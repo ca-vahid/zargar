@@ -2,6 +2,8 @@
 
 *Research date: August 2026. Compiled from three parallel research tracks: (1) the IBKR API landscape, (2) app architecture / charting / mock-mode patterns, (3) signal ingestion and automation safety.*
 
+> **Note:** the owner's answers to the open questions in §11 are recorded in [DECISIONS.md](./DECISIONS.md), which overrides this document where they differ (notably: **PostgreSQL in Docker instead of SQLite**, local-first hosting instead of a VPS, and instrument scope extended to Canadian stocks and US/CAD options).
+
 ---
 
 ## 0. Executive summary — the recommended blueprint

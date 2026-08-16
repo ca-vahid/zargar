@@ -12,4 +12,7 @@ A **mock mode** runs the same pipeline without sending real orders, so every str
 
 ## Status
 
-Research phase. See [RESEARCH.md](./RESEARCH.md) for the comprehensive technology and architecture research (IBKR API landscape, app architecture, charting, signal ingestion, safety guardrails).
+Research phase complete. See:
+
+- [RESEARCH.md](./RESEARCH.md) — comprehensive technology and architecture research (IBKR API landscape, app architecture, charting, signal ingestion, safety guardrails).
+- [DECISIONS.md](./DECISIONS.md) — the owner's confirmed decisions (stack, instruments, hosting, risk defaults) and the build order.
