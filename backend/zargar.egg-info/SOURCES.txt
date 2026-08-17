@@ -1,4 +1,11 @@
 pyproject.toml
+tests/test_api_and_pipeline.py
+tests/test_bars.py
+tests/test_engine_flow.py
+tests/test_grounding.py
+tests/test_riskgate.py
+tests/test_sim_executor.py
+tests/test_verification.py
 zargar/__init__.py
 zargar/bus.py
 zargar/config.py

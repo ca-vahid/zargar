@@ -10,29 +10,56 @@ Zargar is a single-user app built around three ideas:
 
 A **mock mode** runs the same pipeline without sending real orders, so every strategy and signal source can be evaluated on "what would have happened" before real money is at stake.
 
-## Quickstart (development — no IBKR account needed)
+## Run it on your computer
 
-Everything runs fully simulated out of the box: a synthetic market feed, a local
-fill engine, and synthesized chart history.
+Everything runs fully simulated out of the box — synthetic market feed, local
+fill engine, synthesized chart history. No IBKR account or API keys needed.
 
-```bash
-# 1. Database (the only dockerized piece — never rebuilt during development)
-docker compose up -d
+**Prerequisites** (one-time installs): [Git](https://git-scm.com),
+[Docker Desktop](https://www.docker.com/products/docker-desktop/) (running),
+[Python 3.11+](https://python.org) (Windows: tick “Add to PATH”),
+[Node.js 20+](https://nodejs.org).
 
-# 2. Backend engine + API  (http://127.0.0.1:8420)
-cd backend
-uv venv && uv pip install -e ".[dev]"       # or: python -m venv .venv && pip install -e ".[dev]"
-cp ../.env.example .env                     # optional; defaults work
-.venv/bin/python -m zargar.main
+**Windows (PowerShell):**
 
-# 3. Frontend  (http://localhost:5173, proxies to the backend)
-cd ../frontend
-npm install
-npm run dev
+```powershell
+git clone https://github.com/ca-vahid/zargar.git
+cd zargar
+powershell -ExecutionPolicy Bypass -File scripts\setup.ps1   # one time
+powershell -ExecutionPolicy Bypass -File scripts\start.ps1   # every time
 ```
 
-Run the backend tests (needs the Postgres from step 1, or set
+**macOS / Linux:**
+
+```bash
+git clone https://github.com/ca-vahid/zargar.git
+cd zargar
+./scripts/setup.sh     # one time
+./scripts/start.sh     # every time
+```
+
+Then open **http://127.0.0.1:8420** — one process serves the engine, the API,
+and the UI. Stop with Ctrl-C (Postgres keeps running in Docker; data persists).
+
+<details>
+<summary>Manual steps / frontend dev mode (hot reload)</summary>
+
+```bash
+docker compose up -d                        # database only
+
+cd backend
+python -m venv .venv && .venv/bin/pip install -e ".[dev]"
+cp ../.env.example .env                     # optional; defaults work
+.venv/bin/python -m zargar.main             # engine + API on :8420
+
+cd ../frontend
+npm install
+npm run dev                                 # UI on :5173 with hot reload, proxies to :8420
+```
+
+Backend tests (needs the Postgres from docker compose, or set
 `ZARGAR_TEST_DATABASE_URL`): `cd backend && .venv/bin/python -m pytest`
+</details>
 
 ### Going beyond simulation
 
