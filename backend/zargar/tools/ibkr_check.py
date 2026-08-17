@@ -76,7 +76,7 @@ async def run(host: str, port: int, client_id: int, symbols: list[str]) -> int:
         for symbol in symbols:
             contract = _contract_for(symbol, "STK")
             qualified = await ib.qualifyContractsAsync(contract)
-            if not qualified:
+            if not qualified or qualified[0] is None:  # ib_async >= 2.0: None in-slot
                 print(f"{RED} {symbol}: contract did not qualify")
                 continue
             ticker = ib.reqMktData(qualified[0], "", False, False)

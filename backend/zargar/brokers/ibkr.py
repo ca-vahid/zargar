@@ -61,7 +61,12 @@ class IBKRBroker(QuoteFeed, Executor):
         if symbol in self._tickers or not self.connected:
             return
         contract = _contract_for(symbol, "STK")
-        await self._ib.qualifyContractsAsync(contract)
+        # ib_async >= 2.0: failed qualifications come back as None in-slot
+        qualified = await self._ib.qualifyContractsAsync(contract)
+        if not qualified or qualified[0] is None:
+            log.warning("could not qualify contract for %s — no quotes", symbol)
+            return
+        contract = qualified[0]
         ticker = self._ib.reqMktData(contract, "", False, False)
         ticker.zargar_symbol = symbol  # tag for the tick handler
         self._tickers[symbol] = ticker
@@ -89,7 +94,13 @@ class IBKRBroker(QuoteFeed, Executor):
         from ib_async import LimitOrder, MarketOrder, Order as IbOrder, StopOrder
 
         contract = _contract_for(order.symbol, order.sec_type)
-        await self._ib.qualifyContractsAsync(contract)
+        qualified = await self._ib.qualifyContractsAsync(contract)
+        if not qualified or qualified[0] is None:
+            await self.emit(ExecReport(
+                kind="rejected", order_id=order.id,
+                reason=f"IBKR could not resolve contract for {order.symbol}"))
+            return
+        contract = qualified[0]
         action = "BUY" if order.side == OrderSide.BUY else "SELL"
         if order.order_type == OrderType.MKT:
             ib_order = MarketOrder(action, order.qty)

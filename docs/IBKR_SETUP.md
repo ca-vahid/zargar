@@ -10,13 +10,14 @@ worked for a while.
 ## 1. Get your paper trading account
 
 1. Log in to [IBKR Client Portal](https://www.interactivebrokers.com/portal).
-2. Head icon (top right) → **Settings** → **Account Settings** → in the
-   *Configuration* section find **Paper Trading Account** → request/open it.
-3. Note the paper username (usually your live username with a `d`/`D` prefixed
-   or appended) and set its password there.
+2. Head icon (top right) → **Settings** → **Account Configuration** →
+   **Paper Trading Account** → request it.
+3. You choose a **separate paper username and password** there (paper account
+   ids start with `DU…`). Provisioning takes up to ~24 h (email confirmation);
+   the account starts with $1,000,000 of paper money.
 4. On the same page, enable **“Share real-time market data with paper trading
-   account”** if offered — otherwise paper only gets delayed data.
-   (Live and paper can’t consume the same data feed at the same moment.)
+   account”** — otherwise paper only gets delayed data. (Live and paper can’t
+   consume the same feed at the same moment.)
 
 ## 2. Install and log in to IB Gateway
 
@@ -39,6 +40,13 @@ In IB Gateway: **Configure → Settings → API → Settings**
 
 Click OK. (Ports: gateway paper `4002`, gateway live `4001`, TWS paper `7497`,
 TWS live `7496`.)
+
+> ⚠ **After upgrading Gateway/TWS to 10.45+**, the upgrade **clears “Enable
+> ActiveX and Socket Clients” and “Allow connections from localhost only”**
+> (per IBKR’s 2026 release notes). If Zargar suddenly can’t connect after a
+> gateway update, re-check these two boxes first. IBKR also enforces a minimum
+> supported version (10.30 as of March 2025) — keep Gateway on the current
+> *stable* channel.
 
 ## 4. Verify with the self-test
 

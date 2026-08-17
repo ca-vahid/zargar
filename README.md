@@ -73,7 +73,14 @@ Backend tests (needs the Postgres from docker compose, or set
 - **Telegram approvals**: set `ZARGAR_TELEGRAM_BOT_TOKEN` + `ZARGAR_TELEGRAM_CHAT_ID`
   and enable the toggle in Settings.
 
-## Documents
+## Documentation
 
-- [RESEARCH.md](./RESEARCH.md) — comprehensive technology and architecture research (IBKR API landscape, app architecture, charting, signal ingestion, safety guardrails).
-- [DECISIONS.md](./DECISIONS.md) — the owner's confirmed decisions (stack, instruments, hosting, risk defaults) and the build order.
+| Doc | What's in it |
+|---|---|
+| [docs/ROADMAP.md](./docs/ROADMAP.md) | **Start here to continue** — current status, your next steps in order, and the development plan (v0.2–v0.5 + backlog). |
+| [docs/OPERATIONS.md](./docs/OPERATIONS.md) | Runbook: everyday commands, configuration model, trading modes, integrations checklist, troubleshooting. |
+| [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) | How it works: module map, order lifecycle, risk pipeline, signal pipeline, WS protocol, DB schema. |
+| [docs/IBKR_SETUP.md](./docs/IBKR_SETUP.md) | Connecting to Interactive Brokers: paper account, IB Gateway, API settings, self-test. |
+| [RESEARCH.md](./RESEARCH.md) | Original technology research (IBKR API landscape, architecture options, signal ingestion). |
+| [DECISIONS.md](./DECISIONS.md) | The design decisions this build follows (stack, instruments, hosting, risk defaults). |
+| [CLAUDE.md](./CLAUDE.md) | Context for Claude Code sessions: commands, conventions, gotchas. |
