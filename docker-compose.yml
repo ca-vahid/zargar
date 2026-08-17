@@ -1,0 +1,24 @@
+# Zargar infrastructure — database only, by design.
+# The trading engine and web app run natively so day-to-day development
+# never requires a docker rebuild:  docker compose up -d
+services:
+  db:
+    image: postgres:16
+    container_name: zargar-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zargar
+      POSTGRES_PASSWORD: zargar
+      POSTGRES_DB: zargar
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - zargar_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zargar"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  zargar_pgdata:

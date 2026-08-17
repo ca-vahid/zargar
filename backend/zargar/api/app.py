@@ -1,0 +1,282 @@
+"""FastAPI application factory.
+
+NOTE: no `from __future__ import annotations` here — FastAPI must resolve the
+locally-scoped Pydantic request models, which stringified annotations break.
+"""
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from sqlalchemy import select
+
+from .. import events as ev
+from ..config import AppConfig
+from ..domain import new_id
+from ..engine import Engine
+from ..models import Event, Portfolio, Watchlist
+from ..orders import OrderIntent
+from .ws import WSHub
+
+log = logging.getLogger("zargar.api")
+
+
+def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
+    eng = engine or Engine(config)
+    hub = WSHub(eng)
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if not eng.started:
+            await eng.start()
+        # signal layer (proposals/ingestion) attaches itself if available
+        from ..signals.service import attach_signal_layer
+        await attach_signal_layer(eng)
+        from ..approvals.telegram import attach_telegram
+        await attach_telegram(eng)
+        await hub.start()
+        yield
+        await hub.stop()
+        await eng.stop()
+
+    app = FastAPI(title="Zargar", version="0.1.0", lifespan=lifespan)
+    app.state.engine = eng
+    app.state.hub = hub
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[o.strip() for o in config.cors_origins.split(",") if o.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # --- auth ----------------------------------------------------------------
+    async def require_auth(request: Request) -> None:
+        if not config.auth_token:
+            return
+        header = request.headers.get("authorization", "")
+        token = header.removeprefix("Bearer ").strip() if header else request.query_params.get("token", "")
+        if token != config.auth_token:
+            raise HTTPException(status_code=401, detail="invalid token")
+
+    auth = Depends(require_auth)
+
+    # --- health / state -----------------------------------------------------
+    @app.get("/api/health")
+    async def health():
+        return {"ok": True, "started": eng.started}
+
+    @app.get("/api/state", dependencies=[auth])
+    async def state():
+        return await eng.snapshot()
+
+    # --- orders ---------------------------------------------------------------
+    @app.post("/api/orders", dependencies=[auth])
+    async def place_order(intent: OrderIntent):
+        try:
+            order = await eng.orders.place(intent)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return order
+
+    @app.post("/api/orders/{order_id}/cancel", dependencies=[auth])
+    async def cancel_order(order_id: str):
+        try:
+            return await eng.orders.cancel(order_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.get("/api/orders", dependencies=[auth])
+    async def list_orders(
+        portfolio: str | None = None,
+        open_only: bool = Query(default=False, alias="open"),
+        limit: int = 200,
+    ):
+        return await eng.orders.list_orders(portfolio, open_only, limit)
+
+    @app.get("/api/executions", dependencies=[auth])
+    async def list_executions(portfolio: str | None = None, limit: int = 200):
+        return await eng.orders.list_executions(portfolio, limit)
+
+    # --- portfolios ------------------------------------------------------------
+    class PortfolioCreate(BaseModel):
+        name: str
+        kind: str = "sim"
+        starting_cash: float = 10_000.0
+        source_name: str | None = None
+
+    @app.get("/api/portfolios", dependencies=[auth])
+    async def portfolios():
+        out = []
+        for p in eng.positions.portfolios():
+            eq = await eng.positions.equity(p["id"])
+            out.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2)})
+        return out
+
+    @app.post("/api/portfolios", dependencies=[auth])
+    async def create_portfolio(body: PortfolioCreate):
+        if body.kind not in ("sim", "shadow", "paper", "live"):
+            raise HTTPException(status_code=400, detail="invalid kind")
+        row = Portfolio(
+            id=new_id(), name=body.name, kind=body.kind,
+            starting_cash=body.starting_cash, cash=body.starting_cash,
+            source_name=body.source_name)
+        async with eng.sf() as session:
+            session.add(row)
+            await session.commit()
+        eng.positions.register_portfolio(row)
+        return {"id": row.id, "name": row.name, "kind": row.kind,
+                "cash": row.cash, "startingCash": row.starting_cash}
+
+    @app.get("/api/portfolios/{pid}/equity", dependencies=[auth])
+    async def equity_series(pid: str, limit: int = 2000):
+        return await eng.positions.equity_series(pid, limit)
+
+    # --- market data --------------------------------------------------------
+    @app.get("/api/chart/{symbol}", dependencies=[auth])
+    async def chart(symbol: str, tf: str = "1m", limit: int = 500):
+        symbol = symbol.upper()
+        await eng.ensure_symbol(symbol)
+        try:
+            bars = eng.bars.bars(symbol, tf=tf, limit=limit)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"symbol": symbol, "tf": tf, "bars": [b.to_row() for b in bars]}
+
+    @app.get("/api/quotes", dependencies=[auth])
+    async def quotes(symbols: str = ""):
+        wanted = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+        all_quotes = eng.quotes.all()
+        if wanted:
+            return {s: all_quotes[s].to_dict() for s in wanted if s in all_quotes}
+        return {s: q.to_dict() for s, q in all_quotes.items()}
+
+    class WatchBody(BaseModel):
+        symbol: str
+
+    @app.post("/api/watch", dependencies=[auth])
+    async def watch(body: WatchBody):
+        await eng.ensure_symbol(body.symbol)
+        return {"ok": True, "symbol": body.symbol.upper()}
+
+    # --- watchlists -----------------------------------------------------------
+    class WatchlistBody(BaseModel):
+        name: str
+        symbols: list[str] = []
+
+    @app.get("/api/watchlists", dependencies=[auth])
+    async def get_watchlists():
+        async with eng.sf() as session:
+            rows = (await session.execute(select(Watchlist).order_by(Watchlist.sort))).scalars().all()
+        return [{"id": w.id, "name": w.name, "sort": w.sort, "symbols": w.symbols or []} for w in rows]
+
+    @app.post("/api/watchlists", dependencies=[auth])
+    async def create_watchlist(body: WatchlistBody):
+        row = Watchlist(id=new_id(), name=body.name,
+                        symbols=[s.upper() for s in body.symbols])
+        async with eng.sf() as session:
+            session.add(row)
+            await session.commit()
+        return {"id": row.id, "name": row.name, "sort": row.sort, "symbols": row.symbols}
+
+    @app.put("/api/watchlists/{wid}", dependencies=[auth])
+    async def update_watchlist(wid: str, body: WatchlistBody):
+        async with eng.sf() as session:
+            row = await session.get(Watchlist, wid)
+            if row is None:
+                raise HTTPException(status_code=404, detail="watchlist not found")
+            row.name = body.name
+            row.symbols = [s.upper() for s in body.symbols]
+            await session.commit()
+        for s in body.symbols:
+            await eng.ensure_symbol(s)
+        return {"id": row.id, "name": row.name, "sort": row.sort, "symbols": row.symbols}
+
+    @app.delete("/api/watchlists/{wid}", dependencies=[auth])
+    async def delete_watchlist(wid: str):
+        async with eng.sf() as session:
+            row = await session.get(Watchlist, wid)
+            if row is not None:
+                await session.delete(row)
+                await session.commit()
+        return {"ok": True}
+
+    # --- settings ------------------------------------------------------------
+    @app.get("/api/settings", dependencies=[auth])
+    async def get_settings():
+        return eng.settings.all()
+
+    @app.patch("/api/settings", dependencies=[auth])
+    async def patch_settings(body: dict):
+        try:
+            await eng.settings.set_many(body)
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return eng.settings.all()
+
+    # --- kill switch / system --------------------------------------------------
+    class HaltBody(BaseModel):
+        reason: str = "manual halt"
+
+    @app.post("/api/halt", dependencies=[auth])
+    async def halt(body: HaltBody):
+        return await eng.engage_halt(body.reason, source="app")
+
+    @app.post("/api/resume", dependencies=[auth])
+    async def resume():
+        return await eng.release_halt(source="app")
+
+    @app.get("/api/events", dependencies=[auth])
+    async def events(
+        type: str | None = None,
+        aggregate_id: str | None = None,
+        portfolio: str | None = None,
+        limit: int = 200,
+    ):
+        async with eng.sf() as session:
+            stmt = select(Event).order_by(Event.id.desc()).limit(min(limit, 1000))
+            if type:
+                stmt = stmt.where(Event.type == type)
+            if aggregate_id:
+                stmt = stmt.where(Event.aggregate_id == aggregate_id)
+            if portfolio:
+                stmt = stmt.where(Event.portfolio_id == portfolio)
+            rows = (await session.execute(stmt)).scalars().all()
+        return [{
+            "id": e.id, "ts": e.ts.isoformat(), "type": e.type,
+            "aggregateType": e.aggregate_type, "aggregateId": e.aggregate_id,
+            "portfolioId": e.portfolio_id, "payload": e.payload,
+        } for e in rows]
+
+    # --- websocket -----------------------------------------------------------
+    @app.websocket("/ws")
+    async def ws_endpoint(ws: WebSocket):
+        if config.auth_token:
+            token = ws.query_params.get("token", "")
+            if token != config.auth_token:
+                await ws.close(code=4401)
+                return
+        await hub.handle(ws)
+
+    # --- signal ingestion + proposals routes (phase 4/5) ------------------------
+    from .routes_signals import build_signal_routes
+    build_signal_routes(app, eng, auth, config)
+
+    # --- static SPA -----------------------------------------------------------
+    if config.frontend_dist and Path(config.frontend_dist).is_dir():
+        dist = Path(config.frontend_dist)
+        app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def spa(path: str):
+            file = dist / path
+            if path and file.is_file():
+                return FileResponse(file)
+            return FileResponse(dist / "index.html")
+
+    return app

@@ -1,0 +1,62 @@
+"""Signal ingestion, signals, and proposals routes.
+
+NOTE: no `from __future__ import annotations` — see api/app.py.
+"""
+from fastapi import HTTPException, Request
+from pydantic import BaseModel
+
+
+def build_signal_routes(app, eng, auth, config) -> None:
+
+    # --- inbound email webhook (Cloudflare Email Worker posts here) ----------
+    @app.post("/api/ingest/email")
+    async def ingest_email(request: Request):
+        if config.ingest_key:
+            if request.headers.get("x-zargar-ingest-key", "") != config.ingest_key:
+                raise HTTPException(status_code=401, detail="bad ingest key")
+        payload = await request.json()
+        return await eng.signals_service.ingest_email(payload)
+
+    class ManualIngest(BaseModel):
+        text: str
+        source_name: str = "manual"
+        subject: str = ""
+
+    @app.post("/api/ingest/manual", dependencies=[auth])
+    async def ingest_manual(body: ManualIngest):
+        return await eng.signals_service.ingest_manual(
+            body.text, source_name=body.source_name, subject=body.subject)
+
+    # --- signals / content ----------------------------------------------------
+    @app.get("/api/signals", dependencies=[auth])
+    async def list_signals(limit: int = 100):
+        return await eng.signals_service.list_signals(limit)
+
+    @app.get("/api/content", dependencies=[auth])
+    async def list_content(limit: int = 50):
+        return await eng.signals_service.list_content(limit)
+
+    # --- proposals -----------------------------------------------------------
+    @app.get("/api/proposals", dependencies=[auth])
+    async def list_proposals(all: bool = False, limit: int = 100):
+        if eng.proposals is None:
+            return []
+        return await (eng.proposals.list_all(limit) if all else eng.proposals.list_pending())
+
+    class DecisionBody(BaseModel):
+        half: bool = False
+
+    @app.post("/api/proposals/{pid}/approve", dependencies=[auth])
+    async def approve(pid: str, body: DecisionBody | None = None):
+        try:
+            return await eng.proposals.approve(pid, via="app",
+                                               half=bool(body and body.half))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/proposals/{pid}/reject", dependencies=[auth])
+    async def reject(pid: str):
+        try:
+            return await eng.proposals.reject(pid, via="app")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
