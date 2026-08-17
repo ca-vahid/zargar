@@ -1,0 +1,192 @@
+import { useEffect, useMemo, useState } from "react";
+import { api } from "../lib/api";
+import { fmtDateTime, fmtMoney, fmtQty, fmtSigned, fmtPct } from "../lib/format";
+import { positionsFor, useStore } from "../store";
+import type { Execution, Order } from "../types";
+
+type Tab = "positions" | "orders" | "history" | "fills";
+
+export function Blotter() {
+  const [tab, setTab] = useState<Tab>("positions");
+  return (
+    <div className="panel blotter-area">
+      <div className="panel-head" style={{ paddingBottom: 0, borderBottom: "none" }}>
+        <div className="tabs">
+          {(["positions", "orders", "history", "fills"] as Tab[]).map((t) => (
+            <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+              {t === "orders" ? "Open orders" : t[0].toUpperCase() + t.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="scroll-x">
+        {tab === "positions" && <PositionsTable />}
+        {tab === "orders" && <OpenOrdersTable />}
+        {tab === "history" && <OrderHistoryTable />}
+        {tab === "fills" && <FillsTable />}
+      </div>
+    </div>
+  );
+}
+
+function portfolioName(portfolios: { id: string; name: string }[], id: string) {
+  return portfolios.find((p) => p.id === id)?.name ?? id.slice(0, 6);
+}
+
+function PositionsTable() {
+  const state = useStore();
+  const positions = positionsFor(state);
+  if (!positions.length) return <div className="empty">No positions yet</div>;
+  return (
+    <table className="tbl">
+      <thead>
+        <tr>
+          <th>Symbol</th><th>Portfolio</th><th className="num">Qty</th>
+          <th className="num">Avg cost</th><th className="num">Last</th>
+          <th className="num">Mkt value</th><th className="num">Unrealized</th>
+          <th className="num">Realized</th>
+        </tr>
+      </thead>
+      <tbody>
+        {positions.map((p) => {
+          const quote = state.quotes[p.symbol];
+          const last = quote?.last ?? p.last ?? p.avgCost;
+          const unreal = (last - p.avgCost) * p.qty * (p.secType === "OPT" ? 100 : 1);
+          const pct = p.avgCost > 0 ? ((last / p.avgCost - 1) * 100) * Math.sign(p.qty) : 0;
+          return (
+            <tr key={`${p.portfolioId}:${p.symbol}:${p.secType}`}
+              onClick={() => state.setActiveSymbol(p.symbol)} style={{ cursor: "pointer" }}>
+              <td><b>{p.symbol}</b>{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</td>
+              <td className="muted">{portfolioName(state.portfolios, p.portfolioId)}</td>
+              <td className="num">{fmtQty(p.qty)}</td>
+              <td className="num">{fmtMoney(p.avgCost)}</td>
+              <td className="num">{fmtMoney(last)}</td>
+              <td className="num">{fmtMoney(p.qty * last * (p.secType === "OPT" ? 100 : 1))}</td>
+              <td className={`num ${unreal >= 0 ? "pos" : "neg"}`}>
+                {fmtSigned(unreal)} ({fmtPct(pct)})
+              </td>
+              <td className={`num ${p.realizedPnl >= 0 ? "pos" : "neg"}`}>{fmtSigned(p.realizedPnl)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+function statusPill(status: string) {
+  const cls =
+    status === "FILLED" ? "ok"
+    : ["REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"].includes(status) ? "bad"
+    : status === "DRY_RUN" ? "dim"
+    : "wait";
+  return <span className={`status-pill ${cls}`}>{status.replace("_", " ")}</span>;
+}
+
+function OrderRow({ o, cancellable }: { o: Order; cancellable: boolean }) {
+  const portfolios = useStore((s) => s.portfolios);
+  const toast = useStore((s) => s.toast);
+  return (
+    <tr title={o.rejectReason ?? undefined}>
+      <td><b>{o.symbol}</b></td>
+      <td className={o.side === "BUY" ? "pos" : "neg"}>{o.side}</td>
+      <td className="num">{fmtQty(o.filledQty)}/{fmtQty(o.qty)}</td>
+      <td>{o.orderType}{o.source !== "manual" && <span className="muted"> · {o.source}</span>}</td>
+      <td className="num">
+        {o.limitPrice ? fmtMoney(o.limitPrice) : o.stopPrice ? `stp ${fmtMoney(o.stopPrice)}` : "mkt"}
+      </td>
+      <td className="num">{o.avgFillPrice ? fmtMoney(o.avgFillPrice) : "—"}</td>
+      <td>{statusPill(o.status)}</td>
+      <td className="muted">{portfolioName(portfolios, o.portfolioId)}</td>
+      <td className="muted">{fmtDateTime(o.createdAt)}</td>
+      <td>
+        {cancellable && (
+          <button className="danger-btn" onClick={() =>
+            api.cancelOrder(o.id).catch((e) => toast("error", e.message))}>
+            Cancel
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+const HEAD = (
+  <tr>
+    <th>Symbol</th><th>Side</th><th className="num">Filled/Qty</th><th>Type</th>
+    <th className="num">Price</th><th className="num">Avg fill</th><th>Status</th>
+    <th>Portfolio</th><th>Time</th><th></th>
+  </tr>
+);
+
+function OpenOrdersTable() {
+  const openMap = useStore((s) => s.openOrders);
+  const open = useMemo(() => Object.values(openMap), [openMap]);
+  if (!open.length) return <div className="empty">No working orders</div>;
+  return (
+    <table className="tbl">
+      <thead>{HEAD}</thead>
+      <tbody>
+        {open.map((o) => <OrderRow key={o.id} o={o} cancellable />)}
+      </tbody>
+    </table>
+  );
+}
+
+function OrderHistoryTable() {
+  const recent = useStore((s) => s.recentOrders);
+  const [loaded, setLoaded] = useState<Order[]>([]);
+  useEffect(() => {
+    api.get<Order[]>("/api/orders?limit=100").then(setLoaded).catch(() => undefined);
+  }, []);
+  const merged = [...recent];
+  for (const o of loaded) if (!merged.some((r) => r.id === o.id)) merged.push(o);
+  if (!merged.length) return <div className="empty">No orders yet</div>;
+  return (
+    <table className="tbl">
+      <thead>{HEAD}</thead>
+      <tbody>
+        {merged.slice(0, 100).map((o) => (
+          <OrderRow key={o.id} o={o}
+            cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)} />
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function FillsTable() {
+  const live = useStore((s) => s.executions);
+  const portfolios = useStore((s) => s.portfolios);
+  const [loaded, setLoaded] = useState<Execution[]>([]);
+  useEffect(() => {
+    api.get<Execution[]>("/api/executions?limit=100").then(setLoaded).catch(() => undefined);
+  }, []);
+  const merged = [...live];
+  for (const e of loaded) if (!merged.some((r) => r.id === e.id)) merged.push(e);
+  if (!merged.length) return <div className="empty">No fills yet</div>;
+  return (
+    <table className="tbl">
+      <thead>
+        <tr>
+          <th>Symbol</th><th>Side</th><th className="num">Qty</th>
+          <th className="num">Price</th><th className="num">Commission</th>
+          <th>Portfolio</th><th>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {merged.slice(0, 100).map((e) => (
+          <tr key={e.id}>
+            <td><b>{e.symbol}</b></td>
+            <td className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</td>
+            <td className="num">{fmtQty(e.qty)}</td>
+            <td className="num">{fmtMoney(e.price)}</td>
+            <td className="num muted">{fmtMoney(e.commission)}</td>
+            <td className="muted">{portfolioName(portfolios, e.portfolioId)}</td>
+            <td className="muted">{fmtDateTime(e.ts)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
