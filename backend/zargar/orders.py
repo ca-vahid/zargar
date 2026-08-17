@@ -270,6 +270,11 @@ class OrderManager:
             order.filled_qty = new_filled
             fully = new_filled >= order.qty - 1e-9
             order.status = OrderStatus.FILLED.value if fully else OrderStatus.PARTIALLY_FILLED.value
+            # Positions must be current before the order becomes observable as
+            # (PARTIALLY_)FILLED — readers treat FILLED as "effects applied".
+            await self._positions.apply_fill(
+                order.portfolio_id, order.symbol, order.sec_type, order.side,
+                report.fill_qty, report.fill_price, report.commission)
             await session.commit()
             odict = order_dict(order)
 
@@ -288,10 +293,6 @@ class OrderManager:
             "price": report.fill_price, "commission": report.commission, "ts": report.ts,
         })
         self._bus.publish(topics.ORDERS, odict)
-
-        await self._positions.apply_fill(
-            order.portfolio_id, order.symbol, order.sec_type, order.side,
-            report.fill_qty, report.fill_price, report.commission)
 
         if fully and order.bracket and not order.parent_id:
             await self._spawn_bracket_children(order)

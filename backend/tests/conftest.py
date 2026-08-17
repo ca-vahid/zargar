@@ -10,7 +10,7 @@ from zargar.models import Base
 
 TEST_DB_URL = os.environ.get(
     "ZARGAR_TEST_DATABASE_URL",
-    "postgresql+asyncpg://zargar@127.0.0.1:5433/zargar_test",
+    "postgresql+asyncpg://zargar:zargar@127.0.0.1:5433/zargar_test",
 )
 
 
