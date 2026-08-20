@@ -31,12 +31,48 @@ explain itself.
 - [ ] Halt banner UX: show reason + "view in journal" link (Journal
       pre-filtered to the risk group); RESUME opens a confirm dialog stating
       what resume does and what caused the halt.
+- [ ] Halt banner layout bug: `.app` grid is `48px 1fr`, so the banner (a
+      third grid child) absorbs the `1fr` leftover and balloons on short
+      pages, shoving the sidebar around per page. Fix rows to
+      `48px auto 1fr` + give the banner one fixed height everywhere — no
+      layout shift when switching pages.
+- [ ] Journal noise: `BrokerSync` currently journals every 15-min cycle even
+      when nothing changed. Journal only when the diff is non-empty (cash
+      delta or positionsChanged); quiet cycles publish to the bus only.
 - [ ] Portfolio cards get a "today" P&L% chip so daily state is visible
       before any threshold is near.
 - [ ] Tests: monitor skips passive portfolios; drift warning journaled once;
-      traded portfolio still halts; anchor waits for quotes.
+      traded portfolio still halts; anchor waits for quotes; no-change sync
+      does not journal.
 
-## Phase 2 — Trading modes: Practice | Live [ ]
+## Phase 2 — Money accuracy: currencies & FX [ ]
+
+Verified bug (2026-08-20): USD positions inside CAD accounts are summed at
+face value with no FX — Webull CASH shows C$15,286 while SnapTrade's own
+FX-converted total says C$20,025 (SPCX is USD: 60 × $131.98 counted as CAD,
+~C$2,900 missing; TQQQ same story in Wealthsimple, ~C$1,100 missing).
+
+- [ ] Positions carry their own currency end-to-end: sync already parses it;
+      store it on the Position row + PositionKeeper in-memory dicts + wire
+      shape (camelCase `currency`).
+- [ ] FX rate source: Yahoo pairs (`USDCAD=X`, `CADUSD=X`) polled alongside
+      quotes (they ride the existing feed as watched symbols); a tiny
+      `fx.convert(amount, from, to)` helper with rate age guard.
+- [ ] `PositionKeeper.equity()` / `gross_exposure()` / market values convert
+      each position into the **portfolio's base currency** before summing;
+      risk caps therefore operate in account currency correctly.
+- [ ] Blotter/portfolio/provider views label position market values in their
+      native currency and account totals in account currency.
+- [ ] Cross-check on every sync: computed equity vs SnapTrade's
+      `balance.total` (their FX-converted number); deviation > ~2% raises a
+      journaled `BrokerSyncMismatch` warning surfaced in the UI.
+- [ ] Dashboard net worth: per-currency totals stay primary; add an optional
+      FX-blended headline ("≈ C$32.1k total") using the live rate, clearly
+      marked approximate.
+- [ ] Tests: USD position in CAD account equity math, FX helper with stale
+      rate, mismatch warning fires, blended total.
+
+## Phase 3 — Trading modes: Practice | Live [ ]
 
 Four confusing modes (Dry run / Simulation / Paper (IBKR) / LIVE (IBKR))
 become two, venue-agnostic.
@@ -55,7 +91,7 @@ become two, venue-agnostic.
 - [ ] RiskGate `market_hours` + routing-gate tests updated; engine tests
       migrated off `trading.mode=sim` strings.
 
-## Phase 3 — Real vs Practice compartmentalization [ ]
+## Phase 4 — Real vs Practice compartmentalization [ ]
 
 Real money is the headline; the simulator is a clearly-labeled sandbox.
 No mixed totals anywhere.
@@ -75,7 +111,7 @@ No mixed totals anywhere.
       practice account, live mode → last-used real account).
 - [ ] Sim portfolio rename to "Practice" everywhere user-facing.
 
-## Phase 4 — Broker identity: icons & naming [ ]
+## Phase 5 — Broker identity: icons & naming [ ]
 
 - [ ] Sync captures brokerage logo URLs from SnapTrade `authorizations`
       (`brokerage.aws_s3_square_logo_url` / `logo_url`) into
@@ -88,7 +124,7 @@ No mixed totals anywhere.
       brackets, no institution duplication, currency only when disambiguating.
 - [ ] Rename-on-sync updates existing portfolio rows to the new pattern.
 
-## Phase 5 — Light theme by default + polish [ ]
+## Phase 6 — Light theme by default + polish [ ]
 
 - [ ] Default `ui.theme` → `light` (respect an explicitly saved choice —
       only unset/default users flip).
@@ -98,7 +134,7 @@ No mixed totals anywhere.
       confirm dialog.
 - [ ] Dark retested side-by-side; both pass the browser walk.
 
-## Phase 6 — Navigation & discoverability [ ]
+## Phase 7 — Navigation & discoverability [ ]
 
 "Links that take me to places where I can see what's happening."
 
@@ -114,7 +150,7 @@ No mixed totals anywhere.
       hover tooltips with concrete examples ("collar 5% = reject a limit
       more than 5% from last").
 
-## Phase 7 — Verification & ship [ ]
+## Phase 8 — Verification & ship [ ]
 
 - [ ] Backend suite green (existing + new Phase 1/2 tests).
 - [ ] `npm run build` + grep gates (no emoji, no window.confirm, no bare
@@ -129,6 +165,9 @@ No mixed totals anywhere.
 
 - The 2026-08-20 halt: `DailyLossHalt {lossPct: -3.001, portfolioId: Webull
   CASH}` at 08:20 ET — SPCX fell ~5% overnight; no zargar orders existed.
+- The FX undercount: computed Webull CASH equity C$15,286 vs SnapTrade's
+  FX-converted `balance.total` C$20,025 — the delta is SPCX's USD market
+  value counted 1:1 as CAD. Use `balance.total` as the audit reference.
 - The user's screenshots that triggered this plan were from a **cached old
   bundle** (pre-Dashboard); hard refresh shows the current UI. Cache-busting
   is handled by Vite hashes; the stale HTML came from the browser.
