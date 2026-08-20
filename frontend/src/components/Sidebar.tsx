@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useStore, type Page } from "../store";
 import {
   IconDashboard,
@@ -25,6 +25,19 @@ export function Sidebar() {
   const setPage = useStore((s) => s.setPage);
   const watchlists = useStore((s) => s.watchlists);
   const pending = useStore((s) => s.proposals.length);
+  const positionsMap = useStore((s) => s.positions);
+  const portfolios = useStore((s) => s.portfolios);
+
+  // your real holdings, always on top — the symbols that actually matter
+  const holdings = useMemo(() => {
+    const real = new Set(portfolios
+      .filter((p) => p.kind === "live" || p.kind === "paper").map((p) => p.id));
+    const syms = new Set<string>();
+    for (const p of Object.values(positionsMap)) {
+      if (real.has(p.portfolioId) && Math.abs(p.qty) > 1e-9) syms.add(p.symbol);
+    }
+    return [...syms].sort();
+  }, [positionsMap, portfolios]);
 
   return (
     <aside className="sidebar">
@@ -42,6 +55,14 @@ export function Sidebar() {
         ))}
       </nav>
       <div className="watchlist">
+        {holdings.length > 0 && (
+          <div>
+            <h4>My holdings <span className="holdings-dot" title="Live positions in your real accounts" /></h4>
+            {holdings.map((sym) => (
+              <WatchRow key={sym} symbol={sym} />
+            ))}
+          </div>
+        )}
         {watchlists.map((wl) => (
           <div key={wl.id}>
             <h4>

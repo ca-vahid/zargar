@@ -662,7 +662,7 @@ class SnapTradeSync:
         else:
             await self._maybe_rename(portfolio_id, display_name)
 
-        cash = await self._fetch_cash(account_id, currency, acct)
+        cash, cash_balances = await self._fetch_cash(account_id, currency, acct)
         positions = await self._fetch_positions(account_id)
         for p in positions:
             try:
@@ -686,12 +686,17 @@ class SnapTradeSync:
 
         equity = await self._positions.equity(portfolio_id)
         # Cross-check our FX-converted equity against the broker's own total —
-        # a silent currency/parsing bug should never hide again.
+        # a silent currency/parsing bug should never hide again. The broker
+        # total comes from SnapTrade's overnight holdings sync, so live-price
+        # and FX-source drift is expected: only deviations beyond 5% are
+        # structural enough to warn about.
         broker_total = float(((acct.get("balance") or {}).get("total") or {}).get("amount") or 0.0)
+        broker_synced_at = ((acct.get("sync_status") or {}).get("holdings") or {}
+                            ).get("last_successful_sync")
         mismatch = None
         if broker_total > 1.0 and equity > 1.0:
             pct = (equity - broker_total) / broker_total * 100
-            if abs(pct) > 2.0:
+            if abs(pct) > 5.0:
                 mismatch = {"computedEquity": round(equity, 2),
                             "brokerTotal": round(broker_total, 2),
                             "pct": round(pct, 2)}
@@ -712,8 +717,10 @@ class SnapTradeSync:
             "currency": currency,
             "accountType": str((acct.get("meta") or {}).get("type") or acct.get("raw_type") or ""),
             "cash": round(cash, 2),
+            "cashBalances": cash_balances,
             "equity": round(equity, 2),
             "brokerTotal": round(broker_total, 2) if broker_total else None,
+            "brokerSyncedAt": broker_synced_at,
             "mismatch": mismatch,
             "syncedAt": now.isoformat(),
             "positions": positions,
@@ -771,25 +778,34 @@ class SnapTradeSync:
             "id": pid, "name": name, "kind": "live", "cash": 0.0, "ts": now_iso()})
         return pid
 
-    async def _fetch_cash(self, account_id: str, currency: str, acct: dict) -> float:
-        """Cash for the account's primary currency; falls back to balance.total."""
+    async def _fetch_cash(self, account_id: str, currency: str,
+                          acct: dict) -> tuple[float, list[dict]]:
+        """All cash balances FX-converted into the account currency.
+
+        Accounts hold cash in several currencies at once (Webull CASH keeps a
+        USD wallet inside a CAD account) — dropping non-primary currencies
+        silently undercounts equity.
+        Returns (total in account ccy, [{currency, cash}] native breakdown).
+        """
         try:
             balances = await self._client.request(
                 "GET", f"/api/v1/accounts/{account_id}/balances")
         except (SnapTradeError, SnapTradeUnknownOutcome):
             balances = None
+        entries: list[dict] = []
         if isinstance(balances, list):
             for bal in balances:
                 cur = (bal.get("currency") or {})
-                code = cur.get("code") if isinstance(cur, dict) else cur
-                if str(code or "").upper() == currency and bal.get("cash") is not None:
-                    return float(bal["cash"])
-            # single-entry accounts: take the first cash figure we can find
-            for bal in balances:
-                if bal.get("cash") is not None:
-                    return float(bal["cash"])
-        total = ((acct.get("balance") or {}).get("total") or {})
-        return float(total.get("amount") or 0.0)
+                code = str((cur.get("code") if isinstance(cur, dict) else cur) or "").upper()
+                if bal.get("cash") is None or not code:
+                    continue
+                entries.append({"currency": code, "cash": float(bal["cash"])})
+        if entries:
+            fx = self._positions.fx
+            total = sum(fx.convert(e["cash"], e["currency"], currency) for e in entries)
+            return total, entries
+        total = float(((acct.get("balance") or {}).get("total") or {}).get("amount") or 0.0)
+        return total, []
 
     async def _fetch_positions(self, account_id: str) -> list[dict]:
         """Parsed positions via the unified endpoint, legacy as fallback."""

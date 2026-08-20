@@ -1,10 +1,13 @@
 """Yahoo Finance polling quote feed.
 
-Stopgap real-market data source until the IBKR feed is available: near-realtime
-(~1-2s delayed) quotes for the watched symbols, batched into one request per
-poll. Unofficial endpoints — the feed fails closed: on persistent errors
-`connected` goes false, quotes age out, and the RiskGate's quote_fresh check
-blocks orders.
+Stopgap real-market data source until the IBKR feed is available. The classic
+v7 quote endpoint now serves unauthenticated callers HOURLY snapshots (prices
+pinned to the top of the hour), so this feed polls the v8 chart endpoint per
+symbol instead: its 1-minute bars are genuinely live (seconds old).
+
+Unofficial endpoints — the feed fails closed: on persistent errors or a 429
+cooldown, `connected` goes false, quotes age out, and the RiskGate's
+quote_fresh check blocks orders.
 
 Yahoo's `.TO` / `.V` suffix convention matches zargar's natively.
 """
@@ -13,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from typing import Callable
 
 import httpx
@@ -24,14 +28,16 @@ log = logging.getLogger("zargar.yahoo")
 
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
-QUOTE_URL = "https://query1.finance.yahoo.com/v7/finance/quote"
-CRUMB_URL = "https://query1.finance.yahoo.com/v1/test/getcrumb"
+CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 COOKIE_URL = "https://fc.yahoo.com"
 
-# When Yahoo reports no bid/ask (off-hours), synthesize a spread around last so
-# the SimExecutor (which needs bid/ask > 0) keeps filling sim portfolios
-# against real prices.
+# Chart bars carry no bid/ask — synthesize a small spread around last so the
+# SimExecutor (which needs bid/ask > 0) keeps filling practice orders against
+# real prices.
 SYNTH_SPREAD = 0.00025  # 2.5 bps each side
+
+MAX_CONCURRENCY = 5
+COOLDOWN_SECONDS = 90  # after a 429, stand down before hammering again
 
 
 class YahooQuoteFeed(QuoteFeed):
@@ -46,9 +52,10 @@ class YahooQuoteFeed(QuoteFeed):
         self._http = client or httpx.AsyncClient(
             timeout=10, headers={"User-Agent": UA}, follow_redirects=True)
         self._symbols: set[str] = set()
-        self._crumb: str | None = None
+        self._cookie_warm = False
         self._task: asyncio.Task | None = None
         self._last_ok = 0
+        self._cooldown_until = 0.0
 
     @property
     def symbols(self) -> set[str]:
@@ -81,60 +88,87 @@ class YahooQuoteFeed(QuoteFeed):
                 log.exception("yahoo poll failed")
             await asyncio.sleep(self._poll_seconds)
 
-    async def _ensure_crumb(self) -> None:
-        if self._crumb is not None:
+    async def _ensure_cookie(self) -> None:
+        if self._cookie_warm:
             return
         with contextlib.suppress(httpx.HTTPError):
-            await self._http.get(COOKIE_URL)  # warms the session cookie jar
-        resp = await self._http.get(CRUMB_URL)
-        if resp.status_code == 200 and resp.text and "<" not in resp.text:
-            self._crumb = resp.text.strip()
-        else:
-            self._crumb = ""  # some sessions work without one
+            await self._http.get(COOKIE_URL)
+        self._cookie_warm = True
 
     async def poll_once(self) -> None:
-        """One batched fetch of all watched symbols."""
-        if not self._symbols:
+        """One sweep: every watched symbol fetched from the chart endpoint."""
+        if not self._symbols or time.monotonic() < self._cooldown_until:
             return
-        await self._ensure_crumb()
-        params = {"symbols": ",".join(sorted(self._symbols))}
-        if self._crumb:
-            params["crumb"] = self._crumb
-        resp = await self._http.get(QUOTE_URL, params=params)
-        if resp.status_code in (401, 403):
-            # crumb/cookie expired: refresh once, next poll retries
-            self._crumb = None
-            log.info("yahoo session expired (%s); refreshing crumb", resp.status_code)
-            return
-        resp.raise_for_status()
-        payload = resp.json()
-        rows = ((payload.get("quoteResponse") or {}).get("result")) or []
-        for row in rows:
-            quote = self._to_quote(row)
-            if quote is not None:
-                self._on_quote(quote)
-        self._last_ok = now_ms()
+        await self._ensure_cookie()
+        now_s = int(time.time())
+        sem = asyncio.Semaphore(MAX_CONCURRENCY)
+        rate_limited = False
+        any_ok = False
 
-    def _to_quote(self, row: dict) -> Quote | None:
-        symbol = str(row.get("symbol") or "").upper()
-        if not symbol:
+        async def fetch(symbol: str) -> None:
+            nonlocal rate_limited, any_ok
+            async with sem:
+                try:
+                    resp = await self._http.get(
+                        CHART_URL.format(symbol=symbol),
+                        params={
+                            "interval": "1m",
+                            "period1": now_s - 30 * 60,
+                            "period2": now_s,
+                            "includePrePost": "true",
+                        })
+                except httpx.HTTPError:
+                    return
+            if resp.status_code == 429:
+                rate_limited = True
+                return
+            if resp.status_code != 200:
+                return
+            try:
+                quote = self._parse_chart(symbol, resp.json())
+            except (ValueError, KeyError):
+                return
+            if quote is not None:
+                any_ok = True
+                self._on_quote(quote)
+
+        await asyncio.gather(*(fetch(s) for s in sorted(self._symbols)))
+        if rate_limited:
+            self._cooldown_until = time.monotonic() + COOLDOWN_SECONDS
+            log.warning("yahoo rate-limited (429) — cooling down %ss", COOLDOWN_SECONDS)
+        if any_ok:
+            self._last_ok = now_ms()
+
+    def _parse_chart(self, symbol: str, data: dict) -> Quote | None:
+        result = (((data or {}).get("chart") or {}).get("result") or [None])[0]
+        if not result:
             return None
-        last = float(row.get("regularMarketPrice") or 0.0)
-        bid = float(row.get("bid") or 0.0)
-        ask = float(row.get("ask") or 0.0)
-        if last <= 0 and bid <= 0 and ask <= 0:
+        stamps = result.get("timestamp") or []
+        block = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+        closes = block.get("close") or []
+        volumes = block.get("volume") or []
+        last = 0.0
+        volume = 0
+        for i in range(len(closes) - 1, -1, -1):
+            if closes[i] is not None:
+                last = float(closes[i])
+                if i < len(volumes) and volumes[i] is not None:
+                    volume = int(volumes[i])
+                break
+        if last <= 0:  # off-session fallback: meta close (may be stale)
+            meta = result.get("meta") or {}
+            last = float(meta.get("regularMarketPrice") or 0.0)
+        if last <= 0:
             return None
-        if (bid <= 0 or ask <= 0) and last > 0:
-            bid = round(last * (1 - SYNTH_SPREAD), 4)
-            ask = round(last * (1 + SYNTH_SPREAD), 4)
+        _ = stamps  # bar time informs freshness only via connected-age today
         return Quote(
-            symbol=symbol,
-            bid=bid,
-            ask=ask,
-            last=last if last > 0 else (bid + ask) / 2,
-            bid_size=int(row.get("bidSize") or 0),
-            ask_size=int(row.get("askSize") or 0),
-            volume=int(row.get("regularMarketVolume") or 0),
+            symbol=symbol.upper(),
+            bid=round(last * (1 - SYNTH_SPREAD), 4),
+            ask=round(last * (1 + SYNTH_SPREAD), 4),
+            last=last,
+            bid_size=0,
+            ask_size=0,
+            volume=volume,
             halted=False,
             ts=now_ms(),
         )

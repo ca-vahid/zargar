@@ -136,8 +136,14 @@ body {
   background: var(--surface-2); padding: 4px 10px; border-radius: var(--radius-sm);
   white-space: nowrap; border: none; cursor: pointer;
 }
-.equity-chip:hover { color: var(--text-1); }
-.equity-chip--real { color: var(--text-1); font-weight: 600; border: 1px solid var(--border); }
+.equity-chip { transition: background 0.15s ease, color 0.15s ease; }
+.equity-chip:hover { color: var(--text-1); background: var(--surface-3); }
+.equity-chip--real {
+  color: var(--text-1); font-weight: 700; font-variant-numeric: tabular-nums;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+.equity-chip--real:hover { background: color-mix(in srgb, var(--accent) 18%, var(--surface-2)); }
 .mode-select {
   background: var(--surface-2); color: var(--text-1); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 4px 8px; font-size: var(--fs-1);
@@ -197,6 +203,29 @@ body {
 .wl-sub { grid-column: 1 / -1; display: flex; justify-content: space-between; font-size: var(--fs-0); color: var(--text-3); }
 .flash-up { color: var(--up); }
 .flash-down { color: var(--down); }
+.holdings-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--up);
+  display: inline-block; animation: live-blink 2s ease-in-out infinite;
+}
+@keyframes live-blink { 50% { opacity: 0.3; } }
+
+/* ── live-quote motion ─────────────────────────────────────────────────── */
+/* Remounted per tick (key=quote.ts) so the pulse replays on every update —
+   the page visibly breathes with the market. */
+.quote-cell {
+  border-radius: 4px; padding: 1px 4px; margin: -1px -4px;
+  transition: color 0.25s ease; font-variant-numeric: tabular-nums;
+}
+.quote-cell.flash-up { color: var(--up); animation: pulse-up 0.9s ease-out; }
+.quote-cell.flash-down { color: var(--down); animation: pulse-down 0.9s ease-out; }
+@keyframes pulse-up {
+  0% { background: color-mix(in srgb, var(--up) 28%, transparent); }
+  100% { background: transparent; }
+}
+@keyframes pulse-down {
+  0% { background: color-mix(in srgb, var(--down) 28%, transparent); }
+  100% { background: transparent; }
+}
 
 /* ── panels & cards ────────────────────────────────────────────────────── */
 .panel {
@@ -250,9 +279,15 @@ body {
   font-size: var(--fs-0); font-weight: 700; color: var(--text-3);
   border: 1px solid var(--border); border-radius: 4px; padding: 0 4px;
 }
-.provider-card { cursor: pointer; }
-.provider-card:hover { border-color: var(--accent); }
+.provider-card {
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, border-color 0.15s ease;
+}
+.provider-card:hover {
+  border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-1);
+}
 .provider-card--practice { opacity: 0.85; border-style: dashed; }
+.acct-row .bal { font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* ── quote header ──────────────────────────────────────────────────────── */
 .quote-head { display: flex; align-items: baseline; gap: 14px; padding: 10px 12px; flex-wrap: wrap; }
@@ -327,10 +362,12 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .tbl td { padding: var(--cell-y) 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .tbl tr:last-child td { border-bottom: none; }
 .tbl tr:hover td { background: var(--surface-2); }
-.tbl .num { font-family: var(--mono); text-align: right; }
+.tbl .num { font-family: var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
 .tbl th.num { text-align: right; }
-.pos { color: var(--up); }
-.neg { color: var(--down); }
+.tbl tbody tr { transition: background 0.12s ease; }
+.sym-cell { font-weight: 700; letter-spacing: 0.2px; }
+.pos { color: var(--up); font-weight: 600; }
+.neg { color: var(--down); font-weight: 600; }
 .muted { color: var(--text-3); }
 .empty { color: var(--text-3); text-align: center; padding: 26px 0; font-size: var(--fs-2); }
 
@@ -361,9 +398,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
   display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-0); font-weight: 700;
   letter-spacing: 0.4px; border-radius: 4px; padding: 2px 7px; text-transform: uppercase;
 }
-.status-pill.ok { background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--up); }
-.status-pill.bad { background: color-mix(in srgb, var(--down) 18%, transparent); color: var(--down); }
-.status-pill.wait { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+.status-pill.ok { background: color-mix(in srgb, var(--up) 22%, transparent); color: var(--up); }
+.status-pill.bad { background: color-mix(in srgb, var(--down) 22%, transparent); color: var(--down); }
+.status-pill.wait { background: color-mix(in srgb, var(--warn) 24%, transparent); color: var(--warn); }
 .status-pill.dim { background: var(--surface-3); color: var(--text-2); }
 
 .link-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: var(--fs-1); padding: 0; }
@@ -452,7 +489,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .section-head {
   display: flex; align-items: center; gap: var(--sp-2);
   font-weight: 700; font-size: var(--fs-3); margin: var(--sp-3) 0 var(--sp-2);
+  border-left: 3px solid var(--accent); padding-left: var(--sp-2);
 }
+
+/* interactive elements share one motion language */
+.nav button, .chip-btn, .tf-row button, .tabs button, .ghost-btn, .primary-btn,
+.danger-btn, .icon-btn, .wl-row, .link-btn, .submit-btn, .side-toggle button {
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+    opacity 0.15s ease;
+}
+.metric-lg { font-variant-numeric: tabular-nums; }
 
 /* misc */
 .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad); align-items: start; }

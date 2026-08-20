@@ -170,6 +170,27 @@ No mixed totals anywhere.
 
 ---
 
+## Follow-ups shipped after the 8 phases (2026-08-20 PM) [x]
+
+- [x] **Mismatch root-caused and fixed**: accounts hold multi-currency cash
+      (Webull CASH had US$914.17 + C$67.31; only the CAD row was counted).
+      `_fetch_cash` now sums every `/balances` entry FX-converted; the UI
+      shows the per-currency breakdown ("cash US$914.17 + C$67.31"). The
+      residual ~2% vs `balance.total` is SnapTrade's overnight sync vintage —
+      threshold moved to 5%, tooltip explains, both Δ pills cleared.
+- [x] **Live updates fixed**: Yahoo's v7 quote endpoint turned out to serve
+      hourly-frozen snapshots to unauthenticated sessions; the feed now polls
+      v8 chart 1m bars per symbol (verified seconds-fresh; NVDA/TSLA/SPCX/
+      TQQQ/USDCAD all ticking), with concurrency cap + 429 cooldown.
+- [x] **Alive & personalized UI**: quote cells pulse green/red on every tick
+      (key-remount animation, reduced-motion aware), provider position
+      tables are live-priced with P&L% (no longer static sync prices),
+      "My holdings" section (your real positions) tops the sidebar with a
+      breathing live dot, bolder tabular numerals, hover lift on cards,
+      accent-tinted real-money chip, unified transitions.
+- [x] Verified in-browser: 10 price changes + flash mutations in 8s;
+      97 backend tests; build green.
+
 ### Known context for whoever implements
 
 - The 2026-08-20 halt: `DailyLossHalt {lossPct: -3.001, portfolioId: Webull

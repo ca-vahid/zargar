@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Highcharts from "highcharts/esm/highstock.js";
+import { memo } from "react";
 import { api } from "../lib/api";
-import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtSigned } from "../lib/format";
+import { fmtCcy, fmtDateTime, fmtMoney, fmtPct, fmtQty, fmtSigned } from "../lib/format";
 import { baseChartOptions, seriesPalette } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
-import { groupPositions, useStore } from "../store";
-import type { BrokerageProvider, Portfolio } from "../types";
+import { groupPositions, usePrevLast, useQuote, useStore } from "../store";
+import type { BrokeragePosition, BrokerageProvider, Portfolio } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { AsyncSection, EmptyState } from "../components/ui";
@@ -69,6 +70,51 @@ function PortfolioCard({
   );
 }
 
+/** Live-priced row: the sync price is only the fallback — quotes stream in. */
+const LiveBrokerageRow = memo(function LiveBrokerageRow({
+  pos,
+  accountCurrency,
+}: {
+  pos: BrokeragePosition;
+  accountCurrency: string;
+}) {
+  const quote = useQuote(pos.symbol);
+  const prev = usePrevLast(pos.symbol);
+  const openTrade = useStore((s) => s.openTrade);
+  const live = quote?.last && quote.last > 0 ? quote.last : pos.price ?? 0;
+  const dir = quote && prev !== undefined
+    ? live > prev ? "flash-up" : live < prev ? "flash-down" : ""
+    : "";
+  const ccy = pos.currency ?? accountCurrency;
+  const pnlPct = pos.avgCost > 0 ? (live / pos.avgCost - 1) * 100 : null;
+  return (
+    <tr onClick={() => openTrade(pos.symbol)} style={{ cursor: "pointer" }}
+      title={`Open ${pos.symbol} in Trade`}>
+      <td className="sym-cell">{pos.symbol}</td>
+      <td className="num">{fmtQty(pos.qty)}</td>
+      <td className="num">{fmtMoney(pos.avgCost)}</td>
+      <td className="num">
+        <span key={quote?.ts ?? 0} className={`quote-cell ${dir}`}>
+          {live ? fmtMoney(live) : "—"}
+        </span>
+      </td>
+      <td className={`num ${pnlPct !== null ? (pnlPct >= 0 ? "pos" : "neg") : ""}`}>
+        {pnlPct !== null ? fmtPct(pnlPct) : "—"}
+      </td>
+      <td className="num">{live ? fmtCcy(pos.qty * live, ccy) : "—"}</td>
+    </tr>
+  );
+});
+
+function cashLine(a: { cash: number; currency: string;
+  cashBalances?: { currency: string; cash: number }[] }): string {
+  const parts = (a.cashBalances ?? []).filter((b) => Math.abs(b.cash) > 0.004);
+  if (parts.length > 1) {
+    return parts.map((b) => fmtCcy(b.cash, b.currency)).join(" + ");
+  }
+  return fmtCcy(a.cash, a.currency);
+}
+
 function BrokerageSection({
   provider,
   onRefresh,
@@ -104,13 +150,13 @@ function BrokerageSection({
               <span className="ccy-chip">{a.currency}</span>
               {a.mismatch && (
                 <span className="status-pill wait"
-                  title={`Our computed equity ${fmtCcy(a.mismatch.computedEquity, a.currency)} differs from the broker's total ${fmtCcy(a.mismatch.brokerTotal, a.currency)} by ${a.mismatch.pct}% — see Journal (broker)`}>
+                  title={`Our live-priced equity ${fmtCcy(a.mismatch.computedEquity, a.currency)} vs the broker's total ${fmtCcy(a.mismatch.brokerTotal, a.currency)} (${a.mismatch.pct > 0 ? "+" : ""}${a.mismatch.pct}%). The broker total comes from SnapTrade's overnight sync${a.brokerSyncedAt ? ` (${fmtDateTime(a.brokerSyncedAt)})` : ""} — small drift is price/FX vintage; large drift means something is missing. Details: Journal → Broker.`}>
                   Δ mismatch
                 </span>
               )}
               <span style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>
                 {fmtCcy(a.equity, a.currency)}
-                <span className="metric-sub"> · cash {fmtCcy(a.cash, a.currency)}</span>
+                <span className="metric-sub"> · cash {cashLine(a)}</span>
               </span>
             </div>
             {a.positions.length === 0 ? (
@@ -121,23 +167,14 @@ function BrokerageSection({
                   <thead>
                     <tr>
                       <th>Symbol</th><th className="num">Qty</th>
-                      <th className="num">Avg cost</th><th className="num">Price</th>
-                      <th className="num">Value</th>
+                      <th className="num">Avg cost</th><th className="num">Live</th>
+                      <th className="num">P&L</th><th className="num">Value</th>
                     </tr>
                   </thead>
                   <tbody>
                     {a.positions.map((pos) => (
-                      <tr key={pos.symbol}>
-                        <td>{pos.symbol}</td>
-                        <td className="num">{fmtQty(pos.qty)}</td>
-                        <td className="num">{fmtMoney(pos.avgCost)}</td>
-                        <td className="num">{pos.price ? fmtMoney(pos.price) : "—"}</td>
-                        <td className="num">
-                          {pos.price
-                            ? fmtCcy(pos.qty * pos.price, pos.currency ?? a.currency)
-                            : "—"}
-                        </td>
-                      </tr>
+                      <LiveBrokerageRow key={pos.symbol} pos={pos}
+                        accountCurrency={a.currency} />
                     ))}
                   </tbody>
                 </table>

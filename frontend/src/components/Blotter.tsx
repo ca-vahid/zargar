@@ -2,7 +2,7 @@ import { memo, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtSigned, fmtPct } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
-import { useQuote, useStore } from "../store";
+import { usePrevLast, useQuote, useStore } from "../store";
 import type { Execution, Order, Position } from "../types";
 import { AsyncSection, EmptyState, StatusPill } from "./ui";
 
@@ -67,20 +67,26 @@ function portfolioName(portfolios: { id: string; name: string }[], id: string) {
 /** One row subscribes to its own quote — 10 Hz updates re-render rows, not the table. */
 const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
   const quote = useQuote(p.symbol);
+  const prev = usePrevLast(p.symbol);
   const portfolios = useStore((s) => s.portfolios);
   const openTrade = useStore((s) => s.openTrade);
   const last = quote?.last ?? p.last ?? p.avgCost;
   const mult = p.secType === "OPT" ? 100 : 1;
   const unreal = (last - p.avgCost) * p.qty * mult;
   const pct = p.avgCost > 0 ? ((last / p.avgCost - 1) * 100) * Math.sign(p.qty) : 0;
+  const dir = quote && prev !== undefined
+    ? last > prev ? "flash-up" : last < prev ? "flash-down" : ""
+    : "";
   return (
     <tr onClick={() => openTrade(p.symbol, p.portfolioId)} style={{ cursor: "pointer" }}
       title="Open in Trade with this account preselected">
-      <td><b>{p.symbol}</b>{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</td>
+      <td className="sym-cell">{p.symbol}{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</td>
       <td className="muted">{portfolioName(portfolios, p.portfolioId)}</td>
       <td className="num">{fmtQty(p.qty)}</td>
       <td className="num">{fmtMoney(p.avgCost)}</td>
-      <td className="num">{fmtMoney(last)}</td>
+      <td className="num">
+        <span key={quote?.ts ?? 0} className={`quote-cell ${dir}`}>{fmtMoney(last)}</span>
+      </td>
       <td className="num">{fmtCcy(p.qty * last * mult, p.currency ?? "USD")}</td>
       <td className={`num ${unreal >= 0 ? "pos" : "neg"}`}>
         {fmtSigned(unreal)} ({fmtPct(pct)})

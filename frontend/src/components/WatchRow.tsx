@@ -22,7 +22,7 @@ export const WatchRow = memo(function WatchRow({ symbol }: { symbol: string }) {
       aria-label={`Trade ${symbol}`}
     >
       <span className="wl-sym">{symbol}</span>
-      <span className={`wl-price ${flash ? dir : ""}`}>
+      <span key={flash ? quote?.ts ?? 0 : 0} className={`wl-price quote-cell ${flash ? dir : ""}`}>
         {quote ? fmtMoney(quote.last) : "…"}
       </span>
       <span className="wl-sub">

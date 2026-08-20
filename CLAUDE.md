@@ -58,6 +58,14 @@ docker-compose.
   `sim_tick_interval=0.03`, `sim_history_minutes=30` via
   `tests/conftest.make_test_config`.
 - pydantic-settings precedence: real env vars beat `backend/.env`.
+- Yahoo: the v7 `finance/quote` endpoint serves unauthenticated callers
+  **hourly-frozen snapshots** (regularMarketTime pinned to the top of the
+  hour) — cache-busting and crumbs don't help. The v8 `finance/chart` 1m bars
+  ARE live (seconds old); the feed polls those per symbol. SnapTrade's own
+  quotes endpoint requires userId/userSecret and rejects personal-key auth.
+- SnapTrade accounts hold cash in SEVERAL currencies at once (Webull CASH
+  keeps a USD wallet inside a CAD account) — always sum ALL `/balances`
+  entries FX-converted, never just the account-currency row.
 - SnapTrade (personal auth): omit userId/userSecret; sign
   `{"content","path","query"}` as sorted-keys compact JSON, HMAC-SHA256,
   base64 in a `Signature` header (`SnapTradeClient._sign`). Accounts created

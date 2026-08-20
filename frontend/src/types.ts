@@ -42,8 +42,10 @@ export interface BrokerageAccount {
   currency: string;
   accountType?: string;
   cash: number;
+  cashBalances?: { currency: string; cash: number }[]; // native per-currency cash
   equity: number;
   brokerTotal?: number | null; // broker's own FX-converted account total
+  brokerSyncedAt?: string | null; // vintage of brokerTotal (their overnight sync)
   mismatch?: { computedEquity: number; brokerTotal: number; pct: number } | null;
   syncedAt: string | null;
   positions: BrokeragePosition[];

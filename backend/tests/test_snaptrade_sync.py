@@ -2,6 +2,8 @@
 import pytest
 from sqlalchemy import func, select
 
+import pytest
+
 from zargar import bus as topics
 from zargar.brokers.snaptrade import SnapTradeClient, SnapTradeSync
 from zargar.domain import Quote
@@ -137,6 +139,27 @@ async def test_sync_overwrites_and_preserves_day_loss(sf):
     # an authoritative level-set must not register as intraday P&L
     loss = await positions.daily_loss_pct(pid)
     assert abs(loss) < 0.01
+    await client.aclose()
+
+
+async def test_multi_currency_cash_included(sf):
+    """USD cash inside a CAD account must be FX-converted, not dropped."""
+    stub = StubSnapTrade()
+    stub.connections = [stub_connection()]
+    stub.accounts = [stub_account(total=1400.0)]
+    stub.balances["acct-1"] = [
+        {"currency": {"code": "CAD"}, "cash": 67.31},
+        {"currency": {"code": "USD"}, "cash": 914.17},
+    ]
+    stub.positions["acct-1"] = []
+    sync, positions, bus, client, _ = make_sync(sf, stub)
+    positions._quotes.on_quote(Quote(symbol="USDCAD=X", bid=1.37, ask=1.37, last=1.37))
+
+    payload = await sync.sync_once()
+    account = payload["providers"][0]["accounts"][0]
+    assert account["cash"] == pytest.approx(67.31 + 914.17 * 1.37, abs=0.01)
+    assert {(b["currency"], b["cash"]) for b in account["cashBalances"]} == {
+        ("CAD", 67.31), ("USD", 914.17)}
     await client.aclose()
 
 
