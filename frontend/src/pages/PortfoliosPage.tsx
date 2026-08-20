@@ -133,7 +133,9 @@ function BrokerageSection({
                         <td className="num">{fmtMoney(pos.avgCost)}</td>
                         <td className="num">{pos.price ? fmtMoney(pos.price) : "—"}</td>
                         <td className="num">
-                          {pos.price ? fmtCcy(pos.qty * pos.price, a.currency) : "—"}
+                          {pos.price
+                            ? fmtCcy(pos.qty * pos.price, pos.currency ?? a.currency)
+                            : "—"}
                         </td>
                       </tr>
                     ))}

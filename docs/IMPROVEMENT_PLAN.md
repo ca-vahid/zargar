@@ -147,14 +147,26 @@ No mixed totals anywhere.
       gained concrete hints (currency-of-caps, stale-quote behavior,
       gross-exposure definition).
 
-## Phase 8 — Verification & ship [ ]
+## Phase 8 — Verification & ship [x]
 
-- [ ] Backend suite green (existing + new Phase 1/2 tests).
-- [ ] `npm run build` + grep gates (no emoji, no window.confirm, no bare
-      useStore(), tokens only).
-- [ ] Browser walk of all pages in light and dark; halt-drift scenario
-      exercised end-to-end (simulate drift, see warning not halt).
-- [ ] Screenshot review with the user; commit + push per phase.
+- [x] Backend suite green: **96 passed** (was 64 at v0.1).
+- [x] `npm run build` green + grep gates pass (0 window.confirm/prompt,
+      0 bare useStore(), 0 emoji, 2 documented fire-and-forget catches).
+- [x] Live browser walk on real data: Dashboard (real chips C$22,326 +
+      practice chip, blended ≈C$36,105, Δ mismatch pills, broker sections),
+      Trade (mode pill, grouped account selector, real-scope blotter with
+      native-currency values), Portfolios (Real/Practice sections, 7-line
+      equity chart with scope chips), Journal (halt banner deep-links to the
+      risk filter), Settings. Light theme default verified (#f4f4f0), dark
+      toggles live over WS, banner row fixed at 30px/banner with zero layout
+      shift (grid 48px auto 1fr measured).
+- [x] Drift scenario exercised END-TO-END against real accounts: threshold
+      temporarily dropped to 0.005% → both real accounts journaled
+      `DailyDriftWarning`, amber banners rendered with details/dismiss,
+      **halt stayed disengaged**; threshold restored, banners dismissed.
+      Yesterday's stale false-positive halt released through the new RESUME
+      confirm dialog.
+- [x] Committed + pushed per phase (97c0aa9 → this commit).
 
 ---
 

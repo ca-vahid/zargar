@@ -209,19 +209,22 @@ _TYPE_WORDS = {"CASH", "MARGIN", "PERSONAL", "CORPORATE", "TFSA", "RRSP", "FHSA"
 def _display_name(institution: str, acct_name: str, account_type: str) -> str:
     """"Webull CASH" + type CASH -> "Webull (Cash)"; never duplicates the broker.
 
-    Falls back to treating a trailing type-word in the account name as the
-    type when the broker doesn't report one (Wealthsimple).
+    A trailing type-word in the account name (PERSONAL, CASH, ...) wins over
+    the broker-reported type — "Wealthsimple Trade PERSONAL" with reported
+    type NON_REGISTERED should read "(Personal)", not "(Non Registered)".
     """
     base = acct_name.strip()
-    kind = account_type.strip()
-    if not kind:
-        last = base.split()[-1].upper() if base.split() else ""
-        if last in _TYPE_WORDS:
-            kind = last
-    if kind and base.upper().endswith(kind.upper()):
-        base = base[: len(base) - len(kind)].strip()
+    last = base.split()[-1].upper() if base.split() else ""
+    if last in _TYPE_WORDS:
+        kind = last
+        base = base[: len(base) - len(last)].strip()
+    else:
+        kind = account_type.strip()
+        if kind and base.upper().endswith(kind.upper()):
+            base = base[: len(base) - len(kind)].strip()
     if not base or institution.split()[0].lower() not in base.lower():
         base = f"{institution} {base}".strip()
+    kind = kind.replace("_", " ").strip()
     return f"{base} ({kind.title()})" if kind else base
 
 
