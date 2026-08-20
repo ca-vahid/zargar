@@ -99,6 +99,12 @@ function BrokerageSection({
               <strong>{a.name}</strong>
               {a.number && <span className="metric-sub">#{a.number}</span>}
               <span className="ccy-chip">{a.currency}</span>
+              {a.mismatch && (
+                <span className="status-pill wait"
+                  title={`Our computed equity ${fmtCcy(a.mismatch.computedEquity, a.currency)} differs from the broker's total ${fmtCcy(a.mismatch.brokerTotal, a.currency)} by ${a.mismatch.pct}% — see Journal (broker)`}>
+                  Δ mismatch
+                </span>
+              )}
               <span style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>
                 {fmtCcy(a.equity, a.currency)}
                 <span className="metric-sub"> · cash {fmtCcy(a.cash, a.currency)}</span>

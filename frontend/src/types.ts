@@ -43,6 +43,8 @@ export interface BrokerageAccount {
   accountType?: string;
   cash: number;
   equity: number;
+  brokerTotal?: number | null; // broker's own FX-converted account total
+  mismatch?: { computedEquity: number; brokerTotal: number; pct: number } | null;
   syncedAt: string | null;
   positions: BrokeragePosition[];
 }
@@ -77,6 +79,7 @@ export interface Position {
   qty: number;
   avgCost: number;
   realizedPnl: number;
+  currency?: string; // native currency of the instrument (values are native)
   last?: number;
   marketValue?: number;
   unrealizedPnl?: number;

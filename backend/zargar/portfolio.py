@@ -17,6 +17,7 @@ from . import events as ev
 from .bus import Bus
 from .domain import now_ms
 from .events import Journal
+from .fx import FxService, currency_for_symbol
 from .marketdata import QuoteCache
 from .models import BrokerageAccount, EquityPoint, Portfolio, Position
 
@@ -39,6 +40,7 @@ class PositionKeeper:
         self._bus = bus
         self._journal = journal
         self._quotes = quotes
+        self.fx = FxService(quotes)
         self._portfolios: dict[str, dict] = {}
         self._positions: dict[tuple[str, str, str], dict] = {}
         self._day_start_equity: dict[tuple[str, str], float] = {}  # (pid, ET date) -> equity
@@ -62,6 +64,7 @@ class PositionKeeper:
                     "portfolioId": pos.portfolio_id, "symbol": pos.symbol,
                     "secType": pos.sec_type, "qty": pos.qty, "avgCost": pos.avg_cost,
                     "realizedPnl": pos.realized_pnl,
+                    "currency": currency_for_symbol(pos.symbol),
                 }
 
     def register_portfolio(self, p: Portfolio, *, venue: str = "ibkr") -> None:
@@ -93,6 +96,16 @@ class PositionKeeper:
             out.append(self._enrich(pos))
         return out
 
+    def _pos_currency(self, pos: dict) -> str:
+        return (pos.get("currency") or currency_for_symbol(pos["symbol"])).upper()
+
+    def _pos_value(self, pos: dict, target_ccy: str) -> float:
+        """Position market value converted into target_ccy (signed)."""
+        q = self._quotes.get(pos["symbol"])
+        last = q.last if q and q.last > 0 else pos["avgCost"]
+        native = pos["qty"] * last * _mult(pos["secType"])
+        return self.fx.convert(native, self._pos_currency(pos), target_ccy)
+
     def _enrich(self, pos: dict) -> dict:
         q = self._quotes.get(pos["symbol"])
         last = q.last if q and q.last > 0 else pos["avgCost"]
@@ -100,8 +113,9 @@ class PositionKeeper:
         unreal = (last - pos["avgCost"]) * pos["qty"] * mult
         return {
             **pos,
+            "currency": self._pos_currency(pos),
             "last": round(last, 4),
-            "marketValue": round(pos["qty"] * last * mult, 2),
+            "marketValue": round(pos["qty"] * last * mult, 2),  # native currency
             "unrealizedPnl": round(unreal, 2),
             "unrealizedPnlPct": round(
                 (last / pos["avgCost"] - 1) * 100 * (1 if pos["qty"] >= 0 else -1), 2)
@@ -109,26 +123,26 @@ class PositionKeeper:
         }
 
     async def equity(self, pid: str) -> float:
+        """Cash + positions, each converted into the portfolio's base currency."""
         p = self._portfolios.get(pid)
         if p is None:
             return 0.0
+        base = (p.get("baseCurrency") or "USD").upper()
         total = p["cash"]
-        for (ppid, sym, st), pos in self._positions.items():
+        for (ppid, _sym, _st), pos in self._positions.items():
             if ppid != pid or abs(pos["qty"]) < 1e-9:
                 continue
-            q = self._quotes.get(sym)
-            last = q.last if q and q.last > 0 else pos["avgCost"]
-            total += pos["qty"] * last * _mult(st)
+            total += self._pos_value(pos, base)
         return total
 
     async def gross_exposure(self, pid: str) -> float:
+        p = self._portfolios.get(pid)
+        base = ((p or {}).get("baseCurrency") or "USD").upper()
         total = 0.0
-        for (ppid, sym, st), pos in self._positions.items():
+        for (ppid, _sym, _st), pos in self._positions.items():
             if ppid != pid or abs(pos["qty"]) < 1e-9:
                 continue
-            q = self._quotes.get(sym)
-            last = q.last if q and q.last > 0 else pos["avgCost"]
-            total += abs(pos["qty"]) * last * _mult(st)
+            total += abs(self._pos_value(pos, base))
         return total
 
     def _quotes_ready(self, pid: str) -> bool:
@@ -177,6 +191,7 @@ class PositionKeeper:
         pos = self._positions.get(key) or {
             "portfolioId": portfolio_id, "symbol": symbol, "secType": sec_type,
             "qty": 0.0, "avgCost": 0.0, "realizedPnl": 0.0,
+            "currency": currency_for_symbol(symbol),
         }
         old_qty, avg = pos["qty"], pos["avgCost"]
         realized_delta = 0.0
@@ -267,11 +282,14 @@ class PositionKeeper:
                 changes.append({"symbol": sym, "secType": st,
                                 "qtyBefore": pos["qty"], "qtyAfter": new_qty})
                 pos["qty"], pos["avgCost"] = new_qty, new_avg  # realizedPnl preserved
+            if new and new.get("currency"):
+                pos["currency"] = str(new["currency"]).upper()
         for (sym, st), new in incoming.items():
             self._positions[(pid, sym, st)] = {
                 "portfolioId": pid, "symbol": sym, "secType": st,
                 "qty": float(new["qty"]), "avgCost": float(new["avgCost"]),
                 "realizedPnl": 0.0,
+                "currency": str(new.get("currency") or currency_for_symbol(sym)).upper(),
             }
             changes.append({"symbol": sym, "secType": st,
                             "qtyBefore": 0.0, "qtyAfter": float(new["qty"])})

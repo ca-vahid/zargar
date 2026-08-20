@@ -14,8 +14,8 @@ const GROUPS: Record<string, string[]> = {
     "DailyLossHalt", "DailyDriftWarning"],
   signals: ["ContentReceived", "SignalExtracted", "SignalVerified", "SignalVerificationFailed",
     "ProposalCreated", "ProposalApproved", "ProposalRejected", "ProposalExpired"],
-  broker: ["BrokerConnected", "BrokerDisconnected", "BrokerSync", "PositionReconciled",
-    "BrokerOrderLinked", "BrokerSubmitUnknown", "BrokerageAccountLinked"],
+  broker: ["BrokerConnected", "BrokerDisconnected", "BrokerSync", "BrokerSyncMismatch",
+    "PositionReconciled", "BrokerOrderLinked", "BrokerSubmitUnknown", "BrokerageAccountLinked"],
   system: ["SettingChanged", "BrokerConnected", "BrokerDisconnected", "PositionUpdated"],
 };
 

@@ -140,6 +140,30 @@ async def test_sync_overwrites_and_preserves_day_loss(sf):
     await client.aclose()
 
 
+async def test_sync_mismatch_warning(sf):
+    """Broker's FX-converted total far from our computed equity -> journaled once."""
+    stub = StubSnapTrade()
+    stub.connections = [stub_connection()]
+    stub.accounts = [stub_account(total=20_000.0)]  # broker says 20k
+    stub.balances["acct-1"] = [{"currency": {"code": "CAD"}, "cash": 100.0}]
+    stub.positions["acct-1"] = []  # we compute equity = 100 -> huge mismatch
+    sync, positions, bus, client, _ = make_sync(sf, stub)
+
+    payload = await sync.sync_once()
+    account = payload["providers"][0]["accounts"][0]
+    assert account["mismatch"] is not None
+    assert account["mismatch"]["brokerTotal"] == 20_000.0
+    assert account["brokerTotal"] == 20_000.0
+
+    await sync.sync_once()  # same day: warn once, not per cycle
+    async with sf() as session:
+        n = (await session.execute(
+            select(func.count(Event.id)).where(
+                Event.type == "BrokerSyncMismatch"))).scalar_one()
+    assert n == 1
+    await client.aclose()
+
+
 async def test_sync_journals_and_publishes(sf):
     stub = StubSnapTrade()
     stub.connections = [stub_connection()]

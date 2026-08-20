@@ -27,6 +27,12 @@ function ProviderCard({ provider }: { provider: BrokerageProvider }) {
           <div key={a.id} className="acct-row">
             <span className="name" title={a.number ? `#${a.number}` : undefined}>{a.name}</span>
             <span className="ccy-chip">{a.currency}</span>
+            {a.mismatch && (
+              <span className="status-pill wait"
+                title={`Computed ${fmtCcy(a.mismatch.computedEquity, a.currency)} vs broker ${fmtCcy(a.mismatch.brokerTotal, a.currency)} (${a.mismatch.pct > 0 ? "+" : ""}${a.mismatch.pct}%)`}>
+                Δ
+              </span>
+            )}
             <span className="bal">{fmtCcy(a.equity, a.currency)}</span>
           </div>
         ))}
@@ -206,6 +212,17 @@ export function DashboardPage() {
 
   const totals = useMemo(
     () => netWorthByCurrency(portfolios, brokerages), [portfolios, brokerages]);
+  const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
+  const blended = useMemo(() => {
+    if (!usdCad || usdCad <= 0 || totals.length < 2) return null;
+    let cad = 0;
+    for (const t of totals) {
+      if (t.currency === "CAD") cad += t.total;
+      else if (t.currency === "USD") cad += t.total * usdCad;
+      else return null; // unknown currency — no blended figure
+    }
+    return cad;
+  }, [totals, usdCad]);
   const watchSymbols = watchlists[0]?.symbols ?? [];
 
   const refresh = async () => {
@@ -238,6 +255,12 @@ export function DashboardPage() {
                   </div>
                 </div>
               ))}
+              {blended !== null && (
+                <div title={`Blended at live USD/CAD ${usdCad?.toFixed(4)} — approximate`}>
+                  <div className="metric-lg muted">≈ {fmtCcy(blended, "CAD")}</div>
+                  <div className="metric-sub">all currencies, live FX</div>
+                </div>
+              )}
               <div className="networth-badges">
                 <span className={`status-pill ${halt.engaged ? "bad" : "ok"}`}>
                   {halt.engaged ? "HALTED" : "trading"}

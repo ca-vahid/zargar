@@ -128,6 +128,10 @@ class Engine:
 
         for symbol in await self._startup_symbols():
             await self.ensure_symbol(symbol)
+        from .brokers.yahoo import YahooQuoteFeed
+        if isinstance(self.feed, YahooQuoteFeed):
+            for pair in self.positions.fx.watch_symbols:  # live FX for CAD/USD math
+                await self.feed.watch(pair)
         await self.feed.start()
 
         self._bar_persister = BarPersister(self.bus, self.sf)
@@ -249,7 +253,8 @@ class Engine:
         async with self.bus.subscription(topics.QUOTES) as q:
             while True:
                 quote = await q.get()
-                self.bars.on_quote(quote)
+                if "=X" not in quote.symbol:  # FX pairs feed conversions, not charts
+                    self.bars.on_quote(quote)
                 if self.sim_executor is not None:
                     await self.sim_executor.on_quote(quote)
 

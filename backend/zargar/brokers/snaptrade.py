@@ -550,6 +550,7 @@ class SnapTradeSync:
         self._ensure_symbol = ensure_symbol
         self._account_to_portfolio: dict[str, str] = {}
         self._portfolio_to_account: dict[str, str] = {}
+        self._mismatch_warned: set[tuple[str, str]] = set()  # (account, day) journaled once
         self.last_sync_at: str | None = None
         self.providers: list[dict] = []
         self._sync_lock = asyncio.Lock()
@@ -644,7 +645,8 @@ class SnapTradeSync:
         await self._positions.sync_portfolio_state(
             portfolio_id, cash=cash,
             positions=[{"symbol": p["symbol"], "secType": p.get("secType", "STK"),
-                        "qty": p["qty"], "avgCost": p["avgCost"]} for p in positions])
+                        "qty": p["qty"], "avgCost": p["avgCost"],
+                        "currency": p.get("currency")} for p in positions])
 
         now = dt.datetime.now(dt.timezone.utc)
         async with self._sf() as session:
@@ -655,6 +657,24 @@ class SnapTradeSync:
                 await session.commit()
 
         equity = await self._positions.equity(portfolio_id)
+        # Cross-check our FX-converted equity against the broker's own total —
+        # a silent currency/parsing bug should never hide again.
+        broker_total = float(((acct.get("balance") or {}).get("total") or {}).get("amount") or 0.0)
+        mismatch = None
+        if broker_total > 1.0 and equity > 1.0:
+            pct = (equity - broker_total) / broker_total * 100
+            if abs(pct) > 2.0:
+                mismatch = {"computedEquity": round(equity, 2),
+                            "brokerTotal": round(broker_total, 2),
+                            "pct": round(pct, 2)}
+                warn_key = (account_id, dt.datetime.now(dt.timezone.utc).date().isoformat())
+                if warn_key not in self._mismatch_warned:
+                    self._mismatch_warned.add(warn_key)
+                    await self._journal.append(
+                        ev.BROKER_SYNC_MISMATCH,
+                        {**mismatch, "account": display_name},
+                        aggregate_type="portfolio", aggregate_id=portfolio_id,
+                        portfolio_id=portfolio_id)
         entry = {
             "id": account_id,
             "portfolioId": portfolio_id,
@@ -665,6 +685,8 @@ class SnapTradeSync:
             "accountType": str((acct.get("meta") or {}).get("type") or acct.get("raw_type") or ""),
             "cash": round(cash, 2),
             "equity": round(equity, 2),
+            "brokerTotal": round(broker_total, 2) if broker_total else None,
+            "mismatch": mismatch,
             "syncedAt": now.isoformat(),
             "positions": positions,
         }

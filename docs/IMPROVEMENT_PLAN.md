@@ -39,32 +39,32 @@ explain itself.
       doesn't arm the halt; anchor waits for quotes; quiet sync not
       journaled. Suite: 92 passed.
 
-## Phase 2 — Money accuracy: currencies & FX [ ]
+## Phase 2 — Money accuracy: currencies & FX [x]
 
 Verified bug (2026-08-20): USD positions inside CAD accounts are summed at
 face value with no FX — Webull CASH shows C$15,286 while SnapTrade's own
 FX-converted total says C$20,025 (SPCX is USD: 60 × $131.98 counted as CAD,
 ~C$2,900 missing; TQQQ same story in Wealthsimple, ~C$1,100 missing).
 
-- [ ] Positions carry their own currency end-to-end: sync already parses it;
-      store it on the Position row + PositionKeeper in-memory dicts + wire
-      shape (camelCase `currency`).
-- [ ] FX rate source: Yahoo pairs (`USDCAD=X`, `CADUSD=X`) polled alongside
-      quotes (they ride the existing feed as watched symbols); a tiny
-      `fx.convert(amount, from, to)` helper with rate age guard.
-- [ ] `PositionKeeper.equity()` / `gross_exposure()` / market values convert
-      each position into the **portfolio's base currency** before summing;
-      risk caps therefore operate in account currency correctly.
-- [ ] Blotter/portfolio/provider views label position market values in their
-      native currency and account totals in account currency.
-- [ ] Cross-check on every sync: computed equity vs SnapTrade's
-      `balance.total` (their FX-converted number); deviation > ~2% raises a
-      journaled `BrokerSyncMismatch` warning surfaced in the UI.
-- [ ] Dashboard net worth: per-currency totals stay primary; add an optional
-      FX-blended headline ("≈ C$32.1k total") using the live rate, clearly
-      marked approximate.
-- [ ] Tests: USD position in CAD account equity math, FX helper with stale
-      rate, mismatch warning fires, blended total.
+- [x] Positions carry currency end-to-end: broker-reported currency in the
+      in-memory dicts + wire shape; derived from the symbol suffix
+      (`fx.currency_for_symbol`) everywhere else — zero schema changes.
+- [x] FX rates ride the quote feed: engine watches `USDCAD=X` on the Yahoo
+      feed; `FxService.rate/convert` with a 6h age guard, inverse-pair
+      fallback, and a conservative 1:1 fallback (undercounts, so risk caps
+      bind sooner, never later). FX symbols skip bar aggregation.
+- [x] `equity()` / `gross_exposure()` convert every position into the
+      portfolio's base currency — risk caps now operate in account currency.
+- [x] Blotter market values shown in the position's native currency
+      (`C$`/`US$`); account totals in account currency.
+- [x] Sync cross-check: computed equity vs SnapTrade's FX-converted
+      `balance.total`; >2% deviation journals `BrokerSyncMismatch` (once per
+      account per day) and shows a Δ pill on Dashboard + Portfolios.
+- [x] Dashboard adds an "≈ C$… all currencies, live FX" blended headline,
+      marked approximate, only when a live rate exists.
+- [x] Tests (5 new): symbol currencies, direct/inverse/stale rates, the
+      SPCX-in-CAD equity bug reproduced + fixed, gross exposure conversion,
+      mismatch warning journaled once. Suite: 96 passed.
 
 ## Phase 3 — Trading modes: Practice | Live [ ]
 

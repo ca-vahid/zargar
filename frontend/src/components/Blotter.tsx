@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import { api } from "../lib/api";
-import { fmtDateTime, fmtMoney, fmtQty, fmtSigned, fmtPct } from "../lib/format";
+import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtSigned, fmtPct } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useQuote, useStore } from "../store";
 import type { Execution, Order, Position } from "../types";
@@ -52,7 +52,7 @@ const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
       <td className="num">{fmtQty(p.qty)}</td>
       <td className="num">{fmtMoney(p.avgCost)}</td>
       <td className="num">{fmtMoney(last)}</td>
-      <td className="num">{fmtMoney(p.qty * last * mult)}</td>
+      <td className="num">{fmtCcy(p.qty * last * mult, p.currency ?? "USD")}</td>
       <td className={`num ${unreal >= 0 ? "pos" : "neg"}`}>
         {fmtSigned(unreal)} ({fmtPct(pct)})
       </td>
