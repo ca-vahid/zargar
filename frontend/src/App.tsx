@@ -13,6 +13,10 @@ import { useStore } from "./store";
 export default function App() {
   const page = useStore((s) => s.page);
   const halt = useStore((s) => s.halt);
+  const driftWarnings = useStore((s) => s.driftWarnings);
+  const openJournal = useStore((s) => s.openJournal);
+  const dismissDrift = useStore((s) => s.dismissDrift);
+  const setPage = useStore((s) => s.setPage);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "dark");
   const accent = useStore((s) => s.settings["ui.accent"] ?? "#5b8cff");
   const density = useStore((s) => s.settings["ui.density"] ?? "comfortable");
@@ -26,11 +30,29 @@ export default function App() {
   return (
     <div className="app">
       <TopBar />
-      {halt.engaged && (
-        <div className="halt-banner" role="alert">
-          KILL SWITCH ENGAGED — {halt.reason || "all order submission blocked"}
-        </div>
-      )}
+      <div className="banners">
+        {halt.engaged && (
+          <div className="halt-banner" role="alert">
+            <span>KILL SWITCH ENGAGED — {halt.reason || "all order submission blocked"}</span>
+            <button className="link-btn" onClick={() => openJournal("risk")}>
+              view in journal
+            </button>
+          </div>
+        )}
+        {driftWarnings.map((d) => (
+          <div key={d.portfolioId} className="drift-banner" role="status">
+            <span>
+              {d.name} {d.lossPct.toFixed(2)}% today — market drift, no zargar trades;
+              trading is NOT halted
+            </span>
+            <button className="link-btn" onClick={() => setPage("portfolios")}>details</button>
+            <button className="link-btn" onClick={() => dismissDrift(d.portfolioId)}
+              aria-label={`Dismiss ${d.name} drift warning`}>
+              dismiss
+            </button>
+          </div>
+        ))}
+      </div>
       <div className="main">
         <Sidebar />
         <div className="content">

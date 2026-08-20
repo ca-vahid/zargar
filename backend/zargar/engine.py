@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import datetime as dt
 import logging
 
 from sqlalchemy import func, select
@@ -13,12 +14,12 @@ from . import events as ev
 from .bus import Bus
 from .config import AppConfig
 from .db import create_all, make_engine, make_session_factory
-from .domain import new_id
+from .domain import OrderStatus, new_id
 from .events import Journal
 from .marketdata import BarAggregator, BarPersister, QuoteCache, load_bars, persist_bars
-from .models import BarRow, Portfolio, Watchlist
+from .models import BarRow, Order, Portfolio, Watchlist
 from .orders import OrderManager
-from .portfolio import PositionKeeper
+from .portfolio import ET, PositionKeeper
 from .risk import HaltState, RiskGate
 from .settings_service import SettingsService
 
@@ -54,6 +55,7 @@ class Engine:
         self.telegram = None
         self._tasks: list[asyncio.Task] = []
         self._bar_persister: BarPersister | None = None
+        self._drift_warned: set[tuple[str, str]] = set()  # (pid, ET date) warned once/day
         self.started = False
 
     # ------------------------------------------------------------------ start
@@ -262,30 +264,69 @@ class Engine:
     async def _daily_loss_monitor(self) -> None:
         while True:
             await asyncio.sleep(10)
-            if self.halt.engaged:
-                continue
             try:
-                for p in self.positions.portfolios():
-                    if p["kind"] == "shadow":
-                        continue
-                    loss = await self.positions.daily_loss_pct(p["id"])
-                    halt_pct = float(self.settings.get("risk.daily_loss_halt_pct", 3.0))
-                    if loss is not None and loss <= -abs(halt_pct):
-                        reason = (f"daily loss limit: {p['name']} at {loss:.2f}% "
-                                  f"(halt at -{halt_pct:.1f}%)")
-                        await self.journal.append(
-                            ev.DAILY_LOSS_HALT, {"portfolioId": p["id"], "lossPct": loss})
-                        await self.engage_halt(reason, source="auto")
-                        break
+                await self.check_daily_loss()
             except Exception:  # pragma: no cover
                 log.exception("daily loss monitor failed")
+
+    async def _traded_today(self) -> set[str]:
+        """Portfolio ids with zargar-originated orders placed today (ET)."""
+        start_et = dt.datetime.now(tz=ET).replace(hour=0, minute=0, second=0, microsecond=0)
+        async with self.sf() as session:
+            rows = (await session.execute(
+                select(Order.portfolio_id).distinct().where(
+                    Order.created_at >= start_et.astimezone(dt.timezone.utc),
+                    Order.status != OrderStatus.DRY_RUN.value,
+                ))).scalars().all()
+        return set(rows)
+
+    async def check_daily_loss(self) -> None:
+        """One monitoring pass.
+
+        The kill switch is for losses *zargar's trading* produced — only
+        portfolios with orders placed today can auto-halt. Passive market
+        drift on real accounts raises a once-a-day warning instead.
+        """
+        halt_pct = float(self.settings.get("risk.daily_loss_halt_pct", 3.0))
+        traded = await self._traded_today()
+        today = dt.datetime.now(tz=ET).date().isoformat()
+        for p in self.positions.portfolios():
+            if p["kind"] == "shadow":
+                continue
+            loss = await self.positions.daily_loss_pct(p["id"])
+            if loss is None or loss > -abs(halt_pct):
+                continue
+            if p["id"] in traded:
+                if self.halt.engaged:
+                    continue
+                reason = (f"daily loss limit: {p['name']} at {loss:.2f}% "
+                          f"(halt at -{halt_pct:.1f}%)")
+                await self.journal.append(
+                    ev.DAILY_LOSS_HALT, {"portfolioId": p["id"], "lossPct": loss})
+                await self.engage_halt(reason, source="auto")
+            else:
+                key = (p["id"], today)
+                if key in self._drift_warned:
+                    continue
+                self._drift_warned.add(key)
+                await self.journal.append(
+                    ev.DAILY_DRIFT_WARNING,
+                    {"portfolioId": p["id"], "name": p["name"], "lossPct": round(loss, 2),
+                     "note": "market drift — no zargar trades today; trading not halted"},
+                    portfolio_id=p["id"])
+                self.bus.publish(topics.SYSTEM, {
+                    "kind": "drift", "portfolioId": p["id"], "name": p["name"],
+                    "lossPct": round(loss, 2), "ts": dt.datetime.now(
+                        dt.timezone.utc).isoformat()})
 
     # ------------------------------------------------------------- snapshot
     async def snapshot(self) -> dict:
         portfolios = []
         for p in self.positions.portfolios():
             eq = await self.positions.equity(p["id"])
-            portfolios.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2)})
+            today = await self.positions.daily_loss_pct(p["id"])
+            portfolios.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2),
+                               "todayPct": round(today, 2) if today is not None else None})
         open_orders = await self.orders.list_orders(open_only=True) if self.orders else []
         async with self.sf() as session:
             watchlists = [

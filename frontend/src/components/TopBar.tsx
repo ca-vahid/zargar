@@ -22,6 +22,7 @@ export function TopBar() {
 
   const [confirmLive, setConfirmLive] = useState(false);
   const [promptHalt, setPromptHalt] = useState(false);
+  const [confirmResume, setConfirmResume] = useState(false);
 
   const defaultId = useStore((s) => s.settings["trading.default_portfolio"]);
   const active = portfolios.find((p) => p.id === defaultId) ?? portfolios[0];
@@ -50,16 +51,18 @@ export function TopBar() {
     }
   };
 
-  const toggleHalt = async () => {
-    if (halt.engaged) {
-      try {
-        await api.resume();
-      } catch (e: any) {
-        toast("error", e.message);
-      }
-    } else {
-      setPromptHalt(true);
+  const doResume = async () => {
+    setConfirmResume(false);
+    try {
+      await api.resume();
+    } catch (e: any) {
+      toast("error", e.message);
     }
+  };
+
+  const toggleHalt = () => {
+    if (halt.engaged) setConfirmResume(true);
+    else setPromptHalt(true);
   };
 
   return (
@@ -114,6 +117,26 @@ export function TopBar() {
           }
           onConfirm={() => { setConfirmLive(false); void applyMode("live"); }}
           onCancel={() => setConfirmLive(false)}
+        />
+      )}
+      {confirmResume && (
+        <ConfirmDialog
+          title="Release the kill switch?"
+          confirmLabel="Resume trading"
+          body={
+            <div>
+              <p style={{ marginTop: 0 }}>
+                Halted because: <b>{halt.reason || "manual halt"}</b>
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                Resuming lets orders route again (per the trading mode and risk
+                gate). If this was an auto-halt, make sure you understand what
+                tripped it first.
+              </p>
+            </div>
+          }
+          onConfirm={() => void doResume()}
+          onCancel={() => setConfirmResume(false)}
         />
       )}
       {promptHalt && (

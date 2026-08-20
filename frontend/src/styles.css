@@ -114,9 +114,12 @@ body {
 }
 
 /* ── layout ────────────────────────────────────────────────────────────── */
-.app { display: grid; grid-template-rows: 48px 1fr; height: 100vh; }
+/* banners are auto-height rows — 1fr belongs to .main only, so a banner
+   never balloons or shifts the sidebar between pages */
+.app { display: grid; grid-template-rows: 48px auto 1fr; height: 100vh; }
 .main { display: grid; grid-template-columns: 232px 1fr; min-height: 0; }
 .content { min-width: 0; min-height: 0; overflow: auto; padding: var(--pad); }
+.banners { display: flex; flex-direction: column; }
 
 /* ── top bar ───────────────────────────────────────────────────────────── */
 .topbar {
@@ -144,9 +147,17 @@ body {
 }
 .halt-btn.halted { background: var(--surface-3); color: var(--down); outline: 2px solid var(--down); }
 .halt-banner {
-  background: var(--down); color: var(--on-down); text-align: center; font-weight: 600;
-  padding: var(--sp-1); font-size: var(--fs-1);
+  background: var(--down); color: var(--on-down); font-weight: 600;
+  font-size: var(--fs-1); height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; gap: var(--sp-3);
 }
+.halt-banner .link-btn { color: var(--on-down); text-decoration: underline; }
+.drift-banner {
+  background: color-mix(in srgb, var(--warn) 22%, var(--surface-1));
+  color: var(--text-1); font-size: var(--fs-1); height: 30px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; gap: var(--sp-3);
+}
+.drift-banner .link-btn { color: inherit; text-decoration: underline; }
 
 /* ── sidebar ───────────────────────────────────────────────────────────── */
 .sidebar {

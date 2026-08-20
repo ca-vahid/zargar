@@ -43,7 +43,16 @@ function PortfolioCard({
         </label>
       </div>
       <div className="panel-body">
-        <div className="metric-lg">{fmtCcy(equity, ccy)}</div>
+        <div className="metric-lg">
+          {fmtCcy(equity, ccy)}
+          {p.todayPct !== null && p.todayPct !== undefined && (
+            <span className={`status-pill ${p.todayPct >= 0 ? "ok" : "bad"}`}
+              style={{ marginLeft: 8, verticalAlign: "middle" }}
+              title="Equity change vs today's first quote-backed observation">
+              {p.todayPct >= 0 ? "+" : ""}{p.todayPct.toFixed(2)}% today
+            </span>
+          )}
+        </div>
         {p.kind !== "live" && (
           <div className={pnl >= 0 ? "pos" : "neg"} style={{ fontSize: "var(--fs-2)" }}>
             {fmtSigned(pnl)} since start

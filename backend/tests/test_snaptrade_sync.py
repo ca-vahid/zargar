@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 
 from zargar import bus as topics
 from zargar.brokers.snaptrade import SnapTradeClient, SnapTradeSync
+from zargar.domain import Quote
 from zargar.bus import Bus
 from zargar.db import make_engine, make_session_factory
 from zargar.events import Journal
@@ -119,6 +120,8 @@ async def test_sync_overwrites_and_preserves_day_loss(sf):
     # seed realized pnl to prove it survives the overwrite
     key = (pid, "SHOP.TO", "STK")
     positions._positions[key]["realizedPnl"] = 42.0
+    # a live quote must exist before the day-start anchor is set
+    positions._quotes.on_quote(Quote(symbol="SHOP.TO", bid=99.9, ask=100.1, last=100.0))
     assert await positions.daily_loss_pct(pid) == 0.0  # memoizes day-start equity
 
     # broker now reports more cash and a different position set
@@ -159,4 +162,15 @@ async def test_sync_journals_and_publishes(sf):
     assert "BrokerageAccountLinked" in types
     assert "BrokerSync" in types
     assert "PositionReconciled" in types
+
+    # a second identical sync changes nothing — it must not journal again
+    before = await _count_broker_syncs(sf)
+    await sync.sync_once()
+    assert await _count_broker_syncs(sf) == before
     await client.aclose()
+
+
+async def _count_broker_syncs(sf) -> int:
+    async with sf() as session:
+        return (await session.execute(
+            select(func.count(Event.id)).where(Event.type == "BrokerSync"))).scalar_one()

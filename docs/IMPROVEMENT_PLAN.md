@@ -11,39 +11,33 @@ green (`pytest` 88+, `npm run build`) and a commit.
 
 ---
 
-## Phase 1 — Kill-switch trust & safety [ ]
+## Phase 1 — Kill-switch trust & safety [x]
 
 The auto-halt fired on a normal red day because Webull CASH drifted −3%
 intraday with zero zargar orders. Fix the semantics, then make every halt
 explain itself.
 
-- [ ] Daily-loss monitor only evaluates portfolios with zargar-originated
-      orders placed **today (ET)** — query `orders` per portfolio per cycle
-      (cache per day); shadow stays excluded as today.
-- [ ] Passive drift ≥ threshold on other portfolios → new journal event
-      `DailyDriftWarning` (once per portfolio per day) + `system` bus message
-      → amber dismissible banner in the UI ("Webull CASH −3.1% today — market
-      drift, trading not halted") linking to Portfolios. Never halts.
-- [ ] Day-start equity anchor correctness: don't memoize a portfolio's
-      day-start equity until live quotes exist for its position symbols
-      (avgCost-fallback baselines cause false positives); re-anchor when the
-      quote feed first connects.
-- [ ] Halt banner UX: show reason + "view in journal" link (Journal
-      pre-filtered to the risk group); RESUME opens a confirm dialog stating
-      what resume does and what caused the halt.
-- [ ] Halt banner layout bug: `.app` grid is `48px 1fr`, so the banner (a
-      third grid child) absorbs the `1fr` leftover and balloons on short
-      pages, shoving the sidebar around per page. Fix rows to
-      `48px auto 1fr` + give the banner one fixed height everywhere — no
-      layout shift when switching pages.
-- [ ] Journal noise: `BrokerSync` currently journals every 15-min cycle even
-      when nothing changed. Journal only when the diff is non-empty (cash
-      delta or positionsChanged); quiet cycles publish to the bus only.
-- [ ] Portfolio cards get a "today" P&L% chip so daily state is visible
-      before any threshold is near.
-- [ ] Tests: monitor skips passive portfolios; drift warning journaled once;
-      traded portfolio still halts; anchor waits for quotes; no-change sync
-      does not journal.
+- [x] Daily-loss monitor only evaluates portfolios with zargar-originated
+      orders placed **today (ET)** — `Engine.check_daily_loss` +
+      `_traded_today()` (DRY_RUN orders don't count); shadow still excluded.
+- [x] Passive drift ≥ threshold → `DailyDriftWarning` journal event (once
+      per portfolio per ET day) + system bus `{"kind":"drift"}` → amber
+      dismissible banner linking to Portfolios. Never halts.
+- [x] Day-start equity anchor waits for live quotes on every open position
+      (`PositionKeeper._quotes_ready`); no more avgCost-baseline anchors.
+- [x] Halt banner: reason + "view in journal" link (pre-filters the risk
+      group via `openJournal`); RESUME opens a confirm dialog showing the
+      halt reason and what resuming does.
+- [x] Banner layout: `.app` grid now `48px auto 1fr` with a `.banners` row;
+      halt + drift banners are fixed 30px — zero layout shift across pages.
+- [x] Journal noise: `BrokerSync` journals only when cash or positions
+      actually changed; quiet cycles stay off the audit trail.
+- [x] Portfolio cards show a "±x.xx% today" chip (`todayPct` on portfolio
+      payloads + 30s equity snapshots).
+- [x] Tests (4 new in `test_daily_loss.py` + sync-noise assertion): passive
+      drift warns once & never halts; traded portfolio halts; DRY_RUN
+      doesn't arm the halt; anchor waits for quotes; quiet sync not
+      journaled. Suite: 92 passed.
 
 ## Phase 2 — Money accuracy: currencies & FX [ ]
 

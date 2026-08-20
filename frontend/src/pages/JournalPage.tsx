@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTime } from "../lib/format";
@@ -10,7 +10,8 @@ const GROUPS: Record<string, string[]> = {
   all: [],
   orders: ["OrderIntentCreated", "OrderSubmitted", "OrderAccepted", "OrderFill", "OrderFilled",
     "OrderCancelled", "OrderRejected", "OrderDryRun", "OrderExpired"],
-  risk: ["RiskCheckPassed", "RiskCheckFailed", "KillSwitchEngaged", "KillSwitchReleased", "DailyLossHalt"],
+  risk: ["RiskCheckPassed", "RiskCheckFailed", "KillSwitchEngaged", "KillSwitchReleased",
+    "DailyLossHalt", "DailyDriftWarning"],
   signals: ["ContentReceived", "SignalExtracted", "SignalVerified", "SignalVerificationFailed",
     "ProposalCreated", "ProposalApproved", "ProposalRejected", "ProposalExpired"],
   broker: ["BrokerConnected", "BrokerDisconnected", "BrokerSync", "PositionReconciled",
@@ -41,11 +42,21 @@ function summarize(e: JournalEvent): string {
 
 export function JournalPage() {
   const liveEvents = useStore((s) => s.events);
+  const requestedGroup = useStore((s) => s.journalGroup);
+  const clearJournalGroup = useStore((s) => s.clearJournalGroup);
   const loadedState = useAsync(
     () => api.get<JournalEvent[]>("/api/events?limit=300"), []);
   const loaded = loadedState.data ?? [];
-  const [group, setGroup] = useState("all");
+  const [group, setGroup] = useState(
+    requestedGroup && requestedGroup in GROUPS ? requestedGroup : "all");
   const [typeFilter, setTypeFilter] = useState("");
+
+  useEffect(() => {
+    if (requestedGroup) {
+      if (requestedGroup in GROUPS) setGroup(requestedGroup);
+      clearJournalGroup();
+    }
+  }, [requestedGroup, clearJournalGroup]);
 
   const merged = useMemo(() => {
     const all = [...liveEvents];

@@ -21,6 +21,7 @@ export interface Portfolio {
   isDefault?: boolean;
   baseCurrency?: string;
   venue?: string; // "ibkr" | "snaptrade" for live/paper portfolios
+  todayPct?: number | null; // % equity change vs today's first quote-backed observation
 }
 
 export interface BrokeragePosition {

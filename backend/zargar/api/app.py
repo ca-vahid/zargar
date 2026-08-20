@@ -115,7 +115,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         out = []
         for p in eng.positions.portfolios():
             eq = await eng.positions.equity(p["id"])
-            out.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2)})
+            today = await eng.positions.daily_loss_pct(p["id"])
+            out.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2),
+                        "todayPct": round(today, 2) if today is not None else None})
         return out
 
     @app.post("/api/portfolios", dependencies=[auth])

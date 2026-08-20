@@ -131,17 +131,33 @@ class PositionKeeper:
             total += abs(pos["qty"]) * last * _mult(st)
         return total
 
+    def _quotes_ready(self, pid: str) -> bool:
+        """True when every open position in the portfolio has a live quote.
+
+        Anchoring the day-start equity on avgCost fallbacks produces false
+        baselines (and false daily-loss triggers) — wait for real prices.
+        """
+        for (ppid, sym, _st), pos in self._positions.items():
+            if ppid != pid or abs(pos["qty"]) < 1e-9:
+                continue
+            q = self._quotes.get(sym)
+            if q is None or q.last <= 0:
+                return False
+        return True
+
     async def daily_loss_pct(self, pid: str) -> float | None:
-        """Percent change of equity vs the first observation of the ET trading day."""
+        """Percent change of equity vs the first quote-backed observation of the ET day."""
         today = dt.datetime.now(tz=ET).date().isoformat()
         key = (pid, today)
-        eq = await self.equity(pid)
         if key not in self._day_start_equity:
-            self._day_start_equity[key] = eq
+            if not self._quotes_ready(pid):
+                return None  # don't anchor until real prices exist
+            self._day_start_equity[key] = await self.equity(pid)
             return 0.0
         start = self._day_start_equity[key]
         if start <= 0:
             return None
+        eq = await self.equity(pid)
         return (eq - start) / start * 100
 
     # --- mutations -----------------------------------------------------------
@@ -296,9 +312,12 @@ class PositionKeeper:
             "cashAfter": round(pf["cash"], 2),
             "positionsChanged": changes,
         }
-        await self._journal.append(
-            ev.BROKER_SYNC, diff, aggregate_type="portfolio",
-            aggregate_id=pid, portfolio_id=pid)
+        # Quiet cycles (no cash delta, no position change) are not decisions —
+        # journaling them every sync would drown the audit trail.
+        if changes or abs(pf["cash"] - cash_before) > 0.005:
+            await self._journal.append(
+                ev.BROKER_SYNC, diff, aggregate_type="portfolio",
+                aggregate_id=pid, portfolio_id=pid)
         for change in changes:
             pos = self._positions.get((pid, change["symbol"], change["secType"]))
             if pos is not None:
@@ -319,8 +338,10 @@ class PositionKeeper:
                 eq = await self.equity(pid)
                 cash = self._portfolios[pid]["cash"]
                 session.add(EquityPoint(portfolio_id=pid, ts=now_ms(), equity=eq, cash=cash))
+                today = await self.daily_loss_pct(pid)
                 point = {"portfolioId": pid, "equity": round(eq, 2),
-                         "cash": round(cash, 2), "ts": now_ms()}
+                         "cash": round(cash, 2), "ts": now_ms(),
+                         "todayPct": round(today, 2) if today is not None else None}
                 out.append(point)
                 self._bus.publish(topics.PORTFOLIO, point)
             await session.commit()

@@ -55,11 +55,16 @@ interface AppState {
   halt: HaltState;
   broker: BrokerState | null;
   brokerages: Brokerages | null;
+  driftWarnings: { portfolioId: string; name: string; lossPct: number; ts: string }[];
+  journalGroup: string | null; // pre-filter applied when the Journal page opens
   events: JournalEvent[];
   toasts: { id: number; kind: "info" | "error" | "success"; text: string }[];
 
   setPage: (p: Page) => void;
   setActiveSymbol: (s: string) => void;
+  openJournal: (group: string) => void;
+  clearJournalGroup: () => void;
+  dismissDrift: (portfolioId: string) => void;
   applySnapshot: (s: Snapshot) => void;
   applyBrokerages: (b: Brokerages) => void;
   applyQuotes: (quotes: Quote[]) => void;
@@ -99,11 +104,17 @@ export const useStore = create<AppState>((set, get) => ({
   halt: { engaged: false, reason: "", ts: 0 },
   broker: null,
   brokerages: null,
+  driftWarnings: [],
+  journalGroup: null,
   events: [],
   toasts: [],
 
   setPage: (page) => set({ page }),
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),
+  openJournal: (group) => set({ page: "journal", journalGroup: group }),
+  clearJournalGroup: () => set({ journalGroup: null }),
+  dismissDrift: (portfolioId) =>
+    set((st) => ({ driftWarnings: st.driftWarnings.filter((d) => d.portfolioId !== portfolioId) })),
 
   applySnapshot: (s) =>
     set({
@@ -154,7 +165,12 @@ export const useStore = create<AppState>((set, get) => ({
     set((st) => ({
       portfolios: st.portfolios.map((p) =>
         p.id === msg.portfolioId
-          ? { ...p, cash: msg.cash ?? p.cash, equity: msg.equity ?? p.equity }
+          ? {
+              ...p,
+              cash: msg.cash ?? p.cash,
+              equity: msg.equity ?? p.equity,
+              todayPct: msg.todayPct !== undefined ? msg.todayPct : p.todayPct,
+            }
           : p,
       ),
     })),
@@ -178,6 +194,13 @@ export const useStore = create<AppState>((set, get) => ({
     } else if (msg.kind === "brokerage") {
       const { kind: _kind, ...brokerages } = msg;
       get().applyBrokerages(brokerages as Brokerages);
+    } else if (msg.kind === "drift") {
+      set((st) => ({
+        driftWarnings: [
+          { portfolioId: msg.portfolioId, name: msg.name, lossPct: msg.lossPct, ts: msg.ts },
+          ...st.driftWarnings.filter((d) => d.portfolioId !== msg.portfolioId),
+        ],
+      }));
     }
   },
 
