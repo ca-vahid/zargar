@@ -73,15 +73,21 @@ export function TopBar() {
   return (
     <header className="topbar">
       <div className="brand">
+        <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
         Zar<em>gar</em>
       </div>
-      <select className="mode-select" value={mode} onChange={(e) => changeMode(e.target.value)}
-        aria-label="Trading mode"
-        title="Trading mode — the routing gate for all orders">
-        {MODES.map((m) => (
-          <option key={m.value} value={m.value}>{m.label}</option>
-        ))}
-      </select>
+      <div className={`mode-indicator mode-indicator--${mode}`}
+        title={mode === "live"
+          ? "LIVE — real orders route to your brokerage accounts"
+          : "Practice — orders fill on the simulator, no real money moves"}>
+        <span className="mode-dot" />
+        <select className="mode-select" value={mode} onChange={(e) => changeMode(e.target.value)}
+          aria-label="Trading mode">
+          {MODES.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </select>
+      </div>
       {quoteSource === "yahoo" && (
         <span className="status-pill dim"
           title="Quotes come from Yahoo Finance (~1–2s delayed, indicative). Live IBKR data replaces this when the gateway connects.">

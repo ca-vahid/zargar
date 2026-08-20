@@ -226,8 +226,13 @@ export function DashboardPage() {
   const setPage = useStore((s) => s.setPage);
   const [refreshing, setRefreshing] = useState(false);
 
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
   const totals = useMemo(
     () => netWorthByCurrency(portfolios, brokerages), [portfolios, brokerages]);
+  const practiceTotal = useMemo(() => portfolios
+    .filter((p) => p.kind === "sim")
+    .reduce((sum, p) => sum + (p.equity ?? p.cash), 0), [portfolios]);
+  const practiceCcy = portfolios.find((p) => p.kind === "sim")?.baseCurrency ?? "USD";
   const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
   const blended = useMemo(() => {
     if (!usdCad || usdCad <= 0 || totals.length < 2) return null;
@@ -260,22 +265,49 @@ export function DashboardPage() {
         <div className="panel dash-networth">
           <div className="panel-body">
             <div className="networth-row">
-              {totals.length === 0 && <span className="metric-lg">—</span>}
-              {totals.map((t) => (
-                <div key={t.currency}>
-                  <div className="metric-lg">{fmtCcy(t.total, t.currency)}</div>
-                  <div className="metric-sub">
-                    {t.brokerage > 0 && `${fmtCcy(t.brokerage, t.currency)} brokerage`}
-                    {t.brokerage > 0 && t.local > 0 && " · "}
-                    {t.local > 0 && `${fmtCcy(t.local, t.currency)} local`}
+              {mode === "practice" ? (
+                <>
+                  {/* practice mode: the sandbox number leads, real money steps back */}
+                  <div>
+                    <div className="metric-lg">
+                      {fmtCcy(practiceTotal, practiceCcy)}
+                      <span className="status-pill dim" style={{ marginLeft: 8, verticalAlign: "middle" }}>
+                        practice
+                      </span>
+                    </div>
+                    <div className="metric-sub">simulated equity — no real money moves in this mode</div>
                   </div>
-                </div>
-              ))}
-              {blended !== null && (
-                <div title={`Blended at live USD/CAD ${usdCad?.toFixed(4)} — approximate`}>
-                  <div className="metric-lg muted">≈ {fmtCcy(blended, "CAD")}</div>
-                  <div className="metric-sub">all currencies, live FX</div>
-                </div>
+                  {totals.filter((t) => t.brokerage > 0).map((t) => (
+                    <div key={t.currency}>
+                      <div className="metric-mid muted">{fmtCcy(t.brokerage, t.currency)}</div>
+                      <div className="metric-sub">real {t.currency} (read-only in practice)</div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  {totals.length === 0 && <span className="metric-lg">—</span>}
+                  {totals.map((t) => (
+                    <div key={t.currency}>
+                      <div className="metric-lg">{fmtCcy(t.total, t.currency)}</div>
+                      <div className="metric-sub">
+                        {t.brokerage > 0 && `${fmtCcy(t.brokerage, t.currency)} brokerage`}
+                        {t.brokerage > 0 && t.local > 0 && " · "}
+                        {t.local > 0 && `${fmtCcy(t.local, t.currency)} local`}
+                      </div>
+                    </div>
+                  ))}
+                  {blended !== null && (
+                    <div title={`Blended at live USD/CAD ${usdCad?.toFixed(4)} — approximate`}>
+                      <div className="metric-lg muted">≈ {fmtCcy(blended, "CAD")}</div>
+                      <div className="metric-sub">all currencies, live FX</div>
+                    </div>
+                  )}
+                  <div>
+                    <div className="metric-mid muted">{fmtCcy(practiceTotal, practiceCcy)}</div>
+                    <div className="metric-sub">practice (simulated)</div>
+                  </div>
+                </>
               )}
               <div className="networth-badges">
                 <span className={`status-pill ${halt.engaged ? "bad" : "ok"}`}>

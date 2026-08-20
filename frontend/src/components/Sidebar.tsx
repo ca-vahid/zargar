@@ -1,6 +1,7 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useStore, type Page } from "../store";
 import {
+  IconChevron,
   IconDashboard,
   IconEdit,
   IconJournal,
@@ -20,6 +21,40 @@ const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "settings", label: "Settings", icon: <IconSettings /> },
 ];
 
+function loadCollapsed(): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem("zargar_wl_collapsed") ?? "{}");
+  } catch {
+    return {};
+  }
+}
+
+function SectionHead({
+  id,
+  children,
+  extra,
+  collapsed,
+  onToggle,
+}: {
+  id: string;
+  children: ReactNode;
+  extra?: ReactNode;
+  collapsed: boolean;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="wl-head">
+      <button className="wl-head-btn" onClick={() => onToggle(id)}
+        aria-expanded={!collapsed}>
+        <IconChevron size={11}
+          style={{ transform: collapsed ? "none" : "rotate(90deg)", transition: "transform 0.15s" }} />
+        {children}
+      </button>
+      {extra}
+    </div>
+  );
+}
+
 export function Sidebar() {
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
@@ -27,6 +62,14 @@ export function Sidebar() {
   const pending = useStore((s) => s.proposals.length);
   const positionsMap = useStore((s) => s.positions);
   const portfolios = useStore((s) => s.portfolios);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(loadCollapsed);
+
+  const toggle = (id: string) =>
+    setCollapsed((c) => {
+      const next = { ...c, [id]: !c[id] };
+      localStorage.setItem("zargar_wl_collapsed", JSON.stringify(next));
+      return next;
+    });
 
   // your real holdings, always on top — the symbols that actually matter
   const holdings = useMemo(() => {
@@ -57,26 +100,33 @@ export function Sidebar() {
       <div className="watchlist">
         {holdings.length > 0 && (
           <div>
-            <h4>My holdings <span className="holdings-dot" title="Live positions in your real accounts" /></h4>
-            {holdings.map((sym) => (
+            <SectionHead id="holdings" collapsed={!!collapsed["holdings"]} onToggle={toggle}
+              extra={<span className="holdings-dot" title="Live positions in your real accounts" />}>
+              My holdings
+            </SectionHead>
+            {!collapsed["holdings"] && holdings.map((sym) => (
               <WatchRow key={sym} symbol={sym} />
             ))}
           </div>
         )}
         {watchlists.map((wl) => (
           <div key={wl.id}>
-            <h4>
+            <SectionHead id={wl.id} collapsed={!!collapsed[wl.id]} onToggle={toggle}
+              extra={
+                <button className="icon-btn" title="Manage in Settings"
+                  aria-label={`Manage ${wl.name} in Settings`}
+                  onClick={() => setPage("settings")}>
+                  <IconEdit size={11} />
+                </button>
+              }>
               {wl.name}
-              <button title="Manage in Settings" aria-label={`Manage ${wl.name} in Settings`}
-                onClick={() => setPage("settings")}>
-                <IconEdit size={12} />
-              </button>
-            </h4>
-            {wl.symbols.map((sym) => (
+            </SectionHead>
+            {!collapsed[wl.id] && wl.symbols.map((sym) => (
               <WatchRow key={sym} symbol={sym} />
             ))}
           </div>
         ))}
+        <div className="sidebar-flourish" aria-hidden="true" />
       </div>
     </aside>
   );

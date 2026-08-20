@@ -1,0 +1,12 @@
+# machine-specific
+docker-compose.override.yml
+backend/.env
+
+# build artifacts
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+backend/zargar.egg-info/
+__pycache__/
+
+# raw AI-art sources (regenerate via infra/art/generate_art.py)
+frontend/art-src/

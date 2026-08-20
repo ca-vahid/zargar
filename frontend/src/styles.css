@@ -125,9 +125,38 @@ body {
 .topbar {
   display: flex; align-items: center; gap: 14px; padding: 0 14px;
   background: var(--surface-1); border-bottom: 1px solid var(--border);
+  position: relative;
 }
-.brand { font-weight: 700; font-size: var(--fs-4); letter-spacing: 0.5px; }
+/* the whole chrome answers "which mode am I in?" at a glance */
+.topbar::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px;
+  background: var(--accent); transition: background 0.25s ease;
+}
+[data-mode="live"] .topbar::after { background: var(--down); }
+.brand { font-weight: 700; font-size: var(--fs-4); letter-spacing: 0.5px;
+  display: flex; align-items: center; gap: 8px; }
 .brand em { color: var(--accent); font-style: normal; }
+.brand-logo { width: 24px; height: 24px; object-fit: contain; }
+
+.mode-indicator {
+  display: inline-flex; align-items: center; gap: 7px;
+  border-radius: var(--radius-sm); padding: 2px 6px 2px 10px;
+  font-weight: 700; transition: background 0.2s ease;
+}
+.mode-indicator .mode-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mode-indicator--practice {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+.mode-indicator--practice .mode-dot { background: var(--accent); }
+.mode-indicator--live {
+  background: color-mix(in srgb, var(--down) 16%, var(--surface-2));
+  outline: 1px solid color-mix(in srgb, var(--down) 55%, transparent);
+}
+.mode-indicator--live .mode-dot {
+  background: var(--down); animation: live-blink 1.4s ease-in-out infinite;
+}
+.mode-indicator .mode-select { border: none; background: transparent; font-weight: 700; }
+.mode-indicator--live .mode-select { color: var(--down); }
 .topbar .spacer { flex: 1; }
 .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--down); }
 .conn-dot.on { background: var(--up); }
@@ -185,12 +214,28 @@ body {
   margin-left: auto; background: var(--accent); color: var(--accent-ink);
   border-radius: 10px; font-size: var(--fs-0); padding: 1px 7px; font-weight: 700;
 }
-.watchlist { flex: 1; overflow-y: auto; border-top: 1px solid var(--border); padding: 6px 0; }
-.watchlist h4 {
-  margin: 6px 12px; font-size: var(--fs-0); text-transform: uppercase;
-  letter-spacing: 0.8px; color: var(--text-3); display: flex; justify-content: space-between;
+.watchlist {
+  flex: 1; overflow-y: auto; border-top: 1px solid var(--border); padding: 6px 0;
+  position: relative;
 }
-.watchlist h4 button { background: none; border: none; color: var(--text-3); cursor: pointer; }
+.wl-head {
+  display: flex; align-items: center; margin: 8px 8px 3px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-2));
+  border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
+  padding-right: 4px;
+}
+.wl-head-btn {
+  flex: 1; display: flex; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer; text-align: left;
+  padding: 5px 6px; font-size: var(--fs-0); font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.9px; color: var(--text-2);
+}
+.wl-head-btn:hover { color: var(--text-1); }
+.sidebar-flourish {
+  position: sticky; top: 100%; height: 120px; margin-top: var(--sp-4);
+  background: url("/art/sidebar-flourish-alpha.png") bottom left / contain no-repeat;
+  opacity: 0.5; pointer-events: none;
+}
 .wl-row {
   display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%;
   padding: var(--row-y) 12px; cursor: pointer; gap: 4px;
@@ -240,6 +285,7 @@ body {
 .panel-head--tabs { padding-bottom: 0; border-bottom: none; }
 .panel-body { padding: var(--pad); }
 .metric-lg { font-size: var(--fs-6); font-weight: 700; font-variant-numeric: tabular-nums; }
+.metric-mid { font-size: var(--fs-4); font-weight: 600; font-variant-numeric: tabular-nums; }
 .metric-sub { font-size: var(--fs-1); color: var(--text-3); }
 
 .trade-grid {
@@ -262,7 +308,15 @@ body {
     "curve watch"
     "orders orders";
 }
-.dash-networth { grid-area: networth; }
+.dash-networth {
+  grid-area: networth; position: relative; overflow: hidden;
+}
+.dash-networth::after {
+  content: ""; position: absolute; inset: 0;
+  background: url("/art/hero-ornament-alpha.png") right -40px bottom -60px / 420px no-repeat;
+  opacity: 0.16; pointer-events: none;
+}
+[data-theme="light"] .dash-networth::after { opacity: 0.22; }
 .dash-providers { grid-area: providers; display: grid; gap: var(--pad); grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .dash-curve { grid-area: curve; min-width: 0; }
 .dash-watch { grid-area: watch; min-width: 0; }
@@ -378,6 +432,7 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 }
 .state-note.error { color: var(--down); }
 .empty-state { text-align: center; padding: var(--sp-5) var(--sp-3); color: var(--text-3); }
+.empty-art { width: 84px; height: 84px; object-fit: contain; margin-bottom: 6px; opacity: 0.9; }
 .empty-state .title { font-weight: 600; color: var(--text-2); margin-bottom: 4px; font-size: var(--fs-2); }
 .empty-state .hint { font-size: var(--fs-1); }
 .spinner {
@@ -499,6 +554,30 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
     opacity 0.15s ease;
 }
 .metric-lg { font-variant-numeric: tabular-nums; }
+
+/* ── splash ────────────────────────────────────────────────────────────── */
+.splash {
+  position: fixed; inset: 0; z-index: 200; background: #0b1512;
+  display: grid; place-items: center; overflow: hidden;
+  transition: opacity 0.6s ease;
+}
+.splash--fade { opacity: 0; pointer-events: none; }
+.splash-art {
+  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
+  animation: splash-zoom 4s ease-out forwards;
+}
+@keyframes splash-zoom { from { transform: scale(1.04); } to { transform: scale(1); } }
+.splash-center {
+  position: relative; text-align: center; color: #f3ead0;
+  animation: splash-rise 0.9s ease-out;
+}
+@keyframes splash-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; } }
+.splash-logo { width: 130px; height: 130px; object-fit: contain;
+  filter: drop-shadow(0 0 26px rgba(201, 162, 39, 0.55)); }
+.splash-word { font-size: 42px; font-weight: 800; letter-spacing: 1.5px; margin-top: 6px; }
+.splash-word em { color: #c9a227; font-style: normal; }
+.splash-tag { font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase;
+  color: rgba(243, 234, 208, 0.65); margin-top: 6px; }
 
 /* misc */
 .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad); align-items: start; }

@@ -25,13 +25,16 @@ export function EmptyState({
   title,
   hint,
   action,
+  art = true,
 }: {
   title: string;
   hint?: string;
   action?: ReactNode;
+  art?: boolean;
 }) {
   return (
     <div className="empty-state">
+      {art && <img className="empty-art" src="/art/empty-medallion.png" alt="" aria-hidden="true" />}
       <div className="title">{title}</div>
       {hint && <div className="hint">{hint}</div>}
       {action && <div style={{ marginTop: 8 }}>{action}</div>}

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { Splash } from "./components/Splash";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { Toasts } from "./components/Toasts";
@@ -20,15 +21,18 @@ export default function App() {
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const accent = useStore((s) => s.settings["ui.accent"] ?? "#5b8cff");
   const density = useStore((s) => s.settings["ui.density"] ?? "comfortable");
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     document.documentElement.dataset.density = density;
+    document.documentElement.dataset.mode = mode;
     document.documentElement.style.setProperty("--accent", accent);
-  }, [theme, accent, density]);
+  }, [theme, accent, density, mode]);
 
   return (
     <div className="app">
+      <Splash />
       <TopBar />
       <div className="banners">
         {halt.engaged && (
