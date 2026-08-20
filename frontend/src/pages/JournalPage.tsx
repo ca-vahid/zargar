@@ -66,6 +66,7 @@ export function JournalPage() {
     if (group !== "all") out = out.filter((e) => GROUPS[group].includes(e.type));
     if (typeFilter) out = out.filter((e) =>
       e.type.toLowerCase().includes(typeFilter.toLowerCase()) ||
+      (e.aggregateId ?? "").toLowerCase().startsWith(typeFilter.toLowerCase()) ||
       summarize(e).toLowerCase().includes(typeFilter.toLowerCase()));
     return out.slice(0, 300);
   }, [liveEvents, loaded, group, typeFilter]);
@@ -113,7 +114,12 @@ export function JournalPage() {
                     </td>
                     <td style={{ whiteSpace: "normal", maxWidth: 520 }}>{summarize(e)}</td>
                     <td className="muted">
-                      {e.aggregateType && <code className="mono">{e.aggregateType}:{(e.aggregateId ?? "").slice(0, 8)}</code>}
+                      {e.aggregateType && (
+                        <button className="link-btn" title="Filter to this aggregate"
+                          onClick={() => setTypeFilter((e.aggregateId ?? "").slice(0, 8))}>
+                          <code className="mono">{e.aggregateType}:{(e.aggregateId ?? "").slice(0, 8)}</code>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}

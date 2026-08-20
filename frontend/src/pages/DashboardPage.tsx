@@ -12,13 +12,14 @@ import { AsyncSection, EmptyState, StatusPill } from "../components/ui";
 import { WatchRow } from "../components/WatchRow";
 
 function ProviderCard({ provider }: { provider: BrokerageProvider }) {
-  const setPage = useStore((s) => s.setPage);
+  const openPortfolios = useStore((s) => s.openPortfolios);
+  const open = () => openPortfolios(provider.connectionId || provider.broker);
   const pill = provider.disabled ? "bad" : provider.type === "trade" ? "ok" : "dim";
   const pillText = provider.disabled ? "disconnected" : provider.type === "trade" ? "trade" : "read-only";
   return (
-    <div className="panel provider-card" onClick={() => setPage("portfolios")}
+    <div className="panel provider-card" onClick={open}
       role="button" tabIndex={0}
-      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setPage("portfolios"); }}>
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") open(); }}>
       <div className="panel-head">
         <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} />
         {provider.broker}
@@ -222,6 +223,7 @@ export function DashboardPage() {
   const watchlists = useStore((s) => s.watchlists);
   const applyBrokerages = useStore((s) => s.applyBrokerages);
   const toast = useStore((s) => s.toast);
+  const setPage = useStore((s) => s.setPage);
   const [refreshing, setRefreshing] = useState(false);
 
   const totals = useMemo(
@@ -286,13 +288,15 @@ export function DashboardPage() {
                 {broker?.quoteSource && (
                   <span className="status-pill dim">{broker.quoteSource} quotes</span>
                 )}
-                {brokerages?.lastSyncAt && (
-                  <span className="metric-sub">synced {fmtDateTime(brokerages.lastSyncAt)}</span>
-                )}
                 {brokerages?.enabled && (
                   <button className="icon-btn" onClick={refresh} disabled={refreshing}
-                    aria-label="Refresh brokerage data" title="Refresh brokerage data">
+                    aria-label="Refresh brokerage data"
+                    title="Refresh brokerage data now"
+                    style={{ gap: 6, fontSize: "var(--fs-1)" }}>
                     {refreshing ? <span className="spinner" /> : <IconRefresh />}
+                    {brokerages?.lastSyncAt && (
+                      <span>synced {fmtDateTime(brokerages.lastSyncAt)}</span>
+                    )}
                   </button>
                 )}
               </div>
@@ -310,7 +314,9 @@ export function DashboardPage() {
               <div className="panel-body">
                 <EmptyState
                   title="No brokerages connected"
-                  hint="Add SnapTrade credentials to backend/.env, enable snaptrade in Settings, and restart."
+                  hint="Add SnapTrade credentials to backend/.env, enable SnapTrade, restart."
+                  action={<button className="link-btn" onClick={() => setPage("settings")}>
+                    open Settings → Brokerages</button>}
                 />
               </div>
             </div>
@@ -326,7 +332,9 @@ export function DashboardPage() {
           <div style={{ overflowY: "auto", maxHeight: 260 }}>
             {watchSymbols.map((sym) => <WatchRow key={sym} symbol={sym} />)}
             {watchSymbols.length === 0 && (
-              <EmptyState title="Watchlist is empty" hint="Add symbols in Settings." />
+              <EmptyState title="Watchlist is empty"
+                action={<button className="link-btn" onClick={() => setPage("settings")}>
+                  add symbols in Settings</button>} />
             )}
           </div>
         </div>

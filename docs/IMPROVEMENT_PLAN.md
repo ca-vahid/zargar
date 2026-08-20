@@ -129,21 +129,23 @@ No mixed totals anywhere.
       Phase 1-5 work; charts pull tokens at build time.
 - [x] Dark retested in the Phase 8 browser walk (both themes).
 
-## Phase 7 — Navigation & discoverability [ ]
+## Phase 7 — Navigation & discoverability [x]
 
 "Links that take me to places where I can see what's happening."
 
-- [ ] Lightweight page context in the store (`setPage(page, ctx)`): Journal
-      accepts a pre-filter (group/type/portfolio), Portfolios accepts a
-      scroll-to provider.
-- [ ] Halt/drift banners → Journal (risk filter). Provider cards → their
-      Portfolios section. Position rows → Trade with symbol (keep) and
-      portfolio context in the ticket. Journal aggregate ids → filtered view.
-- [ ] Dashboard sync timestamp → refresh action; every EmptyState links to
-      the exact page/setting that fixes it.
-- [ ] Settings: group headers get one-line explainers; risk knobs get
-      hover tooltips with concrete examples ("collar 5% = reject a limit
-      more than 5% from last").
+- [x] Page context in the store: `openJournal(group)`, `openPortfolios
+      (focusProviderId)` (smooth-scrolls to the provider section),
+      `openTrade(symbol, portfolioId)` (one-shot ticket preselect).
+- [x] Halt banner → risk-filtered Journal; drift banner → Portfolios;
+      Dashboard provider cards → their Portfolios section; blotter position
+      rows → Trade with the account preselected; Journal aggregate ids are
+      clickable filters (filter matches aggregate ids too).
+- [x] Dashboard sync timestamp lives inside the refresh button; EmptyStates
+      (no brokerages / no real accounts / empty watchlist) link straight to
+      Settings.
+- [x] Settings: every panel head has a one-line explainer; risk knobs
+      gained concrete hints (currency-of-caps, stale-quote behavior,
+      gross-exposure definition).
 
 ## Phase 8 — Verification & ship [ ]
 

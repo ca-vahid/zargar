@@ -57,6 +57,8 @@ interface AppState {
   brokerages: Brokerages | null;
   driftWarnings: { portfolioId: string; name: string; lossPct: number; ts: string }[];
   journalGroup: string | null; // pre-filter applied when the Journal page opens
+  portfoliosFocus: string | null; // provider connectionId to scroll to on Portfolios
+  ticketPortfolioId: string | null; // one-shot account preselect for the order ticket
   events: JournalEvent[];
   toasts: { id: number; kind: "info" | "error" | "success"; text: string }[];
 
@@ -64,6 +66,10 @@ interface AppState {
   setActiveSymbol: (s: string) => void;
   openJournal: (group: string) => void;
   clearJournalGroup: () => void;
+  openPortfolios: (focus?: string) => void;
+  clearPortfoliosFocus: () => void;
+  openTrade: (symbol: string, portfolioId?: string) => void;
+  clearTicketPortfolio: () => void;
   dismissDrift: (portfolioId: string) => void;
   applySnapshot: (s: Snapshot) => void;
   applyBrokerages: (b: Brokerages) => void;
@@ -106,6 +112,8 @@ export const useStore = create<AppState>((set, get) => ({
   brokerages: null,
   driftWarnings: [],
   journalGroup: null,
+  portfoliosFocus: null,
+  ticketPortfolioId: null,
   events: [],
   toasts: [],
 
@@ -113,6 +121,11 @@ export const useStore = create<AppState>((set, get) => ({
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),
   openJournal: (group) => set({ page: "journal", journalGroup: group }),
   clearJournalGroup: () => set({ journalGroup: null }),
+  openPortfolios: (focus) => set({ page: "portfolios", portfoliosFocus: focus ?? null }),
+  clearPortfoliosFocus: () => set({ portfoliosFocus: null }),
+  openTrade: (symbol, portfolioId) =>
+    set({ page: "trade", activeSymbol: symbol, ticketPortfolioId: portfolioId ?? null }),
+  clearTicketPortfolio: () => set({ ticketPortfolioId: null }),
   dismissDrift: (portfolioId) =>
     set((st) => ({ driftWarnings: st.driftWarnings.filter((d) => d.portfolioId !== portfolioId) })),
 

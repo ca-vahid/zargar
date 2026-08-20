@@ -68,13 +68,14 @@ function portfolioName(portfolios: { id: string; name: string }[], id: string) {
 const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
   const quote = useQuote(p.symbol);
   const portfolios = useStore((s) => s.portfolios);
-  const setActiveSymbol = useStore((s) => s.setActiveSymbol);
+  const openTrade = useStore((s) => s.openTrade);
   const last = quote?.last ?? p.last ?? p.avgCost;
   const mult = p.secType === "OPT" ? 100 : 1;
   const unreal = (last - p.avgCost) * p.qty * mult;
   const pct = p.avgCost > 0 ? ((last / p.avgCost - 1) * 100) * Math.sign(p.qty) : 0;
   return (
-    <tr onClick={() => setActiveSymbol(p.symbol)} style={{ cursor: "pointer" }}>
+    <tr onClick={() => openTrade(p.symbol, p.portfolioId)} style={{ cursor: "pointer" }}
+      title="Open in Trade with this account preselected">
       <td><b>{p.symbol}</b>{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</td>
       <td className="muted">{portfolioName(portfolios, p.portfolioId)}</td>
       <td className="num">{fmtQty(p.qty)}</td>

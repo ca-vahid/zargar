@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { fmtCcy, fmtMoney } from "../lib/format";
 import { useQuote, useStore, type OrderIntentBody } from "../store";
@@ -22,6 +22,15 @@ export function OrderTicket({ symbol }: { symbol: string }) {
   const [stopPrice, setStopPrice] = useState("");
   const [tif, setTif] = useState("DAY");
   const [portfolioId, setPortfolioId] = useState<string>("");
+  const ticketPid = useStore((s) => s.ticketPortfolioId);
+  const clearTicketPortfolio = useStore((s) => s.clearTicketPortfolio);
+  useEffect(() => {
+    // one-shot preselect from navigation (e.g. clicking a position row)
+    if (ticketPid) {
+      setPortfolioId(ticketPid);
+      clearTicketPortfolio();
+    }
+  }, [ticketPid, clearTicketPortfolio]);
   const [bracketOn, setBracketOn] = useState(false);
   const [tpPct, setTpPct] = useState("5");
   const [slPct, setSlPct] = useState("2");

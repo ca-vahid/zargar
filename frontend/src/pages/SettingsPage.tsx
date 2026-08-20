@@ -79,7 +79,8 @@ export function SettingsPage() {
       <h2 className="page-title">Settings</h2>
       <div className="settings-grid">
         <div className="panel">
-          <div className="panel-head">Trading &amp; routing</div>
+          <div className="panel-head">Trading &amp; routing
+            <span className="sub">mode, default account, order defaults</span></div>
           <div className="panel-body">
             <SelectRow k="trading.mode" label="Trading mode"
               hint="practice fills on the simulator; LIVE routes real orders to SnapTrade/IBKR. Per-order dry runs live in the ticket."
@@ -105,17 +106,22 @@ export function SettingsPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-head">Risk gate</div>
+          <div className="panel-head">Risk gate
+            <span className="sub">every order must pass all of these</span></div>
           <div className="panel-body">
-            <NumberRow k="risk.max_position_notional" label="Max position ($/symbol)" step={100} />
-            <NumberRow k="risk.max_position_pct" label="Max position (% equity)" step={0.5} />
-            <NumberRow k="risk.max_gross_exposure_pct" label="Max gross exposure (%)" step={5} />
+            <NumberRow k="risk.max_position_notional" label="Max position ($/symbol)" step={100}
+              hint="in the account's currency — e.g. 1000 on a CAD account means C$1,000" />
+            <NumberRow k="risk.max_position_pct" label="Max position (% equity)" step={0.5}
+              hint="resulting position vs account equity" />
+            <NumberRow k="risk.max_gross_exposure_pct" label="Max gross exposure (%)" step={5}
+              hint="sum of |position values| vs equity" />
             <NumberRow k="risk.daily_loss_halt_pct" label="Daily loss halt (%)" step={0.5}
               hint="auto-engages the kill switch" />
             <NumberRow k="risk.price_collar_pct" label="Price collar (%)" step={0.5}
               hint="fat-finger guard vs last price" />
             <NumberRow k="risk.max_orders_per_minute" label="Max orders / minute" />
-            <NumberRow k="risk.stale_quote_seconds" label="Stale quote block (s)" />
+            <NumberRow k="risk.stale_quote_seconds" label="Stale quote block (s)"
+              hint="orders are rejected when the symbol's quote is older than this" />
             <ToggleRow k="risk.allow_short" label="Allow short selling" />
             <ToggleRow k="risk.allow_options" label="Allow options" />
             <NumberRow k="risk.max_option_premium_pct" label="Max option premium (% equity)" step={0.5} />
@@ -124,7 +130,8 @@ export function SettingsPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-head">Signals &amp; verification</div>
+          <div className="panel-head">Signals &amp; verification
+            <span className="sub">how newsletter alerts become proposals</span></div>
           <div className="panel-body">
             <NumberRow k="signals.default_sizing_pct" label="Proposal sizing (% equity)" step={0.5} />
             <NumberRow k="signals.default_ttl_minutes" label="Proposal TTL (minutes)" />
@@ -142,7 +149,8 @@ export function SettingsPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-head">Account &amp; integrations</div>
+          <div className="panel-head">Account &amp; integrations
+            <span className="sub">tax-rule regime + external services</span></div>
           <div className="panel-body">
             <SelectRow k="account.regime" label="Account regime"
               hint="drives day-trade + tax-loss rules"
@@ -158,7 +166,8 @@ export function SettingsPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-head">Brokerages (SnapTrade)</div>
+          <div className="panel-head">Brokerages (SnapTrade)
+            <span className="sub">your real accounts, via aggregator</span></div>
           <div className="panel-body">
             <div className="setting-row">
               <div className="lbl">SnapTrade<small>Wealthsimple + Webull via aggregator</small></div>
@@ -182,7 +191,8 @@ export function SettingsPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-head">Appearance</div>
+          <div className="panel-head">Appearance
+            <span className="sub">theme, density, chart defaults</span></div>
           <div className="panel-body">
             <SelectRow k="ui.theme" label="Theme"
               options={[{ value: "dark", label: "Dark" }, { value: "light", label: "Light" }]} />

@@ -83,7 +83,7 @@ function BrokerageSection({
   const pill = provider.disabled ? "bad" : provider.type === "trade" ? "ok" : "dim";
   const pillText = provider.disabled ? "disconnected" : provider.type === "trade" ? "trade" : "read-only";
   return (
-    <div className="panel mb">
+    <div className="panel mb" id={`provider-${provider.connectionId || provider.broker}`}>
       <div className="panel-head">
         <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} />
         {provider.broker}
@@ -154,6 +154,7 @@ export function PortfoliosPage() {
   const brokerages = useStore((s) => s.brokerages);
   const applyBrokerages = useStore((s) => s.applyBrokerages);
   const toast = useStore((s) => s.toast);
+  const setPage = useStore((s) => s.setPage);
   const theme = useStore((s) => s.settings["ui.theme"]);
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<Highcharts.Chart | null>(null);
@@ -174,6 +175,14 @@ export function PortfoliosPage() {
     () => portfolios.filter((p) => !REAL_KINDS.has(p.kind)),
     [portfolios]);
   const [chartScope, setChartScope] = useState<"all" | "real" | "practice">("all");
+  const portfoliosFocus = useStore((s) => s.portfoliosFocus);
+  const clearPortfoliosFocus = useStore((s) => s.clearPortfoliosFocus);
+  useEffect(() => {
+    if (!portfoliosFocus) return;
+    document.getElementById(`provider-${portfoliosFocus}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    clearPortfoliosFocus();
+  }, [portfoliosFocus, clearPortfoliosFocus]);
 
   const applyChartScope = (scope: "all" | "real" | "practice") => {
     setChartScope(scope);
@@ -266,7 +275,9 @@ export function PortfoliosPage() {
       {(brokerages?.providers ?? []).length === 0 && realCards.length === 0 && (
         <div className="panel mb"><div className="panel-body">
           <EmptyState title="No real accounts connected"
-            hint="Add SnapTrade credentials to backend/.env and enable SnapTrade in Settings." />
+            hint="Add SnapTrade credentials to backend/.env and enable SnapTrade."
+            action={<button className="link-btn" onClick={() => setPage("settings")}>
+              open Settings → Brokerages</button>} />
         </div></div>
       )}
 
