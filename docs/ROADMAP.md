@@ -14,6 +14,19 @@
 | IBKR adapter (ib_async 2.1.0) + connectivity self-test + setup guide | ✅ built, API-surface-verified — **not yet run against a real gateway** |
 | Rich settings UI, watchlists, sources registry, themes | ✅ done |
 | Docs: architecture, operations, IBKR setup, this roadmap | ✅ done |
+| **SnapTrade venue (v0.2)**: Wealthsimple + Webull CA trade-enabled, signed client, executor (poll/reconcile/throttle), account+position sync, `/api/brokerages` | ✅ done, tested (23 stubbed-transport tests) + **verified against real accounts** |
+| **Yahoo quote feed (v0.2)**: batched near-realtime quotes for real symbols until IBKR | ✅ done, tested, live |
+| **Dashboard + UI overhaul (v0.2)**: per-currency net worth, provider cards, real-money confirm dialog with risk pre-flight, design tokens/icons/modals/async states | ✅ done, build green, verified in-app |
+
+### First real SnapTrade order (supervised, when you're ready)
+
+Set *Trading mode → LIVE* in the top bar, pick a brokerage account in the
+ticket (Webull CASH has the fund cushion), submit a **1-share MKT** order,
+review the confirm dialog's risk checks, confirm, and watch the Journal:
+`OrderIntentCreated → RiskCheckPassed → OrderSubmitted → BrokerOrderLinked →
+OrderAccepted → OrderFill(ed)`. Verify the fill in the Webull app. Default
+risk caps ($1,000/position, 10% equity) apply — raise them in Settings when
+you trust the pipe. There is **no paper mode** on SnapTrade venues.
 
 ## Your next steps (in order — each unlocks the next)
 

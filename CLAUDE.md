@@ -1,9 +1,11 @@
 # Zargar — agent notes
 
-Personal IBKR trading app: Python asyncio engine + FastAPI (port 8420),
+Personal trading app: Python asyncio engine + FastAPI (port 8420),
 React/Vite SPA, Postgres in Docker (the only dockerized piece — do not
-dockerize the app). Single user. Read `docs/ARCHITECTURE.md` before
-non-trivial changes; `docs/ROADMAP.md` holds the plan.
+dockerize the app). Single user. Venues: SnapTrade (Wealthsimple + Webull CA,
+live today) and IBKR (native, once the account activates). Read
+`docs/ARCHITECTURE.md` before non-trivial changes; `docs/ROADMAP.md` holds
+the plan.
 
 ## Commands
 
@@ -15,6 +17,8 @@ cd frontend && npm run build                           # typecheck + production 
 cd frontend && npm run dev                             # hot-reload UI on :5173, proxies :8420
 ./scripts/start.sh | scripts\start.ps1                 # one-process app for the user
 cd backend && .venv/bin/python -m zargar.tools.ibkr_check   # read-only IBKR connectivity test
+cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTrade status/accounts
+cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-auth a connection to trade
 ```
 
 Tests default to `postgresql+asyncpg://zargar@127.0.0.1:5433/zargar_test`
@@ -54,6 +58,23 @@ docker-compose.
   `sim_tick_interval=0.03`, `sim_history_minutes=30` via
   `tests/conftest.make_test_config`.
 - pydantic-settings precedence: real env vars beat `backend/.env`.
+- SnapTrade (personal auth): omit userId/userSecret; sign
+  `{"content","path","query"}` as sorted-keys compact JSON, HMAC-SHA256,
+  base64 in a `Signature` header (`SnapTradeClient._sign`). Accounts created
+  after May 2026 get **410** from the legacy `/positions` and `/holdings`
+  endpoints — use `/accounts/{id}/positions/all` (numbers arrive as strings,
+  exchanges are MIC codes like XTSE, `instrument.kind` discriminates types,
+  CDRs come pre-suffixed e.g. `AAPL.TO`).
+- SnapTrade Connection Portal redeem tokens are session-bound: generate ONE
+  re-auth URL at a time (`snaptrade_check --upgrade` enforces this) — a
+  second URL from the same run dies when the first login completes.
+- SnapTrade trading: soft limit 1 trade/sec/account (executor throttles);
+  fills arrive by polling `recentOrders` — emit incremental deltas with
+  deterministic exec ids or re-polls double-apply executions.
+- Dry-run orders must NOT consume the rate/duplicate risk budget — the
+  confirm dialog pre-flights every real-money order as a dry run first.
+- The real-money confirm dialog triggers on `kind === "live"` portfolios
+  only; sim/shadow/paper submit instantly.
 
 ## Testing conventions
 
