@@ -10,8 +10,9 @@ import { IconRefresh } from "../components/icons";
 import { AsyncSection, EmptyState } from "../components/ui";
 
 const KIND_LABEL: Record<string, string> = {
-  live: "Live", paper: "Paper", sim: "Simulation", shadow: "Shadow",
+  live: "Live", paper: "Paper", sim: "Practice", shadow: "Shadow",
 };
+const REAL_KINDS = new Set(["live", "paper"]);
 
 function PortfolioCard({
   portfolio,
@@ -60,7 +61,7 @@ function PortfolioCard({
         )}
         <div className="metric-sub" style={{ marginTop: 6 }}>
           cash {fmtCcy(p.cash, ccy)} · {positionCount} position{positionCount === 1 ? "" : "s"}
-          {p.sourceName && p.sourceName !== "snaptrade" && <> · tracks “{p.sourceName}”</>}
+          {p.sourceName && p.sourceName !== "snaptrade" && <> · tracks "{p.sourceName}"</>}
         </div>
       </div>
     </div>
@@ -159,6 +160,31 @@ export function PortfoliosPage() {
 
   const byPortfolio = useMemo(() => groupPositions(positionsMap), [positionsMap]);
   const portfolioIds = portfolios.map((p) => p.id).join(",");
+  const snaptradePids = useMemo(() => new Set(
+    (brokerages?.providers ?? []).flatMap((pr) => pr.accounts.map((a) => a.portfolioId))),
+    [brokerages]);
+  // brokerage-backed portfolios render inside their provider section — the
+  // card grid carries only what's left (IBKR placeholder, practice, shadow)
+  const realCards = useMemo(
+    () => portfolios.filter((p) => REAL_KINDS.has(p.kind) && !snaptradePids.has(p.id)),
+    [portfolios, snaptradePids]);
+  const practiceCards = useMemo(
+    () => portfolios.filter((p) => !REAL_KINDS.has(p.kind)),
+    [portfolios]);
+  const [chartScope, setChartScope] = useState<"all" | "real" | "practice">("all");
+
+  const applyChartScope = (scope: "all" | "real" | "practice") => {
+    setChartScope(scope);
+    const chart = chartInstance.current;
+    if (!chart) return;
+    for (const p of portfolios) {
+      const isReal = REAL_KINDS.has(p.kind);
+      const visible = !hidden[p.id]
+        && (scope === "all" || (scope === "real") === isReal);
+      (chart.get(p.id) as Highcharts.Series | undefined)?.setVisible(visible, false);
+    }
+    chart.redraw();
+  };
 
   const curves = useAsync(
     async () => {
@@ -217,30 +243,61 @@ export function PortfoliosPage() {
     <div>
       <h2 className="page-title">Portfolios</h2>
 
+      <div className="section-head">
+        Real accounts <span className="status-pill bad">real money</span>
+      </div>
       {(brokerages?.providers ?? []).map((provider) => (
         <BrokerageSection key={provider.connectionId || provider.broker}
           provider={provider} onRefresh={refresh} refreshing={refreshing}
           lastSyncAt={brokerages?.lastSyncAt ?? null} />
       ))}
+      {realCards.length > 0 && (
+        <div className="settings-grid mb">
+          {realCards.map((p) => (
+            <PortfolioCard key={p.id} portfolio={p}
+              positionCount={(byPortfolio[p.id] ?? []).length}
+              visible={!hidden[p.id]}
+              onToggle={(v) => toggleVisible(p.id, v)} />
+          ))}
+        </div>
+      )}
+      {(brokerages?.providers ?? []).length === 0 && realCards.length === 0 && (
+        <div className="panel mb"><div className="panel-body">
+          <EmptyState title="No real accounts connected"
+            hint="Add SnapTrade credentials to backend/.env and enable SnapTrade in Settings." />
+        </div></div>
+      )}
 
+      <div className="section-head">
+        Practice environment <span className="status-pill dim">simulated fills</span>
+      </div>
       <div className="settings-grid mb">
-        {portfolios.map((p) => (
+        {practiceCards.map((p) => (
           <PortfolioCard key={p.id} portfolio={p}
             positionCount={(byPortfolio[p.id] ?? []).length}
             visible={!hidden[p.id]}
             onToggle={(v) => toggleVisible(p.id, v)} />
         ))}
-        {portfolios.length === 0 && (
+        {practiceCards.length === 0 && (
           <div className="panel"><div className="panel-body">
-            <EmptyState title="No portfolios yet"
-              hint="The engine seeds a simulation portfolio on first start." />
+            <EmptyState title="No practice portfolios"
+              hint="The engine seeds one on first start." />
           </div></div>
         )}
       </div>
 
       <div className="panel">
         <div className="panel-head">
-          Equity curves <span className="sub">live vs simulation vs shadow — the “what would have happened” view</span>
+          Equity curves
+          <span className="sub">real vs practice — the "what would have happened" view</span>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+            {(["all", "real", "practice"] as const).map((sc) => (
+              <button key={sc} className={`chip-btn ${chartScope === sc ? "active" : ""}`}
+                onClick={() => applyChartScope(sc)}>
+                {sc}
+              </button>
+            ))}
+          </div>
         </div>
         <AsyncSection state={curves}
           empty={<EmptyState title="No equity history yet" />}>

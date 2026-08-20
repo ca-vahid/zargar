@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { fmtCcy } from "../lib/format";
-import { useStore } from "../store";
+import { netWorthByCurrency, useStore } from "../store";
 import { IconWarn } from "./icons";
 import { ConfirmDialog, PromptDialog } from "./Modal";
 
@@ -18,12 +18,19 @@ export function TopBar() {
   const broker = useStore((s) => s.broker);
   const toast = useStore((s) => s.toast);
 
+  const brokerages = useStore((s) => s.brokerages);
+  const setPage = useStore((s) => s.setPage);
   const [confirmLive, setConfirmLive] = useState(false);
   const [promptHalt, setPromptHalt] = useState(false);
   const [confirmResume, setConfirmResume] = useState(false);
 
-  const defaultId = useStore((s) => s.settings["trading.default_portfolio"]);
-  const active = portfolios.find((p) => p.id === defaultId) ?? portfolios[0];
+  // real money is the headline; practice is its own clearly-labeled chip
+  const realTotals = useMemo(
+    () => netWorthByCurrency(portfolios, brokerages).filter((t) => t.brokerage > 0),
+    [portfolios, brokerages]);
+  const practice = useMemo(
+    () => portfolios.filter((p) => p.kind === "sim"), [portfolios]);
+  const practiceTotal = practice.reduce((sum, p) => sum + (p.equity ?? p.cash), 0);
   const quoteSource = broker?.quoteSource;
 
   const applyMode = async (value: string) => {
@@ -87,10 +94,17 @@ export function TopBar() {
         </span>
       )}
       <div className="spacer" />
-      {active && (
-        <div className="equity-chip" title={`${active.name} equity`}>
-          {active.name}: {fmtCcy(active.equity ?? active.cash, active.baseCurrency ?? "USD")}
-        </div>
+      {realTotals.length > 0 && (
+        <button className="equity-chip equity-chip--real" onClick={() => setPage("dashboard")}
+          title="Real brokerage net worth (per currency) — click for the Dashboard">
+          {realTotals.map((t) => fmtCcy(t.brokerage, t.currency)).join(" · ")}
+        </button>
+      )}
+      {practice.length > 0 && (
+        <button className="equity-chip" onClick={() => setPage("portfolios")}
+          title="Practice environment (simulated fills) — click for Portfolios">
+          practice {fmtCcy(practiceTotal, practice[0]?.baseCurrency ?? "USD")}
+        </button>
       )}
       <div role="status" aria-label={connected ? "Connected" : "Disconnected"}
         title={connected ? "Live connection" : "Disconnected"}>

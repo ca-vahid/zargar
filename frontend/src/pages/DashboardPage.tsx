@@ -44,19 +44,20 @@ function ProviderCard({ provider }: { provider: BrokerageProvider }) {
   );
 }
 
-function SimCard() {
+function PracticeCard() {
   const portfolios = useStore((s) => s.portfolios);
   const setPage = useStore((s) => s.setPage);
   const sims = useMemo(
-    () => portfolios.filter((p) => p.kind === "sim" || p.kind === "paper"),
+    () => portfolios.filter((p) => p.kind === "sim"),
     [portfolios]);
   if (sims.length === 0) return null;
   return (
-    <div className="panel provider-card" onClick={() => setPage("portfolios")}
+    <div className="panel provider-card provider-card--practice"
+      onClick={() => setPage("portfolios")}
       role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setPage("portfolios"); }}>
       <div className="panel-head">
-        Simulation <span className="status-pill dim">virtual</span>
+        Practice <span className="status-pill dim">simulated — not real money</span>
       </div>
       <div className="panel-body">
         {sims.map((p) => (
@@ -127,7 +128,18 @@ function RecentActivity() {
   const [tab, setTab] = useState<"orders" | "fills">("orders");
   const pname = useMemo(
     () => Object.fromEntries(portfolios.map((p) => [p.id, p.name])), [portfolios]);
+  const preal = useMemo(
+    () => Object.fromEntries(portfolios.map(
+      (p) => [p.id, p.kind === "live" || p.kind === "paper"])), [portfolios]);
   const goTrade = (symbol: string) => { setActiveSymbol(symbol); setPage("trade"); };
+  const portfolioCell = (pid: string) => (
+    <td className="muted">
+      {pname[pid] ?? "—"}{" "}
+      <span className={`status-pill ${preal[pid] ? "bad" : "dim"}`}>
+        {preal[pid] ? "real" : "practice"}
+      </span>
+    </td>
+  );
 
   return (
     <div className="panel dash-orders">
@@ -165,7 +177,7 @@ function RecentActivity() {
                       <td className="num">{fmtQty(o.qty)}</td>
                       <td className="muted">{o.orderType}</td>
                       <td><StatusPill status={o.status} /></td>
-                      <td className="muted">{pname[o.portfolioId] ?? "—"}</td>
+                      {portfolioCell(o.portfolioId)}
                     </tr>
                   ))}
                 </tbody>
@@ -189,7 +201,7 @@ function RecentActivity() {
                     <td className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</td>
                     <td className="num">{fmtQty(e.qty)}</td>
                     <td className="num">{fmtMoney(e.price)}</td>
-                    <td className="muted">{pname[e.portfolioId] ?? "—"}</td>
+                    {portfolioCell(e.portfolioId)}
                   </tr>
                 ))}
               </tbody>
@@ -290,7 +302,7 @@ export function DashboardPage() {
           {(brokerages?.providers ?? []).map((p) => (
             <ProviderCard key={p.connectionId || p.broker} provider={p} />
           ))}
-          <SimCard />
+          <PracticeCard />
           {(!brokerages || brokerages.providers.length === 0) && (
             <div className="panel">
               <div className="panel-body">

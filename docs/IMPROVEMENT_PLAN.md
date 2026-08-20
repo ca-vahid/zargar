@@ -85,25 +85,25 @@ become two, venue-agnostic.
 - [x] Tests migrated: mode-alias coverage, order-level dry run, practice
       blocks live portfolios ("trading.mode=practice blocks"). 96 passed.
 
-## Phase 4 — Real vs Practice compartmentalization [ ]
+## Phase 4 — Real vs Practice compartmentalization [x]
 
 Real money is the headline; the simulator is a clearly-labeled sandbox.
 No mixed totals anywhere.
 
-- [ ] TopBar equity chip → real net worth per currency (from the brokerage
-      sync, e.g. "C$16.9k · US$0"), click → Dashboard. Separate small
-      "practice" chip when a sim portfolio exists.
-- [ ] Blotter: Real | Practice | All filter (defaults to Real when live
-      accounts exist); portfolio names carry venue badges.
-- [ ] Portfolios page: Real section first (brokerage panels), Practice below
-      under an explicit "Practice environment" header with badge; equity
-      chart splits into Real / Practice series groups.
-- [ ] Dashboard: practice card visually distinct (badge + muted); recent
-      activity rows badge real vs practice.
-- [ ] Order ticket account selector grouped: "Real accounts" (with venue +
-      currency) vs "Practice"; default follows trading mode (practice mode →
-      practice account, live mode → last-used real account).
-- [ ] Sim portfolio rename to "Practice" everywhere user-facing.
+- [x] TopBar: real brokerage net worth per currency (click → Dashboard) +
+      separate "practice …" chip (click → Portfolios); no more "Simulation:
+      $…" masquerading as the headline.
+- [x] Blotter: real | practice | all scope chips on every tab (defaults to
+      real when brokerages are connected).
+- [x] Portfolios page: "Real accounts" section (brokerage panels + IBKR
+      placeholder card) then "Practice environment" section with badges;
+      equity chart gains all/real/practice series-group chips.
+- [x] Dashboard: PracticeCard is dashed/muted with a "simulated — not real
+      money" badge; recent orders/fills rows carry real/practice pills.
+- [x] Order ticket: Account selector grouped (Real accounts w/ currency vs
+      Practice); default follows the mode — practice → practice portfolio,
+      live → last-used real account (localStorage).
+- [x] Sim portfolio renamed "Practice" (DB migration in seed + UI labels).
 
 ## Phase 5 — Broker identity: icons & naming [ ]
 

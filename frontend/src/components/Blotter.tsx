@@ -7,9 +7,27 @@ import type { Execution, Order, Position } from "../types";
 import { AsyncSection, EmptyState, StatusPill } from "./ui";
 
 type Tab = "positions" | "orders" | "history" | "fills";
+type Scope = "real" | "practice" | "all";
+
+const REAL_KINDS = new Set(["live", "paper"]);
+
+/** portfolioId -> passes the current real/practice scope */
+function useScopeFilter(scope: Scope): (portfolioId: string) => boolean {
+  const portfolios = useStore((s) => s.portfolios);
+  return useMemo(() => {
+    if (scope === "all") return () => true;
+    const wanted = new Set(
+      portfolios
+        .filter((p) => REAL_KINDS.has(p.kind) === (scope === "real"))
+        .map((p) => p.id));
+    return (pid: string) => wanted.has(pid);
+  }, [portfolios, scope]);
+}
 
 export function Blotter() {
   const [tab, setTab] = useState<Tab>("positions");
+  const hasReal = useStore((s) => s.brokerages)?.providers?.length ? true : false;
+  const [scope, setScope] = useState<Scope>(hasReal ? "real" : "all");
   return (
     <div className="panel blotter-area">
       <div className="panel-head panel-head--tabs">
@@ -21,12 +39,22 @@ export function Blotter() {
             </button>
           ))}
         </div>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+          {(["real", "practice", "all"] as Scope[]).map((sc) => (
+            <button key={sc} className={`chip-btn ${scope === sc ? "active" : ""}`}
+              onClick={() => setScope(sc)}
+              title={sc === "real" ? "Real brokerage accounts only"
+                : sc === "practice" ? "Practice/shadow portfolios only" : "Everything"}>
+              {sc}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="scroll-x">
-        {tab === "positions" && <PositionsTable />}
-        {tab === "orders" && <OpenOrdersTable />}
-        {tab === "history" && <OrderHistoryTable />}
-        {tab === "fills" && <FillsTable />}
+        {tab === "positions" && <PositionsTable scope={scope} />}
+        {tab === "orders" && <OpenOrdersTable scope={scope} />}
+        {tab === "history" && <OrderHistoryTable scope={scope} />}
+        {tab === "fills" && <FillsTable scope={scope} />}
       </div>
     </div>
   );
@@ -61,13 +89,15 @@ const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
   );
 });
 
-function PositionsTable() {
+function PositionsTable({ scope }: { scope: Scope }) {
   const positionsMap = useStore((s) => s.positions);
+  const inScope = useScopeFilter(scope);
   const positions = useMemo(
-    () => Object.values(positionsMap).filter((p) => Math.abs(p.qty) > 1e-9),
-    [positionsMap]);
+    () => Object.values(positionsMap)
+      .filter((p) => Math.abs(p.qty) > 1e-9 && inScope(p.portfolioId)),
+    [positionsMap, inScope]);
   if (!positions.length) {
-    return <EmptyState title="No positions yet"
+    return <EmptyState title={scope === "all" ? "No positions yet" : `No ${scope} positions`}
       hint="Fill an order from the ticket and it appears here." />;
   }
   return (
@@ -125,9 +155,12 @@ const HEAD = (
   </tr>
 );
 
-function OpenOrdersTable() {
+function OpenOrdersTable({ scope }: { scope: Scope }) {
   const openMap = useStore((s) => s.openOrders);
-  const open = useMemo(() => Object.values(openMap), [openMap]);
+  const inScope = useScopeFilter(scope);
+  const open = useMemo(
+    () => Object.values(openMap).filter((o) => inScope(o.portfolioId)),
+    [openMap, inScope]);
   if (!open.length) return <EmptyState title="No working orders" />;
   return (
     <table className="tbl">
@@ -139,14 +172,15 @@ function OpenOrdersTable() {
   );
 }
 
-function OrderHistoryTable() {
+function OrderHistoryTable({ scope }: { scope: Scope }) {
   const recent = useStore((s) => s.recentOrders);
+  const inScope = useScopeFilter(scope);
   const loaded = useAsync(() => api.get<Order[]>("/api/orders?limit=100"), []);
   const merged = useMemo(() => {
     const out = [...recent];
     for (const o of loaded.data ?? []) if (!out.some((r) => r.id === o.id)) out.push(o);
-    return out.slice(0, 100);
-  }, [recent, loaded.data]);
+    return out.filter((o) => inScope(o.portfolioId)).slice(0, 100);
+  }, [recent, loaded.data, inScope]);
   return (
     <AsyncSection state={loaded}
       isEmpty={() => merged.length === 0}
@@ -166,15 +200,16 @@ function OrderHistoryTable() {
   );
 }
 
-function FillsTable() {
+function FillsTable({ scope }: { scope: Scope }) {
   const live = useStore((s) => s.executions);
   const portfolios = useStore((s) => s.portfolios);
+  const inScope = useScopeFilter(scope);
   const loaded = useAsync(() => api.get<Execution[]>("/api/executions?limit=100"), []);
   const merged = useMemo(() => {
     const out = [...live];
     for (const e of loaded.data ?? []) if (!out.some((r) => r.id === e.id)) out.push(e);
-    return out.slice(0, 100);
-  }, [live, loaded.data]);
+    return out.filter((e) => inScope(e.portfolioId)).slice(0, 100);
+  }, [live, loaded.data, inScope]);
   return (
     <AsyncSection state={loaded}
       isEmpty={() => merged.length === 0}

@@ -30,7 +30,24 @@ export function OrderTicket({ symbol }: { symbol: string }) {
   const [confirming, setConfirming] = useState<OrderIntentBody | null>(null);
   const [riskFails, setRiskFails] = useState<{ name: string; detail: string }[]>([]);
 
-  const pid = portfolioId || defaultPid || portfolios[0]?.id || "";
+  const realPortfolios = useMemo(
+    () => portfolios.filter((p) => p.kind === "live" || p.kind === "paper"), [portfolios]);
+  const practicePortfolios = useMemo(
+    () => portfolios.filter((p) => p.kind === "sim"), [portfolios]);
+
+  // default account follows the mode: practice mode -> practice portfolio,
+  // live mode -> last-used real account (falls back sensibly)
+  const modeDefault = useMemo(() => {
+    if (mode === "live") {
+      const last = localStorage.getItem("zargar_last_real_pid");
+      if (last && realPortfolios.some((p) => p.id === last)) return last;
+      return realPortfolios[0]?.id;
+    }
+    const def = practicePortfolios.find((p) => p.id === defaultPid);
+    return (def ?? practicePortfolios[0])?.id;
+  }, [mode, realPortfolios, practicePortfolios, defaultPid]);
+
+  const pid = portfolioId || modeDefault || defaultPid || portfolios[0]?.id || "";
   const portfolio = portfolios.find((p) => p.id === pid);
   const needsLimit = orderType === "LMT" || orderType === "STP_LMT";
   const needsStop = orderType === "STP" || orderType === "STP_LMT";
@@ -69,6 +86,10 @@ export function OrderTicket({ symbol }: { symbol: string }) {
   });
 
   const handleResult = (order: any) => {
+    if (portfolio && (portfolio.kind === "live" || portfolio.kind === "paper")
+        && !["REJECTED", "REJECTED_RISK"].includes(order.status)) {
+      localStorage.setItem("zargar_last_real_pid", portfolio.id);
+    }
     if (order.status === "REJECTED_RISK" || order.status === "REJECTED") {
       toast("error", `Order rejected: ${order.rejectReason ?? "risk check failed"}`);
       const checks = order?.risk?.checks ?? [];
@@ -155,11 +176,22 @@ export function OrderTicket({ symbol }: { symbol: string }) {
 
         <div className="row2">
           <label className="field">
-            <span>Portfolio</span>
+            <span>Account</span>
             <select value={pid} onChange={(e) => setPortfolioId(e.target.value)}>
-              {portfolios.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
+              {realPortfolios.length > 0 && (
+                <optgroup label="Real accounts">
+                  {realPortfolios.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}{p.baseCurrency ? ` (${p.baseCurrency})` : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label="Practice">
+                {practicePortfolios.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </optgroup>
             </select>
           </label>
           <label className="field">

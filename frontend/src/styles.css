@@ -134,8 +134,10 @@ body {
 .equity-chip {
   font-family: var(--mono); font-size: var(--fs-2); color: var(--text-2);
   background: var(--surface-2); padding: 4px 10px; border-radius: var(--radius-sm);
-  white-space: nowrap;
+  white-space: nowrap; border: none; cursor: pointer;
 }
+.equity-chip:hover { color: var(--text-1); }
+.equity-chip--real { color: var(--text-1); font-weight: 600; border: 1px solid var(--border); }
 .mode-select {
   background: var(--surface-2); color: var(--text-1); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 4px 8px; font-size: var(--fs-1);
@@ -250,6 +252,7 @@ body {
 }
 .provider-card { cursor: pointer; }
 .provider-card:hover { border-color: var(--accent); }
+.provider-card--practice { opacity: 0.85; border-style: dashed; }
 
 /* ── quote header ──────────────────────────────────────────────────────── */
 .quote-head { display: flex; align-items: baseline; gap: 14px; padding: 10px 12px; flex-wrap: wrap; }
@@ -445,6 +448,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .toast.error { border-left: 3px solid var(--down); }
 .toast.success { border-left: 3px solid var(--up); }
 .toast.info { border-left: 3px solid var(--accent); }
+
+.section-head {
+  display: flex; align-items: center; gap: var(--sp-2);
+  font-weight: 700; font-size: var(--fs-3); margin: var(--sp-3) 0 var(--sp-2);
+}
 
 /* misc */
 .grid-2col { display: grid; grid-template-columns: 1fr 1fr; gap: var(--pad); align-items: start; }

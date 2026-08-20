@@ -176,13 +176,20 @@ class Engine:
         async with self.sf() as session:
             count = (await session.execute(select(func.count(Portfolio.id)))).scalar_one()
             if count == 0:
-                sim = Portfolio(id=new_id(), name="Simulation", kind="sim",
+                sim = Portfolio(id=new_id(), name="Practice", kind="sim",
                                 starting_cash=10_000.0, cash=10_000.0, is_default=True)
                 live = Portfolio(id=new_id(), name="Live (IBKR)", kind="live",
                                  starting_cash=0.0, cash=0.0)
                 session.add_all([sim, live])
                 await session.commit()
                 await self.settings.set("trading.default_portfolio", sim.id, journal=False)
+            else:
+                # v0.3 rename: the sandbox is "Practice", not "Simulation"
+                for row in (await session.execute(
+                        select(Portfolio).where(Portfolio.kind == "sim",
+                                                Portfolio.name == "Simulation"))).scalars():
+                    row.name = "Practice"
+                await session.commit()
             wl_count = (await session.execute(select(func.count(Watchlist.id)))).scalar_one()
             if wl_count == 0:
                 session.add(Watchlist(id=new_id(), name="Main", sort=0, symbols=DEFAULT_WATCHLIST))
