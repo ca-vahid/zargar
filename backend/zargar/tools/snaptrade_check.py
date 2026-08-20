@@ -119,32 +119,33 @@ async def run(upgrade: bool, open_browser: bool) -> int:
         print(f"\n{GREEN} All active connections are already trade-enabled.")
         return 0
 
-    print(f"\nGenerating trade re-authorization URLs ({len(read_only)}) …")
-    failures = 0
-    for conn in read_only:
-        name = (conn.get("brokerage") or {}).get("display_name") or "?"
-        try:
-            login = await st.request("POST", "/api/v1/snapTrade/login", {
-                "reconnect": conn["id"],
-                "connectionType": "trade",
-            })
-        except RuntimeError as exc:
-            print(f"{RED} {name}: {exc}")
-            failures += 1
-            continue
-        uri = login.get("redirectURI")
-        if not uri:
-            print(f"{RED} {name}: no redirectURI in response: {json.dumps(login)[:200]}")
-            failures += 1
-            continue
-        print(f"{GREEN} {name}: open this URL and re-login to grant trade access:")
-        print(f"   {uri}")
-        if open_browser:
-            webbrowser.open(uri)
+    # One connection per run: portal tokens are session-bound, so a second URL
+    # generated in the same run dies the moment the first login completes.
+    conn = read_only[0]
+    name = (conn.get("brokerage") or {}).get("display_name") or "?"
+    print(f"\nGenerating trade re-authorization URL for {name} …")
+    try:
+        login = await st.request("POST", "/api/v1/snapTrade/login", {
+            "reconnect": conn["id"],
+            "connectionType": "trade",
+        })
+    except RuntimeError as exc:
+        print(f"{RED} {name}: {exc}")
+        return 1
+    uri = login.get("redirectURI")
+    if not uri:
+        print(f"{RED} {name}: no redirectURI in response: {json.dumps(login)[:200]}")
+        return 1
+    print(f"{GREEN} {name}: open this URL and re-login to grant trade access:")
+    print(f"   {uri}")
+    if open_browser:
+        webbrowser.open(uri)
 
-    print(f"\nAfter completing the browser logins, re-run this tool — every")
-    print(f"connection should show type=trade.")
-    return 1 if failures else 0
+    remaining = len(read_only) - 1
+    print(f"\nAfter completing the browser login, re-run this tool"
+          + (f" — {remaining} more connection(s) still need upgrading."
+             if remaining else " to verify type=trade."))
+    return 0
 
 
 def main() -> None:
