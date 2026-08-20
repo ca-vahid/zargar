@@ -99,6 +99,23 @@
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; }
+
+/* ── scrollbars: thin, rounded, fade-in on hover ───────────────────────── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-3) 35%, transparent) transparent;
+}
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 30%, transparent);
+  border-radius: 8px; border: 2px solid transparent; background-clip: padding-box;
+}
+*:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-3) 50%, transparent);
+  border: 2px solid transparent; background-clip: padding-box;
+}
 body {
   background: var(--bg);
   color: var(--text-1);
@@ -118,7 +135,13 @@ body {
    never balloons or shifts the sidebar between pages */
 .app { display: grid; grid-template-rows: 48px auto 1fr; height: 100vh; }
 .main { display: grid; grid-template-columns: 232px 1fr; min-height: 0; }
-.content { min-width: 0; min-height: 0; overflow: auto; padding: var(--pad); }
+.content {
+  min-width: 0; min-height: 0; overflow: auto; padding: var(--pad);
+  background:
+    radial-gradient(1100px 460px at 88% -8%,
+      color-mix(in srgb, #c9a227 7%, transparent), transparent 62%),
+    var(--bg);
+}
 .banners { display: flex; flex-direction: column; }
 
 /* ── top bar ───────────────────────────────────────────────────────────── */
@@ -198,8 +221,15 @@ body {
 
 /* ── sidebar ───────────────────────────────────────────────────────────── */
 .sidebar {
-  background: var(--surface-1); border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   display: flex; flex-direction: column; min-height: 0;
+  /* fixed golden foot — visible without scrolling, never scrolls away */
+  background:
+    url("/art/sidebar-flourish-alpha.png") left calc(100% + 24px) / 170px auto no-repeat,
+    linear-gradient(180deg,
+      var(--surface-1) 0%,
+      var(--surface-1) 62%,
+      color-mix(in srgb, #c9a227 9%, var(--surface-1)) 100%);
 }
 .nav { display: flex; flex-direction: column; padding: var(--sp-2); gap: 2px; }
 .nav button {
@@ -231,11 +261,6 @@ body {
   text-transform: uppercase; letter-spacing: 0.9px; color: var(--text-2);
 }
 .wl-head-btn:hover { color: var(--text-1); }
-.sidebar-flourish {
-  position: sticky; top: 100%; height: 120px; margin-top: var(--sp-4);
-  background: url("/art/sidebar-flourish-alpha.png") bottom left / contain no-repeat;
-  opacity: 0.5; pointer-events: none;
-}
 .wl-row {
   display: grid; grid-template-columns: 1fr auto; align-items: center; width: 100%;
   padding: var(--row-y) 12px; cursor: pointer; gap: 4px;
@@ -280,6 +305,7 @@ body {
 .panel-head {
   display: flex; align-items: center; gap: 10px; padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border); font-weight: 600; font-size: var(--fs-2);
+  background: color-mix(in srgb, var(--surface-2) 45%, transparent);
 }
 .panel-head .sub { color: var(--text-3); font-weight: 400; font-size: var(--fs-1); }
 .panel-head--tabs { padding-bottom: 0; border-bottom: none; }
@@ -310,6 +336,9 @@ body {
 }
 .dash-networth {
   grid-area: networth; position: relative; overflow: hidden;
+  background: linear-gradient(115deg,
+    var(--surface-1) 52%,
+    color-mix(in srgb, #c9a227 11%, var(--surface-1)) 100%);
 }
 .dash-networth::after {
   content: ""; position: absolute; inset: 0;

@@ -106,7 +106,7 @@ export function TopBar() {
           {realTotals.map((t) => fmtCcy(t.brokerage, t.currency)).join(" · ")}
         </button>
       )}
-      {practice.length > 0 && (
+      {mode !== "live" && practice.length > 0 && (
         <button className="equity-chip" onClick={() => setPage("portfolios")}
           title="Practice environment (simulated fills) — click for Portfolios">
           practice {fmtCcy(practiceTotal, practice[0]?.baseCurrency ?? "USD")}

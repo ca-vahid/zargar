@@ -50,10 +50,11 @@ function ProviderCard({ provider }: { provider: BrokerageProvider }) {
 function PracticeCard() {
   const portfolios = useStore((s) => s.portfolios);
   const setPage = useStore((s) => s.setPage);
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
   const sims = useMemo(
     () => portfolios.filter((p) => p.kind === "sim"),
     [portfolios]);
-  if (sims.length === 0) return null;
+  if (sims.length === 0 || mode === "live") return null; // live board = real money only
   return (
     <div className="panel provider-card provider-card--practice"
       onClick={() => setPage("portfolios")}
@@ -79,7 +80,18 @@ function EquityCurvePanel() {
   const portfolios = useStore((s) => s.portfolios);
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
-  const target = portfolios.find((p) => p.id === defaultPid) ?? portfolios[0];
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  // live mode charts your biggest real account; practice charts the sandbox
+  const target = useMemo(() => {
+    if (mode === "live") {
+      const real = portfolios.filter((p) => p.kind === "live" || p.kind === "paper");
+      if (real.length > 0) {
+        return real.reduce((best, p) =>
+          (p.equity ?? p.cash) > (best.equity ?? best.cash) ? p : best);
+      }
+    }
+    return portfolios.find((p) => p.id === defaultPid) ?? portfolios[0];
+  }, [mode, portfolios, defaultPid]);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
 
@@ -234,16 +246,21 @@ export function DashboardPage() {
     .reduce((sum, p) => sum + (p.equity ?? p.cash), 0), [portfolios]);
   const practiceCcy = portfolios.find((p) => p.kind === "sim")?.baseCurrency ?? "USD";
   const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
+  // In LIVE mode the headline is REAL money only — practice never mixes in.
+  const liveTotals = useMemo(
+    () => totals.filter((t) => t.brokerage > 0)
+      .map((t) => ({ currency: t.currency, total: t.brokerage })),
+    [totals]);
   const blended = useMemo(() => {
-    if (!usdCad || usdCad <= 0 || totals.length < 2) return null;
+    if (!usdCad || usdCad <= 0 || liveTotals.length < 2) return null;
     let cad = 0;
-    for (const t of totals) {
+    for (const t of liveTotals) {
       if (t.currency === "CAD") cad += t.total;
       else if (t.currency === "USD") cad += t.total * usdCad;
       else return null; // unknown currency — no blended figure
     }
     return cad;
-  }, [totals, usdCad]);
+  }, [liveTotals, usdCad]);
   const watchSymbols = watchlists[0]?.symbols ?? [];
 
   const refresh = async () => {
@@ -286,27 +303,20 @@ export function DashboardPage() {
                 </>
               ) : (
                 <>
-                  {totals.length === 0 && <span className="metric-lg">—</span>}
-                  {totals.map((t) => (
+                  {/* LIVE: real money only — practice lives on the Portfolios page */}
+                  {liveTotals.length === 0 && <span className="metric-lg">—</span>}
+                  {liveTotals.map((t) => (
                     <div key={t.currency}>
                       <div className="metric-lg">{fmtCcy(t.total, t.currency)}</div>
-                      <div className="metric-sub">
-                        {t.brokerage > 0 && `${fmtCcy(t.brokerage, t.currency)} brokerage`}
-                        {t.brokerage > 0 && t.local > 0 && " · "}
-                        {t.local > 0 && `${fmtCcy(t.local, t.currency)} local`}
-                      </div>
+                      <div className="metric-sub">real {t.currency} across brokerages</div>
                     </div>
                   ))}
                   {blended !== null && (
                     <div title={`Blended at live USD/CAD ${usdCad?.toFixed(4)} — approximate`}>
                       <div className="metric-lg muted">≈ {fmtCcy(blended, "CAD")}</div>
-                      <div className="metric-sub">all currencies, live FX</div>
+                      <div className="metric-sub">real total, live FX</div>
                     </div>
                   )}
-                  <div>
-                    <div className="metric-mid muted">{fmtCcy(practiceTotal, practiceCcy)}</div>
-                    <div className="metric-sub">practice (simulated)</div>
-                  </div>
                 </>
               )}
               <div className="networth-badges">

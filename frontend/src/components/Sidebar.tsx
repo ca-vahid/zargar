@@ -126,7 +126,6 @@ export function Sidebar() {
             ))}
           </div>
         ))}
-        <div className="sidebar-flourish" aria-hidden="true" />
       </div>
     </aside>
   );
