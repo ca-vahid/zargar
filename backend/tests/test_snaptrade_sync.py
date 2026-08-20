@@ -65,7 +65,7 @@ async def test_unified_positions_endpoint(sf):
 
     payload = await sync.sync_once()
     account = payload["providers"][0]["accounts"][0]
-    assert account["name"] == "Webull CASH"  # institution not duplicated
+    assert account["name"] == "Webull (Cash)"  # broker once, type in brackets
     symbols = {p["symbol"] for p in account["positions"]}
     assert symbols == {"AAPL.TO", "SPCX"}
     pid = account["portfolioId"]

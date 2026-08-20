@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { fmtCcy, fmtMoney } from "../lib/format";
 import type { OrderIntentBody } from "../store";
 import type { BrokerageAccount, BrokerageProvider, Portfolio } from "../types";
+import { BrokerIcon } from "./BrokerIcon";
 import { IconWarn } from "./icons";
 import { Modal } from "./Modal";
 import { Spinner } from "./ui";
@@ -90,7 +91,8 @@ export function ConfirmOrderDialog({
       </div>
       <div className="confirm-line">
         <span className="k">Account</span>
-        <span>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          {provider && <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} size={16} />}
           {portfolio.name} <span className="ccy-chip">{currency}</span>
           {provider && (
             <span className={`status-pill ${provider.type === "trade" ? "ok" : "bad"}`}

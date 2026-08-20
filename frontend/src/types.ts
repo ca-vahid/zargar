@@ -52,6 +52,7 @@ export interface BrokerageAccount {
 export interface BrokerageProvider {
   connectionId: string;
   broker: string;
+  logoUrl?: string | null;
   type: "trade" | "read" | string;
   disabled: boolean;
   accounts: BrokerageAccount[];

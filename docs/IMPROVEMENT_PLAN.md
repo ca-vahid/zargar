@@ -105,18 +105,20 @@ No mixed totals anywhere.
       live → last-used real account (localStorage).
 - [x] Sim portfolio renamed "Practice" (DB migration in seed + UI labels).
 
-## Phase 5 — Broker identity: icons & naming [ ]
+## Phase 5 — Broker identity: icons & naming [x]
 
-- [ ] Sync captures brokerage logo URLs from SnapTrade `authorizations`
-      (`brokerage.aws_s3_square_logo_url` / `logo_url`) into
-      `BrokerageAccount.meta` + the providers payload (`logoUrl`).
-- [ ] `BrokerIcon` component: rounded `<img>` with graceful lettermark
-      fallback (initials on brand-ish tint) — used in provider cards,
-      Portfolios sections, ticket account selector, confirm dialog, TopBar.
-- [ ] Account naming: "Webull (Cash)", "Webull (Margin)", "Wealthsimple
-      (Personal · CAD)", "Wealthsimple (Corporate)" — account_type moves into
-      brackets, no institution duplication, currency only when disambiguating.
-- [ ] Rename-on-sync updates existing portfolio rows to the new pattern.
+- [x] Sync captures brokerage logo URLs from `authorizations`
+      (`aws_s3_square_logo_url` → providers payload `logoUrl`).
+- [x] `BrokerIcon` component: rounded logo `<img>` with deterministic
+      lettermark fallback — used in Dashboard provider cards, Portfolios
+      broker sections, and the real-money confirm dialog. (Native `<select>`
+      can't render images, so the ticket keeps text + optgroups.)
+- [x] Account naming via `_display_name`: "Webull (Cash)", "Webull
+      (Margin)", "Wealthsimple Trade (Personal)" — type words move into
+      brackets (broker-reported or inferred from trailing CASH/MARGIN/
+      PERSONAL/… words), broker never duplicated; currency stays on the
+      ccy chips.
+- [x] Rename-on-sync migrates the existing portfolio rows automatically.
 
 ## Phase 6 — Light theme by default + polish [ ]
 

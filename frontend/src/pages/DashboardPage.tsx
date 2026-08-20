@@ -6,6 +6,7 @@ import { baseChartOptions, cssVar } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { netWorthByCurrency, useStore } from "../store";
 import type { BrokerageProvider } from "../types";
+import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { AsyncSection, EmptyState, StatusPill } from "../components/ui";
 import { WatchRow } from "../components/WatchRow";
@@ -19,6 +20,7 @@ function ProviderCard({ provider }: { provider: BrokerageProvider }) {
       role="button" tabIndex={0}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setPage("portfolios"); }}>
       <div className="panel-head">
+        <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} />
         {provider.broker}
         <span className={`status-pill ${pill}`}>{pillText}</span>
       </div>

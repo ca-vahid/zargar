@@ -6,6 +6,7 @@ import { baseChartOptions, seriesPalette } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { groupPositions, useStore } from "../store";
 import type { BrokerageProvider, Portfolio } from "../types";
+import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { AsyncSection, EmptyState } from "../components/ui";
 
@@ -84,6 +85,7 @@ function BrokerageSection({
   return (
     <div className="panel mb">
       <div className="panel-head">
+        <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} />
         {provider.broker}
         <span className={`status-pill ${pill}`}>{pillText}</span>
         <span className="sub">synced {lastSyncAt ? fmtDateTime(lastSyncAt) : "never"}</span>

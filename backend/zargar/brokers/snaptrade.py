@@ -201,6 +201,30 @@ def extract_position(raw: dict) -> dict | None:
     }
 
 
+# account descriptors that read as an account *type* rather than a name
+_TYPE_WORDS = {"CASH", "MARGIN", "PERSONAL", "CORPORATE", "TFSA", "RRSP", "FHSA",
+               "RESP", "LIRA", "RRIF", "CRYPTO"}
+
+
+def _display_name(institution: str, acct_name: str, account_type: str) -> str:
+    """"Webull CASH" + type CASH -> "Webull (Cash)"; never duplicates the broker.
+
+    Falls back to treating a trailing type-word in the account name as the
+    type when the broker doesn't report one (Wealthsimple).
+    """
+    base = acct_name.strip()
+    kind = account_type.strip()
+    if not kind:
+        last = base.split()[-1].upper() if base.split() else ""
+        if last in _TYPE_WORDS:
+            kind = last
+    if kind and base.upper().endswith(kind.upper()):
+        base = base[: len(base) - len(kind)].strip()
+    if not base or institution.split()[0].lower() not in base.lower():
+        base = f"{institution} {base}".strip()
+    return f"{base} ({kind.title()})" if kind else base
+
+
 def dashed_uuid(hex_id: str) -> str:
     """Our uuid4().hex order id → SnapTrade's dashed-UUID client_order_id."""
     return str(uuid.UUID(hex=hex_id))
@@ -588,6 +612,8 @@ class SnapTradeSync:
             conn_by_id[cid] = {
                 "connectionId": cid,
                 "broker": brokerage.get("display_name") or brokerage.get("name") or "?",
+                "logoUrl": brokerage.get("aws_s3_square_logo_url")
+                or brokerage.get("aws_s3_logo_url") or brokerage.get("logo_url"),
                 "type": str(conn.get("type") or "read"),
                 "disabled": bool(conn.get("disabled")),
                 "accounts": [],
@@ -623,9 +649,8 @@ class SnapTradeSync:
         number = str(acct.get("number") or "")
         currency = self._account_currency(acct)
         conn_id = str(acct.get("brokerage_authorization") or "")
-        # "Webull MARGIN" already names the broker — don't produce "Webull Canada Webull MARGIN"
-        display_name = (acct_name if institution.split()[0].lower() in acct_name.lower()
-                        else f"{institution} {acct_name}")
+        account_type = str((acct.get("meta") or {}).get("type") or acct.get("raw_type") or "")
+        display_name = _display_name(institution, acct_name, account_type)
 
         portfolio_id = self._account_to_portfolio.get(account_id)
         if portfolio_id is None:
