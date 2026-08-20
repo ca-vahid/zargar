@@ -17,7 +17,7 @@ export default function App() {
   const openJournal = useStore((s) => s.openJournal);
   const dismissDrift = useStore((s) => s.dismissDrift);
   const setPage = useStore((s) => s.setPage);
-  const theme = useStore((s) => s.settings["ui.theme"] ?? "dark");
+  const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const accent = useStore((s) => s.settings["ui.accent"] ?? "#5b8cff");
   const density = useStore((s) => s.settings["ui.density"] ?? "comfortable");
 

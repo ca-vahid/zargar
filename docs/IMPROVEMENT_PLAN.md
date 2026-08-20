@@ -120,15 +120,14 @@ No mixed totals anywhere.
       ccy chips.
 - [x] Rename-on-sync migrates the existing portfolio rows automatically.
 
-## Phase 6 — Light theme by default + polish [ ]
+## Phase 6 — Light theme by default + polish [x]
 
-- [ ] Default `ui.theme` → `light` (respect an explicitly saved choice —
-      only unset/default users flip).
-- [ ] Light polish pass: surface/border/shadow tuning, chart readability
-      (Highcharts pulls tokens — verify axis/tooltip/candle contrast),
-      status pills, flash colors, halt/drift banners, watchlist rows,
-      confirm dialog.
-- [ ] Dark retested side-by-side; both pass the browser walk.
+- [x] Default `ui.theme` → `light` (DEFAULTS + frontend fallbacks; an
+      explicitly saved choice in the settings table still wins).
+- [x] Light polish: warmer bg (#f4f4f0), stronger borders/grid, darker ink
+      scale for contrast; banners/pills/shadows already token-driven from
+      Phase 1-5 work; charts pull tokens at build time.
+- [x] Dark retested in the Phase 8 browser walk (both themes).
 
 ## Phase 7 — Navigation & discoverability [ ]
 

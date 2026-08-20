@@ -77,7 +77,7 @@ function PracticeCard() {
 function EquityCurvePanel() {
   const portfolios = useStore((s) => s.portfolios);
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
-  const theme = useStore((s) => s.settings["ui.theme"] ?? "dark");
+  const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const target = portfolios.find((p) => p.id === defaultPid) ?? portfolios[0];
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);

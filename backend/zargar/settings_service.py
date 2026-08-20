@@ -61,7 +61,7 @@ DEFAULTS: dict[str, Any] = {
     "snaptrade.allow_brackets": False,
     "quotes.yahoo_poll_seconds": 3.0,
     # --- UI ----------------------------------------------------------------
-    "ui.theme": "dark",                     # dark | light
+    "ui.theme": "light",                    # light | dark (explicit saves win)
     "ui.accent": "#5b8cff",
     "ui.density": "comfortable",            # comfortable | compact
     "ui.default_symbol": "AAPL",

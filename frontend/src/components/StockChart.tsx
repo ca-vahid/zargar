@@ -26,7 +26,7 @@ export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Pr
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
-  const theme = useStore((s) => s.settings["ui.theme"] ?? "dark");
+  const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
 
   useEffect(() => {
     let cancelled = false;

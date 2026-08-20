@@ -63,15 +63,15 @@
 
 [data-theme="light"] {
   color-scheme: light;
-  --bg: #f9f9f7;
-  --surface-1: #fcfcfb;
-  --surface-2: #f0efec;
-  --surface-3: #e6e5e0;
-  --border: rgba(11, 11, 11, 0.1);
-  --grid: #e1e0d9;
-  --text-1: #0b0b0b;
-  --text-2: #52514e;
-  --text-3: #898781;
+  --bg: #f4f4f0;
+  --surface-1: #fdfdfc;
+  --surface-2: #efeee9;
+  --surface-3: #e4e3dc;
+  --border: rgba(11, 11, 11, 0.13);
+  --grid: #e3e1d8;
+  --text-1: #171717;
+  --text-2: #4c4b47;
+  --text-3: #7d7b74;
   --accent-ink: #ffffff;
   --up: #006300;
   --down: #d03b3b;
