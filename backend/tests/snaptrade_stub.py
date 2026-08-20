@@ -11,6 +11,7 @@ class StubSnapTrade:
         self.accounts: list[dict] = []
         self.balances: dict[str, list] = {}
         self.positions: dict[str, list] = {}
+        self.unified_positions: dict[str, list] | None = None  # served at /positions/all when set
         self.recent_orders: dict[str, list] = {}
         self.place_response: dict = {"brokerage_order_id": "bo-1", "status": "PENDING"}
         self.place_error: int | Exception | None = None
@@ -40,6 +41,12 @@ class StubSnapTrade:
         if path.endswith("/balances"):
             account_id = path.split("/")[4]
             return httpx.Response(200, json=self.balances.get(account_id, []))
+        if path.endswith("/positions/all"):
+            account_id = path.split("/")[4]
+            if self.unified_positions is None:
+                return httpx.Response(410, json={"detail": "endpoint retired"})
+            return httpx.Response(
+                200, json={"results": self.unified_positions.get(account_id, [])})
         if path.endswith("/positions"):
             account_id = path.split("/")[4]
             return httpx.Response(200, json=self.positions.get(account_id, []))

@@ -19,6 +19,54 @@ export interface Portfolio {
   startingCash: number;
   sourceName?: string | null;
   isDefault?: boolean;
+  baseCurrency?: string;
+  venue?: string; // "ibkr" | "snaptrade" for live/paper portfolios
+}
+
+export interface BrokeragePosition {
+  symbol: string;
+  qty: number;
+  avgCost: number;
+  price?: number | null;
+  marketValue?: number | null;
+  currency?: string | null;
+}
+
+export interface BrokerageAccount {
+  id: string;
+  portfolioId: string;
+  institution: string;
+  name: string;
+  number: string;
+  currency: string;
+  accountType?: string;
+  cash: number;
+  equity: number;
+  syncedAt: string | null;
+  positions: BrokeragePosition[];
+}
+
+export interface BrokerageProvider {
+  connectionId: string;
+  broker: string;
+  type: "trade" | "read" | string;
+  disabled: boolean;
+  accounts: BrokerageAccount[];
+}
+
+export interface Brokerages {
+  enabled: boolean;
+  lastSyncAt: string | null;
+  providers: BrokerageProvider[];
+}
+
+export interface BrokerState {
+  feed: string | null;
+  feedConnected: boolean;
+  ibkrConnected?: boolean;
+  snaptradeConnected?: boolean;
+  quoteSource?: "yahoo" | "sim" | "ibkr" | string;
+  mode: string;
 }
 
 export interface Position {
@@ -150,5 +198,6 @@ export interface Snapshot {
   halt: HaltState;
   watchlists: Watchlist[];
   proposals: Proposal[];
-  broker: { feed: string; feedConnected: boolean; ibkrConnected: boolean; mode: string };
+  brokerages?: Brokerages | null;
+  broker: BrokerState;
 }

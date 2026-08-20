@@ -50,4 +50,7 @@ export const api = {
   rejectProposal: (id: string) => request<any>("POST", `/api/proposals/${id}/reject`),
   ingestManual: (text: string, source_name: string, subject: string) =>
     request<any>("POST", "/api/ingest/manual", { text, source_name, subject }),
+  getBrokerages: () => request<import("../types").Brokerages>("GET", "/api/brokerages"),
+  refreshBrokerages: () =>
+    request<import("../types").Brokerages>("POST", "/api/brokerages/refresh"),
 };

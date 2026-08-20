@@ -6,6 +6,19 @@ export function fmtMoney(v: number | null | undefined, digits = 2): string {
   });
 }
 
+const CCY_PREFIX: Record<string, string> = { USD: "US$", CAD: "C$" };
+
+export function fmtCcy(
+  v: number | null | undefined,
+  currency = "USD",
+  digits = 2,
+): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return "—";
+  const ccy = (currency || "USD").toUpperCase();
+  const prefix = CCY_PREFIX[ccy];
+  return prefix ? `${prefix}${fmtMoney(v, digits)}` : `${fmtMoney(v, digits)} ${ccy}`;
+}
+
 export function fmtUsd(v: number | null | undefined, digits = 2): string {
   if (v === null || v === undefined || Number.isNaN(v)) return "—";
   return `$${fmtMoney(v, digits)}`;

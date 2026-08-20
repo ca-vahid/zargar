@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTime } from "../lib/format";
+import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
 import type { JournalEvent } from "../types";
 
@@ -11,6 +13,8 @@ const GROUPS: Record<string, string[]> = {
   risk: ["RiskCheckPassed", "RiskCheckFailed", "KillSwitchEngaged", "KillSwitchReleased", "DailyLossHalt"],
   signals: ["ContentReceived", "SignalExtracted", "SignalVerified", "SignalVerificationFailed",
     "ProposalCreated", "ProposalApproved", "ProposalRejected", "ProposalExpired"],
+  broker: ["BrokerConnected", "BrokerDisconnected", "BrokerSync", "PositionReconciled",
+    "BrokerOrderLinked", "BrokerSubmitUnknown", "BrokerageAccountLinked"],
   system: ["SettingChanged", "BrokerConnected", "BrokerDisconnected", "PositionUpdated"],
 };
 
@@ -37,13 +41,11 @@ function summarize(e: JournalEvent): string {
 
 export function JournalPage() {
   const liveEvents = useStore((s) => s.events);
-  const [loaded, setLoaded] = useState<JournalEvent[]>([]);
+  const loadedState = useAsync(
+    () => api.get<JournalEvent[]>("/api/events?limit=300"), []);
+  const loaded = loadedState.data ?? [];
   const [group, setGroup] = useState("all");
   const [typeFilter, setTypeFilter] = useState("");
-
-  useEffect(() => {
-    api.get<JournalEvent[]>("/api/events?limit=300").then(setLoaded).catch(() => undefined);
-  }, []);
 
   const merged = useMemo(() => {
     const all = [...liveEvents];
@@ -74,8 +76,13 @@ export function JournalPage() {
             style={{ marginLeft: "auto", width: 180 }} />
         </div>
         <div className="scroll-x">
-          {merged.length === 0 ? (
-            <div className="empty">No events</div>
+          {loadedState.loading && merged.length === 0 ? (
+            <Spinner />
+          ) : loadedState.error && merged.length === 0 ? (
+            <ErrorState message={loadedState.error} onRetry={loadedState.reload} />
+          ) : merged.length === 0 ? (
+            <EmptyState title="No events yet"
+              hint="Every decision the engine makes lands here." />
           ) : (
             <table className="tbl">
               <thead>

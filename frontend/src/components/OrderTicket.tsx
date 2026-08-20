@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { api } from "../lib/api";
-import { fmtMoney, fmtUsd } from "../lib/format";
-import { useQuote, useStore } from "../store";
+import { fmtCcy, fmtMoney } from "../lib/format";
+import { useQuote, useStore, type OrderIntentBody } from "../store";
+import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
 
 export function OrderTicket({ symbol }: { symbol: string }) {
   const quote = useQuote(symbol);
@@ -11,6 +12,7 @@ export function OrderTicket({ symbol }: { symbol: string }) {
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
   const defaultQty = useStore((s) => Number(s.settings["trading.default_qty"] ?? 10));
   const mode = useStore((s) => s.settings["trading.mode"] ?? "sim");
+  const brokerages = useStore((s) => s.brokerages);
   const toast = useStore((s) => s.toast);
 
   const [side, setSide] = useState<"BUY" | "SELL">("BUY");
@@ -25,11 +27,23 @@ export function OrderTicket({ symbol }: { symbol: string }) {
   const [slPct, setSlPct] = useState("2");
   const [dryRun, setDryRun] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<OrderIntentBody | null>(null);
   const [riskFails, setRiskFails] = useState<{ name: string; detail: string }[]>([]);
 
   const pid = portfolioId || defaultPid || portfolios[0]?.id || "";
+  const portfolio = portfolios.find((p) => p.id === pid);
   const needsLimit = orderType === "LMT" || orderType === "STP_LMT";
   const needsStop = orderType === "STP" || orderType === "STP_LMT";
+
+  // brokerage account/provider behind this portfolio (SnapTrade venues)
+  const { account, provider } = useMemo(() => {
+    for (const prov of brokerages?.providers ?? []) {
+      const acct = prov.accounts.find((a) => a.portfolioId === pid);
+      if (acct) return { account: acct, provider: prov };
+    }
+    return { account: undefined, provider: undefined };
+  }, [brokerages, pid]);
+  const readOnlyVenue = provider !== undefined && (provider.type !== "trade" || provider.disabled);
 
   const estPrice = useMemo(() => {
     if (needsLimit && limitPrice) return parseFloat(limitPrice);
@@ -37,36 +51,49 @@ export function OrderTicket({ symbol }: { symbol: string }) {
     return side === "BUY" ? quote.ask : quote.bid;
   }, [quote, side, needsLimit, limitPrice]);
   const estCost = estPrice !== null && qty ? estPrice * parseFloat(qty || "0") : null;
+  const currency = account?.currency ?? portfolio?.baseCurrency ?? "USD";
+
+  const buildIntent = (): OrderIntentBody => ({
+    portfolio_id: pid,
+    symbol,
+    side,
+    qty: parseFloat(qty),
+    order_type: orderType,
+    limit_price: needsLimit && limitPrice ? parseFloat(limitPrice) : null,
+    stop_price: needsStop && stopPrice ? parseFloat(stopPrice) : null,
+    tif,
+    dry_run: dryRun,
+    bracket: bracketOn
+      ? { take_profit_pct: parseFloat(tpPct) || null, stop_loss_pct: parseFloat(slPct) || null }
+      : null,
+  });
+
+  const handleResult = (order: any) => {
+    if (order.status === "REJECTED_RISK" || order.status === "REJECTED") {
+      toast("error", `Order rejected: ${order.rejectReason ?? "risk check failed"}`);
+      const checks = order?.risk?.checks ?? [];
+      setRiskFails(checks.filter((c: any) => !c.passed));
+    } else if (order.status === "DRY_RUN") {
+      toast("info",
+        `Dry run OK — would ${side} ${qty} ${symbol}` +
+        (order.estimatedPrice ? ` @ ~${fmtMoney(order.estimatedPrice)}` : ""));
+    } else {
+      toast("success", `${side} ${qty} ${symbol} submitted`);
+    }
+  };
 
   const submit = async () => {
-    setBusy(true);
     setRiskFails([]);
+    const intent = buildIntent();
+    // Real-money accounts get a confirm dialog with a risk pre-flight;
+    // sim/paper/dry-run stay instant.
+    if (!dryRun && portfolio?.kind === "live") {
+      setConfirming(intent);
+      return;
+    }
+    setBusy(true);
     try {
-      const order = await api.placeOrder({
-        portfolio_id: pid,
-        symbol,
-        side,
-        qty: parseFloat(qty),
-        order_type: orderType,
-        limit_price: needsLimit && limitPrice ? parseFloat(limitPrice) : null,
-        stop_price: needsStop && stopPrice ? parseFloat(stopPrice) : null,
-        tif,
-        dry_run: dryRun,
-        bracket: bracketOn
-          ? { take_profit_pct: parseFloat(tpPct) || null, stop_loss_pct: parseFloat(slPct) || null }
-          : null,
-      });
-      if (order.status === "REJECTED_RISK" || order.status === "REJECTED") {
-        toast("error", `Order rejected: ${order.rejectReason ?? "risk check failed"}`);
-        const checks = order?.risk?.checks ?? [];
-        setRiskFails(checks.filter((c: any) => !c.passed));
-      } else if (order.status === "DRY_RUN") {
-        toast("info",
-          `Dry run OK — would ${side} ${qty} ${symbol}` +
-          (order.estimatedPrice ? ` @ ~${fmtMoney(order.estimatedPrice)}` : ""));
-      } else {
-        toast("success", `${side} ${qty} ${symbol} submitted`);
-      }
+      handleResult(await api.placeOrder(intent));
     } catch (e: any) {
       toast("error", e.message);
     } finally {
@@ -170,14 +197,22 @@ export function OrderTicket({ symbol }: { symbol: string }) {
 
         <div className="est-line">
           {quote
-            ? `est. ${side === "BUY" ? "cost" : "proceeds"}: ${estCost ? fmtUsd(estCost) : "—"}`
+            ? `est. ${side === "BUY" ? "cost" : "proceeds"}: ${estCost ? fmtCcy(estCost, currency) : "—"}`
             : "waiting for quote…"}
         </div>
 
-        <button className={`submit-btn ${side.toLowerCase()}`} disabled={busy || !quote || !pid}
+        <button className={`submit-btn ${side.toLowerCase()}`}
+          disabled={busy || !quote || !pid || readOnlyVenue}
           onClick={submit}>
           {dryRun ? "VALIDATE " : ""}{side} {qty || "?"} {symbol}
         </button>
+        {readOnlyVenue && (
+          <div className="metric-sub" style={{ marginTop: 6 }}>
+            {provider?.disabled
+              ? "this brokerage connection is disconnected — re-authorize it first"
+              : "read-only connection — upgrade it to trade access to submit orders"}
+          </div>
+        )}
 
         {riskFails.length > 0 && (
           <div style={{ marginTop: 10 }}>
@@ -189,6 +224,18 @@ export function OrderTicket({ symbol }: { symbol: string }) {
           </div>
         )}
       </div>
+
+      {confirming && portfolio && (
+        <ConfirmOrderDialog
+          intent={confirming}
+          portfolio={portfolio}
+          account={account}
+          provider={provider}
+          estCost={estCost}
+          onSubmitted={(order) => { setConfirming(null); handleResult(order); }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
     </div>
   );
 }

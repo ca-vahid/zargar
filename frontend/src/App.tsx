@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
 import { Toasts } from "./components/Toasts";
+import { DashboardPage } from "./pages/DashboardPage";
 import { TradePage } from "./pages/TradePage";
 import { InboxPage } from "./pages/InboxPage";
 import { PortfoliosPage } from "./pages/PortfoliosPage";
@@ -26,13 +27,14 @@ export default function App() {
     <div className="app">
       <TopBar />
       {halt.engaged && (
-        <div className="halt-banner">
+        <div className="halt-banner" role="alert">
           KILL SWITCH ENGAGED — {halt.reason || "all order submission blocked"}
         </div>
       )}
       <div className="main">
         <Sidebar />
         <div className="content">
+          {page === "dashboard" && <DashboardPage />}
           {page === "trade" && <TradePage />}
           {page === "inbox" && <InboxPage />}
           {page === "portfolios" && <PortfoliosPage />}

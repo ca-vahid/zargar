@@ -116,8 +116,11 @@ class SnapTradeClient:
 
 # --- symbol helpers ----------------------------------------------------------
 
-_TSX_CODES = {"TSX", "TSE", "TOR"}
-_TSXV_CODES = {"TSXV", "CDNX", "VENTURE"}
+_TSX_CODES = {"TSX", "TSE", "TOR", "XTSE"}
+_TSXV_CODES = {"TSXV", "CDNX", "VENTURE", "XTSX"}
+
+# instrument.kind values from /positions/all that map onto our STK handling
+_EQUITY_KINDS = {"stock", "etf", "adr", "cef", "mutualfund"}
 
 
 def normalize_symbol(raw: str, exchange_code: str | None) -> str:
@@ -131,6 +134,42 @@ def normalize_symbol(raw: str, exchange_code: str | None) -> str:
     if code in _TSXV_CODES:
         return f"{sym}.V"
     return sym
+
+
+def extract_unified_position(raw: dict) -> dict | None:
+    """Parse one row of GET /accounts/{id}/positions/all (the current API).
+
+    Shape: {instrument: {kind, symbol, raw_symbol, currency, exchange(MIC)},
+            units: "60", price: "139.42", cost_basis: "159.67", currency}
+    Numbers arrive as strings. `instrument.symbol` already carries suffix
+    conventions (e.g. AAPL.TO for CDRs).
+    """
+    instrument = raw.get("instrument") or {}
+    kind = str(instrument.get("kind") or "").lower()
+    sec_type = "STK" if kind in _EQUITY_KINDS else "OPT" if kind == "option" else None
+    if sec_type is None:
+        log.info("skipping unsupported position kind=%s symbol=%s",
+                 kind, instrument.get("symbol"))
+        return None
+    ticker = instrument.get("symbol") or instrument.get("raw_symbol")
+    if not ticker:
+        return None
+    try:
+        qty = float(raw.get("units") or 0.0)
+        price = float(raw.get("price") or 0.0)
+        avg = float(raw.get("cost_basis") or 0.0)
+    except (TypeError, ValueError):
+        return None
+    if abs(qty) < 1e-12:
+        return None
+    return {
+        "symbol": normalize_symbol(str(ticker), instrument.get("exchange")),
+        "secType": sec_type,
+        "qty": qty,
+        "avgCost": avg,
+        "price": price or None,
+        "currency": str(raw.get("currency") or instrument.get("currency") or "") or None,
+    }
 
 
 def extract_position(raw: dict) -> dict | None:
@@ -153,6 +192,7 @@ def extract_position(raw: dict) -> dict | None:
         qty = raw.get("fractional_units") or 0.0
     return {
         "symbol": normalize_symbol(str(ticker), exchange),
+        "secType": "STK",
         "qty": float(qty or 0.0),
         "avgCost": float(raw.get("average_purchase_price") or 0.0),
         "price": float(raw.get("price") or 0.0) or None,
@@ -582,15 +622,19 @@ class SnapTradeSync:
         number = str(acct.get("number") or "")
         currency = self._account_currency(acct)
         conn_id = str(acct.get("brokerage_authorization") or "")
+        # "Webull MARGIN" already names the broker — don't produce "Webull Canada Webull MARGIN"
+        display_name = (acct_name if institution.split()[0].lower() in acct_name.lower()
+                        else f"{institution} {acct_name}")
 
         portfolio_id = self._account_to_portfolio.get(account_id)
         if portfolio_id is None:
             portfolio_id = await self._provision(
-                account_id, conn_id, institution, acct_name, number, currency, acct)
+                account_id, conn_id, institution, display_name, number, currency, acct)
+        else:
+            await self._maybe_rename(portfolio_id, display_name)
 
         cash = await self._fetch_cash(account_id, currency, acct)
-        raw_positions = await self._fetch_positions(account_id)
-        positions = [p for p in (extract_position(r) for r in raw_positions) if p]
+        positions = await self._fetch_positions(account_id)
         for p in positions:
             try:
                 await self._ensure_symbol(p["symbol"])
@@ -599,7 +643,7 @@ class SnapTradeSync:
 
         await self._positions.sync_portfolio_state(
             portfolio_id, cash=cash,
-            positions=[{"symbol": p["symbol"], "secType": "STK",
+            positions=[{"symbol": p["symbol"], "secType": p.get("secType", "STK"),
                         "qty": p["qty"], "avgCost": p["avgCost"]} for p in positions])
 
         now = dt.datetime.now(dt.timezone.utc)
@@ -615,7 +659,7 @@ class SnapTradeSync:
             "id": account_id,
             "portfolioId": portfolio_id,
             "institution": institution,
-            "name": f"{institution} {acct_name}",
+            "name": display_name,
             "number": number,
             "currency": currency,
             "accountType": str((acct.get("meta") or {}).get("type") or acct.get("raw_type") or ""),
@@ -638,10 +682,20 @@ class SnapTradeSync:
             cur = cur.get("code")
         return str(cur or "CAD").upper()
 
+    async def _maybe_rename(self, portfolio_id: str, name: str) -> None:
+        pf = self._positions.portfolio(portfolio_id)
+        if pf is None or pf.get("name") == name:
+            return
+        async with self._sf() as session:
+            row = await session.get(Portfolio, portfolio_id)
+            if row is not None:
+                row.name = name
+                await session.commit()
+        pf["name"] = name
+
     async def _provision(self, account_id: str, conn_id: str, institution: str,
-                         acct_name: str, number: str, currency: str, acct: dict) -> str:
+                         name: str, number: str, currency: str, acct: dict) -> str:
         pid = new_id()
-        name = f"{institution} {acct_name}"
         async with self._sf() as session:
             portfolio = Portfolio(
                 id=pid, name=name, kind="live", base_currency=currency,
@@ -687,14 +741,29 @@ class SnapTradeSync:
         total = ((acct.get("balance") or {}).get("total") or {})
         return float(total.get("amount") or 0.0)
 
-    async def _fetch_positions(self, account_id: str) -> list:
+    async def _fetch_positions(self, account_id: str) -> list[dict]:
+        """Parsed positions via the unified endpoint, legacy as fallback."""
+        try:
+            payload = await self._client.request(
+                "GET", f"/api/v1/accounts/{account_id}/positions/all")
+            rows = payload.get("results") if isinstance(payload, dict) else None
+            return [p for p in (extract_unified_position(r) for r in rows or []) if p]
+        except SnapTradeError as exc:
+            if exc.status not in (404, 410):
+                log.warning("positions/all failed for %s: %s", account_id, exc)
+                return []
+        except SnapTradeUnknownOutcome as exc:
+            log.warning("positions/all failed for %s: %s", account_id, exc)
+            return []
+        # older accounts: the pre-2026 positions endpoint
         try:
             rows = await self._client.request(
                 "GET", f"/api/v1/accounts/{account_id}/positions")
         except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
             log.warning("positions fetch failed for %s: %s", account_id, exc)
             return []
-        return rows if isinstance(rows, list) else []
+        rows = rows if isinstance(rows, list) else []
+        return [p for p in (extract_position(r) for r in rows) if p]
 
 
 def now_iso() -> str:

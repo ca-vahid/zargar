@@ -44,6 +44,36 @@ def tsx_position(sym="SHOP", units=5.0, avg=90.0, price=100.0):
     }
 
 
+async def test_unified_positions_endpoint(sf):
+    """New accounts get /positions/all (legacy /positions returns 410)."""
+    stub = StubSnapTrade()
+    stub.connections = [stub_connection()]
+    stub.accounts = [stub_account(total=20_000.0)]
+    stub.balances["acct-1"] = [{"currency": {"code": "CAD"}, "cash": 67.31}]
+    stub.unified_positions = {"acct-1": [
+        {"instrument": {"kind": "adr", "symbol": "AAPL.TO", "raw_symbol": "AAPL",
+                        "currency": "CAD", "exchange": "XTSE"},
+         "units": "89", "price": "44.61", "cost_basis": "32.86", "currency": "CAD"},
+        {"instrument": {"kind": "stock", "symbol": "SPCX", "raw_symbol": "SPCX",
+                        "currency": "USD", "exchange": "XNAS"},
+         "units": "60", "price": "139.42", "cost_basis": "159.67", "currency": "USD"},
+        {"instrument": {"kind": "crypto", "symbol": "BTC"},
+         "units": "0.5", "price": "60000", "cost_basis": "50000"},  # skipped kind
+    ]}
+    sync, positions, bus, client, watched = make_sync(sf, stub)
+
+    payload = await sync.sync_once()
+    account = payload["providers"][0]["accounts"][0]
+    assert account["name"] == "Webull CASH"  # institution not duplicated
+    symbols = {p["symbol"] for p in account["positions"]}
+    assert symbols == {"AAPL.TO", "SPCX"}
+    pid = account["portfolioId"]
+    assert positions.position_qty(pid, "AAPL.TO") == 89.0
+    aapl = next(p for p in account["positions"] if p["symbol"] == "AAPL.TO")
+    assert aapl["avgCost"] == 32.86
+    assert stub.calls("/positions") == []  # legacy endpoint never hit
+
+
 async def test_autoprovision_idempotent(sf):
     stub = StubSnapTrade()
     stub.connections = [stub_connection()]

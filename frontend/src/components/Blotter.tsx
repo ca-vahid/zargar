@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, fmtQty, fmtSigned, fmtPct } from "../lib/format";
-import { positionsFor, useStore } from "../store";
-import type { Execution, Order } from "../types";
+import { useAsync } from "../lib/useAsync";
+import { useQuote, useStore } from "../store";
+import type { Execution, Order, Position } from "../types";
+import { AsyncSection, EmptyState, StatusPill } from "./ui";
 
 type Tab = "positions" | "orders" | "history" | "fills";
 
@@ -10,10 +12,11 @@ export function Blotter() {
   const [tab, setTab] = useState<Tab>("positions");
   return (
     <div className="panel blotter-area">
-      <div className="panel-head" style={{ paddingBottom: 0, borderBottom: "none" }}>
-        <div className="tabs">
+      <div className="panel-head panel-head--tabs">
+        <div className="tabs" role="tablist">
           {(["positions", "orders", "history", "fills"] as Tab[]).map((t) => (
-            <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+            <button key={t} role="tab" aria-selected={tab === t}
+              className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
               {t === "orders" ? "Open orders" : t[0].toUpperCase() + t.slice(1)}
             </button>
           ))}
@@ -33,10 +36,40 @@ function portfolioName(portfolios: { id: string; name: string }[], id: string) {
   return portfolios.find((p) => p.id === id)?.name ?? id.slice(0, 6);
 }
 
+/** One row subscribes to its own quote — 10 Hz updates re-render rows, not the table. */
+const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
+  const quote = useQuote(p.symbol);
+  const portfolios = useStore((s) => s.portfolios);
+  const setActiveSymbol = useStore((s) => s.setActiveSymbol);
+  const last = quote?.last ?? p.last ?? p.avgCost;
+  const mult = p.secType === "OPT" ? 100 : 1;
+  const unreal = (last - p.avgCost) * p.qty * mult;
+  const pct = p.avgCost > 0 ? ((last / p.avgCost - 1) * 100) * Math.sign(p.qty) : 0;
+  return (
+    <tr onClick={() => setActiveSymbol(p.symbol)} style={{ cursor: "pointer" }}>
+      <td><b>{p.symbol}</b>{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</td>
+      <td className="muted">{portfolioName(portfolios, p.portfolioId)}</td>
+      <td className="num">{fmtQty(p.qty)}</td>
+      <td className="num">{fmtMoney(p.avgCost)}</td>
+      <td className="num">{fmtMoney(last)}</td>
+      <td className="num">{fmtMoney(p.qty * last * mult)}</td>
+      <td className={`num ${unreal >= 0 ? "pos" : "neg"}`}>
+        {fmtSigned(unreal)} ({fmtPct(pct)})
+      </td>
+      <td className={`num ${p.realizedPnl >= 0 ? "pos" : "neg"}`}>{fmtSigned(p.realizedPnl)}</td>
+    </tr>
+  );
+});
+
 function PositionsTable() {
-  const state = useStore();
-  const positions = positionsFor(state);
-  if (!positions.length) return <div className="empty">No positions yet</div>;
+  const positionsMap = useStore((s) => s.positions);
+  const positions = useMemo(
+    () => Object.values(positionsMap).filter((p) => Math.abs(p.qty) > 1e-9),
+    [positionsMap]);
+  if (!positions.length) {
+    return <EmptyState title="No positions yet"
+      hint="Fill an order from the ticket and it appears here." />;
+  }
   return (
     <table className="tbl">
       <thead>
@@ -48,39 +81,12 @@ function PositionsTable() {
         </tr>
       </thead>
       <tbody>
-        {positions.map((p) => {
-          const quote = state.quotes[p.symbol];
-          const last = quote?.last ?? p.last ?? p.avgCost;
-          const unreal = (last - p.avgCost) * p.qty * (p.secType === "OPT" ? 100 : 1);
-          const pct = p.avgCost > 0 ? ((last / p.avgCost - 1) * 100) * Math.sign(p.qty) : 0;
-          return (
-            <tr key={`${p.portfolioId}:${p.symbol}:${p.secType}`}
-              onClick={() => state.setActiveSymbol(p.symbol)} style={{ cursor: "pointer" }}>
-              <td><b>{p.symbol}</b>{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</td>
-              <td className="muted">{portfolioName(state.portfolios, p.portfolioId)}</td>
-              <td className="num">{fmtQty(p.qty)}</td>
-              <td className="num">{fmtMoney(p.avgCost)}</td>
-              <td className="num">{fmtMoney(last)}</td>
-              <td className="num">{fmtMoney(p.qty * last * (p.secType === "OPT" ? 100 : 1))}</td>
-              <td className={`num ${unreal >= 0 ? "pos" : "neg"}`}>
-                {fmtSigned(unreal)} ({fmtPct(pct)})
-              </td>
-              <td className={`num ${p.realizedPnl >= 0 ? "pos" : "neg"}`}>{fmtSigned(p.realizedPnl)}</td>
-            </tr>
-          );
-        })}
+        {positions.map((p) => (
+          <PositionRow key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p} />
+        ))}
       </tbody>
     </table>
   );
-}
-
-function statusPill(status: string) {
-  const cls =
-    status === "FILLED" ? "ok"
-    : ["REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"].includes(status) ? "bad"
-    : status === "DRY_RUN" ? "dim"
-    : "wait";
-  return <span className={`status-pill ${cls}`}>{status.replace("_", " ")}</span>;
 }
 
 function OrderRow({ o, cancellable }: { o: Order; cancellable: boolean }) {
@@ -96,7 +102,7 @@ function OrderRow({ o, cancellable }: { o: Order; cancellable: boolean }) {
         {o.limitPrice ? fmtMoney(o.limitPrice) : o.stopPrice ? `stp ${fmtMoney(o.stopPrice)}` : "mkt"}
       </td>
       <td className="num">{o.avgFillPrice ? fmtMoney(o.avgFillPrice) : "—"}</td>
-      <td>{statusPill(o.status)}</td>
+      <td><StatusPill status={o.status} /></td>
       <td className="muted">{portfolioName(portfolios, o.portfolioId)}</td>
       <td className="muted">{fmtDateTime(o.createdAt)}</td>
       <td>
@@ -122,7 +128,7 @@ const HEAD = (
 function OpenOrdersTable() {
   const openMap = useStore((s) => s.openOrders);
   const open = useMemo(() => Object.values(openMap), [openMap]);
-  if (!open.length) return <div className="empty">No working orders</div>;
+  if (!open.length) return <EmptyState title="No working orders" />;
   return (
     <table className="tbl">
       <thead>{HEAD}</thead>
@@ -135,58 +141,68 @@ function OpenOrdersTable() {
 
 function OrderHistoryTable() {
   const recent = useStore((s) => s.recentOrders);
-  const [loaded, setLoaded] = useState<Order[]>([]);
-  useEffect(() => {
-    api.get<Order[]>("/api/orders?limit=100").then(setLoaded).catch(() => undefined);
-  }, []);
-  const merged = [...recent];
-  for (const o of loaded) if (!merged.some((r) => r.id === o.id)) merged.push(o);
-  if (!merged.length) return <div className="empty">No orders yet</div>;
+  const loaded = useAsync(() => api.get<Order[]>("/api/orders?limit=100"), []);
+  const merged = useMemo(() => {
+    const out = [...recent];
+    for (const o of loaded.data ?? []) if (!out.some((r) => r.id === o.id)) out.push(o);
+    return out.slice(0, 100);
+  }, [recent, loaded.data]);
   return (
-    <table className="tbl">
-      <thead>{HEAD}</thead>
-      <tbody>
-        {merged.slice(0, 100).map((o) => (
-          <OrderRow key={o.id} o={o}
-            cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)} />
-        ))}
-      </tbody>
-    </table>
+    <AsyncSection state={loaded}
+      isEmpty={() => merged.length === 0}
+      empty={<EmptyState title="No orders yet" />}>
+      {() => (
+        <table className="tbl">
+          <thead>{HEAD}</thead>
+          <tbody>
+            {merged.map((o) => (
+              <OrderRow key={o.id} o={o}
+                cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)} />
+            ))}
+          </tbody>
+        </table>
+      )}
+    </AsyncSection>
   );
 }
 
 function FillsTable() {
   const live = useStore((s) => s.executions);
   const portfolios = useStore((s) => s.portfolios);
-  const [loaded, setLoaded] = useState<Execution[]>([]);
-  useEffect(() => {
-    api.get<Execution[]>("/api/executions?limit=100").then(setLoaded).catch(() => undefined);
-  }, []);
-  const merged = [...live];
-  for (const e of loaded) if (!merged.some((r) => r.id === e.id)) merged.push(e);
-  if (!merged.length) return <div className="empty">No fills yet</div>;
+  const loaded = useAsync(() => api.get<Execution[]>("/api/executions?limit=100"), []);
+  const merged = useMemo(() => {
+    const out = [...live];
+    for (const e of loaded.data ?? []) if (!out.some((r) => r.id === e.id)) out.push(e);
+    return out.slice(0, 100);
+  }, [live, loaded.data]);
   return (
-    <table className="tbl">
-      <thead>
-        <tr>
-          <th>Symbol</th><th>Side</th><th className="num">Qty</th>
-          <th className="num">Price</th><th className="num">Commission</th>
-          <th>Portfolio</th><th>Time</th>
-        </tr>
-      </thead>
-      <tbody>
-        {merged.slice(0, 100).map((e) => (
-          <tr key={e.id}>
-            <td><b>{e.symbol}</b></td>
-            <td className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</td>
-            <td className="num">{fmtQty(e.qty)}</td>
-            <td className="num">{fmtMoney(e.price)}</td>
-            <td className="num muted">{fmtMoney(e.commission)}</td>
-            <td className="muted">{portfolioName(portfolios, e.portfolioId)}</td>
-            <td className="muted">{fmtDateTime(e.ts)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <AsyncSection state={loaded}
+      isEmpty={() => merged.length === 0}
+      empty={<EmptyState title="No fills yet" />}>
+      {() => (
+        <table className="tbl">
+          <thead>
+            <tr>
+              <th>Symbol</th><th>Side</th><th className="num">Qty</th>
+              <th className="num">Price</th><th className="num">Commission</th>
+              <th>Portfolio</th><th>Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {merged.map((e) => (
+              <tr key={e.id}>
+                <td><b>{e.symbol}</b></td>
+                <td className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</td>
+                <td className="num">{fmtQty(e.qty)}</td>
+                <td className="num">{fmtMoney(e.price)}</td>
+                <td className="num muted">{fmtMoney(e.commission)}</td>
+                <td className="muted">{portfolioName(portfolios, e.portfolioId)}</td>
+                <td className="muted">{fmtDateTime(e.ts)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </AsyncSection>
   );
 }

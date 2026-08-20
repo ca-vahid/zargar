@@ -4,6 +4,7 @@ import "highcharts/esm/indicators/indicators.js"; // registers sma + ema
 import "highcharts/esm/indicators/bollinger-bands.js";
 import "highcharts/esm/modules/accessibility.js";
 import { api } from "../lib/api";
+import { cssVar, rgbaVar } from "../lib/highchartsTheme";
 import { onBar, watchSymbol } from "../lib/ws";
 import { useStore } from "../store";
 import type { Quote } from "../types";
@@ -12,10 +13,6 @@ export type Indicator = "sma50" | "ema20" | "bb";
 export type ChartType = "candlestick" | "ohlc" | "line";
 
 const TF_MS: Record<string, number> = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000 };
-
-function cssVar(name: string): string {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-}
 
 interface Props {
   symbol: string;
@@ -101,7 +98,7 @@ export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Pr
             color: series7, lineWidth: 1.5, marker: { enabled: false } } as any);
         if (indicators.includes("bb"))
           series.push({ type: "bb", linkedTo: "main",
-            color: series4, lineWidth: 1, fillColor: "rgba(201,133,0,0.06)",
+            color: series4, lineWidth: 1, fillColor: rgbaVar("--series-4", 0.06),
             marker: { enabled: false } } as any);
       }
 
@@ -118,7 +115,7 @@ export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Pr
         rangeSelector: { enabled: false },
         navigator: {
           enabled: true, height: 28,
-          outlineColor: grid, maskFill: "rgba(137,135,129,0.12)",
+          outlineColor: grid, maskFill: rgbaVar("--text-3", 0.12),
           series: { color: series1, lineWidth: 1 },
           xAxis: { labels: { style: { color: text3 } } },
         },

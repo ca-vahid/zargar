@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
+import { IconCheck, IconClock, IconHalf, IconX } from "../components/icons";
+import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, timeUntil } from "../lib/format";
+import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
 import type { Proposal, RawContentItem, Signal } from "../types";
 
@@ -62,7 +65,7 @@ function ProposalCard({ p }: { p: Proposal }) {
         <span className={p.side === "BUY" ? "pos" : "neg"}>
           <b>{p.side}</b> {p.qty} @ {p.orderType} {p.limitPrice ? fmtMoney(p.limitPrice) : ""}
         </span>
-        <span className="ttl">⏳ {timeUntil(p.expiresAt)}</span>
+        <span className="ttl"><IconClock size={11} /> {timeUntil(p.expiresAt)}</span>
       </div>
       <div className="muted" style={{ fontSize: 12 }}>
         {p.context?.sourceName ?? "unknown source"} · {p.context?.confidence ?? "?"}
@@ -75,22 +78,22 @@ function ProposalCard({ p }: { p: Proposal }) {
         {checks.map((c: any) => (
           <span key={c.name} className={`check-item ${c.passed ? "ok" : "fail"}`}
             title={c.detail}>
-            {c.passed ? "✓" : "✗"} {c.name.replace(/_/g, " ")}
+            {c.passed ? <IconCheck size={10} /> : <IconX size={10} />} {c.name.replace(/_/g, " ")}
           </span>
         ))}
       </div>
       <div className="proposal-actions">
         <button className="approve-btn" disabled={busy}
           onClick={() => act(() => api.approveProposal(p.id), `Approved ${p.symbol}`)}>
-          ✓ Approve
+          <IconCheck size={12} /> Approve
         </button>
         <button className="half-btn" disabled={busy}
           onClick={() => act(() => api.approveProposal(p.id, true), `Approved ${p.symbol} (half)`)}>
-          ½ size
+          <IconHalf size={12} /> half size
         </button>
         <button className="reject-btn" disabled={busy}
           onClick={() => act(() => api.rejectProposal(p.id), `Rejected ${p.symbol}`)}>
-          ✗ Reject
+          <IconX size={12} /> Reject
         </button>
       </div>
     </div>
@@ -148,19 +151,21 @@ function ManualIngest() {
 
 function SignalsPanel() {
   const live = useStore((s) => s.signals);
-  const [loaded, setLoaded] = useState<Signal[]>([]);
-  useEffect(() => {
-    api.get<Signal[]>("/api/signals?limit=50").then(setLoaded).catch(() => undefined);
-  }, [live.length]);
+  const loadedState = useAsync(
+    () => api.get<Signal[]>("/api/signals?limit=50"), [live.length]);
   const merged = [...live];
-  for (const s of loaded) if (!merged.some((m) => m.id === s.id)) merged.push(s);
+  for (const s of loadedState.data ?? []) if (!merged.some((m) => m.id === s.id)) merged.push(s);
 
   return (
     <div className="panel mb">
       <div className="panel-head">Extracted signals</div>
       <div className="scroll-x">
-        {merged.length === 0 ? (
-          <div className="empty">No signals yet — ingest an email or paste text</div>
+        {loadedState.loading && merged.length === 0 ? (
+          <Spinner />
+        ) : loadedState.error && merged.length === 0 ? (
+          <ErrorState message={loadedState.error} onRetry={loadedState.reload} />
+        ) : merged.length === 0 ? (
+          <EmptyState title="No signals yet" hint="Ingest an email or paste text below." />
         ) : (
           <table className="tbl">
             <thead>
@@ -201,17 +206,21 @@ function SignalsPanel() {
 }
 
 function ContentPanel() {
-  const [items, setItems] = useState<RawContentItem[]>([]);
   const signalCount = useStore((s) => s.signals.length);
-  useEffect(() => {
-    api.get<RawContentItem[]>("/api/content?limit=25").then(setItems).catch(() => undefined);
-  }, [signalCount]);
+  const itemsState = useAsync(
+    () => api.get<RawContentItem[]>("/api/content?limit=25"), [signalCount]);
+  const items = itemsState.data ?? [];
   return (
     <div className="panel">
       <div className="panel-head">Inbound content</div>
       <div className="scroll-x">
-        {items.length === 0 ? (
-          <div className="empty">Nothing received yet</div>
+        {itemsState.loading && items.length === 0 ? (
+          <Spinner />
+        ) : itemsState.error ? (
+          <ErrorState message={itemsState.error} onRetry={itemsState.reload} />
+        ) : items.length === 0 ? (
+          <EmptyState title="Nothing received yet"
+            hint="Email ingestion and manual paste both land here." />
         ) : (
           <table className="tbl">
             <thead>

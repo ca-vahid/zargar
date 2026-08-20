@@ -1,5 +1,7 @@
 import { create } from "zustand";
 import type {
+  Brokerages,
+  BrokerState,
   Execution,
   HaltState,
   JournalEvent,
@@ -14,7 +16,7 @@ import type {
   Watchlist,
 } from "./types";
 
-export type Page = "trade" | "inbox" | "portfolios" | "journal" | "settings";
+export type Page = "dashboard" | "trade" | "inbox" | "portfolios" | "journal" | "settings";
 
 export interface OrderIntentBody {
   portfolio_id: string;
@@ -51,13 +53,15 @@ interface AppState {
   proposals: Proposal[];
   signals: Signal[];
   halt: HaltState;
-  broker: Snapshot["broker"] | null;
+  broker: BrokerState | null;
+  brokerages: Brokerages | null;
   events: JournalEvent[];
   toasts: { id: number; kind: "info" | "error" | "success"; text: string }[];
 
   setPage: (p: Page) => void;
   setActiveSymbol: (s: string) => void;
   applySnapshot: (s: Snapshot) => void;
+  applyBrokerages: (b: Brokerages) => void;
   applyQuotes: (quotes: Quote[]) => void;
   applyOrder: (o: Order) => void;
   applyExecution: (e: Execution) => void;
@@ -79,7 +83,7 @@ let toastSeq = 1;
 
 export const useStore = create<AppState>((set, get) => ({
   connected: false,
-  page: "trade",
+  page: "dashboard",
   activeSymbol: "AAPL",
   settings: {},
   portfolios: [],
@@ -94,6 +98,7 @@ export const useStore = create<AppState>((set, get) => ({
   signals: [],
   halt: { engaged: false, reason: "", ts: 0 },
   broker: null,
+  brokerages: null,
   events: [],
   toasts: [],
 
@@ -111,8 +116,11 @@ export const useStore = create<AppState>((set, get) => ({
       proposals: s.proposals,
       halt: s.halt,
       broker: s.broker,
+      brokerages: s.brokerages ?? get().brokerages,
       activeSymbol: get().activeSymbol || s.settings["ui.default_symbol"] || "AAPL",
     }),
+
+  applyBrokerages: (brokerages) => set({ brokerages }),
 
   applyQuotes: (quotes) =>
     set((st) => {
@@ -167,6 +175,9 @@ export const useStore = create<AppState>((set, get) => ({
         msg.engaged ? `Kill switch engaged: ${msg.reason}` : "Kill switch released");
     } else if (msg.kind === "setting") {
       set((st) => ({ settings: { ...st.settings, [msg.key]: msg.value } }));
+    } else if (msg.kind === "brokerage") {
+      const { kind: _kind, ...brokerages } = msg;
+      get().applyBrokerages(brokerages as Brokerages);
     }
   },
 
@@ -191,4 +202,43 @@ export function positionsFor(state: AppState, portfolioId?: string): Position[] 
   return Object.values(state.positions).filter(
     (p) => (!portfolioId || p.portfolioId === portfolioId) && Math.abs(p.qty) > 1e-9,
   );
+}
+
+/** Positions grouped by portfolio id (pure helper — use with useMemo). */
+export function groupPositions(positions: Record<string, Position>): Record<string, Position[]> {
+  const out: Record<string, Position[]> = {};
+  for (const p of Object.values(positions)) {
+    if (Math.abs(p.qty) < 1e-9) continue;
+    (out[p.portfolioId] ??= []).push(p);
+  }
+  return out;
+}
+
+/**
+ * Per-currency net worth across live brokerage accounts + local portfolios.
+ * No FX conversion — one total per currency, brokerage accounts counted from
+ * their server-side equity (portfolios array carries the same ids, so live
+ * portfolios are skipped there to avoid double counting).
+ */
+export function netWorthByCurrency(
+  portfolios: Portfolio[],
+  brokerages: Brokerages | null,
+): { currency: string; total: number; brokerage: number; local: number }[] {
+  const acc: Record<string, { brokerage: number; local: number }> = {};
+  const brokeragePids = new Set<string>();
+  for (const provider of brokerages?.providers ?? []) {
+    for (const account of provider.accounts) {
+      brokeragePids.add(account.portfolioId);
+      const ccy = (account.currency || "USD").toUpperCase();
+      (acc[ccy] ??= { brokerage: 0, local: 0 }).brokerage += account.equity;
+    }
+  }
+  for (const p of portfolios) {
+    if (p.kind === "shadow" || brokeragePids.has(p.id)) continue;
+    const ccy = (p.baseCurrency || "USD").toUpperCase();
+    (acc[ccy] ??= { brokerage: 0, local: 0 }).local += p.equity ?? p.cash;
+  }
+  return Object.entries(acc)
+    .map(([currency, v]) => ({ currency, ...v, total: v.brokerage + v.local }))
+    .sort((a, b) => b.total - a.total);
 }

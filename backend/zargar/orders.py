@@ -387,7 +387,9 @@ class OrderManager:
             event_type, payload,
             aggregate_type="order", aggregate_id=order_id, portfolio_id=odict.get("portfolioId"))
         self._bus.publish(topics.ORDERS, odict)
-        return odict
+        # extra (risk verdict, estimated price) rides the API response only —
+        # the UI shows failed checks and the confirm dialog's pre-flight result.
+        return {**odict, **(extra or {})}
 
     # ------------------------------------------------------------------ queries
     async def list_orders(

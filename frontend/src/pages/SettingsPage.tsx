@@ -82,12 +82,12 @@ export function SettingsPage() {
           <div className="panel-head">Trading &amp; routing</div>
           <div className="panel-body">
             <SelectRow k="trading.mode" label="Trading mode"
-              hint="dry_run validates only; sim fills locally; paper/live need IBKR"
+              hint="dry_run validates only; sim fills locally; live routes to SnapTrade/IBKR"
               options={[
                 { value: "dry_run", label: "Dry run" },
                 { value: "sim", label: "Simulation" },
-                { value: "paper", label: "Paper (IBKR)" },
-                { value: "live", label: "LIVE (IBKR)" },
+                { value: "paper", label: "Paper" },
+                { value: "live", label: "LIVE" },
               ]} />
             <div className="setting-row">
               <div className="lbl">Default portfolio<small>used by ticket and proposals</small></div>
@@ -156,6 +156,30 @@ export function SettingsPage() {
             <ToggleRow k="telegram.enabled" label="Telegram approvals"
               hint="needs ZARGAR_TELEGRAM_BOT_TOKEN + CHAT_ID, restart backend" />
             <ApiTokenRow />
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">Brokerages (SnapTrade)</div>
+          <div className="panel-body">
+            <div className="setting-row">
+              <div className="lbl">SnapTrade<small>Wealthsimple + Webull via aggregator</small></div>
+              <span className={`status-pill ${broker?.snaptradeConnected ? "ok" : "dim"}`}>
+                {broker?.snaptradeConnected ? "connected" : "off"}
+              </span>
+            </div>
+            <div className="setting-row">
+              <div className="lbl">IBKR gateway<small>native connection for live/paper</small></div>
+              <span className={`status-pill ${broker?.ibkrConnected ? "ok" : "dim"}`}>
+                {broker?.ibkrConnected ? "connected" : "off"}
+              </span>
+            </div>
+            <ToggleRow k="snaptrade.enabled" label="Enable SnapTrade"
+              hint="needs ZARGAR_SNAPTRADE_* credentials in .env, restart backend" />
+            <NumberRow k="snaptrade.sync_minutes" label="Account sync interval (min)" />
+            <NumberRow k="snaptrade.order_poll_seconds" label="Order status poll (s)" step={0.5} />
+            <ToggleRow k="snaptrade.allow_brackets" label="Allow bracket orders"
+              hint="off by default — broker support varies" />
           </div>
         </div>
 
@@ -272,7 +296,7 @@ function WatchlistEditor({ wl, onSave, onDelete }: {
     <div style={{ marginBottom: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
         <b>{wl.name}</b>
-        <button className="link-btn" style={{ color: "var(--down)" }} onClick={onDelete}>remove</button>
+        <button className="link-btn danger" onClick={onDelete}>remove</button>
       </div>
       <input type="text" value={draft} onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
@@ -311,7 +335,7 @@ function SourcesPanel() {
               {src.name}
               <small>{(src.emails ?? []).join(", ") || "no addresses"}</small>
             </div>
-            <button className="link-btn" style={{ color: "var(--down)" }}
+            <button className="link-btn danger"
               onClick={() => save(registry.filter((_, j) => j !== i))}>
               remove
             </button>

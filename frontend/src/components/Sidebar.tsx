@@ -1,43 +1,24 @@
-import { memo } from "react";
-import { fmtMoney } from "../lib/format";
-import { useQuote, usePrevLast, useStore, type Page } from "../store";
+import type { ReactNode } from "react";
+import { useStore, type Page } from "../store";
+import {
+  IconDashboard,
+  IconEdit,
+  IconJournal,
+  IconPortfolios,
+  IconSettings,
+  IconSignals,
+  IconTrade,
+} from "./icons";
+import { WatchRow } from "./WatchRow";
 
-const PAGES: { key: Page; label: string; icon: string }[] = [
-  { key: "trade", label: "Trade", icon: "📈" },
-  { key: "inbox", label: "Signals", icon: "📥" },
-  { key: "portfolios", label: "Portfolios", icon: "💼" },
-  { key: "journal", label: "Journal", icon: "🗂" },
-  { key: "settings", label: "Settings", icon: "⚙️" },
+const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
+  { key: "dashboard", label: "Dashboard", icon: <IconDashboard /> },
+  { key: "trade", label: "Trade", icon: <IconTrade /> },
+  { key: "inbox", label: "Signals", icon: <IconSignals /> },
+  { key: "portfolios", label: "Portfolios", icon: <IconPortfolios /> },
+  { key: "journal", label: "Journal", icon: <IconJournal /> },
+  { key: "settings", label: "Settings", icon: <IconSettings /> },
 ];
-
-const WatchRow = memo(function WatchRow({ symbol }: { symbol: string }) {
-  const quote = useQuote(symbol);
-  const prev = usePrevLast(symbol);
-  const active = useStore((s) => s.activeSymbol === symbol);
-  const setActiveSymbol = useStore((s) => s.setActiveSymbol);
-  const setPage = useStore((s) => s.setPage);
-  const flash = useStore((s) => s.settings["ui.quote_flash"] ?? true);
-
-  const dir = quote && prev !== undefined
-    ? quote.last > prev ? "flash-up" : quote.last < prev ? "flash-down" : ""
-    : "";
-
-  return (
-    <div
-      className={`wl-row ${active ? "active" : ""}`}
-      onClick={() => { setActiveSymbol(symbol); setPage("trade"); }}
-    >
-      <span className="wl-sym">{symbol}</span>
-      <span className={`wl-price ${flash ? dir : ""}`}>
-        {quote ? fmtMoney(quote.last) : "…"}
-      </span>
-      <span className="wl-sub">
-        <span>{quote ? `${fmtMoney(quote.bid)} × ${fmtMoney(quote.ask)}` : ""}</span>
-        {quote?.halted && <span className="neg">HALTED</span>}
-      </span>
-    </div>
-  );
-});
 
 export function Sidebar() {
   const page = useStore((s) => s.page);
@@ -47,14 +28,15 @@ export function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <nav className="nav">
+      <nav className="nav" aria-label="Primary">
         {PAGES.map((p) => (
           <button
             key={p.key}
             className={page === p.key ? "active" : ""}
+            aria-current={page === p.key ? "page" : undefined}
             onClick={() => setPage(p.key)}
           >
-            <span>{p.icon}</span> {p.label}
+            {p.icon} {p.label}
             {p.key === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
           </button>
         ))}
@@ -64,7 +46,10 @@ export function Sidebar() {
           <div key={wl.id}>
             <h4>
               {wl.name}
-              <button title="Manage in Settings" onClick={() => setPage("settings")}>✎</button>
+              <button title="Manage in Settings" aria-label={`Manage ${wl.name} in Settings`}
+                onClick={() => setPage("settings")}>
+                <IconEdit size={12} />
+              </button>
             </h4>
             {wl.symbols.map((sym) => (
               <WatchRow key={sym} symbol={sym} />
