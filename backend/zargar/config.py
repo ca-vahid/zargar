@@ -34,6 +34,10 @@ class AppConfig(BaseSettings):
     sim_history_minutes: int = 2 * 24 * 60  # synthesized 1m-bar history per symbol
 
     # --- integrations ----------------------------------------------------
+    # SnapTrade personal API credentials (dashboard → API Key page). Used for
+    # Wealthsimple/Webull access; see zargar.tools.snaptrade_check.
+    snaptrade_client_id: str = ""
+    snaptrade_consumer_key: str = ""
     anthropic_api_key: str = ""
     extraction_model: str = "claude-opus-5"
     telegram_bot_token: str = ""
