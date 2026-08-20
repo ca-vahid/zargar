@@ -66,24 +66,24 @@ FX-converted total says C$20,025 (SPCX is USD: 60 × $131.98 counted as CAD,
       SPCX-in-CAD equity bug reproduced + fixed, gross exposure conversion,
       mismatch warning journaled once. Suite: 96 passed.
 
-## Phase 3 — Trading modes: Practice | Live [ ]
+## Phase 3 — Trading modes: Practice | Live [x]
 
 Four confusing modes (Dry run / Simulation / Paper (IBKR) / LIVE (IBKR))
 become two, venue-agnostic.
 
-- [ ] `trading.mode` accepts `practice | live` only. Routing: practice →
-      sim/shadow portfolios; live → all kinds (sim/shadow still fill on the
-      SimExecutor; live/paper route to their venue — SnapTrade or IBKR).
-- [ ] Migration on settings load: `dry_run`→`practice` (+ note), `sim`→
-      `practice`, `paper`/`live`→`live`; journaled `SettingChanged`.
-- [ ] Dry-run survives **only** as the per-order "validate only" checkbox
-      (and the confirm dialog's pre-flight) — the mode rung disappears.
-- [ ] IBKR paper folds into Live routing when the account arrives (kind
-      `paper` routes to IBKR under live mode; no separate mode rung).
-- [ ] TopBar: two-option select — Practice (default) and LIVE (styled
-      dangerous, keeps the confirm dialog). Settings page options updated.
-- [ ] RiskGate `market_hours` + routing-gate tests updated; engine tests
-      migrated off `trading.mode=sim` strings.
+- [x] `trading.mode` accepts `practice | live` only (set() validates);
+      routing: practice → sim/shadow; live → everything (sim/shadow still on
+      the simulator; live/paper route to their venue).
+- [x] One-time migration on settings load (`MODE_ALIASES`): dry_run/sim →
+      practice, paper → live; persisted + journaled `SettingChanged` with a
+      migration note. set() also accepts the old aliases forever.
+- [x] Dry-run is only the per-order checkbox + confirm pre-flight; the mode
+      rung is gone (`intent.dry_run` short-circuit only).
+- [x] IBKR paper folds into Live routing (kind `paper` under live mode).
+- [x] TopBar: Practice | LIVE select (LIVE keeps the danger confirm);
+      Settings options + hint updated; ticket header shows a mode pill.
+- [x] Tests migrated: mode-alias coverage, order-level dry run, practice
+      blocks live portfolios ("trading.mode=practice blocks"). 96 passed.
 
 ## Phase 4 — Real vs Practice compartmentalization [ ]
 

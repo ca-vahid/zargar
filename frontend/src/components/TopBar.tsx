@@ -6,16 +6,14 @@ import { IconWarn } from "./icons";
 import { ConfirmDialog, PromptDialog } from "./Modal";
 
 const MODES = [
-  { value: "dry_run", label: "Dry run" },
-  { value: "sim", label: "Simulation" },
-  { value: "paper", label: "Paper" },
+  { value: "practice", label: "Practice" },
   { value: "live", label: "LIVE" },
 ];
 
 export function TopBar() {
   const connected = useStore((s) => s.connected);
   const halt = useStore((s) => s.halt);
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "sim");
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
   const portfolios = useStore((s) => s.portfolios);
   const broker = useStore((s) => s.broker);
   const toast = useStore((s) => s.toast);

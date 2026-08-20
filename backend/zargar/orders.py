@@ -185,9 +185,9 @@ class OrderManager:
                 reject_reason="bracket orders are not supported on SnapTrade venues")
 
         # ---- routing gate ----------------------------------------------------
-        mode = str(self._settings.get("trading.mode", "sim"))
+        mode = str(self._settings.get("trading.mode", "practice"))
         kind = portfolio["kind"]
-        if intent.dry_run or mode == "dry_run":
+        if intent.dry_run:
             est = self._estimate_price(intent)
             return await self._transition(
                 order.id, OrderStatus.DRY_RUN, ev.ORDER_DRY_RUN,
@@ -195,9 +195,10 @@ class OrderManager:
         # Dry runs never consume rate/duplicate budget (a confirm-dialog
         # pre-flight would otherwise block the real submit that follows).
         self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
+        # practice: simulated venues only; live: everything (sim/shadow still
+        # fill on the simulator — live/paper route to their real venue)
         allowed = {
-            "sim": {"sim", "shadow"},
-            "paper": {"sim", "shadow", "paper"},
+            "practice": {"sim", "shadow"},
             "live": {"sim", "shadow", "paper", "live"},
         }.get(mode, set())
         if kind not in allowed:

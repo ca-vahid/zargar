@@ -11,7 +11,7 @@ export function OrderTicket({ symbol }: { symbol: string }) {
     () => allPortfolios.filter((p) => p.kind !== "shadow"), [allPortfolios]);
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
   const defaultQty = useStore((s) => Number(s.settings["trading.default_qty"] ?? 10));
-  const mode = useStore((s) => s.settings["trading.mode"] ?? "sim");
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
   const brokerages = useStore((s) => s.brokerages);
   const toast = useStore((s) => s.toast);
 
@@ -104,7 +104,8 @@ export function OrderTicket({ symbol }: { symbol: string }) {
   return (
     <div className="panel ticket-area">
       <div className="panel-head">
-        Order ticket <span className="sub">{mode === "dry_run" ? "dry-run mode" : mode}</span>
+        Order ticket
+        <span className={`status-pill ${mode === "live" ? "bad" : "dim"}`}>{mode}</span>
       </div>
       <div className="panel-body">
         <div className="side-toggle">

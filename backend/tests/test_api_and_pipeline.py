@@ -36,7 +36,7 @@ async def test_health_and_state(app_client):
     assert r.status_code == 200 and r.json()["ok"]
     r = await client.get("/api/state")
     state = r.json()
-    assert state["settings"]["trading.mode"] == "sim"
+    assert state["settings"]["trading.mode"] == "practice"
     assert len(state["portfolios"]) == 2
     assert state["watchlists"][0]["symbols"]
     assert state["halt"]["engaged"] is False

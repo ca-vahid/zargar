@@ -82,11 +82,9 @@ export function SettingsPage() {
           <div className="panel-head">Trading &amp; routing</div>
           <div className="panel-body">
             <SelectRow k="trading.mode" label="Trading mode"
-              hint="dry_run validates only; sim fills locally; live routes to SnapTrade/IBKR"
+              hint="practice fills on the simulator; LIVE routes real orders to SnapTrade/IBKR. Per-order dry runs live in the ticket."
               options={[
-                { value: "dry_run", label: "Dry run" },
-                { value: "sim", label: "Simulation" },
-                { value: "paper", label: "Paper" },
+                { value: "practice", label: "Practice" },
                 { value: "live", label: "LIVE" },
               ]} />
             <div className="setting-row">

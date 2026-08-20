@@ -83,12 +83,12 @@ async def test_live_order_routes_and_fills(snaptrade_engine):
 async def test_mode_gate_blocks_snaptrade_outside_live(snaptrade_engine):
     eng, stub = snaptrade_engine
     pid = snaptrade_pid(eng)
-    await wait_quote(eng, "AAPL")  # trading.mode defaults to "sim"
+    await wait_quote(eng, "AAPL")  # trading.mode defaults to "practice"
 
     order = await eng.orders.place(OrderIntent(
         portfolio_id=pid, symbol="AAPL", side="BUY", qty=1, order_type="MKT"))
     assert order["status"] == "REJECTED_RISK"
-    assert "trading.mode=sim blocks" in order["rejectReason"]
+    assert "trading.mode=practice blocks" in order["rejectReason"]
     assert stub.calls("/trade/place") == []  # never reached the broker
 
 

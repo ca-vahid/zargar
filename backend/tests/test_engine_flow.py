@@ -66,18 +66,26 @@ async def test_kill_switch_blocks_and_persists(engine):
     assert order2["status"] == "SUBMITTED"
 
 
-async def test_dry_run_mode_never_routes(engine):
+async def test_mode_aliases_and_order_level_dry_run(engine):
     pid = sim_portfolio(engine)["id"]
     await wait_quote(engine, "AAPL")
+    # legacy mode strings fold into the practice|live model
     await engine.settings.set("trading.mode", "dry_run")
+    assert engine.settings.get("trading.mode") == "practice"
+    await engine.settings.set("trading.mode", "sim")
+    assert engine.settings.get("trading.mode") == "practice"
+    await engine.settings.set("trading.mode", "paper")
+    assert engine.settings.get("trading.mode") == "live"
+    await engine.settings.set("trading.mode", "practice")
+    # dry run is a per-order flag, not a mode: it validates and never routes
     order = await engine.orders.place(OrderIntent(
-        portfolio_id=pid, symbol="AAPL", side="BUY", qty=1, order_type="MKT"))
+        portfolio_id=pid, symbol="AAPL", side="BUY", qty=1, order_type="MKT",
+        dry_run=True))
     assert order["status"] == "DRY_RUN"
     assert engine.positions.position_qty(pid, "AAPL") == 0
-    await engine.settings.set("trading.mode", "sim")
 
 
-async def test_live_order_blocked_in_sim_mode(engine):
+async def test_live_order_blocked_in_practice_mode(engine):
     live = next(p for p in engine.positions.portfolios() if p["kind"] == "live")
     await wait_quote(engine, "AAPL")
     order = await engine.orders.place(OrderIntent(

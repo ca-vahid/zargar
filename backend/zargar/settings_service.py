@@ -16,9 +16,14 @@ from .bus import Bus
 from .events import Journal
 from .models import Setting
 
+# Historical trading.mode values fold into the two-mode model: practice
+# (simulated fills, incl. the old dry_run/sim rungs — per-order dry runs are
+# a ticket checkbox now) and live (real orders to any connected venue).
+MODE_ALIASES = {"dry_run": "practice", "sim": "practice", "paper": "live"}
+
 DEFAULTS: dict[str, Any] = {
     # --- trading / routing -------------------------------------------------
-    "trading.mode": "sim",                  # dry_run | sim | paper | live
+    "trading.mode": "practice",             # practice | live
     "trading.default_portfolio": "",        # filled at seed time
     "trading.default_qty": 10,
     "trading.confirm_before_submit": True,
@@ -84,6 +89,19 @@ class SettingsService:
         for row in rows:
             if row.key in DEFAULTS or row.key.startswith("system."):
                 merged[row.key] = row.value.get("v")
+        # one-time migration of pre-v0.3 mode values
+        raw_mode = merged.get("trading.mode")
+        canon = MODE_ALIASES.get(raw_mode, raw_mode)
+        if canon != raw_mode:
+            merged["trading.mode"] = canon
+            async with self._sf() as session:
+                row = await session.get(Setting, "trading.mode")
+                if row is not None:
+                    row.value = {"v": canon}
+                    await session.commit()
+            await self._journal.append(ev.SETTING_CHANGED, {
+                "key": "trading.mode", "old": raw_mode, "new": canon,
+                "note": "migrated to the practice|live model"})
         self._cache = merged
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -95,6 +113,10 @@ class SettingsService:
     async def set(self, key: str, value: Any, *, journal: bool = True) -> None:
         if key not in DEFAULTS and not key.startswith("system."):
             raise KeyError(f"unknown setting: {key}")
+        if key == "trading.mode":
+            value = MODE_ALIASES.get(value, value)
+            if value not in ("practice", "live"):
+                raise KeyError(f"trading.mode must be practice or live, got {value!r}")
         expected = DEFAULTS.get(key)
         if expected is not None and value is not None and not key.startswith("system."):
             # light type coercion so "3" from a form works for a numeric setting
