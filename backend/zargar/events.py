@@ -43,6 +43,11 @@ PROPOSAL_REJECTED = "ProposalRejected"
 PROPOSAL_EXPIRED = "ProposalExpired"
 BROKER_CONNECTED = "BrokerConnected"
 BROKER_DISCONNECTED = "BrokerDisconnected"
+BROKER_SYNC = "BrokerSync"
+POSITION_RECONCILED = "PositionReconciled"
+BROKER_ORDER_LINKED = "BrokerOrderLinked"
+BROKER_SUBMIT_UNKNOWN = "BrokerSubmitUnknown"
+BROKERAGE_ACCOUNT_LINKED = "BrokerageAccountLinked"
 
 
 class Journal:

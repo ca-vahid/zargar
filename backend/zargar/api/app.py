@@ -206,6 +206,24 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
                 await session.commit()
         return {"ok": True}
 
+    # --- brokerages (SnapTrade) ----------------------------------------------
+    @app.get("/api/brokerages", dependencies=[auth])
+    async def brokerages():
+        if eng.snaptrade_sync is None:
+            return {"enabled": False, "lastSyncAt": None, "providers": []}
+        return eng.snaptrade_sync.payload()
+
+    @app.post("/api/brokerages/refresh", dependencies=[auth])
+    async def refresh_brokerages():
+        if eng.snaptrade_sync is None:
+            raise HTTPException(
+                status_code=503,
+                detail="SnapTrade is not configured (credentials + snaptrade.enabled)")
+        try:
+            return await eng.snaptrade_sync.sync_once()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"sync failed: {exc}")
+
     # --- settings ------------------------------------------------------------
     @app.get("/api/settings", dependencies=[auth])
     async def get_settings():

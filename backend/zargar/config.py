@@ -24,6 +24,9 @@ class AppConfig(BaseSettings):
     # --- broker ----------------------------------------------------------
     # Which broker backend serves live/paper portfolios: "sim" | "ibkr"
     broker: str = "sim"
+    # Where quotes come from: "auto" (ibkr if connected, else yahoo when
+    # SnapTrade is active, else sim) | "sim" | "yahoo"
+    quote_source: str = "auto"
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 4002  # 4002 gateway paper, 4001 gateway live, 7497 TWS paper
     ibkr_client_id: int = 17

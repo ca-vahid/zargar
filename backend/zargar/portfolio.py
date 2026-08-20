@@ -18,7 +18,7 @@ from .bus import Bus
 from .domain import now_ms
 from .events import Journal
 from .marketdata import QuoteCache
-from .models import EquityPoint, Portfolio, Position
+from .models import BrokerageAccount, EquityPoint, Portfolio, Position
 
 ET = ZoneInfo("America/New_York")
 
@@ -46,11 +46,16 @@ class PositionKeeper:
     # --- loading ------------------------------------------------------------
     async def load(self) -> None:
         async with self._sf() as session:
+            venues = {
+                acct.portfolio_id: acct.venue
+                for acct in (await session.execute(select(BrokerageAccount))).scalars()
+            }
             for p in (await session.execute(select(Portfolio))).scalars():
                 self._portfolios[p.id] = {
                     "id": p.id, "name": p.name, "kind": p.kind, "cash": p.cash,
                     "startingCash": p.starting_cash, "baseCurrency": p.base_currency,
                     "sourceName": p.source_name, "isDefault": p.is_default,
+                    "venue": venues.get(p.id, "ibkr"),
                 }
             for pos in (await session.execute(select(Position))).scalars():
                 self._positions[(pos.portfolio_id, pos.symbol, pos.sec_type)] = {
@@ -59,11 +64,12 @@ class PositionKeeper:
                     "realizedPnl": pos.realized_pnl,
                 }
 
-    def register_portfolio(self, p: Portfolio) -> None:
+    def register_portfolio(self, p: Portfolio, *, venue: str = "ibkr") -> None:
         self._portfolios[p.id] = {
             "id": p.id, "name": p.name, "kind": p.kind, "cash": p.cash,
             "startingCash": p.starting_cash, "baseCurrency": p.base_currency,
             "sourceName": p.source_name, "isDefault": p.is_default,
+            "venue": venue,
         }
 
     # --- queries ------------------------------------------------------------
@@ -213,6 +219,97 @@ class PositionKeeper:
             self._bus.publish(topics.PORTFOLIO, {
                 "portfolioId": portfolio_id, "cash": round(pf["cash"], 2), "ts": now_ms()})
         return enriched
+
+    async def sync_portfolio_state(
+        self,
+        pid: str,
+        *,
+        cash: float,
+        positions: list[dict],  # [{symbol, secType, qty, avgCost}]
+        source: str = "snaptrade",
+    ) -> dict:
+        """Authoritative broker-state overwrite (used by brokerage sync).
+
+        Preserves accumulated realizedPnl on surviving keys, zeroes symbols the
+        broker no longer reports, and adjusts the day-start-equity memo so a
+        sync delta never shows up as intraday P&L.
+        """
+        pf = self._portfolios.get(pid)
+        if pf is None:
+            return {}
+        eq_before = await self.equity(pid)
+        incoming = {(p["symbol"].upper(), p.get("secType", "STK")): p for p in positions}
+        changes: list[dict] = []
+
+        for (ppid, sym, st), pos in list(self._positions.items()):
+            if ppid != pid:
+                continue
+            new = incoming.pop((sym, st), None)
+            new_qty = float(new["qty"]) if new else 0.0
+            new_avg = float(new["avgCost"]) if new else 0.0
+            if abs(pos["qty"] - new_qty) > 1e-9 or abs(pos["avgCost"] - new_avg) > 1e-6:
+                changes.append({"symbol": sym, "secType": st,
+                                "qtyBefore": pos["qty"], "qtyAfter": new_qty})
+                pos["qty"], pos["avgCost"] = new_qty, new_avg  # realizedPnl preserved
+        for (sym, st), new in incoming.items():
+            self._positions[(pid, sym, st)] = {
+                "portfolioId": pid, "symbol": sym, "secType": st,
+                "qty": float(new["qty"]), "avgCost": float(new["avgCost"]),
+                "realizedPnl": 0.0,
+            }
+            changes.append({"symbol": sym, "secType": st,
+                            "qtyBefore": 0.0, "qtyAfter": float(new["qty"])})
+
+        cash_before = pf["cash"]
+        pf["cash"] = float(cash)
+
+        async with self._sf() as session:
+            for (ppid, sym, st), pos in self._positions.items():
+                if ppid != pid:
+                    continue
+                row = (await session.execute(
+                    select(Position).where(
+                        Position.portfolio_id == pid,
+                        Position.symbol == sym,
+                        Position.sec_type == st,
+                    ))).scalar_one_or_none()
+                if row is None:
+                    row = Position(portfolio_id=pid, symbol=sym, sec_type=st)
+                    session.add(row)
+                row.qty = pos["qty"]
+                row.avg_cost = pos["avgCost"]
+                row.realized_pnl = pos["realizedPnl"]
+            pf_row = await session.get(Portfolio, pid)
+            if pf_row is not None:
+                pf_row.cash = pf["cash"]
+            await session.commit()
+
+        eq_after = await self.equity(pid)
+        # A broker sync is a level-set, not trading P&L — shift the day anchor.
+        day_key = (pid, dt.datetime.now(tz=ET).date().isoformat())
+        if day_key in self._day_start_equity:
+            self._day_start_equity[day_key] += eq_after - eq_before
+
+        diff = {
+            "source": source,
+            "cashBefore": round(cash_before, 2),
+            "cashAfter": round(pf["cash"], 2),
+            "positionsChanged": changes,
+        }
+        await self._journal.append(
+            ev.BROKER_SYNC, diff, aggregate_type="portfolio",
+            aggregate_id=pid, portfolio_id=pid)
+        for change in changes:
+            pos = self._positions.get((pid, change["symbol"], change["secType"]))
+            if pos is not None:
+                await self._journal.append(
+                    ev.POSITION_RECONCILED, change,
+                    aggregate_type="position",
+                    aggregate_id=f"{pid}:{change['symbol']}", portfolio_id=pid)
+                self._bus.publish(topics.POSITIONS, self._enrich(pos))
+        self._bus.publish(topics.PORTFOLIO, {
+            "portfolioId": pid, "cash": round(pf["cash"], 2), "ts": now_ms()})
+        return diff
 
     async def snapshot_equity(self) -> list[dict]:
         """Persist an equity point per portfolio (called periodically by the engine)."""

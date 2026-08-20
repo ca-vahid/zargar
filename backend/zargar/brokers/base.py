@@ -31,6 +31,7 @@ class BrokerOrder:
     outside_rth: bool = False
     oca_group: str | None = None
     parent_id: str | None = None
+    portfolio_id: str | None = None  # lets account-scoped venues (SnapTrade) resolve the account
 
 
 @dataclass(slots=True)

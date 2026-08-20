@@ -44,6 +44,9 @@ class Engine:
         # Executors / feeds are attached in start() (sim always; ibkr when configured)
         self.sim_executor = None
         self.ibkr = None            # IBKRBroker (feed+executor) when configured
+        self.snaptrade = None       # SnapTradeBroker (executor) when configured
+        self.snaptrade_sync = None  # SnapTradeSync (account/balance/position sync)
+        self._snaptrade_client = None
         self.feed = None
         self.orders: OrderManager | None = None
         self.proposals = None        # attached by signal layer
@@ -80,11 +83,36 @@ class Engine:
             except Exception as exc:  # pragma: no cover - depends on gateway
                 log.error("IBKR connection failed (%s); falling back to sim feed", exc)
                 await self.journal.append(ev.BROKER_DISCONNECTED, {"broker": "ibkr", "error": str(exc)})
+        # SnapTrade venue (Wealthsimple / Webull through the aggregator)
+        snaptrade_configured = bool(
+            self.config.snaptrade_client_id and self.config.snaptrade_consumer_key
+            and self.settings.get("snaptrade.enabled", False))
+        if snaptrade_configured:
+            from .brokers.snaptrade import SnapTradeBroker, SnapTradeClient, SnapTradeSync
+            self._snaptrade_client = SnapTradeClient(
+                self.config.snaptrade_client_id, self.config.snaptrade_consumer_key)
+            self.snaptrade_sync = SnapTradeSync(
+                self._snaptrade_client, self.sf, self.positions, self.journal,
+                self.settings, self.bus, self.ensure_symbol)
+            await self.snaptrade_sync.load_links()
+            self.snaptrade = SnapTradeBroker(
+                self._snaptrade_client, self.sf, self.journal, self.settings,
+                self.snaptrade_sync.account_for)
+            await self.journal.append(ev.BROKER_CONNECTED, {"broker": "snaptrade"})
+
         if self.feed is None:
-            self.feed = SimQuoteFeed(
-                on_quote=self.quotes.on_quote,
-                tick_interval=self.config.sim_tick_interval,
-                seed=self.config.sim_seed)
+            use_yahoo = self.config.quote_source == "yahoo" or (
+                self.config.quote_source == "auto" and snaptrade_configured)
+            if use_yahoo:
+                from .brokers.yahoo import YahooQuoteFeed
+                self.feed = YahooQuoteFeed(
+                    on_quote=self.quotes.on_quote,
+                    poll_seconds=float(self.settings.get("quotes.yahoo_poll_seconds", 3.0)))
+            else:
+                self.feed = SimQuoteFeed(
+                    on_quote=self.quotes.on_quote,
+                    tick_interval=self.config.sim_tick_interval,
+                    seed=self.config.sim_seed)
 
         self.orders = OrderManager(
             self.sf, self.bus, self.journal, self.risk, self.settings,
@@ -92,6 +120,9 @@ class Engine:
         self.sim_executor.on_report = self.orders.on_report
         if self.ibkr is not None:
             self.ibkr.on_report = self.orders.on_report
+        if self.snaptrade is not None:
+            self.snaptrade.on_report = self.orders.on_report
+            await self.snaptrade.start()
 
         for symbol in await self._startup_symbols():
             await self.ensure_symbol(symbol)
@@ -104,6 +135,9 @@ class Engine:
             asyncio.create_task(self._equity_snapshotter(), name="equity-snapshots"),
             asyncio.create_task(self._daily_loss_monitor(), name="daily-loss-monitor"),
         ]
+        if self.snaptrade_sync is not None:
+            self._tasks.append(
+                asyncio.create_task(self.snaptrade_sync.run(), name="snaptrade-sync"))
         self.started = True
         log.info("engine started (feed=%s)", type(self.feed).__name__)
 
@@ -125,6 +159,10 @@ class Engine:
             await self.feed.stop()
         if self.ibkr:
             await self.ibkr.stop()
+        if self.snaptrade is not None:
+            await self.snaptrade.stop()
+        if getattr(self, "_snaptrade_client", None) is not None:
+            await self._snaptrade_client.aclose()
         await self.db.dispose()
 
     # ------------------------------------------------------------- seeding
@@ -178,10 +216,13 @@ class Engine:
         self.bars.seed(symbol, existing)
 
     # ------------------------------------------------------------- routing
-    def executor_for(self, portfolio_kind: str):
-        if portfolio_kind in ("sim", "shadow"):
+    def executor_for(self, portfolio: dict | None):
+        kind = (portfolio or {}).get("kind", "sim")
+        if kind in ("sim", "shadow"):
             return self.sim_executor
-        if portfolio_kind in ("paper", "live"):
+        if kind in ("paper", "live"):
+            if (portfolio or {}).get("venue") == "snaptrade":
+                return self.snaptrade
             return self.ibkr
         return None
 
@@ -255,6 +296,9 @@ class Engine:
         pending = []
         if self.proposals is not None:
             pending = await self.proposals.list_pending()
+        feed_name = type(self.feed).__name__ if self.feed else None
+        quote_source = {"SimQuoteFeed": "sim", "YahooQuoteFeed": "yahoo",
+                        "IBKRBroker": "ibkr"}.get(feed_name or "", "sim")
         return {
             "settings": self.settings.all(),
             "portfolios": portfolios,
@@ -264,10 +308,13 @@ class Engine:
             "halt": self.halt.to_dict(),
             "watchlists": watchlists,
             "proposals": pending,
+            "brokerages": self.snaptrade_sync.payload() if self.snaptrade_sync else None,
             "broker": {
-                "feed": type(self.feed).__name__ if self.feed else None,
+                "feed": feed_name,
                 "feedConnected": bool(self.feed and self.feed.connected),
                 "ibkrConnected": bool(self.ibkr and self.ibkr.connected),
+                "snaptradeConnected": bool(self.snaptrade and self.snaptrade.connected),
+                "quoteSource": quote_source,
                 "mode": self.settings.get("trading.mode"),
             },
         }

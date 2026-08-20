@@ -49,6 +49,12 @@ DEFAULTS: dict[str, Any] = {
     "verification.require_actionable": True,
     # --- integrations ----------------------------------------------------------
     "telegram.enabled": False,
+    "snaptrade.enabled": False,
+    "snaptrade.sync_minutes": 15,
+    "snaptrade.order_poll_seconds": 2.0,
+    "snaptrade.reconcile_seconds": 60,
+    "snaptrade.allow_brackets": False,
+    "quotes.yahoo_poll_seconds": 3.0,
     # --- UI ----------------------------------------------------------------
     "ui.theme": "dark",                     # dark | light
     "ui.accent": "#5b8cff",

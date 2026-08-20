@@ -62,6 +62,26 @@ class Portfolio(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class BrokerageAccount(Base):
+    """A real brokerage account reached through an aggregator (SnapTrade today).
+
+    Links one external account to exactly one zargar portfolio; the sync
+    service auto-provisions both on first sight of an account.
+    """
+    __tablename__ = "brokerage_accounts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)  # SnapTrade account UUID
+    portfolio_id: Mapped[str] = mapped_column(ForeignKey("portfolios.id"), unique=True, index=True)
+    venue: Mapped[str] = mapped_column(String(16), default="snaptrade")
+    connection_id: Mapped[str | None] = mapped_column(String(64))  # authorization id
+    institution: Mapped[str | None] = mapped_column(String(64))    # "Wealthsimple" / "Webull"
+    number: Mapped[str | None] = mapped_column(String(64))
+    currency: Mapped[str] = mapped_column(String(8), default="CAD")
+    account_type: Mapped[str | None] = mapped_column(String(32))   # MARGIN / CASH / ...
+    last_synced_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    meta: Mapped[dict] = mapped_column(JSONVariant, default=dict)  # raw balances etc.
+
+
 class Instrument(Base):
     __tablename__ = "instruments"
     __table_args__ = (UniqueConstraint("symbol", "exchange", "sec_type", name="uq_instrument"),)

@@ -7,66 +7,34 @@ Requires personal API credentials in backend/.env:
 
 Usage (from backend/):
 
-    .venv/bin/python -m zargar.tools.snaptrade_check             # status + connections + accounts
-    .venv/bin/python -m zargar.tools.snaptrade_check --upgrade   # re-auth URLs to upgrade
-                                                                 # read-only connections to trade
+    .venv/bin/python -m zargar.tools.snaptrade_check              # status + connections + accounts
+    .venv/bin/python -m zargar.tools.snaptrade_check --upgrade    # re-auth URL to upgrade the next
+                                                                  # read-only connection to trade
+    .venv/bin/python -m zargar.tools.snaptrade_check --balances   # raw balances payloads (JSON)
+    .venv/bin/python -m zargar.tools.snaptrade_check --positions  # raw positions payloads (JSON)
 
 Read-only against your brokerage accounts: never places orders. --upgrade only
 generates SnapTrade Connection Portal URLs; you complete the broker login in
-the browser yourself.
+the browser yourself. The raw dump modes exist to verify SnapTrade's actual
+field shapes per broker before the sync service trusts them.
 """
 from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
-import hashlib
-import hmac
 import json
 import sys
-import time
 import webbrowser
 
-import httpx
-
+from ..brokers.snaptrade import SnapTradeClient, SnapTradeError, SnapTradeUnknownOutcome
 from ..config import get_config
 
-BASE = "https://api.snaptrade.com"
 GREEN = "\033[1;32m✓\033[0m"
 RED = "\033[1;31m✗\033[0m"
 WARN = "\033[1;33m!\033[0m"
 
 
-class SnapTradeClient:
-    """Minimal signed client for SnapTrade personal-account auth.
-
-    Personal API keys identify the user directly, so userId/userSecret are
-    omitted everywhere (per docs/personal-vs-commercial).
-    """
-
-    def __init__(self, client_id: str, consumer_key: str):
-        self._client_id = client_id
-        self._consumer_key = consumer_key
-
-    def _sign(self, path: str, query: str, body: dict | None) -> str:
-        payload = {"content": body, "path": path, "query": query}
-        data = json.dumps(payload, separators=(",", ":"), sort_keys=True)
-        digest = hmac.new(self._consumer_key.encode(), data.encode(), hashlib.sha256).digest()
-        return base64.b64encode(digest).decode()
-
-    async def request(self, method: str, path: str, body: dict | None = None):
-        query = f"clientId={self._client_id}&timestamp={int(time.time())}"
-        headers = {"Signature": self._sign(path, query, body)}
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.request(
-                method, f"{BASE}{path}?{query}", headers=headers,
-                json=body if body is not None else None)
-        if resp.status_code >= 400:
-            raise RuntimeError(f"{method} {path} -> {resp.status_code}: {resp.text[:300]}")
-        return resp.json()
-
-
-async def run(upgrade: bool, open_browser: bool) -> int:
+async def run(upgrade: bool, open_browser: bool, dump: str | None) -> int:
     cfg = get_config()
     if not cfg.snaptrade_client_id or not cfg.snaptrade_consumer_key:
         print(f"{RED} SnapTrade credentials missing.")
@@ -77,12 +45,18 @@ async def run(upgrade: bool, open_browser: bool) -> int:
         return 1
 
     st = SnapTradeClient(cfg.snaptrade_client_id, cfg.snaptrade_consumer_key)
+    try:
+        return await _run(st, upgrade, open_browser, dump)
+    finally:
+        await st.aclose()
 
+
+async def _run(st: SnapTradeClient, upgrade: bool, open_browser: bool, dump: str | None) -> int:
     try:
         connections = await st.request("GET", "/api/v1/authorizations")
-    except RuntimeError as exc:
+    except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
         print(f"{RED} Could not list connections: {exc}")
-        if "401" in str(exc) or "signature" in str(exc).lower():
+        if isinstance(exc, SnapTradeError) and exc.status == 401:
             print("   Check that the consumer key matches the client ID (both from the")
             print("   dashboard API Key page) and that your system clock is accurate.")
         return 1
@@ -100,19 +74,33 @@ async def run(upgrade: bool, open_browser: bool) -> int:
 
     try:
         accounts = await st.request("GET", "/api/v1/accounts")
-        for acct in accounts:
-            bal = (acct.get("balance") or {}).get("total") or {}
-            amount, currency = bal.get("amount"), bal.get("currency", "")
-            total = f"{amount:,.2f} {currency}" if isinstance(amount, (int, float)) else "n/a"
-            print(f"{GREEN} Account: {acct.get('name') or acct.get('number'):<28} "
-                  f"{acct.get('institution_name', ''):<16} balance {total}")
-    except RuntimeError as exc:
+    except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
         print(f"{WARN} Could not list accounts: {exc}")
+        accounts = []
+    for acct in accounts:
+        bal = (acct.get("balance") or {}).get("total") or {}
+        amount, currency = bal.get("amount"), bal.get("currency", "")
+        if isinstance(currency, dict):
+            currency = currency.get("code", "")
+        total = f"{amount:,.2f} {currency}" if isinstance(amount, (int, float)) else "n/a"
+        print(f"{GREEN} Account: {acct.get('name') or acct.get('number'):<28} "
+              f"{acct.get('institution_name', ''):<16} balance {total}")
+
+    if dump:
+        for acct in accounts:
+            aid = acct.get("id")
+            print(f"\n=== {acct.get('institution_name')} {acct.get('name')} ({aid}) — {dump} ===")
+            try:
+                payload = await st.request("GET", f"/api/v1/accounts/{aid}/{dump}")
+                print(json.dumps(payload, indent=2, default=str)[:4000])
+            except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
+                print(f"{RED} {exc}")
+        return 0
 
     if not upgrade:
         if read_only:
             print(f"\n{WARN} {len(read_only)} connection(s) are not trade-enabled. Re-run with"
-                  " --upgrade to generate re-authorization URLs.")
+                  " --upgrade to generate a re-authorization URL.")
         return 0
 
     if not read_only:
@@ -129,7 +117,7 @@ async def run(upgrade: bool, open_browser: bool) -> int:
             "reconnect": conn["id"],
             "connectionType": "trade",
         })
-    except RuntimeError as exc:
+    except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
         print(f"{RED} {name}: {exc}")
         return 1
     uri = login.get("redirectURI")
@@ -151,12 +139,17 @@ async def run(upgrade: bool, open_browser: bool) -> int:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Zargar ↔ SnapTrade connectivity check")
     parser.add_argument("--upgrade", action="store_true",
-                        help="generate re-auth URLs upgrading read-only connections to trade")
+                        help="generate a re-auth URL upgrading a read-only connection to trade")
     parser.add_argument("--no-browser", action="store_true",
                         help="print upgrade URLs without opening a browser")
+    parser.add_argument("--balances", action="store_true",
+                        help="dump raw per-account balances payloads (read-only)")
+    parser.add_argument("--positions", action="store_true",
+                        help="dump raw per-account positions payloads (read-only)")
     args = parser.parse_args()
+    dump = "balances" if args.balances else "positions" if args.positions else None
     try:
-        code = asyncio.run(run(args.upgrade, open_browser=not args.no_browser))
+        code = asyncio.run(run(args.upgrade, open_browser=not args.no_browser, dump=dump))
     except KeyboardInterrupt:
         code = 130
     sys.exit(code)

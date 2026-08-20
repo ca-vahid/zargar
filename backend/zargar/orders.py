@@ -117,7 +117,7 @@ class OrderManager:
         settings,
         positions: PositionKeeper,
         quotes: QuoteCache,
-        executor_for: Callable[[str], Executor | None],
+        executor_for: Callable[[dict | None], Executor | None],
         ensure_symbol,  # async Callable[[str], None] — make sure quotes flow
     ) -> None:
         self._sf = session_factory
@@ -175,7 +175,14 @@ class OrderManager:
             return await self._transition(
                 order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
                 reject_reason=reason, extra={"risk": verdict.to_dict()})
-        self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
+
+        # Venue capability check before the dry-run short-circuit so a
+        # pre-flight dry run surfaces it in the confirm dialog too.
+        if (order.bracket and portfolio.get("venue") == "snaptrade"
+                and not bool(self._settings.get("snaptrade.allow_brackets", False))):
+            return await self._transition(
+                order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
+                reject_reason="bracket orders are not supported on SnapTrade venues")
 
         # ---- routing gate ----------------------------------------------------
         mode = str(self._settings.get("trading.mode", "sim"))
@@ -185,6 +192,9 @@ class OrderManager:
             return await self._transition(
                 order.id, OrderStatus.DRY_RUN, ev.ORDER_DRY_RUN,
                 extra={"estimatedPrice": est, "risk": verdict.to_dict()})
+        # Dry runs never consume rate/duplicate budget (a confirm-dialog
+        # pre-flight would otherwise block the real submit that follows).
+        self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
         allowed = {
             "sim": {"sim", "shadow"},
             "paper": {"sim", "shadow", "paper"},
@@ -194,7 +204,7 @@ class OrderManager:
             return await self._transition(
                 order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
                 reject_reason=f"trading.mode={mode} blocks orders on a '{kind}' portfolio")
-        executor = self._executor_for(kind)
+        executor = self._executor_for(portfolio)
         if executor is None or not executor.connected:
             return await self._transition(
                 order.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
@@ -206,7 +216,7 @@ class OrderManager:
             side=OrderSide(order.side), qty=order.qty,
             order_type=OrderType(order.order_type),
             limit_price=order.limit_price, stop_price=order.stop_price,
-            tif=TimeInForce(order.tif),
+            tif=TimeInForce(order.tif), portfolio_id=order.portfolio_id,
         ))
         return result
 
@@ -226,7 +236,7 @@ class OrderManager:
             raise ValueError(f"unknown order: {order_id}")
         if order.status in OPEN_STATUSES:
             portfolio = self._positions.portfolio(order.portfolio_id) or {}
-            executor = self._executor_for(portfolio.get("kind", "sim"))
+            executor = self._executor_for(portfolio)
             if executor is not None:
                 await executor.cancel(order_id)
                 return order_dict(order)  # final state arrives via report
@@ -311,7 +321,7 @@ class OrderManager:
         child_side = "SELL" if long else "BUY"
         oca = f"oca-{parent.id[:12]}"
         portfolio = self._positions.portfolio(parent.portfolio_id) or {}
-        executor = self._executor_for(portfolio.get("kind", "sim"))
+        executor = self._executor_for(portfolio)
         children: list[Order] = []
         if tp:
             children.append(Order(
@@ -344,6 +354,7 @@ class OrderManager:
                     order_type=OrderType(child.order_type),
                     limit_price=child.limit_price, stop_price=child.stop_price,
                     tif=TimeInForce(child.tif), oca_group=oca, parent_id=parent.id,
+                    portfolio_id=child.portfolio_id,
                 ))
 
     # ------------------------------------------------------------------ util
