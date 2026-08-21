@@ -78,6 +78,12 @@ export function connectWS() {
       case "bar":
         for (const l of barListeners) l(data.d);
         break;
+      case "technique":
+        s.applyTechnique(data.d);
+        break;
+      case "chat":
+        s.applyChat(data.d);
+        break;
     }
   };
 }

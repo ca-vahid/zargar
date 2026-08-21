@@ -52,6 +52,8 @@ class Engine:
         self.orders: OrderManager | None = None
         self.proposals = None        # attached by signal layer
         self.signals_service = None  # attached by signal layer
+        self.technique = None        # TechniqueService (attached by technique layer)
+        self.chat = None             # ChatService
         self.telegram = None
         self._tasks: list[asyncio.Task] = []
         self._bar_persister: BarPersister | None = None

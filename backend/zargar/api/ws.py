@@ -28,6 +28,8 @@ TOPIC_TO_TYPE = {
     topics.SIGNALS: "signal",
     topics.SYSTEM: "system",
     topics.EVENTS: "event",
+    topics.TECHNIQUE: "technique",
+    topics.CHAT: "chat",
 }
 
 

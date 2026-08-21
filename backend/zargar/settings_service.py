@@ -76,6 +76,35 @@ DEFAULTS: dict[str, Any] = {
     "ui.quote_flash": True,
     # --- signal sources registry (list of {name, emails, trust, notes}) -----
     "sources.registry": [],
+    # --- LLM (technique pipeline + chat) -----------------------------------
+    "llm.model": "claude-opus-5",
+    "llm.effort": "high",                   # low | medium | high | xhigh | max
+    "llm.thinking_display": "summarized",   # summarized | omitted (raw CoT is never returned)
+    "llm.max_tokens": 16000,
+    "llm.max_passes": 6,                    # vision pipeline call budget per run
+    # --- technique (docs/TECHNIQUE-ENHANCEDMARKET.md section 10 thresholds) ---
+    "technique.enabled": True,
+    "technique.long_only": True,
+    "technique.level_tolerance_pct": 0.15,
+    "technique.min_touches": 2,
+    "technique.pivot_window": 3,
+    "technique.lookback_sessions": 3,
+    "technique.volume_spike_mult": 1.5,
+    "technique.volume_dryup_mult": 0.7,
+    "technique.decisive_body_ratio": 0.6,
+    "technique.min_risk_reward": 3.0,
+    "technique.default_risk_pct": 1.0,
+    "technique.max_risk_pct": 5.0,
+    "technique.wedge_min_bars": 8,
+    "technique.default_tf": "1m",
+    "technique.options.enabled": True,
+    "technique.options.provider": "cboe",   # cboe (free, ~15-min delayed) | tradier (token)
+    "technique.emit_proposals": False,      # valid setups -> practice proposals
+    "technique.scan.enabled": False,
+    "technique.scan.symbols": ["SPY", "QQQ", "TSLA", "NVDA", "AAPL"],
+    "technique.scan.interval_minutes": 30,
+    "technique.scan.rth_only": True,
+    "technique.max_runs_per_day": 40,
 }
 
 

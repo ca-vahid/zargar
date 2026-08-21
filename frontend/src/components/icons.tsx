@@ -35,6 +35,10 @@ export const IconTrade = make("IconTrade", <>
   <path d="M10.5 4h4v4" />
 </>);
 
+export const IconTechnique = make("IconTechnique", <>
+  <path d="M2 12.5 5.5 8l2.5 2.5L11 5l3 3.5" />
+  <path d="M2 3.5h12M2 6.5h5" opacity="0.5" />
+</>);
 export const IconSignals = make("IconSignals", <>
   <path d="M1.5 9.5h3.2l1.3 2.5h4l1.3-2.5h3.2" />
   <path d="M2.5 9.5v3a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-3" />

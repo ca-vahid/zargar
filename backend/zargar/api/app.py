@@ -38,9 +38,13 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         await attach_signal_layer(eng)
         from ..approvals.telegram import attach_telegram
         await attach_telegram(eng)
+        from ..technique.service import attach_technique_layer
+        await attach_technique_layer(eng)
         await hub.start()
         yield
         await hub.stop()
+        if eng.technique is not None:
+            await eng.technique.stop()
         await eng.stop()
 
     app = FastAPI(title="Zargar", version="0.1.0", lifespan=lifespan)
@@ -322,6 +326,10 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     # --- signal ingestion + proposals routes (phase 4/5) ------------------------
     from .routes_signals import build_signal_routes
     build_signal_routes(app, eng, auth, config)
+
+    # --- technique pipeline + chat ------------------------------------------------
+    from .routes_technique import build_technique_routes
+    build_technique_routes(app, eng, auth, config)
 
     # --- static SPA -----------------------------------------------------------
     if config.frontend_dist and Path(config.frontend_dist).is_dir():

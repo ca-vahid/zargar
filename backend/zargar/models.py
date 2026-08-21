@@ -17,6 +17,7 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -259,3 +260,100 @@ class Watchlist(Base):
     name: Mapped[str] = mapped_column(String(64))
     sort: Mapped[int] = mapped_column(Integer, default=0)
     symbols: Mapped[list] = mapped_column(JSONVariant, default=list)  # ordered list of symbols
+
+
+# --- technique pipeline (docs/TECHNIQUE-PIPELINE-PLAN.md) --------------------
+
+class TechniqueRun(Base):
+    """One analysis run. Created at start, completed once; never edited after
+    `status` leaves `running`."""
+    __tablename__ = "technique_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    thread_id: Mapped[str | None] = mapped_column(ForeignKey("chat_threads.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    as_of: Mapped[int | None] = mapped_column(BigInteger)        # epoch ms analysed, null = live
+    primary_tf: Mapped[str] = mapped_column(String(8), default="1m")
+    mode: Mapped[str] = mapped_column(String(16), default="full")  # full | image_only
+    trigger: Mapped[str] = mapped_column(String(16), default="manual")  # manual | scan | chat
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)
+    # running | done | failed
+    verdict: Mapped[str | None] = mapped_column(String(16), index=True)   # setup | no_setup
+    setup_type: Mapped[str | None] = mapped_column(String(24))
+    confidence: Mapped[float | None] = mapped_column(Float)
+    grounded: Mapped[bool | None] = mapped_column(Boolean)
+    facts: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    result: Mapped[dict] = mapped_column(JSONVariant, default=dict)       # PipelineResult.to_dict()
+    images: Mapped[dict] = mapped_column(JSONVariant, default=dict)       # tf -> asset id
+    usage: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+    llm: Mapped[dict] = mapped_column(JSONVariant, default=dict)          # model, effort, display
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TechniqueSetup(Base):
+    """A setup emitted by a run (valid or not; invalid ones keep their reasons)."""
+    __tablename__ = "technique_setups"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    setup_type: Mapped[str] = mapped_column(String(24))
+    direction: Mapped[str] = mapped_column(String(8))
+    entry: Mapped[float] = mapped_column(Float)
+    stop: Mapped[float] = mapped_column(Float)
+    targets: Mapped[list] = mapped_column(JSONVariant, default=list)
+    risk_reward: Mapped[float] = mapped_column(Float)
+    confidence: Mapped[float] = mapped_column(Float)
+    valid: Mapped[bool] = mapped_column(Boolean, default=False)
+    rules: Mapped[list] = mapped_column(JSONVariant, default=list)
+    no_trade_reasons: Mapped[list] = mapped_column(JSONVariant, default=list)
+    options: Mapped[dict | None] = mapped_column(JSONVariant)
+    proposal_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)
+    # open | proposed | expired | dismissed
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ChatThread(Base):
+    __tablename__ = "chat_threads"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    kind: Mapped[str] = mapped_column(String(16), default="chat")   # chat | run
+    symbol: Mapped[str | None] = mapped_column(String(32), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    meta: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class ChatMessage(Base):
+    """Every turn, pipeline pass, tool call and tool result. Never updated."""
+    __tablename__ = "chat_messages"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    thread_id: Mapped[str] = mapped_column(ForeignKey("chat_threads.id"), index=True)
+    seq: Mapped[int] = mapped_column(Integer, index=True)
+    role: Mapped[str] = mapped_column(String(16))       # user | assistant
+    blocks: Mapped[list] = mapped_column(JSONVariant, default=list)   # API content blocks (JSON)
+    meta: Mapped[dict] = mapped_column(JSONVariant, default=dict)     # pass, usage, model, tool info
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class ChatAsset(Base):
+    """Binary attachments (chart PNGs, pasted screenshots) referenced by id
+    from message blocks so the JSON rows stay small."""
+    __tablename__ = "chat_assets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    thread_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    media_type: Mapped[str] = mapped_column(String(32))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    meta: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+Index("ix_chat_messages_thread_seq", ChatMessage.thread_id, ChatMessage.seq, unique=True)

@@ -19,7 +19,12 @@ cd frontend && npm run dev                             # hot-reload UI on :5173,
 cd backend && .venv/bin/python -m zargar.tools.ibkr_check   # read-only IBKR connectivity test
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTrade status/accounts
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-auth a connection to trade
+cd backend && .venv/bin/python -m pytest tests/test_technique_*.py       # technique pipeline (no LLM calls)
 ```
+
+Technique pipeline (EnhancedMarket method): spec in `docs/TECHNIQUE-ENHANCEDMARKET.md`,
+build plan + lessons in `docs/TECHNIQUE-PIPELINE-PLAN.md`, code in
+`backend/zargar/technique/`, UI in `frontend/src/pages/TechniquePage.tsx`.
 
 Tests default to `postgresql+asyncpg://zargar@127.0.0.1:5433/zargar_test`
 (override: `ZARGAR_TEST_DATABASE_URL`). Runtime default is port 5432 per
@@ -83,6 +88,17 @@ docker-compose.
   confirm dialog pre-flights every real-money order as a dry run first.
 - The real-money confirm dialog triggers on `kind === "live"` portfolios
   only; sim/shadow/paper submit instantly.
+- Technique/LLM: structured-output schemas must stay **flat** (nested models +
+  enums → 400 "compiled grammar is too large"); Opus 5 defaults thinking display
+  to `omitted` — pass `display: "summarized"` to stream it; never trust an
+  image's extension, sniff the bytes (`technique/llm.py::sniff_media_type`);
+  Yahoo 1m history ≈ 20 days back (8 days/request), 5m 60 d, 1h 2 y.
+- Options chains come from CBOE's free delayed endpoint by default
+  (`cdn.cboe.com/api/global/delayed_quotes/options/{sym}.json` — greeks + IV
+  included, no auth; Tradier needs a US address so it's optional via
+  `technique.options.provider` + `ZARGAR_TRADIER_TOKEN`). CBOE is US listings
+  only — `.TO`/`.V` symbols have no chain there.
+- Technique settings (`technique.*`, `llm.*`) are UI-editable.
 
 ## Testing conventions
 

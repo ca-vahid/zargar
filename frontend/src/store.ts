@@ -14,9 +14,14 @@ import type {
   Signal,
   Snapshot,
   Watchlist,
+  ChatLive,
+  ChatMessage,
+  ChatThread,
+  TechniqueRun,
+  TechniqueSetup,
 } from "./types";
 
-export type Page = "dashboard" | "trade" | "inbox" | "portfolios" | "journal" | "settings";
+export type Page = "dashboard" | "trade" | "inbox" | "portfolios" | "journal" | "settings" | "technique";
 
 export interface OrderIntentBody {
   portfolio_id: string;
@@ -62,6 +67,15 @@ interface AppState {
   ticketPortfolioId: string | null; // one-shot account preselect for the order ticket
   events: JournalEvent[];
   toasts: { id: number; kind: "info" | "error" | "success"; text: string }[];
+  // --- technique / chat ---
+  techniqueRuns: TechniqueRun[];            // most recent first
+  techniqueSetups: TechniqueSetup[];
+  techniqueTab: "analyse" | "chat" | "history" | "backtest";
+  techniqueFocusRunId: string | null;
+  chatThreads: ChatThread[];
+  chatActiveThreadId: string | null;
+  chatMessages: Record<string, ChatMessage[]>;   // threadId -> messages (loaded threads)
+  chatLive: Record<string, ChatLive>;            // threadId -> streaming state
 
   setPage: (p: Page) => void;
   setActiveSymbol: (s: string) => void;
@@ -89,6 +103,18 @@ interface AppState {
   setWatchlists: (w: Watchlist[]) => void;
   toast: (kind: "info" | "error" | "success", text: string) => void;
   dismissToast: (id: number) => void;
+  // --- technique / chat ---
+  applyTechnique: (msg: any) => void;
+  applyChat: (msg: { threadId: string; runId?: string | null; event: any }) => void;
+  setTechniqueRuns: (runs: TechniqueRun[]) => void;
+  setTechniqueSetups: (s: TechniqueSetup[]) => void;
+  setTechniqueTab: (t: "analyse" | "chat" | "history" | "backtest") => void;
+  openTechniqueRun: (runId: string) => void;
+  setChatThreads: (t: ChatThread[]) => void;
+  setChatThread: (t: ChatThread) => void;
+  setChatActive: (id: string | null) => void;
+  openTechniqueChat: (threadId: string) => void;
+  seedChatLive: (threadId: string, live: { passes?: any[]; grounding?: any; facts?: any }) => void;
 }
 
 const posKey = (p: Position) => `${p.portfolioId}:${p.symbol}:${p.secType}`;
@@ -119,6 +145,14 @@ export const useStore = create<AppState>((set, get) => ({
   ticketPortfolioId: null,
   events: [],
   toasts: [],
+  techniqueRuns: [],
+  techniqueSetups: [],
+  techniqueTab: "analyse",
+  techniqueFocusRunId: null,
+  chatThreads: [],
+  chatActiveThreadId: null,
+  chatMessages: {},
+  chatLive: {},
 
   setPage: (page) => set({ page }),
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),
@@ -230,6 +264,136 @@ export const useStore = create<AppState>((set, get) => ({
   setConnected: (connected) => set({ connected }),
   setSettings: (settings) => set({ settings }),
   setWatchlists: (watchlists) => set({ watchlists }),
+
+  // --- technique / chat -----------------------------------------------------
+  setTechniqueRuns: (techniqueRuns) => set({ techniqueRuns }),
+  setTechniqueSetups: (techniqueSetups) => set({ techniqueSetups }),
+  setTechniqueTab: (techniqueTab) => set({ techniqueTab }),
+  openTechniqueRun: (runId) => set({ page: "technique", techniqueTab: "analyse", techniqueFocusRunId: runId }),
+  setChatThreads: (chatThreads) => set({ chatThreads }),
+  setChatThread: (t) =>
+    set((st) => ({
+      chatThreads: [t, ...st.chatThreads.filter((x) => x.id !== t.id)],
+      chatMessages: t.messages ? { ...st.chatMessages, [t.id]: t.messages } : st.chatMessages,
+    })),
+  setChatActive: (chatActiveThreadId) => set({ chatActiveThreadId }),
+  openTechniqueChat: (threadId) =>
+    set({ page: "technique", techniqueTab: "chat", chatActiveThreadId: threadId }),
+  seedChatLive: (threadId, live) =>
+    set((st) => {
+      const prev = st.chatLive[threadId];
+      if (prev && prev.passes.length > 0) return {};
+      const base: ChatLive = prev ?? {
+        active: true, thinking: "", text: "", round: 0, tools: [], passes: [], pass: null,
+        grounding: null, facts: null, error: null,
+      };
+      const passes = (live.passes ?? []).map((p: any) => ({
+        name: p.name, status: p.status, thinking: p.thinking ?? "", text: p.text ?? "",
+        usage: p.usage, seconds: p.seconds, call: p.call,
+      }));
+      const running = passes.find((p: any) => p.status === "running");
+      return { chatLive: { ...st.chatLive, [threadId]: {
+        ...base, active: true, passes, pass: running?.name ?? null,
+        grounding: live.grounding ?? base.grounding, facts: live.facts ?? base.facts } } };
+    }),
+
+  applyTechnique: (msg) => {
+    if (msg.kind === "run" || msg.kind === "run_done") {
+      const run = msg.run as TechniqueRun;
+      set((st) => ({
+        techniqueRuns: [run, ...st.techniqueRuns.filter((r) => r.id !== run.id)].slice(0, 300),
+      }));
+      if (msg.kind === "run_done") {
+        const r = msg.run as TechniqueRun;
+        if (r.status === "failed") get().toast("error", `${r.symbol} analysis failed: ${msg.error ?? r.error ?? ""}`);
+        else if (r.verdict === "setup") get().toast("success", `${r.symbol}: ${r.setupType} setup (conf ${(r.confidence ?? 0).toFixed(2)})`);
+      }
+    } else if (msg.kind === "setup") {
+      set((st) => ({ techniqueSetups: [msg.setup, ...st.techniqueSetups].slice(0, 300) }));
+    } else if (msg.kind === "scan") {
+      get().toast("info", `Scan started ${msg.started?.length ?? 0} run(s)`);
+    }
+  },
+
+  applyChat: ({ threadId, event }) => {
+    const e = event;
+    const t = e.type as string;
+    if (t === "thread") {
+      get().setChatThread(e.thread);
+      return;
+    }
+    if (t === "message") {
+      const m = e.message as ChatMessage;
+      set((st) => {
+        const cur = st.chatMessages[threadId] ?? [];
+        if (cur.some((x) => x.id === m.id)) return {};
+        const live = st.chatLive[threadId];
+        // a persisted assistant message supersedes the streamed buffer for that turn
+        const nextLive = live && m.role === "assistant"
+          ? { ...live, thinking: "", text: "" } : live;
+        return {
+          chatMessages: { ...st.chatMessages, [threadId]: [...cur, m].sort((a, b) => a.seq - b.seq) },
+          chatLive: nextLive ? { ...st.chatLive, [threadId]: nextLive } : st.chatLive,
+          chatThreads: st.chatThreads.map((th) => th.id === threadId
+            ? { ...th, messageCount: (th.messageCount ?? 0) + 1, updatedAt: m.createdAt } : th),
+        };
+      });
+      return;
+    }
+    set((st) => {
+      const prev: ChatLive = st.chatLive[threadId] ?? {
+        active: false, thinking: "", text: "", round: 0, tools: [], passes: [], pass: null,
+        grounding: null, facts: null, error: null,
+      };
+      let live: ChatLive = prev;
+      switch (t) {
+        case "turn_start":
+          live = { ...prev, active: true, thinking: "", text: "", tools: [], error: null }; break;
+        case "turn_done":
+          live = { ...prev, active: false, error: e.error ?? null, pass: null }; break;
+        case "pass_start": {
+          const passes = [...prev.passes.filter((p) => p.name !== e.pass),
+            { name: e.pass, status: "running" as const, thinking: "", text: "", call: e.call }];
+          live = { ...prev, active: true, pass: e.pass, passes, thinking: "", text: "" }; break;
+        }
+        case "pass_done": {
+          const passes = prev.passes.map((p) => p.name === e.pass
+            ? { ...p, status: "done" as const, usage: e.usage, seconds: e.seconds } : p);
+          live = { ...prev, passes, pass: null }; break;
+        }
+        case "grounding":
+          live = { ...prev, grounding: { passed: e.passed, checks: e.checks, attempt: e.attempt } }; break;
+        case "facts":
+          live = { ...prev, facts: { keyLevels: e.keyLevels, volume: e.volume, trend: e.trend } }; break;
+        case "run_done":
+          live = { ...prev, active: false, pass: null }; break;
+        case "thinking_delta": {
+          const passes = prev.pass
+            ? prev.passes.map((p) => p.name === prev.pass ? { ...p, thinking: p.thinking + e.text } : p)
+            : prev.passes;
+          live = { ...prev, active: true, thinking: prev.thinking + e.text, passes }; break;
+        }
+        case "text_delta": {
+          const passes = prev.pass
+            ? prev.passes.map((p) => p.name === prev.pass ? { ...p, text: p.text + e.text } : p)
+            : prev.passes;
+          live = { ...prev, active: true, text: prev.text + e.text, passes }; break;
+        }
+        case "tool_running":
+          live = { ...prev, thinking: "", text: "",
+            tools: [...prev.tools.filter((x) => x.id !== e.id),
+              { id: e.id, name: e.name, input: e.input, status: "running" as const }] }; break;
+        case "tool_done":
+          live = { ...prev, tools: prev.tools.map((x) => x.id === e.id
+            ? { ...x, status: "done" as const, meta: e.meta, preview: e.preview } : x) }; break;
+        case "message_done":
+          live = { ...prev, round: (e.round ?? prev.round) }; break;
+        default:
+          return {};
+      }
+      return { chatLive: { ...st.chatLive, [threadId]: live } };
+    });
+  },
 
   toast: (kind, text) => {
     const id = toastSeq++;

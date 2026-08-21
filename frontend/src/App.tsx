@@ -9,6 +9,7 @@ import { InboxPage } from "./pages/InboxPage";
 import { PortfoliosPage } from "./pages/PortfoliosPage";
 import { JournalPage } from "./pages/JournalPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { TechniquePage } from "./pages/TechniquePage";
 import { useStore } from "./store";
 
 export default function App() {
@@ -66,6 +67,7 @@ export default function App() {
           {page === "portfolios" && <PortfoliosPage />}
           {page === "journal" && <JournalPage />}
           {page === "settings" && <SettingsPage />}
+          {page === "technique" && <TechniquePage />}
         </div>
       </div>
       <Toasts />

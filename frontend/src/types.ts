@@ -209,3 +209,68 @@ export interface Snapshot {
   brokerages?: Brokerages | null;
   broker: BrokerState;
 }
+
+
+// --- technique pipeline + chat ------------------------------------------------
+export interface TechniqueLevel {
+  price: number; kind: string; touches: number; note?: string;
+  strong?: boolean; sources?: string[]; position?: string; effectiveKind?: string; timeframes?: string[];
+}
+export interface TechniqueTarget { price: number; trimPct: number; basis: string }
+export interface TechniqueContract {
+  symbol: string; verdict: "setup" | "no_setup"; setupType: string; direction: string; trend: string;
+  levels: TechniqueLevel[];
+  pattern: { kind: string; present: boolean; widestHeight?: number | null; volumeDeclining: boolean; notes: string };
+  breakout: { observed: boolean; levelPrice?: number | null; verdict: string; volumeConfirmed: boolean;
+    decisiveCandle: boolean; followThrough: boolean; holdsLevel: boolean; higherTfAgrees: boolean };
+  entry: { price: number; basis: string; requiresConfirmation: boolean } | null;
+  stop: { price: number; kind: string; reference: string } | null;
+  targets: TechniqueTarget[]; runnerPct: number; riskReward: number; volumeVerdict: string;
+  confidence: number; rulesFired: string[]; noTradeReasons: string[];
+  optionsExpression: { strikeGuidance: string; expiryGuidance: string; warnings: string[] } | null;
+  rationale: string;
+}
+export interface GroundingCheck { name: string; passed: boolean; detail: string }
+export interface TechniqueRun {
+  id: string; threadId: string | null; symbol: string; asOf: number | null; primaryTf: string;
+  mode: string; trigger: string; status: "running" | "done" | "failed";
+  verdict: string | null; setupType: string | null; confidence: number | null; grounded: boolean | null;
+  analysis?: TechniqueContract | null; groundingPassed?: boolean | null;
+  images: Record<string, string>; usage: Record<string, number>; error: string | null;
+  llm: Record<string, string>; createdAt: string | null; finishedAt: string | null;
+  options?: any; seconds?: number;
+  facts?: any; result?: { analysis: TechniqueContract | null; grounding: { passed: boolean; checks: GroundingCheck[] };
+    passes: { name: string; parsed: any; usage: any; seconds: number }[]; mode: string; error: string | null;
+    usage: any; options?: any; seconds?: number };
+  setups?: TechniqueSetup[];
+}
+export interface TechniqueSetup {
+  id: string; runId: string; symbol: string; setupType: string; direction: string; entry: number; stop: number;
+  targets: TechniqueTarget[]; riskReward: number; confidence: number; valid: boolean; rules: string[];
+  noTradeReasons: string[]; options: any; proposalId: string | null; status: string; createdAt: string | null;
+}
+export interface TechniqueStatus {
+  llmAvailable: boolean; model: string; effort: string; thinkingDisplay: string; optionsAvailable: boolean;
+  optionsProvider?: string;
+  runsToday: number; maxRunsPerDay: number; scanEnabled: boolean; scanSymbols: string[]; running: string[];
+  rules: Record<string, string>;
+}
+export interface ChatBlock { type: string; [k: string]: any }
+export interface ChatMessage {
+  id: string; threadId: string; seq: number; role: "user" | "assistant"; blocks: ChatBlock[];
+  meta: Record<string, any>; createdAt: string | null;
+}
+export interface ChatThread {
+  id: string; title: string; kind: "chat" | "run"; symbol: string | null; runId: string | null;
+  archived: boolean; meta: Record<string, any>; createdAt: string | null; updatedAt: string | null;
+  messageCount?: number | null; messages?: ChatMessage[]; busy?: boolean;
+}
+/** Live (in-flight) streaming state for one thread; cleared when the turn ends. */
+export interface ChatLive {
+  active: boolean; thinking: string; text: string; round: number;
+  tools: { id: string; name: string; input: any; status: "running" | "done"; meta?: any; preview?: string }[];
+  pass?: string | null;
+  passes: { name: string; status: "running" | "done"; thinking: string; text: string; usage?: any; seconds?: number; call?: number }[];
+  grounding?: { passed: boolean; checks: GroundingCheck[]; attempt: number } | null;
+  facts?: any; error?: string | null;
+}

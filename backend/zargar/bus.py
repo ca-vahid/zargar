@@ -58,3 +58,5 @@ PROPOSALS = "proposals"    # proposal lifecycle dicts
 SIGNALS = "signals"        # extracted signal dicts
 SYSTEM = "system"          # halt state, broker connectivity, notices
 BARS = "bars"              # closed bars {symbol, tf, bar}
+TECHNIQUE = "technique"
+CHAT = "chat"

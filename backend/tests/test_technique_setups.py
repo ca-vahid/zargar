@@ -1,0 +1,318 @@
+"""Structure, wedge geometry, and setup arithmetic.
+
+Covers the breakout/fakeout discriminator (T3.3) and the two setup types from
+spec §8 — the resolution of the book's own entry-timing contradiction.
+"""
+from __future__ import annotations
+
+from zargar.domain import Bar
+from zargar.technique.levels import Level
+from zargar.technique.setups import (
+    build_bounce_setup,
+    build_breakout_setup,
+    build_ladder,
+    classify_breakout,
+    risk_reward,
+)
+from zargar.technique.structure import detect_wedge, fit_line, read_trend
+from zargar.technique.volume import VolumeAssessment
+
+MIN = 60_000
+
+
+def bar(i: int, o: float, h: float, l: float, c: float, v: int = 1000) -> Bar:
+    return Bar(symbol="TEST", tf="1m", ts=i * MIN, open=o, high=h, low=l, close=c, volume=v)
+
+
+def leg(bars: list[Bar], idx: int, a: float, b: float, n: int = 5, vol: int = 1000) -> int:
+    """Append `n` bars walking price from a to b. Real swings span several bars —
+    compressed fixtures lose pivots to ties at the default pivot window."""
+    for k in range(n):
+        p = a + (b - a) * ((k + 1) / n)
+        bars.append(bar(idx + k, o=p, h=p + 0.3, l=p - 0.3, c=p, v=vol))
+    return idx + n
+
+
+def swings(points: list[float], *, vol: int = 1000, decay: float = 1.0,
+           per_leg: int = 5) -> list[Bar]:
+    """Bars tracing a zig-zag through `points`, one leg per pair."""
+    bars: list[Bar] = []
+    idx = 0
+    v = vol
+    for a, b in zip(points, points[1:]):
+        idx = leg(bars, idx, a, b, per_leg, v)
+        v = int(v * decay)
+    return bars
+
+
+def vol_assess(*, spike=False, dryup=False, floor=False, trend="flat",
+               ptrend="flat", rel=1.0) -> VolumeAssessment:
+    return VolumeAssessment(
+        relative=rel, trend=trend, price_trend=ptrend,
+        is_spike=spike, is_dryup=dryup, below_floor=floor,
+        rules=["T2.9"], note="",
+    )
+
+
+def level(price: float, kind="support", touches=3, sources=None) -> Level:
+    return Level(price=price, kind=kind, touches=touches,
+                 sources=sources or ["T1.3c"], touch_ts=[0] * touches)
+
+
+# --- trendline fitting ----------------------------------------------------
+
+def test_fit_line_recovers_known_slope():
+    line = fit_line([(0, 100.0), (10, 110.0), (20, 120.0)])
+    assert line is not None
+    assert abs(line.slope - 1.0) < 1e-9
+    assert abs(line.at(30) - 130.0) < 1e-6
+
+
+def test_fit_line_needs_two_points():
+    assert fit_line([(0, 100.0)]) is None
+
+
+# --- trend reading --------------------------------------------------------
+
+def test_read_trend_detects_uptrend():
+    """Higher highs and higher lows (T3.5a)."""
+    # Higher highs (13, 16, 19) and higher lows (10, 12, 14).
+    bars = swings([8, 13, 10, 16, 12, 19, 14, 21])
+    t = read_trend(bars)
+    assert t.direction == "uptrend"
+    assert "T3.5a" in t.rules
+
+
+def test_read_trend_detects_downtrend():
+    # Lower highs (19, 16, 13) and lower lows (14, 12, 10).
+    bars = swings([21, 19, 14, 16, 12, 13, 10, 11])
+    t = read_trend(bars)
+    assert t.direction == "downtrend"
+    assert "T3.5b" in t.rules
+
+
+def test_read_trend_sideways_when_mixed():
+    bars = swings([10, 12, 10, 12, 10, 12, 10, 12])
+    assert read_trend(bars).direction == "sideways"
+
+
+# --- wedge detection ------------------------------------------------------
+
+def _falling_wedge_bars() -> list[Bar]:
+    """A true falling wedge: BOTH lines fall, the upper one faster (T3.1a/b).
+
+    Highs 110 -> 102.5 (steep), lows 100 -> 99.0 (shallow), so the lines converge
+    while both slope down. Volume decays each swing to satisfy T3.1c.
+    """
+    bars: list[Bar] = []
+    idx = 0
+    vol = 4000
+    highs = [110.0, 107.0, 104.5, 102.5]
+    lows = [100.0, 99.5, 99.2, 99.0]
+    prev = highs[0]
+    for h, l in zip(highs, lows):
+        idx = leg(bars, idx, prev, h, 5, vol)
+        idx = leg(bars, idx, h, l, 5, vol)
+        prev = l
+        vol = int(vol * 0.75)
+    return bars
+
+
+def test_detect_wedge_finds_converging_falling_wedge():
+    w = detect_wedge(_falling_wedge_bars())
+    assert w is not None, "expected a falling wedge"
+    assert "T3.1a" in w.rules and "T3.1b" in w.rules
+    assert w.upper.slope < w.lower.slope < 0      # upper steeper, both falling
+    assert w.widest_height > 0
+    assert w.volume_declining and "T3.1c" in w.rules
+
+
+def test_detect_wedge_rejects_short_window():
+    bars = [bar(i, 100, 101, 99, 100) for i in range(5)]
+    assert detect_wedge(bars) is None
+
+
+def test_detect_wedge_rejects_rising_channel():
+    """An ascending shape is not a falling wedge."""
+    bars = swings([100, 106, 102, 110, 106, 114, 110, 118])
+    assert detect_wedge(bars) is None
+
+
+def test_wedge_breakout_level_tracks_upper_line():
+    w = detect_wedge(_falling_wedge_bars())
+    assert w is not None
+    early, late = w.breakout_level(0), w.breakout_level(20)
+    assert late < early     # the break threshold falls with the wedge
+
+
+# --- risk / reward --------------------------------------------------------
+
+def test_risk_reward_basic():
+    assert risk_reward(100.0, 99.0, 103.0) == 3.0
+
+
+def test_risk_reward_zero_when_stop_equals_entry():
+    assert risk_reward(100.0, 100.0, 110.0) == 0.0
+
+
+def test_build_ladder_uses_measured_move():
+    targets = build_ladder(100.0, "long", measured_move=10.0)
+    assert len(targets) == 3
+    assert all(t.basis == "measured_move" for t in targets)
+    assert abs(targets[-1].price - 110.0) < 1e-9
+    assert abs(sum(t.trim_pct for t in targets) - 0.85) < 1e-9   # 15% runner left
+
+
+def test_build_ladder_falls_back_to_pct():
+    targets = build_ladder(100.0, "long")
+    assert [round(t.price, 2) for t in targets] == [102.0, 104.0, 106.0]
+    assert all(t.basis == "pct_ladder" for t in targets)
+
+
+# --- breakout vs fakeout --------------------------------------------------
+
+def _prior_bars(n=20, price=100.0) -> list[Bar]:
+    return [bar(i, o=price, h=price + 0.3, l=price - 0.3, c=price) for i in range(n)]
+
+
+def test_classify_breakout_accepts_confirmed_break():
+    bars = _prior_bars()
+    bars.append(bar(20, o=100.1, h=104.2, l=100.0, c=104.0, v=6000))
+    bars += [bar(21, 104, 105, 103.9, 104.8, 3000), bar(22, 104.8, 105.5, 104.5, 105.2, 3000)]
+    v = classify_breakout(bars, level(100.5, "resistance"), 20, vol_assess(spike=True))
+    assert v.is_breakout and not v.is_fakeout
+    assert v.has_volume and v.is_decisive and v.has_followthrough
+    assert "T3.3a" in v.rules and "T2.5" in v.rules
+
+
+def test_classify_breakout_rejects_low_volume_break():
+    """T3.3d — the single most reliable fakeout tell."""
+    bars = _prior_bars()
+    bars.append(bar(20, o=100.1, h=104.2, l=100.0, c=104.0, v=900))
+    bars += [bar(21, 104, 105, 103.9, 104.8), bar(22, 104.8, 105.5, 104.5, 105.2)]
+    v = classify_breakout(bars, level(100.5, "resistance"), 20, vol_assess(spike=False))
+    assert v.is_fakeout and not v.has_volume
+    assert "T3.3d" in v.rules and "T2.6" in v.rules
+    assert any("volume" in r for r in v.reasons)
+
+
+def test_classify_breakout_rejects_long_upper_wick():
+    """Price pierced the level then got sold — classic fakeout (T3.3e)."""
+    bars = _prior_bars()
+    bars.append(bar(20, o=100.1, h=106.0, l=100.0, c=100.6, v=6000))
+    bars += [bar(21, 100.6, 100.9, 100.0, 100.2), bar(22, 100.2, 100.4, 99.5, 99.8)]
+    v = classify_breakout(bars, level(100.5, "resistance"), 20, vol_assess(spike=True))
+    assert v.is_fakeout and not v.is_decisive
+
+
+def test_classify_breakout_flags_failure_to_hold():
+    """T3.3f — bull trap: broke out, then fell back through."""
+    bars = _prior_bars()
+    bars.append(bar(20, o=100.1, h=104.2, l=100.0, c=104.0, v=6000))
+    bars += [bar(21, 104, 104.2, 100.0, 100.2), bar(22, 100.2, 100.4, 99.0, 99.2)]
+    v = classify_breakout(bars, level(100.5, "resistance"), 20, vol_assess(spike=True))
+    assert v.is_fakeout and not v.holds_level
+    assert "T3.3f" in v.rules
+
+
+def test_classify_breakout_requires_close_beyond_level():
+    """Merely touching the level is not a break (T3.3b)."""
+    bars = _prior_bars()
+    bars.append(bar(20, o=99.8, h=100.6, l=99.5, c=100.1, v=6000))
+    v = classify_breakout(bars, level(100.5, "resistance"), 20, vol_assess(spike=True))
+    assert v.is_fakeout
+    assert any("close" in r for r in v.reasons)
+
+
+def test_classify_breakout_handles_bad_index():
+    v = classify_breakout([], level(100.0), 0, vol_assess())
+    assert v.is_fakeout and "T3.3d" in v.rules
+
+
+# --- setup construction ---------------------------------------------------
+
+def test_bounce_setup_enters_at_the_level():
+    """Setup A — T4.1/T4.2: entry is the level itself, no confirmation."""
+    bars = _prior_bars()
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(dryup=True),
+                           next_resistance=level(112.0, "resistance"))
+    assert s.setup_type == "support_bounce"
+    assert s.entry == 100.0
+    assert s.entry_basis == "at_level"
+    assert s.requires_confirmation is False
+    assert s.stop < s.entry
+    assert s.stop_kind == "mental"
+    assert "T4.2" in s.rules
+
+
+def test_bounce_setup_rejects_poor_risk_reward():
+    """R2 — a level with resistance right above it is not tradeable."""
+    bars = _prior_bars()
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(),
+                           next_resistance=level(100.4, "resistance"))
+    assert not s.valid
+    assert any("R2" in r for r in s.no_trade_reasons)
+
+
+def test_bounce_setup_rejects_low_volume():
+    bars = _prior_bars()
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(floor=True),
+                           next_resistance=level(120.0, "resistance"))
+    assert not s.valid
+    assert any("R3.1" in r for r in s.no_trade_reasons)
+
+
+def test_bounce_setup_targets_sum_to_ladder():
+    bars = _prior_bars()
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(),
+                           next_resistance=level(120.0, "resistance"))
+    assert len(s.targets) == 3
+    assert abs(sum(t.trim_pct for t in s.targets) + s.runner_pct - 1.0) < 1e-9
+
+
+def test_breakout_setup_requires_confirmation():
+    """Setup B — the other half of the spec §8 split."""
+    bars = _prior_bars()
+    bars.append(bar(20, o=100.1, h=104.2, l=100.0, c=104.0, v=6000))
+    bars += [bar(21, 104, 105, 103.9, 104.8), bar(22, 104.8, 105.5, 104.5, 105.2)]
+    lv = level(100.5, "resistance")
+    v = classify_breakout(bars, lv, 20, vol_assess(spike=True))
+    s = build_breakout_setup("TEST", bars, lv, v, vol_assess(spike=True))
+    assert s.requires_confirmation is True
+    assert s.entry_basis == "on_break"
+    assert s.setup_type == "breakout"
+
+
+def test_breakout_setup_carries_fakeout_reasons():
+    bars = _prior_bars()
+    bars.append(bar(20, o=100.1, h=104.2, l=100.0, c=104.0, v=900))
+    lv = level(100.5, "resistance")
+    v = classify_breakout(bars, lv, 20, vol_assess(spike=False))
+    s = build_breakout_setup("TEST", bars, lv, v, vol_assess(spike=False))
+    assert not s.valid
+    assert any("fakeout" in r for r in s.no_trade_reasons)
+
+
+def test_wedge_setup_uses_measured_move_and_wedge_low():
+    """T3.1e stop, T3.1f measured-move target."""
+    bars = _falling_wedge_bars()
+    w = detect_wedge(bars)
+    assert w is not None
+    lv = level(w.breakout_level(len(bars) - 1), "resistance")
+    v = classify_breakout(bars, lv, len(bars) - 1, vol_assess(spike=True))
+    s = build_breakout_setup("TEST", bars, lv, v, vol_assess(spike=True), wedge=w)
+    assert s.setup_type == "falling_wedge"
+    assert abs(s.stop - (w.lowest_price - s.entry * 0.001)) < 1e-6
+    assert all(t.basis == "measured_move" for t in s.targets)
+    assert "T3.1f" in s.rules
+
+
+def test_setup_to_dict_is_wire_shaped():
+    bars = _prior_bars()
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(),
+                           next_resistance=level(120.0, "resistance"))
+    d = s.to_dict()
+    assert d["setupType"] == "support_bounce"
+    assert set(d["entry"]) == {"price", "basis", "requiresConfirmation"}
+    assert "riskReward" in d and "noTradeReasons" in d
+    assert isinstance(d["targets"][0]["trimPct"], float)

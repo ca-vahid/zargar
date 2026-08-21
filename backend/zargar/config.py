@@ -43,6 +43,9 @@ class AppConfig(BaseSettings):
     snaptrade_consumer_key: str = ""
     anthropic_api_key: str = ""
     extraction_model: str = "claude-opus-5"
+    # Tradier developer token for options chains (free tier: developer.tradier.com).
+    tradier_token: str = ""
+    tradier_sandbox: bool = False
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
     # Shared secret required on the inbound email webhook (X-Zargar-Ingest-Key header).

@@ -59,4 +59,35 @@ export const api = {
       "POST", "/api/brokerages/impact", body),
   refreshBrokerages: () =>
     request<import("../types").Brokerages>("POST", "/api/brokerages/refresh"),
+
+  // --- technique ---
+  techniqueStatus: () => request<import("../types").TechniqueStatus>("GET", "/api/technique/status"),
+  techniqueAnalyze: (body: { symbol: string; tf?: string; asOf?: number | null; note?: string;
+    imageDataUrl?: string | null }) =>
+    request<import("../types").TechniqueRun>("POST", "/api/technique/analyze", body),
+  techniqueRuns: (limit = 100, symbol?: string) =>
+    request<import("../types").TechniqueRun[]>("GET",
+      `/api/technique/runs?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ""}`),
+  techniqueRun: (id: string) => request<import("../types").TechniqueRun>("GET", `/api/technique/runs/${id}`),
+  techniqueCancel: (id: string) => request<any>("POST", `/api/technique/runs/${id}/cancel`),
+  techniqueSetups: (limit = 100) =>
+    request<import("../types").TechniqueSetup[]>("GET", `/api/technique/setups?limit=${limit}`),
+  techniqueBacktest: (body: { symbol: string; tf: string; days: number; horizonBars?: number; stepBars?: number }) =>
+    request<any>("POST", "/api/technique/backtest", body),
+  techniqueScan: () => request<any>("POST", "/api/technique/scan"),
+  techniqueOptions: (symbol: string, direction = "long") =>
+    request<any>("GET", `/api/technique/options/${encodeURIComponent(symbol)}?direction=${direction}`),
+  // --- chat ---
+  chatThreads: (kind?: string) =>
+    request<import("../types").ChatThread[]>("GET", `/api/chat/threads${kind ? `?kind=${kind}` : ""}`),
+  chatCreate: (body: { title?: string; symbol?: string | null }) =>
+    request<import("../types").ChatThread>("POST", "/api/chat/threads", body),
+  chatThread: (id: string) => request<import("../types").ChatThread>("GET", `/api/chat/threads/${id}`),
+  chatPatch: (id: string, body: { title?: string; archived?: boolean }) =>
+    request<import("../types").ChatThread>("PATCH", `/api/chat/threads/${id}`, body),
+  chatSend: (id: string, body: { text: string; images?: string[] }) =>
+    request<import("../types").ChatMessage>("POST", `/api/chat/threads/${id}/messages`, body),
+  chatCancel: (id: string) => request<any>("POST", `/api/chat/threads/${id}/cancel`),
+  chatSearch: (q: string) => request<any[]>("GET", `/api/chat/search?q=${encodeURIComponent(q)}`),
+  assetUrl: (id: string) => `/api/chat/assets/${id}${getAuthToken() ? `?token=${encodeURIComponent(getAuthToken())}` : ""}`,
 };

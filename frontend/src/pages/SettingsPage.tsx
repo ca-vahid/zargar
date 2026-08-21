@@ -66,6 +66,28 @@ function SelectRow({ k, label, options, hint }: {
   );
 }
 
+function ListRow({ k, label, hint }: { k: string; label: string; hint?: string }) {
+  const value = useStore((s) => s.settings[k]);
+  const patch = usePatch();
+  const [draft, setDraft] = useState<string>("");
+  const [editing, setEditing] = useState(false);
+  const current = Array.isArray(value) ? value.join(", ") : "";
+  return (
+    <div className="setting-row">
+      <div className="lbl">{label}{hint && <small>{hint}</small>}</div>
+      <input type="text" value={editing ? draft : current}
+        onFocus={() => { setDraft(current); setEditing(true); }}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => {
+          setEditing(false);
+          const list = draft.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean);
+          if (list.join(",") !== (Array.isArray(value) ? value.join(",") : "")) patch(k, list);
+        }}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const broker = useStore((s) => s.broker);
   const allPortfolios = useStore((s) => s.portfolios);
@@ -187,6 +209,42 @@ export function SettingsPage() {
             <NumberRow k="snaptrade.order_poll_seconds" label="Order status poll (s)" step={0.5} />
             <ToggleRow k="snaptrade.allow_brackets" label="Allow bracket orders"
               hint="off by default — broker support varies" />
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">Technique &amp; LLM
+            <span className="sub">EnhancedMarket pipeline, model effort, scans</span></div>
+          <div className="panel-body">
+            <SelectRow k="llm.effort" label="Thinking depth (effort)"
+              hint="low = fast/cheap; high = default; xhigh/max = deepest reasoning, slower"
+              options={[
+                { value: "low", label: "low" }, { value: "medium", label: "medium" },
+                { value: "high", label: "high" }, { value: "xhigh", label: "xhigh" }, { value: "max", label: "max" },
+              ]} />
+            <SelectRow k="llm.thinking_display" label="Show thinking"
+              hint="summarized streams the model's reasoning live; raw chain-of-thought is never returned by the API"
+              options={[{ value: "summarized", label: "summarized (visible)" }, { value: "omitted", label: "omitted (silent)" }]} />
+            <NumberRow k="llm.max_passes" label="Max model calls per run" hint="context, pattern, entry, critic + retries" />
+            <NumberRow k="technique.max_runs_per_day" label="Daily run cap" hint="cost guard across manual + scans" />
+            <SelectRow k="technique.default_tf" label="Default primary timeframe"
+              options={[{ value: "1m", label: "1m" }, { value: "5m", label: "5m" }, { value: "15m", label: "15m" }]} />
+            <NumberRow k="technique.min_risk_reward" label="Min reward:risk (R2)" step={0.5} hint="book: 1:3" />
+            <NumberRow k="technique.default_risk_pct" label="Risk per trade (%)" step={0.25} hint="book: 0.5-1%" />
+            <NumberRow k="technique.max_risk_pct" label="Max risk per trade (%)" step={0.5} hint="book: 5% ceiling" />
+            <NumberRow k="technique.level_tolerance_pct" label="Level touch tolerance (%)" step={0.05} hint="spec Q1" />
+            <NumberRow k="technique.min_touches" label="Min touches for a level" hint="T1.2: 2; strong = 3" />
+            <NumberRow k="technique.volume_spike_mult" label="Volume spike (x baseline)" step={0.1} />
+            <NumberRow k="technique.volume_dryup_mult" label="Volume dry-up (x baseline)" step={0.1} />
+            <ToggleRow k="technique.options.enabled" label="Pick option contracts" hint="just-OTM strike, weekly/0DTE, greeks + IV warnings (T5)" />
+            <SelectRow k="technique.options.provider" label="Options data provider"
+              hint="CBOE is free with greeks, ~15-min delayed, no account (works in Canada). Tradier needs a US-signup token."
+              options={[{ value: "cboe", label: "CBOE delayed (free)" }, { value: "tradier", label: "Tradier (token)" }]} />
+            <ToggleRow k="technique.emit_proposals" label="Valid setups become practice proposals" hint="approval still goes through the RiskGate" />
+            <ToggleRow k="technique.scan.enabled" label="Scheduled scans" />
+            <NumberRow k="technique.scan.interval_minutes" label="Scan interval (min)" />
+            <ToggleRow k="technique.scan.rth_only" label="Scan only during US market hours" />
+            <ListRow k="technique.scan.symbols" label="Scan symbols" hint="comma separated" />
           </div>
         </div>
 

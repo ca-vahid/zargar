@@ -50,6 +50,14 @@ POSITION_RECONCILED = "PositionReconciled"
 BROKER_ORDER_LINKED = "BrokerOrderLinked"
 BROKER_SUBMIT_UNKNOWN = "BrokerSubmitUnknown"
 BROKERAGE_ACCOUNT_LINKED = "BrokerageAccountLinked"
+TECHNIQUE_RUN_STARTED = "TechniqueRunStarted"
+TECHNIQUE_RUN_COMPLETED = "TechniqueRunCompleted"
+TECHNIQUE_RUN_FAILED = "TechniqueRunFailed"
+TECHNIQUE_SETUP_EMITTED = "TechniqueSetupEmitted"
+TECHNIQUE_GROUNDING_FAILED = "TechniqueGroundingFailed"
+TECHNIQUE_SCAN = "TechniqueScan"
+CHAT_THREAD_CREATED = "ChatThreadCreated"
+CHAT_TOOL_CALLED = "ChatToolCalled"
 
 
 class Journal:

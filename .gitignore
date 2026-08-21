@@ -1,6 +1,7 @@
 # machine-specific
 docker-compose.override.yml
 backend/.env
+.claude/
 
 # build artifacts
 frontend/dist/
