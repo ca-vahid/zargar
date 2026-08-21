@@ -13,6 +13,9 @@
  */
 
 const MAX_BACKTRACK = 40;
+/** Only the tail of a candidate can contain a trailing comma or dangling key,
+ *  so the end-anchored cleanup regexes run over this many chars, not the lot. */
+const TRIM_WINDOW = 256;
 
 interface Cut {
   /** index one past the completed value */
@@ -74,28 +77,38 @@ export function parsePartialJson(raw: string): any | null {
       literal = true; // start of a number / true / false / null
     }
   }
-  if (literal) mark(text.length);
+  // NOTE: a numeric literal still open at end-of-buffer is deliberately NOT
+  // marked. `{"entry_price":1` is valid JSON on its own, so marking it would
+  // return 1 for a value that is really 145.67 — and unlike truncated prose, a
+  // truncated number looks settled. Leaving it unmarked hides the field until a
+  // delimiter proves it finished.
 
-  // Most valuable attempt first: if the stream stopped *inside* a string, close
-  // that string and show the partial text. Without this, a long value still
-  // being written (a rationale, an observation) has no completed value after it
-  // and the whole document would fall back to raw JSON — which is the common
-  // case while streaming, not an edge case.
-  const attempts: string[] = [];
-  if (inStr) {
-    // A trailing lone backslash would escape the quote we are about to add.
-    const body = esc ? text.slice(0, -1) : text;
-    attempts.push(`${body}"${closersFor()}`);
-  }
-  for (let k = cuts.length - 1, n = 0; k >= 0 && n < MAX_BACKTRACK; k--, n++) {
-    const cut = cuts[k];
-    let head = text.slice(0, cut.end).replace(/,\s*$/, "");
-    // A dangling `"key":` with no value cannot be closed — drop the pair.
-    head = head.replace(/,?\s*"[^"]*"\s*:\s*$/, "");
-    attempts.push(head + cut.closers);
+  // Candidates are generated lazily and tried in order, most complete first:
+  // building all 40 up front cost a full-length slice plus two full-buffer
+  // regex scans each, on every streamed delta (O(n^2) on the render path).
+  function* candidates(): Generator<string> {
+    // If the stream stopped inside a string, close it and show the partial
+    // prose — the common streaming case, not an edge case.
+    if (inStr) {
+      // A trailing lone backslash would escape the quote we are about to add.
+      yield `${esc ? text.slice(0, -1) : text}"${closersFor()}`;
+    }
+    for (let k = cuts.length - 1, n = 0; k >= 0 && n < MAX_BACKTRACK; k--, n++) {
+      const cut = cuts[k];
+      const head = text.slice(0, cut.end);
+      // Trim only the tail: these patterns are all end-anchored, so scanning
+      // the whole buffer for them is wasted work on every delta.
+      const from = Math.max(0, head.length - TRIM_WINDOW);
+      const tail = head
+        .slice(from)
+        .replace(/,\s*$/, "")
+        // A dangling `"key":` with no value cannot be closed — drop the pair.
+        .replace(/,?\s*"[^"]*"\s*:\s*$/, "");
+      yield head.slice(0, from) + tail + cut.closers;
+    }
   }
 
-  for (const candidate of attempts) {
+  for (const candidate of candidates()) {
     try {
       const parsed = JSON.parse(candidate);
       if (parsed && typeof parsed === "object") return parsed;

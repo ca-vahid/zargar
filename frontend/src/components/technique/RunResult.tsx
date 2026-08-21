@@ -2,9 +2,11 @@ import { useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/format";
 import { useStore } from "../../store";
+import { absoluteUrl } from "../../lib/routing";
 import type { GroundingCheck, TechniqueContract, TechniqueRun } from "../../types";
 import { IconCheck, IconX } from "../icons";
 import { Collapse } from "../Collapse";
+import { CopyChip } from "../CopyChip";
 import { Markdown } from "./Markdown";
 import { FactsView } from "./StreamingOutput";
 
@@ -64,7 +66,9 @@ export function RunResult({ run, rules }: { run: TechniqueRun; rules: Record<str
   if (run.status === "failed") {
     return (
       <div className="panel tq-result">
-        <div className="panel-head"><VerdictBadge run={run} /> <span className="sub">{run.symbol} · {run.primaryTf}</span></div>
+        <div className="panel-head"><VerdictBadge run={run} /> <span className="sub">{run.symbol} · {run.primaryTf}</span>
+          <span className="tq-head-right"><CopyChip value={run.id}
+            link={absoluteUrl({ page: "technique", techniqueTab: "analyse", runId: run.id })} /></span></div>
         <div className="panel-body"><div className="neg">{run.error}</div></div>
       </div>
     );
@@ -81,7 +85,9 @@ export function RunResult({ run, rules }: { run: TechniqueRun; rules: Record<str
         <span className="tq-grounded" title="Every price re-verified against the bar data">
           {grounding?.passed ? <><IconCheck size={11} /> grounded</> : <><IconX size={11} /> not grounded</>}
         </span>
-        <span className="sub" style={{ marginLeft: "auto" }}>
+        <span className="sub tq-head-right">
+          <CopyChip value={run.id} title={`Run ${run.id} — click to copy the id`}
+            link={absoluteUrl({ page: "technique", techniqueTab: "analyse", runId: run.id })} />
           {run.finishedAt ? fmtDateTime(run.finishedAt) : ""} · {run.seconds ?? run.result?.seconds ?? "?"}s · ≈${cost.toFixed(2)}
         </span>
       </div>

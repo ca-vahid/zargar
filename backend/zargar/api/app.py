@@ -346,11 +346,17 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         dist = Path(config.frontend_dist)
         app.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
 
+        dist_root = dist.resolve()
+
         @app.get("/{path:path}", include_in_schema=False)
         async def spa(path: str):
-            file = dist / path
-            if path and file.is_file():
-                return FileResponse(file)
-            return FileResponse(dist / "index.html")
+            # Deep links (/technique/run/<id>) fall through to index.html, but the
+            # path is attacker-controlled: resolve it and refuse anything that
+            # escapes the dist directory, or `../../backend/.env` is served.
+            if path:
+                candidate = (dist_root / path).resolve()
+                if candidate.is_relative_to(dist_root) and candidate.is_file():
+                    return FileResponse(candidate)
+            return FileResponse(dist_root / "index.html")
 
     return app

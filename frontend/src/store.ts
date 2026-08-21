@@ -110,11 +110,13 @@ interface AppState {
   setTechniqueSetups: (s: TechniqueSetup[]) => void;
   setTechniqueTab: (t: "analyse" | "chat" | "history" | "backtest") => void;
   openTechniqueRun: (runId: string) => void;
+  setTechniqueFocusRun: (runId: string | null) => void;
   setChatThreads: (t: ChatThread[]) => void;
   setChatThread: (t: ChatThread) => void;
   setChatActive: (id: string | null) => void;
   openTechniqueChat: (threadId: string) => void;
   seedChatLive: (threadId: string, live: { passes?: any[]; grounding?: any; facts?: any }) => void;
+  applyRoute: (r: { page: Page; techniqueTab?: string; runId?: string | null; threadId?: string | null }) => void;
 }
 
 const posKey = (p: Position) => `${p.portfolioId}:${p.symbol}:${p.secType}`;
@@ -269,7 +271,15 @@ export const useStore = create<AppState>((set, get) => ({
   setTechniqueRuns: (techniqueRuns) => set({ techniqueRuns }),
   setTechniqueSetups: (techniqueSetups) => set({ techniqueSetups }),
   setTechniqueTab: (techniqueTab) => set({ techniqueTab }),
+  applyRoute: (r) =>
+    set((st) => ({
+      page: r.page,
+      techniqueTab: (r.techniqueTab as any) ?? st.techniqueTab,
+      techniqueFocusRunId: r.runId ?? (r.page === "technique" ? null : st.techniqueFocusRunId),
+      chatActiveThreadId: r.threadId ?? st.chatActiveThreadId,
+    })),
   openTechniqueRun: (runId) => set({ page: "technique", techniqueTab: "analyse", techniqueFocusRunId: runId }),
+  setTechniqueFocusRun: (techniqueFocusRunId) => set({ techniqueFocusRunId }),
   setChatThreads: (chatThreads) => set({ chatThreads }),
   setChatThread: (t) =>
     set((st) => ({

@@ -4,12 +4,14 @@ import { LiveRun } from "../components/technique/LiveRun";
 import { RunResult, VerdictBadge } from "../components/technique/RunResult";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
 import { Modal } from "../components/Modal";
+import { CopyChip } from "../components/CopyChip";
 import { EmptyState, Spinner } from "../components/ui";
 import { IconX } from "../components/icons";
 import { SymbolSearch } from "../components/SymbolSearch";
 import { api } from "../lib/api";
 import { fmtDateTime } from "../lib/format";
 import { useStore } from "../store";
+import { absoluteUrl } from "../lib/routing";
 import type { TechniqueRun, TechniqueSetup, TechniqueStatus } from "../types";
 
 const TFS = ["1m", "5m", "15m"];
@@ -249,7 +251,7 @@ function HistoryTab({ onOpen }: { onOpen: (id: string) => void }) {
         <input className="tq-filter" placeholder="filter symbol" value={filter} onChange={(e) => setFilter(e.target.value)} /></div>
       <div className="panel-body" style={{ padding: 0 }}>
         <table className="tq-table tq-history">
-          <thead><tr><th>When</th><th>Symbol</th><th>TF</th><th>Verdict</th><th>Conf</th><th>Grounded</th><th>Trigger</th><th>Tokens</th><th></th></tr></thead>
+          <thead><tr><th>When</th><th>Symbol</th><th>TF</th><th>Verdict</th><th>Conf</th><th>Grounded</th><th>Trigger</th><th>Run</th><th></th></tr></thead>
           <tbody>
             {visible.map((r) => (
               <tr key={r.id} className="clickable" onClick={() => onOpen(r.id)}>
@@ -260,7 +262,7 @@ function HistoryTab({ onOpen }: { onOpen: (id: string) => void }) {
                 <td>{r.confidence !== null && r.confidence !== undefined ? r.confidence.toFixed(2) : "—"}</td>
                 <td>{r.grounded === null || r.grounded === undefined ? "—" : r.grounded ? "yes" : "no"}</td>
                 <td className="muted">{r.trigger}</td>
-                <td className="muted">{(r.usage as any)?.output ?? ""}</td>
+                <td><CopyChip value={r.id} link={absoluteUrl({ page: "technique", techniqueTab: "analyse", runId: r.id })} /></td>
                 <td><button className="link-btn" onClick={(e) => { e.stopPropagation(); if (r.threadId) useStore.getState().openTechniqueChat(r.threadId); }}>chat</button></td>
               </tr>
             ))}
@@ -403,15 +405,21 @@ export function TechniquePage() {
   const focusId = useStore((s) => s.techniqueFocusRunId);
   const toast = useStore((s) => s.toast);
   const [status, setStatus] = useState<TechniqueStatus | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const setFocusRun = useStore((s) => s.setTechniqueFocusRun);
   const [full, setFull] = useState<TechniqueRun | null>(null);
   const fetchedFor = useRef<string | null>(null);
 
   const refreshStatus = useCallback(() => { api.techniqueStatus().then(setStatus).catch(() => undefined); }, []);
   useEffect(() => { refreshStatus(); api.techniqueRuns(100).then(setRuns).catch(() => undefined); }, [refreshStatus, setRuns]);
-  useEffect(() => { if (focusId) { setActiveId(focusId); setTab("analyse"); } }, [focusId, setTab]);
+  const active = useMemo(() => runs.find((r) => r.id === focusId) ?? runs[0] ?? null, [runs, focusId]);
 
-  const active = useMemo(() => runs.find((r) => r.id === activeId) ?? runs[0] ?? null, [runs, activeId]);
+  // A deep link may name a run that is not in the recent list — fetch it.
+  useEffect(() => {
+    if (!focusId || runs.some((r) => r.id === focusId)) return;
+    api.techniqueRun(focusId)
+      .then((r) => setRuns([r, ...useStore.getState().techniqueRuns.filter((x) => x.id !== r.id)]))
+      .catch(() => toast("error", `Run ${focusId.slice(0, 8)} not found`));
+  }, [focusId, runs, setRuns, toast]);
 
   // A client that connects mid-run has no pass history: seed it from the server.
   const chatLive = useStore((s) => s.chatLive);
@@ -461,7 +469,7 @@ export function TechniquePage() {
             {tab === "analyse" && (
               <>
                 <AnalyseForm disabled={!status?.llmAvailable} running={running}
-                  onStarted={(r) => { setActiveId(r.id); }} />
+                  onStarted={(r) => { setFocusRun(r.id); }} />
                 {!status?.llmAvailable && status && (
                   <EmptyState title="No API key" hint="Set ZARGAR_ANTHROPIC_API_KEY in backend/.env to run analyses." />
                 )}
@@ -470,7 +478,7 @@ export function TechniquePage() {
                 {!shown && <EmptyState title="No runs yet" hint="Enter a symbol and run the pipeline, or paste a chart screenshot." />}
               </>
             )}
-            {tab === "history" && <HistoryTab onOpen={(id) => { setActiveId(id); setTab("analyse"); }} />}
+            {tab === "history" && <HistoryTab onOpen={(id) => { setFocusRun(id); setTab("analyse"); }} />}
             {tab === "backtest" && <BacktestTab />}
           </div>
           <Rail rules={rules} />

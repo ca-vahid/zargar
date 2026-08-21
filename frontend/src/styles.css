@@ -1109,3 +1109,16 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-facts-toggle:hover { color: var(--accent); }
 .tq-facts-toggle .muted { font-weight: 400; font-size: var(--fs-1); }
 .tq-facts { max-height: none; overflow: visible; padding-bottom: var(--sp-2); }
+
+/* ── run identity: copy chip ────────────────────────────────────────────── */
+.copy-chip-group { display: inline-flex; align-items: center; gap: 3px; }
+.copy-chip {
+  font-family: var(--mono); font-size: var(--fs-0); background: var(--surface-2);
+  border: 1px solid var(--border); color: var(--text-2); border-radius: 4px;
+  padding: 1px 6px; cursor: pointer; line-height: 1.5;
+}
+.copy-chip:hover { color: var(--text-1); border-color: var(--accent); }
+.copy-chip.done { color: var(--up); border-color: var(--up); }
+.copy-chip--link { font-family: var(--font); }
+.copy-chip-text { font-variant-numeric: tabular-nums; }
+.tq-head-right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-2); }

@@ -11,9 +11,27 @@ import { JournalPage } from "./pages/JournalPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TechniquePage } from "./pages/TechniquePage";
 import { useStore } from "./store";
+import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 
 export default function App() {
   const page = useStore((s) => s.page);
+  const techniqueTab = useStore((s) => s.techniqueTab);
+  const techniqueRunId = useStore((s) => s.techniqueFocusRunId);
+  const chatThreadId = useStore((s) => s.chatActiveThreadId);
+  const applyRoute = useStore((s) => s.applyRoute);
+
+  // URL is the source of truth on load and on back/forward; state drives it after.
+  useEffect(() => {
+    applyRoute(parseLocation());
+    return onRouteChange(applyRoute);
+  }, [applyRoute]);
+
+  useEffect(() => {
+    const next = { page, techniqueTab, runId: techniqueRunId, threadId: chatThreadId };
+    // pushState only when the destination really changes, so back/forward walks
+    // the places the user visited rather than every incidental state write.
+    syncUrl(next, buildPath(next) !== window.location.pathname);
+  }, [page, techniqueTab, techniqueRunId, chatThreadId]);
   const halt = useStore((s) => s.halt);
   const driftWarnings = useStore((s) => s.driftWarnings);
   const openJournal = useStore((s) => s.openJournal);

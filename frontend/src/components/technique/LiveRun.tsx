@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../../store";
+import { absoluteUrl } from "../../lib/routing";
 import { useStickyScroll } from "../../lib/useStickyScroll";
 import type { ChatLive, TechniqueRun } from "../../types";
 import { Spinner } from "../ui";
 import { IconCheck, IconX } from "../icons";
 import { Collapse } from "../Collapse";
+import { CopyChip } from "../CopyChip";
 import { StreamingOutput } from "./StreamingOutput";
 
 const PASS_LABEL: Record<string, string> = {
@@ -45,7 +47,11 @@ export function LiveRun({ run }: { run: TechniqueRun }) {
       <div className="panel-head">
         <Spinner /> Analysing {run.symbol} · {run.primaryTf}
         <span className="sub">{run.llm?.model} · effort {run.llm?.effort} · thinking {run.llm?.thinkingDisplay}</span>
-        <button className="link-btn danger" style={{ marginLeft: "auto" }} onClick={cancel}>cancel</button>
+        <span className="tq-head-right">
+          <CopyChip value={run.id}
+            link={absoluteUrl({ page: "technique", techniqueTab: "analyse", runId: run.id })} />
+          <button className="link-btn danger" onClick={cancel}>cancel</button>
+        </span>
       </div>
       <div className="panel-body">
         {live?.facts && (
