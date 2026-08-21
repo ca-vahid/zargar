@@ -203,6 +203,23 @@ async def test_unknown_outcome_reconcile_not_found(sf):
     await client.aclose()
 
 
+async def test_order_impact_maps_fee_fields(sf):
+    stub = StubSnapTrade()
+    broker, col, client = make_broker(sf, stub)
+    result = await broker.order_impact("acct-1", symbol="AAPL", side="BUY", qty=10)
+    method, path, params, body = stub.calls("/trade/impact")[0]
+    assert body["account_id"] == "acct-1" and body["units"] == 10
+    assert body["universal_symbol_id"] == "uni-aapl"  # resolved, not the raw ticker
+    assert "symbol" not in body
+    # resolution is cached: a second impact makes no extra symbol search
+    n_searches = len(stub.calls("/symbols"))
+    await broker.order_impact("acct-1", symbol="AAPL", side="SELL", qty=5)
+    assert len(stub.calls("/symbols")) == n_searches
+    assert result == {"estimatedCommission": 2.99, "forexFees": 10.67,
+                      "remainingCash": 55.5, "remainingCashCurrency": "CAD"}
+    await client.aclose()
+
+
 async def test_per_account_throttle(sf):
     stub = StubSnapTrade()
     broker, col, client = make_broker(sf, stub)

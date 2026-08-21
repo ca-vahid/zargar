@@ -215,6 +215,42 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
             return {"enabled": False, "lastSyncAt": None, "providers": []}
         return eng.snaptrade_sync.payload()
 
+    class ImpactBody(BaseModel):
+        portfolio_id: str
+        symbol: str
+        side: str
+        qty: float
+        order_type: str = "MKT"
+        limit_price: float | None = None
+
+    @app.post("/api/brokerages/impact", dependencies=[auth])
+    async def order_impact(body: ImpactBody):
+        """Broker-verified pre-trade impact (exact commission + forex fees).
+
+        Read-only at the brokerage: SnapTrade validates without reserving
+        funds; the returned trade id expires in ~5 minutes and we discard it.
+        """
+        if eng.snaptrade_sync is None or eng.snaptrade is None:
+            raise HTTPException(status_code=503, detail="SnapTrade is not configured")
+        account_id = eng.snaptrade_sync.account_for(body.portfolio_id)
+        if account_id is None:
+            raise HTTPException(status_code=400,
+                                detail="portfolio is not a SnapTrade account")
+        from ..brokers.snaptrade import SnapTradeError
+        try:
+            result = await eng.snaptrade.order_impact(
+                account_id, symbol=body.symbol, side=body.side, qty=body.qty,
+                order_type=body.order_type, limit_price=body.limit_price)
+        except SnapTradeError as exc:
+            # a broker-side verdict ("Not enough cash", "market closed") is an
+            # answer, not a failure — hand it to the UI as one
+            detail = exc.body if isinstance(exc.body, str) else (
+                exc.body.get("detail") or exc.body.get("message") or str(exc.body))
+            return {"error": str(detail)}
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"impact check failed: {exc}")
+        return result
+
     @app.post("/api/brokerages/refresh", dependencies=[auth])
     async def refresh_brokerages():
         if eng.snaptrade_sync is None:

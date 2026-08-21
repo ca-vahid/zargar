@@ -60,6 +60,10 @@ DEFAULTS: dict[str, Any] = {
     "snaptrade.reconcile_seconds": 60,
     "snaptrade.allow_brackets": False,
     "quotes.yahoo_poll_seconds": 1.0,   # 1=frantic … 10=calm (see ui tick-speed select)
+    # --- broker fee schedule (editable estimates; verify via order impact) ----
+    "fees.webull_fx_pct": 1.5,          # Webull CA: rate + 1.5% markup on CAD<->USD
+    "fees.wealthsimple_fx_pct": 1.5,    # WS: ~1.5% conversion on USD trades in CAD accts
+    "fees.default_fx_pct": 1.5,
     # --- UI ----------------------------------------------------------------
     "ui.theme": "light",                    # light | dark (explicit saves win)
     "ui.accent": "#5b8cff",

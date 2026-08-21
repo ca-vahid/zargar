@@ -23,6 +23,19 @@ class StubSnapTrade:
         body = json.loads(request.content) if request.content else None
         self.requests.append((request.method, path, dict(request.url.params), body))
 
+        if path.endswith("/symbols") and request.method == "POST":
+            return httpx.Response(200, json=[
+                {"id": "uni-aapl", "symbol": "AAPL", "raw_symbol": "AAPL"},
+                {"id": "uni-aapl-to", "symbol": "AAPL.TO", "raw_symbol": "AAPL"},
+            ])
+        if path == "/api/v1/trade/impact":
+            return httpx.Response(200, json={
+                "trade": {"id": "trade-1"},
+                "trade_impacts": [{"estimated_commission": 2.99, "forex_fees": 10.67,
+                                   "remaining_cash": 55.5}],
+                "combined_remaining_balance": {"cash": 55.5,
+                                               "currency": {"code": "CAD"}},
+            })
         if path == "/api/v1/trade/place":
             if isinstance(self.place_error, Exception):
                 raise self.place_error

@@ -31,6 +31,12 @@ export function TradePage() {
   const quoteSource = useStore((s) => s.broker?.quoteSource);
   const day = useDaySeries(symbol);
   const [symInput, setSymInput] = useState(symbol);
+  const [ticketCollapsed, setTicketCollapsed] = useState(
+    () => localStorage.getItem("zargar_ticket_collapsed") === "1");
+  const toggleTicket = () => setTicketCollapsed((v) => {
+    localStorage.setItem("zargar_ticket_collapsed", v ? "0" : "1");
+    return !v;
+  });
 
   useEffect(() => setSymInput(symbol), [symbol]);
   useEffect(() => {
@@ -51,7 +57,7 @@ export function TradePage() {
       cur.includes(key) ? cur.filter((i) => i !== key) : [...cur, key]);
 
   return (
-    <div className="trade-grid">
+    <div className={`trade-grid ${ticketCollapsed ? "trade-grid--tc" : ""}`}>
       <div className="panel chart-area">
         <div className="quote-head">
           <input className="symbol-input" value={symInput}
@@ -97,7 +103,8 @@ export function TradePage() {
         <StockChart symbol={symbol} tf={tf} chartType={chartType}
           indicators={indicators} showVolume={showVolume} />
       </div>
-      <OrderTicket symbol={symbol} />
+      <OrderTicket symbol={symbol} collapsed={ticketCollapsed}
+        onToggleCollapse={toggleTicket} />
       <Blotter />
     </div>
   );

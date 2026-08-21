@@ -274,6 +274,7 @@ class SnapTradeBroker(Executor):
         self._settings = settings
         self._account_for = account_for
         self._tracked: dict[str, _Tracked] = {}       # our order id -> state
+        self._symbol_ids: dict[tuple[str, str], str] = {}  # (account, ticker) -> universal id
         self._last_submit: dict[str, float] = {}      # account id -> monotonic ts
         self._submit_locks: dict[str, asyncio.Lock] = {}
         self._task: asyncio.Task | None = None
@@ -418,6 +419,62 @@ class SnapTradeBroker(Executor):
                     and abs(float(row.get("total_quantity") or 0) - order.qty) < 1e-9):
                 return row
         return None
+
+    # ---------------------------------------------------------------- impact
+    async def _universal_symbol_id(self, account_id: str, symbol: str) -> str:
+        """Resolve a ticker to SnapTrade's universal symbol id (cached).
+
+        Unlike trade/place, the impact endpoint refuses plain tickers.
+        """
+        key = (account_id, symbol.upper())
+        cached = self._symbol_ids.get(key)
+        if cached:
+            return cached
+        result = await self._client.request(
+            "POST", f"/api/v1/accounts/{account_id}/symbols",
+            {"substring": symbol.split(".")[0]})
+        rows = result if isinstance(result, list) else []
+        for row in rows:
+            uni = row.get("symbol") if isinstance(row.get("symbol"), dict) else row
+            if not isinstance(uni, dict):
+                continue
+            ticker = str(uni.get("symbol") or "").upper()
+            if ticker == symbol.upper() and uni.get("id"):
+                self._symbol_ids[key] = str(uni["id"])
+                return str(uni["id"])
+        raise SnapTradeError(404, f"symbol {symbol} not tradable in this account")
+
+    async def order_impact(self, account_id: str, *, symbol: str, side: str,
+                           qty: float, order_type: str = "MKT",
+                           limit_price: float | None = None) -> dict:
+        """Broker-verified pre-trade impact: exact commission + forex fees.
+
+        Validation only — SnapTrade reserves nothing; the trade id it returns
+        expires in ~5 minutes and is intentionally discarded here.
+        """
+        body: dict[str, Any] = {
+            "account_id": account_id,
+            "action": side.upper(),
+            "order_type": _ORDER_TYPE.get(order_type, "Market"),
+            "time_in_force": "Day",
+            "universal_symbol_id": await self._universal_symbol_id(account_id, symbol),
+            "units": qty,
+        }
+        if limit_price is not None:
+            body["price"] = limit_price
+        result = await self._client.request("POST", "/api/v1/trade/impact", body)
+        impacts = result.get("trade_impacts") or []
+        first = impacts[0] if impacts else {}
+        combined = result.get("combined_remaining_balance") or {}
+        cash = combined.get("cash")
+        currency = (combined.get("currency") or {})
+        code = currency.get("code") if isinstance(currency, dict) else currency
+        return {
+            "estimatedCommission": float(first.get("estimated_commission") or 0.0),
+            "forexFees": float(first.get("forex_fees") or 0.0),
+            "remainingCash": float(cash) if cash is not None else None,
+            "remainingCashCurrency": str(code or "") or None,
+        }
 
     # ---------------------------------------------------------------- cancel
     async def cancel(self, order_id: str) -> None:

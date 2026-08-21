@@ -307,6 +307,63 @@ body {
   font-family: var(--mono); font-variant-numeric: tabular-nums;
   display: inline-flex; align-items: center; gap: 4px;
 }
+
+/* ── rich account selector ─────────────────────────────────────────────── */
+.acct-select { position: relative; }
+.acct-btn {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  background: var(--surface-2); border: 1px solid var(--border); color: var(--text-1);
+  border-radius: var(--radius-sm); padding: 6px 9px; cursor: pointer; text-align: left;
+  font: inherit;
+}
+.acct-btn:hover { border-color: var(--accent); }
+.acct-opt-dot { width: 18px; height: 18px; border-radius: 5px; flex-shrink: 0;
+  background: var(--surface-3); }
+.acct-opt-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.acct-opt-name { font-weight: 600; font-size: var(--fs-2); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.acct-opt-cash { font-size: var(--fs-0); color: var(--text-3);
+  font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.acct-pop {
+  position: absolute; z-index: 60; left: 0; right: 0; top: calc(100% + 4px);
+  background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: var(--radius); box-shadow: var(--shadow-1); overflow: hidden;
+  max-height: 320px; overflow-y: auto;
+}
+.acct-group {
+  font-size: var(--fs-0); font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text-3); padding: 7px 10px 3px;
+}
+.acct-opt {
+  width: 100%; display: flex; align-items: center; gap: 8px; text-align: left;
+  background: none; border: none; color: inherit; font: inherit;
+  padding: 7px 10px; cursor: pointer;
+}
+.acct-opt:hover { background: var(--surface-2); }
+.acct-opt.active { background: color-mix(in srgb, var(--accent) 10%, var(--surface-1)); }
+
+/* ── ticket fees / fx block ────────────────────────────────────────────── */
+.avail-line {
+  font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: var(--fs-1);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: var(--radius-sm); padding: var(--control-y) 9px; min-height: 31px;
+  display: flex; align-items: center;
+}
+.fees-block {
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: var(--sp-2) var(--sp-3); margin: var(--sp-2) 0;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.fee-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: var(--sp-2);
+  font-size: var(--fs-1); color: var(--text-2);
+}
+.fee-row .v { font-family: var(--mono); font-variant-numeric: tabular-nums;
+  color: var(--text-1); text-align: right; }
+.fx-note { font-size: var(--fs-0); line-height: 1.5; border-radius: var(--radius-sm);
+  padding: 6px 8px; }
+.fx-note.warn { background: color-mix(in srgb, var(--warn) 14%, transparent); color: var(--text-1); }
+.fx-note.ok { background: color-mix(in srgb, var(--up) 12%, transparent); color: var(--text-1); }
 .holdings-dot {
   width: 7px; height: 7px; border-radius: 50%; background: var(--up);
   display: inline-block; animation: live-blink 2s ease-in-out infinite;
@@ -335,9 +392,21 @@ body {
 
 .trade-grid {
   display: grid; gap: var(--pad); min-height: 100%;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: 1fr 345px; /* ticket widened 15% */
   grid-template-rows: minmax(380px, 1.2fr) minmax(230px, 0.8fr);
   grid-template-areas: "chart ticket" "blotter blotter";
+}
+.trade-grid--tc { grid-template-columns: 1fr 42px; }
+.ticket-rail { display: flex; align-items: stretch; justify-content: center; }
+.ticket-rail-btn {
+  background: none; border: none; cursor: pointer; color: var(--text-2);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 14px 4px; width: 100%;
+}
+.ticket-rail-btn:hover { color: var(--text-1); background: var(--surface-2); }
+.ticket-rail-label {
+  writing-mode: vertical-rl; font-size: var(--fs-1); font-weight: 700;
+  letter-spacing: 1px; text-transform: uppercase;
 }
 .chart-area { grid-area: chart; display: flex; flex-direction: column; min-width: 0; }
 .ticket-area { grid-area: ticket; }

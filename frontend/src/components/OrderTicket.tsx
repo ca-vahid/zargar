@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../lib/api";
+import { cashText } from "../lib/brokerage";
+import { estimateFees } from "../lib/fees";
 import { fmtCcy, fmtMoney } from "../lib/format";
+import { currencyForSymbol } from "../lib/symbols";
 import { useQuote, useStore, type OrderIntentBody } from "../store";
+import { AccountSelect, type AccountOption } from "./AccountSelect";
 import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
+import { IconChevron } from "./icons";
 
-export function OrderTicket({ symbol }: { symbol: string }) {
+export function OrderTicket({
+  symbol,
+  collapsed = false,
+  onToggleCollapse,
+}: {
+  symbol: string;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+}) {
   const quote = useQuote(symbol);
   const allPortfolios = useStore((s) => s.portfolios);
   const portfolios = useMemo(
@@ -77,7 +90,59 @@ export function OrderTicket({ symbol }: { symbol: string }) {
     return side === "BUY" ? quote.ask : quote.bid;
   }, [quote, side, needsLimit, limitPrice]);
   const estCost = estPrice !== null && qty ? estPrice * parseFloat(qty || "0") : null;
-  const currency = account?.currency ?? portfolio?.baseCurrency ?? "USD";
+  const tradeCcy = currencyForSymbol(symbol); // the currency the order settles in
+  const accountCcy = account?.currency ?? portfolio?.baseCurrency ?? "USD";
+  const settings = useStore((s) => s.settings);
+  const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
+
+  const fees = useMemo(() => estimateFees({
+    institution: provider?.broker ?? null,
+    account: account ?? null,
+    accountCurrency: accountCcy,
+    symbol, side, notional: estCost, settings,
+  }), [provider?.broker, account, accountCcy, symbol, side, estCost, settings]);
+
+  const toAccountCcy = (amount: number): number | null => {
+    if (tradeCcy === accountCcy) return amount;
+    if (!usdCad || usdCad <= 0) return null;
+    if (tradeCcy === "USD" && accountCcy === "CAD") return amount * usdCad;
+    if (tradeCcy === "CAD" && accountCcy === "USD") return amount / usdCad;
+    return null;
+  };
+
+  const [impact, setImpact] = useState<{
+    estimatedCommission?: number; forexFees?: number;
+    remainingCash?: number | null; remainingCashCurrency?: string | null;
+    error?: string;
+  } | null>(null);
+  const [impactBusy, setImpactBusy] = useState(false);
+  useEffect(() => setImpact(null), [symbol, side, qty, pid, orderType, limitPrice]);
+  const checkImpact = async () => {
+    setImpactBusy(true);
+    try {
+      setImpact(await api.orderImpact({
+        portfolio_id: pid, symbol, side, qty: parseFloat(qty),
+        order_type: orderType,
+        limit_price: needsLimit && limitPrice ? parseFloat(limitPrice) : null,
+      }));
+    } catch (e: any) {
+      toast("error", `impact check: ${e.message}`);
+    } finally {
+      setImpactBusy(false);
+    }
+  };
+
+  const accountOptions: AccountOption[] = useMemo(() => {
+    const map = new Map<string, { account: any; provider: any }>();
+    for (const prov of brokerages?.providers ?? []) {
+      for (const acct of prov.accounts) map.set(acct.portfolioId, { account: acct, provider: prov });
+    }
+    return [...realPortfolios, ...practicePortfolios].map((p) => ({
+      portfolio: p,
+      account: map.get(p.id)?.account,
+      provider: map.get(p.id)?.provider,
+    }));
+  }, [brokerages, realPortfolios, practicePortfolios]);
 
   const buildIntent = (): OrderIntentBody => ({
     portfolio_id: pid,
@@ -131,11 +196,30 @@ export function OrderTicket({ symbol }: { symbol: string }) {
     }
   };
 
+  if (collapsed) {
+    return (
+      <div className="panel ticket-area ticket-rail">
+        <button className="ticket-rail-btn" onClick={onToggleCollapse}
+          aria-label="Expand order ticket" title="Expand order ticket">
+          <IconChevron size={12} style={{ transform: "rotate(180deg)" }} />
+          <span className="ticket-rail-label">Order ticket</span>
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="panel ticket-area">
       <div className="panel-head">
         Order ticket
         <span className={`status-pill ${mode === "live" ? "bad" : "dim"}`}>{mode}</span>
+        {onToggleCollapse && (
+          <button className="icon-btn" style={{ marginLeft: "auto" }}
+            onClick={onToggleCollapse} aria-label="Collapse order ticket"
+            title="Collapse order ticket">
+            <IconChevron size={12} />
+          </button>
+        )}
       </div>
       <div className="panel-body">
         <div className="side-toggle">
@@ -183,26 +267,12 @@ export function OrderTicket({ symbol }: { symbol: string }) {
           </div>
         )}
 
+        <label className="field">
+          <span>Account</span>
+          <AccountSelect options={accountOptions} value={pid}
+            onChange={(id) => setPortfolioId(id)} />
+        </label>
         <div className="row2">
-          <label className="field">
-            <span>Account</span>
-            <select value={pid} onChange={(e) => setPortfolioId(e.target.value)}>
-              {realPortfolios.length > 0 && (
-                <optgroup label="Real accounts">
-                  {realPortfolios.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}{p.baseCurrency ? ` (${p.baseCurrency})` : ""}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              <optgroup label="Practice">
-                {practicePortfolios.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </optgroup>
-            </select>
-          </label>
           <label className="field">
             <span>Time in force</span>
             <select value={tif} onChange={(e) => setTif(e.target.value)}>
@@ -211,6 +281,13 @@ export function OrderTicket({ symbol }: { symbol: string }) {
               <option>IOC</option>
             </select>
           </label>
+          <div className="field">
+            <span>Available to trade</span>
+            <div className="avail-line">
+              {account ? cashText(account)
+                : portfolio ? fmtCcy(portfolio.cash, portfolio.baseCurrency ?? "USD") : "—"}
+            </div>
+          </div>
         </div>
 
         <label className="switch" style={{ marginBottom: 8 }}>
@@ -237,10 +314,64 @@ export function OrderTicket({ symbol }: { symbol: string }) {
           <span>Dry run (validate only, never route)</span>
         </label>
 
-        <div className="est-line">
-          {quote
-            ? `est. ${side === "BUY" ? "cost" : "proceeds"}: ${estCost ? fmtCcy(estCost, currency) : "—"}`
-            : "waiting for quote…"}
+        <div className="fees-block">
+          <div className="fee-row">
+            <span>est. {side === "BUY" ? "cost" : "proceeds"}</span>
+            <span className="v">{estCost ? fmtCcy(estCost, tradeCcy) : "—"}</span>
+          </div>
+          <div className="fee-row">
+            <span title={fees.commissionNote}>commission (est.)</span>
+            <span className="v">
+              {fees.commission > 0 ? fmtCcy(fees.commission, tradeCcy) : "$0"}
+            </span>
+          </div>
+          {fees.needsFx && (
+            <div className={`fx-note ${fees.fxCoveredByWallet ? "ok" : "warn"}`}>
+              {fees.fxCoveredByWallet ? (
+                <>✓ {tradeCcy} trade from a {accountCcy} account — your {tradeCcy} wallet
+                  ({fmtCcy(fees.walletCash ?? 0, tradeCcy)}) covers it, no conversion needed.</>
+              ) : (
+                <>
+                  <b>{tradeCcy} trade from a {accountCcy} account.</b>{" "}
+                  {fees.walletCash !== null && fees.walletCash > 0.004 && (
+                    <>Wallet has {fmtCcy(fees.walletCash, tradeCcy)} — not enough. </>
+                  )}
+                  Broker auto-converts at ~{fees.fxPct}%
+                  {fees.fxFee !== null && estCost !== null && (
+                    <> (≈ {fmtCcy(fees.fxFee, tradeCcy)}
+                    {toAccountCcy(estCost + fees.commission + fees.fxFee) !== null &&
+                      <>; total ≈ {fmtCcy(toAccountCcy(estCost + fees.commission + fees.fxFee)!, accountCcy)}</>}
+                    )</>
+                  )}.
+                  {" "}Cheaper options: pre-convert in the broker app at a moment you
+                  choose, or keep a {tradeCcy} cash balance for {tradeCcy} trades.
+                </>
+              )}
+            </div>
+          )}
+          {account && !dryRun && (
+            <div className="fee-row">
+              <button className="link-btn" onClick={checkImpact} disabled={impactBusy}
+                title="Asks the broker (via SnapTrade) for the exact commission and FX fees — read-only, nothing is reserved">
+                {impactBusy ? "checking with broker…" : "verify exact fees with broker"}
+              </button>
+              {impact && (impact.error ? (
+                <span className="v neg" title="The broker's own verdict on this order">
+                  broker: {impact.error}
+                </span>
+              ) : (
+                <span className="v">
+                  fees {fmtCcy(impact.estimatedCommission ?? 0, tradeCcy)}
+                  {(impact.forexFees ?? 0) > 0 && <> · FX {fmtCcy(impact.forexFees!, tradeCcy)}</>}
+                  {impact.remainingCash != null && (
+                    <> · cash after {fmtCcy(impact.remainingCash,
+                      impact.remainingCashCurrency ?? accountCcy)}</>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
+          {!quote && <div className="metric-sub">waiting for quote…</div>}
         </div>
 
         <button className={`submit-btn ${side.toLowerCase()}`}

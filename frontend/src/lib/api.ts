@@ -51,6 +51,12 @@ export const api = {
   ingestManual: (text: string, source_name: string, subject: string) =>
     request<any>("POST", "/api/ingest/manual", { text, source_name, subject }),
   getBrokerages: () => request<import("../types").Brokerages>("GET", "/api/brokerages"),
+  orderImpact: (body: { portfolio_id: string; symbol: string; side: string; qty: number;
+    order_type?: string; limit_price?: number | null }) =>
+    request<{ estimatedCommission?: number; forexFees?: number;
+      remainingCash?: number | null; remainingCashCurrency?: string | null;
+      error?: string }>(
+      "POST", "/api/brokerages/impact", body),
   refreshBrokerages: () =>
     request<import("../types").Brokerages>("POST", "/api/brokerages/refresh"),
 };
