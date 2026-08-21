@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { cashText } from "../lib/brokerage";
 import { estimateFees } from "../lib/fees";
 import { fmtCcy, fmtMoney } from "../lib/format";
 import { currencyForSymbol } from "../lib/symbols";
 import { useQuote, useStore, type OrderIntentBody } from "../store";
+import type { Portfolio } from "../types";
 import { AccountSelect, type AccountOption } from "./AccountSelect";
 import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
 import { IconChevron } from "./icons";
@@ -63,11 +64,22 @@ export function OrderTicket({
     if (mode === "live") {
       const last = localStorage.getItem("zargar_last_real_pid");
       if (last && realPortfolios.some((p) => p.id === last)) return last;
-      return realPortfolios[0]?.id;
+      // prefer connected brokerage accounts (Webull, then Wealthsimple) over
+      // the seeded IBKR placeholder, matching the picker's sort order
+      const rank = (p: Portfolio) => {
+        const broker = (brokerages?.providers ?? [])
+          .find((prov) => prov.accounts.some((a) => a.portfolioId === p.id))
+          ?.broker?.toLowerCase() ?? "";
+        if (broker.includes("webull")) return 0;
+        if (broker.includes("wealthsimple")) return 1;
+        return p.venue === "ibkr" ? 3 : 2;
+      };
+      return [...realPortfolios]
+        .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))[0]?.id;
     }
     const def = practicePortfolios.find((p) => p.id === defaultPid);
     return (def ?? practicePortfolios[0])?.id;
-  }, [mode, realPortfolios, practicePortfolios, defaultPid]);
+  }, [mode, realPortfolios, practicePortfolios, defaultPid, brokerages]);
 
   const pid = portfolioId || modeDefault || defaultPid || portfolios[0]?.id || "";
   const portfolio = portfolios.find((p) => p.id === pid);
@@ -116,21 +128,39 @@ export function OrderTicket({
     error?: string;
   } | null>(null);
   const [impactBusy, setImpactBusy] = useState(false);
-  useEffect(() => setImpact(null), [symbol, side, qty, pid, orderType, limitPrice]);
+  // brokerages throttle these checks (Wealthsimple especially) — on a
+  // rate-limit verdict we retry automatically with a visible countdown
+  const [retryIn, setRetryIn] = useState<number | null>(null);
+  const retryAttempts = useRef(0);
+  useEffect(() => {
+    setImpact(null); setRetryIn(null); retryAttempts.current = 0;
+  }, [symbol, side, qty, pid, orderType, limitPrice]);
   const checkImpact = async () => {
     setImpactBusy(true);
+    setRetryIn(null);
     try {
-      setImpact(await api.orderImpact({
+      const res = await api.orderImpact({
         portfolio_id: pid, symbol, side, qty: parseFloat(qty),
         order_type: orderType,
         limit_price: needsLimit && limitPrice ? parseFloat(limitPrice) : null,
-      }));
+      });
+      setImpact(res);
+      if (res.error && /rate limit/i.test(res.error) && retryAttempts.current < 3) {
+        retryAttempts.current += 1;
+        setRetryIn(30);
+      }
     } catch (e: any) {
       toast("error", `impact check: ${e.message}`);
     } finally {
       setImpactBusy(false);
     }
   };
+  useEffect(() => {
+    if (retryIn === null) return;
+    if (retryIn <= 0) { void checkImpact(); return; }
+    const t = setTimeout(() => setRetryIn((v) => (v === null ? null : v - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [retryIn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const accountOptions: AccountOption[] = useMemo(() => {
     const map = new Map<string, { account: any; provider: any }>();
@@ -359,7 +389,9 @@ export function OrderTicket({
                 /rate limit/i.test(impact.error) ? (
                   <span className="v muted"
                     title="The brokerage throttles third-party checks (Wealthsimple especially) — this is on their side, not yours.">
-                    broker busy — retry in a minute
+                    {retryIn !== null
+                      ? `broker busy — retrying in ${retryIn}s…`
+                      : "broker busy — try again in a minute"}
                   </span>
                 ) : (
                   <span className="v neg" title="The broker's own verdict on this order">
