@@ -30,6 +30,45 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 COOKIE_URL = "https://fc.yahoo.com"
+SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
+
+# instrument kinds worth surfacing in the lookup UI
+SEARCH_TYPES = {"EQUITY", "ETF", "INDEX", "CRYPTOCURRENCY"}
+
+
+async def search_symbols(
+    query: str, client: httpx.AsyncClient | None = None
+) -> list[dict]:
+    """Ticker/name lookup via Yahoo's search endpoint (no auth needed).
+
+    Returns [{symbol, name, exchange, type}] filtered to tradable/watchable
+    instrument kinds. Symbols come back in Yahoo's convention, which matches
+    zargar's natively (`.TO`, `.V`, ...).
+    """
+    owns = client is None
+    http = client or httpx.AsyncClient(
+        timeout=8, headers={"User-Agent": UA}, follow_redirects=True)
+    try:
+        resp = await http.get(SEARCH_URL, params={
+            "q": query, "quotesCount": 12, "newsCount": 0, "listsCount": 0})
+        resp.raise_for_status()
+        data = resp.json()
+    finally:
+        if owns:
+            await http.aclose()
+    out: list[dict] = []
+    for row in data.get("quotes") or []:
+        sym = row.get("symbol")
+        kind = (row.get("quoteType") or "").upper()
+        if not sym or kind not in SEARCH_TYPES:
+            continue
+        out.append({
+            "symbol": str(sym).upper(),
+            "name": row.get("shortname") or row.get("longname") or "",
+            "exchange": row.get("exchDisp") or row.get("exchange") or "",
+            "type": kind,
+        })
+    return out
 
 # Chart bars carry no bid/ask — synthesize a small spread around last so the
 # SimExecutor (which needs bid/ask > 0) keeps filling practice orders against

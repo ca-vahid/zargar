@@ -59,4 +59,10 @@ export const api = {
       "POST", "/api/brokerages/impact", body),
   refreshBrokerages: () =>
     request<import("../types").Brokerages>("POST", "/api/brokerages/refresh"),
+  searchSymbols: (q: string) =>
+    request<{ results: { symbol: string; name: string; exchange: string; type: string }[] }>(
+      "GET", `/api/symbols/search?q=${encodeURIComponent(q)}`),
+  watchSymbol: (symbol: string) => request<any>("POST", "/api/watch", { symbol }),
+  updateWatchlist: (id: string, name: string, symbols: string[]) =>
+    request<import("../types").Watchlist>("PUT", `/api/watchlists/${id}`, { name, symbols }),
 };

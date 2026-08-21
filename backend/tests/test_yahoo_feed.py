@@ -90,3 +90,44 @@ async def test_recovers_after_error_status():
     assert [q.symbol for q in quotes] == ["AAPL"]
     assert feed.connected
     await feed.stop()
+
+
+# ---------------------------------------------------------------- symbol search
+
+SEARCH_FIXTURE = {
+    "quotes": [
+        {"symbol": "SHOP.TO", "shortname": "Shopify Inc.", "exchDisp": "Toronto",
+         "quoteType": "EQUITY"},
+        {"symbol": "SHOP", "shortname": "Shopify Inc.", "exchDisp": "NYSE",
+         "quoteType": "EQUITY"},
+        {"symbol": "SHOP-FUT", "shortname": "some future", "quoteType": "FUTURE"},
+        {"shortname": "no symbol row", "quoteType": "EQUITY"},
+        {"symbol": "tqqq", "longname": "ProShares UltraPro QQQ",
+         "exchange": "NGM", "quoteType": "ETF"},
+    ],
+    "news": [],
+}
+
+
+async def test_search_symbols_filters_and_normalizes():
+    from zargar.brokers.yahoo import search_symbols
+
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        assert "/v1/finance/search" in request.url.path
+        return httpx.Response(200, json=SEARCH_FIXTURE)
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    results = await search_symbols("shop", client=client)
+    await client.aclose()
+
+    assert seen[0].url.params["q"] == "shop"
+    # futures and symbol-less rows dropped; symbols upper-cased
+    assert [r["symbol"] for r in results] == ["SHOP.TO", "SHOP", "TQQQ"]
+    assert results[0] == {"symbol": "SHOP.TO", "name": "Shopify Inc.",
+                          "exchange": "Toronto", "type": "EQUITY"}
+    # longname/exchange fallbacks apply
+    assert results[2]["name"] == "ProShares UltraPro QQQ"
+    assert results[2]["exchange"] == "NGM"

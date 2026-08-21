@@ -32,8 +32,11 @@ async def snaptrade_engine(fresh_db):
         snaptrade_client_id="CID", snaptrade_consumer_key="KEY", quote_source="sim"))
     await eng.start()
     try:
+        # wait for the FULL sync pass: the portfolio appears early, but the
+        # providers payload is only cached at the end — snapshot tests race it
         await wait_for(lambda: any(
-            p.get("venue") == "snaptrade" for p in eng.positions.portfolios()))
+            p.get("venue") == "snaptrade" for p in eng.positions.portfolios())
+            and bool(eng.snaptrade_sync.providers))
         yield eng, stub
     finally:
         await eng.stop()
