@@ -286,16 +286,22 @@ class TechniqueService:
                 # annotated chart with the final plan (or the levels, if no setup)
                 a = result.analysis
                 ptf = facts.get("primaryTf") or tf
-                setup_overlay = None
+                setup_overlay = rejected_overlay = None
                 if a and a.verdict == "setup" and a.entry and a.stop:
                     setup_overlay = {"entry": {"price": a.entry.price}, "stop": {"price": a.stop.price},
                                      "targets": [{"price": x.price} for x in a.targets]}
+                elif a:
+                    # No setup: draw the candidate that was considered and rejected,
+                    # so the chart shows *why* rather than only asserting a verdict.
+                    rejected_overlay = _rejected_overlay(facts, a)
                 lv_overlay = [{"price": lv.price, "kind": lv.kind, "touches": lv.touches,
                                "strong": lv.touches >= 3} for lv in (a.levels if a else [])][:8]
                 if ptf in bars:
                     png = render_chart(bars[ptf][-WINDOW_FOR_TF.get(ptf, 150):],
-                                       title=f"{symbol} {ptf} — {a.verdict if a else 'n/a'}", tf=ptf,
+                                       title=f"{symbol} {ptf}", tf=ptf,
                                        levels=lv_overlay, setup=setup_overlay,
+                                       rejected=rejected_overlay,
+                                       caption=_chart_caption(a, rejected_overlay),
                                        wedge=(facts.get("wedge") or {}).get(ptf))
                     images_meta["annotated"] = await chat.store_asset(
                         png, "image/png", thread_id=thread_id, meta={"kind": "annotated", "tf": ptf})
@@ -544,6 +550,36 @@ class TechniqueService:
 
 
 # --- helpers --------------------------------------------------------------------
+
+def _rejected_overlay(facts: dict, a) -> dict | None:
+    """The deterministic candidate the analysis declined, as a drawable plan."""
+    cands = facts.get("candidateSetups") or []
+    if not cands:
+        return None
+    c = cands[0]
+    return {"entry": {"price": c["entry"]["price"]}, "stop": {"price": c["stop"]["price"]},
+            "targets": [{"price": t["price"]} for t in (c.get("targets") or [])[:1]],
+            "riskReward": c.get("riskReward"), "setupType": c.get("setupType")}
+
+
+def _chart_caption(a, rejected: dict | None) -> str:
+    """One or two lines drawn on the chart summarising the verdict."""
+    if a is None:
+        return ""
+    if a.verdict == "setup":
+        return f"SETUP · {a.setup_type.replace('_', ' ')} · R:R {a.risk_reward:.2f}"
+    lines = ["NO SETUP"]
+    if rejected:
+        rr = rejected.get("riskReward")
+        kind = (rejected.get("setupType") or "candidate").replace("_", " ")
+        lines.append(f"rejected {kind}: entry {rejected['entry']['price']:.2f}, "
+                     f"stop {rejected['stop']['price']:.2f}"
+                     + (f", R:R {rr:.2f} (need 3.0)" if rr is not None else ""))
+    reason = next((r for r in a.no_trade_reasons if not r.startswith("CRITIC")), "")
+    if reason:
+        lines.append(reason[:96] + ("…" if len(reason) > 96 else ""))
+    return "\n".join(lines)
+
 
 def _slim_facts(facts: dict) -> dict:
     """Facts without the raw bar arrays (the UI fetches bars itself)."""

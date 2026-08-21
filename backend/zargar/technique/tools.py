@@ -66,6 +66,11 @@ TOOL_DEFS: list[dict] = [
                 "show_wedge": {"type": "boolean"},
                 "setup": {"type": "object",
                           "description": "Optional {entry, stop, targets:[...]} prices to draw"},
+                "rejected": {"type": "object",
+                             "description": "Optional {entry, stop, targets:[...]} for a candidate that "
+                                            "FAILED, drawn muted/dashed to show what was declined"},
+                "caption": {"type": "string",
+                            "description": "Short note drawn on the chart, e.g. why there is no setup"},
                 "title": {"type": "string"},
             },
             "required": ["symbol", "tf"],
@@ -198,7 +203,8 @@ class ToolExecutor:
 
     async def _t_render_chart(self, symbol: str, tf: str, bars: int = 150, as_of_ms: int | None = None,
                               show_levels: bool = True, show_wedge: bool = True,
-                              setup: dict | None = None, title: str = ""):
+                              setup: dict | None = None, rejected: dict | None = None,
+                              caption: str = "", title: str = ""):
         req = AnalysisRequest(symbol=symbol, primary_tf=tf, context_tfs=(), as_of_ms=as_of_ms,
                               thresholds=self.technique.thresholds())
         bars_by_tf, notes = await gather_bars(req)
@@ -213,12 +219,15 @@ class ToolExecutor:
                 levels = [lv for lv in facts.get("keyLevels", []) if tf in lv.get("timeframes", [tf])][:8]
             if show_wedge:
                 wedge = (facts.get("wedge") or {}).get(tf)
-        setup_d = None
-        if setup:
-            setup_d = {"entry": {"price": setup.get("entry")}, "stop": {"price": setup.get("stop")},
-                       "targets": [{"price": p} for p in (setup.get("targets") or [])]}
+        def _plan(d: dict | None) -> dict | None:
+            if not d:
+                return None
+            return {"entry": {"price": d.get("entry")}, "stop": {"price": d.get("stop")},
+                    "targets": [{"price": p} for p in (d.get("targets") or [])]}
+
         png = render_chart(blist[-bars:], title=title or f"{symbol.upper()} {tf}", tf=tf,
-                           levels=levels, wedge=wedge, setup=setup_d)
+                           levels=levels, wedge=wedge, setup=_plan(setup),
+                           rejected=_plan(rejected), caption=caption)
         asset_id = await self.store_asset(png, "image/png")
         content = [image_block(png, "image/png"),
                    {"type": "text", "text": f"Rendered {symbol.upper()} {tf}, last {min(bars, len(blist))} bars"

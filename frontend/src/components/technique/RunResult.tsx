@@ -5,6 +5,7 @@ import { useStore } from "../../store";
 import type { GroundingCheck, TechniqueContract, TechniqueRun } from "../../types";
 import { IconCheck, IconX } from "../icons";
 import { Markdown } from "./Markdown";
+import { FactsView } from "./StreamingOutput";
 
 function fmt(n: number | null | undefined, d = 2) {
   return n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(d);
@@ -42,6 +43,16 @@ export function RunResult({ run, rules }: { run: TechniqueRun; rules: Record<str
   const annotated = run.images?.annotated;
   const failed = useMemo(() => (grounding?.checks ?? []).filter((c: GroundingCheck) => !c.passed), [grounding]);
   const usage = run.usage ?? {};
+  // The deterministic candidate the analysis declined — shown so "no setup" is
+  // explained by geometry rather than merely asserted.
+  const rejectedLine = useMemo(() => {
+    const c = (run.facts?.candidateSetups ?? [])[0];
+    if (!c || a?.verdict === "setup") return null;
+    return `Considered: ${String(c.setupType).replace(/_/g, " ")} — entry ${fmt(c.entry?.price)}, `
+      + `stop ${fmt(c.stop?.price)}, first target ${fmt(c.targets?.[0]?.price)} → R:R ${fmt(c.riskReward)} `
+      + `(needs ≥ 3.0).`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [run.facts, a?.verdict]);
   const cost = useMemo(() => {
     // Opus 5 list price: $5/M in, $25/M out; cache reads $0.50/M, writes $6.25/M
     const u: any = usage;
@@ -89,9 +100,25 @@ export function RunResult({ run, rules }: { run: TechniqueRun; rules: Record<str
                 <span>runner {a.runnerPct}%</span></div>
             </div>
           )}
+          {a.verdict === "no_setup" && (
+            <div className="tq-nosetup">
+              <div className="tq-nosetup-head">No tradeable setup right now</div>
+              <div className="tq-nosetup-body">
+                The numbers below describe what the market <i>is</i> doing — the levels, volume and
+                structure the method reads. They are not a trade. The chart marks the candidate that
+                was considered and declined (dashed, ✗), so you can see the geometry that failed.
+                {rejectedLine && <div className="tq-nosetup-cand">{rejectedLine}</div>}
+              </div>
+            </div>
+          )}
           {annotated && (
             <a href={api.assetUrl(annotated)} target="_blank" rel="noreferrer" className="tq-img-wrap">
               <img src={api.assetUrl(annotated)} alt="annotated chart" className="tq-img" />
+              <span className="tq-img-cap">
+                {a.verdict === "setup"
+                  ? "solid = the plan · blue support / amber resistance · shaded = risk and reward"
+                  : "dashed grey ✗ = candidate declined · blue support / amber resistance"}
+              </span>
             </a>
           )}
           <div className="tq-section">
@@ -172,10 +199,14 @@ export function RunResult({ run, rules }: { run: TechniqueRun; rules: Record<str
             {run.threadId && <button className="primary-btn" onClick={() => openChat(run.threadId!)}>Discuss in chat</button>}
             <button className="link-btn" onClick={() => setShowFacts((v) => !v)}>{showFacts ? "hide facts" : "show facts"}</button>
           </div>
-          {showFacts && (
-            <pre className="tq-facts">{JSON.stringify({ ...run.facts, bars: undefined }, null, 1)}</pre>
-          )}
+
         </div>
+        {showFacts && (
+          <div className="tq-facts-full">
+            <div className="tq-label">Deterministic facts — what the detectors measured from the bars</div>
+            <FactsView facts={run.facts} />
+          </div>
+        )}
       </div>
     </div>
   );

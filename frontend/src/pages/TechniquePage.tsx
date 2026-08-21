@@ -4,12 +4,32 @@ import { LiveRun } from "../components/technique/LiveRun";
 import { RuleChips, RunResult, VerdictBadge } from "../components/technique/RunResult";
 import { EmptyState, Spinner } from "../components/ui";
 import { IconX } from "../components/icons";
+import { SymbolSearch } from "../components/SymbolSearch";
 import { api } from "../lib/api";
 import { fmtDateTime } from "../lib/format";
 import { useStore } from "../store";
 import type { TechniqueRun, TechniqueSetup, TechniqueStatus } from "../types";
 
 const TFS = ["1m", "5m", "15m"];
+
+/** Local `datetime-local` string for a Date. */
+function toLocalInput(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Most recent completed trading day before `from`: Mon->Fri, Sat->Fri, Sun->Fri.
+ *  Set to 16:00 local so the whole session is inside the window. */
+function previousBusinessDay(from = new Date(), back = 1): Date {
+  const d = new Date(from);
+  d.setHours(16, 0, 0, 0);
+  for (let i = 0; i < back; i++) {
+    do {
+      d.setDate(d.getDate() - 1);
+    } while (d.getDay() === 0 || d.getDay() === 6);
+  }
+  return d;
+}
 
 function readFileAsDataUrl(f: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -92,12 +112,28 @@ function AnalyseForm({ onStarted, disabled }: { onStarted: (run: TechniqueRun) =
     <div className="panel tq-form" onPaste={onPaste} onDrop={onDrop} onDragOver={(e) => e.preventDefault()}>
       <div className="panel-head">Analyse <span className="sub">symbol + period, or paste a chart screenshot</span></div>
       <div className="panel-body tq-form-body">
-        <label className="field"><span>Symbol</span>
-          <input value={symbol} onChange={(e) => setSymbol(e.target.value)} placeholder="SPY" /></label>
+        <div className="field"><span>Symbol</span>
+          <div className="tq-symbol-row">
+            <input className="tq-symbol-input" value={symbol} spellCheck={false}
+              onChange={(e) => setSymbol(e.target.value.toUpperCase())} placeholder="SPY" />
+            <SymbolSearch compact placeholder="search by name or ticker…"
+              onPick={(h) => setSymbol(h.symbol)} />
+          </div>
+        </div>
         <label className="field"><span>Primary timeframe</span>
           <select value={tf} onChange={(e) => setTf(e.target.value)}>{TFS.map((t) => <option key={t}>{t}</option>)}</select></label>
-        <label className="field"><span>As of <small className="muted">(blank = now; 1m history ≈ 20 days)</small></span>
-          <input type="datetime-local" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></label>
+        <div className="field"><span>As of <small className="muted">(blank = now; 1m history ≈ 20 days)</small></span>
+          <div className="tq-asof-row">
+            <input type="datetime-local" value={asOf} onChange={(e) => setAsOf(e.target.value)} />
+            <div className="tq-presets">
+              <button type="button" className={!asOf ? "active" : ""} onClick={() => setAsOf("")}>Now</button>
+              <button type="button" onClick={() => setAsOf(toLocalInput(previousBusinessDay()))}
+                title="Most recent completed trading day (skips weekends)">Prev session</button>
+              <button type="button" onClick={() => setAsOf(toLocalInput(previousBusinessDay(new Date(), 2)))}>−2 days</button>
+              <button type="button" onClick={() => setAsOf(toLocalInput(previousBusinessDay(new Date(), 5)))}>−1 week</button>
+            </div>
+          </div>
+        </div>
         <label className="field tq-note"><span>Note to the analyst <small className="muted">(optional)</small></span>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. focus on the 10:30 rejection" /></label>
         <div className="field tq-drop">

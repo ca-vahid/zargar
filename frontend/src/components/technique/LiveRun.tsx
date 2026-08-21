@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { useStore } from "../../store";
+import { useStickyScroll } from "../../lib/useStickyScroll";
 import type { ChatLive, TechniqueRun } from "../../types";
 import { Spinner } from "../ui";
 import { IconCheck, IconX } from "../icons";
+import { StreamingOutput } from "./StreamingOutput";
 
 const PASS_LABEL: Record<string, string> = {
   context: "1 · Context (higher TF)",
@@ -29,6 +31,11 @@ export function LiveRun({ run }: { run: TechniqueRun }) {
     const el = thinkRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [live?.thinking, live?.text]);
+
+  // Follow the run down the page, but only while the reader is at the bottom.
+  useStickyScroll(Boolean(live?.active), [
+    live?.thinking?.length, live?.text?.length, live?.passes.length, live?.grounding?.attempt,
+  ]);
 
   const passes = live?.passes ?? [];
   const current = passes.find((p) => p.status === "running");
@@ -77,8 +84,10 @@ export function LiveRun({ run }: { run: TechniqueRun }) {
             )}
             {(current?.text || live?.text) && (
               <>
-                <div className="tq-stream-head muted">structured output (streaming)</div>
-                <pre className="tq-text-stream">{current?.text || live?.text}</pre>
+                <div className="tq-stream-head muted">analysis taking shape</div>
+                <div className="tq-text-stream">
+                  <StreamingOutput text={current?.text || live?.text || ""} streaming />
+                </div>
               </>
             )}
           </div>

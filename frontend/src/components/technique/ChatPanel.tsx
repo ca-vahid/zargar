@@ -6,6 +6,7 @@ import type { ChatBlock, ChatLive, ChatMessage, ChatThread } from "../../types";
 import { IconX } from "../icons";
 import { Spinner } from "../ui";
 import { Markdown } from "./Markdown";
+import { StreamingOutput } from "./StreamingOutput";
 
 // --- helpers -------------------------------------------------------------------
 
@@ -107,8 +108,8 @@ function Blocks({ blocks, role, meta }: { blocks: ChatBlock[]; role: string; met
         }
       })}
       {kind === "pipeline_response" && meta.parsed && (
-        <Collapsible label={`structured output · pass ${meta.pass} · ${meta.seconds}s · ${meta.usage?.output ?? "?"} tok`}>
-          <pre className="chat-tool-preview">{JSON.stringify(meta.parsed, null, 1)}</pre>
+        <Collapsible label={`analysis · pass ${meta.pass} · ${meta.seconds}s · ${meta.usage?.output ?? "?"} tok`}>
+          <StreamingOutput text={JSON.stringify(meta.parsed)} />
         </Collapsible>
       )}
     </>
