@@ -607,6 +607,13 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .icon-btn.active { color: var(--accent); background: var(--surface-2); }
 .icon-btn.danger:hover { color: var(--down); }
 
+.ext-chip {
+  font-size: var(--fs-0); color: var(--text-3); border: 1px dashed var(--border);
+  border-radius: 999px; padding: 1px 7px; white-space: nowrap;
+}
+.ext-chip.up { color: var(--up); }
+.ext-chip.down { color: var(--down); }
+
 /* ── symbol lookup ─────────────────────────────────────────────────────── */
 .sym-search { position: relative; width: 240px; }
 .sym-search--compact { width: 100%; }

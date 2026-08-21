@@ -54,6 +54,7 @@ class Engine:
         self.signals_service = None  # attached by signal layer
         self.telegram = None
         self._tasks: list[asyncio.Task] = []
+        self._history_seeded: set[str] = set()  # symbols whose day bars were loaded
         self._bar_persister: BarPersister | None = None
         self._drift_warned: set[tuple[str, str]] = set()  # (pid, ET date) warned once/day
         self.started = False
@@ -218,15 +219,27 @@ class Engine:
         """Make sure quotes flow and chart history exists for a symbol."""
         symbol = symbol.upper()
         from .brokers.sim import SimQuoteFeed
-        already = isinstance(self.feed, SimQuoteFeed) and symbol in self.feed.symbols
+        from .brokers.yahoo import YahooQuoteFeed
+        already = symbol in self._history_seeded or (
+            isinstance(self.feed, SimQuoteFeed) and symbol in self.feed.symbols)
         await self.feed.watch(symbol)
         if already:
             return
+        self._history_seeded.add(symbol)
         existing = await load_bars(self.sf, symbol, "1m", limit=3000)
         if not existing and isinstance(self.feed, SimQuoteFeed):
             history = self.feed.synthesize_history(symbol, minutes=self.config.sim_history_minutes)
             await persist_bars(self.sf, history)
             existing = history[-3000:]
+        if isinstance(self.feed, YahooQuoteFeed):
+            # real exchange bars for today beat our ticks-since-boot aggregation;
+            # on overlapping minutes Yahoo's bar wins
+            day = await self.feed.fetch_day_bars(symbol)
+            if day:
+                await persist_bars(self.sf, day)
+                merged = {b.ts: b for b in existing}
+                merged.update({b.ts: b for b in day})
+                existing = [merged[k] for k in sorted(merged)][-3000:]
         self.bars.seed(symbol, existing)
 
     # ------------------------------------------------------------- routing

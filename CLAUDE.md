@@ -63,6 +63,12 @@ docker-compose.
   hour) — cache-busting and crumbs don't help. The v8 `finance/chart` 1m bars
   ARE live (seconds old); the feed polls those per symbol. SnapTrade's own
   quotes endpoint requires userId/userSecret and rejects personal-key auth.
+- Day change = regular-session price vs the PREVIOUS close (Yahoo chart meta
+  `chartPreviousClose`/`regularMarketPrice`, carried on `Quote.prev_close` /
+  `reg_price` / `session`), never today's first bar — brokers all quote it that
+  way and a gap-up otherwise vanishes. Pre/after-hours moves show separately.
+  Day sparklines/charts are seeded from Yahoo's real 1m session bars on
+  `ensure_symbol` (not ticks-since-boot) and filtered to 09:30–16:00 ET.
 - SnapTrade accounts hold cash in SEVERAL currencies at once (Webull CASH
   keeps a USD wallet inside a CAD account) — always sum ALL `/balances`
   entries FX-converted, never just the account-currency row.

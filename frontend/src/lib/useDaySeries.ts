@@ -3,8 +3,16 @@ import { api } from "./api";
 import { onBar } from "./ws";
 
 export interface DayData {
-  closes: number[]; // today's 1m closes, session open -> now
-  open: number | null; // today's first bar open (the day-change basis)
+  closes: number[]; // today's regular-session 1m closes, 09:30 ET -> now
+  open: number | null; // today's first regular-session bar open (fallback basis
+                       // when the feed carries no previous close)
+}
+
+const SESSION_START_MS = 9.5 * 3600_000; // 09:30 ET
+const SESSION_END_MS = 16 * 3600_000;    // 16:00 ET
+
+function inRegularSession(ts: number, dayStart: number): boolean {
+  return ts >= dayStart + SESSION_START_MS && ts < dayStart + SESSION_END_MS;
 }
 
 interface Entry {
@@ -33,6 +41,7 @@ function ensureBarSubscription() {
     if (msg.tf !== "1m") return;
     const entry = cache.get(msg.symbol);
     if (!entry || !entry.fetched) return;
+    if (!inRegularSession(msg.bar[0], etDayStartMs())) return; // pre/post bars stay out
     const close = msg.bar[4];
     entry.data.closes.push(close);
     if (entry.data.open === null) entry.data.open = msg.bar[1];
@@ -52,7 +61,7 @@ export function useDaySeries(symbol: string): DayData {
       const dayStart = etDayStartMs();
       api.get<{ bars: number[][] }>(`/api/chart/${symbol}?tf=1m&limit=600`)
         .then((d) => {
-          const bars = (d.bars ?? []).filter((b) => b[0] >= dayStart);
+          const bars = (d.bars ?? []).filter((b) => inRegularSession(b[0], dayStart));
           entry!.data = {
             closes: bars.map((b) => b[4]),
             open: bars.length ? bars[0][1] : null,

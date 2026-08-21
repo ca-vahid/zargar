@@ -131,3 +131,64 @@ async def test_search_symbols_filters_and_normalizes():
     # longname/exchange fallbacks apply
     assert results[2]["name"] == "ProShares UltraPro QQQ"
     assert results[2]["exchange"] == "NGM"
+
+
+# ------------------------------------------------------ day-change basis + day bars
+
+async def test_quote_carries_previous_close_and_session():
+    """The day-change basis must be the PRIOR session close (what brokers show),
+    with regular-session price and session phase carried alongside."""
+    from zargar.brokers.yahoo import _session
+
+    stub = StubYahoo()
+    payload = chart_payload([136.5, 136.9, 136.97])
+    payload["chart"]["result"][0]["meta"].update({
+        "regularMarketPrice": 136.97, "chartPreviousClose": 134.0,
+        "regularMarketDayHigh": 137.35, "regularMarketDayLow": 131.22,
+    })
+    stub.charts["SPCX"] = payload
+    got: list = []
+    feed = YahooQuoteFeed(got.append, poll_seconds=1.0, client=stub.client())
+    await feed.watch("SPCX")
+    await feed.poll_once()
+    q = got[0]
+    assert q.prev_close == 134.0 and q.reg_price == 136.97
+    assert q.day_high == 137.35 and q.day_low == 131.22
+    assert round((q.last / q.prev_close - 1) * 100, 2) == 2.22  # Webull's number
+    d = q.to_dict()
+    assert d["prevClose"] == 134.0 and d["regPrice"] == 136.97
+
+    periods = {"pre": {"start": 100, "end": 200}, "regular": {"start": 200, "end": 300},
+               "post": {"start": 300, "end": 400}}
+    assert _session(periods, now_s=150) == "pre"
+    assert _session(periods, now_s=250) == "regular"
+    assert _session(periods, now_s=350) == "post"
+    assert _session(periods, now_s=450) == "closed"
+    assert _session(None) == ""
+
+
+async def test_fetch_day_bars_returns_real_session_bars():
+    from zargar.brokers.yahoo import parse_day_bars
+
+    payload = {"chart": {"result": [{
+        "timestamp": [1_700_000_000, 1_700_000_060, 1_700_000_120],
+        "meta": {},
+        "indicators": {"quote": [{
+            "open": [10.0, 10.2, None], "high": [10.3, 10.4, None],
+            "low": [9.9, 10.1, None], "close": [10.2, 10.3, None],
+            "volume": [100, 200, None],
+        }]},
+    }]}}
+    bars = parse_day_bars("spcx", payload)
+    assert [b.ts for b in bars] == [1_700_000_000_000, 1_700_000_060_000]  # null close skipped
+    assert bars[0].symbol == "SPCX" and bars[0].tf == "1m"
+    assert (bars[1].open, bars[1].high, bars[1].low, bars[1].close, bars[1].volume) == (
+        10.2, 10.4, 10.1, 10.3, 200)
+
+    stub = StubYahoo()
+    stub.charts["SPCX"] = payload
+    feed = YahooQuoteFeed(lambda q: None, client=stub.client())
+    got = await feed.fetch_day_bars("SPCX")
+    assert len(got) == 2
+    req = stub.chart_requests()[-1]
+    assert req.url.params["range"] == "1d" and req.url.params["includePrePost"] == "false"

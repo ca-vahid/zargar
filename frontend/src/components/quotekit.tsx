@@ -3,21 +3,59 @@
 import { memo, useRef } from "react";
 import { fmtMoney } from "../lib/format";
 import { usePrevLast, useQuote, useStore } from "../store";
+import type { Quote } from "../types";
+
+export interface DayChange {
+  abs: number;
+  pct: number;
+  basis: number;   // previous close (or today's open when the feed has no prev close)
+  price: number;   // the price the change is measured at (regular-session price)
+  ext: { abs: number; pct: number; price: number } | null; // pre/after-hours move
+  session: string;
+  basisKind: "prevClose" | "open";
+}
+
+/** The day change exactly as brokers quote it: regular-session price vs the
+ * PREVIOUS close. Outside regular hours the extended-session move is reported
+ * separately (like Webull's "after-hours" line) instead of blended in. */
+export function dayChange(quote: Quote | undefined, fallbackOpen: number | null): DayChange | null {
+  if (!quote) return null;
+  const prevClose = quote.prevClose ?? 0;
+  const basisKind = prevClose > 0 ? "prevClose" : "open";
+  const basis = prevClose > 0 ? prevClose : (fallbackOpen ?? 0);
+  if (basis <= 0) return null;
+  const session = quote.session ?? "";
+  const regPrice = quote.regPrice ?? 0;
+  const extended = session !== "regular" && session !== "" && regPrice > 0;
+  const price = extended ? regPrice : quote.last;
+  if (!price || price <= 0) return null;
+  const abs = price - basis;
+  let ext: DayChange["ext"] = null;
+  if (extended && quote.last > 0 && Math.abs(quote.last - price) > 1e-9) {
+    ext = { abs: quote.last - price, pct: ((quote.last - price) / price) * 100, price: quote.last };
+  }
+  return { abs, pct: (abs / basis) * 100, basis, price, ext, session, basisKind };
+}
+
+export const SESSION_LABEL: Record<string, string> = {
+  pre: "pre-market", post: "after-hours", closed: "after-hours",
+};
 
 /** Day-shaped mini chart: no axes, no labels, tinted by day direction. */
 export const Sparkline = memo(function Sparkline({
   closes,
   live,
-  open,
+  basis,
   height = 22,
 }: {
   closes: number[];
   live?: number | null;
-  open: number | null;
+  basis: number | null; // previous close: tints the line by day direction
   height?: number;
 }) {
   const series = live && live > 0 ? [...closes, live] : closes;
-  if (series.length < 2 || open === null) return <span className="spark spark--empty" />;
+  if (series.length < 2 || basis === null) return <span className="spark spark--empty" />;
+  const open = basis;
   const min = Math.min(...series);
   const max = Math.max(...series);
   const span = Math.max(max - min, open * 0.0005);
@@ -39,39 +77,60 @@ export const Sparkline = memo(function Sparkline({
   );
 });
 
-/** Day change vs session open — click anywhere toggles % ↔ $ globally. */
+/** Day change vs previous close — click anywhere toggles % ↔ $ globally. */
 export function DeltaPill({
-  price,
-  open,
+  quote,
+  fallbackOpen,
   size = "sm",
   interactive = true,
 }: {
-  price: number | null | undefined;
-  open: number | null;
+  quote: Quote | undefined;
+  fallbackOpen: number | null;
   size?: "sm" | "md";
   interactive?: boolean;
 }) {
   const chgDollar = useStore((s) => s.chgDollar);
   const toggleChgMode = useStore((s) => s.toggleChgMode);
-  if (!price || price <= 0 || !open || open <= 0) {
+  const chg = dayChange(quote, fallbackOpen);
+  if (!chg) {
     return <span className={`delta-pill delta-pill--${size} dim`}>—</span>;
   }
-  const abs = price - open;
-  const pct = (abs / open) * 100;
-  const up = abs >= 0;
+  const up = chg.abs >= 0;
   const sign = up ? "+" : "−";
   const text = chgDollar
-    ? `${sign}$${Math.abs(abs).toFixed(2)}`
-    : `${sign}${Math.abs(pct).toFixed(2)}%`;
+    ? `${sign}$${Math.abs(chg.abs).toFixed(2)}`
+    : `${sign}${Math.abs(chg.pct).toFixed(2)}%`;
+  const basisText = chg.basisKind === "prevClose"
+    ? `vs previous close ${fmtMoney(chg.basis)}`
+    : `vs today's open ${fmtMoney(chg.basis)} (feed has no previous close)`;
+  const extText = chg.ext
+    ? ` · ${SESSION_LABEL[chg.session] ?? "extended"} ${fmtMoney(chg.ext.price)} (${chg.ext.abs >= 0 ? "+" : "−"}${Math.abs(chg.ext.pct).toFixed(2)}%)`
+    : "";
   return (
     <button
       className={`delta-pill delta-pill--${size} ${up ? "up" : "down"}`}
       onClick={interactive ? (e) => { e.stopPropagation(); toggleChgMode(); } : undefined}
-      title="Today vs session open — click to switch % / $"
+      title={`Today ${basisText}${extText} — click to switch % / $`}
       tabIndex={interactive ? 0 : -1}
     >
       <span className="a">{up ? "▲" : "▼"}</span>{text}
     </button>
+  );
+}
+
+/** Small pre-/after-hours move beside the day pill (trade page header). */
+export function ExtendedHoursChip({ quote, fallbackOpen }: {
+  quote: Quote | undefined; fallbackOpen: number | null;
+}) {
+  const chg = dayChange(quote, fallbackOpen);
+  if (!chg?.ext) return null;
+  const up = chg.ext.abs >= 0;
+  return (
+    <span className={`ext-chip ${up ? "up" : "down"}`}
+      title={`${SESSION_LABEL[chg.session] ?? "extended"} trading: ${fmtMoney(chg.ext.price)} vs the regular-session price ${fmtMoney(chg.price)}`}>
+      {SESSION_LABEL[chg.session] ?? "ext"} {fmtMoney(chg.ext.price)}
+      {" "}{up ? "+" : "−"}{Math.abs(chg.ext.pct).toFixed(2)}%
+    </span>
   );
 }
 
