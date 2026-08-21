@@ -1,50 +1,5 @@
 import { useMemo } from "react";
-
-/** Decode the escapes that show up raw in a streaming JSON payload
- *  (—, \\n, \" …) so the text reads as text. */
-export function decodeEscapes(s: string): string {
-  return s
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_m, h) => String.fromCharCode(parseInt(h, 16)))
-    .replace(/\\n/g, "\n")
-    .replace(/\\t/g, "  ")
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, "\\");
-}
-
-/** Best-effort parse of JSON that is still streaming in: close whatever
- *  strings/brackets are open, drop a dangling key, and try again. */
-function parsePartial(raw: string): any | null {
-  const text = raw.trim();
-  if (!text.startsWith("{") && !text.startsWith("[")) return null;
-  try {
-    return JSON.parse(text);
-  } catch {
-    /* fall through to repair */
-  }
-  let out = "";
-  let inStr = false;
-  let esc = false;
-  const stack: string[] = [];
-  for (const ch of text) {
-    if (esc) { out += ch; esc = false; continue; }
-    if (ch === "\\" && inStr) { out += ch; esc = true; continue; }
-    if (ch === '"') { inStr = !inStr; out += ch; continue; }
-    if (!inStr) {
-      if (ch === "{" || ch === "[") stack.push(ch);
-      else if (ch === "}" || ch === "]") stack.pop();
-    }
-    out += ch;
-  }
-  if (inStr) out += '"';
-  // a trailing `"key":` or `,` cannot be closed — trim back to the last complete value
-  out = out.replace(/,\s*"[^"]*"\s*:\s*$/, "").replace(/,\s*$/, "").replace(/"[^"]*$/, "");
-  for (let i = stack.length - 1; i >= 0; i--) out += stack[i] === "{" ? "}" : "]";
-  try {
-    return JSON.parse(out);
-  } catch {
-    return null;
-  }
-}
+import { decodeEscapes, parsePartialJson } from "../../lib/partialJson";
 
 const LABELS: Record<string, string> = {
   observations: "Observations",
@@ -127,7 +82,7 @@ function Value({ k, v }: { k: string; v: any }) {
 /** Renders a model's structured output while it is still streaming: parses what
  *  has arrived and shows it as labelled sections instead of raw escaped JSON. */
 export function StreamingOutput({ text, streaming = false }: { text: string; streaming?: boolean }) {
-  const parsed = useMemo(() => parsePartial(text), [text]);
+  const parsed = useMemo(() => parsePartialJson(text), [text]);
   if (!text.trim()) return null;
 
   if (!parsed || typeof parsed !== "object") {

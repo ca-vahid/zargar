@@ -4,6 +4,7 @@ import { fmtDateTime } from "../../lib/format";
 import { useStore } from "../../store";
 import type { GroundingCheck, TechniqueContract, TechniqueRun } from "../../types";
 import { IconCheck, IconX } from "../icons";
+import { Collapse } from "../Collapse";
 import { Markdown } from "./Markdown";
 import { FactsView } from "./StreamingOutput";
 
@@ -197,16 +198,24 @@ export function RunResult({ run, rules }: { run: TechniqueRun; rules: Record<str
           </div>
           <div className="tq-side-actions">
             {run.threadId && <button className="primary-btn" onClick={() => openChat(run.threadId!)}>Discuss in chat</button>}
-            <button className="link-btn" onClick={() => setShowFacts((v) => !v)}>{showFacts ? "hide facts" : "show facts"}</button>
+
           </div>
 
         </div>
-        {showFacts && (
-          <div className="tq-facts-full">
-            <div className="tq-label">Deterministic facts — what the detectors measured from the bars</div>
-            <FactsView facts={run.facts} />
-          </div>
-        )}
+        <div className="tq-facts-bar">
+          <button className="tq-facts-toggle" onClick={() => setShowFacts((v) => !v)}
+            aria-expanded={showFacts}>
+            <span className={`disclosure-chev ${showFacts ? "open" : ""}`} aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                   strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l6 5-6 5" /></svg>
+            </span>
+            Deterministic facts
+            <span className="muted">— every level, volume reading and candidate the detectors measured</span>
+          </button>
+          <Collapse open={showFacts}>
+            <div className="tq-facts"><FactsView facts={run.facts} /></div>
+          </Collapse>
+        </div>
       </div>
     </div>
   );

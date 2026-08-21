@@ -4,6 +4,7 @@ import { useStickyScroll } from "../../lib/useStickyScroll";
 import type { ChatLive, TechniqueRun } from "../../types";
 import { Spinner } from "../ui";
 import { IconCheck, IconX } from "../icons";
+import { Collapse } from "../Collapse";
 import { StreamingOutput } from "./StreamingOutput";
 
 const PASS_LABEL: Record<string, string> = {
@@ -73,15 +74,18 @@ export function LiveRun({ run }: { run: TechniqueRun }) {
         {(current || live?.thinking || live?.text) && (
           <div className="tq-stream">
             <div className="tq-stream-head">
-              <button className="link-btn" onClick={() => setOpenThink((v) => !v)}>
-                {openThink ? "▾" : "▸"} thinking {current ? `(${passLabel(current.name)})` : ""}
+              <button className="link-btn" onClick={() => setOpenThink((v) => !v)} aria-expanded={openThink}>
+                <span className={`disclosure-chev ${openThink ? "open" : ""}`} aria-hidden="true">
+                  <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+                       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l6 5-6 5" /></svg>
+                </span> thinking {current ? `(${passLabel(current.name)})` : ""}
               </button>
             </div>
-            {openThink && (
+            <Collapse open={openThink}>
               <div className="tq-think" ref={thinkRef}>
                 {(current?.thinking || live?.thinking) || <span className="muted">…</span>}
               </div>
-            )}
+            </Collapse>
             {(current?.text || live?.text) && (
               <>
                 <div className="tq-stream-head muted">analysis taking shape</div>

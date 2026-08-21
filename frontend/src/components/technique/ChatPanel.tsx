@@ -5,6 +5,7 @@ import { useStore } from "../../store";
 import type { ChatBlock, ChatLive, ChatMessage, ChatThread } from "../../types";
 import { IconX } from "../icons";
 import { Spinner } from "../ui";
+import { Collapse } from "../Collapse";
 import { Markdown } from "./Markdown";
 import { StreamingOutput } from "./StreamingOutput";
 
@@ -26,8 +27,13 @@ function Thinking({ text, open: initial = false, streaming = false }: { text: st
   if (!text) return null;
   return (
     <div className={`chat-think ${streaming ? "streaming" : ""}`}>
-      <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "▾" : "▸"} thinking{streaming ? "…" : ""}</button>
-      {open && <div className="chat-think-body" ref={ref}>{text}</div>}
+      <button className="link-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className={`disclosure-chev ${open ? "open" : ""}`} aria-hidden="true">
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l6 5-6 5" /></svg>
+        </span> thinking{streaming ? "…" : ""}
+      </button>
+      <Collapse open={open}><div className="chat-think-body" ref={ref}>{text}</div></Collapse>
     </div>
   );
 }
@@ -36,8 +42,13 @@ function Collapsible({ label, children, open: initial = false }: { label: string
   const [open, setOpen] = useState(initial);
   return (
     <div className="chat-collapsible">
-      <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "▾" : "▸"} {label}</button>
-      {open && <div className="chat-collapsible-body">{children}</div>}
+      <button className="link-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <span className={`disclosure-chev ${open ? "open" : ""}`} aria-hidden="true">
+          <svg width="9" height="9" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l6 5-6 5" /></svg>
+        </span> {label}
+      </button>
+      <Collapse open={open}><div className="chat-collapsible-body">{children}</div></Collapse>
     </div>
   );
 }

@@ -18,6 +18,10 @@ export function SymbolSearch({
   onAdd,
   addLabel = "+ watch",
   inputRef,
+  value,
+  onValueChange,
+  inputId,
+  inputClassName = "",
 }: {
   placeholder?: string;
   autoFocus?: boolean;
@@ -26,8 +30,16 @@ export function SymbolSearch({
   onAdd?: (hit: SymbolHit) => void;
   addLabel?: string;
   inputRef?: React.Ref<HTMLInputElement>;
+  /** Controlled mode: the input *is* the field (keeps its text after a pick). */
+  value?: string;
+  onValueChange?: (v: string) => void;
+  inputId?: string;
+  inputClassName?: string;
 }) {
-  const [q, setQ] = useState("");
+  const controlled = value !== undefined;
+  const [uq, setUq] = useState("");
+  const q = controlled ? value : uq;
+  const setQ = (v: string) => { if (controlled) onValueChange?.(v); else setUq(v); };
   const [hits, setHits] = useState<SymbolHit[]>([]);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -35,6 +47,9 @@ export function SymbolSearch({
   const [failed, setFailed] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const seqRef = useRef(0);
+  // In controlled mode the field starts populated (and the parent can set it),
+  // so a value change alone must not pop the menu open — only real typing does.
+  const typedRef = useRef(false);
 
   useEffect(() => {
     const query = q.trim();
@@ -50,11 +65,12 @@ export function SymbolSearch({
         if (seq !== seqRef.current) return; // stale response
         setHits(res.results);
         setActive(0);
-        setOpen(true);
+        if (!controlled || typedRef.current) setOpen(true);
         setFailed(false);
       } catch {
         if (seq !== seqRef.current) return;
-        setHits([]); setOpen(true); setFailed(true);
+        setHits([]); setFailed(true);
+        if (!controlled || typedRef.current) setOpen(true);
       } finally {
         if (seq === seqRef.current) setLoading(false);
       }
@@ -73,7 +89,10 @@ export function SymbolSearch({
 
   const pick = (hit: SymbolHit) => {
     setOpen(false);
-    setQ("");
+    // Controlled mode keeps the chosen symbol in the field; the standalone
+    // lookup clears so it is ready for the next search.
+    typedRef.current = false;
+    setQ(controlled ? hit.symbol : "");
     onPick(hit);
   };
 
@@ -89,14 +108,15 @@ export function SymbolSearch({
     <div className={`sym-search ${compact ? "sym-search--compact" : ""}`} ref={rootRef}>
       <input
         ref={inputRef}
+        id={inputId}
         type="text"
-        className="sym-search-input"
+        className={`sym-search-input ${inputClassName}`}
         value={q}
         placeholder={placeholder}
         autoFocus={autoFocus}
         spellCheck={false}
-        onChange={(e) => setQ(e.target.value)}
-        onFocus={() => { if (hits.length > 0) setOpen(true); }}
+        onChange={(e) => { typedRef.current = true; setQ(e.target.value); }}
+        onFocus={() => { if (hits.length > 0 && typedRef.current) setOpen(true); }}
         onKeyDown={onKey}
         role="combobox"
         aria-expanded={open}
