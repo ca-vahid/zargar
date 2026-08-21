@@ -2,7 +2,7 @@ import { memo } from "react";
 import { fmtMoney } from "../lib/format";
 import { useDaySeries } from "../lib/useDaySeries";
 import { useQuote, useStore } from "../store";
-import { DeltaPill, Sparkline, TickArrow } from "./quotekit";
+import { dayChange, DeltaPill, Sparkline, TickArrow } from "./quotekit";
 
 /** Watchlist row, design "F": day change leads in a pill, day sparkline in the
  * middle, small price with the arrow-pulse tick indicator below. */
@@ -12,6 +12,7 @@ export const WatchRow = memo(function WatchRow({ symbol }: { symbol: string }) {
   const setActiveSymbol = useStore((s) => s.setActiveSymbol);
   const setPage = useStore((s) => s.setPage);
   const day = useDaySeries(symbol);
+  const chg = dayChange(quote, day.open);
 
   return (
     <button
@@ -22,9 +23,10 @@ export const WatchRow = memo(function WatchRow({ symbol }: { symbol: string }) {
     >
       <span className="wl-sym" title={symbol}>{symbol}</span>
       <span className="wl-spark">
-        <Sparkline closes={day.closes} live={quote?.last} open={day.open} />
+        <Sparkline closes={day.closes} live={chg?.price ?? quote?.last}
+          basis={chg?.basis ?? day.open} />
       </span>
-      <DeltaPill price={quote?.last} open={day.open} size="sm" />
+      <DeltaPill quote={quote} fallbackOpen={day.open} size="sm" />
       <span className="wl-sub">
         <span>{quote ? `${fmtMoney(quote.bid)} × ${fmtMoney(quote.ask)}` : ""}</span>
         <span className="price-live">

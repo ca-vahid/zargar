@@ -89,6 +89,12 @@ class Quote:
     volume: int = 0
     halted: bool = False
     ts: int = field(default_factory=now_ms)
+    # session context from real feeds (0 / "" when the feed doesn't know):
+    prev_close: float = 0.0   # prior session close — THE day-change basis
+    reg_price: float = 0.0    # regular-session price (differs from last pre/post)
+    day_high: float = 0.0
+    day_low: float = 0.0
+    session: str = ""         # "pre" | "regular" | "post" | "closed"
 
     @property
     def mid(self) -> float:
@@ -114,6 +120,11 @@ class Quote:
             "volume": self.volume,
             "halted": self.halted,
             "ts": self.ts,
+            "prevClose": round(self.prev_close, 4),
+            "regPrice": round(self.reg_price, 4),
+            "dayHigh": round(self.day_high, 4),
+            "dayLow": round(self.day_low, 4),
+            "session": self.session,
         }
 
 

@@ -8,6 +8,12 @@ export interface Quote {
   volume: number;
   halted: boolean;
   ts: number;
+  // session context from real feeds (0 / "" when unknown, e.g. the sim feed)
+  prevClose?: number; // prior session close — the day-change basis
+  regPrice?: number;  // regular-session price (differs from last pre/post)
+  dayHigh?: number;
+  dayLow?: number;
+  session?: "pre" | "regular" | "post" | "closed" | "";
 }
 
 export interface Portfolio {

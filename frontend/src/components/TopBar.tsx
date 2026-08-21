@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { fmtCcy } from "../lib/format";
 import { netWorthByCurrency, useStore } from "../store";
 import { IconWarn } from "./icons";
 import { ConfirmDialog, PromptDialog } from "./Modal";
+import { SymbolSearch, type SymbolHit } from "./SymbolSearch";
 
 const MODES = [
   { value: "practice", label: "Practice" },
@@ -20,6 +21,10 @@ export function TopBar() {
 
   const brokerages = useStore((s) => s.brokerages);
   const setPage = useStore((s) => s.setPage);
+  const openTrade = useStore((s) => s.openTrade);
+  const watchlists = useStore((s) => s.watchlists);
+  const setWatchlists = useStore((s) => s.setWatchlists);
+  const searchRef = useRef<HTMLInputElement>(null);
   const [confirmLive, setConfirmLive] = useState(false);
   const [promptHalt, setPromptHalt] = useState(false);
   const [confirmResume, setConfirmResume] = useState(false);
@@ -70,6 +75,41 @@ export function TopBar() {
     else setPromptHalt(true);
   };
 
+  // "/" focuses the stock lookup from anywhere (unless already typing)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "/" || e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  const lookupPick = (hit: SymbolHit) => {
+    void api.watchSymbol(hit.symbol).catch(() => undefined); // start quotes flowing now
+    openTrade(hit.symbol);
+  };
+
+  const lookupAdd = async (hit: SymbolHit) => {
+    const wl = watchlists[0];
+    if (!wl) { toast("error", "no watchlist yet — create one in Settings"); return; }
+    if (wl.symbols.includes(hit.symbol)) {
+      toast("info", `${hit.symbol} is already on ${wl.name}`);
+      return;
+    }
+    try {
+      const symbols = [...wl.symbols, hit.symbol];
+      await api.updateWatchlist(wl.id, wl.name, symbols);
+      setWatchlists(watchlists.map((w) => (w.id === wl.id ? { ...w, symbols } : w)));
+      toast("info", `${hit.symbol} added to ${wl.name}`);
+    } catch (e: any) {
+      toast("error", e.message);
+    }
+  };
+
   return (
     <header className="topbar">
       <div className="brand">
@@ -99,6 +139,12 @@ export function TopBar() {
           sim quotes
         </span>
       )}
+      <SymbolSearch
+        placeholder="Search stocks…  ( / )"
+        onPick={lookupPick}
+        onAdd={(h) => void lookupAdd(h)}
+        inputRef={searchRef}
+      />
       <div className="spacer" />
       {realTotals.length > 0 && (
         <button className="equity-chip equity-chip--real" onClick={() => setPage("dashboard")}

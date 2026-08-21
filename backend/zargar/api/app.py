@@ -15,6 +15,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from .. import events as ev
+from ..brokers.yahoo import search_symbols
 from ..config import AppConfig
 from ..domain import new_id
 from ..engine import Engine
@@ -169,6 +170,15 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     async def watch(body: WatchBody):
         await eng.ensure_symbol(body.symbol)
         return {"ok": True, "symbol": body.symbol.upper()}
+
+    @app.get("/api/symbols/search", dependencies=[auth])
+    async def symbols_search(q: str = Query(min_length=1, max_length=64)):
+        try:
+            results = await search_symbols(q.strip())
+        except Exception:
+            log.warning("symbol search failed for %r", q, exc_info=True)
+            raise HTTPException(status_code=502, detail="symbol search unavailable")
+        return {"results": results}
 
     # --- watchlists -----------------------------------------------------------
     class WatchlistBody(BaseModel):

@@ -1,5 +1,7 @@
 import { useMemo, useState, type ReactNode } from "react";
+import { api } from "../lib/api";
 import { useStore, type Page } from "../store";
+import type { Watchlist } from "../types";
 import {
   IconChevron,
   IconDashboard,
@@ -10,7 +12,9 @@ import {
   IconSignals,
   IconTechnique,
   IconTrade,
+  IconX,
 } from "./icons";
+import { SymbolSearch } from "./SymbolSearch";
 import { WatchRow } from "./WatchRow";
 
 const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
@@ -112,23 +116,86 @@ export function Sidebar() {
           </div>
         )}
         {watchlists.map((wl) => (
-          <div key={wl.id}>
-            <SectionHead id={wl.id} collapsed={!!collapsed[wl.id]} onToggle={toggle}
-              extra={
-                <button className="icon-btn" title="Manage in Settings"
-                  aria-label={`Manage ${wl.name} in Settings`}
-                  onClick={() => setPage("settings")}>
-                  <IconEdit size={11} />
-                </button>
-              }>
-              {wl.name}
-            </SectionHead>
-            {!collapsed[wl.id] && wl.symbols.map((sym) => (
-              <WatchRow key={sym} symbol={sym} />
-            ))}
-          </div>
+          <WatchlistSection key={wl.id} wl={wl}
+            collapsed={!!collapsed[wl.id]} onToggle={toggle} />
         ))}
       </div>
     </aside>
+  );
+}
+
+/** One watchlist section with in-place editing: the pencil toggles an edit
+ * mode with per-symbol remove and search-to-add, saved straight to the API. */
+function WatchlistSection({
+  wl,
+  collapsed,
+  onToggle,
+}: {
+  wl: Watchlist;
+  collapsed: boolean;
+  onToggle: (id: string) => void;
+}) {
+  const watchlists = useStore((s) => s.watchlists);
+  const setWatchlists = useStore((s) => s.setWatchlists);
+  const toast = useStore((s) => s.toast);
+  const [editing, setEditing] = useState(false);
+
+  const save = async (symbols: string[]) => {
+    try {
+      await api.updateWatchlist(wl.id, wl.name, symbols);
+      setWatchlists(watchlists.map((w) => (w.id === wl.id ? { ...w, symbols } : w)));
+    } catch (e: any) {
+      toast("error", e.message);
+    }
+  };
+
+  const add = (symbol: string) => {
+    if (wl.symbols.includes(symbol)) {
+      toast("info", `${symbol} is already on ${wl.name}`);
+      return;
+    }
+    void save([...wl.symbols, symbol]);
+  };
+
+  return (
+    <div>
+      <SectionHead id={wl.id} collapsed={collapsed} onToggle={onToggle}
+        extra={
+          <button className={`icon-btn ${editing ? "active" : ""}`}
+            title={editing ? "Done editing" : `Edit ${wl.name}`}
+            aria-label={editing ? "Done editing" : `Edit ${wl.name}`}
+            aria-pressed={editing}
+            onClick={() => setEditing((v) => !v)}>
+            <IconEdit size={11} />
+          </button>
+        }>
+        {wl.name}
+      </SectionHead>
+      {!collapsed && !editing && wl.symbols.map((sym) => (
+        <WatchRow key={sym} symbol={sym} />
+      ))}
+      {!collapsed && editing && (
+        <div className="wl-editbox">
+          {wl.symbols.map((sym) => (
+            <div key={sym} className="wl-edit-row">
+              <span className="wl-sym">{sym}</span>
+              <button className="icon-btn danger" title={`Remove ${sym}`}
+                aria-label={`Remove ${sym} from ${wl.name}`}
+                onClick={() => void save(wl.symbols.filter((s) => s !== sym))}>
+                <IconX size={11} />
+              </button>
+            </div>
+          ))}
+          {wl.symbols.length === 0 && (
+            <div className="wl-edit-empty">empty — search below to add</div>
+          )}
+          <SymbolSearch compact placeholder="Add a stock…"
+            onPick={(h) => add(h.symbol)} />
+          <button className="link-btn wl-edit-done" onClick={() => setEditing(false)}>
+            done
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
