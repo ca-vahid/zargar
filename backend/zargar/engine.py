@@ -93,13 +93,14 @@ class Engine:
             from .brokers.snaptrade import SnapTradeBroker, SnapTradeClient, SnapTradeSync
             self._snaptrade_client = SnapTradeClient(
                 self.config.snaptrade_client_id, self.config.snaptrade_consumer_key)
+            symbol_ids: dict = {}  # sync fills from held positions; broker reads
             self.snaptrade_sync = SnapTradeSync(
                 self._snaptrade_client, self.sf, self.positions, self.journal,
-                self.settings, self.bus, self.ensure_symbol)
+                self.settings, self.bus, self.ensure_symbol, symbol_ids=symbol_ids)
             await self.snaptrade_sync.load_links()
             self.snaptrade = SnapTradeBroker(
                 self._snaptrade_client, self.sf, self.journal, self.settings,
-                self.snaptrade_sync.account_for)
+                self.snaptrade_sync.account_for, symbol_ids=symbol_ids)
             await self.journal.append(ev.BROKER_CONNECTED, {"broker": "snaptrade"})
 
         if self.feed is None:

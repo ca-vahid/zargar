@@ -31,6 +31,7 @@ export interface BrokeragePosition {
   price?: number | null;
   marketValue?: number | null;
   currency?: string | null;
+  universalId?: string | null; // SnapTrade universal symbol id (impact checks)
 }
 
 export interface BrokerageAccount {

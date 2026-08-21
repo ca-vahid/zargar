@@ -356,11 +356,19 @@ export function OrderTicket({
                 {impactBusy ? "checking with broker…" : "verify exact fees with broker"}
               </button>
               {impact && (impact.error ? (
-                <span className="v neg" title="The broker's own verdict on this order">
-                  broker: {impact.error}
-                </span>
+                /rate limit/i.test(impact.error) ? (
+                  <span className="v muted"
+                    title="The brokerage throttles third-party checks (Wealthsimple especially) — this is on their side, not yours.">
+                    broker busy — retry in a minute
+                  </span>
+                ) : (
+                  <span className="v neg" title="The broker's own verdict on this order">
+                    broker: {impact.error}
+                  </span>
+                )
               ) : (
-                <span className="v">
+                <span className="v"
+                  title="The broker's own live numbers — computed against their real-time wallet, so they can differ slightly from the synced balances shown above.">
                   fees {fmtCcy(impact.estimatedCommission ?? 0, tradeCcy)}
                   {(impact.forexFees ?? 0) > 0 && <> · FX {fmtCcy(impact.forexFees!, tradeCcy)}</>}
                   {impact.remainingCash != null && (

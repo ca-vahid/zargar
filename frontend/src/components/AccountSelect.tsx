@@ -14,6 +14,9 @@ export interface AccountOption {
 
 function OptionRow({ opt }: { opt: AccountOption }) {
   const { portfolio: p, account, provider } = opt;
+  // the seeded IBKR portfolio isn't a usable venue until the gateway connects
+  const ibkrPending = !account && p.venue === "ibkr"
+    && (p.kind === "live" || p.kind === "paper");
   const available = account
     ? cashText(account)
     : fmtCcy(p.cash, p.baseCurrency ?? "USD");
@@ -23,12 +26,23 @@ function OptionRow({ opt }: { opt: AccountOption }) {
         ? <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} size={18} />
         : <span className="acct-opt-dot" aria-hidden="true" />}
       <span className="acct-opt-main">
-        <span className="acct-opt-name">{p.name}</span>
-        <span className="acct-opt-cash">available {available}</span>
+        <span className="acct-opt-name">{ibkrPending ? "IBKR" : p.name}</span>
+        <span className="acct-opt-cash">
+          {ibkrPending ? "not set up yet — account pending" : `available ${available}`}
+        </span>
       </span>
       <span className="ccy-chip">{account?.currency ?? p.baseCurrency ?? "USD"}</span>
     </>
   );
+}
+
+const PROVIDER_ORDER = ["webull", "wealthsimple"]; // then everything else, IBKR last
+
+function providerRank(opt: AccountOption): number {
+  const name = opt.provider?.broker?.toLowerCase() ?? "";
+  const idx = PROVIDER_ORDER.findIndex((p) => name.includes(p));
+  if (idx >= 0) return idx;
+  return opt.portfolio.venue === "ibkr" ? PROVIDER_ORDER.length + 1 : PROVIDER_ORDER.length;
 }
 
 /** Rich account picker: broker logo, name, currency, available cash. */
@@ -60,7 +74,10 @@ export function AccountSelect({
   }, [open]);
 
   const groups = useMemo(() => ({
-    real: options.filter((o) => o.portfolio.kind === "live" || o.portfolio.kind === "paper"),
+    real: options
+      .filter((o) => o.portfolio.kind === "live" || o.portfolio.kind === "paper")
+      .sort((a, b) => providerRank(a) - providerRank(b)
+        || a.portfolio.name.localeCompare(b.portfolio.name)),
     practice: options.filter((o) => o.portfolio.kind === "sim"),
   }), [options]);
 

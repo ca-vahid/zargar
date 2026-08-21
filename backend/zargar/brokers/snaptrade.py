@@ -169,6 +169,7 @@ def extract_unified_position(raw: dict) -> dict | None:
         "avgCost": avg,
         "price": price or None,
         "currency": str(raw.get("currency") or instrument.get("currency") or "") or None,
+        "universalId": str(instrument.get("id") or "") or None,
     }
 
 
@@ -266,6 +267,7 @@ class SnapTradeBroker(Executor):
         journal,
         settings,
         account_for: Callable[[str], str | None],  # portfolio_id -> snaptrade account id
+        symbol_ids: dict[tuple[str, str], str] | None = None,  # shared with the sync
     ) -> None:
         super().__init__()
         self._client = client
@@ -274,7 +276,7 @@ class SnapTradeBroker(Executor):
         self._settings = settings
         self._account_for = account_for
         self._tracked: dict[str, _Tracked] = {}       # our order id -> state
-        self._symbol_ids: dict[tuple[str, str], str] = {}  # (account, ticker) -> universal id
+        self._symbol_ids = symbol_ids if symbol_ids is not None else {}
         self._last_submit: dict[str, float] = {}      # account id -> monotonic ts
         self._submit_locks: dict[str, asyncio.Lock] = {}
         self._task: asyncio.Task | None = None
@@ -624,6 +626,7 @@ class SnapTradeSync:
         settings,
         bus,
         ensure_symbol,       # async Callable[[str], None]
+        symbol_ids: dict[tuple[str, str], str] | None = None,  # shared with the broker
     ) -> None:
         self._client = client
         self._sf = session_factory
@@ -632,6 +635,7 @@ class SnapTradeSync:
         self._settings = settings
         self._bus = bus
         self._ensure_symbol = ensure_symbol
+        self.symbol_ids = symbol_ids if symbol_ids is not None else {}
         self._account_to_portfolio: dict[str, str] = {}
         self._portfolio_to_account: dict[str, str] = {}
         self._mismatch_warned: set[tuple[str, str]] = set()  # (account, day) journaled once
@@ -721,6 +725,11 @@ class SnapTradeSync:
 
         cash, cash_balances = await self._fetch_cash(account_id, currency, acct)
         positions = await self._fetch_positions(account_id)
+        # pre-seed the impact endpoint's symbol-id cache from held positions —
+        # saves a brokerage API call per fee check (Wealthsimple rate-limits)
+        for p in positions:
+            if p.get("universalId"):
+                self.symbol_ids[(account_id, p["symbol"].upper())] = p["universalId"]
         for p in positions:
             try:
                 await self._ensure_symbol(p["symbol"])
