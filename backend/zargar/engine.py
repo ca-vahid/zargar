@@ -109,7 +109,7 @@ class Engine:
                 from .brokers.yahoo import YahooQuoteFeed
                 self.feed = YahooQuoteFeed(
                     on_quote=self.quotes.on_quote,
-                    poll_seconds=float(self.settings.get("quotes.yahoo_poll_seconds", 3.0)))
+                    poll_seconds=lambda: self.settings.get("quotes.yahoo_poll_seconds", 1.0))
             else:
                 self.feed = SimQuoteFeed(
                     on_quote=self.quotes.on_quote,

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { Blotter } from "../components/Blotter";
 import { IconCandles, IconLine, IconWarn } from "../components/icons";
+import { DeltaPill, TickArrow } from "../components/quotekit";
 import { OrderTicket } from "../components/OrderTicket";
 import { StockChart, type ChartType, type Indicator } from "../components/StockChart";
 import { api } from "../lib/api";
 import { fmtMoney } from "../lib/format";
+import { useDaySeries } from "../lib/useDaySeries";
 import { watchSymbol } from "../lib/ws";
 import { useQuote, useStore } from "../store";
 
@@ -27,6 +29,7 @@ export function TradePage() {
       ["ema20", "sma50", "bb"].includes(i)) as Indicator[]);
   const showVolume = settings["ui.chart.show_volume"] ?? true;
   const quoteSource = useStore((s) => s.broker?.quoteSource);
+  const day = useDaySeries(symbol);
   const [symInput, setSymInput] = useState(symbol);
 
   useEffect(() => setSymInput(symbol), [symbol]);
@@ -58,7 +61,8 @@ export function TradePage() {
             spellCheck={false} />
           {quote && (
             <>
-              <span className="last">{fmtMoney(quote.last)}</span>
+              <span className="last"><TickArrow symbol={symbol} /> {fmtMoney(quote.last)}</span>
+              <DeltaPill price={quote.last} open={day.open} size="md" />
               <span className="ba">
                 bid {fmtMoney(quote.bid)} × {quote.bidSize} &nbsp;·&nbsp; ask {fmtMoney(quote.ask)} × {quote.askSize}
               </span>

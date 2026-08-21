@@ -44,10 +44,12 @@ class YahooQuoteFeed(QuoteFeed):
     def __init__(
         self,
         on_quote: Callable[[Quote], None],
-        poll_seconds: float = 3.0,
+        poll_seconds: float | Callable[[], float] = 3.0,
         client: httpx.AsyncClient | None = None,
     ) -> None:
         self._on_quote = on_quote
+        # a callable re-reads the live setting every cycle — speed changes
+        # apply without a restart
         self._poll_seconds = poll_seconds
         self._http = client or httpx.AsyncClient(
             timeout=10, headers={"User-Agent": UA}, follow_redirects=True)
@@ -80,13 +82,20 @@ class YahooQuoteFeed(QuoteFeed):
         self._symbols.add(symbol.upper())
 
     # ------------------------------------------------------------------ polling
+    def _interval(self) -> float:
+        raw = self._poll_seconds() if callable(self._poll_seconds) else self._poll_seconds
+        try:
+            return max(1.0, float(raw))  # floor: don't hammer Yahoo below 1s
+        except (TypeError, ValueError):
+            return 3.0
+
     async def _loop(self) -> None:
         while True:
             try:
                 await self.poll_once()
             except Exception:  # pragma: no cover - defensive
                 log.exception("yahoo poll failed")
-            await asyncio.sleep(self._poll_seconds)
+            await asyncio.sleep(self._interval())
 
     async def _ensure_cookie(self) -> None:
         if self._cookie_warm:

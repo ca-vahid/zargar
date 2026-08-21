@@ -56,6 +56,7 @@ interface AppState {
   broker: BrokerState | null;
   brokerages: Brokerages | null;
   driftWarnings: { portfolioId: string; name: string; lossPct: number; ts: string }[];
+  chgDollar: boolean; // day-change display: false = %, true = $ (global, persisted)
   journalGroup: string | null; // pre-filter applied when the Journal page opens
   portfoliosFocus: string | null; // provider connectionId to scroll to on Portfolios
   ticketPortfolioId: string | null; // one-shot account preselect for the order ticket
@@ -70,6 +71,7 @@ interface AppState {
   clearPortfoliosFocus: () => void;
   openTrade: (symbol: string, portfolioId?: string) => void;
   clearTicketPortfolio: () => void;
+  toggleChgMode: () => void;
   dismissDrift: (portfolioId: string) => void;
   applySnapshot: (s: Snapshot) => void;
   applyBrokerages: (b: Brokerages) => void;
@@ -111,6 +113,7 @@ export const useStore = create<AppState>((set, get) => ({
   broker: null,
   brokerages: null,
   driftWarnings: [],
+  chgDollar: localStorage.getItem("zargar_chg_dollar") === "1",
   journalGroup: null,
   portfoliosFocus: null,
   ticketPortfolioId: null,
@@ -126,6 +129,12 @@ export const useStore = create<AppState>((set, get) => ({
   openTrade: (symbol, portfolioId) =>
     set({ page: "trade", activeSymbol: symbol, ticketPortfolioId: portfolioId ?? null }),
   clearTicketPortfolio: () => set({ ticketPortfolioId: null }),
+  toggleChgMode: () =>
+    set((st) => {
+      const next = !st.chgDollar;
+      localStorage.setItem("zargar_chg_dollar", next ? "1" : "0");
+      return { chgDollar: next };
+    }),
   dismissDrift: (portfolioId) =>
     set((st) => ({ driftWarnings: st.driftWarnings.filter((d) => d.portfolioId !== portfolioId) })),
 

@@ -59,7 +59,7 @@ function SelectRow({ k, label, options, hint }: {
   return (
     <div className="setting-row">
       <div className="lbl">{label}{hint && <small>{hint}</small>}</div>
-      <select value={value ?? ""} onChange={(e) => patch(k, e.target.value)}>
+      <select value={String(value ?? "")} onChange={(e) => patch(k, e.target.value)}>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>
@@ -199,7 +199,15 @@ export function SettingsPage() {
             <AccentRow />
             <SelectRow k="ui.density" label="Density"
               options={[{ value: "comfortable", label: "Comfortable" }, { value: "compact", label: "Compact" }]} />
-            <ToggleRow k="ui.quote_flash" label="Flash quotes on change" />
+            <SelectRow k="quotes.yahoo_poll_seconds" label="Tick speed"
+              hint="how often the quote feed refreshes (applies live)"
+              options={[
+                { value: "10", label: "1 · calm" },
+                { value: "6", label: "2 · easy" },
+                { value: "3", label: "3 · market" },
+                { value: "2", label: "4 · busy" },
+                { value: "1", label: "5 · frantic" },
+              ]} />
             <ToggleRow k="ui.chart.show_volume" label="Show volume pane" />
             <SelectRow k="ui.chart.type" label="Default chart type"
               options={[{ value: "candlestick", label: "Candlestick" }, { value: "line", label: "Line" }]} />

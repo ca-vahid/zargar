@@ -1,18 +1,17 @@
 import { memo } from "react";
 import { fmtMoney } from "../lib/format";
-import { usePrevLast, useQuote, useStore } from "../store";
+import { useDaySeries } from "../lib/useDaySeries";
+import { useQuote, useStore } from "../store";
+import { DeltaPill, Sparkline, TickArrow } from "./quotekit";
 
+/** Watchlist row, design "F": day change leads in a pill, day sparkline in the
+ * middle, small price with the arrow-pulse tick indicator below. */
 export const WatchRow = memo(function WatchRow({ symbol }: { symbol: string }) {
   const quote = useQuote(symbol);
-  const prev = usePrevLast(symbol);
   const active = useStore((s) => s.activeSymbol === symbol);
   const setActiveSymbol = useStore((s) => s.setActiveSymbol);
   const setPage = useStore((s) => s.setPage);
-  const flash = useStore((s) => s.settings["ui.quote_flash"] ?? true);
-
-  const dir = quote && prev !== undefined
-    ? quote.last > prev ? "flash-up" : quote.last < prev ? "flash-down" : ""
-    : "";
+  const day = useDaySeries(symbol);
 
   return (
     <button
@@ -21,13 +20,18 @@ export const WatchRow = memo(function WatchRow({ symbol }: { symbol: string }) {
       onClick={() => { setActiveSymbol(symbol); setPage("trade"); }}
       aria-label={`Trade ${symbol}`}
     >
-      <span className="wl-sym">{symbol}</span>
-      <span key={flash ? quote?.ts ?? 0 : 0} className={`wl-price quote-cell ${flash ? dir : ""}`}>
-        {quote ? fmtMoney(quote.last) : "…"}
+      <span className="wl-sym" title={symbol}>{symbol}</span>
+      <span className="wl-spark">
+        <Sparkline closes={day.closes} live={quote?.last} open={day.open} />
       </span>
+      <DeltaPill price={quote?.last} open={day.open} size="sm" />
       <span className="wl-sub">
         <span>{quote ? `${fmtMoney(quote.bid)} × ${fmtMoney(quote.ask)}` : ""}</span>
-        {quote?.halted && <span className="neg">HALTED</span>}
+        <span className="price-live">
+          <TickArrow symbol={symbol} />
+          <span>{quote ? fmtMoney(quote.last) : "…"}</span>
+          {quote?.halted && <span className="neg"> HALTED</span>}
+        </span>
       </span>
     </button>
   );

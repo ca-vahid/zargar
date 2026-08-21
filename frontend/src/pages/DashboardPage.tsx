@@ -8,14 +8,22 @@ import { netWorthByCurrency, useStore } from "../store";
 import type { BrokerageProvider } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
+import { cashText, providerTotal } from "../lib/brokerage";
 import { AsyncSection, EmptyState, StatusPill } from "../components/ui";
 import { WatchRow } from "../components/WatchRow";
 
 function ProviderCard({ provider }: { provider: BrokerageProvider }) {
   const openPortfolios = useStore((s) => s.openPortfolios);
+  const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
   const open = () => openPortfolios(provider.connectionId || provider.broker);
-  const pill = provider.disabled ? "bad" : provider.type === "trade" ? "ok" : "dim";
-  const pillText = provider.disabled ? "disconnected" : provider.type === "trade" ? "trade" : "read-only";
+  const total = useMemo(
+    () => providerTotal(provider.accounts, usdCad), [provider.accounts, usdCad]);
+
+  // the pill earns its place only when something needs attention
+  const warnPill = provider.disabled
+    ? { cls: "bad", text: "disconnected" }
+    : provider.type !== "trade" ? { cls: "dim", text: "read-only" } : null;
+
   return (
     <div className="panel provider-card" onClick={open}
       role="button" tabIndex={0}
@@ -23,22 +31,33 @@ function ProviderCard({ provider }: { provider: BrokerageProvider }) {
       <div className="panel-head">
         <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} />
         {provider.broker}
-        <span className={`status-pill ${pill}`}>{pillText}</span>
+        {warnPill && <span className={`status-pill ${warnPill.cls}`}>{warnPill.text}</span>}
+        <span className="prov-total">{total}</span>
       </div>
       <div className="panel-body">
-        {provider.accounts.map((a) => (
-          <div key={a.id} className="acct-row">
-            <span className="name" title={a.number ? `#${a.number}` : undefined}>{a.name}</span>
-            <span className="ccy-chip">{a.currency}</span>
-            {a.mismatch && (
-              <span className="status-pill wait"
-                title={`Computed ${fmtCcy(a.mismatch.computedEquity, a.currency)} vs broker ${fmtCcy(a.mismatch.brokerTotal, a.currency)} (${a.mismatch.pct > 0 ? "+" : ""}${a.mismatch.pct}%)`}>
-                Δ
-              </span>
-            )}
-            <span className="bal">{fmtCcy(a.equity, a.currency)}</span>
-          </div>
-        ))}
+        {provider.accounts.map((a) => {
+          const invested = a.equity - a.cash;
+          return (
+            <div key={a.id} className="acct-block">
+              <div className="acct-row">
+                <span className="name" title={a.number ? `#${a.number}` : undefined}>{a.name}</span>
+                <span className="ccy-chip">{a.currency}</span>
+                {a.mismatch && (
+                  <span className="status-pill wait"
+                    title={`Computed ${fmtCcy(a.mismatch.computedEquity, a.currency)} vs broker ${fmtCcy(a.mismatch.brokerTotal, a.currency)} (${a.mismatch.pct > 0 ? "+" : ""}${a.mismatch.pct}%)`}>
+                    Δ
+                  </span>
+                )}
+                <span className="bal">{fmtCcy(a.equity, a.currency)}</span>
+              </div>
+              {a.equity > 0.005 && (
+                <div className="acct-detail">
+                  invested {fmtCcy(invested, a.currency)} · cash {cashText(a)}
+                </div>
+              )}
+            </div>
+          );
+        })}
         {provider.accounts.length === 0 && (
           <div className="metric-sub">no accounts synced yet</div>
         )}

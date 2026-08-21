@@ -59,7 +59,7 @@ DEFAULTS: dict[str, Any] = {
     "snaptrade.order_poll_seconds": 2.0,
     "snaptrade.reconcile_seconds": 60,
     "snaptrade.allow_brackets": False,
-    "quotes.yahoo_poll_seconds": 3.0,
+    "quotes.yahoo_poll_seconds": 1.0,   # 1=frantic … 10=calm (see ui tick-speed select)
     # --- UI ----------------------------------------------------------------
     "ui.theme": "light",                    # light | dark (explicit saves win)
     "ui.accent": "#5b8cff",

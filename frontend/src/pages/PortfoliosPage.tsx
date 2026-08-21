@@ -5,10 +5,12 @@ import { api } from "../lib/api";
 import { fmtCcy, fmtDateTime, fmtMoney, fmtPct, fmtQty, fmtSigned } from "../lib/format";
 import { baseChartOptions, seriesPalette } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
-import { groupPositions, usePrevLast, useQuote, useStore } from "../store";
+import { groupPositions, useQuote, useStore } from "../store";
 import type { BrokeragePosition, BrokerageProvider, Portfolio } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
+import { LivePrice, ValuePill } from "../components/quotekit";
+import { cashText, providerTotal } from "../lib/brokerage";
 import { AsyncSection, EmptyState } from "../components/ui";
 
 const KIND_LABEL: Record<string, string> = {
@@ -49,10 +51,10 @@ function PortfolioCard({
         <div className="metric-lg">
           {fmtCcy(equity, ccy)}
           {p.todayPct !== null && p.todayPct !== undefined && (
-            <span className={`status-pill ${p.todayPct >= 0 ? "ok" : "bad"}`}
-              style={{ marginLeft: 8, verticalAlign: "middle" }}
+            <span style={{ marginLeft: 8, verticalAlign: "middle" }}
               title="Equity change vs today's first quote-backed observation">
-              {p.todayPct >= 0 ? "+" : ""}{p.todayPct.toFixed(2)}% today
+              <ValuePill value={p.todayPct}
+                text={`${p.todayPct >= 0 ? "+" : ""}${p.todayPct.toFixed(2)}% today`} />
             </span>
           )}
         </div>
@@ -79,12 +81,8 @@ const LiveBrokerageRow = memo(function LiveBrokerageRow({
   accountCurrency: string;
 }) {
   const quote = useQuote(pos.symbol);
-  const prev = usePrevLast(pos.symbol);
   const openTrade = useStore((s) => s.openTrade);
   const live = quote?.last && quote.last > 0 ? quote.last : pos.price ?? 0;
-  const dir = quote && prev !== undefined
-    ? live > prev ? "flash-up" : live < prev ? "flash-down" : ""
-    : "";
   const ccy = pos.currency ?? accountCurrency;
   const pnlPct = pos.avgCost > 0 ? (live / pos.avgCost - 1) * 100 : null;
   return (
@@ -93,27 +91,14 @@ const LiveBrokerageRow = memo(function LiveBrokerageRow({
       <td className="sym-cell">{pos.symbol}</td>
       <td className="num">{fmtQty(pos.qty)}</td>
       <td className="num">{fmtMoney(pos.avgCost)}</td>
+      <td className="num"><LivePrice symbol={pos.symbol} fallback={live || undefined} /></td>
       <td className="num">
-        <span key={quote?.ts ?? 0} className={`quote-cell ${dir}`}>
-          {live ? fmtMoney(live) : "—"}
-        </span>
-      </td>
-      <td className={`num ${pnlPct !== null ? (pnlPct >= 0 ? "pos" : "neg") : ""}`}>
-        {pnlPct !== null ? fmtPct(pnlPct) : "—"}
+        {pnlPct !== null ? <ValuePill value={pnlPct} text={fmtPct(pnlPct)} /> : "—"}
       </td>
       <td className="num">{live ? fmtCcy(pos.qty * live, ccy) : "—"}</td>
     </tr>
   );
 });
-
-function cashLine(a: { cash: number; currency: string;
-  cashBalances?: { currency: string; cash: number }[] }): string {
-  const parts = (a.cashBalances ?? []).filter((b) => Math.abs(b.cash) > 0.004);
-  if (parts.length > 1) {
-    return parts.map((b) => fmtCcy(b.cash, b.currency)).join(" + ");
-  }
-  return fmtCcy(a.cash, a.currency);
-}
 
 function BrokerageSection({
   provider,
@@ -126,16 +111,20 @@ function BrokerageSection({
   refreshing: boolean;
   lastSyncAt: string | null;
 }) {
-  const pill = provider.disabled ? "bad" : provider.type === "trade" ? "ok" : "dim";
-  const pillText = provider.disabled ? "disconnected" : provider.type === "trade" ? "trade" : "read-only";
+  const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
+  const total = providerTotal(provider.accounts, usdCad);
+  const warnPill = provider.disabled
+    ? { cls: "bad", text: "disconnected" }
+    : provider.type !== "trade" ? { cls: "dim", text: "read-only" } : null;
   return (
     <div className="panel mb" id={`provider-${provider.connectionId || provider.broker}`}>
       <div className="panel-head">
         <BrokerIcon name={provider.broker} logoUrl={provider.logoUrl} />
         {provider.broker}
-        <span className={`status-pill ${pill}`}>{pillText}</span>
+        {warnPill && <span className={`status-pill ${warnPill.cls}`}>{warnPill.text}</span>}
         <span className="sub">synced {lastSyncAt ? fmtDateTime(lastSyncAt) : "never"}</span>
-        <button className="icon-btn" style={{ marginLeft: "auto" }} onClick={onRefresh}
+        <span className="prov-total">{total}</span>
+        <button className="icon-btn" onClick={onRefresh}
           disabled={refreshing} aria-label={`Refresh ${provider.broker}`}
           title="Refresh brokerage data">
           {refreshing ? <span className="spinner" /> : <IconRefresh />}
@@ -154,9 +143,13 @@ function BrokerageSection({
                   Δ mismatch
                 </span>
               )}
-              <span style={{ marginLeft: "auto", fontFamily: "var(--mono)" }}>
-                {fmtCcy(a.equity, a.currency)}
-                <span className="metric-sub"> · cash {cashLine(a)}</span>
+              <span style={{ marginLeft: "auto", fontFamily: "var(--mono)", textAlign: "right" }}>
+                <b>{fmtCcy(a.equity, a.currency)}</b>
+                {a.equity > 0.005 && (
+                  <span className="metric-sub">
+                    {" "}· invested {fmtCcy(a.equity - a.cash, a.currency)} · cash {cashText(a)}
+                  </span>
+                )}
               </span>
             </div>
             {a.positions.length === 0 ? (
@@ -205,15 +198,23 @@ export function PortfoliosPage() {
   const snaptradePids = useMemo(() => new Set(
     (brokerages?.providers ?? []).flatMap((pr) => pr.accounts.map((a) => a.portfolioId))),
     [brokerages]);
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const ibkrConnected = useStore((s) => !!s.broker?.ibkrConnected);
   // brokerage-backed portfolios render inside their provider section — the
-  // card grid carries only what's left (IBKR placeholder, practice, shadow)
+  // card grid carries only what's left. The empty IBKR placeholder hides
+  // until the gateway actually connects or holds money.
   const realCards = useMemo(
-    () => portfolios.filter((p) => REAL_KINDS.has(p.kind) && !snaptradePids.has(p.id)),
-    [portfolios, snaptradePids]);
+    () => portfolios.filter((p) => REAL_KINDS.has(p.kind) && !snaptradePids.has(p.id)
+      && (ibkrConnected || (p.equity ?? p.cash) > 0.005)),
+    [portfolios, snaptradePids, ibkrConnected]);
   const practiceCards = useMemo(
     () => portfolios.filter((p) => !REAL_KINDS.has(p.kind)),
     [portfolios]);
-  const [chartScope, setChartScope] = useState<"all" | "real" | "practice">("all");
+  const showPractice = mode !== "live"; // live board = real money only
+  const [chartScope, setChartScope] = useState<"all" | "real" | "practice">(
+    mode === "live" ? "real" : "all");
+  const chartScopeRef = useRef(chartScope);
+  chartScopeRef.current = chartScope;
   const portfoliosFocus = useStore((s) => s.portfoliosFocus);
   const clearPortfoliosFocus = useStore((s) => s.clearPortfoliosFocus);
   useEffect(() => {
@@ -258,18 +259,26 @@ export function PortfoliosPage() {
       navigator: { enabled: false },
       legend: { ...baseChartOptions().legend, enabled: true },
       tooltip: { ...baseChartOptions().tooltip, valueDecimals: 2 },
-      series: curves.data.map((s, i) => ({
-        type: "line" as const,
-        id: s.portfolio.id,
-        name: s.portfolio.name,
-        color: palette[i % palette.length],
-        data: s.points,
-        visible: !hidden[s.portfolio.id],
-      })),
+      series: curves.data
+        // live mode: practice series don't even enter the chart or legend
+        .filter((s) => showPractice || REAL_KINDS.has(s.portfolio.kind))
+        .map((s, i) => {
+          const isReal = REAL_KINDS.has(s.portfolio.kind);
+          const scope = chartScopeRef.current;
+          return {
+            type: "line" as const,
+            id: s.portfolio.id,
+            name: s.portfolio.name,
+            color: palette[i % palette.length],
+            data: s.points,
+            visible: !hidden[s.portfolio.id]
+              && (scope === "all" || (scope === "real") === isReal),
+          };
+        }),
     });
     return () => { chartInstance.current?.destroy(); chartInstance.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [curves.data, theme]);
+  }, [curves.data, theme, showPractice]);
 
   const toggleVisible = (pid: string, visible: boolean) => {
     setHidden((h) => ({ ...h, [pid]: !visible }));
@@ -320,36 +329,45 @@ export function PortfoliosPage() {
         </div></div>
       )}
 
-      <div className="section-head">
-        Practice environment <span className="status-pill dim">simulated fills</span>
-      </div>
-      <div className="settings-grid mb">
-        {practiceCards.map((p) => (
-          <PortfolioCard key={p.id} portfolio={p}
-            positionCount={(byPortfolio[p.id] ?? []).length}
-            visible={!hidden[p.id]}
-            onToggle={(v) => toggleVisible(p.id, v)} />
-        ))}
-        {practiceCards.length === 0 && (
-          <div className="panel"><div className="panel-body">
-            <EmptyState title="No practice portfolios"
-              hint="The engine seeds one on first start." />
-          </div></div>
-        )}
-      </div>
+      {showPractice && (
+        <>
+          <div className="section-head">
+            Practice environment <span className="status-pill dim">simulated fills</span>
+          </div>
+          <div className="settings-grid mb">
+            {practiceCards.map((p) => (
+              <PortfolioCard key={p.id} portfolio={p}
+                positionCount={(byPortfolio[p.id] ?? []).length}
+                visible={!hidden[p.id]}
+                onToggle={(v) => toggleVisible(p.id, v)} />
+            ))}
+            {practiceCards.length === 0 && (
+              <div className="panel"><div className="panel-body">
+                <EmptyState title="No practice portfolios"
+                  hint="The engine seeds one on first start." />
+              </div></div>
+            )}
+          </div>
+        </>
+      )}
 
       <div className="panel">
         <div className="panel-head">
           Equity curves
-          <span className="sub">real vs practice — the "what would have happened" view</span>
-          <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-            {(["all", "real", "practice"] as const).map((sc) => (
-              <button key={sc} className={`chip-btn ${chartScope === sc ? "active" : ""}`}
-                onClick={() => applyChartScope(sc)}>
-                {sc}
-              </button>
-            ))}
-          </div>
+          <span className="sub">
+            {showPractice ? 'real vs practice — the "what would have happened" view'
+              : "your real accounts over time"}
+          </span>
+          {showPractice && (
+            <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+              {(["all", "real", "practice"] as const).map((sc) => (
+                <button key={sc} className={`chip-btn ${chartScope === sc ? "active" : ""}`}
+                  onClick={() => applyChartScope(sc)}>
+                  {sc}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <AsyncSection state={curves}
           empty={<EmptyState title="No equity history yet" />}>
