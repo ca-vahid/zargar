@@ -82,6 +82,27 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
   const levelsRow = outs.find((o) => o.planSource === "levels");
   const respect: any[] = levelsRow?.plan?.levels ?? [];
   const respectBy = Object.fromEntries(respect.map((r: any) => [String(r.price), r]));
+  // Arming only makes sense for the upcoming (or current) session; a past plan is a
+  // "would it have worked?" exercise.
+  const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const upcoming = !!plan && plan.planFor >= todayEt;
+  const trigOuts = outs.filter((o) => o.planSource.startsWith("trigger:"));
+  const scoredTrig = trigOuts.filter((o) => o.status === "scored" || o.status === "partial");
+  const fired = scoredTrig.filter((o) => o.outcome && !["not_triggered", "observed", "gapped_past", "gapped_through", "gap_void", "not_tradeable"].includes(o.outcome));
+  const verdictLine = (() => {
+    if (!plan) return "";
+    if (upcoming) return "";
+    if (!outs.length) return "Not checked yet — press \"check now\".";
+    if (!scoredTrig.length && !levelsRow) return outs[0]?.note ?? "Waiting for that session's bars.";
+    if (!plan.validTriggers) return "The plan had no tradeable trigger, so there was nothing to follow that day.";
+    if (!fired.length) {
+      const reasons = scoredTrig.map((o) => `${o.planSource.slice(8)}: ${String(o.outcome ?? o.status).replace(/_/g, " ")}`);
+      return `No — no trigger fired that day (${reasons.join("; ") || "price never reached a level inside a prime window"}).`;
+    }
+    const parts = fired.map((o) => `${o.planSource.slice(8)} fired (${o.plan?.firedWindow?.replace(/_/g, " ") ?? ""}) → ${String(o.outcome).replace(/_/g, " ")}${o.rMultiple !== null && o.rMultiple !== undefined ? ` ${o.rMultiple > 0 ? "+" : ""}${o.rMultiple.toFixed(2)}R` : ""}`);
+    const sumR = fired.reduce((n, o) => n + (o.rMultiple ?? 0), 0);
+    return `${sumR > 0 ? "Yes" : sumR < 0 ? "No" : "Flat"} — ${parts.join("; ")}.`;
+  })();
   if (!plan) return null;
   const arm = async () => {
     if (!isArmed) { setArmOpen(true); return; }
@@ -103,8 +124,25 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
       </div>
       <div className="panel-body tq-result-body">
         <div className="tq-result-main">
+          {!upcoming && (
+            <div className={`tq-section tq-would ${verdictLine.startsWith("Yes") ? "yes" : verdictLine.startsWith("No") ? "no" : ""}`}>
+              <div className="tq-label">Would this plan have worked on {plan.planFor}?
+                <span className="muted"> — following it mechanically: fire only in the prime windows, stop first, 30/40/15 trims, flat by the close</span></div>
+              <div className="tq-would-verdict">{verdictLine}</div>
+              {scoredTrig.length > 0 && (
+                <div className="tq-plan">
+                  {scoredTrig.map((o) => (
+                    <div className="tq-plan-cell" key={o.id}><small>Trigger {o.planSource.slice(8)}</small>
+                      <b className={(o.rMultiple ?? 0) > 0 ? "pos" : (o.rMultiple ?? 0) < 0 ? "neg" : ""}>{String(o.outcome ?? o.status).replace(/_/g, " ")}{o.rMultiple !== null && o.rMultiple !== undefined && o.outcome !== "not_filled" ? ` ${o.rMultiple > 0 ? "+" : ""}${o.rMultiple.toFixed(2)}R` : ""}</b>
+                      <span>{o.plan?.firedWindow ? `fired ${String(o.plan.firedWindow).replace(/_/g, " ")}` : o.plan?.observedMidday ? `${o.plan.observedMidday} mid-day touch(es) — not taken (R6.3)` : (o.note ?? "")}</span></div>
+                  ))}
+                </div>
+              )}
+              {!outs.length && <OutcomeSection run={run} onRefresh={onRefresh} />}
+            </div>
+          )}
           <div className="tq-nosetup">
-            <div className="tq-nosetup-head">Tomorrow's map, not a trade</div>
+            <div className="tq-nosetup-head">{upcoming ? "Tomorrow's map, not a trade" : "The plan, as it was built that evening"}</div>
             <div className="tq-nosetup-body">
               The market was closed at the as-of instant (R6.4), so this is the book's pre-session routine (pp. 116–117, 120):
               the levels that matter and <i>conditional</i> triggers — WATCH a level, IF price reaches it inside a prime window on
@@ -162,7 +200,7 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
               </div>
             </div>
           )}
-          {!levelsRow && <OutcomeSection run={run} onRefresh={onRefresh} />}
+          {!levelsRow && upcoming && <OutcomeSection run={run} onRefresh={onRefresh} />}
           <ReviewSection run={run} onRefresh={onRefresh} />
         </div>
         <div className="tq-result-side">
@@ -181,10 +219,13 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
           <div className="tq-label" style={{ marginTop: 10 }}>Trace {trace.length ? `${trace.length} steps` : ""}
             {trace.length > 0 && <button className="link-btn" onClick={() => setShowTrace((v) => !v)}>{showTrace ? "hide" : "show"}</button>}</div>
           <div className="tq-side-actions">
-            <button className={isArmed ? "ghost-btn" : "primary-btn"} disabled={busy || run.status !== "done"} onClick={arm}
-              title="Arm: watch the triggers on live 1m bars inside the prime windows; choose the account and whether a fire alerts, proposes, or executes">
-              {busy ? "…" : isArmed ? "Disarm" : "Arm for live triggers"}
-            </button>
+            {upcoming && (
+              <button className={isArmed ? "ghost-btn" : "primary-btn"} disabled={busy || run.status !== "done"} onClick={arm}
+                title="Arm: watch the triggers on live 1m bars inside the prime windows; choose the account and whether a fire alerts, proposes, or executes">
+                {busy ? "…" : isArmed ? "Disarm" : "Arm for live triggers"}
+              </button>
+            )}
+            {!upcoming && <div className="muted small">Past session — arming is only offered for the upcoming session. Use this page to check whether the plan would have worked.</div>}
             {isArmed && <button className="ghost-btn" onClick={() => setTab("armed")}>Open armed dashboard</button>}
             {armOpen && (
               <ArmDialog symbol={plan.symbol} planFor={plan.planFor} onClose={() => setArmOpen(false)}

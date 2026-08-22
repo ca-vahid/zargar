@@ -132,6 +132,43 @@ TOOL_DEFS: list[dict] = [
         },
     },
     {
+        "name": "get_run",
+        "description": "Fetch one analysis run by id (or id prefix): its verdict/plan, the decision trace, "
+                       "what price did afterwards (outcomes), and any reviews. Use it when the user talks "
+                       "about a specific run or 'this run' in a run thread.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"run_id": {"type": "string", "description": "full id or the first 8+ characters"}},
+            "required": ["run_id"],
+        },
+    },
+    {
+        "name": "record_review",
+        "description": "Persist the user's review of a run: whether the call was right (correct | wrong_verdict | "
+                       "wrong_levels | wrong_plan | late | data_issue | unclear), which pipeline stage was at fault "
+                       "(data | detectors | facts_prompt | pass_context | pass_pattern | pass_entry | critic | "
+                       "grounding | options | thresholds | rulebook | other), what they expected, notes, and planned "
+                       "fixes. Call it when the user states a judgement about a run ('this was wrong', 'it should "
+                       "have been a setup at 101.2'). Reviewer is the user unless they ask you to judge.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "run_id": {"type": "string"},
+                "review_verdict": {"type": "string"},
+                "root_cause_stage": {"type": "string"},
+                "expected_verdict": {"type": "string", "description": "setup | no_setup"},
+                "expected_setup_type": {"type": "string"},
+                "expected_entry": {"type": "number"},
+                "expected_stop": {"type": "number"},
+                "expectation_note": {"type": "string"},
+                "notes": {"type": "string"},
+                "actions": {"type": "array", "items": {"type": "string"}},
+                "reviewer": {"type": "string", "description": "user | claude"},
+            },
+            "required": ["run_id", "review_verdict"],
+        },
+    },
+    {
         "name": "get_rule",
         "description": "Look up the text of a technique rule by id (e.g. T3.3d, R2).",
         "input_schema": {
@@ -146,9 +183,11 @@ CHAT_TOOL_GUIDE = """
 You also have TOOLS. Use them instead of guessing: `compute_facts` for any price, level or volume
 claim; `render_chart` whenever a picture would help (and always when the user asks to "show" or
 "draw"); `run_analysis` for a full fresh read; `get_option_chain` for contract questions;
-`backtest_window` for "how has this done". When the user pastes a chart image, analyse it directly
-but say prices are approximate unless you also fetch bars. Keep answers concrete: numbers, rule ids,
-what would change the verdict.
+`backtest_window` for "how has this done"; `get_run` to read a specific run (its trace, plan, what
+happened next); `record_review` when the user judges a run ("this was wrong", "should have been a
+setup at 101.2") so the judgement is persisted for the review loop. When the user pastes a chart
+image, analyse it directly but say prices are approximate unless you also fetch bars. Keep answers
+concrete: numbers, rule ids, what would change the verdict.
 """
 
 
@@ -262,6 +301,70 @@ class ToolExecutor:
         trades = out.get("trades") or []
         return json.dumps({"summary": summ, "sampleTrades": trades[:15]}, default=str), \
             {"n": len(trades)}
+
+    async def _resolve_run_id(self, run_id: str) -> str | None:
+        run_id = (run_id or "").strip()
+        if not run_id:
+            return None
+        if await self.technique.get_run(run_id) is not None:
+            return run_id
+        rows = await self.technique.list_runs(limit=500)
+        hit = [r["id"] for r in rows if r["id"].startswith(run_id)]
+        return hit[0] if len(hit) == 1 else None
+
+    async def _t_get_run(self, run_id: str):
+        rid = await self._resolve_run_id(run_id) or (self.thread_id and None)
+        if rid is None and self.thread_id:
+            # a run thread: fall back to the run this thread belongs to
+            t = await self.technique.chat.get_thread(self.thread_id)
+            rid = (t or {}).get("runId")
+        if rid is None:
+            return f"no run matches {run_id!r}", {"error": True}
+        run = await self.technique.get_run(rid)
+        if run is None:
+            return f"run {rid} not found", {"error": True}
+        res = run.get("result") or {}
+        slim = {
+            "id": run["id"], "symbol": run["symbol"], "mode": run["mode"], "verdict": run["verdict"],
+            "setupType": run["setupType"], "confidence": run["confidence"], "grounded": run["grounded"],
+            "asOf": run["asOf"], "createdAt": run["createdAt"], "sessionWindow": res.get("sessionWindow"),
+            "analysis": res.get("analysis"), "plan": res.get("plan"),
+            "trace": [{k: t.get(k) for k in ("seq", "stage", "step", "reason")} for t in (res.get("trace") or [])],
+            "outcomes": [{k: o.get(k) for k in ("planSource", "status", "outcome", "rMultiple", "mfeR", "maeR", "note")}
+                         for o in (run.get("outcomes") or [])],
+            "reviews": [{k: r.get(k) for k in ("reviewer", "reviewVerdict", "rootCauseStage", "notes", "createdAt")}
+                        for r in (run.get("reviews") or [])],
+            "setups": [{k: s.get(k) for k in ("setupType", "entry", "stop", "valid", "noTradeReasons")}
+                       for s in (run.get("setups") or [])],
+        }
+        return json.dumps(slim, default=str), {"runId": rid}
+
+    async def _t_record_review(self, run_id: str, review_verdict: str, root_cause_stage: str | None = None,
+                               expected_verdict: str | None = None, expected_setup_type: str | None = None,
+                               expected_entry: float | None = None, expected_stop: float | None = None,
+                               expectation_note: str = "", notes: str = "", actions: list | None = None,
+                               reviewer: str = "user"):
+        rid = await self._resolve_run_id(run_id)
+        if rid is None and self.thread_id:
+            t = await self.technique.chat.get_thread(self.thread_id)
+            rid = (t or {}).get("runId")
+        if rid is None:
+            return f"no run matches {run_id!r}", {"error": True}
+        plan = {}
+        if expected_entry is not None:
+            plan["entry"] = expected_entry
+        if expected_stop is not None:
+            plan["stop"] = expected_stop
+        try:
+            d = await self.technique.add_review(
+                rid, review_verdict=review_verdict, reviewer=reviewer if reviewer in ("user", "claude") else "user",
+                expected_verdict=expected_verdict, expected_setup_type=expected_setup_type, expected_plan=plan,
+                expectation_note=expectation_note or "", root_cause_stage=root_cause_stage, notes=notes or "",
+                actions=[{"desc": a} for a in (actions or [])])
+        except (KeyError, ValueError) as exc:
+            return f"review not recorded: {exc}", {"error": True}
+        return json.dumps({"recorded": True, "reviewId": d["id"], "runId": rid, "reviewVerdict": d["reviewVerdict"],
+                           "rootCauseStage": d["rootCauseStage"]}), {"runId": rid, "reviewId": d["id"]}
 
     async def _t_list_recent_runs(self, symbol: str | None = None, limit: int = 10):
         rows = await self.technique.list_runs(limit=limit, symbol=symbol)

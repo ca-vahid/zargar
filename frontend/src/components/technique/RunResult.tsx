@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/format";
 import { useStore } from "../../store";
 import { absoluteUrl } from "../../lib/routing";
 import type {
-  GroundingCheck, TechniqueContract, TechniqueOutcome, TechniqueReview, TechniqueRun, TechniqueTaxonomy, TraceStep,
+  GroundingCheck, TechniqueContract, TechniqueOutcome, TechniqueReview, TechniqueRun, TraceStep,
 } from "../../types";
 import { IconCheck, IconX } from "../icons";
 import { Collapse } from "../Collapse";
@@ -346,29 +346,42 @@ export function OutcomeSection({ run, onRefresh }: { run: TechniqueRun; onRefres
     finally { setBusy(false); }
   };
   if (run.status !== "done" || run.mode === "image_only") return null;
+  const scored = outs.filter((o) => o.status === "scored" || o.status === "partial");
+  const waiting = outs.length > 0 && scored.length === 0;
+  const waitingNote = waiting ? (outs[0].note ?? "") : "";
+  const label = (o: TechniqueOutcome) => o.planSource === "analysis" ? "This setup"
+    : o.planSource === "candidate" ? "The setup it declined"
+    : o.planSource.startsWith("trigger:") ? `Trigger ${o.planSource.slice(8)}`
+    : o.planSource === "levels" ? "Levels" : "Price path";
   return (
     <div className="tq-section tq-outcome">
       <div className="tq-label">What happened next
-        <span className="muted"> — scored like the backtester: fill at the entry, stop wins a straddling bar, 30/40/15 trims</span>
-        <button className="link-btn" disabled={busy} onClick={score}>{busy ? "scoring…" : outs.length ? "re-score" : "score now"}</button>
+        <span className="muted"> — did price reach the entry, then the stop or the targets? (same scorer as the backtester)</span>
+        <button className="link-btn" disabled={busy} onClick={score}>{busy ? "checking…" : scored.length ? "re-check" : "check now"}</button>
       </div>
-      {outs.length === 0 && <div className="muted">Not scored yet — the outcome loop picks finished runs up every 30 min once bars exist after the decision.</div>}
-      {outs.length > 0 && (
+      {outs.length === 0 && <div className="muted">Not checked yet — it is checked automatically once bars exist after this moment.</div>}
+      {waiting && (
+        <div className="muted">
+          {/after-hours|weekend|not started|no bars/.test(waitingNote)
+            ? "Waiting for the next session — the market has not traded since this moment yet."
+            : waitingNote || "Waiting for data."}
+        </div>
+      )}
+      {scored.length > 0 && (
         <div className="tq-plan">
-          {outs.map((o) => {
-            const src = o.planSource === "analysis" ? "The plan" : o.planSource === "candidate" ? "Declined candidate"
-              : o.planSource.startsWith("trigger:") ? `Trigger ${o.planSource.slice(8)}` : o.planSource === "levels" ? "Levels" : "Market path";
+          {scored.map((o) => {
             const r = o.rMultiple;
+            const notFilled = o.outcome === "not_filled";
             return (
               <div className="tq-plan-cell tq-outcome-cell" key={o.id} title={o.note ?? ""}>
-                <small>{src}{o.status === "partial" ? " (partial)" : o.status === "pending" ? " (pending)" : o.status === "unscorable" ? " (unscorable)" : ""}</small>
-                <b className={r === null ? "" : r > 0 ? "pos" : r < 0 ? "neg" : ""}>
-                  {o.outcome ? o.outcome.replace(/_/g, " ") : o.status === "scored" || o.status === "partial" ? "path" : o.status}
-                  {r !== null && o.outcome !== "not_filled" ? ` ${r > 0 ? "+" : ""}${r.toFixed(2)}R` : ""}
+                <small>{label(o)}{o.status === "partial" ? " · still open" : ""}</small>
+                <b className={r === null || notFilled ? "" : r > 0 ? "pos" : r < 0 ? "neg" : ""}>
+                  {notFilled ? "never reached the entry" : o.outcome ? o.outcome.replace(/_/g, " ") : "path"}
+                  {r !== null && !notFilled ? ` ${r > 0 ? "+" : ""}${r.toFixed(2)}R` : ""}
                 </b>
                 <span>
-                  {o.mfeR !== null && o.outcome !== "not_filled" ? `MFE ${o.mfeR.toFixed(2)}R · MAE ${(o.maeR ?? 0).toFixed(2)}R · ${o.barsHeld ?? 0} bars` : (o.note ?? "")}
-                  {o.path && o.path["+30"] ? ` · +30 bars: ${o.path["+30"].closePct > 0 ? "+" : ""}${o.path["+30"].closePct}%` : ""}
+                  {o.mfeR !== null && !notFilled ? `best ${o.mfeR.toFixed(2)}R · worst ${(o.maeR ?? 0).toFixed(2)}R · ${o.barsHeld ?? 0} bars` : ""}
+                  {o.path && o.path["+30"] ? `${o.mfeR !== null && !notFilled ? " · " : ""}30 bars later: ${o.path["+30"].closePct > 0 ? "+" : ""}${o.path["+30"].closePct}%` : ""}
                 </span>
               </div>
             );
@@ -379,48 +392,25 @@ export function OutcomeSection({ run, onRefresh }: { run: TechniqueRun; onRefres
   );
 }
 
-export function ReviewSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () => void }) {
-  const toast = useStore((s) => s.toast);
+/** Reviews recorded for this run (from chat, the CLI, or the /technique-review
+ *  skill). No form here — reviewing happens in conversation. */
+export function ReviewSection({ run }: { run: TechniqueRun; onRefresh?: () => void }) {
+  const openChat = useStore((s) => s.openTechniqueChat);
   const reviews: TechniqueReview[] = run.reviews ?? [];
-  const [tax, setTax] = useState<TechniqueTaxonomy | null>(null);
-  const [open, setOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [f, setF] = useState({ reviewVerdict: "", rootCauseStage: "", expectedVerdict: "", expectedSetupType: "",
-    expectedEntry: "", expectedStop: "", expectationNote: "", notes: "", actions: "" });
-  useEffect(() => { if (open && !tax) api.techniqueTaxonomy().then(setTax).catch(() => undefined); }, [open, tax]);
-  const submit = async () => {
-    if (!f.reviewVerdict) { toast("error", "Pick a review verdict"); return; }
-    setBusy(true);
-    try {
-      const plan: any = {};
-      if (f.expectedEntry) plan.entry = Number(f.expectedEntry);
-      if (f.expectedStop) plan.stop = Number(f.expectedStop);
-      await api.techniqueAddReview(run.id, {
-        reviewVerdict: f.reviewVerdict, rootCauseStage: f.rootCauseStage || null,
-        expectedVerdict: f.expectedVerdict || null, expectedSetupType: f.expectedSetupType || null,
-        expectedPlan: plan, expectationNote: f.expectationNote, notes: f.notes,
-        actions: f.actions.split("\n").map((x) => x.trim()).filter(Boolean), reviewer: "user",
-      });
-      toast("success", "Review saved");
-      setOpen(false);
-      setF({ reviewVerdict: "", rootCauseStage: "", expectedVerdict: "", expectedSetupType: "", expectedEntry: "",
-        expectedStop: "", expectationNote: "", notes: "", actions: "" });
-      onRefresh?.();
-    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
-  };
   if (run.status !== "done") return null;
   return (
     <div className="tq-section tq-review">
       <div className="tq-label">Review
-        <span className="muted"> — what you expected vs what it said; where the first wrong turn was</span>
-        <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "cancel" : reviews.length ? "add review" : "review this run"}</button>
+        <span className="muted"> — was this call right? Tell the analyst in chat ("this was wrong, the entry pass chased") and it records it.</span>
+        {run.threadId && <button className="link-btn" onClick={() => openChat(run.threadId!)}>discuss</button>}
       </div>
+      {reviews.length === 0 && <div className="muted">No review yet.</div>}
       {reviews.length > 0 && (
         <ul className="tq-reviews">
           {reviews.map((r) => (
             <li key={r.id}>
               <ReviewBadge last={{ reviewVerdict: r.reviewVerdict, rootCauseStage: r.rootCauseStage, createdAt: r.createdAt, reviewer: r.reviewer }} count={1} />
-              <span className="muted"> {r.reviewer} · {r.createdAt ? fmtDateTime(r.createdAt) : ""}{r.processVersion?.processVersion ? ` · process ${r.processVersion.processVersion}` : ""}</span>
+              <span className="muted"> {r.reviewer} · {r.createdAt ? fmtDateTime(r.createdAt) : ""}</span>
               {r.expectedVerdict && <div>Expected <b>{r.expectedVerdict}</b>{r.expectedSetupType ? ` (${r.expectedSetupType.replace(/_/g, " ")})` : ""}
                 {r.expectedPlan?.entry ? ` · entry ${r.expectedPlan.entry}` : ""}{r.expectedPlan?.stop ? ` · stop ${r.expectedPlan.stop}` : ""}
                 {r.expectationNote ? ` — ${r.expectationNote}` : ""}</div>}
@@ -429,47 +419,6 @@ export function ReviewSection({ run, onRefresh }: { run: TechniqueRun; onRefresh
             </li>
           ))}
         </ul>
-      )}
-      {open && (
-        <div className="tq-review-form">
-          <div className="tq-row">
-            <label className="tq-ctl"><span className="tq-ctl-label">Verdict on the run</span>
-              <select value={f.reviewVerdict} onChange={(e) => setF({ ...f, reviewVerdict: e.target.value })}>
-                <option value="">—</option>
-                {Object.entries(tax?.reviewVerdicts ?? {}).map(([k, v]) => <option key={k} value={k} title={v}>{k.replace(/_/g, " ")}</option>)}
-              </select></label>
-            <label className="tq-ctl"><span className="tq-ctl-label">Root-cause stage</span>
-              <select value={f.rootCauseStage} onChange={(e) => setF({ ...f, rootCauseStage: e.target.value })}>
-                <option value="">—</option>
-                {Object.entries(tax?.rootCauseStages ?? {}).map(([k, v]) => <option key={k} value={k} title={v}>{k.replace(/_/g, " ")}</option>)}
-              </select></label>
-            <label className="tq-ctl"><span className="tq-ctl-label">I expected</span>
-              <select value={f.expectedVerdict} onChange={(e) => setF({ ...f, expectedVerdict: e.target.value })}>
-                <option value="">—</option><option value="setup">setup</option><option value="no_setup">no setup</option>
-              </select></label>
-            <label className="tq-ctl"><span className="tq-ctl-label">Type</span>
-              <select value={f.expectedSetupType} onChange={(e) => setF({ ...f, expectedSetupType: e.target.value })}>
-                <option value="">—</option><option value="support_bounce">support bounce</option>
-                <option value="breakout">breakout</option><option value="falling_wedge">falling wedge</option>
-              </select></label>
-            <label className="tq-ctl"><span className="tq-ctl-label">Entry</span>
-              <input type="number" step="0.01" value={f.expectedEntry} onChange={(e) => setF({ ...f, expectedEntry: e.target.value })} /></label>
-            <label className="tq-ctl"><span className="tq-ctl-label">Stop</span>
-              <input type="number" step="0.01" value={f.expectedStop} onChange={(e) => setF({ ...f, expectedStop: e.target.value })} /></label>
-          </div>
-          {tax && f.reviewVerdict && <small className="muted">{tax.reviewVerdicts[f.reviewVerdict]}</small>}
-          {tax && f.rootCauseStage && <small className="muted"> · {tax.rootCauseStages[f.rootCauseStage]}</small>}
-          <label className="field"><span className="tq-ctl-label">What I expected, in words</span>
-            <input value={f.expectationNote} onChange={(e) => setF({ ...f, expectationNote: e.target.value })} placeholder="e.g. bounce at prior-day LOD with rising volume" /></label>
-          <label className="field"><span className="tq-ctl-label">Notes / diagnosis</span>
-            <textarea rows={3} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} placeholder="where the first wrong turn was, and the evidence" /></label>
-          <label className="field"><span className="tq-ctl-label">Planned actions (one per line)</span>
-            <textarea rows={2} value={f.actions} onChange={(e) => setF({ ...f, actions: e.target.value })} placeholder="e.g. SYSTEM_PROMPT: bounce entries never need confirmation (T4.2)" /></label>
-          <div className="tq-form-actions">
-            <button className="primary-btn" disabled={busy} onClick={submit}>{busy ? "Saving…" : "Save review"}</button>
-            <span className="muted">Tip: in Claude Code, <code>/technique-review {run.id.slice(0, 10)}</code> does the full audit.</span>
-          </div>
-        </div>
       )}
     </div>
   );

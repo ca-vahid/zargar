@@ -559,3 +559,23 @@ async def test_cli_list_show_dump_review_diff(rig, tmp_path):
     # (`score` via the CLI would hit Yahoo for real bars; the scoring path is covered through the API)
     p = _cli("dump", "does-not-exist", "--out", str(tmp_path))
     assert p.returncode == 1
+
+
+async def test_chat_tools_get_run_and_record_review(rig):
+    from zargar.technique.tools import ToolExecutor
+    run = await rig.svc.analyze("TEST", as_of_ms=rig.as_of, primary_tf="1m", wait=True)
+    ex = ToolExecutor(rig.svc, lambda d, mt: rig.eng.chat.store_asset(d, mt), thread_id=run["threadId"])
+    content, meta = await ex.run("get_run", {"run_id": run["id"][:10]})       # prefix resolves
+    got = json.loads(content)
+    assert got["id"] == run["id"] and got["verdict"] == "setup" and got["trace"] and got["outcomes"]
+    content, meta = await ex.run("record_review", {"run_id": "this run", "review_verdict": "wrong_plan",
+                                                   "root_cause_stage": "pass_entry", "expected_verdict": "setup",
+                                                   "expected_entry": 100.0, "notes": "stop too wide",
+                                                   "actions": ["tighten the stop buffer"]})
+    # an unknown id falls back to the thread's own run
+    rec = json.loads(content)
+    assert rec["recorded"] and rec["runId"] == run["id"]
+    full = (await rig.client.get(f"/api/technique/runs/{run['id']}")).json()
+    assert full["reviews"][0]["reviewVerdict"] == "wrong_plan" and full["reviews"][0]["actions"][0]["desc"] == "tighten the stop buffer"
+    content, meta = await ex.run("record_review", {"run_id": run["id"], "review_verdict": "nope"})
+    assert meta.get("error") and "review not recorded" in content

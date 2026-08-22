@@ -388,6 +388,13 @@ full audit trail. `technique/arming.py` (`PlanArmer`, `ArmConfig`, `ArmedPlan`, 
 | **Persistence** | `technique_armed` row per plan (config, status, state projection); a restart re-arms today's `armed`/`paused` rows (seeded with the session's bars so far) and expires stale days. |
 | **Dashboard** | Technique → **Armed** tab: KPI bar (armed, in trade, realized today, trading mode, kill switch; Stop all / Flatten & stop all / Arm today's plan); one card per plan — symbol, mode badge (AUTO · REAL in red), account, status, stale flag, R6 window now, last price / bar age; one-line summary ("watching 2 triggers · nearest b1 0.8 % away · prime window open"), triggers with distance and status, trades with entry / size / stop / next target / realized P&L, errors; pause / resume / disarm / flatten; expandable live log + journal audit; history table of past armed plans. |
 
+**UI rules (2026-08-22):** the Arm button is offered only when the plan's session is today or
+later; a plan for a past session shows **"Would this plan have worked on <date>?"** — the
+mechanical replay verdict per trigger (fired when / stop or targets / R, or why nothing fired)
+— so historical runs are a check of our numbers, not something to arm. The run page no longer
+carries a review *form*; reviews are recorded from chat (`record_review` tool, with `get_run`
+to read a run), the CLI, or the `/technique-review` skill, and the page lists them.
+
 API: `GET /api/technique/armed`, `/armed/options` (accounts + defaults + gates), `/armed/history`,
 `/armed/{id}`, `/armed/{id}/audit`; `POST /runs/{id}/arm {portfolioId, mode, riskPct, maxQty, qty,
 useCritic, allowLive, flattenMinutesBeforeClose, slippagePct}`; `DELETE /runs/{id}/arm?flatten=`;
