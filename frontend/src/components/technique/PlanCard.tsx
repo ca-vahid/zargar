@@ -5,8 +5,9 @@ import { useStore } from "../../store";
 import { absoluteUrl } from "../../lib/routing";
 import type { PlanTrigger, SessionPlan, TechniqueRun } from "../../types";
 import { CopyChip } from "../CopyChip";
-import { OutcomeSection, Provenance, ReplayControls, ReviewSection, TracePanel, WindowBadge } from "./RunResult";
+import { OutcomeSection, Provenance, ReplayControls, ReviewSection, RuleChips, TracePanel, WindowBadge } from "./RunResult";
 import { ArmDialog } from "./ArmDialog";
+import { Markdown } from "./Markdown";
 
 function fmt(n: number | null | undefined, d = 2) {
   return n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(d);
@@ -66,8 +67,11 @@ function TriggerRow({ t, outcome }: { t: PlanTrigger; outcome?: any }) {
 
 /** A session plan run: the map + conditional triggers (never a fill), what the
  *  next session did to them, arm/disarm, review. */
-export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () => void }) {
+export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; onRefresh?: () => void; rules?: Record<string, string> }) {
   const plan: SessionPlan | undefined = run.result?.plan;
+  const analysis = run.result?.analysis ?? null;
+  const annotated = run.images?.annotated;
+  const tfImages = Object.entries(run.images ?? {}).filter(([k]) => !["annotated", "user", "bars"].includes(k));
   const toast = useStore((s) => s.toast);
   const openChat = useStore((s) => s.openTechniqueChat);
   const armed = useStore((s) => s.techniqueArmed);
@@ -139,6 +143,31 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
                 </div>
               )}
               {!outs.length && <OutcomeSection run={run} onRefresh={onRefresh} />}
+            </div>
+          )}
+          {annotated && (
+            <a href={api.assetUrl(annotated)} target="_blank" rel="noreferrer" className="tq-img-wrap">
+              <img src={api.assetUrl(annotated)} alt="plan chart" className="tq-img" />
+              <span className="tq-img-cap">the map: blue support / amber resistance · solid = best tradeable trigger (entry, stop, targets) · dashed ✗ = a rejected one</span>
+            </a>
+          )}
+          {tfImages.length > 0 && (
+            <div className="tq-thumbs">
+              {tfImages.map(([k, id]) => (
+                <a key={k} href={api.assetUrl(id)} target="_blank" rel="noreferrer" title={`${k} chart the analysis used`}>
+                  <img src={api.assetUrl(id)} alt={`${k} chart`} /><span>{k}</span>
+                </a>
+              ))}
+            </div>
+          )}
+          {analysis && (
+            <div className="tq-section tq-analyst">
+              <div className="tq-label">Analyst read <span className="muted">— the 4-pass model review of the same charts (plan mode: its entry is conditional, not a fill)</span></div>
+              <div><b>{analysis.verdict === "setup" ? `Conditional setup · ${analysis.setupType.replace(/_/g, " ")}` : "No setup it would watch"}</b>
+                {" "}· trend {analysis.trend} · confidence {fmt(analysis.confidence)}</div>
+              <Markdown text={analysis.rationale} />
+              {analysis.noTradeReasons.length > 0 && <ul className="tq-reasons small">{analysis.noTradeReasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}
+              <RuleChips ids={analysis.rulesFired} rules={rules} />
             </div>
           )}
           <div className="tq-nosetup">

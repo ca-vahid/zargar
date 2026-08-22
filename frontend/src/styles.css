@@ -1253,3 +1253,8 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-would.yes { border-color: var(--up); }
 .tq-would.no { border-color: var(--down); }
 .tq-would-verdict { font-size: var(--fs-2); font-weight: 600; margin: 4px 0 8px; }
+
+.tq-thumbs { display: flex; gap: 8px; flex-wrap: wrap; }
+.tq-thumbs a { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: var(--fs-0); color: var(--text-2); text-decoration: none; }
+.tq-thumbs img { width: 180px; height: auto; border: 1px solid var(--border); border-radius: 4px; }
+.tq-analyst { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }

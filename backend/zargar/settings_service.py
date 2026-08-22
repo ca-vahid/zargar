@@ -131,7 +131,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.plan.gap_void_r": 1.0,          # Q13 (ours): gap > 1R voids the plan
     "technique.plan.respect_mult": 3.0,        # Q14 (ours): reversal >= 3x tol = level respected
     "technique.plan.entry_window_bars": 12,    # bars a bounce has to fill after the touch
-    "technique.plan.with_vision": False,       # plan mode is deterministic unless opted in
+    "technique.plan.with_vision": True,        # manual plans get the 4-pass read too (sweeps stay deterministic)
     "technique.walkforward.symbols": ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "AMZN"],
     "technique.walkforward.sessions": 40,      # default sweep length
     # --- phase 2: arm plans for live triggers ---------------------------------

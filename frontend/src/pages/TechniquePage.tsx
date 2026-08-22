@@ -574,7 +574,7 @@ export function TechniquePage() {
                   <EmptyState title="No API key" hint="Set ZARGAR_ANTHROPIC_API_KEY in backend/.env to run analyses." />
                 )}
                 {shown && running && <LiveRun run={shown} />}
-                {shown && !running && shown.mode === "plan" && <PlanCard run={shown} onRefresh={() => setRefreshKey((k) => k + 1)} />}
+                {shown && !running && shown.mode === "plan" && <PlanCard run={shown} rules={rules} onRefresh={() => setRefreshKey((k) => k + 1)} />}
                 {shown && !running && shown.mode !== "plan" && <RunResult run={shown} rules={rules} onRefresh={() => setRefreshKey((k) => k + 1)} />}
                 {!shown && <EmptyState title="No runs yet" hint="Enter a symbol and run the pipeline, or paste a chart screenshot." />}
               </>

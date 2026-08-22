@@ -442,7 +442,7 @@ Portfolios / Blotter and must be managed by hand (or flattened).
 | Prime-window enforcement | **Detect everywhere, gate at trigger, report both** — measures R6 instead of assuming it |
 | Bounce trigger gate | **No candle requirement** (T4.2); hammer/wick = confidence only |
 | Gap handling | our extrapolation; `gap_void_r` default 1.0, all gap rules reported with counterfactual |
-| Model in plan mode | **Deterministic default, vision opt-in**; "model vs rules" is its own measured question |
+| Model in plan mode | Manual / promoted plans run the **4-pass read by default** (`technique.plan.with_vision`, falls back to deterministic without a key); the **sweep stays deterministic** so it is free — "model vs rules" remains a measured question (user feedback 2026-08-22: the plan should get the same pipeline as a live read) |
 | Storage | plans are runs (`mode="plan"`) + `technique_outcomes` rows; bulk sweep in `technique_walkforward`; any session promotable to a full run |
 
 ---

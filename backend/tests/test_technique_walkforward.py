@@ -336,9 +336,10 @@ async def rig(fresh_db, monkeypatch):
 
 async def test_plan_run_auto_mode_trace_scoring_bundle_and_replay(rig, tmp_path):
     close_ts = session_bounds(rig.close_day)[1]
-    run = await rig.svc.analyze("TEST", as_of_ms=close_ts, wait=True)          # 16:00 ET -> plan mode
+    run = await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=False, wait=True)   # 16:00 ET -> plan mode
     assert run["status"] == "done", run.get("error")
     assert run["mode"] == "plan" and run["verdict"] == "plan"
+    assert run["images"].get("annotated") and run["images"].get("1m")          # the map is drawn
     plan = run["result"]["plan"]
     assert plan["planFor"] == rig.days[4].isoformat() and plan["validTriggers"] >= 1
     assert run["config"]["planMode"]["structureTfs"] == ["1h", "30m"] and run["config"]["planMode"]["triggerTf"] == "1m"
@@ -464,12 +465,24 @@ async def test_scan_respects_prime_windows(rig, monkeypatch):
     assert isinstance(svc._scan_allowed(), bool)
 
 
+async def test_plan_with_vision_runs_the_passes(rig):
+    """Default for manual plans: the 4-pass read runs on the structure charts and
+    its analysis sits next to the deterministic plan (fake LLM in the rig)."""
+    close_ts = session_bounds(rig.close_day)[1]
+    run = await rig.svc.analyze("TEST", as_of_ms=close_ts, wait=True)          # with_vision defaults on
+    assert run["mode"] == "plan" and run["status"] == "done"
+    assert [p["name"] for p in run["result"]["passes"]][:3] == ["context", "pattern", "entry"]
+    assert run["result"]["analysis"] is not None and run["result"]["plan"]["validTriggers"] >= 1
+    assert run["config"]["planMode"]["withVision"] is True
+
+
 async def test_deterministic_plan_needs_no_api_key(rig):
     rig.eng.config.anthropic_api_key = ""          # no model available
     rig.svc._client = None
     close_ts = session_bounds(rig.close_day)[1]
-    run = await rig.svc.analyze("TEST", as_of_ms=close_ts, wait=True)
+    run = await rig.svc.analyze("TEST", as_of_ms=close_ts, wait=True)         # default vision -> falls back
     assert run["status"] == "done" and run["mode"] == "plan" and run["result"]["plan"]["planFor"]
+    assert run["result"]["passes"] == [] and run["config"]["planMode"]["withVision"] is False
     # but a live/full run still fails closed without a key
     with pytest.raises(RuntimeError):
         await rig.svc.analyze("TEST", as_of_ms=None, wait=True)

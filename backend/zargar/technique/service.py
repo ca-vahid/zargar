@@ -334,9 +334,14 @@ class TechniqueService:
             if plan is True or (plan is None and as_of_ms is not None and session_window(as_of_ms) == "extended"):
                 mode = "plan"
                 tf = primary_tf or self.trigger_tf()
+        vision_requested = with_vision
         if with_vision is None:
-            with_vision = bool(self.engine.settings.get("technique.plan.with_vision", False))
-        # A deterministic plan needs no model; everything else does.
+            with_vision = bool(self.engine.settings.get("technique.plan.with_vision", True))
+        # A plan can always be built without the model; if vision was merely the
+        # default (not explicitly requested) and there is no key, fall back to the
+        # deterministic plan instead of failing.
+        if mode == "plan" and with_vision and not cfg.available and vision_requested is None:
+            with_vision = False
         needs_llm = not (mode == "plan" and not with_vision)
         if needs_llm and not cfg.available:
             raise RuntimeError("ZARGAR_ANTHROPIC_API_KEY is not configured")
@@ -595,21 +600,46 @@ class TechniqueService:
                 a = result.analysis
                 ptf = facts.get("primaryTf") or tf
                 setup_overlay = rejected_overlay = None
-                if a and a.verdict == "setup" and a.entry and a.stop:
-                    setup_overlay = {"entry": {"price": a.entry.price}, "stop": {"price": a.stop.price},
-                                     "targets": [{"price": x.price} for x in a.targets]}
-                elif a:
-                    # No setup: draw the candidate that was considered and rejected,
-                    # so the chart shows *why* rather than only asserting a verdict.
-                    rejected_overlay = _rejected_overlay(facts, a)
-                lv_overlay = [{"price": lv.price, "kind": lv.kind, "touches": lv.touches,
-                               "strong": lv.touches >= 3} for lv in (a.levels if a else [])][:8]
+                caption = ""
+                if plan_d is not None:
+                    # plan mode: the map (levels near price) + the best valid trigger drawn as
+                    # the conditional plan, the best invalid one dashed
+                    last = float(facts.get("lastClose") or 0) or 1.0
+                    lv_overlay = [{"price": l["price"], "kind": l["effectiveKind"], "touches": l.get("touches") or 1,
+                                   "strong": (l.get("touches") or 0) >= 3 or bool(l.get("priorDayExtreme"))}
+                                  for l in plan_d["levels"] if abs(l["price"] - last) / last <= 0.05][:8]
+                    valid = [x for x in plan_d["triggers"] if x["valid"]]
+                    best = max(valid, key=lambda x: x["confidence"]) if valid else None
+                    if best:
+                        setup_overlay = {"entry": {"price": best["entry"]["price"]}, "stop": {"price": best["stop"]["price"]},
+                                         "targets": [{"price": t["price"]} for t in best["targets"]]}
+                    inval = [x for x in plan_d["triggers"] if not x["valid"]]
+                    if inval:
+                        w = inval[0]
+                        rejected_overlay = {"entry": {"price": w["entry"]["price"]}, "stop": {"price": w["stop"]["price"]},
+                                            "targets": [{"price": t["price"]} for t in w["targets"][:1]],
+                                            "riskReward": w["riskReward"], "setupType": w["setupType"]}
+                    caption = (f"PLAN for {plan_d['planFor']} · {len(valid)} tradeable trigger(s)"
+                               + (f"\n{best['id']} {best['kind']}: IF price reaches {best['entry']['price']:.2f} in a prime window "
+                                  f"THEN long, stop {best['stop']['price']:.2f}, R:R {best['riskReward']:.2f}" if best else
+                                  "\nnothing within reach — watch only")
+                               + (f"\n{inval[0]['id']} rejected: {inval[0]['noTradeReasons'][0][:70]}" if inval and inval[0].get("noTradeReasons") else ""))
+                else:
+                    if a and a.verdict == "setup" and a.entry and a.stop:
+                        setup_overlay = {"entry": {"price": a.entry.price}, "stop": {"price": a.stop.price},
+                                         "targets": [{"price": x.price} for x in a.targets]}
+                    elif a:
+                        # No setup: draw the candidate that was considered and rejected,
+                        # so the chart shows *why* rather than only asserting a verdict.
+                        rejected_overlay = _rejected_overlay(facts, a)
+                    lv_overlay = [{"price": lv.price, "kind": lv.kind, "touches": lv.touches,
+                                   "strong": lv.touches >= 3} for lv in (a.levels if a else [])][:8]
+                    caption = _chart_caption(a, rejected_overlay)
                 if ptf in bars:
                     png = render_chart(bars[ptf][-WINDOW_FOR_TF.get(ptf, 150):],
-                                       title=f"{symbol} {ptf}", tf=ptf,
-                                       levels=lv_overlay, setup=setup_overlay,
-                                       rejected=rejected_overlay,
-                                       caption=_chart_caption(a, rejected_overlay),
+                                       title=f"{symbol} {ptf}" + (f" — plan for {plan_d['planFor']}" if plan_d else ""),
+                                       tf=ptf, levels=lv_overlay, setup=setup_overlay,
+                                       rejected=rejected_overlay, caption=caption,
                                        wedge=(facts.get("wedge") or {}).get(ptf))
                     images_meta["annotated"] = await chat.store_asset(
                         png, "image/png", thread_id=thread_id, meta={"kind": "annotated", "tf": ptf})
