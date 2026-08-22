@@ -12,17 +12,31 @@ import type { Quote } from "../types";
 export type Indicator = "sma50" | "ema20" | "bb";
 export type ChartType = "candlestick" | "ohlc" | "line";
 
-const TF_MS: Record<string, number> = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000 };
+const TF_MS: Record<string, number> = {
+  "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "1d": 86_400_000,
+};
+
+/** Live bars/ticks are only appended during the extended session (04:00–20:00
+ * ET, weekdays) — overnight the feed just repeats the close, and drawing that
+ * produces the flat "01:00–09:00" line brokers never show. */
+function inExtendedSession(ts: number): boolean {
+  const et = new Date(new Date(ts).toLocaleString("en-US", { timeZone: "America/New_York" }));
+  const dow = et.getDay();
+  if (dow === 0 || dow === 6) return false;
+  const mins = et.getHours() * 60 + et.getMinutes();
+  return mins >= 4 * 60 && mins < 20 * 60;
+}
 
 interface Props {
   symbol: string;
   tf: string;
+  range: string; // Yahoo range key: 1d | 5d | 1mo | 3mo | 6mo | 1y | 5y
   chartType: ChartType;
   indicators: Indicator[];
   showVolume: boolean;
 }
 
-export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Props) {
+export function StockChart({ symbol, tf, range, chartType, indicators, showVolume }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
@@ -44,7 +58,7 @@ export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Pr
 
     async function build() {
       const data = await api.get<{ bars: number[][] }>(
-        `/api/chart/${symbol}?tf=${tf}&limit=500`,
+        `/api/chart/${symbol}?tf=${tf}&range=${range}&limit=500`,
       );
       if (cancelled || !containerRef.current) return;
       const ohlc = data.bars.map((b) => [b[0], b[1], b[2], b[3], b[4]]);
@@ -152,7 +166,7 @@ export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Pr
       const main = chart.get("main") as Highcharts.Series | undefined;
       if (!main) return;
       const [ts, o, h, l, c, v] = msg.bar;
-      if (ts <= lastBarTs.current) return;
+      if (ts <= lastBarTs.current || !inExtendedSession(ts)) return;
       lastBarTs.current = ts;
       const point = chartType === "line" ? [ts, c] : [ts, o, h, l, c];
       main.addPoint(point as any, false, main.data.length > 600);
@@ -182,7 +196,7 @@ export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Pr
             close: price,
           }, false);
         chart.redraw(false);
-      } else if (bucket > lastPoint.x && bucket > lastBarTs.current) {
+      } else if (bucket > lastPoint.x && bucket > lastBarTs.current && inExtendedSession(q.ts)) {
         lastBarTs.current = bucket;
         const point = chartType === "line" ? [bucket, price] : [bucket, price, price, price, price];
         main.addPoint(point, false, main.data.length > 600);
@@ -197,7 +211,7 @@ export function StockChart({ symbol, tf, chartType, indicators, showVolume }: Pr
       chartRef.current?.destroy();
       chartRef.current = null;
     };
-  }, [symbol, tf, chartType, indicators.join(","), showVolume, theme]);
+  }, [symbol, tf, range, chartType, indicators.join(","), showVolume, theme]);
 
   return <div ref={containerRef} style={{ flex: 1, minHeight: 320 }} />;
 }

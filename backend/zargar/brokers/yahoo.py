@@ -78,6 +78,20 @@ SYNTH_SPREAD = 0.00025  # 2.5 bps each side
 MAX_CONCURRENCY = 5
 COOLDOWN_SECONDS = 90  # after a 429, stand down before hammering again
 
+# chart history: zargar timeframe -> Yahoo interval, and which timeframes Yahoo
+# serves for each range (1m history only reaches ~7 days, 5m/15m ~60 days,
+# 1h ~2 years, 1d forever)
+YAHOO_INTERVAL = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "60m", "1d": "1d"}
+RANGE_TFS: dict[str, tuple[str, ...]] = {
+    "1d": ("1m", "5m", "15m", "1h"),
+    "5d": ("1m", "5m", "15m", "1h", "1d"),
+    "1mo": ("5m", "15m", "1h", "1d"),
+    "3mo": ("1h", "1d"),
+    "6mo": ("1h", "1d"),
+    "1y": ("1h", "1d"),
+    "5y": ("1d",),
+}
+
 
 class YahooQuoteFeed(QuoteFeed):
     def __init__(
@@ -227,22 +241,32 @@ class YahooQuoteFeed(QuoteFeed):
             session=_session(meta.get("currentTradingPeriod")),
         )
 
-    async def fetch_day_bars(self, symbol: str) -> list[Bar]:
-        """Today's regular-session 1m bars straight from Yahoo — real exchange
-        history for the day sparkline/chart instead of ticks-since-boot."""
+    async def fetch_bars(self, symbol: str, tf: str = "1m", range_: str = "1d",
+                         include_pre_post: bool = False) -> list[Bar]:
+        """Chart history straight from Yahoo for a (timeframe, range) pair —
+        real exchange bars for the Trade chart's range selector."""
+        interval = YAHOO_INTERVAL.get(tf)
+        if interval is None or tf not in RANGE_TFS.get(range_, ()):
+            raise ValueError(f"unsupported range/timeframe: {range_}/{tf}")
         await self._ensure_cookie()
         try:
             resp = await self._http.get(
                 CHART_URL.format(symbol=symbol),
-                params={"interval": "1m", "range": "1d", "includePrePost": "false"})
+                params={"interval": interval, "range": range_,
+                        "includePrePost": "true" if include_pre_post else "false"})
         except httpx.HTTPError:
             return []
         if resp.status_code != 200:
             return []
         try:
-            return parse_day_bars(symbol, resp.json())
+            return parse_bars(symbol, tf, resp.json())
         except (ValueError, KeyError, TypeError):
             return []
+
+    async def fetch_day_bars(self, symbol: str) -> list[Bar]:
+        """Today's regular-session 1m bars — real exchange history for the day
+        sparkline instead of ticks-since-boot."""
+        return await self.fetch_bars(symbol, "1m", "1d", include_pre_post=False)
 
 
 def _num(v) -> float:
@@ -271,7 +295,11 @@ def _session(periods: dict | None, now_s: float | None = None) -> str:
 
 
 def parse_day_bars(symbol: str, data: dict) -> list[Bar]:
-    """Yahoo chart payload -> 1m Bars (rows with a null close are skipped)."""
+    return parse_bars(symbol, "1m", data)
+
+
+def parse_bars(symbol: str, tf: str, data: dict) -> list[Bar]:
+    """Yahoo chart payload -> Bars of timeframe `tf` (null-close rows skipped)."""
     result = (((data or {}).get("chart") or {}).get("result") or [None])[0]
     if not result:
         return []
@@ -288,7 +316,7 @@ def parse_day_bars(symbol: str, data: dict) -> list[Bar]:
         h = highs[i] if i < len(highs) and highs[i] is not None else max(o, c)
         lo = lows[i] if i < len(lows) and lows[i] is not None else min(o, c)
         v = volumes[i] if i < len(volumes) and volumes[i] is not None else 0
-        out.append(Bar(symbol=symbol.upper(), tf="1m", ts=int(ts) * 1000,
+        out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000,
                        open=float(o), high=float(h), low=float(lo), close=float(c),
                        volume=int(v)))
     return out

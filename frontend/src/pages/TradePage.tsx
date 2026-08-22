@@ -10,7 +10,17 @@ import { useDaySeries } from "../lib/useDaySeries";
 import { watchSymbol } from "../lib/ws";
 import { useQuote, useStore } from "../store";
 
-const TFS = ["1m", "5m", "15m", "1h"];
+const TFS = ["1m", "5m", "15m", "1h", "1d"];
+/** Chart ranges (Yahoo keys) and the timeframes Yahoo serves for each. */
+const RANGES: { key: string; label: string; tfs: string[]; def: string }[] = [
+  { key: "1d", label: "1D", tfs: ["1m", "5m", "15m", "1h"], def: "1m" },
+  { key: "5d", label: "5D", tfs: ["1m", "5m", "15m", "1h", "1d"], def: "5m" },
+  { key: "1mo", label: "1M", tfs: ["5m", "15m", "1h", "1d"], def: "1h" },
+  { key: "3mo", label: "3M", tfs: ["1h", "1d"], def: "1d" },
+  { key: "6mo", label: "6M", tfs: ["1h", "1d"], def: "1d" },
+  { key: "1y", label: "1Y", tfs: ["1h", "1d"], def: "1d" },
+  { key: "5y", label: "5Y", tfs: ["1d"], def: "1d" },
+];
 const INDICATORS: { key: Indicator; label: string }[] = [
   { key: "ema20", label: "EMA 20" },
   { key: "sma50", label: "SMA 50" },
@@ -23,6 +33,18 @@ export function TradePage() {
   const settings = useStore((s) => s.settings);
   const quote = useQuote(symbol);
   const [tf, setTf] = useState<string>(settings["ui.chart.tf"] ?? "1m");
+  const [range, setRange] = useState<string>(
+    () => localStorage.getItem("zargar_chart_range") ?? "1d");
+  const rangeDef = RANGES.find((r) => r.key === range) ?? RANGES[0];
+  const pickRange = (key: string) => {
+    localStorage.setItem("zargar_chart_range", key);
+    setRange(key);
+    const r = RANGES.find((x) => x.key === key) ?? RANGES[0];
+    if (!r.tfs.includes(tf)) setTf(r.def); // keep the timeframe Yahoo can serve
+  };
+  useEffect(() => {
+    if (!rangeDef.tfs.includes(tf)) setTf(rangeDef.def);
+  }, [rangeDef, tf]);
   const [chartType, setChartType] = useState<ChartType>(settings["ui.chart.type"] ?? "candlestick");
   const [indicators, setIndicators] = useState<Indicator[]>(
     (settings["ui.chart.indicators"] ?? ["ema20"]).filter((i: string) =>
@@ -88,11 +110,23 @@ export function TradePage() {
                 {t === "candlestick" ? <IconCandles size={13} /> : <IconLine size={13} />}
               </button>
             ))}
+            <span className="sep" aria-hidden="true" />
+            {RANGES.map((r) => (
+              <button key={r.key} className={range === r.key ? "active" : ""}
+                onClick={() => pickRange(r.key)} title={`Show the last ${r.label}`}>
+                {r.label}
+              </button>
+            ))}
+            <span className="sep" aria-hidden="true" />
             {TFS.map((t) => (
-              <button key={t} className={tf === t ? "active" : ""} onClick={() => setTf(t)}>
+              <button key={t} className={tf === t ? "active" : ""}
+                disabled={!rangeDef.tfs.includes(t)}
+                title={rangeDef.tfs.includes(t) ? `${t} bars` : `${t} bars aren't available for ${rangeDef.label}`}
+                onClick={() => setTf(t)}>
                 {t}
               </button>
             ))}
+            <span className="sep" aria-hidden="true" />
             {INDICATORS.map((i) => (
               <button key={i.key} className={indicators.includes(i.key) ? "active" : ""}
                 onClick={() => toggleIndicator(i.key)}>
@@ -101,7 +135,7 @@ export function TradePage() {
             ))}
           </div>
         </div>
-        <StockChart symbol={symbol} tf={tf} chartType={chartType}
+        <StockChart symbol={symbol} tf={tf} range={range} chartType={chartType}
           indicators={indicators} showVolume={showVolume} />
       </div>
       <OrderTicket symbol={symbol} collapsed={ticketCollapsed}

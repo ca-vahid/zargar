@@ -223,13 +223,14 @@ body {
 .sidebar {
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; min-height: 0;
-  /* fixed golden foot — visible without scrolling, never scrolls away */
+  /* quiet, modern: flat surface with a faint accent glow settling at the foot */
   background:
-    url("/art/sidebar-flourish-alpha.png") left calc(100% + 24px) / 170px auto no-repeat,
+    radial-gradient(260px 200px at 0% 100%,
+      color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%),
     linear-gradient(180deg,
       var(--surface-1) 0%,
-      var(--surface-1) 62%,
-      color-mix(in srgb, #c9a227 9%, var(--surface-1)) 100%);
+      var(--surface-1) 70%,
+      color-mix(in srgb, var(--accent) 4%, var(--surface-1)) 100%);
 }
 .nav { display: flex; flex-direction: column; padding: var(--sp-2); gap: 2px; }
 .nav button {
@@ -480,7 +481,9 @@ body {
   font-family: var(--mono); font-size: var(--fs-3); font-weight: 600; text-transform: uppercase;
   border-radius: var(--radius-sm); padding: 5px 9px; width: 110px;
 }
-.tf-row { display: flex; gap: 4px; margin-left: auto; }
+.tf-row { display: flex; gap: 4px; margin-left: auto; align-items: center; flex-wrap: wrap; }
+.tf-row .sep { width: 1px; height: 16px; background: var(--border); margin: 0 3px; }
+.tf-row button:disabled { opacity: 0.35; cursor: not-allowed; }
 .tf-row button, .chip-btn {
   background: none; border: 1px solid var(--border); color: var(--text-2);
   border-radius: var(--radius-sm); padding: 3px 9px; font-size: var(--fs-1); cursor: pointer;

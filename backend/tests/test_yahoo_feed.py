@@ -192,3 +192,21 @@ async def test_fetch_day_bars_returns_real_session_bars():
     assert len(got) == 2
     req = stub.chart_requests()[-1]
     assert req.url.params["range"] == "1d" and req.url.params["includePrePost"] == "false"
+
+
+async def test_fetch_bars_maps_range_and_interval():
+    from zargar.brokers.yahoo import RANGE_TFS
+    import pytest as _pytest
+
+    stub = StubYahoo()
+    stub.charts["AAPL"] = chart_payload([1.0, 2.0])
+    feed = YahooQuoteFeed(lambda q: None, client=stub.client())
+    bars = await feed.fetch_bars("AAPL", tf="1h", range_="3mo")
+    assert len(bars) == 2 and bars[0].tf == "1h"
+    req = stub.chart_requests()[-1]
+    assert req.url.params["interval"] == "60m"   # Yahoo spells 1h as 60m
+    assert req.url.params["range"] == "3mo"
+    assert req.url.params["includePrePost"] == "false"
+    with _pytest.raises(ValueError):
+        await feed.fetch_bars("AAPL", tf="1m", range_="1y")  # Yahoo has no 1m that far back
+    assert "1m" not in RANGE_TFS["1y"]

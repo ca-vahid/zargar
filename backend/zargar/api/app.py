@@ -4,6 +4,7 @@ NOTE: no `from __future__ import annotations` here — FastAPI must resolve the
 locally-scoped Pydantic request models, which stringified annotations break.
 """
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from .. import events as ev
-from ..brokers.yahoo import search_symbols
+from ..brokers.yahoo import RANGE_TFS, YahooQuoteFeed, search_symbols
 from ..config import AppConfig
 from ..domain import new_id
 from ..engine import Engine
@@ -145,15 +146,41 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         return await eng.positions.equity_series(pid, limit)
 
     # --- market data --------------------------------------------------------
+    # (symbol, tf, range) -> (monotonic ts, rows): a chart re-render within a
+    # few seconds must not cost another Yahoo call
+    chart_cache: dict[tuple[str, str, str], tuple[float, list]] = {}
+    CHART_CACHE_SECONDS = 20
+
     @app.get("/api/chart/{symbol}", dependencies=[auth])
-    async def chart(symbol: str, tf: str = "1m", limit: int = 500):
+    async def chart(symbol: str, tf: str = "1m", limit: int = 500,
+                    rng: str | None = Query(default=None, alias="range")):
         symbol = symbol.upper()
         await eng.ensure_symbol(symbol)
+        # explicit range -> real exchange history from Yahoo (when it is the feed)
+        if rng and isinstance(eng.feed, YahooQuoteFeed):
+            if rng not in RANGE_TFS or tf not in RANGE_TFS[rng]:
+                raise HTTPException(
+                    status_code=400, detail=f"unsupported range/timeframe: {rng}/{tf}")
+            key = (symbol, tf, rng)
+            hit = chart_cache.get(key)
+            if hit is not None and time.monotonic() - hit[0] < CHART_CACHE_SECONDS:
+                rows = hit[1]
+            else:
+                bars = await eng.feed.fetch_bars(
+                    symbol, tf=tf, range_=rng, include_pre_post=rng in ("1d", "5d"))
+                rows = [b.to_row() for b in bars]
+                if rows:
+                    chart_cache[key] = (time.monotonic(), rows)
+            if rows:
+                return {"symbol": symbol, "tf": tf, "range": rng, "source": "yahoo",
+                        "bars": rows}
+            # Yahoo miss (cooldown, unknown symbol) -> fall back to local bars
         try:
             bars = eng.bars.bars(symbol, tf=tf, limit=limit)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
-        return {"symbol": symbol, "tf": tf, "bars": [b.to_row() for b in bars]}
+        return {"symbol": symbol, "tf": tf, "range": rng, "source": "local",
+                "bars": [b.to_row() for b in bars]}
 
     @app.get("/api/quotes", dependencies=[auth])
     async def quotes(symbols: str = ""):

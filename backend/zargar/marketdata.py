@@ -20,7 +20,8 @@ from .domain import Bar, Quote, now_ms
 from .models import BarRow
 
 MINUTE_MS = 60_000
-TF_MS = {"1m": MINUTE_MS, "5m": 5 * MINUTE_MS, "15m": 15 * MINUTE_MS, "1h": 60 * MINUTE_MS}
+TF_MS = {"1m": MINUTE_MS, "5m": 5 * MINUTE_MS, "15m": 15 * MINUTE_MS, "1h": 60 * MINUTE_MS,
+         "1d": 24 * 60 * MINUTE_MS}
 
 
 class QuoteCache:
