@@ -105,6 +105,11 @@ DEFAULTS: dict[str, Any] = {
     "technique.scan.interval_minutes": 30,
     "technique.scan.rth_only": True,
     "technique.max_runs_per_day": 40,
+    # --- technique review loop (docs/TECHNIQUE-REVIEW-PLAN.md) -------------
+    "technique.outcome.enabled": True,        # score what price did after each run
+    "technique.outcome.horizon_bars": 60,     # bars after as_of to walk forward
+    "technique.outcome.entry_window_bars": 12,  # bars a bounce entry has to fill
+    "technique.outcome.interval_minutes": 30, # scoring loop cadence
 }
 
 

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { ChatPanel } from "../components/technique/ChatPanel";
 import { LiveRun } from "../components/technique/LiveRun";
-import { RunResult, VerdictBadge } from "../components/technique/RunResult";
+import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge } from "../components/technique/RunResult";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
 import { Modal } from "../components/Modal";
 import { CopyChip } from "../components/CopyChip";
@@ -239,34 +239,80 @@ function AnalyseForm({ onStarted, disabled, running }: {
 
 // --- history -----------------------------------------------------------------------------
 
+type HistoryLens = "all" | "unreviewed" | "wrong" | "losses" | "pending";
+const LENSES: { key: HistoryLens; label: string; hint: string }[] = [
+  { key: "all", label: "All", hint: "every run" },
+  { key: "unreviewed", label: "Unreviewed", hint: "finished runs with no review yet" },
+  { key: "wrong", label: "Wrong", hint: "reviewed as anything but correct, or a losing outcome" },
+  { key: "losses", label: "Losses", hint: "analysis or rejected-candidate plan lost money" },
+  { key: "pending", label: "Pending outcome", hint: "outcome not scored / still partial" },
+];
+
+function primaryOutcome(r: TechniqueRun) {
+  const outs = r.outcomes ?? [];
+  return outs.find((o) => o.planSource === "analysis") ?? outs.find((o) => o.planSource === "candidate") ?? outs[0] ?? null;
+}
+
 function HistoryTab({ onOpen }: { onOpen: (id: string) => void }) {
   const runs = useStore((s) => s.techniqueRuns);
   const setRuns = useStore((s) => s.setTechniqueRuns);
+  const toast = useStore((s) => s.toast);
   const [filter, setFilter] = useState("");
+  const [lens, setLens] = useState<HistoryLens>("all");
+  const [scoring, setScoring] = useState(false);
   useEffect(() => { api.techniqueRuns(200).then(setRuns).catch(() => undefined); }, [setRuns]);
-  const visible = useMemo(() => runs.filter((r) => !filter || r.symbol.includes(filter.toUpperCase())), [runs, filter]);
+  const visible = useMemo(() => runs.filter((r) => {
+    if (filter && !r.symbol.includes(filter.toUpperCase())) return false;
+    if (lens === "all") return true;
+    const o = primaryOutcome(r);
+    const lost = (r.outcomes ?? []).some((x) => (x.rMultiple ?? 0) < 0);
+    if (lens === "unreviewed") return r.status === "done" && !(r.reviewCount ?? 0);
+    if (lens === "wrong") return (r.lastReview && r.lastReview.reviewVerdict !== "correct") || lost;
+    if (lens === "losses") return lost;
+    if (lens === "pending") return r.status === "done" && (!o || o.status === "pending" || o.status === "partial");
+    return true;
+  }), [runs, filter, lens]);
+  const scoreAll = async () => {
+    setScoring(true);
+    try {
+      const res = await api.techniqueScorePending();
+      toast("info", `Scored ${res.scored?.length ?? 0} run(s)${res.remaining ? `, ${res.remaining} left` : ""}`);
+      api.techniqueRuns(200).then(setRuns).catch(() => undefined);
+    } catch (e: any) { toast("error", e.message); } finally { setScoring(false); }
+  };
   return (
     <div className="panel">
-      <div className="panel-head">Run history <span className="sub">{runs.length} runs</span>
+      <div className="panel-head">Run history <span className="sub">{visible.length} / {runs.length} runs</span>
+        <div className="tq-lenses" role="group" aria-label="History lens">
+          {LENSES.map((l) => (
+            <button key={l.key} type="button" className={lens === l.key ? "active" : ""} title={l.hint}
+              onClick={() => setLens(l.key)}>{l.label}</button>
+          ))}
+        </div>
+        <button className="link-btn" disabled={scoring} onClick={scoreAll} title="Score every finished run that has no outcome yet">
+          {scoring ? "scoring…" : "score pending"}
+        </button>
         <input className="tq-filter" placeholder="filter symbol" value={filter} onChange={(e) => setFilter(e.target.value)} /></div>
       <div className="panel-body" style={{ padding: 0 }}>
         <table className="tq-table tq-history">
-          <thead><tr><th>When</th><th>Symbol</th><th>TF</th><th>Verdict</th><th>Conf</th><th>Grounded</th><th>Trigger</th><th>Run</th><th></th></tr></thead>
+          <thead><tr><th>When</th><th>Symbol</th><th>TF</th><th>Verdict</th><th>Conf</th><th>Grounded</th><th>Outcome</th><th>Review</th><th>Trigger</th><th>Run</th><th></th></tr></thead>
           <tbody>
             {visible.map((r) => (
               <tr key={r.id} className="clickable" onClick={() => onOpen(r.id)}>
                 <td>{r.createdAt ? fmtDateTime(r.createdAt) : ""}</td>
                 <td><b>{r.symbol}</b></td>
-                <td>{r.primaryTf}{r.mode === "image_only" ? " (img)" : ""}</td>
+                <td>{r.primaryTf}{r.mode === "image_only" ? " (img)" : ""}{r.parentRunId ? " ↺" : ""}</td>
                 <td><VerdictBadge run={r} /></td>
                 <td>{r.confidence !== null && r.confidence !== undefined ? r.confidence.toFixed(2) : "—"}</td>
                 <td>{r.grounded === null || r.grounded === undefined ? "—" : r.grounded ? "yes" : "no"}</td>
+                <td><OutcomeBadge outcome={primaryOutcome(r)} /></td>
+                <td><ReviewBadge last={r.lastReview ?? null} count={r.reviewCount ?? 0} /></td>
                 <td className="muted">{r.trigger}</td>
                 <td><CopyChip value={r.id} link={absoluteUrl({ page: "technique", techniqueTab: "analyse", runId: r.id })} /></td>
                 <td><button className="link-btn" onClick={(e) => { e.stopPropagation(); if (r.threadId) useStore.getState().openTechniqueChat(r.threadId); }}>chat</button></td>
               </tr>
             ))}
-            {visible.length === 0 && <tr><td colSpan={9}><div className="empty">No runs yet.</div></td></tr>}
+            {visible.length === 0 && <tr><td colSpan={11}><div className="empty">{runs.length ? "No runs match this lens." : "No runs yet."}</div></td></tr>}
           </tbody>
         </table>
       </div>
@@ -408,6 +454,8 @@ export function TechniquePage() {
   const setFocusRun = useStore((s) => s.setTechniqueFocusRun);
   const [full, setFull] = useState<TechniqueRun | null>(null);
   const fetchedFor = useRef<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const bump = useStore((s) => (focusId ? s.techniqueRunBumps[focusId] : undefined) ?? 0);
 
   const refreshStatus = useCallback(() => { api.techniqueStatus().then(setStatus).catch(() => undefined); }, []);
   useEffect(() => { refreshStatus(); api.techniqueRuns(100).then(setRuns).catch(() => undefined); }, [refreshStatus, setRuns]);
@@ -433,14 +481,17 @@ export function TechniquePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active?.id, active?.status]);
 
-  // Fetch the full row (facts, passes) once a run finishes.
+  // Fetch the full row (facts, passes, outcomes, reviews) once a run finishes,
+  // and again whenever an outcome / review lands for it.
+  const activeBump = useStore((s) => (active ? s.techniqueRunBumps[active.id] : undefined) ?? 0);
   useEffect(() => {
     if (!active || active.status === "running") return;
-    const key = `${active.id}:${active.status}`;
+    const key = `${active.id}:${active.status}:${activeBump}:${refreshKey}`;
     if (fetchedFor.current === key) return;
     fetchedFor.current = key;
     api.techniqueRun(active.id).then((r) => { setFull(r); refreshStatus(); }).catch((e) => toast("error", e.message));
-  }, [active, refreshStatus, toast]);
+  }, [active, activeBump, refreshKey, refreshStatus, toast]);
+  void bump;
 
   useEffect(() => { refreshStatus(); }, [runs.length, refreshStatus]);
 
@@ -474,7 +525,7 @@ export function TechniquePage() {
                   <EmptyState title="No API key" hint="Set ZARGAR_ANTHROPIC_API_KEY in backend/.env to run analyses." />
                 )}
                 {shown && running && <LiveRun run={shown} />}
-                {shown && !running && <RunResult run={shown} rules={rules} />}
+                {shown && !running && <RunResult run={shown} rules={rules} onRefresh={() => setRefreshKey((k) => k + 1)} />}
                 {!shown && <EmptyState title="No runs yet" hint="Enter a symbol and run the pipeline, or paste a chart screenshot." />}
               </>
             )}

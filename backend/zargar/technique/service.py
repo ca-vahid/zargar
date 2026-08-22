@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import datetime as dt
+import gzip
+import json
 import logging
 import math
 import time
@@ -19,13 +22,28 @@ from sqlalchemy import func, select
 
 from .. import bus as topics
 from .. import events as ev
-from ..domain import new_id
-from ..models import Proposal, TechniqueRun, TechniqueSetup
+from ..domain import Bar, new_id
+from ..models import Proposal, TechniqueOutcome, TechniqueReview, TechniqueRun, TechniqueSetup
 from .analysis import WINDOW_FOR_TF, AnalysisRequest, compute_facts, gather_bars
 from .backtest import run_backtest
 from .llm import LLMConfig, config_from_settings, make_client
 from .options import CboeClient, TradierClient, pick_for_setup
+from .outcome import (
+    bars_to_rows,
+    describe_outcome,
+    fetch_after,
+    horizon_still_fetchable,
+    outcome_dict,
+    path_summary,
+    plan_from_candidate,
+    plan_from_contract,
+    rows_to_bars,
+    same_plan,
+    simulate_plan,
+)
+from .provenance import snapshot as provenance_snapshot
 from .render import render_chart
+from .review import diff_runs, review_dict, validate_review
 from .rulebook import RULES, Thresholds, thresholds_from_settings
 from .vision import VisionPipeline, transcript_messages
 
@@ -42,6 +60,8 @@ def run_dict(r: TechniqueRun) -> dict:
         "verdict": r.verdict, "setupType": r.setup_type, "confidence": r.confidence,
         "grounded": r.grounded, "facts": r.facts or {}, "result": r.result or {},
         "images": r.images or {}, "usage": r.usage or {}, "error": r.error, "llm": r.llm or {},
+        "config": r.config or {}, "parentRunId": r.parent_run_id,
+        "processVersion": (r.config or {}).get("processVersion"),
         "createdAt": r.created_at.isoformat() if r.created_at else None,
         "finishedAt": r.finished_at.isoformat() if r.finished_at else None,
     }
@@ -50,9 +70,12 @@ def run_dict(r: TechniqueRun) -> dict:
 def run_summary(r: TechniqueRun) -> dict:
     d = run_dict(r)
     d.pop("facts", None)
+    d.pop("config", None)
     res = d.pop("result", None) or {}
     d["analysis"] = res.get("analysis")
     d["groundingPassed"] = (res.get("grounding") or {}).get("passed")
+    d["traceSteps"] = len(res.get("trace") or [])
+    d["seconds"] = res.get("seconds")
     return d
 
 
@@ -76,6 +99,7 @@ class TechniqueService:
         self._tradier: TradierClient | None = None
         self._cboe: CboeClient | None = None
         self._scan_task: asyncio.Task | None = None
+        self._outcome_task: asyncio.Task | None = None
         self._running: dict[str, asyncio.Task] = {}
         # Live progress for running runs so a client that connects mid-run (or
         # reloads) can seed its view: {run_id: {"passes": [...], "grounding", "facts"}}
@@ -128,6 +152,8 @@ class TechniqueService:
             "scanEnabled": bool(self.engine.settings.get("technique.scan.enabled", False)),
             "scanSymbols": list(self.engine.settings.get("technique.scan.symbols", [])),
             "running": [rid for rid, t in self._running.items() if not t.done()],
+            "outcomeEnabled": bool(self.engine.settings.get("technique.outcome.enabled", True)),
+            "outcomeHorizonBars": int(self.engine.settings.get("technique.outcome.horizon_bars", 60)),
             "rules": RULES,
         }
 
@@ -140,15 +166,60 @@ class TechniqueService:
         return int(n or 0)
 
     async def list_runs(self, *, limit: int = 50, symbol: str | None = None,
-                        verdict: str | None = None) -> list[dict]:
+                        verdict: str | None = None, reviewed: bool | None = None,
+                        outcome: str | None = None, review_verdict: str | None = None,
+                        process_version: str | None = None, trigger: str | None = None) -> list[dict]:
+        """Recent runs (newest first) with their outcome + review summaries.
+        `reviewed`, `outcome` (e.g. stopped / tp1 / not_filled, matched on the
+        analysis plan, or `scored` / `pending` for any) and `review_verdict`
+        filter post-hoc so the review loop can ask for "unreviewed losers"."""
+        post_filter = reviewed is not None or outcome or review_verdict or process_version
+        fetch = min(limit * 6, 1500) if post_filter else limit
         async with self.engine.sf() as session:
-            stmt = select(TechniqueRun).order_by(TechniqueRun.created_at.desc()).limit(limit)
+            stmt = select(TechniqueRun).order_by(TechniqueRun.created_at.desc()).limit(fetch)
             if symbol:
                 stmt = stmt.where(TechniqueRun.symbol == symbol.upper())
             if verdict:
                 stmt = stmt.where(TechniqueRun.verdict == verdict)
+            if trigger:
+                stmt = stmt.where(TechniqueRun.trigger == trigger)
             rows = (await session.execute(stmt)).scalars().all()
-        return [run_summary(r) for r in rows]
+            ids = [r.id for r in rows]
+            outs = (await session.execute(
+                select(TechniqueOutcome).where(TechniqueOutcome.run_id.in_(ids)))).scalars().all() if ids else []
+            revs = (await session.execute(
+                select(TechniqueReview).where(TechniqueReview.run_id.in_(ids))
+                .order_by(TechniqueReview.created_at))).scalars().all() if ids else []
+        by_out: dict[str, list[dict]] = {}
+        for o in outs:
+            by_out.setdefault(o.run_id, []).append(outcome_dict(o))
+        by_rev: dict[str, list[dict]] = {}
+        for rv in revs:
+            by_rev.setdefault(rv.run_id, []).append(review_dict(rv))
+        out: list[dict] = []
+        for r in rows:
+            d = run_summary(r)
+            d["outcomes"] = [_slim_outcome(o) for o in by_out.get(r.id, [])]
+            rl = by_rev.get(r.id, [])
+            d["reviewCount"] = len(rl)
+            d["lastReview"] = ({"reviewVerdict": rl[-1]["reviewVerdict"],
+                                "rootCauseStage": rl[-1]["rootCauseStage"],
+                                "createdAt": rl[-1]["createdAt"], "reviewer": rl[-1]["reviewer"]}
+                               if rl else None)
+            if reviewed is True and not rl:
+                continue
+            if reviewed is False and rl:
+                continue
+            if review_verdict and not any(x["reviewVerdict"] == review_verdict for x in rl):
+                continue
+            if process_version and d.get("processVersion") != process_version:
+                continue
+            if outcome and not _outcome_matches(d["outcomes"], outcome):
+                continue
+            out.append(d)
+            if len(out) >= limit:
+                break
+        return out
 
     async def get_run(self, run_id: str) -> dict | None:
         async with self.engine.sf() as session:
@@ -157,8 +228,24 @@ class TechniqueService:
                 return None
             setups = (await session.execute(
                 select(TechniqueSetup).where(TechniqueSetup.run_id == run_id))).scalars().all()
+            outs = (await session.execute(
+                select(TechniqueOutcome).where(TechniqueOutcome.run_id == run_id)
+                .order_by(TechniqueOutcome.created_at))).scalars().all()
+            revs = (await session.execute(
+                select(TechniqueReview).where(TechniqueReview.run_id == run_id)
+                .order_by(TechniqueReview.created_at))).scalars().all()
+            children = (await session.execute(
+                select(TechniqueRun.id, TechniqueRun.created_at, TechniqueRun.verdict,
+                       TechniqueRun.setup_type, TechniqueRun.confidence, TechniqueRun.status)
+                .where(TechniqueRun.parent_run_id == run_id)
+                .order_by(TechniqueRun.created_at))).all()
         d = run_dict(r)
         d["setups"] = [setup_dict(s) for s in setups]
+        d["outcomes"] = [outcome_dict(o) for o in outs]
+        d["reviews"] = [review_dict(x) for x in revs]
+        d["replays"] = [{"id": c.id, "createdAt": c.created_at.isoformat() if c.created_at else None,
+                         "verdict": c.verdict, "setupType": c.setup_type, "confidence": c.confidence,
+                         "status": c.status} for c in children]
         if run_id in self._live:
             d["live"] = self._live[run_id]
         return d
@@ -174,9 +261,16 @@ class TechniqueService:
     # ------------------------------------------------------------ analyze
     async def analyze(self, symbol: str, *, as_of_ms: int | None = None, primary_tf: str | None = None,
                       trigger: str = "manual", image: bytes | None = None, note: str = "",
-                      thread_id: str | None = None, wait: bool = False) -> dict:
+                      thread_id: str | None = None, wait: bool = False,
+                      parent_run_id: str | None = None, thresholds_override: dict | None = None,
+                      bars_override: dict[str, list[Bar]] | None = None) -> dict:
         """Start a run. Returns the run row immediately (status=running) unless
-        `wait=True`, in which case the finished run is returned."""
+        `wait=True`, in which case the finished run is returned.
+
+        `parent_run_id` / `thresholds_override` / `bars_override` are the replay
+        hooks: re-run an earlier moment with the bars it saw (so Yahoo's history
+        limit does not matter) and optionally different thresholds, linked to
+        the parent so the two can be diffed."""
         cfg = self.llm_config()
         if not cfg.available:
             raise RuntimeError("ZARGAR_ANTHROPIC_API_KEY is not configured")
@@ -192,15 +286,33 @@ class TechniqueService:
         if not symbol and image is None:
             raise ValueError("symbol or image required")
 
+        thresholds = self.thresholds()
+        if thresholds_override:
+            fields = {f.name for f in dataclasses.fields(Thresholds)}
+            bad = [k for k in thresholds_override if k not in fields]
+            if bad:
+                raise ValueError(f"unknown threshold(s): {bad}; valid: {sorted(fields)}")
+            thresholds = dataclasses.replace(thresholds, **thresholds_override)
+        max_passes = int(self.engine.settings.get("llm.max_passes", 6))
+        tfs = AnalysisRequest(symbol=symbol or "IMAGE", primary_tf=tf).timeframes if mode == "full" else []
+        config = provenance_snapshot(
+            thresholds=thresholds, settings_all=self.engine.settings.all(), model=cfg.model,
+            effort=cfg.effort, thinking_display=cfg.thinking_display, max_passes=max_passes,
+            timeframes=tfs, parent_run_id=parent_run_id,
+            overrides={"thresholds": dict(thresholds_override or {}),
+                       "barsFromSnapshot": bars_override is not None})
+
         if thread_id is None:
-            title = f"{symbol or 'chart'} analysis · {tf}" + (" · image" if image else "")
+            title = f"{symbol or 'chart'} analysis · {tf}" + (" · image" if image else "") \
+                + (" · replay" if parent_run_id else "")
             thread = await self.chat.create_thread(title=title, kind="run", symbol=symbol or None)
             thread_id = thread["id"]
 
         run = TechniqueRun(id=new_id(), thread_id=thread_id, symbol=symbol or "IMAGE", as_of=as_of_ms,
                            primary_tf=tf, mode=mode, trigger=trigger, status="running",
                            llm={"model": cfg.model, "effort": cfg.effort,
-                                "thinkingDisplay": cfg.thinking_display})
+                                "thinkingDisplay": cfg.thinking_display},
+                           config=config, parent_run_id=parent_run_id)
         async with self.engine.sf() as session:
             session.add(run)
             # link the thread to its run
@@ -212,12 +324,16 @@ class TechniqueService:
         rd = run_dict(run)
         await self.engine.journal.append(ev.TECHNIQUE_RUN_STARTED, {
             "runId": run.id, "symbol": symbol, "tf": tf, "asOf": as_of_ms, "mode": mode,
-            "trigger": trigger, "threadId": thread_id, "llm": run.llm},
+            "trigger": trigger, "threadId": thread_id, "llm": run.llm,
+            "processVersion": config.get("processVersion"), "parentRunId": parent_run_id,
+            "overrides": config.get("overrides")},
             aggregate_type="technique_run", aggregate_id=run.id)
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "run", "run": run_summary(run)})
 
         task = asyncio.create_task(self._execute(run.id, thread_id, symbol, tf, as_of_ms, mode,
-                                                 image, note, trigger), name=f"technique-{run.id[:8]}")
+                                                 image, note, trigger, thresholds=thresholds,
+                                                 bars_override=bars_override),
+                                   name=f"technique-{run.id[:8]}")
         self._running[run.id] = task
         if wait:
             await task
@@ -225,10 +341,12 @@ class TechniqueService:
         return rd
 
     async def _execute(self, run_id: str, thread_id: str, symbol: str, tf: str, as_of_ms: int | None,
-                       mode: str, image: bytes | None, note: str, trigger: str) -> None:
+                       mode: str, image: bytes | None, note: str, trigger: str, *,
+                       thresholds: Thresholds | None = None,
+                       bars_override: dict[str, list[Bar]] | None = None) -> None:
         cfg = self.llm_config()
         client = self._get_client()
-        t = self.thresholds()
+        t = thresholds or self.thresholds()
         chat = self.chat
         t0 = time.time()
 
@@ -249,24 +367,88 @@ class TechniqueService:
             elif t_ == "facts":
                 live["facts"] = {"keyLevels": e.get("keyLevels"), "volume": e.get("volume"),
                                  "trend": e.get("trend")}
+            elif t_ == "trace":
+                live.setdefault("trace", []).append({k: v for k, v in e.items() if k != "type"})
             chat.publish(thread_id, e, run_id=run_id)
 
         facts: dict = {}
         images_meta: dict = {}
         result = None
+        trace: list[dict] = []
+        bars_asset: str | None = None
         try:
             max_passes = int(self.engine.settings.get("llm.max_passes", 6))
-            vp = VisionPipeline(client, cfg, thresholds=t, max_passes=max_passes, on_event=on_event)
+            vp = VisionPipeline(client, cfg, thresholds=t, max_passes=max_passes, on_event=on_event,
+                                trace=trace, t0=t0)
+            await vp.note("run", "start", f"run started ({trigger}) for {symbol or 'image'} on {tf}"
+                          + (f" as of {dt.datetime.fromtimestamp(as_of_ms / 1000, dt.timezone.utc).isoformat()}"
+                             if as_of_ms else " (live)"),
+                          mode=mode, trigger=trigger, model=cfg.model, effort=cfg.effort,
+                          maxPasses=max_passes, userImage=image is not None, userNote=bool(note))
             if mode == "image_only":
                 aid = await chat.store_asset(image, None, thread_id=thread_id, meta={"kind": "user_image"})
                 images_meta["user"] = aid
+                await vp.note("data", "image_only", "no symbol given: analysing the user's screenshot alone, "
+                              "no bars fetched and nothing to ground against", assetId=aid)
                 result = await vp.run_image_only(image, note=note, symbol_hint=symbol)
             else:
                 req = AnalysisRequest(symbol=symbol, as_of_ms=as_of_ms, primary_tf=tf, thresholds=t)
-                bars, notes = await gather_bars(req)
+                td = time.time()
+                if bars_override is not None:
+                    bars = {k: list(v) for k, v in bars_override.items() if v}
+                    notes = ["bars loaded from the parent run's snapshot (replay)"]
+                    await vp.note("data", "snapshot", "bars loaded from the parent run's snapshot instead "
+                                  "of Yahoo, so the replay sees exactly what the original saw",
+                                  perTf={k: len(v) for k, v in bars.items()})
+                else:
+                    bars, notes = await gather_bars(req)
+                    await vp.note("data", "fetch",
+                                  f"fetched {sum(len(v) for v in bars.values())} bars across "
+                                  f"{len(bars)} timeframe(s) from Yahoo in {time.time() - td:.1f}s"
+                                  + ("; notes: " + "; ".join(notes) if notes else ""),
+                                  perTf={k: {"bars": len(v), "firstTs": v[0].ts, "lastTs": v[-1].ts}
+                                         for k, v in bars.items()},
+                                  requested=req.timeframes, notes=list(notes), asOf=as_of_ms,
+                                  seconds=round(time.time() - td, 2))
                 facts = compute_facts(req, bars, notes)
                 if not bars:
+                    await vp.note("data", "abort", "no bars for any timeframe; run cannot proceed",
+                                  notes=list(notes))
                     raise RuntimeError("no bars available for " + symbol + " — " + "; ".join(notes))
+                cands = facts.get("candidateSetups") or []
+                ptf = facts.get("primaryTf") or tf
+                await vp.note("data", "facts",
+                              f"detectors on {ptf}: {len(facts.get('keyLevels') or [])} key level(s), "
+                              f"trend {(facts.get('trend') or {}).get(ptf, {}).get('direction', '?') if isinstance((facts.get('trend') or {}).get(ptf), dict) else (facts.get('trend') or {}).get(ptf, '?')}, "
+                              f"{len(cands)} deterministic candidate setup(s)"
+                              + (f"; first candidate {cands[0].get('setupType')} entry "
+                                 f"{(cands[0].get('entry') or {}).get('price')} R:R {cands[0].get('riskReward')} "
+                                 f"valid={cands[0].get('valid')}" if cands else ""),
+                              lastClose=facts.get("lastClose"), primaryTf=ptf,
+                              keyLevels=[{"price": lv.get("price"), "kind": lv.get("kind"),
+                                          "touches": lv.get("touches"), "position": lv.get("position")}
+                                         for lv in (facts.get("keyLevels") or [])[:10]],
+                              candidateSetups=[{"setupType": c.get("setupType"), "valid": c.get("valid"),
+                                                "entry": (c.get("entry") or {}).get("price"),
+                                                "stop": (c.get("stop") or {}).get("price"),
+                                                "riskReward": c.get("riskReward"),
+                                                "noTradeReasons": list(c.get("noTradeReasons") or [])}
+                                               for c in cands],
+                              volume=(facts.get("volume") or {}).get(ptf),
+                              recentBreak=bool(facts.get("recentBreak")),
+                              wedge=bool((facts.get("wedge") or {}).get(ptf)))
+                # Full bar windows, saved so the run can be replayed / re-scored
+                # after Yahoo's history limit has passed.
+                snap = {"symbol": symbol, "asOf": as_of_ms, "primaryTf": tf,
+                        "bars": {k: bars_to_rows(v) for k, v in bars.items()}}
+                blob = gzip.compress(json.dumps(snap).encode("utf-8"))
+                bars_asset = await chat.store_asset(blob, "application/gzip", thread_id=thread_id,
+                                                    meta={"kind": "bars_snapshot", "runId": run_id,
+                                                          "symbol": symbol, "tf": tf})
+                await vp.note("data", "snapshot_saved",
+                              "full bar windows saved as an asset for replay / outcome scoring",
+                              assetId=bars_asset, bytes=len(blob),
+                              perTf={k: len(v) for k, v in bars.items()})
                 imgs: dict[str, bytes] = {}
                 for tfx in req.timeframes:
                     if tfx in bars:
@@ -278,6 +460,11 @@ class TechniqueService:
                 if image is not None:
                     images_meta["user"] = await chat.store_asset(image, None, thread_id=thread_id,
                                                                  meta={"kind": "user_image"})
+                await vp.note("data", "charts",
+                              f"rendered {len(imgs)} chart(s) for the model: "
+                              + ", ".join(f"{k} ({min(len(bars[k]), WINDOW_FOR_TF.get(k, 150))} bars)"
+                                          for k in imgs),
+                              images={k: images_meta[k] for k in imgs}, userImage=images_meta.get("user"))
                 await on_event({"type": "facts", "keyLevels": facts.get("keyLevels", [])[:8],
                                 "volume": (facts.get("volume") or {}).get(facts.get("primaryTf")),
                                 "trend": facts.get("trend")})
@@ -315,13 +502,39 @@ class TechniqueService:
             contract = a.to_contract() if a else None
             options = None
             if a and a.verdict == "setup" and bool(self.engine.settings.get("technique.options.enabled", True)):
+                await vp.note("options", "pick", "setup verdict: picking the contract the method would trade (T5)",
+                              provider=getattr(self.options_provider(), "name", "?"),
+                              direction=a.direction or "long")
                 options = await self.option_pick(symbol, a.direction or "long",
                                                  spot=float(facts.get("lastClose") or 0) or None)
+                if options and options.get("available") and options.get("symbol"):
+                    await vp.note("options", "result",
+                                  f"picked {options['symbol']} {options.get('optionType')} {options.get('strike')} "
+                                  f"exp {options.get('expiry')}"
+                                  + (f"; warnings: {'; '.join(options.get('warnings') or [])}"
+                                     if options.get("warnings") else ""),
+                                  contract=options.get("symbol"), warnings=list(options.get("warnings") or []))
+                else:
+                    await vp.note("options", "result", f"no contract: {(options or {}).get('error', 'unknown')}",
+                                  provider=(options or {}).get("provider"))
+            elif a and a.verdict == "setup":
+                await vp.note("options", "skipped", "technique.options.enabled is off")
+            else:
+                await vp.note("options", "skipped", "no setup, no contract to pick")
+
+            # ---- setups (before the run row so their trace notes land in it) --------
+            if a is not None:
+                await self._persist_setup(run_id, symbol or a.symbol, a, contract, options,
+                                          grounded=bool(result.grounding.get("passed")), vp=vp)
 
             usage = dict(result.total_usage)
+            await vp.note("run", "done", f"run finished in {time.time() - t0:.1f}s, "
+                          f"{usage.get('input', 0)} in / {usage.get('output', 0)} out tokens",
+                          usage=usage, seconds=round(time.time() - t0, 1))
             res_d = result.to_dict()
             res_d["options"] = options
             res_d["seconds"] = round(time.time() - t0, 1)
+            res_d["trace"] = list(trace)
             async with self.engine.sf() as session:
                 r = await session.get(TechniqueRun, run_id)
                 r.status = "done"
@@ -334,20 +547,21 @@ class TechniqueService:
                 r.images = images_meta
                 r.usage = usage
                 r.error = result.error
+                if bars_asset:
+                    cfg_d = dict(r.config or {})
+                    cfg_d["barsAssetId"] = bars_asset
+                    r.config = cfg_d
                 r.finished_at = dt.datetime.now(dt.timezone.utc)
                 await session.commit()
                 rd = run_dict(r)
-
-            # ---- setups --------------------------------------------------------------
-            if a is not None:
-                await self._persist_setup(run_id, symbol or a.symbol, a, contract, options,
-                                          grounded=bool(result.grounding.get("passed")))
 
             await self.engine.journal.append(ev.TECHNIQUE_RUN_COMPLETED, {
                 "runId": run_id, "symbol": symbol, "verdict": rd["verdict"], "setupType": rd["setupType"],
                 "confidence": rd["confidence"], "grounded": rd["grounded"], "usage": usage,
                 "seconds": res_d["seconds"], "rulesFired": (contract or {}).get("rulesFired", []),
-                "noTradeReasons": (contract or {}).get("noTradeReasons", [])},
+                "noTradeReasons": (contract or {}).get("noTradeReasons", []),
+                "traceSteps": len(trace), "processVersion": (rd.get("config") or {}).get("processVersion"),
+                "parentRunId": rd.get("parentRunId")},
                 aggregate_type="technique_run", aggregate_id=run_id)
             if result.mode == "full" and not result.grounding.get("passed"):
                 await self.engine.journal.append(ev.TECHNIQUE_GROUNDING_FAILED, {
@@ -361,22 +575,33 @@ class TechniqueService:
                                       run_id=run_id)
             chat.publish(thread_id, {"type": "run_done", "run": run_summary_from_dict(rd)}, run_id=run_id)
             self.engine.bus.publish(topics.TECHNIQUE, {"kind": "run_done", "run": run_summary_from_dict(rd)})
+
+            # A backdated run already has its future: score it right away.
+            if (mode == "full" and as_of_ms is not None
+                    and bool(self.engine.settings.get("technique.outcome.enabled", True))):
+                with contextlib.suppress(Exception):
+                    await self.score_run(run_id)
         except asyncio.CancelledError:
-            await self._fail(run_id, thread_id, "cancelled")
+            await self._fail(run_id, thread_id, "cancelled", trace=trace)
             raise
         except Exception as exc:
             log.exception("technique run failed")
-            await self._fail(run_id, thread_id, f"{type(exc).__name__}: {exc}")
+            await self._fail(run_id, thread_id, f"{type(exc).__name__}: {exc}", trace=trace)
         finally:
             self._running.pop(run_id, None)
             self._live.pop(run_id, None)
 
-    async def _fail(self, run_id: str, thread_id: str, error: str) -> None:
+    async def _fail(self, run_id: str, thread_id: str, error: str, *, trace: list[dict] | None = None) -> None:
         async with self.engine.sf() as session:
             r = await session.get(TechniqueRun, run_id)
             if r is not None:
                 r.status = "failed"
                 r.error = error
+                if trace is not None:
+                    res = dict(r.result or {})
+                    res["trace"] = list(trace) + [{"seq": len(trace) + 1, "stage": "run", "step": "failed",
+                                                   "reason": error, "t": None, "call": None}]
+                    r.result = res
                 r.finished_at = dt.datetime.now(dt.timezone.utc)
                 await session.commit()
                 rd = run_dict(r)
@@ -399,10 +624,20 @@ class TechniqueService:
         return False
 
     async def _persist_setup(self, run_id: str, symbol: str, a, contract: dict, options: dict | None,
-                             *, grounded: bool) -> None:
+                             *, grounded: bool, vp=None) -> None:
         e, s = a.entry, a.stop
-        valid = a.verdict == "setup" and e is not None and s is not None and grounded \
-            and not [r for r in a.no_trade_reasons if not r.startswith("CRITIC-WARN")]
+        blocking = [r for r in a.no_trade_reasons if not r.startswith("CRITIC-WARN")]
+        valid = a.verdict == "setup" and e is not None and s is not None and grounded and not blocking
+        if vp is not None:
+            why = ("valid: setup verdict, entry+stop present, grounded, no blocking reasons" if valid else
+                   "not valid: " + "; ".join(filter(None, [
+                       "verdict is no_setup" if a.verdict != "setup" else "",
+                       "missing entry/stop" if (e is None or s is None) else "",
+                       "not grounded" if not grounded else "",
+                       f"{len(blocking)} blocking no-trade reason(s)" if blocking else ""])))
+            await vp.note("setup", "persist", f"setup row written; {why}", valid=valid,
+                          setupType=a.setup_type, entry=e.price if e else None, stop=s.price if s else None,
+                          grounded=grounded, blockingReasons=blocking)
         row = TechniqueSetup(
             id=new_id(), run_id=run_id, symbol=symbol.upper(), setup_type=a.setup_type or "none",
             direction=a.direction or "none", entry=e.price if e else 0.0, stop=s.price if s else 0.0,
@@ -417,19 +652,34 @@ class TechniqueService:
         await self.engine.journal.append(ev.TECHNIQUE_SETUP_EMITTED, sd, aggregate_type="technique_setup",
                                          aggregate_id=row.id)
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "setup", "setup": sd})
-        if valid and bool(self.engine.settings.get("technique.emit_proposals", False)):
-            with contextlib.suppress(Exception):
-                await self._emit_proposal(row, a)
+        emit = bool(self.engine.settings.get("technique.emit_proposals", False))
+        if valid and emit:
+            try:
+                pid = await self._emit_proposal(row, a)
+                if vp is not None:
+                    await vp.note("proposal", "emit" if pid else "skipped",
+                                  ("practice proposal created; it still needs approval and passes RiskGate"
+                                   if pid else "no sim portfolio available for a practice proposal"),
+                                  proposalId=pid, setupId=row.id)
+            except Exception as exc:
+                log.exception("proposal emission failed")
+                if vp is not None:
+                    await vp.note("proposal", "error", f"proposal emission failed: {exc}", setupId=row.id)
+        elif vp is not None:
+            await vp.note("proposal", "skipped",
+                          "setup not valid" if not valid else "technique.emit_proposals is off",
+                          valid=valid, emitProposals=emit)
 
-    async def _emit_proposal(self, setup: TechniqueSetup, a) -> None:
+    async def _emit_proposal(self, setup: TechniqueSetup, a) -> str | None:
         """Practice-only: a proposal the user approves in the Signals page; approval
-        routes through OrderManager → RiskGate like every other order."""
+        routes through OrderManager → RiskGate like every other order. Returns
+        the proposal id (None when no portfolio could take it)."""
         eng = self.engine
         pid = str(eng.settings.get("trading.default_portfolio", ""))
         if not pid or eng.positions.portfolio(pid) is None:
             sims = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
             if not sims:
-                return
+                return None
             pid = sims[0]["id"]
         equity = await eng.positions.equity(pid)
         risk_pct = float(eng.settings.get("technique.default_risk_pct", 1.0))
@@ -460,6 +710,290 @@ class TechniqueService:
         await eng.journal.append(ev.PROPOSAL_CREATED, pd, aggregate_type="proposal",
                                  aggregate_id=row.id, portfolio_id=pid)
         eng.bus.publish(topics.PROPOSALS, pd)
+        return row.id
+
+    # ------------------------------------------------------------ outcomes
+    async def score_run(self, run_id: str, *, horizon_bars: int | None = None,
+                        force: bool = False) -> list[dict]:
+        """Score what price did after the run (the analysis plan and, when it
+        declined, the deterministic candidate it rejected). Idempotent: rows are
+        upserted per (run, plan_source); `partial` rows are re-scored as more
+        bars arrive. Returns the outcome dicts."""
+        async with self.engine.sf() as session:
+            r = await session.get(TechniqueRun, run_id)
+            if r is None:
+                raise KeyError(f"run {run_id} not found")
+            existing = {o.plan_source: o for o in (await session.execute(
+                select(TechniqueOutcome).where(TechniqueOutcome.run_id == run_id))).scalars().all()}
+            setups = (await session.execute(
+                select(TechniqueSetup).where(TechniqueSetup.run_id == run_id))).scalars().all()
+        if r.status != "done":
+            return [outcome_dict(o) for o in existing.values()]
+        if not force and existing and all(o.status in ("scored", "unscorable") for o in existing.values()):
+            return [outcome_dict(o) for o in existing.values()]
+
+        horizon = int(horizon_bars or self.engine.settings.get("technique.outcome.horizon_bars", 60))
+        entry_window = int(self.engine.settings.get("technique.outcome.entry_window_bars", 12))
+        res = r.result or {}
+        facts = r.facts or {}
+        contract = res.get("analysis")
+        tf = r.primary_tf
+        as_of = r.as_of or int(r.created_at.timestamp() * 1000)
+        setup_id = setups[0].id if setups else None
+        symbol = r.symbol
+
+        plans: list[tuple[str, dict | None]] = []
+        pa = plan_from_contract(contract)
+        if pa:
+            plans.append(("analysis", pa))
+        pc = plan_from_candidate((facts.get("candidateSetups") or [None])[0])
+        if pc and not same_plan(pc, pa):
+            plans.append(("candidate", pc))
+        if not plans:
+            plans.append(("market", None))
+
+        async def upsert(source: str, **fields) -> TechniqueOutcome:
+            async with self.engine.sf() as session:
+                o = existing.get(source)
+                if o is not None:
+                    o = await session.get(TechniqueOutcome, o.id)
+                else:
+                    o = TechniqueOutcome(id=new_id(), run_id=run_id, plan_source=source,
+                                         setup_id=setup_id if source == "analysis" else None)
+                    session.add(o)
+                o.horizon_bars = horizon
+                for k, v in fields.items():
+                    setattr(o, k, v)
+                await session.commit()
+                existing[source] = o
+                return o
+
+        # --- unscorable cases ----------------------------------------------------------
+        if r.mode == "image_only" or symbol == "IMAGE":
+            for src, plan in plans:
+                await upsert(src, status="unscorable", plan=plan or {},
+                             note="image-only run: no symbol, nothing to fetch",
+                             scored_at=dt.datetime.now(dt.timezone.utc))
+            return [outcome_dict(o) for o in existing.values()]
+
+        bars_after: list[Bar] = []
+        reused = False
+        prior_asset = next((o.bars_asset_id for o in existing.values() if o.bars_asset_id), None)
+        if horizon_still_fetchable(tf, as_of):
+            try:
+                bars_after = await fetch_after(symbol, tf, as_of, horizon=horizon, entry_window=entry_window)
+            except Exception as exc:           # Yahoo hiccup: keep pending, try again later
+                log.warning("outcome fetch failed for %s: %s", run_id, exc)
+                for src, plan in plans:
+                    if src not in existing:
+                        await upsert(src, status="pending", plan=plan or {}, note=f"fetch failed: {exc}")
+                return [outcome_dict(o) for o in existing.values()]
+        if not bars_after and prior_asset:
+            data = await self.chat.get_asset_bytes(prior_asset)
+            if data:
+                try:
+                    bars_after = rows_to_bars(symbol, tf, json.loads(data)["bars"])
+                    reused = True
+                except Exception:
+                    bars_after = []
+        if not bars_after:
+            age_days = (time.time() - as_of / 1000) / 86400
+            if not horizon_still_fetchable(tf, as_of):
+                status, note = "unscorable", f"{tf} bars for that date are no longer served by Yahoo"
+            elif age_days > 4:
+                status, note = "unscorable", "no bars after as_of in 4 days (unknown symbol or data gap)"
+            else:
+                status, note = "pending", "no bars after as_of yet (after-hours / weekend)"
+            for src, plan in plans:
+                await upsert(src, status=status, plan=plan or {}, note=note, bars_after=0,
+                             scored_at=dt.datetime.now(dt.timezone.utc) if status == "unscorable" else None)
+            out = [outcome_dict(o) for o in existing.values()]
+            self.engine.bus.publish(topics.TECHNIQUE, {"kind": "outcome", "runId": run_id, "outcomes": out})
+            return out
+
+        # --- score ------------------------------------------------------------------------
+        last_close = float(facts.get("lastClose") or bars_after[0].open)
+        decision = Bar(symbol=symbol, tf=tf, ts=as_of, open=last_close, high=last_close,
+                       low=last_close, close=last_close, volume=0)
+        series = [decision] + bars_after
+        asset_id = prior_asset if reused else None
+        if asset_id is None:
+            blob = json.dumps({"symbol": symbol, "tf": tf, "asOf": as_of,
+                               "bars": bars_to_rows(bars_after)}).encode("utf-8")
+            asset_id = await self.chat.store_asset(blob, "application/json", thread_id=r.thread_id,
+                                                   meta={"kind": "bars_after", "runId": run_id})
+        path = path_summary(bars_after, last_close)
+        now = dt.datetime.now(dt.timezone.utc)
+        scored: list[dict] = []
+        for src, plan in plans:
+            if plan is None:
+                o = await upsert(src, status="scored" if len(bars_after) >= horizon else "partial",
+                                 plan={}, outcome=None, r_multiple=None, mfe_r=None, mae_r=None,
+                                 bars_held=None, bars_after=len(bars_after), path=path,
+                                 bars_asset_id=asset_id, scored_at=now,
+                                 note="no plan to score (no setup and no candidate); path only")
+            else:
+                sim = simulate_plan(series, 0, plan, entry_window=entry_window, horizon=horizon)
+                o = await upsert(src, status="scored" if sim["resolved"] else "partial",
+                                 plan={**plan, "entryWindow": entry_window}, outcome=sim["outcome"],
+                                 r_multiple=sim["rMultiple"], mfe_r=sim["mfeR"], mae_r=sim["maeR"],
+                                 bars_held=sim["barsHeld"], bars_after=len(bars_after), path=path,
+                                 bars_asset_id=asset_id, scored_at=now, note=sim.get("note") or None)
+            scored.append(outcome_dict(o))
+        await self.engine.journal.append(ev.TECHNIQUE_OUTCOME_SCORED, {
+            "runId": run_id, "symbol": symbol, "tf": tf, "asOf": as_of, "horizonBars": horizon,
+            "barsAfter": len(bars_after),
+            "outcomes": [{"planSource": o["planSource"], "status": o["status"], "outcome": o["outcome"],
+                          "rMultiple": o["rMultiple"], "mfeR": o["mfeR"], "maeR": o["maeR"]} for o in scored],
+            "summary": "; ".join(describe_outcome(o) for o in scored)},
+            aggregate_type="technique_run", aggregate_id=run_id)
+        self.engine.bus.publish(topics.TECHNIQUE, {"kind": "outcome", "runId": run_id, "outcomes": scored})
+        return scored
+
+    async def score_pending(self, *, limit: int = 25) -> dict:
+        """Score every finished run that has no outcome yet or a still-open one.
+        Called by the outcome loop and `POST /api/technique/outcomes/score`."""
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=25)
+        async with self.engine.sf() as session:
+            runs = (await session.execute(
+                select(TechniqueRun.id, TechniqueRun.as_of, TechniqueRun.created_at)
+                .where(TechniqueRun.status == "done", TechniqueRun.mode == "full",
+                       TechniqueRun.created_at >= cutoff)
+                .order_by(TechniqueRun.created_at.desc()).limit(400))).all()
+            ids = [x.id for x in runs]
+            outs = (await session.execute(
+                select(TechniqueOutcome).where(TechniqueOutcome.run_id.in_(ids)))).scalars().all() if ids else []
+        by_run: dict[str, list[TechniqueOutcome]] = {}
+        for o in outs:
+            by_run.setdefault(o.run_id, []).append(o)
+        todo: list[str] = []
+        now_ms = time.time() * 1000
+        for x in runs:
+            as_of = x.as_of or int(x.created_at.timestamp() * 1000)
+            if now_ms - as_of < 5 * 60 * 1000:
+                continue                        # give the first bars a chance to print
+            rows = by_run.get(x.id, [])
+            if not rows or any(o.status in ("pending", "partial") for o in rows):
+                todo.append(x.id)
+        scored, failed = [], []
+        for rid in todo[:limit]:
+            try:
+                await self.score_run(rid)
+                scored.append(rid)
+            except Exception as exc:
+                log.warning("score_run %s failed: %s", rid, exc)
+                failed.append({"runId": rid, "error": str(exc)})
+        return {"scored": scored, "failed": failed, "remaining": max(0, len(todo) - limit)}
+
+    async def _outcome_loop(self) -> None:
+        await asyncio.sleep(20)               # let the engine settle first
+        while True:
+            try:
+                interval = max(5, int(self.engine.settings.get("technique.outcome.interval_minutes", 30)))
+                if bool(self.engine.settings.get("technique.outcome.enabled", True)):
+                    await self.score_pending()
+                await asyncio.sleep(interval * 60)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("outcome loop error")
+                await asyncio.sleep(60)
+
+    # ------------------------------------------------------------ reviews
+    async def add_review(self, run_id: str, *, review_verdict: str, reviewer: str = "user",
+                         expected_verdict: str | None = None, expected_setup_type: str | None = None,
+                         expected_plan: dict | None = None, expectation_note: str = "",
+                         root_cause_stage: str | None = None, notes: str = "",
+                         actions: list[dict] | None = None) -> dict:
+        validate_review(review_verdict=review_verdict, root_cause_stage=root_cause_stage,
+                        reviewer=reviewer, expected_verdict=expected_verdict)
+        async with self.engine.sf() as session:
+            r = await session.get(TechniqueRun, run_id)
+            if r is None:
+                raise KeyError(f"run {run_id} not found")
+            cfg = r.config or {}
+            row = TechniqueReview(
+                id=new_id(), run_id=run_id, reviewer=reviewer, expected_verdict=expected_verdict,
+                expected_setup_type=expected_setup_type, expected_plan=expected_plan or {},
+                expectation_note=expectation_note or "", review_verdict=review_verdict,
+                root_cause_stage=root_cause_stage, notes=notes or "",
+                actions=[{"desc": str(a.get("desc", a)) if isinstance(a, dict) else str(a),
+                          "file": (a.get("file") if isinstance(a, dict) else None),
+                          "status": (a.get("status", "planned") if isinstance(a, dict) else "planned")}
+                         for a in (actions or [])],
+                process_version={k: cfg.get(k) for k in ("processVersion", "promptVersion",
+                                                         "rulebookVersion", "codeVersion", "model", "effort")})
+            session.add(row)
+            await session.commit()
+        d = review_dict(row)
+        await self.engine.journal.append(ev.TECHNIQUE_REVIEW_ADDED, {**d, "symbol": r.symbol,
+                                                                     "runVerdict": r.verdict},
+                                         aggregate_type="technique_run", aggregate_id=run_id)
+        self.engine.bus.publish(topics.TECHNIQUE, {"kind": "review", "runId": run_id, "review": d})
+        if r.thread_id and self.chat:
+            txt = (f"**Review ({reviewer})** — {review_verdict}"
+                   + (f" · root cause: {root_cause_stage}" if root_cause_stage else "")
+                   + (f"\nExpected: {expected_verdict}"
+                      + (f" ({expected_setup_type})" if expected_setup_type else "") if expected_verdict else "")
+                   + (f"\n{expectation_note}" if expectation_note else "")
+                   + (f"\n{notes}" if notes else "")
+                   + ("\nActions:\n- " + "\n- ".join(a["desc"] for a in d["actions"]) if d["actions"] else ""))
+            with contextlib.suppress(Exception):
+                await self.chat.append_message(r.thread_id, "user", [{"type": "text", "text": txt}],
+                                               {"kind": "review", "reviewId": row.id}, run_id=run_id)
+        return d
+
+    async def list_reviews(self, run_id: str | None = None, *, limit: int = 200) -> list[dict]:
+        async with self.engine.sf() as session:
+            stmt = select(TechniqueReview).order_by(TechniqueReview.created_at.desc()).limit(limit)
+            if run_id:
+                stmt = stmt.where(TechniqueReview.run_id == run_id)
+            rows = (await session.execute(stmt)).scalars().all()
+        return [review_dict(x) for x in rows]
+
+    # ------------------------------------------------------------ replay / diff
+    async def load_bars_snapshot(self, run_id: str) -> dict[str, list[Bar]] | None:
+        async with self.engine.sf() as session:
+            r = await session.get(TechniqueRun, run_id)
+        if r is None:
+            raise KeyError(f"run {run_id} not found")
+        aid = (r.config or {}).get("barsAssetId")
+        if not aid or not self.chat:
+            return None
+        data = await self.chat.get_asset_bytes(aid)
+        if not data:
+            return None
+        snap = json.loads(gzip.decompress(data).decode("utf-8"))
+        return {tf: rows_to_bars(r.symbol, tf, rows) for tf, rows in (snap.get("bars") or {}).items()}
+
+    async def replay_run(self, run_id: str, *, thresholds: dict | None = None, use_snapshot: bool = True,
+                         note: str = "", wait: bool = False) -> dict:
+        """Re-run an earlier moment, linked to the parent. With `use_snapshot`
+        (default) the exact bars the parent saw are reused, so a replay isolates
+        the effect of prompt/threshold/code changes from data drift."""
+        async with self.engine.sf() as session:
+            parent = await session.get(TechniqueRun, run_id)
+        if parent is None:
+            raise KeyError(f"run {run_id} not found")
+        if parent.mode != "full":
+            raise ValueError("image-only runs cannot be replayed (no bars)")
+        bars = await self.load_bars_snapshot(run_id) if use_snapshot else None
+        as_of = parent.as_of or int(parent.created_at.timestamp() * 1000)
+        rd = await self.analyze(parent.symbol, as_of_ms=as_of, primary_tf=parent.primary_tf,
+                                trigger="replay", note=note, parent_run_id=run_id,
+                                thresholds_override=thresholds, bars_override=bars, wait=wait)
+        await self.engine.journal.append(ev.TECHNIQUE_RUN_REPLAYED, {
+            "parentRunId": run_id, "runId": rd["id"], "symbol": parent.symbol, "asOf": as_of,
+            "thresholds": thresholds or {}, "barsFromSnapshot": bars is not None, "note": note},
+            aggregate_type="technique_run", aggregate_id=run_id)
+        return rd
+
+    async def diff(self, run_a: str, run_b: str) -> dict:
+        a = await self.get_run(run_a)
+        b = await self.get_run(run_b)
+        if a is None or b is None:
+            raise KeyError("run not found: " + (run_a if a is None else run_b))
+        return diff_runs(a, b)
 
     # ------------------------------------------------------------ options
     async def option_pick(self, symbol: str, direction: str = "long", *, spot: float | None = None) -> dict:
@@ -492,15 +1026,19 @@ class TechniqueService:
     def start(self) -> None:
         if self._scan_task is None:
             self._scan_task = asyncio.create_task(self._scan_loop(), name="technique-scan")
+        if self._outcome_task is None:
+            self._outcome_task = asyncio.create_task(self._outcome_loop(), name="technique-outcome")
 
     async def stop(self) -> None:
         for t in list(self._running.values()):
             t.cancel()
-        if self._scan_task:
-            self._scan_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._scan_task
-            self._scan_task = None
+        for name in ("_scan_task", "_outcome_task"):
+            task = getattr(self, name)
+            if task:
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+                setattr(self, name, None)
         if self._tradier:
             with contextlib.suppress(Exception):
                 await self._tradier.aclose()
@@ -593,12 +1131,38 @@ def _slim_facts(facts: dict) -> dict:
 def run_summary_from_dict(rd: dict) -> dict:
     d = dict(rd)
     d.pop("facts", None)
+    d.pop("config", None)
     res = d.pop("result", None) or {}
     d["analysis"] = res.get("analysis")
     d["groundingPassed"] = (res.get("grounding") or {}).get("passed")
     d["options"] = res.get("options")
     d["seconds"] = res.get("seconds")
+    d["traceSteps"] = len(res.get("trace") or [])
     return d
+
+
+def _slim_outcome(o: dict) -> dict:
+    return {k: o.get(k) for k in ("id", "planSource", "status", "outcome", "rMultiple", "mfeR", "maeR",
+                                  "barsHeld", "barsAfter", "scoredAt")}
+
+
+def _outcome_matches(outs: list[dict], want: str) -> bool:
+    """`want` is an outcome value (stopped, tp1..3, horizon, not_filled) matched
+    on the analysis plan first, then any plan; or a status (scored, pending,
+    partial, unscorable); or 'win' / 'loss' on realised R; or 'none'."""
+    if want == "none":
+        return not outs
+    if want in ("scored", "pending", "partial", "unscorable"):
+        return any(o.get("status") == want for o in outs)
+    primary = next((o for o in outs if o.get("planSource") == "analysis"), None) or \
+        next((o for o in outs if o.get("planSource") == "candidate"), None)
+    if primary is None:
+        return False
+    if want == "win":
+        return (primary.get("rMultiple") or 0) > 0
+    if want == "loss":
+        return (primary.get("rMultiple") or 0) < 0
+    return primary.get("outcome") == want
 
 
 def _summary_text(contract: dict | None, grounding: dict, options: dict | None) -> str:

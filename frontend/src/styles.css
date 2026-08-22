@@ -1122,3 +1122,32 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .copy-chip--link { font-family: var(--font); }
 .copy-chip-text { font-variant-numeric: tabular-nums; }
 .tq-head-right { margin-left: auto; display: inline-flex; align-items: center; gap: var(--sp-2); }
+
+/* --- technique review loop: trace, outcome, review, replay -------------------- */
+.tq-lenses { display: inline-flex; gap: 2px; margin-left: 10px; }
+.tq-lenses button { font-size: var(--fs-0); padding: 2px 8px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); border-radius: 999px; cursor: pointer; }
+.tq-lenses button.active { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border-color: var(--accent); }
+.tq-prov { margin-top: 6px; font-size: var(--fs-0); line-height: 1.5; }
+.tq-prov code { font-size: var(--fs-0); }
+.tq-dl { text-align: center; text-decoration: none; }
+.tq-trace { grid-column: 1 / -1; border-top: 1px solid var(--border); margin-top: var(--sp-2); padding-top: var(--sp-2); }
+.tq-trace-table { width: 100%; border-collapse: collapse; font-size: var(--fs-0); }
+.tq-trace-table td { padding: 3px 6px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.tq-trace-table tr.clickable { cursor: pointer; }
+.tq-trace-table tr.clickable:hover td { background: var(--surface-2); }
+.tq-trace-step { white-space: nowrap; font-family: var(--mono, ui-monospace, monospace); }
+.tq-trace-reason { width: 100%; }
+.tq-trace-detail { margin: 4px 0 0; padding: 6px; background: var(--surface-2); border-radius: 4px; white-space: pre-wrap; word-break: break-word; max-height: 260px; overflow: auto; font-size: var(--fs-0); }
+.tq-trace-table tr.stage-critic .tq-chip { background: color-mix(in srgb, var(--down) 18%, transparent); }
+.tq-trace-table tr.stage-grounding .tq-chip { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.tq-trace-table tr.stage-data .tq-chip { background: var(--surface-3); }
+.tq-outcome-cell b { font-size: var(--fs-2); }
+.tq-reviews { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.tq-reviews li { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-1); }
+.tq-review-notes { white-space: pre-wrap; margin-top: 2px; }
+.tq-review-form { display: flex; flex-direction: column; gap: 8px; padding: 8px; border: 1px dashed var(--border); border-radius: 6px; margin-top: 6px; }
+.tq-review-form .tq-row { flex-wrap: wrap; }
+.tq-review-form .tq-ctl input, .tq-review-form .tq-ctl select { min-width: 110px; }
+.tq-replays { font-size: var(--fs-0); line-height: 1.6; }
+.tq-diff { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: var(--fs-0); }
+.tq-diff-row { padding: 1px 0; word-break: break-word; }
