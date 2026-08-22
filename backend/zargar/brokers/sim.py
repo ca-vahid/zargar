@@ -262,5 +262,5 @@ class SimExecutor(Executor):
 
     def _commission(self, o: BrokerOrder) -> float:
         if o.sec_type == "OPT":
-            return round(max(1.0, 0.65 * o.qty), 2)
+            return round(0.99 * o.qty + 0.05 * o.qty, 2)  # Webull CA-like: per contract + reg fees
         return round(min(max(1.0, 0.005 * o.qty), 0.01 * o.qty * 200), 2)

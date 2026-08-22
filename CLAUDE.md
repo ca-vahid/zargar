@@ -19,9 +19,17 @@ cd frontend && npm run dev                             # hot-reload UI on :5173,
 cd backend && .venv/bin/python -m zargar.tools.ibkr_check   # read-only IBKR connectivity test
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTrade status/accounts
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-auth a connection to trade
+cd backend && .venv/bin/python -m zargar.tools.snaptrade_options_check   # read-only: which accounts can trade options
 cd backend && .venv/bin/python -m pytest tests/test_technique_*.py       # technique pipeline (no LLM calls)
+cd backend && .venv/bin/python -m pytest tests/test_options_*.py tests/test_snaptrade_options.py  # options (stubbed CBOE/SnapTrade)
 cd backend && .venv/bin/python -m zargar.tools.technique_review list --unreviewed   # review loop CLI (dump/score/review/diff/replay)
 ```
+
+Options trading: research + build plan + status in `docs/OPTIONS-PLAN.md`.
+Code: `backend/zargar/options/` (occ symbology, chain providers, OptionsService),
+`api/routes_options.py`, UI `frontend/src/pages/OptionsPage.tsx` +
+`components/OptionChain.tsx` / `OptionTicket.tsx`. Internal option symbol =
+**unpadded OCC** (`F260828C00014500`); `occ.to_snaptrade()` pads at the venue.
 
 Technique pipeline (EnhancedMarket method): spec in `docs/TECHNIQUE-ENHANCEDMARKET.md`,
 build plan + lessons in `docs/TECHNIQUE-PIPELINE-PLAN.md`, code in
@@ -109,6 +117,14 @@ docker-compose.
   `technique.options.provider` + `ZARGAR_TRADIER_TOKEN`). CBOE is US listings
   only — `.TO`/`.V` symbols have no chain there.
 - Technique settings (`technique.*`, `llm.*`) are UI-editable.
+- SnapTrade options (verified 2026-08-21, `snaptrade_options_check`): orders go
+  to `POST /accounts/{id}/trading/options` with **space-padded 21-char OCC**
+  symbols (`"F     260828C00014500"`), actions `BUY_TO_OPEN`… and **string**
+  prices; preview via `…/trading/options/impact`. **Webull Canada supports it,
+  Wealthsimple does not** (code 1156). Personal keys get 401 on SnapTrade's
+  `optionsChain`/option-quote endpoints and 404 on `/optionsHoldings` — chains
+  come from CBOE, option positions from `/positions/all` (`kind == "option"`),
+  live contract last/bars from Yahoo v8 chart with the **unpadded** OCC symbol.
 - Schema changes: `db.create_all` also ADDs missing columns on existing tables
   (additive only — NOT NULL columns are back-filled from the mapped default).
   Dropping/renaming a column is still manual.

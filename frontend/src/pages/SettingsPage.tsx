@@ -145,9 +145,33 @@ export function SettingsPage() {
             <NumberRow k="risk.stale_quote_seconds" label="Stale quote block (s)"
               hint="orders are rejected when the symbol's quote is older than this" />
             <ToggleRow k="risk.allow_short" label="Allow short selling" />
-            <ToggleRow k="risk.allow_options" label="Allow options" />
-            <NumberRow k="risk.max_option_premium_pct" label="Max option premium (% equity)" step={0.5} />
-            <ToggleRow k="risk.require_market_hours" label="Require market hours (live/paper)" />
+            <ToggleRow k="risk.require_market_hours" label="Require market hours (live/paper)"
+              hint="option orders always enforce regular hours — they have no extended session" />
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">Options
+            <span className="sub">contracts, risk caps, venue, data provider</span></div>
+          <div className="panel-body">
+            <ToggleRow k="risk.allow_options" label="Allow option orders" />
+            <ToggleRow k="risk.allow_0dte" label="Allow 0DTE contracts"
+              hint="the EnhancedMarket method trades weeklies/0DTE — off blocks same-day expiries" />
+            <NumberRow k="risk.max_option_contracts" label="Max contracts per order" />
+            <NumberRow k="risk.max_option_premium_notional" label="Max premium per order ($)" step={50}
+              hint="qty × price × 100, buys only; closes are exempt" />
+            <NumberRow k="risk.max_option_premium_pct" label="Max premium (% equity)" step={0.5} />
+            <NumberRow k="risk.max_option_spread_pct" label="Max bid/ask spread (%)" step={1}
+              hint="market orders on wider spreads are rejected; limits get a warning" />
+            <NumberRow k="options.fee_per_contract" label="Fee per contract (USD)" step={0.01}
+              hint="Webull Canada: US$0.99/contract + regulatory fees — used by the ticket estimate" />
+            <SelectRow k="options.provider" label="Chain data provider"
+              hint="CBOE is free with greeks, ~15-min delayed, no account (works in Canada). Tradier needs a US-signup token."
+              options={[{ value: "cboe", label: "CBOE delayed (free)" }, { value: "tradier", label: "Tradier (token)" }]} />
+            <NumberRow k="options.enrich_seconds" label="Contract quote refresh (s)"
+              hint="how often tracked contracts re-read bid/ask from the chain" />
+            <ListRow k="snaptrade.options_brokers" label="Brokerages allowed to route option orders"
+              hint="verified 2026-08-21: Webull Canada yes, Wealthsimple no (SnapTrade code 1156)" />
           </div>
         </div>
 
@@ -236,10 +260,7 @@ export function SettingsPage() {
             <NumberRow k="technique.min_touches" label="Min touches for a level" hint="T1.2: 2; strong = 3" />
             <NumberRow k="technique.volume_spike_mult" label="Volume spike (x baseline)" step={0.1} />
             <NumberRow k="technique.volume_dryup_mult" label="Volume dry-up (x baseline)" step={0.1} />
-            <ToggleRow k="technique.options.enabled" label="Pick option contracts" hint="just-OTM strike, weekly/0DTE, greeks + IV warnings (T5)" />
-            <SelectRow k="technique.options.provider" label="Options data provider"
-              hint="CBOE is free with greeks, ~15-min delayed, no account (works in Canada). Tradier needs a US-signup token."
-              options={[{ value: "cboe", label: "CBOE delayed (free)" }, { value: "tradier", label: "Tradier (token)" }]} />
+            <ToggleRow k="technique.options.enabled" label="Pick option contracts" hint="just-OTM strike, weekly/0DTE, greeks + IV warnings (T5) — data provider is set under Options" />
             <ToggleRow k="technique.emit_proposals" label="Valid setups become practice proposals" hint="approval still goes through the RiskGate" />
             <ToggleRow k="technique.scan.enabled" label="Scheduled scans" />
             <NumberRow k="technique.scan.interval_minutes" label="Scan interval (min)" />
@@ -385,7 +406,10 @@ function WatchlistEditor({ wl, onSave, onDelete }: {
 interface Source { name: string; emails: string[]; trust: string; notes: string }
 
 function SourcesPanel() {
-  const registry: Source[] = useStore((s) => s.settings["sources.registry"] ?? []);
+  // select the raw value: a `?? []` inside the selector mints a new array every
+  // render before the snapshot arrives -> React #185 loop on a /settings deep link
+  const registryRaw = useStore((s) => s.settings["sources.registry"]);
+  const registry: Source[] = Array.isArray(registryRaw) ? registryRaw : [];
   const patch = usePatch();
   const [name, setName] = useState("");
   const [emails, setEmails] = useState("");

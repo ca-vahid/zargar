@@ -17,10 +17,13 @@ export function ConfirmOrderDialog({
   account,
   provider,
   estCost,
+  label,
   onSubmitted,
   onCancel,
 }: {
   intent: OrderIntentBody;
+  /** human headline (e.g. "buy to open 1 × F 28 Aug 26 14.5 C"); defaults to side/qty/symbol */
+  label?: string;
   portfolio: Portfolio;
   account?: BrokerageAccount;
   provider?: BrokerageProvider;
@@ -80,13 +83,13 @@ export function ConfirmOrderDialog({
             disabled={checking || preflightRejected || submitting}
             onClick={confirm}
           >
-            {submitting ? "Submitting…" : `${intent.side} ${intent.qty} ${intent.symbol}`}
+            {submitting ? "Submitting…" : label ?? `${intent.side} ${intent.qty} ${intent.symbol}`}
           </button>
         </>
       }
     >
       <div className="confirm-headline">
-        {intent.side} {intent.qty} {intent.symbol} · {intent.order_type}
+        {label ?? `${intent.side} ${intent.qty} ${intent.symbol}`} · {intent.order_type}
         {intent.limit_price ? ` @ ${fmtMoney(intent.limit_price)}` : ""} · {intent.tif ?? "DAY"}
       </div>
       <div className="confirm-line">

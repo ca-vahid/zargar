@@ -59,6 +59,7 @@ class Engine:
         self._history_seeded: set[str] = set()  # symbols whose day bars were loaded
         self._bar_persister: BarPersister | None = None
         self._drift_warned: set[tuple[str, str]] = set()  # (pid, ET date) warned once/day
+        self.options = None  # OptionsService (chain data, contract quotes, venue capability)
         self.started = False
 
     # ------------------------------------------------------------------ start
@@ -130,6 +131,11 @@ class Engine:
             self.snaptrade.on_report = self.orders.on_report
             await self.snaptrade.start()
 
+        from .options.service import OptionsService
+        self.options = OptionsService(self)
+        self.orders.option_gate = self.options.allows_options
+        await self.options.start()
+
         for symbol in await self._startup_symbols():
             await self.ensure_symbol(symbol)
         from .brokers.yahoo import YahooQuoteFeed
@@ -157,6 +163,8 @@ class Engine:
             await self.proposals.stop()
         if self.telegram is not None:
             await self.telegram.stop()
+        if self.options is not None:
+            await self.options.stop()
         for t in self._tasks:
             t.cancel()
         for t in self._tasks:
@@ -219,17 +227,24 @@ class Engine:
     # ------------------------------------------------------------- symbols
     async def ensure_symbol(self, symbol: str) -> None:
         """Make sure quotes flow and chart history exists for a symbol."""
-        symbol = symbol.upper()
         from .brokers.sim import SimQuoteFeed
         from .brokers.yahoo import YahooQuoteFeed
+        from .options import occ
+        symbol = occ.normalize(symbol)
+        is_option = occ.is_occ(symbol)
         already = symbol in self._history_seeded or (
             isinstance(self.feed, SimQuoteFeed) and symbol in self.feed.symbols)
-        await self.feed.watch(symbol)
+        # option contracts on the sim feed: the OptionsService publishes their
+        # quotes from the real (delayed) chain — a random walk would be nonsense
+        if not (is_option and isinstance(self.feed, SimQuoteFeed)):
+            await self.feed.watch(symbol)
+        if is_option and self.options is not None:
+            await self.options.track(symbol)
         if already:
             return
         self._history_seeded.add(symbol)
         existing = await load_bars(self.sf, symbol, "1m", limit=3000)
-        if not existing and isinstance(self.feed, SimQuoteFeed):
+        if not existing and isinstance(self.feed, SimQuoteFeed) and not is_option:
             history = self.feed.synthesize_history(symbol, minutes=self.config.sim_history_minutes)
             await persist_bars(self.sf, history)
             existing = history[-3000:]

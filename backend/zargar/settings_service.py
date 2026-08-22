@@ -38,6 +38,12 @@ DEFAULTS: dict[str, Any] = {
     "risk.allow_short": False,
     "risk.allow_options": True,
     "risk.max_option_premium_pct": 5.0,     # of equity, per trade
+    "risk.max_option_premium_notional": 1000.0,  # $ per order (qty x price x 100)
+    "risk.max_option_contracts": 10,        # per order
+    "risk.max_option_spread_pct": 10.0,     # MKT option orders rejected above this
+    "risk.min_option_open_interest": 100,   # warning (blocks only if block_illiquid_options)
+    "risk.block_illiquid_options": False,
+    "risk.allow_0dte": True,                # the EnhancedMarket method trades 0DTE/weeklies
     "risk.duplicate_window_seconds": 10,
     "risk.require_market_hours": False,     # enforce RTH for live orders
     # --- account -------------------------------------------------------------
@@ -59,6 +65,11 @@ DEFAULTS: dict[str, Any] = {
     "snaptrade.order_poll_seconds": 2.0,
     "snaptrade.reconcile_seconds": 60,
     "snaptrade.allow_brackets": False,
+    "snaptrade.options_brokers": ["Webull Canada"],   # verified via options impact 2026-08-21
+    # --- options (chain data + ticket) ---------------------------------------
+    "options.provider": "cboe",             # cboe (free, ~15-min delayed) | tradier (token)
+    "options.enrich_seconds": 5,            # contract bid/ask refresh cadence from the chain
+    "options.fee_per_contract": 0.99,       # Webull CA: USD per contract (+ regulatory fees)
     "quotes.yahoo_poll_seconds": 1.0,   # 1=frantic … 10=calm (see ui tick-speed select)
     # --- broker fee schedule (editable estimates; verify via order impact) ----
     "fees.webull_fx_pct": 1.5,          # Webull CA: rate + 1.5% markup on CAD<->USD

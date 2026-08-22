@@ -17,6 +17,14 @@ class StubSnapTrade:
         self.place_error: int | Exception | None = None
         self.recent_error: Exception | None = None
         self.cancel_response: dict = {"brokerage_order_id": "bo-1"}
+        # options endpoints (/accounts/{id}/trading/options[/impact])
+        self.option_place_response: dict = {"brokerage_order_id": "obo-1", "orders": []}
+        self.option_place_error: int | Exception | None = None
+        self.option_impact_response: dict = {
+            "estimated_cash_change": "21.0400", "cash_change_direction": "DEBIT",
+            "estimated_fee_total": "1.0400"}
+        # per-account override: account id -> (status, body) e.g. Wealthsimple's 1156
+        self.option_impact_errors: dict[str, tuple[int, dict]] = {}
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -36,6 +44,19 @@ class StubSnapTrade:
                 "combined_remaining_balance": {"cash": 55.5,
                                                "currency": {"code": "CAD"}},
             })
+        if path.endswith("/trading/options/impact") and request.method == "POST":
+            account_id = path.split("/")[4]
+            err = self.option_impact_errors.get(account_id)
+            if err is not None:
+                return httpx.Response(err[0], json=err[1])
+            return httpx.Response(200, json=self.option_impact_response)
+        if path.endswith("/trading/options") and request.method == "POST":
+            if isinstance(self.option_place_error, Exception):
+                raise self.option_place_error
+            if isinstance(self.option_place_error, int):
+                return httpx.Response(self.option_place_error,
+                                      json={"detail": "broker says no to options"})
+            return httpx.Response(200, json=self.option_place_response)
         if path == "/api/v1/trade/place":
             if isinstance(self.place_error, Exception):
                 raise self.place_error

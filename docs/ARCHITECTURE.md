@@ -36,7 +36,11 @@ default setup) serves the built UI. PostgreSQL is the only external service.
 | `brokers/sim.py` | `SimQuoteFeed` — deterministic-seedable random-walk market with synthesized history; `SimExecutor` — conservative fill engine (opposite-touch + slippage + size impact, limit-cross fills, stop triggers, OCA groups, simulated latency). |
 | `brokers/ibkr.py` | `IBKRBroker` — ib_async adapter (feed + executor in one). `.TO`/`.V` suffixes map to TSX/TSXV. `orderRef` carries our client order id. |
 | `risk.py` | `RiskGate.evaluate()` — the mandatory pre-trade pipeline (see below) + `HaltState` (kill switch, persisted across restarts). |
-| `orders.py` | `OrderManager` — write-ahead intents, risk gate, mode-based routing, lifecycle from `ExecReport`s, bracket-children spawning, projections. |
+| `orders.py` | `OrderManager` — write-ahead intents, risk gate, mode-based routing, lifecycle from `ExecReport`s, bracket-children spawning, projections. Option orders: derived open/close action (`derive_option_action`), close-qty guard, venue capability gate (`option_gate`). |
+| `options/occ.py` | OCC symbology — canonical **unpadded** OCC (`F260828C00014500`), SnapTrade's padded form at the venue boundary, display names, DTE. |
+| `options/chain.py` | Chain providers (CBOE free delayed default, Tradier optional) → normalized rows with greeks/IV. |
+| `options/service.py` | `OptionsService` — expiries/strike ladder/contract snapshots, contract quotes (Yahoo live `last` + chain bid/ask via `QuoteCache.set_overlay`; on the sim feed it publishes whole quotes), SnapTrade options capability cache (allowlist + live impact verdicts), expiry settlement for practice portfolios. |
+| `api/routes_options.py` | `/api/options/{und}/expiries`, `/chain?expiry=`, `/quote/{occ}`, `/impact`, `/capabilities`, `/expiring`. |
 | `portfolio.py` | `PositionKeeper` — avg-cost positions, realized/unrealized P&L, cash, equity, daily-loss %, equity snapshots. Options use a 100× multiplier. |
 | `signals/schemas.py` | Pydantic schemas for Claude structured extraction + the extraction system prompt. |
 | `signals/extraction.py` | Claude call (`messages.parse`) + **quote grounding**: every extracted ticker/price must be backed by a verbatim quote found in the source, verified in code. |
@@ -65,10 +69,12 @@ Routing gate: `dry_run` routes nothing; `sim` routes sim+shadow portfolios;
 paper/live to `IBKRBroker`.
 
 **RiskGate checks** (each journaled): kill switch, quote freshness, instrument
-halt, price collar, short-selling rule, options rules (enabled, premium cap, no
-naked shorts), max position notional & % equity, max gross exposure (reducing
-orders bypass the caps), order rate, duplicate window, daily loss limit,
-market hours (live/paper, optional).
+halt, price collar (options: vs mid with a tick floor), short-selling rule,
+options rules (enabled, premium cap % and $, no naked shorts, valid OCC, not
+expired / 0DTE toggle, contracts per order, spread cap for market orders), max
+position notional & % equity, max gross exposure (reducing orders bypass the
+caps), order rate, duplicate window, daily loss limit, market hours (live/paper
+optional; always enforced for options).
 
 ### Signal pipeline
 
@@ -126,6 +132,7 @@ ROADMAP).
 | `lib/api.ts` | Fetch wrapper + typed endpoints; bearer token from localStorage. |
 | `components/StockChart.tsx` | Highcharts Stock via **imperative ref** — React renders once; ticks update the forming candle with `point.update()`, closed 1m bars append via `onBar`. ⚠ Highcharts v12 imports come from `highcharts/esm/...js`; EMA/SMA both live in `esm/indicators/indicators.js`. |
 | `components/OrderTicket.tsx` | Side/qty/type/tif/bracket/dry-run; shows failed risk checks inline. |
+| `pages/OptionsPage.tsx`, `components/OptionChain.tsx`, `components/OptionTicket.tsx` | Options: underlying header → expiry strip → strike ladder (calls / strike / puts, centred on ATM) → single-leg option ticket (greeks strip, derived open/close, fees, max loss, breakeven, broker preview, confirm dialog). Deep links `/options/SPY`, `/options/SPY/<expiry>`, `/options/c/<OCC>`. `lib/occ.ts` mirrors the backend symbology. |
 | `components/Blotter.tsx` | Positions / open orders / history / fills tabs. |
 | `pages/` | `TradePage`, `InboxPage` (proposals+signals+pipeline tester), `PortfoliosPage` (equity curves), `JournalPage` (audit browser), `SettingsPage` (every runtime knob, watchlists, sources). |
 | `styles.css` | Design tokens: dark default + light theme, user-set accent, density; market colors `--up/--down`; categorical `--series-1..8`. |

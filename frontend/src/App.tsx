@@ -10,6 +10,7 @@ import { PortfoliosPage } from "./pages/PortfoliosPage";
 import { JournalPage } from "./pages/JournalPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TechniquePage } from "./pages/TechniquePage";
+import { OptionsPage } from "./pages/OptionsPage";
 import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 
@@ -18,6 +19,9 @@ export default function App() {
   const techniqueTab = useStore((s) => s.techniqueTab);
   const techniqueRunId = useStore((s) => s.techniqueFocusRunId);
   const chatThreadId = useStore((s) => s.chatActiveThreadId);
+  const optionsUnderlying = useStore((s) => s.optionsUnderlying);
+  const optionsExpiry = useStore((s) => s.optionsExpiry);
+  const optionsContract = useStore((s) => s.optionsContract);
   const applyRoute = useStore((s) => s.applyRoute);
 
   // URL is the source of truth on load and on back/forward; state drives it after.
@@ -27,11 +31,12 @@ export default function App() {
   }, [applyRoute]);
 
   useEffect(() => {
-    const next = { page, techniqueTab, runId: techniqueRunId, threadId: chatThreadId };
+    const next = { page, techniqueTab, runId: techniqueRunId, threadId: chatThreadId,
+      optionsUnderlying, optionsExpiry, optionsContract };
     // pushState only when the destination really changes, so back/forward walks
     // the places the user visited rather than every incidental state write.
     syncUrl(next, buildPath(next) !== window.location.pathname);
-  }, [page, techniqueTab, techniqueRunId, chatThreadId]);
+  }, [page, techniqueTab, techniqueRunId, chatThreadId, optionsUnderlying, optionsExpiry, optionsContract]);
   const halt = useStore((s) => s.halt);
   const driftWarnings = useStore((s) => s.driftWarnings);
   const openJournal = useStore((s) => s.openJournal);
@@ -81,6 +86,7 @@ export default function App() {
         <div className="content">
           {page === "dashboard" && <DashboardPage />}
           {page === "trade" && <TradePage />}
+          {page === "options" && <OptionsPage />}
           {page === "inbox" && <InboxPage />}
           {page === "portfolios" && <PortfoliosPage />}
           {page === "journal" && <JournalPage />}
