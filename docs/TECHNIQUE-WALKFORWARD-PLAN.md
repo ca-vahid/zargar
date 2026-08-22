@@ -424,6 +424,27 @@ Portfolios / Blotter and must be managed by hand (or flattened).
 
 ---
 
+### 9.2 Validation tab (rebuilt 2026-08-22)
+
+The Validation tab is the second tab and reads like the Analyse form: **Symbols** (a
+multi-select picker — the book's universe, my holdings, watchlists, recently swept, plus
+live search), **Session to check** (Last session, or a date; the plan is built at the close
+*before* that session — exactly what "Last close" on the Analyse tab would have shown that
+evening — and replayed on the session's 1-minute bars), **Sessions** 1 / 5 / 10 / 20 back.
+Output is a **Findings** table, one row per symbol per session, best first: WIN / LOSS /
+MIXED / NO FIRE (with the reason: never touched, gapped past (T4.1), stop gapped through
+(T4.3a), plan void (Q13), mid-day only (R6), all triggers rejected), what fired when and
+where it ended in R, levels held/broke/untested, the opening gap; lenses All / Fired /
+Winners / Losers / Nothing fired. Tick rows → **LLM read** (promote with vision,
+`wait=false`, ≈$0.20 each, lands in History) or **plan** (deterministic run). The book's
+claims and the level/trigger statistics are collapsed underneath; past validations sit in
+the rail. Backend: `run_symbol` fetches bars through the session *after* `end` so the last
+(or only) plan day is actually scored — before this a one-session check returned nothing.
+
+The page header is one row (tabs + status pills) that is identical on every tab; the
+right rail collapses from its left edge (animated, persisted) on Analyse / History /
+Backtest / Validation.
+
 ## 10. Honest limitations
 
 - **Yahoo depth**: 1m ≈ 20 d (8 d/request), 5m/15m/30m ≈ 60 d, 1h ≈ 2 y. A 100-trade

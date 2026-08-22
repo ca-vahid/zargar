@@ -161,16 +161,21 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
 
   const refresh = useCallback(() => { api.techniqueSweeps().then(setSweeps).catch(() => undefined); }, []);
   useEffect(() => { refresh(); }, [refresh, bump]);
+  const refetchSel = useCallback((id: string) => {
+    // only apply if the user is still looking at that sweep (a bump that fires while a new
+    // sweep is being selected must not drag the panel back to the old one)
+    api.techniqueSweep(id).then((r) => setSel((cur) => (cur && cur.id === r.id ? r : cur))).catch(() => undefined);
+  }, []);
   useEffect(() => {
     if (!sel) return;
-    api.techniqueSweep(sel.id).then(setSel).catch(() => undefined);
+    refetchSel(sel.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bump, sel?.id]);
   useEffect(() => { if (!sel && sweeps.length) api.techniqueSweep(sweeps[0].id).then(setSel).catch(() => undefined); }, [sweeps, sel]);
   // a running sweep: poll its detail every few seconds until it finishes
   useEffect(() => {
     if (!sel || sel.status !== "running") return;
-    const t = setInterval(() => { api.techniqueSweep(sel.id).then(setSel).catch(() => undefined); }, 4000);
+    const t = setInterval(() => refetchSel(sel.id), 4000);
     return () => clearInterval(t);
   }, [sel?.id, sel?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -202,7 +207,7 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
     try {
       const run = await api.techniquePromote(sel.id, { symbol: r.symbol, session: r.session, withVision, wait: !withVision });
       toast("success", withVision ? `LLM read started for ${r.symbol} (${r.planFor}) → run ${run.id.slice(0, 8)}` : `Plan for ${r.symbol} ${r.planFor} → run ${run.id.slice(0, 8)}`);
-      if (!withVision) openRun(run.id); else api.techniqueSweep(sel.id).then(setSel).catch(() => undefined);
+      if (!withVision) openRun(run.id); else refetchSel(sel.id);
     } catch (e: any) { toast("error", e.message); }
   };
   const llmSelected = async () => {
@@ -217,7 +222,7 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
     }
     toast("success", `${ok} LLM read${ok === 1 ? "" : "s"} started — they appear in History as they finish`);
     setChecked({}); setLlmBusy(false);
-    api.techniqueSweep(sel.id).then(setSel).catch(() => undefined);
+    refetchSel(sel.id);
   };
 
   const sm = sel?.summary ?? {};
@@ -229,8 +234,9 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
     lens === "fired" ? f.fired > 0 : lens === "wins" ? f.verdict === "win" : lens === "losses" ? f.verdict === "loss" || f.verdict === "mixed" && f.sumR < 0 : lens === "none" ? f.fired === 0 : true)), [findings, lens]);
   const nChecked = Object.values(checked).filter(Boolean).length;
   const counts = useMemo(() => ({
-    rows: findings.length, fired: findings.filter((f) => f.fired > 0).length, wins: findings.filter((f) => f.verdict === "win").length,
-    losses: findings.filter((f) => f.verdict === "loss").length, sumR: findings.reduce((a, f) => a + f.sumR, 0),
+    rows: findings.length, plansFired: findings.filter((f) => f.fired > 0).length,
+    fires: findings.reduce((a, f) => a + f.fired, 0), wins: findings.reduce((a, f) => a + f.wins, 0),
+    losses: findings.reduce((a, f) => a + (f.fired - f.wins), 0), sumR: findings.reduce((a, f) => a + f.sumR, 0),
   }), [findings]);
   const llmOk = llmAvailable;
 
@@ -305,11 +311,11 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
                 <>
                   <div className="tq-plan">
                     <div className="tq-plan-cell"><small>Checked</small><b>{counts.rows}</b><span>symbol · session pairs</span></div>
-                    <div className="tq-plan-cell"><small>Fired</small><b>{counts.fired}</b><span>{counts.rows ? `${Math.round((counts.fired / counts.rows) * 100)}% of plans triggered` : ""}</span></div>
-                    <div className="tq-plan-cell"><small>Won / lost</small><b><span className="pos">{counts.wins}</span> / <span className="neg">{counts.losses}</span></b><span>{sm.triggers?.counterfactual?.base?.winRate !== undefined ? `win rate ${pct(sm.triggers.counterfactual.base.winRate)}` : "of fired"}</span></div>
-                    <div className="tq-plan-cell"><small>Total R</small><b className={counts.sumR > 0 ? "pos" : counts.sumR < 0 ? "neg" : ""}>{signedR(counts.sumR)}</b><span>avg {num(sm.triggers?.counterfactual?.base?.avgR)}R per fire</span></div>
+                    <div className="tq-plan-cell"><small>Fires</small><b>{counts.fires}</b><span>{counts.rows ? `in ${counts.plansFired} of ${counts.rows} plans (${Math.round((counts.plansFired / counts.rows) * 100)}%)` : ""}</span></div>
+                    <div className="tq-plan-cell"><small>Won / lost</small><b><span className="pos">{counts.wins}</span> / <span className="neg">{counts.losses}</span></b><span>{counts.fires ? `win rate ${Math.round((counts.wins / counts.fires) * 100)}% of fires` : "no fires"}</span></div>
+                    <div className="tq-plan-cell"><small>Total R</small><b className={counts.sumR > 0 ? "pos" : counts.sumR < 0 ? "neg" : ""}>{signedR(counts.sumR)}</b><span>{counts.fires ? `avg ${signedR(counts.sumR / counts.fires)} per fire` : ""}</span></div>
                     <div className="tq-plan-cell"><small>Prior-day levels</small><b>{pct(sm.levels?.priorDayVsOther?.priorDay?.testedRespectRate)}</b><span>held when tested · other {pct(sm.levels?.priorDayVsOther?.other?.testedRespectRate)}</span></div>
-                    <div className="tq-plan-cell"><small>Sample</small><b>{sm.sample?.fired ?? counts.fired}</b><span>of the ≥{sm.sample?.target ?? 100} fires the book asks for</span></div>
+                    <div className="tq-plan-cell"><small>Sample</small><b>{counts.fires}</b><span>of the ≥{sm.sample?.target ?? 100} fires the book asks for (p. 72)</span></div>
                   </div>
 
                   <div className="tq-wf-findings-head">
