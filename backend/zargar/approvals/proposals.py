@@ -164,6 +164,17 @@ class ProposalService:
             await session.commit()
             pdict = proposal_dict(row)
         eng.bus.publish(topics.PROPOSALS, pdict)
+        # If this came from an armed technique plan, hand the position to the armer
+        # so its exits (stop / ladder / flatten) are managed like an auto trade.
+        tech = (pdict.get("context") or {}).get("technique") or {}
+        run_id = tech.get("runId")
+        if status == "executed" and run_id and getattr(eng, "technique", None) is not None:
+            with contextlib.suppress(Exception):
+                await eng.technique.armer.adopt_order(
+                    run_id, key=f"proposal:{proposal_id[:8]}", underlying=tech.get("underlying") or {},
+                    order=order, instrument=("options" if pdict.get("secType") == "OPT" else "shares"),
+                    order_symbol=(pdict.get("symbol") if pdict.get("secType") == "OPT" else None),
+                    multiplier=(100.0 if pdict.get("secType") == "OPT" else 1.0))
         return {"proposal": pdict, "order": order}
 
     async def reject(self, proposal_id: str, *, via: str = "app") -> dict:

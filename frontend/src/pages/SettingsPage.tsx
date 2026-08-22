@@ -296,6 +296,31 @@ export function SettingsPage() {
           </div>
         </div>
 
+        <div className="panel">
+          <div className="panel-head">Auto-trading (Arm)
+            <span className="sub">how armed plans place and manage orders — safe defaults, change with care</span></div>
+          <div className="panel-body">
+            <ToggleRow k="technique.arm.enabled" label="Allow arming plans" hint="master switch — off means plans can't be armed at all" />
+            <SelectRow k="technique.arm.mode" label="Default mode"
+              hint="alert = watch only · propose = you approve each trade · auto = trades for you"
+              options={[{ value: "alert", label: "Alert only" }, { value: "proposal", label: "Propose" }, { value: "auto", label: "Auto-trade" }]} />
+            <SelectRow k="technique.arm.instrument" label="Default instrument"
+              hint="this technique is built for options (buys a call); shares is the alternative"
+              options={[{ value: "options", label: "Options" }, { value: "shares", label: "Shares" }]} />
+            <NumberRow k="technique.arm.contracts" label="Contracts per trade" hint="book: 1 while learning (R5)" />
+            <NumberRow k="technique.arm.risk_pct" label="Risk per trade (%)" step={0.25} hint="shares only — book: 0.5–1%" />
+            <NumberRow k="technique.arm.daily_loss_limit" label="Daily loss limit ($)" step={10} hint="a plan flattens and stops for the day after losing this much; 0 = no limit" />
+            <NumberRow k="technique.arm.max_open_trades" label="Max positions per plan" hint="how many trades one plan may hold at once" />
+            <NumberRow k="technique.arm.flatten_minutes_before_close" label="Flatten before close (min)" hint="nothing is held overnight" />
+            <ToggleRow k="technique.arm.skip_wide_spread" label="Skip options with a wide spread" hint="avoids contracts that lose money the moment you enter (T5.4)" />
+            <ToggleRow k="technique.arm.skip_elevated_iv" label="Skip options with high volatility" hint="avoids IV-crush (T5.3); off by default" />
+            <ToggleRow k="technique.arm.use_critic" label="AI double-check before auto-buying" hint="an AI reads the live chart and can veto a weak setup (needs an API key)" />
+            <ToggleRow k="risk.halt_allows_exits" label="Kill switch still lets you sell" hint="ON (recommended): the halt stops new buys but stops/flatten can still close a position so you're never trapped" />
+            <ToggleRow k="technique.arm.allow_live_auto" label="Allow auto-trade on REAL accounts" hint="off by default; auto on real money also needs LIVE mode and a per-plan tick" />
+            <ListRow k="technique.arm.auto_symbols" label="Auto-arm at the open" hint="symbols to build + arm a plan for every morning; comma separated" />
+          </div>
+        </div>
+
         <WatchlistsPanel />
         <SourcesPanel />
       </div>

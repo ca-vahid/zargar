@@ -114,7 +114,8 @@ class Engine:
                 from .brokers.yahoo import YahooQuoteFeed
                 self.feed = YahooQuoteFeed(
                     on_quote=self.quotes.on_quote,
-                    poll_seconds=lambda: self.settings.get("quotes.yahoo_poll_seconds", 1.0))
+                    poll_seconds=lambda: self.settings.get("quotes.yahoo_poll_seconds", 1.0),
+                    on_bars=self._ingest_exchange_bars)
             else:
                 self.feed = SimQuoteFeed(
                     on_quote=self.quotes.on_quote,
@@ -225,6 +226,14 @@ class Engine:
         return out
 
     # ------------------------------------------------------------- symbols
+    def _ingest_exchange_bars(self, bars: list) -> None:
+        """Feed callback: correct our quote-sampled 1m bars with real exchange
+        OHLC/volume (guarded by `feed.exchange_bars`)."""
+        if not bool(self.settings.get("feed.exchange_bars", True)):
+            return
+        for b in bars:
+            self.bars.ingest_exchange_bar(b)
+
     async def ensure_symbol(self, symbol: str) -> None:
         """Make sure quotes flow and chart history exists for a symbol."""
         from .brokers.sim import SimQuoteFeed

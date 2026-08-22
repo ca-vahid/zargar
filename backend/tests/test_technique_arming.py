@@ -431,3 +431,146 @@ async def test_proposal_options_carries_the_contract(rig, monkeypatch):
         p = await session.get(Proposal, tr["proposalId"])
     assert p.sec_type == "OPT" and p.symbol == OCC and p.qty == 2 and p.limit_price == 2.5
     assert p.context["contract"]["strike"] == 101.0 and p.context["sizing"]["notional"] == 500.0
+
+
+# --- safety: reduce-only exits, loss halt, restore, scorecard, pre-flight --------------------------
+
+async def _open_a_share_trade(rig, run, *, risk_pct=1.0, max_qty=50, loss_limit=0.0, max_open=1):
+    body = {"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"], "riskPct": risk_pct,
+            "maxQty": max_qty, "slippagePct": 1.0, "dailyLossLimit": loss_limit, "maxOpenTrades": max_open}
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm", json=body)).json()
+    bars = rig.sessions[armed["planFor"]]
+    b1 = next(t for t in armed["triggers"] if t["kind"] == "bounce")
+    async def q(bar):
+        await _quote(rig, bar.close)
+    snap, i = await _feed_until(rig, run["id"], bars, lambda s: any(t["kind"] == "bounce" for t in s["trades"]), quote_fn=q)
+    await _quote(rig, b1["entry"])
+    def _bt():
+        d = rig.svc.armer.detail(run["id"]) or {}
+        return next((t for t in d.get("trades", []) if t["kind"] == "bounce"), {})
+    await wait_for(lambda: _bt().get("status") == "open", timeout=5)
+    return armed, bars, b1, i, _bt
+
+
+async def test_exits_are_reduce_only_and_work_under_the_kill_switch(rig):
+    run = await _plan_run(rig)
+    armed, bars, b1, i, _bt = await _open_a_share_trade(rig, run)
+    entry, stop = b1["entry"], b1["stop"]
+    await rig.eng.engage_halt("panic")
+    stop_bar = Bar(symbol="TEST", tf="1m", ts=bars[i].ts, open=entry, high=entry, low=stop - 0.05,
+                   close=stop - 0.02, volume=1000)
+    await _quote(rig, stop - 0.02)
+    await rig.svc.armer.on_bar(run["id"], stop_bar)
+    await _quote(rig, stop - 0.02)
+    await wait_for(lambda: _bt().get("status") == "closed", timeout=5)
+    tr = _bt()
+    assert tr["exits"] and tr["exits"][-1]["kind"] == "stop" and tr["remaining"] == 0
+    orders = await rig.eng.orders.list_orders(rig.sim["id"])
+    sell = next(o for o in orders if o["side"] == "SELL")
+    assert sell["status"] == "FILLED"
+    await rig.eng.release_halt()
+
+
+async def test_daily_loss_halt_flattens_and_stops_the_plan(rig):
+    run = await _plan_run(rig)
+    armed, bars, b1, i, _bt = await _open_a_share_trade(rig, run, loss_limit=0.01)
+    entry, stop = b1["entry"], b1["stop"]
+    stop_bar = Bar(symbol="TEST", tf="1m", ts=bars[i].ts, open=entry, high=entry, low=stop - 0.05,
+                   close=stop - 0.02, volume=1000)
+    await _quote(rig, stop - 0.02)
+    await rig.svc.armer.on_bar(run["id"], stop_bar)
+    await _quote(rig, stop - 0.02)
+    await wait_for(lambda: _bt().get("status") == "closed", timeout=5)
+    nxt = Bar(symbol="TEST", tf="1m", ts=bars[i + 1].ts, open=entry, high=entry + 0.1, low=entry - 0.1,
+              close=entry, volume=1000)
+    await _quote(rig, entry)
+    await rig.svc.armer.on_bar(run["id"], nxt)
+    assert (await rig.client.get("/api/technique/armed")).json() == []
+    events = (await rig.client.get("/api/events", params={"aggregate_id": run["id"]})).json()
+    assert any(e["type"] == "TechniquePlanError" and e["payload"].get("stage") == "loss_halt" for e in events)
+
+
+async def test_restore_reattaches_an_open_trade(rig):
+    run = await _plan_run(rig)
+    armed, bars, b1, i, _bt = await _open_a_share_trade(rig, run)
+    from zargar.models import TechniqueArmed
+    today = session_date(int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000))
+    async with rig.eng.sf() as session:
+        row = await session.get(TechniqueArmed, run["id"])
+        row.plan_for = today
+        await session.commit()
+    rig.svc.armer._armed.clear()
+    rig.svc.armer._order_index.clear()
+    n = await rig.svc.armer.restore()
+    assert n == 1
+    d = rig.svc.armer.detail(run["id"])
+    tr = next(t for t in d["trades"] if t["kind"] == "bounce")
+    assert tr["status"] == "open" and tr["filledQty"] >= 1
+    await rig.svc.armer.disarm(run["id"])
+
+
+async def test_scorecard_after_close(rig):
+    run = await _plan_run(rig)
+    armed, bars, b1, i, _bt = await _open_a_share_trade(rig, run)
+    day = dt.datetime.fromtimestamp(bars[0].ts / 1000, ET).date()
+    close_bar = Bar(symbol="TEST", tf="1m", ts=_ms(day, 15, 59), open=b1["entry"], high=b1["entry"],
+                    low=b1["entry"], close=b1["entry"], volume=1)
+    await _quote(rig, b1["entry"])
+    await rig.svc.armer.on_bar(run["id"], close_bar)
+    hist = (await rig.client.get("/api/technique/armed/history")).json()
+    row = next(h for h in hist if h["runId"] == run["id"])
+    sc = row["state"].get("scorecard")
+    assert sc and "rows" in sc and sc["symbol"] == "TEST" and "actualFires" in sc
+    events = (await rig.client.get("/api/events", params={"aggregate_id": run["id"]})).json()
+    assert any(e["type"] == "TechniquePlanScored" for e in events)
+
+
+async def test_preflight_reports_the_risk_verdict(rig):
+    run = await _plan_run(rig)
+    pf = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm/preflight",
+                                json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"],
+                                      "riskPct": 1.0, "maxQty": 50})).json()
+    assert pf["ok"] is True and pf["instrument"] == "shares" and pf["size"]["shares"] >= 1
+    assert any(c["name"] == "kill_switch" for c in pf["checks"])
+    await rig.eng.settings.set("risk.max_position_notional", 10.0, journal=False)
+    pf2 = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm/preflight",
+                                 json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"],
+                                       "qty": 50})).json()
+    assert pf2["ok"] is False
+    await rig.eng.settings.set("risk.max_position_notional", 1_000_000.0, journal=False)
+
+
+async def test_managed_proposal_is_adopted_and_managed(rig):
+    """adopt_order takes an approved position and manages its exits (the same path
+    the proposal-approval flow uses). The signals/proposals layer isn't attached in
+    this rig, so we drive adopt_order directly with a real order."""
+    from zargar.orders import OrderIntent
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "alert", "portfolioId": rig.sim["id"]})).json()
+    b1 = next(t for t in armed["triggers"] if t["kind"] == "bounce")
+    entry, stop, targets = b1["entry"], b1["stop"], b1["targets"]
+    # place a real BUY (limit above entry so a quote at entry fills it) and adopt it
+    # BEFORE the fill, so the fill routes through the armer's order index
+    limit = round(entry * 1.01, 2)
+    order = await rig.eng.orders.place(OrderIntent(portfolio_id=rig.sim["id"], symbol="TEST", side="BUY",
+                                                   qty=10, order_type="LMT", limit_price=limit, source="technique"))
+    ok = await rig.svc.armer.adopt_order(run["id"], key="proposal:test1234",
+                                         underlying={"entry": entry, "stop": stop,
+                                                     "targets": [{"price": p} for p in targets]},
+                                         order=order, instrument="shares")
+    assert ok
+    await _quote(rig, entry)
+    def _pt():
+        d = rig.svc.armer.detail(run["id"]) or {}
+        return next((t for t in d.get("trades", []) if t["triggerId"] == "proposal:test1234"), {})
+    await wait_for(lambda: _pt().get("status") == "open", timeout=5)
+    # a stop bar closes the adopted position via the shared reduce-only exit
+    day = dt.datetime.fromtimestamp(rig.sessions[armed["planFor"]][0].ts / 1000, ET).date()
+    stop_bar = Bar(symbol="TEST", tf="1m", ts=_ms(day, 10, 0), open=entry, high=entry, low=stop - 0.05,
+                   close=stop - 0.02, volume=1000)
+    await _quote(rig, stop - 0.02)
+    await rig.svc.armer.on_bar(run["id"], stop_bar)
+    await _quote(rig, stop - 0.02)
+    await wait_for(lambda: _pt().get("status") == "closed", timeout=5)
+    assert _pt()["exits"][-1]["kind"] == "stop"

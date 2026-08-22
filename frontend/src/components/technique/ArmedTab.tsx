@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime, fmtTime } from "../../lib/format";
 import { useStore } from "../../store";
-import type { ArmedPlan, ArmedTrade } from "../../types";
+import type { ArmedPlan, ArmedTrade, ArmScorecard } from "../../types";
 import { Spinner } from "../ui";
+import { InfoTip } from "../InfoTip";
 import { WindowBadge } from "./RunResult";
 
 function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
@@ -55,6 +56,29 @@ function TradeRow({ t }: { t: ArmedTrade }) {
   );
 }
 
+function Scorecard({ sc }: { sc: ArmScorecard }) {
+  return (
+    <div className="tq-armed-scorecard">
+      <div className="tq-label">How it went vs the plan
+        <InfoTip>After the close we replay the same session deterministically and compare: did the live plan fire when it should have, and how did the fills and exits line up? This is the record you review it by.</InfoTip>
+      </div>
+      <div className="tq-plan">
+        <div className="tq-plan-cell"><small>Fired</small><b>{sc.actualFires} / {sc.theoreticalFires}</b><span>live vs the replay</span></div>
+        <div className="tq-plan-cell"><small>Matched</small><b className={sc.matched === sc.theoreticalFires ? "pos" : ""}>{sc.matched}</b><span>same decision</span></div>
+        <div className="tq-plan-cell"><small>Realized</small><b className={pnlCls(sc.realizedPnl)}>{fmt(sc.realizedPnl)}</b><span>this plan</span></div>
+        <div className="tq-plan-cell"><small>Replay ΣR</small><b>{fmt(sc.theoreticalSumR)}</b><span>if traded on the stock</span></div>
+      </div>
+      {sc.rows.some((r) => r.notes.length) && (
+        <ul className="tq-armed-sc-notes">
+          {sc.rows.filter((r) => r.notes.length).map((r) => (
+            <li key={r.trigger}><b>{r.trigger}</b> {r.kind}: {r.notes.join("; ")}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
   const toast = useStore((s) => s.toast);
   const openRun = useStore((s) => s.openTechniqueRun);
@@ -79,6 +103,7 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
         <span className="tq-badge nosetup" title="account">{a.portfolio.name ?? a.portfolio.id} · {a.portfolio.kind?.toUpperCase()}</span>
         <span className={`tq-badge ${a.status === "armed" ? "setup" : a.status === "paused" ? "failed" : "nosetup"}`}>{a.status.toUpperCase()}</span>
         {a.stale && <span className="tq-badge failed">STALE DATA</span>}
+        {a.stopReason && <span className="tq-badge failed" title={a.stopReason}>STOPPED</span>}
         <WindowBadge window={a.sessionWindowNow} />
         <span className="sub tq-head-right">
           {a.lastPrice ? <>last <b>{fmt(a.lastPrice)}</b> · </> : null}
@@ -87,6 +112,8 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
       </div>
       <div className="panel-body">
         <div className="tq-armed-summary">{a.summary}</div>
+        {a.stopReason && <div className="neg small tq-armed-stopline">Stopped: {a.stopReason}</div>}
+        {a.scorecard && <Scorecard sc={a.scorecard} />}
         <div className="tq-armed-triggers">
           {a.triggers.map((t) => (
             <div key={t.id} className={`tq-armed-trigger ${t.status}`}>
@@ -164,8 +191,8 @@ export function ArmedTab() {
           <div className="tq-armed-kpi"><small>Armed</small><b>{armed.length}</b></div>
           <div className="tq-armed-kpi"><small>In trade</small><b className={openCount ? "pos" : ""}>{openCount}</b></div>
           <div className="tq-armed-kpi"><small>Realized today</small><b className={pnlCls(pnl)}>{fmt(pnl)}</b></div>
-          <div className="tq-armed-kpi"><small>Trading mode</small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
-          <div className="tq-armed-kpi"><small>Kill switch</small><b className={halt.engaged ? "neg" : "pos"}>{halt.engaged ? "ENGAGED" : "off"}</b></div>
+          <div className="tq-armed-kpi"><small>Trading mode <InfoTip>PRACTICE means every account trades fake money. LIVE lets real accounts place real orders (set in the top bar).</InfoTip></small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
+          <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped in a position.</InfoTip></small><b className={halt.engaged ? "neg" : "pos"}>{halt.engaged ? "ENGAGED" : "off"}</b></div>
           <div className="tq-armed-topactions">
             <input placeholder="symbol" value={sym} onChange={(e) => setSym(e.target.value.toUpperCase())} style={{ width: 90 }} />
             <button className="ghost-btn" onClick={armToday} title="Build today's plan from yesterday's close and arm it with the default account/mode">Arm today's plan</button>

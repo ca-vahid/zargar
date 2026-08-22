@@ -52,6 +52,10 @@ class OrderIntent(BaseModel):
     signal_id: str | None = None
     proposal_id: str | None = None
     dry_run: bool = False
+    reduce_only: bool = False   # an exit that only reduces exposure — RiskGate runs the
+    #                             reduced (safety-only) check list so a stop/flatten is never
+    #                             blocked by an entry cap, the rate/duplicate window, or the
+    #                             daily-loss halt (see RiskGate.evaluate)
 
     @field_validator("symbol")
     @classmethod
@@ -253,7 +257,10 @@ class OrderManager:
                 extra={"estimatedPrice": est, "risk": verdict.to_dict(), **extra_out})
         # Dry runs never consume rate/duplicate budget (a confirm-dialog
         # pre-flight would otherwise block the real submit that follows).
-        self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
+        # Reduce-only exits are also exempt: a stop/flatten must never be
+        # throttled by the very budget that protects entries.
+        if not intent.reduce_only:
+            self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
         # practice: simulated venues only; live: everything (sim/shadow still
         # fill on the simulator — live/paper route to their real venue)
         allowed = {

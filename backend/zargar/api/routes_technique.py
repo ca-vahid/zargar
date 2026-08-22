@@ -160,6 +160,10 @@ def build_technique_routes(app, eng, auth, config) -> None:
         allowLive: bool = False
         flattenMinutesBeforeClose: int | None = None
         slippagePct: float | None = None
+        maxOpenTrades: int | None = None
+        dailyLossLimit: float | None = None
+        skipWideSpread: bool | None = None
+        skipElevatedIv: bool | None = None
 
     def _arm_config(body: ArmBody | None) -> dict:
         if body is None:
@@ -170,6 +174,15 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def technique_arm(run_id: str, body: ArmBody | None = None):
         try:
             return await _svc(eng).arm_plan(run_id, _arm_config(body))
+        except KeyError:
+            raise HTTPException(status_code=404, detail="run not found")
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/technique/runs/{run_id}/arm/preflight", dependencies=[auth])
+    async def technique_arm_preflight(run_id: str, body: ArmBody | None = None):
+        try:
+            return await _svc(eng).arm_preflight(run_id, _arm_config(body))
         except KeyError:
             raise HTTPException(status_code=404, detail="run not found")
         except (RuntimeError, ValueError) as exc:

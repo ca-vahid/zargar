@@ -37,13 +37,15 @@ from sqlalchemy import select
 from .. import bus as topics
 from .. import events as ev
 from ..domain import Bar, new_id
+from ..execution import SessionListener
+from ..execution.book import EXIT_LADDER, EXIT_REPRICE_BARS
+from ..execution.exits import plan_exit, reduce_only_exit_intent, stale_working_exit
 from ..models import TechniqueArmed, TechniqueSetup
 from .analysis import facts_for_prompt
 from .plans import analysis_from_trigger
 from .rulebook import ET, PRIME_WINDOWS, session_bounds, session_date, session_window
-from .setups import LADDER_TRIMS
 from .volume import build_profile
-from .walkforward import TriggerTracker
+from .walkforward import TriggerTracker, score_trigger
 
 log = logging.getLogger("zargar.technique.arming")
 
@@ -67,6 +69,10 @@ class ArmConfig:
     flatten_minutes_before_close: int = 5
     slippage_pct: float = 0.1        # shares: entry limit = trigger price * (1 + slippage)
     max_retries: int = 2
+    max_open_trades: int = 1         # how many positions this plan may hold at once (R5 spirit)
+    daily_loss_limit: float = 0.0    # $ realised loss that stops the plan (flatten + disarm); 0 = off
+    skip_wide_spread: bool = True    # options: skip the entry if T5.4 warns the contract spread is wide
+    skip_elevated_iv: bool = False   # options: skip the entry if T5.3 warns IV is elevated (IV-crush risk)
 
     def to_dict(self) -> dict:
         return {"portfolioId": self.portfolio_id, "mode": self.mode, "instrument": self.instrument,
@@ -74,7 +80,9 @@ class ArmConfig:
                 "singleContractExit": self.single_contract_exit, "riskPct": self.risk_pct,
                 "maxQty": self.max_qty, "qty": self.qty, "useCritic": self.use_critic,
                 "allowLive": self.allow_live, "flattenMinutesBeforeClose": self.flatten_minutes_before_close,
-                "slippagePct": self.slippage_pct, "maxRetries": self.max_retries}
+                "slippagePct": self.slippage_pct, "maxRetries": self.max_retries,
+                "maxOpenTrades": self.max_open_trades, "dailyLossLimit": self.daily_loss_limit,
+                "skipWideSpread": self.skip_wide_spread, "skipElevatedIv": self.skip_elevated_iv}
 
     @classmethod
     def from_dict(cls, d: dict) -> "ArmConfig":
@@ -92,7 +100,11 @@ class ArmConfig:
                    allow_live=bool(d.get("allowLive", d.get("allow_live", False))),
                    flatten_minutes_before_close=int(d.get("flattenMinutesBeforeClose", d.get("flatten_minutes_before_close", 5)) or 5),
                    slippage_pct=float(d.get("slippagePct", d.get("slippage_pct", 0.1)) or 0.1),
-                   max_retries=int(d.get("maxRetries", d.get("max_retries", 2)) or 2))
+                   max_retries=int(d.get("maxRetries", d.get("max_retries", 2)) or 2),
+                   max_open_trades=int(d.get("maxOpenTrades", d.get("max_open_trades", 1)) or 1),
+                   daily_loss_limit=float(d.get("dailyLossLimit", d.get("daily_loss_limit", 0.0)) or 0.0),
+                   skip_wide_spread=bool(d.get("skipWideSpread", d.get("skip_wide_spread", True))),
+                   skip_elevated_iv=bool(d.get("skipElevatedIv", d.get("skip_elevated_iv", False))))
 
 
 @dataclass
@@ -132,10 +144,28 @@ class Trade:
     contract: dict | None = None         # options: the picked contract (OCC symbol, strike, expiry, bid/ask, ...)
     order_symbol: str | None = None      # what was actually bought (OCC symbol for options)
     multiplier: float = 1.0              # 100 for options
+    single_exit: str = "tp2"             # options with < 3 contracts: exit everything at this target
 
     @property
     def open(self) -> bool:
         return self.status in ("working", "open")
+
+    @property
+    def sec_type(self) -> str:
+        """What the shared exit planner reads to pick LMT-at-bid vs MKT."""
+        return "OPT" if self.instrument == "options" else "STK"
+
+    @property
+    def pending_exit_qty(self) -> float:
+        """Shares/contracts already committed to a working (un-resolved) exit —
+        never send another exit for these (avoids overselling)."""
+        total = 0.0
+        for e in self.exits:
+            st = e.get("status")
+            if st in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED", "ERROR", "FILLED"):
+                continue
+            total += float(e.get("qty") or 0) - float(e.get("filledQty") or 0)
+        return max(0.0, total)
 
     def to_dict(self) -> dict:
         risk = max(self.entry - self.stop, 1e-9)
@@ -180,6 +210,8 @@ class ArmedPlan:
     stale: bool = False
     stale_noted: bool = False
     setup_ids: dict[str, str] = field(default_factory=dict)
+    stop_reason: str = ""               # why the plan stopped firing (loss halt, etc.)
+    scorecard: dict | None = None       # execution review vs the walk-forward replay (after close)
 
     def to_dict(self, *, portfolio: dict | None = None, quote=None, now_ms: int | None = None) -> dict:
         now_ms = now_ms or int(time.time() * 1000)
@@ -200,6 +232,7 @@ class ArmedPlan:
         open_trades = [t for t in self.trades.values() if t.open]
         return {
             "runId": self.run_id, "symbol": self.symbol, "planFor": self.plan_for, "status": self.status,
+            "stopReason": self.stop_reason, "scorecard": self.scorecard,
             "config": self.config.to_dict(),
             "portfolio": ({k: portfolio.get(k) for k in ("id", "name", "kind", "venue", "baseCurrency")} if portfolio else
                           {"id": self.config.portfolio_id}),
@@ -240,34 +273,26 @@ class ArmedPlan:
                 if nearest else f"watching {len(waiting)} trigger(s) · {w}")
 
 
-class PlanArmer:
+class PlanArmer(SessionListener):
+    """Arms EnhancedMarket session plans on the shared execution listener. The
+    live loops (1m bars, order updates, heartbeat) and the order-id index come
+    from `SessionListener`; this class supplies the technique-specific hooks —
+    trigger evaluation, the critic, contract picking, sizing — and the exit
+    management is the shared reduce-only path in `execution.exits`."""
+
     def __init__(self, engine, technique) -> None:
-        self.engine = engine
+        super().__init__(engine, name="technique-armer")
         self.technique = technique
         self._armed: dict[str, ArmedPlan] = {}
-        self._task: asyncio.Task | None = None
-        self._orders_task: asyncio.Task | None = None
-        self._auto_task: asyncio.Task | None = None
         self._auto_done: set[tuple[str, str]] = set()
-        self._order_index: dict[str, tuple[str, str]] = {}   # order id -> (run_id, trigger id)
 
-    # ---------------------------------------------------------------- lifecycle
-    def start(self) -> None:
-        if self._task is None:
-            self._task = asyncio.create_task(self._bar_loop(), name="technique-armer")
-        if self._orders_task is None:
-            self._orders_task = asyncio.create_task(self._orders_loop(), name="technique-armer-orders")
-        if self._auto_task is None:
-            self._auto_task = asyncio.create_task(self._auto_loop(), name="technique-armer-auto")
+    # ---------------------------------------------------------------- listener hooks
+    async def on_minute_bar(self, symbol, bar) -> None:
+        for ap in [a for a in self._armed.values() if a.symbol == symbol and a.status in ("armed", "paused")]:
+            await self._on_bar(ap, bar, journal=True)
 
-    async def stop(self) -> None:
-        for name in ("_task", "_orders_task", "_auto_task"):
-            t = getattr(self, name)
-            if t:
-                t.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await t
-                setattr(self, name, None)
+    async def on_order(self, order: dict) -> None:
+        await self.on_order_update(order)
 
     async def restore(self) -> int:
         """Re-arm today's persisted plans after a restart (armed/paused only)."""
@@ -383,6 +408,13 @@ class PlanArmer:
             "maxQty": s.get("technique.arm.max_qty", 100), "useCritic": s.get("technique.arm.use_critic", True),
             "flattenMinutesBeforeClose": s.get("technique.arm.flatten_minutes_before_close", 5),
             "slippagePct": s.get("technique.arm.slippage_pct", 0.1), "maxRetries": s.get("technique.arm.max_retries", 2),
+            "instrument": s.get("technique.arm.instrument", "options"), "contracts": s.get("technique.arm.contracts", 1),
+            "maxContracts": s.get("technique.arm.max_contracts", 5),
+            "singleContractExit": s.get("technique.arm.single_contract_exit", "tp2"),
+            "maxOpenTrades": s.get("technique.arm.max_open_trades", 1),
+            "dailyLossLimit": s.get("technique.arm.daily_loss_limit", 0.0),
+            "skipWideSpread": s.get("technique.arm.skip_wide_spread", True),
+            "skipElevatedIv": s.get("technique.arm.skip_elevated_iv", False),
             **(config or {})})
         portfolio = self.validate_config(cfg)
         symbol = run["symbol"]
@@ -410,6 +442,9 @@ class PlanArmer:
                 seeded += 1
         except Exception:
             log.exception("seeding armed plan failed")
+        if restored:
+            with contextlib.suppress(Exception):
+                await self._restore_trades(ap)
         await self._persist(ap)
         self._log(ap, "armed" if not restored else "restored", f"{cfg.mode} mode on {portfolio['name']} ({portfolio['kind']})",
                   seededBars=seeded)
@@ -461,7 +496,15 @@ class PlanArmer:
                 tr.reason = f"disarmed ({reason})"
                 self._log(ap, "entry_cancelled", f"{tr.trigger_id}: working entry cancelled on disarm")
             elif tr.status == "open" and flatten and tr.remaining > 0:
-                await self._exit(ap, tr, "disarm", tr.remaining, journal=True)
+                # cancel any working exit first so the flatten and a stale limit
+                # can't both fill (overselling), then sell the rest at market
+                for e in tr.exits:
+                    if e.get("orderId") and e.get("status") not in ("FILLED", "REJECTED", "REJECTED_RISK",
+                                                                     "CANCELLED", "EXPIRED", "ERROR"):
+                        with contextlib.suppress(Exception):
+                            await self.engine.orders.cancel(e["orderId"])
+                        e["status"] = "CANCELLED"
+                await self._exit(ap, tr, "disarm", tr.remaining, journal=True, force_market=True)
         ap.status = "disarmed"
         self._armed.pop(run_id, None)
         await self._persist(ap)
@@ -475,12 +518,231 @@ class PlanArmer:
                                                    "armed": self._snapshot(ap)})
         return True
 
+    async def preflight(self, run_id: str, config: ArmConfig | dict | None = None) -> dict:
+        """Dry-run the best trigger's entry so the Arm dialog can say — before you
+        arm — whether the order would actually pass the risk gate on this account,
+        and what it would buy. Costs nothing (no order is placed, no option chain
+        is fetched: options are estimated from the trigger price)."""
+        run = await self.technique.get_run(run_id)
+        if run is None:
+            raise KeyError(f"run {run_id} not found")
+        plan = (run.get("result") or {}).get("plan") or {}
+        s = self.engine.settings
+        cfg = config if isinstance(config, ArmConfig) else ArmConfig.from_dict({
+            "portfolioId": str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
+            "mode": str(s.get("technique.arm.mode", "proposal")),
+            "instrument": s.get("technique.arm.instrument", "options"), **(config or {})})
+        # config validation (account, live gate, options capability)
+        gate_ok, gate_msg = True, ""
+        try:
+            portfolio = self.validate_config(cfg)
+        except ValueError as exc:
+            return {"ok": False, "blocked": str(exc), "checks": [], "size": None}
+        symbol = run["symbol"]
+        valids = [t for t in (plan.get("triggers") or []) if t.get("valid")]
+        best = min(valids, key=lambda t: -(t.get("confidence") or 0)) if valids else None
+        if best is None:
+            return {"ok": True, "note": "no tradeable trigger in this plan — nothing would fire", "checks": [], "size": None}
+        entry = float(best["entry"]["price"])
+        stop = float(best["stop"]["price"])
+        equity = await self.engine.positions.equity(cfg.portfolio_id)
+        from ..orders import OrderIntent
+        if cfg.instrument == "shares":
+            per_share = max(entry - stop, 0.01)
+            qty = float(min(int(max(0, equity * cfg.risk_pct / 100 / per_share)), cfg.max_qty)) if not cfg.qty \
+                else float(min(cfg.qty, cfg.max_qty))
+            if qty < 1:
+                return {"ok": False, "blocked": "position sizes to 0 shares at this risk % / equity", "checks": [],
+                        "size": {"shares": 0}}
+            intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=symbol, sec_type="STK", side="BUY",
+                                 qty=qty, order_type="LMT", limit_price=round(entry, 2), dry_run=True, source="technique")
+            try:
+                res = await self.engine.orders.place(intent)
+            except Exception as exc:
+                return {"ok": False, "blocked": f"{type(exc).__name__}: {exc}", "checks": [], "size": {"shares": qty}}
+            checks = (res.get("risk") or {}).get("checks") or []
+            ok = res.get("status") != "REJECTED_RISK"
+            return {"ok": ok, "instrument": "shares", "size": {"shares": qty, "entry": entry, "notional": round(qty * entry, 2)},
+                    "checks": checks, "account": {"name": portfolio.get("name"), "kind": portfolio.get("kind")},
+                    "trigger": best.get("id"), "note": ""}
+        # options: estimate (the exact OCC contract is chosen at fire time)
+        checks = []
+        opt_ok, opt_why = self.options_capability(portfolio)
+        checks.append({"name": "options_supported", "passed": opt_ok, "detail": "" if opt_ok else opt_why})
+        enabled = bool(s.get("technique.options.enabled", True))
+        checks.append({"name": "options_enabled", "passed": enabled,
+                       "detail": "" if enabled else "technique.options.enabled is off"})
+        n = int(cfg.contracts or 1)
+        est_premium = round(max(0.02, entry * 0.02), 2)          # rough: ~2% of spot as a weekly ATM premium
+        est_notional = round(est_premium * 100 * n, 2)
+        cap = float(s.get("risk.max_option_premium_notional", 1000.0))
+        checks.append({"name": "premium_cap_estimate", "passed": est_notional <= cap,
+                       "detail": f"≈${est_notional:,.0f} vs per-order cap ${cap:,.0f}" if est_notional > cap else ""})
+        pct_cap = float(s.get("risk.max_option_premium_pct", 5.0))
+        pct_ok = equity <= 0 or est_notional <= equity * pct_cap / 100
+        checks.append({"name": "premium_pct_estimate", "passed": pct_ok,
+                       "detail": f"≈${est_notional:,.0f} exceeds {pct_cap:.0f}% of ${equity:,.0f}" if not pct_ok else ""})
+        ok = all(c["passed"] for c in checks)
+        return {"ok": ok, "instrument": "options",
+                "size": {"contracts": n, "estPremium": est_premium, "estNotional": est_notional},
+                "checks": checks, "account": {"name": portfolio.get("name"), "kind": portfolio.get("kind")},
+                "trigger": best.get("id"),
+                "note": "Estimate only — the exact contract (just-OTM call, this Friday/0DTE) and its real premium are chosen when the trigger fires."}
+
+    async def _restore_trades(self, ap: ArmedPlan) -> None:
+        """After a restart, rebuild the Trade objects and the order-id index from
+        the persisted projection so an open position keeps being managed and its
+        fills still find their trade (instead of being orphaned)."""
+        async with self.engine.sf() as session:
+            row = await session.get(TechniqueArmed, ap.run_id)
+        state = (row.state if row else None) or {}
+        rebuilt = 0
+        for td in state.get("trades") or []:
+            tid = td.get("triggerId")
+            if not tid:
+                continue
+            tr = Trade(
+                trigger_id=tid, kind=td.get("kind") or "", fired_ts=int(td.get("firedTs") or 0),
+                window=td.get("window") or "", entry=float(td.get("entry") or 0), stop=float(td.get("stop") or 0),
+                targets=[float(x) for x in (td.get("targets") or [])], status=td.get("status") or "open",
+                reason=td.get("reason") or "", setup_id=td.get("setupId"), proposal_id=td.get("proposalId"),
+                entry_order_id=td.get("entryOrderId"), limit_price=td.get("limitPrice"),
+                qty=float(td.get("qty") or 0), filled_qty=float(td.get("filledQty") or 0),
+                avg_fill=td.get("avgFill"), remaining=float(td.get("remaining") or 0),
+                trims_done=int(td.get("trimsDone") or 0), exits=list(td.get("exits") or []),
+                exit_order_ids=[e.get("orderId") for e in (td.get("exits") or []) if e.get("orderId")],
+                realized_pnl=float(td.get("realizedPnl") or 0), instrument=td.get("instrument") or "shares",
+                contract=td.get("contract"), order_symbol=td.get("orderSymbol"),
+                multiplier=float(td.get("multiplier") or 1.0), opened_ts=td.get("openedTs"),
+                closed_ts=td.get("closedTs"), fire_bar_index=None)
+            tr.single_exit = ap.config.single_contract_exit
+            ap.trades[tid] = tr
+            # re-index working entry/exit orders so their updates route back here
+            if tr.entry_order_id and tr.status in ("working", "submitting", "open"):
+                self.register_order(tr.entry_order_id, (ap.run_id, tid))
+            for oid in tr.exit_order_ids:
+                self.register_order(oid, (ap.run_id, tid))
+            if tid in ap.trackers and tr.status not in ("cancelled", "failed", "skipped"):
+                ap.trackers[tid].status = "fired"     # already acted on; don't re-fire live
+            rebuilt += 1
+        if rebuilt:
+            self._log(ap, "restored_trades", f"re-attached {rebuilt} trade(s) after restart", trades=rebuilt)
+
+    def _score_execution(self, ap: ArmedPlan) -> dict | None:
+        """After the close, compare what the armer actually did to what the
+        deterministic walk-forward replay of the same session says *should* have
+        happened — the same check the Validation tab runs, now applied to a live
+        run. Answers: did we fire when the model would have? did our fill/exit
+        line up? This is the record you review the plan by."""
+        try:
+            bars = [b for b in self.engine.bars.bars(ap.symbol, "1m", limit=2000, include_forming=False)
+                    if session_date(b.ts) == ap.plan_for]
+        except Exception:
+            bars = []
+        if not bars and ap.trackers:
+            # bars fed straight to the trackers (tests / replays don't go through the aggregator)
+            fed = getattr(next(iter(ap.trackers.values())), "_bars", None) or []
+            bars = [b for b in fed if session_date(b.ts) == ap.plan_for]
+        if not bars:
+            return None
+        rows = []
+        theo_fires = actual_fires = matched = 0
+        theo_sum_r = 0.0
+        for tid, tracker in ap.trackers.items():
+            theo = score_trigger(tracker, bars)
+            sim = theo.get("sim") or {}
+            tr = ap.trades.get(tid)
+            theo_fired = theo.get("status") == "fired"
+            actual_fired = bool(tr and tr.status in ("open", "closed") or (tr and tr.filled_qty > 0))
+            if theo_fired:
+                theo_fires += 1
+                theo_sum_r += float(sim.get("rMultiple") or 0)
+            if actual_fired:
+                actual_fires += 1
+            if theo_fired and actual_fired:
+                matched += 1
+            notes = []
+            if theo_fired and not actual_fired:
+                notes.append("model would have fired here but the live plan did not (check volume/critic/gates)")
+            if actual_fired and not theo_fired:
+                notes.append("the live plan fired but the deterministic replay would not have")
+            entry_slip = None
+            if tr and tr.avg_fill and theo.get("fillPrice") and tr.instrument != "options":
+                entry_slip = round(float(tr.avg_fill) - float(theo["fillPrice"]), 4)
+            rows.append({
+                "trigger": tid, "kind": tracker.kind,
+                "theoretical": {"status": theo.get("status"), "firedTs": theo.get("firedTs"),
+                                "fill": theo.get("fillPrice"), "outcome": sim.get("outcome"),
+                                "rMultiple": sim.get("rMultiple"), "mfeR": sim.get("mfeR"), "maeR": sim.get("maeR")},
+                "actual": (None if tr is None else {
+                    "status": tr.status, "firedTs": tr.fired_ts, "instrument": tr.instrument,
+                    "avgFill": tr.avg_fill, "premiumPaid": (round((tr.avg_fill or 0) * tr.filled_qty * tr.multiplier, 2)
+                                                            if tr.instrument == "options" and tr.filled_qty else None),
+                    "realizedPnl": round(tr.realized_pnl, 2), "exits": [e.get("kind") for e in tr.exits],
+                    "reason": tr.reason}),
+                "match": theo_fired == actual_fired, "entrySlippage": entry_slip, "notes": notes,
+            })
+        return {
+            "planFor": ap.plan_for, "symbol": ap.symbol,
+            "theoreticalFires": theo_fires, "actualFires": actual_fires, "matched": matched,
+            "theoreticalSumR": round(theo_sum_r, 3),
+            "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
+            "rows": rows,
+        }
+
+    async def _maybe_loss_halt(self, ap: ArmedPlan) -> bool:
+        """The plan's "certain loss halt": once realised loss for the day crosses
+        the configured dollar limit, flatten everything and stop the plan. Returns
+        True if it fired (caller should stop processing this plan)."""
+        limit = float(ap.config.daily_loss_limit or 0)
+        if limit <= 0 or ap.status not in ("armed", "paused"):
+            return False
+        realized = sum(t.realized_pnl for t in ap.trades.values())
+        if realized > -limit:
+            return False
+        ap.stop_reason = f"loss halt: realised {realized:.2f} crossed -{limit:.2f}"
+        self._log(ap, "loss_halt", ap.stop_reason)
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+            "runId": ap.run_id, "symbol": ap.symbol, "stage": "loss_halt", "error": ap.stop_reason,
+            "realizedPnl": round(realized, 2), "limit": limit},
+            aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        await self.disarm(ap.run_id, reason="loss halt", flatten=True)
+        return True
+
     async def stop_all(self, *, flatten: bool = False, reason: str = "stop all") -> int:
         n = 0
         for rid in list(self._armed):
             if await self.disarm(rid, reason=reason, flatten=flatten):
                 n += 1
         return n
+
+    async def adopt_order(self, run_id: str, *, key: str, underlying: dict, order: dict,
+                          instrument: str = "shares", order_symbol: str | None = None,
+                          multiplier: float = 1.0) -> bool:
+        """Take over a position opened elsewhere (an approved technique proposal)
+        and manage its exits — stop, ladder, flatten — like an auto trade. Returns
+        False if the plan is no longer armed (then the user manages it by hand)."""
+        ap = self._armed.get(run_id)
+        if ap is None:
+            return False
+        targets = [float(t.get("price") if isinstance(t, dict) else t) for t in (underlying.get("targets") or [])][:3]
+        tr = Trade(trigger_id=key, kind="proposal", fired_ts=int(time.time() * 1000),
+                   window=session_window(int(time.time() * 1000)), entry=float(underlying.get("entry") or 0),
+                   stop=float(underlying.get("stop") or 0), targets=targets, instrument=instrument,
+                   order_symbol=order_symbol or (order.get("symbol") if instrument == "options" else ap.symbol),
+                   multiplier=multiplier, status="working", entry_order_id=order.get("id"),
+                   qty=float(order.get("qty") or 0), limit_price=order.get("limitPrice"))
+        tr.single_exit = ap.config.single_contract_exit
+        ap.trades[key] = tr
+        if order.get("id"):
+            self.register_order(order["id"], (run_id, key))
+        self._log(ap, "adopted", f"{key}: managing an approved proposal ({instrument}) order {str(order.get('id'))[:8]}",
+                  trigger=key)
+        if order.get("status") in ("FILLED", "PARTIALLY_FILLED"):
+            await self.on_order_update(order)
+        await self._persist(ap)
+        self._publish(ap, "adopted")
+        return True
 
     async def arm_today(self, symbol: str, config: dict | None = None, *, with_vision: bool | None = None) -> dict:
         """Build today's plan (as of just before the open) and arm it."""
@@ -502,7 +764,8 @@ class PlanArmer:
                                       for tid, tr in ap.trackers.items()},
                          "trades": [t.to_dict() for t in ap.trades.values()],
                          "events": ap.events[-60:], "barsSeen": ap.bar_index, "lastBarTs": ap.last_bar_ts,
-                         "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2)}
+                         "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
+                         "stopReason": ap.stop_reason, "scorecard": ap.scorecard}
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
                                          portfolio_id=ap.config.portfolio_id, mode=ap.config.mode,
@@ -545,36 +808,9 @@ class PlanArmer:
         out.sort(key=lambda x: x["id"])
         return out
 
-    # ---------------------------------------------------------------- bar / order loops
-    async def _bar_loop(self) -> None:
-        async with self.engine.bus.subscription(topics.BARS) as q:
-            while True:
-                msg = await q.get()
-                try:
-                    if msg.get("tf") != "1m":
-                        continue
-                    bar: Bar = msg.get("bar")
-                    sym = msg.get("symbol")
-                    for ap in [a for a in self._armed.values() if a.symbol == sym and a.status in ("armed", "paused")]:
-                        await self._on_bar(ap, bar, journal=True)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    log.exception("armed plan bar handling failed")
-
-    async def _orders_loop(self) -> None:
-        async with self.engine.bus.subscription(topics.ORDERS) as q:
-            while True:
-                msg = await q.get()
-                try:
-                    await self.on_order_update(msg)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    log.exception("armed plan order handling failed")
-
+    # ---------------------------------------------------------------- order updates
     async def on_order_update(self, o: dict) -> None:
-        key = self._order_index.get(o.get("id"))
+        key = self.owner_of(o.get("id"))
         if not key:
             return
         run_id, tid = key
@@ -691,7 +927,12 @@ class PlanArmer:
                             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id,
                             "event": "entry_window_elapsed", "reason": tr.reason},
                             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        # 1b) loss halt: if this plan's realised loss has crossed its limit, flatten
+        #     what's open and stop it for the day (the user's "certain loss halt")
+        if journal and await self._maybe_loss_halt(ap):
+            return
         # 2) triggers
+        open_or_working = sum(1 for t in ap.trades.values() if t.status in ("working", "open"))
         for tid, tr in ap.trackers.items():
             if tr.status in ("fired", "gapped_past", "gapped_through", "gap_void", "expired"):
                 continue
@@ -728,10 +969,29 @@ class PlanArmer:
                             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "halt", "ts": bar.ts},
                             aggregate_type="technique_run", aggregate_id=ap.run_id)
                     continue
+                if ap.config.mode == "auto" and open_or_working >= max(1, ap.config.max_open_trades):
+                    tr.status = "observed"
+                    tr.fired_index = tr.fired_ts = tr.fired_window = tr.fill_price = None
+                    self._log(ap, "max_open_skip",
+                              f"{tid}: fired but already holding {open_or_working} (max {ap.config.max_open_trades})", trigger=tid)
+                    if journal:
+                        await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                            "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "max_open_trades",
+                            "open": open_or_working, "max": ap.config.max_open_trades, "ts": bar.ts},
+                            aggregate_type="technique_run", aggregate_id=ap.run_id)
+                    continue
                 await self._fire(ap, tid, tr, bar, idx, journal=journal)
+                if ap.trades.get(tid) and ap.trades[tid].status in ("working", "open", "submitting"):
+                    open_or_working += 1
         # 3) end of session
         if bar.ts >= close_ms - 60_000:
             ap.status = "expired"
+            if journal:
+                ap.scorecard = self._score_execution(ap)     # score BEFORE finish() (it mutates trackers)
+                if ap.scorecard:
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_SCORED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, **ap.scorecard},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
             for tr in ap.trackers.values():
                 tr.finish()
             if journal:
@@ -764,7 +1024,23 @@ class PlanArmer:
                 png = render_chart(bars[-240:], title=f"{ap.symbol} 1m", tf="1m") if bars else None
                 vp = VisionPipeline(self.technique._get_client(), llm, thresholds=self.technique.thresholds(),
                                     max_passes=2, trace=trace)
-                critic = await vp.run_critic(a, {"1m": png} if png else {}, facts_for_prompt(facts) if facts else "")
+                # give the critic the whole live picture, not just the draft: which
+                # R6 window we are in, the plan's other triggers, and — for options —
+                # the contract it would buy (spread / IV / delta warnings)
+                live_ctx = [f"LIVE CONTEXT — trigger {tid} fired at {trade.entry:.2f} in the {window} window."]
+                others = [f"{t2}: {trk.kind} @ {trk.entry:.2f} ({trk.status})"
+                          for t2, trk in ap.trackers.items() if t2 != tid]
+                if others:
+                    live_ctx.append("Other triggers in this plan: " + "; ".join(others) + ".")
+                if cfg.instrument == "options" and trade.contract:
+                    c = trade.contract
+                    live_ctx.append(
+                        f"Contract to buy (T5): {c.get('display') or c.get('symbol')} — bid/ask "
+                        f"{c.get('bid')}/{c.get('ask')}, IV {c.get('iv')}, delta {c.get('delta')}, "
+                        f"DTE {c.get('dte')}."
+                        + (" WARNINGS: " + "; ".join(c.get("warnings") or []) if c.get("warnings") else ""))
+                facts_ctx = (facts_for_prompt(facts) + "\n\n" + "\n".join(live_ctx)) if facts else "\n".join(live_ctx)
+                critic = await vp.run_critic(a, {"1m": png} if png else {}, facts_ctx)
             except Exception as exc:
                 log.warning("live critic failed: %s", exc)
                 trace.append({"stage": "critic", "step": "error", "reason": str(exc)})
@@ -812,7 +1088,7 @@ class PlanArmer:
                 if setup_row is not None and trade.status != "failed":
                     pid = await self.technique._emit_proposal(
                         setup_row, a, portfolio_id=cfg.portfolio_id, risk_pct=cfg.risk_pct, max_qty=cfg.max_qty,
-                        fixed_qty=cfg.qty, contract=contract,
+                        fixed_qty=cfg.qty, contract=contract, managed=True,
                         contracts=(await self._size_contracts(ap, trade, contract) if contract else None))
             except Exception as exc:
                 log.exception("proposal emission failed")
@@ -909,6 +1185,21 @@ class PlanArmer:
                     "error": trade.errors[-1] if trade.errors else "no contract"},
                     aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
                 return
+            # T5.3/T5.4 liquidity/IV gates — skip the entry when configured to
+            warnings = [str(w) for w in (contract.get("warnings") or [])]
+            blocked = None
+            if cfg.skip_wide_spread and any("T5.4 wide spread" in w for w in warnings):
+                blocked = next(w for w in warnings if "T5.4 wide spread" in w)
+            elif cfg.skip_elevated_iv and any("T5.3 elevated IV" in w for w in warnings):
+                blocked = next(w for w in warnings if "T5.3 elevated IV" in w)
+            if blocked:
+                trade.status = "skipped"
+                trade.reason = f"contract skipped ({blocked})"
+                self._log(ap, "contract_skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "contract_quality",
+                    "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                return
             qty = float(await self._size_contracts(ap, trade, contract))
             limit = round(float(contract.get("ask") or contract.get("mid") or 0), 2)
             if limit <= 0:
@@ -944,7 +1235,7 @@ class PlanArmer:
             return
         trade.entry_order_id = result.get("id")
         if trade.entry_order_id:
-            self._order_index[trade.entry_order_id] = (ap.run_id, trade.trigger_id)
+            self.register_order(trade.entry_order_id, (ap.run_id, trade.trigger_id))
         status = result.get("status")
         if status in ("REJECTED_RISK", "REJECTED"):
             trade.status = "failed"
@@ -997,65 +1288,66 @@ class PlanArmer:
                 return None
 
     async def _manage(self, ap: ArmedPlan, tr: Trade, bar: Bar, close_ms: int, *, journal: bool) -> None:
-        """Exits on closed bars: stop first (conservative), then the 30/40/15
-        ladder, then a flatten before the close. One exit per bar per trade."""
+        """Exits on closed bars, via the shared reduce-only exit path
+        (`execution.exits`): stop first, then the 30/40/15 ladder, then a flatten
+        before the close — one exit per bar. A working exit that has not filled
+        within a couple of bars (a stale bid in a falling market) is cancelled and
+        re-sent at market so a stop can never sit un-filled while the trade bleeds."""
         if not journal:
             return
-        pending = any(e.get("status") in (None, "SUBMITTED", "ACCEPTED", "working") and not e.get("filledQty")
-                      for e in tr.exits if e.get("orderId"))
-        if pending:
-            return                                  # wait for the working exit to resolve
-        flatten_at = close_ms - ap.config.flatten_minutes_before_close * 60_000
-        if bar.low <= tr.stop:
-            await self._exit(ap, tr, "stop", tr.remaining, journal=True)
+        tr.single_exit = ap.config.single_contract_exit
+        # 1) re-price a stuck working exit before deciding anything new
+        idx = ap.bar_index - 1
+        stale = stale_working_exit(tr, idx, reprice_bars=EXIT_REPRICE_BARS)
+        if stale is not None:
+            with contextlib.suppress(Exception):
+                await self.engine.orders.cancel(stale["orderId"])
+            stale["status"] = "CANCELLED"
+            self._log(ap, "exit_reprice", f"{tr.trigger_id}: {stale['kind']} not filled in {EXIT_REPRICE_BARS} bars — re-sending at market",
+                      trigger=tr.trigger_id, kind=stale["kind"])
+            await self._exit(ap, tr, stale["kind"], float(stale.get("qty") or tr.remaining), journal=True, force_market=True)
             return
-        if bar.ts >= flatten_at:
-            await self._exit(ap, tr, "flatten", tr.remaining, journal=True)
+        decision = plan_exit(tr, bar, close_ms=close_ms,
+                             flatten_minutes=ap.config.flatten_minutes_before_close,
+                             ladder=EXIT_LADDER, single_exit=ap.config.single_contract_exit)
+        if decision is None:
+            # a single-contract position may need to advance its trim counter without an order
+            if (tr.trims_done < len(tr.targets) and bar.high >= tr.targets[tr.trims_done]
+                    and tr.instrument == "options" and tr.filled_qty < 3):
+                tr.trims_done += 1
             return
-        if tr.trims_done < len(tr.targets) and bar.high >= tr.targets[tr.trims_done]:
-            k = tr.trims_done
-            if tr.instrument == "options" and tr.filled_qty < 3:
-                # too few contracts to ladder: exit everything at the configured target
-                want = {"tp1": 0, "tp2": 1, "tp3": 2}.get(ap.config.single_contract_exit, 1)
-                if k >= want:
-                    await self._exit(ap, tr, f"tp{k + 1}", tr.remaining, journal=True)
-                    tr.trims_done = len(tr.targets)
-                else:
-                    tr.trims_done += 1
-                return
-            share = LADDER_TRIMS[k] if k < len(LADDER_TRIMS) else 1.0
-            qty = float(int(round(tr.filled_qty * share)))
-            qty = min(qty, tr.remaining)
-            if k == len(tr.targets) - 1 and tr.remaining - qty < 1:
-                qty = tr.remaining          # no fractional runner left behind
-            if qty >= 1:
-                await self._exit(ap, tr, f"tp{k + 1}", qty, journal=True)
-            tr.trims_done += 1
+        tr.trims_done = decision.new_trims_done
+        if decision.qty >= 1:
+            await self._exit(ap, tr, decision.kind, decision.qty, journal=True, reason=decision.reason)
 
-    async def _exit(self, ap: ArmedPlan, tr: Trade, kind: str, qty: float, *, journal: bool) -> None:
-        from ..orders import OrderIntent
+    async def _exit(self, ap: ArmedPlan, tr: Trade, kind: str, qty: float, *, journal: bool,
+                    force_market: bool = False, reason: str = "") -> None:
         qty = float(int(qty))
         if qty < 1 or tr.remaining <= 0:
             return
+        # never commit more than what is still un-exited (avoid overselling)
+        available = tr.remaining - tr.pending_exit_qty
+        qty = min(qty, available)
+        if qty < 1:
+            return
         cfg = ap.config
+        bid = None
         if tr.instrument == "options" and tr.order_symbol:
-            # sell at the bid (marketable limit) when we have a quote; MKT otherwise
             q = self.engine.quotes.get(tr.order_symbol)
-            bid = float(q.bid) if q is not None and q.bid > 0 else 0.0
-            intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=tr.order_symbol, sec_type="OPT", side="SELL",
-                                 qty=qty, order_type="LMT" if bid > 0 else "MKT",
-                                 limit_price=(round(bid, 2) if bid > 0 else None), tif="DAY", source="technique")
-        else:
-            intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=ap.symbol, side="SELL", qty=qty,
-                                 order_type="MKT", tif="DAY", source="technique")
+            bid = float(q.bid) if q is not None and q.bid > 0 else None
+        symbol = tr.order_symbol if tr.instrument == "options" and tr.order_symbol else ap.symbol
+        intent = reduce_only_exit_intent(portfolio_id=cfg.portfolio_id, symbol=symbol, sec_type=tr.sec_type,
+                                         qty=qty, bid=bid, force_market=force_market, source="technique")
         rec = {"kind": kind, "qty": qty, "orderId": None, "status": None, "filledQty": 0.0, "price": None,
-               "ts": int(time.time() * 1000)}
+               "ts": int(time.time() * 1000), "barIndex": ap.bar_index - 1}
         tr.exits.append(rec)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_EXIT, {
             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "kind": kind, "qty": qty,
-            "remainingBefore": tr.remaining, "stop": tr.stop, "targets": tr.targets},
+            "remainingBefore": tr.remaining, "stop": tr.stop, "targets": tr.targets, "reduceOnly": True,
+            "orderType": intent.order_type, "reason": reason},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-        self._log(ap, "exit_submit", f"{tr.trigger_id}: {kind} SELL {qty:g} MKT", trigger=tr.trigger_id, kind=kind)
+        self._log(ap, "exit_submit", f"{tr.trigger_id}: {kind} SELL {qty:g} {intent.order_type} (reduce-only)",
+                  trigger=tr.trigger_id, kind=kind)
         result = await self._place_with_retry(ap, tr, intent, stage=f"exit:{kind}")
         if result is None:
             rec["status"] = "ERROR"
@@ -1064,7 +1356,7 @@ class PlanArmer:
         rec["status"] = result.get("status")
         if rec["orderId"]:
             tr.exit_order_ids.append(rec["orderId"])
-            self._order_index[rec["orderId"]] = (ap.run_id, tr.trigger_id)
+            self.register_order(rec["orderId"], (ap.run_id, tr.trigger_id))
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ORDER_RESULT, {
             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tr.trigger_id, "stage": f"exit:{kind}",
             "orderId": rec["orderId"], "status": rec["status"], "reason": result.get("rejectReason")},
@@ -1082,43 +1374,35 @@ class PlanArmer:
     def _publish(self, ap: ArmedPlan, what: str) -> None:
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "armed", "event": what, "armed": self._snapshot(ap)})
 
-    async def _auto_loop(self) -> None:
+    async def on_heartbeat(self) -> None:
         """Auto-arm configured symbols at the open; mark stale plans; publish a
-        heartbeat snapshot every minute so the dashboard's numbers stay live."""
-        await asyncio.sleep(20)
-        while True:
-            try:
-                s = self.engine.settings
-                stale_s = int(s.get("technique.arm.stale_seconds", 180))
-                now = dt.datetime.now(ET)
-                now_ms = int(time.time() * 1000)
-                in_session = now.weekday() < 5 and (9 * 60 + 30) <= now.hour * 60 + now.minute < 16 * 60
-                for ap in list(self._armed.values()):
-                    if in_session and ap.plan_for == now.strftime("%Y-%m-%d") and ap.last_bar_ts \
-                            and now_ms - ap.last_bar_ts > stale_s * 1000 and not ap.stale:
-                        ap.stale = True
-                        self._log(ap, "stale", f"no closed bar for {stale_s}s — not firing until data resumes")
-                        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
-                            "runId": ap.run_id, "symbol": ap.symbol, "stage": "data", "error": "stale bars",
-                            "lastBarTs": ap.last_bar_ts}, aggregate_type="technique_run", aggregate_id=ap.run_id)
-                    if ap.status in ("armed", "paused"):
-                        self._publish(ap, "heartbeat")
-                syms = [str(x).upper() for x in s.get("technique.arm.auto_symbols", [])]
-                if syms and bool(s.get("technique.arm.enabled", True)):
-                    today = now.strftime("%Y-%m-%d")
-                    if now.weekday() < 5 and (9 * 60 + 20) <= now.hour * 60 + now.minute < 16 * 60:
-                        for sym in syms:
-                            if (sym, today) in self._auto_done or any(a.symbol == sym and a.plan_for == today
-                                                                      for a in self._armed.values()):
-                                continue
-                            self._auto_done.add((sym, today))
-                            try:
-                                await self.arm_today(sym)
-                            except Exception as exc:
-                                log.warning("auto-arm %s failed: %s", sym, exc)
-                await asyncio.sleep(60)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                log.exception("armer housekeeping error")
-                await asyncio.sleep(60)
+        heartbeat snapshot every minute so the dashboard's numbers stay live.
+        Runs on the shared SessionListener heartbeat (every 60 s)."""
+        s = self.engine.settings
+        stale_s = int(s.get("technique.arm.stale_seconds", 180))
+        now = dt.datetime.now(ET)
+        now_ms = int(time.time() * 1000)
+        in_session = now.weekday() < 5 and (9 * 60 + 30) <= now.hour * 60 + now.minute < 16 * 60
+        for ap in list(self._armed.values()):
+            if in_session and ap.plan_for == now.strftime("%Y-%m-%d") and ap.last_bar_ts \
+                    and now_ms - ap.last_bar_ts > stale_s * 1000 and not ap.stale:
+                ap.stale = True
+                self._log(ap, "stale", f"no closed bar for {stale_s}s — not firing until data resumes")
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "stage": "data", "error": "stale bars",
+                    "lastBarTs": ap.last_bar_ts}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+            if ap.status in ("armed", "paused"):
+                self._publish(ap, "heartbeat")
+        syms = [str(x).upper() for x in s.get("technique.arm.auto_symbols", [])]
+        if syms and bool(s.get("technique.arm.enabled", True)):
+            today = now.strftime("%Y-%m-%d")
+            if now.weekday() < 5 and (9 * 60 + 20) <= now.hour * 60 + now.minute < 16 * 60:
+                for sym in syms:
+                    if (sym, today) in self._auto_done or any(a.symbol == sym and a.plan_for == today
+                                                              for a in self._armed.values()):
+                        continue
+                    self._auto_done.add((sym, today))
+                    try:
+                        await self.arm_today(sym)
+                    except Exception as exc:
+                        log.warning("auto-arm %s failed: %s", sym, exc)

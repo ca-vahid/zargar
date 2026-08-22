@@ -527,6 +527,54 @@ async def cmd_armed(args) -> int:
     return await _api_call(args, "GET", "/api/technique/armed")
 
 
+async def cmd_armed_show(args) -> int:
+    """One armed/live plan and its execution scorecard (what it actually did vs
+    the deterministic replay of the same session)."""
+    import httpx
+    cfg = AppConfig()
+    base = args.api or f"http://{cfg.host}:{cfg.port}"
+    headers = {"Authorization": f"Bearer {cfg.auth_token}"} if cfg.auth_token else {}
+    async with httpx.AsyncClient(timeout=60, headers=headers) as http:
+        # live plan first, else the persisted history row
+        d = None
+        try:
+            r = await http.get(f"{base}/api/technique/armed/{args.run_id}")
+            if r.status_code == 200:
+                d = r.json()
+        except httpx.HTTPError as exc:
+            print(f"API not reachable at {base}: {exc}", file=sys.stderr)
+            return 1
+        if d is None:
+            r = await http.get(f"{base}/api/technique/armed/history")
+            row = next((h for h in r.json() if h["runId"].startswith(args.run_id)), None)
+            if row is None:
+                print(f"no armed plan for {args.run_id!r}", file=sys.stderr)
+                return 1
+            d = {**row, **(row.get("state") or {})}
+    if args.json:
+        print(json.dumps(d, indent=1, default=str))
+        return 0
+    print(f"{d.get('symbol')}  {d.get('runId','')[:12]}  status={d.get('status')}  mode={(d.get('config') or {}).get('mode')}")
+    if d.get("stopReason"):
+        print(f"  stopped: {d['stopReason']}")
+    for t in d.get("trades", []):
+        print(f"  trade {t.get('triggerId')}: {t.get('status')} qty={t.get('filledQty')} "
+              f"realised={t.get('realizedPnl')} exits={[e.get('kind') for e in t.get('exits', [])]}")
+    sc = d.get("scorecard")
+    if sc:
+        print(f"\n  SCORECARD ({sc.get('planFor')}): theoretical fires {sc.get('theoreticalFires')} "
+              f"(ΣR {sc.get('theoreticalSumR')}), actual fires {sc.get('actualFires')}, "
+              f"matched {sc.get('matched')}, realised {sc.get('realizedPnl')}")
+        for row in sc.get("rows", []):
+            th, ac = row.get("theoretical") or {}, row.get("actual") or {}
+            print(f"    {row['trigger']} {row['kind']}: replay {th.get('status')}/{th.get('outcome')} R={th.get('rMultiple')}"
+                  f" | live {(ac or {}).get('status', '—')}"
+                  + (f"  ({'; '.join(row['notes'])})" if row.get("notes") else ""))
+    else:
+        print("  (no scorecard yet — the session has not closed)")
+    return 0
+
+
 def cmd_taxonomy(args) -> int:
     if args.json:
         print(json.dumps({"reviewVerdicts": REVIEW_VERDICTS, "rootCauseStages": ROOT_CAUSE_STAGES}, indent=1))
@@ -665,6 +713,10 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("armed", help="list armed plans (API)")
     p.add_argument("--api")
     p.set_defaults(fn=cmd_armed)
+    p = sub.add_parser("armed-show", help="one armed/live plan + its execution scorecard (API)")
+    p.add_argument("run_id")
+    p.add_argument("--api")
+    p.set_defaults(fn=cmd_armed_show)
     return ap
 
 

@@ -95,6 +95,8 @@ export const api = {
   techniqueArmedAudit: (runId: string) => request<any[]>("GET", `/api/technique/armed/${runId}/audit`),
   techniqueArmedHistory: () => request<any[]>("GET", "/api/technique/armed/history"),
   techniqueArmOptions: () => request<import("../types").ArmOptions>("GET", "/api/technique/armed/options"),
+  techniqueArmPreflight: (runId: string, body?: import("../types").ArmRequest) =>
+    request<import("../types").ArmPreflight>("POST", `/api/technique/runs/${runId}/arm/preflight`, body),
   techniqueArm: (runId: string, body?: import("../types").ArmRequest) =>
     request<import("../types").ArmedPlan>("POST", `/api/technique/runs/${runId}/arm`, body ?? {}),
   techniqueDisarm: (runId: string, flatten = false) =>

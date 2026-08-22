@@ -86,13 +86,23 @@ class RiskGate:
     async def evaluate(self, intent, portfolio) -> RiskVerdict:
         """intent: OrderManager's OrderIntent; portfolio: Portfolio row."""
         s = self._settings
-        checks: list[RiskCheck] = []
         symbol = intent.symbol
         side = OrderSide(intent.side)
         qty = float(intent.qty)
         is_option = intent.sec_type == "OPT"
         mult = 100.0 if is_option else 1.0
         reduces = False
+
+        # Reduce-only exits (a stop / flatten / trim) run a SAFETY-ONLY check
+        # list: they must never be blocked by an entry cap, the order-rate or
+        # duplicate window, or the daily-loss halt — those exist to stop you
+        # opening risk, and an exit removes risk. The kill switch still applies
+        # unless `risk.halt_allows_exits` is on (default), so a panic-halt can
+        # still close positions.
+        if getattr(intent, "reduce_only", False):
+            return self._evaluate_reduce_only(intent, symbol, is_option)
+
+        checks: list[RiskCheck] = []
 
         # 1. kill switch -----------------------------------------------------
         checks.append(RiskCheck(
@@ -226,6 +236,27 @@ class RiskGate:
             checks.append(RiskCheck("market_hours", open_now,
                                     "outside regular trading hours" if not open_now else ""))
 
+        return RiskVerdict(passed=all(c.passed for c in checks), checks=checks)
+
+    def _evaluate_reduce_only(self, intent, symbol: str, is_option: bool) -> RiskVerdict:
+        """Safety-only checks for an exit that reduces exposure. The kill switch
+        applies only if `risk.halt_allows_exits` is off; instrument-halt and a
+        parseable option symbol are the only hard blocks."""
+        s = self._settings
+        checks: list[RiskCheck] = []
+        halt_allows_exits = bool(s.get("risk.halt_allows_exits", True))
+        checks.append(RiskCheck(
+            "kill_switch", (not self._halt.engaged) or halt_allows_exits,
+            "" if (not self._halt.engaged) or halt_allows_exits
+            else f"halted and risk.halt_allows_exits is off: {self._halt.reason}"))
+        quote = self._quotes.get(symbol)
+        if quote is not None:
+            checks.append(RiskCheck("not_halted", not quote.halted,
+                                    "instrument is halted" if quote.halted else ""))
+        if is_option:
+            o = occ.parse(symbol)
+            checks.append(RiskCheck("option_symbol", o is not None,
+                                    "" if o else f"{symbol} is not a valid OCC option symbol"))
         return RiskVerdict(passed=all(c.passed for c in checks), checks=checks)
 
     def _option_checks(self, intent, quote, ref_price, qty: float, side: OrderSide,

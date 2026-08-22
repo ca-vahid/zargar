@@ -46,6 +46,7 @@ DEFAULTS: dict[str, Any] = {
     "risk.allow_0dte": True,                # the EnhancedMarket method trades 0DTE/weeklies
     "risk.duplicate_window_seconds": 10,
     "risk.require_market_hours": False,     # enforce RTH for live orders
+    "risk.halt_allows_exits": True,         # kill switch stops new entries but still lets you CLOSE a position
     # --- account -------------------------------------------------------------
     "account.regime": "ca",                 # ca | us — tax/day-trade rule set
     "account.day_trade_warnings": True,
@@ -69,6 +70,7 @@ DEFAULTS: dict[str, Any] = {
     # --- options (chain data + ticket) ---------------------------------------
     "options.provider": "cboe",             # cboe (free, ~15-min delayed) | tradier (token)
     "options.enrich_seconds": 5,            # contract bid/ask refresh cadence from the chain
+    "feed.exchange_bars": True,             # correct sampled 1m bars with real exchange OHLC/volume from the 1m history
     "options.fee_per_contract": 0.99,       # Webull CA: USD per contract (+ regulatory fees)
     "quotes.yahoo_poll_seconds": 1.0,   # 1=frantic … 10=calm (see ui tick-speed select)
     # --- broker fee schedule (editable estimates; verify via order impact) ----
@@ -151,6 +153,10 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.flatten_minutes_before_close": 5,
     "technique.arm.max_retries": 2,            # transient submit errors only (never risk rejections)
     "technique.arm.stale_seconds": 180,        # no closed bar for this long in-session = stale, no firing
+    "technique.arm.max_open_trades": 1,        # positions a single armed plan may hold at once
+    "technique.arm.daily_loss_limit": 0.0,     # $ realised loss that flattens + stops a plan for the day (0 = off)
+    "technique.arm.skip_wide_spread": True,    # options: skip the entry when the contract's spread is wide (T5.4)
+    "technique.arm.skip_elevated_iv": False,   # options: skip the entry when IV is elevated (T5.3, IV-crush risk)
 }
 
 

@@ -75,6 +75,8 @@ TECHNIQUE_PLAN_POSITION_OPENED = "TechniquePlanPositionOpened"
 TECHNIQUE_PLAN_EXIT = "TechniquePlanExit"
 TECHNIQUE_PLAN_POSITION_CLOSED = "TechniquePlanPositionClosed"
 TECHNIQUE_PLAN_ERROR = "TechniquePlanError"
+TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs the walk-forward replay
+TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time
 CHAT_THREAD_CREATED = "ChatThreadCreated"
 CHAT_TOOL_CALLED = "ChatToolCalled"
 

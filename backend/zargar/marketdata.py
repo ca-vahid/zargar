@@ -106,6 +106,33 @@ class BarAggregator:
         if bars:
             self._last_volume.setdefault(symbol, 0)
 
+    def ingest_exchange_bar(self, bar: Bar) -> None:
+        """An authoritative completed 1-minute exchange bar (from the data feed's
+        1m history), used to *correct* the bar we built by sampling quotes — real
+        OHLC and real volume, which the relative-volume gate depends on. Overwrites
+        the in-memory bar for that minute (or appends a minute we missed) and
+        republishes so live consumers re-read accurate history; the still-forming
+        minute is never touched, and same-minute DB writes conflict-ignore."""
+        if bar.tf != "1m" or bar.close <= 0:
+            return
+        forming = self._forming.get(bar.symbol)
+        if forming is not None and bar.ts >= forming.ts:
+            return                                   # don't clobber the live/forming minute
+        dq = self._bars[bar.symbol]
+        for i in range(len(dq) - 1, -1, -1):
+            if dq[i].ts == bar.ts:
+                if (dq[i].open, dq[i].high, dq[i].low, dq[i].close, dq[i].volume) == \
+                        (bar.open, bar.high, bar.low, bar.close, bar.volume):
+                    return                           # already accurate — nothing to do
+                dq[i] = bar
+                self._bus.publish(topics.BARS, {"symbol": bar.symbol, "tf": "1m", "bar": bar, "source": "exchange"})
+                return
+            if dq[i].ts < bar.ts:
+                break
+        if not dq or bar.ts > dq[-1].ts:
+            dq.append(bar)
+            self._bus.publish(topics.BARS, {"symbol": bar.symbol, "tf": "1m", "bar": bar, "source": "exchange"})
+
     def bars(self, symbol: str, tf: str = "1m", limit: int = 500, include_forming: bool = True) -> list[Bar]:
         base = list(self._bars.get(symbol, ()))
         forming = self._forming.get(symbol)

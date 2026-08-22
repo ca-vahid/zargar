@@ -1,17 +1,33 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { cashText } from "../../lib/brokerage";
 import { fmtCcy } from "../../lib/format";
 import { useStore } from "../../store";
-import type { ArmOptions, ArmRequest } from "../../types";
+import type { ArmOptions, ArmPreflight, ArmRequest } from "../../types";
 import { BrokerIcon } from "../BrokerIcon";
+import { InfoTip } from "../InfoTip";
 import { Modal } from "../Modal";
 
 const MODES: { key: "alert" | "proposal" | "auto"; title: string; text: string }[] = [
-  { key: "alert", title: "Alert only", text: "When a trigger fires you get a setup row and a note in the run's chat. Nothing is sent to any account." },
-  { key: "proposal", title: "Proposal — you approve", text: "A fired trigger becomes a proposal in Signals with the contract, size and plan filled in. You click approve; RiskGate runs on approval." },
-  { key: "auto", title: "Auto-execute", text: "A fired trigger is bought immediately, then managed for you: stop first, scale out at the targets (30/40/15 or all-at-TP2 for a single contract), flat before the close. Every order passes RiskGate and the kill switch." },
+  { key: "alert", title: "Alert only", text: "When a setup triggers you get a note in the run's chat — nothing is sent to any account. Good for watching first." },
+  { key: "proposal", title: "Propose — you approve", text: "A trigger becomes a proposal in Signals with the contract, size and plan filled in. You tap approve; the safety checks run then, and the app manages the exit for you." },
+  { key: "auto", title: "Auto-trade", text: "A trigger is bought immediately, then managed for you: stop, scale out at the targets, flat before the close. Every order still passes the safety checks and the kill switch." },
 ];
+
+// plain-language names for the risk checks the pre-flight returns
+const CHECK_LABEL: Record<string, string> = {
+  kill_switch: "Kill switch is off", quote_fresh: "Live price is available", not_halted: "Stock isn't halted",
+  price_collar: "Order price is sane", short_allowed: "Not going short", options_allowed: "Options are allowed",
+  option_premium_cap: "Option cost within the per-trade limit", option_premium_notional: "Option cost within the per-order limit",
+  no_naked_short_option: "Not a naked short option", max_position_notional: "Position size within the dollar cap",
+  max_position_pct: "Position size within the % cap", max_gross_exposure: "Total exposure within the cap",
+  order_rate: "Not too many orders", duplicate_order: "Not a duplicate", daily_loss_limit: "Daily loss limit not hit",
+  market_hours: "Market is open", options_supported: "This account can trade options",
+  options_enabled: "Options are turned on", premium_cap_estimate: "Estimated option cost within the per-order limit",
+  premium_pct_estimate: "Estimated option cost within the % limit", option_symbol: "Valid option contract",
+  option_not_expired: "Contract isn't expired", option_max_contracts: "Contracts within the per-order cap",
+  option_spread: "Option spread isn't too wide",
+};
 
 function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
 
@@ -34,7 +50,13 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
   const [useCritic, setUseCritic] = useState(true);
   const [allowLive, setAllowLive] = useState(false);
   const [flatten, setFlatten] = useState(5);
+  const [maxOpen, setMaxOpen] = useState(1);
+  const [lossLimit, setLossLimit] = useState<string>("");
+  const [skipWide, setSkipWide] = useState(true);
+  const [skipIv, setSkipIv] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [preflight, setPreflight] = useState<ArmPreflight | null>(null);
+  const [pfBusy, setPfBusy] = useState(false);
   useEffect(() => {
     api.techniqueArmOptions().then((o) => {
       setOpts(o);
@@ -45,9 +67,12 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
       setMaxContracts(o.defaults.maxContracts ?? 5);
       setRiskPct(o.defaults.riskPct); setMaxQty(o.defaults.maxQty); setUseCritic(o.defaults.useCritic);
       setFlatten(o.defaults.flattenMinutesBeforeClose);
+      setMaxOpen(o.defaults.maxOpenTrades ?? 1);
+      setLossLimit(o.defaults.dailyLossLimit ? String(o.defaults.dailyLossLimit) : "");
+      setSkipWide(o.defaults.skipWideSpread ?? true);
+      setSkipIv(o.defaults.skipElevatedIv ?? false);
     }).catch((e) => toast("error", e.message));
   }, [toast]);
-  // broker logo / native cash for SnapTrade accounts
   const brokerFor = useMemo(() => {
     const m = new Map<string, { account: any; provider: any }>();
     for (const prov of brokerages?.providers ?? []) for (const a of prov.accounts) m.set(a.portfolioId, { account: a, provider: prov });
@@ -61,19 +86,36 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
     const b = brokerFor.get(p.id);
     return b ? cashText(b.account) : fmtCcy(p.cash ?? 0, p.baseCurrency ?? "USD");
   };
-  // sizing hint from the plan's best trigger
   const equity = portfolio ? (brokerFor.get(portfolio.id)?.account?.equity ?? portfolio.cash ?? 0) : 0;
   const perShare = bestTrigger ? Math.max(bestTrigger.entry - bestTrigger.stop, 0.01) : null;
   const sharesHint = perShare && equity ? Math.min(Math.floor(equity * riskPct / 100 / perShare), maxQty) : null;
+
+  const req = useCallback((): ArmRequest => ({
+    portfolioId, mode, instrument, contracts: contracts ? Number(contracts) : undefined, maxContracts,
+    riskPct, maxQty, qty: qty ? Number(qty) : undefined, useCritic, allowLive, flattenMinutesBeforeClose: flatten,
+    maxOpenTrades: maxOpen, dailyLossLimit: lossLimit ? Number(lossLimit) : 0, skipWideSpread: skipWide, skipElevatedIv: skipIv,
+  }), [portfolioId, mode, instrument, contracts, maxContracts, riskPct, maxQty, qty, useCritic, allowLive, flatten, maxOpen, lossLimit, skipWide, skipIv]);
+
+  // pre-flight: dry-run the entry so we can say — before arming — if it would pass
+  const runId = useStore((s) => s.techniqueFocusRunId);
+  const pfTimer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!opts || !portfolioId || !runId || mode === "alert") { setPreflight(null); return; }
+    window.clearTimeout(pfTimer.current);
+    pfTimer.current = window.setTimeout(() => {
+      setPfBusy(true);
+      api.techniqueArmPreflight(runId, req()).then(setPreflight).catch(() => setPreflight(null)).finally(() => setPfBusy(false));
+    }, 350);
+    return () => window.clearTimeout(pfTimer.current);
+  }, [opts, portfolioId, mode, instrument, contracts, riskPct, maxQty, qty, runId, req]);
+
   const submit = async () => {
     setBusy(true);
-    try {
-      await onArm({ portfolioId, mode, instrument, contracts: contracts ? Number(contracts) : undefined, maxContracts,
-        riskPct, maxQty, qty: qty ? Number(qty) : undefined, useCritic, allowLive, flattenMinutesBeforeClose: flatten });
-      onClose();
-    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+    try { await onArm(req()); onClose(); }
+    catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
   };
   const armDisabled = busy || !opts || !portfolioId || liveBlocked || optionsBlocked || (mode === "auto" && isLive && !allowLive);
+  const failing = (preflight?.checks ?? []).filter((c) => !c.passed);
   return (
     <Modal wide title={<>Arm <b>{symbol}</b> plan for {planFor} <span className="muted">— EM Options technique</span></>} onClose={onClose}
       footer={<>
@@ -85,9 +127,18 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
       {!opts && <div className="muted">loading accounts…</div>}
       {opts && (
         <div className="tq-arm-form">
+          {/* real/practice banner */}
+          <div className={`tq-arm-banner ${isLive ? "live" : "practice"}`}>
+            {isLive
+              ? <><b>REAL MONEY.</b> This account places real orders on {portfolio?.venue}. Practice first if you're unsure — switch the account below.</>
+              : <><b>Practice account.</b> Orders are simulated — nothing real is bought or sold. Safe to experiment.</>}
+          </div>
+
           {/* 1. account */}
           <div className="tq-arm-block">
-            <div className="tq-arm-h">1 · Account this plan trades in</div>
+            <div className="tq-arm-h">1 · Which account trades this plan
+              <InfoTip>The plan can watch and trade in any of your accounts. Practice (SIM) accounts are fake money. The others are real.</InfoTip>
+            </div>
             <div className="tq-arm-accounts">
               {opts.portfolios.map((p) => {
                 const b = brokerFor.get(p.id);
@@ -110,42 +161,47 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
 
           {/* 2. instrument */}
           <div className="tq-arm-block">
-            <div className="tq-arm-h">2 · What to buy when a trigger fires</div>
+            <div className="tq-arm-h">2 · What to buy when a trigger fires
+              <InfoTip>This technique is written for options — it buys a call so a small move in the stock makes a bigger move in the option. You can switch to plain shares if you prefer.</InfoTip>
+            </div>
             <div className="tq-arm-rows">
               <label className={`tq-arm-row ${instrument === "options" ? "active" : ""}`}>
                 <input type="radio" name="arm-instr" checked={instrument === "options"} onChange={() => setInstrument("options")} />
                 <span><b>Options — the book's way (T5)</b>
-                  <span className="muted">Buys the <b>call just out of the money</b>, expiring <b>this Friday</b> (0DTE when it's Friday), at the ask, from the live chain ({opts.optionsProvider.toUpperCase()}). Exits still follow the <i>underlying</i> price: stop, targets, flat by the close.</span></span>
+                  <span className="muted">Buys the <b>call just above the current price</b>, expiring <b>this Friday</b> (or same-day on Fridays), at the ask, from the live chain ({opts.optionsProvider.toUpperCase()}). The stop and targets still watch the <i>stock</i>; when they hit, the option is sold.</span></span>
               </label>
               <label className={`tq-arm-row ${instrument === "shares" ? "active" : ""}`}>
                 <input type="radio" name="arm-instr" checked={instrument === "shares"} onChange={() => setInstrument("shares")} />
-                <span><b>Shares</b><span className="muted">Buys the stock itself at the trigger price (+ slippage). Same stop / targets / flatten.</span></span>
+                <span><b>Shares</b><span className="muted">Buys the stock itself at the trigger price. Same stop / targets / flatten.</span></span>
               </label>
             </div>
             {instrument === "options" && (
               <div className="tq-row tq-arm-size">
-                <label className="tq-ctl"><span className="tq-ctl-label">Contracts per trade</span>
+                <label className="tq-ctl"><span className="tq-ctl-label">Contracts per trade <InfoTip>The book says trade just <b>one contract</b> for the first few months while you learn (rule R5). One contract = 100 shares of exposure.</InfoTip></span>
                   <input type="number" min={1} max={maxContracts} value={contracts} onChange={(e) => setContracts(e.target.value)} /></label>
                 <label className="tq-ctl"><span className="tq-ctl-label">Max contracts</span>
                   <input type="number" min={1} value={maxContracts} onChange={(e) => setMaxContracts(Number(e.target.value))} /></label>
                 <small className="muted tq-arm-hint">
-                  The book says <b>one contract per trade</b> for the first 3–6 months (R5) — keep 1 while the method is being validated.
-                  With fewer than 3 contracts the 30/40/15 ladder can't split, so the position exits at TP2 (setting <code>single_contract_exit</code>).
-                  Leave contracts empty to size by risk % of equity instead.
+                  Keep <b>1</b> while the method is being validated (R5). With fewer than 3 contracts the position exits all-at-once at your chosen target (below). Leave contracts blank to size by risk % instead.
                 </small>
+                <div className="tq-arm-toggles">
+                  <label className="tq-chipbtn"><input type="checkbox" checked={skipWide} onChange={(e) => setSkipWide(e.target.checked)} /> skip if the option's spread is wide (T5.4)
+                    <InfoTip>A wide gap between the buy and sell price means you lose money the moment you enter. Skipping protects you from bad contracts.</InfoTip></label>
+                  <label className="tq-chipbtn"><input type="checkbox" checked={skipIv} onChange={(e) => setSkipIv(e.target.checked)} /> skip if implied volatility is high (T5.3)
+                    <InfoTip>High implied volatility means the option is expensive and can lose value fast even if you're right ("IV crush"). Off by default.</InfoTip></label>
+                </div>
               </div>
             )}
             {instrument === "shares" && (
               <div className="tq-row tq-arm-size">
-                <label className="tq-ctl"><span className="tq-ctl-label">Risk per trade (% of equity)</span>
+                <label className="tq-ctl"><span className="tq-ctl-label">Risk per trade (% of account) <InfoTip>How much of the account you're willing to lose if the stop is hit. The book risks <b>0.5–1%</b>. Shares bought = this ÷ (entry − stop).</InfoTip></span>
                   <input type="number" step="0.1" min={0.1} max={opts.defaults.maxRiskPct} value={riskPct} onChange={(e) => setRiskPct(Number(e.target.value))} /></label>
                 <label className="tq-ctl"><span className="tq-ctl-label">Max shares</span>
                   <input type="number" min={1} value={maxQty} onChange={(e) => setMaxQty(Number(e.target.value))} /></label>
                 <label className="tq-ctl"><span className="tq-ctl-label">Fixed shares (optional)</span>
                   <input type="number" min={1} value={qty} placeholder="size by risk" onChange={(e) => setQty(e.target.value)} /></label>
                 <small className="muted tq-arm-hint">
-                  R1: the book risks <b>0.5–1 %</b> of the account per trade (5 % is the hard cap). Size = equity × risk % ÷ (entry − stop).
-                  {bestTrigger && sharesHint !== null && <> For trigger {bestTrigger.id} (entry {fmt(bestTrigger.entry)}, stop {fmt(bestTrigger.stop)}, risk {fmt(perShare)} /share) that is ≈ <b>{sharesHint}</b> shares on {fmtCcy(equity, portfolio?.baseCurrency ?? "USD")}.</>}
+                  {bestTrigger && sharesHint !== null && <>For trigger {bestTrigger.id} (entry {fmt(bestTrigger.entry)}, stop {fmt(bestTrigger.stop)}) that's ≈ <b>{sharesHint}</b> shares on {fmtCcy(equity, portfolio?.baseCurrency ?? "USD")}.</>}
                 </small>
               </div>
             )}
@@ -153,7 +209,9 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
 
           {/* 3. mode */}
           <div className="tq-arm-block">
-            <div className="tq-arm-h">3 · What happens when a trigger fires</div>
+            <div className="tq-arm-h">3 · What happens when a trigger fires
+              <InfoTip>Start with <b>Alert</b> to watch, move to <b>Propose</b> to approve each trade yourself, and only use <b>Auto</b> once you trust it.</InfoTip>
+            </div>
             <div className="tq-arm-rows">
               {MODES.map((m) => (
                 <label key={m.key} className={`tq-arm-row ${mode === m.key ? "active" : ""} ${m.key === "auto" && isLive ? "live" : ""}`}>
@@ -162,29 +220,52 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
                 </label>
               ))}
             </div>
-            {mode === "auto" && (
+            {mode !== "alert" && (
               <div className="tq-row tq-arm-size">
-                <label className="tq-ctl"><span className="tq-ctl-label">Flatten (min before close)</span>
-                  <input type="number" min={1} max={60} value={flatten} onChange={(e) => setFlatten(Number(e.target.value))} /></label>
-                <label className="tq-chipbtn"><input type="checkbox" checked={useCritic} disabled={!opts.llmAvailable} onChange={(e) => setUseCritic(e.target.checked)} />
-                  run the vision critic before entering{!opts.llmAvailable ? " (no API key — off)" : ""}</label>
+                <label className="tq-ctl"><span className="tq-ctl-label">Stop the day after losing <InfoTip>A safety brake: once this plan has lost this many dollars today, it sells everything and stops trading for the day. Leave blank for no limit.</InfoTip></span>
+                  <div className="tq-arm-money"><span>{portfolio?.baseCurrency === "CAD" ? "C$" : "$"}</span>
+                    <input type="number" min={0} step={10} value={lossLimit} placeholder="no limit" onChange={(e) => setLossLimit(e.target.value)} /></div></label>
+                <label className="tq-ctl"><span className="tq-ctl-label">Max positions at once <InfoTip>How many trades this plan may hold at the same time. The book's spirit is one at a time.</InfoTip></span>
+                  <input type="number" min={1} max={5} value={maxOpen} onChange={(e) => setMaxOpen(Number(e.target.value))} /></label>
+                {mode === "auto" && <label className="tq-ctl"><span className="tq-ctl-label">Flatten (min before close) <InfoTip>Nothing is held overnight — everything is sold this many minutes before the 4pm close.</InfoTip></span>
+                  <input type="number" min={1} max={60} value={flatten} onChange={(e) => setFlatten(Number(e.target.value))} /></label>}
+                {mode === "auto" && <label className="tq-chipbtn"><input type="checkbox" checked={useCritic} disabled={!opts.llmAvailable} onChange={(e) => setUseCritic(e.target.checked)} />
+                  double-check with AI before buying{!opts.llmAvailable ? " (no API key)" : ""}
+                  <InfoTip>Before each auto-buy, an AI reads the live chart and can veto a weak setup. Needs an API key.</InfoTip></label>}
               </div>
             )}
             {optionsBlocked && <div className="neg">This account can't trade options here ({portfolio?.optionsNote}). Pick another account or switch to shares.</div>}
             {mode === "auto" && isLive && (
               <div className="tq-arm-live">
-                <b>Real money.</b> Auto-execution on a {portfolio?.kind} account
-                {!opts.allowLiveAuto && <> is <b>disabled</b> (setting <code>technique.arm.allow_live_auto</code>)</>}
-                {opts.allowLiveAuto && opts.tradingMode !== "live" && <> is blocked while <code>trading.mode</code> is practice</>}
-                {!liveBlocked && <>: every order still passes RiskGate and the kill switch.</>}
+                <b>Real money.</b> Auto-trading on a {portfolio?.kind} account
+                {!opts.allowLiveAuto && <> is <b>turned off</b> in Settings (Auto-trading → allow live auto)</>}
+                {opts.allowLiveAuto && opts.tradingMode !== "live" && <> is blocked while the app is in <b>practice</b> mode</>}
+                {!liveBlocked && <>: every order still passes the safety checks and the kill switch.</>}
                 {!liveBlocked && <label className="tq-chipbtn" style={{ marginTop: 6 }}>
                   <input type="checkbox" checked={allowLive} onChange={(e) => setAllowLive(e.target.checked)} /> I understand this will place real orders
                 </label>}
               </div>
             )}
-            {opts.halt?.engaged && <div className="neg">Kill switch is engaged — nothing will fire until it is released.</div>}
+            {opts.halt?.engaged && <div className="neg">Kill switch is engaged — nothing will fire until it's released{opts.haltAllowsExits ? " (open positions can still be closed)" : ""}.</div>}
           </div>
-          <small className="muted">Fires only inside 09:30–10:30 / 14:45–16:00 ET (R6); mid-day touches are logged, not taken. Nothing is held overnight.</small>
+
+          {/* pre-flight: would the first order actually go through? */}
+          {mode !== "alert" && (
+            <div className={`tq-arm-preflight ${preflight ? (preflight.ok ? "ok" : "bad") : ""}`}>
+              <div className="tq-arm-pf-head">
+                <b>Pre-flight check {pfBusy ? "…" : ""}</b>
+                <InfoTip>A dry run of the first order against this account's safety limits — no order is placed. It tells you now, not at 9:31am, whether a trade would go through.</InfoTip>
+              </div>
+              {preflight?.blocked && <div className="neg small">{preflight.blocked}</div>}
+              {preflight?.note && !preflight.blocked && <div className="muted small">{preflight.note}</div>}
+              {preflight && !preflight.blocked && (
+                preflight.ok
+                  ? <div className="pos small">✓ Ready — the first order would pass{preflight.size?.shares ? ` (≈${preflight.size.shares} shares, $${fmt(preflight.size.notional, 0)})` : preflight.size?.contracts ? ` (${preflight.size.contracts} contract${preflight.size.contracts === 1 ? "" : "s"}, ≈$${fmt(preflight.size.estNotional, 0)})` : ""}</div>
+                  : <div className="neg small">✗ Would be blocked: {failing.map((c) => c.detail || CHECK_LABEL[c.name] || c.name).join("; ")}. Fix in Settings → Auto-trading, or change the account/size.</div>
+              )}
+            </div>
+          )}
+          <small className="muted">Fires only 09:30–10:30 / 14:45–16:00 ET (the book's prime windows); mid-day touches are logged, not taken. Stops and flatten can always sell, even if the kill switch is on.</small>
         </div>
       )}
     </Modal>

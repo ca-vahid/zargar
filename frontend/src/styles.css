@@ -1366,3 +1366,33 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   .tq-head { flex-wrap: wrap; }
   .tq-head .tq-status { order: -1; flex-basis: 100%; margin-left: 0; justify-content: flex-end; padding: 4px 0 2px; }
 }
+
+/* --- help tip (InfoTip) ------------------------------------------------------------------- */
+.infotip { position: relative; display: inline-flex; margin-left: 5px; vertical-align: middle; }
+.infotip-btn { width: 15px; height: 15px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text-2); font-size: 10px; font-weight: 700; line-height: 1;
+  cursor: help; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.infotip-btn:hover { border-color: var(--accent); color: var(--accent); }
+.infotip-pop { position: absolute; z-index: 40; left: 50%; transform: translateX(-50%); top: calc(100% + 6px);
+  width: max-content; max-width: 280px; background: var(--surface-1); color: var(--text-1); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.22); padding: 8px 10px; font-size: var(--fs-1);
+  font-weight: 400; line-height: 1.45; text-transform: none; letter-spacing: 0; white-space: normal; }
+
+/* --- arm dialog: banner, money field, toggles, pre-flight --------------------------------- */
+.tq-arm-banner { border-radius: 8px; padding: 8px 12px; font-size: var(--fs-1); line-height: 1.45; }
+.tq-arm-banner.practice { background: color-mix(in srgb, var(--accent) 8%, transparent); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); }
+.tq-arm-banner.live { background: color-mix(in srgb, var(--down) 10%, transparent); border: 1px solid color-mix(in srgb, var(--down) 40%, var(--border)); }
+.tq-arm-money { display: inline-flex; align-items: center; gap: 3px; }
+.tq-arm-money > span { color: var(--text-3); }
+.tq-arm-money input { width: 90px; }
+.tq-arm-toggles { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 10px 16px; margin-top: 4px; }
+.tq-arm-preflight { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.tq-arm-preflight.ok { border-color: color-mix(in srgb, var(--up) 40%, var(--border)); background: color-mix(in srgb, var(--up) 6%, transparent); }
+.tq-arm-preflight.bad { border-color: color-mix(in srgb, var(--down) 40%, var(--border)); background: color-mix(in srgb, var(--down) 6%, transparent); }
+.tq-arm-pf-head { display: flex; align-items: center; gap: 4px; margin-bottom: 3px; }
+
+/* --- armed card: scorecard, stop line ---------------------------------------------------- */
+.tq-armed-stopline { margin-bottom: 8px; }
+.tq-armed-scorecard { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin-bottom: 10px; background: var(--surface-1); }
+.tq-armed-sc-notes { margin: 6px 0 0; padding-left: 18px; font-size: var(--fs-1); color: var(--text-2); }
+.tq-armed-sc-notes li { margin: 2px 0; }

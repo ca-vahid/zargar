@@ -99,8 +99,12 @@ class YahooQuoteFeed(QuoteFeed):
         on_quote: Callable[[Quote], None],
         poll_seconds: float | Callable[[], float] = 3.0,
         client: httpx.AsyncClient | None = None,
+        on_bars: Callable[[list], None] | None = None,
     ) -> None:
         self._on_quote = on_quote
+        # optional: hand completed 1-minute exchange bars to a consumer (the bar
+        # aggregator's ingest_exchange_bar) so live decisions use real OHLC/volume
+        self._on_bars = on_bars
         # a callable re-reads the live setting every cycle — speed changes
         # apply without a restart
         self._poll_seconds = poll_seconds
@@ -187,12 +191,20 @@ class YahooQuoteFeed(QuoteFeed):
             if resp.status_code != 200:
                 return
             try:
-                quote = self._parse_chart(symbol, resp.json())
+                payload = resp.json()
+                quote = self._parse_chart(symbol, payload)
             except (ValueError, KeyError):
                 return
             if quote is not None:
                 any_ok = True
                 self._on_quote(quote)
+                if self._on_bars is not None:
+                    try:
+                        bars = self._parse_completed_bars(symbol, payload)
+                        if bars:
+                            self._on_bars(bars)
+                    except (ValueError, KeyError, TypeError):
+                        pass
 
         await asyncio.gather(*(fetch(s) for s in sorted(self._symbols)))
         if rate_limited:
@@ -200,6 +212,32 @@ class YahooQuoteFeed(QuoteFeed):
             log.warning("yahoo rate-limited (429) — cooling down %ss", COOLDOWN_SECONDS)
         if any_ok:
             self._last_ok = now_ms()
+
+    def _parse_completed_bars(self, symbol: str, data: dict) -> list:
+        """Completed regular-session 1-minute bars from the chart response (the
+        last, still-forming minute is excluded). Returns Bar objects."""
+        from ..domain import Bar
+        result = (((data or {}).get("chart") or {}).get("result") or [None])[0]
+        if not result:
+            return []
+        ts = result.get("timestamp") or []
+        block = ((result.get("indicators") or {}).get("quote") or [{}])[0]
+        o, h, l, c, v = (block.get(k) or [] for k in ("open", "high", "low", "close", "volume"))
+        now_bucket = (now_ms() // 60_000) * 60_000
+        out = []
+        for i, t in enumerate(ts):
+            if t is None or i >= len(c) or c[i] is None:
+                continue
+            bar_ms = int(t) * 1000
+            if bar_ms >= now_bucket:                 # still-forming minute — skip
+                continue
+            op = o[i] if i < len(o) and o[i] is not None else c[i]
+            hi = h[i] if i < len(h) and h[i] is not None else c[i]
+            lo = l[i] if i < len(l) and l[i] is not None else c[i]
+            vol = int(v[i]) if i < len(v) and v[i] is not None else 0
+            out.append(Bar(symbol=symbol.upper(), tf="1m", ts=bar_ms,
+                           open=float(op), high=float(hi), low=float(lo), close=float(c[i]), volume=vol))
+        return out[-30:]
 
     def _parse_chart(self, symbol: str, data: dict) -> Quote | None:
         result = (((data or {}).get("chart") or {}).get("result") or [None])[0]

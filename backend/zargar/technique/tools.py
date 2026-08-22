@@ -169,6 +169,26 @@ TOOL_DEFS: list[dict] = [
         },
     },
     {
+        "name": "list_armed",
+        "description": "List the armed/live plans right now: symbol, account, mode (alert/proposal/auto), "
+                       "instrument, status, what it is watching, open positions and realised P&L. Use when the "
+                       "user asks 'what's armed', 'what am I trading', 'is anything live'.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_armed_run",
+        "description": "Fetch one armed plan by run id: its config (account, mode, instrument, risk, loss halt), "
+                       "what it is watching, every trade it took (entry, exits, realised P&L), the live log, and — "
+                       "after the close — the execution scorecard (what it actually did vs the deterministic replay: "
+                       "did it fire when it should have, how did fills/exits line up). Use to explain or review a "
+                       "live/armed plan; then record_review with the same run id keeps your verdict.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"run_id": {"type": "string", "description": "full id or the first 8+ characters"}},
+            "required": ["run_id"],
+        },
+    },
+    {
         "name": "get_rule",
         "description": "Look up the text of a technique rule by id (e.g. T3.3d, R2).",
         "input_schema": {
@@ -184,8 +204,10 @@ You also have TOOLS. Use them instead of guessing: `compute_facts` for any price
 claim; `render_chart` whenever a picture would help (and always when the user asks to "show" or
 "draw"); `run_analysis` for a full fresh read; `get_option_chain` for contract questions;
 `backtest_window` for "how has this done"; `get_run` to read a specific run (its trace, plan, what
-happened next); `record_review` when the user judges a run ("this was wrong", "should have been a
-setup at 101.2") so the judgement is persisted for the review loop. When the user pastes a chart
+happened next); `list_armed` / `get_armed_run` for anything about live or armed plans (what's
+trading, what an armed plan did, its execution scorecard vs the replay); `record_review` when the
+user judges a run or an armed plan ("this was wrong", "should have been a setup at 101.2", "the
+stop was too tight") so the judgement is persisted for the review loop. When the user pastes a chart
 image, analyse it directly but say prices are approximate unless you also fetch bars. Keep answers
 concrete: numbers, rule ids, what would change the verdict.
 """
@@ -370,4 +392,30 @@ class ToolExecutor:
         rows = await self.technique.list_runs(limit=limit, symbol=symbol)
         slim = [{k: r.get(k) for k in ("id", "symbol", "verdict", "setupType", "confidence",
                                         "grounded", "createdAt", "status")} for r in rows]
+        return json.dumps(slim, default=str), {}
+
+    async def _t_list_armed(self):
+        plans = self.technique.armed_plans()
+        slim = [{"runId": p["runId"], "symbol": p["symbol"], "status": p["status"],
+                 "mode": p["config"]["mode"], "instrument": p["config"]["instrument"],
+                 "account": (p.get("portfolio") or {}).get("name"), "planFor": p["planFor"],
+                 "openPositions": p.get("openPositions"), "realizedPnl": p.get("realizedPnl"),
+                 "summary": p.get("summary"), "stopReason": p.get("stopReason")} for p in plans]
+        return (json.dumps(slim, default=str) if slim else "nothing is armed right now"), {}
+
+    async def _t_get_armed_run(self, run_id: str):
+        rid = await self._resolve_run_id(run_id) or run_id
+        d = self.technique.armed_detail(rid)
+        if d is None:
+            # not live any more — fall back to the persisted history row
+            for h in await self.technique.armed_history(limit=200):
+                if h["runId"] == rid or h["runId"].startswith(rid):
+                    return json.dumps({"runId": h["runId"], "symbol": h["symbol"], "status": h["status"],
+                                       "mode": h["mode"], "config": h.get("config"),
+                                       "state": h.get("state"), "createdAt": h.get("createdAt")}, default=str), {}
+            return f"no armed plan for {run_id!r} (never armed, or expired and not persisted)", {"error": True}
+        slim = {k: d.get(k) for k in ("runId", "symbol", "planFor", "status", "stopReason", "config",
+                                       "portfolio", "summary", "openPositions", "realizedPnl", "triggers",
+                                       "trades", "scorecard")}
+        slim["recentLog"] = d.get("events", [])[-12:]
         return json.dumps(slim, default=str), {}

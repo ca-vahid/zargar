@@ -842,7 +842,7 @@ class TechniqueService:
     async def _emit_proposal(self, setup: TechniqueSetup, a, *, portfolio_id: str | None = None,
                              risk_pct: float | None = None, max_qty: float | None = None,
                              fixed_qty: float | None = None, contract: dict | None = None,
-                             contracts: int | None = None) -> str | None:
+                             contracts: int | None = None, managed: bool = False) -> str | None:
         """A proposal the user approves in the Signals page; approval routes
         through OrderManager → RiskGate like every other order. Returns the
         proposal id (None when no portfolio could take it). Armed plans pass the
@@ -874,8 +874,9 @@ class TechniqueService:
                 rationale=(a.rationale or "")[:500],
                 context={"sourceName": "technique", "confidence": a.confidence,
                          "technique": {"setupId": setup.id, "runId": setup.run_id, "setupType": setup.setup_type,
-                                       "rules": setup.rules, "underlying": {"entry": setup.entry, "stop": setup.stop,
-                                                                            "targets": setup.targets}},
+                                       "rules": setup.rules, "managed": managed,
+                                       "underlying": {"entry": setup.entry, "stop": setup.stop,
+                                                      "targets": setup.targets}},
                          "contract": contract, "sizing": {"contracts": n, "premium": prem, "riskPct": risk_pct,
                                                           "notional": round(prem * 100 * n, 2)}},
                 expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=ttl))
@@ -893,15 +894,21 @@ class TechniqueService:
             eng.bus.publish(topics.PROPOSALS, pd)
             return row.id
         ttl = int(eng.settings.get("signals.default_ttl_minutes", 30))
+        # A *managed* proposal (from an armed plan) carries no broker bracket — the
+        # armer manages the stop/ladder/flatten after approval (and SnapTrade rejects
+        # brackets). A standalone technique proposal keeps its bracket.
+        bracket = None if managed else {"take_profit": (setup.targets[0]["price"] if setup.targets else None),
+                                        "stop_loss": setup.stop, "take_profit_pct": None, "stop_loss_pct": None}
         row = Proposal(
             id=new_id(), signal_id=None, portfolio_id=pid, symbol=setup.symbol, side="BUY",
             qty=float(qty), order_type="LMT", limit_price=round(setup.entry, 2),
-            bracket={"take_profit": (setup.targets[0]["price"] if setup.targets else None),
-                     "stop_loss": setup.stop, "take_profit_pct": None, "stop_loss_pct": None},
+            bracket=bracket,
             rationale=a.rationale[:500],
             context={"sourceName": "technique", "confidence": a.confidence,
                      "technique": {"setupId": setup.id, "runId": setup.run_id,
-                                   "setupType": setup.setup_type, "rules": setup.rules},
+                                   "setupType": setup.setup_type, "rules": setup.rules,
+                                   "underlying": {"entry": setup.entry, "stop": setup.stop, "targets": setup.targets},
+                                   "managed": managed},
                      "sizing": {"equity": round(equity, 2), "riskPct": risk_pct, "qty": qty}},
             expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=ttl))
         async with eng.sf() as session:
@@ -1325,6 +1332,9 @@ class TechniqueService:
     async def arm_today(self, symbol: str, config: dict | None = None, *, with_vision: bool | None = None) -> dict:
         return await self.armer.arm_today(symbol, config, with_vision=with_vision)
 
+    async def arm_preflight(self, run_id: str, config: dict | None = None) -> dict:
+        return await self.armer.preflight(run_id, config)
+
     def armed_plans(self) -> list[dict]:
         return self.armer.armed()
 
@@ -1367,7 +1377,12 @@ class TechniqueService:
                          "maxQty": float(s.get("technique.arm.max_qty", 100)),
                          "useCritic": bool(s.get("technique.arm.use_critic", True)),
                          "flattenMinutesBeforeClose": int(s.get("technique.arm.flatten_minutes_before_close", 5)),
-                         "slippagePct": float(s.get("technique.arm.slippage_pct", 0.1))},
+                         "slippagePct": float(s.get("technique.arm.slippage_pct", 0.1)),
+                         "maxOpenTrades": int(s.get("technique.arm.max_open_trades", 1)),
+                         "dailyLossLimit": float(s.get("technique.arm.daily_loss_limit", 0.0)),
+                         "skipWideSpread": bool(s.get("technique.arm.skip_wide_spread", True)),
+                         "skipElevatedIv": bool(s.get("technique.arm.skip_elevated_iv", False))},
+            "haltAllowsExits": bool(s.get("risk.halt_allows_exits", True)),
             "optionsEnabled": bool(s.get("technique.options.enabled", True)),
             "optionsProvider": getattr(self.options_provider(), "name", "?"),
             "tradingMode": str(s.get("trading.mode", "practice")),

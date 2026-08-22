@@ -347,18 +347,35 @@ export interface ArmConfig {
   contracts: number | null; maxContracts: number; singleContractExit: string;
   riskPct: number; maxQty: number; qty: number | null;
   useCritic: boolean; allowLive: boolean; flattenMinutesBeforeClose: number; slippagePct: number; maxRetries: number;
+  maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean;
+}
+export interface ArmPreflight {
+  ok: boolean; blocked?: string; note?: string; instrument?: string; trigger?: string;
+  account?: { name?: string; kind?: string };
+  size?: { shares?: number; entry?: number; notional?: number; contracts?: number; estPremium?: number; estNotional?: number };
+  checks: { name: string; passed: boolean; detail: string }[];
+}
+export interface ArmScorecard {
+  planFor: string; symbol: string; theoreticalFires: number; actualFires: number; matched: number;
+  theoreticalSumR: number; realizedPnl: number;
+  rows: { trigger: string; kind: string; match: boolean; entrySlippage: number | null; notes: string[];
+    theoretical: { status?: string; firedTs?: number | null; fill?: number | null; outcome?: string; rMultiple?: number | null; mfeR?: number | null; maeR?: number | null };
+    actual: { status?: string; firedTs?: number | null; instrument?: string; avgFill?: number | null; premiumPaid?: number | null; realizedPnl?: number; exits?: string[]; reason?: string } | null }[];
 }
 export interface ArmRequest {
   portfolioId?: string; mode?: "alert" | "proposal" | "auto"; instrument?: "options" | "shares";
   contracts?: number; maxContracts?: number; singleContractExit?: string;
   riskPct?: number; maxQty?: number; qty?: number;
   useCritic?: boolean; allowLive?: boolean; flattenMinutesBeforeClose?: number; slippagePct?: number;
+  maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean;
 }
 export interface ArmOptions {
   portfolios: { id: string; name: string; kind: string; venue?: string; baseCurrency?: string; cash?: number; isDefault?: boolean;
     sourceName?: string | null; optionsOk: boolean; optionsNote: string }[];
   defaults: { portfolioId: string; mode: string; instrument: string; contracts: number; maxContracts: number; singleContractExit: string;
-    riskPct: number; maxRiskPct: number; maxQty: number; useCritic: boolean; flattenMinutesBeforeClose: number; slippagePct: number };
+    riskPct: number; maxRiskPct: number; maxQty: number; useCritic: boolean; flattenMinutesBeforeClose: number; slippagePct: number;
+    maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean };
+  haltAllowsExits?: boolean;
   optionsEnabled: boolean; optionsProvider: string;
   tradingMode: string; allowLiveAuto: boolean; enabled: boolean; llmAvailable: boolean; halt: any; emitProposals: boolean;
 }
@@ -374,6 +391,7 @@ export interface ArmedTrade {
 }
 export interface ArmedPlan {
   runId: string; symbol: string; planFor: string; status: "armed" | "paused" | "expired" | "disarmed" | string;
+  stopReason?: string; scorecard?: ArmScorecard | null;
   config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };
   armedAt: string; barsSeen: number; lastBarTs: number | null; barAgeSeconds: number | null; stale: boolean;
   sessionWindowNow: string; lastPrice: number | null; quoteAgeSeconds: number | null;
