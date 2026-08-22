@@ -23,9 +23,19 @@ from sqlalchemy import func, select
 from .. import bus as topics
 from .. import events as ev
 from ..domain import Bar, new_id
-from ..models import Proposal, TechniqueOutcome, TechniqueReview, TechniqueRun, TechniqueSetup
-from .analysis import WINDOW_FOR_TF, AnalysisRequest, compute_facts, gather_bars
+from ..models import (
+    Proposal,
+    TechniqueOutcome,
+    TechniqueReview,
+    TechniqueRun,
+    TechniqueSetup,
+    TechniqueSweep,
+    TechniqueWalkforward,
+)
+from .analysis import WINDOW_FOR_TF, AnalysisRequest, compute_facts, facts_for_prompt, gather_bars
+from .arming import PlanArmer
 from .backtest import run_backtest
+from .history import fetch_session
 from .llm import LLMConfig, config_from_settings, make_client
 from .options import CboeClient, TradierClient, pick_for_setup
 from .outcome import (
@@ -41,11 +51,25 @@ from .outcome import (
     same_plan,
     simulate_plan,
 )
+from .plans import build_session_plan, plan_summary_text
 from .provenance import snapshot as provenance_snapshot
 from .render import render_chart
 from .review import diff_runs, review_dict, validate_review
-from .rulebook import RULES, Thresholds, thresholds_from_settings
-from .vision import VisionPipeline, transcript_messages
+from .rulebook import (
+    PRIME_WINDOWS,
+    RULES,
+    WINDOW_RULE,
+    Thresholds,
+    next_session_date,
+    session_bounds,
+    session_date,
+    session_window,
+    thresholds_from_settings,
+)
+from .vision import PipelineResult, VisionPipeline, transcript_messages
+from .volume import build_profile
+from .walkforward import aggregate as aggregate_sweep
+from .walkforward import replay_plan, run_symbol
 
 log = logging.getLogger("zargar.technique")
 
@@ -76,6 +100,8 @@ def run_summary(r: TechniqueRun) -> dict:
     d["groundingPassed"] = (res.get("grounding") or {}).get("passed")
     d["traceSteps"] = len(res.get("trace") or [])
     d["seconds"] = res.get("seconds")
+    d["sessionWindow"] = res.get("sessionWindow")
+    d["plan"] = _slim_plan_summary(res.get("plan"))
     return d
 
 
@@ -101,6 +127,8 @@ class TechniqueService:
         self._scan_task: asyncio.Task | None = None
         self._outcome_task: asyncio.Task | None = None
         self._running: dict[str, asyncio.Task] = {}
+        self._sweeps: dict[str, asyncio.Task] = {}
+        self.armer = PlanArmer(engine, self)
         # Live progress for running runs so a client that connects mid-run (or
         # reloads) can seed its view: {run_id: {"passes": [...], "grounding", "facts"}}
         self._live: dict[str, dict] = {}
@@ -157,8 +185,20 @@ class TechniqueService:
             "running": [rid for rid, t in self._running.items() if not t.done()],
             "outcomeEnabled": bool(self.engine.settings.get("technique.outcome.enabled", True)),
             "outcomeHorizonBars": int(self.engine.settings.get("technique.outcome.horizon_bars", 60)),
+            "sessionWindow": session_window(int(time.time() * 1000)),
+            "enforceSessionWindows": bool(self.engine.settings.get("technique.enforce_session_windows", True)),
+            "structureTfs": list(self.engine.settings.get("technique.structure_tfs", ["1h", "30m"])),
+            "triggerTf": str(self.engine.settings.get("technique.trigger_tf", "1m")),
+            "armed": self.armer.armed(),
+            "sweepsRunning": [sid for sid, t in self._sweeps.items() if not t.done()],
             "rules": RULES,
         }
+
+    def structure_tfs(self) -> tuple[str, ...]:
+        return tuple(str(x) for x in self.engine.settings.get("technique.structure_tfs", ["1h", "30m"]))
+
+    def trigger_tf(self) -> str:
+        return str(self.engine.settings.get("technique.trigger_tf", "1m"))
 
     # ------------------------------------------------------------ queries
     async def runs_today(self) -> int:
@@ -266,28 +306,43 @@ class TechniqueService:
                       trigger: str = "manual", image: bytes | None = None, note: str = "",
                       thread_id: str | None = None, wait: bool = False,
                       parent_run_id: str | None = None, thresholds_override: dict | None = None,
-                      bars_override: dict[str, list[Bar]] | None = None) -> dict:
+                      bars_override: dict[str, list[Bar]] | None = None,
+                      plan: bool | None = None, with_vision: bool | None = None) -> dict:
         """Start a run. Returns the run row immediately (status=running) unless
         `wait=True`, in which case the finished run is returned.
+
+        Modes: `full` (live / intraday as-of), `image_only`, and `plan` — chosen
+        automatically when the as-of instant is outside the regular session
+        (R6.4: nothing to fill, so the output is a plan for the next session),
+        or forced with `plan=True/False`. Plan mode is deterministic unless
+        `with_vision` (or `technique.plan.with_vision`) is on.
 
         `parent_run_id` / `thresholds_override` / `bars_override` are the replay
         hooks: re-run an earlier moment with the bars it saw (so Yahoo's history
         limit does not matter) and optionally different thresholds, linked to
         the parent so the two can be diffed."""
         cfg = self.llm_config()
-        if not cfg.available:
-            raise RuntimeError("ZARGAR_ANTHROPIC_API_KEY is not configured")
         if not bool(self.engine.settings.get("technique.enabled", True)):
             raise RuntimeError("technique.enabled is off")
-        cap = int(self.engine.settings.get("technique.max_runs_per_day", 40))
-        if trigger != "chat" and await self.runs_today() >= cap:
-            raise RuntimeError(f"daily run cap reached ({cap}); raise technique.max_runs_per_day")
 
         symbol = (symbol or "").upper().strip()
         tf = primary_tf or str(self.engine.settings.get("technique.default_tf", "1m"))
         mode = "image_only" if (image is not None and not symbol) else "full"
         if not symbol and image is None:
             raise ValueError("symbol or image required")
+        if mode == "full":
+            if plan is True or (plan is None and as_of_ms is not None and session_window(as_of_ms) == "extended"):
+                mode = "plan"
+                tf = primary_tf or self.trigger_tf()
+        if with_vision is None:
+            with_vision = bool(self.engine.settings.get("technique.plan.with_vision", False))
+        # A deterministic plan needs no model; everything else does.
+        needs_llm = not (mode == "plan" and not with_vision)
+        if needs_llm and not cfg.available:
+            raise RuntimeError("ZARGAR_ANTHROPIC_API_KEY is not configured")
+        cap = int(self.engine.settings.get("technique.max_runs_per_day", 40))
+        if needs_llm and trigger != "chat" and await self.runs_today() >= cap:
+            raise RuntimeError(f"daily run cap reached ({cap}); raise technique.max_runs_per_day")
 
         thresholds = self.thresholds()
         if thresholds_override:
@@ -297,17 +352,25 @@ class TechniqueService:
                 raise ValueError(f"unknown threshold(s): {bad}; valid: {sorted(fields)}")
             thresholds = dataclasses.replace(thresholds, **thresholds_override)
         max_passes = int(self.engine.settings.get("llm.max_passes", 6))
-        tfs = AnalysisRequest(symbol=symbol or "IMAGE", primary_tf=tf).timeframes if mode == "full" else []
+        if mode == "plan":
+            tfs = AnalysisRequest(symbol=symbol, primary_tf=tf, context_tfs=self.structure_tfs()).timeframes
+        else:
+            tfs = AnalysisRequest(symbol=symbol or "IMAGE", primary_tf=tf).timeframes if mode == "full" else []
         config = provenance_snapshot(
             thresholds=thresholds, settings_all=self.engine.settings.all(), model=cfg.model,
             effort=cfg.effort, thinking_display=cfg.thinking_display, max_passes=max_passes,
             timeframes=tfs, parent_run_id=parent_run_id,
             overrides={"thresholds": dict(thresholds_override or {}),
                        "barsFromSnapshot": bars_override is not None})
+        if mode == "plan":
+            config["planMode"] = {"structureTfs": list(self.structure_tfs()), "triggerTf": tf,
+                                  "withVision": bool(with_vision),
+                                  "planFor": next_session_date(as_of_ms) if as_of_ms else None}
 
         if thread_id is None:
-            title = f"{symbol or 'chart'} analysis · {tf}" + (" · image" if image else "") \
-                + (" · replay" if parent_run_id else "")
+            title = (f"{symbol} plan for {next_session_date(as_of_ms) if as_of_ms else 'next session'}"
+                     if mode == "plan" else f"{symbol or 'chart'} analysis · {tf}") \
+                + (" · image" if image else "") + (" · replay" if parent_run_id else "")
             thread = await self.chat.create_thread(title=title, kind="run", symbol=symbol or None)
             thread_id = thread["id"]
 
@@ -335,7 +398,7 @@ class TechniqueService:
 
         task = asyncio.create_task(self._execute(run.id, thread_id, symbol, tf, as_of_ms, mode,
                                                  image, note, trigger, thresholds=thresholds,
-                                                 bars_override=bars_override),
+                                                 bars_override=bars_override, with_vision=bool(with_vision)),
                                    name=f"technique-{run.id[:8]}")
         self._running[run.id] = task
         if wait:
@@ -346,9 +409,10 @@ class TechniqueService:
     async def _execute(self, run_id: str, thread_id: str, symbol: str, tf: str, as_of_ms: int | None,
                        mode: str, image: bytes | None, note: str, trigger: str, *,
                        thresholds: Thresholds | None = None,
-                       bars_override: dict[str, list[Bar]] | None = None) -> None:
+                       bars_override: dict[str, list[Bar]] | None = None,
+                       with_vision: bool = False) -> None:
         cfg = self.llm_config()
-        client = self._get_client()
+        client = self._get_client() if cfg.available else None
         t = thresholds or self.thresholds()
         chat = self.chat
         t0 = time.time()
@@ -379,6 +443,7 @@ class TechniqueService:
         result = None
         trace: list[dict] = []
         bars_asset: str | None = None
+        plan_d: dict | None = None
         try:
             max_passes = int(self.engine.settings.get("llm.max_passes", 6))
             vp = VisionPipeline(client, cfg, thresholds=t, max_passes=max_passes, on_event=on_event,
@@ -395,7 +460,15 @@ class TechniqueService:
                               "no bars fetched and nothing to ground against", assetId=aid)
                 result = await vp.run_image_only(image, note=note, symbol_hint=symbol)
             else:
-                req = AnalysisRequest(symbol=symbol, as_of_ms=as_of_ms, primary_tf=tf, thresholds=t)
+                if mode == "plan":
+                    req = AnalysisRequest(symbol=symbol, as_of_ms=as_of_ms, primary_tf=tf,
+                                          context_tfs=self.structure_tfs(), thresholds=t)
+                    await vp.note("plan", "mode", "as-of instant is outside the regular session: building a "
+                                  "session plan for the next session instead of a live setup (R6.4)",
+                                  planFor=next_session_date(as_of_ms) if as_of_ms else None,
+                                  structureTfs=list(self.structure_tfs()), triggerTf=tf, withVision=with_vision)
+                else:
+                    req = AnalysisRequest(symbol=symbol, as_of_ms=as_of_ms, primary_tf=tf, thresholds=t)
                 td = time.time()
                 if bars_override is not None:
                     bars = {k: list(v) for k, v in bars_override.items() if v}
@@ -471,7 +544,52 @@ class TechniqueService:
                 await on_event({"type": "facts", "keyLevels": facts.get("keyLevels", [])[:8],
                                 "volume": (facts.get("volume") or {}).get(facts.get("primaryTf")),
                                 "trend": facts.get("trend")})
-                result = await vp.run(facts, imgs, user_image=image, user_note=note)
+                if mode == "plan":
+                    plan_obj = build_session_plan(facts, thresholds=t, structure_tfs=list(self.structure_tfs()),
+                                                  trigger_tf=tf)
+                    plan_d = plan_obj.to_dict()
+                    await vp.note("plan", "levels", f"{len(plan_d['levels'])} level(s) kept for the map "
+                                  f"({sum(1 for l in plan_d['levels'] if l.get('priorDayExtreme'))} prior-day extremes)",
+                                  levels=[{k: l.get(k) for k in ("price", "effectiveKind", "touches", "sources",
+                                                                 "distancePct", "priorDayExtreme")} for l in plan_d["levels"][:12]])
+                    for tg in plan_d["triggers"]:
+                        await vp.note("plan", f"trigger_{tg['id']}",
+                                      f"{tg['kind']} at {tg['levelPrice']:.2f}: "
+                                      + ("VALID — " if tg["valid"] else "not tradeable — ")
+                                      + (", ".join(tg["noTradeReasons"]) if tg["noTradeReasons"] else
+                                         f"R:R {tg['riskReward']:.2f}, {len(tg['conditions'])} conditions"),
+                                      trigger={k: tg.get(k) for k in ("id", "kind", "entry", "stop", "riskReward",
+                                                                        "valid", "confluences", "conditions", "voidIf")})
+                    if not plan_d["triggers"]:
+                        await vp.note("plan", "no_triggers", "no level within reach: a plan with nothing to do")
+                    await vp.note("plan", "invalidations", "gap policy and expiry recorded (our extrapolation, Q11-Q13)",
+                                  gapPolicy=plan_d["gapPolicy"])
+                    if with_vision:
+                        preamble = (f"PLAN MODE: the market is closed; this is a plan for {plan_d['planFor']}. "
+                                    "Do not emit a fill — describe the conditional trigger (IF price reaches the level "
+                                    "inside a prime window ...), set plan_mode=true. ")
+                        result = await vp.run(facts, imgs, user_image=image, user_note=preamble + (note or ""))
+                    else:
+                        result = PipelineResult(analysis=None, grounding={"passed": None, "checks": [],
+                                                                           "note": "plan mode: deterministic, no model passes"},
+                                                mode="plan", trace=trace)
+                        await vp.note("loop", "skipped", "deterministic plan; vision passes not requested")
+                else:
+                    result = await vp.run(facts, imgs, user_image=image, user_note=note)
+                    # R6 — outside the prime windows a setup is watch-only (when enforced).
+                    sw = facts.get("sessionWindow")
+                    a0 = result.analysis
+                    if (a0 is not None and a0.verdict == "setup" and sw not in PRIME_WINDOWS
+                            and bool(self.engine.settings.get("technique.enforce_session_windows", True))):
+                        rid = WINDOW_RULE.get(sw, "R6.3")
+                        a0.no_trade_reasons = list(a0.no_trade_reasons) + [
+                            f"{rid} outside the prime windows ({sw}) — watch only, do not enter"]
+                        await vp.note("window", "watch_only",
+                                      f"setup claimed at {sw}; R6 says trade only 09:30-10:30 / 14:45-16:00 ET — "
+                                      "kept as watch-only, not valid", sessionWindow=sw, rule=rid)
+                    elif a0 is not None:
+                        await vp.note("window", "ok" if sw in PRIME_WINDOWS else "note",
+                                      f"as-of instant is in {sw}", sessionWindow=sw)
 
                 # annotated chart with the final plan (or the levels, if no setup)
                 a = result.analysis
@@ -504,7 +622,9 @@ class TechniqueService:
             a = result.analysis
             contract = a.to_contract() if a else None
             options = None
-            if a and a.verdict == "setup" and bool(self.engine.settings.get("technique.options.enabled", True)):
+            if mode == "plan":
+                await vp.note("options", "skipped", "plan mode: the contract is picked when a trigger fires")
+            elif a and a.verdict == "setup" and bool(self.engine.settings.get("technique.options.enabled", True)):
                 await vp.note("options", "pick", "setup verdict: picking the contract the method would trade (T5)",
                               provider=getattr(self.options_provider(), "name", "?"),
                               direction=a.direction or "long")
@@ -526,7 +646,10 @@ class TechniqueService:
                 await vp.note("options", "skipped", "no setup, no contract to pick")
 
             # ---- setups (before the run row so their trace notes land in it) --------
-            if a is not None:
+            if mode == "plan":
+                await vp.note("setup", "skipped", "plan mode: triggers are scored (walk-forward) or armed (live); "
+                              "no setup row until one fires")
+            elif a is not None:
                 await self._persist_setup(run_id, symbol or a.symbol, a, contract, options,
                                           grounded=bool(result.grounding.get("passed")), vp=vp)
 
@@ -538,12 +661,24 @@ class TechniqueService:
             res_d["options"] = options
             res_d["seconds"] = round(time.time() - t0, 1)
             res_d["trace"] = list(trace)
+            res_d["sessionWindow"] = facts.get("sessionWindow")
+            if plan_d is not None:
+                res_d["plan"] = plan_d
+            top = None
+            if plan_d is not None:
+                valid = [x for x in plan_d["triggers"] if x["valid"]]
+                top = max(valid, key=lambda x: x["confidence"]) if valid else None
             async with self.engine.sf() as session:
                 r = await session.get(TechniqueRun, run_id)
                 r.status = "done"
-                r.verdict = a.verdict if a else None
-                r.setup_type = a.setup_type if a else None
-                r.confidence = a.confidence if a else None
+                if mode == "plan":
+                    r.verdict = "plan"
+                    r.setup_type = top["setupType"] if top else None
+                    r.confidence = top["confidence"] if top else (a.confidence if a else None)
+                else:
+                    r.verdict = a.verdict if a else None
+                    r.setup_type = a.setup_type if a else None
+                    r.confidence = a.confidence if a else None
                 r.grounded = bool(result.grounding.get("passed")) if result.mode == "full" else None
                 r.facts = _slim_facts(facts)
                 r.result = res_d
@@ -571,7 +706,8 @@ class TechniqueService:
                     "runId": run_id, "checks": [c for c in result.grounding.get("checks", [])
                                                if not c.get("passed")]},
                     aggregate_type="technique_run", aggregate_id=run_id)
-            summary_text = _summary_text(contract, result.grounding, options)
+            summary_text = (plan_summary_text(plan_d) if plan_d is not None
+                            else _summary_text(contract, result.grounding, options))
             await chat.append_message(thread_id, "assistant", [{"type": "text", "text": summary_text}],
                                       {"kind": "run_summary", "runId": run_id,
                                        "annotatedAssetId": images_meta.get("annotated")},
@@ -580,7 +716,7 @@ class TechniqueService:
             self.engine.bus.publish(topics.TECHNIQUE, {"kind": "run_done", "run": run_summary_from_dict(rd)})
 
             # A backdated run already has its future: score it right away.
-            if (mode == "full" and as_of_ms is not None
+            if (mode in ("full", "plan") and as_of_ms is not None
                     and bool(self.engine.settings.get("technique.outcome.enabled", True))):
                 with contextlib.suppress(Exception):
                     await self.score_run(run_id)
@@ -744,6 +880,8 @@ class TechniqueService:
         as_of = r.as_of or int(r.created_at.timestamp() * 1000)
         setup_id = setups[0].id if setups else None
         symbol = r.symbol
+        if r.mode == "plan":
+            return await self._score_plan_run(r, existing)
 
         plans: list[tuple[str, dict | None]] = []
         pa = plan_from_contract(contract)
@@ -853,6 +991,266 @@ class TechniqueService:
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "outcome", "runId": run_id, "outcomes": scored})
         return scored
 
+    async def _score_plan_run(self, r: TechniqueRun, existing: dict[str, TechniqueOutcome]) -> list[dict]:
+        """Score a plan run against the planned session's bars: one outcome row per
+        trigger (`plan_source="trigger:<id>"`) plus a `levels` row with the level
+        respect scorecard. Re-scored while the session is still open."""
+        res = r.result or {}
+        plan = res.get("plan") or {}
+        plan_for = plan.get("planFor")
+        tf = plan.get("triggerTf") or r.primary_tf
+        symbol = r.symbol
+        now = dt.datetime.now(dt.timezone.utc)
+
+        async def upsert(source: str, **fields) -> TechniqueOutcome:
+            async with self.engine.sf() as session:
+                o = existing.get(source)
+                if o is not None:
+                    o = await session.get(TechniqueOutcome, o.id)
+                else:
+                    o = TechniqueOutcome(id=new_id(), run_id=r.id, plan_source=source)
+                    session.add(o)
+                for k, v in fields.items():
+                    setattr(o, k, v)
+                await session.commit()
+                existing[source] = o
+                return o
+
+        if not plan_for or not plan.get("triggers") and not plan.get("levels"):
+            o = await upsert("levels", status="unscorable", plan={}, note="plan has no levels or triggers",
+                             scored_at=now)
+            return [outcome_dict(o)]
+        open_ms, close_ms = session_bounds(plan_for)
+        now_ms = time.time() * 1000
+        if now_ms < open_ms + 60_000:
+            o = await upsert("levels", status="pending", plan={}, note=f"session {plan_for} has not started")
+            return [outcome_dict(o)]
+        try:
+            bars = await fetch_session(symbol, tf, plan_for)
+        except Exception as exc:
+            o = await upsert("levels", status="pending", plan={}, note=f"fetch failed: {exc}")
+            return [outcome_dict(o)]
+        if not bars:
+            stale = (now_ms - close_ms) > 4 * 86_400_000
+            o = await upsert("levels", status="unscorable" if stale else "pending", plan={},
+                             note=("no bars for the planned session (holiday / symbol / Yahoo depth)" if stale
+                                   else "no bars yet for the planned session"),
+                             scored_at=now if stale else None)
+            out = [outcome_dict(o)]
+            self.engine.bus.publish(topics.TECHNIQUE, {"kind": "outcome", "runId": r.id, "outcomes": out})
+            return out
+        complete = bars[-1].ts >= close_ms - 2 * 60_000 * max(1, {"1m": 1, "5m": 5, "15m": 15}.get(tf, 1))
+        profile = None
+        with contextlib.suppress(Exception):
+            snap = await self.load_bars_snapshot(r.id)
+            if snap and snap.get(tf):
+                profile = build_profile(snap[tf])
+        thr = self._thresholds_of(r)
+        rep = replay_plan(plan, bars, thresholds=thr, profile=profile)
+        blob = json.dumps({"symbol": symbol, "tf": tf, "asOf": r.as_of, "session": plan_for,
+                           "bars": bars_to_rows(bars)}).encode("utf-8")
+        asset_id = next((o.bars_asset_id for o in existing.values() if o.bars_asset_id), None)
+        if asset_id is None:
+            asset_id = await self.chat.store_asset(blob, "application/json", thread_id=r.thread_id,
+                                                   meta={"kind": "bars_after", "runId": r.id, "session": plan_for})
+        last_close = float(plan.get("lastClose") or bars[0].open)
+        path = path_summary(bars, last_close)
+        status = "scored" if complete else "partial"
+        scored: list[dict] = []
+        for tg in rep.get("triggers") or []:
+            sim = tg.get("sim") or {}
+            fired = tg.get("status") == "fired"
+            o = await upsert(f"trigger:{tg['id']}", status=status if tg.get("valid") else "unscorable",
+                             plan={k: tg.get(k) for k in ("id", "kind", "valid", "levelPrice", "entry", "stop",
+                                                          "riskReward", "firedTs", "firedWindow", "fillPrice",
+                                                          "observedMidday", "skipped", "counterfactual", "reasons")},
+                             outcome=(sim.get("outcome") if fired else tg.get("status")),
+                             r_multiple=sim.get("rMultiple") if fired else None,
+                             mfe_r=sim.get("mfeR") if fired else None, mae_r=sim.get("maeR") if fired else None,
+                             bars_held=sim.get("barsHeld") if fired else None, bars_after=len(bars), path=path,
+                             bars_asset_id=asset_id, scored_at=now,
+                             note=(f"fired {tg.get('firedWindow')}" if fired else tg.get("status")))
+            scored.append(outcome_dict(o))
+        o = await upsert("levels", status=status, plan={"levels": rep.get("levels"), "summary": rep.get("summary")},
+                         outcome=None, bars_after=len(bars), path=path, bars_asset_id=asset_id, scored_at=now,
+                         note=(f"{rep['summary'].get('levelsRespected', 0)} respected / "
+                               f"{rep['summary'].get('levelsBroken', 0)} broken / "
+                               f"{rep['summary'].get('levelsUntested', 0)} untested"))
+        scored.append(outcome_dict(o))
+        await self.engine.journal.append(ev.TECHNIQUE_OUTCOME_SCORED, {
+            "runId": r.id, "symbol": symbol, "tf": tf, "planFor": plan_for, "mode": "plan",
+            "complete": complete, "summary": rep.get("summary"),
+            "triggers": [{"id": x["plan"].get("id"), "status": x["outcome"], "rMultiple": x["rMultiple"]}
+                         for x in scored if x["planSource"].startswith("trigger:")]},
+            aggregate_type="technique_run", aggregate_id=r.id)
+        self.engine.bus.publish(topics.TECHNIQUE, {"kind": "outcome", "runId": r.id, "outcomes": scored})
+        return scored
+
+    def _thresholds_of(self, r: TechniqueRun) -> Thresholds:
+        """The thresholds the run was built with (so a re-score is faithful)."""
+        cfg = (r.config or {}).get("thresholds") or {}
+        if not cfg:
+            return self.thresholds()
+        fields = {f.name for f in dataclasses.fields(Thresholds)}
+        kw = {k: (tuple(v) if isinstance(v, list) else v) for k, v in cfg.items() if k in fields}
+        try:
+            return dataclasses.replace(self.thresholds(), **kw)
+        except TypeError:
+            return self.thresholds()
+
+    # ------------------------------------------------------------ walk-forward sweeps
+    async def start_sweep(self, symbols: list[str], start: str, end: str, *, structure_tfs: list[str] | None = None,
+                          trigger_tf: str | None = None, include_invalid: bool = False, label: str = "",
+                          wait: bool = False) -> dict:
+        symbols = [str(s).upper().strip() for s in symbols if str(s).strip()]
+        if not symbols:
+            raise ValueError("at least one symbol")
+        stf = list(structure_tfs or self.structure_tfs())
+        ttf = trigger_tf or self.trigger_tf()
+        t = self.thresholds()
+        row = TechniqueSweep(id=new_id(), label=label or f"{len(symbols)} symbols {start}..{end}", symbols=symbols,
+                             start=start, end=end, status="running",
+                             params={"structureTfs": stf, "triggerTf": ttf, "includeInvalid": include_invalid,
+                                     "thresholds": provenance_snapshot(thresholds=t, settings_all=self.engine.settings.all(),
+                                                                       model="-", effort="-", thinking_display="-",
+                                                                       max_passes=0, timeframes=stf + [ttf])["thresholds"],
+                                     "processVersion": provenance_snapshot(
+                                         thresholds=t, settings_all=self.engine.settings.all(), model="-", effort="-",
+                                         thinking_display="-", max_passes=0, timeframes=stf + [ttf])["processVersion"]},
+                             progress={"done": 0, "total": len(symbols)})
+        async with self.engine.sf() as session:
+            session.add(row)
+            await session.commit()
+        d = sweep_dict(row)
+        await self.engine.journal.append(ev.TECHNIQUE_SWEEP_STARTED, d, aggregate_type="technique_sweep",
+                                         aggregate_id=row.id)
+        self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep", "sweep": d})
+        task = asyncio.create_task(self._run_sweep(row.id, symbols, start, end, stf, ttf, include_invalid, t),
+                                   name=f"technique-sweep-{row.id[:8]}")
+        self._sweeps[row.id] = task
+        if wait:
+            await task
+            return await self.get_sweep(row.id) or d
+        return d
+
+    async def _run_sweep(self, sweep_id: str, symbols: list[str], start: str, end: str, stf: list[str], ttf: str,
+                         include_invalid: bool, t: Thresholds) -> None:
+        all_rows: list[dict] = []
+        errors: list[dict] = []
+        try:
+            for i, sym in enumerate(symbols):
+                try:
+                    rows = await run_symbol(sym, start, end, structure_tfs=stf, trigger_tf=ttf, thresholds=t,
+                                            include_invalid=include_invalid,
+                                            bars_override=self._sweep_bars_override(sym))
+                except Exception as exc:
+                    log.exception("sweep symbol failed")
+                    errors.append({"symbol": sym, "error": str(exc)})
+                    rows = []
+                if rows and rows[0].get("error"):
+                    errors.append({"symbol": sym, "error": rows[0]["error"]})
+                    rows = []
+                async with self.engine.sf() as session:
+                    for r in rows:
+                        session.add(TechniqueWalkforward(id=new_id(), sweep_id=sweep_id, symbol=sym, session=r["session"],
+                                                         plan_for=r.get("planFor"), plan=r.get("plan") or {},
+                                                         result=r.get("result") or {}))
+                    sw = await session.get(TechniqueSweep, sweep_id)
+                    if sw is not None:
+                        sw.progress = {"done": i + 1, "total": len(symbols), "rows": len(all_rows) + len(rows),
+                                       "errors": errors}
+                    await session.commit()
+                all_rows.extend(rows)
+                self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep_progress", "sweepId": sweep_id,
+                                                           "done": i + 1, "total": len(symbols)})
+            summary = aggregate_sweep(all_rows)
+            summary["errors"] = errors
+            async with self.engine.sf() as session:
+                sw = await session.get(TechniqueSweep, sweep_id)
+                sw.status = "done"
+                sw.summary = summary
+                sw.finished_at = dt.datetime.now(dt.timezone.utc)
+                await session.commit()
+                d = sweep_dict(sw)
+            await self.engine.journal.append(ev.TECHNIQUE_SWEEP_COMPLETED, {
+                "sweepId": sweep_id, "sessions": summary.get("sessions"), "fired": (summary.get("sample") or {}).get("fired"),
+                "claims": [{"claim": c["claim"], "verdict": c["verdict"]} for c in summary.get("claims") or []],
+                "errors": errors}, aggregate_type="technique_sweep", aggregate_id=sweep_id)
+            self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep", "sweep": d})
+        except asyncio.CancelledError:
+            async with self.engine.sf() as session:
+                sw = await session.get(TechniqueSweep, sweep_id)
+                if sw is not None:
+                    sw.status = "failed"
+                    sw.error = "cancelled"
+                    await session.commit()
+            raise
+        except Exception as exc:
+            log.exception("sweep failed")
+            async with self.engine.sf() as session:
+                sw = await session.get(TechniqueSweep, sweep_id)
+                if sw is not None:
+                    sw.status = "failed"
+                    sw.error = f"{type(exc).__name__}: {exc}"
+                    await session.commit()
+        finally:
+            self._sweeps.pop(sweep_id, None)
+
+    def _sweep_bars_override(self, symbol: str) -> dict[str, list[Bar]] | None:
+        """Hook for tests (monkeypatched) — production always fetches from Yahoo."""
+        return None
+
+    async def list_sweeps(self, *, limit: int = 50) -> list[dict]:
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(TechniqueSweep).order_by(TechniqueSweep.created_at.desc())
+                                          .limit(limit))).scalars().all()
+        return [sweep_dict(x) for x in rows]
+
+    async def get_sweep(self, sweep_id: str, *, rows: bool = True) -> dict | None:
+        async with self.engine.sf() as session:
+            sw = await session.get(TechniqueSweep, sweep_id)
+            if sw is None:
+                return None
+            d = sweep_dict(sw)
+            if rows:
+                rs = (await session.execute(select(TechniqueWalkforward).where(TechniqueWalkforward.sweep_id == sweep_id)
+                                            .order_by(TechniqueWalkforward.symbol, TechniqueWalkforward.session))).scalars().all()
+                d["rows"] = [walkforward_row_dict(x) for x in rs]
+        return d
+
+    async def promote(self, sweep_id: str, symbol: str, session_day: str, *, with_vision: bool = False) -> dict:
+        """Turn one sweep row into a full, reviewable plan run (same as-of)."""
+        async with self.engine.sf() as session:
+            row = (await session.execute(select(TechniqueWalkforward).where(
+                TechniqueWalkforward.sweep_id == sweep_id, TechniqueWalkforward.symbol == symbol.upper(),
+                TechniqueWalkforward.session == session_day))).scalars().first()
+            sw = await session.get(TechniqueSweep, sweep_id)
+        if row is None or sw is None:
+            raise KeyError("sweep row not found")
+        _, close_ms = session_bounds(session_day)
+        params = sw.params or {}
+        rd = await self.analyze(symbol, as_of_ms=close_ms + 1, primary_tf=params.get("triggerTf"),
+                                trigger="promote", plan=True, with_vision=with_vision, wait=True)
+        async with self.engine.sf() as session:
+            r2 = await session.get(TechniqueWalkforward, row.id)
+            if r2 is not None:
+                r2.promoted_run_id = rd["id"]
+                await session.commit()
+        return rd
+
+    # ------------------------------------------------------------ arming (phase 2)
+    async def arm_plan(self, run_id: str) -> dict:
+        return await self.armer.arm(run_id)
+
+    async def disarm_plan(self, run_id: str) -> bool:
+        return await self.armer.disarm(run_id)
+
+    async def arm_today(self, symbol: str, *, with_vision: bool | None = None) -> dict:
+        return await self.armer.arm_today(symbol, with_vision=with_vision)
+
+    def armed_plans(self) -> list[dict]:
+        return self.armer.armed()
+
     async def score_pending(self, *, limit: int = 25) -> dict:
         """Score every finished run that has no outcome yet or a still-open one.
         Called by the outcome loop and `POST /api/technique/outcomes/score`."""
@@ -860,7 +1258,7 @@ class TechniqueService:
         async with self.engine.sf() as session:
             runs = (await session.execute(
                 select(TechniqueRun.id, TechniqueRun.as_of, TechniqueRun.created_at)
-                .where(TechniqueRun.status == "done", TechniqueRun.mode == "full",
+                .where(TechniqueRun.status == "done", TechniqueRun.mode.in_(("full", "plan")),
                        TechniqueRun.created_at >= cutoff)
                 .order_by(TechniqueRun.created_at.desc()).limit(400))).all()
             ids = [x.id for x in runs]
@@ -978,13 +1376,14 @@ class TechniqueService:
             parent = await session.get(TechniqueRun, run_id)
         if parent is None:
             raise KeyError(f"run {run_id} not found")
-        if parent.mode != "full":
+        if parent.mode not in ("full", "plan"):
             raise ValueError("image-only runs cannot be replayed (no bars)")
         bars = await self.load_bars_snapshot(run_id) if use_snapshot else None
         as_of = parent.as_of or int(parent.created_at.timestamp() * 1000)
         rd = await self.analyze(parent.symbol, as_of_ms=as_of, primary_tf=parent.primary_tf,
                                 trigger="replay", note=note, parent_run_id=run_id,
-                                thresholds_override=thresholds, bars_override=bars, wait=wait)
+                                thresholds_override=thresholds, bars_override=bars, wait=wait,
+                                plan=(True if parent.mode == "plan" else False))
         await self.engine.journal.append(ev.TECHNIQUE_RUN_REPLAYED, {
             "parentRunId": run_id, "runId": rd["id"], "symbol": parent.symbol, "asOf": as_of,
             "thresholds": thresholds or {}, "barsFromSnapshot": bars is not None, "note": note},
@@ -1019,11 +1418,15 @@ class TechniqueService:
 
     # ------------------------------------------------------------ backtest
     async def backtest(self, symbol: str, tf: str = "5m", *, days: int = 10, start_ms: int | None = None,
-                       end_ms: int | None = None, horizon_bars: int = 60, step_bars: int = 5) -> dict:
+                       end_ms: int | None = None, horizon_bars: int = 60, step_bars: int = 5,
+                       prime_windows_only: bool | None = None) -> dict:
         end_ms = end_ms or int(time.time() * 1000)
         start_ms = start_ms or end_ms - days * 86400 * 1000
+        if prime_windows_only is None:
+            prime_windows_only = bool(self.engine.settings.get("technique.enforce_session_windows", True))
         return await run_backtest(symbol, tf, start_ms, end_ms, horizon_bars=horizon_bars,
-                                  step_bars=step_bars, thresholds=self.thresholds())
+                                  step_bars=step_bars, thresholds=self.thresholds(),
+                                  prime_windows_only=prime_windows_only)
 
     # ------------------------------------------------------------ scans
     def start(self) -> None:
@@ -1031,10 +1434,14 @@ class TechniqueService:
             self._scan_task = asyncio.create_task(self._scan_loop(), name="technique-scan")
         if self._outcome_task is None:
             self._outcome_task = asyncio.create_task(self._outcome_loop(), name="technique-outcome")
+        self.armer.start()
 
     async def stop(self) -> None:
         for t in list(self._running.values()):
             t.cancel()
+        for t in list(self._sweeps.values()):
+            t.cancel()
+        await self.armer.stop()
         for name in ("_scan_task", "_outcome_task"):
             task = getattr(self, name)
             if task:
@@ -1075,12 +1482,20 @@ class TechniqueService:
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "scan", "started": started, "skipped": skipped})
         return {"started": started, "skipped": skipped}
 
+    def _scan_allowed(self) -> bool:
+        """R6 — scheduled scans run in the prime windows only (when enforced);
+        otherwise the old RTH-only behaviour."""
+        if bool(self.engine.settings.get("technique.enforce_session_windows", True)):
+            wanted = set(self.engine.settings.get("technique.scan.windows", ["prime_open", "prime_close"]))
+            return session_window(int(time.time() * 1000)) in wanted
+        return not bool(self.engine.settings.get("technique.scan.rth_only", True)) or self._in_rth()
+
     async def _scan_loop(self) -> None:
         while True:
             try:
                 interval = max(5, int(self.engine.settings.get("technique.scan.interval_minutes", 30)))
                 if bool(self.engine.settings.get("technique.scan.enabled", False)):
-                    if not bool(self.engine.settings.get("technique.scan.rth_only", True)) or self._in_rth():
+                    if self._scan_allowed():
                         await self.scan_once()
                 await asyncio.sleep(interval * 60)
             except asyncio.CancelledError:
@@ -1142,6 +1557,30 @@ def run_summary_from_dict(rd: dict) -> dict:
     d["seconds"] = res.get("seconds")
     d["traceSteps"] = len(res.get("trace") or [])
     return d
+
+
+def _slim_plan_summary(plan: dict | None) -> dict | None:
+    if not plan:
+        return None
+    return {"planFor": plan.get("planFor"), "builtFromSession": plan.get("builtFromSession"),
+            "levels": len(plan.get("levels") or []), "triggers": len(plan.get("triggers") or []),
+            "validTriggers": plan.get("validTriggers"),
+            "kinds": sorted({t.get("kind") for t in (plan.get("triggers") or []) if t.get("valid")})}
+
+
+def sweep_dict(s: TechniqueSweep) -> dict:
+    return {"id": s.id, "label": s.label, "symbols": list(s.symbols or []), "start": s.start, "end": s.end,
+            "params": s.params or {}, "status": s.status, "progress": s.progress or {}, "summary": s.summary or {},
+            "error": s.error, "createdAt": s.created_at.isoformat() if s.created_at else None,
+            "finishedAt": s.finished_at.isoformat() if s.finished_at else None}
+
+
+def walkforward_row_dict(r: TechniqueWalkforward) -> dict:
+    res = r.result or {}
+    return {"id": r.id, "sweepId": r.sweep_id, "symbol": r.symbol, "session": r.session, "planFor": r.plan_for,
+            "plan": r.plan or {}, "result": res, "summary": res.get("summary") or {},
+            "promotedRunId": r.promoted_run_id,
+            "createdAt": r.created_at.isoformat() if r.created_at else None}
 
 
 def _slim_outcome(o: dict) -> dict:

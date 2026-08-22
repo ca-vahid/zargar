@@ -21,7 +21,7 @@ the exact rule that fired. Page numbers refer to PDF pages.
 | **Ch 4: Risk Management Strategies** | **61–66** | **KEEP — sizing, no-trade gates** |
 | **Ch 5: Developing Your Trading Edge** | **67–82** | **KEEP — entry, TP/SL, averaging** |
 | Ch 6: The Trader's Mindset | 83–110 | **Drop** — psychology, not executable |
-| Conclusion / Actionable Next Steps / community | 111–123 | **Partial** — the One-Contract Rule (§7.4) is kept as a sizing cap |
+| Conclusion / Actionable Next Steps / community | 111–123 | **KEEP** (corrected 2026-08-22) — trading schedule (§R6), 30m/1h timeframe preference, disable after-hours data, pre-session watchlist + alerts at levels, redraw levels daily, chart-based stops, the One-Contract Rule (R5) |
 
 The author states his entire method rests on **two** things (p. 32):
 
@@ -79,6 +79,15 @@ instances", pp. 33–34).
 Memory/anchoring, round numbers, pain-and-regret (breakeven selling at old
 highs), fear/greed, institutional order placement, confluence, herd mentality
 (pp. 40–41). Used to *explain* a level in the rationale field, not to find it.
+
+### T1.6 Pre-session routine: levels are prepared, alerted, and redrawn daily
+**Source: pp. 115–117, 120 (added 2026-08-22).** "Before the session begins, prepare your own
+watchlist" (p. 116); the author's own pre-market stream is "key levels… for the day ahead"
+(p. 115); "set alerts above and below key levels" (p. 117); "at the end of each trading
+day, remove all your drawings… start fresh the next day by redrawing your levels" (p. 120).
+Together with T1.3a/b (prior-day levels carry into the next day, p. 71) this is the
+close-of-N → plan-for-N+1 workflow: a **Session Plan** of levels + conditional triggers,
+rebuilt every session (`technique/plans.py`, `docs/TECHNIQUE-WALKFORWARD-PLAN.md`).
 
 ### T1.5 Trendline drawing rules
 **Source: p. 68.** These are hard constraints on any sloped line the model draws:
@@ -247,6 +256,13 @@ modelled separately, with confirmation required only for Setup B.
 > hard protective stop placed further out as a disaster backstop. This is a
 > deliberate divergence from the book and must be flagged in the UI.
 
+> **Rule T4.3d (added 2026-08-22)** — the stop is **chart-based, just below the level
+> that invalidates the idea, never a fixed percentage** of price or premium: "avoid the
+> common advice of using a stop loss based on a fixed percentage… set your stop losses
+> based on the chart" (p. 117). The book's own bounce example ($98 support → watch
+> ~$97.50, p. 73) is a zone just under the level; `setups.bounce_stop` uses the larger of
+> that 0.5 %, two touch tolerances and 0.25 ATR (`technique.bounce_stop_pct`).
+
 ### T4.4 Take-profit ladder
 **Source: p. 73.** The author's own worked structure, long at $100:
 
@@ -264,6 +280,12 @@ Note the ladder is evenly spaced (+2, +4, +6 from a $100 entry ⇒ **2 %, 4 %,
 > **Rule T4.4** — Never exit on P&L. "It's also essential not to sell a position
 > based on your Profit and Loss (PnL) statement… I focus solely on the chart and
 > the technicals" (p. 46).
+
+### T4.6 Confluence
+**Source: p. 67.** "Aim for 2+ confluences (agreeing factors) per trade… conflicting
+signals = potential to avoid the trade." `setups.confluences` counts them (prior-day
+extreme, 3+ touches, volume posture, higher-timeframe agreement, rejection candle) and
+fires **T4.6** when ≥ 2; plans carry the list per trigger.
 
 ### T4.5 Averaging down
 **Source: pp. 77–78.** Permitted only under **all** of:
@@ -356,6 +378,35 @@ assessment → (mental state evaluation).
 regardless of account size**. Maps to a hard quantity cap while the technique is
 being validated.
 
+### R6 Trading schedule (added 2026-08-22)
+**Source: pp. 114–115.** "Understanding when to trade is just as important as knowing
+how to trade."
+
+| Rule | Window (ET) | Verdict | Book's reasoning |
+|---|---|---|---|
+| **R6.1** | 09:30–10:30 | Prime | highest volume/volatility, institutional orders, overnight news; momentum, breakouts, early reversals |
+| **R6.2** | 14:45–16:00 | Prime | closing surge; end-of-day momentum, continuation, last-minute breakouts (the p. 71 SPY example) |
+| **R6.3** | 10:30–14:45 | **Avoid** | "lower volume, choppy price action, lack of clear direction"; theta decay, false breakouts, whipsaws |
+| **R6.4** | pre-market / after-hours | **Avoid** | thin volume, wide spreads, erratic swings |
+| **R6.5** | — | data | "Disable after-hours data" (p. 114) — `history.py` fetches regular-session bars only |
+
+> "Trading more does not equal making more. Focus on quality trades during
+> high-probability times." (p. 115)
+
+Implementation: `rulebook.session_window(ts)`; FACTS carry `sessionWindow`; a setup
+found outside the prime windows is **watch only** (`technique.enforce_session_windows`);
+scheduled scans run in `technique.scan.windows`; the backtester takes setups in prime
+windows only by default; plan triggers require a prime window; armed plans log mid-day
+touches as observed but do not fire.
+
+### Timeframe preference (p. 114)
+"Focus on 30-Minute and 1-Hour Timeframes… My personal win rate is significantly higher
+on these timeframes (**78 %**) compared to lower time frames (**58 %**)." A single-trader
+self-report on an unstated sample — **to be tested, not assumed**. Our reading: structure
+(levels, patterns) is read on 30m/1h (`technique.structure_tfs`), the entry/trigger
+decision on 1m/5m (`technique.default_tf` / `technique.trigger_tf`) inside the R6
+windows; the walk-forward reports per structure timeframe (spec Q15).
+
 ---
 
 ## 8. The two setup types (derived)
@@ -440,6 +491,11 @@ configurable default and the numbers below are *our* proposals, not the author's
 | Q8 | Wedge minimum length | ≥ 8 bars, ≥ 2 touches per trendline (T1.5 wants 3) |
 | Q9 | Max distance from level still tradeable | R:R ≥ 3 test (T4.1) governs |
 | Q10 | Short side | The book is **almost entirely long-biased** (falling wedge, buy support). Mirror rules for shorts are our extrapolation — **long-only for v1** |
+| Q11 | **Overnight gap past a planned level** (book silent: the author is flat overnight) | trigger not taken — T4.1 forbids chasing (`gapped_past`) |
+| Q12 | **Open beyond the planned stop** | trigger void (`gapped_through`) |
+| Q13 | **Gap magnitude** | \|open − prev close\| > `technique.plan.gap_void_r` (1.0) × risk voids the plan; reported with and without |
+| Q14 | **"Level respected"** (for level-quality scoring) | price enters ±2×tol and reverses ≥ `technique.plan.respect_mult` (3) × tol without a close beyond; `broken` / `flipped` / `untested` otherwise |
+| Q15 | **Structure vs trigger timeframe** | structure on 30m/1h, triggers on 1m/5m (p. 114 read as *where structure is read*) — ours; per-tf results keep it testable |
 
 ### Decisions taken 2026-08-21
 
@@ -453,17 +509,19 @@ configurable default and the numbers below are *our* proposals, not the author's
 
 ---
 
-## 11. Implementation status
+## 11. Implementation status (refreshed 2026-08-22)
 
 | Module | Spec | Built |
 |---|---|---|
-| T1 Support/Resistance | ✅ | ☐ |
-| T2 Volume | ✅ | ☐ |
-| T3 Patterns (wedge, breakout/fakeout, candles, trend) | ✅ | ☐ |
-| T4 Entry/Stop/Targets | ✅ | ☐ |
-| T5 Options expression | ✅ | ☐ (blocked on chain data) |
-| R Risk & no-trade gates | ✅ | ☐ |
-| Pipeline + grounding | ✅ | ☐ |
-| UI panel | ✅ | ☐ |
-| Backtest harness | ✅ | ☐ |
-| Auto-execution | — | ☐ (deliberately deferred) |
+| T1 Support/Resistance (+ T1.6 pre-session levels) | ✅ | ✅ `levels.py`, `plans.py` |
+| T2 Volume | ✅ | ✅ `volume.py` |
+| T3 Patterns (wedge, breakout/fakeout, candles, trend) | ✅ | ✅ `structure.py`, `setups.py`, `candles.py` |
+| T4 Entry/Stop/Targets (+ T4.3d chart stop, T4.6 confluence) | ✅ | ✅ `setups.py` |
+| T5 Options expression | ✅ | ✅ CBOE chain (`options.py`) |
+| R Risk & no-trade gates (+ R6 schedule) | ✅ | ✅ `rulebook.py`, `service.py`, `backtest.py` |
+| Pipeline + grounding | ✅ | ✅ `vision.py`, `grounding.py` |
+| Review loop (trace, provenance, outcomes, reviews, replay) | — | ✅ `docs/TECHNIQUE-REVIEW-PLAN.md` |
+| Session plans + walk-forward + live arming | — | ✅ `docs/TECHNIQUE-WALKFORWARD-PLAN.md` |
+| UI panel | ✅ | ✅ Analyse / Chat / History / Backtest / Validation |
+| Backtest harness | ✅ | ✅ (R6-gated by default) |
+| Auto-execution | — | ☐ (deliberately deferred — armed triggers become practice proposals) |

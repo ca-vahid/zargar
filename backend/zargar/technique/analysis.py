@@ -13,26 +13,37 @@ from dataclasses import dataclass, field
 from ..domain import Bar
 from .candles import classify, metrics
 from .history import HistoryError, fetch_recent, interval_available, split_sessions
-from .levels import Level, detect_levels, nearest_level, session_key
-from .rulebook import DEFAULT_THRESHOLDS, Thresholds
+from .levels import Level, atr, detect_levels, nearest_level, session_key
+from .rulebook import DEFAULT_THRESHOLDS, Thresholds, session_window
 from .setups import Setup, build_bounce_setup, build_breakout_setup, classify_breakout
 from .structure import detect_wedge, read_trend
 from .volume import assess_volume, build_profile
 
 # Sessions of history per timeframe: enough for a time-of-day volume baseline
 # and prior-day levels, without dragging in months the method ignores.
-SESSIONS_FOR_TF = {"1m": 5, "5m": 8, "15m": 12, "1h": 25, "1d": 120}
+SESSIONS_FOR_TF = {"1m": 5, "5m": 8, "15m": 12, "30m": 15, "1h": 25, "1d": 120}
 # Bars shown to the model / kept in facts for each timeframe.
-WINDOW_FOR_TF = {"1m": 240, "5m": 160, "15m": 120, "1h": 120, "1d": 120}
+WINDOW_FOR_TF = {"1m": 240, "5m": 160, "15m": 120, "30m": 120, "1h": 120, "1d": 120}
 
 
 @dataclass
 class AnalysisRequest:
+    """`primary_tf` is where the entry/trigger decision is made; `context_tfs`
+    are the structure timeframes (the book reads levels/patterns on 30m/1h,
+    p. 114) shown first. `structure_tfs` is an alias kept for plan mode."""
     symbol: str
     as_of_ms: int | None = None
     primary_tf: str = "1m"
     context_tfs: tuple[str, ...] = ("1h", "5m")
     thresholds: Thresholds = field(default_factory=lambda: DEFAULT_THRESHOLDS)
+
+    @property
+    def structure_tfs(self) -> tuple[str, ...]:
+        return tuple(t for t in self.context_tfs if t != self.primary_tf)
+
+    @property
+    def trigger_tf(self) -> str:
+        return self.primary_tf
 
     @property
     def timeframes(self) -> list[str]:
@@ -174,6 +185,9 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
     last = pbars[-1].close
     facts["lastClose"] = last
     facts["lastTs"] = pbars[-1].ts
+    # R6 — where in the book's schedule the as-of instant sits (ET).
+    facts["sessionWindow"] = session_window(int(facts["asOf"]))
+    facts["atr"] = {}
     tol = max(last * t.level_tolerance_pct * 2, 1e-6)
 
     per_tf_levels: dict[str, list[Level]] = {}
@@ -190,6 +204,7 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
 
         tr = read_trend(bars[-win:], thresholds=t)
         facts["trend"][tf] = tr.to_dict()
+        facts["atr"][tf] = round(atr(bars[-win:]), 4)
 
         today_key = keys[-1] if keys else None
         prof = build_profile(bars, exclude_session=today_key)
@@ -221,6 +236,11 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
 
     facts["keyLevels"] = _merge_levels(per_tf_levels, last, tol)
     facts["session"] = _session_stats(pbars)
+    sess = facts["session"]
+    if sess.get("today") and sess.get("prev") and sess["prev"].get("close"):
+        pc = sess["prev"]["close"]
+        facts["gap"] = {"open": sess["today"]["open"], "prevClose": pc,
+                        "pct": round((sess["today"]["open"] - pc) / pc * 100, 3)}
 
     # --- candidate setups (deterministic) ---------------------------------
     plevels = per_tf_levels.get(primary, [])
@@ -231,7 +251,8 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
     candidates: list[dict] = []
     if sup is not None:
         s: Setup = build_bounce_setup(facts["symbol"], pbars, sup, pvol,
-                                      next_resistance=res_above, thresholds=t)
+                                      next_resistance=res_above,
+                                      atr_value=float(facts["atr"].get(primary) or 0.0), thresholds=t)
         d = s.to_dict()
         d["distanceFromEntryPct"] = round((last - s.entry) / s.entry * 100, 3)
         candidates.append(d)
@@ -253,6 +274,13 @@ def facts_for_prompt(facts: dict, *, max_bars: int = 60) -> str:
     L: list[str] = []
     L.append(f"SYMBOL {facts.get('symbol')}  asOf={facts.get('asOf')}  "
              f"lastClose={facts.get('lastClose')}  primaryTf={facts.get('primaryTf')}")
+    if facts.get("sessionWindow"):
+        sw = facts["sessionWindow"]
+        L.append(f"SESSION WINDOW (R6): {sw}" + (" — prime, tradeable" if sw in ("prime_open", "prime_close")
+                                                 else " — outside the prime windows: watch only (R6.3/R6.4)"))
+    if facts.get("gap"):
+        g = facts["gap"]
+        L.append(f"GAP AT OPEN: {g['pct']:+.2f}% (open {g['open']:.2f} vs prev close {g['prevClose']:.2f})")
     for n in facts.get("notes") or []:
         L.append(f"NOTE: {n}")
     sess = facts.get("session") or {}

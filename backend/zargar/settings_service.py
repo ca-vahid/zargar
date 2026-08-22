@@ -107,7 +107,12 @@ DEFAULTS: dict[str, Any] = {
     "technique.default_risk_pct": 1.0,
     "technique.max_risk_pct": 5.0,
     "technique.wedge_min_bars": 8,
-    "technique.default_tf": "1m",
+    "technique.default_tf": "1m",              # trigger / primary timeframe for live runs
+    # Structure is read on the book's 30m/1h charts (p. 114); triggers on 1m/5m.
+    "technique.structure_tfs": ["1h", "30m"],
+    "technique.trigger_tf": "1m",
+    "technique.bounce_stop_pct": 0.5,           # T4.3a/d — % below the level (plus 0.25 ATR)
+    "technique.enforce_session_windows": True,  # R6: outside prime windows = watch only
     "technique.options.enabled": True,
     "technique.options.provider": "cboe",   # cboe (free, ~15-min delayed) | tradier (token)
     "technique.emit_proposals": False,      # valid setups -> practice proposals
@@ -115,12 +120,24 @@ DEFAULTS: dict[str, Any] = {
     "technique.scan.symbols": ["SPY", "QQQ", "TSLA", "NVDA", "AAPL"],
     "technique.scan.interval_minutes": 30,
     "technique.scan.rth_only": True,
+    "technique.scan.windows": ["prime_open", "prime_close"],   # R6.1/R6.2 (when enforced)
     "technique.max_runs_per_day": 40,
     # --- technique review loop (docs/TECHNIQUE-REVIEW-PLAN.md) -------------
     "technique.outcome.enabled": True,        # score what price did after each run
     "technique.outcome.horizon_bars": 60,     # bars after as_of to walk forward
     "technique.outcome.entry_window_bars": 12,  # bars a bounce entry has to fill
     "technique.outcome.interval_minutes": 30, # scoring loop cadence
+    # --- session plans + walk-forward (docs/TECHNIQUE-WALKFORWARD-PLAN.md) ----
+    "technique.plan.gap_void_r": 1.0,          # Q13 (ours): gap > 1R voids the plan
+    "technique.plan.respect_mult": 3.0,        # Q14 (ours): reversal >= 3x tol = level respected
+    "technique.plan.entry_window_bars": 12,    # bars a bounce has to fill after the touch
+    "technique.plan.with_vision": False,       # plan mode is deterministic unless opted in
+    "technique.walkforward.symbols": ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "AMZN"],
+    "technique.walkforward.sessions": 40,      # default sweep length
+    # --- phase 2: arm plans for live triggers ---------------------------------
+    "technique.arm.enabled": True,             # allow arming plans at all
+    "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)
+    "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
 }
 
 

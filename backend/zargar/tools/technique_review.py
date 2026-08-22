@@ -19,6 +19,13 @@ Talks to Postgres directly (no running server needed) for everything except
     python -m zargar.tools.technique_review replay <run_id> [--api URL] [--set key=value ...]
                                                 [--no-snapshot] [--note "..."]
     python -m zargar.tools.technique_review taxonomy
+    python -m zargar.tools.technique_review plan <symbol> [--as-of YYYY-MM-DD] [--with-vision]
+    python -m zargar.tools.technique_review sweep --start D --end D [--symbols A,B] [--structure 1h,30m]
+                                                [--trigger 1m] [--include-invalid] [--label L]
+    python -m zargar.tools.technique_review sweeps | sweep-report <sweep_id> [--rows]
+    python -m zargar.tools.technique_review promote <sweep_id> <symbol> <session>
+    python -m zargar.tools.technique_review arm <run_id> | arm-today <symbol> | armed | disarm <run_id>
+                                                (through the API — the app must be running)
 
 Output is plain text by default; `--json` prints machine-readable JSON.
 Exit code 0 on success, 1 on a user error (bad id / bad value), 2 on a crash.
@@ -359,6 +366,165 @@ async def cmd_replay(args) -> int:
     return 0
 
 
+async def cmd_plan(args) -> int:
+    """Build a session plan through the API (needs the app for a live as-of) or
+    deterministically offline when --as-of is given (no model needed)."""
+    import httpx
+    from ..technique.rulebook import session_bounds
+    as_of = None
+    if args.as_of:
+        _, close = session_bounds(args.as_of)
+        as_of = close + 1
+    cfg = AppConfig()
+    base = args.api or f"http://{cfg.host}:{cfg.port}"
+    headers = {"Authorization": f"Bearer {cfg.auth_token}"} if cfg.auth_token else {}
+    async with httpx.AsyncClient(timeout=900, headers=headers) as http:
+        try:
+            r = await http.post(f"{base}/api/technique/plan",
+                                json={"symbol": args.symbol.upper(), "asOf": as_of, "withVision": args.with_vision,
+                                      "wait": True})
+        except httpx.HTTPError as exc:
+            print(f"API not reachable at {base}: {exc} (start the app first)", file=sys.stderr)
+            return 1
+        if r.status_code >= 400:
+            print(f"plan failed: {r.status_code} {r.text}", file=sys.stderr)
+            return 1
+        run = r.json()
+    if args.json:
+        print(json.dumps(run, indent=1, default=str))
+        return 0
+    from ..technique.plans import plan_summary_text
+    plan = (run.get("result") or {}).get("plan")
+    print(f"run {run['id']} ({run.get('status')})")
+    if plan:
+        print(plan_summary_text(plan))
+    for o in run.get("outcomes") or []:
+        print(" outcome:", o.get("planSource"), o.get("status"), o.get("outcome"), o.get("rMultiple"))
+    return 0
+
+
+async def cmd_sweep(args) -> int:
+    async with Ctx() as c:
+        syms = [s.strip().upper() for s in (args.symbols or "").split(",") if s.strip()] or \
+            list(c.engine.settings.get("technique.walkforward.symbols", []))
+        stf = [s.strip() for s in args.structure.split(",")] if args.structure else None
+        d = await c.svc.start_sweep(syms, args.start, args.end, structure_tfs=stf, trigger_tf=args.trigger,
+                                    include_invalid=args.include_invalid, label=args.label or "", wait=True)
+    if args.json:
+        print(json.dumps(d, indent=1, default=str))
+    else:
+        _print_sweep(d, rows=False)
+    return 0
+
+
+async def cmd_sweeps(args) -> int:
+    async with Ctx() as c:
+        rows = await c.svc.list_sweeps(limit=args.limit)
+    if args.json:
+        print(json.dumps(rows, indent=1, default=str))
+        return 0
+    for s in rows:
+        smp = (s.get("summary") or {}).get("sample") or {}
+        print(f"{s['id'][:10]} {(s.get('createdAt') or '')[:16]} {s['status']:<8} {s['start']}..{s['end']} "
+              f"{','.join(s['symbols'])[:40]:<40} sessions={(s.get('summary') or {}).get('sessions', '-')} "
+              f"fired={smp.get('fired', '-')}")
+    if not rows:
+        print("(no sweeps)")
+    return 0
+
+
+def _print_sweep(d: dict, *, rows: bool) -> None:
+    sm = d.get("summary") or {}
+    print(f"sweep {d['id']} [{d['status']}] {d['start']}..{d['end']} symbols {', '.join(d['symbols'])}")
+    print(f"params: {json.dumps({k: v for k, v in (d.get('params') or {}).items() if k != 'thresholds'})}")
+    if not sm:
+        print("(no summary yet)", d.get("progress"))
+        return
+    print(f"sessions {sm.get('sessions')} · fired {(sm.get('sample') or {}).get('fired')} of target "
+          f"{(sm.get('sample') or {}).get('target')}")
+    print("\nLEVEL QUALITY (tested respect rate):")
+    for key in ("priorDayVsOther", "bySource", "byTouches", "byTimeframe"):
+        print(f"  {key}:")
+        for k, v in ((sm.get("levels") or {}).get(key) or {}).items():
+            print(f"    {k:<12} n={v['n']:<4} respected={v['respected']:<4} broken={v['broken']:<4} "
+                  f"flipped={v['flipped']:<3} untested={v['untested']:<4} testedRespect={v.get('testedRespectRate')}")
+    print("\nTRIGGER QUALITY:")
+    for key in ("byKind", "byWindow", "counterfactual", "byRrGate"):
+        print(f"  {key}:")
+        for k, v in ((sm.get("triggers") or {}).get(key) or {}).items():
+            print(f"    {k:<14} " + " ".join(f"{kk}={vv}" for kk, vv in v.items()
+                                             if kk in ("planned", "fired", "wins", "winRate", "avgR", "sumR",
+                                                       "gappedPast", "gappedThrough", "gapVoid", "observedMidday",
+                                                       "notTriggered", "triggerRate")))
+    md = (sm.get("triggers") or {}).get("middayFiresWithoutGate")
+    if md:
+        print(f"  mid-day fires without the R6 gate: {md}")
+    print("\nCLAIMS (book vs data):")
+    for c in sm.get("claims") or []:
+        print(f"  [{c['verdict']:<12}] {c['claim']} ({c['rule']}) — {c['metric']}: {json.dumps(c['detail'], default=str)[:160]}")
+    if sm.get("errors"):
+        print("\nerrors:", sm["errors"])
+    if rows and d.get("rows"):
+        print("\nROWS:")
+        for r in d["rows"]:
+            s = r.get("summary") or {}
+            print(f"  {r['symbol']:<6} {r['session']} -> {r.get('planFor')}: triggers {s.get('triggers')} fired {s.get('fired')} "
+                  f"sumR {s.get('sumR')} levels R/B/U {s.get('levelsRespected')}/{s.get('levelsBroken')}/{s.get('levelsUntested')} "
+                  f"gap {s.get('gapPct')}%" + (f" promoted {r['promotedRunId'][:8]}" if r.get("promotedRunId") else ""))
+
+
+async def cmd_sweep_report(args) -> int:
+    async with Ctx() as c:
+        d = await c.svc.get_sweep(args.sweep_id, rows=True)
+    if d is None:
+        print("sweep not found", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(d, indent=1, default=str))
+    else:
+        _print_sweep(d, rows=args.rows)
+    return 0
+
+
+async def _api_call(args, method: str, path: str, body: dict | None = None) -> int:
+    import httpx
+    cfg = AppConfig()
+    base = args.api or f"http://{cfg.host}:{cfg.port}"
+    headers = {"Authorization": f"Bearer {cfg.auth_token}"} if cfg.auth_token else {}
+    async with httpx.AsyncClient(timeout=600, headers=headers) as http:
+        try:
+            r = await http.request(method, f"{base}{path}", json=body)
+        except httpx.HTTPError as exc:
+            print(f"API not reachable at {base}: {exc} (start the app first)", file=sys.stderr)
+            return 1
+        if r.status_code >= 400:
+            print(f"{path} failed: {r.status_code} {r.text}", file=sys.stderr)
+            return 1
+        print(json.dumps(r.json(), indent=1, default=str))
+    return 0
+
+
+async def cmd_promote(args) -> int:
+    return await _api_call(args, "POST", f"/api/technique/walkforward/{args.sweep_id}/promote",
+                           {"symbol": args.symbol.upper(), "session": args.session})
+
+
+async def cmd_arm(args) -> int:
+    return await _api_call(args, "POST", f"/api/technique/runs/{args.run_id}/arm")
+
+
+async def cmd_disarm(args) -> int:
+    return await _api_call(args, "DELETE", f"/api/technique/runs/{args.run_id}/arm")
+
+
+async def cmd_arm_today(args) -> int:
+    return await _api_call(args, "POST", "/api/technique/arm-today", {"symbol": args.symbol.upper()})
+
+
+async def cmd_armed(args) -> int:
+    return await _api_call(args, "GET", "/api/technique/armed")
+
+
 def cmd_taxonomy(args) -> int:
     if args.json:
         print(json.dumps({"reviewVerdicts": REVIEW_VERDICTS, "rootCauseStages": ROOT_CAUSE_STAGES}, indent=1))
@@ -447,6 +613,49 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("taxonomy", help="print the review verdict / root-cause vocabularies")
     p.set_defaults(fn=cmd_taxonomy)
+
+    p = sub.add_parser("plan", help="build a session plan (through the API)")
+    p.add_argument("symbol")
+    p.add_argument("--as-of", dest="as_of", help="YYYY-MM-DD: plan built at that session's close")
+    p.add_argument("--with-vision", dest="with_vision", action="store_true")
+    p.add_argument("--api")
+    p.set_defaults(fn=cmd_plan)
+
+    p = sub.add_parser("sweep", help="walk-forward sweep (deterministic, direct DB)")
+    p.add_argument("--start", required=True)
+    p.add_argument("--end", required=True)
+    p.add_argument("--symbols", help="comma-separated; default technique.walkforward.symbols")
+    p.add_argument("--structure", help="comma-separated structure tfs, default technique.structure_tfs")
+    p.add_argument("--trigger", help="trigger tf, default technique.trigger_tf")
+    p.add_argument("--include-invalid", dest="include_invalid", action="store_true")
+    p.add_argument("--label")
+    p.set_defaults(fn=cmd_sweep)
+
+    p = sub.add_parser("sweeps", help="list sweeps")
+    p.add_argument("--limit", type=int, default=30)
+    p.set_defaults(fn=cmd_sweeps)
+
+    p = sub.add_parser("sweep-report", help="aggregate report for a sweep")
+    p.add_argument("sweep_id")
+    p.add_argument("--rows", action="store_true")
+    p.set_defaults(fn=cmd_sweep_report)
+
+    p = sub.add_parser("promote", help="promote a sweep row to a full plan run (API)")
+    p.add_argument("sweep_id")
+    p.add_argument("symbol")
+    p.add_argument("session")
+    p.add_argument("--api")
+    p.set_defaults(fn=cmd_promote)
+
+    for name, fn, extra in (("arm", cmd_arm, "run_id"), ("disarm", cmd_disarm, "run_id"),
+                            ("arm-today", cmd_arm_today, "symbol")):
+        p = sub.add_parser(name, help=f"{name} (API)")
+        p.add_argument(extra)
+        p.add_argument("--api")
+        p.set_defaults(fn=fn)
+    p = sub.add_parser("armed", help="list armed plans (API)")
+    p.add_argument("--api")
+    p.set_defaults(fn=cmd_armed)
     return ap
 
 

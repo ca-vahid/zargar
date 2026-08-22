@@ -22,7 +22,7 @@ from ..domain import Bar
 from .analysis import AnalysisRequest, compute_facts
 from .history import fetch_window, split_sessions
 from .outcome import simulate_plan
-from .rulebook import DEFAULT_THRESHOLDS, Thresholds
+from .rulebook import DEFAULT_THRESHOLDS, PRIME_WINDOWS, Thresholds, session_window
 
 
 @dataclass
@@ -70,8 +70,13 @@ def _simulate(bars: list[Bar], start: int, setup: dict, *, entry_window: int,
 async def run_backtest(symbol: str, tf: str, start_ms: int, end_ms: int, *,
                        step_bars: int = 5, entry_window: int = 12, horizon_bars: int = 60,
                        warmup_sessions: int = 3, thresholds: Thresholds | None = None,
-                       only_valid: bool = True, max_trades: int = 500) -> dict:
-    """Replay [start,end] at `tf`. Returns summary + per-trade rows."""
+                       only_valid: bool = True, max_trades: int = 500,
+                       prime_windows_only: bool = True) -> dict:
+    """Replay [start,end] at `tf`. Returns summary + per-trade rows.
+
+    `prime_windows_only` (default) takes setups only when the cursor bar sits in
+    an R6 prime window (09:30-10:30 / 14:45-16:00 ET) — the book's schedule.
+    `False` is the old all-hours behaviour, kept so the difference is visible."""
     t = thresholds or DEFAULT_THRESHOLDS
     # Pull warm-up history before `start` so early cursors have a volume baseline.
     warm_ms = warmup_sessions * 2 * 86400 * 1000
@@ -94,6 +99,10 @@ async def run_backtest(symbol: str, tf: str, start_ms: int, end_ms: int, *,
         keep = set(sess_keys[-(warmup_sessions + 1):])
         window = [b for b in window if time.strftime("%Y-%m-%d", time.gmtime(b.ts / 1000)) in keep]
         facts = compute_facts(req, {tf: window})
+        cur_window = session_window(bars[cursor].ts)
+        if prime_windows_only and cur_window not in PRIME_WINDOWS:
+            cursor += step_bars
+            continue
         for s in facts.get("candidateSetups") or []:
             if only_valid and not s.get("valid"):
                 continue
@@ -102,8 +111,9 @@ async def run_backtest(symbol: str, tf: str, start_ms: int, end_ms: int, *,
             if last_emit is not None and cursor - last_emit < horizon_bars:
                 continue
             seen[key] = cursor
-            trades.append(_simulate(bars, cursor, s, entry_window=entry_window,
-                                    horizon=horizon_bars))
+            tr = _simulate(bars, cursor, s, entry_window=entry_window, horizon=horizon_bars)
+            tr.rules = list(tr.rules) + [f"window:{cur_window}"]
+            trades.append(tr)
         cursor += step_bars
 
     filled = [x for x in trades if x.filled]
@@ -118,8 +128,20 @@ async def run_backtest(symbol: str, tf: str, start_ms: int, end_ms: int, *,
         d["winRate"] = round(d["wins"] / d["n"], 3) if d["n"] else 0.0
         d["avgR"] = round(d["sumR"] / d["n"], 3) if d["n"] else 0.0
         d["sumR"] = round(d["sumR"], 3)
+    by_window: dict[str, dict] = {}
+    for x in filled:
+        w = next((r.split(":", 1)[1] for r in x.rules if r.startswith("window:")), "?")
+        d = by_window.setdefault(w, {"n": 0, "wins": 0, "sumR": 0.0})
+        d["n"] += 1
+        d["wins"] += 1 if x.r_multiple > 0 else 0
+        d["sumR"] += x.r_multiple
+    for d in by_window.values():
+        d["winRate"] = round(d["wins"] / d["n"], 3) if d["n"] else 0.0
+        d["avgR"] = round(d["sumR"] / d["n"], 3) if d["n"] else 0.0
+        d["sumR"] = round(d["sumR"], 3)
     summary = {
         "symbol": symbol.upper(), "tf": tf, "from": bars[first_idx].ts, "to": bars[-1].ts,
+        "primeWindowsOnly": prime_windows_only, "byWindow": by_window,
         "sessions": len([k for k in keys if sessions[k][0].ts >= start_ms]),
         "setupsEmitted": len(trades), "filled": len(filled), "notFilled": len(trades) - len(filled),
         "winRate": round(len(wins) / len(filled), 3) if filled else 0.0,
@@ -127,6 +149,6 @@ async def run_backtest(symbol: str, tf: str, start_ms: int, end_ms: int, *,
         "totalR": round(sum(x.r_multiple for x in filled), 3),
         "byType": by_type,
         "params": {"stepBars": step_bars, "entryWindow": entry_window, "horizonBars": horizon_bars,
-                   "minRR": t.min_risk_reward},
+                   "minRR": t.min_risk_reward, "primeWindowsOnly": prime_windows_only},
     }
     return {"summary": summary, "trades": [x.to_dict() for x in trades]}

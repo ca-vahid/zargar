@@ -19,6 +19,7 @@ import type {
   ChatThread,
   TechniqueRun,
   TechniqueSetup,
+  ArmedPlan,
 } from "./types";
 
 export type Page = "dashboard" | "trade" | "options" | "inbox" | "portfolios" | "journal" | "settings" | "technique";
@@ -77,10 +78,12 @@ interface AppState {
   // --- technique / chat ---
   techniqueRuns: TechniqueRun[];            // most recent first
   techniqueSetups: TechniqueSetup[];
-  techniqueTab: "analyse" | "chat" | "history" | "backtest";
+  techniqueTab: "analyse" | "chat" | "history" | "backtest" | "validation";
   techniqueFocusRunId: string | null;
   // bumped when an outcome / review lands for a run so open views refetch it
   techniqueRunBumps: Record<string, number>;
+  techniqueArmed: ArmedPlan[];
+  techniqueSweepBump: number;
   chatThreads: ChatThread[];
   chatActiveThreadId: string | null;
   chatMessages: Record<string, ChatMessage[]>;   // threadId -> messages (loaded threads)
@@ -120,7 +123,8 @@ interface AppState {
   applyChat: (msg: { threadId: string; runId?: string | null; event: any }) => void;
   setTechniqueRuns: (runs: TechniqueRun[]) => void;
   setTechniqueSetups: (s: TechniqueSetup[]) => void;
-  setTechniqueTab: (t: "analyse" | "chat" | "history" | "backtest") => void;
+  setTechniqueTab: (t: "analyse" | "chat" | "history" | "backtest" | "validation") => void;
+  setTechniqueArmed: (a: ArmedPlan[]) => void;
   openTechniqueRun: (runId: string) => void;
   setTechniqueFocusRun: (runId: string | null) => void;
   setChatThreads: (t: ChatThread[]) => void;
@@ -169,6 +173,8 @@ export const useStore = create<AppState>((set, get) => ({
   techniqueTab: "analyse",
   techniqueFocusRunId: null,
   techniqueRunBumps: {},
+  techniqueArmed: [],
+  techniqueSweepBump: 0,
   chatThreads: [],
   chatActiveThreadId: null,
   chatMessages: {},
@@ -314,6 +320,7 @@ export const useStore = create<AppState>((set, get) => ({
   setTechniqueRuns: (techniqueRuns) => set({ techniqueRuns }),
   setTechniqueSetups: (techniqueSetups) => set({ techniqueSetups }),
   setTechniqueTab: (techniqueTab) => set({ techniqueTab }),
+  setTechniqueArmed: (techniqueArmed) => set({ techniqueArmed }),
   applyRoute: (r) =>
     set((st) => ({
       page: r.page,
@@ -380,6 +387,16 @@ export const useStore = create<AppState>((set, get) => ({
         } : r),
         techniqueRunBumps: { ...st.techniqueRunBumps, [msg.runId]: (st.techniqueRunBumps[msg.runId] ?? 0) + 1 },
       }));
+    } else if (msg.kind === "armed") {
+      const ap = msg.armed as ArmedPlan;
+      set((st) => ({ techniqueArmed: [ap, ...st.techniqueArmed.filter((a) => a.runId !== ap.runId)] }));
+      if (msg.event === "fired") get().toast("success", `${ap.symbol}: planned trigger fired`);
+      else if (msg.event === "armed") get().toast("info", `${ap.symbol} plan armed for ${ap.planFor}`);
+    } else if (msg.kind === "disarmed") {
+      set((st) => ({ techniqueArmed: st.techniqueArmed.filter((a) => a.runId !== msg.runId) }));
+    } else if (msg.kind === "sweep" || msg.kind === "sweep_progress") {
+      set((st) => ({ techniqueSweepBump: st.techniqueSweepBump + 1 }));
+      if (msg.kind === "sweep" && msg.sweep?.status === "done") get().toast("success", `Walk-forward sweep finished (${msg.sweep.summary?.sessions ?? 0} sessions)`);
     } else if (msg.kind === "scan") {
       get().toast("info", `Scan started ${msg.started?.length ?? 0} run(s)`);
     }

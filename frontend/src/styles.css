@@ -1202,3 +1202,19 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-replays { font-size: var(--fs-0); line-height: 1.6; }
 .tq-diff { margin-top: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: var(--fs-0); }
 .tq-diff-row { padding: 1px 0; word-break: break-word; }
+
+/* --- session plans / walk-forward / arming ------------------------------------- */
+.tq-badge.plan { background: color-mix(in srgb, var(--accent) 22%, transparent); color: var(--accent); }
+.tq-plan-levels tr.pd td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.tq-trigger { border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; background: var(--surface-1); }
+.tq-trigger.invalid { opacity: 0.75; border-style: dashed; }
+.tq-trigger-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; width: 100%; text-align: left; padding: 6px 8px; background: none; border: 0; color: inherit; cursor: pointer; font: inherit; }
+.tq-trigger-head:hover { background: var(--surface-2); }
+.tq-trigger-body { padding: 4px 10px 10px; border-top: 1px solid var(--border); }
+.tq-trigger-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; font-size: var(--fs-1); }
+.tq-trigger-grid small { display: block; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-2); font-size: var(--fs-0); margin-bottom: 2px; }
+.tq-trigger-grid ul { margin: 0; padding-left: 16px; }
+.tq-wf { font-size: var(--fs-0); }
+.tq-wf th, .tq-wf td { padding: 3px 6px; white-space: nowrap; }
+.tq-claims td:last-child { white-space: normal; max-width: 420px; word-break: break-word; }
+.small { font-size: var(--fs-0); }

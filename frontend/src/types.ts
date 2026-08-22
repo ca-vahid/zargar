@@ -305,8 +305,10 @@ export interface TechniqueRun {
   options?: any; seconds?: number;
   facts?: any; result?: { analysis: TechniqueContract | null; grounding: { passed: boolean; checks: GroundingCheck[] };
     passes: { name: string; parsed: any; usage: any; seconds: number }[]; mode: string; error: string | null;
-    usage: any; options?: any; seconds?: number; trace?: TraceStep[] };
+    usage: any; options?: any; seconds?: number; trace?: TraceStep[]; plan?: SessionPlan; sessionWindow?: string | null };
   setups?: TechniqueSetup[];
+  plan?: { planFor: string; builtFromSession: string; levels: number; triggers: number; validTriggers: number; kinds: string[] } | null;
+  sessionWindow?: string | null;
   // review loop
   config?: TechniqueRunConfig; parentRunId?: string | null; processVersion?: string | null; traceSteps?: number;
   outcomes?: TechniqueOutcome[]; reviews?: TechniqueReview[];
@@ -315,6 +317,36 @@ export interface TechniqueRun {
   lastReview?: { reviewVerdict: string; rootCauseStage: string | null; createdAt: string | null; reviewer: string } | null;
 }
 export interface TechniqueTaxonomy { reviewVerdicts: Record<string, string>; rootCauseStages: Record<string, string> }
+export interface PlanCondition { rule: string; text: string; kind: string }
+export interface PlanTrigger {
+  id: string; kind: "bounce" | "breakout" | "wedge_break" | string; direction: string; levelPrice: number; level: any;
+  entry: { price: number; basis: string }; stop: { price: number; reference: string };
+  targets: { price: number; trimPct: number; basis: string }[]; riskReward: number; risk: number;
+  conditions: PlanCondition[]; voidIf: string[]; confluences: string[]; confidence: number; rules: string[];
+  valid: boolean; noTradeReasons: string[]; notes: string; setupType: string;
+}
+export interface PlanLevel {
+  price: number; kind: string; effectiveKind: string; touches: number; sources: string[]; timeframes: string[];
+  position?: string; distancePct: number | null; ageSessions: number | null; priorDayExtreme: boolean; carried?: boolean;
+}
+export interface SessionPlan {
+  symbol: string; planFor: string; builtFromMs: number; builtFromSession: string; structureTfs: string[]; triggerTf: string;
+  lastClose: number; levels: PlanLevel[]; context: any; triggers: PlanTrigger[]; invalidations: { rule: string; text: string; kind: string }[];
+  gapPolicy: any; notes: string[]; validTriggers: number;
+}
+export interface TechniqueSweep {
+  id: string; label: string; symbols: string[]; start: string; end: string; params: any; status: string; progress: any;
+  summary: any; error: string | null; createdAt: string | null; finishedAt: string | null; rows?: WalkforwardRow[];
+}
+export interface WalkforwardRow {
+  id: string; sweepId: string; symbol: string; session: string; planFor: string | null; plan: any; result: any; summary: any;
+  promotedRunId: string | null; createdAt: string | null;
+}
+export interface ArmedPlan {
+  runId: string; symbol: string; planFor: string; armedAt: string; barsSeen: number; lastBarTs: number | null; expired: boolean;
+  triggers: { id: string; kind: string; status: string; entry: number; stop: number; firedTs: number | null; firedWindow: string | null; observedMidday: number; setupId?: string | null }[];
+  fired: any[]; events: any[];
+}
 export interface TechniqueSetup {
   id: string; runId: string; symbol: string; setupType: string; direction: string; entry: number; stop: number;
   targets: TechniqueTarget[]; riskReward: number; confidence: number; valid: boolean; rules: string[];
@@ -325,6 +357,8 @@ export interface TechniqueStatus {
   optionsProvider?: string;
   runsToday: number; maxRunsPerDay: number; scanEnabled: boolean; scanSymbols: string[]; running: string[];
   rules: Record<string, string>;
+  sessionWindow?: string; enforceSessionWindows?: boolean; structureTfs?: string[]; triggerTf?: string;
+  armed?: ArmedPlan[]; sweepsRunning?: string[];
 }
 export interface ChatBlock { type: string; [k: string]: any }
 export interface ChatMessage {

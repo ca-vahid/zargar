@@ -356,6 +356,46 @@ class VisionPipeline:
                             callsUsed=self._calls, usage=dict(result.total_usage))
         return result
 
+    # ----------------------------------------------------------- critic only
+    async def run_critic(self, analysis: TechniqueAnalysis, images: dict[str, bytes], facts_txt: str) -> dict | None:
+        """PASS 4 on its own — used when a planned trigger fires live and the
+        setup deserves the adversarial read before it becomes a proposal.
+        Applies the verdict to `analysis` in place (kill / warn / confidence)."""
+        imgs = [image_block(png, "image/png") for png in list(images.values())[:2]]
+        await self.note("critic", "pass_4", "live trigger fired: running the adversarial critic before emitting")
+        p4 = await self._call("critic", imgs + [
+            {"type": "text", "text": (
+                "PASS 4 of 4 — CRITIC. Your job is to KILL this setup if it deserves it. "
+                "Check every fakeout tell (T3.3d-f), the higher-timeframe read (T3.3g), volume "
+                "(T2.6, R3.1), chop (R3.2), R:R (R2), and whether the entry is chased (T4.1). "
+                "Be adversarial; a surviving setup must earn it.\n\nDRAFT:\n"
+                + json.dumps(analysis.model_dump(), indent=1)
+                + f"\n\nFACTS:\n{facts_txt}")},
+        ], CriticVerdict)
+        critic = p4.parsed
+        if not critic:
+            await self.note("critic", "unparsed", "critic returned no structured verdict; setup kept as-is")
+            return None
+        cv = CriticVerdict.model_validate(critic)
+        before = analysis.confidence
+        if cv.kill:
+            analysis.verdict = "no_setup"
+            analysis.no_trade_reasons = list(analysis.no_trade_reasons) + [
+                f"CRITIC: {v}" for v in cv.violations] + [f"CRITIC: {cv.summary}"]
+            analysis.confidence = max(0.0, min(1.0, analysis.confidence + cv.confidence_adjustment))
+            await self.note("critic", "kill", "critic killed the live trigger", violations=list(cv.violations),
+                            summary=cv.summary, confidenceBefore=round(before, 3),
+                            confidenceAfter=round(analysis.confidence, 3))
+        else:
+            analysis.confidence = max(0.0, min(1.0, analysis.confidence + cv.confidence_adjustment))
+            if cv.violations:
+                analysis.no_trade_reasons = list(analysis.no_trade_reasons) + [
+                    f"CRITIC-WARN: {v}" for v in cv.violations]
+            await self.note("critic", "survive", "live trigger survived the critic", violations=list(cv.violations),
+                            summary=cv.summary, confidenceBefore=round(before, 3),
+                            confidenceAfter=round(analysis.confidence, 3))
+        return {**critic, "passRecord": p4.to_dict()}
+
     # ----------------------------------------------------------- image-only
     async def run_image_only(self, image: bytes, *, note: str = "",
                              symbol_hint: str = "") -> PipelineResult:

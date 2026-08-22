@@ -6,6 +6,7 @@ is unusable). Depth per interval, verified empirically 2026-08-21:
     1m   ~20 days back, max 8 days per request
     5m   ~60 days
     15m  ~60 days
+    30m  ~60 days
     1h   ~730 days
     1d   many years
 
@@ -29,11 +30,11 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
 # Seconds per bar, and the widest single request Yahoo will honour.
-INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400}
-MAX_REQUEST_SPAN = {"1m": 7 * 86400, "5m": 59 * 86400, "15m": 59 * 86400,
+INTERVAL_SECONDS = {"1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "1d": 86400}
+MAX_REQUEST_SPAN = {"1m": 7 * 86400, "5m": 59 * 86400, "15m": 59 * 86400, "30m": 59 * 86400,
                     "1h": 729 * 86400, "1d": 3650 * 86400}
 # How far back each interval is available at all.
-MAX_LOOKBACK = {"1m": 20 * 86400, "5m": 59 * 86400, "15m": 59 * 86400,
+MAX_LOOKBACK = {"1m": 20 * 86400, "5m": 59 * 86400, "15m": 59 * 86400, "30m": 59 * 86400,
                 "1h": 729 * 86400, "1d": 36500 * 86400}
 
 # Small in-process cache: scheduled scans and chat tools would otherwise
@@ -154,6 +155,16 @@ async def fetch_recent(symbol: str, tf: str, *, sessions: int = 5,
             keys.append(k)
     keep = set(keys[-sessions:])
     return [b for b in bars if session_key(b.ts) in keep]
+
+
+async def fetch_session(symbol: str, tf: str, date: str, *,
+                        client: httpx.AsyncClient | None = None) -> list[Bar]:
+    """All regular-session bars of one ET date (09:30-16:00). Empty on a holiday
+    or when Yahoo no longer serves the interval that far back."""
+    from .rulebook import session_bounds, session_date
+    o, c = session_bounds(date)
+    bars = await fetch_window(symbol, tf, o - INTERVAL_SECONDS.get(tf, 60) * 1000, c, client=client)
+    return [b for b in bars if session_date(b.ts) == date and o <= b.ts < c]
 
 
 def interval_available(tf: str, as_of_ms: int | None) -> bool:

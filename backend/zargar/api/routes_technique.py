@@ -41,6 +41,8 @@ def build_technique_routes(app, eng, auth, config) -> None:
         note: str = ""
         imageDataUrl: str | None = None  # data:image/png;base64,...
         wait: bool = False
+        plan: bool | None = None         # force plan mode (default: auto when asOf is outside the session)
+        withVision: bool | None = None   # run the vision passes in plan mode
 
     @app.post("/api/technique/analyze", dependencies=[auth])
     async def technique_analyze(body: AnalyzeBody):
@@ -53,7 +55,97 @@ def build_technique_routes(app, eng, auth, config) -> None:
         try:
             return await _svc(eng).analyze(body.symbol, as_of_ms=body.asOf, primary_tf=body.tf,
                                            image=image, note=body.note, trigger="manual",
-                                           wait=body.wait)
+                                           wait=body.wait, plan=body.plan, with_vision=body.withVision)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    # --- session plans / walk-forward / arming --------------------------------------------
+    class PlanBody(BaseModel):
+        symbol: str
+        asOf: int | None = None          # default: now (plan for the next session)
+        tf: str | None = None            # trigger timeframe
+        withVision: bool | None = None
+        wait: bool = True
+
+    @app.post("/api/technique/plan", dependencies=[auth])
+    async def technique_plan(body: PlanBody):
+        try:
+            return await _svc(eng).analyze(body.symbol, as_of_ms=body.asOf, primary_tf=body.tf, trigger="manual",
+                                           plan=True, with_vision=body.withVision, wait=body.wait)
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    class SweepBody(BaseModel):
+        symbols: list[str] = []
+        start: str
+        end: str
+        structureTfs: list[str] | None = None
+        triggerTf: str | None = None
+        includeInvalid: bool = False
+        label: str = ""
+        wait: bool = False
+
+    @app.post("/api/technique/walkforward", dependencies=[auth])
+    async def technique_sweep(body: SweepBody):
+        svc = _svc(eng)
+        syms = body.symbols or list(eng.settings.get("technique.walkforward.symbols", []))
+        try:
+            return await svc.start_sweep(syms, body.start, body.end, structure_tfs=body.structureTfs,
+                                         trigger_tf=body.triggerTf, include_invalid=body.includeInvalid,
+                                         label=body.label, wait=body.wait)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/technique/walkforward", dependencies=[auth])
+    async def technique_sweeps(limit: int = 50):
+        return await _svc(eng).list_sweeps(limit=min(limit, 200))
+
+    @app.get("/api/technique/walkforward/{sweep_id}", dependencies=[auth])
+    async def technique_sweep_get(sweep_id: str, rows: bool = True):
+        d = await _svc(eng).get_sweep(sweep_id, rows=rows)
+        if d is None:
+            raise HTTPException(status_code=404, detail="sweep not found")
+        return d
+
+    class PromoteBody(BaseModel):
+        symbol: str
+        session: str
+        withVision: bool = False
+
+    @app.post("/api/technique/walkforward/{sweep_id}/promote", dependencies=[auth])
+    async def technique_promote(sweep_id: str, body: PromoteBody):
+        try:
+            return await _svc(eng).promote(sweep_id, body.symbol, body.session, with_vision=body.withVision)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/technique/armed", dependencies=[auth])
+    async def technique_armed():
+        return _svc(eng).armed_plans()
+
+    @app.post("/api/technique/runs/{run_id}/arm", dependencies=[auth])
+    async def technique_arm(run_id: str):
+        try:
+            return await _svc(eng).arm_plan(run_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="run not found")
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.delete("/api/technique/runs/{run_id}/arm", dependencies=[auth])
+    async def technique_disarm(run_id: str):
+        return {"disarmed": await _svc(eng).disarm_plan(run_id)}
+
+    class ArmTodayBody(BaseModel):
+        symbol: str
+        withVision: bool | None = None
+
+    @app.post("/api/technique/arm-today", dependencies=[auth])
+    async def technique_arm_today(body: ArmTodayBody):
+        try:
+            return await _svc(eng).arm_today(body.symbol, with_vision=body.withVision)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
@@ -176,13 +268,15 @@ def build_technique_routes(app, eng, auth, config) -> None:
         stepBars: int = 5
         startMs: int | None = None
         endMs: int | None = None
+        primeWindowsOnly: bool = True
 
     @app.post("/api/technique/backtest", dependencies=[auth])
     async def technique_backtest(body: BacktestBody):
         try:
             return await _svc(eng).backtest(body.symbol, body.tf, days=body.days,
                                             start_ms=body.startMs, end_ms=body.endMs,
-                                            horizon_bars=body.horizonBars, step_bars=body.stepBars)
+                                            horizon_bars=body.horizonBars, step_bars=body.stepBars,
+                                            prime_windows_only=body.primeWindowsOnly)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 

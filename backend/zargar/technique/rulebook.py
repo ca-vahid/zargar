@@ -10,7 +10,9 @@ UI-editable and journaled on change, per the project's settings convention.
 """
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 # --- Rule catalogue --------------------------------------------------------
 # id -> short human-readable statement. Kept terse: this text is injected into
@@ -25,6 +27,7 @@ RULES: dict[str, str] = {
     "T1.3c": "Intraday swing highs/lows with >=2 touches are levels.",
     "T1.3d": "Round numbers act as levels on their own.",
     "T1.5": "Trendlines: <=45 degrees, consistent anchoring, >=3 touches.",
+    "T1.6": "Prepare levels before the session, set alerts above/below them, redraw them daily; prior-day levels carry forward.",
     # T2 — Volume
     "T2.1": "Rising price + rising volume confirms the trend.",
     "T2.2": "Rising price + falling volume is bearish divergence.",
@@ -62,9 +65,11 @@ RULES: dict[str, str] = {
     "T4.3a": "Stop is mental, referenced just beyond the invalidating level.",
     "T4.3b": "On a stop touch, judge the reaction before exiting.",
     "T4.3c": "Averaging down requires a hard stop, not a mental one.",
+    "T4.3d": "The stop is chart-based (just below the level that invalidates the idea), never a fixed percentage of price or premium.",
     "T4.4a": "Scale out 30/40/15 with a 15% runner.",
     "T4.4b": "Never exit on P&L; exit on the chart.",
     "T4.5": "Average down only with a catalyst, with the trend, at support, preplanned.",
+    "T4.6": "Take trades with 2+ agreeing factors (confluence); conflicting signals mean stand aside.",
     # T5 — Options
     "T5.1": "Trade strikes just out of the money.",
     "T5.2": "Weeklies to current-week Friday; 0DTE with reduced size.",
@@ -78,7 +83,66 @@ RULES: dict[str, str] = {
     "R3.3": "No trade on poor contract conditions.",
     "R3.4": "No trade on holidays, FOMC days, or major economic releases.",
     "R5": "One contract per trade while the technique is being validated.",
+    # R6 — Trading schedule (pp. 114-115)
+    "R6.1": "Prime window 09:30-10:30 ET: highest volume and volatility; momentum, breakouts, early reversals.",
+    "R6.2": "Prime window 14:45-16:00 ET: closing surge; end-of-day momentum, continuation, last-minute breakouts.",
+    "R6.3": "Avoid 10:30-14:45 ET: low volume, chop, false breakouts, theta decay.",
+    "R6.4": "Avoid pre-market and after-hours: thin volume, wide spreads, erratic swings.",
+    "R6.5": "Analyse regular-session bars only; after-hours data creates misleading signals.",
 }
+
+# --- Session windows (R6) ---------------------------------------------------
+ET = ZoneInfo("America/New_York")
+WINDOW_RULE = {"prime_open": "R6.1", "prime_close": "R6.2", "midday": "R6.3", "extended": "R6.4"}
+PRIME_WINDOWS = ("prime_open", "prime_close")
+
+
+def session_window(ts_ms: int) -> str:
+    """Classify an instant by the book's trading schedule (pp. 114-115):
+    prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00,
+    extended for pre-market / after-hours / weekends. Times are ET."""
+    t = dt.datetime.fromtimestamp(ts_ms / 1000, ET)
+    if t.weekday() >= 5:
+        return "extended"
+    m = t.hour * 60 + t.minute
+    if 9 * 60 + 30 <= m < 10 * 60 + 30:
+        return "prime_open"
+    if 10 * 60 + 30 <= m < 14 * 60 + 45:
+        return "midday"
+    if 14 * 60 + 45 <= m < 16 * 60:
+        return "prime_close"
+    return "extended"
+
+
+def is_prime(ts_ms: int) -> bool:
+    return session_window(ts_ms) in PRIME_WINDOWS
+
+
+def session_date(ts_ms: int) -> str:
+    """ET calendar date (YYYY-MM-DD) of an instant."""
+    return dt.datetime.fromtimestamp(ts_ms / 1000, ET).strftime("%Y-%m-%d")
+
+
+def session_bounds(date: str) -> tuple[int, int]:
+    """(open_ms, close_ms) of the regular session on an ET date."""
+    y, m, d = (int(x) for x in date.split("-"))
+    o = dt.datetime(y, m, d, 9, 30, tzinfo=ET)
+    c = dt.datetime(y, m, d, 16, 0, tzinfo=ET)
+    return int(o.timestamp() * 1000), int(c.timestamp() * 1000)
+
+
+def next_session_date(ts_ms: int) -> str:
+    """The next regular session after `ts_ms` (skips weekends; holidays are not
+    modelled — a holiday simply yields a session with no bars)."""
+    t = dt.datetime.fromtimestamp(ts_ms / 1000, ET)
+    d = t.date()
+    # before the open counts as "today's" session
+    if t.hour * 60 + t.minute < 9 * 60 + 30 and d.weekday() < 5:
+        return d.strftime("%Y-%m-%d")
+    d = d + dt.timedelta(days=1)
+    while d.weekday() >= 5:
+        d += dt.timedelta(days=1)
+    return d.strftime("%Y-%m-%d")
 
 
 def rule(rid: str) -> str:
@@ -126,6 +190,14 @@ class Thresholds:
     max_risk_pct: float = 5.0
     # T3.4b — long wick threshold, as share of candle range
     long_wick_ratio: float = 0.5
+    # T4.3a/d — bounce stop buffer below the level: the larger of a percent of
+    # price (the book's own $98 -> $97.50 example is 0.5%) and an ATR multiple
+    bounce_stop_pct: float = 0.005
+    stop_buffer_atr: float = 0.25
+    # Plan / walk-forward (ours, spec Q11-Q14)
+    respect_mult: float = 3.0          # reversal >= respect_mult * tol counts as "respected"
+    gap_void_r: float = 1.0            # |open - prevClose| > gap_void_r * risk voids the plan
+    plan_entry_window_bars: int = 12   # bars a bounce trigger has to fill after the touch
     # Round-number detection: treat multiples of these as psychological levels
     round_number_steps: tuple[float, ...] = (1.0, 5.0, 10.0, 50.0, 100.0)
 
@@ -153,6 +225,10 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.default_risk_pct": t.default_risk_pct,
         "technique.max_risk_pct": t.max_risk_pct,
         "technique.wedge_min_bars": t.wedge_min_bars,
+        "technique.bounce_stop_pct": t.bounce_stop_pct * 100,
+        "technique.plan.respect_mult": t.respect_mult,
+        "technique.plan.gap_void_r": t.gap_void_r,
+        "technique.plan.entry_window_bars": t.plan_entry_window_bars,
     }
 
 
@@ -186,4 +262,9 @@ def thresholds_from_settings(get) -> Thresholds:
         max_risk_pct=float(get("technique.max_risk_pct", d.max_risk_pct)),
         long_wick_ratio=d.long_wick_ratio,
         round_number_steps=d.round_number_steps,
+        bounce_stop_pct=float(get("technique.bounce_stop_pct", d.bounce_stop_pct * 100)) / 100,
+        stop_buffer_atr=d.stop_buffer_atr,
+        respect_mult=float(get("technique.plan.respect_mult", d.respect_mult)),
+        gap_void_r=float(get("technique.plan.gap_void_r", d.gap_void_r)),
+        plan_entry_window_bars=int(get("technique.plan.entry_window_bars", d.plan_entry_window_bars)),
     )

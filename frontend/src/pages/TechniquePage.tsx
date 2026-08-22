@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { ChatPanel } from "../components/technique/ChatPanel";
 import { LiveRun } from "../components/technique/LiveRun";
-import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge } from "../components/technique/RunResult";
+import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge, WindowBadge } from "../components/technique/RunResult";
+import { PlanCard } from "../components/technique/PlanCard";
+import { ValidationTab } from "../components/technique/ValidationTab";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
 import { Modal } from "../components/Modal";
 import { CopyChip } from "../components/CopyChip";
@@ -14,7 +16,7 @@ import { useStore } from "../store";
 import { absoluteUrl } from "../lib/routing";
 import type { TechniqueRun, TechniqueSetup, TechniqueStatus } from "../types";
 
-const TFS = ["1m", "5m", "15m"];
+const TFS = ["1m", "5m", "15m", "30m", "1h"];
 
 function readFileAsDataUrl(f: File): Promise<string> {
   return new Promise((res, rej) => {
@@ -42,10 +44,15 @@ function previousBusinessDay(from = new Date(), back = 1): Date {
   return d;
 }
 
-/** A date-only value becomes an as-of instant at that session's close. */
+/** A date-only value becomes an as-of instant at that session's close — 16:00 **ET**
+ *  (not local time), so the run is in plan mode (R6.4) wherever the user sits. */
 function dateToAsOfMs(date: string): number {
   const [y, m, d] = date.split("-").map(Number);
-  return new Date(y, m - 1, d, 16, 0, 0, 0).getTime();
+  // 20:00 UTC is 16:00 EDT; in EST (winter) it is 15:00, so nudge by an hour when needed.
+  let ms = Date.UTC(y, m - 1, d, 20, 0, 0, 0);
+  const etHour = Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", hour12: false }).format(new Date(ms)));
+  if (etHour === 15) ms += 3600_000;
+  return ms;
 }
 
 const PRESETS: { label: string; get: () => string }[] = [
@@ -69,6 +76,8 @@ function StatusBar({ status, onScan }: { status: TechniqueStatus | null; onScan:
         options {status.optionsAvailable ? (status.optionsProvider ?? "cboe").toUpperCase() : "off"}
       </span>
       <span className="status-pill">runs today {status.runsToday}/{status.maxRunsPerDay}</span>
+      <WindowBadge window={status.sessionWindow} />
+      {(status.armed?.length ?? 0) > 0 && <span className="status-pill ok">{status.armed!.length} armed</span>}
       {status.scanEnabled && <span className="status-pill ok">scan on</span>}
       {status.running.length > 0 && <span className="status-pill ok"><Spinner /> {status.running.length} running</span>}
       <button className="link-btn" onClick={onScan}>scan now</button>
@@ -187,7 +196,7 @@ function AnalyseForm({ onStarted, disabled, running }: {
               {note ? "Note ✓" : "Note to analyst"}
             </button>
             <DisclosureHead open={advOpen} onToggle={toggleAdv} level="sub">Advanced</DisclosureHead>
-            <span className="tq-cost muted">paste or drop an image anywhere · ~4 passes · ≈$0.20</span>
+            <span className="tq-cost muted">{date ? "past session → builds a plan for the next session (deterministic, free)" : "paste or drop an image anywhere · ~4 passes · ≈$0.20"}</span>
           </div>
 
           {image && (
@@ -207,10 +216,10 @@ function AnalyseForm({ onStarted, disabled, running }: {
                 </select>
               </div>
               <small className="muted">
-                Which chart the entry decision is made on. The method is timeframe-agnostic — the same
-                level and pattern rules apply on any (T3.1) — but a finer timeframe finds tighter levels
-                and a coarser one filters noise. Context passes always read the higher timeframes too.
-                Change the default in Settings.
+                Where the entry/trigger decision is made. Structure (levels, patterns) is always read on the
+                book's 30m/1h charts as well (p. 114: the author reports 78% vs 58% win rate on those); a finer
+                primary timeframe times the entry inside the prime windows (R6). Change defaults in Settings
+                (technique.default_tf, technique.structure_tfs).
               </small>
             </div>
           </Collapse>
@@ -250,7 +259,9 @@ const LENSES: { key: HistoryLens; label: string; hint: string }[] = [
 
 function primaryOutcome(r: TechniqueRun) {
   const outs = r.outcomes ?? [];
-  return outs.find((o) => o.planSource === "analysis") ?? outs.find((o) => o.planSource === "candidate") ?? outs[0] ?? null;
+  const fired = outs.find((o) => o.planSource.startsWith("trigger:") && o.outcome && !["not_triggered", "observed", "gapped_past", "gapped_through", "gap_void"].includes(o.outcome));
+  return fired ?? outs.find((o) => o.planSource === "analysis") ?? outs.find((o) => o.planSource === "candidate")
+    ?? outs.find((o) => o.planSource.startsWith("trigger:")) ?? outs.find((o) => o.planSource === "levels") ?? outs[0] ?? null;
 }
 
 function HistoryTab({ onOpen }: { onOpen: (id: string) => void }) {
@@ -328,11 +339,12 @@ function BacktestTab() {
   const [tf, setTf] = useState("5m");
   const [days, setDays] = useState(10);
   const [horizon, setHorizon] = useState(60);
+  const [primeOnly, setPrimeOnly] = useState(true);
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<any>(null);
   const run = async () => {
     setBusy(true);
-    try { setRes(await api.techniqueBacktest({ symbol: symbol.toUpperCase(), tf, days, horizonBars: horizon })); }
+    try { setRes(await api.techniqueBacktest({ symbol: symbol.toUpperCase(), tf, days, horizonBars: horizon, primeWindowsOnly: primeOnly })); }
     catch (e: any) { toast("error", e.message); }
     finally { setBusy(false); }
   };
@@ -351,6 +363,9 @@ function BacktestTab() {
               <input type="number" value={days} min={1} max={59} onChange={(e) => setDays(Number(e.target.value))} /></div>
             <div className="tq-ctl"><span className="tq-ctl-label">Horizon (bars)</span>
               <input type="number" value={horizon} min={10} max={300} onChange={(e) => setHorizon(Number(e.target.value))} /></div>
+            <label className="tq-chipbtn" title="R6: take setups only in 09:30–10:30 / 14:45–16:00 ET (the book's schedule)">
+              <input type="checkbox" checked={primeOnly} onChange={(e) => setPrimeOnly(e.target.checked)} /> prime windows only (R6)
+            </label>
             <button className="primary-btn tq-run" disabled={busy} onClick={run}>{busy ? "Replaying…" : "Run backtest"}</button>
           </div>
         </div>
@@ -367,6 +382,9 @@ function BacktestTab() {
               <div className="tq-plan-cell"><small>Total R</small><b className={s.totalR > 0 ? "pos" : "neg"}>{s.totalR}</b><span>min R:R {s.params.minRR}</span></div>
               {Object.entries(s.byType ?? {}).map(([k, v]: any) => (
                 <div className="tq-plan-cell" key={k}><small>{k.replace(/_/g, " ")}</small><b>{v.n}</b><span>win {(v.winRate * 100).toFixed(0)}% · avg R {v.avgR}</span></div>
+              ))}
+              {Object.entries(s.byWindow ?? {}).map(([k, v]: any) => (
+                <div className="tq-plan-cell" key={`w-${k}`}><small>window {k.replace(/_/g, " ")}</small><b>{v.n}</b><span>win {(v.winRate * 100).toFixed(0)}% · avg R {v.avgR}</span></div>
               ))}
             </div>
             <table className="tq-table" style={{ marginTop: 10 }}>
@@ -391,6 +409,38 @@ function BacktestTab() {
 
 // --- right rail -----------------------------------------------------------------------
 
+function ArmedPanel() {
+  const armed = useStore((s) => s.techniqueArmed);
+  const setArmed = useStore((s) => s.setTechniqueArmed);
+  const openRun = useStore((s) => s.openTechniqueRun);
+  const toast = useStore((s) => s.toast);
+  const [sym, setSym] = useState("");
+  useEffect(() => { api.techniqueArmed().then(setArmed).catch(() => undefined); }, [setArmed]);
+  const armToday = async () => {
+    if (!sym.trim()) return;
+    try { const a = await api.techniqueArmToday(sym.trim().toUpperCase()); toast("success", `${a.symbol} plan armed for ${a.planFor}`); setSym(""); }
+    catch (e: any) { toast("error", e.message); }
+  };
+  return (
+    <div className="panel mb">
+      <div className="panel-head">Armed plans <span className="sub">{armed.length} · live triggers (R6 windows)</span></div>
+      <div className="panel-body tq-setups">
+        {armed.length === 0 && <div className="empty">nothing armed</div>}
+        {armed.map((a) => (
+          <button key={a.runId} className="tq-setup-row valid" onClick={() => openRun(a.runId)}>
+            <b>{a.symbol}</b> <span>for {a.planFor}</span>
+            <span className="muted">{a.triggers.map((t) => `${t.id}:${t.status}`).join(" · ")}{a.fired.length ? ` · ${a.fired.length} fired` : ""}</span>
+          </button>
+        ))}
+        <div className="tq-row tq-row--sub">
+          <input placeholder="symbol" value={sym} onChange={(e) => setSym(e.target.value.toUpperCase())} style={{ width: 90 }} />
+          <button className="link-btn" onClick={armToday} title="Build today's plan from yesterday's close and arm it">arm today's plan</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Rail({ rules }: { rules: Record<string, string> }) {
   const setups = useStore((s) => s.techniqueSetups);
   const setSetups = useStore((s) => s.setTechniqueSetups);
@@ -411,6 +461,7 @@ function Rail({ rules }: { rules: Record<string, string> }) {
   }
   return (
     <div className="tq-rail">
+      <ArmedPanel />
       <div className="panel mb">
         <DisclosureHead open onToggle={toggleRail}
           extra={<span className="sub">{setups.length} · hide</span>}>Setups</DisclosureHead>
@@ -506,14 +557,16 @@ export function TechniquePage() {
         <StatusBar status={status} onScan={() => api.techniqueScan().then(() => refreshStatus()).catch((e) => toast("error", e.message))} />
       </div>
       <div className="tabs tq-tabs">
-        {(["analyse", "chat", "history", "backtest"] as const).map((t) => (
+        {(["analyse", "chat", "history", "backtest", "validation"] as const).map((t) => (
           <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-            {t === "analyse" ? "Analyse" : t === "chat" ? "Chat" : t === "history" ? "History" : "Backtest"}
+            {t === "analyse" ? "Analyse" : t === "chat" ? "Chat" : t === "history" ? "History" : t === "backtest" ? "Backtest" : "Validation"}
           </button>
         ))}
       </div>
       {tab === "chat" ? (
         <ChatPanel />
+      ) : tab === "validation" ? (
+        <ValidationTab />
       ) : (
         <div className="tq-grid">
           <div className="tq-main">
@@ -525,7 +578,8 @@ export function TechniquePage() {
                   <EmptyState title="No API key" hint="Set ZARGAR_ANTHROPIC_API_KEY in backend/.env to run analyses." />
                 )}
                 {shown && running && <LiveRun run={shown} />}
-                {shown && !running && <RunResult run={shown} rules={rules} onRefresh={() => setRefreshKey((k) => k + 1)} />}
+                {shown && !running && shown.mode === "plan" && <PlanCard run={shown} onRefresh={() => setRefreshKey((k) => k + 1)} />}
+                {shown && !running && shown.mode !== "plan" && <RunResult run={shown} rules={rules} onRefresh={() => setRefreshKey((k) => k + 1)} />}
                 {!shown && <EmptyState title="No runs yet" hint="Enter a symbol and run the pipeline, or paste a chart screenshot." />}
               </>
             )}

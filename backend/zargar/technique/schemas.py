@@ -81,6 +81,10 @@ class TechniqueAnalysis(BaseModel):
     options_expiry_guidance: str = Field(description="e.g. 'current-week Friday; 0DTE with reduced size' (T5.2)")
     options_warnings: List[str]
     rationale: str = Field(description="3-6 sentences, referencing rule ids inline")
+    session_window: str = Field(default="unknown",
+                                description="R6 window of the as-of instant: prime_open | prime_close | midday | extended | unknown")
+    plan_mode: bool = Field(default=False,
+                            description="True when the market is closed and this is a plan for the next session (entry = IF price reaches the level)")
 
     # ---- adapter views (nested §9 shape used by grounding / UI) -------------
     @property
@@ -243,6 +247,13 @@ Hard gates: R:R >= 3 (R2); volume not below 50% of the time-of-day baseline (R3.
 no clear structure = no trade (R3.2). Long-only. Prefer "no_setup" over a weak setup — the \
 method's edge is in NOT taking bad breakouts. When verdict is no_setup, set entry_price, \
 stop_price to 0, targets to [], and still report levels, trend, volume and rules.
+
+Schedule (R6, pp. 114-115): trades are taken only inside the prime windows 09:30-10:30 and \
+14:45-16:00 ET. FACTS tell you the SESSION WINDOW of the as-of instant. Outside the prime \
+windows a setup is "watch only": still describe it, but say so in no_trade_reasons citing R6.3 \
+(mid-day) or R6.4 (pre/after-hours). When FACTS say the market is closed (plan mode), your \
+entry is conditional — "IF price trades into the level inside a prime window" — never "now"; \
+set plan_mode=true and describe the trigger in the rationale.
 
 Cite rule ids everywhere. Rulebook:
 {_rulebook_text()}

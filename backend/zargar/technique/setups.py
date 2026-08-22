@@ -261,6 +261,34 @@ def _confidence(level: Level, volume: VolumeAssessment, extra: float = 0.0) -> f
     return max(0.0, min(1.0, score + extra))
 
 
+def bounce_stop(level_price: float, *, atr_value: float = 0.0,
+                thresholds: Thresholds | None = None) -> float:
+    """T4.3a/T4.3d — the mental stop sits *just below the level*: the book's own
+    example is $98 support -> watch ~$97.50 (0.5%), and it rejects fixed-percent
+    stops that ignore the chart. The buffer is the larger of that percent, two
+    touch tolerances, and an ATR multiple, so it scales with volatility."""
+    t = thresholds or DEFAULT_THRESHOLDS
+    tol = max(level_price * t.level_tolerance_pct, 1e-9)
+    return level_price - max(tol * 2, level_price * t.bounce_stop_pct, atr_value * t.stop_buffer_atr)
+
+
+def confluences(level: Level, volume: VolumeAssessment, *, higher_tf_agrees: bool | None = None,
+                candle_bullish: bool = False) -> list[str]:
+    """T4.6 — the agreeing factors behind a setup (the book asks for 2+)."""
+    out: list[str] = []
+    if "T1.3a" in level.sources:
+        out.append("prior-day extreme (T1.3a)")
+    if level.touches >= DEFAULT_THRESHOLDS.strong_touches:
+        out.append(f"{level.touches} touches (T1.2)")
+    if volume.measurable and (volume.is_spike or volume.is_dryup or "T2.3" in volume.rules):
+        out.append("volume posture (T2)")
+    if higher_tf_agrees:
+        out.append("higher timeframe agrees (T3.3g)")
+    if candle_bullish:
+        out.append("rejection candle (T3.4b)")
+    return out
+
+
 def build_bounce_setup(
     symbol: str,
     bars: list[Bar],
@@ -268,6 +296,7 @@ def build_bounce_setup(
     volume: VolumeAssessment,
     *,
     next_resistance: Level | None = None,
+    atr_value: float = 0.0,
     thresholds: Thresholds | None = None,
 ) -> Setup:
     """Setup A — buy the dip into support (spec §8).
@@ -278,9 +307,8 @@ def build_bounce_setup(
     """
     t = thresholds or DEFAULT_THRESHOLDS
     entry = level.price
-    tol = max(entry * t.level_tolerance_pct, 1e-9)
-    # T4.3a — mental stop sits below the level, not at it.
-    stop = entry - max(tol * 2, entry * 0.005)
+    # T4.3a/T4.3d — mental stop just below the level, volatility-aware.
+    stop = bounce_stop(entry, atr_value=atr_value, thresholds=t)
 
     targets = build_ladder(
         entry, "long",
@@ -288,7 +316,7 @@ def build_bounce_setup(
     )
     rr = risk_reward(entry, stop, targets[-1].price) if targets else 0.0
 
-    rules = ["T1.2", "T4.1", "T4.2", "T4.3a", "T4.4a", "T4.4b"]
+    rules = ["T1.2", "T4.1", "T4.2", "T4.3a", "T4.3d", "T4.4a", "T4.4b"]
     rules.extend(level.sources)
     rules.extend(volume.rules)
 
@@ -302,12 +330,17 @@ def build_bounce_setup(
     if level.touches < t.min_touches:
         no_trade.append(f"T1.2 level has only {level.touches} touch(es)")
 
-    # A rejection wick at the level is the book's bullish tell (T3.4b).
+    # A rejection wick at the level is the book's bullish tell (T3.4b) — a
+    # confidence modifier, never a gate (T4.2: do not wait for confirmation).
     extra = 0.0
     labels = classify(bars, -1, thresholds=t)
-    if "hammer" in labels or "bullish_engulfing" in labels:
+    bullish_candle = "hammer" in labels or "bullish_engulfing" in labels
+    if bullish_candle:
         rules.append("T3.4b")
         extra += 0.1
+    conf = confluences(level, volume, candle_bullish=bullish_candle)
+    if len(conf) >= 2:
+        rules.append("T4.6")
 
     return Setup(
         symbol=symbol,
@@ -325,7 +358,8 @@ def build_bounce_setup(
         rules=sorted(set(rules)),
         no_trade_reasons=no_trade,
         confidence=_confidence(level, volume, extra),
-        notes="Enter at the level; do not wait for confirmation (T4.2).",
+        notes="Enter at the level; do not wait for confirmation (T4.2)."
+              + (f" Confluence: {'; '.join(conf)}." if conf else ""),
     )
 
 

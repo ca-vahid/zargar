@@ -165,6 +165,7 @@ Reuses existing Highcharts wiring (`StockChart.tsx`) per the CLAUDE.md rules
 | **7** | Backtest harness + scoring (`backtest.py`, deterministic) | ✅ built |
 | **8** | Scheduled scans (`technique.scan.*` settings, RTH-only, daily cap) | ✅ built, default off |
 | **9** | Review loop — decision trace + provenance per run, bars snapshot, outcome scoring, reviews, bundle/CLI, replay + diff, `/technique-review` skill (`docs/TECHNIQUE-REVIEW-PLAN.md`) | ✅ built |
+| **10** | Session plans + walk-forward validation + live arming — R6 schedule, 30m/1h structure tfs, plan mode, sweeps, claims grid, `PlanArmer` (`docs/TECHNIQUE-WALKFORWARD-PLAN.md`) | ✅ built |
 
 Everything is wired and live; no credentials outstanding.
 
@@ -186,6 +187,13 @@ Everything is wired and live; no credentials outstanding.
 - **Mid-run reconnects**: `TechniqueService._live` keeps pass progress per running
   run and `GET /api/technique/runs/{id}` returns it as `live` so a reloaded client
   seeds its view.
+- **A closed market gets a plan, not a fill.** An as-of instant outside the regular
+  session (R6.4) switches `analyze()` to `mode="plan"`: deterministic levels + conditional
+  triggers (WATCH / IF / THEN / VOID) for the next session, scored afterwards trigger by
+  trigger with the same `TriggerTracker` the live armer uses. The book's schedule (R6),
+  its 30m/1h structure preference and the pre-session routine (pp. 114–120) were missed
+  by the original spec scope — re-read "Actionable Next Steps" before dismissing a
+  section as marketing.
 - **Reviewability is a first-class output.** A verdict without the *why* and the
   *what happened next* cannot be improved. Every run now records a decision trace
   (`result.trace`, `vp.note(stage, step, reason, **detail)`), a provenance

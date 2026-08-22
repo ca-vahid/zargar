@@ -82,7 +82,19 @@ export const api = {
     request<any[]>("GET", `/api/options/expiring?days=${days}`),
   // --- technique ---
   techniqueStatus: () => request<import("../types").TechniqueStatus>("GET", "/api/technique/status"),
-  techniqueAnalyze: (body: { symbol: string; tf?: string; asOf?: number | null; note?: string;
+  techniquePlan: (body: { symbol: string; asOf?: number | null; tf?: string; withVision?: boolean | null; wait?: boolean }) =>
+    request<import("../types").TechniqueRun>("POST", "/api/technique/plan", body),
+  techniqueSweeps: () => request<import("../types").TechniqueSweep[]>("GET", "/api/technique/walkforward"),
+  techniqueSweep: (id: string) => request<import("../types").TechniqueSweep>("GET", `/api/technique/walkforward/${id}`),
+  techniqueStartSweep: (body: { symbols: string[]; start: string; end: string; structureTfs?: string[]; triggerTf?: string; includeInvalid?: boolean; label?: string }) =>
+    request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward", body),
+  techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean }) =>
+    request<import("../types").TechniqueRun>("POST", `/api/technique/walkforward/${id}/promote`, body),
+  techniqueArmed: () => request<import("../types").ArmedPlan[]>("GET", "/api/technique/armed"),
+  techniqueArm: (runId: string) => request<import("../types").ArmedPlan>("POST", `/api/technique/runs/${runId}/arm`),
+  techniqueDisarm: (runId: string) => request<{ disarmed: boolean }>("DELETE", `/api/technique/runs/${runId}/arm`),
+  techniqueArmToday: (symbol: string) => request<import("../types").ArmedPlan>("POST", "/api/technique/arm-today", { symbol }),
+  techniqueAnalyze: (body: { symbol: string; tf?: string; asOf?: number | null; note?: string; plan?: boolean | null; withVision?: boolean | null;
     imageDataUrl?: string | null }) =>
     request<import("../types").TechniqueRun>("POST", "/api/technique/analyze", body),
   techniqueRuns: (limit = 100, symbol?: string, extra?: Record<string, string>) =>
@@ -104,7 +116,7 @@ export const api = {
   techniqueCancel: (id: string) => request<any>("POST", `/api/technique/runs/${id}/cancel`),
   techniqueSetups: (limit = 100) =>
     request<import("../types").TechniqueSetup[]>("GET", `/api/technique/setups?limit=${limit}`),
-  techniqueBacktest: (body: { symbol: string; tf: string; days: number; horizonBars?: number; stepBars?: number }) =>
+  techniqueBacktest: (body: { symbol: string; tf: string; days: number; horizonBars?: number; stepBars?: number; primeWindowsOnly?: boolean }) =>
     request<any>("POST", "/api/technique/backtest", body),
   techniqueScan: () => request<any>("POST", "/api/technique/scan"),
   techniqueOptions: (symbol: string, direction = "long") =>

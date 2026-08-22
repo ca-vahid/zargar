@@ -351,6 +351,47 @@ class TechniqueReview(Base):
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class TechniqueSweep(Base):
+    """One walk-forward sweep: build a session plan at every close in [start, end]
+    for each symbol and score it on the next session. Rows live in
+    `technique_walkforward`; `summary` is `walkforward.aggregate()` over them."""
+    __tablename__ = "technique_sweeps"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    label: Mapped[str] = mapped_column(String(120), default="")
+    symbols: Mapped[list] = mapped_column(JSONVariant, default=list)
+    start: Mapped[str] = mapped_column(String(10))
+    end: Mapped[str] = mapped_column(String(10))
+    params: Mapped[dict] = mapped_column(JSONVariant, default=dict)   # structureTfs, triggerTf, thresholds, ...
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)   # running | done | failed
+    progress: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    summary: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TechniqueWalkforward(Base):
+    """One (sweep, symbol, plan session) row: the plan built at that close and how
+    the next session scored it. Light by design — promote a row to a full plan
+    run (`TechniqueService.promote`) for a deep review."""
+    __tablename__ = "technique_walkforward"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    sweep_id: Mapped[str] = mapped_column(ForeignKey("technique_sweeps.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    session: Mapped[str] = mapped_column(String(10), index=True)      # plan built at this session's close
+    plan_for: Mapped[str | None] = mapped_column(String(10))
+    plan: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    result: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    promoted_run_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+Index("ix_technique_walkforward_sweep_sym_sess", TechniqueWalkforward.sweep_id,
+      TechniqueWalkforward.symbol, TechniqueWalkforward.session, unique=True)
+
+
 class TechniqueSetup(Base):
     """A setup emitted by a run (valid or not; invalid ones keep their reasons)."""
     __tablename__ = "technique_setups"

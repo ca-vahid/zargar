@@ -16,19 +16,37 @@ function fmt(n: number | null | undefined, d = 2) {
   return n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(d);
 }
 
-export function VerdictBadge({ run }: { run: Pick<TechniqueRun, "status" | "verdict" | "setupType" | "confidence" | "grounded"> }) {
+export function VerdictBadge({ run }: { run: Pick<TechniqueRun, "status" | "verdict" | "setupType" | "confidence" | "grounded"> & { plan?: TechniqueRun["plan"] } }) {
   if (run.status === "running") return <span className="tq-badge running">running</span>;
   if (run.status === "failed") return <span className="tq-badge failed">failed</span>;
+  if (run.verdict === "plan") {
+    const n = run.plan?.validTriggers;
+    return <span className="tq-badge plan">PLAN{n !== undefined && n !== null ? ` · ${n} trigger${n === 1 ? "" : "s"}` : ""}</span>;
+  }
   if (run.verdict === "setup") {
     return <span className="tq-badge setup">SETUP · {run.setupType?.replace(/_/g, " ")}</span>;
   }
   return <span className="tq-badge nosetup">no setup</span>;
 }
 
+const WINDOW_LABEL: Record<string, string> = {
+  prime_open: "09:30–10:30 prime", prime_close: "14:45–16:00 prime", midday: "mid-day (avoid, R6.3)", extended: "outside session (R6.4)",
+};
+/** R6 session-window pill. */
+export function WindowBadge({ window }: { window?: string | null }) {
+  if (!window) return null;
+  const prime = window === "prime_open" || window === "prime_close";
+  return <span className={`tq-badge ${prime ? "setup" : window === "midday" ? "failed" : "nosetup"}`} title="Book's trading schedule, pp. 114–115">{WINDOW_LABEL[window] ?? window}</span>;
+}
+
 /** Outcome pill for lists: which plan, what happened, R. */
 export function OutcomeBadge({ outcome }: { outcome: TechniqueOutcome | null }) {
   if (!outcome) return <span className="tq-badge nosetup" title="not scored yet">—</span>;
-  const src = outcome.planSource === "analysis" ? "plan" : outcome.planSource === "candidate" ? "declined" : "market";
+  if (outcome.planSource === "levels") {
+    return <span className="tq-badge nosetup" title={outcome.note ?? ""}>levels · {outcome.note ?? outcome.status}</span>;
+  }
+  const src = outcome.planSource === "analysis" ? "plan" : outcome.planSource === "candidate" ? "declined"
+    : outcome.planSource.startsWith("trigger:") ? `trigger ${outcome.planSource.slice(8)}` : "market";
   if (outcome.status === "pending" || outcome.status === "unscorable") {
     return <span className="tq-badge nosetup" title={outcome.note ?? ""}>{src} · {outcome.status}</span>;
   }
@@ -113,6 +131,7 @@ export function RunResult({ run, rules, onRefresh }: { run: TechniqueRun; rules:
         <span className="tq-sym">{a.symbol}</span>
         <span className="sub">{run.primaryTf} · trend {a.trend} · confidence <b>{fmt(a.confidence)}</b>
           {run.mode === "image_only" ? " · image-only (approximate prices)" : ""}</span>
+        <WindowBadge window={run.result?.sessionWindow} />
         <span className="tq-grounded" title="Every price re-verified against the bar data">
           {grounding?.passed ? <><IconCheck size={11} /> grounded</> : <><IconX size={11} /> not grounded</>}
         </span>
@@ -272,7 +291,7 @@ export function RunResult({ run, rules, onRefresh }: { run: TechniqueRun; rules:
 
 // --- review loop: provenance, trace, outcome, review, replay ---------------------------------
 
-function Provenance({ run }: { run: TechniqueRun }) {
+export function Provenance({ run }: { run: TechniqueRun }) {
   const c = run.config ?? {};
   if (!c.processVersion) return null;
   const ov = c.overrides ?? {};
@@ -289,9 +308,9 @@ function Provenance({ run }: { run: TechniqueRun }) {
   );
 }
 
-const STAGE_ORDER = ["run", "data", "loop", "context", "pattern", "entry", "critic", "grounding", "options", "setup", "proposal"];
+const STAGE_ORDER = ["run", "data", "loop", "context", "pattern", "entry", "critic", "grounding", "options", "setup", "proposal", "plan", "window"];
 
-function TracePanel({ trace }: { trace: TraceStep[] }) {
+export function TracePanel({ trace }: { trace: TraceStep[] }) {
   const [open, setOpen] = useState<number | null>(null);
   return (
     <div className="tq-trace">
@@ -316,7 +335,7 @@ function TracePanel({ trace }: { trace: TraceStep[] }) {
   );
 }
 
-function OutcomeSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () => void }) {
+export function OutcomeSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () => void }) {
   const toast = useStore((s) => s.toast);
   const [busy, setBusy] = useState(false);
   const outs = run.outcomes ?? [];
@@ -337,7 +356,8 @@ function OutcomeSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () 
       {outs.length > 0 && (
         <div className="tq-plan">
           {outs.map((o) => {
-            const src = o.planSource === "analysis" ? "The plan" : o.planSource === "candidate" ? "Declined candidate" : "Market path";
+            const src = o.planSource === "analysis" ? "The plan" : o.planSource === "candidate" ? "Declined candidate"
+              : o.planSource.startsWith("trigger:") ? `Trigger ${o.planSource.slice(8)}` : o.planSource === "levels" ? "Levels" : "Market path";
             const r = o.rMultiple;
             return (
               <div className="tq-plan-cell tq-outcome-cell" key={o.id} title={o.note ?? ""}>
@@ -359,7 +379,7 @@ function OutcomeSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () 
   );
 }
 
-function ReviewSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () => void }) {
+export function ReviewSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () => void }) {
   const toast = useStore((s) => s.toast);
   const reviews: TechniqueReview[] = run.reviews ?? [];
   const [tax, setTax] = useState<TechniqueTaxonomy | null>(null);
@@ -455,7 +475,7 @@ function ReviewSection({ run, onRefresh }: { run: TechniqueRun; onRefresh?: () =
   );
 }
 
-function ReplayControls({ run }: { run: TechniqueRun }) {
+export function ReplayControls({ run }: { run: TechniqueRun }) {
   const toast = useStore((s) => s.toast);
   const openRun = useStore((s) => s.openTechniqueRun);
   const [busy, setBusy] = useState(false);

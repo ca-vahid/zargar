@@ -23,6 +23,7 @@ cd backend && .venv/bin/python -m zargar.tools.snaptrade_options_check   # read-
 cd backend && .venv/bin/python -m pytest tests/test_technique_*.py       # technique pipeline (no LLM calls)
 cd backend && .venv/bin/python -m pytest tests/test_options_*.py tests/test_snaptrade_options.py  # options (stubbed CBOE/SnapTrade)
 cd backend && .venv/bin/python -m zargar.tools.technique_review list --unreviewed   # review loop CLI (dump/score/review/diff/replay)
+cd backend && .venv/bin/python -m zargar.tools.technique_review sweep --start 2026-07-01 --end 2026-08-20   # walk-forward sweep (deterministic)
 ```
 
 Options trading: research + build plan + status in `docs/OPTIONS-PLAN.md`.
@@ -37,6 +38,8 @@ build plan + lessons in `docs/TECHNIQUE-PIPELINE-PLAN.md`, code in
 Review loop (trace, provenance, outcomes, reviews, replay, bundle):
 `docs/TECHNIQUE-REVIEW-PLAN.md`; the `/technique-review` skill
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
+Session plans + walk-forward + live arming: `docs/TECHNIQUE-WALKFORWARD-PLAN.md`
+(`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
 
 Tests default to `postgresql+asyncpg://zargar@127.0.0.1:5433/zargar_test`
 (override: `ZARGAR_TEST_DATABASE_URL`). Runtime default is port 5432 per
@@ -133,6 +136,11 @@ docker-compose.
   settings, `barsAssetId`). Add a `vp.note(...)` when you add a step to the
   pipeline; never strip the trace. `technique_runs`/`events` are never edited —
   reviews and replays are new rows.
+- **R6 schedule is enforced** (`technique.enforce_session_windows`): a setup found
+  outside 09:30–10:30 / 14:45–16:00 ET is watch-only; an as-of outside the session makes
+  `analyze()` build a *plan* (`mode="plan"`, verdict `plan`) instead of a fill; scans and
+  the backtester are window-gated. Plan triggers and live arming share
+  `walkforward.TriggerTracker` — change one path, both change.
 - Outcomes (`technique_outcomes`) are scored by `outcome.simulate_plan`, the same
   walk-forward the backtester uses — change one, change both. Yahoo 1m depth
   (~20 d) bounds how late a run can still be scored; the bars snapshot saved per

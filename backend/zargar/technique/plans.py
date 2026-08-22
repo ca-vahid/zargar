@@ -1,0 +1,459 @@
+"""Session plans — the book's pre-session routine, as data (spec T1.6, R6).
+
+A plan is built as-of a session boundary (close of N, or anything outside the
+regular session) from FACTS alone. It is *not* a trade: it is the map (levels
+with provenance and age) plus **conditional triggers** — WATCH a level, IF
+price does X inside a prime window with adequate volume, THEN long with this
+stop/targets, VOID IF the open gaps past it — and the gap policy that voids the
+whole plan. Every clause cites the rule it comes from. Nothing here calls the
+model; `service` can run the vision passes on top as an opt-in.
+
+Triggers are scored afterwards by `walkforward.replay_plan` against the next
+session's bars, live by `arming.PlanArmer`, and both use the same
+`TriggerTracker`, so validation and live behaviour cannot drift apart.
+"""
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+
+from ..domain import Bar
+from .levels import Level
+from .rulebook import (
+    DEFAULT_THRESHOLDS,
+    PRIME_WINDOWS,
+    Thresholds,
+    next_session_date,
+    session_date,
+)
+from .setups import LADDER_TRIMS, RUNNER_PCT, bounce_stop, build_ladder, risk_reward
+from .volume import VolumeAssessment
+
+MAX_BOUNCE_TRIGGERS = 3
+MAX_BREAK_TRIGGERS = 2
+# How far below the last close a support may sit and still be planned (a level
+# 8% away is not "tomorrow's map").
+MAX_LEVEL_DISTANCE_PCT = 0.04
+
+
+@dataclass
+class Condition:
+    rule: str
+    text: str
+    kind: str            # touch | close_through | window | volume | decisive | followthrough
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+
+@dataclass
+class Trigger:
+    id: str
+    kind: str                        # bounce | breakout | wedge_break
+    direction: str                   # long
+    level_price: float
+    level: dict
+    entry_price: float
+    entry_basis: str                 # at_level | on_break
+    stop_price: float
+    stop_reference: str
+    targets: list[dict]
+    risk_reward: float
+    conditions: list[Condition]
+    void_if: list[str]
+    confluences: list[str]
+    confidence: float
+    rules: list[str]
+    valid: bool
+    no_trade_reasons: list[str]
+    notes: str = ""
+
+    @property
+    def risk(self) -> float:
+        return max(self.entry_price - self.stop_price, 0.0)
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "kind": self.kind, "direction": self.direction,
+            "levelPrice": round(self.level_price, 4), "level": self.level,
+            "entry": {"price": round(self.entry_price, 4), "basis": self.entry_basis},
+            "stop": {"price": round(self.stop_price, 4), "reference": self.stop_reference},
+            "targets": self.targets, "riskReward": round(self.risk_reward, 2),
+            "risk": round(self.risk, 4),
+            "conditions": [c.to_dict() for c in self.conditions], "voidIf": list(self.void_if),
+            "confluences": list(self.confluences), "confidence": round(self.confidence, 3),
+            "rules": sorted(set(self.rules)), "valid": self.valid,
+            "noTradeReasons": list(self.no_trade_reasons), "notes": self.notes,
+            "setupType": {"bounce": "support_bounce", "breakout": "breakout",
+                          "wedge_break": "falling_wedge"}[self.kind],
+        }
+
+
+@dataclass
+class SessionPlan:
+    symbol: str
+    plan_for: str                     # ET date of the session the plan is for
+    built_from_ms: int                # as-of instant
+    built_from_session: str           # ET date of the last session consumed
+    structure_tfs: list[str]
+    trigger_tf: str
+    last_close: float
+    levels: list[dict]
+    context: dict
+    triggers: list[Trigger]
+    invalidations: list[dict]
+    gap_policy: dict
+    notes: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return {
+            "symbol": self.symbol, "planFor": self.plan_for, "builtFromMs": self.built_from_ms,
+            "builtFromSession": self.built_from_session, "structureTfs": list(self.structure_tfs),
+            "triggerTf": self.trigger_tf, "lastClose": self.last_close,
+            "levels": self.levels, "context": self.context,
+            "triggers": [t.to_dict() for t in self.triggers],
+            "invalidations": self.invalidations, "gapPolicy": self.gap_policy,
+            "notes": list(self.notes),
+            "validTriggers": sum(1 for t in self.triggers if t.valid),
+        }
+
+
+def _neutral_volume() -> VolumeAssessment:
+    """Volume is a trigger-time condition, not a build-time fact."""
+    return VolumeAssessment(relative=1.0, trend="flat", price_trend="flat", is_spike=False,
+                            is_dryup=False, below_floor=False, rules=["T2.9"],
+                            note="judged at trigger time", measurable=True)
+
+
+def _level_from_dict(d: dict) -> Level:
+    return Level(price=float(d["price"]), kind=d.get("effectiveKind") or d.get("kind") or "support",
+                 touches=int(d.get("touches") or 0), sources=list(d.get("sources") or []),
+                 touch_ts=list(d.get("touchTs") or []), first_ts=d.get("firstTs"),
+                 last_ts=d.get("lastTs"), timeframe=(d.get("timeframes") or ["1m"])[0])
+
+
+def _age_sessions(first_ts: int | None, as_of_ms: int) -> int | None:
+    if not first_ts:
+        return None
+    return max(0, int((as_of_ms - first_ts) / 86_400_000))
+
+
+def _window_condition() -> Condition:
+    return Condition("R6.1/R6.2", "inside a prime window (09:30-10:30 or 14:45-16:00 ET)", "window")
+
+
+def _volume_floor_condition(t: Thresholds) -> Condition:
+    return Condition("R3.1", f"volume at the trigger bar >= {t.volume_floor_mult:.0%} of the "
+                             f"time-of-day baseline", "volume")
+
+
+def _trigger_confidence(level: Level, confl: list[str], rr: float, valid: bool) -> float:
+    c = 0.3 + min(level.touches, 4) * 0.1 + (0.1 if "T1.3a" in level.sources else 0.0)
+    c += 0.05 * len(confl)
+    if rr >= 4:
+        c += 0.05
+    if not valid:
+        c -= 0.3
+    return max(0.0, min(1.0, c))
+
+
+def _higher_tf_agrees(context: dict, want: str) -> bool | None:
+    """Does the highest structure timeframe's trend agree with a long idea?
+    (`want` = uptrend for breakouts; for bounces sideways/uptrend both fine)."""
+    trends = context.get("trend") or {}
+    for tf in ("1h", "30m", "15m"):
+        tr = trends.get(tf)
+        if tr:
+            d = tr.get("direction")
+            if want == "uptrend":
+                return d == "uptrend"
+            return d in ("uptrend", "sideways")
+    return None
+
+
+def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
+                       structure_tfs: list[str] | tuple[str, ...] = ("1h", "30m"),
+                       trigger_tf: str = "1m") -> SessionPlan:
+    """Turn FACTS (computed as-of a session boundary) into a SessionPlan.
+
+    Requires `facts` from `analysis.compute_facts` with `primary_tf == trigger_tf`
+    and the structure timeframes as context, so `keyLevels` already merges the
+    30m/1h structure with the trigger-timeframe detail.
+    """
+    t = thresholds or DEFAULT_THRESHOLDS
+    symbol = facts.get("symbol", "?")
+    as_of = int(facts.get("asOf") or 0)
+    last = float(facts.get("lastClose") or 0.0)
+    ptf = facts.get("primaryTf") or trigger_tf
+    atr_v = float((facts.get("atr") or {}).get(ptf) or 0.0)
+    tol = max(last * t.level_tolerance_pct, 1e-9)
+    plan_for = next_session_date(as_of) if as_of else "?"
+    built_session = session_date(int(facts.get("lastTs") or as_of)) if (facts.get("lastTs") or as_of) else "?"
+
+    sess = facts.get("session") or {}
+    prev = sess.get("prev") or {}
+    today = sess.get("today") or {}
+    context = {
+        "trend": facts.get("trend") or {},
+        "volume": {tf: {k: v.get(k) for k in ("relativeToTimeOfDayAvg", "trend", "priceTrend", "belowFloor",
+                                                 "measurable", "baselineSessions")}
+                   for tf, v in (facts.get("volume") or {}).items()},
+        "wedge": {tf: (w and {k: w.get(k) for k in ("widestHeight", "lowestPrice", "breakoutLevelNow",
+                                                     "volumeDeclining")})
+                  for tf, w in (facts.get("wedge") or {}).items()},
+        "lastSession": {"date": built_session, "open": today.get("open"), "hod": today.get("hod"),
+                        "lod": today.get("lod"), "close": last},
+        "prevSession": prev,
+        "sessionWindowAtBuild": facts.get("sessionWindow"),
+        "notes": list(facts.get("notes") or []),
+    }
+
+    # --- levels with provenance and age -------------------------------------------
+    levels: list[dict] = []
+    for lv in facts.get("keyLevels") or []:
+        levels.append({
+            "price": round(float(lv["price"]), 4), "kind": lv.get("kind"),
+            "effectiveKind": lv.get("effectiveKind") or lv.get("kind"),
+            "touches": lv.get("touches"), "sources": list(lv.get("sources") or []),
+            "timeframes": list(lv.get("timeframes") or []),
+            "position": lv.get("position"),
+            "distancePct": round((float(lv["price"]) - last) / last * 100, 3) if last else None,
+            "ageSessions": _age_sessions(lv.get("firstTs"), as_of),
+            "priorDayExtreme": "T1.3a" in (lv.get("sources") or []),
+        })
+    # Carry the last session's HOD/LOD explicitly (T1.3a) even if the detector
+    # did not promote them to levels yet — they become tomorrow's strongest refs.
+    for key, kind in (("lod", "support"), ("hod", "resistance")):
+        px = today.get(key)
+        if px and not any(abs(l["price"] - px) <= tol * 2 for l in levels):
+            levels.append({"price": round(float(px), 4), "kind": kind, "effectiveKind": kind,
+                           "touches": 1, "sources": ["T1.3a"], "timeframes": [ptf],
+                           "position": "above" if px > last else "below",
+                           "distancePct": round((px - last) / last * 100, 3) if last else None,
+                           "ageSessions": 0, "priorDayExtreme": True, "carried": True})
+    levels.sort(key=lambda l: (0 if l["priorDayExtreme"] else 1, -(l["touches"] or 0)))
+
+    # --- triggers ------------------------------------------------------------------
+    triggers: list[Trigger] = []
+    notes: list[str] = []
+    resistances_above = sorted([l for l in levels if l["effectiveKind"] == "resistance" and l["price"] > last],
+                               key=lambda l: l["price"])
+    supports_below = sorted([l for l in levels if l["effectiveKind"] == "support" and l["price"] < last],
+                            key=lambda l: -l["price"])
+
+    # Bounce triggers — nearest supports below, within reach.
+    n = 0
+    for ld in supports_below:
+        if n >= MAX_BOUNCE_TRIGGERS:
+            break
+        if (last - ld["price"]) / last > MAX_LEVEL_DISTANCE_PCT:
+            continue
+        lv = _level_from_dict({**ld, "effectiveKind": "support"})
+        entry = lv.price
+        stop = bounce_stop(entry, atr_value=atr_v, thresholds=t)
+        next_res = next((r for r in resistances_above if r["price"] > entry), None)
+        targets = build_ladder(entry, "long", next_level=(next_res["price"] if next_res else None))
+        rr = risk_reward(entry, stop, targets[-1].price)
+        vol = _neutral_volume()
+        confl = []
+        if "T1.3a" in lv.sources:
+            confl.append("prior-day extreme (T1.3a)")
+        if lv.touches >= t.strong_touches:
+            confl.append(f"{lv.touches} touches (T1.2)")
+        hta = _higher_tf_agrees(context, "bounce")
+        if hta:
+            confl.append("higher timeframe not against it (T3.3g)")
+        if len(ld.get("timeframes") or []) >= 2:
+            confl.append("confluence across timeframes")
+        reasons: list[str] = []
+        if rr < t.min_risk_reward:
+            reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
+        if lv.touches < t.min_touches and "T1.3a" not in lv.sources:
+            reasons.append(f"T1.2 only {lv.touches} touch(es)")
+        valid = not reasons
+        rules = ["T1.2", "T1.6", "T4.1", "T4.2", "T4.3a", "T4.3d", "T4.4a", "R2", "R3.1", "R6.1", "R6.2"] + list(lv.sources)
+        if len(confl) >= 2:
+            rules.append("T4.6")
+        n += 1
+        triggers.append(Trigger(
+            id=f"b{n}", kind="bounce", direction="long", level_price=entry, level=ld,
+            entry_price=entry, entry_basis="at_level", stop_price=stop, stop_reference="below_support",
+            targets=[tg.to_dict() for tg in targets], risk_reward=rr,
+            conditions=[
+                Condition("T4.1", f"price trades down into {entry:.2f} (+/- {tol:.2f})", "touch"),
+                _window_condition(), _volume_floor_condition(t),
+            ],
+            void_if=[f"session opens below the stop {stop:.2f} (level gapped through)",
+                     f"session opens below {entry:.2f} (gapped past the level — do not chase, T4.1)",
+                     f"|open - prev close| > {t.gap_void_r:.1f}x risk ({t.gap_void_r * (entry - stop):.2f})"],
+            confluences=confl, confidence=_trigger_confidence(lv, confl, rr, valid),
+            rules=rules, valid=valid, no_trade_reasons=reasons,
+            notes="Bounce: enter AT the level, no visual confirmation (T4.2); a hammer / long lower "
+                  "wick at the touch raises confidence (T3.4b) but is not required.",
+        ))
+
+    # Breakout triggers — nearest resistances above.
+    m = 0
+    for rd in resistances_above:
+        if m >= MAX_BREAK_TRIGGERS:
+            break
+        if (rd["price"] - last) / last > MAX_LEVEL_DISTANCE_PCT:
+            continue
+        lv = _level_from_dict({**rd, "effectiveKind": "resistance"})
+        entry = lv.price
+        stop = entry - max(tol * 2, entry * t.bounce_stop_pct, atr_v * t.stop_buffer_atr)
+        next_res = next((r for r in resistances_above if r["price"] > entry + tol), None)
+        targets = build_ladder(entry, "long", next_level=(next_res["price"] if next_res else None))
+        rr = risk_reward(entry, stop, targets[-1].price)
+        confl = []
+        if "T1.3a" in lv.sources:
+            confl.append("prior-day extreme (T1.3a)")
+        if lv.touches >= t.strong_touches:
+            confl.append(f"{lv.touches} touches (T1.2)")
+        hta = _higher_tf_agrees(context, "uptrend")
+        if hta:
+            confl.append("higher timeframe uptrend (T3.3g)")
+        reasons = []
+        if rr < t.min_risk_reward:
+            reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
+        valid = not reasons
+        rules = ["T1.2", "T1.6", "T3.3a", "T3.3b", "T3.3c", "T2.5", "T4.1", "T4.3a", "T4.4a", "R2", "R6.1", "R6.2"] + list(lv.sources)
+        if len(confl) >= 2:
+            rules.append("T4.6")
+        m += 1
+        triggers.append(Trigger(
+            id=f"k{m}", kind="breakout", direction="long", level_price=entry, level=rd,
+            entry_price=entry, entry_basis="on_break", stop_price=stop,
+            stop_reference="below_broken_resistance",
+            targets=[tg.to_dict() for tg in targets], risk_reward=rr,
+            conditions=[
+                Condition("T3.3b", f"a bar CLOSES above {entry:.2f}", "close_through"),
+                _window_condition(),
+                Condition("T3.3a/T2.5", f"volume on the break >= {t.volume_spike_mult:.1f}x baseline", "volume"),
+                Condition("T3.3b", "decisive candle (large body, minimal wicks)", "decisive"),
+                Condition("T3.3c/T3.3f", f"{t.followthrough_required} of the next {t.followthrough_bars} bars "
+                                         f"hold above the level", "followthrough"),
+            ],
+            void_if=[f"session opens above {entry:.2f} (gapped past — do not chase, T4.1)",
+                     f"|open - prev close| > {t.gap_void_r:.1f}x risk ({t.gap_void_r * (entry - stop):.2f})"],
+            confluences=confl, confidence=_trigger_confidence(lv, confl, rr, valid),
+            rules=rules, valid=valid, no_trade_reasons=reasons,
+            notes="Breakout: confirmation REQUIRED (volume surge + decisive candle + follow-through); "
+                  "any fakeout tell (T3.3d-f) cancels it.",
+        ))
+
+    # Wedge break — if the detectors see a falling wedge on the trigger or a structure tf.
+    for tf in [ptf] + list(structure_tfs):
+        w = (facts.get("wedge") or {}).get(tf)
+        if not w:
+            continue
+        lvl = float(w.get("breakoutLevelNow") or 0)
+        if lvl <= 0:
+            continue
+        stop = float(w["lowestPrice"]) - max(lvl * 0.001, 1e-9)
+        targets = build_ladder(lvl, "long", measured_move=float(w.get("widestHeight") or 0))
+        rr = risk_reward(lvl, stop, targets[-1].price)
+        reasons = []
+        if rr < t.min_risk_reward:
+            reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
+        if not w.get("volumeDeclining"):
+            reasons.append("T3.1c volume not declining into the wedge")
+        valid = not reasons
+        wd = {"price": round(lvl, 4), "kind": "resistance", "effectiveKind": "resistance",
+              "touches": 2, "sources": ["T3.1"], "timeframes": [tf], "wedge": w}
+        triggers.append(Trigger(
+            id=f"w{tf}", kind="wedge_break", direction="long", level_price=lvl, level=wd,
+            entry_price=lvl, entry_basis="on_break", stop_price=stop, stop_reference="wedge_low",
+            targets=[tg.to_dict() for tg in targets], risk_reward=rr,
+            conditions=[
+                Condition("T3.1d", f"a bar CLOSES above the upper wedge line (~{lvl:.2f} at the close of {built_session})", "close_through"),
+                _window_condition(),
+                Condition("T3.3a/T2.5", f"volume on the break >= {t.volume_spike_mult:.1f}x baseline", "volume"),
+                Condition("T3.3b", "decisive candle", "decisive"),
+                Condition("T3.3c", f"{t.followthrough_required} of the next {t.followthrough_bars} bars hold above", "followthrough"),
+            ],
+            void_if=[f"session opens above {lvl:.2f} (gapped past)",
+                     f"|open - prev close| > {t.gap_void_r:.1f}x risk"],
+            confluences=(["falling wedge (T3.1)"] + (["volume declining (T3.1c)"] if w.get("volumeDeclining") else [])),
+            confidence=0.5 if valid else 0.25, rules=["T3.1a", "T3.1b", "T3.1c", "T3.1d", "T3.1e", "T3.1f", "R6.1", "R6.2"],
+            valid=valid, no_trade_reasons=reasons,
+            notes=f"Wedge break on {tf}: stop below the wedge low (T3.1e), target = measured height (T3.1f).",
+        ))
+        break
+
+    if not triggers:
+        notes.append("No level within reach — a valid plan with nothing to do (p. 117: day trading "
+                     "doesn't mean trading every day).")
+
+    invalidations = [
+        {"rule": "Q13", "text": f"whole plan void if |open - prev close| exceeds {t.gap_void_r:.1f}x a trigger's risk",
+         "kind": "gap_void"},
+        {"rule": "T4.1", "text": "a trigger whose level was gapped past at the open is not chased", "kind": "gapped_past"},
+        {"rule": "T4.3a", "text": "a trigger whose stop was gapped through at the open is void", "kind": "gapped_through"},
+        {"rule": "R6.4", "text": "plan expires at the session close; nothing is held overnight", "kind": "expiry"},
+    ]
+    gap_policy = {"gapVoidR": t.gap_void_r, "respectMult": t.respect_mult,
+                  "entryWindowBars": t.plan_entry_window_bars, "primeWindows": list(PRIME_WINDOWS),
+                  "extrapolation": "the book is silent on overnight gaps (spec Q11-Q13)"}
+    return SessionPlan(symbol=symbol, plan_for=plan_for, built_from_ms=as_of, built_from_session=built_session,
+                       structure_tfs=list(structure_tfs), trigger_tf=trigger_tf, last_close=last,
+                       levels=levels, context=context, triggers=triggers, invalidations=invalidations,
+                       gap_policy=gap_policy, notes=notes)
+
+
+def analysis_from_trigger(trigger: dict, symbol: str, *, session_window: str = "unknown",
+                          confidence: float | None = None):
+    """A `TechniqueAnalysis` (the pipeline's contract) for a fired trigger, so the
+    live path can reuse `_persist_setup` / the critic / proposals unchanged."""
+    from .schemas import TechniqueAnalysis
+    lv = trigger.get("level") or {}
+    targets = trigger.get("targets") or []
+    trims = (30.0, 40.0, 15.0)
+    base = dict(
+        symbol=symbol, verdict="setup", setup_type=trigger.get("setupType") or "support_bounce",
+        direction="long", trend="sideways",
+        levels=[{"price": float(trigger["levelPrice"]), "kind": lv.get("effectiveKind") or lv.get("kind") or "support",
+                 "touches": int(lv.get("touches") or 1), "note": ",".join(lv.get("sources") or [])}],
+        pattern_kind="falling_wedge" if trigger.get("kind") == "wedge_break" else "none",
+        pattern_present=trigger.get("kind") == "wedge_break",
+        pattern_widest_height=float(((lv.get("wedge") or {}).get("widestHeight")) or 0.0),
+        pattern_volume_declining=bool((lv.get("wedge") or {}).get("volumeDeclining")), pattern_notes="",
+        breakout_observed=trigger.get("kind") != "bounce", breakout_verdict="breakout" if trigger.get("kind") != "bounce" else "none",
+        breakout_level=float(trigger["levelPrice"]) if trigger.get("kind") != "bounce" else 0.0,
+        breakout_volume_confirmed=trigger.get("kind") != "bounce", breakout_decisive_candle=trigger.get("kind") != "bounce",
+        breakout_follow_through=trigger.get("kind") != "bounce", breakout_holds_level=trigger.get("kind") != "bounce",
+        higher_tf_agrees=any("higher timeframe" in c for c in (trigger.get("confluences") or [])),
+        entry_price=float(trigger["entry"]["price"]), entry_basis=trigger["entry"].get("basis", "at_level"),
+        entry_requires_confirmation=trigger.get("kind") != "bounce",
+        stop_price=float(trigger["stop"]["price"]), stop_kind="mental",
+        stop_reference=trigger["stop"].get("reference", "below_support"),
+        targets=[{"price": float(tg["price"]), "trim_pct": float(tg.get("trimPct") or trims[i] if i < 3 else 15.0),
+                  "basis": tg.get("basis", "next_resistance")} for i, tg in enumerate(targets[:3])],
+        runner_pct=15.0, risk_reward=float(trigger.get("riskReward") or 0.0),
+        volume_verdict="judged at the trigger bar (T2.9)",
+        confidence=float(confidence if confidence is not None else trigger.get("confidence") or 0.5),
+        rules_fired=list(trigger.get("rules") or []), no_trade_reasons=list(trigger.get("noTradeReasons") or []),
+        options_strike_guidance="first strike just OTM (T5.1)", options_expiry_guidance="current-week Friday; 0DTE with reduced size (T5.2)",
+        options_warnings=[], rationale=f"Planned {trigger.get('kind')} trigger {trigger.get('id')} fired: "
+                                       + "; ".join(c.get("text", "") for c in (trigger.get("conditions") or [])),
+        session_window=session_window, plan_mode=False)
+    return TechniqueAnalysis.model_validate(base)
+
+
+def plan_summary_text(plan: dict) -> str:
+    """Human-readable plan for the run's chat thread / CLI."""
+    L = [f"**{plan['symbol']} — session plan for {plan['planFor']}** (built from the {plan['builtFromSession']} close "
+         f"{plan['lastClose']:.2f}; structure {', '.join(plan['structureTfs'])}, triggers on {plan['triggerTf']})"]
+    lv = plan.get("levels") or []
+    if lv:
+        L.append("Levels: " + "; ".join(f"{l['price']:.2f} {l['effectiveKind'][0].upper()} x{l['touches']}"
+                                        + (" PD" if l.get("priorDayExtreme") else "") for l in lv[:8]))
+    for tg in plan.get("triggers") or []:
+        head = f"{tg['id']} {tg['kind']} @ {tg['levelPrice']:.2f}: " + ("VALID" if tg["valid"] else "not tradeable")
+        L.append(f"- {head} — IF " + "; ".join(c["text"] for c in tg["conditions"])
+                 + f" THEN long {tg['entry']['price']:.2f}, stop {tg['stop']['price']:.2f}, "
+                   f"targets {[x['price'] for x in tg['targets']]}, R:R {tg['riskReward']:.2f}"
+                 + (f" · {'; '.join(tg['noTradeReasons'])}" if tg["noTradeReasons"] else ""))
+    if not plan.get("triggers"):
+        L.append("- no triggers within reach")
+    L.append("Void: " + "; ".join(i["text"] for i in plan.get("invalidations") or []))
+    return "\n".join(L)
