@@ -4,6 +4,7 @@ import { LiveRun } from "../components/technique/LiveRun";
 import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge, WindowBadge } from "../components/technique/RunResult";
 import { PlanCard } from "../components/technique/PlanCard";
 import { ValidationTab } from "../components/technique/ValidationTab";
+import { ArmedTab } from "../components/technique/ArmedTab";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
 import { Modal } from "../components/Modal";
 import { CopyChip } from "../components/CopyChip";
@@ -412,30 +413,20 @@ function BacktestTab() {
 function ArmedPanel() {
   const armed = useStore((s) => s.techniqueArmed);
   const setArmed = useStore((s) => s.setTechniqueArmed);
-  const openRun = useStore((s) => s.openTechniqueRun);
-  const toast = useStore((s) => s.toast);
-  const [sym, setSym] = useState("");
+  const setTab = useStore((s) => s.setTechniqueTab);
   useEffect(() => { api.techniqueArmed().then(setArmed).catch(() => undefined); }, [setArmed]);
-  const armToday = async () => {
-    if (!sym.trim()) return;
-    try { const a = await api.techniqueArmToday(sym.trim().toUpperCase()); toast("success", `${a.symbol} plan armed for ${a.planFor}`); setSym(""); }
-    catch (e: any) { toast("error", e.message); }
-  };
   return (
     <div className="panel mb">
-      <div className="panel-head">Armed plans <span className="sub">{armed.length} · live triggers (R6 windows)</span></div>
+      <div className="panel-head">Armed <span className="sub">{armed.length}</span>
+        <button className="link-btn" style={{ marginLeft: "auto" }} onClick={() => setTab("armed")}>dashboard</button></div>
       <div className="panel-body tq-setups">
         {armed.length === 0 && <div className="empty">nothing armed</div>}
         {armed.map((a) => (
-          <button key={a.runId} className="tq-setup-row valid" onClick={() => openRun(a.runId)}>
-            <b>{a.symbol}</b> <span>for {a.planFor}</span>
-            <span className="muted">{a.triggers.map((t) => `${t.id}:${t.status}`).join(" · ")}{a.fired.length ? ` · ${a.fired.length} fired` : ""}</span>
+          <button key={a.runId} className={`tq-setup-row ${a.status === "armed" ? "valid" : ""}`} onClick={() => setTab("armed")}>
+            <b>{a.symbol}</b> <span>{a.config.mode}{a.portfolio.kind === "live" ? " · REAL" : ""} · {a.status}</span>
+            <span className="muted">{a.summary}</span>
           </button>
         ))}
-        <div className="tq-row tq-row--sub">
-          <input placeholder="symbol" value={sym} onChange={(e) => setSym(e.target.value.toUpperCase())} style={{ width: 90 }} />
-          <button className="link-btn" onClick={armToday} title="Build today's plan from yesterday's close and arm it">arm today's plan</button>
-        </div>
       </div>
     </div>
   );
@@ -506,6 +497,7 @@ export function TechniquePage() {
   const [full, setFull] = useState<TechniqueRun | null>(null);
   const fetchedFor = useRef<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const armedCount = useStore((s) => s.techniqueArmed.length);
   const bump = useStore((s) => (focusId ? s.techniqueRunBumps[focusId] : undefined) ?? 0);
 
   const refreshStatus = useCallback(() => { api.techniqueStatus().then(setStatus).catch(() => undefined); }, []);
@@ -557,9 +549,10 @@ export function TechniquePage() {
         <StatusBar status={status} onScan={() => api.techniqueScan().then(() => refreshStatus()).catch((e) => toast("error", e.message))} />
       </div>
       <div className="tabs tq-tabs">
-        {(["analyse", "chat", "history", "backtest", "validation"] as const).map((t) => (
+        {(["analyse", "chat", "history", "backtest", "validation", "armed"] as const).map((t) => (
           <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-            {t === "analyse" ? "Analyse" : t === "chat" ? "Chat" : t === "history" ? "History" : t === "backtest" ? "Backtest" : "Validation"}
+            {t === "analyse" ? "Analyse" : t === "chat" ? "Chat" : t === "history" ? "History" : t === "backtest" ? "Backtest"
+              : t === "validation" ? "Validation" : <>Armed{armedCount > 0 ? <span className="tq-tab-count">{armedCount}</span> : null}</>}
           </button>
         ))}
       </div>
@@ -567,6 +560,8 @@ export function TechniquePage() {
         <ChatPanel />
       ) : tab === "validation" ? (
         <ValidationTab />
+      ) : tab === "armed" ? (
+        <ArmedTab />
       ) : (
         <div className="tq-grid">
           <div className="tq-main">

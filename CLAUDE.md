@@ -136,6 +136,12 @@ docker-compose.
   settings, `barsAssetId`). Add a `vp.note(...)` when you add a step to the
   pipeline; never strip the trace. `technique_runs`/`events` are never edited —
   reviews and replays are new rows.
+- **Armed plans can trade.** `technique/arming.py` modes: alert / proposal / auto. Auto mode
+  places orders only via `OrderManager.place()` (RiskGate inside) and honours the kill
+  switch; auto on a live/paper account needs `technique.arm.allow_live_auto`,
+  `trading.mode=live` AND the per-arm `allowLive` acknowledgement. Order `source` is
+  `technique` (the column is 12 chars). Exits are managed on closed 1m bars; everything is
+  journaled under the plan run id (`GET /api/technique/armed/{id}/audit`).
 - **R6 schedule is enforced** (`technique.enforce_session_windows`): a setup found
   outside 09:30–10:30 / 14:45–16:00 ET is watch-only; an as-of outside the session makes
   `analyze()` build a *plan* (`mode="plan"`, verdict `plan`) instead of a fill; scans and

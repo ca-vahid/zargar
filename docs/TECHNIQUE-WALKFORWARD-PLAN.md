@@ -372,6 +372,38 @@ The book's "set alerts above and below key levels" (p. 117), done by the machine
 Built after phase-1 results show the triggers are worth arming. Designed now so the plan
 schema needs no change later (`triggers[].armedAt`, `firedAt`, `skippedReason`).
 
+### 9.1 As built (2026-08-22, enriched the same day)
+
+An armed plan is **an account + an execution mode + the plan**, with a live dashboard and a
+full audit trail. `technique/arming.py` (`PlanArmer`, `ArmConfig`, `ArmedPlan`, `Trade`):
+
+| Piece | Behaviour |
+|---|---|
+| **Account** | `ArmConfig.portfolio_id` is required (default `technique.arm.default_portfolio` → `trading.default_portfolio`); the dashboard shows account name / kind (SIM, PAPER, LIVE) / venue on every card. |
+| **Modes** | `alert` — setup row + journal, nothing sent. `proposal` — practice proposal in Signals (RiskGate on approval), sized from `riskPct` / `maxQty` / fixed `qty`. `auto` — BUY LMT at trigger price × (1 + `slippagePct`) through `OrderManager.place()` (write-ahead intent, RiskGate, venue routing), then the position is **managed on closed 1m bars**: stop first, 30/40/15 trims at the targets (MKT), runner, **flatten `flattenMinutesBeforeClose` before the close**; entry unfilled after `plan_entry_window_bars` is cancelled (T4.1). |
+| **Real money gate** | `auto` on a live/paper account needs **three** things: `technique.arm.allow_live_auto=true`, `trading.mode=live`, and the per-arm acknowledgement `allowLive=true` (the dialog shows a red "REAL MONEY" panel). Practice accounts never need it. |
+| **Safety** | kill switch → touches are logged as `halt` skips, nothing fires; `paused` → watching only, open positions still managed; **stale data** (no closed bar for `technique.arm.stale_seconds` in-session) → flagged, no firing; every order still passes `RiskGate.evaluate()`; one exit per bar per trade; no overnight holds. |
+| **Controls** | pause / resume / disarm (optionally **flatten**) per plan; **Stop all** / **Flatten & stop all**; `arm-today <symbol>` builds today's plan from yesterday's close and arms it; `technique.arm.auto_symbols` auto-arms at 09:20 ET. |
+| **Audit** | journal (aggregate = plan run id, portfolio id set): `TechniquePlanArmed / Paused / Resumed / Disarmed / TriggerFired / TriggerSkipped (window, volume, gap, paused, halt, entry window) / OrderIntent / OrderResult / PositionOpened / Exit / PositionClosed / Error (retries, rejections, stale data)` — plus the orders' own `OrderIntentCreated / RiskCheck* / OrderSubmitted / OrderFill*` under their order ids; `GET /api/technique/armed/{id}/audit` merges both. Every fire is also a note in the run's chat thread. Transient transport errors are retried (`maxRetries`, backoff, journaled); risk rejections are never retried. |
+| **Persistence** | `technique_armed` row per plan (config, status, state projection); a restart re-arms today's `armed`/`paused` rows (seeded with the session's bars so far) and expires stale days. |
+| **Dashboard** | Technique → **Armed** tab: KPI bar (armed, in trade, realized today, trading mode, kill switch; Stop all / Flatten & stop all / Arm today's plan); one card per plan — symbol, mode badge (AUTO · REAL in red), account, status, stale flag, R6 window now, last price / bar age; one-line summary ("watching 2 triggers · nearest b1 0.8 % away · prime window open"), triggers with distance and status, trades with entry / size / stop / next target / realized P&L, errors; pause / resume / disarm / flatten; expandable live log + journal audit; history table of past armed plans. |
+
+API: `GET /api/technique/armed`, `/armed/options` (accounts + defaults + gates), `/armed/history`,
+`/armed/{id}`, `/armed/{id}/audit`; `POST /runs/{id}/arm {portfolioId, mode, riskPct, maxQty, qty,
+useCritic, allowLive, flattenMinutesBeforeClose, slippagePct}`; `DELETE /runs/{id}/arm?flatten=`;
+`POST /armed/{id}/pause|resume`; `POST /armed/stop-all?flatten=`; `POST /arm-today`.
+Settings: `technique.arm.*` (`mode`, `default_portfolio`, `risk_pct`, `max_qty`, `allow_live_auto`,
+`slippage_pct`, `flatten_minutes_before_close`, `max_retries`, `stale_seconds`, `use_critic`,
+`auto_symbols`, `enabled`). Tests: `backend/tests/test_technique_arming.py`.
+
+**Known limits (honest):** exits are evaluated on *closed* 1-minute bars (a stop can be hit
+intra-bar and sold one bar later, at market); trims are market orders; there is no
+economic-calendar gate (R3.4) yet; a live venue that rejects or loses an order shows as
+`failed` with the reason and is not retried — you decide, it does not; after a **restart**,
+today's plans are re-armed and triggers that already fired are replayed as `alert` (no
+double entry), but a position opened *before* the restart is not re-attached — it shows in
+Portfolios / Blotter and must be managed by hand (or flattened).
+
 ---
 
 ## 10. Honest limitations
@@ -435,7 +467,7 @@ schema needs no change later (`triggers[].armedAt`, `firedAt`, `skippedReason`).
 | `TriggerTracker` (shared by replay and live), `level_respect`, `replay_plan` (+ counterfactuals), `run_symbol`, `aggregate` (+ claims grid) | `technique/walkforward.py` |
 | Backtest R6 gating (`prime_windows_only`, `byWindow`) | `technique/backtest.py` |
 | `mode="plan"` (auto when the as-of is outside the session, or `plan=True`), plan trace (stage `plan`), R6 watch-only (stage `window`), `_score_plan_run` (per-trigger + `levels` outcome rows), sweeps (`start_sweep` / `get_sweep` / `promote`), scan windows, arming wiring | `technique/service.py` |
-| `PlanArmer` (arm / disarm / arm_today / auto-arm, bus-driven bar loop, critic on fire, setup + proposal via the existing path, journal + chat notes) | `technique/arming.py` |
+| `PlanArmer` — accounts + modes (alert / proposal / auto), auto execution lifecycle (entry LMT → fills → 30/40/15 trims → stop → flatten), pause / resume / disarm(+flatten) / stop-all, stale-data + kill-switch gates, retries, full audit, persistence + restore, `arm_today`, auto-arm (§9.1) | `technique/arming.py`, `models.TechniqueArmed`, `tests/test_technique_arming.py` |
 | `VisionPipeline.run_critic`; `session_window` / `plan_mode` fields; R6 + plan-mode prompt text | `technique/vision.py`, `technique/schemas.py` |
 | `technique_sweeps`, `technique_walkforward` tables; events `TechniqueSweepStarted/Completed`, `TechniquePlanArmed/Disarmed`, `TechniquePlanTriggerFired/Skipped` | `models.py`, `events.py` |
 | API: `POST /api/technique/plan`, `POST/GET /api/technique/walkforward[/{id}]`, `POST …/{id}/promote`, `GET /api/technique/armed`, `POST/DELETE /runs/{id}/arm`, `POST /api/technique/arm-today`; `analyze` body `plan` / `withVision`; backtest `primeWindowsOnly` | `api/routes_technique.py` |

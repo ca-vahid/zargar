@@ -342,10 +342,37 @@ export interface WalkforwardRow {
   id: string; sweepId: string; symbol: string; session: string; planFor: string | null; plan: any; result: any; summary: any;
   promotedRunId: string | null; createdAt: string | null;
 }
+export interface ArmConfig {
+  portfolioId: string; mode: "alert" | "proposal" | "auto" | string; riskPct: number; maxQty: number; qty: number | null;
+  useCritic: boolean; allowLive: boolean; flattenMinutesBeforeClose: number; slippagePct: number; maxRetries: number;
+}
+export interface ArmRequest {
+  portfolioId?: string; mode?: "alert" | "proposal" | "auto"; riskPct?: number; maxQty?: number; qty?: number;
+  useCritic?: boolean; allowLive?: boolean; flattenMinutesBeforeClose?: number; slippagePct?: number;
+}
+export interface ArmOptions {
+  portfolios: { id: string; name: string; kind: string; venue?: string; baseCurrency?: string; cash?: number; isDefault?: boolean }[];
+  defaults: { portfolioId: string; mode: string; riskPct: number; maxQty: number; useCritic: boolean; flattenMinutesBeforeClose: number; slippagePct: number };
+  tradingMode: string; allowLiveAuto: boolean; enabled: boolean; llmAvailable: boolean; halt: any; emitProposals: boolean;
+}
+export interface ArmedTrade {
+  triggerId: string; kind: string; firedTs: number; window: string; entry: number; stop: number; targets: number[]; status: string;
+  reason: string; setupId: string | null; proposalId: string | null; entryOrderId: string | null; limitPrice: number | null;
+  qty: number; filledQty: number; avgFill: number | null; remaining: number; trimsDone: number;
+  exits: { kind: string; qty: number; orderId: string | null; status: string | null; filledQty: number; price: number | null; error?: string }[];
+  realizedPnl: number; unrealizedPnl: number; realizedR: number | null; lastPrice: number | null; errors: string[]; retries: number;
+  openedTs: number | null; closedTs: number | null; critic: { kill?: boolean; summary?: string; violations?: string[] } | null;
+}
 export interface ArmedPlan {
-  runId: string; symbol: string; planFor: string; armedAt: string; barsSeen: number; lastBarTs: number | null; expired: boolean;
-  triggers: { id: string; kind: string; status: string; entry: number; stop: number; firedTs: number | null; firedWindow: string | null; observedMidday: number; setupId?: string | null }[];
-  fired: any[]; events: any[];
+  runId: string; symbol: string; planFor: string; status: "armed" | "paused" | "expired" | "disarmed" | string;
+  config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };
+  armedAt: string; barsSeen: number; lastBarTs: number | null; barAgeSeconds: number | null; stale: boolean;
+  sessionWindowNow: string; lastPrice: number | null; quoteAgeSeconds: number | null;
+  triggers: { id: string; kind: string; status: string; entry: number; stop: number; targets: number[]; riskReward: number | null;
+    firedTs: number | null; firedWindow: string | null; observedMidday: number; skipped: any[]; conditions: any[]; setupId?: string | null;
+    distancePct?: number; distance?: number; windowOpenNow?: boolean }[];
+  trades: ArmedTrade[]; openPositions: number; realizedPnl: number; fired: any[]; events: { ts: number; event: string; text: string; [k: string]: any }[];
+  summary: string;
 }
 export interface TechniqueSetup {
   id: string; runId: string; symbol: string; setupType: string; direction: string; entry: number; stop: number;

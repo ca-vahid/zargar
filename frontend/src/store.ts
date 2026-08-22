@@ -78,7 +78,7 @@ interface AppState {
   // --- technique / chat ---
   techniqueRuns: TechniqueRun[];            // most recent first
   techniqueSetups: TechniqueSetup[];
-  techniqueTab: "analyse" | "chat" | "history" | "backtest" | "validation";
+  techniqueTab: "analyse" | "chat" | "history" | "backtest" | "validation" | "armed";
   techniqueFocusRunId: string | null;
   // bumped when an outcome / review lands for a run so open views refetch it
   techniqueRunBumps: Record<string, number>;
@@ -123,7 +123,7 @@ interface AppState {
   applyChat: (msg: { threadId: string; runId?: string | null; event: any }) => void;
   setTechniqueRuns: (runs: TechniqueRun[]) => void;
   setTechniqueSetups: (s: TechniqueSetup[]) => void;
-  setTechniqueTab: (t: "analyse" | "chat" | "history" | "backtest" | "validation") => void;
+  setTechniqueTab: (t: "analyse" | "chat" | "history" | "backtest" | "validation" | "armed") => void;
   setTechniqueArmed: (a: ArmedPlan[]) => void;
   openTechniqueRun: (runId: string) => void;
   setTechniqueFocusRun: (runId: string | null) => void;
@@ -389,9 +389,16 @@ export const useStore = create<AppState>((set, get) => ({
       }));
     } else if (msg.kind === "armed") {
       const ap = msg.armed as ArmedPlan;
-      set((st) => ({ techniqueArmed: [ap, ...st.techniqueArmed.filter((a) => a.runId !== ap.runId)] }));
-      if (msg.event === "fired") get().toast("success", `${ap.symbol}: planned trigger fired`);
-      else if (msg.event === "armed") get().toast("info", `${ap.symbol} plan armed for ${ap.planFor}`);
+      set((st) => ({
+        techniqueArmed: ap.status === "disarmed" || ap.status === "expired"
+          ? st.techniqueArmed.filter((a) => a.runId !== ap.runId)
+          : [ap, ...st.techniqueArmed.filter((a) => a.runId !== ap.runId)].sort((a, b) => a.symbol.localeCompare(b.symbol)),
+      }));
+      if (msg.event === "fired") get().toast("success", `${ap.symbol}: planned trigger fired (${ap.config.mode})`);
+      else if (msg.event === "armed") get().toast("info", `${ap.symbol} plan armed for ${ap.planFor} — ${ap.config.mode} on ${ap.portfolio.name ?? ap.portfolio.id}`);
+      else if (msg.event === "position_open") get().toast("success", `${ap.symbol}: position open`);
+      else if (msg.event === "exit_fill" || msg.event === "exit_submit") { /* quiet */ }
+      else if (msg.event === "entry_rejected" || msg.event === "entry_error" || msg.event === "exit_failed") get().toast("error", `${ap.symbol}: ${msg.event.replace(/_/g, " ")} — see Armed tab`);
     } else if (msg.kind === "disarmed") {
       set((st) => ({ techniqueArmed: st.techniqueArmed.filter((a) => a.runId !== msg.runId) }));
     } else if (msg.kind === "sweep" || msg.kind === "sweep_progress") {

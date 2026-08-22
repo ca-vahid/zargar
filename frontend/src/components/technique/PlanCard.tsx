@@ -6,6 +6,7 @@ import { absoluteUrl } from "../../lib/routing";
 import type { PlanTrigger, SessionPlan, TechniqueRun } from "../../types";
 import { CopyChip } from "../CopyChip";
 import { OutcomeSection, Provenance, ReplayControls, ReviewSection, TracePanel, WindowBadge } from "./RunResult";
+import { ArmDialog } from "./ArmDialog";
 
 function fmt(n: number | null | undefined, d = 2) {
   return n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(d);
@@ -72,6 +73,8 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
   const armed = useStore((s) => s.techniqueArmed);
   const [showTrace, setShowTrace] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [armOpen, setArmOpen] = useState(false);
+  const setTab = useStore((s) => s.setTechniqueTab);
   const isArmed = armed.some((a) => a.runId === run.id);
   const trace = run.result?.trace ?? [];
   const outs = run.outcomes ?? [];
@@ -81,12 +84,10 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
   const respectBy = Object.fromEntries(respect.map((r: any) => [String(r.price), r]));
   if (!plan) return null;
   const arm = async () => {
+    if (!isArmed) { setArmOpen(true); return; }
     setBusy(true);
-    try {
-      if (isArmed) { await api.techniqueDisarm(run.id); toast("info", "Plan disarmed"); }
-      else { await api.techniqueArm(run.id); toast("success", `Armed ${plan.symbol} plan for ${plan.planFor}`); }
-      onRefresh?.();
-    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+    try { await api.techniqueDisarm(run.id); toast("info", "Plan disarmed"); onRefresh?.(); }
+    catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
   };
   return (
     <div className="panel tq-result tq-plan-card">
@@ -181,9 +182,14 @@ export function PlanCard({ run, onRefresh }: { run: TechniqueRun; onRefresh?: ()
             {trace.length > 0 && <button className="link-btn" onClick={() => setShowTrace((v) => !v)}>{showTrace ? "hide" : "show"}</button>}</div>
           <div className="tq-side-actions">
             <button className={isArmed ? "ghost-btn" : "primary-btn"} disabled={busy || run.status !== "done"} onClick={arm}
-              title="Arm: watch the triggers on live 1m bars inside the prime windows; a fire becomes a setup (and a practice proposal if enabled)">
+              title="Arm: watch the triggers on live 1m bars inside the prime windows; choose the account and whether a fire alerts, proposes, or executes">
               {busy ? "…" : isArmed ? "Disarm" : "Arm for live triggers"}
             </button>
+            {isArmed && <button className="ghost-btn" onClick={() => setTab("armed")}>Open armed dashboard</button>}
+            {armOpen && (
+              <ArmDialog symbol={plan.symbol} planFor={plan.planFor} onClose={() => setArmOpen(false)}
+                onArm={async (req) => { const a = await api.techniqueArm(run.id, req); toast("success", `Armed ${a.symbol} — ${a.config.mode} on ${a.portfolio.name ?? a.portfolio.id}`); onRefresh?.(); }} />
+            )}
             {run.threadId && <button className="ghost-btn" onClick={() => openChat(run.threadId!)}>Discuss in chat</button>}
             <ReplayControls run={run} />
             <a className="ghost-btn tq-dl" href={api.techniqueBundleUrl(run.id)}>Download bundle</a>

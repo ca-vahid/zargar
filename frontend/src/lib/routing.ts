@@ -18,7 +18,7 @@ export const PAGES: Page[] = [
   "dashboard", "trade", "options", "inbox", "technique", "portfolios", "journal", "settings",
 ];
 const OCC_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
-export const TQ_TABS = ["analyse", "chat", "history", "backtest", "validation"] as const;
+export const TQ_TABS = ["analyse", "chat", "history", "backtest", "validation", "armed"] as const;
 export type TqTab = (typeof TQ_TABS)[number];
 
 export interface RouteState {

@@ -138,6 +138,15 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.enabled": True,             # allow arming plans at all
     "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
+    "technique.arm.mode": "proposal",          # default execution mode: alert | proposal | auto
+    "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
+    "technique.arm.risk_pct": 0.5,             # R1: % of equity risked per entry
+    "technique.arm.max_qty": 100,              # hard cap on shares per entry
+    "technique.arm.allow_live_auto": False,    # auto mode on live/paper accounts needs this AND per-arm ack
+    "technique.arm.slippage_pct": 0.1,         # entry limit = trigger price * (1 + this %)
+    "technique.arm.flatten_minutes_before_close": 5,
+    "technique.arm.max_retries": 2,            # transient submit errors only (never risk rejections)
+    "technique.arm.stale_seconds": 180,        # no closed bar for this long in-session = stale, no firing
 }
 
 

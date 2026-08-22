@@ -91,9 +91,19 @@ export const api = {
   techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean }) =>
     request<import("../types").TechniqueRun>("POST", `/api/technique/walkforward/${id}/promote`, body),
   techniqueArmed: () => request<import("../types").ArmedPlan[]>("GET", "/api/technique/armed"),
-  techniqueArm: (runId: string) => request<import("../types").ArmedPlan>("POST", `/api/technique/runs/${runId}/arm`),
-  techniqueDisarm: (runId: string) => request<{ disarmed: boolean }>("DELETE", `/api/technique/runs/${runId}/arm`),
-  techniqueArmToday: (symbol: string) => request<import("../types").ArmedPlan>("POST", "/api/technique/arm-today", { symbol }),
+  techniqueArmedDetail: (runId: string) => request<import("../types").ArmedPlan>("GET", `/api/technique/armed/${runId}`),
+  techniqueArmedAudit: (runId: string) => request<any[]>("GET", `/api/technique/armed/${runId}/audit`),
+  techniqueArmedHistory: () => request<any[]>("GET", "/api/technique/armed/history"),
+  techniqueArmOptions: () => request<import("../types").ArmOptions>("GET", "/api/technique/armed/options"),
+  techniqueArm: (runId: string, body?: import("../types").ArmRequest) =>
+    request<import("../types").ArmedPlan>("POST", `/api/technique/runs/${runId}/arm`, body ?? {}),
+  techniqueDisarm: (runId: string, flatten = false) =>
+    request<{ disarmed: boolean }>("DELETE", `/api/technique/runs/${runId}/arm${flatten ? "?flatten=true" : ""}`),
+  techniquePause: (runId: string) => request<import("../types").ArmedPlan>("POST", `/api/technique/armed/${runId}/pause`),
+  techniqueResume: (runId: string) => request<import("../types").ArmedPlan>("POST", `/api/technique/armed/${runId}/resume`),
+  techniqueStopAll: (flatten = false) => request<{ disarmed: number }>("POST", `/api/technique/armed/stop-all${flatten ? "?flatten=true" : ""}`),
+  techniqueArmToday: (symbol: string, body?: import("../types").ArmRequest) =>
+    request<import("../types").ArmedPlan>("POST", "/api/technique/arm-today", { symbol, ...(body ?? {}) }),
   techniqueAnalyze: (body: { symbol: string; tf?: string; asOf?: number | null; note?: string; plan?: boolean | null; withVision?: boolean | null;
     imageDataUrl?: string | null }) =>
     request<import("../types").TechniqueRun>("POST", "/api/technique/analyze", body),

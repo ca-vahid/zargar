@@ -125,27 +125,81 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def technique_armed():
         return _svc(eng).armed_plans()
 
+    @app.get("/api/technique/armed/options", dependencies=[auth])
+    async def technique_arm_options():
+        return _svc(eng).arm_options()
+
+    @app.get("/api/technique/armed/history", dependencies=[auth])
+    async def technique_armed_history(limit: int = 50):
+        return await _svc(eng).armed_history(limit=min(limit, 200))
+
+    @app.get("/api/technique/armed/{run_id}", dependencies=[auth])
+    async def technique_armed_detail(run_id: str):
+        d = _svc(eng).armed_detail(run_id)
+        if d is None:
+            raise HTTPException(status_code=404, detail="not armed")
+        return d
+
+    @app.get("/api/technique/armed/{run_id}/audit", dependencies=[auth])
+    async def technique_armed_audit(run_id: str, limit: int = 200):
+        return await _svc(eng).armed_audit(run_id, limit=min(limit, 1000))
+
+    class ArmBody(BaseModel):
+        portfolioId: str | None = None
+        mode: str | None = None            # alert | proposal | auto
+        riskPct: float | None = None
+        maxQty: float | None = None
+        qty: float | None = None
+        useCritic: bool | None = None
+        allowLive: bool = False
+        flattenMinutesBeforeClose: int | None = None
+        slippagePct: float | None = None
+
+    def _arm_config(body: ArmBody | None) -> dict:
+        if body is None:
+            return {}
+        return {k: v for k, v in body.model_dump().items() if v is not None}
+
     @app.post("/api/technique/runs/{run_id}/arm", dependencies=[auth])
-    async def technique_arm(run_id: str):
+    async def technique_arm(run_id: str, body: ArmBody | None = None):
         try:
-            return await _svc(eng).arm_plan(run_id)
+            return await _svc(eng).arm_plan(run_id, _arm_config(body))
         except KeyError:
             raise HTTPException(status_code=404, detail="run not found")
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @app.delete("/api/technique/runs/{run_id}/arm", dependencies=[auth])
-    async def technique_disarm(run_id: str):
-        return {"disarmed": await _svc(eng).disarm_plan(run_id)}
+    async def technique_disarm(run_id: str, flatten: bool = False):
+        return {"disarmed": await _svc(eng).disarm_plan(run_id, flatten=flatten)}
 
-    class ArmTodayBody(BaseModel):
-        symbol: str
+    @app.post("/api/technique/armed/{run_id}/pause", dependencies=[auth])
+    async def technique_pause(run_id: str):
+        try:
+            return await _svc(eng).pause_plan(run_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="not armed")
+
+    @app.post("/api/technique/armed/{run_id}/resume", dependencies=[auth])
+    async def technique_resume(run_id: str):
+        try:
+            return await _svc(eng).resume_plan(run_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="not armed")
+
+    @app.post("/api/technique/armed/stop-all", dependencies=[auth])
+    async def technique_stop_all(flatten: bool = False):
+        return {"disarmed": await _svc(eng).stop_all_armed(flatten=flatten)}
+
+    class ArmTodayBody(ArmBody):
+        symbol: str = ""
         withVision: bool | None = None
 
     @app.post("/api/technique/arm-today", dependencies=[auth])
     async def technique_arm_today(body: ArmTodayBody):
+        cfg = {k: v for k, v in body.model_dump().items() if v is not None and k not in ("symbol", "withVision")}
         try:
-            return await _svc(eng).arm_today(body.symbol, with_vision=body.withVision)
+            return await _svc(eng).arm_today(body.symbol, cfg, with_vision=body.withVision)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 

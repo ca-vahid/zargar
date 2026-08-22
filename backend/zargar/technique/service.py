@@ -809,22 +809,29 @@ class TechniqueService:
                           "setup not valid" if not valid else "technique.emit_proposals is off",
                           valid=valid, emitProposals=emit)
 
-    async def _emit_proposal(self, setup: TechniqueSetup, a) -> str | None:
-        """Practice-only: a proposal the user approves in the Signals page; approval
-        routes through OrderManager → RiskGate like every other order. Returns
-        the proposal id (None when no portfolio could take it)."""
+    async def _emit_proposal(self, setup: TechniqueSetup, a, *, portfolio_id: str | None = None,
+                             risk_pct: float | None = None, max_qty: float | None = None,
+                             fixed_qty: float | None = None) -> str | None:
+        """A proposal the user approves in the Signals page; approval routes
+        through OrderManager → RiskGate like every other order. Returns the
+        proposal id (None when no portfolio could take it). Armed plans pass the
+        account / sizing they were configured with."""
         eng = self.engine
-        pid = str(eng.settings.get("trading.default_portfolio", ""))
+        pid = portfolio_id or str(eng.settings.get("trading.default_portfolio", ""))
         if not pid or eng.positions.portfolio(pid) is None:
             sims = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
             if not sims:
                 return None
             pid = sims[0]["id"]
         equity = await eng.positions.equity(pid)
-        risk_pct = float(eng.settings.get("technique.default_risk_pct", 1.0))
+        risk_pct = float(risk_pct if risk_pct is not None else eng.settings.get("technique.default_risk_pct", 1.0))
         risk_pct = min(risk_pct, float(eng.settings.get("technique.max_risk_pct", 5.0)))
         per_share = max(setup.entry - setup.stop, 0.01)
         qty = max(1, math.floor(equity * risk_pct / 100 / per_share))
+        if fixed_qty:
+            qty = max(1, int(fixed_qty))
+        if max_qty:
+            qty = max(1, min(qty, int(max_qty)))
         ttl = int(eng.settings.get("signals.default_ttl_minutes", 30))
         row = Proposal(
             id=new_id(), signal_id=None, portfolio_id=pid, symbol=setup.symbol, side="BUY",
@@ -1239,17 +1246,63 @@ class TechniqueService:
         return rd
 
     # ------------------------------------------------------------ arming (phase 2)
-    async def arm_plan(self, run_id: str) -> dict:
-        return await self.armer.arm(run_id)
+    async def arm_plan(self, run_id: str, config: dict | None = None) -> dict:
+        return await self.armer.arm(run_id, config)
 
-    async def disarm_plan(self, run_id: str) -> bool:
-        return await self.armer.disarm(run_id)
+    async def disarm_plan(self, run_id: str, *, flatten: bool = False, reason: str = "manual") -> bool:
+        return await self.armer.disarm(run_id, reason=reason, flatten=flatten)
 
-    async def arm_today(self, symbol: str, *, with_vision: bool | None = None) -> dict:
-        return await self.armer.arm_today(symbol, with_vision=with_vision)
+    async def pause_plan(self, run_id: str) -> dict:
+        return await self.armer.pause(run_id)
+
+    async def resume_plan(self, run_id: str) -> dict:
+        return await self.armer.resume(run_id)
+
+    async def stop_all_armed(self, *, flatten: bool = False) -> int:
+        return await self.armer.stop_all(flatten=flatten)
+
+    async def arm_today(self, symbol: str, config: dict | None = None, *, with_vision: bool | None = None) -> dict:
+        return await self.armer.arm_today(symbol, config, with_vision=with_vision)
 
     def armed_plans(self) -> list[dict]:
         return self.armer.armed()
+
+    def armed_detail(self, run_id: str) -> dict | None:
+        return self.armer.detail(run_id)
+
+    async def armed_audit(self, run_id: str, *, limit: int = 200) -> list[dict]:
+        return await self.armer.audit(run_id, limit=limit)
+
+    async def armed_history(self, *, limit: int = 50) -> list[dict]:
+        from ..models import TechniqueArmed
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(TechniqueArmed).order_by(TechniqueArmed.created_at.desc())
+                                          .limit(limit))).scalars().all()
+        return [{"runId": r.run_id, "symbol": r.symbol, "planFor": r.plan_for, "portfolioId": r.portfolio_id,
+                 "mode": r.mode, "status": r.status, "config": r.config or {}, "state": r.state or {},
+                 "createdAt": r.created_at.isoformat() if r.created_at else None,
+                 "updatedAt": r.updated_at.isoformat() if r.updated_at else None} for r in rows]
+
+    def arm_options(self) -> dict:
+        """What the Arm dialog needs: accounts, defaults, and the live/auto gate state."""
+        s = self.engine.settings
+        return {
+            "portfolios": [{k: p.get(k) for k in ("id", "name", "kind", "venue", "baseCurrency", "cash", "isDefault")}
+                           for p in self.engine.positions.portfolios()],
+            "defaults": {"portfolioId": str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
+                         "mode": str(s.get("technique.arm.mode", "proposal")),
+                         "riskPct": float(s.get("technique.arm.risk_pct", 0.5)),
+                         "maxQty": float(s.get("technique.arm.max_qty", 100)),
+                         "useCritic": bool(s.get("technique.arm.use_critic", True)),
+                         "flattenMinutesBeforeClose": int(s.get("technique.arm.flatten_minutes_before_close", 5)),
+                         "slippagePct": float(s.get("technique.arm.slippage_pct", 0.1))},
+            "tradingMode": str(s.get("trading.mode", "practice")),
+            "allowLiveAuto": bool(s.get("technique.arm.allow_live_auto", False)),
+            "enabled": bool(s.get("technique.arm.enabled", True)),
+            "llmAvailable": self.llm_config().available,
+            "halt": getattr(self.engine.halt, "to_dict", lambda: {})(),
+            "emitProposals": bool(s.get("technique.emit_proposals", False)),
+        }
 
     async def score_pending(self, *, limit: int = 25) -> dict:
         """Score every finished run that has no outcome yet or a still-open one.
@@ -1435,6 +1488,15 @@ class TechniqueService:
         if self._outcome_task is None:
             self._outcome_task = asyncio.create_task(self._outcome_loop(), name="technique-outcome")
         self.armer.start()
+        asyncio.create_task(self._restore_armed(), name="technique-armer-restore")
+
+    async def _restore_armed(self) -> None:
+        try:
+            n = await self.armer.restore()
+            if n:
+                log.info("re-armed %d plan(s) after restart", n)
+        except Exception:
+            log.exception("re-arming plans failed")
 
     async def stop(self) -> None:
         for t in list(self._running.values()):

@@ -392,6 +392,25 @@ Index("ix_technique_walkforward_sweep_sym_sess", TechniqueWalkforward.sweep_id,
       TechniqueWalkforward.symbol, TechniqueWalkforward.session, unique=True)
 
 
+class TechniqueArmed(Base):
+    """An armed session plan: which account it trades in, in which mode, and
+    its live state (trackers, trades, last events). Kept so a restart re-arms
+    today's plans and the dashboard can show history. `events` (journal) holds
+    the full audit trail; this row is the projection."""
+    __tablename__ = "technique_armed"
+
+    run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    plan_for: Mapped[str] = mapped_column(String(10), index=True)
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    mode: Mapped[str] = mapped_column(String(16), default="proposal")      # alert | proposal | auto
+    config: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    status: Mapped[str] = mapped_column(String(16), default="armed", index=True)  # armed | paused | expired | disarmed
+    state: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class TechniqueSetup(Base):
     """A setup emitted by a run (valid or not; invalid ones keep their reasons)."""
     __tablename__ = "technique_setups"

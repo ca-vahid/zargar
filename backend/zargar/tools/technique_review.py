@@ -510,7 +510,9 @@ async def cmd_promote(args) -> int:
 
 
 async def cmd_arm(args) -> int:
-    return await _api_call(args, "POST", f"/api/technique/runs/{args.run_id}/arm")
+    body = {k: v for k, v in {"portfolioId": args.portfolio, "mode": args.mode, "riskPct": args.risk_pct,
+                              "maxQty": args.max_qty, "allowLive": args.allow_live}.items() if v not in (None, False)}
+    return await _api_call(args, "POST", f"/api/technique/runs/{args.run_id}/arm", body or None)
 
 
 async def cmd_disarm(args) -> int:
@@ -652,6 +654,13 @@ def build_parser() -> argparse.ArgumentParser:
         p = sub.add_parser(name, help=f"{name} (API)")
         p.add_argument(extra)
         p.add_argument("--api")
+        if name == "arm":
+            p.add_argument("--portfolio", help="account id the plan trades in")
+            p.add_argument("--mode", choices=["alert", "proposal", "auto"])
+            p.add_argument("--risk-pct", dest="risk_pct", type=float)
+            p.add_argument("--max-qty", dest="max_qty", type=float)
+            p.add_argument("--allow-live", dest="allow_live", action="store_true",
+                           help="acknowledge auto execution on a live/paper account")
         p.set_defaults(fn=fn)
     p = sub.add_parser("armed", help="list armed plans (API)")
     p.add_argument("--api")
