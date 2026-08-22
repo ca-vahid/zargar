@@ -34,8 +34,10 @@ def rulebook_version() -> str:
 
 @lru_cache
 def code_version() -> str:
-    """Short git sha of the running tree. `ZARGAR_GIT_SHA` wins (packaged
-    deploys); otherwise ask git from the package directory; else 'unknown'."""
+    """Short git sha of the running tree, captured at import (process start) so
+    a long-running server reports the code it is actually running, not whatever
+    HEAD moved to later. `ZARGAR_GIT_SHA` wins (packaged deploys); otherwise ask
+    git from the package directory; else 'unknown'."""
     env = os.environ.get("ZARGAR_GIT_SHA", "").strip()
     if env:
         return env[:12]
@@ -91,3 +93,7 @@ def snapshot(*, thresholds: Thresholds, settings_all: dict, model: str, effort: 
         "parentRunId": parent_run_id,
         "overrides": overrides or {},
     }
+
+
+# Capture at import: the sha of the code this process loaded.
+CODE_VERSION_AT_START = code_version()
