@@ -1,7 +1,9 @@
 # machine-specific
 docker-compose.override.yml
 backend/.env
-.claude/
+# Claude Code local state is ignored, but project skills are checked in.
+.claude/*
+!.claude/skills/
 
 # build artifacts
 frontend/dist/

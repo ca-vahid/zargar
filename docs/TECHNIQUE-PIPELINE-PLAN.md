@@ -164,6 +164,7 @@ Reuses existing Highcharts wiring (`StockChart.tsx`) per the CLAUDE.md rules
 | **6** | Options integration (`options.py`, T5 contract pick) | ✅ **live via CBOE — free, no credentials**; Tradier optional |
 | **7** | Backtest harness + scoring (`backtest.py`, deterministic) | ✅ built |
 | **8** | Scheduled scans (`technique.scan.*` settings, RTH-only, daily cap) | ✅ built, default off |
+| **9** | Review loop — decision trace + provenance per run, bars snapshot, outcome scoring, reviews, bundle/CLI, replay + diff, `/technique-review` skill (`docs/TECHNIQUE-REVIEW-PLAN.md`) | ✅ built |
 
 Everything is wired and live; no credentials outstanding.
 
@@ -185,6 +186,14 @@ Everything is wired and live; no credentials outstanding.
 - **Mid-run reconnects**: `TechniqueService._live` keeps pass progress per running
   run and `GET /api/technique/runs/{id}` returns it as `live` so a reloaded client
   seeds its view.
+- **Reviewability is a first-class output.** A verdict without the *why* and the
+  *what happened next* cannot be improved. Every run now records a decision trace
+  (`result.trace`, `vp.note(stage, step, reason, **detail)`), a provenance
+  snapshot (`config.processVersion` = prompt + rulebook + code + thresholds +
+  settings + model), the full bar windows (asset), and is scored afterwards
+  (`technique_outcomes`). Reviews (`technique_reviews`) record expectation, verdict
+  and root-cause stage; replays reuse the snapshot so a prompt/threshold change is
+  measured on identical data. Driver: `python -m zargar.tools.technique_review`.
 
 ---
 

@@ -274,6 +274,27 @@ export interface TechniqueContract {
   rationale: string;
 }
 export interface GroundingCheck { name: string; passed: boolean; detail: string }
+export interface TraceStep {
+  seq: number; t: number | null; stage: string; step: string; reason: string; call?: number | null; detail?: any;
+}
+export interface TechniqueOutcome {
+  id: string; runId: string; setupId: string | null; planSource: string; status: string; horizonBars: number;
+  plan: any; outcome: string | null; rMultiple: number | null; mfeR: number | null; maeR: number | null;
+  barsHeld: number | null; barsAfter: number; path: Record<string, any>; barsAssetId: string | null;
+  note: string | null; scoredAt: string | null; createdAt: string | null;
+}
+export interface TechniqueReview {
+  id: string; runId: string; reviewer: string; expectedVerdict: string | null; expectedSetupType: string | null;
+  expectedPlan: any; expectationNote: string; reviewVerdict: string; rootCauseStage: string | null; notes: string;
+  actions: { desc: string; file?: string | null; status?: string }[]; processVersion: Record<string, any>;
+  createdAt: string | null;
+}
+export interface TechniqueRunConfig {
+  promptVersion?: string; rulebookVersion?: string; codeVersion?: string; processVersion?: string;
+  thresholds?: Record<string, any>; settings?: Record<string, any>; model?: string; effort?: string;
+  thinkingDisplay?: string; maxPasses?: number; timeframes?: string[]; parentRunId?: string | null;
+  overrides?: Record<string, any>; barsAssetId?: string;
+}
 export interface TechniqueRun {
   id: string; threadId: string | null; symbol: string; asOf: number | null; primaryTf: string;
   mode: string; trigger: string; status: "running" | "done" | "failed";
@@ -284,9 +305,16 @@ export interface TechniqueRun {
   options?: any; seconds?: number;
   facts?: any; result?: { analysis: TechniqueContract | null; grounding: { passed: boolean; checks: GroundingCheck[] };
     passes: { name: string; parsed: any; usage: any; seconds: number }[]; mode: string; error: string | null;
-    usage: any; options?: any; seconds?: number };
+    usage: any; options?: any; seconds?: number; trace?: TraceStep[] };
   setups?: TechniqueSetup[];
+  // review loop
+  config?: TechniqueRunConfig; parentRunId?: string | null; processVersion?: string | null; traceSteps?: number;
+  outcomes?: TechniqueOutcome[]; reviews?: TechniqueReview[];
+  replays?: { id: string; createdAt: string | null; verdict: string | null; setupType: string | null; confidence: number | null; status: string }[];
+  reviewCount?: number;
+  lastReview?: { reviewVerdict: string; rootCauseStage: string | null; createdAt: string | null; reviewer: string } | null;
 }
+export interface TechniqueTaxonomy { reviewVerdicts: Record<string, string>; rootCauseStages: Record<string, string> }
 export interface TechniqueSetup {
   id: string; runId: string; symbol: string; setupType: string; direction: string; entry: number; stop: number;
   targets: TechniqueTarget[]; riskReward: number; confidence: number; valid: boolean; rules: string[];

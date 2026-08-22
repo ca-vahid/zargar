@@ -22,6 +22,7 @@ cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-au
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_options_check   # read-only: which accounts can trade options
 cd backend && .venv/bin/python -m pytest tests/test_technique_*.py       # technique pipeline (no LLM calls)
 cd backend && .venv/bin/python -m pytest tests/test_options_*.py tests/test_snaptrade_options.py  # options (stubbed CBOE/SnapTrade)
+cd backend && .venv/bin/python -m zargar.tools.technique_review list --unreviewed   # review loop CLI (dump/score/review/diff/replay)
 ```
 
 Options trading: research + build plan + status in `docs/OPTIONS-PLAN.md`.
@@ -33,6 +34,9 @@ Code: `backend/zargar/options/` (occ symbology, chain providers, OptionsService)
 Technique pipeline (EnhancedMarket method): spec in `docs/TECHNIQUE-ENHANCEDMARKET.md`,
 build plan + lessons in `docs/TECHNIQUE-PIPELINE-PLAN.md`, code in
 `backend/zargar/technique/`, UI in `frontend/src/pages/TechniquePage.tsx`.
+Review loop (trace, provenance, outcomes, reviews, replay, bundle):
+`docs/TECHNIQUE-REVIEW-PLAN.md`; the `/technique-review` skill
+(`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
 
 Tests default to `postgresql+asyncpg://zargar@127.0.0.1:5433/zargar_test`
 (override: `ZARGAR_TEST_DATABASE_URL`). Runtime default is port 5432 per
@@ -121,6 +125,20 @@ docker-compose.
   `optionsChain`/option-quote endpoints and 404 on `/optionsHoldings` — chains
   come from CBOE, option positions from `/positions/all` (`kind == "option"`),
   live contract last/bars from Yahoo v8 chart with the **unpadded** OCC symbol.
+- Schema changes: `db.create_all` also ADDs missing columns on existing tables
+  (additive only — NOT NULL columns are back-filled from the mapped default).
+  Dropping/renaming a column is still manual.
+- Every technique run carries `result.trace` (one record per decision, with a
+  prose reason) and `config` (prompt/rulebook/code/process versions, thresholds,
+  settings, `barsAssetId`). Add a `vp.note(...)` when you add a step to the
+  pipeline; never strip the trace. `technique_runs`/`events` are never edited —
+  reviews and replays are new rows.
+- Outcomes (`technique_outcomes`) are scored by `outcome.simulate_plan`, the same
+  walk-forward the backtester uses — change one, change both. Yahoo 1m depth
+  (~20 d) bounds how late a run can still be scored; the bars snapshot saved per
+  run is what makes replay possible after that.
+- Patching files from scripts on Windows: open with `encoding="utf-8"`
+  (the default cp1252 silently corrupts em dashes / arrows).
 
 ## Testing conventions
 

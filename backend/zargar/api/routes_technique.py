@@ -58,8 +58,14 @@ def build_technique_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=400, detail=str(exc))
 
     @app.get("/api/technique/runs", dependencies=[auth])
-    async def technique_runs(limit: int = 50, symbol: str | None = None, verdict: str | None = None):
-        return await _svc(eng).list_runs(limit=min(limit, 500), symbol=symbol, verdict=verdict)
+    async def technique_runs(limit: int = 50, symbol: str | None = None, verdict: str | None = None,
+                             reviewed: bool | None = None, outcome: str | None = None,
+                             review_verdict: str | None = Query(default=None, alias="reviewVerdict"),
+                             process_version: str | None = Query(default=None, alias="processVersion"),
+                             trigger: str | None = None):
+        return await _svc(eng).list_runs(limit=min(limit, 500), symbol=symbol, verdict=verdict,
+                                         reviewed=reviewed, outcome=outcome, review_verdict=review_verdict,
+                                         process_version=process_version, trigger=trigger)
 
     @app.get("/api/technique/runs/{run_id}", dependencies=[auth])
     async def technique_run(run_id: str):
@@ -67,6 +73,91 @@ def build_technique_routes(app, eng, auth, config) -> None:
         if r is None:
             raise HTTPException(status_code=404, detail="run not found")
         return r
+
+    # --- review loop: outcomes, reviews, replay, diff, bundle ----------------------------
+    @app.get("/api/technique/review/taxonomy", dependencies=[auth])
+    async def technique_review_taxonomy():
+        from ..technique.review import REVIEW_VERDICTS, ROOT_CAUSE_STAGES
+        return {"reviewVerdicts": REVIEW_VERDICTS, "rootCauseStages": ROOT_CAUSE_STAGES}
+
+    @app.post("/api/technique/runs/{run_id}/score", dependencies=[auth])
+    async def technique_score(run_id: str, horizon: int | None = Query(default=None, alias="horizonBars"),
+                              force: bool = True):
+        try:
+            return await _svc(eng).score_run(run_id, horizon_bars=horizon, force=force)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="run not found")
+
+    @app.post("/api/technique/outcomes/score", dependencies=[auth])
+    async def technique_score_pending(limit: int = 25):
+        return await _svc(eng).score_pending(limit=min(limit, 200))
+
+    class ReviewBody(BaseModel):
+        reviewVerdict: str
+        reviewer: str = "user"
+        expectedVerdict: str | None = None
+        expectedSetupType: str | None = None
+        expectedPlan: dict | None = None
+        expectationNote: str = ""
+        rootCauseStage: str | None = None
+        notes: str = ""
+        actions: list = []
+
+    @app.get("/api/technique/runs/{run_id}/reviews", dependencies=[auth])
+    async def technique_reviews(run_id: str):
+        return await _svc(eng).list_reviews(run_id)
+
+    @app.post("/api/technique/runs/{run_id}/reviews", dependencies=[auth])
+    async def technique_add_review(run_id: str, body: ReviewBody):
+        try:
+            return await _svc(eng).add_review(
+                run_id, review_verdict=body.reviewVerdict, reviewer=body.reviewer,
+                expected_verdict=body.expectedVerdict, expected_setup_type=body.expectedSetupType,
+                expected_plan=body.expectedPlan, expectation_note=body.expectationNote,
+                root_cause_stage=body.rootCauseStage, notes=body.notes, actions=body.actions)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="run not found")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/technique/reviews", dependencies=[auth])
+    async def technique_all_reviews(limit: int = 200):
+        return await _svc(eng).list_reviews(None, limit=min(limit, 1000))
+
+    class ReplayBody(BaseModel):
+        thresholds: dict | None = None
+        useSnapshot: bool = True
+        note: str = ""
+        wait: bool = False
+
+    @app.post("/api/technique/runs/{run_id}/replay", dependencies=[auth])
+    async def technique_replay(run_id: str, body: ReplayBody):
+        try:
+            return await _svc(eng).replay_run(run_id, thresholds=body.thresholds, use_snapshot=body.useSnapshot,
+                                              note=body.note, wait=body.wait)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="run not found")
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/technique/runs/{run_id}/diff/{other_id}", dependencies=[auth])
+    async def technique_diff(run_id: str, other_id: str):
+        try:
+            return await _svc(eng).diff(run_id, other_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
+    @app.get("/api/technique/runs/{run_id}/bundle", dependencies=[auth])
+    async def technique_bundle(run_id: str, format: str = "zip"):
+        from ..technique.bundle import build_bundle, zip_bundle
+        try:
+            if format == "json":
+                return await build_bundle(_svc(eng), run_id)
+            data = await zip_bundle(_svc(eng), run_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="run not found")
+        return Response(content=data, media_type="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="run-{run_id}.zip"'})
 
     @app.post("/api/technique/runs/{run_id}/cancel", dependencies=[auth])
     async def technique_cancel(run_id: str):

@@ -288,8 +288,67 @@ class TechniqueRun(Base):
     usage: Mapped[dict] = mapped_column(JSONVariant, default=dict)
     error: Mapped[str | None] = mapped_column(Text)
     llm: Mapped[dict] = mapped_column(JSONVariant, default=dict)          # model, effort, display
+    # Provenance snapshot taken when the run starts: thresholds, technique.* /
+    # llm.* settings, prompt/rulebook/code versions, bars-snapshot asset id.
+    # Lets a review tie a verdict to the exact process version that produced it.
+    config: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    # Set when this run is a replay of an earlier one (same symbol/as_of, maybe
+    # different thresholds/prompt) so the two can be diffed.
+    parent_run_id: Mapped[str | None] = mapped_column(String(64), index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TechniqueOutcome(Base):
+    """What price actually did after a run — the "facts of the matter" a review
+    compares the verdict against. One row per (run, plan_source): the emitted
+    analysis plan and, when the run declined, the deterministic candidate it
+    rejected (so missed trades are measurable too). Re-scored while `partial`."""
+    __tablename__ = "technique_outcomes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)
+    setup_id: Mapped[str | None] = mapped_column(String(64))
+    plan_source: Mapped[str] = mapped_column(String(24))          # analysis | candidate
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
+    # pending | partial | scored | unscorable
+    horizon_bars: Mapped[int] = mapped_column(Integer, default=60)
+    plan: Mapped[dict] = mapped_column(JSONVariant, default=dict)   # entry/stop/targets scored
+    outcome: Mapped[str | None] = mapped_column(String(16))        # not_filled|stopped|tp1..3|horizon
+    r_multiple: Mapped[float | None] = mapped_column(Float)
+    mfe_r: Mapped[float | None] = mapped_column(Float)             # max favourable excursion, in R
+    mae_r: Mapped[float | None] = mapped_column(Float)             # max adverse excursion, in R
+    bars_held: Mapped[int | None] = mapped_column(Integer)
+    bars_after: Mapped[int] = mapped_column(Integer, default=0)    # bars available after as_of
+    path: Mapped[dict] = mapped_column(JSONVariant, default=dict)   # {+5,+15,+30,+60: {high,low,close}}
+    bars_asset_id: Mapped[str | None] = mapped_column(String(64))  # chat_assets row with the after-bars
+    note: Mapped[str | None] = mapped_column(Text)
+    scored_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class TechniqueReview(Base):
+    """A human/Claude review of one run: what was expected, whether the verdict
+    held up, which pipeline stage is to blame, and the planned fix. Append-only:
+    a run can be reviewed more than once (e.g. before and after a fix)."""
+    __tablename__ = "technique_reviews"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)
+    reviewer: Mapped[str] = mapped_column(String(16), default="user")   # user | claude
+    expected_verdict: Mapped[str | None] = mapped_column(String(16))    # setup | no_setup
+    expected_setup_type: Mapped[str | None] = mapped_column(String(24))
+    expected_plan: Mapped[dict] = mapped_column(JSONVariant, default=dict)  # {entry, stop, targets?}
+    expectation_note: Mapped[str] = mapped_column(Text, default="")
+    review_verdict: Mapped[str] = mapped_column(String(24), index=True)
+    # correct | wrong_verdict | wrong_levels | wrong_plan | late | data_issue | unclear
+    root_cause_stage: Mapped[str | None] = mapped_column(String(24), index=True)
+    # data | detectors | facts_prompt | pass_context | pass_pattern | pass_entry |
+    # critic | grounding | options | thresholds | other
+    notes: Mapped[str] = mapped_column(Text, default="")
+    actions: Mapped[list] = mapped_column(JSONVariant, default=list)   # [{desc, file?, status}]
+    process_version: Mapped[dict] = mapped_column(JSONVariant, default=dict)  # copied from run.config
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
 class TechniqueSetup(Base):

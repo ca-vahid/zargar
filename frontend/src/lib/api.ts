@@ -85,10 +85,22 @@ export const api = {
   techniqueAnalyze: (body: { symbol: string; tf?: string; asOf?: number | null; note?: string;
     imageDataUrl?: string | null }) =>
     request<import("../types").TechniqueRun>("POST", "/api/technique/analyze", body),
-  techniqueRuns: (limit = 100, symbol?: string) =>
+  techniqueRuns: (limit = 100, symbol?: string, extra?: Record<string, string>) =>
     request<import("../types").TechniqueRun[]>("GET",
-      `/api/technique/runs?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ""}`),
+      `/api/technique/runs?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ""}`
+      + Object.entries(extra ?? {}).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("")),
   techniqueRun: (id: string) => request<import("../types").TechniqueRun>("GET", `/api/technique/runs/${id}`),
+  techniqueScore: (id: string) => request<import("../types").TechniqueOutcome[]>("POST", `/api/technique/runs/${id}/score`),
+  techniqueScorePending: () => request<any>("POST", "/api/technique/outcomes/score"),
+  techniqueReviews: (id: string) => request<import("../types").TechniqueReview[]>("GET", `/api/technique/runs/${id}/reviews`),
+  techniqueAddReview: (id: string, body: any) =>
+    request<import("../types").TechniqueReview>("POST", `/api/technique/runs/${id}/reviews`, body),
+  techniqueTaxonomy: () => request<import("../types").TechniqueTaxonomy>("GET", "/api/technique/review/taxonomy"),
+  techniqueReplay: (id: string, body: { thresholds?: Record<string, any> | null; useSnapshot?: boolean; note?: string; wait?: boolean }) =>
+    request<import("../types").TechniqueRun>("POST", `/api/technique/runs/${id}/replay`, body),
+  techniqueDiff: (a: string, b: string) => request<any>("GET", `/api/technique/runs/${a}/diff/${b}`),
+  techniqueBundleUrl: (id: string) =>
+    `/api/technique/runs/${id}/bundle${getAuthToken() ? `?token=${encodeURIComponent(getAuthToken())}` : ""}`,
   techniqueCancel: (id: string) => request<any>("POST", `/api/technique/runs/${id}/cancel`),
   techniqueSetups: (limit = 100) =>
     request<import("../types").TechniqueSetup[]>("GET", `/api/technique/setups?limit=${limit}`),

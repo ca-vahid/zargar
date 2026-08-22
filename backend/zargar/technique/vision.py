@@ -50,6 +50,10 @@ class PipelineResult:
     error: str | None = None
     total_usage: dict = field(default_factory=lambda: {"input": 0, "output": 0,
                                                        "cacheRead": 0, "cacheWrite": 0})
+    # Decision trace: one record per step the pipeline took and *why* — which
+    # pass ran, why a retry happened, what the critic changed, why the loop
+    # stopped. Reviewers read this instead of inferring it from pass names.
+    trace: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -59,6 +63,7 @@ class PipelineResult:
             "mode": self.mode,
             "error": self.error,
             "usage": self.total_usage,
+            "trace": list(self.trace),
         }
 
 
@@ -82,17 +87,35 @@ def _strip_images(blocks: list[dict]) -> list[dict]:
 
 class VisionPipeline:
     def __init__(self, client, cfg: LLMConfig, *, thresholds: Thresholds,
-                 max_passes: int = 6, on_event: EventCb | None = None) -> None:
+                 max_passes: int = 6, on_event: EventCb | None = None,
+                 trace: list[dict] | None = None, t0: float | None = None) -> None:
         self.client = client
         self.cfg = cfg
         self.t = thresholds
         self.max_passes = max_passes
         self.on_event = on_event
         self._calls = 0
+        # Shared with the service so data-gathering / options / setup steps
+        # land in the same ordered list as the model passes.
+        self.trace: list[dict] = trace if trace is not None else []
+        self._t0 = t0 if t0 is not None else time.time()
 
     async def _emit(self, ev: dict) -> None:
         if self.on_event:
             await self.on_event(ev)
+
+    async def note(self, stage: str, step: str, reason: str, **detail) -> dict:
+        """Record one decision. `stage` is the pipeline stage (data, context,
+        pattern, entry, critic, grounding, loop, options, setup, proposal),
+        `step` the concrete action, `reason` why it happened (plain English),
+        `detail` any numbers worth keeping."""
+        rec = {"seq": len(self.trace) + 1, "t": round(time.time() - self._t0, 2),
+               "stage": stage, "step": step, "reason": reason, "call": self._calls}
+        if detail:
+            rec["detail"] = detail
+        self.trace.append(rec)
+        await self._emit({"type": "trace", **rec})
+        return rec
 
     async def _call(self, name: str, user_blocks: list[dict], output_format,
                     *, prior: list[dict] | None = None) -> PassRecord:
@@ -132,15 +155,27 @@ class VisionPipeline:
                   *, user_image: bytes | None = None, user_note: str = "") -> PipelineResult:
         """Full pipeline with FACTS. `images` maps timeframe → PNG bytes, in
         the order they should be shown (context → primary)."""
-        result = PipelineResult(analysis=None, grounding={"passed": False, "checks": []})
+        result = PipelineResult(analysis=None, grounding={"passed": False, "checks": []},
+                                trace=self.trace)
         tfs = list(images.keys())
         if not tfs:
             result.error = "no chart images"
+            await self.note("loop", "abort", "no chart images were rendered, nothing to analyse")
             return result
         facts_txt = facts_for_prompt(facts)
         primary = facts.get("primaryTf") or tfs[-1]
         ctx_tf = tfs[0]
         mid_tf = tfs[1] if len(tfs) > 2 else (tfs[0] if len(tfs) > 1 else tfs[-1])
+        cands = facts.get("candidateSetups") or []
+        await self.note("loop", "plan",
+                        f"4-pass vision loop: context on {ctx_tf}, pattern on {mid_tf}, entry on "
+                        f"{primary}, critic only if a setup is claimed; call budget {self.max_passes}",
+                        timeframes=tfs, primaryTf=primary, contextTf=ctx_tf, patternTf=mid_tf,
+                        maxPasses=self.max_passes, userImage=bool(user_image), userNote=bool(user_note),
+                        keyLevels=len(facts.get("keyLevels") or []),
+                        candidateSetups=[{"setupType": c.get("setupType"), "valid": c.get("valid"),
+                                          "riskReward": c.get("riskReward"),
+                                          "entry": (c.get("entry") or {}).get("price")} for c in cands])
 
         def acc(rec: PassRecord) -> None:
             result.passes.append(rec)
@@ -148,6 +183,7 @@ class VisionPipeline:
                 result.total_usage[k] += rec.usage.get(k, 0)
 
         # PASS 1 — context
+        await self.note("context", "pass_1", f"read structure / major levels / volume on the {ctx_tf} chart")
         p1 = await self._call("context", [
             image_block(images[ctx_tf], "image/png"),
             {"type": "text", "text": (
@@ -157,8 +193,14 @@ class VisionPipeline:
                 f"FACTS:\n{facts_txt}")},
         ], PassNotes)
         acc(p1)
+        await self.note("context", "result", "context pass returned",
+                        parsed=bool(p1.parsed), seconds=round(p1.seconds, 1),
+                        hypothesis=(p1.parsed or {}).get("pattern_hypothesis"),
+                        candidateLevels=(p1.parsed or {}).get("candidate_levels"))
 
         # PASS 2 — pattern
+        await self.note("pattern", "pass_2",
+                        f"look for wedge / flag / consolidation and breakout tests on the {mid_tf} chart")
         p2 = await self._call("pattern", [
             image_block(images[mid_tf], "image/png"),
             {"type": "text", "text": (
@@ -169,6 +211,9 @@ class VisionPipeline:
                 f"{json.dumps(p1.parsed or {}, indent=1)}")},
         ], PassNotes)
         acc(p2)
+        await self.note("pattern", "result", "pattern pass returned",
+                        parsed=bool(p2.parsed), seconds=round(p2.seconds, 1),
+                        hypothesis=(p2.parsed or {}).get("pattern_hypothesis"))
 
         # PASS 3 — entry (structured), with retries on grounding failure
         corrections: list[str] = []
@@ -177,6 +222,14 @@ class VisionPipeline:
         critic: dict | None = None
         remaining = max(1, self.max_passes - 3)
         for attempt in range(remaining):
+            if attempt == 0:
+                await self.note("entry", "pass_3", f"draft the full analysis on the {primary} chart"
+                                + (" with the user's image alongside" if user_image else ""))
+            else:
+                await self.note("entry", f"pass_3_retry{attempt}",
+                                "previous draft failed grounding; re-running entry pass with corrections"
+                                + (" and the critic verdict" if critic else ""),
+                                corrections=list(corrections), attempt=attempt + 1, maxAttempts=remaining)
             blocks: list[dict] = [image_block(images[primary], "image/png")]
             if user_image:
                 blocks.append(image_block(user_image))
@@ -200,13 +253,23 @@ class VisionPipeline:
             acc(p3)
             if not p3.parsed:
                 corrections = ["Return the full TechniqueAnalysis structure."]
+                await self.note("entry", "unparsed", "model returned no structured analysis; retrying")
                 continue
             analysis = TechniqueAnalysis.model_validate(p3.parsed).clamp()
             analysis.symbol = facts.get("symbol", analysis.symbol)
+            await self.note("entry", "draft", f"draft verdict {analysis.verdict}"
+                            + (f" ({analysis.setup_type})" if analysis.verdict == "setup" else ""),
+                            verdict=analysis.verdict, setupType=analysis.setup_type,
+                            entry=analysis.entry_price, stop=analysis.stop_price,
+                            targets=[t.price for t in analysis.targets], riskReward=analysis.risk_reward,
+                            confidence=analysis.confidence, rulesFired=list(analysis.rules_fired),
+                            noTradeReasons=list(analysis.no_trade_reasons), seconds=round(p3.seconds, 1))
 
             # PASS 4 — critic, only when a setup is claimed (no point killing nothing)
             critic = None
             if analysis.verdict == "setup" and self._calls < self.max_passes:
+                await self.note("critic", "pass_4", "a setup is claimed, so the adversarial critic runs",
+                                callsUsed=self._calls, maxPasses=self.max_passes)
                 p4 = await self._call("critic", [
                     image_block(images[primary], "image/png"),
                     image_block(images[mid_tf], "image/png"),
@@ -222,21 +285,60 @@ class VisionPipeline:
                 critic = p4.parsed
                 if critic:
                     cv = CriticVerdict.model_validate(critic)
+                    before = analysis.confidence
                     if cv.kill:
                         analysis.verdict = "no_setup"
                         analysis.no_trade_reasons = list(analysis.no_trade_reasons) + [
                             f"CRITIC: {v}" for v in cv.violations] + [f"CRITIC: {cv.summary}"]
                         analysis.confidence = max(0.0, min(1.0, analysis.confidence + cv.confidence_adjustment))
+                        await self.note("critic", "kill", "critic killed the setup; verdict flipped to no_setup",
+                                        violations=list(cv.violations), fakeoutRisk=cv.fakeout_risk,
+                                        summary=cv.summary, confidenceBefore=round(before, 3),
+                                        confidenceAfter=round(analysis.confidence, 3))
                     else:
                         analysis.confidence = max(0.0, min(1.0, analysis.confidence + cv.confidence_adjustment))
                         if cv.violations:
                             analysis.no_trade_reasons = list(analysis.no_trade_reasons) + [
                                 f"CRITIC-WARN: {v}" for v in cv.violations]
+                        await self.note("critic", "survive", "setup survived the critic"
+                                        + (" with warnings" if cv.violations else ""),
+                                        violations=list(cv.violations), fakeoutRisk=cv.fakeout_risk,
+                                        adjustments=list(cv.adjustments), summary=cv.summary,
+                                        confidenceBefore=round(before, 3),
+                                        confidenceAfter=round(analysis.confidence, 3))
+                else:
+                    await self.note("critic", "unparsed",
+                                    "critic returned no structured verdict; draft kept as-is")
+            elif analysis.verdict == "setup":
+                await self.note("critic", "skipped",
+                                "setup claimed but the call budget is exhausted, critic skipped",
+                                callsUsed=self._calls, maxPasses=self.max_passes)
+            else:
+                await self.note("critic", "skipped", "no setup claimed, nothing for the critic to kill")
 
             grounding = ground_analysis(analysis, facts, thresholds=self.t)
             await self._emit({"type": "grounding", "passed": grounding["passed"],
                               "checks": grounding["checks"], "attempt": attempt + 1})
-            if grounding["passed"] or self._calls >= self.max_passes:
+            failed = [c for c in grounding["checks"] if not c.get("passed")]
+            await self.note("grounding", "check",
+                            ("every number verified against FACTS" if grounding["passed"]
+                             else f"{len(failed)} check(s) failed against FACTS"),
+                            passed=grounding["passed"], attempt=attempt + 1,
+                            failed=[{"name": c["name"], "detail": c.get("detail", "")} for c in failed],
+                            corrections=list(grounding.get("corrections") or []))
+            if grounding["passed"]:
+                await self.note("loop", "stop", "grounding passed; analysis accepted",
+                                callsUsed=self._calls)
+                break
+            if self._calls >= self.max_passes:
+                await self.note("loop", "stop",
+                                "grounding failed but the call budget is exhausted; last draft kept, "
+                                "marked not grounded", callsUsed=self._calls, maxPasses=self.max_passes)
+                break
+            if attempt + 1 >= remaining:
+                await self.note("loop", "stop",
+                                "grounding failed on the last allowed attempt; last draft kept, "
+                                "marked not grounded", attempt=attempt + 1, maxAttempts=remaining)
                 break
             corrections = grounding["corrections"]
 
@@ -244,6 +346,14 @@ class VisionPipeline:
         result.grounding = grounding
         if analysis is None:
             result.error = "model returned no analysis"
+            await self.note("loop", "stop", "model never returned a parseable analysis")
+        else:
+            await self.note("loop", "final", f"final verdict {analysis.verdict}"
+                            + (f" ({analysis.setup_type})" if analysis.verdict == "setup" else "")
+                            + f", confidence {analysis.confidence:.2f}, grounded {grounding['passed']}",
+                            verdict=analysis.verdict, setupType=analysis.setup_type,
+                            confidence=round(analysis.confidence, 3), grounded=grounding["passed"],
+                            callsUsed=self._calls, usage=dict(result.total_usage))
         return result
 
     # ----------------------------------------------------------- image-only
@@ -253,7 +363,10 @@ class VisionPipeline:
         axis and are approximate — the result says so loudly."""
         result = PipelineResult(analysis=None, grounding={"passed": False, "checks": [],
                                                           "note": "image_only: no bar data to ground"},
-                                mode="image_only")
+                                mode="image_only", trace=self.trace)
+        await self.note("loop", "plan", "image-only: single entry pass on the user's screenshot; "
+                        "no FACTS, so no grounding and confidence capped at 0.6",
+                        symbolHint=symbol_hint, userNote=bool(note))
         rec = await self._call("image_entry", [
             image_block(image),
             {"type": "text", "text": (
@@ -271,8 +384,12 @@ class VisionPipeline:
             a = TechniqueAnalysis.model_validate(rec.parsed).clamp()
             a.confidence = min(a.confidence, 0.6)
             result.analysis = a
+            await self.note("loop", "final",
+                            f"image-only verdict {a.verdict}, confidence {a.confidence:.2f} (capped)",
+                            verdict=a.verdict, setupType=a.setup_type, confidence=round(a.confidence, 3))
         else:
             result.error = "model returned no analysis"
+            await self.note("loop", "stop", "model returned no parseable analysis")
         return result
 
 

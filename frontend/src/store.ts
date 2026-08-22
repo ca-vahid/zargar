@@ -79,6 +79,8 @@ interface AppState {
   techniqueSetups: TechniqueSetup[];
   techniqueTab: "analyse" | "chat" | "history" | "backtest";
   techniqueFocusRunId: string | null;
+  // bumped when an outcome / review lands for a run so open views refetch it
+  techniqueRunBumps: Record<string, number>;
   chatThreads: ChatThread[];
   chatActiveThreadId: string | null;
   chatMessages: Record<string, ChatMessage[]>;   // threadId -> messages (loaded threads)
@@ -166,6 +168,7 @@ export const useStore = create<AppState>((set, get) => ({
   techniqueSetups: [],
   techniqueTab: "analyse",
   techniqueFocusRunId: null,
+  techniqueRunBumps: {},
   chatThreads: [],
   chatActiveThreadId: null,
   chatMessages: {},
@@ -363,6 +366,20 @@ export const useStore = create<AppState>((set, get) => ({
       }
     } else if (msg.kind === "setup") {
       set((st) => ({ techniqueSetups: [msg.setup, ...st.techniqueSetups].slice(0, 300) }));
+    } else if (msg.kind === "outcome") {
+      set((st) => ({
+        techniqueRuns: st.techniqueRuns.map((r) => r.id === msg.runId ? { ...r, outcomes: msg.outcomes } : r),
+        techniqueRunBumps: { ...st.techniqueRunBumps, [msg.runId]: (st.techniqueRunBumps[msg.runId] ?? 0) + 1 },
+      }));
+    } else if (msg.kind === "review") {
+      const rv = msg.review;
+      set((st) => ({
+        techniqueRuns: st.techniqueRuns.map((r) => r.id === msg.runId ? {
+          ...r, reviewCount: (r.reviewCount ?? 0) + 1,
+          lastReview: { reviewVerdict: rv.reviewVerdict, rootCauseStage: rv.rootCauseStage, createdAt: rv.createdAt, reviewer: rv.reviewer },
+        } : r),
+        techniqueRunBumps: { ...st.techniqueRunBumps, [msg.runId]: (st.techniqueRunBumps[msg.runId] ?? 0) + 1 },
+      }));
     } else if (msg.kind === "scan") {
       get().toast("info", `Scan started ${msg.started?.length ?? 0} run(s)`);
     }

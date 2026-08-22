@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 from ..domain import Bar
 from .analysis import AnalysisRequest, compute_facts
 from .history import fetch_window, split_sessions
+from .outcome import simulate_plan
 from .rulebook import DEFAULT_THRESHOLDS, Thresholds
-from .setups import LADDER_TRIMS, RUNNER_PCT
 
 
 @dataclass
@@ -54,65 +54,17 @@ class TradeResult:
 
 def _simulate(bars: list[Bar], start: int, setup: dict, *, entry_window: int,
               horizon: int) -> TradeResult:
-    entry = float(setup["entry"]["price"])
-    stop = float(setup["stop"]["price"])
-    targets = [float(t["price"]) for t in setup["targets"]]
-    trims = list(LADDER_TRIMS[:len(targets)])
-    risk = entry - stop
+    """Score one deterministic setup with the shared walk-forward model
+    (`outcome.simulate_plan`) — the same rules score live runs, so backtest
+    statistics and per-run outcomes are directly comparable."""
     ts0 = bars[start].ts
     session = time.strftime("%Y-%m-%d", time.gmtime(ts0 / 1000))
-    base = dict(ts=ts0, session=session, setup_type=setup["setupType"], entry=entry, stop=stop,
-                targets=targets, rules=setup.get("rules", []), confidence=setup.get("confidence", 0))
-    if risk <= 0:
-        return TradeResult(filled=False, fill_ts=None, outcome="not_filled", r_multiple=0.0,
-                           bars_held=0, **base)
-
-    # --- fill ----------------------------------------------------------------
-    if setup["entry"]["basis"] == "on_break":
-        fill_i = start
-    else:
-        fill_i = None
-        for i in range(start + 1, min(len(bars), start + 1 + entry_window)):
-            if bars[i].low <= entry:
-                fill_i = i
-                break
-        if fill_i is None:
-            return TradeResult(filled=False, fill_ts=None, outcome="not_filled", r_multiple=0.0,
-                               bars_held=0, **base)
-
-    # --- walk forward ----------------------------------------------------------
-    remaining = 1.0
-    realized = 0.0
-    hit = 0
-    outcome = "horizon"
-    end_i = min(len(bars) - 1, fill_i + horizon)
-    i = fill_i + 1
-    while i <= end_i and remaining > 1e-9:
-        b = bars[i]
-        # conservative: if both stop and target are inside one bar, the stop wins
-        if b.low <= stop:
-            realized += remaining * (stop - entry)
-            remaining = 0.0
-            outcome = "stopped" if hit == 0 else f"tp{hit}"
-            break
-        while hit < len(targets) and b.high >= targets[hit]:
-            part = trims[hit] if hit < len(trims) else remaining
-            part = min(part, remaining)
-            realized += part * (targets[hit] - entry)
-            remaining -= part
-            hit += 1
-        if hit >= len(targets) and remaining <= RUNNER_PCT + 1e-9:
-            # only the runner left — it rides to the horizon or the stop
-            pass
-        i += 1
-    if remaining > 1e-9:
-        last = bars[min(i, end_i)]
-        realized += remaining * (last.close - entry)
-        if outcome == "horizon" and hit > 0:
-            outcome = f"tp{hit}"
-    r_mult = realized / risk
-    return TradeResult(filled=True, fill_ts=bars[fill_i].ts, outcome=outcome,
-                       r_multiple=r_mult, bars_held=(min(i, end_i) - fill_i), **base)
+    sim = simulate_plan(bars, start, setup, entry_window=entry_window, horizon=horizon)
+    return TradeResult(
+        ts=ts0, session=session, setup_type=setup["setupType"], entry=sim["entry"], stop=sim["stop"],
+        targets=sim["targets"], filled=sim["filled"], fill_ts=sim["fillTs"], outcome=sim["outcome"],
+        r_multiple=sim["rMultiple"], bars_held=sim["barsHeld"], rules=setup.get("rules", []),
+        confidence=setup.get("confidence", 0))
 
 
 async def run_backtest(symbol: str, tf: str, start_ms: int, end_ms: int, *,
