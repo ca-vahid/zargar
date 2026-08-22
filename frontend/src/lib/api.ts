@@ -88,7 +88,7 @@ export const api = {
   techniqueSweep: (id: string) => request<import("../types").TechniqueSweep>("GET", `/api/technique/walkforward/${id}`),
   techniqueStartSweep: (body: { symbols: string[]; start: string; end: string; structureTfs?: string[]; triggerTf?: string; includeInvalid?: boolean; label?: string }) =>
     request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward", body),
-  techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean }) =>
+  techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean; wait?: boolean }) =>
     request<import("../types").TechniqueRun>("POST", `/api/technique/walkforward/${id}/promote`, body),
   techniqueArmed: () => request<import("../types").ArmedPlan[]>("GET", "/api/technique/armed"),
   techniqueArmedDetail: (runId: string) => request<import("../types").ArmedPlan>("GET", `/api/technique/armed/${runId}`),

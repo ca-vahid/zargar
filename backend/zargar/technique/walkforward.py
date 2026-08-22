@@ -375,6 +375,9 @@ async def run_symbol(symbol: str, start: str, end: str, *, structure_tfs: list[s
     `bars_override` (tf -> bars) lets tests / replays skip Yahoo."""
     o_ms, _ = session_bounds(start)
     _, e_ms = session_bounds(end)
+    # plans built on `end` are scored on the session AFTER it — fetch through that
+    # session (a week covers any holiday run); plan days past `end` are skipped below
+    e_ms += 7 * 86_400_000
     warm_ms = warmup_sessions * 2 * 86_400_000
     bars_by_tf: dict[str, list[Bar]] = {}
     for tf in list(structure_tfs) + [trigger_tf]:

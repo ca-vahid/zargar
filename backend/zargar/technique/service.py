@@ -1285,7 +1285,8 @@ class TechniqueService:
                 d["rows"] = [walkforward_row_dict(x) for x in rs]
         return d
 
-    async def promote(self, sweep_id: str, symbol: str, session_day: str, *, with_vision: bool = False) -> dict:
+    async def promote(self, sweep_id: str, symbol: str, session_day: str, *, with_vision: bool = False,
+                      wait: bool = True) -> dict:
         """Turn one sweep row into a full, reviewable plan run (same as-of)."""
         async with self.engine.sf() as session:
             row = (await session.execute(select(TechniqueWalkforward).where(
@@ -1297,7 +1298,7 @@ class TechniqueService:
         _, close_ms = session_bounds(session_day)
         params = sw.params or {}
         rd = await self.analyze(symbol, as_of_ms=close_ms + 1, primary_tf=params.get("triggerTf"),
-                                trigger="promote", plan=True, with_vision=with_vision, wait=True)
+                                trigger="promote", plan=True, with_vision=with_vision, wait=wait)
         async with self.engine.sf() as session:
             r2 = await session.get(TechniqueWalkforward, row.id)
             if r2 is not None:

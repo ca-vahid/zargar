@@ -5,6 +5,7 @@ import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge, WindowBadge } from 
 import { PlanCard } from "../components/technique/PlanCard";
 import { ValidationTab } from "../components/technique/ValidationTab";
 import { ArmedTab } from "../components/technique/ArmedTab";
+import { RailShell, useRail } from "../components/technique/RailShell";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
 import { Modal } from "../components/Modal";
 import { CopyChip } from "../components/CopyChip";
@@ -156,7 +157,9 @@ function AnalyseForm({ onStarted, disabled, running }: {
           <button className="primary-btn tq-rerun" disabled={busy || disabled || running}
             onClick={run}>{running ? "Running…" : "Run again"}</button>
         )}>
-        {formOpen ? "Analyse" : <>Analyse <span className="muted">· {summary}</span></>}
+        {formOpen
+          ? <>EM Options Technique <span className="muted">· EnhancedMarket method · just-OTM weeklies / 0DTE</span></>
+          : <>EM Options Technique <span className="muted">· {summary}</span></>}
       </DisclosureHead>
 
       <Collapse open={formOpen}>
@@ -306,21 +309,21 @@ function HistoryTab({ onOpen }: { onOpen: (id: string) => void }) {
           {scoring ? "scoring…" : "score pending"}
         </button>
         <input className="tq-filter" placeholder="filter symbol" value={filter} onChange={(e) => setFilter(e.target.value)} /></div>
-      <div className="panel-body" style={{ padding: 0 }}>
+      <div className="panel-body tq-table-wrap" style={{ padding: 0 }}>
         <table className="tq-table tq-history">
-          <thead><tr><th>When</th><th>Symbol</th><th>TF</th><th>Verdict</th><th>Conf</th><th>Grounded</th><th>Outcome</th><th>Review</th><th>Trigger</th><th>Run</th><th></th></tr></thead>
+          <thead><tr><th>When</th><th>Symbol</th><th>TF</th><th>Verdict</th><th className="tq-col-opt">Conf</th><th className="tq-col-opt">Grounded</th><th>Outcome</th><th>Review</th><th className="tq-col-opt">Trigger</th><th>Run</th><th></th></tr></thead>
           <tbody>
             {visible.map((r) => (
               <tr key={r.id} className="clickable" onClick={() => onOpen(r.id)}>
-                <td>{r.createdAt ? fmtDateTime(r.createdAt) : ""}</td>
+                <td className="nowrap muted">{r.createdAt ? fmtDateTime(r.createdAt) : ""}</td>
                 <td><b>{r.symbol}</b></td>
-                <td>{r.primaryTf}{r.mode === "image_only" ? " (img)" : ""}{r.parentRunId ? " ↺" : ""}</td>
+                <td className="nowrap">{r.primaryTf}{r.mode === "image_only" ? " (img)" : ""}{r.parentRunId ? " ↺" : ""}</td>
                 <td><VerdictBadge run={r} /></td>
-                <td>{r.confidence !== null && r.confidence !== undefined ? r.confidence.toFixed(2) : "—"}</td>
-                <td>{r.grounded === null || r.grounded === undefined ? "—" : r.grounded ? "yes" : "no"}</td>
+                <td className="tq-col-opt">{r.confidence !== null && r.confidence !== undefined ? r.confidence.toFixed(2) : "—"}</td>
+                <td className="tq-col-opt">{r.grounded === null || r.grounded === undefined ? "—" : r.grounded ? "yes" : "no"}</td>
                 <td><OutcomeBadge outcome={primaryOutcome(r)} /></td>
                 <td><ReviewBadge last={r.lastReview ?? null} count={r.reviewCount ?? 0} /></td>
-                <td className="muted">{r.trigger}</td>
+                <td className="muted tq-col-opt">{r.trigger}</td>
                 <td><CopyChip value={r.id} link={absoluteUrl({ page: "technique", techniqueTab: "analyse", runId: r.id })} /></td>
                 <td><button className="link-btn" onClick={(e) => { e.stopPropagation(); if (r.threadId) useStore.getState().openTechniqueChat(r.threadId); }}>chat</button></td>
               </tr>
@@ -433,30 +436,21 @@ function ArmedPanel() {
   );
 }
 
-function Rail({ rules }: { rules: Record<string, string> }) {
+function Rail({ rules, open, onToggle }: { rules: Record<string, string>; open: boolean; onToggle: () => void }) {
   const setups = useStore((s) => s.techniqueSetups);
   const setSetups = useStore((s) => s.setTechniqueSetups);
   const openRun = useStore((s) => s.openTechniqueRun);
-  const [railOpen, toggleRail] = useDisclosure("tq_rail", true);
   const [rulesOpen, toggleRules] = useDisclosure("tq_rules", false);
   const [q, setQ] = useState("");
   useEffect(() => { api.techniqueSetups(50).then(setSetups).catch(() => undefined); }, [setSetups]);
   const ruleList = useMemo(() => Object.entries(rules).filter(([id, t]) =>
     !q || id.toLowerCase().includes(q.toLowerCase()) || t.toLowerCase().includes(q.toLowerCase())), [rules, q]);
 
-  if (!railOpen) {
-    return (
-      <button className="tq-rail-tab" onClick={toggleRail} title="Show setups and rulebook">
-        <span>SETUPS &amp; RULES</span>
-      </button>
-    );
-  }
   return (
-    <div className="tq-rail">
+    <RailShell open={open} onToggle={onToggle} label="Setups & rules">
       <ArmedPanel />
       <div className="panel mb">
-        <DisclosureHead open onToggle={toggleRail}
-          extra={<span className="sub">{setups.length} · hide</span>}>Setups</DisclosureHead>
+        <div className="panel-head">Setups <span className="sub">{setups.length}</span></div>
         <div className="panel-body tq-setups">
           {setups.length === 0 && <div className="empty">none yet</div>}
           {setups.slice(0, 12).map((s: TechniqueSetup) => (
@@ -480,7 +474,7 @@ function Rail({ rules }: { rules: Record<string, string> }) {
           </div>
         </Collapse>
       </div>
-    </div>
+    </RailShell>
   );
 }
 
@@ -500,6 +494,7 @@ export function TechniquePage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const armedCount = useStore((s) => s.techniqueArmed.length);
   const bump = useStore((s) => (focusId ? s.techniqueRunBumps[focusId] : undefined) ?? 0);
+  const rail = useRail("tq_rail");
 
   const refreshStatus = useCallback(() => { api.techniqueStatus().then(setStatus).catch(() => undefined); }, []);
   useEffect(() => { refreshStatus(); api.techniqueRuns(100).then(setRuns).catch(() => undefined); }, [refreshStatus, setRuns]);
@@ -545,26 +540,25 @@ export function TechniquePage() {
 
   return (
     <div className="tq-page">
-      <div className="tq-title-row">
-        <h2 className="page-title">EM Options Technique <span className="muted">· EnhancedMarket method · just-OTM weeklies / 0DTE</span></h2>
+      <div className="tq-head">
+        <div className="tabs tq-tabs" role="tablist" aria-label="EM Options Technique">
+          {(["analyse", "validation", "chat", "history", "backtest", "armed"] as const).map((t) => (
+            <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+              {t === "analyse" ? "EM Options · Analyse" : t === "validation" ? "Validation" : t === "chat" ? "Chat" : t === "history" ? "History"
+                : t === "backtest" ? "Backtest" : <>Armed{armedCount > 0 ? <span className="tq-tab-count">{armedCount}</span> : null}</>}
+            </button>
+          ))}
+        </div>
         <StatusBar status={status} onScan={() => api.techniqueScan().then(() => refreshStatus()).catch((e) => toast("error", e.message))} />
-      </div>
-      <div className="tabs tq-tabs">
-        {(["analyse", "chat", "history", "backtest", "validation", "armed"] as const).map((t) => (
-          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-            {t === "analyse" ? "EM Options · Analyse" : t === "chat" ? "Chat" : t === "history" ? "History" : t === "backtest" ? "Backtest"
-              : t === "validation" ? "Validation" : <>Armed{armedCount > 0 ? <span className="tq-tab-count">{armedCount}</span> : null}</>}
-          </button>
-        ))}
       </div>
       {tab === "chat" ? (
         <ChatPanel />
       ) : tab === "validation" ? (
-        <ValidationTab />
+        <ValidationTab llmAvailable={status?.llmAvailable ?? true} />
       ) : tab === "armed" ? (
         <ArmedTab />
       ) : (
-        <div className="tq-grid">
+        <div className={rail.gridClass}>
           <div className="tq-main">
             {tab === "analyse" && (
               <>
@@ -582,7 +576,7 @@ export function TechniquePage() {
             {tab === "history" && <HistoryTab onOpen={(id) => { setFocusRun(id); setTab("analyse"); }} />}
             {tab === "backtest" && <BacktestTab />}
           </div>
-          <Rail rules={rules} />
+          <Rail rules={rules} open={rail.open} onToggle={rail.toggle} />
         </div>
       )}
     </div>
