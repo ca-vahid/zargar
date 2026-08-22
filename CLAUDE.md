@@ -120,6 +120,13 @@ docker-compose.
   `technique.options.provider` + `ZARGAR_TRADIER_TOKEN`). CBOE is US listings
   only — `.TO`/`.V` symbols have no chain there.
 - Technique settings (`technique.*`, `llm.*`) are UI-editable.
+- Execution exits are **reduce-only** (`OrderIntent(reduce_only=True)`): RiskGate
+  runs a safety-only list so a stop/flatten is never blocked by an entry cap, the
+  rate/duplicate window or the daily-loss halt; `risk.halt_allows_exits` (default
+  on) lets the kill switch still close positions. Shared execution machinery lives
+  in `zargar/execution/` (`SessionListener` loops + order index, pure `exits`
+  decision/intent, `ManagedTrade`); `PlanArmer` subclasses `SessionListener`. New
+  techniques reuse that layer instead of re-implementing order management.
 - Armed plans default to the **options** instrument (just-OTM call via
   `technique.option_pick`, BUY LMT at ask, SELL at bid, P&L × 100, <3 contracts
   exit in full at TP2); tests that only need share fills must arm with

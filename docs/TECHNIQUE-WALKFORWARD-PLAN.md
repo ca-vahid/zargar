@@ -445,6 +445,57 @@ The page header is one row (tabs + status pills) that is identical on every tab;
 right rail collapses from its left edge (animated, persisted) on Analyse / History /
 Backtest / Validation.
 
+### 9.3 Execution rebuilt for safety, recording and reuse (2026-08-22)
+
+A full audit of the arm system (does it buy AND sell properly, is it recorded, does it have
+what it needs) drove this pass. What changed:
+
+**Safe exits — the core of an informed buy/sell.** Every exit is now **reduce-only**:
+`OrderIntent(reduce_only=True)` makes `RiskGate` run a *safety-only* check list (kill-switch
+policy, instrument-halt, valid option symbol) and skip every entry cap, the price collar, the
+order-rate / duplicate window, the option-spread block and the daily-loss halt — those protect
+you from *opening* risk, and an exit removes it. New setting **`risk.halt_allows_exits`**
+(default on): the kill switch stops new buys but a stop / flatten can still close a position, so
+you are never trapped. A working exit that has not filled within ~2 bars (a stale delayed bid in
+a falling market) is cancelled and **re-sent at market**; pending-exit accounting and a
+cancel-first flatten/disarm mean the same shares can never be sold twice.
+
+**Certain loss halt (user ask).** `ArmConfig.dailyLossLimit` — once a plan's realised loss for
+the day crosses the dollar limit it **flattens everything and stops for the day** (journaled
+`TechniquePlanError stage=loss_halt`, shown as a STOPPED badge). Plus `maxOpenTrades` (positions
+at once, default 1) and options `skipWideSpread` (T5.4) / `skipElevatedIv` (T5.3) entry gates.
+
+**Modular shared layer** (so the next technique reuses the risky parts): new
+`zargar/execution/` package — `SessionListener` (the BARS/ORDERS/heartbeat loops + the
+order-id→owner index), pure `exits` (stop / 30-40-15 ladder / single-contract / flatten decision
++ reduce-only intent building, unit-tested), and `ManagedTrade`. `PlanArmer` now **subclasses
+`SessionListener`**.
+
+**Recording + review, like the analysis side.** After the close an **execution scorecard**
+compares what the armer actually did to the deterministic walk-forward replay of the same
+session (did it fire when it should have, how did the fill/exit line up) — journaled
+(`TechniquePlanScored`), shown on the Armed card, in the CLI (`technique_review armed-show <run>`)
+and to the chat LLM (`list_armed` / `get_armed_run`, which pair with `record_review`).
+**Restart recovery**: trades and the order index are rebuilt from the persisted state so an open
+position keeps being managed and its fills are not orphaned. **Managed proposals**: an approved
+technique proposal is adopted by the armer and its exits managed (no broker bracket, which
+SnapTrade rejects). The live **critic** is handed the whole picture — R6 window, sibling
+triggers, the option contract's warnings — to judge on.
+
+**Real 1-minute bars.** `YahooQuoteFeed.on_bars` → `BarAggregator.ingest_exchange_bar` corrects
+the quote-sampled 1m bars with real exchange OHLC/volume (the volume gate depends on it), guarded
+by `feed.exchange_bars` (default on).
+
+**Pre-flight + plain-language UI.** `POST /runs/{id}/arm/preflight` dry-runs the best trigger's
+entry so the Arm dialog says — before you arm — whether the first order would pass, in plain
+words. New `InfoTip` help bubbles across the Arm dialog and Armed tab, a REAL/PRACTICE banner,
+the loss-halt / max-positions / T5-skip controls, and a **Settings → Auto-trading (Arm)** panel.
+
+New settings: `risk.halt_allows_exits`, `feed.exchange_bars`, `technique.arm.max_open_trades`,
+`technique.arm.daily_loss_limit`, `technique.arm.skip_wide_spread`, `technique.arm.skip_elevated_iv`.
+Still open (deferred): **IBKR option contracts** (the executor builds stock contracts only — to be
+wired when IBKR activates); DB does not overwrite a corrected same-minute bar (in-memory only).
+
 ## 10. Honest limitations
 
 - **Yahoo depth**: 1m ≈ 20 d (8 d/request), 5m/15m/30m ≈ 60 d, 1h ≈ 2 y. A 100-trade
