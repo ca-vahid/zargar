@@ -163,8 +163,10 @@ export function RunResult({ run, rules }: { run: TechniqueRun; rules: Record<str
             <div className="tq-section"><div className="tq-label">Options expression (T5)</div>
               {options.available && options.symbol ? (
                 <div>
-                  <b>{options.symbol}</b> {options.optionType} {options.strike} exp {options.expiry}{options.is0dte ? " (0DTE)" : ""} ·
+                  <b>{options.display ?? options.symbol}</b> {options.optionType} {options.strike} exp {options.expiry}{options.is0dte ? " (0DTE)" : ""} ·
                   bid/ask {options.bid}/{options.ask} · spread {options.spreadPct}% · Δ {options.delta ?? "—"} · IV {options.iv ?? "—"} · OI {options.openInterest}
+                  {" "}<button className="link-btn" onClick={() => useStore.getState().openOptions({ contract: options.symbol, side: "BUY", qty: 1 })}
+                    title="Open the option ticket with this contract loaded (practice by default)">trade this contract →</button>
                   {options.warnings?.length > 0 && <ul className="tq-reasons">{options.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}</ul>}
                 </div>
               ) : (

@@ -32,6 +32,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from .. import bus as topics
 from .. import events as ev
 from ..domain import new_id
+from ..options import occ
 from ..models import BrokerageAccount, Order, Portfolio
 from .base import BrokerOrder, ExecReport, Executor
 
@@ -46,7 +47,12 @@ OPEN_STATUSES = ("SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED")
 
 _ORDER_TYPE = {"MKT": "Market", "LMT": "Limit", "STP": "Stop", "STP_LMT": "StopLimit"}
 _TIF = {"DAY": "Day", "GTC": "GTC", "IOC": "IOC"}
+# the options endpoint (/trading/options) uses a different order-type vocabulary
+_OPT_ORDER_TYPE = {"MKT": "MARKET", "LMT": "LIMIT", "STP": "STOP_LOSS_MARKET", "STP_LMT": "STOP_LOSS_LIMIT"}
 
+# recentOrders defaults to executed-only rows; working/cancelled orders must be
+# visible for accept/cancel detection (the param is accepted — verified 2026-08-21)
+_RECENT_ORDERS_PARAMS = {"only_executed": "false"}
 # SnapTrade recentOrders statuses that mean "broker acknowledged, working"
 _WORKING = {"ACCEPTED", "ACTIVATED", "TRIGGERED", "REPLACE_PENDING", "CANCEL_PENDING", "REPLACED"}
 _NO_ACTION = {"NONE", "PENDING", "QUEUED"}
@@ -91,8 +97,15 @@ class SnapTradeClient:
         digest = hmac.new(self._consumer_key.encode(), data.encode(), hashlib.sha256).digest()
         return base64.b64encode(digest).decode()
 
-    async def request(self, method: str, path: str, body: dict | None = None) -> Any:
-        query = f"clientId={self._client_id}&timestamp={int(time.time())}"
+    async def request(self, method: str, path: str, body: dict | None = None,
+                      params: dict[str, Any] | None = None) -> Any:
+        # query params are signed as sent; keep them sorted so the signature
+        # and the wire agree regardless of insertion order
+        items = {"clientId": self._client_id, "timestamp": str(int(time.time()))}
+        for k, v in (params or {}).items():
+            if v is not None:
+                items[str(k)] = str(v).lower() if isinstance(v, bool) else str(v)
+        query = "&".join(f"{k}={items[k]}" for k in sorted(items))
         headers = {"Signature": self._sign(path, query, body)}
         try:
             resp = await self._http.request(
@@ -152,7 +165,7 @@ def extract_unified_position(raw: dict) -> dict | None:
                  kind, instrument.get("symbol"))
         return None
     ticker = instrument.get("symbol") or instrument.get("raw_symbol")
-    if not ticker:
+    if not ticker and sec_type != "OPT":
         return None
     try:
         qty = float(raw.get("units") or 0.0)
@@ -162,6 +175,19 @@ def extract_unified_position(raw: dict) -> dict | None:
         return None
     if abs(qty) < 1e-12:
         return None
+    if sec_type == "OPT":
+        symbol = _option_symbol_from_instrument(instrument)
+        if symbol is None:
+            log.warning("skipping option position with unrecognised instrument: %s", instrument)
+            return None
+        if instrument.get("is_mini_option"):
+            log.warning("skipping mini option %s (10-share multiplier unsupported)", symbol)
+            return None
+        return {
+            "symbol": symbol, "secType": "OPT", "qty": qty, "avgCost": avg,
+            "price": price or None, "currency": "USD",
+            "universalId": str(instrument.get("id") or "") or None,
+        }
     return {
         "symbol": normalize_symbol(str(ticker), instrument.get("exchange")),
         "secType": sec_type,
@@ -171,6 +197,27 @@ def extract_unified_position(raw: dict) -> dict | None:
         "currency": str(raw.get("currency") or instrument.get("currency") or "") or None,
         "universalId": str(instrument.get("id") or "") or None,
     }
+
+
+def _option_symbol_from_instrument(instrument: dict) -> str | None:
+    """kind=option instrument -> canonical OCC. Accepts an OCC ticker in `symbol`
+    (padded or not) or rebuilds it from the discriminated fields."""
+    for key in ("symbol", "raw_symbol", "ticker"):
+        sym = occ.from_snaptrade(str(instrument.get(key) or ""))
+        if sym:
+            return sym
+    underlying = instrument.get("underlying") or instrument.get("underlying_symbol") or {}
+    if isinstance(underlying, dict):
+        underlying = underlying.get("symbol") or underlying.get("raw_symbol")
+    right = str(instrument.get("option_type") or "").upper()[:1]
+    strike = instrument.get("strike_price") or instrument.get("strike")
+    exp = str(instrument.get("expiration_date") or instrument.get("expiry") or "")[:10]
+    if not (underlying and right in ("C", "P") and strike and exp):
+        return None
+    try:
+        return occ.make(str(underlying), exp, right, float(strike)).symbol
+    except (ValueError, TypeError):
+        return None
 
 
 def extract_position(raw: dict) -> dict | None:
@@ -322,24 +369,33 @@ class SnapTradeBroker(Executor):
                 reason="portfolio is not linked to a SnapTrade account"))
             return
         client_order_id = dashed_uuid(order.id)
-        body: dict[str, Any] = {
-            "account_id": account_id,
-            "action": order.side.value,
-            "order_type": _ORDER_TYPE[order.order_type.value],
-            "time_in_force": _TIF[order.tif.value],
-            "symbol": order.symbol,
-            "units": order.qty,
-            "client_order_id": client_order_id,
-        }
-        if order.limit_price is not None:
-            body["price"] = order.limit_price
-        if order.stop_price is not None:
-            body["stop"] = order.stop_price
+        if order.sec_type == "OPT":
+            try:
+                body = option_order_body(order)
+            except ValueError as exc:
+                await self.emit(ExecReport(kind="rejected", order_id=order.id, reason=str(exc)))
+                return
+            path = f"/api/v1/accounts/{account_id}/trading/options"
+        else:
+            body = {
+                "account_id": account_id,
+                "action": order.side.value,
+                "order_type": _ORDER_TYPE[order.order_type.value],
+                "time_in_force": _TIF[order.tif.value],
+                "symbol": order.symbol,
+                "units": order.qty,
+                "client_order_id": client_order_id,
+            }
+            if order.limit_price is not None:
+                body["price"] = order.limit_price
+            if order.stop_price is not None:
+                body["stop"] = order.stop_price
+            path = "/api/v1/trade/place"
 
         tracked = _Tracked(order.id, account_id, client_order_id)
         try:
             async with self._throttle(account_id):
-                result = await self._client.request("POST", "/api/v1/trade/place", body)
+                result = await self._client.request("POST", path, body)
             self._healthy = True
         except SnapTradeError as exc:
             await self.emit(ExecReport(kind="rejected", order_id=order.id, reason=str(exc)))
@@ -353,6 +409,8 @@ class SnapTradeBroker(Executor):
             return
 
         broker_id = str(result.get("brokerage_order_id") or "") or None
+        if not broker_id and isinstance(result.get("orders"), list) and result["orders"]:
+            broker_id = str((result["orders"][0] or {}).get("brokerage_order_id") or "") or None
         tracked.broker_order_id = broker_id
         self._tracked[order.id] = tracked
         if broker_id:
@@ -385,7 +443,8 @@ class SnapTradeBroker(Executor):
         while time.monotonic() < deadline:
             try:
                 rows = await self._client.request(
-                    "GET", f"/api/v1/accounts/{tracked.account_id}/recentOrders")
+                    "GET", f"/api/v1/accounts/{tracked.account_id}/recentOrders",
+                    params=_RECENT_ORDERS_PARAMS)
             except (SnapTradeError, SnapTradeUnknownOutcome):
                 rows = None
             match = self._find_reconcile_match(rows or {}, order, tracked)
@@ -478,6 +537,36 @@ class SnapTradeBroker(Executor):
             "remainingCashCurrency": str(code or "") or None,
         }
 
+    async def option_impact(self, account_id: str, *, symbol: str, side: str, qty: float,
+                            order_type: str = "LMT", limit_price: float | None = None,
+                            stop_price: float | None = None, action: str | None = None) -> dict:
+        """Broker-side preview of an option order (`/trading/options/impact`, BETA).
+
+        A simulation - nothing is placed or reserved. Also the live capability
+        probe: Wealthsimple answers 400 code 1156 "not supported for this brokerage".
+        """
+        from ..domain import OrderSide as _Side, OrderType as _Type, TimeInForce as _Tif
+        bo = BrokerOrder(
+            id="impact", symbol=occ.normalize(symbol), sec_type="OPT",
+            side=_Side(side.upper()), qty=qty, order_type=_Type(order_type.upper()),
+            limit_price=limit_price, stop_price=stop_price, tif=_Tif.DAY,
+            option_action=action)
+        body = option_order_body(bo)
+        result = await self._client.request(
+            "POST", f"/api/v1/accounts/{account_id}/trading/options/impact", body)
+
+        def _f(v):
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+        return {
+            "estimatedCashChange": _f(result.get("estimated_cash_change")),
+            "direction": str(result.get("cash_change_direction") or "") or None,
+            "estimatedFees": _f(result.get("estimated_fee_total")),
+            "request": body,
+        }
+
     # ---------------------------------------------------------------- cancel
     async def cancel(self, order_id: str) -> None:
         t = self._tracked.get(order_id)
@@ -516,7 +605,8 @@ class SnapTradeBroker(Executor):
         for account_id, tracked_list in by_account.items():
             try:
                 payload = await self._client.request(
-                    "GET", f"/api/v1/accounts/{account_id}/recentOrders")
+                    "GET", f"/api/v1/accounts/{account_id}/recentOrders",
+                    params=_RECENT_ORDERS_PARAMS)
                 self._healthy = True
             except (SnapTradeError, SnapTradeUnknownOutcome) as exc:
                 log.warning("recentOrders failed for %s: %s", account_id, exc)
@@ -543,6 +633,9 @@ class SnapTradeBroker(Executor):
 
     @staticmethod
     def _row_symbol(row: dict) -> str | None:
+        opt = row.get("option_symbol")
+        if isinstance(opt, dict) and opt.get("ticker"):
+            return occ.from_snaptrade(str(opt["ticker"])) or str(opt["ticker"]).replace(" ", "")
         uni = row.get("universal_symbol") or {}
         ticker = uni.get("symbol") if isinstance(uni, dict) else None
         exch = (uni.get("exchange") or {}) if isinstance(uni, dict) else {}
@@ -586,6 +679,32 @@ class SnapTradeBroker(Executor):
         elif status == "EXPIRED":
             self._tracked.pop(t.order_id, None)
             await self.emit(ExecReport(kind="expired", order_id=t.order_id))
+
+
+def option_order_body(order: BrokerOrder) -> dict[str, Any]:
+    """BrokerOrder (OPT) -> SnapTrade `/trading/options` request body."""
+    sym = occ.to_snaptrade(order.symbol)  # raises ValueError on a non-OCC symbol
+    action = order.option_action or ("BUY_TO_OPEN" if order.side.value == "BUY" else "SELL_TO_CLOSE")
+    if action not in ("BUY_TO_OPEN", "BUY_TO_CLOSE", "SELL_TO_OPEN", "SELL_TO_CLOSE"):
+        raise ValueError(f"invalid option action {action!r}")
+    units = int(round(order.qty))
+    if units <= 0 or abs(units - order.qty) > 1e-9:
+        raise ValueError("option quantity must be a whole number of contracts")
+    body: dict[str, Any] = {
+        "order_type": _OPT_ORDER_TYPE[order.order_type.value],
+        "time_in_force": _TIF[order.tif.value],
+        "price_effect": "DEBIT" if order.side.value == "BUY" else "CREDIT",
+        "legs": [{
+            "instrument": {"symbol": sym, "instrument_type": "OPTION"},
+            "action": action,
+            "units": units,
+        }],
+    }
+    if order.limit_price is not None:
+        body["limit_price"] = f"{float(order.limit_price):.2f}"
+    if order.stop_price is not None:
+        body["stop_price"] = f"{float(order.stop_price):.2f}"
+    return body
 
 
 class _SubmitThrottle:

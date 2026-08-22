@@ -27,10 +27,31 @@ class QuoteCache:
     def __init__(self, bus: Bus) -> None:
         self._bus = bus
         self._quotes: dict[str, Quote] = {}
+        # per-symbol field overrides applied to every incoming quote — option
+        # contracts get bid/ask from the (delayed) chain while `last` streams live
+        self._overlays: dict[str, dict] = {}
 
     def on_quote(self, q: Quote) -> None:
+        ov = self._overlays.get(q.symbol)
+        if ov:
+            for k, v in ov.items():
+                setattr(q, k, v)
         self._quotes[q.symbol] = q
         self._bus.publish(topics.QUOTES, q)
+
+    def set_overlay(self, symbol: str, **fields) -> None:
+        """Override quote fields for a symbol (bid/ask/sizes) until cleared."""
+        if not fields:
+            self._overlays.pop(symbol, None)
+            return
+        self._overlays[symbol] = dict(fields)
+        q = self._quotes.get(symbol)
+        if q is not None:
+            for k, v in fields.items():
+                setattr(q, k, v)
+
+    def clear_overlay(self, symbol: str) -> None:
+        self._overlays.pop(symbol, None)
 
     def get(self, symbol: str) -> Quote | None:
         return self._quotes.get(symbol)

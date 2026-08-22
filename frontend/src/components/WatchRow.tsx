@@ -1,5 +1,6 @@
 import { memo } from "react";
 import { fmtMoney } from "../lib/format";
+import { parseOcc } from "../lib/occ";
 import { useDaySeries } from "../lib/useDaySeries";
 import { useQuote, useStore } from "../store";
 import { dayChange, DeltaPill, Sparkline, TickArrow } from "./quotekit";
@@ -11,17 +12,22 @@ export const WatchRow = memo(function WatchRow({ symbol }: { symbol: string }) {
   const active = useStore((s) => s.activeSymbol === symbol);
   const setActiveSymbol = useStore((s) => s.setActiveSymbol);
   const setPage = useStore((s) => s.setPage);
+  const openOptions = useStore((s) => s.openOptions);
   const day = useDaySeries(symbol);
   const chg = dayChange(quote, day.open);
+  const occ = parseOcc(symbol);
 
   return (
     <button
       type="button"
       className={`wl-row ${active ? "active" : ""}`}
-      onClick={() => { setActiveSymbol(symbol); setPage("trade"); }}
-      aria-label={`Trade ${symbol}`}
+      onClick={() => {
+        if (occ) openOptions({ contract: occ.symbol });
+        else { setActiveSymbol(symbol); setPage("trade"); }
+      }}
+      aria-label={`Trade ${occ?.display ?? symbol}`}
     >
-      <span className="wl-sym" title={symbol}>{symbol}</span>
+      <span className="wl-sym" title={occ ? `${occ.display} (${symbol})` : symbol}>{occ?.short ?? symbol}</span>
       <span className="wl-spark">
         <Sparkline closes={day.closes} live={chg?.price ?? quote?.last}
           basis={chg?.basis ?? day.open} />

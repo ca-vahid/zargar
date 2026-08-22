@@ -104,6 +104,12 @@ export const IconWarn = make("IconWarn", <>
   <path d="M8 6.5v3M8 11.5v.01" />
 </>);
 
+export const IconOptions = make("IconOptions", <>
+  <path d="M1.5 11.5h13" opacity="0.5" />
+  <path d="M2 11.5 6.5 5l2.5 3.5L12 4l2.5 4" />
+  <path d="M2.5 2.5h11" opacity="0.35" />
+</>);
+
 export const IconChevron = make("IconChevron", <>
   <path d="m5.5 3 5 5-5 5" />
 </>);

@@ -1,19 +1,8 @@
-"""Options chain data and contract selection per spec module T5.
+"""T5 contract selection (EnhancedMarket §6) over the shared chain providers.
 
-Providers (all normalize to the same row shape, so `select_contract` is
-provider-agnostic):
-
-* **CBOE** (default) — the free delayed-quotes JSON at
-  `cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json`. No account,
-  no token, works from Canada (Tradier's developer signup needs a US address).
-  One request returns the whole chain **with greeks and IV** (delta/gamma/
-  theta/vega per contract) plus the underlying's current price, ~15-min
-  delayed. Verified live 2026-08-21.
-* **Tradier** — kept for anyone with a token (`ZARGAR_TRADIER_TOKEN`);
-  real-time, greeks via ORATS.
-* IBKR native slots in here once the account activates (reqSecDefOptParams).
-
-The T5 rules these make checkable:
+The providers themselves (CBOE default, Tradier optional) live in
+``zargar.options.chain`` and are re-exported here so existing imports keep
+working; ``parse_occ`` wraps ``zargar.options.occ``.
 
     T5.1 strike just OTM            T5.3 do not buy elevated IV
     T5.2 current-week Friday / 0DTE T5.4 avoid wide spreads, poor greeks
@@ -22,19 +11,17 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import re
-import time
 from dataclasses import dataclass, field
 
 import httpx
 
-log = logging.getLogger("zargar.technique.options")
+from ..options import occ as _occ
+from ..options.chain import (  # noqa: F401  (re-exports)
+    CBOE_URL, TRADIER_PROD_BASE, TRADIER_SANDBOX_BASE, UA,
+    CboeClient, OptionsError, TradierClient,
+)
 
-TRADIER_PROD_BASE = "https://api.tradier.com/v1"
-TRADIER_SANDBOX_BASE = "https://sandbox.tradier.com/v1"
-CBOE_URL = "https://cdn.cboe.com/api/global/delayed_quotes/options/{symbol}.json"
-UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-      "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
+log = logging.getLogger("zargar.technique.options")
 
 # T5.4 heuristics — the book gives no numbers; these are ours (spec §10).
 MAX_SPREAD_PCT = 10.0       # (ask-bid)/mid
@@ -42,10 +29,6 @@ MIN_OPEN_INTEREST = 100
 MIN_VOLUME = 10
 LOW_DELTA = 0.25
 ELEVATED_IV = 0.60          # absolute mid IV; percentile needs history we lack
-
-
-class OptionsError(RuntimeError):
-    pass
 
 
 @dataclass
@@ -78,183 +61,16 @@ class ContractPick:
             "openInterest": self.open_interest, "delta": self.delta, "theta": self.theta,
             "iv": self.iv, "dte": self.dte, "is0dte": self.is_0dte,
             "warnings": list(self.warnings), "rules": list(self.rules),
+            "display": _occ.display(self.symbol),
         }
-
-
-# --- OCC symbology ------------------------------------------------------------
-
-_OCC_RE = re.compile(r"^(?P<root>.+?)(?P<date>\d{6})(?P<cp>[CP])(?P<strike>\d{8})$")
 
 
 def parse_occ(symbol: str) -> tuple[str, str, str, float] | None:
     """'SPY260821C00360000' → ('SPY', '2026-08-21', 'call', 360.0)."""
-    m = _OCC_RE.match(symbol.strip().upper())
-    if not m:
+    o = _occ.parse(symbol)
+    if o is None:
         return None
-    d = m.group("date")
-    expiry = f"20{d[0:2]}-{d[2:4]}-{d[4:6]}"
-    cp = "call" if m.group("cp") == "C" else "put"
-    strike = int(m.group("strike")) / 1000.0
-    return m.group("root"), expiry, cp, strike
-
-
-# --- CBOE (default; free, no credentials, works from Canada) --------------------
-
-class CboeClient:
-    """Free delayed chain with greeks. One ~6 MB fetch covers every expiry, so
-    responses are cached per symbol for a short TTL."""
-
-    name = "cboe"
-    CACHE_TTL = 60.0
-
-    def __init__(self, client: httpx.AsyncClient | None = None) -> None:
-        self._http = client or httpx.AsyncClient(timeout=30, headers={"User-Agent": UA},
-                                                 follow_redirects=True)
-        self._cache: dict[str, tuple[float, dict]] = {}
-
-    @property
-    def available(self) -> bool:
-        return True
-
-    async def _payload(self, symbol: str) -> dict:
-        sym = symbol.upper().strip()
-        if "." in sym:
-            raise OptionsError(f"{sym}: CBOE lists US options only (no .TO/.V symbols)")
-        hit = self._cache.get(sym)
-        now = time.time()
-        if hit and now - hit[0] < self.CACHE_TTL:
-            return hit[1]
-        r = await self._http.get(CBOE_URL.format(symbol=sym))
-        if r.status_code == 404:
-            raise OptionsError(f"no US-listed options for {sym} (CBOE 404)")
-        if r.status_code >= 400:
-            raise OptionsError(f"CBOE HTTP {r.status_code}")
-        data = (r.json() or {}).get("data") or {}
-        if not data.get("options"):
-            raise OptionsError(f"CBOE returned no contracts for {sym}")
-        self._cache[sym] = (now, data)
-        return data
-
-    @staticmethod
-    def _normalize(row: dict, underlying: str) -> dict | None:
-        occ = parse_occ(row.get("option") or "")
-        if occ is None:
-            return None
-        _root, expiry, cp, strike = occ
-        iv = row.get("iv")
-        return {
-            "symbol": row.get("option"),
-            "underlying": underlying,
-            "expiry": expiry,
-            "option_type": cp,
-            "strike": strike,
-            "bid": row.get("bid") or 0.0,
-            "ask": row.get("ask") or 0.0,
-            "volume": int(row.get("volume") or 0),
-            "open_interest": int(row.get("open_interest") or 0),
-            "greeks": {
-                "delta": row.get("delta"),
-                "theta": row.get("theta"),
-                "mid_iv": iv if iv else None,   # CBOE reports 0.0 for deep ITM
-            },
-        }
-
-    async def expirations(self, symbol: str) -> list[str]:
-        data = await self._payload(symbol)
-        out: set[str] = set()
-        for row in data.get("options") or []:
-            occ = parse_occ(row.get("option") or "")
-            if occ:
-                out.add(occ[1])
-        return sorted(out)
-
-    async def chain(self, symbol: str, expiry: str) -> list[dict]:
-        data = await self._payload(symbol)
-        sym = symbol.upper().strip()
-        rows = []
-        for row in data.get("options") or []:
-            n = self._normalize(row, sym)
-            if n and n["expiry"] == expiry:
-                rows.append(n)
-        return rows
-
-    async def spot(self, symbol: str) -> float | None:
-        data = await self._payload(symbol)
-        v = data.get("current_price") or data.get("close")
-        return float(v) if v else None
-
-    async def aclose(self) -> None:
-        await self._http.aclose()
-
-
-# --- Tradier (optional; needs a token, US-only signup) ---------------------------
-
-class TradierClient:
-    name = "tradier"
-
-    def __init__(self, token: str, *, sandbox: bool = False,
-                 client: httpx.AsyncClient | None = None) -> None:
-        self._token = token
-        self._base = TRADIER_SANDBOX_BASE if sandbox else TRADIER_PROD_BASE
-        self._http = client or httpx.AsyncClient(timeout=15)
-
-    @property
-    def available(self) -> bool:
-        return bool(self._token)
-
-    async def _get(self, path: str, params: dict) -> dict:
-        if not self._token:
-            raise OptionsError("Tradier token not configured (ZARGAR_TRADIER_TOKEN)")
-        r = await self._http.get(f"{self._base}{path}", params=params, headers={
-            "Authorization": f"Bearer {self._token}", "Accept": "application/json"})
-        if r.status_code == 401:
-            raise OptionsError("Tradier rejected the token (401)")
-        if r.status_code >= 400:
-            raise OptionsError(f"Tradier HTTP {r.status_code}: {r.text[:200]}")
-        return r.json() or {}
-
-    async def expirations(self, symbol: str) -> list[str]:
-        data = await self._get("/markets/options/expirations",
-                               {"symbol": symbol.upper(), "includeAllRoots": "true"})
-        exp = (data.get("expirations") or {}).get("date") or []
-        if isinstance(exp, str):
-            exp = [exp]
-        return sorted(exp)
-
-    async def chain(self, symbol: str, expiry: str) -> list[dict]:
-        data = await self._get("/markets/options/chains",
-                               {"symbol": symbol.upper(), "expiration": expiry, "greeks": "true"})
-        opts = (data.get("options") or {}).get("option") or []
-        if isinstance(opts, dict):
-            opts = [opts]
-        out = []
-        for c in opts:
-            g = c.get("greeks") or {}
-            out.append({
-                "symbol": c.get("symbol"),
-                "underlying": c.get("underlying") or c.get("root_symbol") or symbol.upper(),
-                "expiry": expiry,
-                "option_type": (c.get("option_type") or "").lower(),
-                "strike": float(c.get("strike") or 0),
-                "bid": c.get("bid") or 0.0,
-                "ask": c.get("ask") or 0.0,
-                "volume": int(c.get("volume") or 0),
-                "open_interest": int(c.get("open_interest") or 0),
-                "greeks": {"delta": g.get("delta"), "theta": g.get("theta"),
-                           "mid_iv": g.get("mid_iv") or g.get("smv_vol")},
-            })
-        return out
-
-    async def spot(self, symbol: str) -> float | None:
-        data = await self._get("/markets/quotes", {"symbols": symbol.upper(), "greeks": "false"})
-        q = (data.get("quotes") or {}).get("quote") or {}
-        if isinstance(q, list):
-            q = q[0] if q else {}
-        v = q.get("last") or q.get("close")
-        return float(v) if v else None
-
-    async def aclose(self) -> None:
-        await self._http.aclose()
+    return o.underlying, o.expiry.isoformat(), o.option_type, o.strike
 
 
 # --- selection (provider-agnostic) ------------------------------------------------

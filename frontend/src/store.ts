@@ -21,7 +21,9 @@ import type {
   TechniqueSetup,
 } from "./types";
 
-export type Page = "dashboard" | "trade" | "inbox" | "portfolios" | "journal" | "settings" | "technique";
+export type Page = "dashboard" | "trade" | "options" | "inbox" | "portfolios" | "journal" | "settings" | "technique";
+
+export interface OptionsPrefill { side?: "BUY" | "SELL"; qty?: number; portfolioId?: string }
 
 export interface OrderIntentBody {
   portfolio_id: string;
@@ -65,6 +67,11 @@ interface AppState {
   journalGroup: string | null; // pre-filter applied when the Journal page opens
   portfoliosFocus: string | null; // provider connectionId to scroll to on Portfolios
   ticketPortfolioId: string | null; // one-shot account preselect for the order ticket
+  // --- options page ---
+  optionsUnderlying: string;
+  optionsExpiry: string | null;
+  optionsContract: string | null;   // canonical OCC symbol loaded in the option ticket
+  optionsPrefill: OptionsPrefill | null; // one-shot ticket prefill (close from blotter, technique pick)
   events: JournalEvent[];
   toasts: { id: number; kind: "info" | "error" | "success"; text: string }[];
   // --- technique / chat ---
@@ -85,6 +92,9 @@ interface AppState {
   clearPortfoliosFocus: () => void;
   openTrade: (symbol: string, portfolioId?: string) => void;
   clearTicketPortfolio: () => void;
+  openOptions: (args: { underlying?: string; expiry?: string | null; contract?: string | null } & OptionsPrefill) => void;
+  setOptionsView: (v: { underlying?: string; expiry?: string | null; contract?: string | null }) => void;
+  clearOptionsPrefill: () => void;
   toggleChgMode: () => void;
   dismissDrift: (portfolioId: string) => void;
   applySnapshot: (s: Snapshot) => void;
@@ -116,7 +126,8 @@ interface AppState {
   setChatActive: (id: string | null) => void;
   openTechniqueChat: (threadId: string) => void;
   seedChatLive: (threadId: string, live: { passes?: any[]; grounding?: any; facts?: any }) => void;
-  applyRoute: (r: { page: Page; techniqueTab?: string; runId?: string | null; threadId?: string | null }) => void;
+  applyRoute: (r: { page: Page; techniqueTab?: string; runId?: string | null; threadId?: string | null;
+    optionsUnderlying?: string; optionsExpiry?: string | null; optionsContract?: string | null }) => void;
 }
 
 const posKey = (p: Position) => `${p.portfolioId}:${p.symbol}:${p.secType}`;
@@ -145,6 +156,10 @@ export const useStore = create<AppState>((set, get) => ({
   journalGroup: null,
   portfoliosFocus: null,
   ticketPortfolioId: null,
+  optionsUnderlying: localStorage.getItem("zargar_options_underlying") || "SPY",
+  optionsExpiry: null,
+  optionsContract: null,
+  optionsPrefill: null,
   events: [],
   toasts: [],
   techniqueRuns: [],
@@ -165,6 +180,31 @@ export const useStore = create<AppState>((set, get) => ({
   openTrade: (symbol, portfolioId) =>
     set({ page: "trade", activeSymbol: symbol, ticketPortfolioId: portfolioId ?? null }),
   clearTicketPortfolio: () => set({ ticketPortfolioId: null }),
+  openOptions: ({ underlying, expiry, contract, side, qty, portfolioId }) =>
+    set((st) => {
+      const und = (underlying ?? (contract ? contract.replace(/\s+/g, "").match(/^[A-Z]{1,6}/)?.[0] : null)
+        ?? st.optionsUnderlying).toUpperCase();
+      localStorage.setItem("zargar_options_underlying", und);
+      const changed = und !== st.optionsUnderlying;
+      return {
+        page: "options",
+        optionsUnderlying: und,
+        optionsExpiry: expiry !== undefined ? expiry : changed ? null : st.optionsExpiry,
+        optionsContract: contract !== undefined ? contract : changed ? null : st.optionsContract,
+        optionsPrefill: side || qty || portfolioId ? { side, qty, portfolioId } : null,
+      };
+    }),
+  setOptionsView: (v) =>
+    set((st) => {
+      const und = (v.underlying ?? st.optionsUnderlying).toUpperCase();
+      if (v.underlying) localStorage.setItem("zargar_options_underlying", und);
+      return {
+        optionsUnderlying: und,
+        optionsExpiry: v.expiry !== undefined ? v.expiry : st.optionsExpiry,
+        optionsContract: v.contract !== undefined ? v.contract : st.optionsContract,
+      };
+    }),
+  clearOptionsPrefill: () => set({ optionsPrefill: null }),
   toggleChgMode: () =>
     set((st) => {
       const next = !st.chgDollar;
@@ -277,6 +317,9 @@ export const useStore = create<AppState>((set, get) => ({
       techniqueTab: (r.techniqueTab as any) ?? st.techniqueTab,
       techniqueFocusRunId: r.runId ?? (r.page === "technique" ? null : st.techniqueFocusRunId),
       chatActiveThreadId: r.threadId ?? st.chatActiveThreadId,
+      optionsUnderlying: r.optionsUnderlying ?? st.optionsUnderlying,
+      optionsExpiry: r.page === "options" ? (r.optionsExpiry ?? (r.optionsUnderlying && r.optionsUnderlying !== st.optionsUnderlying ? null : st.optionsExpiry)) : st.optionsExpiry,
+      optionsContract: r.page === "options" ? (r.optionsContract ?? (r.optionsUnderlying && r.optionsUnderlying !== st.optionsUnderlying ? null : st.optionsContract)) : st.optionsContract,
     })),
   openTechniqueRun: (runId) => set({ page: "technique", techniqueTab: "analyse", techniqueFocusRunId: runId }),
   setTechniqueFocusRun: (techniqueFocusRunId) => set({ techniqueFocusRunId }),

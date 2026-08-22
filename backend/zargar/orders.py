@@ -21,6 +21,7 @@ from .domain import OrderSide, OrderStatus, OrderType, TimeInForce, new_id
 from .events import Journal
 from .marketdata import QuoteCache
 from .models import Execution, Order
+from .options import occ
 from .portfolio import PositionKeeper
 from .risk import RiskGate
 
@@ -55,7 +56,15 @@ class OrderIntent(BaseModel):
     @field_validator("symbol")
     @classmethod
     def _sym(cls, v: str) -> str:
-        return v.strip().upper()
+        return occ.normalize(v)
+
+    @field_validator("sec_type")
+    @classmethod
+    def _st(cls, v: str) -> str:
+        v = (v or "STK").strip().upper()
+        if v not in ("STK", "ETF", "OPT", "CASH"):
+            raise ValueError(f"unsupported sec_type {v!r}")
+        return v
 
     @field_validator("side")
     @classmethod
@@ -95,9 +104,26 @@ def order_dict(o: Order) -> dict:
         "proposalId": o.proposal_id,
         "rejectReason": o.reject_reason,
         "bracket": o.bracket,
+        "option": _option_block(o.symbol) if o.sec_type == "OPT" else None,
         "createdAt": o.created_at.isoformat() if o.created_at else None,
         "updatedAt": o.updated_at.isoformat() if o.updated_at else None,
     }
+
+
+def _option_block(symbol: str) -> dict | None:
+    o = occ.parse(symbol)
+    return o.to_dict() if o else None
+
+
+def derive_option_action(side: str, position_qty: float, qty: float) -> str:
+    """BUY/SELL + current contract position -> the broker's open/close action.
+
+    A BUY against a short position closes (never flips in one order); a SELL
+    against a long position closes; anything else opens.
+    """
+    if side == "BUY":
+        return "BUY_TO_CLOSE" if position_qty < -1e-9 else "BUY_TO_OPEN"
+    return "SELL_TO_CLOSE" if position_qty > 1e-9 else "SELL_TO_OPEN"
 
 
 OPEN_STATUSES = (
@@ -130,6 +156,13 @@ class OrderManager:
         self._executor_for = executor_for
         self._ensure_symbol = ensure_symbol
         self._report_lock = asyncio.Lock()
+        # venue capability gate for option orders: portfolio_id -> (ok, reason);
+        # the engine points this at OptionsService.allows_options
+        self.option_gate: Callable[[str], tuple[bool, str]] | None = None
+
+    def option_action(self, portfolio_id: str, symbol: str, side: str, qty: float) -> str:
+        pos = self._positions.position_qty(portfolio_id, occ.normalize(symbol), "OPT")
+        return derive_option_action(side.upper(), pos, qty)
 
     # ------------------------------------------------------------------ place
     async def place(self, intent: OrderIntent) -> dict:
@@ -138,6 +171,18 @@ class OrderManager:
         if portfolio is None:
             raise ValueError(f"unknown portfolio: {intent.portfolio_id}")
 
+        is_option = intent.sec_type == "OPT"
+        if is_option and not occ.is_occ(intent.symbol):
+            raise ValueError(f"{intent.symbol!r} is not an OCC option symbol")
+        option_action = (
+            self.option_action(intent.portfolio_id, intent.symbol, intent.side, intent.qty)
+            if is_option else None)
+        if is_option and option_action.endswith("_TO_CLOSE"):
+            held = abs(self._positions.position_qty(intent.portfolio_id, intent.symbol, "OPT"))
+            if intent.qty > held + 1e-9:
+                raise ValueError(
+                    f"closing {intent.qty:g} contracts but only {held:g} held - "
+                    "split into a close and a separate open")
         order = Order(
             id=new_id(),
             portfolio_id=intent.portfolio_id,
@@ -159,8 +204,9 @@ class OrderManager:
             session.add(order)
             await session.commit()
         await self._journal.append(
-            ev.ORDER_INTENT_CREATED, order_dict(order),
+            ev.ORDER_INTENT_CREATED, {**order_dict(order), "optionAction": option_action},
             aggregate_type="order", aggregate_id=order.id, portfolio_id=order.portfolio_id)
+        extra_out = {"optionAction": option_action} if option_action else {}
 
         # ---- risk gate -----------------------------------------------------
         class _P:  # RiskGate expects .kind
@@ -174,7 +220,20 @@ class OrderManager:
             reason = "; ".join(c.detail or c.name for c in verdict.failures)
             return await self._transition(
                 order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
-                reject_reason=reason, extra={"risk": verdict.to_dict()})
+                reject_reason=reason, extra={"risk": verdict.to_dict(), **extra_out})
+
+        # Venue capability: only brokerages verified to accept option orders via
+        # SnapTrade get them (Wealthsimple returns code 1156 - never discover
+        # that with a real order). Checked before the dry-run short-circuit so
+        # the confirm dialog's pre-flight shows it.
+        if (is_option and portfolio.get("venue") == "snaptrade"
+                and portfolio["kind"] in ("live", "paper") and self.option_gate is not None):
+            ok, why = self.option_gate(intent.portfolio_id)
+            if not ok:
+                return await self._transition(
+                    order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
+                    reject_reason=f"options unavailable on this account: {why}",
+                    extra={"risk": verdict.to_dict(), **extra_out})
 
         # Venue capability check before the dry-run short-circuit so a
         # pre-flight dry run surfaces it in the confirm dialog too.
@@ -191,7 +250,7 @@ class OrderManager:
             est = self._estimate_price(intent)
             return await self._transition(
                 order.id, OrderStatus.DRY_RUN, ev.ORDER_DRY_RUN,
-                extra={"estimatedPrice": est, "risk": verdict.to_dict()})
+                extra={"estimatedPrice": est, "risk": verdict.to_dict(), **extra_out})
         # Dry runs never consume rate/duplicate budget (a confirm-dialog
         # pre-flight would otherwise block the real submit that follows).
         self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
@@ -211,13 +270,15 @@ class OrderManager:
                 order.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
                 reject_reason=f"no connected execution venue for '{kind}' portfolio")
 
-        result = await self._transition(order.id, OrderStatus.SUBMITTED, ev.ORDER_SUBMITTED)
+        result = await self._transition(order.id, OrderStatus.SUBMITTED, ev.ORDER_SUBMITTED,
+                                        extra=extra_out or None)
         await executor.submit(BrokerOrder(
             id=order.id, symbol=order.symbol, sec_type=order.sec_type,
             side=OrderSide(order.side), qty=order.qty,
             order_type=OrderType(order.order_type),
             limit_price=order.limit_price, stop_price=order.stop_price,
             tif=TimeInForce(order.tif), portfolio_id=order.portfolio_id,
+            option_action=option_action,
         ))
         return result
 
@@ -331,6 +392,9 @@ class OrderManager:
                 order_type="LMT", limit_price=tp, tif="GTC",
                 status=OrderStatus.SUBMITTED.value, source="bracket",
                 parent_id=parent.id, oca_group=oca))
+        child_action = None
+        if parent.sec_type == "OPT":
+            child_action = "SELL_TO_CLOSE" if long else "BUY_TO_CLOSE"
         if sl:
             children.append(Order(
                 id=new_id(), portfolio_id=parent.portfolio_id, symbol=parent.symbol,
@@ -355,7 +419,7 @@ class OrderManager:
                     order_type=OrderType(child.order_type),
                     limit_price=child.limit_price, stop_price=child.stop_price,
                     tif=TimeInForce(child.tif), oca_group=oca, parent_id=parent.id,
-                    portfolio_id=child.portfolio_id,
+                    portfolio_id=child.portfolio_id, option_action=child_action,
                 ))
 
     # ------------------------------------------------------------------ util

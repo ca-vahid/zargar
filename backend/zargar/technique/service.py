@@ -107,6 +107,9 @@ class TechniqueService:
         """CBOE by default — free, no credentials, reachable from Canada
         (Tradier's developer signup needs a US address). `technique.options.provider`
         can force tradier for anyone who does have a token."""
+        opts = getattr(self.engine, "options", None)
+        if opts is not None:
+            return opts.provider()
         pref = str(self.engine.settings.get("technique.options.provider", "cboe"))
         if pref == "tradier":
             t = self.tradier()

@@ -20,6 +20,7 @@ from .events import Journal
 from .fx import FxService, currency_for_symbol
 from .marketdata import QuoteCache
 from .models import BrokerageAccount, EquityPoint, Portfolio, Position
+from .options import occ
 
 ET = ZoneInfo("America/New_York")
 
@@ -111,8 +112,13 @@ class PositionKeeper:
         last = q.last if q and q.last > 0 else pos["avgCost"]
         mult = _mult(pos["secType"])
         unreal = (last - pos["avgCost"]) * pos["qty"] * mult
+        option = None
+        if pos["secType"] == "OPT":
+            o = occ.parse(pos["symbol"])
+            option = o.to_dict() if o else None
         return {
             **pos,
+            "option": option,
             "currency": self._pos_currency(pos),
             "last": round(last, 4),
             "marketValue": round(pos["qty"] * last * mult, 2),  # native currency

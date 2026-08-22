@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
 from .domain import OrderSide, OrderType
+from .options import occ
 
 ET = ZoneInfo("America/New_York")
 
@@ -118,7 +119,18 @@ class RiskGate:
 
         # 3. price collar -----------------------------------------------------
         collar = float(s.get("risk.price_collar_pct", 5.0))
-        if intent.limit_price and quote is not None and quote.last > 0:
+        if intent.limit_price and is_option and quote is not None and (quote.mid > 0 or quote.last > 0):
+            # options: measure against the mid (bid/ask is the market) and floor
+            # the tolerance at a few ticks — a 1-cent move on a 2-cent premium is
+            # "50%" yet entirely normal
+            ref = quote.mid if (quote.bid > 0 and quote.ask > 0) else quote.last
+            tol = max(ref * collar / 100, 0.05, (quote.ask - quote.bid) if quote.ask > quote.bid > 0 else 0.0)
+            dev = abs(float(intent.limit_price) - ref)
+            checks.append(RiskCheck(
+                "price_collar", dev <= tol + 1e-9,
+                f"limit {intent.limit_price} is {dev:.2f} from mid {ref:.2f} (max {tol:.2f})"
+                if dev > tol + 1e-9 else ""))
+        elif intent.limit_price and quote is not None and quote.last > 0:
             dev = abs(float(intent.limit_price) - quote.last) / quote.last * 100
             checks.append(RiskCheck(
                 "price_collar", dev <= collar,
@@ -156,6 +168,7 @@ class RiskGate:
             checks.append(RiskCheck(
                 "no_naked_short_option", not (goes_short and is_option),
                 "naked short options are blocked" if (goes_short and is_option) else ""))
+            checks.extend(self._option_checks(intent, quote, ref_price, qty, side, reduces))
 
         # 6/7. per-position and gross caps (only when increasing exposure) -----
         if ref_price and not reduces:
@@ -205,10 +218,55 @@ class RiskGate:
             "daily_loss_limit", not breached,
             f"daily P&L {loss_pct:.2f}% breaches -{halt_pct:.1f}% halt" if breached else ""))
 
-        # 11. market hours (live/paper only, if configured) ----------------------
-        if bool(s.get("risk.require_market_hours", False)) and portfolio.kind in ("live", "paper"):
+        # 11. market hours (live/paper only, if configured; options have no
+        #     extended session, so for them it is always enforced) ---------------
+        if portfolio.kind in ("live", "paper") and (
+                is_option or bool(s.get("risk.require_market_hours", False))):
             open_now = is_us_market_hours()
             checks.append(RiskCheck("market_hours", open_now,
                                     "outside regular trading hours" if not open_now else ""))
 
         return RiskVerdict(passed=all(c.passed for c in checks), checks=checks)
+
+    def _option_checks(self, intent, quote, ref_price, qty: float, side: OrderSide,
+                       reduces: bool) -> list[RiskCheck]:
+        """Contract-specific checks: expiry, size, absolute premium, spread."""
+        s = self._settings
+        out: list[RiskCheck] = []
+        o = occ.parse(intent.symbol)
+        out.append(RiskCheck("option_symbol", o is not None,
+                             "" if o else f"{intent.symbol} is not a valid OCC option symbol"))
+        if o is None:
+            return out
+        dte = o.dte()
+        if dte < 0:
+            out.append(RiskCheck("option_not_expired", False,
+                                 f"{o.display()} expired on {o.expiry.isoformat()}"))
+        elif dte == 0:
+            allow = bool(s.get("risk.allow_0dte", True))
+            out.append(RiskCheck("option_not_expired", allow,
+                                 "" if allow else "0DTE contracts disabled (risk.allow_0dte)"))
+        else:
+            out.append(RiskCheck("option_not_expired", True, ""))
+        max_contracts = int(s.get("risk.max_option_contracts", 10))
+        out.append(RiskCheck(
+            "option_max_contracts", qty <= max_contracts or reduces,
+            f"{qty:g} contracts exceeds per-order cap {max_contracts}"
+            if (qty > max_contracts and not reduces) else ""))
+        if side == OrderSide.BUY and ref_price and not reduces:
+            premium = qty * ref_price * 100.0
+            cap = float(s.get("risk.max_option_premium_notional", 1000.0))
+            out.append(RiskCheck(
+                "option_premium_notional", premium <= cap,
+                f"premium ${premium:,.0f} exceeds per-order cap ${cap:,.0f}" if premium > cap else ""))
+        if quote is not None and quote.bid > 0 and quote.ask > 0:
+            spread = quote.spread_pct
+            max_spread = float(s.get("risk.max_option_spread_pct", 10.0))
+            wide = spread > max_spread
+            is_mkt = intent.order_type == OrderType.MKT.value
+            out.append(RiskCheck(
+                "option_spread", not (wide and is_mkt),
+                (f"bid/ask spread {spread:.1f}% exceeds {max_spread:.0f}%"
+                 + (" - market order rejected, use a limit" if is_mkt else " (limit order, warning only)"))
+                if wide else ""))
+        return out

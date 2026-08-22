@@ -69,9 +69,13 @@ you trust the pipe. There is **no paper mode** on SnapTrade venues.
 - **DB migrations** (alembic) before any schema change — today the schema is
   `create_all`-only.
 
-### v0.3 — Options
-- Synthetic option chain in the sim + chain browser UI (expiry/strike grid),
-  single-leg tickets; IBKR option contracts (`Option(...)`) in the adapter.
+### v0.3 — Options (**plan: [OPTIONS-PLAN.md](./OPTIONS-PLAN.md)**)
+- Research done 2026-08-21: SnapTrade option orders work on **Webull Canada**
+  (verified with the broker-side impact preview on both accounts); Wealthsimple
+  is not supported (code 1156). Chains from CBOE (free, delayed), live contract
+  prices from Yahoo, OCC symbology, derived open/close, options risk checks,
+  Options page (strike ladder + ticket), SnapTrade single-leg executor, then
+  lifecycle/expiry, technique hand-off, multi-leg, IBKR — phased in the plan.
   Risk rules (premium cap, no naked shorts) and the 100× multiplier already exist.
 
 ### v0.4 — Account regime guards

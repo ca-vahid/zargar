@@ -82,10 +82,16 @@ export interface BrokerState {
   mode: string;
 }
 
+export interface OptionInfo {
+  symbol: string; underlying: string; expiry: string; strike: number; right: "C" | "P";
+  optionType: "call" | "put"; dte: number; display: string; short: string; multiplier: number;
+}
+
 export interface Position {
   portfolioId: string;
   symbol: string;
   secType: string;
+  option?: OptionInfo | null; // present for OPT positions
   qty: number;
   avgCost: number;
   realizedPnl: number;
@@ -113,6 +119,8 @@ export interface Order {
   source: string;
   parentId: string | null;
   rejectReason: string | null;
+  option?: OptionInfo | null; // present for OPT orders
+  optionAction?: string | null; // BUY_TO_OPEN … (API response only)
   createdAt: string;
 }
 
@@ -216,6 +224,35 @@ export interface Snapshot {
   broker: BrokerState;
 }
 
+
+// --- options -------------------------------------------------------------------
+export interface OptionExpiry { date: string; dte: number; is0dte: boolean; weekday: string }
+export interface OptionExpiries {
+  underlying: string; spot: number | null; prevClose: number | null; iv30: number | null;
+  expiries: OptionExpiry[]; provider: string; delayed: boolean;
+}
+export interface OptionCell {
+  symbol: string; bid: number; ask: number; mid: number; last: number | null; spreadPct: number | null;
+  volume: number; openInterest: number; iv: number | null; delta: number | null; gamma: number | null;
+  theta: number | null; vega: number | null; inTheMoney: boolean;
+}
+export interface OptionChainRow { strike: number; call: OptionCell | null; put: OptionCell | null }
+export interface OptionChain {
+  underlying: string; expiry: string; dte: number | null; spot: number | null; rows: OptionChainRow[];
+  asOf: number; provider: string; delayed: boolean;
+}
+export interface OptionContract extends OptionInfo, Partial<Omit<OptionCell, "symbol">> {
+  underlyingSpot: number | null; available: boolean; asOf?: number; quote: Quote | null;
+  provider: string; delayed: boolean;
+}
+export interface OptionCapability {
+  accountId: string; portfolioId: string | null; broker: string; allowlisted: boolean;
+  supported: boolean | null; probed: boolean; checkedAt: string | null; detail: string | null;
+}
+export interface OptionImpact {
+  estimatedCashChange?: number | null; direction?: string | null; estimatedFees?: number | null;
+  supported?: boolean | null; error?: string; code?: string | null;
+}
 
 // --- technique pipeline + chat ------------------------------------------------
 export interface TechniqueLevel {

@@ -32,6 +32,7 @@ class BrokerOrder:
     oca_group: str | None = None
     parent_id: str | None = None
     portfolio_id: str | None = None  # lets account-scoped venues (SnapTrade) resolve the account
+    option_action: str | None = None  # OPT only: BUY_TO_OPEN | BUY_TO_CLOSE | SELL_TO_OPEN | SELL_TO_CLOSE
 
 
 @dataclass(slots=True)

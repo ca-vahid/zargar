@@ -1,6 +1,7 @@
 import { memo, useMemo, useState } from "react";
 import { api } from "../lib/api";
 import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtSigned, fmtPct } from "../lib/format";
+import { parseOcc } from "../lib/occ";
 import { useAsync } from "../lib/useAsync";
 import { useQuote, useStore } from "../store";
 import type { Execution, Order, Position } from "../types";
@@ -70,14 +71,31 @@ const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
   const quote = useQuote(p.symbol);
   const portfolios = useStore((s) => s.portfolios);
   const openTrade = useStore((s) => s.openTrade);
+  const openOptions = useStore((s) => s.openOptions);
   const last = quote?.last ?? p.last ?? p.avgCost;
-  const mult = p.secType === "OPT" ? 100 : 1;
+  const isOpt = p.secType === "OPT";
+  const occ = isOpt ? parseOcc(p.symbol) : null;
+  const mult = isOpt ? 100 : 1;
   const unreal = (last - p.avgCost) * p.qty * mult;
   const pct = p.avgCost > 0 ? ((last / p.avgCost - 1) * 100) * Math.sign(p.qty) : 0;
+  const open = () => occ
+    ? openOptions({ contract: occ.symbol, side: p.qty > 0 ? "SELL" : "BUY", qty: Math.abs(p.qty), portfolioId: p.portfolioId })
+    : openTrade(p.symbol, p.portfolioId);
   return (
-    <tr onClick={() => openTrade(p.symbol, p.portfolioId)} style={{ cursor: "pointer" }}
-      title="Open in Trade with this account preselected">
-      <td className="sym-cell">{p.symbol}{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</td>
+    <tr onClick={open} style={{ cursor: "pointer" }}
+      title={occ ? `${occ.symbol} — open the option ticket to close this position` : "Open in Trade with this account preselected"}>
+      <td className="sym-cell">
+        {occ ? (
+          <>
+            {occ.display}
+            <span className={`opt-dte ${occ.dte < 0 ? "bad" : occ.dte <= 1 ? "warn" : ""}`}>
+              {occ.dte < 0 ? "expired" : occ.dte === 0 ? "0DTE" : `${occ.dte}d`}
+            </span>
+          </>
+        ) : (
+          <>{p.symbol}{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</>
+        )}
+      </td>
       <td className="muted">{portfolioName(portfolios, p.portfolioId)}</td>
       <td className="num">{fmtQty(p.qty)}</td>
       <td className="num">{fmtMoney(p.avgCost)}</td>
@@ -124,9 +142,10 @@ function PositionsTable({ scope }: { scope: Scope }) {
 function OrderRow({ o, cancellable }: { o: Order; cancellable: boolean }) {
   const portfolios = useStore((s) => s.portfolios);
   const toast = useStore((s) => s.toast);
+  const occ = o.secType === "OPT" ? parseOcc(o.symbol) : null;
   return (
-    <tr title={o.rejectReason ?? undefined}>
-      <td><b>{o.symbol}</b></td>
+    <tr title={o.rejectReason ?? (occ ? o.symbol : undefined)}>
+      <td><b>{occ ? occ.display : o.symbol}</b>{occ && <span className="muted"> opt</span>}</td>
       <td className={o.side === "BUY" ? "pos" : "neg"}>{o.side}</td>
       <td className="num">{fmtQty(o.filledQty)}/{fmtQty(o.qty)}</td>
       <td>{o.orderType}{o.source !== "manual" && <span className="muted"> · {o.source}</span>}</td>
@@ -228,7 +247,7 @@ function FillsTable({ scope }: { scope: Scope }) {
           <tbody>
             {merged.map((e) => (
               <tr key={e.id}>
-                <td><b>{e.symbol}</b></td>
+                <td><b>{parseOcc(e.symbol)?.display ?? e.symbol}</b></td>
                 <td className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</td>
                 <td className="num">{fmtQty(e.qty)}</td>
                 <td className="num">{fmtMoney(e.price)}</td>

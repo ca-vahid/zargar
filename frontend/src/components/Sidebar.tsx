@@ -7,6 +7,7 @@ import {
   IconDashboard,
   IconEdit,
   IconJournal,
+  IconOptions,
   IconPortfolios,
   IconSettings,
   IconSignals,
@@ -20,6 +21,7 @@ import { WatchRow } from "./WatchRow";
 const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "dashboard", label: "Dashboard", icon: <IconDashboard /> },
   { key: "trade", label: "Trade", icon: <IconTrade /> },
+  { key: "options", label: "Options", icon: <IconOptions /> },
   { key: "inbox", label: "Signals", icon: <IconSignals /> },
   { key: "technique", label: "Technique", icon: <IconTechnique /> },
   { key: "portfolios", label: "Portfolios", icon: <IconPortfolios /> },

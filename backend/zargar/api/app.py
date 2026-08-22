@@ -341,6 +341,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     from .routes_technique import build_technique_routes
     build_technique_routes(app, eng, auth, config)
 
+    from .routes_options import build_options_routes
+    build_options_routes(app, eng, auth, config)
+
     # --- static SPA -----------------------------------------------------------
     if config.frontend_dist and Path(config.frontend_dist).is_dir():
         dist = Path(config.frontend_dist)

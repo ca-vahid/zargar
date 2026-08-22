@@ -65,6 +65,21 @@ export const api = {
   watchSymbol: (symbol: string) => request<any>("POST", "/api/watch", { symbol }),
   updateWatchlist: (id: string, name: string, symbols: string[]) =>
     request<import("../types").Watchlist>("PUT", `/api/watchlists/${id}`, { name, symbols }),
+  // --- options ---
+  optionsExpiries: (underlying: string) =>
+    request<import("../types").OptionExpiries>("GET", `/api/options/${encodeURIComponent(underlying)}/expiries`),
+  optionsChain: (underlying: string, expiry: string) =>
+    request<import("../types").OptionChain>("GET",
+      `/api/options/${encodeURIComponent(underlying)}/chain?expiry=${encodeURIComponent(expiry)}`),
+  optionsQuote: (occ: string) =>
+    request<import("../types").OptionContract>("GET", `/api/options/quote/${encodeURIComponent(occ)}`),
+  optionsImpact: (body: { portfolio_id: string; symbol: string; side: string; qty: number;
+    order_type?: string; limit_price?: number | null }) =>
+    request<import("../types").OptionImpact>("POST", "/api/options/impact", body),
+  optionsCapabilities: () =>
+    request<{ accounts: import("../types").OptionCapability[] }>("GET", "/api/options/capabilities"),
+  optionsExpiring: (days = 2) =>
+    request<any[]>("GET", `/api/options/expiring?days=${days}`),
   // --- technique ---
   techniqueStatus: () => request<import("../types").TechniqueStatus>("GET", "/api/technique/status"),
   techniqueAnalyze: (body: { symbol: string; tf?: string; asOf?: number | null; note?: string;
