@@ -55,17 +55,23 @@ TRANSIENT_ERRORS = ("timeout", "connection", "temporarily", "rate limit", "503",
 class ArmConfig:
     portfolio_id: str
     mode: str = "proposal"           # alert | proposal | auto
-    risk_pct: float = 0.5            # % of equity risked per trade (R1: 0.5-1 %)
-    max_qty: float = 100.0           # hard cap on shares per entry
-    qty: float | None = None         # fixed size instead of risk sizing
+    instrument: str = "options"      # options (the book: just-OTM weekly / 0DTE, T5) | shares
+    contracts: int | None = 1        # options: fixed contracts (R5 one-contract rule); None = size by risk %
+    max_contracts: int = 5           # options: hard cap per entry
+    single_contract_exit: str = "tp2"  # options with < 3 contracts: exit everything at this target
+    risk_pct: float = 0.5            # % of equity risked per trade (R1: 0.5-1 %, 5 % hard cap)
+    max_qty: float = 100.0           # shares: hard cap per entry
+    qty: float | None = None         # shares: fixed size instead of risk sizing
     use_critic: bool = True
     allow_live: bool = False         # explicit acknowledgement for auto mode on a live portfolio
     flatten_minutes_before_close: int = 5
-    slippage_pct: float = 0.1        # entry limit = trigger price * (1 + slippage)
+    slippage_pct: float = 0.1        # shares: entry limit = trigger price * (1 + slippage)
     max_retries: int = 2
 
     def to_dict(self) -> dict:
-        return {"portfolioId": self.portfolio_id, "mode": self.mode, "riskPct": self.risk_pct,
+        return {"portfolioId": self.portfolio_id, "mode": self.mode, "instrument": self.instrument,
+                "contracts": self.contracts, "maxContracts": self.max_contracts,
+                "singleContractExit": self.single_contract_exit, "riskPct": self.risk_pct,
                 "maxQty": self.max_qty, "qty": self.qty, "useCritic": self.use_critic,
                 "allowLive": self.allow_live, "flattenMinutesBeforeClose": self.flatten_minutes_before_close,
                 "slippagePct": self.slippage_pct, "maxRetries": self.max_retries}
@@ -74,6 +80,11 @@ class ArmConfig:
     def from_dict(cls, d: dict) -> "ArmConfig":
         return cls(portfolio_id=str(d.get("portfolioId") or d.get("portfolio_id") or ""),
                    mode=str(d.get("mode") or "proposal"),
+                   instrument=str(d.get("instrument") or "options"),
+                   contracts=(int(d["contracts"]) if d.get("contracts") not in (None, "", 0) else
+                              (None if "contracts" in d and d.get("contracts") in (None, "") else 1)),
+                   max_contracts=int(d.get("maxContracts", d.get("max_contracts", 5)) or 5),
+                   single_contract_exit=str(d.get("singleContractExit", d.get("single_contract_exit", "tp2")) or "tp2"),
                    risk_pct=float(d.get("riskPct", d.get("risk_pct", 0.5)) or 0.5),
                    max_qty=float(d.get("maxQty", d.get("max_qty", 100)) or 100),
                    qty=(float(d["qty"]) if d.get("qty") else None),
@@ -117,6 +128,10 @@ class Trade:
     closed_ts: int | None = None
     fire_bar_index: int | None = None
     critic: dict | None = None
+    instrument: str = "shares"           # shares | options
+    contract: dict | None = None         # options: the picked contract (OCC symbol, strike, expiry, bid/ask, ...)
+    order_symbol: str | None = None      # what was actually bought (OCC symbol for options)
+    multiplier: float = 1.0              # 100 for options
 
     @property
     def open(self) -> bool:
@@ -124,16 +139,26 @@ class Trade:
 
     def to_dict(self) -> dict:
         risk = max(self.entry - self.stop, 1e-9)
-        unreal = ((self.last_price - (self.avg_fill or self.entry)) * self.remaining
-                  if self.last_price is not None and self.remaining > 0 and self.avg_fill else 0.0)
+        if self.instrument == "options":
+            # unrealised in $ from the contract's own quote is not tracked here; show premium at risk
+            unreal = 0.0
+        else:
+            unreal = ((self.last_price - (self.avg_fill or self.entry)) * self.remaining
+                      if self.last_price is not None and self.remaining > 0 and self.avg_fill else 0.0)
         return {"triggerId": self.trigger_id, "kind": self.kind, "firedTs": self.fired_ts, "window": self.window,
+                "instrument": self.instrument, "contract": self.contract, "orderSymbol": self.order_symbol,
+                "multiplier": self.multiplier,
                 "entry": self.entry, "stop": self.stop, "targets": self.targets, "status": self.status,
                 "reason": self.reason, "setupId": self.setup_id, "proposalId": self.proposal_id,
                 "entryOrderId": self.entry_order_id, "limitPrice": self.limit_price, "qty": self.qty,
                 "filledQty": self.filled_qty, "avgFill": self.avg_fill, "remaining": self.remaining,
                 "trimsDone": self.trims_done, "exits": list(self.exits), "realizedPnl": round(self.realized_pnl, 2),
-                "unrealizedPnl": round(unreal, 2), "realizedR": round(self.realized_pnl / (risk * self.filled_qty), 3)
-                if self.filled_qty else None, "lastPrice": self.last_price, "errors": list(self.errors),
+                "unrealizedPnl": round(unreal, 2),
+                "realizedR": (round(self.realized_pnl / (risk * self.filled_qty), 3)
+                              if self.filled_qty and self.instrument != "options" else None),
+                "premiumPaid": (round((self.avg_fill or 0) * self.filled_qty * self.multiplier, 2)
+                                if self.instrument == "options" and self.filled_qty else None),
+                "lastPrice": self.last_price, "errors": list(self.errors),
                 "retries": self.retries, "openedTs": self.opened_ts, "closedTs": self.closed_ts,
                 "critic": self.critic}
 
@@ -308,7 +333,35 @@ class PlanArmer:
             raise ValueError(f"riskPct must be in (0, {s.get('technique.max_risk_pct', 5.0)}] (R1)")
         if cfg.max_qty <= 0:
             raise ValueError("maxQty must be > 0")
+        if cfg.instrument not in ("options", "shares"):
+            raise ValueError("instrument must be 'options' or 'shares'")
+        if cfg.instrument == "options":
+            if cfg.contracts is not None and cfg.contracts < 1:
+                raise ValueError("contracts must be >= 1 (or empty to size by risk %)")
+            if cfg.max_contracts < 1:
+                raise ValueError("maxContracts must be >= 1")
+            if cfg.mode in ("auto", "proposal") and not bool(s.get("technique.options.enabled", True)):
+                raise ValueError("technique.options.enabled is off — switch the instrument to shares")
+            ok, why = self.options_capability(portfolio)
+            if cfg.mode == "auto" and not ok:
+                raise ValueError(f"this account cannot trade options here: {why}")
         return portfolio
+
+    def options_capability(self, portfolio: dict) -> tuple[bool, str]:
+        """Can option orders be routed for this account?"""
+        kind, venue = portfolio.get("kind"), portfolio.get("venue")
+        if kind in ("sim", "shadow"):
+            return True, "simulated fills from the delayed chain"
+        if venue == "snaptrade":
+            opts = getattr(self.engine, "options", None)
+            if opts is None:
+                return False, "options service not attached"
+            return opts.allows_options(portfolio["id"])
+        if venue == "ibkr":
+            ib = getattr(self.engine, "ibkr", None)
+            return (bool(ib is not None and getattr(ib, "connected", False)),
+                    "IBKR gateway connected" if (ib is not None and getattr(ib, "connected", False)) else "IBKR gateway not connected")
+        return False, "unknown venue"
 
     # ---------------------------------------------------------------- arm / disarm
     async def arm(self, run_id: str, config: ArmConfig | dict | None = None, *, restored: bool = False,
@@ -574,7 +627,7 @@ class PlanArmer:
                     x["filledQty"] = fq
                     x["price"] = o.get("avgFillPrice")
                     if tr.avg_fill and x.get("price") is not None:
-                        tr.realized_pnl += (float(x["price"]) - float(tr.avg_fill)) * (fq - prev)
+                        tr.realized_pnl += (float(x["price"]) - float(tr.avg_fill)) * (fq - prev) * tr.multiplier
                     tr.remaining = max(0.0, tr.filled_qty - sum(float(e.get("filledQty") or 0) for e in tr.exits))
                     self._log(ap, "exit_fill", f"{tid}: {x['kind']} filled {fq:g} @ {x.get('price')}, {tr.remaining:g} left",
                               trigger=tid, kind=x["kind"], qty=fq, price=x.get("price"))
@@ -692,7 +745,8 @@ class PlanArmer:
         cfg = ap.config
         trade = Trade(trigger_id=tid, kind=tr.kind, fired_ts=bar.ts, window=window, entry=float(tr.fill_price or tr.entry),
                       stop=tr.stop, targets=[float(t["price"]) for t in tr.trigger.get("targets") or []][:3],
-                      fire_bar_index=idx, last_price=bar.close)
+                      fire_bar_index=idx, last_price=bar.close, instrument=cfg.instrument,
+                      multiplier=100.0 if cfg.instrument == "options" else 1.0)
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid} {tr.kind} fired at {trade.entry:.2f} ({window})", trigger=tid, window=window)
         a = analysis_from_trigger(tr.trigger, ap.symbol, session_window=window)
@@ -748,17 +802,25 @@ class PlanArmer:
         elif cfg.mode == "proposal":
             pid = None
             try:
+                contract = None
+                if cfg.instrument == "options":
+                    contract = await self._pick_contract(ap, trade)
+                    if contract is None:
+                        trade.status = "failed"
+                        trade.reason = "no option contract available (see errors)"
                 setup_row = await self._setup_row(trade.setup_id)
-                if setup_row is not None:
-                    pid = await self.technique._emit_proposal(setup_row, a, portfolio_id=cfg.portfolio_id,
-                                                              risk_pct=cfg.risk_pct, max_qty=cfg.max_qty,
-                                                              fixed_qty=cfg.qty)
+                if setup_row is not None and trade.status != "failed":
+                    pid = await self.technique._emit_proposal(
+                        setup_row, a, portfolio_id=cfg.portfolio_id, risk_pct=cfg.risk_pct, max_qty=cfg.max_qty,
+                        fixed_qty=cfg.qty, contract=contract,
+                        contracts=(await self._size_contracts(ap, trade, contract) if contract else None))
             except Exception as exc:
                 log.exception("proposal emission failed")
                 trade.errors.append(f"proposal: {exc}")
             trade.proposal_id = pid
-            trade.status = "proposal" if pid else "failed"
-            trade.reason = "practice proposal created — approve it in Signals" if pid else "no proposal could be created"
+            if trade.status != "failed":
+                trade.status = "proposal" if pid else "failed"
+                trade.reason = ("proposal created — approve it in Signals" if pid else "no proposal could be created")
             self._log(ap, "proposal" if pid else "proposal_failed", f"{tid}: {trade.reason}", trigger=tid, proposalId=pid)
         else:
             await self._enter(ap, trade, tr, journal=journal)
@@ -793,29 +855,90 @@ class PlanArmer:
         qty = int(max(0, equity * cfg.risk_pct / 100 / per_share))
         return float(min(qty, cfg.max_qty))
 
+    async def _pick_contract(self, ap: ArmedPlan, trade: Trade) -> dict | None:
+        """T5: the just-OTM call, current-week Friday / 0DTE, from the live chain."""
+        try:
+            pick = await self.technique.option_pick(ap.symbol, "long", spot=float(trade.last_price or trade.entry))
+        except Exception as exc:
+            trade.errors.append(f"option chain: {exc}")
+            self._log(ap, "option_pick_failed", f"{trade.trigger_id}: option chain error {exc}", trigger=trade.trigger_id)
+            return None
+        if not pick or not pick.get("available") or not pick.get("symbol"):
+            why = (pick or {}).get("error") or "no contract just OTM"
+            trade.errors.append(f"option pick: {why}")
+            self._log(ap, "option_pick_failed", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id)
+            return None
+        trade.contract = {k: pick.get(k) for k in ("symbol", "display", "underlying", "expiry", "strike", "optionType",
+                                                    "bid", "ask", "mid", "spreadPct", "delta", "theta", "iv", "dte",
+                                                    "is0dte", "openInterest", "volume", "warnings", "provider")}
+        trade.order_symbol = pick["symbol"]
+        self._log(ap, "option_picked", f"{trade.trigger_id}: {pick.get('display') or pick['symbol']} "
+                  f"bid/ask {pick.get('bid')}/{pick.get('ask')}" + (f"; warnings: {'; '.join(pick.get('warnings') or [])}"
+                                                                    if pick.get("warnings") else ""),
+                  trigger=trade.trigger_id, contract=trade.contract)
+        with contextlib.suppress(Exception):
+            if getattr(self.engine, "options", None) is not None:
+                await self.engine.options.track(pick["symbol"])
+        return trade.contract
+
+    async def _size_contracts(self, ap: ArmedPlan, trade: Trade, contract: dict) -> int:
+        cfg = ap.config
+        if cfg.contracts:
+            return int(max(1, min(cfg.contracts, cfg.max_contracts)))
+        premium = float(contract.get("ask") or contract.get("mid") or 0) * 100.0
+        if premium <= 0:
+            return 1
+        equity = await self.engine.positions.equity(cfg.portfolio_id)
+        n = int(equity * cfg.risk_pct / 100 / premium)
+        return int(max(1, min(n, cfg.max_contracts)))
+
     async def _enter(self, ap: ArmedPlan, trade: Trade, tr: TriggerTracker, *, journal: bool) -> None:
         """Auto mode: place the entry order (write-ahead: intent journaled first;
-        OrderManager journals the risk verdict and routing)."""
+        OrderManager journals the risk verdict and routing). Options: buy the
+        just-OTM contract at the ask (the book buys the ask on a break, p. 31);
+        shares: limit at the trigger price + slippage."""
         from ..orders import OrderIntent
         cfg = ap.config
-        qty = await self._size(ap, trade)
-        if qty < 1:
-            trade.status = "skipped"
-            trade.reason = "size rounds to 0 shares at this risk % — not sent"
-            self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
-            return
-        limit = round(trade.entry * (1 + cfg.slippage_pct / 100), 2)
+        if cfg.instrument == "options":
+            contract = await self._pick_contract(ap, trade)
+            if contract is None:
+                trade.status = "failed"
+                trade.reason = "no option contract available — nothing sent"
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
+                    "error": trade.errors[-1] if trade.errors else "no contract"},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
+                return
+            qty = float(await self._size_contracts(ap, trade, contract))
+            limit = round(float(contract.get("ask") or contract.get("mid") or 0), 2)
+            if limit <= 0:
+                trade.status = "failed"
+                trade.reason = "contract has no ask price"
+                return
+            order_symbol, sec_type = contract["symbol"], "OPT"
+        else:
+            qty = await self._size(ap, trade)
+            if qty < 1:
+                trade.status = "skipped"
+                trade.reason = "size rounds to 0 shares at this risk % — not sent"
+                self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+                return
+            limit = round(trade.entry * (1 + cfg.slippage_pct / 100), 2)
+            order_symbol, sec_type = ap.symbol, "STK"
+            trade.order_symbol = ap.symbol
         trade.qty = qty
         trade.limit_price = limit
         trade.status = "submitting"
-        intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=ap.symbol, side="BUY", qty=qty,
-                             order_type="LMT", limit_price=limit, tif="DAY", source="technique")
+        intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=order_symbol, sec_type=sec_type, side="BUY",
+                             qty=qty, order_type="LMT", limit_price=limit, tif="DAY", source="technique")
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ORDER_INTENT, {
-            "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "side": "BUY", "qty": qty,
-            "limitPrice": limit, "entry": trade.entry, "stop": trade.stop, "targets": trade.targets,
-            "portfolioId": cfg.portfolio_id, "riskPct": cfg.risk_pct},
+            "runId": ap.run_id, "symbol": ap.symbol, "orderSymbol": order_symbol, "secType": sec_type,
+            "trigger": trade.trigger_id, "side": "BUY", "qty": qty, "limitPrice": limit, "entry": trade.entry,
+            "stop": trade.stop, "targets": trade.targets, "portfolioId": cfg.portfolio_id, "riskPct": cfg.risk_pct,
+            "contract": trade.contract},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-        self._log(ap, "entry_submit", f"{trade.trigger_id}: BUY {qty:g} LMT {limit:.2f}", trigger=trade.trigger_id)
+        self._log(ap, "entry_submit", f"{trade.trigger_id}: BUY {qty:g} {'contract(s) ' + (trade.contract or {}).get('display', order_symbol) if sec_type == 'OPT' else 'sh'} LMT {limit:.2f}",
+                  trigger=trade.trigger_id)
         result = await self._place_with_retry(ap, trade, intent, stage="entry")
         if result is None:
             return
@@ -891,6 +1014,15 @@ class PlanArmer:
             return
         if tr.trims_done < len(tr.targets) and bar.high >= tr.targets[tr.trims_done]:
             k = tr.trims_done
+            if tr.instrument == "options" and tr.filled_qty < 3:
+                # too few contracts to ladder: exit everything at the configured target
+                want = {"tp1": 0, "tp2": 1, "tp3": 2}.get(ap.config.single_contract_exit, 1)
+                if k >= want:
+                    await self._exit(ap, tr, f"tp{k + 1}", tr.remaining, journal=True)
+                    tr.trims_done = len(tr.targets)
+                else:
+                    tr.trims_done += 1
+                return
             share = LADDER_TRIMS[k] if k < len(LADDER_TRIMS) else 1.0
             qty = float(int(round(tr.filled_qty * share)))
             qty = min(qty, tr.remaining)
@@ -906,8 +1038,16 @@ class PlanArmer:
         if qty < 1 or tr.remaining <= 0:
             return
         cfg = ap.config
-        intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=ap.symbol, side="SELL", qty=qty,
-                             order_type="MKT", tif="DAY", source="technique")
+        if tr.instrument == "options" and tr.order_symbol:
+            # sell at the bid (marketable limit) when we have a quote; MKT otherwise
+            q = self.engine.quotes.get(tr.order_symbol)
+            bid = float(q.bid) if q is not None and q.bid > 0 else 0.0
+            intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=tr.order_symbol, sec_type="OPT", side="SELL",
+                                 qty=qty, order_type="LMT" if bid > 0 else "MKT",
+                                 limit_price=(round(bid, 2) if bid > 0 else None), tif="DAY", source="technique")
+        else:
+            intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=ap.symbol, side="SELL", qty=qty,
+                                 order_type="MKT", tif="DAY", source="technique")
         rec = {"kind": kind, "qty": qty, "orderId": None, "status": None, "filledQty": 0.0, "price": None,
                "ts": int(time.time() * 1000)}
         tr.exits.append(rec)

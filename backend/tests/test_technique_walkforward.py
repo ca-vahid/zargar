@@ -423,7 +423,7 @@ async def test_arming_fires_trigger_and_persists_setup(rig):
     close_ts = session_bounds(rig.close_day)[1]
     run = await rig.svc.analyze("TEST", as_of_ms=close_ts, wait=True)
     plan_for = run["result"]["plan"]["planFor"]
-    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm")).json()
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm", json={"instrument": "shares"})).json()
     assert armed["runId"] == run["id"] and armed["planFor"] == plan_for and armed["triggers"]
     assert (await rig.client.get("/api/technique/armed")).json()[0]["runId"] == run["id"]
     # feed the planned session's bars by hand (the bus would do this live)

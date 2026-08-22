@@ -1258,3 +1258,25 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-thumbs a { display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: var(--fs-0); color: var(--text-2); text-decoration: none; }
 .tq-thumbs img { width: 180px; height: auto; border: 1px solid var(--border); border-radius: 4px; }
 .tq-analyst { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+
+/* --- arm dialog (wide) ------------------------------------------------------------- */
+.modal.modal-wide { width: min(860px, 96vw); max-width: 96vw; }
+.tq-arm-block { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+.tq-arm-h { font-weight: 700; letter-spacing: 0.02em; margin-bottom: 8px; }
+.tq-arm-rows { display: flex; flex-direction: column; gap: 6px; }
+.tq-arm-row { display: grid; grid-template-columns: 18px 1fr; gap: 10px; align-items: start; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.tq-arm-row.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tq-arm-row.live.active { border-color: var(--down); background: color-mix(in srgb, var(--down) 8%, transparent); }
+.tq-arm-row > span { display: flex; flex-direction: column; gap: 2px; }
+.tq-arm-row b { font-size: var(--fs-2); }
+.tq-arm-accounts { display: flex; flex-direction: column; gap: 6px; }
+.tq-arm-account { display: grid; grid-template-columns: 18px 26px 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.tq-arm-account.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tq-arm-account.live.active { border-color: var(--down); }
+.tq-arm-venue { display: inline-flex; width: 22px; height: 22px; border-radius: 50%; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; background: var(--surface-3); }
+.tq-arm-acct-main { display: flex; flex-direction: column; }
+.tq-arm-acct-name { font-weight: 600; }
+.tq-arm-acct-cash { display: flex; flex-direction: column; align-items: flex-end; }
+.tq-arm-size { flex-wrap: wrap; margin-top: 8px; align-items: flex-end; }
+.tq-arm-hint { flex-basis: 100%; line-height: 1.45; }
+.tq-armed-contract { font-size: var(--fs-1); margin-bottom: 4px; }

@@ -29,9 +29,17 @@ function TradeRow({ t }: { t: ArmedTrade }) {
         {t.status === "open" && <span className={`tq-badge ${pnlCls(t.unrealizedPnl)}`}>open {fmt(t.unrealizedPnl)} unreal.</span>}
         {t.status === "closed" && <span className={`tq-badge ${(t.realizedPnl ?? 0) >= 0 ? "setup" : "failed"}`}>{(t.realizedPnl ?? 0) >= 0 ? "+" : ""}{fmt(t.realizedPnl)} ({t.realizedR ?? "—"}R)</span>}
       </div>
+      {t.contract && (
+        <div className="tq-armed-contract">
+          <b>{t.contract.display ?? t.contract.symbol}</b> · {t.contract.is0dte ? "0DTE" : `exp ${t.contract.expiry}`} · strike {fmt(t.contract.strike)} · bid/ask {fmt(t.contract.bid)}/{fmt(t.contract.ask)}
+          {t.contract.delta !== undefined && t.contract.delta !== null ? ` · Δ ${t.contract.delta}` : ""}{t.contract.iv ? ` · IV ${t.contract.iv}` : ""}
+          {t.contract.warnings?.length ? <span className="neg"> · {t.contract.warnings.join("; ")}</span> : null}
+        </div>
+      )}
       <div className="tq-plan tq-armed-nums">
-        <div className="tq-plan-cell"><small>Entry</small><b>{fmt(t.avgFill ?? t.entry)}</b><span>{t.avgFill ? "filled" : `plan ${fmt(t.entry)}${t.limitPrice ? ` · limit ${fmt(t.limitPrice)}` : ""}`}</span></div>
-        <div className="tq-plan-cell"><small>Size</small><b>{t.filledQty || t.qty || "—"}</b><span>{t.remaining ? `${t.remaining} left` : t.qty ? "shares" : ""}</span></div>
+        <div className="tq-plan-cell"><small>{t.instrument === "options" ? "Premium" : "Entry"}</small><b>{fmt(t.avgFill ?? (t.instrument === "options" ? t.limitPrice : t.entry))}</b>
+          <span>{t.instrument === "options" ? `underlying trigger ${fmt(t.entry)}${t.premiumPaid ? ` · paid ${fmt(t.premiumPaid)}` : ""}` : t.avgFill ? "filled" : `plan ${fmt(t.entry)}${t.limitPrice ? ` · limit ${fmt(t.limitPrice)}` : ""}`}</span></div>
+        <div className="tq-plan-cell"><small>Size</small><b>{t.filledQty || t.qty || "—"}</b><span>{t.instrument === "options" ? (t.remaining ? `${t.remaining} contract(s) left` : "contract(s)") : t.remaining ? `${t.remaining} left` : t.qty ? "shares" : ""}</span></div>
         <div className="tq-plan-cell"><small>Stop</small><b className="neg">{fmt(t.stop)}</b><span>sell all if hit</span></div>
         <div className="tq-plan-cell"><small>Next target</small><b className="pos">{nextTp !== undefined ? fmt(nextTp) : "runner"}</b><span>{t.trimsDone}/{t.targets.length} trims done</span></div>
         <div className="tq-plan-cell"><small>Realized</small><b className={pnlCls(t.realizedPnl)}>{fmt(t.realizedPnl)}</b><span>{t.exits.length} exit(s)</span></div>
@@ -67,6 +75,7 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
         <span className={`tq-badge ${a.config.mode === "auto" ? (live ? "failed" : "setup") : "nosetup"}`} title="execution mode">
           {a.config.mode === "auto" ? (live ? "AUTO · REAL" : "AUTO · practice") : a.config.mode.toUpperCase()}
         </span>
+        <span className="tq-badge nosetup" title="instrument">{a.config.instrument === "options" ? `OPTIONS · ${a.config.contracts ?? "risk-sized"} ct` : "SHARES"}</span>
         <span className="tq-badge nosetup" title="account">{a.portfolio.name ?? a.portfolio.id} · {a.portfolio.kind?.toUpperCase()}</span>
         <span className={`tq-badge ${a.status === "armed" ? "setup" : a.status === "paused" ? "failed" : "nosetup"}`}>{a.status.toUpperCase()}</span>
         {a.stale && <span className="tq-badge failed">STALE DATA</span>}

@@ -380,6 +380,7 @@ full audit trail. `technique/arming.py` (`PlanArmer`, `ArmConfig`, `ArmedPlan`, 
 | Piece | Behaviour |
 |---|---|
 | **Account** | `ArmConfig.portfolio_id` is required (default `technique.arm.default_portfolio` → `trading.default_portfolio`); the dashboard shows account name / kind (SIM, PAPER, LIVE) / venue on every card. |
+| **Instrument** | `options` (default — the book's expression, T5) or `shares`. Options: at the trigger the armer asks `technique.option_pick` for the **just-OTM call** (this Friday / 0DTE by the T5 rules), BUYs it LMT **at the ask** (`OrderIntent(sec_type="OPT")`), tracks the OCC symbol for quotes, and manages the position on the *underlying's* 1m bars (stop / targets are still price levels on the stock); exits SELL LMT at the bid (MKT fallback), P&L is premium × 100. `contracts` (default 1 — R5 one-contract rule; empty → size by risk % of the premium, capped by `maxContracts`); with **fewer than 3 contracts** the position is not trimmed 30/40/15 — it exits in full at `singleContractExit` (`tp1`/`tp2`/`tp3`, default TP2). No contract (no chain, `.TO`, no strike just OTM) → the trade fails cleanly, nothing is sent. Shares keep the R1 sizing (risk % of equity ÷ per-share risk, capped by `maxQty`, or fixed `qty`). |
 | **Modes** | `alert` — setup row + journal, nothing sent. `proposal` — practice proposal in Signals (RiskGate on approval), sized from `riskPct` / `maxQty` / fixed `qty`. `auto` — BUY LMT at trigger price × (1 + `slippagePct`) through `OrderManager.place()` (write-ahead intent, RiskGate, venue routing), then the position is **managed on closed 1m bars**: stop first, 30/40/15 trims at the targets (MKT), runner, **flatten `flattenMinutesBeforeClose` before the close**; entry unfilled after `plan_entry_window_bars` is cancelled (T4.1). |
 | **Real money gate** | `auto` on a live/paper account needs **three** things: `technique.arm.allow_live_auto=true`, `trading.mode=live`, and the per-arm acknowledgement `allowLive=true` (the dialog shows a red "REAL MONEY" panel). Practice accounts never need it. |
 | **Safety** | kill switch → touches are logged as `halt` skips, nothing fires; `paused` → watching only, open positions still managed; **stale data** (no closed bar for `technique.arm.stale_seconds` in-session) → flagged, no firing; every order still passes `RiskGate.evaluate()`; one exit per bar per trade; no overnight holds. |
@@ -395,13 +396,23 @@ mechanical replay verdict per trigger (fired when / stop or targets / R, or why 
 carries a review *form*; reviews are recorded from chat (`record_review` tool, with `get_run`
 to read a run), the CLI, or the `/technique-review` skill, and the page lists them.
 
-API: `GET /api/technique/armed`, `/armed/options` (accounts + defaults + gates), `/armed/history`,
-`/armed/{id}`, `/armed/{id}/audit`; `POST /runs/{id}/arm {portfolioId, mode, riskPct, maxQty, qty,
-useCritic, allowLive, flattenMinutesBeforeClose, slippagePct}`; `DELETE /runs/{id}/arm?flatten=`;
+API: `GET /api/technique/armed`, `/armed/options` (accounts with cash + `optionsOk` / `optionsNote`,
+defaults, gates, `optionsProvider`), `/armed/history`, `/armed/{id}`, `/armed/{id}/audit`;
+`POST /runs/{id}/arm {portfolioId, mode, instrument, contracts, maxContracts, singleContractExit,
+riskPct, maxQty, qty, useCritic, allowLive, flattenMinutesBeforeClose, slippagePct}`; `DELETE /runs/{id}/arm?flatten=`;
 `POST /armed/{id}/pause|resume`; `POST /armed/stop-all?flatten=`; `POST /arm-today`.
-Settings: `technique.arm.*` (`mode`, `default_portfolio`, `risk_pct`, `max_qty`, `allow_live_auto`,
+Settings: `technique.arm.*` (`mode`, `instrument`, `contracts`, `max_contracts`, `single_contract_exit`,
+`default_portfolio`, `risk_pct`, `max_qty`, `allow_live_auto`,
 `slippage_pct`, `flatten_minutes_before_close`, `max_retries`, `stale_seconds`, `use_critic`,
 `auto_symbols`, `enabled`). Tests: `backend/tests/test_technique_arming.py`.
+
+**Arm dialog (2026-08-22):** wide modal, three numbered blocks — **1 Account** (broker icon, venue,
+REAL / PRACTICE, options ✓/✗, available cash), **2 Instrument** (Options — the book's way — vs
+Shares, with contract / sizing hints: R5, the <3-contracts exit rule, what "risk % of equity (R1)"
+means and the shares it works out to for the best trigger), **3 Mode** (Alert / Proposal / Auto, one
+row each with a one-line description), then flatten / critic, the red REAL MONEY panel when the
+account is live, and the kill-switch warning. The page is titled **EM Options Technique** and the
+first tab **EM Options · Analyse** so it is clear the technique trades options, not shares.
 
 **Known limits (honest):** exits are evaluated on *closed* 1-minute bars (a stop can be hit
 intra-bar and sold one bar later, at market); trims are market orders; there is no

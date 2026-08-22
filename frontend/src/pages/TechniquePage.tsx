@@ -546,13 +546,13 @@ export function TechniquePage() {
   return (
     <div className="tq-page">
       <div className="tq-title-row">
-        <h2 className="page-title">Technique <span className="muted">· EnhancedMarket</span></h2>
+        <h2 className="page-title">EM Options Technique <span className="muted">· EnhancedMarket method · just-OTM weeklies / 0DTE</span></h2>
         <StatusBar status={status} onScan={() => api.techniqueScan().then(() => refreshStatus()).catch((e) => toast("error", e.message))} />
       </div>
       <div className="tabs tq-tabs">
         {(["analyse", "chat", "history", "backtest", "validation", "armed"] as const).map((t) => (
           <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-            {t === "analyse" ? "Analyse" : t === "chat" ? "Chat" : t === "history" ? "History" : t === "backtest" ? "Backtest"
+            {t === "analyse" ? "EM Options · Analyse" : t === "chat" ? "Chat" : t === "history" ? "History" : t === "backtest" ? "Backtest"
               : t === "validation" ? "Validation" : <>Armed{armedCount > 0 ? <span className="tq-tab-count">{armedCount}</span> : null}</>}
           </button>
         ))}

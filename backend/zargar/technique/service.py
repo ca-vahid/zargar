@@ -841,7 +841,8 @@ class TechniqueService:
 
     async def _emit_proposal(self, setup: TechniqueSetup, a, *, portfolio_id: str | None = None,
                              risk_pct: float | None = None, max_qty: float | None = None,
-                             fixed_qty: float | None = None) -> str | None:
+                             fixed_qty: float | None = None, contract: dict | None = None,
+                             contracts: int | None = None) -> str | None:
         """A proposal the user approves in the Signals page; approval routes
         through OrderManager → RiskGate like every other order. Returns the
         proposal id (None when no portfolio could take it). Armed plans pass the
@@ -862,6 +863,35 @@ class TechniqueService:
             qty = max(1, int(fixed_qty))
         if max_qty:
             qty = max(1, min(qty, int(max_qty)))
+        if contract and contract.get("symbol"):
+            # the book's expression: the just-OTM contract, bought at the ask (T5)
+            prem = float(contract.get("ask") or contract.get("mid") or 0)
+            n = int(contracts or 1)
+            ttl = int(eng.settings.get("signals.default_ttl_minutes", 30))
+            row = Proposal(
+                id=new_id(), signal_id=None, portfolio_id=pid, symbol=contract["symbol"], sec_type="OPT", side="BUY",
+                qty=float(n), order_type="LMT", limit_price=round(prem, 2) if prem > 0 else None, bracket=None,
+                rationale=(a.rationale or "")[:500],
+                context={"sourceName": "technique", "confidence": a.confidence,
+                         "technique": {"setupId": setup.id, "runId": setup.run_id, "setupType": setup.setup_type,
+                                       "rules": setup.rules, "underlying": {"entry": setup.entry, "stop": setup.stop,
+                                                                            "targets": setup.targets}},
+                         "contract": contract, "sizing": {"contracts": n, "premium": prem, "riskPct": risk_pct,
+                                                          "notional": round(prem * 100 * n, 2)}},
+                expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=ttl))
+            async with eng.sf() as session:
+                session.add(row)
+                s = await session.get(TechniqueSetup, setup.id)
+                if s is not None:
+                    s.proposal_id = row.id
+                    s.status = "proposed"
+                await session.commit()
+            from ..approvals.proposals import proposal_dict
+            pd = proposal_dict(row)
+            await eng.journal.append(ev.PROPOSAL_CREATED, pd, aggregate_type="proposal",
+                                     aggregate_id=row.id, portfolio_id=pid)
+            eng.bus.publish(topics.PROPOSALS, pd)
+            return row.id
         ttl = int(eng.settings.get("signals.default_ttl_minutes", 30))
         row = Proposal(
             id=new_id(), signal_id=None, portfolio_id=pid, symbol=setup.symbol, side="BUY",
@@ -1314,18 +1344,31 @@ class TechniqueService:
                  "updatedAt": r.updated_at.isoformat() if r.updated_at else None} for r in rows]
 
     def arm_options(self) -> dict:
-        """What the Arm dialog needs: accounts, defaults, and the live/auto gate state."""
+        """What the Arm dialog needs: accounts (with cash + options capability),
+        defaults, and the live/auto gate state."""
         s = self.engine.settings
+        ports = []
+        for p in self.engine.positions.portfolios():
+            ok, why = self.armer.options_capability(p)
+            ports.append({**{k: p.get(k) for k in ("id", "name", "kind", "venue", "baseCurrency", "cash", "isDefault",
+                                                   "sourceName")},
+                          "optionsOk": ok, "optionsNote": why})
         return {
-            "portfolios": [{k: p.get(k) for k in ("id", "name", "kind", "venue", "baseCurrency", "cash", "isDefault")}
-                           for p in self.engine.positions.portfolios()],
+            "portfolios": ports,
             "defaults": {"portfolioId": str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
                          "mode": str(s.get("technique.arm.mode", "proposal")),
+                         "instrument": str(s.get("technique.arm.instrument", "options")),
+                         "contracts": int(s.get("technique.arm.contracts", 1)),
+                         "maxContracts": int(s.get("technique.arm.max_contracts", 5)),
+                         "singleContractExit": str(s.get("technique.arm.single_contract_exit", "tp2")),
                          "riskPct": float(s.get("technique.arm.risk_pct", 0.5)),
+                         "maxRiskPct": float(s.get("technique.max_risk_pct", 5.0)),
                          "maxQty": float(s.get("technique.arm.max_qty", 100)),
                          "useCritic": bool(s.get("technique.arm.use_critic", True)),
                          "flattenMinutesBeforeClose": int(s.get("technique.arm.flatten_minutes_before_close", 5)),
                          "slippagePct": float(s.get("technique.arm.slippage_pct", 0.1))},
+            "optionsEnabled": bool(s.get("technique.options.enabled", True)),
+            "optionsProvider": getattr(self.options_provider(), "name", "?"),
             "tradingMode": str(s.get("trading.mode", "practice")),
             "allowLiveAuto": bool(s.get("technique.arm.allow_live_auto", False)),
             "enabled": bool(s.get("technique.arm.enabled", True)),

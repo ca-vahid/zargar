@@ -343,20 +343,29 @@ export interface WalkforwardRow {
   promotedRunId: string | null; createdAt: string | null;
 }
 export interface ArmConfig {
-  portfolioId: string; mode: "alert" | "proposal" | "auto" | string; riskPct: number; maxQty: number; qty: number | null;
+  portfolioId: string; mode: "alert" | "proposal" | "auto" | string; instrument: "options" | "shares" | string;
+  contracts: number | null; maxContracts: number; singleContractExit: string;
+  riskPct: number; maxQty: number; qty: number | null;
   useCritic: boolean; allowLive: boolean; flattenMinutesBeforeClose: number; slippagePct: number; maxRetries: number;
 }
 export interface ArmRequest {
-  portfolioId?: string; mode?: "alert" | "proposal" | "auto"; riskPct?: number; maxQty?: number; qty?: number;
+  portfolioId?: string; mode?: "alert" | "proposal" | "auto"; instrument?: "options" | "shares";
+  contracts?: number; maxContracts?: number; singleContractExit?: string;
+  riskPct?: number; maxQty?: number; qty?: number;
   useCritic?: boolean; allowLive?: boolean; flattenMinutesBeforeClose?: number; slippagePct?: number;
 }
 export interface ArmOptions {
-  portfolios: { id: string; name: string; kind: string; venue?: string; baseCurrency?: string; cash?: number; isDefault?: boolean }[];
-  defaults: { portfolioId: string; mode: string; riskPct: number; maxQty: number; useCritic: boolean; flattenMinutesBeforeClose: number; slippagePct: number };
+  portfolios: { id: string; name: string; kind: string; venue?: string; baseCurrency?: string; cash?: number; isDefault?: boolean;
+    sourceName?: string | null; optionsOk: boolean; optionsNote: string }[];
+  defaults: { portfolioId: string; mode: string; instrument: string; contracts: number; maxContracts: number; singleContractExit: string;
+    riskPct: number; maxRiskPct: number; maxQty: number; useCritic: boolean; flattenMinutesBeforeClose: number; slippagePct: number };
+  optionsEnabled: boolean; optionsProvider: string;
   tradingMode: string; allowLiveAuto: boolean; enabled: boolean; llmAvailable: boolean; halt: any; emitProposals: boolean;
 }
 export interface ArmedTrade {
   triggerId: string; kind: string; firedTs: number; window: string; entry: number; stop: number; targets: number[]; status: string;
+  instrument?: string; contract?: { symbol: string; display?: string; strike?: number; expiry?: string; bid?: number; ask?: number; delta?: number; iv?: number; is0dte?: boolean; warnings?: string[] } | null;
+  orderSymbol?: string | null; multiplier?: number; premiumPaid?: number | null;
   reason: string; setupId: string | null; proposalId: string | null; entryOrderId: string | null; limitPrice: number | null;
   qty: number; filledQty: number; avgFill: number | null; remaining: number; trimsDone: number;
   exits: { kind: string; qty: number; orderId: string | null; status: string | null; filledQty: number; price: number | null; error?: string }[];

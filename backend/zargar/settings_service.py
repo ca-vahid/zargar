@@ -139,6 +139,10 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
     "technique.arm.mode": "proposal",          # default execution mode: alert | proposal | auto
+    "technique.arm.instrument": "options",     # the book trades just-OTM weeklies / 0DTE (T5); "shares" is the alternative
+    "technique.arm.contracts": 1,              # R5: one contract per trade while the technique is validated
+    "technique.arm.max_contracts": 5,          # hard cap per entry (RiskGate has its own caps too)
+    "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
     "technique.arm.risk_pct": 0.5,             # R1: % of equity risked per entry
     "technique.arm.max_qty": 100,              # hard cap on shares per entry

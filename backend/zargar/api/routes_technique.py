@@ -147,6 +147,10 @@ def build_technique_routes(app, eng, auth, config) -> None:
     class ArmBody(BaseModel):
         portfolioId: str | None = None
         mode: str | None = None            # alert | proposal | auto
+        instrument: str | None = None      # options | shares
+        contracts: int | None = None       # options: fixed contracts (R5); omit to size by risk %
+        maxContracts: int | None = None
+        singleContractExit: str | None = None
         riskPct: float | None = None
         maxQty: float | None = None
         qty: float | None = None

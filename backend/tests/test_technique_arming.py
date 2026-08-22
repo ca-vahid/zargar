@@ -129,7 +129,7 @@ async def test_arm_options_and_config_validation(rig):
         assert r.status_code == 400 and "allow_live_auto" in r.json()["detail"]
     # risk % outside R1 cap
     r = await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
-                              json={"mode": "auto", "portfolioId": rig.sim["id"], "riskPct": 9})
+                              json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"], "riskPct": 9})
     assert r.status_code == 400 and "riskPct" in r.json()["detail"]
     # a full (non-plan) run cannot be armed
     r = await rig.client.post("/api/technique/runs/does-not-exist/arm", json={})
@@ -141,7 +141,7 @@ async def test_arm_options_and_config_validation(rig):
 async def test_auto_mode_full_lifecycle_entry_trims_stop(rig):
     run = await _plan_run(rig)
     armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
-                                   json={"mode": "auto", "portfolioId": rig.sim["id"], "riskPct": 1.0,
+                                   json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"], "riskPct": 1.0,
                                          "maxQty": 50, "slippagePct": 1.0})).json()
     assert armed["status"] == "armed" and armed["config"]["mode"] == "auto" and armed["portfolio"]["kind"] == "sim"
     assert armed["summary"].startswith("watching")
@@ -208,7 +208,7 @@ async def test_auto_mode_full_lifecycle_entry_trims_stop(rig):
 async def test_auto_mode_flattens_before_close_and_disarm_flatten(rig):
     run = await _plan_run(rig)
     armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
-                                   json={"mode": "auto", "portfolioId": rig.sim["id"], "qty": 5, "slippagePct": 1.0,
+                                   json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"], "qty": 5, "slippagePct": 1.0,
                                          "flattenMinutesBeforeClose": 5})).json()
     plan_for = armed["planFor"]
     bars = rig.sessions[plan_for]
@@ -276,7 +276,7 @@ async def test_pause_resume_halt_and_stop_all(rig):
 async def test_proposal_mode_creates_practice_proposal(rig):
     run = await _plan_run(rig)
     await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
-                          json={"mode": "proposal", "portfolioId": rig.sim["id"], "riskPct": 1.0, "maxQty": 20})
+                          json={"mode": "proposal", "instrument": "shares", "portfolioId": rig.sim["id"], "riskPct": 1.0, "maxQty": 20})
     plan_for = (await rig.client.get("/api/technique/armed")).json()[0]["planFor"]
     snap, _ = await _feed_until(rig, run["id"], rig.sessions[plan_for], lambda s: bool(s["trades"]))
     tr = snap["trades"][0]
@@ -316,3 +316,118 @@ async def test_arm_config_roundtrip():
     c = ArmConfig.from_dict({"portfolioId": "p", "mode": "auto", "riskPct": 0.75, "maxQty": 10, "allowLive": True})
     assert c.to_dict()["riskPct"] == 0.75 and c.allow_live and c.max_qty == 10
     assert ArmConfig.from_dict(c.to_dict()) == c
+
+
+# --- options instrument (the book's expression) ------------------------------------------------------
+
+OCC = "TEST260828C00101000"
+
+
+async def _fake_pick(rig, monkeypatch, *, ask=2.50, bid=2.40):
+    await rig.eng.settings.set("technique.options.enabled", True, journal=False)   # the pick is faked, no chain call
+    async def pick(symbol, direction="long", *, spot=None):
+        return {"available": True, "symbol": OCC, "display": "TEST 28AUG26 101C", "underlying": "TEST", "expiry": "2026-08-28",
+                "strike": 101.0, "optionType": "call", "bid": bid, "ask": ask, "mid": round((bid + ask) / 2, 2), "spreadPct": 4.0,
+                "delta": 0.45, "theta": -0.08, "iv": 0.55, "dte": 5, "is0dte": False, "openInterest": 1200, "volume": 300,
+                "warnings": [], "provider": "fake", "chainSize": 40}
+    monkeypatch.setattr(rig.svc, "option_pick", pick)
+    if getattr(rig.eng, "options", None) is not None:
+        async def track(symbol):
+            return None
+        monkeypatch.setattr(rig.eng.options, "track", track)
+
+
+async def _opt_quote(rig, bid: float, ask: float):
+    q = Quote(symbol=OCC, bid=bid, ask=ask, last=round((bid + ask) / 2, 2), bid_size=500, ask_size=500, volume=1000)
+    # the sim feed only ticks the underlying, so publish twice: once for the risk gate /
+    # working order, once more after the sim executor's 120ms latency so the LMT can fill
+    for _ in range(2):
+        q.ts = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+        rig.eng.quotes.on_quote(q)      # cache (risk gate) + bus (sim executor fills)
+        await asyncio.sleep(0.2)
+
+
+async def test_arm_options_lists_accounts_with_cash_and_options_capability(rig):
+    opts = (await rig.client.get("/api/technique/armed/options")).json()
+    sim = next(p for p in opts["portfolios"] if p["kind"] == "sim")
+    assert sim["optionsOk"] is True and "cash" in sim and opts["defaults"]["instrument"] == "options"
+    assert opts["defaults"]["contracts"] == 1 and opts["optionsProvider"]
+
+
+async def test_auto_options_one_contract_lifecycle(rig, monkeypatch):
+    await _fake_pick(rig, monkeypatch)
+    await rig.eng.settings.set("risk.max_option_premium_notional", 100000.0, journal=False)
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "auto", "instrument": "options", "contracts": 1,
+                                         "portfolioId": rig.sim["id"], "singleContractExit": "tp2"})).json()
+    assert armed["config"]["instrument"] == "options" and armed["config"]["contracts"] == 1
+    plan_for = armed["planFor"]
+    bars = rig.sessions[plan_for]
+    b1 = next(t for t in armed["triggers"] if t["kind"] == "bounce")
+    entry, stop, targets = b1["entry"], b1["stop"], b1["targets"]
+    async def q(bar):
+        await _quote(rig, bar.close)
+        await _opt_quote(rig, 2.40, 2.50)
+    snap, i = await _feed_until(rig, run["id"], bars, lambda s: any(t["kind"] == "bounce" for t in s["trades"]), quote_fn=q)
+    tr = next(t for t in snap["trades"] if t["kind"] == "bounce")
+    assert tr["status"] in ("working", "open"), (tr["status"], tr["reason"], tr["errors"], snap["events"][-6:])
+    assert tr["instrument"] == "options" and tr["contract"]["symbol"] == OCC and tr["qty"] == 1 and tr["limitPrice"] == 2.5
+    await _opt_quote(rig, 2.40, 2.50)          # ask <= limit -> fills
+    def _bt():
+        d = rig.svc.armer.detail(run["id"]) or {}
+        return next((t for t in d.get("trades", []) if t["kind"] == "bounce"), {})
+    await wait_for(lambda: _bt().get("status") == "open", timeout=5)
+    tr = _bt()
+    assert tr["filledQty"] == 1 and tr["premiumPaid"] == pytest.approx(250.0, abs=1) and tr["orderSymbol"] == OCC
+    orders = await rig.eng.orders.list_orders(rig.sim["id"])
+    assert any(o["secType"] == "OPT" and o["symbol"] == OCC and o["side"] == "BUY" and o["status"] == "FILLED" for o in orders)
+    # TP1 on the underlying: a single contract does NOT trim (exit is at TP2)
+    tp1_bar = Bar(symbol="TEST", tf="1m", ts=bars[i].ts, open=entry, high=targets[0] + 0.05, low=entry - 0.01, close=targets[0], volume=1000)
+    await rig.svc.armer.on_bar(run["id"], tp1_bar)
+    assert _bt()["exits"] == [] and _bt()["trimsDone"] == 1
+    # TP2 on the underlying -> sell the contract at the bid (LMT), option now worth more
+    await _opt_quote(rig, 4.10, 4.20)
+    tp2_bar = Bar(symbol="TEST", tf="1m", ts=bars[i + 1].ts, open=targets[0], high=targets[1] + 0.05, low=targets[0], close=targets[1], volume=1000)
+    await rig.svc.armer.on_bar(run["id"], tp2_bar)
+    await _opt_quote(rig, 4.10, 4.20)
+    await wait_for(lambda: _bt().get("status") == "closed", timeout=5)
+    tr = _bt()
+    assert [e["kind"] for e in tr["exits"]] == ["tp2"] and tr["remaining"] == 0
+    assert tr["realizedPnl"] == pytest.approx((4.10 - 2.50) * 100, abs=2)       # premium move x 100
+    audit = (await rig.client.get(f"/api/technique/armed/{run['id']}/audit")).json()
+    intent = next(e for e in audit if e["type"] == "TechniquePlanOrderIntent")
+    assert intent["payload"]["secType"] == "OPT" and intent["payload"]["contract"]["symbol"] == OCC
+
+
+async def test_auto_options_without_a_contract_fails_cleanly(rig, monkeypatch):
+    async def pick(symbol, direction="long", *, spot=None):
+        return {"available": False, "error": "no call just OTM at 2026-08-28", "provider": "fake"}
+    monkeypatch.setattr(rig.svc, "option_pick", pick)
+    await rig.eng.settings.set("technique.options.enabled", True, journal=False)
+    run = await _plan_run(rig)
+    await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                          json={"mode": "auto", "instrument": "options", "contracts": 1, "portfolioId": rig.sim["id"]})
+    plan_for = (await rig.client.get("/api/technique/armed")).json()[0]["planFor"]
+    async def q(bar):
+        await _quote(rig, bar.close)
+    snap, _ = await _feed_until(rig, run["id"], rig.sessions[plan_for], lambda s: bool(s["trades"]), quote_fn=q)
+    tr = snap["trades"][0]
+    assert tr["status"] == "failed" and "no option contract" in tr["reason"] and any("no call just OTM" in e for e in tr["errors"])
+    assert not await rig.eng.orders.list_orders(rig.sim["id"])
+
+
+async def test_proposal_options_carries_the_contract(rig, monkeypatch):
+    await _fake_pick(rig, monkeypatch)
+    run = await _plan_run(rig)
+    await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                          json={"mode": "proposal", "instrument": "options", "contracts": 2, "portfolioId": rig.sim["id"]})
+    plan_for = (await rig.client.get("/api/technique/armed")).json()[0]["planFor"]
+    snap, _ = await _feed_until(rig, run["id"], rig.sessions[plan_for], lambda s: bool(s["trades"]))
+    tr = snap["trades"][0]
+    assert tr["status"] == "proposal" and tr["proposalId"] and tr["contract"]["symbol"] == OCC
+    from zargar.models import Proposal
+    async with rig.eng.sf() as session:
+        p = await session.get(Proposal, tr["proposalId"])
+    assert p.sec_type == "OPT" and p.symbol == OCC and p.qty == 2 and p.limit_price == 2.5
+    assert p.context["contract"]["strike"] == 101.0 and p.context["sizing"]["notional"] == 500.0

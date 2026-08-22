@@ -10,12 +10,14 @@ export function Modal({
   children,
   footer,
   dismissable = true,
+  wide = false,
 }: {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
   dismissable?: boolean;
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -60,7 +62,7 @@ export function Modal({
       }}
     >
       <div
-        className="modal"
+        className={`modal ${wide ? "modal-wide" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

@@ -258,6 +258,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
             {isArmed && <button className="ghost-btn" onClick={() => setTab("armed")}>Open armed dashboard</button>}
             {armOpen && (
               <ArmDialog symbol={plan.symbol} planFor={plan.planFor} onClose={() => setArmOpen(false)}
+                bestTrigger={(() => { const v = plan.triggers.filter((t) => t.valid); if (!v.length) return null; const b = v.reduce((a, t) => (t.confidence > a.confidence ? t : a)); return { id: b.id, entry: b.entry.price, stop: b.stop.price, riskReward: b.riskReward }; })()}
                 onArm={async (req) => { const a = await api.techniqueArm(run.id, req); toast("success", `Armed ${a.symbol} — ${a.config.mode} on ${a.portfolio.name ?? a.portfolio.id}`); onRefresh?.(); }} />
             )}
             {run.threadId && <button className="ghost-btn" onClick={() => openChat(run.threadId!)}>Discuss in chat</button>}

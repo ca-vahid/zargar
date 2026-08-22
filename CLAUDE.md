@@ -120,6 +120,12 @@ docker-compose.
   `technique.options.provider` + `ZARGAR_TRADIER_TOKEN`). CBOE is US listings
   only — `.TO`/`.V` symbols have no chain there.
 - Technique settings (`technique.*`, `llm.*`) are UI-editable.
+- Armed plans default to the **options** instrument (just-OTM call via
+  `technique.option_pick`, BUY LMT at ask, SELL at bid, P&L × 100, <3 contracts
+  exit in full at TP2); tests that only need share fills must arm with
+  `"instrument": "shares"`. Option quotes reach the risk gate only through
+  `engine.quotes.on_quote()` (not a bare bus publish), and the sim executor
+  needs a quote *after* its 120 ms latency to fill — publish twice.
 - SnapTrade options (verified 2026-08-21, `snaptrade_options_check`): orders go
   to `POST /accounts/{id}/trading/options` with **space-padded 21-char OCC**
   symbols (`"F     260828C00014500"`), actions `BUY_TO_OPEN`… and **string**
