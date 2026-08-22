@@ -56,11 +56,12 @@ function dateToAsOfMs(date: string): number {
   return ms;
 }
 
-const PRESETS: { label: string; get: () => string }[] = [
-  { label: "Today", get: () => "" },
-  { label: "Prev session", get: () => toDateInput(previousBusinessDay()) },
-  { label: "−2 days", get: () => toDateInput(previousBusinessDay(new Date(), 2)) },
-  { label: "−1 week", get: () => toDateInput(previousBusinessDay(new Date(), 5)) },
+// The as-of moment. The lookback (5 sessions of 1m, 15 of 30m, 25 of 1h) is always
+// applied behind it; a plan is always for the *next* session, so only "now" and "the
+// last close" matter day to day — the date box is for checking one specific past close.
+const PRESETS: { label: string; get: () => string; title: string }[] = [
+  { label: "Now", get: () => "", title: "Live: analyse the current bar (a plan for the next session if the market is closed)" },
+  { label: "Last close", get: () => toDateInput(previousBusinessDay()), title: "As of the last session's 16:00 ET close: the plan for the next session" },
 ];
 
 // --- status header -------------------------------------------------------------------
@@ -143,7 +144,7 @@ function AnalyseForm({ onStarted, disabled, running }: {
   const summary = [
     symbol.toUpperCase() || "—",
     tf,
-    date ? `as of ${date}` : "latest",
+    date ? `as of ${date} close` : "now",
     image ? "+ image" : null,
     note ? "+ note" : null,
   ].filter(Boolean).join(" · ");
@@ -168,20 +169,20 @@ function AnalyseForm({ onStarted, disabled, running }: {
                 onPick={(h) => setSymbol(h.symbol)} />
             </div>
             <div className="tq-ctl tq-ctl--date">
-              <span className="tq-ctl-label">Period</span>
+              <span className="tq-ctl-label">As of</span>
               <div className="tq-date-row">
-                <div className="tq-presets" role="group" aria-label="Period preset">
+                <div className="tq-presets" role="group" aria-label="As-of preset">
                   {PRESETS.map((p) => {
                     const v = p.get();
                     return (
                       <button key={p.label} type="button" className={date === v ? "active" : ""}
-                        onClick={() => setDate(v)}
-                        title={v ? `Session ending ${v}` : "Latest data"}>{p.label}</button>
+                        onClick={() => setDate(v)} title={p.title}>{p.label}</button>
                     );
                   })}
                 </div>
                 <input type="date" value={date} max={toDateInput(new Date())}
-                  onChange={(e) => setDate(e.target.value)} aria-label="Session date" />
+                  onChange={(e) => setDate(e.target.value)} aria-label="A specific session close"
+                  title="Or a specific past close (16:00 ET) — to check what the plan for the following day would have been" />
               </div>
             </div>
             <button className="primary-btn tq-run" disabled={busy || disabled || running || (!symbol.trim() && !image)}
@@ -197,7 +198,7 @@ function AnalyseForm({ onStarted, disabled, running }: {
               {note ? "Note ✓" : "Note to analyst"}
             </button>
             <DisclosureHead open={advOpen} onToggle={toggleAdv} level="sub">Advanced</DisclosureHead>
-            <span className="tq-cost muted">{date ? "past session → builds a plan for the next session (deterministic, free)" : "paste or drop an image anywhere · ~4 passes · ≈$0.20"}</span>
+            <span className="tq-cost muted">{date ? `as of the ${date} close → the plan for the next session (deterministic, free); always looks back 5/15/25 sessions from there` : "paste or drop an image anywhere · ~4 passes · ≈$0.20"}</span>
           </div>
 
           {image && (
