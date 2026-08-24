@@ -1562,3 +1562,6 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-scan-grades .tq-chipbtn { display: inline-flex; align-items: center; gap: 6px; }
 .tq-scan-armall { margin-left: auto; }
 .tq-scan-panel .panel-head .tq-head-right { margin-left: 8px; }
+.tq-scan-dialog .warn { color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
+.tq-scan-stale { opacity: 0.85; }
+.tq-scan-stale > span { display: flex; flex-direction: column; gap: 6px; }

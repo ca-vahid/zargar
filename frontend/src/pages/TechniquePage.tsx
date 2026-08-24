@@ -650,6 +650,7 @@ export function TechniquePage() {
   const scanSymbols = status?.scanSymbols ?? [];
   // tonight's sheet, if one exists for the upcoming session: scan can analyst-check its graded rows
   const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;
+    freshness: "next" | "today" | "stale";
     rows: { symbol: string; session: string; grade: string }[] } | null | undefined>(undefined);
   const [scanSource, setScanSource] = useState<"sheet" | "watch">("sheet");
   const [scanGrades, setScanGrades] = useState<Set<string>>(new Set(["A"]));
@@ -660,9 +661,8 @@ export function TechniquePage() {
     (async () => {
       try {
         const sweeps = await api.techniqueSweeps();
-        const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
-        const sheet = sweeps.find((s) => s.params?.kind === "next" && s.status === "done"
-          && String(s.params?.planFor ?? s.summary?.planFor ?? "") >= todayEt);
+        // newest prepared sheet, whatever its date — the dialog explains if it is stale
+        const sheet = sweeps.find((s) => s.params?.kind === "next" && s.status === "done");
         if (!sheet) { if (!stop) { setSheetScan(null); setScanSource("watch"); } return; }
         const fullSheet = await api.techniqueSweep(sheet.id, true);
         const rows = (fullSheet.rows ?? []).map((r) => {
@@ -672,8 +672,18 @@ export function TechniquePage() {
           return { symbol: r.symbol, session: r.session, grade: String(best.assessment?.grade ?? "C") };
         }).filter(Boolean) as { symbol: string; session: string; grade: string }[];
         if (!stop) {
-          setSheetScan(rows.length ? { sweepId: sheet.id, planFor: String(sheet.params?.planFor ?? "") , rows } : null);
-          setScanSource(rows.length ? "sheet" : "watch");
+          const planFor = String(sheet.params?.planFor ?? sheet.summary?.planFor ?? "");
+          const et = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", hour12: false,
+          }).formatToParts(new Date());
+          const get = (t: string) => et.find((p) => p.type === t)?.value ?? "";
+          const todayEt = `${get("year")}-${get("month")}-${get("day")}`;
+          const pastClose = Number(get("hour")) * 60 + Number(get("minute")) >= 16 * 60;
+          const freshness: "next" | "today" | "stale" =
+            planFor > todayEt ? "next" : planFor === todayEt && !pastClose ? "today" : "stale";
+          setSheetScan(rows.length ? { sweepId: sheet.id, planFor, rows, freshness } : null);
+          setScanSource(rows.length && freshness !== "stale" ? "sheet" : "watch");
         }
       } catch { if (!stop) { setSheetScan(null); setScanSource("watch"); } }
     })();
@@ -732,11 +742,19 @@ export function TechniquePage() {
           </>}>
           <div className="tq-scan-dialog">
             {sheetScan === undefined && <div className="muted"><Spinner /> checking for tonight's sheet…</div>}
-            {sheetScan && (
+            {sheetScan && sheetScan.freshness !== "stale" && (
               <label className={`tq-arm-row ${scanSource === "sheet" ? "active" : ""}`}>
                 <input type="radio" name="scan-src" checked={scanSource === "sheet"} onChange={() => setScanSource("sheet")} />
                 <span>
-                  <b>Tonight's sheet — analyst-check the graded setups for {sheetScan.planFor}</b>
+                  <b>Prepared sheet — analyst-check the graded setups for {sheetScan.planFor}
+                    {sheetScan.freshness === "today" ? " (TODAY)" : ""}</b>
+                  {sheetScan.freshness === "today" && (
+                    <span className="warn small">
+                      ⚠ This sheet is for TODAY: arming from it covers only the rest of today's session —
+                      triggers fire in the remaining prime window(s) and every plan expires flat at the
+                      16:00 ET close. For tomorrow, build a fresh sheet in Validation after today's close.
+                    </span>
+                  )}
                   <span className="muted">
                     Runs the 4-pass analyst read on each symbol's own plan run — the same run you arm, so grade,
                     analyst verdict and the Arm button end up in one place. Pick which grades:
@@ -753,10 +771,26 @@ export function TechniquePage() {
                 </span>
               </label>
             )}
+            {sheetScan && sheetScan.freshness === "stale" && (
+              <div className="tq-arm-row disabled tq-scan-stale">
+                <span>
+                  <b>Prepared sheet for {sheetScan.planFor} — expired</b>
+                  <span className="muted">
+                    That session is over, so its plans can't be analyst-checked or armed any more. Build a fresh
+                    sheet for the next session (free, deterministic), then come back here.
+                  </span>
+                  <span>
+                    <button className="ghost-btn" onClick={() => { setScanConfirm(false); setTab("validation"); }}>
+                      Prepare the next session in Validation →
+                    </button>
+                  </span>
+                </span>
+              </div>
+            )}
             {sheetScan === null && (
               <div className="muted small">
-                No prepared sheet for the upcoming session — build one first in Validation → "Prepare the next
-                session" (free, deterministic) to analyst-check graded setups instead of a flat watch list.
+                No prepared sheet found — build one first in Validation → "Prepare the next session"
+                (free, deterministic) to analyst-check graded setups instead of a flat watch list.
               </div>
             )}
             <label className={`tq-arm-row ${scanSource === "watch" ? "active" : ""}`}>
