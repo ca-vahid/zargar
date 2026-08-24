@@ -1570,3 +1570,5 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-badge.warnbadge { background: color-mix(in srgb, var(--warn) 16%, transparent); color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
 .tq-status .tq-scan-btn { padding: 4px 14px; font-weight: 700; }
 .tq-wf-today-note { margin-top: 6px; color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
+.tq-scan-table td { vertical-align: middle; }
+.tq-scan-table tr.clickable { cursor: pointer; }

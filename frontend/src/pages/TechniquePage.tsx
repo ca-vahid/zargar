@@ -155,46 +155,77 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
         )}
         <button className="icon-btn tq-head-right" onClick={onClose} aria-label="Dismiss scan results"><IconX /></button>
       </div>
-      <div className="panel-body tq-scan-rows">
-        {ids.map((id) => {
-          const r = rows.find((x) => x.id === id);
-          const fr = full[id];
-          const best = bestTrigger(fr);
-          return (
-            <span key={id} className="tq-scan-row" role="button" tabIndex={0} onClick={() => r && onOpen(r.id)}
-              onKeyDown={(e) => { if (e.key === "Enter" && r) onOpen(r.id); }} title={r ? "Open this run" : ""}>
-              <b>{r?.symbol ?? id.slice(0, 8)}</b>
-              {!r || r.status === "running" ? <span className="muted"><Spinner /> analysing…</span> : armable ? (
-                <>
-                  {best ? <GradeChip a={best.assessment} valid /> : <span className="muted small">no armable trigger</span>}
-                  {fr ? (
-                    fr.result?.analysis
-                      ? <span className={analystOk(fr) ? "pos small" : "muted small"}
-                          title={analystOk(fr)
-                            ? "The analyst read the same charts and agrees a conditional setup is worth watching"
-                            : `The analyst read the same charts and would stand aside. Its first reason: ${fr.result.analysis.noTradeReasons?.[0] ?? "(none given)"} — open the run for the full read. You can still arm the graded trigger; the analyst's view is advice, not a gate.`}>
-                          analyst {analystOk(fr) ? `✓ ${(fr.result.analysis.confidence ?? 0).toFixed(2)}` : "✗ would stand aside"}
-                        </span>
-                      : <span className="muted small">no analyst read</span>
-                  ) : <span className="muted small"><Spinner /></span>}
-                  {best && (isArmed(id)
-                    ? <span className="tq-badge setup">ARMED</span>
-                    : <button className="tq-act next" disabled={!!armBusy[id]}
-                        onClick={(e) => { e.stopPropagation(); void armOne(id, r.symbol); }}
-                        title="Arm this plan with your default account/mode (nothing fires until its conditions are met)">
-                        {armBusy[id] ? "…" : "⚡ arm"}
-                      </button>)}
-                </>
-              ) : (
-                <>
-                  <VerdictBadge run={r} />
-                  {r.verdict !== "setup" && <span className="muted small">nothing tradeable at this moment</span>}
-                </>
-              )}
-            </span>
-          );
-        })}
-      </div>
+      {armable ? (
+        <div className="panel-body" style={{ padding: 0 }}>
+          <div className="tq-table-wrap">
+            <table className="tq-table tq-scan-table">
+              <thead><tr><th>Symbol</th><th title="Deterministic validity grade of the best trigger">Grade</th>
+                <th title="The 4-pass model read of the same plan — advice, not a gate">Analyst</th>
+                <th>Setup</th><th>Entry</th><th>Stop</th><th>Targets</th>
+                <th title="Reward-to-risk of the graded trigger">R:R</th><th aria-label="actions" /></tr></thead>
+              <tbody>
+                {ids
+                  .map((id) => ({ id, r: rows.find((x) => x.id === id), fr: full[id] }))
+                  .sort((a, b) => (Number(analystOk(b.fr)) - Number(analystOk(a.fr)))
+                    || ((bestTrigger(b.fr)?.assessment?.score ?? -1) - (bestTrigger(a.fr)?.assessment?.score ?? -1)))
+                  .map(({ id, r, fr }) => {
+                    const best = bestTrigger(fr);
+                    const running = !r || r.status === "running";
+                    const fp = (n: any) => (typeof n === "number" ? n.toFixed(2) : "—");
+                    return (
+                      <tr key={id} className="clickable" onClick={() => r && onOpen(r.id)} title={r ? "Open this run" : ""}>
+                        <td className="nowrap"><b>{r?.symbol ?? id.slice(0, 8)}</b>{running && <span className="muted"> <Spinner /></span>}</td>
+                        <td>{best ? <GradeChip a={best.assessment} valid /> : running ? null : <span className="muted small">none</span>}</td>
+                        <td className="nowrap">{running ? <span className="muted small">analysing…</span>
+                          : fr?.result?.analysis
+                            ? <span className={analystOk(fr) ? "pos" : "muted"}
+                                title={analystOk(fr)
+                                  ? "The analyst read the plan and endorses this trigger"
+                                  : `Would stand aside. First reason: ${fr.result.analysis.noTradeReasons?.[0] ?? "(none)"} — open the run for the full read. Advice, not a gate.`}>
+                                {analystOk(fr) ? `✓ ${(fr.result.analysis.confidence ?? 0).toFixed(2)}` : "✗ stand aside"}
+                              </span>
+                            : fr ? <span className="muted small">no read</span> : <span className="muted small"><Spinner /></span>}</td>
+                        <td>{best ? <span className={`tq-badge ${best.kind === "bounce" ? "setup" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : "WEDGE"}</span> : null}</td>
+                        <td className="nowrap">{best ? <>{fp(best.entry?.price)} <span className="muted small">{best.entry?.basis === "on_break" ? "on break" : "at level"}</span></> : "—"}</td>
+                        <td className="nowrap neg">{best ? fp(best.stop?.price) : "—"}</td>
+                        <td className="nowrap small">{best ? (best.targets ?? []).slice(0, 3).map((t: any, i: number) =>
+                          <span key={i}>{i > 0 && <span className="tq-sep"> / </span>}<span className="pos">{fp(t.price)}</span></span>) : "—"}</td>
+                        <td>{best ? <b>{typeof best.riskReward === "number" ? best.riskReward.toFixed(1) : "—"}</b> : "—"}</td>
+                        <td className="nowrap tq-arm-cell" onClick={(e) => e.stopPropagation()}>
+                          {best && (isArmed(id)
+                            ? <span className="tq-badge setup">ARMED</span>
+                            : <button className="tq-act next" disabled={!!armBusy[id]}
+                                onClick={() => void armOne(id, r!.symbol)}
+                                title="Arm this plan with your default account/mode (nothing fires until its conditions are met)">
+                                {armBusy[id] ? "…" : "⚡ arm"}
+                              </button>)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : (
+        <div className="panel-body tq-scan-rows">
+          {ids.map((id) => {
+            const r = rows.find((x) => x.id === id);
+            return (
+              <span key={id} className="tq-scan-row" role="button" tabIndex={0} onClick={() => r && onOpen(r.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" && r) onOpen(r.id); }} title={r ? "Open this run" : ""}>
+                <b>{r?.symbol ?? id.slice(0, 8)}</b>
+                {!r || r.status === "running" ? <span className="muted"><Spinner /> analysing…</span> : (
+                  <>
+                    <VerdictBadge run={r} />
+                    {r.verdict !== "setup" && <span className="muted small">nothing tradeable at this moment</span>}
+                  </>
+                )}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -684,7 +715,19 @@ export function TechniquePage() {
   const running = shown?.status === "running";
 
   const [scanConfirm, setScanConfirm] = useState(false);
-  const [scan, setScan] = useState<{ ids: string[]; done: boolean; armable?: boolean } | null>(null);
+  // survives F5: an in-flight or finished scan keeps its panel until dismissed
+  const [scan, setScan] = useState<{ ids: string[]; done: boolean; armable?: boolean } | null>(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem("zargar_tq_scan") || "null");
+      if (s && Array.isArray(s.ids) && s.ids.length && Date.now() - (s.ts ?? 0) < 86_400_000)
+        return { ids: s.ids, done: !!s.done, armable: !!s.armable };
+    } catch { /* corrupt state — start clean */ }
+    return null;
+  });
+  useEffect(() => {
+    if (scan) localStorage.setItem("zargar_tq_scan", JSON.stringify({ ...scan, ts: Date.now() }));
+    else localStorage.removeItem("zargar_tq_scan");
+  }, [scan]);
   const scanSymbols = status?.scanSymbols ?? [];
   // tonight's sheet, if one exists for the upcoming session: scan can analyst-check its graded rows
   const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;

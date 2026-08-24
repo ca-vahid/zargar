@@ -115,6 +115,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.scan.rth_only": True,
     "technique.scan.windows": ["prime_open", "prime_close"],   # R6.1/R6.2 (when enforced)
     "technique.max_runs_per_day": 40,
+    "technique.max_concurrent_runs": 8,     # scan-now / bulk analyst-check parallelism (takes effect on restart)
     # --- technique review loop (docs/TECHNIQUE-REVIEW-PLAN.md) -------------
     "technique.outcome.enabled": True,        # score what price did after each run
     "technique.outcome.horizon_bars": 60,     # bars after as_of to walk forward
