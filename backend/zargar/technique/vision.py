@@ -277,7 +277,14 @@ class VisionPipeline:
                         "PASS 4 of 4 — CRITIC. Your job is to KILL this setup if it deserves it. "
                         "Check every fakeout tell (T3.3d-f), the higher-timeframe read (T3.3g), volume "
                         "(T2.6, R3.1), chop (R3.2), R:R (R2), and whether the entry is chased (T4.1). "
-                        "Be adversarial; a surviving setup must earn it.\n\nDRAFT:\n"
+                        "Be adversarial; a surviving setup must earn it.\n"
+                        "Two things are NEVER violations: (1) in PLAN MODE (see the context below) the "
+                        "setup is conditional on the NEXT session's prime windows — the current session "
+                        "window / market-closed is not a reason to kill (R6 gates execution, not plans); "
+                        "(2) targets at 40/75/100% of the way to the next opposing level are the method's "
+                        "own trim points (T4.4a) — interpolated trims are not fabricated prices.\n"
+                        + (f"\nCONTEXT GIVEN TO THE ANALYST:\n{user_note}\n" if user_note else "")
+                        + "\nDRAFT:\n"
                         + json.dumps(analysis.model_dump(), indent=1)
                         + f"\n\nFACTS:\n{facts_txt}")},
                 ], CriticVerdict)

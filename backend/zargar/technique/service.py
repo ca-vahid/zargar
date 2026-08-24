@@ -624,6 +624,10 @@ class TechniqueService:
                             "session is NOT a reason: every trigger is already conditional on the next session's prime "
                             "windows, so do not cite R6.3/R6.4 against them. Do not emit a fill; set plan_mode=true.\n\n")
                         result = await vp.run(facts, imgs, user_image=image, user_note=preamble + (note or ""))
+                        # Plan-mode facts are deterministic; never trust the model to set them.
+                        if result.analysis is not None:
+                            result.analysis.plan_mode = True
+                            result.analysis.session_window = facts.get("sessionWindow") or "extended"
                     else:
                         result = PipelineResult(analysis=None, grounding={"passed": None, "checks": [],
                                                                            "note": "plan mode: deterministic, no model passes"},
