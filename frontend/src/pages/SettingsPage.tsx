@@ -247,8 +247,12 @@ export function SettingsPage() {
             <NumberRow k="technique.default_risk_pct" label="Analysis risk sizing (%)" step={0.25}
               hint="sizing the pipeline assumes when judging a setup (book: 0.5-1%) — armed plans size with their own knob below" />
             <NumberRow k="technique.max_risk_pct" label="Max risk per trade (%)" step={0.5} hint="book: 5% ceiling" />
+            <NumberRow k="technique.max_stop_pct" label="Max stop distance (%)" step={0.5}
+              hint="T4.3a/R1 — widest chart-justified stop as % of entry; wider setups are skipped" />
             <NumberRow k="technique.level_tolerance_pct" label="Level touch tolerance (%)" step={0.05} hint="spec Q1" />
             <NumberRow k="technique.min_touches" label="Min touches for a level" hint="T1.2: 2; strong = 3" />
+            <NumberRow k="technique.plan.zone_merge_pct" label="Level zone merge (%)" step={0.25}
+              hint="levels closer than this % are treated as one zone, not a ladder" />
             <NumberRow k="technique.volume_spike_mult" label="Volume spike (x baseline)" step={0.1} />
             <NumberRow k="technique.volume_dryup_mult" label="Volume dry-up (x baseline)" step={0.1} />
             <ToggleRow k="technique.options.enabled" label="Pick option contracts" hint="just-OTM strike, weekly/0DTE, greeks + IV warnings (T5) — data provider is set under Options" />
