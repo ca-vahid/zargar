@@ -741,6 +741,23 @@ export function TechniquePage() {
     if (scan) localStorage.setItem("zargar_tq_scan", JSON.stringify({ ...scan, ts: Date.now() }));
     else localStorage.removeItem("zargar_tq_scan");
   }, [scan]);
+  // No saved panel (e.g. it was lost before persistence existed)? Reconstruct it
+  // from today's latest analyst-check batch: promote-triggered runs cluster
+  // within minutes of each other, so the newest one defines the batch.
+  useEffect(() => {
+    if (scan || !runs.length) return;
+    const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+    const promos = runs.filter((r) => r.trigger === "promote" && r.createdAt
+      && new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date(r.createdAt)) === todayEt);
+    if (promos.length < 2) return;
+    const newest = Math.max(...promos.map((r) => new Date(r.createdAt!).getTime()));
+    const batch = promos.filter((r) => newest - new Date(r.createdAt!).getTime() < 10 * 60_000);
+    if (batch.length < 2) return;
+    const ids = batch.map((r) => r.id).sort();
+    if (localStorage.getItem("zargar_tq_scan_dismissed") === ids.join(",")) return;
+    setScan({ ids, done: batch.every((r) => r.status !== "running"), armable: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scan, runs.length]);
   const scanSymbols = status?.scanSymbols ?? [];
   // tonight's sheet, if one exists for the upcoming session: scan can analyst-check its graded rows
   const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;
@@ -903,7 +920,7 @@ export function TechniquePage() {
       {scan && (
         <ScanPanel ids={scan.ids} armable={scan.armable}
           onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
-          onClose={() => setScan(null)}
+          onClose={() => { localStorage.setItem("zargar_tq_scan_dismissed", scan.ids.slice().sort().join(",")); setScan(null); }}
           onOpen={(id) => { setFocusRun(id); setTab("analyse"); }} />
       )}
       {tab === "chat" ? (
