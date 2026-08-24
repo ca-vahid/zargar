@@ -543,27 +543,53 @@ function ArmedPanel() {
   );
 }
 
+const ET_HM = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
+const ET_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+
 function Rail({ rules, open, onToggle }: { rules: Record<string, string>; open: boolean; onToggle: () => void }) {
   const setups = useStore((s) => s.techniqueSetups);
   const setSetups = useStore((s) => s.setTechniqueSetups);
+  const runs = useStore((s) => s.techniqueRuns);
   const openRun = useStore((s) => s.openTechniqueRun);
   const [rulesOpen, toggleRules] = useDisclosure("tq_rules", false);
   const [q, setQ] = useState("");
-  useEffect(() => { api.techniqueSetups(50).then(setSetups).catch(() => undefined); }, [setSetups]);
+  useEffect(() => { api.techniqueSetups(50).then(setSetups).catch(() => undefined); }, [setSetups, runs.length]);
   const ruleList = useMemo(() => Object.entries(rules).filter(([id, t]) =>
     !q || id.toLowerCase().includes(q.toLowerCase()) || t.toLowerCase().includes(q.toLowerCase())), [rules, q]);
+  const todayEt = ET_DAY.format(new Date());
+  const todaysRuns = useMemo(() => runs
+    .filter((r) => r.createdAt && ET_DAY.format(new Date(r.createdAt)) === todayEt)
+    .slice(0, 15), [runs, todayEt]);
+  const validSetups = useMemo(() => setups.filter((s: TechniqueSetup) => s.valid).slice(0, 8), [setups]);
 
   return (
-    <RailShell open={open} onToggle={onToggle} label="Setups & rules">
+    <RailShell open={open} onToggle={onToggle} label="Runs & rules">
       <ArmedPanel />
+      {validSetups.length > 0 && (
+        <div className="panel mb">
+          <div className="panel-head">Valid setups <span className="sub">{validSetups.length}</span></div>
+          <div className="panel-body tq-setups">
+            {validSetups.map((s: TechniqueSetup) => (
+              <button key={s.id} className="tq-setup-row valid" onClick={() => openRun(s.runId)}
+                title="A run whose setup cleared every gate — click to open it">
+                <b>{s.symbol}</b> <span>{s.setupType.replace(/_/g, " ")}</span>
+                <span className="muted">entry {s.entry.toFixed(2)} · stop {s.stop.toFixed(2)} · R:R {s.riskReward.toFixed(1)}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="panel mb">
-        <div className="panel-head">Setups <span className="sub">{setups.length}</span></div>
+        <div className="panel-head">Today's runs <span className="sub">{todaysRuns.length}</span></div>
         <div className="panel-body tq-setups">
-          {setups.length === 0 && <div className="empty">none yet</div>}
-          {setups.slice(0, 12).map((s: TechniqueSetup) => (
-            <button key={s.id} className={`tq-setup-row ${s.valid ? "valid" : ""}`} onClick={() => openRun(s.runId)}>
-              <b>{s.symbol}</b> <span>{s.setupType.replace(/_/g, " ")}</span>
-              <span className="muted">{s.valid ? `entry ${s.entry.toFixed(2)} · R:R ${s.riskReward.toFixed(1)}` : `no trade · ${s.noTradeReasons[0]?.slice(0, 28) ?? ""}`}</span>
+          {todaysRuns.length === 0 && <div className="empty">none yet today — Run analysis, scan now, or promote from a sheet</div>}
+          {todaysRuns.map((r) => (
+            <button key={r.id} className={`tq-setup-row ${r.verdict === "setup" ? "valid" : ""}`} onClick={() => openRun(r.id)}
+              title={`Open run ${r.id.slice(0, 8)}`}>
+              <span className="muted tq-run-t">{r.createdAt ? ET_HM.format(new Date(r.createdAt)) : ""}</span>
+              <b>{r.symbol}</b>
+              {r.status === "running" ? <span className="muted"><Spinner /></span> : <VerdictBadge run={r} />}
+              <span className="muted small">{r.trigger && r.trigger !== "manual" ? r.trigger : ""}</span>
             </button>
           ))}
         </div>
