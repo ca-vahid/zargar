@@ -1521,3 +1521,19 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .status-pill.attention { background: var(--down); color: #fff; cursor: pointer; font-weight: 700; animation: tqpulse 1.6s infinite; }
 .tq-armed-traderow { display: flex; align-items: baseline; gap: var(--sp-2); }
 .link-btn.danger { color: var(--down); }
+
+/* --- trigger validity grades + plan bottom line ------------------------------ */
+.tq-grade { font-weight: 800; min-width: 22px; text-align: center; padding: 1px 7px; border-radius: 6px; font-size: 12px; display: inline-block; }
+.tq-grade.gA { color: var(--up); background: color-mix(in srgb, var(--up) 16%, transparent); border: 1px solid color-mix(in srgb, var(--up) 40%, transparent); }
+.tq-grade.gB { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+.tq-grade.gC { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); border: 1px solid color-mix(in srgb, var(--muted) 35%, transparent); }
+.tq-bottomline { border-left: 3px solid var(--accent); padding: 8px 12px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.tq-bottomline.none { border-left-color: var(--muted); background: color-mix(in srgb, var(--muted) 8%, transparent); }
+.tq-bottomline-text { font-size: 14px; line-height: 1.45; }
+.tq-assess-list { margin: 4px 0; padding-left: 4px; list-style: none; }
+.tq-assess-list li { margin: 1px 0; }
+.tq-assess-list.pos-list li { color: color-mix(in srgb, var(--up) 80%, var(--text)); }
+.tq-assess-list.warn-list li { color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
+.tq-arm-what .tq-arm-triggers { margin: 4px 0 0; padding-left: 4px; list-style: none; }
+.tq-arm-what .tq-arm-triggers li { margin: 4px 0; }
+.tq-arm-what .warn { color: color-mix(in srgb, var(--warn) 85%, var(--text)); margin-top: 2px; }

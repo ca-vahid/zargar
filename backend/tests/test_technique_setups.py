@@ -231,6 +231,20 @@ def test_classify_breakout_handles_bad_index():
     assert v.is_fakeout and "T3.3d" in v.rules
 
 
+def test_classify_breakout_fails_when_price_fades_back_below_by_the_last_bar():
+    """A break can pass its follow-through window and STILL be dead if price has
+    since faded back through the level (COP 2026-08-21: 'holds=True' while the
+    close sat below the level)."""
+    bars = _prior_bars()
+    bars.append(bar(20, o=100.1, h=104.2, l=100.0, c=104.0, v=6000))       # confirmed break
+    bars += [bar(21, 104, 105, 103.9, 104.8, 3000), bar(22, 104.8, 105.5, 104.5, 105.2, 3000),
+             bar(23, 105.2, 105.4, 104.9, 105.0, 2000)]                    # follow-through window holds
+    bars += [bar(24, 105.0, 105.1, 100.0, 100.2), bar(25, 100.2, 100.4, 99.6, 99.8)]  # then the fade
+    v = classify_breakout(bars, level(100.5, "resistance"), 20, vol_assess(spike=True))
+    assert v.is_fakeout and not v.holds_level
+    assert any("back below the level at the last close" in r for r in v.reasons)
+
+
 # --- setup construction ---------------------------------------------------
 
 def test_bounce_setup_enters_at_the_level():

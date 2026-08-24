@@ -14,17 +14,30 @@ function fmt(n: number | null | undefined, d = 2) {
 }
 
 const KIND_LABEL: Record<string, string> = { bounce: "Support bounce", breakout: "Breakout", wedge_break: "Wedge break" };
+const GRADE_WORD: Record<string, string> = { A: "strong", B: "decent", C: "weak" };
+
+export function GradeChip({ a, valid }: { a?: { grade: string | null; score: number } | null; valid: boolean }) {
+  if (!valid) return null;
+  const g = a?.grade ?? "?";
+  return (
+    <span className={`tq-grade g${g}`} title={`Validity ${g}${a ? ` — ${a.score}/100` : ""} (${GRADE_WORD[g] ?? "ungraded"}). Deterministic: level strength, real targets, chart stop, minus cautions. Expand the row for the breakdown.`}>
+      {g}
+    </span>
+  );
+}
 
 function TriggerRow({ t, outcome }: { t: PlanTrigger; outcome?: any }) {
   const [open, setOpen] = useState(false);
   const fired = outcome && outcome.planSource && outcome.outcome && outcome.outcome !== "not_triggered";
+  const blueSky = t.targets[0]?.basis === "pct_ladder";
   return (
     <div className={`tq-trigger ${t.valid ? "valid" : "invalid"}`}>
       <button type="button" className="tq-trigger-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="tq-chip">{t.id}</span>
+        <GradeChip a={t.assessment} valid={t.valid} />
         <b>{KIND_LABEL[t.kind] ?? t.kind}</b>
         <span>WATCH <b>{fmt(t.levelPrice)}</b></span>
-        <span className="muted">· IF {t.conditions.map((c) => c.kind).join(" + ")} · THEN long {fmt(t.entry.price)} / stop {fmt(t.stop.price)} · R:R {fmt(t.riskReward)}</span>
+        <span className="muted">· arms only if {t.conditions.map((c) => c.kind).join(" + ")} · then long {fmt(t.entry.price)} / stop {fmt(t.stop.price)} · R:R {fmt(t.riskReward)}{blueSky ? "*" : ""}</span>
         {!t.valid && <span className="tq-badge failed">not tradeable</span>}
         {outcome && (
           <span className={`tq-badge ${fired && (outcome.rMultiple ?? 0) > 0 ? "setup" : fired && (outcome.rMultiple ?? 0) < 0 ? "failed" : "nosetup"}`}
@@ -42,10 +55,17 @@ function TriggerRow({ t, outcome }: { t: PlanTrigger; outcome?: any }) {
             <div><small>THEN</small>
               <div>long <b>{fmt(t.entry.price)}</b> ({t.entry.basis.replace(/_/g, " ")}) · stop <b className="neg">{fmt(t.stop.price)}</b> ({t.stop.reference.replace(/_/g, " ")})</div>
               <div>targets {t.targets.map((x) => `${fmt(x.price)} (${x.trimPct}%)`).join(" · ")} · R:R <b className={t.riskReward >= 3 ? "pos" : "neg"}>{fmt(t.riskReward)}</b> · risk {fmt(t.risk)}</div>
+              {t.targets[0]?.basis === "pct_ladder" && <div className="muted small">* blue-sky ladder — no resistance overhead, targets are the book's 2/4/6% steps, so the R:R is optimistic (T4.4)</div>}
             </div>
             <div><small>VOID IF</small><ul>{t.voidIf.map((v, i) => <li key={i}>{v}</li>)}</ul></div>
-            <div><small>Why</small>
-              <div>{t.confluences.length ? t.confluences.join("; ") : "no extra confluence"} · confidence {fmt(t.confidence)}</div>
+            <div><small>{t.valid && t.assessment?.grade ? `Validity ${t.assessment.grade} — ${t.assessment.score}/100` : "Why"}</small>
+              {t.assessment && t.assessment.strengths.length > 0 && (
+                <ul className="tq-assess-list pos-list small">{t.assessment.strengths.map((s, i) => <li key={i}>✓ {s}</li>)}</ul>
+              )}
+              {t.assessment && t.assessment.cautions.length > 0 && (
+                <ul className="tq-assess-list warn-list small">{t.assessment.cautions.map((s, i) => <li key={i}>⚠ {s}</li>)}</ul>
+              )}
+              {!t.assessment && <div>{t.confluences.length ? t.confluences.join("; ") : "no extra confluence"} · confidence {fmt(t.confidence)}</div>}
               {t.noTradeReasons.length > 0 && <ul className="tq-reasons small">{t.noTradeReasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}
               <div className="muted">{t.notes}</div>
               <div className="tq-chips">{t.rules.map((r) => <span key={r} className="tq-chip">{r}</span>)}</div>
@@ -128,6 +148,12 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
       </div>
       <div className="panel-body tq-result-body">
         <div className="tq-result-main">
+          {upcoming && plan.bottomLine && (
+            <div className={`tq-section tq-bottomline ${plan.validTriggers ? "some" : "none"}`}>
+              <div className="tq-label">Anything to do on {plan.planFor}?</div>
+              <div className="tq-bottomline-text">{plan.bottomLine}</div>
+            </div>
+          )}
           {!upcoming && (
             <div className={`tq-section tq-would ${verdictLine.startsWith("Yes") ? "yes" : verdictLine.startsWith("No") ? "no" : ""}`}>
               <div className="tq-label">Would this plan have worked on {plan.planFor}?
@@ -249,9 +275,11 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
             {trace.length > 0 && <button className="link-btn" onClick={() => setShowTrace((v) => !v)}>{showTrace ? "hide" : "show"}</button>}</div>
           <div className="tq-side-actions">
             {upcoming && (
-              <button className={isArmed ? "ghost-btn" : "primary-btn"} disabled={busy || run.status !== "done"} onClick={arm}
-                title="Arm: watch the triggers on live 1m bars inside the prime windows; choose the account and whether a fire alerts, proposes, or executes">
-                {busy ? "…" : isArmed ? "Disarm" : "Arm for live triggers"}
+              <button className={isArmed ? "ghost-btn" : "primary-btn"} disabled={busy || run.status !== "done" || (!isArmed && !plan.validTriggers)} onClick={arm}
+                title={!isArmed && !plan.validTriggers
+                  ? "Nothing to arm — no trigger clears the gates, so nothing would ever fire. Re-plan after the next close."
+                  : "Arm: watch the triggers on live 1m bars inside the prime windows; choose the account and whether a fire alerts, proposes, or executes"}>
+                {busy ? "…" : isArmed ? "Disarm" : plan.validTriggers ? "Arm for live triggers" : "Nothing to arm"}
               </button>
             )}
             {!upcoming && (
@@ -270,7 +298,8 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
             {isArmed && <button className="ghost-btn" onClick={() => setTab("armed")}>Open armed dashboard</button>}
             {armOpen && (
               <ArmDialog symbol={plan.symbol} planFor={plan.planFor} onClose={() => setArmOpen(false)}
-                bestTrigger={(() => { const v = plan.triggers.filter((t) => t.valid); if (!v.length) return null; const b = v.reduce((a, t) => (t.confidence > a.confidence ? t : a)); return { id: b.id, entry: b.entry.price, stop: b.stop.price, riskReward: b.riskReward }; })()}
+                triggers={plan.triggers.filter((t) => t.valid)}
+                bestTrigger={(() => { const v = plan.triggers.filter((t) => t.valid); if (!v.length) return null; const b = v.reduce((a, t) => ((t.assessment?.score ?? 0) > (a.assessment?.score ?? 0) ? t : a)); return { id: b.id, entry: b.entry.price, stop: b.stop.price, riskReward: b.riskReward }; })()}
                 onArm={async (req) => { const a = await api.techniqueArm(run.id, req); toast("success", `Armed ${a.symbol} — ${a.config.mode} on ${a.portfolio.name ?? a.portfolio.id}`); onRefresh?.(); }} />
             )}
             {run.threadId && <button className="ghost-btn" onClick={() => openChat(run.threadId!)}>Discuss in chat</button>}

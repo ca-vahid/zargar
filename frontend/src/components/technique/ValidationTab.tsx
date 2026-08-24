@@ -179,7 +179,8 @@ interface SheetRow { row: WalkforwardRow; best: any | null; valid: any[]; levels
 function readSheetRow(r: WalkforwardRow): SheetRow {
   const plan = r.plan ?? {};
   const trig: any[] = plan.triggers ?? [];
-  const valid = trig.filter((t) => t.valid).sort((a, b) => (b.confidence - a.confidence) || (b.riskReward - a.riskReward));
+  const valid = trig.filter((t) => t.valid).sort((a, b) =>
+    ((b.assessment?.score ?? 0) - (a.assessment?.score ?? 0)) || (b.confidence - a.confidence) || (b.riskReward - a.riskReward));
   const best = valid[0] ?? null;
   const tr = plan.context?.trend ?? {};
   const ARROW: Record<string, string> = { uptrend: "↑", downtrend: "↓", sideways: "→", up: "↑", down: "↓" };
@@ -203,6 +204,14 @@ function Conf({ v }: { v: number | null | undefined }) {
   const p = Math.round(v * 100);
   return <span className={`tq-conf ${p >= 80 ? "hi" : p >= 60 ? "mid" : "lo"}`}>{p}%</span>;
 }
+
+function Grade({ t }: { t: any }) {
+  const a = t?.assessment;
+  if (!a?.grade) return <Conf v={t?.confidence} />;
+  const tip = [`Validity ${a.grade} — ${a.score}/100`, ...(a.strengths ?? []).map((s: string) => `✓ ${s}`),
+    ...(a.cautions ?? []).map((s: string) => `⚠ ${s}`)].join("\n");
+  return <span className={`tq-grade g${a.grade}`} title={tip}>{a.grade}</span>;
+}
 const WHY_SHORT: [RegExp, string][] = [
   [/prior-day extreme \(T1\.3a\)/, "PD"], [/(\d+) touches \(T1\.2\)/, "$1×"],
   [/higher timeframe not against it \(T3\.3g\)/, "HTF✓"], [/higher timeframe uptrend \(T3\.3g\)/, "HTF↑"],
@@ -221,7 +230,9 @@ function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
 }) {
   const openRun = useStore((s) => s.openTechniqueRun);
   const rows = useMemo(() => (sel.rows ?? []).map(readSheetRow), [sel.rows]);
-  const withSetup = rows.filter((x) => x.best).sort((a, b) => (b.best.confidence - a.best.confidence) || (b.best.riskReward - a.best.riskReward) || a.row.symbol.localeCompare(b.row.symbol));
+  const withSetup = rows.filter((x) => x.best).sort((a, b) =>
+    ((b.best.assessment?.score ?? 0) - (a.best.assessment?.score ?? 0)) || (b.best.confidence - a.best.confidence)
+    || (b.best.riskReward - a.best.riskReward) || a.row.symbol.localeCompare(b.row.symbol));
   const without = rows.filter((x) => !x.best);
   const bounces = withSetup.filter((x) => x.best.kind === "bounce").length;
   const avgRR = withSetup.length ? withSetup.reduce((a, x) => a + (x.best.riskReward || 0), 0) / withSetup.length : null;
@@ -229,7 +240,7 @@ function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
   return (
     <>
       <div className="tq-wf-callout">
-        <b>Setups for {planFor}</b> — each symbol's plan built at the {sel.start} close, exactly what you would arm. Ranked by the plan's own confidence (level strength, touches, confluences), then reward-to-risk.
+        <b>Setups for {planFor}</b> — each symbol's plan built at the {sel.start} close, exactly what you would arm. Ranked by validity grade (A strong · B decent · C weak — hover a grade for the breakdown), then reward-to-risk. Nothing here is a fill: every row fires only if its conditions are met inside a prime window.
         {" "}A setup is an <i>if-then</i>: it only becomes a trade if price reaches the entry inside a prime window. {scorable
           ? <> The session has closed — <button className="link-btn" onClick={onScore}>score this sheet now</button> to see what each setup did.</>
           : <> After {planFor} closes, this sheet scores itself into a validation.</>}
@@ -245,7 +256,7 @@ function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
         <span className="muted small"><b>PD</b> prior-day level · <b>N×</b> touches · <b>HTF✓/↑</b> higher timeframe agrees · <b>CF</b> confluence · hover a row for the void rules · ⚡ arms</span></div>
       <div className="tq-table-wrap sticky-head">
         <table className="tq-table tq-wf tq-findings tq-sheet">
-          <thead><tr><th>Symbol</th><th>Setup</th><th title="Additional valid triggers in the same plan">Alt</th><th>Entry</th><th>Stop</th><th>Targets</th><th title="Reward-to-risk — the book's floor is 3 (R2)">R:R</th><th title="The plan's own confidence: level strength, touches, confluences">Conf</th><th>Why</th><th title="Structure trend on the higher timeframes (↑ up · → sideways · ↓ down)">Trend</th><th aria-label="arm"></th></tr></thead>
+          <thead><tr><th>Symbol</th><th>Setup</th><th title="Additional valid triggers in the same plan">Alt</th><th>Entry</th><th>Stop</th><th>Targets</th><th title="Reward-to-risk — the book's floor is 3 (R2)">R:R</th><th title="Validity grade A (strong) / B (decent) / C (weak) — deterministic: level strength, real targets, chart stop, minus cautions. Hover for the breakdown.">Grade</th><th>Why</th><th title="Structure trend on the higher timeframes (↑ up · → sideways · ↓ down)">Trend</th><th aria-label="arm"></th></tr></thead>
           <tbody>
             {withSetup.map(({ row, best, valid, trend, why }) => (
               <tr key={row.id} className="tq-finding win" title={`${row.symbol}: ${best.kind} at ${num(best.levelPrice)} · void if: ${(best.voidIf ?? []).join("; ") || "—"}`}>
@@ -259,7 +270,7 @@ function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
                 <td className="nowrap neg">{num(best.stop?.price)}</td>
                 <td className="nowrap small">{(best.targets ?? []).slice(0, 3).map((t: any, i: number) => <span key={i}>{i > 0 && <span className="tq-sep"> / </span>}<span className="pos">{num(t.price)}</span></span>)}</td>
                 <td><b>{num(best.riskReward, 1)}</b></td>
-                <td><Conf v={best.confidence} /></td>
+                <td><Grade t={best} /></td>
                 <td><div className="tq-why-chips" title={why}>{whyChips(why || "").map((w, i) => <span key={i}>{w}</span>)}</div></td>
                 <td className="muted nowrap small">{trend || "—"}</td>
                 <td className="nowrap tq-arm-cell">{pending[row.id]

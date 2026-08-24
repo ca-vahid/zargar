@@ -212,6 +212,29 @@ def test_plan_merges_clustered_supports_and_stops_below_the_zone():
     assert plan["validTriggers"] == 0
 
 
+def test_plan_triggers_carry_a_deterministic_grade_and_bottom_line():
+    """The 'level of validity' the user reads before arming: every trigger gets
+    an assessment (grade A/B/C for valid ones, strengths/cautions with rule
+    citations for all), and the plan carries a plain-language bottom line."""
+    facts = _mara_like_facts()
+    plan = build_session_plan(facts, structure_tfs=["1h", "30m"], trigger_tf="1m").to_dict()
+    b = plan["triggers"][0]
+    a = b["assessment"]
+    assert a["grade"] is None and not b["valid"]           # invalid -> no grade
+    assert a["score"] > 0 and any("T1.3a" in s for s in a["strengths"])
+    assert "Nothing to arm" in plan["bottomLine"] and "do not force a trade" in plan["bottomLine"]
+    # a valid trigger gets a letter grade and the bottom line says how it fires
+    days = weekdays(5)
+    market = continuous_market(days)
+    plan2, _ = plan_at_close(market, days[3].isoformat())
+    valid = [t for t in plan2["triggers"] if t["valid"]]
+    assert valid and all(t["assessment"]["grade"] in ("A", "B", "C") for t in valid)
+    assert "fires only if" in plan2["bottomLine"] and "can arm" in plan2["bottomLine"]
+    # deterministic: same facts -> same grades
+    plan3, _ = plan_at_close(market, days[3].isoformat())
+    assert [t["assessment"] for t in plan3["triggers"]] == [t["assessment"] for t in plan2["triggers"]]
+
+
 def test_plan_skips_supports_inside_a_prior_triggers_risk_envelope():
     """A lower zone whose entry sits above the prior trigger's stop is churn
     (stop out, re-enter at the same price) — it is skipped, not emitted."""

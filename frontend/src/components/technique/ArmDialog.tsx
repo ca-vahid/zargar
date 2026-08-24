@@ -4,7 +4,7 @@ import { cashText } from "../../lib/brokerage";
 import { fmtCcy } from "../../lib/format";
 import { useStore } from "../../store";
 import { useWorkspace, workspaceOf } from "../../lib/workspace";
-import type { ArmOptions, ArmPreflight, ArmRequest } from "../../types";
+import type { ArmOptions, ArmPreflight, ArmRequest, PlanTrigger } from "../../types";
 import { BrokerIcon } from "../BrokerIcon";
 import { InfoTip } from "../InfoTip";
 import { Modal } from "../Modal";
@@ -32,9 +32,18 @@ const CHECK_LABEL: Record<string, string> = {
 
 function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
 
+const GRADE_WORD: Record<string, string> = { A: "strong", B: "decent", C: "weak" };
+
+function firesOnlyIf(t: PlanTrigger): string {
+  return t.kind === "bounce"
+    ? `fires only if price trades down into ${t.entry.price.toFixed(2)} inside a prime window on adequate volume`
+    : `fires only if a bar closes above ${t.entry.price.toFixed(2)} inside a prime window with a volume surge, a decisive candle and follow-through`;
+}
+
 /** Account + instrument + execution-mode picker shown before a plan is armed. */
-export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
+export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onArm }: {
   symbol: string; planFor: string; bestTrigger?: { entry: number; stop: number; riskReward: number; id: string } | null;
+  triggers?: PlanTrigger[];
   onClose: () => void; onArm: (req: ArmRequest) => Promise<void>;
 }) {
   const toast = useStore((s) => s.toast);
@@ -139,6 +148,28 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
       {!opts && <div className="muted">loading accounts…</div>}
       {opts && (
         <div className="tq-arm-form">
+          {/* what is actually being armed — the conditional triggers and their validity */}
+          {triggers && triggers.length > 0 && (
+            <div className="tq-arm-block tq-arm-what">
+              <div className="tq-arm-h">What you're arming
+                <InfoTip>Arming places <b>no order</b>. The app watches these conditions on live 1-minute bars; a trigger that never meets them simply never fires. The grade is the plan's own deterministic read of how good each trigger is — expand the trigger on the run page for the full breakdown.</InfoTip>
+              </div>
+              <ul className="tq-arm-triggers">
+                {triggers.map((t) => (
+                  <li key={t.id}>
+                    <span className="tq-chip">{t.id}</span>
+                    {t.assessment?.grade && <span className={`tq-grade g${t.assessment.grade}`} title={`${t.assessment.score}/100`}>{t.assessment.grade}</span>}
+                    <b>{t.kind === "bounce" ? "Support bounce" : t.kind === "breakout" ? "Breakout" : "Wedge break"}</b>
+                    {t.assessment?.grade && <span className="muted"> ({GRADE_WORD[t.assessment.grade]})</span>}
+                    <span className="muted"> — {firesOnlyIf(t)}; then long {fmt(t.entry.price)}, stop {fmt(t.stop.price)}.</span>
+                    {(t.assessment?.cautions ?? []).length > 0 && (
+                      <div className="small warn">⚠ {t.assessment!.cautions.join(" · ")}</div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {/* real/practice banner */}
           <div className={`tq-arm-banner ${isLive ? "live" : "practice"}`}>
             {isLive

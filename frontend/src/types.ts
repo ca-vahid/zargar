@@ -318,12 +318,14 @@ export interface TechniqueRun {
 }
 export interface TechniqueTaxonomy { reviewVerdicts: Record<string, string>; rootCauseStages: Record<string, string> }
 export interface PlanCondition { rule: string; text: string; kind: string }
+export interface TriggerAssessment { grade: "A" | "B" | "C" | null; score: number; strengths: string[]; cautions: string[] }
 export interface PlanTrigger {
   id: string; kind: "bounce" | "breakout" | "wedge_break" | string; direction: string; levelPrice: number; level: any;
   entry: { price: number; basis: string }; stop: { price: number; reference: string };
   targets: { price: number; trimPct: number; basis: string }[]; riskReward: number; risk: number;
   conditions: PlanCondition[]; voidIf: string[]; confluences: string[]; confidence: number; rules: string[];
   valid: boolean; noTradeReasons: string[]; notes: string; setupType: string;
+  assessment?: TriggerAssessment;
 }
 export interface PlanLevel {
   price: number; kind: string; effectiveKind: string; touches: number; sources: string[]; timeframes: string[];
@@ -332,7 +334,7 @@ export interface PlanLevel {
 export interface SessionPlan {
   symbol: string; planFor: string; builtFromMs: number; builtFromSession: string; structureTfs: string[]; triggerTf: string;
   lastClose: number; levels: PlanLevel[]; context: any; triggers: PlanTrigger[]; invalidations: { rule: string; text: string; kind: string }[];
-  gapPolicy: any; notes: string[]; validTriggers: number;
+  gapPolicy: any; notes: string[]; validTriggers: number; bottomLine?: string;
 }
 export interface TechniqueSweep {
   id: string; label: string; symbols: string[]; start: string; end: string; params: any; status: string; progress: any;

@@ -206,6 +206,18 @@ def classify_breakout(
         rules.append("T3.3f")
         reasons.append("price failed to hold the level it broke")
 
+    # A break that survived its follow-through window but has since faded back
+    # through the level is no longer holding AS OF THE LAST BAR — judging only
+    # the first N bars let a mid-afternoon break read "holds=True" while the
+    # close sat back below the level (COP 2026-08-21, chat 06cad365).
+    last_close = bars[-1].close
+    faded = last_close < level.price if direction == "long" else last_close > level.price
+    if holds and faded:
+        holds = False
+        rules.append("T3.3f")
+        reasons.append(f"price is back {'below' if direction == 'long' else 'above'} the level "
+                       f"at the last close ({last_close:.2f})")
+
     is_breakout = has_volume and decisive and (has_follow or not after) and holds
     return BreakoutVerdict(
         is_breakout=is_breakout,
