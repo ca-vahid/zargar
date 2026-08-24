@@ -250,9 +250,15 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
     res_above = nearest_level(plevels, last, "resistance", side="above")
     candidates: list[dict] = []
     if sup is not None:
+        # Stop buffer scales with the widest timeframe's ATR (structure, not
+        # trigger noise); the chop guard compares against the trigger tf's own.
+        stop_atr = max((float(v or 0.0) for v in facts["atr"].values()), default=0.0)
+        ptrend = (facts.get("trend") or {}).get(primary) or {}
         s: Setup = build_bounce_setup(facts["symbol"], pbars, sup, pvol,
                                       next_resistance=res_above,
-                                      atr_value=float(facts["atr"].get(primary) or 0.0), thresholds=t)
+                                      atr_value=float(facts["atr"].get(primary) or 0.0),
+                                      stop_atr=stop_atr,
+                                      trend_direction=ptrend.get("direction"), thresholds=t)
         d = s.to_dict()
         d["distanceFromEntryPct"] = round((last - s.entry) / s.entry * 100, 3)
         candidates.append(d)

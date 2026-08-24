@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from .rulebook import RULES, DEFAULT_THRESHOLDS, Thresholds
 from .schemas import TechniqueAnalysis
-from .setups import LADDER_PCTS, risk_reward
+from .setups import LADDER_PCTS, risk_reward, stop_buffer
 
 
 def _tolerance(price: float, facts: dict, t: Thresholds) -> float:
@@ -107,10 +107,15 @@ def ground_analysis(analysis: TechniqueAnalysis, facts: dict,
     if d > tol_e:
         corrections.append(f"Entry {e:.2f} does not correspond to any level or bar price in FACTS.")
 
-    # stop: below entry for long; within a sane band below a grounded anchor
+    # stop: below entry for long; within a sane band below a grounded anchor.
+    # The band admits a full chart-stop buffer (anchor - ATR-scaled clearance,
+    # T4.3d) so a stop just below an invalidating low is not rejected.
     check("stop_below_entry", s < e if analysis.direction == "long" else s > e)
     d_s, src_s = _nearest(s, anchors)
-    stop_band = max(tol_e * 3, e * 0.01)
+    atr_max = max((float(v or 0.0) for v in (facts.get("atr") or {}).values()), default=0.0)
+    # 1.1x: the stop is buffer-below an anchor that may itself sit slightly
+    # below the entry the band is computed from.
+    stop_band = max(tol_e * 3, e * 0.01, stop_buffer(e, atr_value=atr_max, thresholds=t) * 1.1)
     check("stop_near_anchor", d_s <= stop_band, f"nearest {src_s} Δ{d_s:.3f} band {stop_band:.3f}")
     if d_s > stop_band:
         corrections.append(f"Stop {s:.2f} is far from any level/bar price; place it just beyond "

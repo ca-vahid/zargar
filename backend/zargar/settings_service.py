@@ -113,7 +113,9 @@ DEFAULTS: dict[str, Any] = {
     # Structure is read on the book's 30m/1h charts (p. 114); triggers on 1m/5m.
     "technique.structure_tfs": ["1h", "30m"],
     "technique.trigger_tf": "1m",
-    "technique.bounce_stop_pct": 0.5,           # T4.3a/d — % below the level (plus 0.25 ATR)
+    "technique.bounce_stop_pct": 0.5,           # T4.3a/d — % clearance below the invalidating low (plus 0.25 ATR)
+    "technique.max_stop_pct": 3.0,              # T4.3a/R1 — widest chart-justified stop, % of entry
+    "technique.plan.zone_merge_pct": 1.0,       # levels closer than this % are one zone, not a ladder
     "technique.enforce_session_windows": True,  # R6: outside prime windows = watch only
     "technique.options.enabled": True,
     "technique.options.provider": "cboe",   # cboe (free, ~15-min delayed) | tradier (token)

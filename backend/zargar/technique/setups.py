@@ -24,6 +24,7 @@ __all__ = [
     "BreakoutVerdict", "Target", "Setup",
     "classify_breakout", "build_ladder", "build_bounce_setup",
     "build_breakout_setup", "risk_reward",
+    "stop_buffer", "invalidation_low", "bounce_stop",
 ]
 
 # T4.4a — the author's own scale-out ladder.
@@ -261,15 +262,42 @@ def _confidence(level: Level, volume: VolumeAssessment, extra: float = 0.0) -> f
     return max(0.0, min(1.0, score + extra))
 
 
-def bounce_stop(level_price: float, *, atr_value: float = 0.0,
+def stop_buffer(anchor_price: float, *, atr_value: float = 0.0,
                 thresholds: Thresholds | None = None) -> float:
-    """T4.3a/T4.3d — the mental stop sits *just below the level*: the book's own
-    example is $98 support -> watch ~$97.50 (0.5%), and it rejects fixed-percent
-    stops that ignore the chart. The buffer is the larger of that percent, two
-    touch tolerances, and an ATR multiple, so it scales with volatility."""
+    """Clearance below the invalidating price: the larger of two touch
+    tolerances, the book's 0.5% ($98 support -> watch ~$97.50), and an ATR
+    multiple, so it scales with volatility."""
     t = thresholds or DEFAULT_THRESHOLDS
-    tol = max(level_price * t.level_tolerance_pct, 1e-9)
-    return level_price - max(tol * 2, level_price * t.bounce_stop_pct, atr_value * t.stop_buffer_atr)
+    tol = max(anchor_price * t.level_tolerance_pct, 1e-9)
+    return max(tol * 2, anchor_price * t.bounce_stop_pct, atr_value * t.stop_buffer_atr)
+
+
+def invalidation_low(bars: list[Bar], level_price: float, *,
+                     thresholds: Thresholds | None = None) -> float | None:
+    """T4.3d — the price that actually invalidates a bounce at `level_price`:
+    the lowest recent trade *below* the level but within the acceptable stop
+    distance (the chop band / zone floor under the level). None when price has
+    never traded below the level in the window — then the level itself is the
+    invalidation and the buffer alone applies (the book's $98 example).
+    Deeper prints (below `max_stop_pct`) belong to an older regime and are
+    ignored — a stop that far away fails R1 anyway."""
+    t = thresholds or DEFAULT_THRESHOLDS
+    floor = level_price * (1 - t.max_stop_pct)
+    lows = [b.low for b in bars if floor <= b.low < level_price]
+    return min(lows) if lows else None
+
+
+def bounce_stop(level_price: float, *, atr_value: float = 0.0,
+                thresholds: Thresholds | None = None,
+                invalidation: float | None = None) -> float:
+    """T4.3a/T4.3d — the mental stop sits just below the price that invalidates
+    the idea: the recent low / zone floor beneath the level when the chart shows
+    one (`invalidation`), else the level itself. Never a bare percent of price —
+    the buffer is only the clearance below that chart anchor."""
+    anchor = level_price
+    if invalidation is not None and 0 < invalidation < level_price:
+        anchor = invalidation
+    return anchor - stop_buffer(anchor, atr_value=atr_value, thresholds=thresholds)
 
 
 def confluences(level: Level, volume: VolumeAssessment, *, higher_tf_agrees: bool | None = None,
@@ -297,18 +325,25 @@ def build_bounce_setup(
     *,
     next_resistance: Level | None = None,
     atr_value: float = 0.0,
+    stop_atr: float | None = None,
+    trend_direction: str | None = None,
     thresholds: Thresholds | None = None,
 ) -> Setup:
     """Setup A — buy the dip into support (spec §8).
 
     Entry sits *at* the level, not at the current price: T4.1 computes R:R from
     the level, and a price that has already run too far from it fails the R2
-    gate rather than being chased.
+    gate rather than being chased. The stop goes below the chart's invalidating
+    low (T4.3d), buffered by `stop_atr` (structure-timeframe ATR when the
+    caller has one; falls back to `atr_value`).
     """
     t = thresholds or DEFAULT_THRESHOLDS
     entry = level.price
-    # T4.3a/T4.3d — mental stop just below the level, volatility-aware.
-    stop = bounce_stop(entry, atr_value=atr_value, thresholds=t)
+    # T4.3a/T4.3d — mental stop just below the invalidating low, volatility-aware.
+    s_atr = stop_atr if stop_atr is not None else atr_value
+    inv = invalidation_low(bars, entry, thresholds=t)
+    stop = bounce_stop(entry, atr_value=s_atr, thresholds=t, invalidation=inv)
+    risk = entry - stop
 
     targets = build_ladder(
         entry, "long",
@@ -329,6 +364,12 @@ def build_bounce_setup(
         no_trade.append(f"R2 reward:risk {rr:.2f} is below the {t.min_risk_reward:.1f} minimum")
     if level.touches < t.min_touches:
         no_trade.append(f"T1.2 level has only {level.touches} touch(es)")
+    if risk > entry * t.max_stop_pct:
+        no_trade.append(f"T4.3a/R1 the stop the chart justifies ({stop:.2f}) is "
+                        f"{risk / entry:.1%} away — beyond the {t.max_stop_pct:.1%} cap")
+    if trend_direction == "sideways" and atr_value > 0 and risk < t.chop_stop_atr * atr_value:
+        no_trade.append(f"R3.2 stop {risk:.2f} sits inside the chop: trigger-timeframe trend is "
+                        f"sideways and the stop is under {t.chop_stop_atr:.0f}x its ATR ({atr_value:.2f})")
 
     # A rejection wick at the level is the book's bullish tell (T3.4b) — a
     # confidence modifier, never a gate (T4.2: do not wait for confirmation).
@@ -351,7 +392,7 @@ def build_bounce_setup(
         requires_confirmation=False,
         stop=stop,
         stop_kind="mental",
-        stop_reference="below_support",
+        stop_reference="below_invalidation_low" if inv is not None else "below_support",
         targets=targets,
         risk_reward=rr,
         level_price=level.price,

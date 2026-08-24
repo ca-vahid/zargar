@@ -127,11 +127,20 @@ nobody "fixes" it.
 
 Read carefully, the book's bounce stop is a *zone just under the level* ("$98 support →
 watch ~$97.50", i.e. ~0.5 %), and the "fixed percentage" it rejects is a stop set on the
-entry/premium with no regard to the chart (options swing 15–20 %). `build_bounce_setup`
-was already level-anchored (`level − max(2·tol, 0.5 %)`); what it lacked was
-**volatility awareness** and a tunable. *As built:* `setups.bounce_stop` = level − max(2·tol,
-`technique.bounce_stop_pct` (0.5 %), 0.25 × ATR), cited as **T4.3d**; the breakout / wedge
-stops keep their level / wedge-low references.
+entry/premium with no regard to the chart (options swing 15–20 %). The first build kept
+`level − max(2·tol, 0.5 %, 0.25·ATR)` — which the review of run `f055c5c6` (MARA) showed
+is still a fixed percentage in costume: identical risk at three different entries, inside
+the prior session's chop band. *As rebuilt (2026-08-23):* the stop anchors below the
+**invalidating price** — the merged support zone's floor / lowest recent print under the
+level (`setups.invalidation_low`, carried prior-day LOD included) — and the old formula
+survives only as the *clearance buffer* below that anchor (`setups.stop_buffer`, using the
+**structure**-timeframe ATR, not 1m noise). A chart stop wider than `technique.max_stop_pct`
+(3 %) is a **no-trade**, never silently tightened; a stop under `chop_stop_atr`×ATR with a
+sideways trigger-tf trend is refused as R3.2. Adjacent levels within
+`technique.plan.zone_merge_pct` (1 %) form one zone → one trigger (no ladders that re-enter
+above their own stop), and target ladders anchor at the nearest real resistance above the
+*entry* (not "above the last close", which once skipped a 27-touch level $0.002 away and
+produced an R:R-22 artifact). Breakout / wedge stops keep their level / wedge-low references.
 
 ### 3.6 Other rules that bear on plans (cited for completeness)
 
