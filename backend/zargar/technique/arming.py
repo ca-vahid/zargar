@@ -1143,9 +1143,11 @@ class PlanArmer(SessionListener):
         #     what's open and stop it for the day (the user's "certain loss halt")
         if journal and await self._maybe_loss_halt(ap):
             return
-        # 2) triggers
+        # 2) triggers — never evaluated on pre/after-market bars (R6.5: after-hours
+        #    volume is misleading signal; exits above and expiry below still run)
+        in_session = session_window(bar.ts) != "extended"
         open_or_working = sum(1 for t in ap.trades.values() if t.status in ("working", "open"))
-        for tid, tr in ap.trackers.items():
+        for tid, tr in (ap.trackers.items() if in_session else ()):
             if tr.status in ("fired", "gapped_past", "gapped_through", "gap_void", "expired"):
                 continue
             before = tr.status
