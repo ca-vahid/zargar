@@ -76,7 +76,7 @@ function StatusBar({ status, onScan, scanBusy }: {
       {!status.llmAvailable && <span className="status-pill bad">no API key</span>}
       <span className="status-pill">runs today {status.runsToday}/{status.maxRunsPerDay}</span>
       {(status.armed?.length ?? 0) > 0 && <span className="status-pill ok">{status.armed!.length} armed</span>}
-      {status.running.length > 0 && <span className="status-pill ok"><Spinner /> {status.running.length} running</span>}
+      {status.running.length > 0 && <span className="tq-running-pill"><Spinner /> {status.running.length} running</span>}
       <button className="primary-btn tq-scan-btn" onClick={onScan} disabled={scanBusy}
         title="Analyst-check tonight's graded sheet, or run a live read of the watch list — a confirmation shows symbols and cost first">
         {scanBusy ? "Scanning…" : "Scan now"}
@@ -709,6 +709,19 @@ export function TechniquePage() {
   void bump;
 
   useEffect(() => { refreshStatus(); }, [runs.length, refreshStatus]);
+
+  // While anything is running, poll status + the run list so the running pill,
+  // History rows and the rail spinners come down on their own.
+  const runningCount = status?.running?.length ?? 0;
+  useEffect(() => {
+    if (!runningCount) return;
+    const tick = () => {
+      refreshStatus();
+      api.techniqueRuns(100).then(setRuns).catch(() => undefined);
+    };
+    const t = setInterval(tick, 5000);
+    return () => clearInterval(t);
+  }, [runningCount > 0, refreshStatus, setRuns]);
 
   const rules = status?.rules ?? {};
   const shown = full && active && full.id === active.id ? { ...active, ...full } : active;
