@@ -208,7 +208,6 @@ export function ArmedTab() {
   const settings = useStore((s) => s.settings);
   const toast = useStore((s) => s.toast);
   const [history, setHistory] = useState<any[]>([]);
-  const [sym, setSym] = useState("");
   const ws = useWorkspace();
   const portfolios = useStore((s) => s.portfolios);
   const pmap = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p])), [portfolios]);
@@ -230,11 +229,6 @@ export function ArmedTab() {
     try { const r = await api.techniqueStopAll(flatten); toast("info", `Disarmed ${r.disarmed} plan(s)`); refresh(); }
     catch (e: any) { toast("error", e.message); }
   };
-  const armToday = async () => {
-    if (!sym.trim()) return;
-    try { const a = await api.techniqueArmToday(sym.trim().toUpperCase(), {}); toast("success", `${a.symbol} armed for ${a.planFor}`); setSym(""); refresh(); }
-    catch (e: any) { toast("error", e.message); }
-  };
   return (
     <div>
       <div className="panel mb tq-armed-top">
@@ -245,10 +239,14 @@ export function ArmedTab() {
           <div className="tq-armed-kpi"><small>Workspace <InfoTip>Everything on this page belongs to the active workspace. PRACTICE = the simulator, fake money. LIVE = your real accounts (orders route for real). Switch it next to HALT in the top bar.</InfoTip></small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
           <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped in a position.</InfoTip></small><b className={halt.engaged ? "neg" : "pos"}>{halt.engaged ? "ENGAGED" : "off"}</b></div>
           <div className="tq-armed-topactions">
-            <input placeholder="symbol" value={sym} onChange={(e) => setSym(e.target.value.toUpperCase())} style={{ width: 90 }} />
-            <button className="ghost-btn" onClick={armToday} title="Build today's plan from yesterday's close and arm it with the default account/mode">Arm today's plan</button>
-            <button className="ghost-btn" disabled={!armed.length} onClick={() => stopAll(false)}>Stop all</button>
-            <button className="ghost-btn neg" disabled={!openCount} onClick={() => stopAll(true)}>Flatten &amp; stop all</button>
+            {armed.length > 0 && (
+              <button className="ghost-btn" onClick={() => stopAll(false)}
+                title="Disarm every plan — open positions stay open">Stop all</button>
+            )}
+            {openCount > 0 && (
+              <button className="ghost-btn neg" onClick={() => stopAll(true)}
+                title="Sell everything the plans hold at market, then disarm every plan">Flatten &amp; stop all</button>
+            )}
           </div>
         </div>
       </div>

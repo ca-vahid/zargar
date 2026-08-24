@@ -1567,3 +1567,4 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-scan-stale > span { display: flex; flex-direction: column; gap: 6px; }
 .tq-setup-row .tq-run-t { font-variant-numeric: tabular-nums; font-size: 11px; white-space: nowrap; }
 .tq-badge.warnbadge { background: color-mix(in srgb, var(--warn) 16%, transparent); color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
+.tq-status .tq-scan-btn { padding: 4px 14px; font-weight: 700; }

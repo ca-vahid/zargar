@@ -77,9 +77,9 @@ function StatusBar({ status, onScan, scanBusy }: {
       <span className="status-pill">runs today {status.runsToday}/{status.maxRunsPerDay}</span>
       {(status.armed?.length ?? 0) > 0 && <span className="status-pill ok">{status.armed!.length} armed</span>}
       {status.running.length > 0 && <span className="status-pill ok"><Spinner /> {status.running.length} running</span>}
-      <button className="link-btn" onClick={onScan} disabled={scanBusy}
-        title="Run a full analysis on each watch symbol — shows a confirmation with symbols and cost first">
-        {scanBusy ? "scanning…" : "scan now"}
+      <button className="primary-btn tq-scan-btn" onClick={onScan} disabled={scanBusy}
+        title="Analyst-check tonight's graded sheet, or run a live read of the watch list — a confirmation shows symbols and cost first">
+        {scanBusy ? "Scanning…" : "Scan now"}
       </button>
     </div>
   );
