@@ -127,11 +127,13 @@ def test_session_windows_follow_the_book():
     assert o == _ms(d, 9, 30) and c == _ms(d, 16, 0)
 
 
-def test_bounce_stop_is_level_anchored_and_volatility_aware():
+def test_bounce_stop_is_chart_anchored_and_volatility_aware():
     s0 = bounce_stop(100.0)
     assert 100.0 - s0 == pytest.approx(0.5, abs=0.01)          # book's $98 -> $97.50 = 0.5%
     s1 = bounce_stop(100.0, atr_value=4.0)                      # 0.25 ATR = 1.0 beats 0.5%
     assert 100.0 - s1 == pytest.approx(1.0, abs=0.01)
+    s2 = bounce_stop(100.0, invalidation=99.0)                  # chart low below the level anchors
+    assert s2 == pytest.approx(99.0 - 0.495, abs=0.01)
 
 
 # --- plan building ------------------------------------------------------------------------------
@@ -158,6 +160,72 @@ def test_session_plan_has_conditional_triggers_not_fills():
     # the analysis contract for a fired trigger round-trips through the schema
     a = analysis_from_trigger(b, "TEST", session_window="prime_open")
     assert a.verdict == "setup" and a.entry.price == b["entry"]["price"] and len(a.targets) == 3
+
+
+def _facts_level(as_of: int, price: float, kind: str, touches: int,
+                 sources=("T1.3c",), tfs=("1m",)) -> dict:
+    return {"price": price, "kind": kind, "effectiveKind": kind, "touches": touches,
+            "sources": list(sources), "timeframes": list(tfs),
+            "position": "below" if kind == "support" else "above",
+            "firstTs": as_of - 3 * 86_400_000, "lastTs": as_of}
+
+
+def _mara_like_facts() -> dict:
+    """The MARA 2026-08-21 close, distilled (run f055c5c6): three supports within
+    0.9% + Friday's LOD below them, a 27-touch resistance at the close, and the
+    faded gap's wick high as the prior-day extreme."""
+    as_of = _ms(dt.date(2026, 8, 21), 16, 5)      # a Friday, after the close
+    return {
+        "symbol": "MARA", "asOf": as_of, "lastTs": as_of, "lastClose": 11.26,
+        "primaryTf": "1m", "atr": {"1m": 0.035, "30m": 0.35, "1h": 0.36},
+        "trend": {"1m": {"direction": "sideways"}, "30m": {"direction": "uptrend"},
+                  "1h": {"direction": "uptrend"}},
+        "volume": {}, "wedge": {}, "notes": [],
+        "session": {"prev": {"hod": 11.19, "lod": 9.96, "close": 11.15, "date": "2026-08-20"},
+                    "today": {"open": 11.715, "hod": 12.465, "lod": 11.02, "bars": 390}},
+        "keyLevels": [
+            _facts_level(as_of, 11.198, "support", 26, ("T1.3a", "T1.3c"), ("1m", "1h", "30m")),
+            _facts_level(as_of, 11.1462, "support", 24),
+            _facts_level(as_of, 11.1037, "support", 20),
+            _facts_level(as_of, 11.258, "resistance", 27),
+        ],
+    }
+
+
+def test_plan_merges_clustered_supports_and_stops_below_the_zone():
+    """The review of run f055c5c6 pinned four defects: a fixed-% stop, a ladder
+    of three triggers inside one zone, a target anchored at a rejected gap wick
+    (R:R 22 'artifact'), and no honest R2 gate. All four in one regression."""
+    plan = build_session_plan(_mara_like_facts(), structure_tfs=["1h", "30m"],
+                              trigger_tf="1m").to_dict()
+    bounces = [t for t in plan["triggers"] if t["kind"] == "bounce"]
+    assert len(bounces) == 1                       # 11.20/11.15/11.10 + Friday's LOD = ONE zone
+    b = bounces[0]
+    assert b["entry"]["price"] == 11.198           # the strong prior-day level leads
+    z = b["level"]["zone"]
+    assert z["low"] == 11.02 and 11.02 in z["members"]     # carried LOD joins the zone
+    assert b["stop"]["price"] < 11.02 and b["stop"]["reference"] == "below_zone_low"
+    # targets anchor at the real 27-touch resistance overhead, not the gap wick
+    assert abs(b["targets"][-1]["price"] - 11.258) < 1e-6
+    # honest stop + honest target -> the R2 gate fails: not tradeable
+    assert not b["valid"] and any("R2" in r for r in b["noTradeReasons"])
+    assert plan["validTriggers"] == 0
+
+
+def test_plan_skips_supports_inside_a_prior_triggers_risk_envelope():
+    """A lower zone whose entry sits above the prior trigger's stop is churn
+    (stop out, re-enter at the same price) — it is skipped, not emitted."""
+    facts = _mara_like_facts()
+    facts["lastClose"] = 100.5
+    facts["atr"] = {"1m": 0.05, "30m": 4.4, "1h": 4.4}   # wide buffer: stop1 lands at 98.9
+    facts["session"] = {"prev": {}, "today": {"open": 100.5, "hod": 104.0, "lod": 100.0}}
+    as_of = facts["asOf"]
+    facts["keyLevels"] = [_facts_level(as_of, 100.0, "support", 5),
+                          _facts_level(as_of, 98.9, "support", 4)]
+    plan = build_session_plan(facts, structure_tfs=["1h", "30m"], trigger_tf="1m").to_dict()
+    bounces = [t for t in plan["triggers"] if t["kind"] == "bounce"]
+    assert len(bounces) == 1 and bounces[0]["entry"]["price"] == 100.0
+    assert any("risk envelope" in n for n in plan["notes"])
 
 
 def test_plan_builder_has_no_look_ahead():

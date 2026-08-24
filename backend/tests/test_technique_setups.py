@@ -8,10 +8,12 @@ from __future__ import annotations
 from zargar.domain import Bar
 from zargar.technique.levels import Level
 from zargar.technique.setups import (
+    bounce_stop,
     build_bounce_setup,
     build_breakout_setup,
     build_ladder,
     classify_breakout,
+    invalidation_low,
     risk_reward,
 )
 from zargar.technique.structure import detect_wedge, fit_line, read_trend
@@ -268,6 +270,50 @@ def test_bounce_setup_targets_sum_to_ladder():
                            next_resistance=level(120.0, "resistance"))
     assert len(s.targets) == 3
     assert abs(sum(t.trim_pct for t in s.targets) + s.runner_pct - 1.0) < 1e-9
+
+
+def test_bounce_stop_goes_below_the_invalidating_low():
+    """T4.3d — with recent prints below the level, the stop clears them; a
+    pristine level falls back to the book's buffer-below-the-level; prints
+    deeper than the stop cap belong to another regime and are ignored."""
+    bars = _prior_bars()                                   # lows at 99.7 under a 100 level
+    inv = invalidation_low(bars, 100.0)
+    assert inv == 99.7
+    s = bounce_stop(100.0, invalidation=inv)
+    assert s < 99.7 and abs((99.7 - s) - 99.7 * 0.005) < 1e-6   # buffer clears the ANCHOR
+    assert invalidation_low([bar(0, 101, 101.3, 100.4, 101)], 100.0) is None
+    assert invalidation_low([bar(0, 95, 95.3, 94.7, 95)], 100.0) is None
+
+
+def test_bounce_setup_stop_references_the_invalidating_low():
+    bars = _prior_bars()
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(),
+                           next_resistance=level(112.0, "resistance"))
+    assert s.stop_reference == "below_invalidation_low"
+    assert s.stop < 99.7
+
+
+def test_bounce_setup_rejects_stop_wider_than_cap():
+    """T4.3a/R1 — when the chart's invalidation is too far away, it's a no-trade,
+    not a tighter arbitrary stop."""
+    bars = _prior_bars() + [bar(20, 100.2, 100.4, 97.2, 100.1)]
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(),
+                           next_resistance=level(120.0, "resistance"))
+    assert s.stop < 97.2
+    assert not s.valid and any("T4.3a" in r for r in s.no_trade_reasons)
+
+
+def test_bounce_setup_rejects_stop_inside_chop():
+    """R3.2 — sideways trigger-tf trend + a stop under 2x its ATR = a noise stop."""
+    bars = [bar(i, 100.4, 100.6, 100.2, 100.4) for i in range(20)]   # never below the level
+    s = build_bounce_setup("TEST", bars, level(100.0), vol_assess(),
+                           next_resistance=level(120.0, "resistance"),
+                           atr_value=1.0, trend_direction="sideways")
+    assert any("R3.2" in r for r in s.no_trade_reasons)
+    s2 = build_bounce_setup("TEST", bars, level(100.0), vol_assess(),
+                            next_resistance=level(120.0, "resistance"),
+                            atr_value=1.0, trend_direction="uptrend")
+    assert not any("R3.2" in r for r in s2.no_trade_reasons)
 
 
 def test_breakout_setup_requires_confirmation():

@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
-from ..domain import Bar
 from .levels import Level
 from .rulebook import (
     DEFAULT_THRESHOLDS,
@@ -25,8 +24,7 @@ from .rulebook import (
     next_session_date,
     session_date,
 )
-from .setups import LADDER_TRIMS, RUNNER_PCT, bounce_stop, build_ladder, risk_reward
-from .volume import VolumeAssessment
+from .setups import bounce_stop, build_ladder, risk_reward, stop_buffer
 
 MAX_BOUNCE_TRIGGERS = 3
 MAX_BREAK_TRIGGERS = 2
@@ -115,13 +113,6 @@ class SessionPlan:
             "notes": list(self.notes),
             "validTriggers": sum(1 for t in self.triggers if t.valid),
         }
-
-
-def _neutral_volume() -> VolumeAssessment:
-    """Volume is a trigger-time condition, not a build-time fact."""
-    return VolumeAssessment(relative=1.0, trend="flat", price_trend="flat", is_spike=False,
-                            is_dryup=False, below_floor=False, rules=["T2.9"],
-                            note="judged at trigger time", measurable=True)
 
 
 def _level_from_dict(d: dict) -> Level:
@@ -235,25 +226,64 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
     # --- triggers ------------------------------------------------------------------
     triggers: list[Trigger] = []
     notes: list[str] = []
-    resistances_above = sorted([l for l in levels if l["effectiveKind"] == "resistance" and l["price"] > last],
-                               key=lambda l: l["price"])
+    # Levels closer together than this are one zone, not a ladder of separate
+    # trades (T4.3d: the zone's floor is what invalidates, not each rung).
+    merge_dist = max(tol * 2, last * t.zone_merge_pct)
+    # The stop buffer breathes with structure volatility, not 1m bar noise.
+    stop_atr = max([float((facts.get("atr") or {}).get(tf) or 0.0) for tf in structure_tfs] + [atr_v])
+    trig_trend = ((facts.get("trend") or {}).get(ptf) or {}).get("direction")
+
+    all_resistances = sorted([l for l in levels if l["effectiveKind"] == "resistance"],
+                             key=lambda l: l["price"])
     supports_below = sorted([l for l in levels if l["effectiveKind"] == "support" and l["price"] < last],
                             key=lambda l: -l["price"])
 
-    # Bounce triggers — nearest supports below, within reach.
+    def _zones(members: list[dict]) -> list[list[dict]]:
+        """Chain-merge adjacent levels into zones. `members` must be sorted from
+        nearest to farthest; a level joins the current zone while it is within
+        `merge_dist` of the zone's far edge and the zone stays narrower than the
+        stop cap."""
+        out: list[list[dict]] = []
+        for ld in members:
+            if out:
+                cur = out[-1]
+                width_ok = abs(ld["price"] - cur[0]["price"]) <= cur[0]["price"] * t.max_stop_pct
+                if abs(cur[-1]["price"] - ld["price"]) <= merge_dist and width_ok:
+                    cur.append(ld)
+                    continue
+            out.append([ld])
+        return out
+
+    def _representative(zone: list[dict]) -> dict:
+        return max(zone, key=lambda m: (bool(m.get("priorDayExtreme")), m.get("touches") or 0))
+
+    def _next_resistance_above(price: float, exclude: set[float] = frozenset()) -> dict | None:
+        return next((r for r in all_resistances
+                     if r["price"] > price + tol and r["price"] not in exclude), None)
+
+    # Bounce triggers — nearest support zones below, within reach.
     n = 0
-    for ld in supports_below:
+    for zone in _zones(supports_below):
         if n >= MAX_BOUNCE_TRIGGERS:
             break
-        if (last - ld["price"]) / last > MAX_LEVEL_DISTANCE_PCT:
+        rep = _representative(zone)
+        entry = rep["price"]
+        if (last - entry) / last > MAX_LEVEL_DISTANCE_PCT:
             continue
-        lv = _level_from_dict({**ld, "effectiveKind": "support"})
-        entry = lv.price
-        stop = bounce_stop(entry, atr_value=atr_v, thresholds=t)
-        next_res = next((r for r in resistances_above if r["price"] > entry), None)
+        lv = _level_from_dict({**rep, "effectiveKind": "support"})
+        zone_low = min(m["price"] for m in zone)
+        # T4.3d — the stop goes below what invalidates the idea: the zone's
+        # floor (which includes a carried prior-day LOD) when there is one.
+        stop = bounce_stop(entry, atr_value=stop_atr, thresholds=t,
+                           invalidation=zone_low if zone_low < entry else None)
+        if triggers and entry >= triggers[-1].stop_price:
+            notes.append(f"support {entry:.2f} skipped: inside the risk envelope of trigger "
+                         f"{triggers[-1].id} (entry above its stop {triggers[-1].stop_price:.2f})")
+            continue
+        risk = entry - stop
+        next_res = _next_resistance_above(entry)
         targets = build_ladder(entry, "long", next_level=(next_res["price"] if next_res else None))
         rr = risk_reward(entry, stop, targets[-1].price)
-        vol = _neutral_volume()
         confl = []
         if "T1.3a" in lv.sources:
             confl.append("prior-day extreme (T1.3a)")
@@ -262,21 +292,33 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         hta = _higher_tf_agrees(context, "bounce")
         if hta:
             confl.append("higher timeframe not against it (T3.3g)")
-        if len(ld.get("timeframes") or []) >= 2:
+        if len(rep.get("timeframes") or []) >= 2:
             confl.append("confluence across timeframes")
+        if len(zone) > 1:
+            confl.append(f"zone of {len(zone)} levels ({zone_low:.2f}-{zone[0]['price']:.2f})")
         reasons: list[str] = []
         if rr < t.min_risk_reward:
             reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
         if lv.touches < t.min_touches and "T1.3a" not in lv.sources:
             reasons.append(f"T1.2 only {lv.touches} touch(es)")
+        if risk > entry * t.max_stop_pct:
+            reasons.append(f"T4.3a/R1 the stop the chart justifies ({stop:.2f}) is "
+                           f"{risk / entry:.1%} away — beyond the {t.max_stop_pct:.1%} cap")
+        if trig_trend == "sideways" and atr_v > 0 and risk < t.chop_stop_atr * atr_v:
+            reasons.append(f"R3.2 stop {risk:.2f} sits inside the chop: {ptf} trend is sideways "
+                           f"and the stop is under {t.chop_stop_atr:.0f}x its ATR ({atr_v:.2f})")
         valid = not reasons
-        rules = ["T1.2", "T1.6", "T4.1", "T4.2", "T4.3a", "T4.3d", "T4.4a", "R2", "R3.1", "R6.1", "R6.2"] + list(lv.sources)
+        rules = ["T1.2", "T1.6", "T4.1", "T4.2", "T4.3a", "T4.3d", "T4.4a", "R2", "R3.1", "R3.2",
+                 "R6.1", "R6.2"] + list(lv.sources)
         if len(confl) >= 2:
             rules.append("T4.6")
         n += 1
         triggers.append(Trigger(
-            id=f"b{n}", kind="bounce", direction="long", level_price=entry, level=ld,
-            entry_price=entry, entry_basis="at_level", stop_price=stop, stop_reference="below_support",
+            id=f"b{n}", kind="bounce", direction="long", level_price=entry,
+            level={**rep, "zone": {"high": zone[0]["price"], "low": zone_low,
+                                   "members": [m["price"] for m in zone]}},
+            entry_price=entry, entry_basis="at_level", stop_price=stop,
+            stop_reference="below_zone_low" if zone_low < entry else "below_support",
             targets=[tg.to_dict() for tg in targets], risk_reward=rr,
             conditions=[
                 Condition("T4.1", f"price trades down into {entry:.2f} (+/- {tol:.2f})", "touch"),
@@ -291,17 +333,25 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
                   "wick at the touch raises confidence (T3.4b) but is not required.",
         ))
 
-    # Breakout triggers — nearest resistances above.
+    # Breakout triggers — nearest resistance zones above the last close. A break
+    # must clear the whole zone, so entry is the zone's top; a failed break is
+    # back below the zone, so the stop is under its floor.
+    resistances_above = [r for r in all_resistances if r["price"] > last + tol]
     m = 0
-    for rd in resistances_above:
+    for zone in _zones(resistances_above):
         if m >= MAX_BREAK_TRIGGERS:
             break
-        if (rd["price"] - last) / last > MAX_LEVEL_DISTANCE_PCT:
+        rep = _representative(zone)
+        zone_top = max(mm["price"] for mm in zone)
+        zone_low = min(mm["price"] for mm in zone)
+        entry = zone_top
+        if (entry - last) / last > MAX_LEVEL_DISTANCE_PCT:
             continue
-        lv = _level_from_dict({**rd, "effectiveKind": "resistance"})
-        entry = lv.price
-        stop = entry - max(tol * 2, entry * t.bounce_stop_pct, atr_v * t.stop_buffer_atr)
-        next_res = next((r for r in resistances_above if r["price"] > entry + tol), None)
+        lv = _level_from_dict({**rep, "effectiveKind": "resistance"})
+        stop = zone_low - stop_buffer(zone_low, atr_value=stop_atr, thresholds=t)
+        risk = entry - stop
+        member_prices = {mm["price"] for mm in zone}
+        next_res = _next_resistance_above(entry, exclude=member_prices)
         targets = build_ladder(entry, "long", next_level=(next_res["price"] if next_res else None))
         rr = risk_reward(entry, stop, targets[-1].price)
         confl = []
@@ -315,13 +365,18 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         reasons = []
         if rr < t.min_risk_reward:
             reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
+        if risk > entry * t.max_stop_pct:
+            reasons.append(f"T4.3a/R1 the stop the chart justifies ({stop:.2f}) is "
+                           f"{risk / entry:.1%} away — beyond the {t.max_stop_pct:.1%} cap")
         valid = not reasons
         rules = ["T1.2", "T1.6", "T3.3a", "T3.3b", "T3.3c", "T2.5", "T4.1", "T4.3a", "T4.4a", "R2", "R6.1", "R6.2"] + list(lv.sources)
         if len(confl) >= 2:
             rules.append("T4.6")
         m += 1
         triggers.append(Trigger(
-            id=f"k{m}", kind="breakout", direction="long", level_price=entry, level=rd,
+            id=f"k{m}", kind="breakout", direction="long", level_price=entry,
+            level={**rep, "zone": {"high": zone_top, "low": zone_low,
+                                   "members": [mm["price"] for mm in zone]}},
             entry_price=entry, entry_basis="on_break", stop_price=stop,
             stop_reference="below_broken_resistance",
             targets=[tg.to_dict() for tg in targets], risk_reward=rr,

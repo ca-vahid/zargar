@@ -190,10 +190,22 @@ class Thresholds:
     max_risk_pct: float = 5.0
     # T3.4b — long wick threshold, as share of candle range
     long_wick_ratio: float = 0.5
-    # T4.3a/d — bounce stop buffer below the level: the larger of a percent of
-    # price (the book's own $98 -> $97.50 example is 0.5%) and an ATR multiple
+    # T4.3a/d — the stop sits just below the price that invalidates the idea
+    # (zone low / recent low under the level); this buffer is the *clearance*
+    # below that anchor: the larger of a percent of price (the book's own
+    # $98 -> $97.50 example is 0.5%) and an ATR multiple
     bounce_stop_pct: float = 0.005
     stop_buffer_atr: float = 0.25
+    # T4.3a/R1 — widest chart-justified stop we accept, as a fraction of entry;
+    # if the invalidating structure is further away than this, it's a no-trade
+    max_stop_pct: float = 0.03
+    # R3.2 — with a sideways trigger-timeframe trend, a stop tighter than this
+    # many trigger-tf ATRs sits inside the chop and gets taken by noise
+    chop_stop_atr: float = 2.0
+    # Supports/resistances closer together than this fraction of price are one
+    # zone, not separate levels (prevents ladders that re-enter above their own
+    # stop)
+    zone_merge_pct: float = 0.01
     # Plan / walk-forward (ours, spec Q11-Q14)
     respect_mult: float = 3.0          # reversal >= respect_mult * tol counts as "respected"
     gap_void_r: float = 1.0            # |open - prevClose| > gap_void_r * risk voids the plan
@@ -226,6 +238,8 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.max_risk_pct": t.max_risk_pct,
         "technique.wedge_min_bars": t.wedge_min_bars,
         "technique.bounce_stop_pct": t.bounce_stop_pct * 100,
+        "technique.max_stop_pct": t.max_stop_pct * 100,
+        "technique.plan.zone_merge_pct": t.zone_merge_pct * 100,
         "technique.plan.respect_mult": t.respect_mult,
         "technique.plan.gap_void_r": t.gap_void_r,
         "technique.plan.entry_window_bars": t.plan_entry_window_bars,
@@ -264,6 +278,9 @@ def thresholds_from_settings(get) -> Thresholds:
         round_number_steps=d.round_number_steps,
         bounce_stop_pct=float(get("technique.bounce_stop_pct", d.bounce_stop_pct * 100)) / 100,
         stop_buffer_atr=d.stop_buffer_atr,
+        max_stop_pct=float(get("technique.max_stop_pct", d.max_stop_pct * 100)) / 100,
+        chop_stop_atr=d.chop_stop_atr,
+        zone_merge_pct=float(get("technique.plan.zone_merge_pct", d.zone_merge_pct * 100)) / 100,
         respect_mult=float(get("technique.plan.respect_mult", d.respect_mult)),
         gap_void_r=float(get("technique.plan.gap_void_r", d.gap_void_r)),
         plan_entry_window_bars=int(get("technique.plan.entry_window_bars", d.plan_entry_window_bars)),

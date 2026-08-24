@@ -202,6 +202,27 @@ Everything is wired and live; no credentials outstanding.
   (`technique_outcomes`). Reviews (`technique_reviews`) record expectation, verdict
   and root-cause stage; replays reuse the snapshot so a prompt/threshold change is
   measured on identical data. Driver: `python -m zargar.tools.technique_review`.
+- **A "chart-based stop" must actually read the chart** (review of run `f055c5c6`,
+  MARA 2026-08-23). The first plan builder computed the bounce stop as
+  `level − max(2·tol, 0.5%, 0.25·ATR_1m)` — a fixed percentage wearing a costume
+  (identical $0.056 risk at three different entries), the exact thing T4.3d
+  forbids. Three lessons now enforced in code + pinned by tests:
+  (1) the stop anchors below the *invalidating* price — the merged support
+  zone's floor / recent low under the level (`setups.invalidation_low`,
+  `bounce_stop(invalidation=…)`), buffered by the *structure*-timeframe ATR, and
+  capped by `technique.max_stop_pct` (wider = no-trade, not a tighter fake stop);
+  (2) levels closer than `technique.plan.zone_merge_pct` are ONE zone, never a
+  ladder — the old plan emitted b2's entry $0.004 above b1's stop (stop out,
+  re-enter, churn); a lower zone inside a prior trigger's risk envelope is skipped;
+  (3) the R:R gate is only as honest as its target anchor — the old code dropped
+  a 27-touch resistance for sitting $0.002 below the last close and anchored the
+  ladder at a rejected gap-wick 10.7% away, producing "R:R 22.6" on a noise stop.
+  Target anchors now come from all resistances above the *entry*. Net effect on
+  the MARA run: three VALID triggers → one honest not-tradeable zone trigger,
+  matching the chat's independent read. R3.2 (sideways trigger tf + stop under
+  `chop_stop_atr`×ATR) is a further no-trade guard. Expect walk-forward stats to
+  shift: valid bounces are rarer now, and that is the point — a plan with nothing
+  to do is a valid plan.
 
 ---
 
