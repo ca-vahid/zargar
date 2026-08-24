@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { ChatPanel } from "../components/technique/ChatPanel";
 import { LiveRun } from "../components/technique/LiveRun";
-import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge, WindowBadge } from "../components/technique/RunResult";
+import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge } from "../components/technique/RunResult";
 import { PlanCard } from "../components/technique/PlanCard";
 import { ValidationTab } from "../components/technique/ValidationTab";
 import { ArmedTab } from "../components/technique/ArmedTab";
 import { RailShell, useRail } from "../components/technique/RailShell";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
-import { Modal } from "../components/Modal";
+import { ConfirmDialog, Modal } from "../components/Modal";
 import { CopyChip } from "../components/CopyChip";
 import { EmptyState, Spinner } from "../components/ui";
 import { IconX } from "../components/icons";
@@ -67,24 +67,77 @@ const PRESETS: { label: string; get: () => string; title: string }[] = [
 
 // --- status header -------------------------------------------------------------------
 
-function StatusBar({ status, onScan }: { status: TechniqueStatus | null; onScan: () => void }) {
-  const setPage = useStore((s) => s.setPage);
+function StatusBar({ status, onScan, scanBusy }: {
+  status: TechniqueStatus | null; onScan: () => void; scanBusy: boolean;
+}) {
   if (!status) return <div className="tq-status muted"><Spinner /> loading status…</div>;
   return (
     <div className="tq-status">
-      <span className={`status-pill ${status.llmAvailable ? "ok" : "bad"}`}>
-        {status.llmAvailable ? `${status.model} · ${status.effort}` : "no API key"}
-      </span>
-      <span className={`status-pill ${status.optionsAvailable ? "ok" : ""}`}>
-        options {status.optionsAvailable ? (status.optionsProvider ?? "cboe").toUpperCase() : "off"}
-      </span>
+      {!status.llmAvailable && <span className="status-pill bad">no API key</span>}
       <span className="status-pill">runs today {status.runsToday}/{status.maxRunsPerDay}</span>
-      <WindowBadge window={status.sessionWindow} />
       {(status.armed?.length ?? 0) > 0 && <span className="status-pill ok">{status.armed!.length} armed</span>}
-      {status.scanEnabled && <span className="status-pill ok">scan on</span>}
       {status.running.length > 0 && <span className="status-pill ok"><Spinner /> {status.running.length} running</span>}
-      <button className="link-btn" onClick={onScan}>scan now</button>
-      <button className="link-btn" onClick={() => setPage("settings")}>settings</button>
+      <button className="link-btn" onClick={onScan} disabled={scanBusy}
+        title="Run a full analysis on each watch symbol — shows a confirmation with symbols and cost first">
+        {scanBusy ? "scanning…" : "scan now"}
+      </button>
+    </div>
+  );
+}
+
+/** Live progress of a "scan now": one row per symbol, filling in as runs finish. */
+function ScanPanel({ ids, onDone, onClose, onOpen }: {
+  ids: string[]; onDone: () => void; onClose: () => void; onOpen: (id: string) => void;
+}) {
+  const [rows, setRows] = useState<TechniqueRun[]>([]);
+  const finished = useRef(false);
+  useEffect(() => {
+    let stop = false;
+    const poll = async () => {
+      if (finished.current) return;
+      try {
+        const all = await api.techniqueRuns(40);
+        if (stop) return;
+        const mine = all.filter((r) => ids.includes(r.id));
+        setRows(mine);
+        if (mine.length === ids.length && mine.every((r) => r.status !== "running")) {
+          finished.current = true;
+          onDone();
+        }
+      } catch { /* transient */ }
+    };
+    void poll();
+    const t = setInterval(() => void poll(), 3000);
+    return () => { stop = true; clearInterval(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ids.join(",")]);
+  const done = rows.filter((r) => r.status !== "running");
+  const setups = done.filter((r) => r.verdict === "setup");
+  const allDone = finished.current || (rows.length === ids.length && done.length === ids.length);
+  return (
+    <div className="panel mb tq-scan-panel">
+      <div className="panel-head">
+        {allDone
+          ? <b>Scan finished — {setups.length ? `${setups.length} setup(s) found` : "no setups"} across {ids.length} symbol(s)</b>
+          : <b><Spinner /> Scanning — {done.length}/{ids.length} done</b>}
+        <span className="sub">each row is a full analysis run; they also live in History (trigger "scan")</span>
+        <button className="icon-btn tq-head-right" onClick={onClose} aria-label="Dismiss scan results"><IconX /></button>
+      </div>
+      <div className="panel-body tq-scan-rows">
+        {ids.map((id) => {
+          const r = rows.find((x) => x.id === id);
+          return (
+            <button key={id} type="button" className="tq-scan-row" onClick={() => r && onOpen(r.id)}
+              title={r ? "Open this run" : ""}>
+              <b>{r?.symbol ?? id.slice(0, 8)}</b>
+              {!r || r.status === "running" ? <span className="muted"><Spinner /> analysing…</span> : <VerdictBadge run={r} />}
+              {r && r.status !== "running" && r.verdict !== "setup" && (
+                <span className="muted small">nothing tradeable at this moment</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -538,6 +591,20 @@ export function TechniquePage() {
   const shown = full && active && full.id === active.id ? { ...active, ...full } : active;
   const running = shown?.status === "running";
 
+  const [scanConfirm, setScanConfirm] = useState(false);
+  const [scan, setScan] = useState<{ ids: string[]; done: boolean } | null>(null);
+  const scanSymbols = status?.scanSymbols ?? [];
+  const startScan = async () => {
+    setScanConfirm(false);
+    try {
+      const r = await api.techniqueScan();
+      if (r.skipped?.length) toast("info", `skipped ${r.skipped.map((s: any) => `${s.symbol} (${s.reason})`).join("; ")}`.slice(0, 160));
+      if (r.started?.length) setScan({ ids: r.started, done: false });
+      refreshStatus();
+      api.techniqueRuns(100).then(setRuns).catch(() => undefined);
+    } catch (e: any) { toast("error", e.message); }
+  };
+
   return (
     <div className="tq-page">
       <div className="tq-head">
@@ -549,8 +616,41 @@ export function TechniquePage() {
             </button>
           ))}
         </div>
-        <StatusBar status={status} onScan={() => api.techniqueScan().then(() => refreshStatus()).catch((e) => toast("error", e.message))} />
+        <StatusBar status={status} scanBusy={!!scan && !scan.done} onScan={() => setScanConfirm(true)} />
       </div>
+      {scanConfirm && (
+        <ConfirmDialog
+          title={`Scan ${scanSymbols.length} watch symbol(s) now?`}
+          confirmLabel="Scan"
+          body={
+            <div>
+              <p style={{ marginTop: 0 }}>
+                Runs a <b>full analysis</b> (detectors + the 4-pass model read) on each of:{" "}
+                <b>{scanSymbols.join(", ") || "—"}</b>.
+              </p>
+              <p>
+                Each run costs roughly <b>$0.20</b> and takes ~30–60&nbsp;s; they run in parallel and count
+                against the daily cap ({status ? `${status.runsToday}/${status.maxRunsPerDay} used` : "…"}).
+                Total ≈ <b>${(scanSymbols.length * 0.2).toFixed(2)}</b>.
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                Results appear right here as they finish (and in History, trigger "scan"). A symbol with a
+                <b> valid setup</b> gets a setup card you can open and act on; "no setup" means nothing
+                tradeable at this moment — that is the normal answer. The watch list is editable in
+                Settings → <i>technique.scan.symbols</i>.
+              </p>
+            </div>
+          }
+          onConfirm={() => void startScan()}
+          onCancel={() => setScanConfirm(false)}
+        />
+      )}
+      {scan && (
+        <ScanPanel ids={scan.ids}
+          onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
+          onClose={() => setScan(null)}
+          onOpen={(id) => { setFocusRun(id); setTab("analyse"); }} />
+      )}
       {tab === "chat" ? (
         <ChatPanel />
       ) : tab === "validation" ? (

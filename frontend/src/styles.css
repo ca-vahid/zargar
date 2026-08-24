@@ -1546,3 +1546,11 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-armed-day-tl li.neg { color: var(--down); }
 .tq-armed-day-t { min-width: 108px; font-variant-numeric: tabular-nums; font-size: 12px; }
 .tq-armed-day-ic { min-width: 18px; text-align: center; }
+
+/* --- scan-now progress panel ------------------------------------------------ */
+.tq-scan-panel .panel-head { display: flex; align-items: center; gap: 10px; }
+.tq-scan-rows { display: flex; flex-wrap: wrap; gap: 8px; }
+.tq-scan-row { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--surface-1);
+  cursor: pointer; font: inherit; color: inherit; }
+.tq-scan-row:hover { background: var(--surface-2); }
