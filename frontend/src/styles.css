@@ -1537,3 +1537,18 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-arm-what .tq-arm-triggers { margin: 4px 0 0; padding-left: 4px; list-style: none; }
 .tq-arm-what .tq-arm-triggers li { margin: 4px 0; }
 .tq-arm-what .warn { color: color-mix(in srgb, var(--warn) 85%, var(--text)); margin-top: 2px; }
+
+/* --- armed day panel: chart + timeline ------------------------------------- */
+.tq-armed-sym-btn { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; color: inherit; font-weight: 800; font-size: inherit; display: inline-flex; align-items: baseline; gap: 4px; }
+.tq-armed-sym-caret { font-size: 11px; color: var(--text-3); }
+.tq-armed-day { border: 1px solid var(--border); border-radius: 8px; margin: 8px 0 10px; overflow: hidden; }
+.tq-armed-day-now { padding: 8px 12px; font-size: 13px; background: color-mix(in srgb, var(--accent) 5%, transparent); border-bottom: 1px solid var(--border); line-height: 1.5; }
+.tq-armed-day-chart { min-height: 340px; }
+.tq-armed-day-tl { padding: 8px 12px 10px; border-top: 1px solid var(--border); }
+.tq-armed-day-tl ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.tq-armed-day-tl li { display: flex; gap: 8px; align-items: baseline; padding: 2px 0; font-size: 13px; }
+.tq-armed-day-tl li.warn { color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
+.tq-armed-day-tl li.pos { color: var(--up); font-weight: 600; }
+.tq-armed-day-tl li.neg { color: var(--down); }
+.tq-armed-day-t { min-width: 108px; font-variant-numeric: tabular-nums; font-size: 12px; }
+.tq-armed-day-ic { min-width: 18px; text-align: center; }

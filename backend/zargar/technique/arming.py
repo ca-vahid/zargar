@@ -269,7 +269,7 @@ class ArmedPlan:
             "needsAttention": (lambda probs: bool(probs))(self._attention_reasons()),
             "attentionReasons": self._attention_reasons(),
             "fired": [t.to_dict() for t in self.trades.values()],   # back-compat for the rail
-            "events": self.events[-40:],
+            "events": self.events[-200:],   # a full session of touches/skips fits in the day panel
             "summary": self._summary(prime_now, last),
         }
 
@@ -966,7 +966,7 @@ class PlanArmer(SessionListener):
                                             "skipped": tr.skipped[-5:], "observedMidday": len(tr.observed_midday)}
                                       for tid, tr in ap.trackers.items()},
                          "trades": [t.to_dict() for t in ap.trades.values()],
-                         "events": ap.events[-60:], "barsSeen": ap.bar_index, "lastBarTs": ap.last_bar_ts,
+                         "events": ap.events[-200:], "barsSeen": ap.bar_index, "lastBarTs": ap.last_bar_ts,
                          "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
                          "stopReason": ap.stop_reason, "scorecard": ap.scorecard}
                 if row is None:

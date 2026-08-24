@@ -7,6 +7,7 @@ import type { ArmedPlan, ArmedTrade, ArmScorecard } from "../../types";
 import { Spinner } from "../ui";
 import { InfoTip } from "../InfoTip";
 import { WindowBadge } from "./RunResult";
+import { ArmedDayPanel } from "./ArmedDayPanel";
 
 function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
 function pnlCls(v: number | null | undefined) { return (v ?? 0) > 0 ? "pos" : (v ?? 0) < 0 ? "neg" : ""; }
@@ -84,6 +85,7 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
   const toast = useStore((s) => s.toast);
   const openRun = useStore((s) => s.openTechniqueRun);
   const [open, setOpen] = useState(false);
+  const [day, setDay] = useState(a.status === "armed" || a.status === "paused");
   const [audit, setAudit] = useState<any[] | null>(null);
   const [busy, setBusy] = useState(false);
   const live = a.portfolio.kind === "live" || a.portfolio.kind === "paper";
@@ -96,7 +98,10 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
   return (
     <div className={`panel mb tq-armed-card ${a.status} ${a.stale ? "stale" : ""}`}>
       <div className="panel-head tq-armed-head">
-        <span className="tq-armed-sym">{a.symbol}</span>
+        <button type="button" className="tq-armed-sym tq-armed-sym-btn" onClick={() => setDay((v) => !v)}
+          title={day ? "Hide the day view" : "Show today's chart + timeline: what happened, what was refused and why, what we're waiting for"}>
+          {a.symbol} <span className="tq-armed-sym-caret">{day ? "▾" : "▸"}</span>
+        </button>
         <span className={`tq-badge ${a.config.mode === "auto" ? (live ? "failed" : "setup") : "nosetup"}`} title="execution mode">
           {a.config.mode === "auto" ? (live ? "AUTO · REAL" : "AUTO · practice") : a.config.mode.toUpperCase()}
         </span>
@@ -126,6 +131,7 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
         )}
         <div className="tq-armed-summary">{a.summary}</div>
         {a.stopReason && <div className="neg small tq-armed-stopline">Stopped: {a.stopReason}</div>}
+        {day && <ArmedDayPanel a={a} />}
         {a.scorecard && <Scorecard sc={a.scorecard} />}
         <div className="tq-armed-triggers">
           {a.triggers.map((t) => (
