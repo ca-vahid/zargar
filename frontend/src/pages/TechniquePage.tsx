@@ -543,8 +543,17 @@ function ArmedPanel() {
   );
 }
 
-const ET_HM = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
+const ET_HM = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", hour12: true });
+const ET_MD = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric" });
 const ET_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+
+/** "1:57 PM ET", with "Aug 23, " in front when the run is not from today. */
+function etStamp(iso: string | null | undefined, todayEt: string): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const day = ET_DAY.format(d);
+  return `${day !== todayEt ? ET_MD.format(d) + ", " : ""}${ET_HM.format(d)} ET`;
+}
 
 function Rail({ rules, open, onToggle }: { rules: Record<string, string>; open: boolean; onToggle: () => void }) {
   const setups = useStore((s) => s.techniqueSetups);
@@ -586,7 +595,7 @@ function Rail({ rules, open, onToggle }: { rules: Record<string, string>; open: 
           {todaysRuns.map((r) => (
             <button key={r.id} className={`tq-setup-row ${r.verdict === "setup" ? "valid" : ""}`} onClick={() => openRun(r.id)}
               title={`Open run ${r.id.slice(0, 8)}`}>
-              <span className="muted tq-run-t">{r.createdAt ? ET_HM.format(new Date(r.createdAt)) : ""}</span>
+              <span className="muted tq-run-t">{etStamp(r.createdAt, todayEt)}</span>
               <b>{r.symbol}</b>
               {r.status === "running" ? <span className="muted"><Spinner /></span> : <VerdictBadge run={r} />}
               <span className="muted small">{r.trigger && r.trigger !== "manual" ? r.trigger : ""}</span>
