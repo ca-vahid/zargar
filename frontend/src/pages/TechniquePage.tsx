@@ -807,19 +807,15 @@ export function TechniquePage() {
               </label>
             )}
             {sheetScan && sheetScan.freshness === "stale" && (
-              <div className="tq-arm-row disabled tq-scan-stale">
-                <span>
-                  <b>Prepared sheet for {sheetScan.planFor} — expired</b>
-                  <span className="muted">
-                    That session is over, so its plans can't be analyst-checked or armed any more. Build a fresh
-                    sheet for the next session (free, deterministic), then come back here.
-                  </span>
-                  <span>
-                    <button className="ghost-btn" onClick={() => { setScanConfirm(false); setTab("validation"); }}>
-                      Prepare the next session in Validation →
-                    </button>
-                  </span>
+              <div className="tq-scan-stale">
+                <b>Prepared sheet for {sheetScan.planFor} — expired</b>
+                <span className="muted">
+                  That session is over, so its plans can't be analyst-checked or armed any more. Build a fresh
+                  sheet for the next session (free, deterministic), then come back here.
                 </span>
+                <button className="ghost-btn" onClick={() => { setScanConfirm(false); setTab("validation"); }}>
+                  Prepare the next session in Validation →
+                </button>
               </div>
             )}
             {sheetScan === null && (

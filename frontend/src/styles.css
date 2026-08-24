@@ -1557,14 +1557,15 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 
 /* --- scan dialog + bulk arm ------------------------------------------------- */
 .tq-scan-dialog { display: flex; flex-direction: column; gap: 10px; }
-.tq-scan-dialog .tq-arm-row span { display: flex; flex-direction: column; gap: 4px; }
+.tq-scan-dialog .tq-arm-row > span { display: flex; flex-direction: column; gap: 4px; }
 .tq-scan-grades { flex-direction: row !important; gap: 10px !important; margin-top: 2px; }
 .tq-scan-grades .tq-chipbtn { display: inline-flex; align-items: center; gap: 6px; }
 .tq-scan-armall { margin-left: auto; }
 .tq-scan-panel .panel-head .tq-head-right { margin-left: 8px; }
 .tq-scan-dialog .warn { color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
-.tq-scan-stale { opacity: 0.85; }
-.tq-scan-stale > span { display: flex; flex-direction: column; gap: 6px; }
+.tq-scan-stale { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px;
+  display: flex; flex-direction: column; gap: 6px; opacity: 0.92; }
+.tq-scan-stale button { align-self: flex-start; }
 .tq-setup-row .tq-run-t { font-variant-numeric: tabular-nums; font-size: 11px; white-space: nowrap; }
 .tq-badge.warnbadge { background: color-mix(in srgb, var(--warn) 16%, transparent); color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
 .tq-status .tq-scan-btn { padding: 4px 14px; font-weight: 700; }
