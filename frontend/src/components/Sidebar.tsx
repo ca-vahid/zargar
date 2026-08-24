@@ -63,7 +63,7 @@ function SectionHead({
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: { collapsed?: boolean; onToggleCollapse?: () => void } = {}) {
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   const watchlists = useStore((s) => s.watchlists);
@@ -91,16 +91,21 @@ export function Sidebar() {
   }, [positionsMap, portfolios]);
 
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar ${navCollapsed ? "collapsed" : ""}`}>
+      <button type="button" className="side-collapse" onClick={onToggleCollapse}
+        title={navCollapsed ? "Expand the sidebar" : "Collapse the sidebar"} aria-expanded={!navCollapsed}>
+        <IconChevron size={12} style={{ transform: navCollapsed ? "none" : "rotate(180deg)", transition: "transform 0.2s" }} />
+      </button>
       <nav className="nav" aria-label="Primary">
         {PAGES.map((p) => (
           <button
             key={p.key}
             className={page === p.key ? "active" : ""}
+            title={navCollapsed ? p.label : undefined}
             aria-current={page === p.key ? "page" : undefined}
             onClick={() => setPage(p.key)}
           >
-            {p.icon} {p.label}
+            {p.icon} <span className="nav-label">{p.label}</span>
             {p.key === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
           </button>
         ))}

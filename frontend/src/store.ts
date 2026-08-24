@@ -399,6 +399,8 @@ export const useStore = create<AppState>((set, get) => ({
       else if (msg.event === "position_open") get().toast("success", `${ap.symbol}: position open`);
       else if (msg.event === "exit_fill" || msg.event === "exit_submit") { /* quiet */ }
       else if (msg.event === "entry_rejected" || msg.event === "entry_error" || msg.event === "exit_failed") get().toast("error", `${ap.symbol}: ${msg.event.replace(/_/g, " ")} — see Armed tab`);
+    } else if (msg.kind === "alert") {
+      get().toast(msg.level === "warning" ? "info" : "error", `\u26a0 ${msg.text}`);
     } else if (msg.kind === "disarmed") {
       set((st) => ({ techniqueArmed: st.techniqueArmed.filter((a) => a.runId !== msg.runId) }));
     } else if (msg.kind === "sweep" || msg.kind === "sweep_progress") {

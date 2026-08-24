@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from zargar.domain import Bar
+from zargar.execution.exits import premium_stop_breach
 from zargar.execution.exits import (
     ExitDecision, plan_exit, reduce_only_exit_intent, stale_working_exit,
 )
@@ -90,3 +91,23 @@ def test_reduce_only_intent_is_reduce_only_and_sells():
     forced = reduce_only_exit_intent(portfolio_id="p", symbol="AAPL260101C00200000", sec_type="OPT",
                                      qty=1, bid=2.4, force_market=True)
     assert forced.order_type == "MKT"
+
+
+def test_premium_stop_breach_only_for_bleeding_options():
+    class T:
+        sec_type = "OPT"
+        remaining = 1.0
+        pending_exit_qty = 0.0
+        avg_fill = 2.00
+        entry = 100.0
+        stop = 99.0
+    t = T()
+    assert premium_stop_breach(t, 1.10, stop_pct=50) is None          # -45%: not yet
+    assert premium_stop_breach(t, 0.99, stop_pct=50) is not None      # -50.5%: exit
+    assert premium_stop_breach(t, 0.10, stop_pct=0) is None           # disabled
+    assert premium_stop_breach(t, 0.0, stop_pct=50) is not None      # bid 0 = total bleed
+    t.sec_type = "STK"
+    assert premium_stop_breach(t, 0.10, stop_pct=50) is None          # shares: never
+    t.sec_type = "OPT"
+    t.pending_exit_qty = 1.0
+    assert premium_stop_breach(t, 0.10, stop_pct=50) is None          # exit already working

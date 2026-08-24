@@ -145,3 +145,22 @@ ROADMAP).
   full pipeline (extraction stubbed with canned results — no API key needed).
 * Frontend: `npm run build` (tsc + vite) is the gate; end-to-end verified with
   Playwright driving the real served app.
+
+
+## Workspaces (2026-08-23)
+
+`trading.mode` is a **workspace**, not just a routing gate. Practice = the in-app
+simulator (`sim` + `shadow` books); Live = real venues (`live` accounts and
+broker-hosted `paper` accounts — IBKR paper trades on IBKR's systems with their
+numbers, so it belongs to Live, greyed until the gateway connects). Switching the
+workspace (top bar, next to HALT) both flips the order-routing gate (unchanged:
+practice mode rejects orders to real accounts in `orders.py`) and scopes every
+account-shaped view: top-bar money, Dashboard (net worth, provider cards, recent
+activity, equity curve), Portfolios, the Blotter, account pickers
+(`AccountSelect`), the Arm dialog's account list, and the Armed dashboard
+(cards, KPIs, history). The Technique research surfaces (analyses, plans,
+validation, sheets) are shared — they are account-free. Armed plans in the
+hidden workspace are never silent: the top bar and the Armed tab show an
+"N armed in <other>" notice. Single source of truth:
+`frontend/src/lib/workspace.ts` (`workspaceOf`, `useWorkspace`,
+`useWorkspacePortfolios`, `useWorkspaceFilter`).

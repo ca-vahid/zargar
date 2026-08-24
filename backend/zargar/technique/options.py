@@ -75,9 +75,11 @@ def parse_occ(symbol: str) -> tuple[str, str, str, float] | None:
 
 # --- selection (provider-agnostic) ------------------------------------------------
 
-def choose_expiry(expirations: list[str], today: dt.date) -> tuple[str | None, bool]:
+def choose_expiry(expirations: list[str], today: dt.date, *, avoid_0dte: bool = False) -> tuple[str | None, bool]:
     """T5.2 — same-day (0DTE) if listed, else the nearest expiry on/before this
-    week's Friday, else the very next expiry."""
+    week's Friday, else the very next expiry. `avoid_0dte` skips the same-day
+    expiry when any later one exists (used near the close, where a 0DTE premium
+    is mostly spread and theta) — with no alternative it still returns 0DTE."""
     dates = []
     for s in expirations:
         try:
@@ -87,18 +89,23 @@ def choose_expiry(expirations: list[str], today: dt.date) -> tuple[str | None, b
     dates = sorted(d for d in dates if d >= today)
     if not dates:
         return None, False
-    if dates[0] == today:
+    if dates[0] == today and not (avoid_0dte and len(dates) > 1):
         return dates[0].isoformat(), True
+    later = [d for d in dates if d > today] or dates
     friday = today + dt.timedelta(days=(4 - today.weekday()) % 7)
-    this_week = [d for d in dates if d <= friday]
-    pick = this_week[-1] if this_week else dates[0]
-    return pick.isoformat(), False
+    this_week = [d for d in later if d <= friday]
+    pick = this_week[-1] if this_week else later[0]
+    return pick.isoformat(), pick == today
 
 
 def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: str,
-                    today: dt.date, is_0dte: bool) -> ContractPick | None:
+                    today: dt.date, is_0dte: bool, max_strike: float | None = None) -> ContractPick | None:
     """T5.1 — the first strike just OTM in the trade direction, with T5.3/T5.4
-    warnings attached. Returns None if the chain has no usable contract."""
+    warnings attached. `max_strike` (usually the plan's TP2) caps the pick: a
+    call whose strike sits beyond the target would still be OTM when the plan
+    says take profit — worthless leverage. If every OTM strike is beyond the
+    cap, the nearest one is used with a warning. Returns None if the chain has
+    no usable contract."""
     want = "call" if direction == "long" else "put"
     rows = [c for c in chain if (c.get("option_type") or "").lower() == want]
     if not rows:
@@ -111,7 +118,15 @@ def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: s
         otm.sort(key=lambda c: -float(c["strike"]))
     if not otm:
         return None
+    strike_warning = None
     c = otm[0]
+    if max_strike is not None and want == "call" and float(c["strike"]) > max_strike:
+        within = [x for x in otm if float(x["strike"]) <= max_strike]
+        if within:
+            c = within[0]                      # still the closest OTM, but inside the target
+        else:
+            strike_warning = (f"T5.1 strike {float(c['strike']):g} is beyond the plan's target cap "
+                              f"{max_strike:g} — payoff at target is poor")
     bid = float(c.get("bid") or 0.0)
     ask = float(c.get("ask") or 0.0)
     mid = (bid + ask) / 2 if (bid or ask) else 0.0
@@ -127,6 +142,8 @@ def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: s
         dte = -1
 
     warnings: list[str] = []
+    if strike_warning:
+        warnings.append(strike_warning)
     rules = ["T5.1", "T5.2"]
     if spread_pct > MAX_SPREAD_PCT:
         warnings.append(f"T5.4 wide spread {spread_pct:.1f}% (bid {bid} / ask {ask})")
@@ -156,19 +173,21 @@ def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: s
 
 
 async def pick_for_setup(client, symbol: str, spot: float, direction: str,
-                         *, today: dt.date | None = None) -> dict:
+                         *, today: dt.date | None = None, max_strike: float | None = None,
+                         avoid_0dte: bool = False) -> dict:
     """End-to-end: expirations → expiry choice → chain → contract. `client` is
     any provider exposing expirations()/chain() with normalized rows. Never
     raises for 'no contract'; returns a dict with `error` for hard failures."""
     today = today or dt.date.today()
     try:
         exps = await client.expirations(symbol)
-        expiry, is_0dte = choose_expiry(exps, today)
+        expiry, is_0dte = choose_expiry(exps, today, avoid_0dte=avoid_0dte)
         if not expiry:
             return {"error": "no expirations listed", "available": False,
                     "provider": getattr(client, "name", "?")}
         chain = await client.chain(symbol, expiry)
-        pick = select_contract(chain, spot, direction, expiry=expiry, today=today, is_0dte=is_0dte)
+        pick = select_contract(chain, spot, direction, expiry=expiry, today=today, is_0dte=is_0dte,
+                               max_strike=max_strike)
         if pick is None:
             return {"error": f"no {('call' if direction == 'long' else 'put')} just OTM at {expiry}",
                     "expiry": expiry, "available": True, "provider": getattr(client, "name", "?")}

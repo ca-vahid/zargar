@@ -445,6 +445,158 @@ The page header is one row (tabs + status pills) that is identical on every tab;
 right rail collapses from its left edge (animated, persisted) on Analyse / History /
 Backtest / Validation.
 
+**Parallel sweeps + a 50-name universe (2026-08-22, later the same day).** A sweep is two
+halves per symbol — `walkforward.fetch_symbol_bars` (I/O: the three timeframes fetch
+concurrently, `history._sem` bounds Yahoo at 4 in flight, 429s retry with back-off) and
+`walkforward.compute_symbol_rows` (pure CPU, ~1 s per symbol-session, picklable). The
+service runs every symbol concurrently (`technique.walkforward.concurrency`, default 8 in
+flight) and farms the CPU half to a `ProcessPoolExecutor` (`technique.walkforward.workers`:
+0 = auto, CPU−1 capped at 8; 1 = a single background thread, what the tests use; N =
+N processes) so the engine's event loop keeps serving quotes and the risk gate during a
+45-symbol × 20-session sweep. Rows are persisted per symbol as each finishes; progress
+counts symbols and names the pool. `technique.walkforward.symbols` grew from 9 to 50
+liquid, optionable US names (index/sector ETFs, mega-caps, semis, high-beta tech,
+financials, energy); the UI stores its selection under a new key so the bigger universe
+becomes the default. Yahoo bug fixed on the way: a 1m chunk lying wholly in the future
+(the week after the last plan day) returns HTTP 400 and used to fail the symbol — whether
+it bit depended on how the 7-day chunks aligned with today, so 1-session checks worked and
+20-session ones didn't; `history.clip_request_window` now ends every request at now. The
+`plan` / `LLM read` row actions show a spinner while in flight, mark the row promoted at
+once (no duplicate runs from a second click), and say where the result lands.
+
+**Sweep plan == live plan (2026-08-22, evening).** A promoted run showed a *different* plan
+from the sweep row it came from (XYZ: sweep "b2 fired, WIN"; run "b3 not triggered").
+Cause: the sweep built every plan from ~12 calendar days of bars on every timeframe,
+while `analyze()` → `gather_bars` → `fetch_recent` uses `SESSIONS_FOR_TF` (1m 5 sessions,
+30m 15, 1h 25) — different pivots, different levels, different triggers. Now
+`walkforward.plan_window()` trims each timeframe to exactly that window at the plan
+close, `fetch_symbol_bars` fetches deep enough for the 1h window, and the replay's
+relative-volume baseline is the same 1m window the promoted run snapshots. Regression
+tests assert sweep plan == `plan_at_close` == promoted run plan (triggers + levels).
+**Sweeps run before this fix used the wider window — re-run them before trusting a
+number.** UI in the same pass: the picker grew **bundles** (sector/theme sets, collapsed,
+"add all" — `lib/symbolBundles.ts`); a **Past validations** table sits above the results
+(every sweep is kept; click to reopen); row actions are icon pills — *open* (promote,
+free), *LLM* (analyst read), and **next** (build the symbol's plan for the upcoming
+session at the last close via `POST /api/technique/plan` — the run that has the Arm
+button); a past plan's run page carries the same "Plan the next session →" button so the
+path to arming is one click from any validation finding.
+
+**Stale sweeps are labelled (same evening).** Two sweeps minutes apart disagreed on ADBE
+because the plan-builder code changed between them — and the git sha could not tell
+them apart (a dirty tree stays "-dirty"). Every sweep now stores `params.sweepVersion`
+(`provenance.sweep_version`: content hash of the technique+execution sources, rulebook,
+thresholds, timeframes — deliberately *not* the model/prompt/universe, which do not touch
+a deterministic sweep); `GET /api/technique/status` reports the current one, and the
+Past-validations table shows "⚠ older engine" when they differ. Also in this pass: the
+Validate button is disabled and shows progress while a sweep runs; the selection is
+summarised as whole sets ("The book's universe · 50", "Fintech & crypto · 16") plus loose
+symbols; Advanced is a labelled three-field row with one-line explanations; and the
+statistics panel ("Does the book hold up?") is plain language — each claim as a question
+with a verdict badge and one evidence sentence, level/trigger tables with human row names
+and bars, a "why the rest never fired" column, and the counterfactual rows named for the
+rule they switch off.
+
+**Orientation pass (2026-08-23).** User confusion worth recording: WIN/MIXED/LOSS/NO FIRE
+read as "things to arm", and "Plan → scored" read as a lost opportunity. The tab now opens
+with a callout — *looks backward; every row is evidence, never a trade; to prepare the
+next session (date shown) press ⚡ next or Analyse → Last close* — the column is "Built at
+close of → replayed on", badges carry tooltips and a one-line legend says all four are
+past sessions. Also: sweeps can be **named** before start and **renamed** after (`PATCH
+/api/technique/walkforward/{id}`, `rename_sweep`), the running/selected sweep sits above
+the history table, the Validate button's spinner is inline, and Advanced is one line with
+structure timeframes as toggle chips (1d/1h/30m/15m/5m) instead of a free-text field.
+
+**Plan sheet — "Prepare the next session" (2026-08-23).** The user's real question was
+"which of these 70 are a good setup for Monday's open?" — forward, not backward. The
+Validation tab now has a mode toggle: *Check the past* (the sweep) and *Prepare the next
+session* (the sheet). `POST /api/technique/walkforward/next {symbols, label}` →
+`service.start_plan_sheet`: for every symbol, `walkforward.compute_symbol_plan` builds the
+plan at `last_completed_session()`'s close for `next_session_date` — same `plan_window` +
+builder as a sweep row and as a live "Last close", so sheet == sweep == run — in the
+same process pool, **no technique runs minted** (the runs/day budget is untouched) and no
+LLM. Stored as a `TechniqueSweep` with `params.kind == "next"`, rows with
+`result.pending`; `summary.setups` counts symbols with ≥1 valid trigger. The UI ranks rows
+by the plan's own confidence then R:R and shows level, entry, stop, targets, R:R,
+confidence bar, confluences ("why"), level count, structure trend and the gap rule; each
+row's **open & arm** mints the run (`POST /api/technique/plan`) and opens it with the Arm
+button; symbols without a setup are listed with the reason. After the session closes,
+`POST /api/technique/walkforward/{id}/score` (`score_sheet` → `score_pending_row`, only
+once the session's bars are complete) replays every pending row and the sheet becomes an
+ordinary validation with the usual aggregate — so "what I planned" and "what happened" are
+one object. Tests: `last_completed_session` roll-back, sheet builds pending rows equal to
+`plan_at_close`, scoring turns it into a validation.
+
+**Intra-minute quote stop watch (2026-08-23).** Sub-minute bars are off the table (Yahoo
+has no 5s data, so a 5s trigger loop would be unvalidatable), but exits may react faster
+than the bar close without costing validatability — they can only get *safer*. New safety
+layer: `execution.exits.quote_stop_breach` (pure) fires when the **underlying's live
+quote** is not merely at the stop (the bar-close logic owns that call — mental-stop
+discipline) but **decisively through it**, beyond the stop by
+`technique.arm.quote_exit_excess_r` (0.25) × the planned risk, for
+`technique.arm.quote_exit_polls` (2) consecutive polls of the
+`SessionListener._quote_watch_loop` (`technique.arm.quote_exit_seconds`, 2 s — the quote
+feed itself polls ~3 s). The exit goes through the same `_exit` reduce-only machinery,
+force-market, journaled with reason "intra-minute quote breach". Entries NEVER come from
+this path. Stale quotes (> `technique.arm.stale_seconds`) are ignored. Tests: a
+mid-minute crash exits without any closed bar; a quote *at* the stop does not fire.
+
+**Navigation pass on the Validation tab (same day).** App sidebar collapses to a 52px
+icon rail (chevron, animated, persisted). The plan-sheet table dropped the Levels /
+Void-if columns (void rules live in the row tooltip), confidence is a colored percentage
+pill instead of a bar, "why" is compact chips, and **⚡ arm sits next to the symbol** —
+no horizontal scroll, sticky headers with their own scroll area (62vh). The set-up form
+folds into its header once a validation is shown; Past validations defaults to collapsed;
+the no-setup list shows one reason with a "+N more" tooltip.
+
+**Execution-audit fixes + resilience (2026-08-23, evening).** A full review of
+arm→fire→buy→manage→sell found the loss paths the underlying-based ladder cannot see, and
+that failures had logging but no escalation. Fixed:
+- **Premium stop** (`exits.premium_stop_breach`, `technique.arm.premium_stop_pct` = 50):
+  an option that bleeds past 50% of the premium paid is sold at market even though the
+  underlying never touched its stop — theta/IV was the one unbounded loss path.
+- **Loss halt counts open positions** marked at the bid (`_unrealized`); open gains do not
+  license bigger losses (only negative marks count). **Auto mode derives a halt** when none
+  is set: 2 × the per-trade dollar risk (journaled at arm time). Proposal/alert modes are
+  not auto-limited.
+- **Strike capped at TP2** (`select_contract(max_strike=…)`,
+  `technique.arm.strike_within_targets`): the just-OTM pick prefers a strike inside the
+  plan's target; beyond-cap fallback carries a warning.
+- **Late-day 0DTE avoidance** (`choose_expiry(avoid_0dte=…)`,
+  `technique.arm.avoid_0dte_after` = 15:15 ET) and **0DTE half-size** on the risk-sized
+  contracts path (T5.2's "reduced size" made mechanical).
+- **Failed-exit watchdog**: an errored/rejected exit with the position still open is
+  retried at market every 30 s (5 tries) from the quote-watch loop, with an alert on the
+  first failure and a final "needs manual attention" alert.
+- **Alert channel** (`PlanArmer._alert`): one call fans out to the plan's live log, the
+  journal (`TechniquePlanError`, stage names the source), a WS `{kind:"alert"}` toast in
+  the UI, and Telegram (`engine.telegram`, best-effort) — wired to exit failures, the
+  watchdog, loss halts, premium stops, and stale-data-while-holding.
+- **Attention state**: `ArmedPlan._attention_reasons()` → `needsAttention` +
+  `attentionReasons` in every snapshot; the Armed card shows a red banner with the reasons
+  and a **Sell now (market)** button (also per open trade); the top bar shows a pulsing
+  "N needs attention" chip that crosses workspaces (safety outranks scoping). Recourse
+  endpoint: `POST /api/technique/armed/{id}/exit {trigger?}` → `flatten_trade`
+  (reduce-only, force-market).
+Known remaining softness: "R" for options is still underlying-defined while P&L is
+premium-defined (documented, measured by the scorecard, not yet displayed as premium-R).
+
+**Adversarial audit round 2 (same evening).** Attacking the fresh code found three real
+holes, all fixed: (1) the `trading.mode` routing gate rejected **reduce-only exits** to
+real accounts — flipping the workspace to Practice while a live plan held a position
+would have trapped it (stop/flatten/watchdog all REJECTED_RISK); reduce-only orders are
+now exempt from the mode gate, mirroring `risk.halt_allows_exits` (test:
+`test_reduce_only_exits_pass_the_trading_mode_gate`). (2) The premium stop treated
+**bid = 0 as a missing quote** and skipped — i.e. it was blind exactly when the option
+became worthless; a *fresh* zero-bid quote now counts as total bleed and exits. (3) A
+missing/stale option quote made the premium stop silently inert — after ~5 minutes of
+consecutive misses while holding, an alert fires ("premium stop is blind; underlying
+stops still work"). Hygiene: breach/retry counters are cleaned when a trade closes, and
+a failed equity fetch during loss-halt derivation logs a warning instead of silently
+arming with no halt. Also fixed en route (found live): `restore()` expired any plan not
+armed *for today* — weekend arming for Monday died on every restart; now only past
+sessions expire (verified live: MARA survived a restart).
+
 ### 9.3 Execution rebuilt for safety, recording and reuse (2026-08-22)
 
 A full audit of the arm system (does it buy AND sell properly, is it recorded, does it have

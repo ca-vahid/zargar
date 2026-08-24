@@ -3,6 +3,7 @@ import { api } from "../../lib/api";
 import { cashText } from "../../lib/brokerage";
 import { fmtCcy } from "../../lib/format";
 import { useStore } from "../../store";
+import { useWorkspace, workspaceOf } from "../../lib/workspace";
 import type { ArmOptions, ArmPreflight, ArmRequest } from "../../types";
 import { BrokerIcon } from "../BrokerIcon";
 import { InfoTip } from "../InfoTip";
@@ -73,6 +74,17 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
       setSkipIv(o.defaults.skipElevatedIv ?? false);
     }).catch((e) => toast("error", e.message));
   }, [toast]);
+  const ws = useWorkspace();
+  const wsPortfolios = useMemo(() => (opts?.portfolios ?? []).filter((p) => workspaceOf(p.kind) === ws), [opts, ws]);
+  const isPendingAcct = useCallback((p: any) => p.venue === "ibkr" && (p.kind === "live" || p.kind === "paper"), [] as any);
+  useEffect(() => {
+    if (!wsPortfolios.length) return;
+    if (!wsPortfolios.some((p) => p.id === portfolioId && !isPendingAcct(p))) {
+      const first = wsPortfolios.find((p) => !isPendingAcct(p)) ?? wsPortfolios[0];
+      setPortfolioId(first.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wsPortfolios]);
   const brokerFor = useMemo(() => {
     const m = new Map<string, { account: any; provider: any }>();
     for (const prov of brokerages?.providers ?? []) for (const a of prov.accounts) m.set(a.portfolioId, { account: a, provider: prov });
@@ -137,20 +149,22 @@ export function ArmDialog({ symbol, planFor, bestTrigger, onClose, onArm }: {
           {/* 1. account */}
           <div className="tq-arm-block">
             <div className="tq-arm-h">1 · Which account trades this plan
-              <InfoTip>The plan can watch and trade in any of your accounts. Practice (SIM) accounts are fake money. The others are real.</InfoTip>
+              <InfoTip>Only the active workspace's accounts are offered — Practice shows the simulator, LIVE shows your real accounts (switch next to HALT). IBKR's paper account will appear under LIVE, greyed until the gateway connects.</InfoTip>
             </div>
             <div className="tq-arm-accounts">
-              {opts.portfolios.map((p) => {
+              {wsPortfolios.map((p) => {
                 const b = brokerFor.get(p.id);
                 const live = p.kind === "live" || p.kind === "paper";
+                const pending = isPendingAcct(p);
                 return (
-                  <label key={p.id} className={`tq-arm-account ${portfolioId === p.id ? "active" : ""} ${live ? "live" : ""}`}>
-                    <input type="radio" name="arm-account" checked={portfolioId === p.id} onChange={() => setPortfolioId(p.id)} />
+                  <label key={p.id} className={`tq-arm-account ${portfolioId === p.id ? "active" : ""} ${live ? "live" : ""} ${pending ? "disabled" : ""}`}
+                    title={pending ? "IBKR is not connected yet — this account (incl. IBKR paper) activates with the gateway" : undefined}>
+                    <input type="radio" name="arm-account" disabled={pending} checked={portfolioId === p.id} onChange={() => setPortfolioId(p.id)} />
                     {b?.provider ? <BrokerIcon name={b.provider.broker} logoUrl={b.provider.logoUrl} size={22} />
                       : <span className="tq-arm-venue">{p.venue === "ibkr" ? "IB" : "SIM"}</span>}
                     <span className="tq-arm-acct-main">
                       <span className="tq-arm-acct-name">{p.name}</span>
-                      <span className="muted small">{live ? "REAL" : "PRACTICE"} · {p.venue}{p.optionsOk ? " · options ✓" : ` · no options (${p.optionsNote})`}</span>
+                      <span className="muted small">{live ? (p.kind === "paper" ? "PAPER — IBKR-hosted practice, lives in LIVE" : "REAL") : "PRACTICE"} · {p.venue}{p.optionsOk ? " · options ✓" : ` · no options (${p.optionsNote})`}</span>
                     </span>
                     <span className="tq-arm-acct-cash"><b>{cashOf(p)}</b><span className="muted small">available</span></span>
                   </label>

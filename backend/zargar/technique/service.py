@@ -12,11 +12,16 @@ import asyncio
 import contextlib
 import dataclasses
 import datetime as dt
+import functools
 import gzip
 import json
 import logging
 import math
+import os
+import pickle
 import time
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 
 from sqlalchemy import func, select
 
@@ -53,6 +58,7 @@ from .outcome import (
 )
 from .plans import build_session_plan, plan_summary_text
 from .provenance import snapshot as provenance_snapshot
+from .provenance import sweep_version, technique_source_version
 from .render import render_chart
 from .review import diff_runs, review_dict, validate_review
 from .rulebook import (
@@ -69,7 +75,14 @@ from .rulebook import (
 from .vision import PipelineResult, VisionPipeline, transcript_messages
 from .volume import build_profile
 from .walkforward import aggregate as aggregate_sweep
-from .walkforward import replay_plan, run_symbol
+from .walkforward import (
+    compute_symbol_plan,
+    compute_symbol_rows,
+    fetch_symbol_bars,
+    last_completed_session,
+    replay_plan,
+    score_pending_row,
+)
 
 log = logging.getLogger("zargar.technique")
 
@@ -191,6 +204,9 @@ class TechniqueService:
             "triggerTf": str(self.engine.settings.get("technique.trigger_tf", "1m")),
             "armed": self.armer.armed(),
             "sweepsRunning": [sid for sid, t in self._sweeps.items() if not t.done()],
+            "sweepVersion": sweep_version(thresholds=self.thresholds(), structure_tfs=list(self.structure_tfs()),
+                                          trigger_tf=self.trigger_tf()),
+            "techniqueSource": technique_source_version(),
             "rules": RULES,
         }
 
@@ -1185,6 +1201,8 @@ class TechniqueService:
         row = TechniqueSweep(id=new_id(), label=label or f"{len(symbols)} symbols {start}..{end}", symbols=symbols,
                              start=start, end=end, status="running",
                              params={"structureTfs": stf, "triggerTf": ttf, "includeInvalid": include_invalid,
+                                     "sweepVersion": sweep_version(thresholds=t, structure_tfs=stf, trigger_tf=ttf),
+                                     "techniqueSource": technique_source_version(),
                                      "thresholds": provenance_snapshot(thresholds=t, settings_all=self.engine.settings.all(),
                                                                        model="-", effort="-", thinking_display="-",
                                                                        max_passes=0, timeframes=stf + [ttf])["thresholds"],
@@ -1207,23 +1225,60 @@ class TechniqueService:
             return await self.get_sweep(row.id) or d
         return d
 
+    def _sweep_pool(self):
+        """Executor for the CPU half of a sweep. `technique.walkforward.workers`:
+        0 = auto (CPU count - 1, max 8) processes, 1 = one background thread (no
+        extra processes — tests, tiny machines), N = N processes. Processes matter:
+        each symbol-session is ~1 s of pure Python and the engine's event loop must
+        keep serving quotes and the risk gate while a 45-symbol sweep runs."""
+        want = int(self.engine.settings.get("technique.walkforward.workers", 0) or 0)
+        if want == 1:
+            return ThreadPoolExecutor(max_workers=1, thread_name_prefix="technique-sweep"), "thread"
+        n = want if want > 1 else max(1, min(8, (os.cpu_count() or 2) - 1))
+        try:
+            return ProcessPoolExecutor(max_workers=n), f"{n} processes"
+        except Exception:                                    # pragma: no cover — exotic hosts
+            log.exception("process pool unavailable, falling back to a thread")
+            return ThreadPoolExecutor(max_workers=1, thread_name_prefix="technique-sweep"), "thread"
+
     async def _run_sweep(self, sweep_id: str, symbols: list[str], start: str, end: str, stf: list[str], ttf: str,
                          include_invalid: bool, t: Thresholds) -> None:
+        """Fetch every symbol concurrently (history's semaphore bounds Yahoo), score
+        each in the worker pool as soon as its bars land, persist per symbol."""
         all_rows: list[dict] = []
         errors: list[dict] = []
-        try:
-            for i, sym in enumerate(symbols):
-                try:
-                    rows = await run_symbol(sym, start, end, structure_tfs=stf, trigger_tf=ttf, thresholds=t,
-                                            include_invalid=include_invalid,
-                                            bars_override=self._sweep_bars_override(sym))
-                except Exception as exc:
-                    log.exception("sweep symbol failed")
-                    errors.append({"symbol": sym, "error": str(exc)})
-                    rows = []
-                if rows and rows[0].get("error"):
-                    errors.append({"symbol": sym, "error": rows[0]["error"]})
-                    rows = []
+        done = 0
+        loop = asyncio.get_running_loop()
+        pool, pool_desc = self._sweep_pool()
+        in_flight = asyncio.Semaphore(max(1, int(self.engine.settings.get("technique.walkforward.concurrency", 8) or 8)))
+        lock = asyncio.Lock()
+        fallback = ThreadPoolExecutor(max_workers=1, thread_name_prefix="technique-sweep-fb")
+
+        async def one(sym: str) -> None:
+            nonlocal done
+            rows: list[dict] = []
+            try:
+                async with in_flight:
+                    bars = await fetch_symbol_bars(sym, start, end, structure_tfs=stf, trigger_tf=ttf,
+                                                   bars_override=self._sweep_bars_override(sym))
+                    fn = functools.partial(compute_symbol_rows, sym, start, end, structure_tfs=stf, trigger_tf=ttf,
+                                           thresholds=t, bars_by_tf=bars, include_invalid=include_invalid)
+                    try:
+                        rows = await loop.run_in_executor(pool, fn)
+                    except (BrokenProcessPool, pickle.PicklingError, AttributeError) as exc:
+                        log.warning("sweep worker pool failed for %s (%s) — computing in a thread", sym, exc)
+                        rows = await loop.run_in_executor(fallback, fn)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.exception("sweep symbol failed")
+                errors.append({"symbol": sym, "error": str(exc)})
+                rows = []
+            if rows and rows[0].get("error"):
+                errors.append({"symbol": sym, "error": rows[0]["error"]})
+                rows = []
+            async with lock:
+                done += 1
                 async with self.engine.sf() as session:
                     for r in rows:
                         session.add(TechniqueWalkforward(id=new_id(), sweep_id=sweep_id, symbol=sym, session=r["session"],
@@ -1231,12 +1286,16 @@ class TechniqueService:
                                                          result=r.get("result") or {}))
                     sw = await session.get(TechniqueSweep, sweep_id)
                     if sw is not None:
-                        sw.progress = {"done": i + 1, "total": len(symbols), "rows": len(all_rows) + len(rows),
-                                       "errors": errors}
+                        sw.progress = {"done": done, "total": len(symbols), "rows": len(all_rows) + len(rows),
+                                       "errors": errors, "workers": pool_desc}
                     await session.commit()
                 all_rows.extend(rows)
                 self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep_progress", "sweepId": sweep_id,
-                                                           "done": i + 1, "total": len(symbols)})
+                                                           "done": done, "total": len(symbols), "symbol": sym})
+
+        try:
+            log.info("sweep %s: %d symbols %s..%s on %s", sweep_id[:8], len(symbols), start, end, pool_desc)
+            await asyncio.gather(*(one(sym) for sym in symbols))
             summary = aggregate_sweep(all_rows)
             summary["errors"] = errors
             async with self.engine.sf() as session:
@@ -1269,6 +1328,192 @@ class TechniqueService:
                     await session.commit()
         finally:
             self._sweeps.pop(sweep_id, None)
+            pool.shutdown(wait=False, cancel_futures=True)
+            fallback.shutdown(wait=False)
+
+    # ------------------------------------------------------------ plan sheet ("prepare the next session")
+    async def start_plan_sheet(self, symbols: list[str], *, label: str = "", wait: bool = False) -> dict:
+        """Build the NEXT session's plan for every symbol at the last completed close —
+        deterministic, free, no LLM, no technique runs minted (so it does not touch
+        the runs/day budget). Stored as a sweep with `params.kind == "next"`; rows
+        are pending until the session has happened, then `score_sheet` replays them
+        and the sheet becomes an ordinary validation."""
+        symbols = [str(s).upper().strip() for s in symbols if str(s).strip()]
+        if not symbols:
+            raise ValueError("at least one symbol")
+        day = last_completed_session()
+        plan_for = next_session_date(session_bounds(day)[1] + 1)
+        stf, ttf, t = list(self.structure_tfs()), self.trigger_tf(), self.thresholds()
+        row = TechniqueSweep(id=new_id(), label=label or f"Setups for {plan_for} · {len(symbols)} symbols", symbols=symbols,
+                             start=day, end=day, status="running",
+                             params={"kind": "next", "planFor": plan_for, "structureTfs": stf, "triggerTf": ttf,
+                                     "includeInvalid": False,
+                                     "sweepVersion": sweep_version(thresholds=t, structure_tfs=stf, trigger_tf=ttf),
+                                     "techniqueSource": technique_source_version(),
+                                     "thresholds": provenance_snapshot(thresholds=t, settings_all=self.engine.settings.all(),
+                                                                       model="-", effort="-", thinking_display="-",
+                                                                       max_passes=0, timeframes=stf + [ttf])["thresholds"]},
+                             progress={"done": 0, "total": len(symbols)})
+        async with self.engine.sf() as session:
+            session.add(row)
+            await session.commit()
+        d = sweep_dict(row)
+        await self.engine.journal.append(ev.TECHNIQUE_SWEEP_STARTED, {**d, "kind": "next"}, aggregate_type="technique_sweep",
+                                         aggregate_id=row.id)
+        self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep", "sweep": d})
+        task = asyncio.create_task(self._run_plan_sheet(row.id, symbols, day, plan_for, stf, ttf, t),
+                                   name=f"technique-sheet-{row.id[:8]}")
+        self._sweeps[row.id] = task
+        if wait:
+            await task
+            return await self.get_sweep(row.id) or d
+        return d
+
+    async def _run_plan_sheet(self, sweep_id: str, symbols: list[str], day: str, plan_for: str, stf: list[str], ttf: str,
+                              t: Thresholds) -> None:
+        errors: list[dict] = []
+        done = 0
+        n_setups = 0
+        loop = asyncio.get_running_loop()
+        pool, pool_desc = self._sweep_pool()
+        in_flight = asyncio.Semaphore(max(1, int(self.engine.settings.get("technique.walkforward.concurrency", 8) or 8)))
+        lock = asyncio.Lock()
+        fallback = ThreadPoolExecutor(max_workers=1, thread_name_prefix="technique-sheet-fb")
+
+        async def one(sym: str) -> None:
+            nonlocal done, n_setups
+            row: dict | None = None
+            try:
+                async with in_flight:
+                    bars = await fetch_symbol_bars(sym, day, day, structure_tfs=stf, trigger_tf=ttf,
+                                                   bars_override=self._sweep_bars_override(sym))
+                    fn = functools.partial(compute_symbol_plan, sym, day, structure_tfs=stf, trigger_tf=ttf,
+                                           thresholds=t, bars_by_tf=bars)
+                    try:
+                        row = await loop.run_in_executor(pool, fn)
+                    except (BrokenProcessPool, pickle.PicklingError, AttributeError) as exc:
+                        log.warning("sheet worker pool failed for %s (%s) — computing in a thread", sym, exc)
+                        row = await loop.run_in_executor(fallback, fn)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.exception("plan sheet symbol failed")
+                errors.append({"symbol": sym, "error": str(exc)})
+                row = None
+            if row and row.get("error"):
+                errors.append({"symbol": sym, "error": row["error"]})
+                row = None
+            async with lock:
+                done += 1
+                if row and (row["plan"].get("validTriggers") or 0) > 0:
+                    n_setups += 1
+                async with self.engine.sf() as session:
+                    if row:
+                        session.add(TechniqueWalkforward(id=new_id(), sweep_id=sweep_id, symbol=sym, session=row["session"],
+                                                         plan_for=row.get("planFor"), plan=row.get("plan") or {},
+                                                         result=row.get("result") or {}))
+                    sw = await session.get(TechniqueSweep, sweep_id)
+                    if sw is not None:
+                        sw.progress = {"done": done, "total": len(symbols), "errors": errors, "workers": pool_desc,
+                                       "setups": n_setups}
+                    await session.commit()
+                self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep_progress", "sweepId": sweep_id,
+                                                           "done": done, "total": len(symbols), "symbol": sym})
+
+        try:
+            log.info("plan sheet %s: %d symbols for %s on %s", sweep_id[:8], len(symbols), plan_for, pool_desc)
+            await asyncio.gather(*(one(sym) for sym in symbols))
+            summary = {"kind": "next", "planFor": plan_for, "builtFrom": day, "symbols": sorted(symbols),
+                       "setups": n_setups, "pending": True, "errors": errors,
+                       "sample": {"fired": 0, "target": 100, "note": "scores after the session closes"}}
+            async with self.engine.sf() as session:
+                sw = await session.get(TechniqueSweep, sweep_id)
+                sw.status = "done"
+                sw.summary = summary
+                sw.finished_at = dt.datetime.now(dt.timezone.utc)
+                await session.commit()
+                d = sweep_dict(sw)
+            await self.engine.journal.append(ev.TECHNIQUE_SWEEP_COMPLETED, {
+                "sweepId": sweep_id, "kind": "next", "planFor": plan_for, "symbols": len(symbols), "setups": n_setups,
+                "errors": errors}, aggregate_type="technique_sweep", aggregate_id=sweep_id)
+            self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep", "sweep": d})
+        except asyncio.CancelledError:
+            async with self.engine.sf() as session:
+                sw = await session.get(TechniqueSweep, sweep_id)
+                if sw is not None:
+                    sw.status = "failed"; sw.error = "cancelled"
+                    await session.commit()
+            raise
+        except Exception as exc:
+            log.exception("plan sheet failed")
+            async with self.engine.sf() as session:
+                sw = await session.get(TechniqueSweep, sweep_id)
+                if sw is not None:
+                    sw.status = "failed"; sw.error = f"{type(exc).__name__}: {exc}"
+                    await session.commit()
+        finally:
+            self._sweeps.pop(sweep_id, None)
+            pool.shutdown(wait=False, cancel_futures=True)
+            fallback.shutdown(wait=False)
+
+    async def score_sheet(self, sweep_id: str) -> dict | None:
+        """Replay every still-pending row of a plan sheet whose session has closed;
+        when none is pending the sheet's summary becomes the usual aggregate."""
+        async with self.engine.sf() as session:
+            sw = await session.get(TechniqueSweep, sweep_id)
+            if sw is None:
+                return None
+            rows = (await session.execute(select(TechniqueWalkforward).where(TechniqueWalkforward.sweep_id == sweep_id))).scalars().all()
+            params = dict(sw.params or {})
+            pend = [r for r in rows if (r.result or {}).get("pending")]
+            ids = [(r.id, r.symbol, r.session, dict(r.plan or {})) for r in pend]
+        if not ids:
+            return await self.get_sweep(sweep_id)
+        stf = list(params.get("structureTfs") or self.structure_tfs()); ttf = params.get("triggerTf") or self.trigger_tf()
+        t = self._thresholds_from(params.get("thresholds") or {})
+        scored = 0
+        for rid, sym, day, plan in ids:
+            try:
+                bars = await fetch_symbol_bars(sym, day, day, structure_tfs=stf, trigger_tf=ttf,
+                                               bars_override=self._sweep_bars_override(sym))
+                rep = score_pending_row(plan, bars, trigger_tf=ttf, thresholds=t,
+                                        include_invalid=bool(params.get("includeInvalid")))
+            except Exception as exc:
+                log.warning("score sheet %s %s failed: %s", sweep_id[:8], sym, exc)
+                rep = None
+            if rep is None:
+                continue
+            async with self.engine.sf() as session:
+                r = await session.get(TechniqueWalkforward, rid)
+                if r is not None:
+                    r.result = rep
+                    await session.commit()
+            scored += 1
+        async with self.engine.sf() as session:
+            sw = await session.get(TechniqueSweep, sweep_id)
+            rows = (await session.execute(select(TechniqueWalkforward).where(TechniqueWalkforward.sweep_id == sweep_id))).scalars().all()
+            still = sum(1 for r in rows if (r.result or {}).get("pending"))
+            if sw is not None:
+                if still == 0:
+                    summ = aggregate_sweep([{"symbol": r.symbol, "session": r.session, "planFor": r.plan_for,
+                                             "plan": r.plan, "result": r.result} for r in rows])
+                    summ.update({"kind": "next", "planFor": params.get("planFor"), "scoredAt": dt.datetime.now(dt.timezone.utc).isoformat(),
+                                 "errors": (sw.summary or {}).get("errors") or []})
+                    sw.summary = summ
+                else:
+                    sw.summary = {**(sw.summary or {}), "pendingRows": still, "scoredRows": scored}
+                await session.commit()
+        d = await self.get_sweep(sweep_id)
+        if d:
+            self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep", "sweep": {k: v for k, v in d.items() if k != "rows"}})
+        return d
+
+    def _thresholds_from(self, snap: dict) -> Thresholds:
+        try:
+            return dataclasses.replace(self.thresholds(), **{k: (tuple(v) if isinstance(v, list) else v)
+                                                             for k, v in snap.items() if hasattr(self.thresholds(), k)})
+        except TypeError:
+            return self.thresholds()
 
     def _sweep_bars_override(self, symbol: str) -> dict[str, list[Bar]] | None:
         """Hook for tests (monkeypatched) — production always fetches from Yahoo."""
@@ -1279,6 +1524,18 @@ class TechniqueService:
             rows = (await session.execute(select(TechniqueSweep).order_by(TechniqueSweep.created_at.desc())
                                           .limit(limit))).scalars().all()
         return [sweep_dict(x) for x in rows]
+
+    async def rename_sweep(self, sweep_id: str, label: str) -> dict | None:
+        """Cosmetic: the label shown in the validation history (rows/summary untouched)."""
+        async with self.engine.sf() as session:
+            sw = await session.get(TechniqueSweep, sweep_id)
+            if sw is None:
+                return None
+            sw.label = (label or "").strip()[:120] or sw.label
+            await session.commit()
+            d = sweep_dict(sw)
+        self.engine.bus.publish(topics.TECHNIQUE, {"kind": "sweep", "sweep": d})
+        return d
 
     async def get_sweep(self, sweep_id: str, *, rows: bool = True) -> dict | None:
         async with self.engine.sf() as session:
@@ -1540,7 +1797,8 @@ class TechniqueService:
         return diff_runs(a, b)
 
     # ------------------------------------------------------------ options
-    async def option_pick(self, symbol: str, direction: str = "long", *, spot: float | None = None) -> dict:
+    async def option_pick(self, symbol: str, direction: str = "long", *, spot: float | None = None,
+                          max_strike: float | None = None, avoid_0dte: bool = False) -> dict:
         client = self.options_provider()
         if spot is None:
             q = self.engine.quotes.get(symbol.upper())
@@ -1554,7 +1812,8 @@ class TechniqueService:
         if not spot:
             return {"available": False, "error": "no spot price",
                     "provider": getattr(client, "name", "?")}
-        out = await pick_for_setup(client, symbol, spot, direction)
+        out = await pick_for_setup(client, symbol, spot, direction, max_strike=max_strike,
+                                   avoid_0dte=avoid_0dte)
         out["spot"] = spot
         return out
 

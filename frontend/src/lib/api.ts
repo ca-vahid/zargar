@@ -85,6 +85,11 @@ export const api = {
   techniquePlan: (body: { symbol: string; asOf?: number | null; tf?: string; withVision?: boolean | null; wait?: boolean }) =>
     request<import("../types").TechniqueRun>("POST", "/api/technique/plan", body),
   techniqueSweeps: () => request<import("../types").TechniqueSweep[]>("GET", "/api/technique/walkforward"),
+  techniqueArmedExit: (runId: string, trigger?: string | null) =>
+    request<import("../types").ArmedPlan>("POST", `/api/technique/armed/${runId}/exit`, { trigger: trigger ?? null }),
+  techniqueStartSheet: (body: { symbols: string[]; label?: string }) => request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward/next", body),
+  techniqueScoreSheet: (id: string) => request<import("../types").TechniqueSweep>("POST", `/api/technique/walkforward/${id}/score`),
+  techniqueRenameSweep: (id: string, label: string) => request<import("../types").TechniqueSweep>("PATCH", `/api/technique/walkforward/${id}`, { label }),
   techniqueSweep: (id: string) => request<import("../types").TechniqueSweep>("GET", `/api/technique/walkforward/${id}`),
   techniqueStartSweep: (body: { symbols: string[]; start: string; end: string; structureTfs?: string[]; triggerTf?: string; includeInvalid?: boolean; label?: string }) =>
     request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward", body),

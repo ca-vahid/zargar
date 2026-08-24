@@ -64,6 +64,47 @@ def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
     return None
 
 
+def quote_stop_breach(trade, last: float, *, excess_r: float = 0.25) -> str | None:
+    """Intra-minute disaster check on the *underlying's live quote*: the price is
+    not merely at the stop (bar-close logic owns that call, per the book's
+    mental-stop discipline) but **decisively through it** — beyond the stop by
+    `excess_r` × the planned risk (entry − stop). Exits can only become earlier
+    and safer through this rule, never entries — so it needs no historical data
+    to validate. Returns the reason string, or None."""
+    if last is None or last <= 0 or trade.remaining <= 0:
+        return None
+    if getattr(trade, "pending_exit_qty", 0.0) > 1e-9:
+        return None                                   # an exit is already working
+    risk = max(float(trade.entry) - float(trade.stop), 1e-9)
+    line = float(trade.stop) - excess_r * risk
+    if last <= line:
+        return (f"live quote {last:.4f} is decisively through the stop {trade.stop:.4f} "
+                f"(> {excess_r:g}R beyond) — exiting now instead of waiting for the bar close")
+    return None
+
+
+def premium_stop_breach(trade, bid: float | None, *, stop_pct: float) -> str | None:
+    """Options only: the position's own premium has bled past `stop_pct`% of what
+    was paid — theta/IV can do this while the underlying never touches its stop
+    (the gap the underlying-based ladder cannot see). Exit-only, like the quote
+    stop. Returns the reason, or None."""
+    if stop_pct <= 0 or getattr(trade, "sec_type", "STK") != "OPT":
+        return None
+    if bid is None or bid < 0 or trade.remaining <= 0:   # bid == 0 IS a (total) bleed
+        return None
+    if getattr(trade, "pending_exit_qty", 0.0) > 1e-9:
+        return None
+    paid = float(getattr(trade, "avg_fill", 0) or 0)
+    if paid <= 0:
+        return None
+    floor = paid * (1.0 - stop_pct / 100.0)
+    if bid <= floor:
+        lost = (paid - bid) / paid * 100.0
+        return (f"premium stop: bid {bid:.2f} is {lost:.0f}% below the {paid:.2f} paid "
+                f"(limit {stop_pct:g}%) — theta/IV bleed the underlying stop cannot see")
+    return None
+
+
 def next_trim_only(trade, bar) -> bool:
     """A single-contract position that reached a target below its exit target:
     advance trims_done but send nothing. Returns True when the caller should

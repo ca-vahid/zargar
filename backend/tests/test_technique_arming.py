@@ -205,6 +205,82 @@ async def test_auto_mode_full_lifecycle_entry_trims_stop(rig):
     assert full["setups"] and full["setups"][0]["valid"] is True
 
 
+async def test_auto_mode_derives_a_loss_halt(rig):
+    """Auto mode with no loss limit set gets one derived from equity x risk%."""
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"],
+                                         "riskPct": 1.0, "maxQty": 10})).json()
+    assert armed["config"]["dailyLossLimit"] > 0, armed["config"]
+    await rig.svc.armer.disarm(run["id"], reason="test")
+    # proposal mode does not silently add one
+    run2 = await _plan_run(rig)
+    r2 = await rig.client.post(f"/api/technique/runs/{run2['id']}/arm",
+                               json={"mode": "proposal", "instrument": "shares", "portfolioId": rig.sim["id"]})
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["config"]["dailyLossLimit"] == 0
+
+
+async def test_quote_stop_watch_exits_between_bars(rig):
+    """A crash through the stop mid-minute is caught by the ~2s quote watch and
+    sold reduce-only at market — no waiting for the bar close. One breach poll is
+    not enough (bad tick); two consecutive are."""
+    await rig.eng.settings.set("technique.arm.quote_exit_seconds", 0.05, journal=False)
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"],
+                                         "riskPct": 1.0, "maxQty": 50, "slippagePct": 1.0})).json()
+    bars = rig.sessions[armed["planFor"]]
+    b1 = next(t for t in armed["triggers"] if t["kind"] == "bounce")
+
+    async def q(bar):
+        await _quote(rig, bar.close)
+    snap, i = await _feed_until(rig, run["id"], bars, lambda s: any(t["kind"] == "bounce" for t in s["trades"]), quote_fn=q)
+    await _quote(rig, b1["entry"])
+
+    def _bt():
+        d = rig.svc.armer.detail(run["id"]) or {}
+        return next((t for t in d.get("trades", []) if t["kind"] == "bounce"), {})
+    await wait_for(lambda: _bt().get("status") == "open", timeout=5)
+    risk = b1["entry"] - b1["stop"]
+    crash = round(b1["stop"] - 0.6 * risk, 2)          # decisively through (excess_r = 0.25)
+    # no closed bar is fed — the quote watch alone must react
+    await _quote(rig, crash)
+    await wait_for(lambda: (_bt().get("exits") or [{}])[0].get("kind") == "stop", timeout=5)
+    await _quote(rig, crash)                            # lets the sim fill the market sell
+    await wait_for(lambda: _bt().get("status") == "closed", timeout=5)
+    tr = _bt()
+    assert [e["kind"] for e in tr["exits"]] == ["stop"] and tr["remaining"] == 0
+    audit = (await rig.client.get(f"/api/technique/armed/{run['id']}/audit")).json()
+    exit_ev = next(e for e in audit if e["type"] == "TechniquePlanExit")
+    assert "intra-minute quote breach" in exit_ev["payload"]["reason"]
+
+
+async def test_quote_at_the_stop_is_left_to_the_bar_close(rig):
+    """At-or-slightly-past the stop is the bar-close logic's call (mental-stop
+    discipline) — the quote watch must NOT fire there."""
+    await rig.eng.settings.set("technique.arm.quote_exit_seconds", 0.05, journal=False)
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"],
+                                         "riskPct": 1.0, "maxQty": 50, "slippagePct": 1.0})).json()
+    bars = rig.sessions[armed["planFor"]]
+    b1 = next(t for t in armed["triggers"] if t["kind"] == "bounce")
+
+    async def q(bar):
+        await _quote(rig, bar.close)
+    await _feed_until(rig, run["id"], bars, lambda s: any(t["kind"] == "bounce" for t in s["trades"]), quote_fn=q)
+    await _quote(rig, b1["entry"])
+
+    def _bt():
+        d = rig.svc.armer.detail(run["id"]) or {}
+        return next((t for t in d.get("trades", []) if t["kind"] == "bounce"), {})
+    await wait_for(lambda: _bt().get("status") == "open", timeout=5)
+    await _quote(rig, round(b1["stop"] - 0.01, 2))      # at the stop, not decisively through
+    await asyncio.sleep(0.5)                            # several watch cycles
+    assert _bt().get("status") == "open" and not _bt().get("exits")
+
+
 async def test_auto_mode_flattens_before_close_and_disarm_flatten(rig):
     run = await _plan_run(rig)
     armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
@@ -312,6 +388,17 @@ async def test_restore_after_restart(rig):
     await rig.svc.armer.disarm(run["id"])
 
 
+    # ...and a plan armed ahead of time for the NEXT session (weekend arming) survives too
+    rig.svc.armer._armed.clear()
+    async with rig.eng.sf() as session:
+        row = await session.get(TechniqueArmed, run["id"])
+        row.status = "armed"
+        row.plan_for = (dt.date.fromisoformat(today) + dt.timedelta(days=3)).isoformat()
+        await session.commit()
+    assert await rig.svc.armer.restore() == 1
+    assert rig.svc.armer.get(run["id"]).status == "armed"
+
+
 async def test_arm_config_roundtrip():
     c = ArmConfig.from_dict({"portfolioId": "p", "mode": "auto", "riskPct": 0.75, "maxQty": 10, "allowLive": True})
     assert c.to_dict()["riskPct"] == 0.75 and c.allow_live and c.max_qty == 10
@@ -325,7 +412,7 @@ OCC = "TEST260828C00101000"
 
 async def _fake_pick(rig, monkeypatch, *, ask=2.50, bid=2.40):
     await rig.eng.settings.set("technique.options.enabled", True, journal=False)   # the pick is faked, no chain call
-    async def pick(symbol, direction="long", *, spot=None):
+    async def pick(symbol, direction="long", *, spot=None, **kw):
         return {"available": True, "symbol": OCC, "display": "TEST 28AUG26 101C", "underlying": "TEST", "expiry": "2026-08-28",
                 "strike": 101.0, "optionType": "call", "bid": bid, "ask": ask, "mid": round((bid + ask) / 2, 2), "spreadPct": 4.0,
                 "delta": 0.45, "theta": -0.08, "iv": 0.55, "dte": 5, "is0dte": False, "openInterest": 1200, "volume": 300,
@@ -401,7 +488,7 @@ async def test_auto_options_one_contract_lifecycle(rig, monkeypatch):
 
 
 async def test_auto_options_without_a_contract_fails_cleanly(rig, monkeypatch):
-    async def pick(symbol, direction="long", *, spot=None):
+    async def pick(symbol, direction="long", *, spot=None, **kw):
         return {"available": False, "error": "no call just OTM at 2026-08-28", "provider": "fake"}
     monkeypatch.setattr(rig.svc, "option_pick", pick)
     await rig.eng.settings.set("technique.options.enabled", True, journal=False)
@@ -452,6 +539,23 @@ async def _open_a_share_trade(rig, run, *, risk_pct=1.0, max_qty=50, loss_limit=
     return armed, bars, b1, i, _bt
 
 
+async def test_reduce_only_exits_pass_the_trading_mode_gate(rig):
+    """practice mode blocks entries to real accounts but must NEVER block a
+    reduce-only exit — a workspace switch cannot trap an open position."""
+    from zargar.orders import OrderIntent
+    live = next(p for p in rig.eng.positions.portfolios() if p["kind"] == "live")
+    assert str(rig.eng.settings.get("trading.mode")) == "practice"
+    buy = await rig.eng.orders.place(OrderIntent(portfolio_id=live["id"], symbol="TEST", sec_type="STK",
+                                                 side="BUY", qty=1, order_type="MKT", source="manual"))
+    assert "trading.mode=practice blocks" in (buy.get("rejectReason") or "")
+    sell = await rig.eng.orders.place(OrderIntent(portfolio_id=live["id"], symbol="TEST", sec_type="STK",
+                                                  side="SELL", qty=1, order_type="MKT", source="technique",
+                                                  reduce_only=True))
+    # it passes the mode gate; the only remaining objection is the missing venue
+    assert "trading.mode" not in (sell.get("rejectReason") or ""), sell
+    assert "no connected execution venue" in (sell.get("rejectReason") or ""), sell
+
+
 async def test_exits_are_reduce_only_and_work_under_the_kill_switch(rig):
     run = await _plan_run(rig)
     armed, bars, b1, i, _bt = await _open_a_share_trade(rig, run)
@@ -480,11 +584,10 @@ async def test_daily_loss_halt_flattens_and_stops_the_plan(rig):
     await _quote(rig, stop - 0.02)
     await rig.svc.armer.on_bar(run["id"], stop_bar)
     await _quote(rig, stop - 0.02)
-    await wait_for(lambda: _bt().get("status") == "closed", timeout=5)
-    nxt = Bar(symbol="TEST", tf="1m", ts=bars[i + 1].ts, open=entry, high=entry + 0.1, low=entry - 0.1,
-              close=entry, volume=1000)
-    await _quote(rig, entry)
-    await rig.svc.armer.on_bar(run["id"], nxt)
+    # the open position marked at the quote already crosses the $0.01 limit, so the
+    # halt fires on this very bar (unrealised counts now) — the plan flattens + stops
+    await wait_for(lambda: (rig.svc.armer.armed()) == [], timeout=5)
+    await _quote(rig, stop - 0.02)
     assert (await rig.client.get("/api/technique/armed")).json() == []
     events = (await rig.client.get("/api/events", params={"aggregate_id": run["id"]})).json()
     assert any(e["type"] == "TechniquePlanError" and e["payload"].get("stage") == "loss_halt" for e in events)

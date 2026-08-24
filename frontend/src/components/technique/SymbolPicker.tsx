@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { Modal } from "../Modal";
 
-export interface SymbolSet { key: string; label: string; hint: string; symbols: string[] }
+export interface SymbolSet { key: string; label: string; hint: string; symbols: string[]; collapsed?: boolean; group?: string }
 
 /**
  * Multi-select symbol picker: quick sets (the book's universe, holdings, watchlists,
@@ -44,6 +44,8 @@ export function SymbolPicker({ initial, sets, onClose, onApply }: {
     } else if (e.key === "Backspace" && !q && sel.length) { remove(sel[sel.length - 1]); }
   };
   const visibleSets = useMemo(() => sets.filter((s) => s.symbols.length), [sets]);
+  const [opened, setOpened] = useState<Record<string, boolean>>({});
+  let lastGroup: string | undefined;
 
   return (
     <Modal wide title={<>Choose symbols <span className="muted">· {sel.length} selected</span></>} onClose={onClose}
@@ -77,18 +79,31 @@ export function SymbolPicker({ initial, sets, onClose, onApply }: {
         </div>
         {visibleSets.map((set) => {
           const allIn = set.symbols.every(has);
+          const nIn = set.symbols.filter(has).length;
+          const isOpen = set.collapsed ? !!opened[set.key] : true;
+          const groupHead = set.group && set.group !== lastGroup ? set.group : null;
+          lastGroup = set.group;
           return (
-            <div className="tq-picker-set" key={set.key}>
-              <div className="tq-picker-set-head">
-                <b>{set.label}</b> <span className="muted">· {set.hint}</span>
-                <button type="button" className="link-btn" onClick={() => (allIn ? removeSet(set.symbols) : addSet(set.symbols))}>
-                  {allIn ? "remove all" : `add all ${set.symbols.length}`}
-                </button>
-              </div>
-              <div className="tq-picker-chips">
-                {set.symbols.map((s) => (
-                  <button key={s} type="button" className={`tq-sym-chip ${has(s) ? "on" : ""}`} onClick={() => toggle(s)}>{s}</button>
-                ))}
+            <div key={set.key}>
+              {groupHead && <div className="tq-picker-group">{groupHead}</div>}
+              <div className={`tq-picker-set ${set.collapsed ? "compact" : ""}`}>
+                <div className="tq-picker-set-head">
+                  {set.collapsed
+                    ? <button type="button" className="tq-picker-set-toggle" onClick={() => setOpened((o) => ({ ...o, [set.key]: !isOpen }))} aria-expanded={isOpen}>
+                        <span className="tq-picker-caret">{isOpen ? "▾" : "▸"}</span> <b>{set.label}</b> <span className="muted">· {set.hint} · {set.symbols.length}{nIn ? ` (${nIn} in)` : ""}</span>
+                      </button>
+                    : <><b>{set.label}</b> <span className="muted">· {set.hint}</span></>}
+                  <button type="button" className={`tq-picker-addall ${allIn ? "on" : ""}`} onClick={() => (allIn ? removeSet(set.symbols) : addSet(set.symbols))}>
+                    {allIn ? "✓ added · remove" : `+ add all ${set.symbols.length}`}
+                  </button>
+                </div>
+                {isOpen && (
+                  <div className="tq-picker-chips">
+                    {set.symbols.map((s) => (
+                      <button key={s} type="button" className={`tq-sym-chip ${has(s) ? "on" : ""}`} onClick={() => toggle(s)}>{s}</button>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           );

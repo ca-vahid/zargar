@@ -46,8 +46,24 @@ _HIST_TTL = 3600.0
 _sem = asyncio.Semaphore(4)
 
 
+# Back-off between retries of a 429 (sweeps over ~50 symbols fire a few hundred
+# requests; Yahoo throttles in bursts, a short pause is usually enough).
+_RETRY_PAUSES = (2.0, 5.0, 12.0)
+
+
 class HistoryError(RuntimeError):
     pass
+
+
+def clip_request_window(tf: str, start_s: int, end_s: int, now: float | None = None) -> tuple[int, int]:
+    """Clamp a request to what Yahoo will actually serve: no older than the
+    interval's lookback, and **no later than now** — a chunk that lies wholly in
+    the future (e.g. the week after the last planned session) comes back as
+    HTTP 400 "Data doesn't exist", which used to fail the whole symbol."""
+    now = time.time() if now is None else now
+    start_s = max(int(start_s), int(now - MAX_LOOKBACK[tf]))
+    end_s = min(int(end_s), int(now) + 60)
+    return start_s, end_s
 
 
 def _parse(symbol: str, tf: str, data: dict) -> list[Bar]:
@@ -92,9 +108,7 @@ async def fetch_window(
     if hit and now - hit[0] < (_LIVE_TTL if end_ms / 1000 > now - 120 else _HIST_TTL):
         return list(hit[1])
 
-    oldest_allowed = now - MAX_LOOKBACK[tf]
-    start_s = max(start_ms // 1000, int(oldest_allowed))
-    end_s = end_ms // 1000
+    start_s, end_s = clip_request_window(tf, start_ms // 1000, end_ms // 1000, now)
     if end_s <= start_s:
         return []
 
@@ -109,8 +123,14 @@ async def fetch_window(
             chunk_end = min(cursor + span, end_s)
             params = {"period1": cursor, "period2": chunk_end, "interval": tf,
                       "includePrePost": "false"}
-            async with _sem:
-                resp = await http.get(CHART_URL.format(symbol=symbol.upper()), params=params)
+            resp = None
+            for attempt, pause in enumerate(_RETRY_PAUSES + (None,)):
+                async with _sem:
+                    resp = await http.get(CHART_URL.format(symbol=symbol.upper()), params=params)
+                if resp.status_code != 429 or pause is None:
+                    break
+                log.info("yahoo 429 for %s %s — retry %d in %.0fs", symbol, tf, attempt + 1, pause)
+                await asyncio.sleep(pause)
             if resp.status_code == 429:
                 raise HistoryError("rate limited by Yahoo (429) — try again shortly")
             if resp.status_code >= 400:

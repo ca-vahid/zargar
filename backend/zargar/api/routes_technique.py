@@ -100,6 +100,36 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def technique_sweeps(limit: int = 50):
         return await _svc(eng).list_sweeps(limit=min(limit, 200))
 
+    class SheetBody(BaseModel):
+        symbols: list[str] = []
+        label: str = ""
+        wait: bool = False
+
+    @app.post("/api/technique/walkforward/next", dependencies=[auth])
+    async def technique_plan_sheet(body: SheetBody):
+        syms = body.symbols or list(eng.settings.get("technique.walkforward.symbols", []))
+        try:
+            return await _svc(eng).start_plan_sheet(syms, label=body.label, wait=body.wait)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/technique/walkforward/{sweep_id}/score", dependencies=[auth])
+    async def technique_sheet_score(sweep_id: str):
+        d = await _svc(eng).score_sheet(sweep_id)
+        if d is None:
+            raise HTTPException(status_code=404, detail="sweep not found")
+        return d
+
+    class SweepPatchBody(BaseModel):
+        label: str
+
+    @app.patch("/api/technique/walkforward/{sweep_id}", dependencies=[auth])
+    async def technique_sweep_rename(sweep_id: str, body: SweepPatchBody):
+        d = await _svc(eng).rename_sweep(sweep_id, body.label)
+        if d is None:
+            raise HTTPException(status_code=404, detail="sweep not found")
+        return d
+
     @app.get("/api/technique/walkforward/{sweep_id}", dependencies=[auth])
     async def technique_sweep_get(sweep_id: str, rows: bool = True):
         d = await _svc(eng).get_sweep(sweep_id, rows=rows)
@@ -122,6 +152,16 @@ def build_technique_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=404, detail=str(exc))
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    class ArmedExitBody(BaseModel):
+        trigger: str | None = None       # null = every open trade of the plan
+
+    @app.post("/api/technique/armed/{run_id}/exit", dependencies=[auth])
+    async def technique_armed_exit(run_id: str, body: ArmedExitBody):
+        d = await _svc(eng).armer.flatten_trade(run_id, body.trigger)
+        if d is None:
+            raise HTTPException(status_code=404, detail="plan is not armed")
+        return d
 
     @app.get("/api/technique/armed", dependencies=[auth])
     async def technique_armed():

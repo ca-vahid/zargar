@@ -554,7 +554,7 @@ export function TechniquePage() {
       {tab === "chat" ? (
         <ChatPanel />
       ) : tab === "validation" ? (
-        <ValidationTab llmAvailable={status?.llmAvailable ?? true} />
+        <ValidationTab llmAvailable={status?.llmAvailable ?? true} sweepVersion={status?.sweepVersion ?? null} />
       ) : tab === "armed" ? (
         <ArmedTab />
       ) : (

@@ -95,5 +95,33 @@ def snapshot(*, thresholds: Thresholds, settings_all: dict, model: str, effort: 
     }
 
 
+@lru_cache
+def technique_source_version() -> str:
+    """Content hash of the technique + execution packages as loaded. Unlike the
+    git sha this moves on every edit of a working tree (a '-dirty' sha does not),
+    so two sweeps run minutes apart on different code are told apart."""
+    h = hashlib.sha256()
+    here = Path(__file__).parent
+    for pkg in (here, here.parent / "execution"):
+        if not pkg.is_dir():
+            continue
+        for f in sorted(pkg.glob("*.py")):
+            try:
+                h.update(f.name.encode()); h.update(f.read_bytes())
+            except OSError:
+                continue
+    return h.hexdigest()[:10]
+
+
+def sweep_version(*, thresholds: Thresholds, structure_tfs: list[str], trigger_tf: str) -> str:
+    """Fingerprint of everything that changes a *deterministic* sweep's rows for
+    the same bars: technique code, rulebook, thresholds, timeframes. The model /
+    prompt / symbol universe are deliberately NOT in it (they do not touch a sweep)."""
+    blob = json.dumps({"source": technique_source_version(), "rulebook": rulebook_version(),
+                       "thresholds": thresholds_dict(thresholds), "structureTfs": list(structure_tfs),
+                       "triggerTf": trigger_tf}, sort_keys=True, default=str)
+    return _h(blob, 10)
+
+
 # Capture at import: the sha of the code this process loaded.
 CODE_VERSION_AT_START = code_version()

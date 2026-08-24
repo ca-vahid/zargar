@@ -134,8 +134,19 @@ DEFAULTS: dict[str, Any] = {
     "technique.plan.respect_mult": 3.0,        # Q14 (ours): reversal >= 3x tol = level respected
     "technique.plan.entry_window_bars": 12,    # bars a bounce has to fill after the touch
     "technique.plan.with_vision": True,        # manual plans get the 4-pass read too (sweeps stay deterministic)
-    "technique.walkforward.symbols": ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "AMZN"],
+    # the book's universe: liquid, optionable US names with tight spreads and real
+    # 1m volume — index ETFs, mega-caps, semis, high-beta tech, financials, energy.
+    # (CBOE chains are US-only, so no .TO/.V here.)
+    "technique.walkforward.symbols": [
+        "SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "SMH", "TLT", "GLD",
+        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "NFLX", "AMD",
+        "MU", "INTC", "QCOM", "TSM", "ARM", "CRM", "ORCL", "ADBE", "PLTR", "UBER",
+        "COIN", "SHOP", "XYZ", "PYPL", "SOFI", "HOOD", "MSTR", "RIVN", "NIO", "BABA",
+        "JPM", "BAC", "GS", "C", "WFC", "XOM", "CVX", "OXY", "BA", "DIS",
+    ],
     "technique.walkforward.sessions": 40,      # default sweep length
+    "technique.walkforward.workers": 0,        # CPU workers for a sweep: 0 auto (cpu-1, max 8), 1 = thread only
+    "technique.walkforward.concurrency": 8,    # symbols in flight at once (fetch + score)
     # --- phase 2: arm plans for live triggers ---------------------------------
     "technique.arm.enabled": True,             # allow arming plans at all
     "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)
@@ -155,6 +166,13 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.stale_seconds": 180,        # no closed bar for this long in-session = stale, no firing
     "technique.arm.max_open_trades": 1,        # positions a single armed plan may hold at once
     "technique.arm.daily_loss_limit": 0.0,     # $ realised loss that flattens + stops a plan for the day (0 = off)
+    "technique.arm.quote_exit": True,          # intra-minute safety: exit when the live quote is decisively through the stop
+    "technique.arm.quote_exit_excess_r": 0.25,  # "decisively" = beyond the stop by this x planned risk
+    "technique.arm.quote_exit_polls": 2,       # consecutive ~2s polls required (one bad tick is not a breach)
+    "technique.arm.quote_exit_seconds": 2.0,   # watch cadence; the quote feed itself polls ~3s
+    "technique.arm.premium_stop_pct": 50.0,    # options: sell when the premium bleeds this % below what was paid (0 = off)
+    "technique.arm.avoid_0dte_after": "15:15", # ET: after this time prefer this-week expiry over 0DTE ("" = never)
+    "technique.arm.strike_within_targets": True,  # cap the just-OTM strike at the plan's TP2
     "technique.arm.skip_wide_spread": True,    # options: skip the entry when the contract's spread is wide (T5.4)
     "technique.arm.skip_elevated_iv": False,   # options: skip the entry when IV is elevated (T5.3, IV-crush risk)
 }

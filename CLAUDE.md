@@ -109,6 +109,16 @@ docker-compose.
   confirm dialog pre-flights every real-money order as a dry run first.
 - The real-money confirm dialog triggers on `kind === "live"` portfolios
   only; sim/shadow/paper submit instantly.
+- Yahoo v8 chart returns **HTTP 400** for a request window wholly in the future —
+  `history.clip_request_window` ends every request at now; keep it that way.
+  Walk-forward sweeps run symbols concurrently and score in a **process pool**
+  (`technique.walkforward.workers`, 0 = auto; tests set 1 = thread) — the CPU half
+  (`walkforward.compute_symbol_rows`) must stay pure/picklable. Sweep plans are built
+  from `walkforward.plan_window()` = the same per-tf `SESSIONS_FOR_TF` windows
+  `analyze()` fetches — change one, change both, or promoted runs stop matching their
+  sweep rows (tests assert equality). A **plan sheet** (`start_plan_sheet`, Validation
+  tab "Prepare the next session") is a sweep with `params.kind == "next"` whose rows are
+  `result.pending` until `score_sheet` replays them — it mints no runs and calls no LLM.
 - Technique/LLM: structured-output schemas must stay **flat** (nested models +
   enums → 400 "compiled grammar is too large"); Opus 5 defaults thinking display
   to `omitted` — pass `display: "summarized"` to stream it; never trust an
@@ -149,6 +159,15 @@ docker-compose.
   settings, `barsAssetId`). Add a `vp.note(...)` when you add a step to the
   pipeline; never strip the trace. `technique_runs`/`events` are never edited —
   reviews and replays are new rows.
+- Armed plans also run a ~2s **quote stop watch** (`technique.arm.quote_exit*`):
+  exit-only, fires when the underlying's live quote is decisively through the stop
+  (excess_r × risk beyond, N consecutive polls). Never add an entry path to
+  `SessionListener.on_quote_watch` — sub-minute entries cannot be validated (no 5s history).
+  The same loop also runs the **premium stop** (options bleeding past
+  `technique.arm.premium_stop_pct`) and the **failed-exit watchdog** (market retry
+  every 30s ×5, then alert). Armed-plan failures escalate through `PlanArmer._alert`
+  (log + journal + WS toast + Telegram) and surface as `needsAttention` on the
+  snapshot — wire new failure modes through those two, not bare log lines.
 - **Armed plans can trade.** `technique/arming.py` modes: alert / proposal / auto. Auto mode
   places orders only via `OrderManager.place()` (RiskGate inside) and honours the kill
   switch; auto on a live/paper account needs `technique.arm.allow_live_auto`,

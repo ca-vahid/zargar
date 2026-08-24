@@ -27,6 +27,7 @@ class SessionListener:
         self._bar_task: asyncio.Task | None = None
         self._orders_task: asyncio.Task | None = None
         self._heartbeat_task: asyncio.Task | None = None
+        self._quote_watch_task: asyncio.Task | None = None
         # order id -> whatever token the subclass needs to find its trade
         self._order_index: dict[str, Any] = {}
 
@@ -38,9 +39,11 @@ class SessionListener:
             self._orders_task = asyncio.create_task(self._orders_loop(), name=f"{self._name}-orders")
         if self._heartbeat_task is None:
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop(), name=f"{self._name}-heartbeat")
+        if self._quote_watch_task is None:
+            self._quote_watch_task = asyncio.create_task(self._quote_watch_loop(), name=f"{self._name}-quote-watch")
 
     async def stop(self) -> None:
-        for attr in ("_bar_task", "_orders_task", "_heartbeat_task"):
+        for attr in ("_bar_task", "_orders_task", "_heartbeat_task", "_quote_watch_task"):
             t = getattr(self, attr)
             if t is not None:
                 t.cancel()
@@ -68,6 +71,17 @@ class SessionListener:
 
     async def on_heartbeat(self) -> None:                     # pragma: no cover - overridden
         ...
+
+    async def on_quote_watch(self) -> None:                   # pragma: no cover - overridden
+        """Fast intra-minute check (safety only — earlier exits, never entries).
+        Runs every `quote_watch_seconds()`; return without doing anything when
+        the subclass has nothing open."""
+        ...
+
+    def quote_watch_seconds(self) -> float:
+        """Cadence of on_quote_watch; the live quote feed itself polls ~3 s, so
+        going much faster only re-reads the same quote."""
+        return 2.0
 
     def heartbeat_seconds(self) -> float:
         return 60.0
@@ -100,6 +114,17 @@ class SessionListener:
                     raise
                 except Exception:
                     log.exception("%s order handling failed", self._name)
+
+    async def _quote_watch_loop(self) -> None:
+        await asyncio.sleep(1.0)
+        while True:
+            try:
+                await self.on_quote_watch()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("%s quote watch failed", self._name)
+            await asyncio.sleep(max(0.05, float(self.quote_watch_seconds())))
 
     async def _heartbeat_loop(self) -> None:
         await asyncio.sleep(self.heartbeat_warmup_seconds())

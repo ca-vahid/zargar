@@ -16,12 +16,13 @@ Each rule that is ours (R6 gating, gap rules) is also evaluated *without* itself
 """
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 from collections import defaultdict
 from dataclasses import dataclass, field
 
 from ..domain import Bar
-from .analysis import AnalysisRequest, compute_facts
+from .analysis import SESSIONS_FOR_TF, AnalysisRequest, compute_facts
 from .candles import is_decisive
 from .history import fetch_window
 from .levels import session_key
@@ -36,6 +37,10 @@ from .rulebook import (
     session_window,
 )
 from .volume import VolumeProfile, build_profile, relative_volume
+
+# A claim verdict needs at least this many fires (or tested levels) on each side.
+MIN_CLAIM_FIRES = 5
+MIN_CLAIM_TESTED = 20
 
 # --- level respect ----------------------------------------------------------------
 
@@ -367,24 +372,61 @@ def _by_session(bars: list[Bar]) -> dict[str, list[Bar]]:
     return dict(out)
 
 
-async def run_symbol(symbol: str, start: str, end: str, *, structure_tfs: list[str], trigger_tf: str,
-                     thresholds: Thresholds, warmup_sessions: int = 6, include_invalid: bool = False,
-                     bars_override: dict[str, list[Bar]] | None = None,
-                     progress=None) -> list[dict]:
-    """Walk [start, end] for one symbol: one row per (plan session N, scored on N+1).
-    `bars_override` (tf -> bars) lets tests / replays skip Yahoo."""
+def sweep_window_ms(start: str, end: str, *, warmup_sessions: int = 6, tfs: tuple[str, ...] = ()) -> tuple[int, int]:
+    """[from, to] in ms that a sweep over plan days [start, end] needs: enough
+    history before `start` for the deepest timeframe window `analyze()` would use
+    (`SESSIONS_FOR_TF`, sized like `history.fetch_recent`), and the session AFTER
+    `end` (a week covers any holiday run) because the last plan is scored on it."""
     o_ms, _ = session_bounds(start)
     _, e_ms = session_bounds(end)
-    # plans built on `end` are scored on the session AFTER it — fetch through that
-    # session (a week covers any holiday run); plan days past `end` are skipped below
-    e_ms += 7 * 86_400_000
-    warm_ms = warmup_sessions * 2 * 86_400_000
-    bars_by_tf: dict[str, list[Bar]] = {}
-    for tf in list(structure_tfs) + [trigger_tf]:
+    sessions = max([warmup_sessions] + [SESSIONS_FOR_TF.get(tf, 5) for tf in tfs])
+    cal_days = max(2, int(sessions * 1.6) + 2)
+    return o_ms - cal_days * 86_400_000, e_ms + 7 * 86_400_000
+
+
+def plan_window(bars_by_tf: dict[str, list[Bar]], close_ms: int) -> dict[str, list[Bar]]:
+    """Exactly the bars a live `analyze()` at `close_ms` would see: per timeframe,
+    the last `SESSIONS_FOR_TF[tf]` sessions ending at the close (what
+    `gather_bars` -> `fetch_recent` returns). Validation and the promoted plan run
+    must be built from the same window or their plans drift apart."""
+    out: dict[str, list[Bar]] = {}
+    for tf, bars in bars_by_tf.items():
+        upto = [b for b in bars if b.ts <= close_ms]
+        if not upto:
+            continue
+        keys: list[str] = []
+        for b in upto:
+            k = session_key(b.ts)
+            if not keys or keys[-1] != k:
+                keys.append(k)
+        keep = set(keys[-SESSIONS_FOR_TF.get(tf, 5):])
+        out[tf] = [b for b in upto if session_key(b.ts) in keep]
+    return out
+
+
+async def fetch_symbol_bars(symbol: str, start: str, end: str, *, structure_tfs: list[str], trigger_tf: str,
+                            warmup_sessions: int = 6,
+                            bars_override: dict[str, list[Bar]] | None = None) -> dict[str, list[Bar]]:
+    """The I/O half of a sweep: every timeframe's bars for one symbol (the
+    structure tfs fetch concurrently; `history._sem` bounds Yahoo traffic)."""
+    tfs = list(structure_tfs) + [trigger_tf]
+    lo, hi = sweep_window_ms(start, end, warmup_sessions=warmup_sessions, tfs=tuple(tfs))
+
+    async def one(tf: str) -> list[Bar]:
         if bars_override and tf in bars_override:
-            bars_by_tf[tf] = list(bars_override[tf])
-        else:
-            bars_by_tf[tf] = await fetch_window(symbol, tf, o_ms - warm_ms, e_ms)
+            return list(bars_override[tf])
+        return await fetch_window(symbol, tf, lo, hi)
+
+    got = await asyncio.gather(*(one(tf) for tf in tfs))
+    return dict(zip(tfs, got))
+
+
+def compute_symbol_rows(symbol: str, start: str, end: str, *, structure_tfs: list[str], trigger_tf: str,
+                        thresholds: Thresholds, bars_by_tf: dict[str, list[Bar]], warmup_sessions: int = 6,
+                        include_invalid: bool = False, progress=None) -> list[dict]:
+    """The CPU half: walk [start, end] for one symbol — one row per (plan session
+    N, scored on N+1). Pure and picklable, so a sweep can farm symbols out to a
+    process pool; `progress(symbol, day, n_rows)` (sync) is optional."""
     trig = bars_by_tf.get(trigger_tf) or []
     if not trig:
         return [{"symbol": symbol, "session": None, "error": f"no {trigger_tf} bars"}]
@@ -395,9 +437,8 @@ async def run_symbol(symbol: str, start: str, end: str, *, structure_tfs: list[s
         if day < start or day > end or i + 1 >= len(keys):
             continue
         nxt = keys[i + 1]
-        close_ms = sessions[day][-1].ts
         as_of = session_bounds(day)[1]          # 16:00 ET of N: outside the session, plan mode
-        window = {tf: [b for b in bars if b.ts <= close_ms] for tf, bars in bars_by_tf.items()}
+        window = plan_window(bars_by_tf, as_of)  # == what `analyze()` at that close would fetch
         if not window.get(trigger_tf):
             continue
         req = AnalysisRequest(symbol=symbol, as_of_ms=as_of, primary_tf=trigger_tf,
@@ -406,17 +447,82 @@ async def run_symbol(symbol: str, start: str, end: str, *, structure_tfs: list[s
         plan = build_session_plan(facts, thresholds=thresholds, structure_tfs=structure_tfs,
                                   trigger_tf=trigger_tf).to_dict()
         next_bars = sessions[nxt]
-        prof = build_profile([b for b in trig if session_date(b.ts) < nxt and session_date(b.ts) >= keys[max(0, i - warmup_sessions)]])
+        # same relative-volume baseline the promoted run's scorecard uses (its 1m snapshot)
+        prof = build_profile(window[trigger_tf])
         rep = replay_plan(plan, next_bars, thresholds=thresholds, profile=prof, include_invalid=include_invalid)
         rows.append({"symbol": symbol, "session": day, "planFor": nxt, "plan": _slim_plan(plan), "result": rep})
         if progress:
-            await progress(symbol, day, len(rows))
+            progress(symbol, day, len(rows))
     return rows
+
+
+async def run_symbol(symbol: str, start: str, end: str, *, structure_tfs: list[str], trigger_tf: str,
+                     thresholds: Thresholds, warmup_sessions: int = 6, include_invalid: bool = False,
+                     bars_override: dict[str, list[Bar]] | None = None) -> list[dict]:
+    """fetch + compute for one symbol, inline (CLI / tests / replays). The sweep
+    service runs the two halves separately so many symbols overlap."""
+    bars_by_tf = await fetch_symbol_bars(symbol, start, end, structure_tfs=structure_tfs, trigger_tf=trigger_tf,
+                                         warmup_sessions=warmup_sessions, bars_override=bars_override)
+    return compute_symbol_rows(symbol, start, end, structure_tfs=structure_tfs, trigger_tf=trigger_tf,
+                               thresholds=thresholds, bars_by_tf=bars_by_tf, warmup_sessions=warmup_sessions,
+                               include_invalid=include_invalid)
 
 
 def _slim_plan(plan: dict) -> dict:
     return {k: plan.get(k) for k in ("symbol", "planFor", "builtFromSession", "structureTfs", "triggerTf",
-                                     "lastClose", "levels", "triggers", "validTriggers", "invalidations")}
+                                     "lastClose", "levels", "triggers", "validTriggers", "invalidations",
+                                     "context", "gapPolicy")}
+
+
+def last_completed_session(now_ms: int | None = None) -> str:
+    """ET date of the most recent regular session whose close is behind us
+    (weekends skipped; holidays are not modelled — they simply have no bars)."""
+    now_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000) if now_ms is None else int(now_ms)
+    day = session_date(now_ms)
+    y, m, d = (int(x) for x in day.split("-"))
+    cur = dt.date(y, m, d)
+    if cur.weekday() >= 5 or now_ms < session_bounds(day)[1]:
+        cur -= dt.timedelta(days=1)
+        while cur.weekday() >= 5:
+            cur -= dt.timedelta(days=1)
+    return cur.strftime("%Y-%m-%d")
+
+
+def compute_symbol_plan(symbol: str, day: str, *, structure_tfs: list[str], trigger_tf: str,
+                        thresholds: Thresholds, bars_by_tf: dict[str, list[Bar]]) -> dict:
+    """The plan a live analyse at `day`'s close builds — no replay (the session it
+    is for has not happened yet). Same window + builder as `compute_symbol_rows`,
+    so a plan sheet row and a later validation row are the same plan."""
+    as_of = session_bounds(day)[1]
+    window = plan_window(bars_by_tf, as_of)
+    if not window.get(trigger_tf):
+        return {"symbol": symbol, "session": None, "error": f"no {trigger_tf} bars"}
+    req = AnalysisRequest(symbol=symbol, as_of_ms=as_of, primary_tf=trigger_tf,
+                          context_tfs=tuple(structure_tfs), thresholds=thresholds)
+    facts = compute_facts(req, window, [])
+    plan = build_session_plan(facts, thresholds=thresholds, structure_tfs=structure_tfs,
+                              trigger_tf=trigger_tf).to_dict()
+    return {"symbol": symbol, "session": day, "planFor": plan.get("planFor"), "plan": _slim_plan(plan),
+            "result": {"pending": True, "planFor": plan.get("planFor")}}
+
+
+def score_pending_row(plan: dict, bars_by_tf: dict[str, list[Bar]], *, trigger_tf: str, thresholds: Thresholds,
+                      include_invalid: bool = False) -> dict | None:
+    """Replay a plan-sheet row once its session has bars; None while it has not
+    (or the session is still running — a partial replay would be misleading)."""
+    plan_for = plan.get("planFor")
+    if not plan_for:
+        return None
+    trig = bars_by_tf.get(trigger_tf) or []
+    nxt = [b for b in trig if session_date(b.ts) == plan_for]
+    if not nxt:
+        return None
+    _, close_ms = session_bounds(plan_for)
+    if nxt[-1].ts < close_ms - 3 * 60_000:
+        return None
+    as_of = session_bounds(plan.get("builtFromSession") or plan_for)[1]
+    prof = build_profile(plan_window(bars_by_tf, as_of).get(trigger_tf) or [])
+    return replay_plan(plan, nxt, thresholds=thresholds, profile=prof, include_invalid=include_invalid)
 
 
 def aggregate(rows: list[dict]) -> dict:
@@ -507,37 +613,47 @@ def aggregate(rows: list[dict]) -> dict:
     pd_ = finish_lv(lv_pd)
     touch = finish_lv(lv_by_touch)
 
-    # claim grid (§6.4) — only what the data can say
+    # claim grid (§6.4) — only what the data can say: below MIN_CLAIM_FIRES fires (or
+    # MIN_CLAIM_TESTED tested levels) on either side a verdict is noise, so it stays
+    # "insufficient" rather than pass/fail on two trades
     claims = []
+    def enough(*ns):
+        return all((n or 0) >= MIN_CLAIM_FIRES for n in ns)
+    def tested(d):
+        return (d.get("n") or 0) - (d.get("untested") or 0)
     def claim(name, rule, metric, ok, detail):
         claims.append({"claim": name, "rule": rule, "metric": metric,
                        "verdict": ("pass" if ok else "fail") if ok is not None else "insufficient", "detail": detail})
     a, b = pd_["priorDay"].get("testedRespectRate"), pd_["other"].get("testedRespectRate")
+    ok_pd = a is not None and b is not None and tested(pd_["priorDay"]) >= MIN_CLAIM_TESTED and tested(pd_["other"]) >= MIN_CLAIM_TESTED
     claim("Prior-day HOD/LOD are the strongest levels", "T1.3a", "tested respect rate prior-day vs other",
-          (a > b) if (a is not None and b is not None) else None, {"priorDay": a, "other": b})
+          (a > b) if ok_pd else None, {"priorDay": a, "other": b, "testedPriorDay": tested(pd_["priorDay"]), "testedOther": tested(pd_["other"])})
     t2, t3 = touch.get("2", {}).get("testedRespectRate"), touch.get("3+", {}).get("testedRespectRate")
+    ok_t = t2 is not None and t3 is not None and tested(touch.get("2", {})) >= MIN_CLAIM_TESTED and tested(touch.get("3+", {})) >= MIN_CLAIM_TESTED
     claim("More touches = stronger level", "T1.2", "tested respect rate 3+ vs 2",
-          (t3 >= t2) if (t2 is not None and t3 is not None) else None, {"2": t2, "3+": t3})
+          (t3 >= t2) if ok_t else None, {"2": t2, "3+": t3, "tested2": tested(touch.get("2", {})), "tested3+": tested(touch.get("3+", {}))})
     po, pc, md = windows.get("prime_open", {}), windows.get("prime_close", {}), midday_fires
     prime_r = ((po.get("sumR") or 0) + (pc.get("sumR") or 0)) / max(1, (po.get("fired") or 0) + (pc.get("fired") or 0)) \
         if ((po.get("fired") or 0) + (pc.get("fired") or 0)) else None
     mid_r = (md["sumR"] / md["fired"]) if md["fired"] else None
     claim("Prime windows beat mid-day", "R6.1-R6.3", "avg R prime vs mid-day (counterfactual fires)",
-          (prime_r > mid_r) if (prime_r is not None and mid_r is not None) else None,
+          (prime_r > mid_r) if (prime_r is not None and mid_r is not None
+                                and enough((po.get("fired") or 0) + (pc.get("fired") or 0), md["fired"])) else None,
           {"primeAvgR": round(prime_r, 3) if prime_r is not None else None, "middayAvgR": round(mid_r, 3) if mid_r is not None else None,
            "primeFired": (po.get("fired") or 0) + (pc.get("fired") or 0), "middayFired": md["fired"]})
     base_r = cfo["base"].get("avgR"); ng = cfo["noGapRules"].get("avgR")
     claim("Gap rules help (ours)", "Q11-Q13", "avg R with vs without gap rules",
-          (base_r >= ng) if (base_r is not None and ng is not None) else None, {"with": base_r, "without": ng})
+          (base_r >= ng) if (base_r is not None and ng is not None and enough(cfo["base"].get("fired"), cfo["noGapRules"].get("fired"))) else None,
+          {"with": base_r, "without": ng, "firedWith": cfo["base"].get("fired"), "firedWithout": cfo["noGapRules"].get("fired")})
     g3, g4 = by_rr_gate.get("rr3-4", {}), by_rr_gate.get("rr>=4", {})
     claim("R:R >= 3 gate is not dominated by a stricter one", "R2", "avg R for 3-4 vs >=4",
-          None if not (g3.get("fired") and g4.get("fired")) else (g3["sumR"] / g3["fired"] >= 0.5 * (g4["sumR"] / g4["fired"])),
+          None if not enough(g3.get("fired"), g4.get("fired")) else (g3["sumR"] / g3["fired"] >= 0.5 * (g4["sumR"] / g4["fired"])),
           {"rr3-4": finish_tr({"x": g3})["x"] if g3 else None, "rr>=4": finish_tr({"x": g4})["x"] if g4 else None})
     bk = trig_kind.get("breakout", {}); bo = trig_kind.get("bounce", {})
     claim("Confirmed breakouts are worth taking", "T3.3a-c", "breakout win rate / avg R",
-          (bk.get("avgR") or 0) > 0 if bk.get("fired") else None, {"breakout": bk})
+          (bk.get("avgR") or 0) > 0 if enough(bk.get("fired")) else None, {"breakout": bk})
     claim("Bounce at the level works", "T4.1/T4.2", "bounce win rate / avg R",
-          (bo.get("avgR") or 0) > 0 if bo.get("fired") else None, {"bounce": bo})
+          (bo.get("avgR") or 0) > 0 if enough(bo.get("fired")) else None, {"bounce": bo})
 
     total_fired = cfo["base"]["fired"]
     return {

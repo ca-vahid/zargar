@@ -4,6 +4,7 @@ import { fmtCcy } from "../lib/format";
 import { useStore } from "../store";
 import type { BrokerageAccount, BrokerageProvider, Portfolio } from "../types";
 import { BrokerIcon } from "./BrokerIcon";
+import { useWorkspace, workspaceOf } from "../lib/workspace";
 import { IconChevron } from "./icons";
 
 export interface AccountOption {
@@ -57,7 +58,20 @@ export function AccountSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const selected = options.find((o) => o.portfolio.id === value) ?? options[0];
+  const ws = useWorkspace();
+  const scoped = useMemo(() => options.filter((o) => workspaceOf(o.portfolio.kind) === ws), [options, ws]);
+  const isPending = (o: AccountOption) => !o.account && o.portfolio.venue === "ibkr"
+    && (o.portfolio.kind === "live" || o.portfolio.kind === "paper");
+  // keep the parent's selection inside the workspace
+  useEffect(() => {
+    if (!scoped.length) return;
+    if (!scoped.some((o) => o.portfolio.id === value)) {
+      const first = scoped.find((o) => !isPending(o)) ?? scoped[0];
+      onChange(first.portfolio.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scoped, value]);
+  const selected = scoped.find((o) => o.portfolio.id === value) ?? scoped[0] ?? options[0];
 
   useEffect(() => {
     if (!open) return;
@@ -74,12 +88,12 @@ export function AccountSelect({
   }, [open]);
 
   const groups = useMemo(() => ({
-    real: options
+    real: scoped
       .filter((o) => o.portfolio.kind === "live" || o.portfolio.kind === "paper")
       .sort((a, b) => providerRank(a) - providerRank(b)
         || a.portfolio.name.localeCompare(b.portfolio.name)),
-    practice: options.filter((o) => o.portfolio.kind === "sim"),
-  }), [options]);
+    practice: scoped.filter((o) => o.portfolio.kind === "sim" || o.portfolio.kind === "shadow"),
+  }), [scoped]);
 
   if (!selected) return null;
   return (
@@ -92,12 +106,13 @@ export function AccountSelect({
       </button>
       {open && (
         <div className="acct-pop" role="listbox" aria-label="Account">
-          {groups.real.length > 0 && <div className="acct-group">Real accounts</div>}
+          {groups.real.length > 0 && <div className="acct-group">Live accounts</div>}
           {groups.real.map((o) => (
-            <button type="button" key={o.portfolio.id} role="option"
+            <button type="button" key={o.portfolio.id} role="option" disabled={isPending(o)}
               aria-selected={o.portfolio.id === value}
-              className={`acct-opt ${o.portfolio.id === value ? "active" : ""}`}
-              onClick={() => { onChange(o.portfolio.id); setOpen(false); }}>
+              title={isPending(o) ? "IBKR (incl. its paper account) joins the Live workspace when the gateway connects" : undefined}
+              className={`acct-opt ${o.portfolio.id === value ? "active" : ""} ${isPending(o) ? "disabled" : ""}`}
+              onClick={() => { if (!isPending(o)) { onChange(o.portfolio.id); setOpen(false); } }}>
               <OptionRow opt={o} />
             </button>
           ))}

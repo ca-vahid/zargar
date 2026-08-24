@@ -30,6 +30,7 @@ from zargar.technique.service import attach_technique_layer
 from zargar.technique.setups import bounce_stop
 from zargar.technique.volume import build_profile
 from zargar.technique.walkforward import (
+    compute_symbol_rows,
     TriggerTracker,
     aggregate,
     level_respect,
@@ -273,6 +274,27 @@ def test_replay_plan_scores_bounce_and_counterfactuals():
     assert all(l["status"] in ("respected", "broken", "flipped", "untested") for l in rep["levels"])
 
 
+def test_history_clip_request_window_never_asks_for_the_future():
+    # a chunk wholly in the future (the week after the last planned session) is a
+    # Yahoo 400 — the window must end at "now"; 1m start is clamped to its lookback
+    from zargar.technique.history import MAX_LOOKBACK, clip_request_window
+    now = 1_787_000_000
+    lo, hi = clip_request_window("1m", now - 40 * 86400, now + 7 * 86400, now)
+    assert lo == now - MAX_LOOKBACK["1m"] and now <= hi <= now + 60
+    lo, hi = clip_request_window("1h", now - 40 * 86400, now - 86400, now)
+    assert (lo, hi) == (now - 40 * 86400, now - 86400)
+
+
+def test_compute_symbol_rows_is_the_pure_half_of_run_symbol():
+    days = weekdays(6)
+    market = continuous_market(days)
+    rows = compute_symbol_rows("TEST", days[1].isoformat(), days[4].isoformat(), structure_tfs=["1h", "30m"],
+                               trigger_tf="1m", thresholds=DEFAULT_THRESHOLDS, bars_by_tf=market)
+    assert [r["session"] for r in rows] == [d.isoformat() for d in days[1:5]]
+    assert compute_symbol_rows("TEST", days[1].isoformat(), days[4].isoformat(), structure_tfs=["1h"],
+                               trigger_tf="1m", thresholds=DEFAULT_THRESHOLDS, bars_by_tf={})[0]["error"]
+
+
 async def test_run_symbol_sweep_and_aggregate():
     days = weekdays(6)
     market = continuous_market(days)
@@ -280,6 +302,12 @@ async def test_run_symbol_sweep_and_aggregate():
                             trigger_tf="1m", thresholds=DEFAULT_THRESHOLDS, bars_override=market)
     assert [r["session"] for r in rows] == [d.isoformat() for d in days[1:5]]
     assert all(r["planFor"] == days[i + 2].isoformat() for i, r in enumerate(rows))
+    # the sweep's plan for day N is the plan a live analyse at N's close builds — same
+    # triggers, same prices (a promoted run must not show a different plan)
+    live, _ = plan_at_close(market, days[3].isoformat())
+    swept = rows[2]["plan"]
+    assert [(t["id"], t["kind"], t["entry"]["price"], t["stop"]["price"]) for t in swept["triggers"]] ==         [(t["id"], t["kind"], t["entry"]["price"], t["stop"]["price"]) for t in live["triggers"]]
+    assert [l["price"] for l in swept["levels"]] == [l["price"] for l in live["levels"]]
     agg = aggregate(rows)
     assert agg["sessions"] == 4 and agg["symbols"] == ["TEST"]
     assert agg["triggers"]["byKind"]["bounce"]["fired"] >= 1
@@ -389,6 +417,46 @@ async def test_full_run_outside_prime_window_is_watch_only(rig):
     assert run_off["setups"][0]["valid"] is True
 
 
+async def test_sweep_many_symbols_run_in_parallel_thread_mode(rig):
+    # workers=1 keeps it to a background thread (no process spawn in CI); several
+    # symbols in flight, each persisted as it finishes, progress counts symbols
+    await rig.eng.settings.set("technique.walkforward.workers", 1, journal=False)
+    syms = ["AAA", "BBB", "CCC", "DDD"]
+    d = await rig.svc.start_sweep(syms, rig.days[1].isoformat(), rig.days[4].isoformat(), wait=True)
+    assert d["status"] == "done", d.get("error")
+    assert d["progress"]["done"] == 4 and d["progress"]["workers"] == "thread"
+    assert d["summary"]["sessions"] == 16 and sorted(d["summary"]["symbols"]) == syms
+    got = (await rig.client.get(f"/api/technique/walkforward/{d['id']}")).json()
+    assert len(got["rows"]) == 16 and [r["symbol"] for r in got["rows"]] == sorted(r["symbol"] for r in got["rows"])
+
+
+def test_last_completed_session_rolls_back_over_weekends_and_open_sessions():
+    from zargar.technique.walkforward import last_completed_session
+    # Sunday noon ET -> Friday; Thursday 10:00 ET (session open) -> Wednesday; Thursday 17:00 -> Thursday
+    assert last_completed_session(_ms(dt.date(2026, 8, 23), 12, 0)) == "2026-08-21"
+    assert last_completed_session(_ms(dt.date(2026, 8, 20), 10, 0)) == "2026-08-19"
+    assert last_completed_session(_ms(dt.date(2026, 8, 20), 17, 0)) == "2026-08-20"
+
+
+async def test_plan_sheet_builds_pending_rows_and_scores_later(rig, monkeypatch):
+    from zargar.technique import service as svc_mod
+    # pretend "now" is the close of days[3]: the sheet plans days[4] from the synthetic market
+    monkeypatch.setattr(svc_mod, "last_completed_session", lambda now_ms=None: rig.days[3].isoformat())
+    await rig.eng.settings.set("technique.walkforward.workers", 1, journal=False)
+    d = await rig.svc.start_plan_sheet(["TEST", "TEST2"], label="sheet", wait=True)
+    assert d["status"] == "done" and d["params"]["kind"] == "next" and d["params"]["planFor"] == rig.days[4].isoformat()
+    assert len(d["rows"]) == 2 and all(r["result"].get("pending") for r in d["rows"])
+    live, _ = plan_at_close(rig.market, rig.days[3].isoformat())
+    assert [t["id"] for t in d["rows"][0]["plan"]["triggers"]] == [t["id"] for t in live["triggers"]]
+    assert d["summary"]["setups"] >= 1
+    # the session has bars in the synthetic market -> scoring turns it into a validation
+    s = await rig.svc.score_sheet(d["id"])
+    assert not any(r["result"].get("pending") for r in s["rows"])
+    assert s["summary"]["kind"] == "next" and s["summary"]["sessions"] == 2 and "claims" in s["summary"]
+    r = await rig.client.post(f"/api/technique/walkforward/{d['id']}/score")
+    assert r.status_code == 200
+
+
 async def test_sweep_service_rows_promote_and_cli(rig):
     d = await rig.svc.start_sweep(["TEST"], rig.days[1].isoformat(), rig.days[4].isoformat(), wait=True)
     assert d["status"] == "done", d.get("error")
@@ -403,6 +471,11 @@ async def test_sweep_service_rows_promote_and_cli(rig):
     assert pr.status_code == 200, pr.text
     run = pr.json()
     assert run["mode"] == "plan" and run["trigger"] == "promote"
+    # the promoted run carries the very plan the sweep scored (same triggers + levels)
+    row = next(r for r in got["rows"] if r["session"] == rig.days[3].isoformat())
+    rp, sp = run["result"]["plan"], row["plan"]
+    assert [(t["id"], t["entry"]["price"]) for t in rp["triggers"]] == [(t["id"], t["entry"]["price"]) for t in sp["triggers"]]
+    assert [l["price"] for l in rp["levels"]] == [l["price"] for l in sp["levels"]]
     got = (await rig.client.get(f"/api/technique/walkforward/{d['id']}")).json()
     assert any(r["promotedRunId"] == run["id"] for r in got["rows"])
     ev = (await rig.client.get("/api/events", params={"type": "TechniqueSweepCompleted"})).json()

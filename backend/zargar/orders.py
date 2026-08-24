@@ -267,7 +267,11 @@ class OrderManager:
             "practice": {"sim", "shadow"},
             "live": {"sim", "shadow", "paper", "live"},
         }.get(mode, set())
-        if kind not in allowed:
+        # Reduce-only exits are exempt from the mode gate: switching the workspace
+        # to practice while a real account holds a position must never trap it —
+        # a reduce-only order can only CLOSE exposure (same reasoning as
+        # risk.halt_allows_exits for the kill switch).
+        if kind not in allowed and not intent.reduce_only:
             return await self._transition(
                 order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
                 reject_reason=f"trading.mode={mode} blocks orders on a '{kind}' portfolio")

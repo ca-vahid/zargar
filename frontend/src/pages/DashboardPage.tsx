@@ -5,6 +5,7 @@ import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtTime } from "../lib/format";
 import { baseChartOptions, cssVar } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { netWorthByCurrency, useStore } from "../store";
+import { useWorkspaceFilter } from "../lib/workspace";
 import type { BrokerageProvider } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
@@ -154,9 +155,13 @@ function EquityCurvePanel() {
 }
 
 function RecentActivity() {
-  const recentOrders = useStore((s) => s.recentOrders);
-  const executions = useStore((s) => s.executions);
+  const allOrders = useStore((s) => s.recentOrders);
+  const allExecutions = useStore((s) => s.executions);
   const portfolios = useStore((s) => s.portfolios);
+  const wsOk = useWorkspaceFilter();
+  const kindOf = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p.kind])), [portfolios]);
+  const recentOrders = useMemo(() => allOrders.filter((o) => wsOk(kindOf[o.portfolioId])), [allOrders, wsOk, kindOf]);
+  const executions = useMemo(() => allExecutions.filter((e) => wsOk(kindOf[e.portfolioId])), [allExecutions, wsOk, kindOf]);
   const setActiveSymbol = useStore((s) => s.setActiveSymbol);
   const setPage = useStore((s) => s.setPage);
   const [tab, setTab] = useState<"orders" | "fills">("orders");
@@ -313,12 +318,11 @@ export function DashboardPage() {
                     </div>
                     <div className="metric-sub">simulated equity — no real money moves in this mode</div>
                   </div>
-                  {totals.filter((t) => t.brokerage > 0).map((t) => (
-                    <div key={t.currency}>
-                      <div className="metric-mid muted">{fmtCcy(t.brokerage, t.currency)}</div>
-                      <div className="metric-sub">real {t.currency} (read-only in practice)</div>
+                  <div>
+                    <div className="metric-sub" style={{ marginTop: 6 }}>
+                      real accounts live in the <b>LIVE</b> workspace (switch next to HALT)
                     </div>
-                  ))}
+                  </div>
                 </>
               ) : (
                 <>
@@ -366,11 +370,11 @@ export function DashboardPage() {
         </div>
 
         <div className="dash-providers">
-          {(brokerages?.providers ?? []).map((p) => (
+          {mode === "live" && (brokerages?.providers ?? []).map((p) => (
             <ProviderCard key={p.connectionId || p.broker} provider={p} />
           ))}
           <PracticeCard />
-          {(!brokerages || brokerages.providers.length === 0) && (
+          {mode === "live" && (!brokerages || brokerages.providers.length === 0) && (
             <div className="panel">
               <div className="panel-body">
                 <EmptyState

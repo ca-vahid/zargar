@@ -7,6 +7,13 @@ import { Spinner } from "../ui";
 import { Collapse, DisclosureHead, useDisclosure } from "../Collapse";
 import { RailShell, useRail } from "./RailShell";
 import { SymbolPicker, type SymbolSet } from "./SymbolPicker";
+import { SYMBOL_BUNDLES } from "../../lib/symbolBundles";
+
+// --- row-action icons ---------------------------------------------------------------------
+const IcoPlan = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6" /><path d="M8 13h8M8 17h5" /></svg>;
+const IcoLlm = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" /></svg>;
+const IcoNext = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M13 2L4 14h7l-1 8 9-12h-7z" /></svg>;
+const IcoOpen = () => <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /><path d="M15 3h6v6" /><path d="M10 14L21 3" /></svg>;
 
 // --- dates -------------------------------------------------------------------------------
 
@@ -15,6 +22,12 @@ function toDateInput(d: Date): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 function fromDateInput(s: string): Date { const [y, m, d] = s.split("-").map(Number); return new Date(y, (m || 1) - 1, d || 1); }
+function nextBusinessDay(from: Date = new Date()): Date {
+  const d = new Date(from); d.setHours(12, 0, 0, 0);
+  do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
+  return d;
+}
+const STRUCTURE_TF_OPTIONS = ["1d", "1h", "30m", "15m", "5m"];
 function businessDaysBack(from: Date, n: number): Date {
   const d = new Date(from);
   let left = n;
@@ -76,39 +89,199 @@ function readRow(r: WalkforwardRow): Finding {
   return { row: r, fired: fired.length, wins, sumR, planned: valid.length, verdict, text: parts.join("; "), levels, gap };
 }
 
-// --- statistics tables (book claims) ------------------------------------------------------
+// --- book claims & statistics, in plain language ---------------------------------------------
 
-function LevelTable({ title, data }: { title: string; data: Record<string, any> }) {
-  const rows = Object.entries(data ?? {});
+const VERDICT_WORDS: Record<string, { word: string; cls: string }> = {
+  pass: { word: "holds in this data", cls: "setup" },
+  fail: { word: "does not hold here", cls: "failed" },
+  insufficient: { word: "not enough fires yet", cls: "nosetup" },
+};
+function r2(v: any) { return v === null || v === undefined ? "—" : `${Number(v) > 0 ? "+" : ""}${Number(v).toFixed(2)}R`; }
+
+/** Turn a claim row from `walkforward.aggregate()` into a question + one evidence sentence. */
+function describeClaim(c: any): { question: string; evidence: string } {
+  const d = c.detail ?? {};
+  switch (c.claim) {
+    case "Prior-day HOD/LOD are the strongest levels":
+      return { question: "Are yesterday's high and low the most reliable levels?", evidence: `held when tested: prior-day ${pct(d.priorDay)} vs every other level ${pct(d.other)}` };
+    case "More touches = stronger level":
+      return { question: "Does a level touched 3+ times hold better than one touched twice?", evidence: `held when tested: 3+ touches ${pct(d["3+"])} vs 2 touches ${pct(d["2"])}` };
+    case "Prime windows beat mid-day":
+      return { question: "Do fires inside the prime windows (09:30–10:30 · 14:45–16:00) beat mid-day fires?", evidence: `avg ${r2(d.primeAvgR)} over ${d.primeFired ?? 0} prime fires vs ${r2(d.middayAvgR)} over ${d.middayFired ?? 0} mid-day fires (mid-day fires come from the replay without the R6 gate — for real, the gate blocks them)` };
+    case "Gap rules help (ours)":
+      return { question: "Do our gap rules (Q11–Q13: void a plan when the open gaps too far) improve results?", evidence: `avg ${r2(d.with)} with the rules vs ${r2(d.without)} without them` };
+    case "R:R >= 3 gate is not dominated by a stricter one":
+      return { question: "Is reward-to-risk ≥ 3 the right bar, or should we demand ≥ 4?", evidence: `R:R 3–4: avg ${r2(d["rr3-4"]?.avgR)} over ${d["rr3-4"]?.fired ?? 0} fires · R:R ≥ 4: avg ${r2(d["rr>=4"]?.avgR)} over ${d["rr>=4"]?.fired ?? 0} fires` };
+    case "Confirmed breakouts are worth taking": { const k = d.breakout ?? {}; return { question: "Do breakout entries (buy through resistance) make money?", evidence: `${k.fired ?? 0} fired of ${k.planned ?? 0} planned · win rate ${pct(k.winRate)} · avg ${r2(k.avgR)}` }; }
+    case "Bounce at the level works": { const k = d.bounce ?? {}; return { question: "Do bounce entries (buy the dip at support) make money?", evidence: `${k.fired ?? 0} fired of ${k.planned ?? 0} planned · win rate ${pct(k.winRate)} · avg ${r2(k.avgR)}` }; }
+    default: return { question: c.claim, evidence: JSON.stringify(d) };
+  }
+}
+
+function Bar({ v }: { v: number | null | undefined }) {
+  if (v === null || v === undefined) return <span className="muted">—</span>;
+  const p = Math.max(0, Math.min(100, Math.round(v * 100)));
+  return <span className="tq-bar" title={`${p}%`}><span style={{ width: `${p}%` }} /><b>{p}%</b></span>;
+}
+
+const LEVEL_LABELS: Record<string, string> = {
+  priorDay: "Prior-day high / low", other: "Every other level",
+  "T1.3a": "Prior-day high / low", "T1.3b": "Prior-session extreme", "T1.3c": "Swing pivots (touched 2+ times)", "T1.3d": "Round numbers",
+  "1": "1 touch", "2": "2 touches", "3+": "3+ touches",
+  "1h": "Read on 1h", "30m": "Read on 30m", "1m": "Read on 1m (trigger tf)", "?": "unknown",
+};
+function LevelQuality({ title, data, hint }: { title: string; data: Record<string, any>; hint?: string }) {
+  const rows = Object.entries(data ?? {}).filter(([, v]: any) => v && v.n);
   if (!rows.length) return null;
   return (
     <div className="tq-section">
-      <div className="tq-label">{title}</div>
-      <div className="tq-table-wrap"><table className="tq-table tq-wf">
-        <thead><tr><th></th><th>n</th><th>respected</th><th>broken</th><th>flipped</th><th>untested</th><th>respect (tested)</th></tr></thead>
+      <div className="tq-label">{title}{hint && <span className="muted tq-hint"> · {hint}</span>}</div>
+      <div className="tq-table-wrap"><table className="tq-table tq-wf tq-stat">
+        <thead><tr><th></th><th>levels planned</th><th>tested</th><th>held</th><th>broke</th><th>flipped</th><th>held when tested</th></tr></thead>
         <tbody>{rows.map(([k, v]: any) => (
-          <tr key={k}><td><b>{k}</b></td><td>{v.n}</td><td className="pos">{v.respected}</td><td className="neg">{v.broken}</td><td>{v.flipped}</td><td className="muted">{v.untested}</td>
-            <td><b>{pct(v.testedRespectRate)}</b></td></tr>))}</tbody>
+          <tr key={k}><td><b>{LEVEL_LABELS[k] ?? k}</b></td><td>{v.n}</td><td>{v.n - (v.untested ?? 0)}</td><td className="pos">{v.respected}</td><td className="neg">{v.broken}</td><td>{v.flipped}</td><td className="tq-barcell"><Bar v={v.testedRespectRate} /></td></tr>))}</tbody>
       </table></div>
     </div>
   );
 }
 
-function TriggerTable({ title, data, planned = true }: { title: string; data: Record<string, any>; planned?: boolean }) {
-  const rows = Object.entries(data ?? {});
+const TRIGGER_LABELS: Record<string, string> = {
+  bounce: "Bounce — buy the dip at support", breakout: "Breakout — buy through resistance",
+  prime_open: "Prime open 09:30–10:30", prime_close: "Prime close 14:45–16:00", midday: "Mid-day", "?": "unknown window",
+  base: "As designed — prime-window gate + gap rules on", noWindowGate: "Without the prime-window gate (R6)", noGapRules: "Without the gap rules (Q11–Q13)",
+  middayBlocked: "Mid-day fires the R6 gate blocked — what they would have done",
+  "rr3-4": "Reward-to-risk between 3 and 4", "rr>=4": "Reward-to-risk 4 or better",
+};
+function TriggerQuality({ title, data, hint, why = false }: { title: string; data: Record<string, any>; hint?: string; why?: boolean }) {
+  const rows = Object.entries(data ?? {}).filter(([, v]: any) => v && (v.fired || v.planned));
   if (!rows.length) return null;
+  const whyText = (v: any) => [v.notTriggered ? `${v.notTriggered} never touched` : "", v.gapVoid ? `${v.gapVoid} voided by the opening gap` : "",
+    v.gappedPast ? `${v.gappedPast} gapped past the level` : "", v.gappedThrough ? `${v.gappedThrough} stop gapped through` : "",
+    v.observedMidday ? `${v.observedMidday} touched mid-day only` : ""].filter(Boolean).join(" · ") || "—";
   return (
     <div className="tq-section">
-      <div className="tq-label">{title}</div>
-      <div className="tq-table-wrap"><table className="tq-table tq-wf">
-        <thead><tr><th></th>{planned && <th>planned</th>}<th>fired</th><th>wins</th><th>win rate</th><th>avg R</th><th>ΣR</th>
-          {planned && <><th>gapped past</th><th>gapped through</th><th>gap void</th><th>mid-day observed</th><th>not triggered</th></>}</tr></thead>
+      <div className="tq-label">{title}{hint && <span className="muted tq-hint"> · {hint}</span>}</div>
+      <div className="tq-table-wrap"><table className="tq-table tq-wf tq-stat">
+        <thead><tr><th></th>{why && <th>planned</th>}<th>fired</th><th>won</th><th>win rate</th><th>avg R</th><th>ΣR</th>{why && <th>why the rest never fired</th>}</tr></thead>
         <tbody>{rows.map(([k, v]: any) => (
-          <tr key={k}><td><b>{k}</b></td>{planned && <td>{v.planned ?? "—"}</td>}<td>{v.fired}</td><td>{v.wins}</td><td>{pct(v.winRate)}</td>
-            <td className={(v.avgR ?? 0) > 0 ? "pos" : (v.avgR ?? 0) < 0 ? "neg" : ""}><b>{num(v.avgR)}</b></td><td>{num(v.sumR)}</td>
-            {planned && <><td>{v.gappedPast ?? "—"}</td><td>{v.gappedThrough ?? "—"}</td><td>{v.gapVoid ?? "—"}</td><td>{v.observedMidday ?? "—"}</td><td>{v.notTriggered ?? "—"}</td></>}</tr>))}</tbody>
+          <tr key={k}><td><b>{TRIGGER_LABELS[k] ?? k}</b></td>{why && <td>{v.planned ?? "—"}</td>}
+            <td>{v.fired}{why && v.planned ? <span className="muted"> ({pct(v.triggerRate)})</span> : null}</td><td>{v.wins}</td><td className="tq-barcell"><Bar v={v.winRate} /></td>
+            <td className={(v.avgR ?? 0) > 0 ? "pos" : (v.avgR ?? 0) < 0 ? "neg" : ""}><b>{r2(v.avgR)}</b></td><td>{r2(v.sumR)}</td>
+            {why && <td className="muted tq-why">{whyText(v)}</td>}</tr>))}</tbody>
       </table></div>
     </div>
+  );
+}
+
+// --- plan sheet: the next session's setups, ranked ---------------------------------------------
+
+interface SheetRow { row: WalkforwardRow; best: any | null; valid: any[]; levels: number; trend: string; why: string; gap: string }
+function readSheetRow(r: WalkforwardRow): SheetRow {
+  const plan = r.plan ?? {};
+  const trig: any[] = plan.triggers ?? [];
+  const valid = trig.filter((t) => t.valid).sort((a, b) => (b.confidence - a.confidence) || (b.riskReward - a.riskReward));
+  const best = valid[0] ?? null;
+  const tr = plan.context?.trend ?? {};
+  const ARROW: Record<string, string> = { uptrend: "↑", downtrend: "↓", sideways: "→", up: "↑", down: "↓" };
+  const trend = Object.entries(tr).filter(([k]) => k !== (plan.triggerTf ?? "1m"))
+    .map(([k, v]: any) => { const w = String(typeof v === "string" ? v : v?.direction ?? v?.trend ?? "?"); return `${k}${ARROW[w] ?? " " + w}`; }).join("  ");
+  const cand = trig.slice().sort((a, b) => (b.confidence - a.confidence))[0];
+  const why = best ? (best.confluences ?? []).join(", ") : cand ? (cand.noTradeReasons ?? []).join("; ") || "rejected" : "no level close enough to trade";
+  const gap = best ? (best.voidIf ?? []).join("; ") : "";
+  return { row: r, best, valid, levels: (plan.levels ?? []).length, trend, why, gap };
+}
+
+function SymAvatar({ sym }: { sym: string }) {
+  const [err, setErr] = useState(false);
+  const hue = Array.from(sym).reduce((a, c) => a + c.charCodeAt(0) * 7, 0) % 360;
+  if (err) return <span className="tq-avatar tq-avatar-mono" style={{ background: `hsl(${hue} 45% 40%)` }} aria-hidden="true">{sym.slice(0, 2)}</span>;
+  return <img className="tq-avatar" alt="" loading="lazy" src={`https://assets.parqet.com/logos/symbol/${sym}?format=png&size=32`} onError={() => setErr(true)} />;
+}
+
+function Conf({ v }: { v: number | null | undefined }) {
+  if (v === null || v === undefined) return <span className="muted">—</span>;
+  const p = Math.round(v * 100);
+  return <span className={`tq-conf ${p >= 80 ? "hi" : p >= 60 ? "mid" : "lo"}`}>{p}%</span>;
+}
+const WHY_SHORT: [RegExp, string][] = [
+  [/prior-day extreme \(T1\.3a\)/, "PD"], [/(\d+) touches \(T1\.2\)/, "$1×"],
+  [/higher timeframe not against it \(T3\.3g\)/, "HTF✓"], [/higher timeframe uptrend \(T3\.3g\)/, "HTF↑"],
+  [/confluence across timeframes/, "CF"], [/volume drying up.*$/, "VOL↓"],
+  [/rejection candle.*$/, "REJ"], [/round number.*$/, "RND"],
+];
+function whyChips(why: string): string[] {
+  return why.split(/,\s*/).map((part) => {
+    for (const [re, out] of WHY_SHORT) { if (re.test(part)) return part.replace(re, out); }
+    return part;
+  }).filter(Boolean).slice(0, 5);
+}
+
+function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
+  sel: TechniqueSweep; pending: Record<string, string>; onOpen: (r: WalkforwardRow) => void; onScore: () => void; scorable: boolean;
+}) {
+  const rows = useMemo(() => (sel.rows ?? []).map(readSheetRow), [sel.rows]);
+  const withSetup = rows.filter((x) => x.best).sort((a, b) => (b.best.confidence - a.best.confidence) || (b.best.riskReward - a.best.riskReward) || a.row.symbol.localeCompare(b.row.symbol));
+  const without = rows.filter((x) => !x.best);
+  const bounces = withSetup.filter((x) => x.best.kind === "bounce").length;
+  const avgRR = withSetup.length ? withSetup.reduce((a, x) => a + (x.best.riskReward || 0), 0) / withSetup.length : null;
+  const planFor = sel.params?.planFor ?? sel.summary?.planFor;
+  return (
+    <>
+      <div className="tq-wf-callout">
+        <b>Setups for {planFor}</b> — each symbol's plan built at the {sel.start} close, exactly what you would arm. Ranked by the plan's own confidence (level strength, touches, confluences), then reward-to-risk.
+        {" "}A setup is an <i>if-then</i>: it only becomes a trade if price reaches the entry inside a prime window. {scorable
+          ? <> The session has closed — <button className="link-btn" onClick={onScore}>score this sheet now</button> to see what each setup did.</>
+          : <> After {planFor} closes, this sheet scores itself into a validation.</>}
+      </div>
+      <div className="tq-plan">
+        <div className="tq-plan-cell"><small>Symbols</small><b>{rows.length}</b><span>planned at the {sel.start} close</span></div>
+        <div className="tq-plan-cell"><small>With a setup</small><b>{withSetup.length}</b><span>{rows.length ? `${Math.round((withSetup.length / rows.length) * 100)}% of symbols` : ""}</span></div>
+        <div className="tq-plan-cell"><small>Bounces / breakouts</small><b>{bounces} / {withSetup.length - bounces}</b><span>best trigger per symbol</span></div>
+        <div className="tq-plan-cell"><small>Avg reward-to-risk</small><b>{avgRR === null ? "—" : avgRR.toFixed(1)}</b><span>the book's floor is 3 (R2)</span></div>
+        <div className="tq-plan-cell"><small>Status</small><b>{sel.status === "running" ? `${sel.progress?.done ?? 0}/${sel.progress?.total ?? "?"}` : "ready"}</b><span>{sel.status === "running" ? "building plans…" : "deterministic · no LLM"}</span></div>
+      </div>
+      <div className="tq-wf-findings-head"><span className="tq-label">Setups · best first</span>
+        <span className="muted small"><b>PD</b> prior-day level · <b>N×</b> touches · <b>HTF✓/↑</b> higher timeframe agrees · <b>CF</b> confluence · hover a row for the void rules · ⚡ arms</span></div>
+      <div className="tq-table-wrap sticky-head">
+        <table className="tq-table tq-wf tq-findings tq-sheet">
+          <thead><tr><th>Symbol</th><th>Setup</th><th title="Additional valid triggers in the same plan">Alt</th><th>Entry</th><th>Stop</th><th>Targets</th><th title="Reward-to-risk — the book's floor is 3 (R2)">R:R</th><th title="The plan's own confidence: level strength, touches, confluences">Conf</th><th>Why</th><th title="Structure trend on the higher timeframes (↑ up · → sideways · ↓ down)">Trend</th><th aria-label="arm"></th></tr></thead>
+          <tbody>
+            {withSetup.map(({ row, best, valid, trend, why }) => (
+              <tr key={row.id} className="tq-finding win" title={`${row.symbol}: ${best.kind} at ${num(best.levelPrice)} · void if: ${(best.voidIf ?? []).join("; ") || "—"}`}>
+                <td className="nowrap"><span className="tq-symcell"><SymAvatar sym={row.symbol} /><b>{row.symbol}</b></span></td>
+                <td className="nowrap"><span className={`tq-badge ${best.kind === "bounce" ? "setup" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : "WEDGE"}</span></td>
+                <td>{valid.length > 1
+                  ? <span className="tq-alt" title={valid.slice(1).map((t: any) => `${t.id} ${t.kind} at ${num(t.entry?.price)} (R:R ${num(t.riskReward, 1)})`).join("; ")}>+{valid.length - 1}</span>
+                  : <span className="muted">—</span>}</td>
+                <td className="nowrap">{num(best.entry?.price)} <span className="muted small">{best.entry?.basis === "on_break" ? "on break" : "at level"}</span></td>
+                <td className="nowrap neg">{num(best.stop?.price)}</td>
+                <td className="nowrap small">{(best.targets ?? []).slice(0, 3).map((t: any, i: number) => <span key={i}>{i > 0 && <span className="tq-sep"> / </span>}<span className="pos">{num(t.price)}</span></span>)}</td>
+                <td><b>{num(best.riskReward, 1)}</b></td>
+                <td><Conf v={best.confidence} /></td>
+                <td><div className="tq-why-chips" title={why}>{whyChips(why || "").map((w, i) => <span key={i}>{w}</span>)}</div></td>
+                <td className="muted nowrap small">{trend || "—"}</td>
+                <td className="nowrap tq-arm-cell">{pending[row.id]
+                  ? <span className="muted small"><Spinner /></span>
+                  : <button className="tq-act next tq-act-icon" onClick={() => onOpen(row)} aria-label={`Arm ${row.symbol}`}
+                      title={`Arm ${row.symbol} — opens its plan for ${planFor} as a run with the Arm button (chart, trace, everything)`}><IcoNext /></button>}</td>
+              </tr>
+            ))}
+            {withSetup.length === 0 && <tr><td colSpan={11}><div className="empty">{sel.status === "running" ? "Building plans…" : "No symbol has a tradeable setup for this session."}</div></td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {without.length > 0 && (
+        <details className="tq-sheet-none">
+          <summary className="muted">No setup for {without.length} symbol{without.length === 1 ? "" : "s"} — why</summary>
+          <div className="tq-table-wrap"><table className="tq-table tq-wf">
+            <tbody>{without.map(({ row, why }) => { const first = (why || "no triggers").split(";")[0]; const more = (why || "").split(";").length - 1;
+              return <tr key={row.id}><td className="nowrap"><b>{row.symbol}</b></td>
+                <td className="muted tq-finding-text" title={why}>{first}{more > 0 && <span className="small"> · +{more} more reason{more > 1 ? "s" : ""}</span>}</td>
+                <td className="nowrap"><button className="tq-act" onClick={() => onOpen(row)} title="Open the plan anyway (levels, chart, trace)"><IcoPlan /><span>open</span></button></td></tr>; })}</tbody>
+          </table></div>
+        </details>
+      )}
+    </>
   );
 }
 
@@ -123,20 +296,33 @@ const LENSES: { key: Lens; label: string; hint: string }[] = [
   { key: "none", label: "Nothing fired", hint: "the plan never triggered (and why)" },
 ];
 
-export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean }) {
+const LEGACY_UNIVERSE = ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "AMZN"];
+
+export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { llmAvailable?: boolean; sweepVersion?: string | null }) {
   const toast = useStore((s) => s.toast);
   const settings = useStore((s) => s.settings);
   const openRun = useStore((s) => s.openTechniqueRun);
   const bump = useStore((s) => s.techniqueSweepBump);
   const positions = useStore((s) => s.positions);
   const watchlists = useStore((s) => s.watchlists);
-  const bookUniverse: string[] = (settings["technique.walkforward.symbols"] as string[]) ?? ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA", "AMD", "META", "AMZN"];
+  const bookUniverse: string[] = (settings["technique.walkforward.symbols"] as string[]) ?? LEGACY_UNIVERSE;
 
-  const [symbols, setSymbols] = useState<string[]>(() => {
-    try { const v = JSON.parse(localStorage.getItem("zargar_tq_sweep_symbols") || "null"); if (Array.isArray(v) && v.length) return v; } catch { /* ignore */ }
-    return bookUniverse;
+  // null = "the book's universe" (follows the setting, which loads after mount); a
+  // picked list is remembered until the user changes it again
+  const [picked, setPicked] = useState<string[] | null>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem("zargar_tq_sweep_symbols_v2") || "null");
+      // a stored copy of the pre-2026-08-22 nine-name default is not a choice — follow the setting
+      if (Array.isArray(v) && v.length && v.join(",") !== LEGACY_UNIVERSE.join(",")) return v;
+    } catch { /* ignore */ }
+    return null;
   });
-  useEffect(() => { localStorage.setItem("zargar_tq_sweep_symbols", JSON.stringify(symbols)); }, [symbols]);
+  const symbols = picked ?? bookUniverse;
+  const setSymbols = (s: string[]) => {
+    const isBook = s.length === bookUniverse.length && s.every((x, i) => x === bookUniverse[i]);
+    setPicked(isBook ? null : s);
+    if (isBook) localStorage.removeItem("zargar_tq_sweep_symbols_v2"); else localStorage.setItem("zargar_tq_sweep_symbols_v2", JSON.stringify(s));
+  };
   const [pickerOpen, setPickerOpen] = useState(false);
   const [preset, setPreset] = useState<"last" | "date">("last");
   const [date, setDate] = useState(lastCompletedSession());
@@ -152,6 +338,32 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [statsOpen, toggleStats] = useDisclosure("tq_wf_stats", false);
   const [llmBusy, setLlmBusy] = useState(false);
+  const [pending, setPending] = useState<Record<string, "plan" | "llm" | "next">>({});
+  const [name, setName] = useState("");
+  const [mode, setMode] = useState<"check" | "prepare">(() => (localStorage.getItem("zargar_tq_wf_mode") as any) || "check");
+  useEffect(() => { localStorage.setItem("zargar_tq_wf_mode", mode); }, [mode]);
+  const sheetFor = nextBusinessDay();
+  const sheetForLabel = sheetFor.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  const rename = async (id: string, value: string) => {
+    const v = value.trim();
+    setRenaming(null);
+    if (!v) return;
+    try {
+      const d = await api.techniqueRenameSweep(id, v);
+      setSweeps((list) => list.map((x) => (x.id === id ? { ...x, label: d.label } : x)));
+      setSel((cur) => (cur && cur.id === id ? { ...cur, label: d.label } : cur));
+    } catch (e: any) { toast("error", e.message); }
+  };
+  const structureList = structure.split(",").map((x) => x.trim()).filter(Boolean);
+  const toggleStructure = (tf: string) => {
+    const on = structureList.includes(tf);
+    if (on && structureList.length === 1) { toast("error", "Keep at least one structure timeframe"); return; }
+    const next = STRUCTURE_TF_OPTIONS.filter((x) => (x === tf ? !on : structureList.includes(x)));
+    setStructure(next.join(","));
+  };
+  const [histOpen, toggleHist] = useDisclosure("tq_wf_hist", false);
+  const [formOpen, setFormOpen] = useState<boolean | null>(null);   // null = auto: open until a validation is shown
   const rail = useRail("tq_rail_validation");
 
   const scored = preset === "last" ? lastCompletedSession() : date;
@@ -187,28 +399,91 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
       { key: "held", label: "My holdings", hint: "stocks you hold in any account", symbols: held },
       ...watchlists.map((w) => ({ key: `wl-${w.id}`, label: `Watchlist · ${w.name}`, hint: `${w.symbols.length} symbols`, symbols: w.symbols })),
       { key: "recent", label: "Recently swept", hint: "symbols from earlier sweeps", symbols: recent },
+      ...SYMBOL_BUNDLES.map((b) => ({ ...b, collapsed: true, group: "Bundles — add a whole theme at once" })),
     ];
   }, [positions, watchlists, sweeps, bookUniverse]);
+
+  // What the selection is made of, in words: whole sets first, then loose symbols
+  const coverage = useMemo(() => {
+    const selSet = new Set(symbols);
+    const candidates = [{ label: "The book's universe", symbols: bookUniverse }, ...SYMBOL_BUNDLES.map((b) => ({ label: b.label, symbols: b.symbols }))]
+      .sort((x, y) => y.symbols.length - x.symbols.length);
+    const covered = new Set<string>();
+    const names: { label: string; n: number; members: string[] }[] = [];
+    for (const c of candidates) {
+      if (c.symbols.length < 3 || !c.symbols.every((x) => selSet.has(x))) continue;
+      const fresh = c.symbols.filter((x) => !covered.has(x));
+      if (fresh.length < Math.max(3, Math.ceil(c.symbols.length * 0.3))) continue;
+      names.push({ label: c.label, n: c.symbols.length, members: c.symbols });
+      c.symbols.forEach((x) => covered.add(x));
+    }
+    return { names, rest: symbols.filter((x) => !covered.has(x)) };
+  }, [symbols, bookUniverse]);
+  const anyRunning = sweeps.some((x) => x.status === "running") || sel?.status === "running";
+  const runningSweep = sweeps.find((x) => x.status === "running") ?? (sel?.status === "running" ? sel : null);
 
   const run = async () => {
     if (!symbols.length) { toast("error", "Pick at least one symbol"); return; }
     setBusy(true);
     try {
       const d = await api.techniqueStartSweep({
-        symbols, start, end, label: `${symbols.length} symbol${symbols.length === 1 ? "" : "s"} · ${count === 1 ? scored : `${firstScored}..${scored}`}`,
+        symbols, start, end, label: name.trim() || `${symbols.length} symbol${symbols.length === 1 ? "" : "s"} · ${count === 1 ? scored : `${firstScored}..${scored}`}`,
         structureTfs: structure.split(",").map((s) => s.trim()).filter(Boolean), triggerTf: trigger, includeInvalid,
       });
       toast("info", `Validation started: ${d.symbols.length} symbol(s), ${count} session${count === 1 ? "" : "s"} ending ${scored}`);
-      setSel(d); setChecked({}); refresh();
+      setSel(d); setChecked({}); setName(""); refresh();
     } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
   };
-  const promote = async (r: WalkforwardRow, withVision: boolean) => {
+  const runSheet = async () => {
+    if (!symbols.length) { toast("error", "Pick at least one symbol"); return; }
+    setBusy(true);
+    try {
+      const d = await api.techniqueStartSheet({ symbols, label: name.trim() || `Setups for ${toDateInput(sheetFor)} · ${symbols.length} symbols` });
+      toast("info", `Building ${d.symbols.length} plans for ${d.params?.planFor ?? "the next session"}…`);
+      setSel(d); setChecked({}); setName(""); refresh();
+    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+  };
+  const scoreSheet = async () => {
     if (!sel) return;
+    try { const d = await api.techniqueScoreSheet(sel.id); setSel(d); refresh(); toast("success", d.summary?.pending ? "Session not complete yet — try after the close" : "Sheet scored"); }
+    catch (e: any) { toast("error", e.message); }
+  };
+  const openSheetRow = async (r: WalkforwardRow) => {
+    if (pending[r.id]) return;
+    setPending((p) => ({ ...p, [r.id]: "next" }));
+    try {
+      const run = await api.techniquePlan({ symbol: r.symbol, withVision: false, wait: true });
+      toast("success", `${r.symbol} plan for ${run.result?.plan?.planFor ?? "the next session"} — arm it here`);
+      openRun(run.id);
+    } catch (e: any) { toast("error", e.message); }
+    finally { setPending((p) => { const n = { ...p }; delete n[r.id]; return n; }); }
+  };
+  const promote = async (r: WalkforwardRow, withVision: boolean) => {
+    if (!sel || pending[r.id]) return;
+    setPending((p) => ({ ...p, [r.id]: withVision ? "llm" : "plan" }));
+    toast("info", withVision ? `Starting the LLM read for ${r.symbol} ${r.planFor}…` : `Building the ${r.symbol} plan for ${r.planFor} (a few seconds)…`);
     try {
       const run = await api.techniquePromote(sel.id, { symbol: r.symbol, session: r.session, withVision, wait: !withVision });
-      toast("success", withVision ? `LLM read started for ${r.symbol} (${r.planFor}) → run ${run.id.slice(0, 8)}` : `Plan for ${r.symbol} ${r.planFor} → run ${run.id.slice(0, 8)}`);
-      if (!withVision) openRun(run.id); else refetchSel(sel.id);
+      // mark the row at once so a second click can't mint a duplicate run
+      setSel((cur) => cur && cur.id === sel.id
+        ? { ...cur, rows: (cur.rows ?? []).map((x) => (x.id === r.id ? { ...x, promotedRunId: run.id } : x)) }
+        : cur);
+      if (withVision) { toast("success", `LLM read started for ${r.symbol} ${r.planFor} → run ${run.id.slice(0, 8)} (appears in History when done)`); refetchSel(sel.id); }
+      else { toast("success", `Plan ${r.symbol} ${r.planFor} → run ${run.id.slice(0, 8)} — opening on Analyse`); openRun(run.id); }
     } catch (e: any) { toast("error", e.message); }
+    finally { setPending((p) => { const n = { ...p }; delete n[r.id]; return n; }); }
+  };
+  // Build THIS symbol's plan for the NEXT session (at the last close) — the one that can be armed
+  const planNext = async (r: WalkforwardRow) => {
+    if (pending[r.id]) return;
+    setPending((p) => ({ ...p, [r.id]: "next" }));
+    toast("info", `Building ${r.symbol}'s plan for the next session at the last close…`);
+    try {
+      const run = await api.techniquePlan({ symbol: r.symbol, withVision: false, wait: true });
+      toast("success", `${r.symbol} plan for ${run.result?.plan?.planFor ?? "the next session"} → run ${run.id.slice(0, 8)} — arm it there`);
+      openRun(run.id);
+    } catch (e: any) { toast("error", e.message); }
+    finally { setPending((p) => { const n = { ...p }; delete n[r.id]; return n; }); }
   };
   const llmSelected = async () => {
     if (!sel) return;
@@ -226,6 +501,7 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
   };
 
   const sm = sel?.summary ?? {};
+  const isSheet = !!sel && sel.params?.kind === "next" && (sel.rows ?? []).some((r) => r.result?.pending) || (!!sel && sel.params?.kind === "next" && sel.status === "running");
   const findings = useMemo(() => (sel?.rows ?? []).map(readRow).sort((a, b) => {
     const rank = (f: Finding) => (f.verdict === "win" ? 0 : f.verdict === "mixed" ? 1 : f.verdict === "loss" ? 2 : f.verdict === "none" ? 3 : 4);
     return rank(a) - rank(b) || b.sumR - a.sumR || a.row.symbol.localeCompare(b.row.symbol) || (b.row.planFor ?? "").localeCompare(a.row.planFor ?? "");
@@ -245,18 +521,37 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
       <div className="tq-main">
         {/* ---- set-up ---- */}
         <div className="panel tq-form">
-          <div className="panel-head">Walk-forward validation
+          <div className="panel-head tq-form-head" role="button" tabIndex={0} onClick={() => setFormOpen((v) => !(v ?? !sel))}
+            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setFormOpen((v) => !(v ?? !sel)); }}>
+            <span className="tq-picker-caret">{(formOpen ?? !sel) ? "▾" : "▸"}</span> Walk-forward validation
             <span className="sub">build the plan at a close, replay it on the next session's real bars — deterministic, free, no LLM (≥100 fires before trusting a number, p. 72)</span>
           </div>
-          <div className="panel-body tq-wf-form">
+          {(formOpen ?? !sel) && <div className="panel-body tq-wf-form">
             <div className="tq-wf-block">
-              <div className="tq-ctl-label">Symbols <span className="muted">· {symbols.length}</span></div>
+              <div className="tq-mode" role="tablist" aria-label="What to do">
+              <button type="button" role="tab" aria-selected={mode === "check"} className={mode === "check" ? "active" : ""} onClick={() => setMode("check")}>Check the past</button>
+              <button type="button" role="tab" aria-selected={mode === "prepare"} className={mode === "prepare" ? "active" : ""} onClick={() => setMode("prepare")}>Prepare the next session · {sheetForLabel}</button>
+            </div>
+            {mode === "check" ? (
+              <div className="tq-wf-callout">
+                <b>Looks backward.</b> Every row here is a plan built at a past close and replayed on the session that followed — evidence for or against the method, never a trade.
+                To see what to trade on <b>{sheetForLabel}</b>, switch to <b>Prepare the next session</b> above (or press <span className="tq-act static next"><IcoNext /><span>next</span></span> on a single finding).
+              </div>
+            ) : (
+              <div className="tq-wf-callout">
+                <b>Looks forward.</b> Builds each symbol's plan for <b>{sheetForLabel}</b> at the last close — the same plan "Last close" on Analyse shows — and ranks the setups: which level, entry, stop, targets, reward-to-risk, and why.
+                Deterministic, free, no LLM, no runs spent. Each setup opens with the <b>Arm</b> button; after the session closes the sheet scores itself, so it becomes a validation.
+              </div>
+            )}
+            <div className="tq-ctl-label">Symbols <span className="muted">· {symbols.length}</span></div>
               <div className="tq-wf-symbols">
-                {symbols.slice(0, 24).map((s) => <span key={s} className="tq-sym-chip on static">{s}</span>)}
-                {symbols.length > 24 && <span className="muted">+{symbols.length - 24} more</span>}
+                {coverage.names.map((c) => <span key={c.label} className="tq-cov-chip" title={c.members.join(", ")}>{c.label} <span>· {c.n}</span></span>)}
+                {coverage.rest.slice(0, 14).map((x) => <span key={x} className="tq-sym-chip on static">{x}</span>)}
+                {coverage.rest.length > 14 && <span className="muted" title={coverage.rest.slice(14).join(", ")}>+{coverage.rest.length - 14} more</span>}
                 <button type="button" className="secondary-btn tq-wf-pick" onClick={() => setPickerOpen(true)}>Choose symbols…</button>
               </div>
             </div>
+            {mode === "check" ? (<>
             <div className="tq-wf-block tq-wf-when">
               <div>
                 <div className="tq-ctl-label">Session to check</div>
@@ -274,7 +569,17 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
                   {SESSION_COUNTS.map((n) => <button key={n} type="button" className={count === n ? "active" : ""} onClick={() => setCount(n)}>{n}</button>)}
                 </div>
               </div>
-              <button className="primary-btn tq-run tq-wf-run" disabled={busy || !symbols.length} onClick={run}>{busy ? "Starting…" : `Validate ${symbols.length} symbol${symbols.length === 1 ? "" : "s"}`}</button>
+              <div className="tq-wf-go">
+                <div>
+                  <div className="tq-ctl-label">Name <span className="muted">· optional</span></div>
+                  <input className="tq-wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={`${symbols.length} symbols · ${count === 1 ? scored : `${firstScored}..${scored}`}`}
+                    title="Shown in Past validations — you can rename it later too" onKeyDown={(e) => { if (e.key === "Enter" && !busy && !anyRunning && symbols.length) run(); }} />
+                </div>
+                <button className="primary-btn tq-run tq-wf-run" disabled={busy || anyRunning || !symbols.length} onClick={run}
+                  title={anyRunning ? "A validation is running — wait for it to finish" : undefined}>
+                  {busy ? "Starting…" : anyRunning ? <><span className="spinner" /> Validating… {runningSweep?.progress?.done ?? 0}/{runningSweep?.progress?.total ?? runningSweep?.symbols.length ?? "?"}</> : `Validate ${symbols.length} symbol${symbols.length === 1 ? "" : "s"}`}
+                </button>
+              </div>
             </div>
             <div className="tq-wf-explain muted">
               {count === 1
@@ -282,32 +587,69 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
                 : <>Does that for each of the last <b>{count}</b> sessions ending <b>{scored}</b> (plans built {start}..{end}, scored {firstScored}..{scored}) — one row per symbol per session, so you get a sample, not an anecdote.</>}
               {" "}Triggers on {trigger}, structure on {structure}; Yahoo keeps ~20 sessions of 1m bars.
             </div>
+            </>) : (
+              <div className="tq-wf-block tq-wf-when">
+                <div className="tq-wf-go tq-wf-go-left">
+                  <div>
+                    <div className="tq-ctl-label">Name <span className="muted">· optional</span></div>
+                    <input className="tq-wf-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={`Setups for ${toDateInput(sheetFor)} · ${symbols.length} symbols`}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !busy && !anyRunning && symbols.length) runSheet(); }} />
+                  </div>
+                  <button className="primary-btn tq-run tq-wf-run" disabled={busy || anyRunning || !symbols.length} onClick={runSheet}
+                    title={anyRunning ? "A validation is running — wait for it to finish" : `Build ${symbols.length} plans at the last close for ${sheetForLabel}`}>
+                    {busy ? "Starting…" : anyRunning ? <><span className="spinner" /> Building… {runningSweep?.progress?.done ?? 0}/{runningSweep?.progress?.total ?? runningSweep?.symbols.length ?? "?"}</> : `Build setups for ${sheetForLabel} · ${symbols.length} symbol${symbols.length === 1 ? "" : "s"}`}
+                  </button>
+                </div>
+                <div className="tq-wf-explain muted" style={{ flexBasis: "100%" }}>
+                  Plans are built at the <b>{lastCompletedSession()}</b> close with structure on {structure} and triggers on {trigger} — the sheet lists every symbol that has a tradeable trigger (R:R ≥ 3, a real level, inside a prime window), best first. Nothing is armed until you open a row and press Arm.
+                </div>
+              </div>
+            )}
             <DisclosureHead open={advOpen} onToggle={toggleAdv} level="sub">Advanced</DisclosureHead>
             <Collapse open={advOpen}>
-              <div className="tq-row tq-adv-row">
-                <div className="tq-ctl"><span className="tq-ctl-label">Structure TFs</span><input value={structure} onChange={(e) => setStructure(e.target.value)} style={{ width: 90 }} /></div>
-                <div className="tq-ctl"><span className="tq-ctl-label">Trigger TF</span>
-                  <select value={trigger} onChange={(e) => setTrigger(e.target.value)}>{["1m", "5m", "15m"].map((t) => <option key={t}>{t}</option>)}</select></div>
-                <label className="tq-chipbtn" title="Also replay triggers the plan rejected (R2 etc.) to see what they would have done"><input type="checkbox" checked={includeInvalid} onChange={(e) => setIncludeInvalid(e.target.checked)} /> include rejected triggers</label>
+              <div className="tq-adv-line">
+                <div className="tq-adv-item" title="Where levels and trend are read — the book reads structure on 30m / 1h (p. 114). Pick one or more.">
+                  <span className="tq-ctl-label">Structure</span>
+                  <div className="tq-presets" role="group" aria-label="Structure timeframes">
+                    {STRUCTURE_TF_OPTIONS.map((tf) => <button key={tf} type="button" className={structureList.includes(tf) ? "active" : ""} onClick={() => toggleStructure(tf)}>{tf}</button>)}
+                  </div>
+                </div>
+                <div className="tq-adv-item" title="Where the entry fires and the replay runs, bar by bar">
+                  <span className="tq-ctl-label">Trigger</span>
+                  <div className="tq-presets" role="group" aria-label="Trigger timeframe">
+                    {["1m", "5m", "15m"].map((tf) => <button key={tf} type="button" className={trigger === tf ? "active" : ""} onClick={() => setTrigger(tf)}>{tf}</button>)}
+                  </div>
+                </div>
+                <div className="tq-adv-item" title="Also score the triggers the plan rejected (R:R < 3 etc.) — shows what the gate cost or saved">
+                  <span className="tq-ctl-label">Rejected triggers</span>
+                  <label className={`tq-chipbtn ${includeInvalid ? "set" : ""}`}><input type="checkbox" checked={includeInvalid} onChange={(e) => setIncludeInvalid(e.target.checked)} /> replay them too</label>
+                </div>
               </div>
+              <div className="tq-adv-hint">Structure = where levels and trend are read (book: 30m / 1h, p. 114) · Trigger = where the entry fires and the replay runs · rejected triggers = also score what the plan turned down (R:R &lt; 3 etc.).</div>
             </Collapse>
-          </div>
+          </div>}
         </div>
 
         {/* ---- results ---- */}
         {sel && (
           <div className="panel">
             <div className="panel-head">
-              {sel.status === "running" && <Spinner />} {sel.label || sel.id.slice(0, 8)}
+              {sel.status === "running" && <Spinner />}
+              {renaming?.id === sel.id
+                ? <input className="tq-rename" autoFocus value={renaming.value} onChange={(e) => setRenaming({ id: sel.id, value: e.target.value })}
+                    onBlur={() => rename(sel.id, renaming.value)} onKeyDown={(e) => { if (e.key === "Enter") rename(sel.id, renaming.value); if (e.key === "Escape") setRenaming(null); }} />
+                : <>{sel.label || sel.id.slice(0, 8)} <button className="tq-pencil" title="Rename this validation" onClick={() => setRenaming({ id: sel.id, value: sel.label || "" })}>✎</button></>}
               <span className="sub">{sel.symbols.length} symbol{sel.symbols.length === 1 ? "" : "s"} · plans {sel.start}..{sel.end} · {sel.status}
-                {sel.progress?.total ? ` · ${sel.progress.done ?? 0}/${sel.progress.total} symbols` : ""}</span>
+                {sel.progress?.total ? ` · ${sel.progress.done ?? 0}/${sel.progress.total} symbols` : ""}
+                {sel.status === "running" && sel.progress?.workers ? ` · ${sel.progress.workers}` : ""}</span>
               {sel.status === "running" && sel.progress?.total ? (
                 <div className="tq-wf-progress" aria-label="progress"><div style={{ width: `${Math.round(((sel.progress.done ?? 0) / sel.progress.total) * 100)}%` }} /></div>
               ) : null}
             </div>
             <div className="panel-body">
-              {findings.length === 0 && <div className="muted">{sel.status === "running" ? "Fetching bars and building plans…" : sel.error ?? "No sessions came back — the date may be a holiday, or the symbols have no 1m history that far back."}</div>}
-              {findings.length > 0 && (
+              {isSheet && sel && <SetupsSheet sel={sel} pending={pending} onOpen={openSheetRow} onScore={scoreSheet} scorable={String(sel.params?.planFor ?? "") <= lastCompletedSession()} />}
+              {!isSheet && findings.length === 0 && <div className="muted">{sel.status === "running" ? "Fetching bars and scoring plans — symbols run in parallel, each appears as it finishes…" : sel.error ?? "No sessions came back — the date may be a holiday, or the symbols have no 1m history that far back."}</div>}
+              {!isSheet && findings.length > 0 && (
                 <>
                   <div className="tq-plan">
                     <div className="tq-plan-cell"><small>Checked</small><b>{counts.rows}</b><span>symbol · session pairs</span></div>
@@ -329,12 +671,20 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
                       {llmBusy ? "Starting…" : `LLM read on ${nChecked || "selected"} ${nChecked === 1 ? "finding" : "findings"}`}
                     </button>
                   </div>
-                  <div className="tq-table-wrap">
+                  <div className="tq-acts-legend muted small">
+                    Results: <span className="tq-badge setup">WIN</span> every fired trigger won · <span className="tq-badge wait">MIXED</span> some won, some lost (R is the net) · <span className="tq-badge failed">LOSS</span> every fired trigger stopped out · <span className="tq-badge nosetup">NO FIRE · N planned</span> N tradeable triggers, none fired — all of these are <b>past</b> sessions, evidence only.
+                  </div>
+                  <div className="tq-acts-legend muted small">
+                    Row actions: <span className="tq-act static"><IcoPlan /><span>open</span></span> open this past plan as a run (free, for review) ·
+                    <span className="tq-act static"><IcoLlm /><span>LLM</span></span> analyst read of it (≈$0.20) ·
+                    <span className="tq-act static next"><IcoNext /><span>next</span></span> plan the symbol's <b>next</b> session — the one you can arm.
+                  </div>
+                  <div className="tq-table-wrap sticky-head">
                     <table className="tq-table tq-wf tq-findings">
                       <thead><tr>
                         <th><input type="checkbox" aria-label="select all visible" checked={visible.length > 0 && visible.every((f) => checked[f.row.id])}
                           onChange={(e) => { const on = e.target.checked; setChecked((c) => { const n = { ...c }; visible.forEach((f) => { n[f.row.id] = on; }); return n; }); }} /></th>
-                        <th>Symbol</th><th>Plan → scored</th><th>Result</th><th>What happened</th><th>R</th><th>Levels</th><th>Gap</th><th></th>
+                        <th>Symbol</th><th title="The plan was built at the close of the first date and replayed on the second date's real 1-minute bars">Built at close of → replayed on</th><th>Result</th><th>What happened</th><th>R</th><th>Levels</th><th>Gap</th><th></th>
                       </tr></thead>
                       <tbody>
                         {visible.map((f) => (
@@ -342,17 +692,25 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
                             <td><input type="checkbox" checked={!!checked[f.row.id]} onChange={(e) => setChecked((c) => ({ ...c, [f.row.id]: e.target.checked }))} aria-label={`select ${f.row.symbol} ${f.row.planFor}`} /></td>
                             <td><b>{f.row.symbol}</b></td>
                             <td className="muted nowrap">{f.row.session} → <b>{f.row.planFor}</b></td>
-                            <td><span className={`tq-badge ${f.verdict === "win" ? "setup" : f.verdict === "loss" ? "failed" : f.verdict === "mixed" ? "wait" : "nosetup"}`}>
+                            <td><span className={`tq-badge ${f.verdict === "win" ? "setup" : f.verdict === "loss" ? "failed" : f.verdict === "mixed" ? "wait" : "nosetup"}`}
+                              title={f.verdict === "win" ? "Every trigger that fired that day ended in profit" : f.verdict === "loss" ? "Every trigger that fired that day ended at the stop" : f.verdict === "mixed" ? "Some fired triggers won, some lost — the R column is the net" : f.verdict === "none" ? `The plan had ${f.planned} tradeable trigger${f.planned === 1 ? "" : "s"} but price never fired one inside a prime window (reason in the row)` : "No bars for that session"}>
                               {f.verdict === "win" ? "WIN" : f.verdict === "loss" ? "LOSS" : f.verdict === "mixed" ? "MIXED" : f.verdict === "none" ? `NO FIRE · ${f.planned} planned` : "NO DATA"}</span></td>
                             <td className="tq-finding-text">{f.text}</td>
                             <td className={`nowrap ${f.sumR > 0 ? "pos" : f.sumR < 0 ? "neg" : "muted"}`}><b>{f.fired ? signedR(f.sumR) : "—"}</b></td>
                             <td className="muted nowrap">{f.levels}</td>
                             <td className="muted nowrap">{f.gap}</td>
                             <td className="nowrap">
-                              {f.row.promotedRunId
-                                ? <button className="link-btn" onClick={() => openRun(f.row.promotedRunId!)}>open run</button>
-                                : <><button className="link-btn" onClick={() => promote(f.row, false)} title="Open this plan as a reviewable run (deterministic, free)">plan</button>
-                                  {" · "}<button className="link-btn" disabled={!llmOk} onClick={() => promote(f.row, true)} title="Full analyst read on this plan (≈$0.20)">LLM read</button></>}
+                              {pending[f.row.id]
+                                ? <span className="muted nowrap"><Spinner /> {pending[f.row.id] === "plan" ? "opening…" : pending[f.row.id] === "llm" ? "LLM read starting…" : "planning next session…"}</span>
+                                : <span className="tq-acts">
+                                    {f.row.promotedRunId
+                                      ? <button className="tq-act" onClick={() => openRun(f.row.promotedRunId!)} title={`Open the run for this plan (${f.row.promotedRunId.slice(0, 8)}) — chart, trace, replay, discuss`}><IcoOpen /><span>open</span></button>
+                                      : <>
+                                        <button className="tq-act" onClick={() => promote(f.row, false)} title={`Open as a run — this exact ${f.row.symbol} plan for ${f.row.planFor} on the Analyse tab, with chart, trace, replay and chat. Deterministic, free, a few seconds. It is a PAST plan: for review, not arming.`}><IcoPlan /><span>open</span></button>
+                                        <button className="tq-act" disabled={!llmOk} onClick={() => promote(f.row, true)} title={`LLM read — the model's 4-pass analyst read of this ${f.row.symbol} plan (≈$0.20, ~1 min). Lands in History.`}><IcoLlm /><span>LLM</span></button>
+                                      </>}
+                                    <button className="tq-act next" onClick={() => planNext(f.row)} title={`Plan the NEXT session for ${f.row.symbol} at the last close — the plan you can ARM for live triggers. Deterministic, free.`}><IcoNext /><span>next</span></button>
+                                  </span>}
                             </td>
                           </tr>
                         ))}
@@ -362,34 +720,84 @@ export function ValidationTab({ llmAvailable = true }: { llmAvailable?: boolean 
                   </div>
 
                   <DisclosureHead open={statsOpen} onToggle={toggleStats}
-                    extra={<span className="sub">{(sm.claims ?? []).length} claims · level & trigger quality</span>}>Book claims &amp; statistics</DisclosureHead>
+                    extra={<span className="sub">{(sm.claims ?? []).length} claims checked against {counts.fires} fire{counts.fires === 1 ? "" : "s"} · level & trigger quality</span>}>Does the book hold up?</DisclosureHead>
                   <Collapse open={statsOpen}>
+                    <div className="tq-stats-intro muted">Everything below is computed from this validation only — {counts.rows} symbol-session{counts.rows === 1 ? "" : "s"}, {counts.fires} fire{counts.fires === 1 ? "" : "s"}. The book asks for ≥100 fires before trusting a number (p. 72), so until then read these as early signals, not verdicts.</div>
                     <div className="tq-section">
-                      <div className="tq-label">Claims — book vs data (§6.4)</div>
-                      <div className="tq-table-wrap"><table className="tq-table tq-wf tq-claims">
-                        <thead><tr><th>Claim</th><th>Rule</th><th>Metric</th><th>Verdict</th><th>Detail</th></tr></thead>
-                        <tbody>{(sm.claims ?? []).map((c: any, i: number) => (
-                          <tr key={i}><td>{c.claim}</td><td><span className="tq-chip">{c.rule}</span></td><td className="muted">{c.metric}</td>
-                            <td><span className={`tq-badge ${c.verdict === "pass" ? "setup" : c.verdict === "fail" ? "failed" : "nosetup"}`}>{c.verdict}</span></td>
-                            <td className="muted small">{JSON.stringify(c.detail)}</td></tr>))}</tbody>
-                      </table></div>
+                      <div className="tq-label">The book's claims, checked against the data <span className="muted tq-hint">· §6.4</span></div>
+                      <div className="tq-claims-list">
+                        {(sm.claims ?? []).map((c: any, i: number) => {
+                          const d = describeClaim(c); const vw = VERDICT_WORDS[c.verdict] ?? VERDICT_WORDS.insufficient;
+                          return (
+                            <div key={i} className={`tq-claim ${c.verdict}`}>
+                              <div className="tq-claim-verdict"><span className={`tq-badge ${vw.cls}`}>{vw.word}</span></div>
+                              <div className="tq-claim-body">
+                                <div className="tq-claim-q">{d.question} <span className="tq-chip" title={c.claim}>{c.rule}</span></div>
+                                <div className="muted small">{d.evidence}</div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <LevelTable title="Level quality — prior-day extremes vs other (T1.3a)" data={sm.levels?.priorDayVsOther} />
-                    <LevelTable title="Level quality — by source" data={sm.levels?.bySource} />
-                    <LevelTable title="Level quality — by touches (T1.2)" data={sm.levels?.byTouches} />
-                    <LevelTable title="Level quality — by structure timeframe (p. 114)" data={sm.levels?.byTimeframe} />
-                    <TriggerTable title="Trigger quality — by kind" data={sm.triggers?.byKind} />
-                    <TriggerTable title="Trigger quality — by window fired (R6)" data={sm.triggers?.byWindow} planned={false} />
-                    <TriggerTable title="Counterfactuals — with vs without our gates" data={sm.triggers?.counterfactual} planned={false} />
-                    {sm.triggers?.middayFiresWithoutGate && <div className="muted small">Mid-day fires without the R6 gate: {JSON.stringify(sm.triggers.middayFiresWithoutGate)}</div>}
-                    <TriggerTable title="By R:R gate (R2)" data={sm.triggers?.byRrGate} planned={false} />
-                    {sm.errors?.length > 0 && <div className="neg">errors: {JSON.stringify(sm.errors)}</div>}
+                    <LevelQuality title="Do planned levels hold?" hint="tested = price came within tolerance · held = reversed ≥3× tolerance before any close through · broke = closed through · flipped = broke, then acted as the opposite level" data={sm.levels?.priorDayVsOther} />
+                    <LevelQuality title="…by where the level came from" data={sm.levels?.bySource} />
+                    <LevelQuality title="…by how many times it had been touched (T1.2)" data={sm.levels?.byTouches} />
+                    <LevelQuality title="…by the timeframe it was read on (p. 114)" data={sm.levels?.byTimeframe} />
+                    <TriggerQuality title="Do the triggers pay?" hint="fired = price reached the entry inside a prime window · R = result in units of the planned risk" data={sm.triggers?.byKind} why />
+                    <TriggerQuality title="…by the window they fired in (R6)" data={sm.triggers?.byWindow} />
+                    <TriggerQuality title="Our own rules — the same plans replayed with one rule switched off" hint="if a rule earns its keep, the row without it should look worse"
+                      data={{ ...(sm.triggers?.counterfactual ?? {}), ...(sm.triggers?.middayFiresWithoutGate?.fired ? { middayBlocked: sm.triggers.middayFiresWithoutGate } : {}) }} />
+                    <TriggerQuality title="…by the reward-to-risk the plan demanded (R2)" data={sm.triggers?.byRrGate} />
+                    {sm.errors?.length > 0 && <div className="muted small">Could not validate: {sm.errors.map((e: any) => `${e.symbol} (${e.error})`).join(", ")}</div>}
                   </Collapse>
                 </>
               )}
             </div>
           </div>
         )}
+        {/* ---- history of validations ---- */}
+        {sweeps.length > 0 && (
+          <div className="panel">
+            <DisclosureHead open={histOpen} onToggle={toggleHist}>Past validations <span className="sub">{sweeps.length} · every run is kept — click one to reopen it</span></DisclosureHead>
+            <Collapse open={histOpen}>
+              <div className="panel-body table-wrap">
+                <table className="data-table tq-hist">
+                  <thead><tr><th>Ran</th><th>Validation</th><th>Symbols</th><th>Plans</th><th>Status</th><th>Checked</th><th>Fires</th><th>Win rate</th><th>ΣR</th><th>Engine</th><th></th></tr></thead>
+                  <tbody>
+                    {sweeps.map((s) => {
+                      const base = s.summary?.triggers?.counterfactual?.base ?? {};
+                      const fired = s.summary?.sample?.fired ?? base.fired;
+                      const sr = Number(base.sumR ?? 0);
+                      return (
+                        <tr key={s.id} className={`clickable ${sel?.id === s.id ? "selected" : ""}`} onClick={() => api.techniqueSweep(s.id).then(setSel).catch(() => undefined)}>
+                          <td className="muted nowrap">{s.createdAt ? fmtDateTime(s.createdAt) : ""}</td>
+                          <td onClick={(e) => e.stopPropagation()}>{renaming?.id === s.id
+                            ? <input className="tq-rename" autoFocus value={renaming.value} onChange={(e) => setRenaming({ id: s.id, value: e.target.value })}
+                                onBlur={() => rename(s.id, renaming.value)} onKeyDown={(e) => { if (e.key === "Enter") rename(s.id, renaming.value); if (e.key === "Escape") setRenaming(null); }} />
+                            : <><b className="clickable" onClick={() => api.techniqueSweep(s.id).then(setSel).catch(() => undefined)}>{s.label || `${s.start}..${s.end}`}</b> <button className="tq-pencil" title="Rename" onClick={() => setRenaming({ id: s.id, value: s.label || "" })}>✎</button></>}</td>
+                          <td className="muted">{s.symbols.length} · {s.symbols.slice(0, 5).join(", ")}{s.symbols.length > 5 ? ` +${s.symbols.length - 5}` : ""}</td>
+                          <td className="muted nowrap">{s.params?.kind === "next" ? <span title="A plan sheet: plans built at the close of the first date for the second date's session">{s.start} → <b>{s.params.planFor}</b> {s.summary?.pending && <span className="tq-badge plan" style={{ marginLeft: 4 }}>setups · {s.summary?.setups ?? "?"}</span>}</span> : s.start === s.end ? s.start : `${s.start} → ${s.end}`}</td>
+                          <td>{s.status === "running" ? <span className="nowrap"><Spinner /> {s.progress?.done ?? 0}/{s.progress?.total ?? s.symbols.length}</span> : s.status === "failed" ? <span className="neg">failed</span> : <span className="pos">done</span>}</td>
+                          <td>{s.summary?.sessions ?? "—"}</td>
+                          <td>{fired ?? "—"}</td>
+                          <td>{base.winRate !== undefined && base.winRate !== null ? `${Math.round(base.winRate * 100)}%` : "—"}</td>
+                          <td className={sr > 0 ? "pos" : sr < 0 ? "neg" : "muted"}>{fired ? signedR(sr) : "—"}</td>
+                          <td className="nowrap">{(() => { const v = s.params?.sweepVersion as string | undefined; const stale = !!(v && sweepVersion && v !== sweepVersion) || (!v && !!sweepVersion);
+                            return stale
+                              ? <span className="tq-stale" title={`Built with an earlier version of the plan builder${v ? ` (${v})` : ""} — levels/triggers may differ from today's engine (${sweepVersion}). Re-run to compare like with like.`}>⚠ older engine</span>
+                              : <span className="muted small" title={`Plan-builder fingerprint ${v ?? "?"} — same as the engine running now`}>{v ? v.slice(0, 6) : "—"}</span>; })()}</td>
+                          <td className="nowrap">{sel?.id === s.id ? <span className="muted small">showing</span> : <button className="link-btn" onClick={(e) => { e.stopPropagation(); api.techniqueSweep(s.id).then(setSel).catch(() => undefined); }}>open</button>}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Collapse>
+          </div>
+        )}
+
       </div>
 
       <RailShell open={rail.open} onToggle={rail.toggle} label="Sweeps">

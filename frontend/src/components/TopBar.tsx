@@ -5,11 +5,14 @@ import { netWorthByCurrency, useStore } from "../store";
 import { IconWarn } from "./icons";
 import { ConfirmDialog, PromptDialog } from "./Modal";
 import { SymbolSearch, type SymbolHit } from "./SymbolSearch";
+import { workspaceOf } from "../lib/workspace";
 
 const MODES = [
   { value: "practice", label: "Practice" },
   { value: "live", label: "LIVE" },
 ];
+// The switch is a WORKSPACE: it scopes every account-shaped view (money, accounts,
+// blotter, armed plans) AND gates order routing (practice rejects real-account orders).
 
 export function TopBar() {
   const connected = useStore((s) => s.connected);
@@ -36,6 +39,13 @@ export function TopBar() {
   const practice = useMemo(
     () => portfolios.filter((p) => p.kind === "sim"), [portfolios]);
   const practiceTotal = practice.reduce((sum, p) => sum + (p.equity ?? p.cash), 0);
+  // armed plans living in the OTHER workspace must never be invisible
+  const armedPlans = useStore((s) => s.techniqueArmed);
+  const setTechniqueTab = useStore((s) => s.setTechniqueTab);
+  const otherArmed = useMemo(
+    () => armedPlans.filter((a) => workspaceOf(a.portfolio?.kind) !== (mode === "live" ? "live" : "practice")).length,
+    [armedPlans, mode]);
+  const attention = useMemo(() => armedPlans.filter((a) => a.needsAttention), [armedPlans]);
   const quoteSource = broker?.quoteSource;
 
   const applyMode = async (value: string) => {
@@ -116,18 +126,6 @@ export function TopBar() {
         <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
         Zar<em>gar</em>
       </div>
-      <div className={`mode-indicator mode-indicator--${mode}`}
-        title={mode === "live"
-          ? "LIVE — real orders route to your brokerage accounts"
-          : "Practice — orders fill on the simulator, no real money moves"}>
-        <span className="mode-dot" />
-        <select className="mode-select" value={mode} onChange={(e) => changeMode(e.target.value)}
-          aria-label="Trading mode">
-          {MODES.map((m) => (
-            <option key={m.value} value={m.value}>{m.label}</option>
-          ))}
-        </select>
-      </div>
       {quoteSource === "yahoo" && (
         <span className="status-pill dim"
           title="Quotes come from Yahoo Finance (~1–2s delayed, indicative). Live IBKR data replaces this when the gateway connects.">
@@ -146,7 +144,7 @@ export function TopBar() {
         inputRef={searchRef}
       />
       <div className="spacer" />
-      {realTotals.length > 0 && (
+      {mode === "live" && realTotals.length > 0 && (
         <button className="equity-chip equity-chip--real" onClick={() => setPage("dashboard")}
           title="Real brokerage net worth (per currency) — click for the Dashboard">
           {realTotals.map((t) => fmtCcy(t.brokerage, t.currency)).join(" · ")}
@@ -154,13 +152,39 @@ export function TopBar() {
       )}
       {mode !== "live" && practice.length > 0 && (
         <button className="equity-chip" onClick={() => setPage("portfolios")}
-          title="Practice environment (simulated fills) — click for Portfolios">
+          title="Practice equity (simulated fills) — click for Portfolios">
           practice {fmtCcy(practiceTotal, practice[0]?.baseCurrency ?? "USD")}
+        </button>
+      )}
+      {attention.length > 0 && (
+        <button className="status-pill attention"
+          title={`${attention.length} armed plan(s) need attention (failed exit / unmanaged position) — click for the Armed dashboard. This shows regardless of workspace.`}
+          onClick={() => { setPage("technique"); setTechniqueTab("armed"); }}>
+          \u26a0 {attention.length} needs attention
+        </button>
+      )}
+      {otherArmed > 0 && (
+        <button className="status-pill warn ws-other-chip"
+          title={`${otherArmed} plan(s) are armed in the ${mode === "live" ? "Practice" : "LIVE"} workspace — click to open the Armed dashboard (switch workspace to manage them)`}
+          onClick={() => { setPage("technique"); setTechniqueTab("armed"); }}>
+          {otherArmed} armed in {mode === "live" ? "practice" : "LIVE"}
         </button>
       )}
       <div role="status" aria-label={connected ? "Connected" : "Disconnected"}
         title={connected ? "Live connection" : "Disconnected"}>
         <div className={`conn-dot ${connected ? "on" : ""}`} />
+      </div>
+      <div className={`mode-indicator mode-indicator--${mode}`}
+        title={mode === "live"
+          ? "LIVE workspace — you see real accounts only, and real orders route to your brokerages. Switch to Practice to see the simulator."
+          : "Practice workspace — you see the simulator only, and orders to real accounts are blocked. Switch to LIVE for real accounts."}>
+        <span className="mode-dot" />
+        <select className="mode-select" value={mode} onChange={(e) => changeMode(e.target.value)}
+          aria-label="Workspace">
+          {MODES.map((m) => (
+            <option key={m.value} value={m.value}>{m.label}</option>
+          ))}
+        </select>
       </div>
       <button className={`halt-btn ${halt.engaged ? "halted" : ""}`} onClick={toggleHalt}
         aria-label={halt.engaged ? "Resume trading" : "Halt trading"}>

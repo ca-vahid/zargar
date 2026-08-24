@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime, fmtTime } from "../../lib/format";
 import { useStore } from "../../store";
+import { useWorkspace, workspaceOf } from "../../lib/workspace";
 import type { ArmedPlan, ArmedTrade, ArmScorecard } from "../../types";
 import { Spinner } from "../ui";
 import { InfoTip } from "../InfoTip";
@@ -100,7 +101,7 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
           {a.config.mode === "auto" ? (live ? "AUTO · REAL" : "AUTO · practice") : a.config.mode.toUpperCase()}
         </span>
         <span className="tq-badge nosetup" title="instrument">{a.config.instrument === "options" ? `OPTIONS · ${a.config.contracts ?? "risk-sized"} ct` : "SHARES"}</span>
-        <span className="tq-badge nosetup" title="account">{a.portfolio.name ?? a.portfolio.id} · {a.portfolio.kind?.toUpperCase()}</span>
+        <span className={`tq-badge ${live ? "failed" : "nosetup"}`} title="account">{(() => { const nm = a.portfolio.name ?? a.portfolio.id; const tag = live ? (a.portfolio.kind === "paper" ? "PAPER (live ws)" : "LIVE") : "PRACTICE"; return nm.toUpperCase() === tag ? tag : `${nm} · ${tag}`; })()}</span>
         <span className={`tq-badge ${a.status === "armed" ? "setup" : a.status === "paused" ? "failed" : "nosetup"}`}>{a.status.toUpperCase()}</span>
         {a.stale && <span className="tq-badge failed">STALE DATA</span>}
         {a.stopReason && <span className="tq-badge failed" title={a.stopReason}>STOPPED</span>}
@@ -111,6 +112,18 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
         </span>
       </div>
       <div className="panel-body">
+        {a.needsAttention && (
+          <div className="tq-attention">
+            <b>\u26a0 Needs attention</b>
+            <ul>{(a.attentionReasons ?? []).map((r, i) => <li key={i}>{r}</li>)}</ul>
+            <div className="tq-attention-actions">
+              <button className="danger-btn" disabled={busy}
+                title="Sell everything this plan still holds, at market, right now (reduce-only)"
+                onClick={() => act(() => api.techniqueArmedExit(a.runId), "Sell-now sent")}>Sell now (market)</button>
+              <span className="muted small">the watchdog also retries failed exits automatically every 30s</span>
+            </div>
+          </div>
+        )}
         <div className="tq-armed-summary">{a.summary}</div>
         {a.stopReason && <div className="neg small tq-armed-stopline">Stopped: {a.stopReason}</div>}
         {a.scorecard && <Scorecard sc={a.scorecard} />}
@@ -127,7 +140,18 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
           ))}
           {a.triggers.length === 0 && <div className="muted">no valid triggers in this plan</div>}
         </div>
-        {a.trades.length > 0 && <div className="tq-armed-trades">{a.trades.map((t) => <TradeRow key={t.triggerId} t={t} />)}</div>}
+        {a.trades.length > 0 && <div className="tq-armed-trades">{a.trades.map((t) => (
+          <div key={t.triggerId} className="tq-armed-traderow">
+            <TradeRow t={t} />
+            {(t.remaining ?? 0) > 0 && (
+              <button className="link-btn danger" disabled={busy}
+                title={`Sell the ${t.remaining} this trade still holds, at market, right now`}
+                onClick={() => act(() => api.techniqueArmedExit(a.runId, t.triggerId), `${t.triggerId}: sell-now sent`)}>
+                sell now
+              </button>
+            )}
+          </div>
+        ))}</div>}
         <div className="tq-armed-actions">
           {a.status === "armed" && <button className="ghost-btn" disabled={busy} onClick={() => act(() => api.techniquePause(a.runId), "Paused")}>Pause</button>}
           {a.status === "paused" && <button className="primary-btn" disabled={busy} onClick={() => act(() => api.techniqueResume(a.runId), "Resumed")}>Resume</button>}
@@ -159,19 +183,27 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
 /** The Armed dashboard: what is armed, in which account and mode, what it is
  *  watching, what fired, what it holds — with pause / resume / disarm / stop all. */
 export function ArmedTab() {
-  const armed = useStore((s) => s.techniqueArmed);
+  const allArmed = useStore((s) => s.techniqueArmed);
   const setArmed = useStore((s) => s.setTechniqueArmed);
   const halt = useStore((s) => s.halt);
   const settings = useStore((s) => s.settings);
   const toast = useStore((s) => s.toast);
   const [history, setHistory] = useState<any[]>([]);
   const [sym, setSym] = useState("");
+  const ws = useWorkspace();
+  const portfolios = useStore((s) => s.portfolios);
+  const pmap = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p])), [portfolios]);
+  const armed = useMemo(() => allArmed.filter((a) => workspaceOf(a.portfolio?.kind) === ws), [allArmed, ws]);
+  const otherArmed = allArmed.length - armed.length;
+  const wsHistory = useMemo(
+    () => history.filter((h) => workspaceOf(pmap[h.portfolioId]?.kind) === ws), [history, pmap, ws]);
   const refresh = useCallback(() => {
     api.techniqueArmed().then(setArmed).catch(() => undefined);
     api.techniqueArmedHistory().then(setHistory).catch(() => undefined);
   }, [setArmed]);
   useEffect(() => { refresh(); const id = setInterval(refresh, 30_000); return () => clearInterval(id); }, [refresh]);
   const tradingMode = String(settings["trading.mode"] ?? "practice");
+  void settings;
   const openCount = useMemo(() => armed.reduce((n, a) => n + a.openPositions, 0), [armed]);
   const pnl = useMemo(() => armed.reduce((n, a) => n + (a.realizedPnl ?? 0), 0), [armed]);
   const stopAll = async (flatten: boolean) => {
@@ -191,7 +223,7 @@ export function ArmedTab() {
           <div className="tq-armed-kpi"><small>Armed</small><b>{armed.length}</b></div>
           <div className="tq-armed-kpi"><small>In trade</small><b className={openCount ? "pos" : ""}>{openCount}</b></div>
           <div className="tq-armed-kpi"><small>Realized today</small><b className={pnlCls(pnl)}>{fmt(pnl)}</b></div>
-          <div className="tq-armed-kpi"><small>Trading mode <InfoTip>PRACTICE means every account trades fake money. LIVE lets real accounts place real orders (set in the top bar).</InfoTip></small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
+          <div className="tq-armed-kpi"><small>Workspace <InfoTip>Everything on this page belongs to the active workspace. PRACTICE = the simulator, fake money. LIVE = your real accounts (orders route for real). Switch it next to HALT in the top bar.</InfoTip></small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
           <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped in a position.</InfoTip></small><b className={halt.engaged ? "neg" : "pos"}>{halt.engaged ? "ENGAGED" : "off"}</b></div>
           <div className="tq-armed-topactions">
             <input placeholder="symbol" value={sym} onChange={(e) => setSym(e.target.value.toUpperCase())} style={{ width: 90 }} />
@@ -201,9 +233,15 @@ export function ArmedTab() {
           </div>
         </div>
       </div>
+      {otherArmed > 0 && (
+        <div className="panel mb"><div className="panel-body tq-ws-note">
+          <b>{otherArmed}</b> plan{otherArmed === 1 ? " is" : "s are"} armed in the <b>{ws === "live" ? "Practice" : "LIVE"}</b> workspace and stay{otherArmed === 1 ? "s" : ""} active —
+          switch the workspace (next to HALT) to see and manage {otherArmed === 1 ? "it" : "them"}.
+        </div></div>
+      )}
       {armed.length === 0 && (
         <div className="panel mb"><div className="panel-body muted">
-          Nothing armed. Open a plan (Analyse with a past Period, or History) and press <b>Arm for live triggers</b>, or arm today's plan for a symbol above.
+          Nothing armed in this workspace. Open a plan (Analyse with a past Period, or History) and press <b>Arm for live triggers</b>, or arm today's plan for a symbol above.
           Armed plans watch live 1-minute bars, fire only inside the prime windows (R6), and — depending on the mode — alert, propose, or execute.
         </div></div>
       )}
@@ -214,9 +252,11 @@ export function ArmedTab() {
           <div className="panel-body" style={{ padding: 0 }}>
             <table className="tq-table tq-wf">
               <thead><tr><th>Symbol</th><th>For</th><th>Mode</th><th>Account</th><th>Status</th><th>Fired</th><th>Realized</th><th>Armed at</th></tr></thead>
-              <tbody>{history.map((h) => (
+              <tbody>{wsHistory.map((h) => (
                 <tr key={h.runId} className="clickable" onClick={() => useStore.getState().openTechniqueRun(h.runId)}>
-                  <td><b>{h.symbol}</b></td><td>{h.planFor}</td><td>{h.mode}</td><td className="muted">{h.portfolioId.slice(0, 8)}</td>
+                  <td><b>{h.symbol}</b></td><td>{h.planFor}</td><td>{h.mode}</td>
+                  <td className="muted">{pmap[h.portfolioId]?.name ?? h.portfolioId.slice(0, 8)}{" "}
+                    <span className={`status-pill ${workspaceOf(pmap[h.portfolioId]?.kind) === "live" ? "bad" : "dim"}`}>{workspaceOf(pmap[h.portfolioId]?.kind) === "live" ? "live" : "practice"}</span></td>
                   <td>{h.status}</td><td>{(h.state?.trades ?? []).length}</td>
                   <td className={pnlCls(h.state?.realizedPnl)}>{fmt(h.state?.realizedPnl)}</td>
                   <td className="muted">{h.createdAt ? fmtDateTime(h.createdAt) : ""}</td></tr>))}</tbody>

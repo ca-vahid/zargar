@@ -254,7 +254,19 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
                 {busy ? "…" : isArmed ? "Disarm" : "Arm for live triggers"}
               </button>
             )}
-            {!upcoming && <div className="muted small">Past session — arming is only offered for the upcoming session. Use this page to check whether the plan would have worked.</div>}
+            {!upcoming && (
+              <>
+                <div className="muted small">This is a <b>past</b> plan (for {plan.planFor}) — here to check whether it would have worked. Arming is only offered for the upcoming session.</div>
+                <button className="primary-btn" disabled={busy} title={`Build ${plan.symbol}'s plan for the next session at the last close — that run has the Arm button`}
+                  onClick={async () => {
+                    setBusy(true);
+                    try { const r = await api.techniquePlan({ symbol: plan.symbol, withVision: false, wait: true }); toast("success", `${plan.symbol} plan for ${r.result?.plan?.planFor ?? "the next session"} — arm it here`); useStore.getState().openTechniqueRun(r.id); }
+                    catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+                  }}>
+                  Plan the next session for {plan.symbol} →
+                </button>
+              </>
+            )}
             {isArmed && <button className="ghost-btn" onClick={() => setTab("armed")}>Open armed dashboard</button>}
             {armOpen && (
               <ArmDialog symbol={plan.symbol} planFor={plan.planFor} onClose={() => setArmOpen(false)}

@@ -261,7 +261,7 @@ export function PortfoliosPage() {
       tooltip: { ...baseChartOptions().tooltip, valueDecimals: 2 },
       series: curves.data
         // live mode: practice series don't even enter the chart or legend
-        .filter((s) => showPractice || REAL_KINDS.has(s.portfolio.kind))
+        .filter((s) => REAL_KINDS.has(s.portfolio.kind) === (mode === "live"))
         .map((s, i) => {
           const isReal = REAL_KINDS.has(s.portfolio.kind);
           const scope = chartScopeRef.current;
@@ -302,15 +302,17 @@ export function PortfoliosPage() {
     <div>
       <h2 className="page-title">Portfolios</h2>
 
-      <div className="section-head">
-        Real accounts <span className="status-pill bad">real money</span>
-      </div>
-      {(brokerages?.providers ?? []).map((provider) => (
+      {mode === "live" && (
+        <div className="section-head">
+          Real accounts <span className="status-pill bad">real money</span>
+        </div>
+      )}
+      {mode === "live" && (brokerages?.providers ?? []).map((provider) => (
         <BrokerageSection key={provider.connectionId || provider.broker}
           provider={provider} onRefresh={refresh} refreshing={refreshing}
           lastSyncAt={brokerages?.lastSyncAt ?? null} />
       ))}
-      {realCards.length > 0 && (
+      {mode === "live" && realCards.length > 0 && (
         <div className="settings-grid mb">
           {realCards.map((p) => (
             <PortfolioCard key={p.id} portfolio={p}
@@ -320,7 +322,7 @@ export function PortfoliosPage() {
           ))}
         </div>
       )}
-      {(brokerages?.providers ?? []).length === 0 && realCards.length === 0 && (
+      {mode === "live" && (brokerages?.providers ?? []).length === 0 && realCards.length === 0 && (
         <div className="panel mb"><div className="panel-body">
           <EmptyState title="No real accounts connected"
             hint="Add SnapTrade credentials to backend/.env and enable SnapTrade."
@@ -355,19 +357,8 @@ export function PortfoliosPage() {
         <div className="panel-head">
           Equity curves
           <span className="sub">
-            {showPractice ? 'real vs practice — the "what would have happened" view'
-              : "your real accounts over time"}
+            {showPractice ? "your practice books over time" : "your real accounts over time"}
           </span>
-          {showPractice && (
-            <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-              {(["all", "real", "practice"] as const).map((sc) => (
-                <button key={sc} className={`chip-btn ${chartScope === sc ? "active" : ""}`}
-                  onClick={() => applyChartScope(sc)}>
-                  {sc}
-                </button>
-              ))}
-            </div>
-          )}
         </div>
         <AsyncSection state={curves}
           empty={<EmptyState title="No equity history yet" />}>

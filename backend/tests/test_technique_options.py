@@ -35,6 +35,33 @@ def test_parse_occ_weekly_root_and_garbage():
 
 # --- choose_expiry (T5.2) --------------------------------------------------------
 
+def test_choose_expiry_avoid_0dte_prefers_this_week():
+    import datetime as _dt
+    today = _dt.date(2026, 8, 21)                       # a Friday with 0DTE listed
+    exp, zero = choose_expiry(["2026-08-21", "2026-08-28"], today, avoid_0dte=True)
+    assert exp == "2026-08-28" and zero is False
+    # no alternative -> still 0DTE rather than nothing
+    exp, zero = choose_expiry(["2026-08-21"], today, avoid_0dte=True)
+    assert exp == "2026-08-21" and zero is True
+
+
+def test_select_contract_caps_strike_at_the_target():
+    import datetime as _dt
+    today = _dt.date(2026, 8, 20)
+    chain = [
+        {"symbol": "X1", "underlying": "X", "option_type": "call", "strike": 101.0, "bid": 1.0, "ask": 1.1,
+         "volume": 500, "open_interest": 500, "greeks": {"delta": 0.45, "mid_iv": 0.3}},
+        {"symbol": "X2", "underlying": "X", "option_type": "call", "strike": 106.0, "bid": 0.4, "ask": 0.5,
+         "volume": 500, "open_interest": 500, "greeks": {"delta": 0.2, "mid_iv": 0.3}},
+    ]
+    # TP2 at 104: the 106 strike is beyond the target -> the 101 one wins
+    pick = select_contract(chain, 100.5, "long", expiry="2026-08-21", today=today, is_0dte=False, max_strike=104.0)
+    assert pick and pick.strike == 101.0 and not any("target cap" in w for w in pick.warnings)
+    # spot above every capped strike: falls back to nearest OTM with a warning
+    pick = select_contract(chain, 105.0, "long", expiry="2026-08-21", today=today, is_0dte=False, max_strike=104.0)
+    assert pick and pick.strike == 106.0 and any("target cap" in w for w in pick.warnings)
+
+
 def test_choose_expiry_prefers_0dte():
     today = dt.date(2026, 8, 21)   # a Friday
     exp, zero = choose_expiry(["2026-08-21", "2026-08-24", "2026-08-28"], today)

@@ -390,6 +390,7 @@ export interface ArmedTrade {
   openedTs: number | null; closedTs: number | null; critic: { kill?: boolean; summary?: string; violations?: string[] } | null;
 }
 export interface ArmedPlan {
+  needsAttention?: boolean; attentionReasons?: string[];
   runId: string; symbol: string; planFor: string; status: "armed" | "paused" | "expired" | "disarmed" | string;
   stopReason?: string; scorecard?: ArmScorecard | null;
   config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };
@@ -412,7 +413,7 @@ export interface TechniqueStatus {
   runsToday: number; maxRunsPerDay: number; scanEnabled: boolean; scanSymbols: string[]; running: string[];
   rules: Record<string, string>;
   sessionWindow?: string; enforceSessionWindows?: boolean; structureTfs?: string[]; triggerTf?: string;
-  armed?: ArmedPlan[]; sweepsRunning?: string[];
+  armed?: ArmedPlan[]; sweepsRunning?: string[]; sweepVersion?: string; techniqueSource?: string;
 }
 export interface ChatBlock { type: string; [k: string]: any }
 export interface ChatMessage {

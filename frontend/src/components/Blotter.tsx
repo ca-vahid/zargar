@@ -6,6 +6,7 @@ import { useAsync } from "../lib/useAsync";
 import { useQuote, useStore } from "../store";
 import type { Execution, Order, Position } from "../types";
 import { LivePrice, ValuePill } from "./quotekit";
+import { useWorkspace } from "../lib/workspace";
 import { AsyncSection, EmptyState, StatusPill } from "./ui";
 
 type Tab = "positions" | "orders" | "history" | "fills";
@@ -28,8 +29,8 @@ function useScopeFilter(scope: Scope): (portfolioId: string) => boolean {
 
 export function Blotter() {
   const [tab, setTab] = useState<Tab>("positions");
-  const hasReal = useStore((s) => s.brokerages)?.providers?.length ? true : false;
-  const [scope, setScope] = useState<Scope>(hasReal ? "real" : "all");
+  const ws = useWorkspace();
+  const scope: Scope = ws === "live" ? "real" : "practice";   // the workspace IS the scope
   return (
     <div className="panel blotter-area">
       <div className="panel-head panel-head--tabs">
@@ -41,16 +42,10 @@ export function Blotter() {
             </button>
           ))}
         </div>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
-          {(["real", "practice", "all"] as Scope[]).map((sc) => (
-            <button key={sc} className={`chip-btn ${scope === sc ? "active" : ""}`}
-              onClick={() => setScope(sc)}
-              title={sc === "real" ? "Real brokerage accounts only"
-                : sc === "practice" ? "Practice/shadow portfolios only" : "Everything"}>
-              {sc}
-            </button>
-          ))}
-        </div>
+        <span className="muted small" style={{ marginLeft: "auto" }}
+          title="The blotter shows the active workspace only — switch Practice/LIVE in the top bar">
+          {ws === "live" ? "live accounts" : "practice"}
+        </span>
       </div>
       <div className="scroll-x">
         {tab === "positions" && <PositionsTable scope={scope} />}

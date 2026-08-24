@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Splash } from "./components/Splash";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -54,6 +54,7 @@ export default function App() {
     document.documentElement.style.setProperty("--accent", accent);
   }, [theme, accent, density, mode]);
 
+  const [sideCollapsed, setSideCollapsed] = useState(() => localStorage.getItem("zargar_side_collapsed") === "1");
   return (
     <div className="app">
       <Splash />
@@ -81,8 +82,8 @@ export default function App() {
           </div>
         ))}
       </div>
-      <div className="main">
-        <Sidebar />
+      <div className={`main ${sideCollapsed ? "side-collapsed" : ""}`}>
+        <Sidebar collapsed={sideCollapsed} onToggleCollapse={() => { const next = !sideCollapsed; localStorage.setItem("zargar_side_collapsed", next ? "1" : "0"); setSideCollapsed(next); }} />
         <div className="content">
           {page === "dashboard" && <DashboardPage />}
           {page === "trade" && <TradePage />}

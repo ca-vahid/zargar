@@ -39,7 +39,13 @@ from .. import events as ev
 from ..domain import Bar, new_id
 from ..execution import SessionListener
 from ..execution.book import EXIT_LADDER, EXIT_REPRICE_BARS
-from ..execution.exits import plan_exit, reduce_only_exit_intent, stale_working_exit
+from ..execution.exits import (
+    plan_exit,
+    premium_stop_breach,
+    quote_stop_breach,
+    reduce_only_exit_intent,
+    stale_working_exit,
+)
 from ..models import TechniqueArmed, TechniqueSetup
 from .analysis import facts_for_prompt
 from .plans import analysis_from_trigger
@@ -213,6 +219,21 @@ class ArmedPlan:
     stop_reason: str = ""               # why the plan stopped firing (loss halt, etc.)
     scorecard: dict | None = None       # execution review vs the walk-forward replay (after close)
 
+    def _attention_reasons(self) -> list[str]:
+        """Human sentences for anything that needs a person: a failed exit with the
+        position still open, an entry that half-filled then errored, stale data
+        while holding. Empty list = all clear."""
+        probs: list[str] = []
+        for t in self.trades.values():
+            last_exit = t.exits[-1] if t.exits else None
+            if t.remaining > 0 and last_exit and last_exit.get("status") in ("ERROR", "REJECTED", "REJECTED_RISK"):
+                probs.append(f"{t.trigger_id}: exit {last_exit.get('kind')} failed — {t.remaining:g} still held")
+            if t.status == "failed" and t.filled_qty > 0 and t.remaining > 0:
+                probs.append(f"{t.trigger_id}: entry errored after a partial fill — {t.remaining:g} held unmanaged")
+        if self.stale and any(t.remaining > 0 for t in self.trades.values()):
+            probs.append("bar data is stale while a position is open")
+        return probs
+
     def to_dict(self, *, portfolio: dict | None = None, quote=None, now_ms: int | None = None) -> dict:
         now_ms = now_ms or int(time.time() * 1000)
         last = float(quote.last) if quote is not None and quote.last > 0 else None
@@ -245,6 +266,8 @@ class ArmedPlan:
             "trades": [t.to_dict() for t in self.trades.values()],
             "openPositions": len(open_trades),
             "realizedPnl": round(sum(t.realized_pnl for t in self.trades.values()), 2),
+            "needsAttention": (lambda probs: bool(probs))(self._attention_reasons()),
+            "attentionReasons": self._attention_reasons(),
             "fired": [t.to_dict() for t in self.trades.values()],   # back-compat for the rail
             "events": self.events[-40:],
             "summary": self._summary(prime_now, last),
@@ -284,6 +307,10 @@ class PlanArmer(SessionListener):
         super().__init__(engine, name="technique-armer")
         self.technique = technique
         self._armed: dict[str, ArmedPlan] = {}
+        # (run_id, trigger_id[, "~prem"]) -> consecutive quote polls seen in breach
+        self._quote_breaches: dict[tuple[str, str], int] = {}
+        # (run_id, trigger_id) -> (last retry ts, attempts) for the failed-exit watchdog
+        self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
         self._auto_done: set[tuple[str, str]] = set()
 
     # ---------------------------------------------------------------- listener hooks
@@ -294,15 +321,124 @@ class PlanArmer(SessionListener):
     async def on_order(self, order: dict) -> None:
         await self.on_order_update(order)
 
+    # ------------------------------------------------------------- quote stop watch
+    def quote_watch_seconds(self) -> float:
+        try:
+            return max(0.05, float(self.engine.settings.get("technique.arm.quote_exit_seconds", 2.0)))
+        except (TypeError, ValueError):
+            return 2.0
+
+    async def on_quote_watch(self) -> None:
+        """Between bar closes, exit an open trade whose *underlying* quote is
+        decisively through the stop (`execution.exits.quote_stop_breach`) for
+        `technique.arm.quote_exit_polls` consecutive polls (one bad tick is not a
+        breach). Safety only: this path can only sell what is already open —
+        reduce-only, same `_exit` machinery, journaled with its own reason."""
+        s = self.engine.settings
+        if not bool(s.get("technique.arm.quote_exit", True)):
+            return
+        try:
+            excess = float(s.get("technique.arm.quote_exit_excess_r", 0.25))
+            need = max(1, int(s.get("technique.arm.quote_exit_polls", 2)))
+        except (TypeError, ValueError):
+            excess, need = 0.25, 2
+        max_age = int(s.get("technique.arm.stale_seconds", 180))
+        now_ms = int(time.time() * 1000)
+        for ap in list(self._armed.values()):
+            if ap.status not in ("armed", "paused"):
+                continue
+            open_trades = [t for t in ap.trades.values() if t.status == "open" and t.remaining > 0]
+            if not open_trades:
+                continue
+            q = self.engine.quotes.get(ap.symbol)
+            last = float(q.last) if q is not None and q.last and q.last > 0 else None
+            fresh = q is not None and (now_ms - q.ts) <= max_age * 1000
+            prem_pct = float(s.get("technique.arm.premium_stop_pct", 50.0) or 0)
+            for tr in open_trades:
+                # 1) failed-exit watchdog: a position whose exit errored must never
+                #    sit un-managed — retry at market every 30s (5 tries), alert once
+                last_exit = tr.exits[-1] if tr.exits else None
+                if (last_exit and last_exit.get("status") in ("ERROR", "REJECTED", "REJECTED_RISK")
+                        and tr.pending_exit_qty <= 1e-9):
+                    rkey = (ap.run_id, tr.trigger_id)
+                    ts0, attempts = self._exit_retries.get(rkey, (0.0, 0))
+                    if attempts < 5 and time.time() - ts0 >= 30.0:
+                        self._exit_retries[rkey] = (time.time(), attempts + 1)
+                        if attempts == 0:
+                            await self._alert(ap, f"{tr.trigger_id}: exit {last_exit.get('kind')} failed "
+                                              f"({last_exit.get('error') or last_exit.get('status')}) — "
+                                              f"watchdog retrying at market", stage="exit_watchdog")
+                        self._log(ap, "exit_retry", f"{tr.trigger_id}: watchdog retry {attempts + 1}/5",
+                                  trigger=tr.trigger_id)
+                        await self._exit(ap, tr, "stop", tr.remaining, journal=True, force_market=True,
+                                         reason=f"watchdog retry {attempts + 1} after failed exit")
+                        continue
+                    if attempts >= 5 and time.time() - ts0 < 31.0:
+                        await self._alert(ap, f"{tr.trigger_id}: exit still failing after 5 retries — "
+                                          f"position needs manual attention (Sell now / broker app)",
+                                          stage="exit_watchdog")
+                        self._exit_retries[rkey] = (time.time() + 1e9, attempts)   # alert once
+                        continue
+                # 2) premium stop (options): the contract's own price bled too far
+                if tr.instrument == "options" and prem_pct > 0 and tr.order_symbol:
+                    oq = self.engine.quotes.get(tr.order_symbol)
+                    fresh_o = oq is not None and (now_ms - oq.ts) <= max_age * 1000
+                    # a fresh quote with no bid means nobody is paying anything — that
+                    # IS the worst bleed, not a data gap; only a missing/stale quote is
+                    obid = (float(oq.bid) if oq is not None and oq.bid and oq.bid > 0
+                            else (0.0 if fresh_o else None))
+                    nkey = (ap.run_id, tr.trigger_id + "~noq")
+                    if obid is None:
+                        miss = self._quote_breaches.get(nkey, 0) + 1
+                        self._quote_breaches[nkey] = miss
+                        if miss == 150:      # ~5 minutes of consecutive misses at 2s
+                            await self._alert(ap, f"{tr.trigger_id}: no live quote for the option "
+                                              f"{tr.order_symbol} for ~5 min while holding — the premium stop "
+                                              f"is blind; underlying stops still work", level="warning",
+                                              stage="option_quote_gap")
+                    else:
+                        self._quote_breaches.pop(nkey, None)
+                    preason = premium_stop_breach(tr, obid, stop_pct=prem_pct)
+                    pkey = (ap.run_id, tr.trigger_id + "~prem")
+                    if preason is None:
+                        self._quote_breaches.pop(pkey, None)
+                    else:
+                        pn = self._quote_breaches.get(pkey, 0) + 1
+                        self._quote_breaches[pkey] = pn
+                        if pn >= need:
+                            self._quote_breaches.pop(pkey, None)
+                            self._log(ap, "premium_stop", f"{tr.trigger_id}: {preason}", trigger=tr.trigger_id)
+                            await self._alert(ap, f"{tr.trigger_id}: {preason} — selling at market",
+                                              level="warning", stage="premium_stop")
+                            await self._exit(ap, tr, "stop", tr.remaining, journal=True, force_market=True,
+                                             reason=preason)
+                            continue
+                # 3) underlying decisively through the stop
+                key = (ap.run_id, tr.trigger_id)
+                reason = quote_stop_breach(tr, last, excess_r=excess) if (last is not None and fresh) else None
+                if reason is None:
+                    self._quote_breaches.pop(key, None)
+                    continue
+                n = self._quote_breaches.get(key, 0) + 1
+                self._quote_breaches[key] = n
+                if n < need:
+                    continue
+                self._quote_breaches.pop(key, None)
+                self._log(ap, "quote_stop", f"{tr.trigger_id}: {reason} (poll {n}/{need})", trigger=tr.trigger_id)
+                await self._exit(ap, tr, "stop", tr.remaining, journal=True, force_market=True,
+                                 reason=f"intra-minute quote breach: {reason}")
+
     async def restore(self) -> int:
-        """Re-arm today's persisted plans after a restart (armed/paused only)."""
+        """Re-arm persisted plans after a restart (armed/paused only). A plan for
+        today OR a coming session is re-armed — arming Sunday evening for Monday
+        must survive a restart; only plans whose session has passed expire."""
         today = session_date(int(time.time() * 1000))
         async with self.engine.sf() as session:
             rows = (await session.execute(select(TechniqueArmed).where(
                 TechniqueArmed.status.in_(("armed", "paused"))))).scalars().all()
         n = 0
         for row in rows:
-            if row.plan_for != today:
+            if (row.plan_for or "") < today:
                 async with self.engine.sf() as session:
                     r2 = await session.get(TechniqueArmed, row.run_id)
                     if r2 is not None:
@@ -446,6 +582,18 @@ class PlanArmer(SessionListener):
             with contextlib.suppress(Exception):
                 await self._restore_trades(ap)
         await self._persist(ap)
+        if cfg.mode == "auto" and float(cfg.daily_loss_limit or 0) <= 0 and not restored:
+            eq = 0.0
+            with contextlib.suppress(Exception):
+                eq = float(await self.engine.positions.equity(cfg.portfolio_id))
+            if eq <= 0:
+                log.warning("loss-halt derivation skipped for %s: equity unavailable — arming with NO loss halt",
+                            run_id)
+            if eq > 0:
+                cfg.daily_loss_limit = round(eq * cfg.risk_pct / 100 * 2, 2)
+                self._log(ap, "loss_halt_default",
+                          f"auto mode with no loss halt set — defaulted to ${cfg.daily_loss_limit:,.0f} "
+                          f"(2 \u00d7 the per-trade risk of {cfg.risk_pct}% on ${eq:,.0f})")
         self._log(ap, "armed" if not restored else "restored", f"{cfg.mode} mode on {portfolio['name']} ({portfolio['kind']})",
                   seededBars=seeded)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ARMED, {
@@ -690,24 +838,79 @@ class PlanArmer(SessionListener):
             "rows": rows,
         }
 
+    def _unrealized(self, ap: ArmedPlan) -> float:
+        """Marked at the option's bid / the underlying's last — what a sell-now
+        would roughly realize. 0 when no quote is available (never guessed)."""
+        total = 0.0
+        for t in ap.trades.values():
+            if t.remaining <= 0 or not t.avg_fill:
+                continue
+            if t.instrument == "options" and t.order_symbol:
+                q = self.engine.quotes.get(t.order_symbol)
+                px = float(q.bid) if q is not None and q.bid and q.bid > 0 else None
+            else:
+                q = self.engine.quotes.get(ap.symbol)
+                px = float(q.last) if q is not None and q.last and q.last > 0 else None
+            if px is not None:
+                total += (px - float(t.avg_fill)) * t.remaining * t.multiplier
+        return total
+
     async def _maybe_loss_halt(self, ap: ArmedPlan) -> bool:
-        """The plan's "certain loss halt": once realised loss for the day crosses
-        the configured dollar limit, flatten everything and stop the plan. Returns
-        True if it fired (caller should stop processing this plan)."""
+        """The plan's "certain loss halt": once the day's loss — realised PLUS the
+        open positions marked at the bid (theta bleed counts) — crosses the dollar
+        limit, flatten everything and stop the plan. Returns True if it fired."""
         limit = float(ap.config.daily_loss_limit or 0)
         if limit <= 0 or ap.status not in ("armed", "paused"):
             return False
         realized = sum(t.realized_pnl for t in ap.trades.values())
-        if realized > -limit:
+        unreal = self._unrealized(ap)
+        total = realized + min(0.0, unreal)     # open gains do not license bigger losses
+        if total > -limit:
             return False
-        ap.stop_reason = f"loss halt: realised {realized:.2f} crossed -{limit:.2f}"
+        ap.stop_reason = (f"loss halt: realised {realized:.2f} + open {unreal:.2f} marked at bid "
+                          f"crossed -{limit:.2f}")
         self._log(ap, "loss_halt", ap.stop_reason)
+        await self._alert(ap, ap.stop_reason, stage="loss_halt")
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
             "runId": ap.run_id, "symbol": ap.symbol, "stage": "loss_halt", "error": ap.stop_reason,
             "realizedPnl": round(realized, 2), "limit": limit},
             aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
         await self.disarm(ap.run_id, reason="loss halt", flatten=True)
         return True
+
+    async def _alert(self, ap: ArmedPlan, text: str, *, level: str = "critical", stage: str = "alert") -> None:
+        """One call = every channel: the plan's live log, the append-only journal,
+        a WS toast for the UI (crosses workspaces), and Telegram when configured.
+        Alerting must never break trading — every channel is best-effort."""
+        self._log(ap, "alert", text)
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                "runId": ap.run_id, "symbol": ap.symbol, "stage": stage, "error": text, "level": level},
+                aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        with contextlib.suppress(Exception):
+            self.engine.bus.publish(topics.TECHNIQUE, {"kind": "alert", "level": level, "text": f"{ap.symbol}: {text}",
+                                                       "runId": ap.run_id, "symbol": ap.symbol})
+        tg = getattr(self.engine, "telegram", None)
+        if tg is not None:
+            with contextlib.suppress(Exception):
+                await tg.send(f"\u26a0 {ap.symbol} armed plan: {text}")
+
+    async def flatten_trade(self, run_id: str, trigger_id: str | None = None) -> dict | None:
+        """Recourse button: sell what a trade (or every open trade of the plan)
+        still holds, at market, right now. Reduce-only — nothing else changes."""
+        ap = self._armed.get(run_id)
+        if ap is None:
+            return None
+        targets = [t for t in ap.trades.values()
+                   if t.remaining > 0 and (trigger_id is None or t.trigger_id == trigger_id)]
+        for tr in targets:
+            self._log(ap, "manual_exit", f"{tr.trigger_id}: sell-now pressed — selling {tr.remaining:g} at market",
+                      trigger=tr.trigger_id)
+            await self._exit(ap, tr, "stop", tr.remaining, journal=True, force_market=True,
+                             reason="manual sell-now from the Armed dashboard")
+        await self._persist(ap)
+        self._publish(ap, "manual_exit")
+        return self._snapshot(ap)
 
     async def stop_all(self, *, flatten: bool = False, reason: str = "stop all") -> int:
         n = 0
@@ -870,6 +1073,9 @@ class PlanArmer(SessionListener):
                     if tr.remaining <= 1e-9 and tr.status != "closed":
                         tr.status = "closed"
                         tr.closed_ts = int(time.time() * 1000)
+                        for k in [k for k in self._quote_breaches if k[0] == ap.run_id and k[1].startswith(tid)]:
+                            self._quote_breaches.pop(k, None)
+                        self._exit_retries.pop((ap.run_id, tid), None)
                         self._log(ap, "position_closed", f"{tid}: closed, realized {tr.realized_pnl:+.2f}",
                                   trigger=tid, realizedPnl=round(tr.realized_pnl, 2))
                         await self.engine.journal.append(ev.TECHNIQUE_PLAN_POSITION_CLOSED, {
@@ -1133,8 +1339,20 @@ class PlanArmer(SessionListener):
 
     async def _pick_contract(self, ap: ArmedPlan, trade: Trade) -> dict | None:
         """T5: the just-OTM call, current-week Friday / 0DTE, from the live chain."""
+        s = self.engine.settings
+        max_strike = None
+        if bool(s.get("technique.arm.strike_within_targets", True)) and trade.targets:
+            max_strike = float(trade.targets[1] if len(trade.targets) >= 2 else trade.targets[0])
+        avoid_0dte = False
+        cutoff = str(s.get("technique.arm.avoid_0dte_after", "15:15") or "")
+        if cutoff:
+            with contextlib.suppress(ValueError):
+                hh, mm = (int(x) for x in cutoff.split(":"))
+                now = dt.datetime.now(ET)
+                avoid_0dte = (now.hour * 60 + now.minute) >= hh * 60 + mm
         try:
-            pick = await self.technique.option_pick(ap.symbol, "long", spot=float(trade.last_price or trade.entry))
+            pick = await self.technique.option_pick(ap.symbol, "long", spot=float(trade.last_price or trade.entry),
+                                                    max_strike=max_strike, avoid_0dte=avoid_0dte)
         except Exception as exc:
             trade.errors.append(f"option chain: {exc}")
             self._log(ap, "option_pick_failed", f"{trade.trigger_id}: option chain error {exc}", trigger=trade.trigger_id)
@@ -1166,6 +1384,10 @@ class PlanArmer(SessionListener):
             return 1
         equity = await self.engine.positions.equity(cfg.portfolio_id)
         n = int(equity * cfg.risk_pct / 100 / premium)
+        if contract.get("is0dte") and n > 1:
+            n = max(1, n // 2)                 # T5.2: 0DTE trades use reduced size
+            self._log(ap, "sized", f"{trade.trigger_id}: 0DTE — risk-sized contracts halved to {n}",
+                      trigger=trade.trigger_id)
         return int(max(1, min(n, cfg.max_contracts)))
 
     async def _enter(self, ap: ArmedPlan, trade: Trade, tr: TriggerTracker, *, journal: bool) -> None:
@@ -1365,6 +1587,8 @@ class PlanArmer(SessionListener):
             rec["error"] = result.get("rejectReason")
             tr.errors.append(f"exit {kind}: {rec['error']}")
             self._log(ap, "exit_failed", f"{tr.trigger_id}: {kind} rejected — {rec['error']}", trigger=tr.trigger_id)
+            await self._alert(ap, f"{tr.trigger_id}: exit {kind} REJECTED — {rec['error']} "
+                              f"(position still open; watchdog will retry)", stage="exit_failed")
         elif rec["status"] in ("FILLED", "PARTIALLY_FILLED"):
             await self.on_order_update(result)
         await self._persist(ap)
@@ -1388,6 +1612,10 @@ class PlanArmer(SessionListener):
                     and now_ms - ap.last_bar_ts > stale_s * 1000 and not ap.stale:
                 ap.stale = True
                 self._log(ap, "stale", f"no closed bar for {stale_s}s — not firing until data resumes")
+                if any(t.remaining > 0 for t in ap.trades.values()):
+                    await self._alert(ap, f"data went stale while holding a position — exits keep working "
+                                      f"on quotes, but watch it (no closed bar for {stale_s}s)",
+                                      level="warning", stage="stale_data")
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
                     "runId": ap.run_id, "symbol": ap.symbol, "stage": "data", "error": "stale bars",
                     "lastBarTs": ap.last_bar_ts}, aggregate_type="technique_run", aggregate_id=ap.run_id)
