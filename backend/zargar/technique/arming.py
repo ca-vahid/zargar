@@ -218,6 +218,7 @@ class ArmedPlan:
     setup_ids: dict[str, str] = field(default_factory=dict)
     stop_reason: str = ""               # why the plan stopped firing (loss halt, etc.)
     scorecard: dict | None = None       # execution review vs the walk-forward replay (after close)
+    replay_ts: int | None = None        # while seeding historical bars: stamp events with the BAR's time
 
     def _attention_reasons(self) -> list[str]:
         """Human sentences for anything that needs a person: a failed exit with the
@@ -574,10 +575,15 @@ class PlanArmer(SessionListener):
             todays = [b for b in self.engine.bars.bars(symbol, "1m", limit=2000, include_forming=False)
                       if session_date(b.ts) == ap.plan_for]
             for b in todays:
+                # Events from replayed history carry the bar's time, not "now" —
+                # a 13:03 restart must not relabel the 09:41 refusals.
+                ap.replay_ts = b.ts
                 await self._on_bar(ap, b, journal=False)
                 seeded += 1
         except Exception:
             log.exception("seeding armed plan failed")
+        finally:
+            ap.replay_ts = None
         if restored:
             with contextlib.suppress(Exception):
                 await self._restore_trades(ap)
@@ -986,7 +992,7 @@ class PlanArmer(SessionListener):
             log.exception("persisting armed plan failed")
 
     def _log(self, ap: ArmedPlan, what: str, text: str, **detail) -> dict:
-        rec = {"ts": int(time.time() * 1000), "event": what, "text": text, **detail}
+        rec = {"ts": ap.replay_ts or int(time.time() * 1000), "event": what, "text": text, **detail}
         ap.events.append(rec)
         if len(ap.events) > 400:
             del ap.events[:-400]

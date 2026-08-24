@@ -399,6 +399,21 @@ async def test_restore_after_restart(rig):
     assert rig.svc.armer.get(run["id"]).status == "armed"
 
 
+async def test_seeded_events_carry_the_bars_time(rig):
+    """Restart recovery replays today's bars through the trackers; the events it
+    regenerates must carry the BAR's timestamp, not the restore time (a 13:03
+    restart was relabelling the 09:41 refusals)."""
+    run = await _plan_run(rig)
+    await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                          json={"mode": "alert", "portfolioId": rig.sim["id"]})
+    ap = rig.svc.armer.get(run["id"])
+    ap.replay_ts = 1_787_000_000_000
+    assert rig.svc.armer._log(ap, "skipped", "k1: replayed")["ts"] == 1_787_000_000_000
+    ap.replay_ts = None
+    assert rig.svc.armer._log(ap, "skipped", "k1: live")["ts"] != 1_787_000_000_000
+    await rig.svc.armer.disarm(run["id"])
+
+
 async def test_arm_config_roundtrip():
     c = ArmConfig.from_dict({"portfolioId": "p", "mode": "auto", "riskPct": 0.75, "maxQty": 10, "allowLive": True})
     assert c.to_dict()["riskPct"] == 0.75 and c.allow_live and c.max_qty == 10
