@@ -142,6 +142,9 @@ class TechniqueService:
         self._outcome_task: asyncio.Task | None = None
         self._running: dict[str, asyncio.Task] = {}
         self._sweeps: dict[str, asyncio.Task] = {}
+        # Ad-hoc runs (scan-now, bulk analyst-checks) queue past this — a 13-symbol
+        # burst was rendering 13x3 charts at once and starving the event loop.
+        self._run_sem = asyncio.Semaphore(6)
         self.armer = PlanArmer(engine, self)
         # Live progress for running runs so a client that connects mid-run (or
         # reloads) can seed its view: {run_id: {"passes": [...], "grounding", "facts"}}
@@ -433,6 +436,7 @@ class TechniqueService:
                        thresholds: Thresholds | None = None,
                        bars_override: dict[str, list[Bar]] | None = None,
                        with_vision: bool = False) -> None:
+      async with self._run_sem:
         cfg = self.llm_config()
         client = self._get_client() if cfg.available else None
         t = thresholds or self.thresholds()

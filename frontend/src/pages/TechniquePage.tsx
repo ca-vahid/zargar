@@ -169,8 +169,11 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
                   {best ? <GradeChip a={best.assessment} valid /> : <span className="muted small">no armable trigger</span>}
                   {fr ? (
                     fr.result?.analysis
-                      ? <span className={analystOk(fr) ? "pos small" : "muted small"}>
-                          analyst {analystOk(fr) ? `✓ ${(fr.result.analysis.confidence ?? 0).toFixed(2)}` : "✗ would not watch"}
+                      ? <span className={analystOk(fr) ? "pos small" : "muted small"}
+                          title={analystOk(fr)
+                            ? "The analyst read the same charts and agrees a conditional setup is worth watching"
+                            : `The analyst read the same charts and would stand aside. Its first reason: ${fr.result.analysis.noTradeReasons?.[0] ?? "(none given)"} — open the run for the full read. You can still arm the graded trigger; the analyst's view is advice, not a gate.`}>
+                          analyst {analystOk(fr) ? `✓ ${(fr.result.analysis.confidence ?? 0).toFixed(2)}` : "✗ would stand aside"}
                         </span>
                       : <span className="muted small">no analyst read</span>
                   ) : <span className="muted small"><Spinner /></span>}
