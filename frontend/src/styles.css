@@ -1554,3 +1554,11 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   border: 1px solid var(--border); border-radius: 8px; background: var(--surface-1);
   cursor: pointer; font: inherit; color: inherit; }
 .tq-scan-row:hover { background: var(--surface-2); }
+
+/* --- scan dialog + bulk arm ------------------------------------------------- */
+.tq-scan-dialog { display: flex; flex-direction: column; gap: 10px; }
+.tq-scan-dialog .tq-arm-row span { display: flex; flex-direction: column; gap: 4px; }
+.tq-scan-grades { flex-direction: row !important; gap: 10px !important; margin-top: 2px; }
+.tq-scan-grades .tq-chipbtn { display: inline-flex; align-items: center; gap: 6px; }
+.tq-scan-armall { margin-left: auto; }
+.tq-scan-panel .panel-head .tq-head-right { margin-left: 8px; }

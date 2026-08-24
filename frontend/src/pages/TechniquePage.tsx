@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ClipboardEvent,
 import { ChatPanel } from "../components/technique/ChatPanel";
 import { LiveRun } from "../components/technique/LiveRun";
 import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge } from "../components/technique/RunResult";
-import { PlanCard } from "../components/technique/PlanCard";
+import { GradeChip, PlanCard } from "../components/technique/PlanCard";
 import { ValidationTab } from "../components/technique/ValidationTab";
 import { ArmedTab } from "../components/technique/ArmedTab";
 import { RailShell, useRail } from "../components/technique/RailShell";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
-import { ConfirmDialog, Modal } from "../components/Modal";
+import { Modal } from "../components/Modal";
 import { CopyChip } from "../components/CopyChip";
 import { EmptyState, Spinner } from "../components/ui";
 import { IconX } from "../components/icons";
@@ -85,21 +85,32 @@ function StatusBar({ status, onScan, scanBusy }: {
   );
 }
 
-/** Live progress of a "scan now": one row per symbol, filling in as runs finish. */
-function ScanPanel({ ids, onDone, onClose, onOpen }: {
-  ids: string[]; onDone: () => void; onClose: () => void; onOpen: (id: string) => void;
+/** Live progress of a scan: one row per symbol, filling in as runs finish.
+ *  In `armable` mode (sheet scan) rows are promoted PLAN runs: each shows its
+ *  deterministic grade + the analyst's read, with per-row and bulk Arm. */
+function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
+  ids: string[]; armable?: boolean; onDone: () => void; onClose: () => void; onOpen: (id: string) => void;
 }) {
+  const toast = useStore((s) => s.toast);
+  const armed = useStore((s) => s.techniqueArmed);
   const [rows, setRows] = useState<TechniqueRun[]>([]);
+  const [full, setFull] = useState<Record<string, TechniqueRun>>({});
+  const [armBusy, setArmBusy] = useState<Record<string, boolean>>({});
   const finished = useRef(false);
   useEffect(() => {
     let stop = false;
     const poll = async () => {
       if (finished.current) return;
       try {
-        const all = await api.techniqueRuns(40);
+        const all = await api.techniqueRuns(60);
         if (stop) return;
         const mine = all.filter((r) => ids.includes(r.id));
         setRows(mine);
+        for (const r of mine) {
+          if (r.status !== "running" && !full[r.id]) {
+            api.techniqueRun(r.id).then((fr) => setFull((m) => ({ ...m, [fr.id]: fr }))).catch(() => undefined);
+          }
+        }
         if (mine.length === ids.length && mine.every((r) => r.status !== "running")) {
           finished.current = true;
           onDone();
@@ -110,31 +121,74 @@ function ScanPanel({ ids, onDone, onClose, onOpen }: {
     const t = setInterval(() => void poll(), 3000);
     return () => { stop = true; clearInterval(t); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ids.join(",")]);
+  }, [ids.join(","), Object.keys(full).length]);
+
+  const bestTrigger = (fr?: TechniqueRun) => {
+    const trig = (fr?.result?.plan?.triggers ?? []).filter((t: any) => t.valid);
+    if (!trig.length) return null;
+    return trig.slice().sort((a: any, b: any) => (b.assessment?.score ?? 0) - (a.assessment?.score ?? 0))[0];
+  };
+  const analystOk = (fr?: TechniqueRun) => fr?.result?.analysis?.verdict === "setup";
+  const isArmed = (id: string) => armed.some((a) => a.runId === id);
+  const armOne = async (id: string, sym: string) => {
+    setArmBusy((m) => ({ ...m, [id]: true }));
+    try { const a = await api.techniqueArm(id); toast("success", `${sym} armed — ${a.config.mode} on ${a.portfolio?.name ?? "default account"}`); }
+    catch (e: any) { toast("error", e.message); }
+    finally { setArmBusy((m) => ({ ...m, [id]: false })); }
+  };
+
   const done = rows.filter((r) => r.status !== "running");
-  const setups = done.filter((r) => r.verdict === "setup");
   const allDone = finished.current || (rows.length === ids.length && done.length === ids.length);
+  const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id));
+  const setups = armable ? ids.filter((id) => analystOk(full[id])) : done.filter((r) => r.verdict === "setup").map((r) => r.id);
   return (
     <div className="panel mb tq-scan-panel">
       <div className="panel-head">
         {allDone
-          ? <b>Scan finished — {setups.length ? `${setups.length} setup(s) found` : "no setups"} across {ids.length} symbol(s)</b>
-          : <b><Spinner /> Scanning — {done.length}/{ids.length} done</b>}
-        <span className="sub">each row is a full analysis run; they also live in History (trigger "scan")</span>
+          ? <b>{armable ? `Analyst check finished — ${setups.length}/${ids.length} confirmed` : `Scan finished — ${setups.length ? `${setups.length} setup(s) found` : "no setups"} across ${ids.length} symbol(s)`}</b>
+          : <b><Spinner /> {armable ? "Analyst-checking" : "Scanning"} — {done.length}/{ids.length} done</b>}
+        <span className="sub">{armable ? "grade = the plan's own read · analyst = the 4-pass model read of the same charts" : "each row is a full analysis run; they also live in History (trigger \"scan\")"}</span>
+        {armable && allDone && passed.length > 0 && (
+          <button className="primary-btn tq-scan-armall" onClick={() => passed.forEach((id) => void armOne(id, full[id]?.symbol ?? id.slice(0, 6)))}>
+            ⚡ Arm {passed.length} confirmed
+          </button>
+        )}
         <button className="icon-btn tq-head-right" onClick={onClose} aria-label="Dismiss scan results"><IconX /></button>
       </div>
       <div className="panel-body tq-scan-rows">
         {ids.map((id) => {
           const r = rows.find((x) => x.id === id);
+          const fr = full[id];
+          const best = bestTrigger(fr);
           return (
-            <button key={id} type="button" className="tq-scan-row" onClick={() => r && onOpen(r.id)}
-              title={r ? "Open this run" : ""}>
+            <span key={id} className="tq-scan-row" role="button" tabIndex={0} onClick={() => r && onOpen(r.id)}
+              onKeyDown={(e) => { if (e.key === "Enter" && r) onOpen(r.id); }} title={r ? "Open this run" : ""}>
               <b>{r?.symbol ?? id.slice(0, 8)}</b>
-              {!r || r.status === "running" ? <span className="muted"><Spinner /> analysing…</span> : <VerdictBadge run={r} />}
-              {r && r.status !== "running" && r.verdict !== "setup" && (
-                <span className="muted small">nothing tradeable at this moment</span>
+              {!r || r.status === "running" ? <span className="muted"><Spinner /> analysing…</span> : armable ? (
+                <>
+                  {best ? <GradeChip a={best.assessment} valid /> : <span className="muted small">no armable trigger</span>}
+                  {fr ? (
+                    fr.result?.analysis
+                      ? <span className={analystOk(fr) ? "pos small" : "muted small"}>
+                          analyst {analystOk(fr) ? `✓ ${(fr.result.analysis.confidence ?? 0).toFixed(2)}` : "✗ would not watch"}
+                        </span>
+                      : <span className="muted small">no analyst read</span>
+                  ) : <span className="muted small"><Spinner /></span>}
+                  {best && (isArmed(id)
+                    ? <span className="tq-badge setup">ARMED</span>
+                    : <button className="tq-act next" disabled={!!armBusy[id]}
+                        onClick={(e) => { e.stopPropagation(); void armOne(id, r.symbol); }}
+                        title="Arm this plan with your default account/mode (nothing fires until its conditions are met)">
+                        {armBusy[id] ? "…" : "⚡ arm"}
+                      </button>)}
+                </>
+              ) : (
+                <>
+                  <VerdictBadge run={r} />
+                  {r.verdict !== "setup" && <span className="muted small">nothing tradeable at this moment</span>}
+                </>
               )}
-            </button>
+            </span>
           );
         })}
       </div>
@@ -592,14 +646,60 @@ export function TechniquePage() {
   const running = shown?.status === "running";
 
   const [scanConfirm, setScanConfirm] = useState(false);
-  const [scan, setScan] = useState<{ ids: string[]; done: boolean } | null>(null);
+  const [scan, setScan] = useState<{ ids: string[]; done: boolean; armable?: boolean } | null>(null);
   const scanSymbols = status?.scanSymbols ?? [];
+  // tonight's sheet, if one exists for the upcoming session: scan can analyst-check its graded rows
+  const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;
+    rows: { symbol: string; session: string; grade: string }[] } | null | undefined>(undefined);
+  const [scanSource, setScanSource] = useState<"sheet" | "watch">("sheet");
+  const [scanGrades, setScanGrades] = useState<Set<string>>(new Set(["A", "B"]));
+  useEffect(() => {
+    if (!scanConfirm) return;
+    let stop = false;
+    setSheetScan(undefined);
+    (async () => {
+      try {
+        const sweeps = await api.techniqueSweeps();
+        const todayEt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
+        const sheet = sweeps.find((s) => s.params?.kind === "next" && s.status === "done"
+          && String(s.params?.planFor ?? s.summary?.planFor ?? "") >= todayEt);
+        if (!sheet) { if (!stop) { setSheetScan(null); setScanSource("watch"); } return; }
+        const fullSheet = await api.techniqueSweep(sheet.id, true);
+        const rows = (fullSheet.rows ?? []).map((r) => {
+          const trig = (r.plan?.triggers ?? []).filter((t: any) => t.valid);
+          if (!trig.length) return null;
+          const best = trig.slice().sort((a: any, b: any) => (b.assessment?.score ?? 0) - (a.assessment?.score ?? 0))[0];
+          return { symbol: r.symbol, session: r.session, grade: String(best.assessment?.grade ?? "C") };
+        }).filter(Boolean) as { symbol: string; session: string; grade: string }[];
+        if (!stop) {
+          setSheetScan(rows.length ? { sweepId: sheet.id, planFor: String(sheet.params?.planFor ?? "") , rows } : null);
+          setScanSource(rows.length ? "sheet" : "watch");
+        }
+      } catch { if (!stop) { setSheetScan(null); setScanSource("watch"); } }
+    })();
+    return () => { stop = true; };
+  }, [scanConfirm]);
+  const gradeCounts = useMemo(() => {
+    const m: Record<string, number> = {};
+    for (const r of sheetScan?.rows ?? []) m[r.grade] = (m[r.grade] ?? 0) + 1;
+    return m;
+  }, [sheetScan]);
+  const sheetPicked = (sheetScan?.rows ?? []).filter((r) => scanGrades.has(r.grade));
   const startScan = async () => {
     setScanConfirm(false);
     try {
-      const r = await api.techniqueScan();
-      if (r.skipped?.length) toast("info", `skipped ${r.skipped.map((s: any) => `${s.symbol} (${s.reason})`).join("; ")}`.slice(0, 160));
-      if (r.started?.length) setScan({ ids: r.started, done: false });
+      if (scanSource === "sheet" && sheetScan && sheetPicked.length) {
+        const settled = await Promise.allSettled(sheetPicked.map((r) =>
+          api.techniquePromote(sheetScan.sweepId, { symbol: r.symbol, session: r.session, withVision: true, wait: false })));
+        const ids = settled.filter((s): s is PromiseFulfilledResult<TechniqueRun> => s.status === "fulfilled").map((s) => s.value.id);
+        const failed = settled.length - ids.length;
+        if (failed) toast("info", `${failed} symbol(s) could not start (daily cap / errors)`);
+        if (ids.length) setScan({ ids, done: false, armable: true });
+      } else {
+        const r = await api.techniqueScan();
+        if (r.skipped?.length) toast("info", `skipped ${r.skipped.map((s: any) => `${s.symbol} (${s.reason})`).join("; ")}`.slice(0, 160));
+        if (r.started?.length) setScan({ ids: r.started, done: false });
+      }
       refreshStatus();
       api.techniqueRuns(100).then(setRuns).catch(() => undefined);
     } catch (e: any) { toast("error", e.message); }
@@ -619,34 +719,65 @@ export function TechniquePage() {
         <StatusBar status={status} scanBusy={!!scan && !scan.done} onScan={() => setScanConfirm(true)} />
       </div>
       {scanConfirm && (
-        <ConfirmDialog
-          title={`Scan ${scanSymbols.length} watch symbol(s) now?`}
-          confirmLabel="Scan"
-          body={
-            <div>
-              <p style={{ marginTop: 0 }}>
-                Runs a <b>full analysis</b> (detectors + the 4-pass model read) on each of:{" "}
-                <b>{scanSymbols.join(", ") || "—"}</b>.
-              </p>
-              <p>
-                Each run costs roughly <b>$0.20</b> and takes ~30–60&nbsp;s; they run in parallel and count
-                against the daily cap ({status ? `${status.runsToday}/${status.maxRunsPerDay} used` : "…"}).
-                Total ≈ <b>${(scanSymbols.length * 0.2).toFixed(2)}</b>.
-              </p>
-              <p style={{ marginBottom: 0 }}>
-                Results appear right here as they finish (and in History, trigger "scan"). A symbol with a
-                <b> valid setup</b> gets a setup card you can open and act on; "no setup" means nothing
-                tradeable at this moment — that is the normal answer. The watch list is editable in
-                Settings → <i>technique.scan.symbols</i>.
-              </p>
+        <Modal title={<>Scan now <span className="muted">— the analyst read costs money; choose what it reads</span></>}
+          onClose={() => setScanConfirm(false)}
+          footer={<>
+            <button className="ghost-btn" onClick={() => setScanConfirm(false)}>Cancel</button>
+            <button className="primary-btn" disabled={scanSource === "sheet" ? (!sheetScan || !sheetPicked.length) : !scanSymbols.length}
+              onClick={() => void startScan()}>
+              {scanSource === "sheet"
+                ? `Analyst-check ${sheetPicked.length} setup(s) · ≈$${(sheetPicked.length * 0.2).toFixed(2)}`
+                : `Scan ${scanSymbols.length} symbol(s) · ≈$${(scanSymbols.length * 0.2).toFixed(2)}`}
+            </button>
+          </>}>
+          <div className="tq-scan-dialog">
+            {sheetScan === undefined && <div className="muted"><Spinner /> checking for tonight's sheet…</div>}
+            {sheetScan && (
+              <label className={`tq-arm-row ${scanSource === "sheet" ? "active" : ""}`}>
+                <input type="radio" name="scan-src" checked={scanSource === "sheet"} onChange={() => setScanSource("sheet")} />
+                <span>
+                  <b>Tonight's sheet — analyst-check the graded setups for {sheetScan.planFor}</b>
+                  <span className="muted">
+                    Runs the 4-pass analyst read on each symbol's own plan run — the same run you arm, so grade,
+                    analyst verdict and the Arm button end up in one place. Pick which grades:
+                  </span>
+                  <span className="tq-scan-grades">
+                    {["A", "B", "C"].map((g) => (
+                      <label key={g} className={`tq-chipbtn ${scanGrades.has(g) ? "active" : ""}`} onClick={(e) => e.stopPropagation()}>
+                        <input type="checkbox" checked={scanGrades.has(g)}
+                          onChange={(e) => setScanGrades((s) => { const n = new Set(s); e.target.checked ? n.add(g) : n.delete(g); return n; })} />
+                        <span className={`tq-grade g${g}`}>{g}</span> {gradeCounts[g] ?? 0}
+                      </label>
+                    ))}
+                  </span>
+                </span>
+              </label>
+            )}
+            {sheetScan === null && (
+              <div className="muted small">
+                No prepared sheet for the upcoming session — build one first in Validation → "Prepare the next
+                session" (free, deterministic) to analyst-check graded setups instead of a flat watch list.
+              </div>
+            )}
+            <label className={`tq-arm-row ${scanSource === "watch" ? "active" : ""}`}>
+              <input type="radio" name="scan-src" checked={scanSource === "watch"} onChange={() => setScanSource("watch")} />
+              <span>
+                <b>Watch list — a live read of {scanSymbols.join(", ") || "—"}</b>
+                <span className="muted">
+                  "Is anything tradeable right now?" Full analysis per symbol, not tied to the sheet. Results
+                  land below and in History (trigger "scan"). List editable in Settings → technique.scan.symbols.
+                </span>
+              </span>
+            </label>
+            <div className="muted small">
+              ≈$0.20 and 30–60 s per symbol, run in parallel; counts against the daily cap
+              ({status ? `${status.runsToday}/${status.maxRunsPerDay} used` : "…"}).
             </div>
-          }
-          onConfirm={() => void startScan()}
-          onCancel={() => setScanConfirm(false)}
-        />
+          </div>
+        </Modal>
       )}
       {scan && (
-        <ScanPanel ids={scan.ids}
+        <ScanPanel ids={scan.ids} armable={scan.armable}
           onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
           onClose={() => setScan(null)}
           onOpen={(id) => { setFocusRun(id); setTab("analyse"); }} />
