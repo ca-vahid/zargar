@@ -591,9 +591,38 @@ class TechniqueService:
                     await vp.note("plan", "invalidations", "gap policy and expiry recorded (our extrapolation, Q11-Q13)",
                                   gapPolicy=plan_d["gapPolicy"])
                     if with_vision:
-                        preamble = (f"PLAN MODE: the market is closed; this is a plan for {plan_d['planFor']}. "
-                                    "Do not emit a fill — describe the conditional trigger (IF price reaches the level "
-                                    "inside a prime window ...), set plan_mode=true. ")
+                        # The analyst judges THE PLAN, with everything the grader knew —
+                        # otherwise it re-derives from the closing print and answers a
+                        # different question (BKNG 2026-08-24: argued about a 213.26
+                        # candidate while the graded trigger was the 206.34 zone floor).
+                        assess_lines = []
+                        for tg in plan_d["triggers"]:
+                            a = tg.get("assessment") or {}
+                            assess_lines.append(
+                                f"- {tg['id']} {tg['kind']} @ {tg['levelPrice']:.2f} "
+                                + ("VALID" + (f", grade {a.get('grade')} ({a.get('score')}/100)" if a.get("grade") else "")
+                                   if tg["valid"] else "not tradeable")
+                                + (": strengths: " + "; ".join(a.get("strengths") or []) if a.get("strengths") else "")
+                                + (" | cautions: " + "; ".join(a.get("cautions") or []) if a.get("cautions") else ""))
+                        preamble = (
+                            f"PLAN MODE: the market is closed; this is a plan for {plan_d['planFor']}.\n\n"
+                            "THE DETERMINISTIC PLAN (built by the rulebook code from the same FACTS — "
+                            "judge THIS plan; do not re-derive your own):\n"
+                            f"{plan_summary_text(plan_d)}\n\n"
+                            "Trigger assessments (deterministic; A strong / B decent / C weak):\n"
+                            + ("\n".join(assess_lines) or "- (no triggers)") + "\n\n"
+                            "How those numbers were made: stops sit below the invalidating structure "
+                            "(the merged zone's floor or the recent low under the level, T4.3d), capped at "
+                            f"{t.max_stop_pct:.1%} of entry (wider = no-trade); levels within {t.zone_merge_pct:.1%} "
+                            "merge into ONE zone (entry at the zone top); a pct-ladder target means no resistance "
+                            "overhead (T4.4) and caps the grade at B.\n\n"
+                            "YOUR JOB: judge each trigger BY ID against the charts. verdict='setup' means at least "
+                            "one VALID trigger is worth watching next session — copy that trigger's entry/stop/targets "
+                            "as your plan and name its id in the rationale (plus what you'd change, if anything). "
+                            "verdict='no_setup' means you reject EVERY valid trigger — give one reason per trigger id "
+                            "in no_trade_reasons, grounded in the charts/FACTS. The as-of instant being outside the "
+                            "session is NOT a reason: every trigger is already conditional on the next session's prime "
+                            "windows, so do not cite R6.3/R6.4 against them. Do not emit a fill; set plan_mode=true.\n\n")
                         result = await vp.run(facts, imgs, user_image=image, user_note=preamble + (note or ""))
                     else:
                         result = PipelineResult(analysis=None, grounding={"passed": None, "checks": [],
