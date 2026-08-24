@@ -27,6 +27,21 @@ function nextBusinessDay(from: Date = new Date()): Date {
   do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
   return d;
 }
+/** The session a sheet built RIGHT NOW is actually for. Plans build at the last
+ * COMPLETED 16:00 ET close — so on a trading day before the close, that is
+ * yesterday's close and the sheet covers TODAY, not tomorrow. */
+function sheetTarget(): { date: Date; isToday: boolean } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const etToday = new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day")), 12);
+  const isTradingDay = !["Sat", "Sun"].includes(get("weekday"));
+  const beforeClose = Number(get("hour")) * 60 + Number(get("minute")) < 16 * 60;
+  if (isTradingDay && beforeClose) return { date: etToday, isToday: true };
+  return { date: nextBusinessDay(etToday), isToday: false };
+}
 const STRUCTURE_TF_OPTIONS = ["1d", "1h", "30m", "15m", "5m"];
 function businessDaysBack(from: Date, n: number): Date {
   const d = new Date(from);
@@ -358,8 +373,9 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
   const [name, setName] = useState("");
   const [mode, setMode] = useState<"check" | "prepare">(() => (localStorage.getItem("zargar_tq_wf_mode") as any) || "check");
   useEffect(() => { localStorage.setItem("zargar_tq_wf_mode", mode); }, [mode]);
-  const sheetFor = nextBusinessDay();
-  const sheetForLabel = sheetFor.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const { date: sheetFor, isToday: sheetIsToday } = sheetTarget();
+  const sheetForLabel = sheetFor.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+    + (sheetIsToday ? " (today)" : "");
   const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const rename = async (id: string, value: string) => {
     const v = value.trim();
@@ -574,6 +590,13 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
               <div className="tq-wf-callout">
                 <b>Looks forward.</b> Builds each symbol's plan for <b>{sheetForLabel}</b> at the last close — the same plan "Last close" on Analyse shows — and ranks the setups: which level, entry, stop, targets, reward-to-risk, and why.
                 Deterministic, free, no LLM, no runs spent. Each setup opens with the <b>Arm</b> button; after the session closes the sheet scores itself, so it becomes a validation.
+                {sheetIsToday && (
+                  <div className="tq-wf-today-note">
+                    ⚠ The market hasn't closed yet, so plans can only be built from <b>yesterday's</b> close —
+                    a sheet built now is for <b>today's remaining session</b>, and its plans expire at 4:00 PM ET.
+                    To prepare <b>tomorrow</b>, come back after today's close.
+                  </div>
+                )}
               </div>
             )}
             <div className="tq-ctl-label">Symbols <span className="muted">· {symbols.length}</span></div>
