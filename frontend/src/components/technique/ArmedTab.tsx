@@ -6,7 +6,6 @@ import { useWorkspace, workspaceOf } from "../../lib/workspace";
 import type { ArmedPlan, ArmedTrade, ArmScorecard } from "../../types";
 import { Spinner } from "../ui";
 import { InfoTip } from "../InfoTip";
-import { WindowBadge } from "./RunResult";
 import { ArmedDayPanel } from "./ArmedDayPanel";
 
 function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
@@ -103,14 +102,28 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
           {a.symbol} <span className="tq-armed-sym-caret">{day ? "▾" : "▸"}</span>
         </button>
         <span className={`tq-badge ${a.config.mode === "auto" ? (live ? "failed" : "setup") : "nosetup"}`} title="execution mode">
-          {a.config.mode === "auto" ? (live ? "AUTO · REAL" : "AUTO · practice") : a.config.mode.toUpperCase()}
+          {a.config.mode === "auto" ? (live ? "AUTO · REAL MONEY" : "AUTO") : a.config.mode.toUpperCase()}
         </span>
         <span className="tq-badge nosetup" title="instrument">{a.config.instrument === "options" ? `OPTIONS · ${a.config.contracts ?? "risk-sized"} ct` : "SHARES"}</span>
-        <span className={`tq-badge ${live ? "failed" : "nosetup"}`} title="account">{(() => { const nm = a.portfolio.name ?? a.portfolio.id; const tag = live ? (a.portfolio.kind === "paper" ? "PAPER (live ws)" : "LIVE") : "PRACTICE"; return nm.toUpperCase() === tag ? tag : `${nm} · ${tag}`; })()}</span>
-        <span className={`tq-badge ${a.status === "armed" ? "setup" : a.status === "paused" ? "failed" : "nosetup"}`}>{a.status.toUpperCase()}</span>
+        {(() => {
+          // the workspace already says practice/live — name the account only when it adds information
+          const nm = a.portfolio.name ?? a.portfolio.id;
+          if (live) return <span className="tq-badge failed" title="account">{nm} · {a.portfolio.kind === "paper" ? "PAPER" : "LIVE"}</span>;
+          return nm.toUpperCase() === "PRACTICE" ? null : <span className="tq-badge nosetup" title="account">{nm}</span>;
+        })()}
+        {a.status !== "armed" && (
+          <span className={`tq-badge ${a.status === "paused" ? "failed" : "nosetup"}`}>{a.status.toUpperCase()}</span>
+        )}
         {a.stale && <span className="tq-badge failed">STALE DATA</span>}
         {a.stopReason && <span className="tq-badge failed" title={a.stopReason}>STOPPED</span>}
-        <WindowBadge window={a.sessionWindowNow} />
+        {(() => {
+          const w = a.sessionWindowNow;
+          if (w === "prime_open") return <span className="tq-badge setup" title="R6.1 — one of the book's two trading windows">● LIVE WINDOW — can fire until 10:30 AM ET</span>;
+          if (w === "prime_close") return <span className="tq-badge setup" title="R6.2 — one of the book's two trading windows">● LIVE WINDOW — can fire until 4:00 PM ET</span>;
+          if (w === "midday") return <span className="tq-badge warnbadge" title="R6.3 — mid-day chop is avoided; touches are logged, nothing fires">⏸ MID-DAY · watching only — fires again 2:45 PM ET</span>;
+          if (w === "extended") return <span className="tq-badge nosetup" title="R6.4 — market closed; nothing fires until the next session's windows">MARKET CLOSED — resumes 9:30 AM ET</span>;
+          return null;
+        })()}
         <span className="sub tq-head-right">
           {a.lastPrice ? <>last <b>{fmt(a.lastPrice)}</b> · </> : null}
           bar {a.barAgeSeconds !== null && a.barAgeSeconds !== undefined ? `${a.barAgeSeconds}s ago` : "—"} · for {a.planFor}
