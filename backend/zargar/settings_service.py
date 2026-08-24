@@ -148,7 +148,8 @@ DEFAULTS: dict[str, Any] = {
     ],
     "technique.walkforward.sessions": 40,      # default sweep length
     "technique.walkforward.workers": 0,        # CPU workers for a sweep: 0 auto (cpu-1, max 8), 1 = thread only
-    "technique.walkforward.concurrency": 8,    # symbols in flight at once (fetch + score)
+    "technique.walkforward.concurrency": 12,   # symbols in flight at once (fetch + score)
+    "technique.history.concurrency": 6,        # concurrent Yahoo requests (429 back-off is the net; >10 = throttling)
     # --- phase 2: arm plans for live triggers ---------------------------------
     "technique.arm.enabled": True,             # allow arming plans at all
     "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)

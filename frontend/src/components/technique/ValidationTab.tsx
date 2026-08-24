@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../lib/api";
 import { fmtDateTime } from "../../lib/format";
 import { useStore } from "../../store";
@@ -219,6 +219,7 @@ function whyChips(why: string): string[] {
 function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
   sel: TechniqueSweep; pending: Record<string, string>; onOpen: (r: WalkforwardRow) => void; onScore: () => void; scorable: boolean;
 }) {
+  const openRun = useStore((s) => s.openTechniqueRun);
   const rows = useMemo(() => (sel.rows ?? []).map(readSheetRow), [sel.rows]);
   const withSetup = rows.filter((x) => x.best).sort((a, b) => (b.best.confidence - a.best.confidence) || (b.best.riskReward - a.best.riskReward) || a.row.symbol.localeCompare(b.row.symbol));
   const without = rows.filter((x) => !x.best);
@@ -248,7 +249,8 @@ function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
           <tbody>
             {withSetup.map(({ row, best, valid, trend, why }) => (
               <tr key={row.id} className="tq-finding win" title={`${row.symbol}: ${best.kind} at ${num(best.levelPrice)} · void if: ${(best.voidIf ?? []).join("; ") || "—"}`}>
-                <td className="nowrap"><span className="tq-symcell"><SymAvatar sym={row.symbol} /><b>{row.symbol}</b></span></td>
+                <td className="nowrap"><span className="tq-symcell"><SymAvatar sym={row.symbol} /><b>{row.symbol}</b>
+                  {row.promotedRunId && <button className="tq-act tq-arm-inline" onClick={() => openRun(row.promotedRunId!)} title="This setup already has a run — open it (and arm there)"><IcoOpen /><span>open</span></button>}</span></td>
                 <td className="nowrap"><span className={`tq-badge ${best.kind === "bounce" ? "setup" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : "WEDGE"}</span></td>
                 <td>{valid.length > 1
                   ? <span className="tq-alt" title={valid.slice(1).map((t: any) => `${t.id} ${t.kind} at ${num(t.entry?.price)} (R:R ${num(t.riskReward, 1)})`).join("; ")}>+{valid.length - 1}</span>
@@ -262,8 +264,11 @@ function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
                 <td className="muted nowrap small">{trend || "—"}</td>
                 <td className="nowrap tq-arm-cell">{pending[row.id]
                   ? <span className="muted small"><Spinner /></span>
-                  : <button className="tq-act next tq-act-icon" onClick={() => onOpen(row)} aria-label={`Arm ${row.symbol}`}
-                      title={`Arm ${row.symbol} — opens its plan for ${planFor} as a run with the Arm button (chart, trace, everything)`}><IcoNext /></button>}</td>
+                  : row.promotedRunId
+                    ? <button className="tq-act tq-act-icon" onClick={() => openRun(row.promotedRunId!)} aria-label={`Open ${row.symbol} run`}
+                        title={`${row.symbol} already has its run — open it`}><IcoOpen /></button>
+                    : <button className="tq-act next tq-act-icon" onClick={() => onOpen(row)} aria-label={`Arm ${row.symbol}`}
+                        title={`Arm ${row.symbol} — opens its plan for ${planFor} as a run with the Arm button (chart, trace, everything)`}><IcoNext /></button>}</td>
               </tr>
             ))}
             {withSetup.length === 0 && <tr><td colSpan={11}><div className="empty">{sel.status === "running" ? "Building plans…" : "No symbol has a tradeable setup for this session."}</div></td></tr>}
@@ -385,9 +390,19 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
   }, [bump, sel?.id]);
   useEffect(() => { if (!sel && sweeps.length) api.techniqueSweep(sweeps[0].id).then(setSel).catch(() => undefined); }, [sweeps, sel]);
   // a running sweep: poll its detail every few seconds until it finishes
+  const pollN = useRef(0);
   useEffect(() => {
     if (!sel || sel.status !== "running") return;
-    const t = setInterval(() => refetchSel(sel.id), 4000);
+    const t = setInterval(() => {
+      pollN.current += 1;
+      if (pollN.current % 8 === 0) { refetchSel(sel.id); return; }   // full rows every ~32s
+      // light poll: progress only — a 250-row sweep re-serialized every 4s was
+      // megabytes of JSON per tick for both the engine and the browser
+      api.techniqueSweep(sel.id, false).then((d) => {
+        setSel((cur) => (cur && cur.id === d.id ? { ...d, rows: d.status !== "running" ? cur.rows : cur.rows } : cur));
+        if (d.status !== "running") refetchSel(d.id);                 // finished: fetch everything once
+      }).catch(() => undefined);
+    }, 4000);
     return () => clearInterval(t);
   }, [sel?.id, sel?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -449,11 +464,18 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
     catch (e: any) { toast("error", e.message); }
   };
   const openSheetRow = async (r: WalkforwardRow) => {
-    if (pending[r.id]) return;
+    if (pending[r.id] || !sel) return;
+    if (r.promotedRunId) { openRun(r.promotedRunId); return; }
     setPending((p) => ({ ...p, [r.id]: "next" }));
     try {
-      const run = await api.techniquePlan({ symbol: r.symbol, withVision: false, wait: true });
-      toast("success", `${r.symbol} plan for ${run.result?.plan?.planFor ?? "the next session"} — arm it here`);
+      // promote (not plan): the run is recorded ON the sheet row, so the \u26a1 turns
+      // into "open" permanently and a second press can never mint a duplicate.
+      // wait:false — the run page streams its own progress; no frozen button.
+      const run = await api.techniquePromote(sel.id, { symbol: r.symbol, session: r.session, withVision: false, wait: false });
+      setSel((cur) => cur && cur.id === sel.id
+        ? { ...cur, rows: (cur.rows ?? []).map((x) => (x.id === r.id ? { ...x, promotedRunId: run.id } : x)) }
+        : cur);
+      toast("success", `${r.symbol}: building the plan — opening it now (arm from there)`);
       openRun(run.id);
     } catch (e: any) { toast("error", e.message); }
     finally { setPending((p) => { const n = { ...p }; delete n[r.id]; return n; }); }
@@ -463,7 +485,7 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
     setPending((p) => ({ ...p, [r.id]: withVision ? "llm" : "plan" }));
     toast("info", withVision ? `Starting the LLM read for ${r.symbol} ${r.planFor}…` : `Building the ${r.symbol} plan for ${r.planFor} (a few seconds)…`);
     try {
-      const run = await api.techniquePromote(sel.id, { symbol: r.symbol, session: r.session, withVision, wait: !withVision });
+      const run = await api.techniquePromote(sel.id, { symbol: r.symbol, session: r.session, withVision, wait: false });
       // mark the row at once so a second click can't mint a duplicate run
       setSel((cur) => cur && cur.id === sel.id
         ? { ...cur, rows: (cur.rows ?? []).map((x) => (x.id === r.id ? { ...x, promotedRunId: run.id } : x)) }

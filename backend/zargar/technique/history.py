@@ -41,9 +41,41 @@ MAX_LOOKBACK = {"1m": 20 * 86400, "5m": 59 * 86400, "15m": 59 * 86400, "30m": 59
 # re-fetch identical windows. Keyed by (symbol, tf, start, end) with a short TTL
 # for windows ending "now" and a long one for fully historical windows.
 _cache: dict[tuple, tuple[float, list[Bar]]] = {}
+_CACHE_MAX = 240            # a 250-symbol sweep must not pin every bar list in RAM forever
 _LIVE_TTL = 20.0
 _HIST_TTL = 3600.0
-_sem = asyncio.Semaphore(4)
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _client_shared() -> httpx.AsyncClient:
+    """One keep-alive client for all Yahoo history traffic — a 250-symbol sweep
+    was opening (and TLS-handshaking) ~750 throwaway clients."""
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            timeout=20, headers={"User-Agent": UA}, follow_redirects=True,
+            limits=httpx.Limits(max_connections=16, max_keepalive_connections=8))
+    return _shared_client
+
+
+def _cache_put(key: tuple, now: float, bars: list[Bar]) -> None:
+    """Insert with eviction: expired entries first, then oldest — the cache was
+    unbounded and grew to hundreds of MB across a big sweep (the 708 MB leak)."""
+    if len(_cache) >= _CACHE_MAX:
+        for k in [k for k, (ts, _) in _cache.items() if now - ts > _HIST_TTL]:
+            _cache.pop(k, None)
+    while len(_cache) >= _CACHE_MAX:
+        _cache.pop(next(iter(_cache)), None)     # insertion order == oldest first
+    _cache[key] = (now, bars)
+_sem = asyncio.Semaphore(6)
+
+
+def set_concurrency(n: int) -> None:
+    """Global cap on concurrent Yahoo requests (`technique.history.concurrency`).
+    The 429 retry with back-off is the safety net; going past ~10 mostly just
+    earns throttling."""
+    global _sem
+    _sem = asyncio.Semaphore(max(1, min(int(n), 12)))
 
 
 # Back-off between retries of a 429 (sweeps over ~50 symbols fire a few hundred
@@ -112,17 +144,19 @@ async def fetch_window(
     if end_s <= start_s:
         return []
 
-    own = client is None
-    http = client or httpx.AsyncClient(timeout=20, headers={"User-Agent": UA},
-                                       follow_redirects=True)
+    own = False                                  # the shared client is never closed here
+    http = client or _client_shared()
     bars: list[Bar] = []
     try:
         span = MAX_REQUEST_SPAN[tf]
+        chunks: list[tuple[int, int]] = []
         cursor = start_s
         while cursor < end_s:
-            chunk_end = min(cursor + span, end_s)
-            params = {"period1": cursor, "period2": chunk_end, "interval": tf,
-                      "includePrePost": "false"}
+            chunks.append((cursor, min(cursor + span, end_s)))
+            cursor = chunks[-1][1]
+
+        async def one(c0: int, c1: int) -> list[Bar]:
+            params = {"period1": c0, "period2": c1, "interval": tf, "includePrePost": "false"}
             resp = None
             for attempt, pause in enumerate(_RETRY_PAUSES + (None,)):
                 async with _sem:
@@ -135,8 +169,12 @@ async def fetch_window(
                 raise HistoryError("rate limited by Yahoo (429) — try again shortly")
             if resp.status_code >= 400:
                 raise HistoryError(f"Yahoo HTTP {resp.status_code}")
-            bars.extend(_parse(symbol, tf, resp.json()))
-            cursor = chunk_end
+            return _parse(symbol, tf, resp.json())
+
+        # chunks of one window fetch concurrently — the global semaphore still
+        # bounds total Yahoo traffic across every symbol in a sweep
+        for part in await asyncio.gather(*(one(c0, c1) for c0, c1 in chunks)):
+            bars.extend(part)
     finally:
         if own:
             await http.aclose()
@@ -149,7 +187,7 @@ async def fetch_window(
             continue
         seen.add(b.ts)
         clean.append(b)
-    _cache[key] = (now, clean)
+    _cache_put(key, now, clean)
     return list(clean)
 
 

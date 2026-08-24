@@ -90,7 +90,7 @@ export const api = {
   techniqueStartSheet: (body: { symbols: string[]; label?: string }) => request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward/next", body),
   techniqueScoreSheet: (id: string) => request<import("../types").TechniqueSweep>("POST", `/api/technique/walkforward/${id}/score`),
   techniqueRenameSweep: (id: string, label: string) => request<import("../types").TechniqueSweep>("PATCH", `/api/technique/walkforward/${id}`, { label }),
-  techniqueSweep: (id: string) => request<import("../types").TechniqueSweep>("GET", `/api/technique/walkforward/${id}`),
+  techniqueSweep: (id: string, rows = true) => request<import("../types").TechniqueSweep>("GET", `/api/technique/walkforward/${id}?rows=${rows}`),
   techniqueStartSweep: (body: { symbols: string[]; start: string; end: string; structureTfs?: string[]; triggerTf?: string; includeInvalid?: boolean; label?: string }) =>
     request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward", body),
   techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean; wait?: boolean }) =>

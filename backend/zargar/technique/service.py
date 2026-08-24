@@ -40,6 +40,7 @@ from ..models import (
 from .analysis import WINDOW_FOR_TF, AnalysisRequest, compute_facts, facts_for_prompt, gather_bars
 from .arming import PlanArmer
 from .backtest import run_backtest
+from . import history as history_mod
 from .history import fetch_session
 from .llm import LLMConfig, config_from_settings, make_client
 from .options import CboeClient, TradierClient, pick_for_setup
@@ -1234,9 +1235,12 @@ class TechniqueService:
         want = int(self.engine.settings.get("technique.walkforward.workers", 0) or 0)
         if want == 1:
             return ThreadPoolExecutor(max_workers=1, thread_name_prefix="technique-sweep"), "thread"
-        n = want if want > 1 else max(1, min(8, (os.cpu_count() or 2) - 1))
+        # auto: 4 is the sweet spot — each worker is a full Python process (~150 MB);
+        # 7 of them plus the engine thrashed an 8-core box. Compute is ~2 s/symbol,
+        # so 4 workers finish a 250-symbol sheet's CPU half in ~2 min anyway.
+        n = want if want > 1 else max(1, min(4, (os.cpu_count() or 2) - 1))
         try:
-            return ProcessPoolExecutor(max_workers=n), f"{n} processes"
+            return ProcessPoolExecutor(max_workers=n, max_tasks_per_child=32), f"{n} processes"
         except Exception:                                    # pragma: no cover — exotic hosts
             log.exception("process pool unavailable, falling back to a thread")
             return ThreadPoolExecutor(max_workers=1, thread_name_prefix="technique-sweep"), "thread"
@@ -2049,6 +2053,8 @@ def _summary_text(contract: dict | None, grounding: dict, options: dict | None) 
 
 
 async def attach_technique_layer(engine) -> None:
+    with __import__("contextlib").suppress(Exception):
+        history_mod.set_concurrency(int(engine.settings.get("technique.history.concurrency", 6)))
     """Create and wire TechniqueService + ChatService onto the engine."""
     from .chat import ChatService
     svc = TechniqueService(engine)
