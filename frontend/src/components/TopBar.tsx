@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../lib/api";
 import { fmtCcy } from "../lib/format";
 import { netWorthByCurrency, useStore } from "../store";
-import { IconWarn } from "./icons";
 import { ConfirmDialog, PromptDialog } from "./Modal";
 import { SymbolSearch, type SymbolHit } from "./SymbolSearch";
 import { workspaceOf } from "../lib/workspace";
@@ -124,14 +123,8 @@ export function TopBar() {
     <header className="topbar">
       <div className="brand">
         <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
-        Zar<em>gar</em>
+        Zargar
       </div>
-      {quoteSource === "yahoo" && (
-        <span className="status-pill dim"
-          title="Quotes come from Yahoo Finance (~1–2s delayed, indicative). Live IBKR data replaces this when the gateway connects.">
-          <IconWarn size={11} /> indicative quotes
-        </span>
-      )}
       {quoteSource === "sim" && (
         <span className="status-pill dim" title="Simulated quote feed — prices are synthetic.">
           sim quotes
@@ -153,7 +146,7 @@ export function TopBar() {
       {mode !== "live" && practice.length > 0 && (
         <button className="equity-chip" onClick={() => setPage("portfolios")}
           title="Practice equity (simulated fills) — click for Portfolios">
-          practice {fmtCcy(practiceTotal, practice[0]?.baseCurrency ?? "USD")}
+          {fmtCcy(practiceTotal, practice[0]?.baseCurrency ?? "USD")}
         </button>
       )}
       {attention.length > 0 && (
@@ -178,7 +171,6 @@ export function TopBar() {
         title={mode === "live"
           ? "LIVE workspace — you see real accounts only, and real orders route to your brokerages. Switch to Practice to see the simulator."
           : "Practice workspace — you see the simulator only, and orders to real accounts are blocked. Switch to LIVE for real accounts."}>
-        <span className="mode-dot" />
         <select className="mode-select" value={mode} onChange={(e) => changeMode(e.target.value)}
           aria-label="Workspace">
           {MODES.map((m) => (

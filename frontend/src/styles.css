@@ -158,7 +158,6 @@ body {
 [data-mode="live"] .topbar::after { background: var(--down); }
 .brand { font-weight: 700; font-size: var(--fs-4); letter-spacing: 0.5px;
   display: flex; align-items: center; gap: 8px; }
-.brand em { color: var(--accent); font-style: normal; }
 .brand-logo { width: 24px; height: 24px; object-fit: contain; }
 
 .mode-indicator {
@@ -166,17 +165,12 @@ body {
   border-radius: var(--radius-sm); padding: 2px 6px 2px 10px;
   font-weight: 700; transition: background 0.2s ease;
 }
-.mode-indicator .mode-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .mode-indicator--practice {
   background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
 }
-.mode-indicator--practice .mode-dot { background: var(--accent); }
 .mode-indicator--live {
   background: color-mix(in srgb, var(--down) 16%, var(--surface-2));
   outline: 1px solid color-mix(in srgb, var(--down) 55%, transparent);
-}
-.mode-indicator--live .mode-dot {
-  background: var(--down); animation: live-blink 1.4s ease-in-out infinite;
 }
 .mode-indicator .mode-select { border: none; background: transparent; font-weight: 700; }
 .mode-indicator--live .mode-select { color: var(--down); }
