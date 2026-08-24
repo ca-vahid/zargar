@@ -91,39 +91,39 @@ function ListRow({ k, label, hint }: { k: string; label: string; hint?: string }
 export function SettingsPage() {
   const broker = useStore((s) => s.broker);
   const allPortfolios = useStore((s) => s.portfolios);
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  // the account list follows the trading mode (set in the top banner):
+  // practice -> simulator accounts, LIVE -> real/paper accounts
   const portfolios = useMemo(
-    () => allPortfolios.filter((p) => p.kind !== "shadow"), [allPortfolios]);
+    () => allPortfolios.filter((p) =>
+      mode === "live" ? p.kind === "live" || p.kind === "paper" : p.kind === "sim"),
+    [allPortfolios, mode]);
   const patch = usePatch();
   const defaultPortfolio = useStore((s) => s.settings["trading.default_portfolio"]);
+  const offModePortfolio = useMemo(
+    () => allPortfolios.find((p) => p.id === defaultPortfolio && !portfolios.some((q) => q.id === p.id)),
+    [allPortfolios, portfolios, defaultPortfolio]);
 
   return (
     <div>
       <h2 className="page-title">Settings</h2>
       <div className="settings-grid">
         <div className="panel">
-          <div className="panel-head">Trading &amp; routing
-            <span className="sub">mode, default account, order defaults</span></div>
+          <div className="panel-head">Order defaults
+            <span className="sub">default account and quantity — the trading mode itself lives in the top banner</span></div>
           <div className="panel-body">
-            <SelectRow k="trading.mode" label="Trading mode"
-              hint="practice fills on the simulator; LIVE routes real orders to SnapTrade/IBKR. Per-order dry runs live in the ticket."
-              options={[
-                { value: "practice", label: "Practice" },
-                { value: "live", label: "LIVE" },
-              ]} />
             <div className="setting-row">
-              <div className="lbl">Default portfolio<small>used by ticket and proposals</small></div>
+              <div className="lbl">Default portfolio
+                <small>used by ticket and proposals — list follows the {mode === "live" ? "LIVE" : "practice"} mode</small></div>
               <select value={defaultPortfolio ?? ""}
                 onChange={(e) => patch("trading.default_portfolio", e.target.value)}>
+                {offModePortfolio && (
+                  <option value={offModePortfolio.id}>{offModePortfolio.name} (other mode)</option>
+                )}
                 {portfolios.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </div>
             <NumberRow k="trading.default_qty" label="Default order quantity" />
-            <div className="setting-row">
-              <div className="lbl">Broker connection<small>configured via environment</small></div>
-              <span className={`status-pill ${broker?.feedConnected ? "ok" : "bad"}`}>
-                {broker?.feed ?? "?"} {broker?.ibkrConnected ? "+ IBKR" : ""}
-              </span>
-            </div>
           </div>
         </div>
 
@@ -181,9 +181,6 @@ export function SettingsPage() {
           <div className="panel-body">
             <NumberRow k="signals.default_sizing_pct" label="Proposal sizing (% equity)" step={0.5} />
             <NumberRow k="signals.default_ttl_minutes" label="Proposal TTL (minutes)" />
-            <ToggleRow k="signals.auto_execute_enabled" label="Rules-gated auto-execution"
-              hint="graduate a source only after its shadow record earns it" />
-            <NumberRow k="signals.max_auto_notional" label="Max auto-execute notional ($)" step={50} />
             <NumberRow k="verification.max_price_deviation_pct" label="Max price deviation (%)" step={0.5}
               hint="reject stale alerts — live price vs claimed entry" />
             <NumberRow k="verification.max_spread_pct" label="Max spread (%)" step={0.1}
@@ -195,26 +192,15 @@ export function SettingsPage() {
         </div>
 
         <div className="panel">
-          <div className="panel-head">Account &amp; integrations
-            <span className="sub">tax-rule regime + external services</span></div>
+          <div className="panel-head">Integrations &amp; connections
+            <span className="sub">brokerages, quote feed, external services</span></div>
           <div className="panel-body">
-            <SelectRow k="account.regime" label="Account regime"
-              hint="drives day-trade + tax-loss rules"
-              options={[
-                { value: "ca", label: "Canada (CRA superficial loss)" },
-                { value: "us", label: "United States (IRS wash sale)" },
-              ]} />
-            <ToggleRow k="account.day_trade_warnings" label="Day-trade warnings" />
-            <ToggleRow k="telegram.enabled" label="Telegram approvals"
-              hint="needs ZARGAR_TELEGRAM_BOT_TOKEN + CHAT_ID, restart backend" />
-            <ApiTokenRow />
-          </div>
-        </div>
-
-        <div className="panel">
-          <div className="panel-head">Brokerages (SnapTrade)
-            <span className="sub">your real accounts, via aggregator</span></div>
-          <div className="panel-body">
+            <div className="setting-row">
+              <div className="lbl">Quote feed<small>configured via environment</small></div>
+              <span className={`status-pill ${broker?.feedConnected ? "ok" : "bad"}`}>
+                {broker?.feed ?? "?"}
+              </span>
+            </div>
             <div className="setting-row">
               <div className="lbl">SnapTrade<small>Wealthsimple + Webull via aggregator</small></div>
               <span className={`status-pill ${broker?.snaptradeConnected ? "ok" : "dim"}`}>
@@ -233,6 +219,9 @@ export function SettingsPage() {
             <NumberRow k="snaptrade.order_poll_seconds" label="Order status poll (s)" step={0.5} />
             <ToggleRow k="snaptrade.allow_brackets" label="Allow bracket orders"
               hint="off by default — broker support varies" />
+            <ToggleRow k="telegram.enabled" label="Telegram approvals"
+              hint="needs ZARGAR_TELEGRAM_BOT_TOKEN + CHAT_ID, restart backend" />
+            <ApiTokenRow />
           </div>
         </div>
 
@@ -251,10 +240,12 @@ export function SettingsPage() {
               options={[{ value: "summarized", label: "summarized (visible)" }, { value: "omitted", label: "omitted (silent)" }]} />
             <NumberRow k="llm.max_passes" label="Max model calls per run" hint="context, pattern, entry, critic + retries" />
             <NumberRow k="technique.max_runs_per_day" label="Daily run cap" hint="cost guard across manual + scans" />
-            <SelectRow k="technique.default_tf" label="Default primary timeframe"
+            <SelectRow k="technique.trigger_tf" label="Trigger timeframe"
+              hint="where entries/triggers are decided — used by manual runs, session plans, sweeps and armed plans"
               options={[{ value: "1m", label: "1m" }, { value: "5m", label: "5m" }, { value: "15m", label: "15m" }]} />
             <NumberRow k="technique.min_risk_reward" label="Min reward:risk (R2)" step={0.5} hint="book: 1:3" />
-            <NumberRow k="technique.default_risk_pct" label="Risk per trade (%)" step={0.25} hint="book: 0.5-1%" />
+            <NumberRow k="technique.default_risk_pct" label="Analysis risk sizing (%)" step={0.25}
+              hint="sizing the pipeline assumes when judging a setup (book: 0.5-1%) — armed plans size with their own knob below" />
             <NumberRow k="technique.max_risk_pct" label="Max risk per trade (%)" step={0.5} hint="book: 5% ceiling" />
             <NumberRow k="technique.level_tolerance_pct" label="Level touch tolerance (%)" step={0.05} hint="spec Q1" />
             <NumberRow k="technique.min_touches" label="Min touches for a level" hint="T1.2: 2; strong = 3" />
@@ -289,7 +280,11 @@ export function SettingsPage() {
               ]} />
             <ToggleRow k="ui.chart.show_volume" label="Show volume pane" />
             <SelectRow k="ui.chart.type" label="Default chart type"
-              options={[{ value: "candlestick", label: "Candlestick" }, { value: "line", label: "Line" }]} />
+              options={[
+                { value: "candlestick", label: "Candlestick" },
+                { value: "ohlc", label: "OHLC bars" },
+                { value: "line", label: "Line" },
+              ]} />
             <SelectRow k="ui.chart.tf" label="Default timeframe"
               options={["1m", "5m", "15m", "1h"].map((t) => ({ value: t, label: t }))} />
             <DefaultSymbolRow />

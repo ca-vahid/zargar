@@ -78,7 +78,7 @@ available to the user (Canada).** Replaced by CBOE's free delayed-quotes JSON
 chain in one request **with greeks** (delta/gamma/theta/vega), IV, bid/ask +
 sizes, OI, volume, and the underlying spot — no account, no token, ~15 min
 delayed. Verified live from this machine. `TradierClient` is kept behind
-`technique.options.provider = "tradier"` for anyone with a token, and IBKR
+`options.provider = "tradier"` for anyone with a token, and IBKR
 native chains slot into the same provider interface once the account activates.
 
 Original Tradier notes: `/v1/markets/options/chains?greeks=true` returns bid/ask,

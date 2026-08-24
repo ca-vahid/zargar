@@ -45,7 +45,7 @@ class OptionsService:
     def provider(self):
         """CBOE by default; Tradier when a token exists and settings ask for it."""
         s = self.engine.settings
-        pref = str(s.get("options.provider", s.get("technique.options.provider", "cboe")))
+        pref = str(s.get("options.provider", "cboe"))
         if pref == "tradier":
             tok = getattr(self.engine.config, "tradier_token", "") or ""
             if tok:

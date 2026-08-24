@@ -171,12 +171,12 @@ class TechniqueService:
 
     def options_provider(self):
         """CBOE by default — free, no credentials, reachable from Canada
-        (Tradier's developer signup needs a US address). `technique.options.provider`
+        (Tradier's developer signup needs a US address). `options.provider`
         can force tradier for anyone who does have a token."""
         opts = getattr(self.engine, "options", None)
         if opts is not None:
             return opts.provider()
-        pref = str(self.engine.settings.get("technique.options.provider", "cboe"))
+        pref = str(self.engine.settings.get("options.provider", "cboe"))
         if pref == "tradier":
             t = self.tradier()
             if t is not None:
@@ -343,7 +343,7 @@ class TechniqueService:
             raise RuntimeError("technique.enabled is off")
 
         symbol = (symbol or "").upper().strip()
-        tf = primary_tf or str(self.engine.settings.get("technique.default_tf", "1m"))
+        tf = primary_tf or self.trigger_tf()
         mode = "image_only" if (image is not None and not symbol) else "full"
         if not symbol and image is None:
             raise ValueError("symbol or image required")

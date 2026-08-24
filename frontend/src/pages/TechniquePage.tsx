@@ -96,7 +96,7 @@ function AnalyseForm({ onStarted, disabled, running }: {
   disabled: boolean;
   running: boolean;
 }) {
-  const defaultTf = useStore((s) => s.settings["technique.default_tf"] ?? "1m");
+  const defaultTf = useStore((s) => s.settings["technique.trigger_tf"] ?? "1m");
   const activeSymbol = useStore((s) => s.activeSymbol);
   const toast = useStore((s) => s.toast);
   const [symbol, setSymbol] = useState(activeSymbol || "SPY");
@@ -224,7 +224,7 @@ function AnalyseForm({ onStarted, disabled, running }: {
                 Where the entry/trigger decision is made. Structure (levels, patterns) is always read on the
                 book's 30m/1h charts as well (p. 114: the author reports 78% vs 58% win rate on those); a finer
                 primary timeframe times the entry inside the prime windows (R6). Change defaults in Settings
-                (technique.default_tf, technique.structure_tfs).
+                (technique.trigger_tf, technique.structure_tfs).
               </small>
             </div>
           </Collapse>

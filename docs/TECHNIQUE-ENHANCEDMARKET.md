@@ -404,7 +404,7 @@ touches as observed but do not fire.
 on these timeframes (**78 %**) compared to lower time frames (**58 %**)." A single-trader
 self-report on an unstated sample — **to be tested, not assumed**. Our reading: structure
 (levels, patterns) is read on 30m/1h (`technique.structure_tfs`), the entry/trigger
-decision on 1m/5m (`technique.default_tf` / `technique.trigger_tf`) inside the R6
+decision on 1m/5m (`technique.trigger_tf`) inside the R6
 windows; the walk-forward reports per structure timeframe (spec Q15).
 
 ---

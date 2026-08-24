@@ -127,7 +127,7 @@ docker-compose.
 - Options chains come from CBOE's free delayed endpoint by default
   (`cdn.cboe.com/api/global/delayed_quotes/options/{sym}.json` — greeks + IV
   included, no auth; Tradier needs a US address so it's optional via
-  `technique.options.provider` + `ZARGAR_TRADIER_TOKEN`). CBOE is US listings
+  `options.provider` + `ZARGAR_TRADIER_TOKEN`). CBOE is US listings
   only — `.TO`/`.V` symbols have no chain there.
 - Technique settings (`technique.*`, `llm.*`) are UI-editable.
 - Execution exits are **reduce-only** (`OrderIntent(reduce_only=True)`): RiskGate

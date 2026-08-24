@@ -26,7 +26,6 @@ DEFAULTS: dict[str, Any] = {
     "trading.mode": "practice",             # practice | live
     "trading.default_portfolio": "",        # filled at seed time
     "trading.default_qty": 10,
-    "trading.confirm_before_submit": True,
     # --- risk gate ---------------------------------------------------------
     "risk.max_position_notional": 1000.0,   # per symbol, $
     "risk.max_position_pct": 10.0,          # per symbol, % of equity
@@ -41,19 +40,12 @@ DEFAULTS: dict[str, Any] = {
     "risk.max_option_premium_notional": 1000.0,  # $ per order (qty x price x 100)
     "risk.max_option_contracts": 10,        # per order
     "risk.max_option_spread_pct": 10.0,     # MKT option orders rejected above this
-    "risk.min_option_open_interest": 100,   # warning (blocks only if block_illiquid_options)
-    "risk.block_illiquid_options": False,
     "risk.allow_0dte": True,                # the EnhancedMarket method trades 0DTE/weeklies
     "risk.duplicate_window_seconds": 10,
     "risk.require_market_hours": False,     # enforce RTH for live orders
     "risk.halt_allows_exits": True,         # kill switch stops new entries but still lets you CLOSE a position
-    # --- account -------------------------------------------------------------
-    "account.regime": "ca",                 # ca | us — tax/day-trade rule set
-    "account.day_trade_warnings": True,
     # --- signals / automation ------------------------------------------------
     "signals.default_ttl_minutes": 30,
-    "signals.auto_execute_enabled": False,
-    "signals.max_auto_notional": 500.0,
     "signals.default_sizing_pct": 5.0,      # % of equity per proposal
     "verification.max_price_deviation_pct": 3.0,
     "verification.max_spread_pct": 1.5,
@@ -86,7 +78,6 @@ DEFAULTS: dict[str, Any] = {
     "ui.chart.type": "candlestick",         # candlestick | ohlc | line
     "ui.chart.indicators": ["ema20", "vwap"],
     "ui.chart.show_volume": True,
-    "ui.quote_flash": True,
     # --- signal sources registry (list of {name, emails, trust, notes}) -----
     "sources.registry": [],
     # --- LLM (technique pipeline + chat) -----------------------------------
@@ -109,16 +100,14 @@ DEFAULTS: dict[str, Any] = {
     "technique.default_risk_pct": 1.0,
     "technique.max_risk_pct": 5.0,
     "technique.wedge_min_bars": 8,
-    "technique.default_tf": "1m",              # trigger / primary timeframe for live runs
     # Structure is read on the book's 30m/1h charts (p. 114); triggers on 1m/5m.
     "technique.structure_tfs": ["1h", "30m"],
-    "technique.trigger_tf": "1m",
+    "technique.trigger_tf": "1m",               # trigger / primary timeframe for manual runs, plans, sweeps, arming
     "technique.bounce_stop_pct": 0.5,           # T4.3a/d — % clearance below the invalidating low (plus 0.25 ATR)
     "technique.max_stop_pct": 3.0,              # T4.3a/R1 — widest chart-justified stop, % of entry
     "technique.plan.zone_merge_pct": 1.0,       # levels closer than this % are one zone, not a ladder
     "technique.enforce_session_windows": True,  # R6: outside prime windows = watch only
     "technique.options.enabled": True,
-    "technique.options.provider": "cboe",   # cboe (free, ~15-min delayed) | tradier (token)
     "technique.emit_proposals": False,      # valid setups -> practice proposals
     "technique.scan.enabled": False,
     "technique.scan.symbols": ["SPY", "QQQ", "TSLA", "NVDA", "AAPL"],
@@ -146,7 +135,6 @@ DEFAULTS: dict[str, Any] = {
         "COIN", "SHOP", "XYZ", "PYPL", "SOFI", "HOOD", "MSTR", "RIVN", "NIO", "BABA",
         "JPM", "BAC", "GS", "C", "WFC", "XOM", "CVX", "OXY", "BA", "DIS",
     ],
-    "technique.walkforward.sessions": 40,      # default sweep length
     "technique.walkforward.workers": 0,        # CPU workers for a sweep: 0 auto (cpu-1, max 8), 1 = thread only
     "technique.walkforward.concurrency": 12,   # symbols in flight at once (fetch + score)
     "technique.history.concurrency": 6,        # concurrent Yahoo requests (429 back-off is the net; >10 = throttling)
