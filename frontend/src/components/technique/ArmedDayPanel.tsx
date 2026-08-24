@@ -134,16 +134,30 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
           { labels: { style: { color: text3, fontSize: "10px" } }, gridLineColor: grid, height: "80%", lineWidth: 0, plotLines },
           { labels: { enabled: false }, gridLineWidth: 0, top: "82%", height: "18%", offset: 0 },
         ],
-        tooltip: { backgroundColor: cssVar("--surface-2"), borderColor: cssVar("--border"),
-          style: { color: cssVar("--text-2"), fontSize: "12px" }, split: false, shared: false },
+        tooltip: {
+          backgroundColor: cssVar("--surface-2"), borderColor: cssVar("--border"),
+          style: { color: cssVar("--text-2"), fontSize: "12px" }, split: false, shared: false,
+          hideDelay: 120,
+          // quiet hover: only the event markers speak; candles/volume just get the crosshair
+          formatter(this: any) {
+            const p = this.point ?? this;
+            if (p?.series?.options?.id !== "ev") return false;
+            return `<b>${etTime(p.x)}</b><br/>${p.custom?.what ?? ""}`;
+          },
+        },
         legend: { enabled: false },
-        plotOptions: { series: { animation: false, dataGrouping: { enabled: false } }, candlestick: { pointPadding: 0.08 } },
+        plotOptions: {
+          series: { animation: false, dataGrouping: { enabled: false },
+            // no dimming of the rest of the chart on hover — that flicker reads as "choppy"
+            states: { inactive: { opacity: 1 } } },
+          candlestick: { pointPadding: 0.12, maxPointWidth: 7 },
+        },
         series: [
           { type: "candlestick", id: "main", name: a.symbol, data: ohlc,
             color: down, upColor: up, lineColor: down, upLineColor: up } as any,
-          { type: "column", id: "vol", name: "Volume", data: volume, yAxis: 1, color: grid, borderWidth: 0 } as any,
+          { type: "column", id: "vol", name: "Volume", data: volume, yAxis: 1, color: grid, borderWidth: 0,
+            enableMouseTracking: false } as any,
           { type: "scatter", id: "ev", name: "events", data: eventPoints, zIndex: 6,
-            tooltip: { pointFormatter(this: any) { return `<b>${etTime(this.x)}</b><br/>${this.custom?.what ?? ""}`; } },
             marker: { enabled: true }, states: { hover: { enabled: true } } } as any,
         ],
       });
