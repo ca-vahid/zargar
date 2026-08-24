@@ -652,7 +652,7 @@ export function TechniquePage() {
   const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;
     rows: { symbol: string; session: string; grade: string }[] } | null | undefined>(undefined);
   const [scanSource, setScanSource] = useState<"sheet" | "watch">("sheet");
-  const [scanGrades, setScanGrades] = useState<Set<string>>(new Set(["A", "B"]));
+  const [scanGrades, setScanGrades] = useState<Set<string>>(new Set(["A"]));
   useEffect(() => {
     if (!scanConfirm) return;
     let stop = false;
