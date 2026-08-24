@@ -235,6 +235,45 @@ def test_plan_triggers_carry_a_deterministic_grade_and_bottom_line():
     assert [t["assessment"] for t in plan3["triggers"]] == [t["assessment"] for t in plan2["triggers"]]
 
 
+def test_bounce_enters_at_the_zone_top_and_ladder_rr_cannot_grade_A():
+    """WDAY 2026-08-24 regression (run a9fd6891, chat 4ed9f02d): the bounce
+    entered at an 18-touch prior-day member near the BOTTOM of a 7-member zone
+    (price had to break five supports to reach it — T3.4d) and graded A; the
+    breakout graded A on a 2/4/6%-ladder R:R. Now: entry is always the zone's
+    top member (here the wide zone honestly fails the stop cap), and a pct-ladder
+    R:R caps the grade at B."""
+    as_of = _ms(dt.date(2026, 8, 21), 16, 5)
+    facts = {
+        "symbol": "WDAY", "asOf": as_of, "lastTs": as_of, "lastClose": 200.01,
+        "primaryTf": "1m", "atr": {"1m": 0.3, "30m": 2.4, "1h": 2.6},
+        "trend": {"1m": {"direction": "sideways"}, "30m": {"direction": "uptrend"},
+                  "1h": {"direction": "uptrend"}},
+        "volume": {}, "wedge": {}, "notes": [],
+        "session": {"prev": {"hod": 201.55, "lod": 194.78, "close": 199.9, "date": "2026-08-20"},
+                    "today": {"open": 199.5, "hod": 201.55, "lod": 198.9, "bars": 390}},
+        "keyLevels": [
+            _facts_level(as_of, 199.3065, "support", 42),
+            _facts_level(as_of, 198.1729, "support", 42),
+            _facts_level(as_of, 196.835, "support", 33),
+            _facts_level(as_of, 196.1717, "support", 20),
+            _facts_level(as_of, 195.4575, "support", 19),
+            _facts_level(as_of, 194.7833, "support", 18, ("T1.3a", "T1.3c"), ("1m", "1h", "30m")),
+            _facts_level(as_of, 193.872, "support", 10),
+            _facts_level(as_of, 200.4986, "resistance", 25, ("T1.3a", "T1.3c"), ("1m", "1h", "30m")),
+            _facts_level(as_of, 201.5499, "resistance", 1, ("T1.3a",)),
+        ],
+    }
+    plan = build_session_plan(facts, structure_tfs=["1h", "30m"], trigger_tf="1m").to_dict()
+    b = next(t for t in plan["triggers"] if t["kind"] == "bounce")
+    assert b["entry"]["price"] == 199.3065          # zone TOP, never a deep member
+    assert not b["valid"]                            # 3%+ zone-wide stop fails the cap honestly
+    assert any("T4.3a" in r or "R2" in r for r in b["noTradeReasons"])
+    k = next(t for t in plan["triggers"] if t["kind"] == "breakout")
+    assert k["valid"] and k["targets"][0]["basis"] == "pct_ladder"
+    assert k["assessment"]["grade"] == "B"           # ladder R:R can never be an A
+    assert any("capped at B" in c for c in k["assessment"]["cautions"])
+
+
 def test_plan_skips_supports_inside_a_prior_triggers_risk_envelope():
     """A lower zone whose entry sits above the prior trigger's stop is churn
     (stop out, re-enter at the same price) — it is skipped, not emitted."""

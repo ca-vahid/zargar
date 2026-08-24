@@ -153,7 +153,7 @@ def _trigger_confidence(level: Level, confl: list[str], rr: float, valid: bool) 
 def assess_trigger(*, kind: str, lv: Level, rep: dict, zone_size: int, rr: float,
                    target_basis: str, risk: float, entry: float, last: float,
                    stop_reference: str, fakeout_level: float, hta: bool | None,
-                   valid: bool, t: Thresholds) -> dict:
+                   valid: bool, t: Thresholds, members_above: int = 0) -> dict:
     """Deterministic validity grade for a plan trigger — the 'how good is this,
     really' the user reads before arming. Every point cites a rule; the grade is
     A (take it seriously) / B (fine, nothing special) / C (technically clears
@@ -199,11 +199,19 @@ def assess_trigger(*, kind: str, lv: Level, rep: dict, zone_size: int, rr: float
         score -= 15
         cautions.append("the last session's break of this level FAILED (T3.3d–f) — "
                         "demand every confirmation condition before believing a new one")
+    if members_above > 0:
+        score -= min(20, 5 + 5 * members_above)
+        cautions.append(f"price must first break {members_above} zone support(s) above the entry — "
+                        "the move that reaches this level argues against bouncing off it (T3.4d)")
     if kind != "bounce":
         cautions.append("fires only on full confirmation: volume surge + decisive candle "
                         "+ follow-through (T3.3a–c)")
     score = max(0, min(100, score))
     grade = ("A" if score >= 75 else "B" if score >= 55 else "C") if valid else None
+    if grade == "A" and target_basis == "pct_ladder":
+        grade = "B"
+        cautions.append("grade capped at B: an A needs targets anchored to a real obstacle, "
+                        "not the assumed 2/4/6% ladder")
     return {"grade": grade, "score": score, "strengths": strengths, "cautions": cautions}
 
 
@@ -344,7 +352,14 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         return out
 
     def _representative(zone: list[dict]) -> dict:
-        return max(zone, key=lambda m: (bool(m.get("priorDayExtreme")), m.get("touches") or 0))
+        """The member that carries the zone's STRENGTH (touches first, prior-day
+        extreme as tiebreak) — used for confluences and grading. It is NOT the
+        entry: a bounce always enters at the zone's TOP member, because that is
+        the first touch that can actually be traded. An entry deeper in the zone
+        means price broke the members above it to get there, and that context
+        argues against the bounce (T3.4d — WDAY 2026-08-24 graded such an entry
+        A while a 42-touch shelf sat five members higher)."""
+        return max(zone, key=lambda m: (m.get("touches") or 0, bool(m.get("priorDayExtreme"))))
 
     def _next_resistance_above(price: float, exclude: set[float] = frozenset()) -> dict | None:
         return next((r for r in all_resistances
@@ -356,7 +371,7 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         if n >= MAX_BOUNCE_TRIGGERS:
             break
         rep = _representative(zone)
-        entry = rep["price"]
+        entry = zone[0]["price"]         # the zone's top — the first tradeable touch
         if (last - entry) / last > MAX_LEVEL_DISTANCE_PCT:
             continue
         lv = _level_from_dict({**rep, "effectiveKind": "support"})
@@ -405,7 +420,8 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         assessment = assess_trigger(kind="bounce", lv=lv, rep=rep, zone_size=len(zone), rr=rr,
                                     target_basis=targets[0].basis, risk=risk, entry=entry,
                                     last=last, stop_reference=stop_ref, fakeout_level=fakeout_level,
-                                    hta=hta, valid=valid, t=t)
+                                    hta=hta, valid=valid, t=t,
+                                    members_above=sum(1 for m in zone if m["price"] > entry + tol))
         n += 1
         triggers.append(Trigger(
             id=f"b{n}", kind="bounce", direction="long", level_price=entry,
