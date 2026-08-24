@@ -13,6 +13,7 @@ import { EmptyState, Spinner } from "../components/ui";
 import { IconX } from "../components/icons";
 import { SymbolSearch } from "../components/SymbolSearch";
 import { api } from "../lib/api";
+import { useWorkspace, workspaceOf } from "../lib/workspace";
 import { fmtDateTime } from "../lib/format";
 import { useStore } from "../store";
 import { absoluteUrl } from "../lib/routing";
@@ -93,6 +94,12 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
 }) {
   const toast = useStore((s) => s.toast);
   const armed = useStore((s) => s.techniqueArmed);
+  const portfolios = useStore((s) => s.portfolios);
+  const ws = useWorkspace();
+  // arms always land in the ACTIVE workspace: practice -> the simulator,
+  // live -> the default/first live account (the server guards the same way)
+  const armPortfolio = useMemo(() => portfolios.find((p) =>
+    workspaceOf(p.kind) === ws && (ws !== "live" ? p.kind === "sim" : true)), [portfolios, ws]);
   const [rows, setRows] = useState<TechniqueRun[]>([]);
   const [full, setFull] = useState<Record<string, TechniqueRun>>({});
   const [armBusy, setArmBusy] = useState<Record<string, boolean>>({});
@@ -132,7 +139,10 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
   const isArmed = (id: string) => armed.some((a) => a.runId === id);
   const armOne = async (id: string, sym: string) => {
     setArmBusy((m) => ({ ...m, [id]: true }));
-    try { const a = await api.techniqueArm(id); toast("success", `${sym} armed — ${a.config.mode} on ${a.portfolio?.name ?? "default account"}`); }
+    try {
+      const a = await api.techniqueArm(id, (armPortfolio ? { portfolioId: armPortfolio.id } : undefined) as any);
+      toast("success", `${sym} armed — ${a.config.mode} on ${a.portfolio?.name ?? "default account"}`);
+    }
     catch (e: any) { toast("error", e.message); }
     finally { setArmBusy((m) => ({ ...m, [id]: false })); }
   };

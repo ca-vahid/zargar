@@ -470,14 +470,22 @@ class PlanArmer(SessionListener):
                           quote=self.engine.quotes.get(ap.symbol))
 
     # ---------------------------------------------------------------- config validation
-    def validate_config(self, cfg: ArmConfig) -> dict:
+    def validate_config(self, cfg: ArmConfig, *, explicit_portfolio: bool = True) -> dict:
         s = self.engine.settings
         if cfg.mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
         pid = cfg.portfolio_id or str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", ""))
         portfolio = self.engine.positions.portfolio(pid) if pid else None
+        sims = [p for p in self.engine.positions.portfolios() if p["kind"] == "sim"]
+        # Workspace safety: a DEFAULTED account must match the trading mode — in
+        # practice, an implicit arm never lands on a live/paper account (the user
+        # bulk-armed 10 plans in the Practice workspace and got Webull). An
+        # explicitly chosen live account is still honoured.
+        if (portfolio is not None and not explicit_portfolio
+                and portfolio["kind"] in ("live", "paper")
+                and str(s.get("trading.mode", "practice")) != "live"):
+            portfolio = sims[0] if sims else None
         if portfolio is None:
-            sims = [p for p in self.engine.positions.portfolios() if p["kind"] == "sim"]
             if cfg.mode == "alert" and sims:
                 portfolio = sims[0]
             else:
@@ -553,7 +561,9 @@ class PlanArmer(SessionListener):
             "skipWideSpread": s.get("technique.arm.skip_wide_spread", True),
             "skipElevatedIv": s.get("technique.arm.skip_elevated_iv", False),
             **(config or {})})
-        portfolio = self.validate_config(cfg)
+        explicit_pid = (bool(config.portfolio_id) if isinstance(config, ArmConfig)
+                        else bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
+        portfolio = self.validate_config(cfg, explicit_portfolio=explicit_pid)
         symbol = run["symbol"]
         enforce = bool(s.get("technique.enforce_session_windows", True))
         t = self.technique.thresholds()
@@ -689,7 +699,8 @@ class PlanArmer(SessionListener):
         # config validation (account, live gate, options capability)
         gate_ok, gate_msg = True, ""
         try:
-            portfolio = self.validate_config(cfg)
+            portfolio = self.validate_config(
+                cfg, explicit_portfolio=bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
         except ValueError as exc:
             return {"ok": False, "blocked": str(exc), "checks": [], "size": None}
         symbol = run["symbol"]

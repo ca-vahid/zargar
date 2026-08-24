@@ -414,6 +414,26 @@ async def test_seeded_events_carry_the_bars_time(rig):
     await rig.svc.armer.disarm(run["id"])
 
 
+async def test_defaulted_arm_in_practice_never_lands_on_a_live_account(rig):
+    """The bulk-arm regression (2026-08-24): 10 plans armed with no explicit
+    account in the Practice workspace landed on the live Webull default. A
+    DEFAULTED portfolio must match trading.mode; an explicit choice is honoured."""
+    live = next(p for p in rig.eng.positions.portfolios() if p["kind"] in ("live", "paper"))
+    await rig.eng.settings.set("technique.arm.default_portfolio", live["id"], journal=False)
+    await rig.eng.settings.set("trading.mode", "practice", journal=False)
+    run = await _plan_run(rig)
+    a = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm", json={"instrument": "shares"})).json()
+    assert "portfolio" in a, a
+    assert a["portfolio"]["kind"] == "sim", a["portfolio"]          # guarded to the simulator
+    await rig.svc.armer.disarm(run["id"])
+    # explicitly choosing the live account still works (proposal mode)
+    a2 = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                json={"mode": "proposal", "portfolioId": live["id"], "instrument": "shares"})).json()
+    assert a2["portfolio"]["id"] == live["id"]
+    await rig.svc.armer.disarm(run["id"])
+    await rig.eng.settings.set("technique.arm.default_portfolio", "", journal=False)
+
+
 async def test_arm_config_roundtrip():
     c = ArmConfig.from_dict({"portfolioId": "p", "mode": "auto", "riskPct": 0.75, "maxQty": 10, "allowLive": True})
     assert c.to_dict()["riskPct"] == 0.75 and c.allow_live and c.max_qty == 10
