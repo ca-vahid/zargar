@@ -1580,3 +1580,7 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   border: 1px solid color-mix(in srgb, var(--up) 35%, transparent);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
 .tq-running-pill .spinner { width: 11px; height: 11px; }
+
+/* armed fleet table (master-detail) */
+.tq-fleet tr.tq-fleet-sel { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+.tq-fleet td { vertical-align: middle; }

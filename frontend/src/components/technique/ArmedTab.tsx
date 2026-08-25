@@ -199,6 +199,59 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
   );
 }
 
+const WINDOW_SHORT: Record<string, [string, string]> = {
+  prime_open: ["● open", "setup"], prime_close: ["● close", "setup"],
+  midday: ["⏸ mid-day", "warnbadge"], extended: ["closed", "nosetup"],
+};
+
+function nearestPct(a: ArmedPlan): number {
+  const ds = (a.triggers ?? []).map((t) => Math.abs(t.distancePct ?? 99));
+  return ds.length ? Math.min(...ds) : 99;
+}
+function fleetRank(a: ArmedPlan): number {
+  if (a.needsAttention) return 0;
+  if (a.openPositions > 0 || (a.trades ?? []).some((t) => ["open", "working", "submitting"].includes(t.status))) return 1;
+  if ((a.trades ?? []).length) return 2;
+  return 3;
+}
+
+/** Fleet overview: one row per armed plan; click (or ←/→) selects the detail card. */
+function FleetTable({ armed, selId, onSel }: { armed: ArmedPlan[]; selId: string; onSel: (id: string) => void }) {
+  return (
+    <div className="panel mb">
+      <div className="panel-head">Armed fleet <span className="sub">{armed.length} plan(s) · click a row (or use ← →) for the full card below</span></div>
+      <div className="panel-body" style={{ padding: 0 }}>
+        <table className="tq-table tq-fleet">
+          <thead><tr><th>Symbol</th><th>Mode</th><th>Window</th><th>Nearest trigger</th><th>Status</th><th>Realized</th><th aria-label="attention" /></tr></thead>
+          <tbody>
+            {armed.map((a) => {
+              const near = (a.triggers ?? []).slice().sort((x, y) => Math.abs(x.distancePct ?? 99) - Math.abs(y.distancePct ?? 99))[0];
+              const [wTxt, wCls] = WINDOW_SHORT[a.sessionWindowNow] ?? [a.sessionWindowNow, "nosetup"];
+              const inTrade = a.openPositions > 0 || (a.trades ?? []).some((t) => ["open", "working", "submitting"].includes(t.status));
+              return (
+                <tr key={a.runId} className={`clickable ${a.runId === selId ? "tq-fleet-sel" : ""}`} onClick={() => onSel(a.runId)}>
+                  <td className="nowrap"><b>{a.symbol}</b></td>
+                  <td className="nowrap small">{a.config.mode}{a.config.instrument === "options" ? " · opt" : " · sh"}</td>
+                  <td className="nowrap"><span className={`tq-badge ${wCls}`}>{wTxt}</span></td>
+                  <td className="nowrap small">{near ? <>{near.id} {near.kind} @ {fmt(near.entry)} <span className="muted">{near.distancePct !== undefined ? `${near.distancePct > 0 ? "+" : ""}${near.distancePct.toFixed(2)}%` : ""}</span></> : "—"}</td>
+                  <td className="nowrap">{a.needsAttention ? <span className="tq-badge failed">⚠ ATTENTION</span>
+                    : inTrade ? <span className="tq-badge setup">IN TRADE</span>
+                    : (a.trades ?? []).length ? <span className="tq-badge plan">FIRED {(a.trades ?? []).length}</span>
+                    : a.status === "paused" ? <span className="tq-badge failed">PAUSED</span>
+                    : a.status !== "armed" ? <span className="tq-badge nosetup">{a.status.toUpperCase()}</span>
+                    : <span className="muted small">watching {(a.triggers ?? []).length}</span>}</td>
+                  <td className={`nowrap ${pnlCls(a.realizedPnl)}`}>{fmt(a.realizedPnl)}</td>
+                  <td>{a.stale ? <span className="tq-badge failed" title="no fresh bars">STALE</span> : null}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 /** The Armed dashboard: what is armed, in which account and mode, what it is
  *  watching, what fired, what it holds — with pause / resume / disarm / stop all. */
 export function ArmedTab() {
@@ -212,6 +265,26 @@ export function ArmedTab() {
   const portfolios = useStore((s) => s.portfolios);
   const pmap = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p])), [portfolios]);
   const armed = useMemo(() => allArmed.filter((a) => workspaceOf(a.portfolio?.kind) === ws), [allArmed, ws]);
+  // master–detail: the fleet table selects which single card shows below
+  const [selId, setSelId] = useState<string>("");
+  const effSelId = useMemo(() => {
+    if (armed.some((a) => a.runId === selId)) return selId;
+    return armed.slice().sort((x, y) => fleetRank(x) - fleetRank(y) || nearestPct(x) - nearestPct(y)
+      || x.symbol.localeCompare(y.symbol))[0]?.runId ?? "";
+  }, [armed, selId]);
+  const selArmed = useMemo(() => armed.find((a) => a.runId === effSelId) ?? null, [armed, effSelId]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (armed.length < 2) return;
+      const i = Math.max(0, armed.findIndex((a) => a.runId === effSelId));
+      setSelId(armed[(i + (e.key === "ArrowRight" ? 1 : armed.length - 1)) % armed.length].runId);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [armed, effSelId]);
   const otherArmed = allArmed.length - armed.length;
   const wsHistory = useMemo(
     () => history.filter((h) => workspaceOf(pmap[h.portfolioId]?.kind) === ws), [history, pmap, ws]);
@@ -262,7 +335,8 @@ export function ArmedTab() {
           Armed plans watch live 1-minute bars, fire only inside the prime windows (R6), and — depending on the mode — alert, propose, or execute.
         </div></div>
       )}
-      {armed.map((a) => <ArmedCard key={a.runId} a={a} onChanged={refresh} />)}
+      {armed.length > 1 && <FleetTable armed={armed} selId={effSelId} onSel={setSelId} />}
+      {selArmed && <ArmedCard key={selArmed.runId} a={selArmed} onChanged={refresh} />}
       {history.length > 0 && (
         <div className="panel">
           <div className="panel-head">History <span className="sub">{history.length} armed plan(s)</span></div>
