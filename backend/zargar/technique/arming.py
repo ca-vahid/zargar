@@ -216,6 +216,7 @@ class ArmedPlan:
     stale: bool = False
     stale_noted: bool = False
     setup_ids: dict[str, str] = field(default_factory=dict)
+    critic_kills: dict[str, int] = field(default_factory=dict)   # per-trigger veto count (re-arm cap)
     stop_reason: str = ""               # why the plan stopped firing (loss halt, etc.)
     scorecard: dict | None = None       # execution review vs the walk-forward replay (after close)
     replay_ts: int | None = None        # while seeding historical bars: stamp events with the BAR's time
@@ -1296,6 +1297,29 @@ class PlanArmer(SessionListener):
                         f"{c.get('bid')}/{c.get('ask')}, IV {c.get('iv')}, delta {c.get('delta')}, "
                         f"DTE {c.get('dte')}."
                         + (" WARNINGS: " + "; ".join(c.get("warnings") or []) if c.get("warnings") else ""))
+                # The critic must know where the level CAME FROM — a ZS fire was
+                # killed as "level does not exist in FACTS" because today's live
+                # window (post-gap) no longer re-detects Monday's zone floor.
+                tg0 = next((t for t in (ap.plan.get("triggers") or []) if t.get("id") == tid), None)
+                if tg0:
+                    lv0 = tg0.get("level") or {}
+                    z0 = lv0.get("zone") or {}
+                    a0 = tg0.get("assessment") or {}
+                    live_ctx.append(
+                        f"PLAN PROVENANCE: trigger {tid} comes from the session plan built at the "
+                        f"{ap.plan.get('builtFromSession')} close. Level {tg0.get('levelPrice')}: "
+                        f"{lv0.get('touches')} touch(es), sources {','.join(lv0.get('sources') or []) or '?'}"
+                        + (f", zone {z0.get('low')}-{z0.get('high')}" if z0 else "")
+                        + (f", deterministic grade {a0.get('grade')} ({a0.get('score')}/100)" if a0.get("grade") else "")
+                        + ". Plan levels are detected from the BUILD window; after an overnight gap they can be "
+                          "absent from today's FACTS — that is expected, NOT fabrication. Judge the level by its "
+                          "provenance plus today's tape, never by whether today's FACTS re-detect it.")
+                    if a0.get("cautions"):
+                        live_ctx.append("Plan cautions (already priced into the grade): " + "; ".join(a0["cautions"]))
+                live_ctx.append(
+                    "DATA QUALITY: if FACTS volume is unmeasurable (relative 0.0x, baseline 0 sessions, or the "
+                    "current bar shows v=0), treat volume as UNKNOWN — a data-feed outage, not a rule violation; "
+                    "do not kill on R3.1/T2 grounds alone in that case.")
                 facts_ctx = (facts_for_prompt(facts) + "\n\n" + "\n".join(live_ctx)) if facts else "\n".join(live_ctx)
                 critic = await vp.run_critic(a, {"1m": png} if png else {}, facts_ctx)
             except Exception as exc:
@@ -1325,6 +1349,20 @@ class PlanArmer(SessionListener):
             trade.status = "critic_killed"
             trade.reason = (critic or {}).get("summary") or "critic killed"
             self._log(ap, "critic_killed", f"{tid}: {trade.reason}", trigger=tid)
+            # A veto is an opinion about THIS moment, not the level: like the
+            # paused/halt skips, the trigger goes back to watching so a later,
+            # distinct touch can fire again (fresh critic, fresh data) — capped
+            # so a stubborn disagreement doesn't burn critic calls all day.
+            ap.critic_kills[tid] = ap.critic_kills.get(tid, 0) + 1
+            if ap.critic_kills[tid] < 3:
+                tr.status = "observed"
+                tr.fired_index = tr.fired_ts = tr.fired_window = tr.fill_price = None
+                self._log(ap, "rearmed_after_kill",
+                          f"{tid}: back to watching — a later touch can refire (veto {ap.critic_kills[tid]}/3)",
+                          trigger=tid)
+            else:
+                self._log(ap, "kill_cap", f"{tid}: vetoed {ap.critic_kills[tid]} times — staying down for the day",
+                          trigger=tid)
             await self._persist(ap)
             self._publish(ap, "critic_killed")
             return

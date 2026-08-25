@@ -375,7 +375,12 @@ class VisionPipeline:
                 "PASS 4 of 4 — CRITIC. Your job is to KILL this setup if it deserves it. "
                 "Check every fakeout tell (T3.3d-f), the higher-timeframe read (T3.3g), volume "
                 "(T2.6, R3.1), chop (R3.2), R:R (R2), and whether the entry is chased (T4.1). "
-                "Be adversarial; a surviving setup must earn it.\n\nDRAFT:\n"
+                "Be adversarial; a surviving setup must earn it.\n"
+                "This trigger already passed the deterministic gates (level touch, prime window, volume "
+                "floor at the bar). Two things are NEVER kill reasons on their own: (1) a planned level "
+                "being absent from today's FACTS when the context gives its plan provenance — post-gap "
+                "windows do not re-detect old levels; (2) unmeasurable volume (0.0x / no baseline / v=0) — "
+                "that is a data outage, treat volume as unknown. Kill on live-tape evidence.\n\nDRAFT:\n"
                 + json.dumps(analysis.model_dump(), indent=1)
                 + f"\n\nFACTS:\n{facts_txt}")},
         ], CriticVerdict)
