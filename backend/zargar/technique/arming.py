@@ -449,7 +449,7 @@ class PlanArmer(SessionListener):
                 continue
             try:
                 await self.arm(row.run_id, ArmConfig.from_dict(row.config or {}), restored=True,
-                               paused=(row.status == "paused"))
+                               paused=(row.status == "paused"), prior_state=row.state or {})
                 n += 1
             except Exception as exc:
                 log.warning("re-arm %s failed: %s", row.run_id, exc)
@@ -536,7 +536,7 @@ class PlanArmer(SessionListener):
 
     # ---------------------------------------------------------------- arm / disarm
     async def arm(self, run_id: str, config: ArmConfig | dict | None = None, *, restored: bool = False,
-                  paused: bool = False) -> dict:
+                  paused: bool = False, prior_state: dict | None = None) -> dict:
         if not bool(self.engine.settings.get("technique.arm.enabled", True)):
             raise RuntimeError("technique.arm.enabled is off")
         if run_id in self._armed:
@@ -596,6 +596,33 @@ class PlanArmer(SessionListener):
         finally:
             ap.replay_ts = None
         if restored:
+            # The seed replay above re-ran today's (corrected) bars, which can
+            # CONTRADICT what actually happened live — e.g. GOLD 2026-08-25:
+            # live gap-voided b2 at 09:31, but the replay's clean history fired
+            # it at 09:44 as a phantom "alert" trade. The live-persisted record
+            # is authoritative: apply it over any replay conclusion, and drop
+            # trades the replay minted that the live plan never had.
+            prior_trackers = (prior_state or {}).get("trackers") or {}
+            for ptid, pst in prior_trackers.items():
+                trk = trackers.get(ptid)
+                if trk is None or not pst.get("status"):
+                    continue
+                if trk.status != pst["status"]:
+                    self._log(ap, "replay_divergence",
+                              f"{ptid}: live record was '{pst['status']}' but the replay said '{trk.status}' — "
+                              "keeping the live record", trigger=ptid)
+                trk.status = pst["status"]
+                trk.fired_ts = pst.get("firedTs")
+                trk.fired_window = pst.get("firedWindow")
+                if pst["status"] not in ("fired",):
+                    trk.fill_price = None
+            if prior_state is not None:
+                live_tids = {t.get("triggerId") for t in (prior_state.get("trades") or [])}
+                for ptid in [k for k, t in list(ap.trades.items())
+                             if k not in live_tids and t.status == "alert"]:
+                    ap.trades.pop(ptid, None)
+                    self._log(ap, "phantom_dropped",
+                              f"{ptid}: replay-minted alert trade removed (live plan never fired it)", trigger=ptid)
             with contextlib.suppress(Exception):
                 await self._restore_trades(ap)
         await self._persist(ap)

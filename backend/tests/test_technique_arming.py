@@ -450,6 +450,32 @@ async def test_set_mode_switches_in_place_and_derives_loss_halt(rig):
     await rig.svc.armer.disarm(run["id"])
 
 
+async def test_restore_keeps_the_live_record_over_replay_conclusions(rig):
+    """GOLD 2026-08-25 regression: live gap-voided a trigger, but restart
+    seeding replayed corrected bars and minted a phantom 'fired/alert'. The
+    persisted live tracker state must win on restore."""
+    run = await _plan_run(rig)
+    await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                          json={"mode": "alert", "portfolioId": rig.sim["id"]})
+    ap = rig.svc.armer.get(run["id"])
+    tid = next(iter(ap.trackers))
+    ap.trackers[tid].status = "gap_void"
+    await rig.svc.armer._persist(ap)
+    # pretend it is for today so restore re-arms instead of expiring
+    from zargar.models import TechniqueArmed
+    today = session_date(int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000))
+    async with rig.eng.sf() as session:
+        row = await session.get(TechniqueArmed, run["id"])
+        row.plan_for = today
+        await session.commit()
+    rig.svc.armer._armed.clear()
+    assert await rig.svc.armer.restore() == 1
+    ap2 = rig.svc.armer.get(run["id"])
+    assert ap2.trackers[tid].status == "gap_void"          # live record survived
+    assert not any(t.status == "alert" for t in ap2.trades.values())
+    await rig.svc.armer.disarm(run["id"])
+
+
 async def test_arm_config_roundtrip():
     c = ArmConfig.from_dict({"portfolioId": "p", "mode": "auto", "riskPct": 0.75, "maxQty": 10, "allowLive": True})
     assert c.to_dict()["riskPct"] == 0.75 and c.allow_live and c.max_qty == 10
