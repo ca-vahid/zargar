@@ -16,8 +16,10 @@ later bars are never fetched, so a backtest cannot peek at the future.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import logging
 import time
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -123,6 +125,61 @@ def _parse(symbol: str, tf: str, data: dict) -> list[Bar]:
     return out
 
 
+# --- Alpaca SIP history (preferred for US symbols when keys are set) ----------
+# Minute-aligned timeframes only: Alpaca's 1Hour bars are clock-aligned (09:00,
+# 10:00) while Yahoo's are session-aligned (09:30) — swapping those would
+# silently reshape 1h structure detection. 1h/1d stay on Yahoo.
+_ALPACA = {"key": "", "secret": ""}
+ALPACA_TF = {"1m": "1Min", "5m": "5Min", "15m": "15Min", "30m": "30Min"}
+ALPACA_BARS_URL = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
+_ET = ZoneInfo("America/New_York")
+
+
+def set_alpaca_credentials(key_id: str, secret: str) -> None:
+    """Wired at engine start when ZARGAR_ALPACA_* is configured."""
+    _ALPACA["key"] = key_id or ""
+    _ALPACA["secret"] = secret or ""
+
+
+def _rth_only(bars: list[Bar]) -> list[Bar]:
+    """Yahoo history was fetched with includePrePost=false; Alpaca returns the
+    full tape, so clip to the regular session to keep detector parity."""
+    out = []
+    for b in bars:
+        t = dt.datetime.fromtimestamp(b.ts / 1000, _ET)
+        m = t.hour * 60 + t.minute
+        if 9 * 60 + 30 <= m < 16 * 60:
+            out.append(b)
+    return out
+
+
+async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
+                         http: httpx.AsyncClient) -> list[Bar]:
+    headers = {"APCA-API-KEY-ID": _ALPACA["key"], "APCA-API-SECRET-KEY": _ALPACA["secret"]}
+    iso = lambda s: dt.datetime.fromtimestamp(s, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    params = {"timeframe": ALPACA_TF[tf], "start": iso(start_s), "end": iso(end_s),
+              "limit": 10_000, "feed": "sip", "adjustment": "raw"}
+    bars: list[Bar] = []
+    token = None
+    for _ in range(20):                        # paginate; 20 pages = 200k bars, ample
+        if token:
+            params["page_token"] = token
+        r = await http.get(ALPACA_BARS_URL.format(symbol=symbol.upper()), params=params,
+                           headers=headers, timeout=20)
+        if r.status_code >= 400:
+            raise HistoryError(f"Alpaca HTTP {r.status_code}: {r.text[:120]}")
+        data = r.json()
+        for row in data.get("bars") or []:
+            from ..brokers.alpaca import parse_rfc3339_ms
+            bars.append(Bar(symbol=symbol.upper(), tf=tf, ts=parse_rfc3339_ms(str(row["t"])),
+                            open=float(row["o"]), high=float(row["h"]), low=float(row["l"]),
+                            close=float(row["c"]), volume=int(row.get("v") or 0)))
+        token = data.get("next_page_token")
+        if not token:
+            break
+    return _rth_only(bars)
+
+
 async def fetch_window(
     symbol: str,
     tf: str,
@@ -131,7 +188,8 @@ async def fetch_window(
     *,
     client: httpx.AsyncClient | None = None,
 ) -> list[Bar]:
-    """Bars in [start_ms, end_ms] at `tf`, chunking requests to Yahoo's limits."""
+    """Bars in [start_ms, end_ms] at `tf` — Alpaca SIP first for US symbols
+    when keys are configured (no 429s, true volume), Yahoo as the fallback."""
     if tf not in INTERVAL_SECONDS:
         raise HistoryError(f"unsupported interval {tf!r}")
     now = time.time()
@@ -147,7 +205,14 @@ async def fetch_window(
     own = False                                  # the shared client is never closed here
     http = client or _client_shared()
     bars: list[Bar] = []
+    if _ALPACA["key"] and tf in ALPACA_TF and "." not in symbol and "=" not in symbol:
+        try:
+            bars = await _alpaca_window(symbol, tf, start_s, end_s, http)
+        except Exception as exc:
+            log.warning("alpaca history failed for %s %s (%s) — falling back to Yahoo", symbol, tf, exc)
+            bars = []
     try:
+      if not bars:
         span = MAX_REQUEST_SPAN[tf]
         chunks: list[tuple[int, int]] = []
         cursor = start_s

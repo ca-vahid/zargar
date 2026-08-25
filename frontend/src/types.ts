@@ -350,6 +350,7 @@ export interface ArmConfig {
   riskPct: number; maxQty: number; qty: number | null;
   useCritic: boolean; allowLive: boolean; flattenMinutesBeforeClose: number; slippagePct: number; maxRetries: number;
   maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean;
+  entryFallback?: string;
 }
 export interface ArmPreflight {
   ok: boolean; blocked?: string; note?: string; instrument?: string; trigger?: string;
@@ -370,13 +371,14 @@ export interface ArmRequest {
   riskPct?: number; maxQty?: number; qty?: number;
   useCritic?: boolean; allowLive?: boolean; flattenMinutesBeforeClose?: number; slippagePct?: number;
   maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean;
+  entryFallback?: string;
 }
 export interface ArmOptions {
   portfolios: { id: string; name: string; kind: string; venue?: string; baseCurrency?: string; cash?: number; isDefault?: boolean;
     sourceName?: string | null; optionsOk: boolean; optionsNote: string }[];
   defaults: { portfolioId: string; mode: string; instrument: string; contracts: number; maxContracts: number; singleContractExit: string;
     riskPct: number; maxRiskPct: number; maxQty: number; useCritic: boolean; flattenMinutesBeforeClose: number; slippagePct: number;
-    maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean };
+    maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean; entryFallback?: string };
   haltAllowsExits?: boolean;
   optionsEnabled: boolean; optionsProvider: string;
   tradingMode: string; allowLiveAuto: boolean; enabled: boolean; llmAvailable: boolean; halt: any; emitProposals: boolean;

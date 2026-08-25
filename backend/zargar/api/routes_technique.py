@@ -204,6 +204,7 @@ def build_technique_routes(app, eng, auth, config) -> None:
         dailyLossLimit: float | None = None
         skipWideSpread: bool | None = None
         skipElevatedIv: bool | None = None
+        entryFallback: str | None = None   # "off" | "shares"
 
     def _arm_config(body: ArmBody | None) -> dict:
         if body is None:
@@ -233,13 +234,15 @@ def build_technique_routes(app, eng, auth, config) -> None:
         return {"disarmed": await _svc(eng).disarm_plan(run_id, flatten=flatten)}
 
     class ArmedModeBody(BaseModel):
-        mode: str
+        mode: str | None = None
         allowLive: bool = False
+        entryFallback: str | None = None      # "off" | "shares"
 
     @app.post("/api/technique/armed/{run_id}/mode", dependencies=[auth])
     async def technique_armed_mode(run_id: str, body: ArmedModeBody):
         try:
-            return await _svc(eng).armer.set_mode(run_id, body.mode, allow_live=body.allowLive)
+            return await _svc(eng).armer.set_mode(run_id, body.mode, allow_live=body.allowLive,
+                                                  entry_fallback=body.entryFallback)
         except KeyError:
             raise HTTPException(status_code=404, detail="not armed")
         except (RuntimeError, ValueError) as exc:

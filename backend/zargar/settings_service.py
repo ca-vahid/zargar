@@ -126,6 +126,10 @@ DEFAULTS: dict[str, Any] = {
     "technique.plan.respect_mult": 3.0,        # Q14 (ours): reversal >= 3x tol = level respected
     "technique.plan.entry_window_bars": 12,    # bars a bounce has to fill after the touch
     "technique.plan.with_vision": True,        # manual plans get the 4-pass read too (sweeps stay deterministic)
+    # --- evening automation (technique.sheet.*) --------------------------------
+    "technique.sheet.auto": "off",             # off | build (free graded sheet after close) | analyst (build + LLM-check the A's)
+    "technique.sheet.build_at": "16:15",       # ET time the auto build fires (45-min window)
+    "technique.sheet.symbols": [],             # universe for the auto sheet; empty = technique.walkforward.symbols
     # the book's universe: liquid, optionable US names with tight spreads and real
     # 1m volume — index ETFs, mega-caps, semis, high-beta tech, financials, energy.
     # (CBOE chains are US-only, so no .TO/.V here.)
@@ -165,6 +169,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.premium_stop_pct": 50.0,    # options: sell when the premium bleeds this % below what was paid (0 = off)
     "technique.arm.avoid_0dte_after": "15:15", # ET: after this time prefer this-week expiry over 0DTE ("" = never)
     "technique.arm.strike_within_targets": True,  # cap the just-OTM strike at the plan's TP2
+    "technique.arm.entry_fallback": "off",     # options entry blocked (spread/IV/no contract): off = skip, shares = buy the stock instead
     "technique.arm.skip_wide_spread": True,    # options: skip the entry when the contract's spread is wide (T5.4)
     "technique.arm.skip_elevated_iv": False,   # options: skip the entry when IV is elevated (T5.3, IV-crush risk)
 }

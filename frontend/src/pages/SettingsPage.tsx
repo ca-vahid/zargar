@@ -107,6 +107,29 @@ export function SettingsPage() {
   return (
     <div>
       <h2 className="page-title">Settings</h2>
+      <div className="panel mb settings-automation">
+        <div className="panel-head">🌙 Evening automation
+          <span className="sub">the daily ritual, hands-free: after the close, build tomorrow's graded sheet — and optionally analyst-check the A's</span></div>
+        <div className="panel-body">
+          <SelectRow k="technique.sheet.auto" label="After each close"
+            hint="off = manual (Validation → Prepare the next session) · sheet = build the graded sheet automatically (free, deterministic) · sheet + analyst = also run the LLM read on every grade-A setup (~$0.20 each), ready to bulk-arm"
+            options={[{ value: "off", label: "do nothing (manual)" },
+                      { value: "build", label: "build tomorrow's sheet (free)" },
+                      { value: "analyst", label: "build sheet + analyst-check the A's ($)" }]} />
+          <SelectRow k="technique.arm.mode" label="Default when arming"
+            hint="what a one-click / bulk arm does when a trigger fires — changeable per plan afterwards"
+            options={[{ value: "alert", label: "alert only" },
+                      { value: "proposal", label: "propose — I approve each trade" },
+                      { value: "auto", label: "auto-trade (practice-safe; live needs extra gates)" }]} />
+          <SelectRow k="technique.arm.entry_fallback" label="If the option can't be traded"
+            hint="wide spread / high IV / no contract at fire time — SNOW lost +1.89R to a spread skip on 2026-08-25"
+            options={[{ value: "off", label: "skip the trade" },
+                      { value: "shares", label: "buy the shares instead" }]} />
+          <div className="setting-row"><div className="lbl">Sheet universe
+            <small>symbols for the auto sheet — technique.sheet.symbols (empty = the book universe, technique.walkforward.symbols)</small></div>
+            <span className="muted">edit below under Technique</span></div>
+        </div>
+      </div>
       <div className="settings-grid">
         <div className="panel">
           <div className="panel-head">Order defaults

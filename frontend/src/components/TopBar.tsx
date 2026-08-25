@@ -126,6 +126,12 @@ export function TopBar() {
         <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
         Zargar
       </div>
+      {quoteSource === "alpaca" && (broker as any)?.alpacaConnected === false && (
+        <span className="status-pill warn"
+          title="The Alpaca data stream is down — quotes and bars are running on the slower Yahoo fallback. Check backend/.env keys or status.alpaca.markets.">
+          ⚠ data: fallback
+        </span>
+      )}
       {quoteSource === "sim" && (
         <span className="status-pill dim" title="Simulated quote feed — prices are synthetic.">
           sim quotes

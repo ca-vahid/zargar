@@ -79,6 +79,11 @@ class ArmConfig:
     daily_loss_limit: float = 0.0    # $ realised loss that stops the plan (flatten + disarm); 0 = off
     skip_wide_spread: bool = True    # options: skip the entry if T5.4 warns the contract spread is wide
     skip_elevated_iv: bool = False   # options: skip the entry if T5.3 warns IV is elevated (IV-crush risk)
+    # When the options entry is blocked (wide spread / elevated IV / no
+    # contract): "off" = skip the trade (old behaviour), "shares" = express the
+    # same level trade in the underlying instead (SNOW 2026-08-25 lost +1.89R
+    # to a 16.5% spread skip). Changeable after arming.
+    entry_fallback: str = "off"
 
     def to_dict(self) -> dict:
         return {"portfolioId": self.portfolio_id, "mode": self.mode, "instrument": self.instrument,
@@ -88,7 +93,8 @@ class ArmConfig:
                 "allowLive": self.allow_live, "flattenMinutesBeforeClose": self.flatten_minutes_before_close,
                 "slippagePct": self.slippage_pct, "maxRetries": self.max_retries,
                 "maxOpenTrades": self.max_open_trades, "dailyLossLimit": self.daily_loss_limit,
-                "skipWideSpread": self.skip_wide_spread, "skipElevatedIv": self.skip_elevated_iv}
+                "skipWideSpread": self.skip_wide_spread, "skipElevatedIv": self.skip_elevated_iv,
+                "entryFallback": self.entry_fallback}
 
     @classmethod
     def from_dict(cls, d: dict) -> "ArmConfig":
@@ -110,7 +116,8 @@ class ArmConfig:
                    max_open_trades=int(d.get("maxOpenTrades", d.get("max_open_trades", 1)) or 1),
                    daily_loss_limit=float(d.get("dailyLossLimit", d.get("daily_loss_limit", 0.0)) or 0.0),
                    skip_wide_spread=bool(d.get("skipWideSpread", d.get("skip_wide_spread", True))),
-                   skip_elevated_iv=bool(d.get("skipElevatedIv", d.get("skip_elevated_iv", False))))
+                   skip_elevated_iv=bool(d.get("skipElevatedIv", d.get("skip_elevated_iv", False))),
+                   entry_fallback=str(d.get("entryFallback", d.get("entry_fallback", "off")) or "off"))
 
 
 @dataclass
@@ -475,6 +482,8 @@ class PlanArmer(SessionListener):
         s = self.engine.settings
         if cfg.mode not in MODES:
             raise ValueError(f"mode must be one of {MODES}")
+        if cfg.entry_fallback not in ("off", "shares"):
+            raise ValueError("entryFallback must be 'off' or 'shares'")
         pid = cfg.portfolio_id or str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", ""))
         portfolio = self.engine.positions.portfolio(pid) if pid else None
         sims = [p for p in self.engine.positions.portfolios() if p["kind"] == "sim"]
@@ -561,6 +570,7 @@ class PlanArmer(SessionListener):
             "dailyLossLimit": s.get("technique.arm.daily_loss_limit", 0.0),
             "skipWideSpread": s.get("technique.arm.skip_wide_spread", True),
             "skipElevatedIv": s.get("technique.arm.skip_elevated_iv", False),
+            "entryFallback": s.get("technique.arm.entry_fallback", "off"),
             **(config or {})})
         explicit_pid = (bool(config.portfolio_id) if isinstance(config, ArmConfig)
                         else bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
@@ -649,17 +659,22 @@ class PlanArmer(SessionListener):
         self._publish(ap, "armed")
         return self._snapshot(ap)
 
-    async def set_mode(self, run_id: str, mode: str, *, allow_live: bool = False) -> dict:
-        """Change an armed plan's execution mode in place (alert/proposal/auto).
+    async def set_mode(self, run_id: str, mode: str | None = None, *, allow_live: bool = False,
+                       entry_fallback: str | None = None) -> dict:
+        """Change an armed plan's execution mode and/or entry fallback in place.
         Runs the same gates as arming: auto on a live/paper account still needs
         allow_live_auto + trading.mode=live + the explicit acknowledgement."""
         ap = self._armed.get(run_id)
         if ap is None:
             raise KeyError("not armed")
-        if mode == ap.config.mode:
+        mode = mode or ap.config.mode
+        if mode == ap.config.mode and (entry_fallback is None or entry_fallback == ap.config.entry_fallback):
             return self._snapshot(ap)
         old = ap.config.mode
-        cfg = ArmConfig.from_dict({**ap.config.to_dict(), "mode": mode, "allowLive": allow_live or ap.config.allow_live})
+        cfg = ArmConfig.from_dict({**ap.config.to_dict(), "mode": mode,
+                                   "entryFallback": (entry_fallback if entry_fallback is not None
+                                                     else ap.config.entry_fallback),
+                                   "allowLive": allow_live or ap.config.allow_live})
         self.validate_config(cfg)                      # gates (mode, live-auto, options capability)
         s = self.engine.settings
         if cfg.mode == "auto" and float(cfg.daily_loss_limit or 0) <= 0:
@@ -672,7 +687,12 @@ class PlanArmer(SessionListener):
                           f"auto mode with no loss halt set — defaulted to ${cfg.daily_loss_limit:,.0f} "
                           f"(2 × the per-trade risk of {cfg.risk_pct}% on ${eq:,.0f})")
         ap.config = cfg
-        self._log(ap, "mode_changed", f"execution mode {old} -> {cfg.mode}")
+        changes = []
+        if cfg.mode != old:
+            changes.append(f"execution mode {old} -> {cfg.mode}")
+        if entry_fallback is not None:
+            changes.append(f"entry fallback -> {cfg.entry_fallback}")
+        self._log(ap, "mode_changed", "; ".join(changes) or f"execution mode {old} -> {cfg.mode}")
         await self._persist(ap)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_MODE_CHANGED,
                                          {"runId": run_id, "symbol": ap.symbol, "from": old, "to": cfg.mode},
@@ -1518,31 +1538,48 @@ class PlanArmer(SessionListener):
         shares: limit at the trigger price + slippage."""
         from ..orders import OrderIntent
         cfg = ap.config
-        if cfg.instrument == "options":
+        use_options = cfg.instrument == "options"
+        contract = None
+        if use_options:
             contract = await self._pick_contract(ap, trade)
-            if contract is None:
-                trade.status = "failed"
-                trade.reason = "no option contract available — nothing sent"
-                await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
-                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
-                    "error": trade.errors[-1] if trade.errors else "no contract"},
-                    aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-                return
-            # T5.3/T5.4 liquidity/IV gates — skip the entry when configured to
-            warnings = [str(w) for w in (contract.get("warnings") or [])]
+            # T5.3/T5.4 liquidity/IV gates
             blocked = None
-            if cfg.skip_wide_spread and any("T5.4 wide spread" in w for w in warnings):
-                blocked = next(w for w in warnings if "T5.4 wide spread" in w)
-            elif cfg.skip_elevated_iv and any("T5.3 elevated IV" in w for w in warnings):
-                blocked = next(w for w in warnings if "T5.3 elevated IV" in w)
-            if blocked:
-                trade.status = "skipped"
-                trade.reason = f"contract skipped ({blocked})"
-                self._log(ap, "contract_skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
-                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
-                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "contract_quality",
-                    "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
-                return
+            if contract is not None:
+                warnings = [str(w) for w in (contract.get("warnings") or [])]
+                if cfg.skip_wide_spread and any("T5.4 wide spread" in w for w in warnings):
+                    blocked = next(w for w in warnings if "T5.4 wide spread" in w)
+                elif cfg.skip_elevated_iv and any("T5.3 elevated IV" in w for w in warnings):
+                    blocked = next(w for w in warnings if "T5.3 elevated IV" in w)
+            if contract is None or blocked:
+                why = blocked or (trade.errors[-1] if trade.errors else "no contract available")
+                if cfg.entry_fallback == "shares":
+                    # Express the same level trade in the underlying instead of
+                    # skipping — the edge is the level, the option is only the
+                    # vehicle (per-arm choice, changeable after arming).
+                    use_options = False
+                    trade.instrument = "shares"
+                    trade.contract = None
+                    trade.order_symbol = None
+                    self._log(ap, "entry_fallback",
+                              f"{trade.trigger_id}: options unavailable ({why}) — taking shares instead",
+                              trigger=trade.trigger_id)
+                elif contract is None:
+                    trade.status = "failed"
+                    trade.reason = "no option contract available — nothing sent"
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
+                        "error": trade.errors[-1] if trade.errors else "no contract"},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
+                    return
+                else:
+                    trade.status = "skipped"
+                    trade.reason = f"contract skipped ({blocked})"
+                    self._log(ap, "contract_skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "contract_quality",
+                        "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                    return
+        if use_options:
             qty = float(await self._size_contracts(ap, trade, contract))
             limit = round(float(contract.get("ask") or contract.get("mid") or 0), 2)
             if limit <= 0:

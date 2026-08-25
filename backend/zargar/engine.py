@@ -176,6 +176,8 @@ class Engine:
             asyncio.create_task(self._equity_snapshotter(), name="equity-snapshots"),
             asyncio.create_task(self._daily_loss_monitor(), name="daily-loss-monitor"),
         ]
+        if isinstance(self.feed, HybridQuoteFeed):
+            self._tasks.append(asyncio.create_task(self._feed_monitor(), name="feed-monitor"))
         if self.snaptrade_sync is not None:
             self._tasks.append(
                 asyncio.create_task(self.snaptrade_sync.run(), name="snaptrade-sync"))
@@ -337,6 +339,48 @@ class Engine:
             except Exception:  # pragma: no cover
                 log.exception("equity snapshot failed")
 
+    async def _feed_monitor(self) -> None:
+        """Alert (toast + journal + log) when the Alpaca stream is down during
+        market hours and quotes are running on the Yahoo fallback; announce
+        recovery. One warning per 15 minutes at most."""
+        import time as _time
+        down_since = 0.0
+        last_alert = 0.0
+        while True:
+            await asyncio.sleep(30)
+            try:
+                feed = self.feed
+                alpaca = getattr(feed, "alpaca", None)
+                if alpaca is None:
+                    continue
+                now_et = dt.datetime.now(ET)
+                in_hours = now_et.weekday() < 5 and 4 * 60 <= now_et.hour * 60 + now_et.minute < 20 * 60
+                now = _time.time()
+                if in_hours and not alpaca.connected:
+                    if not down_since:
+                        down_since = now
+                    elif now - down_since > 90 and now - last_alert > 900:
+                        last_alert = now
+                        msg = ("Alpaca stream is DOWN — market data is on the Yahoo fallback "
+                               "(slower, throttle-prone). Check keys / status.alpaca.markets.")
+                        log.warning(msg)
+                        with contextlib.suppress(Exception):
+                            await self.journal.append("FeedDegraded",
+                                                      {"feed": "alpaca", "sinceMs": int(down_since * 1000)})
+                        self.bus.publish(topics.TECHNIQUE, {"kind": "alert", "level": "warning", "text": msg})
+                elif down_since and alpaca.connected:
+                    with contextlib.suppress(Exception):
+                        await self.journal.append("FeedRecovered",
+                                                  {"feed": "alpaca", "downSeconds": int(now - down_since)})
+                    self.bus.publish(topics.TECHNIQUE, {"kind": "alert", "level": "info",
+                                                        "text": "Alpaca stream recovered — streaming data restored"})
+                    down_since = 0.0
+                    last_alert = 0.0
+                elif not in_hours:
+                    down_since = 0.0
+            except Exception:
+                log.exception("feed monitor error")
+
     async def _daily_loss_monitor(self) -> None:
         while True:
             await asyncio.sleep(10)
@@ -416,6 +460,9 @@ class Engine:
         feed_name = type(self.feed).__name__ if self.feed else None
         quote_source = {"SimQuoteFeed": "sim", "YahooQuoteFeed": "yahoo",
                         "HybridQuoteFeed": "alpaca", "IBKRBroker": "ibkr"}.get(feed_name or "", "sim")
+        alpaca_connected = None
+        if feed_name == "HybridQuoteFeed":
+            alpaca_connected = bool(getattr(getattr(self.feed, "alpaca", None), "connected", False))
         return {
             "settings": self.settings.all(),
             "portfolios": portfolios,
@@ -432,6 +479,7 @@ class Engine:
                 "ibkrConnected": bool(self.ibkr and self.ibkr.connected),
                 "snaptradeConnected": bool(self.snaptrade and self.snaptrade.connected),
                 "quoteSource": quote_source,
+                "alpacaConnected": alpaca_connected,
                 "mode": self.settings.get("trading.mode"),
             },
         }

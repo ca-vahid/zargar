@@ -1587,3 +1587,8 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-armed-modesel { display: inline-flex; align-items: center; gap: 5px; }
 .tq-armed-modesel select { padding: 2px 6px; border-radius: 6px; font-weight: 600; }
 .theme-btn { font-size: 15px; line-height: 1; }
+
+/* evening automation card — the daily ritual front and center */
+.settings-automation { border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--surface-1)); }
+.settings-automation .panel-head { font-weight: 700; }

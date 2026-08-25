@@ -183,10 +183,17 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
           <label className="tq-armed-modesel" title="Change what happens when a trigger fires: alert = note only · proposal = you approve each trade · auto = trade and manage it automatically (auto derives a daily loss halt if none is set)">
             <span className="muted small">on fire:</span>
             <select value={a.config.mode} disabled={busy}
-              onChange={(e) => { const m = e.target.value; void act(() => api.techniqueSetMode(a.runId, m), `${a.symbol}: mode → ${m}`); }}>
+              onChange={(e) => { const m = e.target.value; void act(() => api.techniqueSetMode(a.runId, { mode: m }), `${a.symbol}: mode → ${m}`); }}>
               {["alert", "proposal", "auto"].map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
           </label>
+          {a.config.instrument === "options" && (
+            <label className="tq-chipbtn" title="If the option entry is blocked (wide spread, elevated IV, no contract), buy the underlying shares instead of skipping — the level trade still gets expressed. SNOW lost +1.89R to a spread skip on 2026-08-25.">
+              <input type="checkbox" disabled={busy} checked={a.config.entryFallback === "shares"}
+                onChange={(e) => { const v = e.target.checked ? "shares" : "off"; void act(() => api.techniqueSetMode(a.runId, { entryFallback: v }), `${a.symbol}: fallback → ${v}`); }} />
+              shares fallback
+            </label>
+          )}
           <button className="link-btn" onClick={() => openRun(a.runId)}>open plan</button>
           <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "hide log" : "log"}</button>
           <span className="muted small tq-head-right">risk {a.config.riskPct}% · max {a.config.maxQty} sh · critic {a.config.useCritic ? "on" : "off"} · flatten {a.config.flattenMinutesBeforeClose}m before close</span>

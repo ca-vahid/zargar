@@ -64,6 +64,7 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
   const [lossLimit, setLossLimit] = useState<string>("");
   const [skipWide, setSkipWide] = useState(true);
   const [skipIv, setSkipIv] = useState(false);
+  const [fallback, setFallback] = useState(false);
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<ArmPreflight | null>(null);
   const [pfBusy, setPfBusy] = useState(false);
@@ -81,6 +82,7 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
       setLossLimit(o.defaults.dailyLossLimit ? String(o.defaults.dailyLossLimit) : "");
       setSkipWide(o.defaults.skipWideSpread ?? true);
       setSkipIv(o.defaults.skipElevatedIv ?? false);
+      setFallback((o.defaults.entryFallback ?? "off") === "shares");
     }).catch((e) => toast("error", e.message));
   }, [toast]);
   const ws = useWorkspace();
@@ -115,7 +117,8 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
     portfolioId, mode, instrument, contracts: contracts ? Number(contracts) : undefined, maxContracts,
     riskPct, maxQty, qty: qty ? Number(qty) : undefined, useCritic, allowLive, flattenMinutesBeforeClose: flatten,
     maxOpenTrades: maxOpen, dailyLossLimit: lossLimit ? Number(lossLimit) : 0, skipWideSpread: skipWide, skipElevatedIv: skipIv,
-  }), [portfolioId, mode, instrument, contracts, maxContracts, riskPct, maxQty, qty, useCritic, allowLive, flatten, maxOpen, lossLimit, skipWide, skipIv]);
+    entryFallback: fallback ? "shares" : "off",
+  }), [portfolioId, mode, instrument, contracts, maxContracts, riskPct, maxQty, qty, useCritic, allowLive, flatten, maxOpen, lossLimit, skipWide, skipIv, fallback]);
 
   // pre-flight: dry-run the entry so we can say — before arming — if it would pass
   const runId = useStore((s) => s.techniqueFocusRunId);
@@ -234,6 +237,8 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
                     <InfoTip>A wide gap between the buy and sell price means you lose money the moment you enter. Skipping protects you from bad contracts.</InfoTip></label>
                   <label className="tq-chipbtn"><input type="checkbox" checked={skipIv} onChange={(e) => setSkipIv(e.target.checked)} /> skip if implied volatility is high (T5.3)
                     <InfoTip>High implied volatility means the option is expensive and can lose value fast even if you're right ("IV crush"). Off by default.</InfoTip></label>
+                  <label className="tq-chipbtn"><input type="checkbox" checked={fallback} onChange={(e) => setFallback(e.target.checked)} /> fall back to shares if the contract is blocked
+                    <InfoTip>When the option can't be traded (wide spread, high IV, no contract), buy the stock instead of skipping — the level trade still happens, just without leverage. Changeable after arming.</InfoTip></label>
                 </div>
               </div>
             )}

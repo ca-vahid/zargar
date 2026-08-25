@@ -1683,7 +1683,8 @@ class TechniqueService:
                          "maxOpenTrades": int(s.get("technique.arm.max_open_trades", 1)),
                          "dailyLossLimit": float(s.get("technique.arm.daily_loss_limit", 0.0)),
                          "skipWideSpread": bool(s.get("technique.arm.skip_wide_spread", True)),
-                         "skipElevatedIv": bool(s.get("technique.arm.skip_elevated_iv", False))},
+                         "skipElevatedIv": bool(s.get("technique.arm.skip_elevated_iv", False)),
+                         "entryFallback": str(s.get("technique.arm.entry_fallback", "off"))},
             "haltAllowsExits": bool(s.get("risk.halt_allows_exits", True)),
             "optionsEnabled": bool(s.get("technique.options.enabled", True)),
             "optionsProvider": getattr(self.options_provider(), "name", "?"),
@@ -1880,8 +1881,77 @@ class TechniqueService:
             self._scan_task = asyncio.create_task(self._scan_loop(), name="technique-scan")
         if self._outcome_task is None:
             self._outcome_task = asyncio.create_task(self._outcome_loop(), name="technique-outcome")
+        if getattr(self, "_sheet_task", None) is None:
+            self._sheet_task = asyncio.create_task(self._sheet_loop(), name="technique-sheet-auto")
         self.armer.start()
         asyncio.create_task(self._restore_armed(), name="technique-armer-restore")
+
+    async def _sheet_exists_for(self, plan_for: str) -> bool:
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(TechniqueSweep).order_by(TechniqueSweep.created_at.desc()).limit(12))).scalars().all()
+        return any((r.params or {}).get("kind") == "next"
+                   and str((r.params or {}).get("planFor") or "") == plan_for
+                   and r.status in ("running", "done") for r in rows)
+
+    async def _sheet_loop(self) -> None:
+        """The evening ritual, automated (technique.sheet.auto):
+        off      — nothing.
+        build    — after the close, build the next session's graded sheet.
+        analyst  — build, then analyst-check every grade-A row (LLM cost applies).
+        Runs inside a window after the close so one sheet per session, built
+        from that day's completed bars."""
+        while True:
+            try:
+                await asyncio.sleep(60)
+                mode = str(self.engine.settings.get("technique.sheet.auto", "off"))
+                if mode not in ("build", "analyst"):
+                    continue
+                now_et = dt.datetime.now(ET)
+                if now_et.weekday() >= 5:
+                    continue
+                at = str(self.engine.settings.get("technique.sheet.build_at", "16:15"))
+                try:
+                    hh, mm = (int(x) for x in at.split(":"))
+                except ValueError:
+                    hh, mm = 16, 15
+                mins = now_et.hour * 60 + now_et.minute
+                if not (hh * 60 + mm <= mins < hh * 60 + mm + 45):
+                    continue
+                plan_for = next_session_date(int(time.time() * 1000))
+                if await self._sheet_exists_for(plan_for):
+                    continue
+                syms = [str(s).upper() for s in
+                        (self.engine.settings.get("technique.sheet.symbols", []) or
+                         self.engine.settings.get("technique.walkforward.symbols", []))]
+                if not syms:
+                    continue
+                log.info("auto sheet: building %d symbols for %s", len(syms), plan_for)
+                sweep = await self.start_plan_sheet(syms, label=f"Auto sheet for {plan_for}", wait=True)
+                self.engine.bus.publish(topics.TECHNIQUE, {
+                    "kind": "alert", "level": "info",
+                    "text": f"Auto sheet for {plan_for} built: {len(syms)} symbols"})
+                if mode == "analyst" and sweep.get("id"):
+                    full = await self.get_sweep(sweep["id"], rows=True) or {}
+                    picked = []
+                    for row in full.get("rows") or []:
+                        trig = [t for t in ((row.get("plan") or {}).get("triggers") or []) if t.get("valid")]
+                        best = max(trig, key=lambda t: (t.get("assessment") or {}).get("score") or 0, default=None)
+                        if best and (best.get("assessment") or {}).get("grade") == "A":
+                            picked.append(row)
+                    log.info("auto sheet: analyst-checking %d grade-A rows", len(picked))
+                    for row in picked:
+                        with contextlib.suppress(Exception):
+                            await self.promote(sweep["id"], row["symbol"], row["session"],
+                                               with_vision=True, wait=False)
+                    if picked:
+                        self.engine.bus.publish(topics.TECHNIQUE, {
+                            "kind": "alert", "level": "info",
+                            "text": f"Analyst check started on {len(picked)} grade-A setup(s) for {plan_for}"})
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("auto sheet loop error")
 
     async def _restore_armed(self) -> None:
         try:
@@ -2096,6 +2166,7 @@ def _summary_text(contract: dict | None, grounding: dict, options: dict | None) 
 async def attach_technique_layer(engine) -> None:
     with __import__("contextlib").suppress(Exception):
         history_mod.set_concurrency(int(engine.settings.get("technique.history.concurrency", 6)))
+        history_mod.set_alpaca_credentials(engine.config.alpaca_key_id, engine.config.alpaca_secret)
     """Create and wire TechniqueService + ChatService onto the engine."""
     from .chat import ChatService
     svc = TechniqueService(engine)
