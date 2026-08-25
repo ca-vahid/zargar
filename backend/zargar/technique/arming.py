@@ -621,6 +621,38 @@ class PlanArmer(SessionListener):
         self._publish(ap, "armed")
         return self._snapshot(ap)
 
+    async def set_mode(self, run_id: str, mode: str, *, allow_live: bool = False) -> dict:
+        """Change an armed plan's execution mode in place (alert/proposal/auto).
+        Runs the same gates as arming: auto on a live/paper account still needs
+        allow_live_auto + trading.mode=live + the explicit acknowledgement."""
+        ap = self._armed.get(run_id)
+        if ap is None:
+            raise KeyError("not armed")
+        if mode == ap.config.mode:
+            return self._snapshot(ap)
+        old = ap.config.mode
+        cfg = ArmConfig.from_dict({**ap.config.to_dict(), "mode": mode, "allowLive": allow_live or ap.config.allow_live})
+        self.validate_config(cfg)                      # gates (mode, live-auto, options capability)
+        s = self.engine.settings
+        if cfg.mode == "auto" and float(cfg.daily_loss_limit or 0) <= 0:
+            eq = 0.0
+            with contextlib.suppress(Exception):
+                eq = float(await self.engine.positions.equity(cfg.portfolio_id))
+            if eq > 0:
+                cfg.daily_loss_limit = round(eq * cfg.risk_pct / 100 * 2, 2)
+                self._log(ap, "loss_halt_default",
+                          f"auto mode with no loss halt set — defaulted to ${cfg.daily_loss_limit:,.0f} "
+                          f"(2 × the per-trade risk of {cfg.risk_pct}% on ${eq:,.0f})")
+        ap.config = cfg
+        self._log(ap, "mode_changed", f"execution mode {old} -> {cfg.mode}")
+        await self._persist(ap)
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_MODE_CHANGED,
+                                         {"runId": run_id, "symbol": ap.symbol, "from": old, "to": cfg.mode},
+                                         aggregate_type="technique_run", aggregate_id=run_id,
+                                         portfolio_id=cfg.portfolio_id)
+        self._publish(ap, "mode_changed")
+        return self._snapshot(ap)
+
     async def pause(self, run_id: str) -> dict:
         ap = self._armed.get(run_id)
         if ap is None:

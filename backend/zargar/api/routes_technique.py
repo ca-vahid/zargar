@@ -232,6 +232,19 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def technique_disarm(run_id: str, flatten: bool = False):
         return {"disarmed": await _svc(eng).disarm_plan(run_id, flatten=flatten)}
 
+    class ArmedModeBody(BaseModel):
+        mode: str
+        allowLive: bool = False
+
+    @app.post("/api/technique/armed/{run_id}/mode", dependencies=[auth])
+    async def technique_armed_mode(run_id: str, body: ArmedModeBody):
+        try:
+            return await _svc(eng).armer.set_mode(run_id, body.mode, allow_live=body.allowLive)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="not armed")
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     @app.post("/api/technique/armed/{run_id}/pause", dependencies=[auth])
     async def technique_pause(run_id: str):
         try:

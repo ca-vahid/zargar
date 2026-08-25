@@ -434,6 +434,22 @@ async def test_defaulted_arm_in_practice_never_lands_on_a_live_account(rig):
     await rig.eng.settings.set("technique.arm.default_portfolio", "", journal=False)
 
 
+async def test_set_mode_switches_in_place_and_derives_loss_halt(rig):
+    run = await _plan_run(rig)
+    await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                          json={"mode": "proposal", "instrument": "shares", "portfolioId": rig.sim["id"]})
+    a = (await rig.client.post(f"/api/technique/armed/{run['id']}/mode", json={"mode": "auto"})).json()
+    assert a["config"]["mode"] == "auto"
+    assert (a["config"]["dailyLossLimit"] or 0) > 0          # auto derives a halt when none set
+    assert any(e["event"] == "mode_changed" for e in a["events"])
+    # persisted: the row carries the new mode (restore() reads it back)
+    from zargar.models import TechniqueArmed
+    async with rig.eng.sf() as session:
+        row = await session.get(TechniqueArmed, run["id"])
+    assert row.mode == "auto" and row.config["mode"] == "auto"
+    await rig.svc.armer.disarm(run["id"])
+
+
 async def test_arm_config_roundtrip():
     c = ArmConfig.from_dict({"portfolioId": "p", "mode": "auto", "riskPct": 0.75, "maxQty": 10, "allowLive": True})
     assert c.to_dict()["riskPct"] == 0.75 and c.allow_live and c.max_qty == 10

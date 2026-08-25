@@ -178,6 +178,13 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
           {openTrades.length > 0 && <button className="ghost-btn neg" disabled={busy}
             onClick={() => { if (confirm(`Sell everything this plan holds in ${a.symbol} at market and disarm?`)) act(() => api.techniqueDisarm(a.runId, true), "Flattened and disarmed"); }}>
             Flatten &amp; disarm</button>}
+          <label className="tq-armed-modesel" title="Change what happens when a trigger fires: alert = note only · proposal = you approve each trade · auto = trade and manage it automatically (auto derives a daily loss halt if none is set)">
+            <span className="muted small">on fire:</span>
+            <select value={a.config.mode} disabled={busy}
+              onChange={(e) => { const m = e.target.value; void act(() => api.techniqueSetMode(a.runId, m), `${a.symbol}: mode → ${m}`); }}>
+              {["alert", "proposal", "auto"].map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
           <button className="link-btn" onClick={() => openRun(a.runId)}>open plan</button>
           <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "hide log" : "log"}</button>
           <span className="muted small tq-head-right">risk {a.config.riskPct}% · max {a.config.maxQty} sh · critic {a.config.useCritic ? "on" : "off"} · flatten {a.config.flattenMinutesBeforeClose}m before close</span>

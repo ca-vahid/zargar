@@ -106,6 +106,7 @@ export const api = {
     request<import("../types").ArmedPlan>("POST", `/api/technique/runs/${runId}/arm`, body ?? {}),
   techniqueDisarm: (runId: string, flatten = false) =>
     request<{ disarmed: boolean }>("DELETE", `/api/technique/runs/${runId}/arm${flatten ? "?flatten=true" : ""}`),
+  techniqueSetMode: (runId: string, mode: string, allowLive = false) => request<import("../types").ArmedPlan>("POST", `/api/technique/armed/${runId}/mode`, { mode, allowLive }),
   techniquePause: (runId: string) => request<import("../types").ArmedPlan>("POST", `/api/technique/armed/${runId}/pause`),
   techniqueResume: (runId: string) => request<import("../types").ArmedPlan>("POST", `/api/technique/armed/${runId}/resume`),
   techniqueStopAll: (flatten = false) => request<{ disarmed: number }>("POST", `/api/technique/armed/stop-all${flatten ? "?flatten=true" : ""}`),
