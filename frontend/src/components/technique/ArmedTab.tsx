@@ -174,7 +174,9 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
         <div className="tq-armed-actions">
           {a.status === "armed" && <button className="ghost-btn" disabled={busy} onClick={() => act(() => api.techniquePause(a.runId), "Paused")}>Pause</button>}
           {a.status === "paused" && <button className="primary-btn" disabled={busy} onClick={() => act(() => api.techniqueResume(a.runId), "Resumed")}>Resume</button>}
-          <button className="ghost-btn" disabled={busy} onClick={() => act(() => api.techniqueDisarm(a.runId, false), "Disarmed")}>Disarm</button>
+          <button className="ghost-btn" disabled={busy}
+            onClick={() => { if (confirm(`Disarm the ${a.symbol} plan? It stops watching its triggers for ${a.planFor}${openTrades.length ? " — open positions stay open (use Flatten & disarm to also sell them)" : ""}. Re-arm it any time from the run page.`)) act(() => api.techniqueDisarm(a.runId, false), "Disarmed"); }}>
+            Disarm</button>
           {openTrades.length > 0 && <button className="ghost-btn neg" disabled={busy}
             onClick={() => { if (confirm(`Sell everything this plan holds in ${a.symbol} at market and disarm?`)) act(() => api.techniqueDisarm(a.runId, true), "Flattened and disarmed"); }}>
             Flatten &amp; disarm</button>}
