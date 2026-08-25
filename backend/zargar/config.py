@@ -43,6 +43,11 @@ class AppConfig(BaseSettings):
     snaptrade_consumer_key: str = ""
     anthropic_api_key: str = ""
     extraction_model: str = "claude-opus-5"
+    # Alpaca market data (Algo Trader Plus = full-SIP websocket). With both keys
+    # set, US-listed quotes/1m bars stream from Alpaca and Yahoo drops back to
+    # non-US symbols, session context and history. Keys: app.alpaca.markets.
+    alpaca_key_id: str = ""
+    alpaca_secret: str = ""
     # Tradier developer token for options chains (free tier: developer.tradier.com).
     tradier_token: str = ""
     tradier_sandbox: bool = False

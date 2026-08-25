@@ -112,10 +112,33 @@ class Engine:
                 self.config.quote_source == "auto" and snaptrade_configured)
             if use_yahoo:
                 from .brokers.yahoo import YahooQuoteFeed
-                self.feed = YahooQuoteFeed(
-                    on_quote=self.quotes.on_quote,
-                    poll_seconds=lambda: self.settings.get("quotes.yahoo_poll_seconds", 1.0),
-                    on_bars=self._ingest_exchange_bars)
+                if self.config.alpaca_key_id and self.config.alpaca_secret:
+                    from .brokers.alpaca import AlpacaQuoteFeed, HybridQuoteFeed
+                    alpaca = AlpacaQuoteFeed(
+                        on_quote=self.quotes.on_quote,
+                        key_id=self.config.alpaca_key_id, secret=self.config.alpaca_secret,
+                        on_bars=self._ingest_exchange_bars)
+
+                    def _yahoo_quote(q):
+                        # While Alpaca streams a symbol, Yahoo's slow poll only
+                        # refreshes session context (prev_close, session phase);
+                        # if Alpaca drops, Yahoo quotes flow again as fallback.
+                        if alpaca.connected and q.symbol.upper() in alpaca.symbols:
+                            alpaca.absorb_context(q)
+                        else:
+                            self.quotes.on_quote(q)
+
+                    yahoo = YahooQuoteFeed(
+                        on_quote=_yahoo_quote,
+                        poll_seconds=lambda: (20.0 if alpaca.connected else
+                                              float(self.settings.get("quotes.yahoo_poll_seconds", 1.0))),
+                        on_bars=self._ingest_exchange_bars)
+                    self.feed = HybridQuoteFeed(alpaca, yahoo)
+                else:
+                    self.feed = YahooQuoteFeed(
+                        on_quote=self.quotes.on_quote,
+                        poll_seconds=lambda: self.settings.get("quotes.yahoo_poll_seconds", 1.0),
+                        on_bars=self._ingest_exchange_bars)
             else:
                 self.feed = SimQuoteFeed(
                     on_quote=self.quotes.on_quote,
@@ -139,8 +162,9 @@ class Engine:
 
         for symbol in await self._startup_symbols():
             await self.ensure_symbol(symbol)
+        from .brokers.alpaca import HybridQuoteFeed
         from .brokers.yahoo import YahooQuoteFeed
-        if isinstance(self.feed, YahooQuoteFeed):
+        if isinstance(self.feed, (YahooQuoteFeed, HybridQuoteFeed)):
             for pair in self.positions.fx.watch_symbols:  # live FX for CAD/USD math
                 await self.feed.watch(pair)
         await self.feed.start()
@@ -391,7 +415,7 @@ class Engine:
             pending = await self.proposals.list_pending()
         feed_name = type(self.feed).__name__ if self.feed else None
         quote_source = {"SimQuoteFeed": "sim", "YahooQuoteFeed": "yahoo",
-                        "IBKRBroker": "ibkr"}.get(feed_name or "", "sim")
+                        "HybridQuoteFeed": "alpaca", "IBKRBroker": "ibkr"}.get(feed_name or "", "sim")
         return {
             "settings": self.settings.all(),
             "portfolios": portfolios,
