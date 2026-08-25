@@ -87,9 +87,12 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     const dayStart = etToUtcMs(a.planFor, 9, 25);
     const dayEnd = etToUtcMs(a.planFor, 16, 5);
     const bands = [
-      { from: etToUtcMs(a.planFor, 9, 30), to: etToUtcMs(a.planFor, 10, 30), color: rgbaVar("--up", 0.05), label: { text: "prime open", style: { color: text3, fontSize: "10px" } } },
-      { from: etToUtcMs(a.planFor, 10, 30), to: etToUtcMs(a.planFor, 14, 45), color: rgbaVar("--text-3", 0.05), label: { text: "mid-day · watch only (R6.3)", style: { color: text3, fontSize: "10px" } } },
-      { from: etToUtcMs(a.planFor, 14, 45), to: etToUtcMs(a.planFor, 16, 0), color: rgbaVar("--up", 0.05), label: { text: "prime close", style: { color: text3, fontSize: "10px" } } },
+      { from: etToUtcMs(a.planFor, 9, 30), to: etToUtcMs(a.planFor, 10, 30), color: rgbaVar("--up", 0.12),
+        label: { text: "● prime open — can fire", style: { color: up, fontSize: "10px", fontWeight: "700" } } },
+      { from: etToUtcMs(a.planFor, 10, 30), to: etToUtcMs(a.planFor, 14, 45), color: rgbaVar("--warn", 0.10),
+        label: { text: "⏸ mid-day — watch only (R6.3)", style: { color: warn, fontSize: "10px", fontWeight: "600" } } },
+      { from: etToUtcMs(a.planFor, 14, 45), to: etToUtcMs(a.planFor, 16, 0), color: rgbaVar("--up", 0.12),
+        label: { text: "● prime close — can fire", style: { color: up, fontSize: "10px", fontWeight: "700" } } },
     ];
 
     const plotLines: Highcharts.YAxisPlotLinesOptions[] = [];
