@@ -17,6 +17,7 @@ export function TopBar() {
   const connected = useStore((s) => s.connected);
   const halt = useStore((s) => s.halt);
   const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const portfolios = useStore((s) => s.portfolios);
   const broker = useStore((s) => s.broker);
   const toast = useStore((s) => s.toast);
@@ -167,6 +168,15 @@ export function TopBar() {
         title={connected ? "Live connection" : "Disconnected"}>
         <div className={`conn-dot ${connected ? "on" : ""}`} />
       </div>
+      <button className="icon-btn theme-btn" aria-label="Toggle light/dark mode"
+        title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        onClick={() => {
+          const next = theme === "dark" ? "light" : "dark";
+          useStore.getState().setSettings({ ...useStore.getState().settings, "ui.theme": next });
+          api.patchSettings({ "ui.theme": next }).catch((e) => toast("error", e.message));
+        }}>
+        {theme === "dark" ? "☀" : "🌙"}
+      </button>
       <div className={`mode-indicator mode-indicator--${mode}`}
         title={mode === "live"
           ? "LIVE workspace — you see real accounts only, and real orders route to your brokerages. Switch to Practice to see the simulator."
