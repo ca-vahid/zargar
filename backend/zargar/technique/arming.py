@@ -624,7 +624,7 @@ class PlanArmer(SessionListener):
                     self._log(ap, "phantom_dropped",
                               f"{ptid}: replay-minted alert trade removed (live plan never fired it)", trigger=ptid)
             with contextlib.suppress(Exception):
-                await self._restore_trades(ap)
+                await self._restore_trades(ap, state=prior_state)
         await self._persist(ap)
         if cfg.mode == "auto" and float(cfg.daily_loss_limit or 0) <= 0 and not restored:
             eq = 0.0
@@ -814,13 +814,18 @@ class PlanArmer(SessionListener):
                 "trigger": best.get("id"),
                 "note": "Estimate only — the exact contract (just-OTM call, this Friday/0DTE) and its real premium are chosen when the trigger fires."}
 
-    async def _restore_trades(self, ap: ArmedPlan) -> None:
+    async def _restore_trades(self, ap: ArmedPlan, state: dict | None = None) -> None:
         """After a restart, rebuild the Trade objects and the order-id index from
         the persisted projection so an open position keeps being managed and its
-        fills still find their trade (instead of being orphaned)."""
-        async with self.engine.sf() as session:
-            row = await session.get(TechniqueArmed, ap.run_id)
-        state = (row.state if row else None) or {}
+        fills still find their trade (instead of being orphaned).
+
+        `state` must be the row state captured BEFORE seeding: the seed replay
+        persists as it goes, so re-reading the row here can resurrect phantom
+        trades the replay itself just minted (GOLD 2026-08-25)."""
+        if state is None:
+            async with self.engine.sf() as session:
+                row = await session.get(TechniqueArmed, ap.run_id)
+            state = (row.state if row else None) or {}
         rebuilt = 0
         for td in state.get("trades") or []:
             tid = td.get("triggerId")
