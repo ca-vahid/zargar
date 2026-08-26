@@ -64,6 +64,14 @@ a number** (p. 72).
 - **Decision threshold:** after the fixes, tally kill-vs-counterfactual over ≥10 kills.
   If informed kills still cost R on balance, demote the critic from veto to
   confidence-note on auto mode (it already never gates proposal mode).
+- **2026-08-26 · first post-fix kills, 3/3 CORRECT** (PM k1, run `90f24dbc`): fired
+  thrice into a 5-touch intraday resistance shelf (195.99, HOD 196.13) the evening
+  plan couldn't see; critic killed all three citing chase (T4.1), overhead structure
+  (T1.1) and a manufactured 5.0 R:R — and explicitly did NOT use the forbidden
+  reasons ("killed on live-tape evidence, not on the data-outage or plan-provenance
+  technicalities"). Price rejected off that exact shelf (196.66 → 194.99). Running
+  tally since prompt fix: 3/3 saves. Also evidence for 1.5: the pct-ladder R:R was
+  the artifact the critic had to shoot down.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -169,6 +177,12 @@ a number** (p. 72).
 - 2026-08-25 · `entry_fallback` off|shares per arm · SNOW spread skip (+1.89R untaken).
 - 2026-08-25 · Evening automation (`technique.sheet.auto`): auto sheet after close,
   optional auto analyst-check of A's.
+- 2026-08-26 · Fire-time critic hardening after the PM triple-veto: live FACTS get a
+  prior-session volume baseline (was baselineSessions=0 → volume unmeasurable at every
+  fire); veto cooldown `technique.arm.refire_cooldown_minutes=10` (one squeeze burned
+  all vetoes in 3 min); cap now a setting `technique.arm.critic_kills_per_day` (3→6,
+  user request); `technique.arm.critic_effort=low` (fire-time latency is cost — deep
+  thinking stays for plan-mode reads). Kills/cooldowns persist across restarts.
 - 2026-08-25 · **Risk caps raised for the practice experiment** (user-approved):
   `risk.max_option_premium_notional` 1000→2500, `risk.max_option_premium_pct` 5→25,
   `risk.max_position_notional` 1000→5000 — the old caps blocked 7/37 armed plans
