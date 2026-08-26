@@ -944,7 +944,8 @@ export function TechniquePage() {
     const hi = Math.max(...times);
     const extra = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt
       && Math.abs(new Date(r.createdAt!).getTime() - hi) < 10 * 60_000).map((r) => r.id);
-    if (extra.length) setScan((s) => (s ? { ...s, ids: [...s.ids, ...extra], done: false } : s));
+    // late-arriving batch members are adopted on every poll: de-duplicate, or the queue shows the same run many times
+    if (extra.length) setScan((s) => (s ? { ...s, ids: Array.from(new Set([...s.ids, ...extra])), done: false } : s));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runs, scan?.ids.join(",")]);
   const scanSymbols = status?.scanSymbols ?? [];
