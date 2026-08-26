@@ -49,8 +49,20 @@ function businessDaysBack(from: Date, n: number): Date {
   while (left > 0) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0 && d.getDay() !== 6) left--; }
   return d;
 }
-/** The last session that has finished: yesterday's weekday (today's bars are still being written). */
-function lastCompletedSession(): string { return toDateInput(businessDaysBack(new Date(), 1)); }
+/** The last session that has finished, in ET: today once 16:00 ET has passed on a
+ * trading day, else the previous weekday (the browser's local "yesterday" said
+ * 08-25 at 16:50 ET on 08-26 for a user west of ET). */
+function lastCompletedSession(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const etToday = new Date(Number(get("year")), Number(get("month")) - 1, Number(get("day")), 12);
+  const isTradingDay = !["Sat", "Sun"].includes(get("weekday"));
+  const afterClose = Number(get("hour")) * 60 + Number(get("minute")) >= 16 * 60;
+  return toDateInput(isTradingDay && afterClose ? etToday : businessDaysBack(etToday, 1));
+}
 function etTime(ts: number | null | undefined): string {
   if (!ts) return "";
   return new Date(ts).toLocaleTimeString("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
@@ -341,11 +353,14 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
   const bookUniverse: string[] = (settings["technique.walkforward.symbols"] as string[]) ?? LEGACY_UNIVERSE;
   const extraUniverse: string[] = Array.isArray(settings["technique.universe.extra"]) ? (settings["technique.universe.extra"] as string[]) : [];
   const [autoUniverse, setAutoUniverse] = useState<string[]>([]);
+  // the resolved universe (core + extras + today's most active) — the default package
+  const [universe, setUniverse] = useState<{ symbols: string[]; counts?: { core: number; extra: number; auto: number } } | null>(null);
   useEffect(() => {
     let alive = true;
     api.techniqueUniverse().then((u) => {
       if (!alive) return;
       setAutoUniverse((u.symbols ?? []).filter((s) => u.provenance?.[s] === "auto"));
+      if (u.symbols?.length) setUniverse({ symbols: u.symbols, counts: u.counts });
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
@@ -360,12 +375,15 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
     } catch { /* ignore */ }
     return null;
   });
-  const symbols = picked ?? bookUniverse;
+  const universeSyms = universe?.symbols?.length ? universe.symbols : bookUniverse;
+  const symbols = picked ?? universeSyms;
+  const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
   const setSymbols = (s: string[]) => {
-    const isBook = s.length === bookUniverse.length && s.every((x, i) => x === bookUniverse[i]);
-    setPicked(isBook ? null : s);
-    if (isBook) localStorage.removeItem("zargar_tq_sweep_symbols_v2"); else localStorage.setItem("zargar_tq_sweep_symbols_v2", JSON.stringify(s));
+    const isUniverse = sameList(s, universeSyms);
+    setPicked(isUniverse ? null : s);
+    if (isUniverse) localStorage.removeItem("zargar_tq_sweep_symbols_v2"); else localStorage.setItem("zargar_tq_sweep_symbols_v2", JSON.stringify(s));
   };
+  const selection: "universe" | "core" | "custom" = picked === null ? "universe" : sameList(picked, bookUniverse) ? "core" : "custom";
   const [pickerOpen, setPickerOpen] = useState(false);
   const [preset, setPreset] = useState<"last" | "date">("last");
   const [date, setDate] = useState(lastCompletedSession());
@@ -462,7 +480,7 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
   // What the selection is made of, in words: whole sets first, then loose symbols
   const coverage = useMemo(() => {
     const selSet = new Set(symbols);
-    const candidates = [{ label: "Core universe", symbols: bookUniverse }, { label: "My extras", symbols: extraUniverse }, { label: "Today's most active", symbols: autoUniverse }, ...SYMBOL_BUNDLES.map((b) => ({ label: b.label, symbols: b.symbols }))]
+    const candidates = [{ label: "The universe", symbols: universeSyms }, { label: "Core universe", symbols: bookUniverse }, { label: "My extras", symbols: extraUniverse }, { label: "Today's most active", symbols: autoUniverse }, ...SYMBOL_BUNDLES.map((b) => ({ label: b.label, symbols: b.symbols }))]
       .sort((x, y) => y.symbols.length - x.symbols.length);
     const covered = new Set<string>();
     const names: { label: string; n: number; members: string[] }[] = [];
@@ -614,6 +632,20 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
               </div>
             )}
             <div className="tq-ctl-label">Symbols <span className="muted">· {symbols.length}</span></div>
+              <div className="tq-wf-presets" role="radiogroup" aria-label="Symbol package">
+                <button type="button" className={`chip-btn ${selection === "universe" ? "on" : ""}`} onClick={() => setSymbols(universeSyms)}
+                  title={universe?.counts ? `core ${universe.counts.core} + your extras ${universe.counts.extra} + today's most active ${universe.counts.auto}` : "core + your extras + today's most active"}>
+                  The universe · {universeSyms.length}
+                </button>
+                <button type="button" className={`chip-btn ${selection === "core" ? "on" : ""}`} onClick={() => setSymbols(bookUniverse)}
+                  title="the curated core list only — no extras, no auto additions">
+                  Core only · {bookUniverse.length}
+                </button>
+                <button type="button" className={`chip-btn ${selection === "custom" ? "on" : ""}`} onClick={() => setPickerOpen(true)}
+                  title="pick your own list; 'The universe' restores the package at any time">
+                  Custom{selection === "custom" ? ` · ${symbols.length}` : "…"}
+                </button>
+              </div>
               <div className="tq-wf-symbols">
                 {coverage.names.map((c) => <span key={c.label} className="tq-cov-chip" title={c.members.join(", ")}>{c.label} <span>· {c.n}</span></span>)}
                 {coverage.rest.slice(0, 14).map((x) => <span key={x} className="tq-sym-chip on static">{x}</span>)}

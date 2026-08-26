@@ -1795,3 +1795,7 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .settings-automation { border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
   background: color-mix(in srgb, var(--accent) 4%, var(--surface-1)); }
 .settings-automation .panel-head { font-weight: 700; }
+
+/* Validation: symbol package presets (the universe / core only / custom) */
+.tq-wf-presets { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
+.tq-wf-presets .chip-btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
