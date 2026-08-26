@@ -60,6 +60,8 @@ function waitingFor(t: any, windowNow: string | null | undefined): string {
     ? " — mid-day is watch-only, next chance 14:45–16:00 ET"
     : windowNow === "extended" ? " — market closed" : "";
   if (t.kind === "bounce") return `waiting for price to trade down into ${fmt(t.entry)} on adequate volume${windowBit}`;
+  if (t.kind === "reject") return `waiting for price to trade UP into ${fmt(t.entry)} on adequate volume — short via a put${windowBit}`;
+  if (t.kind === "breakdown") return `waiting for a 1m bar to CLOSE below ${fmt(t.entry)} with a volume surge, a decisive bearish candle and follow-through — short via a put${windowBit}`;
   return `waiting for a 1m bar to CLOSE above ${fmt(t.entry)} with a real volume surge, a decisive candle, then hold${windowBit}`;
 }
 

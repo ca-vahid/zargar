@@ -111,3 +111,28 @@ def test_premium_stop_breach_only_for_bleeding_options():
     t.sec_type = "OPT"
     t.pending_exit_qty = 1.0
     assert premium_stop_breach(t, 0.10, stop_pct=50) is None          # exit already working
+
+
+def test_stop_on_close_ignores_a_wick_through_the_stop():
+    """T4.3 (user decision 2026-08-26): a bar whose LOW pierces the stop but CLOSES back
+    above it is a test, not a break — no exit; a close through it exits."""
+    tr = FakeTrade(remaining=100, filled_qty=100, trims_done=0, targets=[101.0, 102.0, 103.0], stop=99.0)
+    assert plan_exit(tr, _bar(98.6, 100.0, close=99.4), close_ms=10**13, flatten_minutes=5, stop_on="close") is None
+    d = plan_exit(tr, _bar(98.6, 100.0, close=99.4), close_ms=10**13, flatten_minutes=5, stop_on="low")
+    assert d is not None and d.kind == "stop"
+    d = plan_exit(tr, _bar(98.6, 100.0, close=98.9), close_ms=10**13, flatten_minutes=5, stop_on="close")
+    assert d is not None and d.kind == "stop" and "closed through" in d.reason
+
+
+def test_short_exits_mirror_long():
+    tr = FakeTrade(remaining=100, filled_qty=100, trims_done=0, targets=[99.0, 98.0, 97.0], stop=101.0)
+    tr.direction = "short"
+    tr.entry = 100.0
+    d = plan_exit(tr, _bar(100.2, 101.4, close=101.2), close_ms=10**13, flatten_minutes=5, stop_on="close")
+    assert d is not None and d.kind == "stop"
+    assert plan_exit(tr, _bar(100.2, 101.4, close=100.6), close_ms=10**13, flatten_minutes=5, stop_on="close") is None
+    d = plan_exit(tr, _bar(98.8, 99.6, close=98.9), close_ms=10**13, flatten_minutes=5, stop_on="close")
+    assert d is not None and d.kind == "tp1" and d.qty == 30
+    from zargar.execution.exits import quote_stop_breach
+    assert quote_stop_breach(tr, 101.3, excess_r=0.25) is not None
+    assert quote_stop_breach(tr, 101.1, excess_r=0.25) is None

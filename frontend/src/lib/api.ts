@@ -82,6 +82,8 @@ export const api = {
     request<any[]>("GET", `/api/options/expiring?days=${days}`),
   // --- technique ---
   techniqueStatus: () => request<import("../types").TechniqueStatus>("GET", "/api/technique/status"),
+  techniqueUniverse: () => request<{ date: string | null; symbols: string[]; provenance: Record<string, string>; counts: { core: number; extra: number; auto: number }; autoSource?: string | null }>("GET", "/api/technique/universe"),
+  techniqueUniverseRefresh: () => request<{ date: string | null; symbols: string[]; provenance: Record<string, string>; counts: { core: number; extra: number; auto: number }; autoSource?: string | null }>("POST", "/api/technique/universe/refresh"),
   techniquePlan: (body: { symbol: string; asOf?: number | null; tf?: string; withVision?: boolean | null; wait?: boolean }) =>
     request<import("../types").TechniqueRun>("POST", "/api/technique/plan", body),
   techniqueSweeps: () => request<import("../types").TechniqueSweep[]>("GET", "/api/technique/walkforward"),

@@ -205,6 +205,8 @@ async def rig(fresh_db, monkeypatch):
     await eng.start()
     await attach_technique_layer(eng)
     await eng.settings.set("technique.options.enabled", False, journal=False)   # no CBOE calls
+    await eng.settings.set("technique.rr_gate_target", "tp3", journal=False)
+    await eng.settings.set("technique.long_only", True, journal=False)   # these fixtures encode the long-side plan; the short mirror has its own test
     app = create_app(config, eng)
     transport = httpx.ASGITransport(app=app)
 
@@ -579,3 +581,21 @@ async def test_chat_tools_get_run_and_record_review(rig):
     assert full["reviews"][0]["reviewVerdict"] == "wrong_plan" and full["reviews"][0]["actions"][0]["desc"] == "tighten the stop buffer"
     content, meta = await ex.run("record_review", {"run_id": run["id"], "review_verdict": "nope"})
     assert meta.get("error") and "review not recorded" in content
+
+
+def test_simulate_plan_stop_on_close_mirrors_the_live_rule():
+    """The replay scorer and the live exit share one stop rule: a wick through the stop
+    that closes back above it is not a stop; a close through it exits at that close;
+    a crash 0.25R beyond the stop is the quote brake, filled there."""
+    filled = [_mk(0, 100.5, 100.6, 100.4, 100.5), _mk(1, 100.3, 100.4, 99.9, 100.1)]
+    wick = filled + [_mk(2, 100.1, 100.4, 98.85, 99.6), _mk(3, 99.6, 101.2, 99.5, 101.1)]
+    r = simulate_plan(wick, 0, _plan(), entry_window=3, horizon=10, stop_on="close")
+    assert r["outcome"] == "tp1" and r["hits"] == [3]
+    r_low = simulate_plan(wick, 0, _plan(), entry_window=3, horizon=10, stop_on="low")
+    assert r_low["outcome"] == "stopped" and r_low["rMultiple"] == pytest.approx(-1.0)
+    closed = filled + [_mk(2, 100.1, 100.4, 98.9, 98.95)]
+    r = simulate_plan(closed, 0, _plan(), entry_window=3, horizon=10, stop_on="close")
+    assert r["outcome"] == "stopped" and r["rMultiple"] == pytest.approx(-1.05)
+    crash = filled + [_mk(2, 100.1, 100.4, 98.5, 99.3)]        # low 0.5R beyond the stop, closes above it
+    r = simulate_plan(crash, 0, _plan(), entry_window=3, horizon=10, stop_on="close")
+    assert r["outcome"] == "stopped" and r["rMultiple"] == pytest.approx(-1.25)

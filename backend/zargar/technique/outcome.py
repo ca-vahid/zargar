@@ -76,7 +76,7 @@ def same_plan(a: dict | None, b: dict | None, tol: float = 1e-6) -> bool:
 
 
 def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int = 12,
-                  horizon: int = 60) -> dict:
+                  horizon: int = 60, stop_on: str = "close", breach_r: float = 0.25) -> dict:
     """Walk `bars` forward from index `start` (the bar the decision was made on)
     and score `plan`. Returns a plain dict (see keys below). `bars` must be
     sorted by ts and include the start bar; bars after `start` are the future.
@@ -84,12 +84,20 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     Keys: filled, fillTs, fillIndex, outcome (not_filled|stopped|tp1|tp2|tp3|
     horizon), rMultiple, mfeR, maeR, barsHeld, barsAvailable, resolved (the
     outcome can no longer change with more bars), hits [ts per target hit].
+
+    `stop_on` mirrors the live exit rule (`execution.exits.plan_exit`): "close" =
+    stopped when a bar closes through the stop, filled at that close; "low" = the
+    old touch rule, filled at the stop. Either way a bar whose LOW is `breach_r`
+    beyond the stop is the intra-minute quote brake firing (filled there) — the
+    same disaster exit the live quote watch takes. Change one, change both.
     """
     entry = float(plan["entry"]["price"])
     stop = float(plan["stop"]["price"])
     targets = [float(t["price"]) for t in plan["targets"]]
     trims = list(LADDER_TRIMS[:len(targets)])
-    risk = entry - stop
+    short = (plan.get("direction") == "short")
+    sgn = -1.0 if short else 1.0                  # P&L per unit = sgn * (price - entry)
+    risk = (stop - entry) if short else (entry - stop)   # distance to the stop, positive when sane
     avail = max(0, len(bars) - 1 - start)
     base = {"entry": entry, "stop": stop, "targets": targets, "setupType": plan.get("setupType"),
             "barsAvailable": avail, "horizon": horizon, "entryWindow": entry_window}
@@ -105,7 +113,7 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
         fill_i = None
         last_i = min(len(bars) - 1, start + entry_window)
         for i in range(start + 1, last_i + 1):
-            if bars[i].low <= entry:
+            if (bars[i].high >= entry) if short else (bars[i].low <= entry):
                 fill_i = i
                 break
         if fill_i is None:
@@ -131,25 +139,34 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     while i <= end_i and remaining > 1e-9:
         b = bars[i]
         last_i = i
-        mfe = max(mfe, b.high - entry)
-        mae = max(mae, entry - b.low)
-        if b.low <= stop:
-            realized += remaining * (stop - entry)
+        mfe = max(mfe, sgn * (b.low if short else b.high) * 1.0 - sgn * entry) if False else \
+            max(mfe, (entry - b.low) if short else (b.high - entry))
+        mae = max(mae, (b.high - entry) if short else (entry - b.low))
+        brake = stop + breach_r * risk if short else stop - breach_r * risk
+        if (b.high >= brake) if short else (b.low <= brake):    # crash through: the quote brake
+            realized += remaining * sgn * (brake - entry)
             remaining = 0.0
             outcome = "stopped" if hit == 0 else f"tp{hit}"
             resolved = True
             break
-        while hit < len(targets) and b.high >= targets[hit]:
+        ref = b.close if stop_on == "close" else (b.high if short else b.low)
+        if (ref >= stop) if short else (ref <= stop):
+            realized += remaining * sgn * ((b.close if stop_on == "close" else stop) - entry)
+            remaining = 0.0
+            outcome = "stopped" if hit == 0 else f"tp{hit}"
+            resolved = True
+            break
+        while hit < len(targets) and ((b.low <= targets[hit]) if short else (b.high >= targets[hit])):
             part = trims[hit] if hit < len(trims) else remaining
             part = min(part, remaining)
-            realized += part * (targets[hit] - entry)
+            realized += part * sgn * (targets[hit] - entry)
             remaining -= part
             hit += 1
             hits.append(b.ts)
         i += 1
     if remaining > 1e-9:
         last = bars[last_i]
-        realized += remaining * (last.close - entry)
+        realized += remaining * sgn * (last.close - entry)
         if hit > 0:
             outcome = f"tp{hit}"
         # horizon reached only if we actually had that many bars

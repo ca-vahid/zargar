@@ -162,7 +162,7 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
                   <li key={t.id}>
                     <span className="tq-chip">{t.id}</span>
                     {t.assessment?.grade && <span className={`tq-grade g${t.assessment.grade}`} title={`${t.assessment.score}/100`}>{t.assessment.grade}</span>}
-                    <b>{t.kind === "bounce" ? "Support bounce" : t.kind === "breakout" ? "Breakout" : "Wedge break"}</b>
+                    <b>{t.kind === "bounce" ? "Support bounce" : t.kind === "breakout" ? "Breakout" : t.kind === "reject" ? "Rejection (short — put)" : t.kind === "breakdown" ? "Breakdown (short — put)" : "Wedge break"}</b>
                     {t.assessment?.grade && <span className="muted"> ({GRADE_WORD[t.assessment.grade]})</span>}
                     <span className="muted"> — {firesOnlyIf(t)}; then long {fmt(t.entry.price)}, stop {fmt(t.stop.price)}.</span>
                     {(t.assessment?.cautions ?? []).length > 0 && (
@@ -225,12 +225,12 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
             </div>
             {instrument === "options" && (
               <div className="tq-row tq-arm-size">
-                <label className="tq-ctl"><span className="tq-ctl-label">Contracts per trade <InfoTip>The book says trade just <b>one contract</b> for the first few months while you learn (rule R5). One contract = 100 shares of exposure.</InfoTip></span>
-                  <input type="number" min={1} max={maxContracts} value={contracts} onChange={(e) => setContracts(e.target.value)} /></label>
+                <label className="tq-ctl"><span className="tq-ctl-label">Contracts per trade <InfoTip><b>0 = size by risk</b> (practice default): contracts = risk % of equity ÷ what the premium stop can lose per contract, ×0.5 on Fridays, ×0.5 for 0DTE, capped by max contracts. <b>1</b> = the book's one-contract rule (R5) — use it with real money.</InfoTip></span>
+                  <input type="number" min={0} max={maxContracts} value={contracts} onChange={(e) => setContracts(e.target.value)} /></label>
                 <label className="tq-ctl"><span className="tq-ctl-label">Max contracts</span>
                   <input type="number" min={1} value={maxContracts} onChange={(e) => setMaxContracts(Number(e.target.value))} /></label>
                 <small className="muted tq-arm-hint">
-                  Keep <b>1</b> while the method is being validated (R5). With fewer than 3 contracts the position exits all-at-once at your chosen target (below). Leave contracts blank to size by risk % instead.
+                  <b>0</b> sizes by risk % (practice); <b>1</b> is the book's R5 rule for real money. With fewer than 3 contracts the position exits all-at-once at your chosen target (below); 3+ scale out 30/40/15.
                 </small>
                 <div className="tq-arm-toggles">
                   <label className="tq-chipbtn"><input type="checkbox" checked={skipWide} onChange={(e) => setSkipWide(e.target.checked)} /> skip if the option's spread is wide (T5.4)

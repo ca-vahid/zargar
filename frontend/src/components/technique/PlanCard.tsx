@@ -13,7 +13,7 @@ function fmt(n: number | null | undefined, d = 2) {
   return n === null || n === undefined || Number.isNaN(n) ? "—" : n.toFixed(d);
 }
 
-const KIND_LABEL: Record<string, string> = { bounce: "Support bounce", breakout: "Breakout", wedge_break: "Wedge break" };
+const KIND_LABEL: Record<string, string> = { bounce: "Support bounce", breakout: "Breakout", wedge_break: "Wedge break", reject: "Rejection (short — put)", breakdown: "Breakdown (short — put)" };
 const GRADE_WORD: Record<string, string> = { A: "strong", B: "decent", C: "weak" };
 
 export function GradeChip({ a, valid }: { a?: { grade: string | null; score: number } | null; valid: boolean }) {

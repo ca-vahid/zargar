@@ -25,9 +25,14 @@ class ExitDecision:
 
 
 def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
-              ladder: tuple[float, ...] = EXIT_LADDER, single_exit: str = "tp2") -> ExitDecision | None:
+              ladder: tuple[float, ...] = EXIT_LADDER, single_exit: str = "tp2",
+              stop_on: str = "low", direction: str | None = None) -> ExitDecision | None:
     """Decide the next exit on a *closed* bar. One exit per bar. Returns None when
     nothing should be sent (nothing hit, or a working exit is still pending).
+
+    `stop_on`: "low" = the bar traded to the stop (touch); "close" = the bar
+    CLOSED through it (the book's watch-the-reaction stop, T4.3 — a wick through
+    the level is a test; the quote-breach brake covers a crash in between).
 
     `trade` needs: remaining, filled_qty, trims_done, targets, stop, sec_type,
     pending_exit_qty (all present on execution.book.ManagedTrade and the
@@ -36,16 +41,19 @@ def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
         return None
     if getattr(trade, "pending_exit_qty", 0.0) > 1e-9:
         return None                                   # wait for the working exit to resolve
+    short = (direction or getattr(trade, "direction", "long")) == "short"
     # 1) stop first — conservative
-    if bar.low <= trade.stop:
-        return ExitDecision("stop", trade.remaining, len(trade.targets), "price traded to the stop")
+    ref = bar.close if stop_on == "close" else (bar.high if short else bar.low)
+    if (ref >= trade.stop) if short else (ref <= trade.stop):
+        return ExitDecision("stop", trade.remaining, len(trade.targets),
+                            "bar closed through the stop" if stop_on == "close" else "price traded to the stop")
     # 2) flatten before the close — no overnight risk
     flatten_at = close_ms - flatten_minutes * 60_000
     if bar.ts >= flatten_at:
         return ExitDecision("flatten", trade.remaining, len(trade.targets), "flatten before the close")
     # 3) the 30/40/15 scale-out ladder at the targets
     k = trade.trims_done
-    if k < len(trade.targets) and bar.high >= trade.targets[k]:
+    if k < len(trade.targets) and ((bar.low <= trade.targets[k]) if short else (bar.high >= trade.targets[k])):
         single_contract = trade.sec_type == "OPT" and trade.filled_qty < 3
         if single_contract:
             want = _SINGLE_EXIT_INDEX.get(single_exit, 1)
@@ -64,7 +72,7 @@ def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
     return None
 
 
-def quote_stop_breach(trade, last: float, *, excess_r: float = 0.25) -> str | None:
+def quote_stop_breach(trade, last: float, *, excess_r: float = 0.25, direction: str | None = None) -> str | None:
     """Intra-minute disaster check on the *underlying's live quote*: the price is
     not merely at the stop (bar-close logic owns that call, per the book's
     mental-stop discipline) but **decisively through it** — beyond the stop by
@@ -75,9 +83,10 @@ def quote_stop_breach(trade, last: float, *, excess_r: float = 0.25) -> str | No
         return None
     if getattr(trade, "pending_exit_qty", 0.0) > 1e-9:
         return None                                   # an exit is already working
-    risk = max(float(trade.entry) - float(trade.stop), 1e-9)
-    line = float(trade.stop) - excess_r * risk
-    if last <= line:
+    short = (direction or getattr(trade, "direction", "long")) == "short"
+    risk = max(abs(float(trade.entry) - float(trade.stop)), 1e-9)
+    line = float(trade.stop) + excess_r * risk if short else float(trade.stop) - excess_r * risk
+    if (last >= line) if short else (last <= line):
         return (f"live quote {last:.4f} is decisively through the stop {trade.stop:.4f} "
                 f"(> {excess_r:g}R beyond) — exiting now instead of waiting for the bar close")
     return None
@@ -110,7 +119,8 @@ def next_trim_only(trade, bar) -> bool:
     advance trims_done but send nothing. Returns True when the caller should
     bump trims_done without an order."""
     k = trade.trims_done
-    if k >= len(trade.targets) or bar.high < trade.targets[k]:
+    short = getattr(trade, "direction", "long") == "short"
+    if k >= len(trade.targets) or ((bar.low > trade.targets[k]) if short else (bar.high < trade.targets[k])):
         return False
     if trade.sec_type == "OPT" and trade.filled_qty < 3:
         want = _SINGLE_EXIT_INDEX.get(getattr(trade, "single_exit", "tp2"), 1)

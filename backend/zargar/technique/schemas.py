@@ -42,8 +42,9 @@ class TechniqueAnalysis(BaseModel):
 
     symbol: str
     verdict: str = Field(description="setup | no_setup")
-    setup_type: str = Field(description="support_bounce | breakout | falling_wedge | none")
-    direction: str = Field(description="long | none (method is long-only)")
+    setup_type: str = Field(description="support_bounce | breakout | falling_wedge | resistance_reject | breakdown | none")
+    direction: str = Field(description="long | short | none (short = a put on a rejection at resistance or a "
+                                       "breakdown through support — the mirror of the long rules)")
     trend: str = Field(description="uptrend | downtrend | sideways")
     levels: List[LevelCall] = Field(description="Only the levels that matter, from FACTS")
 
@@ -67,7 +68,8 @@ class TechniqueAnalysis(BaseModel):
     entry_requires_confirmation: bool
     stop_price: float = Field(description="0 when no_setup")
     stop_kind: str = Field(description="mental | hard | none")
-    stop_reference: str = Field(description="below_support | wedge_low | below_broken_resistance | none")
+    stop_reference: str = Field(description="below_support | wedge_low | below_broken_resistance | below_break_base | "
+                                            "above_resistance | above_zone_high | above_broken_support | above_break_top | none")
     targets: List[TargetPlan] = Field(description="Empty when no_setup; else 3 targets 30/40/15")
     runner_pct: float = Field(description="Usually 15")
     risk_reward: float = Field(description="Reward:risk at the stated entry; >= 3.0 required for a setup")

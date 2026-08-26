@@ -130,7 +130,8 @@ def ground_analysis(analysis: TechniqueAnalysis, facts: dict,
     for w in (facts.get("wedge") or {}).values():
         if w:
             wedge_h = float(w["widestHeight"])
-    ladder = {round(e * (1 + p), 4) for p in LADDER_PCTS}
+    sgn = -1.0 if analysis.direction == "short" else 1.0
+    ladder = {round(e * (1 + sgn * p), 4) for p in LADDER_PCTS}
     ordered = True
     prev = e
     for i, tg in enumerate(analysis.targets):

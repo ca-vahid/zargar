@@ -219,6 +219,17 @@ class Thresholds:
     # a < 3-contract options position leaves in full at TP2, so a "3.0 to TP3"
     # plan would be a 2.25 trade. The dataclass default stays the book's.
     rr_gate_target: int = 2
+    # T4.3 — the book's mental stop watches the REACTION at the level ("I don't
+    # immediately exit when price touches this level", p. 73). stop_on_close =
+    # exit when a trigger-tf bar CLOSES through the stop (a wick through it is a
+    # test, not a break); the intra-minute quote breach (0.25 R beyond, exits.py)
+    # stays as the disaster brake either way. False = the old touch-of-the-low.
+    stop_on_close: bool = True
+    # Q10 — the book is long-biased; the short side (rejection at resistance /
+    # breakdown through support, expressed with puts) is the mirror of its two
+    # setups. The dataclass default is the book's; the app's setting
+    # `technique.long_only` decides (user decision 2026-08-26: both sides).
+    long_only: bool = True
     # Round-number detection: treat multiples of these as psychological levels
     round_number_steps: tuple[float, ...] = (1.0, 5.0, 10.0, 50.0, 100.0)
 
@@ -244,6 +255,7 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.volume_floor_mult": t.volume_floor_mult,
         "technique.max_false_breaks": t.max_false_breaks,
         "technique.rr_gate_target": "auto",
+        "technique.stop_on_close": t.stop_on_close,
         "technique.decisive_body_ratio": t.decisive_body_ratio,
         "technique.min_risk_reward": t.min_risk_reward,
         "technique.default_risk_pct": t.default_risk_pct,
@@ -286,6 +298,8 @@ def thresholds_from_settings(get) -> Thresholds:
     return Thresholds(
         max_false_breaks=int(get("technique.max_false_breaks", d.max_false_breaks)),
         rr_gate_target=rr_gate_target_from_settings(get),
+        stop_on_close=bool(get("technique.stop_on_close", d.stop_on_close)),
+        long_only=bool(get("technique.long_only", d.long_only)),
         level_tolerance_pct=float(get("technique.level_tolerance_pct",
                                       d.level_tolerance_pct * 100)) / 100,
         level_tolerance_atr=d.level_tolerance_atr,

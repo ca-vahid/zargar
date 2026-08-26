@@ -322,7 +322,7 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
                                 {analystOk(fr) ? `✓ ${(fr.result.analysis.confidence ?? 0).toFixed(2)}` : "✗ stand aside"}
                               </span>
                             : <span className="muted small"><Spinner /></span>}</td>
-                        <td>{best ? <span className={`tq-badge ${best.kind === "bounce" ? "setup" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : "WEDGE"}</span> : null}</td>
+                        <td>{best ? <span className={`tq-badge ${best.kind === "bounce" ? "setup" : best.direction === "short" ? "neg" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : best.kind === "reject" ? "REJECT ↓" : best.kind === "breakdown" ? "BREAKDOWN ↓" : "WEDGE"}</span> : null}</td>
                         <td className="nowrap">{best ? <>{fp(best.entry?.price)} <span className="muted small">{best.entry?.basis === "on_break" ? "on break" : "at level"}</span></> : "—"}</td>
                         <td className="nowrap neg">{best ? fp(best.stop?.price) : "—"}</td>
                         <td className="nowrap small">{best ? (best.targets ?? []).slice(0, 3).map((t: any, i: number) =>

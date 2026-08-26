@@ -41,6 +41,7 @@ async def rig(fresh_db, monkeypatch):
     # the next resistance); the app's default gate is the exit rung (TP2 for one
     # contract) and is covered by its own unit tests
     await eng.settings.set("technique.rr_gate_target", "tp3", journal=False)
+    await eng.settings.set("technique.long_only", True, journal=False)   # these fixtures encode the long-side plan; the short mirror has its own test
     await eng.settings.set("risk.max_position_notional", 1_000_000.0, journal=False)
     await eng.settings.set("risk.max_position_pct", 100.0, journal=False)
     await eng.settings.set("risk.stale_quote_seconds", 600, journal=False)
@@ -519,7 +520,7 @@ async def test_arm_options_lists_accounts_with_cash_and_options_capability(rig):
     opts = (await rig.client.get("/api/technique/armed/options")).json()
     sim = next(p for p in opts["portfolios"] if p["kind"] == "sim")
     assert sim["optionsOk"] is True and "cash" in sim and opts["defaults"]["instrument"] == "options"
-    assert opts["defaults"]["contracts"] == 1 and opts["optionsProvider"]
+    assert opts["defaults"]["contracts"] == 0 and opts["defaults"]["maxContracts"] == 10 and opts["optionsProvider"]
 
 
 async def test_auto_options_one_contract_lifecycle(rig, monkeypatch):

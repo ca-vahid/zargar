@@ -170,6 +170,45 @@ function parseSymbols(text: string): string[] {
   return [...seen];
 }
 
+function ExtraUniverse() {
+  const extraRaw = useStore((s) => s.settings["technique.universe.extra"]);
+  const bookRaw = useStore((s) => s.settings["technique.walkforward.symbols"]);
+  const patch = usePatch();
+  const extra: string[] = Array.isArray(extraRaw) ? extraRaw : [];
+  const book: string[] = Array.isArray(bookRaw) ? bookRaw : [];
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState("");
+  const parsed = useMemo(() => parseSymbols(draft), [draft]);
+  return (
+    <div className="auto-choice">
+      <span className="cl">Extra symbols</span>
+      <div className="universe-line">
+        <b>{extra.length ? `${extra.length} of yours` : "none"} · core {book.length}</b>
+        <button className="ghost-btn" onClick={() => { setDraft(extra.join(", ")); setOpen(true); }}>Edit…</button>
+      </div>
+      <span className="hint">
+        anything here is planned, sheeted and armable alongside the core universe and the day's most-active names
+      </span>
+      {open && (
+        <Modal title="Extra symbols" onClose={() => setOpen(false)}
+          footer={
+            <>
+              <button className="ghost-btn" onClick={() => { void patch("technique.universe.extra", []); setOpen(false); }}>Clear</button>
+              <span style={{ flex: 1 }} />
+              <button className="ghost-btn" onClick={() => setOpen(false)}>Cancel</button>
+              <button className="primary-btn" onClick={() => { void patch("technique.universe.extra", parsed); setOpen(false); }}>
+                Save {parsed.length} symbols
+              </button>
+            </>
+          }>
+          <p className="muted" style={{ marginTop: 0 }}>Comma or space separated. US listings only (options chains come from CBOE).</p>
+          <textarea rows={6} style={{ width: "100%" }} value={draft} onChange={(e) => setDraft(e.target.value)} />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 function SheetUniverse() {
   const sheetRaw = useStore((s) => s.settings["technique.sheet.symbols"]);
   const bookRaw = useStore((s) => s.settings["technique.walkforward.symbols"]);
@@ -186,7 +225,7 @@ function SheetUniverse() {
     <div className="auto-choice">
       <span className="cl">Sheet universe</span>
       <div className="universe-line">
-        <b>{custom ? `${sheet.length} custom symbols` : `book universe · ${book.length} symbols`}</b>
+        <b>{custom ? `${sheet.length} custom symbols` : `core universe · ${book.length} + extras + today's most active`}</b>
         <button className="ghost-btn" onClick={() => {
           setDraft((custom ? sheet : book).join(", "));
           setOpen(true);
@@ -203,7 +242,7 @@ function SheetUniverse() {
           footer={
             <>
               <button className="ghost-btn" onClick={() => { void patch("technique.sheet.symbols", []); setOpen(false); }}>
-                Use book universe ({book.length})
+                Use the core universe ({book.length})
               </button>
               <span style={{ flex: 1 }} />
               <button className="ghost-btn" onClick={() => setOpen(false)}>Cancel</button>
@@ -269,6 +308,7 @@ export function SettingsPage() {
             options={[{ value: "off", label: "skip the trade" },
                       { value: "shares", label: "buy the shares instead" }]} />
           <SheetUniverse />
+            <ExtraUniverse />
         </div>
       </div>
       <div className="settings-grid">

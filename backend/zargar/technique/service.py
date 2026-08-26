@@ -190,6 +190,63 @@ class TechniqueService:
             self._cboe = CboeClient()
         return self._cboe
 
+    # ------------------------------------------------------------ universe
+    def universe_cached(self) -> dict:
+        """The resolved universe as last computed (today's if refreshed today)."""
+        from . import universe as uni
+        s = self.engine.settings
+        cached = s.get("technique.universe.resolved", {}) or {}
+        if cached.get("date") == uni.today_key() and cached.get("symbols"):
+            return dict(cached)
+        core = list(s.get("technique.walkforward.symbols", []) or [])
+        r = uni.resolve(core=core, extra=list(s.get("technique.universe.extra", []) or []),
+                        exclude=list(s.get("technique.universe.exclude", []) or []), auto=[],
+                        min_price=float(s.get("technique.universe.min_price", 20.0) or 0),
+                        auto_top=int(s.get("technique.universe.auto_top", 40) or 0))
+        return {"date": None, "refreshedAt": None, "autoSource": None, **r}
+
+    async def refresh_universe(self, *, force: bool = False) -> dict:
+        """Recompute the working universe: core + extras + today's most-active US
+        stocks (price-floored). Cached per ET date in `technique.universe.resolved`
+        so the evening sheet and the picker see one list."""
+        from . import universe as uni
+        s = self.engine.settings
+        cached = s.get("technique.universe.resolved", {}) or {}
+        if not force and cached.get("date") == uni.today_key() and cached.get("symbols"):
+            return dict(cached)
+        auto: list[dict] = []
+        source = None
+        if bool(s.get("technique.universe.auto_refresh", True)):
+            try:
+                auto = await uni.fetch_most_actives(alpaca_key=self.engine.config.alpaca_key_id,
+                                                    alpaca_secret=self.engine.config.alpaca_secret,
+                                                    top=max(50, int(s.get("technique.universe.auto_top", 40) or 0) * 3))
+                source = auto[0]["source"] if auto else None
+            except Exception as exc:
+                log.warning("universe auto-refresh failed: %s", exc)
+        prices: dict[str, float] = {}
+        need = [r["symbol"] for r in auto if r.get("price") is None]
+        for sym in need[:120]:
+            q = self.engine.quotes.get(sym)
+            if q is not None and q.last > 0:
+                prices[sym] = float(q.last)
+        r = uni.resolve(core=list(s.get("technique.walkforward.symbols", []) or []),
+                        extra=list(s.get("technique.universe.extra", []) or []),
+                        exclude=list(s.get("technique.universe.exclude", []) or []), auto=auto,
+                        min_price=float(s.get("technique.universe.min_price", 20.0) or 0),
+                        auto_top=int(s.get("technique.universe.auto_top", 40) or 0), prices=prices)
+        out = {"date": uni.today_key(), "refreshedAt": int(time.time() * 1000), "autoSource": source, **r}
+        await s.set("technique.universe.resolved", out, journal=False)
+        log.info("universe refreshed: %d symbols (%s)", len(out["symbols"]), out["counts"])
+        return out
+
+    async def universe(self) -> list[str]:
+        """The symbols to plan/sheet by default (refreshes once per day)."""
+        try:
+            return list((await self.refresh_universe())["symbols"])
+        except Exception:
+            return list(self.universe_cached()["symbols"])
+
     async def status(self) -> dict:
         cfg = self.llm_config()
         return {
@@ -335,7 +392,8 @@ class TechniqueService:
                       thread_id: str | None = None, wait: bool = False,
                       parent_run_id: str | None = None, thresholds_override: dict | None = None,
                       bars_override: dict[str, list[Bar]] | None = None,
-                      plan: bool | None = None, with_vision: bool | None = None) -> dict:
+                      plan: bool | None = None, with_vision: bool | None = None,
+                      reference_price: float | None = None) -> dict:
         """Start a run. Returns the run row immediately (status=running) unless
         `wait=True`, in which case the finished run is returned.
 
@@ -398,7 +456,8 @@ class TechniqueService:
         if mode == "plan":
             config["planMode"] = {"structureTfs": list(self.structure_tfs()), "triggerTf": tf,
                                   "withVision": bool(with_vision),
-                                  "planFor": next_session_date(as_of_ms) if as_of_ms else None}
+                                  "planFor": next_session_date(as_of_ms) if as_of_ms else None,
+                                  "referencePrice": reference_price}
 
         if thread_id is None:
             title = (f"{symbol} plan for {next_session_date(as_of_ms) if as_of_ms else 'next session'}"
@@ -431,7 +490,8 @@ class TechniqueService:
 
         task = asyncio.create_task(self._execute(run.id, thread_id, symbol, tf, as_of_ms, mode,
                                                  image, note, trigger, thresholds=thresholds,
-                                                 bars_override=bars_override, with_vision=bool(with_vision)),
+                                                 bars_override=bars_override, with_vision=bool(with_vision),
+                                                 reference_price=reference_price),
                                    name=f"technique-{run.id[:8]}")
         self._running[run.id] = task
         if wait:
@@ -443,7 +503,7 @@ class TechniqueService:
                        mode: str, image: bytes | None, note: str, trigger: str, *,
                        thresholds: Thresholds | None = None,
                        bars_override: dict[str, list[Bar]] | None = None,
-                       with_vision: bool = False) -> None:
+                       with_vision: bool = False, reference_price: float | None = None) -> None:
       if self._run_sem is None:
           self._run_sem = asyncio.Semaphore(
               max(1, int(self.engine.settings.get("technique.max_concurrent_runs", 8))))
@@ -584,7 +644,7 @@ class TechniqueService:
                                 "trend": facts.get("trend")})
                 if mode == "plan":
                     plan_obj = build_session_plan(facts, thresholds=t, structure_tfs=list(self.structure_tfs()),
-                                                  trigger_tf=tf)
+                                                  trigger_tf=tf, reference_price=reference_price)
                     plan_d = plan_obj.to_dict()
                     await vp.note("plan", "levels", f"{len(plan_d['levels'])} level(s) kept for the map "
                                   f"({sum(1 for l in plan_d['levels'] if l.get('priorDayExtreme'))} prior-day extremes)",
@@ -1115,7 +1175,8 @@ class TechniqueService:
                                  bars_asset_id=asset_id, scored_at=now,
                                  note="no plan to score (no setup and no candidate); path only")
             else:
-                sim = simulate_plan(series, 0, plan, entry_window=entry_window, horizon=horizon)
+                sim = simulate_plan(series, 0, plan, entry_window=entry_window, horizon=horizon,
+                                    stop_on="close" if self.thresholds().stop_on_close else "low")
                 o = await upsert(src, status="scored" if sim["resolved"] else "partial",
                                  plan={**plan, "entryWindow": entry_window}, outcome=sim["outcome"],
                                  r_multiple=sim["rMultiple"], mfe_r=sim["mfeR"], mae_r=sim["maeR"],
@@ -1853,7 +1914,8 @@ class TechniqueService:
 
     # ------------------------------------------------------------ options
     async def option_pick(self, symbol: str, direction: str = "long", *, spot: float | None = None,
-                          max_strike: float | None = None, avoid_0dte: bool = False) -> dict:
+                          max_strike: float | None = None, min_strike: float | None = None,
+                          avoid_0dte: bool = False) -> dict:
         client = self.options_provider()
         if spot is None:
             q = self.engine.quotes.get(symbol.upper())
@@ -1868,7 +1930,7 @@ class TechniqueService:
             return {"available": False, "error": "no spot price",
                     "provider": getattr(client, "name", "?")}
         out = await pick_for_setup(client, symbol, spot, direction, max_strike=max_strike,
-                                   avoid_0dte=avoid_0dte)
+                                   min_strike=min_strike, avoid_0dte=avoid_0dte)
         out["spot"] = spot
         return out
 
@@ -1930,9 +1992,9 @@ class TechniqueService:
                 plan_for = next_session_date(int(time.time() * 1000))
                 if await self._sheet_exists_for(plan_for):
                     continue
-                syms = [str(s).upper() for s in
-                        (self.engine.settings.get("technique.sheet.symbols", []) or
-                         self.engine.settings.get("technique.walkforward.symbols", []))]
+                syms = [str(s).upper() for s in (self.engine.settings.get("technique.sheet.symbols", []) or [])]
+                if not syms:
+                    syms = await self.universe()          # core + your extras + today's most active
                 if not syms:
                     continue
                 log.info("auto sheet: building %d symbols for %s", len(syms), plan_for)

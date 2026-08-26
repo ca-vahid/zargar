@@ -462,6 +462,7 @@ async def rig(fresh_db, monkeypatch):
     # the next resistance); the app's default gate is the exit rung (TP2 for one
     # contract) and is covered by its own unit tests
     await eng.settings.set("technique.rr_gate_target", "tp3", journal=False)
+    await eng.settings.set("technique.long_only", True, journal=False)   # these fixtures encode the long-side plan; the short mirror has its own test
     app = create_app(config, eng)
     transport = httpx.ASGITransport(app=app)
     days = weekdays(6)
@@ -783,3 +784,79 @@ def test_rr_gate_target_resolves_to_the_exit_rung():
     assert rr_gate_target_from_settings(get) == 2
     base["technique.rr_gate_target"] = "tp1"
     assert rr_gate_target_from_settings(get) == 0
+
+
+# --- short side (Q10 lifted, 2026-08-26) --------------------------------------------------------
+
+def _reject_trigger(entry=100.0, stop=100.5, targets=(98.4, 97.0, 96.0)):
+    return {"id": "r1", "kind": "reject", "direction": "short", "setupType": "resistance_reject", "valid": True,
+            "entry": {"price": entry, "basis": "at_level"}, "stop": {"price": stop},
+            "targets": [{"price": t} for t in targets], "levelPrice": entry, "riskReward": 8.0}
+
+
+def test_tracker_reject_mirrors_the_bounce():
+    d = weekdays(1)[0]
+    prof = _prior_profile(d)
+    tg = _reject_trigger()
+    # gap rules mirrored: open above the stop = gapped through; open at/above entry = gapped past
+    assert TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=99.8) \
+        .on_bar(_bar(d, 9, 30, 100.8, 100.9, 100.7, 100.8), 0) == "gapped_through"
+    assert TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=99.8) \
+        .on_bar(_bar(d, 9, 30, 100.2, 100.3, 100.1, 100.2), 0) == "gapped_past"
+    # a touch from below inside a prime window fires; the fill is the level
+    tr = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=99.6)
+    assert tr.on_bar(_bar(d, 9, 30, 99.6, 99.7, 99.5, 99.6), 0) == "waiting"
+    assert tr.on_bar(_bar(d, 9, 31, 99.7, 100.05, 99.6, 99.9), 1) == "fired"
+    assert tr.fill_price == 100.0 and tr.direction == "short"
+
+
+def test_tracker_breakdown_needs_confirmation_below():
+    d = weekdays(1)[0]
+    prof = _prior_profile(d)
+    tg = {"id": "d1", "kind": "breakdown", "direction": "short", "setupType": "breakdown", "valid": True,
+          "entry": {"price": 96.0, "basis": "on_break"}, "stop": {"price": 96.5},
+          "targets": [{"price": 95.0}, {"price": 94.0}, {"price": 93.0}], "levelPrice": 96.0, "riskReward": 6.0}
+    tr = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=96.2)
+    i = 0
+    def feed(o, h, l, c, v=1000):
+        nonlocal i
+        st = tr.on_bar(_bar(d, 9, 31 + i, o, h, l, c, v=v), i)
+        i += 1
+        return st
+    feed(96.2, 96.3, 96.1, 96.2)
+    feed(96.1, 96.1, 95.4, 95.45, v=2500)                 # decisive bearish close through on volume
+    assert tr.status == "waiting" and tr._break_index is not None
+    for _ in range(3):
+        feed(95.4, 95.5, 95.0, 95.1)                      # holds below, continues down
+    assert tr.status == "fired" and tr.fill_price == 95.1
+
+
+def test_simulate_plan_short_mirrors_long():
+    from zargar.technique.outcome import simulate_plan
+    def mk(ts, o, h, l, c):
+        return Bar(symbol="T", tf="1m", ts=ts, open=o, high=h, low=l, close=c, volume=1)
+    plan = {"setupType": "resistance_reject", "direction": "short", "entry": {"price": 100.0, "basis": "at_level"},
+            "stop": {"price": 101.0}, "targets": [{"price": 99.0}, {"price": 98.0}, {"price": 97.0}]}
+    bars = [mk(0, 99.5, 99.6, 99.4, 99.5), mk(1, 99.7, 100.1, 99.6, 99.9),          # fills at 100 (high >= entry)
+            mk(2, 99.9, 100.0, 98.8, 98.9), mk(3, 98.9, 99.0, 97.7, 97.8), mk(4, 97.8, 97.9, 96.6, 96.7)]
+    r = simulate_plan(bars, 0, plan, entry_window=3, horizon=10)
+    assert r["filled"] and r["fillIndex"] == 1 and r["outcome"] == "tp3" and r["rMultiple"] > 1.5
+    stopped = bars[:2] + [mk(2, 99.9, 101.2, 99.8, 101.2)]      # closes through the stop (high below the 0.25R brake)
+    r = simulate_plan(stopped, 0, plan, entry_window=3, horizon=10)
+    assert r["outcome"] == "stopped" and r["rMultiple"] == pytest.approx(-1.2)
+
+
+async def test_plan_builds_short_triggers_when_not_long_only(rig):
+    await rig.eng.settings.set("technique.long_only", False, journal=False)
+    close_ts = session_bounds(rig.close_day)[1]
+    run = await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=False, wait=True)
+    trig = run["result"]["plan"]["triggers"]
+    kinds = {t["kind"] for t in trig}
+    assert {"bounce", "breakout"} <= kinds
+    shorts = [t for t in trig if t["direction"] == "short"]
+    assert shorts and all(t["kind"] in ("reject", "breakdown") for t in shorts)
+    for t in shorts:
+        assert t["stop"]["price"] > t["entry"]["price"] and all(x["price"] < t["entry"]["price"] for x in t["targets"])
+    await rig.eng.settings.set("technique.long_only", True, journal=False)
+    run2 = await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=False, wait=True)
+    assert all(t["direction"] == "long" for t in run2["result"]["plan"]["triggers"])

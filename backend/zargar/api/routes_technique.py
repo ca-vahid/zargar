@@ -60,18 +60,28 @@ def build_technique_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=400, detail=str(exc))
 
     # --- session plans / walk-forward / arming --------------------------------------------
+    @app.get("/api/technique/universe", dependencies=[auth])
+    async def technique_universe():
+        return _svc(eng).universe_cached()
+
+    @app.post("/api/technique/universe/refresh", dependencies=[auth])
+    async def technique_universe_refresh():
+        return await _svc(eng).refresh_universe(force=True)
+
     class PlanBody(BaseModel):
         symbol: str
         asOf: int | None = None          # default: now (plan for the next session)
         tf: str | None = None            # trigger timeframe
         withVision: bool | None = None
         wait: bool = True
+        referencePrice: float | None = None   # pre-open re-plan: judge the map against this price, not the close
 
     @app.post("/api/technique/plan", dependencies=[auth])
     async def technique_plan(body: PlanBody):
         try:
             return await _svc(eng).analyze(body.symbol, as_of_ms=body.asOf, primary_tf=body.tf, trigger="manual",
-                                           plan=True, with_vision=body.withVision, wait=body.wait)
+                                           plan=True, with_vision=body.withVision, wait=body.wait,
+                                           reference_price=body.referencePrice)
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 

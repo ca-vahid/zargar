@@ -101,8 +101,8 @@ class ArmConfig:
         return cls(portfolio_id=str(d.get("portfolioId") or d.get("portfolio_id") or ""),
                    mode=str(d.get("mode") or "proposal"),
                    instrument=str(d.get("instrument") or "options"),
-                   contracts=(int(d["contracts"]) if d.get("contracts") not in (None, "", 0) else
-                              (None if "contracts" in d and d.get("contracts") in (None, "") else 1)),
+                   contracts=(int(d["contracts"]) if d.get("contracts") not in (None, "", 0, "0") else
+                              (None if "contracts" in d else 1)),
                    max_contracts=int(d.get("maxContracts", d.get("max_contracts", 5)) or 5),
                    single_contract_exit=str(d.get("singleContractExit", d.get("single_contract_exit", "tp2")) or "tp2"),
                    risk_pct=float(d.get("riskPct", d.get("risk_pct", 0.5)) or 0.5),
@@ -159,6 +159,7 @@ class Trade:
     order_symbol: str | None = None      # what was actually bought (OCC symbol for options)
     multiplier: float = 1.0              # 100 for options
     single_exit: str = "tp2"             # options with < 3 contracts: exit everything at this target
+    direction: str = "long"              # long (call) | short (put) — the underlying idea's side
 
     @property
     def open(self) -> bool:
@@ -189,7 +190,8 @@ class Trade:
         else:
             unreal = ((self.last_price - (self.avg_fill or self.entry)) * self.remaining
                       if self.last_price is not None and self.remaining > 0 and self.avg_fill else 0.0)
-        return {"triggerId": self.trigger_id, "kind": self.kind, "firedTs": self.fired_ts, "window": self.window,
+        return {"triggerId": self.trigger_id, "kind": self.kind, "direction": self.direction,
+                "firedTs": self.fired_ts, "window": self.window,
                 "instrument": self.instrument, "contract": self.contract, "orderSymbol": self.order_symbol,
                 "multiplier": self.multiplier,
                 "entry": self.entry, "stop": self.stop, "targets": self.targets, "status": self.status,
@@ -228,6 +230,7 @@ class ArmedPlan:
     critic_failures: int = 0            # critic errors/timeouts today (fail-open budget, A8)
     fire_tasks: dict = field(default_factory=dict)   # in-flight fire -> critic -> order chains, by trigger
     gap_seed: str = ""                  # late arm: where the opening bars came from (A1)
+    preopen_done: bool = False          # the 09:25 pre-open check ran for this plan today (Q5)
     refire_at: dict[str, int] = field(default_factory=dict)      # per-trigger cooldown after a veto (ms)
     # prior-session 1m bars from the run's snapshot: the fire-time FACTS need a
     # volume baseline (live engine bars are today-only -> baselineSessions=0,
@@ -445,7 +448,7 @@ class PlanArmer(SessionListener):
                             continue
                 # 3) underlying decisively through the stop
                 key = (ap.run_id, tr.trigger_id)
-                reason = quote_stop_breach(tr, last, excess_r=excess) if (last is not None and fresh) else None
+                reason = quote_stop_breach(tr, last, excess_r=excess, direction=tr.direction) if (last is not None and fresh) else None
                 if reason is None:
                     self._quote_breaches.pop(key, None)
                     continue
@@ -606,7 +609,8 @@ class PlanArmer(SessionListener):
             if snap and snap.get(plan.get("triggerTf") or "1m"):
                 baseline_bars = list(snap[plan.get("triggerTf") or "1m"])
                 profile = build_profile(baseline_bars)
-        trackers = {tg["id"]: TriggerTracker(tg, t, profile, enforce, True, float(plan.get("lastClose") or 0) or None)
+        ref_px = float(plan.get("referencePrice") or plan.get("lastClose") or 0) or None
+        trackers = {tg["id"]: TriggerTracker(tg, t, profile, enforce, True, ref_px)
                     for tg in plan.get("triggers") or [] if tg.get("valid")}
         ap = ArmedPlan(run_id=run_id, symbol=symbol, plan=plan, plan_for=plan.get("planFor") or "",
                        config=cfg, trackers=trackers, armed_at=time.time(),
@@ -960,7 +964,8 @@ class PlanArmer(SessionListener):
             if not tid:
                 continue
             tr = Trade(
-                trigger_id=tid, kind=td.get("kind") or "", fired_ts=int(td.get("firedTs") or 0),
+                trigger_id=tid, kind=td.get("kind") or "", direction=td.get("direction") or "long",
+                fired_ts=int(td.get("firedTs") or 0),
                 window=td.get("window") or "", entry=float(td.get("entry") or 0), stop=float(td.get("stop") or 0),
                 targets=[float(x) for x in (td.get("targets") or [])], status=td.get("status") or "open",
                 reason=td.get("reason") or "", setup_id=td.get("setupId"), proposal_id=td.get("proposalId"),
@@ -1448,7 +1453,8 @@ class PlanArmer(SessionListener):
     def _mint_trade(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int) -> Trade:
         window = session_window(bar.ts)
         cfg = ap.config
-        trade = Trade(trigger_id=tid, kind=tr.kind, fired_ts=bar.ts, window=window, entry=float(tr.fill_price or tr.entry),
+        trade = Trade(trigger_id=tid, kind=tr.kind, direction=tr.direction, fired_ts=bar.ts, window=window,
+                      entry=float(tr.fill_price or tr.entry),
                       stop=tr.stop, targets=[float(t["price"]) for t in tr.trigger.get("targets") or []][:3],
                       fire_bar_index=idx, last_price=bar.close, instrument=cfg.instrument,
                       multiplier=100.0 if cfg.instrument == "options" else 1.0)
@@ -1720,9 +1726,13 @@ class PlanArmer(SessionListener):
         """T5: the just-OTM call, current-week Friday / 0DTE, from the live chain."""
         s = self.engine.settings
         trade.contract_attempted = True
-        max_strike = None
+        max_strike = min_strike = None
         if bool(s.get("technique.arm.strike_within_targets", True)) and trade.targets:
-            max_strike = float(trade.targets[1] if len(trade.targets) >= 2 else trade.targets[0])
+            cap = float(trade.targets[1] if len(trade.targets) >= 2 else trade.targets[0])
+            if trade.direction == "short":
+                min_strike = cap                # a put struck below the downside target is worthless leverage
+            else:
+                max_strike = cap
         avoid_0dte = False
         cutoff = str(s.get("technique.arm.avoid_0dte_after", "15:15") or "")
         if cutoff:
@@ -1731,8 +1741,9 @@ class PlanArmer(SessionListener):
                 now = dt.datetime.now(ET)
                 avoid_0dte = (now.hour * 60 + now.minute) >= hh * 60 + mm
         try:
-            pick = await self.technique.option_pick(ap.symbol, "long", spot=float(trade.last_price or trade.entry),
-                                                    max_strike=max_strike, avoid_0dte=avoid_0dte)
+            pick = await self.technique.option_pick(ap.symbol, "short" if trade.direction == "short" else "long",
+                                                    spot=float(trade.last_price or trade.entry),
+                                                    max_strike=max_strike, min_strike=min_strike, avoid_0dte=avoid_0dte)
         except Exception as exc:
             trade.errors.append(f"option chain: {exc}")
             self._log(ap, "option_pick_failed", f"{trade.trigger_id}: option chain error {exc}", trigger=trade.trigger_id)
@@ -1756,19 +1767,40 @@ class PlanArmer(SessionListener):
         return trade.contract
 
     async def _size_contracts(self, ap: ArmedPlan, trade: Trade, contract: dict) -> int:
+        """R1 on the instrument we actually trade. Fixed `contracts` wins (R5 one-
+        contract rule while learning); otherwise size by risk: the dollars at risk
+        per contract are what the premium stop can lose (`premium_stop_pct` of the
+        premium, or the whole premium when that stop is off), contracts = equity x
+        risk% / that. Fridays are scaled by `technique.arm.friday_size_mult`, 0DTE
+        by a further half (T5.2 "reduced size"), then capped by `max_contracts`."""
         cfg = ap.config
+        s = self.engine.settings
         if cfg.contracts:
             return int(max(1, min(cfg.contracts, cfg.max_contracts)))
         premium = float(contract.get("ask") or contract.get("mid") or 0) * 100.0
         if premium <= 0:
             return 1
+        prem_stop = float(s.get("technique.arm.premium_stop_pct", 50.0) or 0)
+        risk_per = premium * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
         equity = await self.engine.positions.equity(cfg.portfolio_id)
-        n = int(equity * cfg.risk_pct / 100 / premium)
-        if contract.get("is0dte") and n > 1:
-            n = max(1, n // 2)                 # T5.2: 0DTE trades use reduced size
-            self._log(ap, "sized", f"{trade.trigger_id}: 0DTE — risk-sized contracts halved to {n}",
-                      trigger=trade.trigger_id)
-        return int(max(1, min(n, cfg.max_contracts)))
+        raw = equity * cfg.risk_pct / 100 / max(risk_per, 1e-9)
+        mult, why = 1.0, []
+        if dt.datetime.now(ET).weekday() == 4:
+            fm = float(s.get("technique.arm.friday_size_mult", 0.5) or 1.0)
+            mult *= fm
+            why.append(f"Friday x{fm:g}")
+        if contract.get("is0dte"):
+            mult *= 0.5
+            why.append("0DTE x0.5 (T5.2)")
+        n = int(raw * mult)
+        n = int(max(1, min(n, cfg.max_contracts)))
+        self._log(ap, "sized",
+                  f"{trade.trigger_id}: {n} contract(s) — ${equity * cfg.risk_pct / 100:,.0f} at risk "
+                  f"({cfg.risk_pct:g}% of ${equity:,.0f}) / ${risk_per:,.0f} per contract"
+                  + (f" ({prem_stop:g}% premium stop on ${premium:,.0f})" if 0 < prem_stop < 100 else "")
+                  + (", " + ", ".join(why) if why else "") + f", cap {cfg.max_contracts}",
+                  trigger=trade.trigger_id, contracts=n)
+        return n
 
     async def _enter(self, ap: ArmedPlan, trade: Trade, tr: TriggerTracker, *, journal: bool) -> None:
         """Auto mode: place the entry order (write-ahead: intent journaled first;
@@ -1778,6 +1810,13 @@ class PlanArmer(SessionListener):
         from ..orders import OrderIntent
         cfg = ap.config
         use_options = cfg.instrument == "options"
+        if trade.direction == "short" and not use_options:
+            # the short side is expressed with puts only — no share shorting (margin,
+            # locate, R1 on a borrowed position: none of that is in the book's method)
+            trade.status = "skipped"
+            trade.reason = "short setups trade puts only — this plan is armed for shares"
+            self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+            return
         contract = None
         if use_options:
             contract = trade.contract if trade.contract_attempted else await self._pick_contract(ap, trade)
@@ -1795,7 +1834,8 @@ class PlanArmer(SessionListener):
                 # fire, get rejected, and take no trade at all — with the
                 # fallback enabled the plan expresses the level in shares.
                 s = self.engine.settings
-                est = float(contract.get("ask") or contract.get("mid") or 0.0) * 100.0 * max(1, cfg.contracts)
+                n_est = await self._size_contracts(ap, trade, contract)
+                est = float(contract.get("ask") or contract.get("mid") or 0.0) * 100.0 * max(1, n_est)
                 cap = float(s.get("risk.max_option_premium_notional", 0.0) or 0.0)
                 pct_cap = float(s.get("risk.max_option_premium_pct", 0.0) or 0.0)
                 pf = self.engine.positions.portfolio(cfg.portfolio_id) or {}
@@ -1807,10 +1847,11 @@ class PlanArmer(SessionListener):
                                f"(risk.max_option_premium_pct)")
             if contract is None or blocked:
                 why = blocked or (trade.errors[-1] if trade.errors else "no contract available")
-                if cfg.entry_fallback == "shares":
+                if cfg.entry_fallback == "shares" and trade.direction != "short":
                     # Express the same level trade in the underlying instead of
                     # skipping — the edge is the level, the option is only the
-                    # vehicle (per-arm choice, changeable after arming).
+                    # vehicle (per-arm choice, changeable after arming). Never for
+                    # a short (puts only).
                     use_options = False
                     trade.instrument = "shares"
                     trade.contract = None
@@ -1944,11 +1985,14 @@ class PlanArmer(SessionListener):
             return
         decision = plan_exit(tr, bar, close_ms=close_ms,
                              flatten_minutes=ap.config.flatten_minutes_before_close,
-                             ladder=EXIT_LADDER, single_exit=ap.config.single_contract_exit)
+                             ladder=EXIT_LADDER, single_exit=ap.config.single_contract_exit,
+                             stop_on="close" if self.technique.thresholds().stop_on_close else "low",
+                             direction=tr.direction)
         if decision is None:
             # a single-contract position may need to advance its trim counter without an order
-            if (tr.trims_done < len(tr.targets) and bar.high >= tr.targets[tr.trims_done]
-                    and tr.instrument == "options" and tr.filled_qty < 3):
+            hit = ((bar.low <= tr.targets[tr.trims_done]) if tr.direction == "short"
+                   else (bar.high >= tr.targets[tr.trims_done])) if tr.trims_done < len(tr.targets) else False
+            if hit and tr.instrument == "options" and tr.filled_qty < 3:
                 tr.trims_done += 1
             return
         tr.trims_done = decision.new_trims_done
@@ -2011,6 +2055,106 @@ class PlanArmer(SessionListener):
     def _publish(self, ap: ArmedPlan, what: str) -> None:
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "armed", "event": what, "armed": self._snapshot(ap)})
 
+    def _preopen_window(self, now: dt.datetime) -> bool:
+        at = str(self.engine.settings.get("technique.arm.preopen_at", "09:25") or "09:25")
+        try:
+            hh, mm = (int(x) for x in at.split(":"))
+        except ValueError:
+            hh, mm = 9, 25
+        m = now.hour * 60 + now.minute
+        return hh * 60 + mm <= m < 9 * 60 + 30
+
+    async def _preopen_check(self, ap: ArmedPlan) -> None:
+        """Q5 (user decision 2026-08-26) — use the pre-market tape smartly, without
+        trading on it (R6.4/R6.5). At `technique.arm.preopen_at` the plan is judged
+        against the pre-market print: which triggers the open would gap past /
+        through / void is recorded (journal + log, so the fleet says WHY before
+        09:30), and when EVERY valid trigger is already dead a fresh plan is built
+        from the same prior-session structure re-anchored to the pre-market price
+        (`build_session_plan(reference_price=...)`) and armed in this one's place —
+        the levels near the new price, not the ones last night's close saw. The
+        gap-void rule then measures the surprise between 09:25 and 09:30."""
+        s = self.engine.settings
+        q = self.engine.quotes.get(ap.symbol)
+        now_ms = int(time.time() * 1000)
+        last = float(q.last) if q is not None and q.last and q.last > 0 else 0.0
+        fresh = q is not None and (now_ms - q.ts) <= 15 * 60_000
+        if last <= 0 or not fresh:
+            self._log(ap, "preopen_check", "no fresh pre-market print — nothing to judge before the open")
+            return
+        prev = float(ap.plan.get("referencePrice") or ap.plan.get("lastClose") or 0)
+        t = self.technique.thresholds()
+        rows = []
+        dead = 0
+        alive = 0
+        for tid, tr in ap.trackers.items():
+            if tr.status not in ("waiting", "observed"):
+                continue
+            verdict = "ok"
+            if tr.kind == "bounce":
+                if last < tr.stop:
+                    verdict = "gapped_through"
+                elif last <= tr.entry:
+                    verdict = "gapped_past"
+            elif last > tr.entry:
+                verdict = "gapped_past"
+            if verdict == "ok" and prev and abs(last - prev) > t.gap_void_r * tr.risk:
+                verdict = "gap_void"
+            (dead := dead + 1) if verdict != "ok" else (alive := alive + 1)
+            rows.append({"trigger": tid, "kind": tr.kind, "entry": tr.entry, "stop": tr.stop,
+                         "verdict": verdict, "gapR": round(abs(last - prev) / tr.risk, 2) if prev else None})
+        pct = ((last - prev) / prev * 100) if prev else 0.0
+        summary = ", ".join(f"{r['trigger']} {r['verdict']}" for r in rows) or "no live triggers"
+        self._log(ap, "preopen_check",
+                  f"pre-market {last:.2f} vs {prev:.2f} ({pct:+.2f}%): {summary}", rows=rows, premarket=last)
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_PREOPEN, {
+            "runId": ap.run_id, "symbol": ap.symbol, "planFor": ap.plan_for, "premarket": last,
+            "reference": prev, "gapPct": round(pct, 3), "triggers": rows,
+            "replan": bool(rows) and alive == 0 and bool(s.get("technique.arm.preopen_replan", True))},
+            aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        if not rows or alive > 0 or not bool(s.get("technique.arm.preopen_replan", True)):
+            return
+        # every trigger would die at the open: re-plan around where price actually is
+        try:
+            run = await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
+                                               primary_tf=str(ap.plan.get("triggerTf") or "1m"),
+                                               trigger="preopen_replan", plan=True, with_vision=False, wait=True,
+                                               parent_run_id=ap.run_id, reference_price=last)
+        except Exception as exc:
+            await self._alert(ap, f"pre-open re-plan failed ({exc}) — keeping the evening plan", level="warning",
+                              stage="preopen")
+            return
+        new_plan = ((run or {}).get("result") or {}).get("plan") or {}
+        n_valid = int(new_plan.get("validTriggers") or 0)
+        if run.get("status") != "done" or n_valid <= 0:
+            self._log(ap, "preopen_replan_empty",
+                      f"re-plan at {last:.2f} found no tradeable level — keeping the evening plan "
+                      f"(its triggers will void at the open)", runId=run.get("id"))
+            return
+        cfg = ap.config
+        old_id = ap.run_id
+        await self.disarm(old_id, reason=f"pre-open re-plan: pre-market {last:.2f} ({pct:+.2f}%) killed every trigger")
+        try:
+            snap = await self.arm(run["id"], ArmConfig.from_dict(cfg.to_dict()))
+        except Exception as exc:
+            await self._alert(ap, f"pre-open re-plan built {run.get('id', '?')[:8]} but arming it failed: {exc}",
+                              level="critical", stage="preopen")
+            return
+        new_ap = self._armed.get(run["id"])
+        if new_ap is not None:
+            new_ap.preopen_done = True
+            self._log(new_ap, "preopen_replanned",
+                      f"replaces {old_id[:8]}: {n_valid} trigger(s) around the pre-market price {last:.2f}",
+                      parentRunId=old_id)
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_REPLANNED, {
+            "runId": run["id"], "parentRunId": old_id, "symbol": ap.symbol, "planFor": ap.plan_for,
+            "premarket": last, "reference": prev, "gapPct": round(pct, 3), "validTriggers": n_valid},
+            aggregate_type="technique_run", aggregate_id=run["id"], portfolio_id=cfg.portfolio_id)
+        self.engine.bus.publish(topics.TECHNIQUE, {
+            "kind": "alert", "level": "info",
+            "text": f"{ap.symbol}: pre-open re-plan — {n_valid} trigger(s) around {last:.2f} ({pct:+.2f}% vs close)",
+            "runId": run["id"], "symbol": ap.symbol})
+
     async def on_heartbeat(self) -> None:
         """Auto-arm configured symbols at the open; mark stale plans; publish a
         heartbeat snapshot every minute so the dashboard's numbers stay live.
@@ -2020,6 +2164,14 @@ class PlanArmer(SessionListener):
         now = dt.datetime.now(ET)
         now_ms = int(time.time() * 1000)
         in_session = now.weekday() < 5 and (9 * 60 + 30) <= now.hour * 60 + now.minute < 16 * 60
+        if now.weekday() < 5 and self._preopen_window(now):
+            for ap in list(self._armed.values()):
+                if ap.plan_for == now.strftime("%Y-%m-%d") and ap.status == "armed" and not ap.preopen_done:
+                    ap.preopen_done = True
+                    try:
+                        await self._preopen_check(ap)
+                    except Exception:
+                        log.exception("pre-open check failed for %s", ap.symbol)
         for ap in list(self._armed.values()):
             if in_session and ap.plan_for == now.strftime("%Y-%m-%d") and ap.last_bar_ts \
                     and now_ms - ap.last_bar_ts > stale_s * 1000 and not ap.stale:

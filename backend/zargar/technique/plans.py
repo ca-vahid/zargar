@@ -85,8 +85,8 @@ class Trigger:
             "rules": sorted(set(self.rules)), "valid": self.valid,
             "noTradeReasons": list(self.no_trade_reasons), "notes": self.notes,
             "assessment": self.assessment,
-            "setupType": {"bounce": "support_bounce", "breakout": "breakout",
-                          "wedge_break": "falling_wedge"}[self.kind],
+            "setupType": {"bounce": "support_bounce", "breakout": "breakout", "wedge_break": "falling_wedge",
+                          "reject": "resistance_reject", "breakdown": "breakdown"}.get(self.kind, self.kind),
         }
 
 
@@ -106,10 +106,12 @@ class SessionPlan:
     gap_policy: dict
     notes: list[str] = field(default_factory=list)
     bottom_line: str = ""
+    reference_price: float | None = None     # pre-open re-plan: the pre-market print the map was judged against
 
     def to_dict(self) -> dict:
         return {
             "symbol": self.symbol, "planFor": self.plan_for, "builtFromMs": self.built_from_ms,
+            "referencePrice": self.reference_price,
             "builtFromSession": self.built_from_session, "structureTfs": list(self.structure_tfs),
             "triggerTf": self.trigger_tf, "lastClose": self.last_close,
             "levels": self.levels, "context": self.context,
@@ -190,7 +192,7 @@ def assess_trigger(*, kind: str, lv: Level, rep: dict, zone_size: int, rr: float
         cautions.append("targets are the book's 2/4/6% ladder — nothing overhead to anchor them, "
                         "so the R:R number is optimistic (T4.4)")
     if stop_reference in ("below_zone_low", "wedge_low", "below_broken_resistance", "below_invalidation_low",
-                          "below_break_base"):
+                          "below_break_base", "above_zone_high", "above_broken_support", "above_break_top"):
         score += 8
         strengths.append("stop sits below the chart structure that invalidates the idea (T4.3d)")
     dist = abs(entry - last) / last if last else 0.0
@@ -222,6 +224,12 @@ def _fires_only_if(tg: Trigger) -> str:
     if tg.kind == "bounce":
         return (f"fires only if price trades down into {tg.entry_price:.2f} inside a prime "
                 f"window on adequate volume")
+    if tg.kind == "reject":
+        return (f"fires only if price trades up into {tg.entry_price:.2f} inside a prime "
+                f"window on adequate volume (short — a put)")
+    if tg.kind == "breakdown":
+        return (f"fires only if a bar CLOSES below {tg.entry_price:.2f} inside a prime window "
+                f"with a volume surge, a decisive candle and follow-through (short — a put)")
     return (f"fires only if a bar CLOSES above {tg.entry_price:.2f} inside a prime window "
             f"with a volume surge, a decisive candle and follow-through")
 
@@ -245,8 +253,9 @@ def build_bottom_line(triggers: list[Trigger], plan_for: str) -> str:
 
 
 def _higher_tf_agrees(context: dict, want: str) -> bool | None:
-    """Does the highest structure timeframe's trend agree with a long idea?
-    (`want` = uptrend for breakouts; for bounces sideways/uptrend both fine)."""
+    """Does the highest structure timeframe's trend agree with the idea?
+    `want`: uptrend (breakouts) / bounce (uptrend or sideways) / downtrend
+    (breakdowns) / reject (downtrend or sideways)."""
     trends = context.get("trend") or {}
     for tf in ("1h", "30m", "15m"):
         tr = trends.get(tf)
@@ -254,13 +263,17 @@ def _higher_tf_agrees(context: dict, want: str) -> bool | None:
             d = tr.get("direction")
             if want == "uptrend":
                 return d == "uptrend"
+            if want == "downtrend":
+                return d == "downtrend"
+            if want == "reject":
+                return d in ("downtrend", "sideways")
             return d in ("uptrend", "sideways")
     return None
 
 
 def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
                        structure_tfs: list[str] | tuple[str, ...] = ("1h", "30m"),
-                       trigger_tf: str = "1m") -> SessionPlan:
+                       trigger_tf: str = "1m", reference_price: float | None = None) -> SessionPlan:
     """Turn FACTS (computed as-of a session boundary) into a SessionPlan.
 
     Requires `facts` from `analysis.compute_facts` with `primary_tf == trigger_tf`
@@ -270,7 +283,14 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
     t = thresholds or DEFAULT_THRESHOLDS
     symbol = facts.get("symbol", "?")
     as_of = int(facts.get("asOf") or 0)
-    last = float(facts.get("lastClose") or 0.0)
+    last_close = float(facts.get("lastClose") or 0.0)
+    # `reference_price` (the pre-open re-plan, Q5): the map is the same prior-session
+    # structure, but "where price is" is the pre-market print, not last night's
+    # close — so a level that was resistance 3 % above the close is the support
+    # just under a gapped-up open. lastClose stays the true close for the record;
+    # the gap-void rule then measures the surprise between this reference and the
+    # 09:30 print (walkforward/arming use referencePrice as prev_close when set).
+    last = float(reference_price) if reference_price and reference_price > 0 else last_close
     ptf = facts.get("primaryTf") or trigger_tf
     atr_v = float((facts.get("atr") or {}).get(ptf) or 0.0)
     tol = max(last * t.level_tolerance_pct, 1e-9)
@@ -330,6 +350,13 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
     stop_atr = max([float((facts.get("atr") or {}).get(tf) or 0.0) for tf in structure_tfs] + [atr_v])
     trig_trend = ((facts.get("trend") or {}).get(ptf) or {}).get("direction")
 
+    if last != last_close:
+        # re-anchor the level roles to the reference price (T1.3b flip): a level
+        # below the reference is support, above it resistance
+        for l in levels:
+            l["effectiveKind"] = "support" if l["price"] <= last else "resistance"
+            l["position"] = "below" if l["price"] <= last else "above"
+            l["distancePct"] = round((l["price"] - last) / last * 100, 3) if last else None
     all_resistances = sorted([l for l in levels if l["effectiveKind"] == "resistance"],
                              key=lambda l: l["price"])
     supports_below = sorted([l for l in levels if l["effectiveKind"] == "support" and l["price"] < last],
@@ -532,6 +559,173 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
                   "any fakeout tell (T3.3d-f) cancels it.",
         ))
 
+    if not t.long_only:
+        # ---- the short side (Q10 lifted, user decision 2026-08-26) — the mirror of the two
+        # long setups. Rejection = "sell at resistance" (p. 74): short AT the level, no
+        # visual confirmation (T4.2 mirrored), stop above the zone. Breakdown = a confirmed
+        # close through support (T3.3 mirrored): volume, decisive bearish candle,
+        # follow-through, stop above the base the break falls from. Expressed with puts.
+        resistances_up = sorted([l for l in levels if l["effectiveKind"] == "resistance" and l["price"] > last],
+                                key=lambda l: l["price"])
+        supports_all = sorted([l for l in levels if l["effectiveKind"] == "support"], key=lambda l: -l["price"])
+
+        def _next_support_below(price: float, exclude: set[float] = frozenset()) -> dict | None:
+            return next((sp for sp in supports_all
+                         if sp["price"] < price - tol and sp["price"] not in exclude), None)
+
+        def _break_top(level_price: float) -> float | None:
+            cap = level_price * (1 + t.max_stop_pct)
+            highs = [float(p["price"]) for p in (facts.get("swingHighs") or {}).get(ptf) or []
+                     if level_price < float(p["price"]) <= cap]
+            return highs[-1] if highs else None
+
+        last_reject: Trigger | None = None
+        n = 0
+        for zone in _zones(resistances_up):
+            if n >= MAX_BOUNCE_TRIGGERS:
+                break
+            rep = _representative(zone)
+            entry = zone[0]["price"]            # the zone's bottom — the first touch from below
+            if (entry - last) / last > MAX_LEVEL_DISTANCE_PCT:
+                continue
+            lv = _level_from_dict({**rep, "effectiveKind": "resistance"})
+            zone_high = max(mm["price"] for mm in zone)
+            anchor = zone_high if zone_high > entry else entry
+            stop = anchor + stop_buffer(anchor, atr_value=stop_atr, thresholds=t)
+            if last_reject is not None and entry <= last_reject.stop_price:
+                notes.append(f"resistance {entry:.2f} skipped: inside the risk envelope of trigger "
+                             f"{last_reject.id} (entry below its stop {last_reject.stop_price:.2f})")
+                continue
+            risk = stop - entry
+            next_sup = _next_support_below(entry)
+            targets = build_ladder(entry, "short", next_level=(next_sup["price"] if next_sup else None))
+            rr = risk_reward(entry, stop, gate_target(targets, t).price)
+            rr3 = risk_reward(entry, stop, targets[-1].price)
+            confl = []
+            if "T1.3a" in lv.sources:
+                confl.append("prior-day extreme (T1.3a)")
+            if lv.touches >= t.strong_touches:
+                confl.append(f"{lv.touches} touches (T1.2)")
+            hta = _higher_tf_agrees(context, "reject")
+            if hta:
+                confl.append("higher timeframe not against it (T3.3g)")
+            if len(rep.get("timeframes") or []) >= 2:
+                confl.append("confluence across timeframes")
+            if len(zone) > 1:
+                confl.append(f"zone of {len(zone)} levels ({zone[0]['price']:.2f}-{zone_high:.2f})")
+            reasons = []
+            if rr < t.min_risk_reward - 1e-9:
+                reasons.append(f"R2 reward:risk {rr:.2f} to {gate_label(t)} below {t.min_risk_reward:.1f}")
+            if lv.touches < t.min_touches and "T1.3a" not in lv.sources:
+                reasons.append(f"T1.2 only {lv.touches} touch(es)")
+            if risk > entry * t.max_stop_pct:
+                reasons.append(f"T4.3a/R1 the stop the chart justifies ({stop:.2f}) is "
+                               f"{risk / entry:.1%} away — beyond the {t.max_stop_pct:.1%} cap")
+            if trig_trend == "sideways" and atr_v > 0 and risk < t.chop_stop_atr * atr_v:
+                reasons.append(f"R3.2 stop {risk:.2f} sits inside the chop: {ptf} trend is sideways "
+                               f"and the stop is under {t.chop_stop_atr:.0f}x its ATR ({atr_v:.2f})")
+            valid = not reasons
+            rules = ["T1.2", "T1.6", "T4.1", "T4.2", "T4.3a", "T4.3d", "T4.4a", "R2", "R3.1", "R3.2",
+                     "R6.1", "R6.2"] + list(lv.sources)
+            if len(confl) >= 2:
+                rules.append("T4.6")
+            stop_ref = "above_zone_high" if zone_high > entry else "above_resistance"
+            assessment = assess_trigger(kind="reject", lv=lv, rep=rep, zone_size=len(zone), rr=rr,
+                                        target_basis=targets[0].basis, risk=risk, entry=entry,
+                                        last=last, stop_reference=stop_ref, fakeout_level=fakeout_level,
+                                        hta=hta, valid=valid, t=t,
+                                        members_above=sum(1 for mm in zone if mm["price"] < entry - tol))
+            n += 1
+            trg = Trigger(
+                id=f"r{n}", kind="reject", direction="short", level_price=entry,
+                level={**rep, "zone": {"high": zone_high, "low": zone[0]["price"],
+                                       "members": [mm["price"] for mm in zone]}},
+                entry_price=entry, entry_basis="at_level", stop_price=stop, stop_reference=stop_ref,
+                targets=[tg.to_dict() for tg in targets], risk_reward=rr, risk_reward_tp3=rr3,
+                conditions=[
+                    Condition("T4.1", f"price trades up into {entry:.2f} (+/- {tol:.2f})", "touch"),
+                    _window_condition(), _volume_floor_condition(t),
+                ],
+                void_if=[f"session opens above the stop {stop:.2f} (level gapped through)",
+                         f"session opens above {entry:.2f} (gapped past the level — do not chase, T4.1)",
+                         f"|open - prev close| > {t.gap_void_r:.1f}x risk ({t.gap_void_r * risk:.2f})"],
+                confluences=confl, confidence=_trigger_confidence(lv, confl, rr, valid),
+                rules=rules, valid=valid, no_trade_reasons=reasons, assessment=assessment,
+                notes="Rejection: SHORT at resistance (sell at resistance, p. 74), no visual confirmation "
+                      "(T4.2); a long upper wick at the touch raises confidence (T3.4b). Expressed with a put (T5).",
+            )
+            triggers.append(trg)
+            last_reject = trg
+
+        supports_down = [sp for sp in supports_all if sp["price"] < last - tol]
+        m = 0
+        for zone in _zones(supports_down):
+            if m >= MAX_BREAK_TRIGGERS:
+                break
+            rep = _representative(zone)
+            zone_top = max(mm["price"] for mm in zone)
+            zone_low = min(mm["price"] for mm in zone)
+            entry = zone_low                    # a breakdown must clear the whole zone
+            if (last - entry) / last > MAX_LEVEL_DISTANCE_PCT:
+                continue
+            lv = _level_from_dict({**rep, "effectiveKind": "support"})
+            top = _break_top(zone_top)
+            anchor = top if top is not None else zone_top
+            stop = anchor + stop_buffer(anchor, atr_value=stop_atr, thresholds=t)
+            stop_ref = "above_break_top" if top is not None else "above_broken_support"
+            risk = stop - entry
+            member_prices = {mm["price"] for mm in zone}
+            next_sup = _next_support_below(entry, exclude=member_prices)
+            targets = build_ladder(entry, "short", next_level=(next_sup["price"] if next_sup else None))
+            rr = risk_reward(entry, stop, gate_target(targets, t).price)
+            rr3 = risk_reward(entry, stop, targets[-1].price)
+            confl = []
+            if "T1.3a" in lv.sources:
+                confl.append("prior-day extreme (T1.3a)")
+            if lv.touches >= t.strong_touches:
+                confl.append(f"{lv.touches} touches (T1.2)")
+            hta = _higher_tf_agrees(context, "downtrend")
+            if hta:
+                confl.append("higher timeframe downtrend (T3.3g)")
+            reasons = []
+            if rr < t.min_risk_reward - 1e-9:
+                reasons.append(f"R2 reward:risk {rr:.2f} to {gate_label(t)} below {t.min_risk_reward:.1f}")
+            if risk > entry * t.max_stop_pct:
+                reasons.append(f"T4.3a/R1 the stop the chart justifies ({stop:.2f}) is "
+                               f"{risk / entry:.1%} away — beyond the {t.max_stop_pct:.1%} cap")
+            valid = not reasons
+            rules = ["T1.2", "T1.6", "T3.3a", "T3.3b", "T3.3c", "T2.5", "T4.1", "T4.3a", "T4.4a", "R2",
+                     "R6.1", "R6.2"] + list(lv.sources)
+            if len(confl) >= 2:
+                rules.append("T4.6")
+            assessment = assess_trigger(kind="breakdown", lv=lv, rep=rep, zone_size=len(zone), rr=rr,
+                                        target_basis=targets[0].basis, risk=risk, entry=entry,
+                                        last=last, stop_reference=stop_ref,
+                                        fakeout_level=fakeout_level, hta=hta, valid=valid, t=t)
+            m += 1
+            triggers.append(Trigger(
+                id=f"d{m}", kind="breakdown", direction="short", level_price=entry,
+                level={**rep, "zone": {"high": zone_top, "low": zone_low,
+                                       "members": [mm["price"] for mm in zone]},
+                       **({"breakTop": round(top, 4)} if top is not None else {})},
+                entry_price=entry, entry_basis="on_break", stop_price=stop, stop_reference=stop_ref,
+                targets=[tg.to_dict() for tg in targets], risk_reward=rr, risk_reward_tp3=rr3,
+                conditions=[
+                    Condition("T3.3b", f"a bar CLOSES below {entry:.2f}", "close_through"),
+                    _window_condition(),
+                    Condition("T3.3a/T2.5", f"volume on the break >= {t.volume_spike_mult:.1f}x baseline", "volume"),
+                    Condition("T3.3b", "decisive bearish candle (large body, minimal wicks)", "decisive"),
+                    Condition("T3.3c/T3.3f", f"{t.followthrough_required} of the next {t.followthrough_bars} bars "
+                                             f"hold below the level", "followthrough"),
+                ],
+                void_if=[f"session opens below {entry:.2f} (gapped past — do not chase, T4.1)",
+                         f"|open - prev close| > {t.gap_void_r:.1f}x risk ({t.gap_void_r * risk:.2f})"],
+                confluences=confl, confidence=_trigger_confidence(lv, confl, rr, valid),
+                rules=rules, valid=valid, no_trade_reasons=reasons, assessment=assessment,
+                notes="Breakdown: SHORT on a confirmed close through support (volume surge + decisive bearish "
+                      "candle + follow-through); any fakeout tell (T3.3d-f) cancels it. Expressed with a put (T5).",
+            ))
+
     # Wedge break — if the detectors see a falling wedge on the trigger or a structure tf.
     for tf in [ptf] + list(structure_tfs):
         w = (facts.get("wedge") or {}).get(tf)
@@ -593,11 +787,16 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
     gap_policy = {"gapVoidR": t.gap_void_r, "respectMult": t.respect_mult,
                   "entryWindowBars": t.plan_entry_window_bars, "primeWindows": list(PRIME_WINDOWS),
                   "extrapolation": "the book is silent on overnight gaps (spec Q11-Q13)"}
-    return SessionPlan(symbol=symbol, plan_for=plan_for, built_from_ms=as_of, built_from_session=built_session,
-                       structure_tfs=list(structure_tfs), trigger_tf=trigger_tf, last_close=last,
-                       levels=levels, context=context, triggers=triggers, invalidations=invalidations,
-                       gap_policy=gap_policy, notes=notes,
-                       bottom_line=build_bottom_line(triggers, plan_for))
+    if last != last_close:
+        notes.append(f"pre-open re-plan: levels judged against the pre-market price {last:.2f} "
+                     f"(close {last_close:.2f}, {(last - last_close) / last_close * 100:+.2f}%)")
+    sp = SessionPlan(symbol=symbol, plan_for=plan_for, built_from_ms=as_of, built_from_session=built_session,
+                     structure_tfs=list(structure_tfs), trigger_tf=trigger_tf, last_close=last_close,
+                     levels=levels, context=context, triggers=triggers, invalidations=invalidations,
+                     gap_policy=gap_policy, notes=notes,
+                     bottom_line=build_bottom_line(triggers, plan_for))
+    sp.reference_price = last if last != last_close else None
+    return sp
 
 
 def analysis_from_trigger(trigger: dict, symbol: str, *, session_window: str = "unknown",
@@ -608,22 +807,24 @@ def analysis_from_trigger(trigger: dict, symbol: str, *, session_window: str = "
     lv = trigger.get("level") or {}
     targets = trigger.get("targets") or []
     trims = (30.0, 40.0, 15.0)
+    kind = trigger.get("kind") or "bounce"
+    is_break = kind in ("breakout", "wedge_break", "breakdown")
     base = dict(
         symbol=symbol, verdict="setup", setup_type=trigger.get("setupType") or "support_bounce",
-        direction="long", trend="sideways",
+        direction=trigger.get("direction") or "long", trend="sideways",
         levels=[{"price": float(trigger["levelPrice"]), "kind": lv.get("effectiveKind") or lv.get("kind") or "support",
                  "touches": int(lv.get("touches") or 1), "note": ",".join(lv.get("sources") or [])}],
         pattern_kind="falling_wedge" if trigger.get("kind") == "wedge_break" else "none",
         pattern_present=trigger.get("kind") == "wedge_break",
         pattern_widest_height=float(((lv.get("wedge") or {}).get("widestHeight")) or 0.0),
         pattern_volume_declining=bool((lv.get("wedge") or {}).get("volumeDeclining")), pattern_notes="",
-        breakout_observed=trigger.get("kind") != "bounce", breakout_verdict="breakout" if trigger.get("kind") != "bounce" else "none",
-        breakout_level=float(trigger["levelPrice"]) if trigger.get("kind") != "bounce" else 0.0,
-        breakout_volume_confirmed=trigger.get("kind") != "bounce", breakout_decisive_candle=trigger.get("kind") != "bounce",
-        breakout_follow_through=trigger.get("kind") != "bounce", breakout_holds_level=trigger.get("kind") != "bounce",
+        breakout_observed=is_break, breakout_verdict="breakout" if is_break else "none",
+        breakout_level=float(trigger["levelPrice"]) if is_break else 0.0,
+        breakout_volume_confirmed=is_break, breakout_decisive_candle=is_break,
+        breakout_follow_through=is_break, breakout_holds_level=is_break,
         higher_tf_agrees=any("higher timeframe" in c for c in (trigger.get("confluences") or [])),
         entry_price=float(trigger["entry"]["price"]), entry_basis=trigger["entry"].get("basis", "at_level"),
-        entry_requires_confirmation=trigger.get("kind") != "bounce",
+        entry_requires_confirmation=is_break,
         stop_price=float(trigger["stop"]["price"]), stop_kind="mental",
         stop_reference=trigger["stop"].get("reference", "below_support"),
         targets=[{"price": float(tg["price"]), "trim_pct": float(tg.get("trimPct") or trims[i] if i < 3 else 15.0),
@@ -632,7 +833,9 @@ def analysis_from_trigger(trigger: dict, symbol: str, *, session_window: str = "
         volume_verdict="judged at the trigger bar (T2.9)",
         confidence=float(confidence if confidence is not None else trigger.get("confidence") or 0.5),
         rules_fired=list(trigger.get("rules") or []), no_trade_reasons=list(trigger.get("noTradeReasons") or []),
-        options_strike_guidance="first strike just OTM (T5.1)", options_expiry_guidance="current-week Friday; 0DTE with reduced size (T5.2)",
+        options_strike_guidance=("first PUT strike just OTM (T5.1, short side)" if (trigger.get("direction") == "short")
+                                 else "first strike just OTM (T5.1)"),
+        options_expiry_guidance="current-week Friday; 0DTE with reduced size (T5.2)",
         options_warnings=[], rationale=f"Planned {trigger.get('kind')} trigger {trigger.get('id')} fired: "
                                        + "; ".join(c.get("text", "") for c in (trigger.get("conditions") or [])),
         session_window=session_window, plan_mode=False)

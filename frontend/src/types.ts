@@ -320,7 +320,7 @@ export interface TechniqueTaxonomy { reviewVerdicts: Record<string, string>; roo
 export interface PlanCondition { rule: string; text: string; kind: string }
 export interface TriggerAssessment { grade: "A" | "B" | "C" | null; score: number; strengths: string[]; cautions: string[] }
 export interface PlanTrigger {
-  id: string; kind: "bounce" | "breakout" | "wedge_break" | string; direction: string; levelPrice: number; level: any;
+  id: string; kind: "bounce" | "breakout" | "wedge_break" | "reject" | "breakdown" | string; direction: string; levelPrice: number; level: any;
   entry: { price: number; basis: string }; stop: { price: number; reference: string };
   targets: { price: number; trimPct: number; basis: string }[]; riskReward: number; risk: number;
   conditions: PlanCondition[]; voidIf: string[]; confluences: string[]; confidence: number; rules: string[];

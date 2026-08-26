@@ -173,11 +173,15 @@ class TriggerTracker:
 
     @property
     def risk(self) -> float:
-        return max(self.entry - self.stop, 1e-9)
+        return max(abs(self.entry - self.stop), 1e-9)
 
     @property
     def kind(self) -> str:
         return self.trigger["kind"]
+
+    @property
+    def direction(self) -> str:
+        return "short" if self.trigger.get("direction") == "short" else "long"
 
     def _note(self, bar: Bar, what: str, **detail) -> None:
         self.events.append({"ts": bar.ts, "event": what, **detail})
@@ -226,17 +230,21 @@ class TriggerTracker:
                 self._note(bar, "gap_unchecked", firstBar=bar.ts, sessionOpen=open_ms)
             elif self.gap_rules:
                 # specific first (through the stop / past the level), then the magnitude rule
-                if self.kind == "bounce":
-                    if bar.open < self.stop:
+                short = self.direction == "short"
+                if self.kind in ("bounce", "reject"):
+                    through = (bar.open > self.stop) if short else (bar.open < self.stop)
+                    past = (bar.open >= self.entry) if short else (bar.open <= self.entry)
+                    if through:
                         self.status = "gapped_through"
                         self._note(bar, "gapped_through", open=bar.open, stop=self.stop)
                         return self.status
-                    if bar.open <= self.entry:
+                    if past:
                         self.status = "gapped_past"
                         self._note(bar, "gapped_past", open=bar.open, entry=self.entry)
                         return self.status
                 else:
-                    if bar.open > self.entry:
+                    past = (bar.open < self.entry) if short else (bar.open > self.entry)
+                    if past:
                         self.status = "gapped_past"
                         self._note(bar, "gapped_past", open=bar.open, entry=self.entry)
                         return self.status
@@ -248,9 +256,10 @@ class TriggerTracker:
                                    limit=round(t.gap_void_r * self.risk, 4))
                         return self.status
         w = session_window(bar.ts)
-        if self.kind == "bounce":
+        short = self.direction == "short"
+        if self.kind in ("bounce", "reject"):
             tol = max(self.entry * t.level_tolerance_pct, 1e-9)
-            touched = bar.low <= self.entry + tol
+            touched = (bar.high >= self.entry - tol) if short else (bar.low <= self.entry + tol)
             if not touched:
                 return self.status
             if not self._window_ok(bar.ts):
@@ -270,10 +279,13 @@ class TriggerTracker:
             self.fill_price = self.entry
             self._note(bar, "fired", window=w, rel=rel, fill=self.entry)
             return self.status
-        # breakout / wedge_break: close through, then confirmation
+        # breakout / wedge_break / breakdown: close through, then confirmation
         if self._break_index is None:
             prev = self._bars[-2] if len(self._bars) >= 2 else None
-            crossed = bar.close > self.entry and (prev is None or prev.close <= self.entry)
+            if short:
+                crossed = bar.close < self.entry and (prev is None or prev.close >= self.entry)
+            else:
+                crossed = bar.close > self.entry and (prev is None or prev.close <= self.entry)
             if not crossed:
                 return self.status
             if not self._window_ok(bar.ts):
@@ -282,7 +294,7 @@ class TriggerTracker:
                 self._note(bar, "break_outside_window", window=w)
                 return self.status
             rel = self._rel_volume(bar)
-            decisive, _ = is_decisive(bar, self._bars[:-1], direction="long", thresholds=t)
+            decisive, _ = is_decisive(bar, self._bars[:-1], direction=self.direction, thresholds=t)
             if rel is None:
                 return self._volume_unknown(bar, "break_skipped_volume_unknown")
             if rel < t.volume_spike_mult:
@@ -301,8 +313,13 @@ class TriggerTracker:
         if len(after) < t.followthrough_bars:
             return self.status
         seq = after[:t.followthrough_bars]
-        held = all(b.close > self.entry for b in seq)
-        cont = sum(1 for b in seq if b.close > self._bars[self._break_index].close)
+        bc = self._bars[self._break_index].close
+        if short:
+            held = all(b.close < self.entry for b in seq)
+            cont = sum(1 for b in seq if b.close < bc)
+        else:
+            held = all(b.close > self.entry for b in seq)
+            cont = sum(1 for b in seq if b.close > bc)
         if held and cont >= t.followthrough_required:
             self.status = "fired"
             self.fired_index, self.fired_ts = index, bar.ts
@@ -341,13 +358,13 @@ def score_trigger(tracker: TriggerTracker, bars: list[Bar], *, thresholds: Thres
     if tracker.status != "fired" or tracker.fired_index is None:
         return res
     i = tracker.fired_index
-    plan = {"setupType": tracker.trigger.get("setupType"),
+    plan = {"setupType": tracker.trigger.get("setupType"), "direction": tracker.direction,
             "entry": {"price": float(tracker.fill_price), "basis": "on_break"},   # fill at the fire bar
             "stop": {"price": tracker.stop},
             "targets": tracker.trigger["targets"]}
     # simulate from the fire bar (on_break fills at bars[start]); horizon = rest of session
-    sim = simulate_plan(bars, i, plan, entry_window=1, horizon=len(bars))
-    sim["rMultiple"] = sim["rMultiple"]
+    sim = simulate_plan(bars, i, plan, entry_window=1, horizon=len(bars),
+                        stop_on="close" if t.stop_on_close else "low")
     res["sim"] = {k: sim.get(k) for k in ("filled", "outcome", "rMultiple", "mfeR", "maeR", "barsHeld", "hits", "resolved")}
     res["closedByEod"] = True
     return res
@@ -358,7 +375,7 @@ def replay_plan(plan: dict, bars: list[Bar], *, thresholds: Thresholds | None = 
     """Replay one session against a plan. Returns per-trigger results (with
     counterfactuals) plus level respect and a summary."""
     t = thresholds or DEFAULT_THRESHOLDS
-    prev_close = float(plan.get("lastClose") or 0) or None
+    prev_close = float(plan.get("referencePrice") or plan.get("lastClose") or 0) or None
     out_triggers: list[dict] = []
     if not bars:
         return {"session": plan.get("planFor"), "bars": 0, "triggers": [], "levels": [],

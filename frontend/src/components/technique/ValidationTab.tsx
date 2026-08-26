@@ -88,7 +88,7 @@ function readRow(r: WalkforwardRow): Finding {
   for (const t of fired) {
     const sim = t.sim ?? {};
     const r = sim.rMultiple ?? 0;
-    parts.push(`${t.id} ${t.kind === "bounce" ? "bounce" : "break"} fired ${etTime(t.firedTs)}${t.firedWindow ? ` (${String(t.firedWindow).replace(/_/g, " ")})` : ""} → ${OUTCOME_WORDS[sim.outcome] ?? sim.outcome ?? "?"} ${signedR(r)}`);
+    parts.push(`${t.id} ${t.kind === "bounce" ? "bounce" : t.kind === "reject" ? "reject (short)" : t.kind === "breakdown" ? "breakdown (short)" : "break"} fired ${etTime(t.firedTs)}${t.firedWindow ? ` (${String(t.firedWindow).replace(/_/g, " ")})` : ""} → ${OUTCOME_WORDS[sim.outcome] ?? sim.outcome ?? "?"} ${signedR(r)}`);
   }
   if (!fired.length) {
     if (!valid.length) parts.push(trig.length ? "no tradeable trigger in the plan (all rejected)" : "no triggers planned");
@@ -163,6 +163,7 @@ function LevelQuality({ title, data, hint }: { title: string; data: Record<strin
 
 const TRIGGER_LABELS: Record<string, string> = {
   bounce: "Bounce — buy the dip at support", breakout: "Breakout — buy through resistance",
+  reject: "Rejection — short at resistance (put)", breakdown: "Breakdown — short through support (put)",
   prime_open: "Prime open 09:30–10:30", prime_close: "Prime close 14:45–16:00", midday: "Mid-day", "?": "unknown window",
   base: "As designed — prime-window gate + gap rules on", noWindowGate: "Without the prime-window gate (R6)", noGapRules: "Without the gap rules (Q11–Q13)",
   middayBlocked: "Mid-day fires the R6 gate blocked — what they would have done",
@@ -278,7 +279,7 @@ function SetupsSheet({ sel, pending, onOpen, onScore, scorable }: {
               <tr key={row.id} className="tq-finding win" title={`${row.symbol}: ${best.kind} at ${num(best.levelPrice)} · void if: ${(best.voidIf ?? []).join("; ") || "—"}`}>
                 <td className="nowrap"><span className="tq-symcell"><SymAvatar sym={row.symbol} /><b>{row.symbol}</b>
                   {row.promotedRunId && <button className="tq-act tq-arm-inline" onClick={() => openRun(row.promotedRunId!)} title="This setup already has a run — open it (and arm there)"><IcoOpen /><span>open</span></button>}</span></td>
-                <td className="nowrap"><span className={`tq-badge ${best.kind === "bounce" ? "setup" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : "WEDGE"}</span></td>
+                <td className="nowrap"><span className={`tq-badge ${best.kind === "bounce" ? "setup" : best.direction === "short" ? "neg" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : best.kind === "reject" ? "REJECT ↓" : best.kind === "breakdown" ? "BREAKDOWN ↓" : "WEDGE"}</span></td>
                 <td>{valid.length > 1
                   ? <span className="tq-alt" title={valid.slice(1).map((t: any) => `${t.id} ${t.kind} at ${num(t.entry?.price)} (R:R ${num(t.riskReward, 1)})`).join("; ")}>+{valid.length - 1}</span>
                   : <span className="muted">—</span>}</td>
@@ -338,6 +339,16 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
   const positions = useStore((s) => s.positions);
   const watchlists = useStore((s) => s.watchlists);
   const bookUniverse: string[] = (settings["technique.walkforward.symbols"] as string[]) ?? LEGACY_UNIVERSE;
+  const extraUniverse: string[] = Array.isArray(settings["technique.universe.extra"]) ? (settings["technique.universe.extra"] as string[]) : [];
+  const [autoUniverse, setAutoUniverse] = useState<string[]>([]);
+  useEffect(() => {
+    let alive = true;
+    api.techniqueUniverse().then((u) => {
+      if (!alive) return;
+      setAutoUniverse((u.symbols ?? []).filter((s) => u.provenance?.[s] === "auto"));
+    }).catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
 
   // null = "the book's universe" (follows the setting, which loads after mount); a
   // picked list is remembered until the user changes it again
@@ -438,18 +449,20 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
     const held = Array.from(new Set(Object.values(positions).filter((p) => p.secType === "STK" && p.qty !== 0).map((p) => p.symbol))).sort();
     const recent = Array.from(new Set(sweeps.flatMap((s) => s.symbols))).filter((s) => !bookUniverse.includes(s)).slice(0, 30);
     return [
-      { key: "book", label: "The book's universe", hint: "liquid, optionable names the method is written for (technique.walkforward.symbols)", symbols: bookUniverse },
+      { key: "book", label: "Core universe", hint: `${bookUniverse.length} big, famous, heavily-traded names — most options-liquid first (technique.walkforward.symbols)`, symbols: bookUniverse },
+      { key: "extra", label: "My extras", hint: "symbols you added yourself (Settings → Auto-trading → Extra symbols)", symbols: extraUniverse },
+      { key: "auto", label: "Today's most active", hint: "added automatically from today's most-active US stocks (price floor applies)", symbols: autoUniverse },
       { key: "held", label: "My holdings", hint: "stocks you hold in any account", symbols: held },
       ...watchlists.map((w) => ({ key: `wl-${w.id}`, label: `Watchlist · ${w.name}`, hint: `${w.symbols.length} symbols`, symbols: w.symbols })),
       { key: "recent", label: "Recently swept", hint: "symbols from earlier sweeps", symbols: recent },
       ...SYMBOL_BUNDLES.map((b) => ({ ...b, collapsed: true, group: "Bundles — add a whole theme at once" })),
     ];
-  }, [positions, watchlists, sweeps, bookUniverse]);
+  }, [positions, watchlists, sweeps, bookUniverse, extraUniverse, autoUniverse]);
 
   // What the selection is made of, in words: whole sets first, then loose symbols
   const coverage = useMemo(() => {
     const selSet = new Set(symbols);
-    const candidates = [{ label: "The book's universe", symbols: bookUniverse }, ...SYMBOL_BUNDLES.map((b) => ({ label: b.label, symbols: b.symbols }))]
+    const candidates = [{ label: "Core universe", symbols: bookUniverse }, { label: "My extras", symbols: extraUniverse }, { label: "Today's most active", symbols: autoUniverse }, ...SYMBOL_BUNDLES.map((b) => ({ label: b.label, symbols: b.symbols }))]
       .sort((x, y) => y.symbols.length - x.symbols.length);
     const covered = new Set<string>();
     const names: { label: string; n: number; members: string[] }[] = [];

@@ -53,13 +53,14 @@ class TradeResult:
 
 
 def _simulate(bars: list[Bar], start: int, setup: dict, *, entry_window: int,
-              horizon: int) -> TradeResult:
+              horizon: int, thresholds: Thresholds | None = None) -> TradeResult:
     """Score one deterministic setup with the shared walk-forward model
     (`outcome.simulate_plan`) — the same rules score live runs, so backtest
     statistics and per-run outcomes are directly comparable."""
     ts0 = bars[start].ts
     session = time.strftime("%Y-%m-%d", time.gmtime(ts0 / 1000))
-    sim = simulate_plan(bars, start, setup, entry_window=entry_window, horizon=horizon)
+    sim = simulate_plan(bars, start, setup, entry_window=entry_window, horizon=horizon,
+                        stop_on="close" if (thresholds or DEFAULT_THRESHOLDS).stop_on_close else "low")
     return TradeResult(
         ts=ts0, session=session, setup_type=setup["setupType"], entry=sim["entry"], stop=sim["stop"],
         targets=sim["targets"], filled=sim["filled"], fill_ts=sim["fillTs"], outcome=sim["outcome"],
@@ -111,7 +112,7 @@ async def run_backtest(symbol: str, tf: str, start_ms: int, end_ms: int, *,
             if last_emit is not None and cursor - last_emit < horizon_bars:
                 continue
             seen[key] = cursor
-            tr = _simulate(bars, cursor, s, entry_window=entry_window, horizon=horizon_bars)
+            tr = _simulate(bars, cursor, s, entry_window=entry_window, horizon=horizon_bars, thresholds=thresholds)
             tr.rules = list(tr.rules) + [f"window:{cur_window}"]
             trades.append(tr)
         cursor += step_bars

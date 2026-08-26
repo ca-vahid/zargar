@@ -99,7 +99,8 @@ def choose_expiry(expirations: list[str], today: dt.date, *, avoid_0dte: bool = 
 
 
 def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: str,
-                    today: dt.date, is_0dte: bool, max_strike: float | None = None) -> ContractPick | None:
+                    today: dt.date, is_0dte: bool, max_strike: float | None = None,
+                    min_strike: float | None = None) -> ContractPick | None:
     """T5.1 — the first strike just OTM in the trade direction, with T5.3/T5.4
     warnings attached. `max_strike` (usually the plan's TP2) caps the pick: a
     call whose strike sits beyond the target would still be OTM when the plan
@@ -127,6 +128,13 @@ def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: s
         else:
             strike_warning = (f"T5.1 strike {float(c['strike']):g} is beyond the plan's target cap "
                               f"{max_strike:g} — payoff at target is poor")
+    if min_strike is not None and want == "put" and float(c["strike"]) < min_strike:
+        within = [x for x in otm if float(x["strike"]) >= min_strike]
+        if within:
+            c = within[0]                      # the closest OTM put still above the downside target
+        else:
+            strike_warning = (f"T5.1 strike {float(c['strike']):g} is beyond the plan's target cap "
+                              f"{min_strike:g} — payoff at target is poor")
     bid = float(c.get("bid") or 0.0)
     ask = float(c.get("ask") or 0.0)
     mid = (bid + ask) / 2 if (bid or ask) else 0.0
@@ -174,7 +182,7 @@ def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: s
 
 async def pick_for_setup(client, symbol: str, spot: float, direction: str,
                          *, today: dt.date | None = None, max_strike: float | None = None,
-                         avoid_0dte: bool = False) -> dict:
+                         min_strike: float | None = None, avoid_0dte: bool = False) -> dict:
     """End-to-end: expirations → expiry choice → chain → contract. `client` is
     any provider exposing expirations()/chain() with normalized rows. Never
     raises for 'no contract'; returns a dict with `error` for hard failures."""
@@ -187,7 +195,7 @@ async def pick_for_setup(client, symbol: str, spot: float, direction: str,
                     "provider": getattr(client, "name", "?")}
         chain = await client.chain(symbol, expiry)
         pick = select_contract(chain, spot, direction, expiry=expiry, today=today, is_0dte=is_0dte,
-                               max_strike=max_strike)
+                               max_strike=max_strike, min_strike=min_strike)
         if pick is None:
             return {"error": f"no {('call' if direction == 'long' else 'put')} just OTM at {expiry}",
                     "expiry": expiry, "available": True, "provider": getattr(client, "name", "?")}

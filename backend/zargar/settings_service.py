@@ -15,6 +15,7 @@ from . import events as ev
 from .bus import Bus
 from .events import Journal
 from .models import Setting
+from .technique.universe import CORE_UNIVERSE
 
 # Historical trading.mode values fold into the two-mode model: practice
 # (simulated fills, incl. the old dry_run/sim rungs — per-order dry runs are
@@ -88,7 +89,7 @@ DEFAULTS: dict[str, Any] = {
     "llm.max_passes": 6,                    # vision pipeline call budget per run
     # --- technique (docs/TECHNIQUE-ENHANCEDMARKET.md section 10 thresholds) ---
     "technique.enabled": True,
-    "technique.long_only": True,
+    "technique.long_only": False,               # False = also plan the short side (rejection at resistance / breakdown, puts)
     "technique.level_tolerance_pct": 0.15,
     "technique.min_touches": 2,
     "technique.pivot_window": 3,
@@ -100,6 +101,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.decisive_body_ratio": 0.6,
     "technique.min_risk_reward": 3.0,
     "technique.rr_gate_target": "auto",         # R2 measured to: auto (where the position actually exits) | tp1 | tp2 | tp3
+    "technique.stop_on_close": True,            # T4.3 — exit when a 1m bar CLOSES through the stop (wick = test); quote breach 0.25R beyond still fires
     "technique.default_risk_pct": 1.0,
     "technique.max_risk_pct": 5.0,
     "technique.wedge_min_bars": 8,
@@ -136,13 +138,14 @@ DEFAULTS: dict[str, Any] = {
     # the book's universe: liquid, optionable US names with tight spreads and real
     # 1m volume — index ETFs, mega-caps, semis, high-beta tech, financials, energy.
     # (CBOE chains are US-only, so no .TO/.V here.)
-    "technique.walkforward.symbols": [
-        "SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "SMH", "TLT", "GLD",
-        "AAPL", "MSFT", "NVDA", "AMZN", "META", "GOOGL", "TSLA", "AVGO", "NFLX", "AMD",
-        "MU", "INTC", "QCOM", "TSM", "ARM", "CRM", "ORCL", "ADBE", "PLTR", "UBER",
-        "COIN", "SHOP", "XYZ", "PYPL", "SOFI", "HOOD", "MSTR", "RIVN", "NIO", "BABA",
-        "JPM", "BAC", "GS", "C", "WFC", "XOM", "CVX", "OXY", "BA", "DIS",
-    ],
+    "technique.walkforward.symbols": list(CORE_UNIVERSE),   # the core universe (technique/universe.py): big, famous, heavily-traded, most options-liquid first
+    "technique.universe.extra": [],           # your own additions — always planned/armable
+    "technique.universe.exclude": [],         # never plan these, whatever layer they come from
+    "technique.universe.auto_refresh": True,  # add the day's most-active US stocks (Alpaca screener / Yahoo) before the evening sheet
+    "technique.universe.auto_top": 40,        # at most this many auto additions
+    "technique.universe.min_price": 20.0,     # auto additions need a share price at least this high (thin, low-priced names are not the book's world)
+    "technique.universe.resolved": {},        # cache: {date, symbols, provenance, counts, dropped} — read via GET /api/technique/universe
+
     "technique.walkforward.workers": 0,        # CPU workers for a sweep: 0 auto (cpu-1, max 8), 1 = thread only
     "technique.walkforward.concurrency": 12,   # symbols in flight at once (fetch + score)
     "technique.history.concurrency": 6,        # concurrent Yahoo requests (429 back-off is the net; >10 = throttling)
@@ -157,11 +160,15 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
     "technique.arm.mode": "proposal",          # default execution mode: alert | proposal | auto
     "technique.arm.instrument": "options",     # the book trades just-OTM weeklies / 0DTE (T5); "shares" is the alternative
-    "technique.arm.contracts": 1,              # R5: one contract per trade while the technique is validated
-    "technique.arm.max_contracts": 5,          # hard cap per entry (RiskGate has its own caps too)
+    "technique.arm.contracts": 0,              # 0 = size by risk % (see risk_pct); 1 = the book's R5 one-contract rule
+    "technique.arm.max_contracts": 10,         # hard cap per entry (RiskGate has its own caps too)
+    "technique.arm.friday_size_mult": 0.5,     # Fridays (0DTE day for single names): scale the risk-sized contracts
+    "technique.arm.preopen_at": "09:25",       # ET: judge armed plans against the pre-market print from this time
+    "technique.arm.preopen_replan": True,      # when every trigger would die at the open, re-plan around the pre-market price
+
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
-    "technique.arm.risk_pct": 0.5,             # R1: % of equity risked per entry
+    "technique.arm.risk_pct": 2.0,             # R1: % of equity risked per entry (practice: 2%; the book's live range is 0.5-1%)
     "technique.arm.max_qty": 100,              # hard cap on shares per entry
     "technique.arm.allow_live_auto": False,    # auto mode on live/paper accounts needs this AND per-arm ack
     "technique.arm.slippage_pct": 0.1,         # entry limit = trigger price * (1 + this %)
@@ -179,7 +186,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.quote_exit_polls": 2,       # consecutive ~2s polls required (one bad tick is not a breach)
     "technique.arm.quote_exit_seconds": 2.0,   # watch cadence; the quote feed itself polls ~3s
     "technique.arm.premium_stop_pct": 50.0,    # options: sell when the premium bleeds this % below what was paid (0 = off)
-    "technique.arm.avoid_0dte_after": "15:15", # ET: after this time prefer this-week expiry over 0DTE ("" = never)
+    "technique.arm.avoid_0dte_after": "10:30", # ET: 0DTE only in the morning window; later fires take the next expiry ("" = never)
     "technique.arm.strike_within_targets": True,  # cap the just-OTM strike at the plan's TP2
     "technique.arm.entry_fallback": "off",     # options entry blocked (spread/IV/no contract): off = skip, shares = buy the stock instead
     "technique.arm.skip_wide_spread": True,    # options: skip the entry when the contract's spread is wide (T5.4)

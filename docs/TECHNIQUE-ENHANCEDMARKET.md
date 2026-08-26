@@ -490,7 +490,7 @@ configurable default and the numbers below are *our* proposals, not the author's
 | Q7 | "Follow-through" | 2 of the next 3 candles continue, no close back through the level |
 | Q8 | Wedge minimum length | ≥ 8 bars, ≥ 2 touches per trendline (T1.5 wants 3) |
 | Q9 | Max distance from level still tradeable | R:R ≥ 3 test (T4.1) governs |
-| Q10 | Short side | The book is **almost entirely long-biased** (falling wedge, buy support). Mirror rules for shorts are our extrapolation — **long-only for v1** |
+| Q10 | Short side | The book is **almost entirely long-biased** (falling wedge, buy support). Mirror rules for shorts are our extrapolation — long-only for v1; **lifted 2026-08-26** (`technique.long_only` off): `reject` = short at resistance (p. 74 "sell at resistance"), `breakdown` = confirmed close through support (T3.3 mirrored), puts only |
 | Q11 | **Overnight gap past a planned level** (book silent: the author is flat overnight) | trigger not taken — T4.1 forbids chasing (`gapped_past`) |
 | Q12 | **Open beyond the planned stop** | trigger void (`gapped_through`) |
 | Q13 | **Gap magnitude** | \|open − prev close\| > `technique.plan.gap_void_r` (1.0) × risk voids the plan; reported with and without |

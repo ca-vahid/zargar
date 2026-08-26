@@ -173,6 +173,20 @@ docker-compose.
   (`feed.exchange_bar_hold_seconds`); consumers get ONE bar per minute (`source: exchange`
   when corrected). The fire→critic→order chain runs off the bar loop (`_spawn_fire`);
   tests/manual feeds call `armer.on_bar()` which awaits `wait_fires()`.
+- **Both sides are planned** (`technique.long_only` off): trigger kinds `bounce`/`breakout`/
+  `wedge_break` (long, calls) and `reject`/`breakdown` (short, PUTS only — never share
+  shorting). Everything price-relative (tracker, `outcome.simulate_plan`, `exits.plan_exit`,
+  `quote_stop_breach`, option pick `min_strike`) takes the direction; keep mirrors in sync.
+- Universe = `technique/universe.py`: core list (`technique.walkforward.symbols`, 117 liquid
+  names) + `technique.universe.extra` + daily auto most-actives (price floor) − exclude;
+  `service.universe()` / `GET /api/technique/universe`. Don't hand-edit the core in settings
+  DEFAULTS — it is `CORE_UNIVERSE`.
+- Stops exit on the bar CLOSE (`technique.stop_on_close`), the 0.25R quote breach is the
+  crash brake; sizing is risk-based (`technique.arm.contracts`=0) with Friday/0DTE
+  multipliers; 0DTE only before `technique.arm.avoid_0dte_after` (10:30).
+- Pre-open (09:25 ET): `PlanArmer._preopen_check` judges plans against the pre-market print
+  and may re-plan with `build_session_plan(reference_price=)`; a re-planned run's
+  `referencePrice` is the tracker's prev_close for the gap rule.
 - Auto mode never arms without a loss halt (`_ensure_loss_halt`, fallback
   `technique.arm.daily_loss_fallback`); the critic fails OPEN with a timeout + per-day
   budget (`technique.arm.critic_fail_budget`) that pauses the plan.

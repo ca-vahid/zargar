@@ -318,3 +318,48 @@ a number** (p. 72).
     the same 3-cent box; the paid critic was doing R3.2's job.
   - Still open (B, before real money): fleet-wide position/premium caps, R1 on premium,
     re-tightened `risk.*`, event calendar, RTH-only exits, real-time option quotes, fees.
+- 2026-08-26 (night) · **User decisions on the review's D-questions**, all built the same
+  night (see `docs/EM-METHOD-REVIEW-2026-08-26.md` §5-D):
+  - **D1 Universe → large, liquid, refreshed.** `technique.walkforward.symbols` is now a
+    curated **117-name core** (index/sector ETFs with daily or M/W/F expiries, mega caps,
+    the most-active single-name options — ranked by one day of consolidated CBOE options
+    volume, price ≥ $20; `technique/universe.py`). Plus `technique.universe.extra` (the
+    user's own names, always in) and a daily **auto layer** (`technique.universe.auto_refresh`,
+    Alpaca most-actives screener, Yahoo `most_actives` fallback, price floor
+    `technique.universe.min_price` = $20, cap `auto_top` = 40). `technique.universe.exclude`
+    wins over every layer. The evening sheet uses the resolved list when
+    `technique.sheet.symbols` is empty; `GET /api/technique/universe` shows provenance.
+    T, CHPT, SOUN, CLF are gone from the default set.
+  - **D2 Sizing → risk-based in practice, Fridays smaller, 0DTE mornings only.**
+    `technique.arm.contracts` 1→**0** (= size by risk), `risk_pct` 0.5→**2.0** (practice;
+    the book's live range stays 0.5–1 %), `max_contracts` 5→10. Risk per contract = what
+    the premium stop can lose (`premium_stop_pct` of the premium); contracts = equity ×
+    risk% / that; **Fridays × `friday_size_mult` 0.5**, 0DTE × 0.5 (T5.2). `avoid_0dte_after`
+    15:15→**10:30** — a fire after the morning window takes the next expiry. R2's `auto` gate
+    therefore measures to TP3 again when the size is ≥ 3 contracts (fixed 1–2 → TP2).
+    ⚠ Re-set `contracts`=1 / `risk_pct`≤1 before real money (R5, R1).
+  - **D3 Stop → on the close, not the wick.** `technique.stop_on_close` = on: a 1m bar
+    must CLOSE through the stop (the book's watch-the-reaction stop, T4.3/p. 73); the
+    0.25 R quote breach remains the crash brake. Mirrored in `outcome.simulate_plan`
+    (`stop_on`, brake fill at 0.25 R) and the backtester, so sweeps before/after are not
+    comparable (`sweepVersion` changes). Counterfactual: the old rule is `stop_on_close`
+    off.
+  - **D4 Short side → on.** `technique.long_only` = **off** (spec Q10 lifted). Two mirror
+    setups in every plan: **reject** (`r*`, short AT resistance from below — "sell at
+    resistance", p. 74 — no confirmation, stop above the zone high) and **breakdown**
+    (`d*`, a confirmed close through support: volume surge + decisive bearish candle +
+    follow-through, stop above the most recent swing high, `above_break_top`). Expressed
+    with **puts only** (just-OTM put, strike capped at TP2 from below); no share shorting.
+    Tracker, replay scorer, exits, quote brake and the option pick are direction-aware.
+    Book fidelity note: the author is long-biased and never spells out the short rules —
+    these are OUR mirror, to be measured separately (`byKind` reject/breakdown in sweeps).
+  - **D5 Gap rule → keep 1.0 R, and use the pre-market smartly.** Not traded on (R6.4),
+    but at `technique.arm.preopen_at` (09:25 ET) every armed plan is judged against the
+    pre-market print: which triggers the open would gap past/through/void is journaled
+    (`TechniquePlanPreopen`) and shown; when EVERY valid trigger is already dead,
+    `technique.arm.preopen_replan` rebuilds the plan from the same prior-session structure
+    re-anchored to the pre-market price (`build_session_plan(reference_price=)`, levels
+    flip roles around the new price) and arms it in the old plan's place
+    (`TechniquePlanReplanned`, `trigger=preopen_replan`, parent linked). For a re-planned
+    run the gap-void rule measures the 09:25→09:30 surprise (`referencePrice` is the
+    tracker's prev_close). Evidence for §1.1 still accrues on the valid 08-25 samples.

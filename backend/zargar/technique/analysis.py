@@ -208,9 +208,11 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
         facts["trend"][tf] = tr.to_dict()
         facts["atr"][tf] = round(atr(bars[-win:]), 4)
         # recent swing lows — the bases a break launches from (breakout stops, T4.3d)
+        piv = find_pivots(bars[-60:], window=t.pivot_window)
         facts.setdefault("swingLows", {})[tf] = [
-            {"price": round(p.price, 4), "ts": p.ts}
-            for p in find_pivots(bars[-60:], window=t.pivot_window) if p.kind == "low"][-8:]
+            {"price": round(p.price, 4), "ts": p.ts} for p in piv if p.kind == "low"][-8:]
+        facts.setdefault("swingHighs", {})[tf] = [
+            {"price": round(p.price, 4), "ts": p.ts} for p in piv if p.kind == "high"][-8:]
 
         today_key = keys[-1] if keys else None
         prof = build_profile(bars, exclude_session=today_key)
