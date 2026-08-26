@@ -106,6 +106,7 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
   const [full, setFull] = useState<Record<string, TechniqueRun>>({});
   const [active, setActive] = useState<Record<string, { symbol?: string; stage?: string }>>({});
   const [armBusy, setArmBusy] = useState<Record<string, boolean>>({});
+  const [bulkArm, setBulkArm] = useState<{ done: number; total: number } | null>(null);
   const [now, setNow] = useState(Date.now());
   const finished = useRef(false);
   const doneOrder = useRef<string[]>([]);
@@ -156,14 +157,19 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
   };
   const analystOk = (fr?: TechniqueRun) => fr?.result?.analysis?.verdict === "setup";
   const isArmed = (id: string) => armed.some((a) => a.runId === id);
-  const armOne = async (id: string, sym: string) => {
+  // quiet=true is the bulk path: no per-plan toasts (21 chips once buried the
+  // screen) — the caller shows ONE summary instead
+  const armOne = async (id: string, sym: string, quiet = false): Promise<string | null> => {
     setArmBusy((m) => ({ ...m, [id]: true }));
     try {
       const a = await api.techniqueArm(id, (armPortfolio ? { portfolioId: armPortfolio.id } : undefined) as any);
-      toast("success", `${sym} armed — ${a.config.mode} on ${a.portfolio?.name ?? "default account"}`);
-      return true;
+      if (!quiet) toast("success", `${sym} armed — ${a.config.mode} on ${a.portfolio?.name ?? "default account"}`);
+      return null;
     }
-    catch (e: any) { toast("error", e.message); return false; }
+    catch (e: any) {
+      if (!quiet) toast("error", e.message);
+      return `${sym}: ${e.message}`;
+    }
     finally { setArmBusy((m) => ({ ...m, [id]: false })); }
   };
 
@@ -195,9 +201,21 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
   const setups = armable ? ids.filter((id) => analystOk(full[id]))
     : doneIds.filter((id) => rows[id]?.verdict === "setup");
   const armAll = async () => {
-    let n = 0;
-    for (const id of passed) if (await armOne(id, full[id]?.symbol ?? id.slice(0, 6))) n += 1;
-    if (n) onArmedAll?.(n);
+    const total = passed.length;
+    const fails: string[] = [];
+    setBulkArm({ done: 0, total });
+    try {
+      for (const [i, id] of passed.entries()) {
+        const err = await armOne(id, full[id]?.symbol ?? id.slice(0, 6), true);
+        if (err) fails.push(err);
+        setBulkArm({ done: i + 1, total });
+      }
+    } finally { setBulkArm(null); }
+    const ok = total - fails.length;
+    if (fails.length) toast(ok ? "info" : "error",
+      `${ok}/${total} armed · ${fails.length} failed — first: ${fails[0]}`);
+    else toast("success", `All ${ok} armed — they're on the Armed dashboard`);
+    if (ok) onArmedAll?.(ok);
   };
 
   // completion order while running (rows appear as they finish, no jumping);
@@ -257,9 +275,10 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
           ? <b>{armable ? `Analyst check finished — ${setups.length}/${ids.length} confirmed` : `Scan finished — ${setups.length ? `${setups.length} setup(s) found` : "no setups"} across ${ids.length} symbol(s)`}</b>
           : <b><Spinner /> {armable ? "Analyst-checking" : "Scanning"}</b>}
         <span className="sub">{armable ? "grade = the plan's own read · analyst = the 4-pass model read of the same charts" : "each row is a full analysis run; they also live in History (trigger \"scan\")"}</span>
-        {armable && allDone && passed.length > 0 && (
-          <button className="primary-btn tq-scan-armall" onClick={() => void armAll()}>
-            ⚡ Arm {passed.length} confirmed
+        {armable && allDone && (passed.length > 0 || bulkArm) && (
+          <button className="primary-btn tq-scan-armall" disabled={!!bulkArm}
+            onClick={() => void armAll()}>
+            {bulkArm ? `⚡ Arming ${bulkArm.done}/${bulkArm.total}…` : `⚡ Arm ${passed.length} confirmed`}
           </button>
         )}
         <button className="icon-btn tq-head-right" onClick={onClose} aria-label="Dismiss scan results"><IconX /></button>
@@ -1032,7 +1051,7 @@ export function TechniquePage() {
           onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
           onClose={() => { localStorage.setItem("zargar_tq_scan_dismissed", scan.ids.slice().sort().join(",")); setScan(null); }}
           onOpen={(id) => { setFocusRun(id); setTab("analyse"); }}
-          onArmedAll={(n) => { toast("success", `${n} plan(s) armed — they're on the Armed dashboard now`); setTab("armed"); }} />
+          onArmedAll={() => setTab("armed")} />
       )}
       {tab === "chat" ? (
         <ChatPanel />
