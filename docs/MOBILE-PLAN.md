@@ -1,4 +1,4 @@
-# Zargar — Mobile-first plan (2026-08-26)
+# Zargar — Mobile-first plan (2026-08-26, refreshed against HEAD `b1a96a8`)
 
 **Goal:** Zargar works as a first-class phone app — installable, thumb-driven,
 safe to trade from — with the **Armed "Now" screen** as its home. One codebase,
@@ -13,9 +13,28 @@ Do Phase 1 first, alone, then fan out.
 
 ## 0. Where we are (evidence, 2026-08-26)
 
-Measured with Playwright device emulation (iPhone 14, 390×664 @3×) against
-HEAD `50f2664`, every page. Regenerate any time: `cd frontend && npm run mobile-audit`
-(see Phase 9; one-time `npx playwright install chromium` in `frontend/`).
+Measured with Playwright device emulation (iPhone SE / 14 / Pixel 7 / iPad Mini)
+against HEAD `b1a96a8` (re-run after the 2026-08-26 merges: Techniques family
+nav, Validation-first technique tabs, universe settings). Baseline: **42/42
+device×route combos fail**. Regenerate any time: `cd frontend && npm run
+mobile-audit` (see Phase 9; one-time `npx playwright install chromium` in
+`frontend/`).
+
+**What changed since the first draft (50f2664 → b1a96a8) and what it means here:**
+- Sidebar: items are now 15px / 11px padding (**≈ 44px — already touch-sized**)
+  and "Techniques" is a family with an **EM Options** sub-item (more techniques
+  will nest under it). The phone `More` sheet and any drawer must show the same
+  family grouping, not a flat list.
+- Technique page: tabs are now **Validation · Analyse · Chat · History · Backtest**,
+  Validation is the default, and the Armed tab is gone (Armed is its own page).
+  On phones the default tab must flip to Analyse/History (Phase 6) because
+  Validation is desktop-only.
+- Settings: new universe controls (core universe · extras · today's most
+  active) with an **Extra symbols** modal + 13px textarea — Phase 4 covers it
+  (sheet + 16px).
+- Backend: `technique/universe.py`, sweeps-failed-on-restart, short-side plans
+  (REJECT/BREAKDOWN badges in scan/plan views) — no layout impact beyond more
+  badge variants in the Armed/Technique cards.
 
 | Fact | Evidence |
 |---|---|
@@ -25,7 +44,7 @@ HEAD `50f2664`, every page. Regenerate any time: `cd frontend && npm run mobile-
 | **Top bar is a non-wrapping 48px flex row of ~10 controls incl. a fixed 240px search** → document scrolls sideways; **HALT is the first thing pushed off-screen**. | `styles.css:148-151, :615`; `TopBar.tsx:122-199` |
 | **Load-bearing meaning lives in `title=` tooltips** (touch can't open them): ~50 settings hints, LIVE-vs-practice contract, Δ broker mismatch, failed risk-check reasons, order reject reasons, void reasons, fee notes, disabled-timeframe reasons. | Settings `:90/:111/:125`; TopBar `:130/:160/:186`; ConfirmOrderDialog `:123-126`; Blotter `:142`; ArmedPage `:313` |
 | **Every input is 12–14px** → iOS zooms on focus and never zooms back — including the order ticket and the halt-reason prompt. | `styles.css:494-498, :473-477, :617-622` |
-| **Sub-40px targets are the norm**: `.link-btn` ~17px, `.icon-btn` ~22px, `.switch` 19px (the **dry-run** toggle!), `.status-pill` 20px, `.danger-btn` 25px (**Sell now**, **Cancel order**), table rows 24–28px. | `styles.css:584, :600, :521, :577, :586, :539` |
+| **Sub-40px targets are the norm** (sidebar items are the exception since b1a96a8): `.link-btn` ~17px, `.icon-btn` ~22px, `.switch` 19px (the **dry-run** toggle!), `.status-pill` 20px, `.danger-btn` 25px (**Sell now**, **Cancel order**), table rows 24–28px. Audit on iPhone 14: Armed 15/25 targets < 40px, Trade 44/55, Signals 9/20, Settings 75/85, Journal 308/318. | `styles.css:584, :600, :521, :577, :586, :539` |
 | **Tables everywhere, `nowrap`, 6–15 columns**, some inside `overflow:hidden` panels (Armed fleet: clipped, not even scrollable). | Blotter 8/10/7 cols; OptionChain 15; Inbox 8; Armed fleet 7–8 (`.panel{overflow:hidden}` `:372`); Technique history 11 |
 | **`100vh` shell** (`:136`) + `calc(100vh-210px)` regions → bottom of app under iOS chrome; modals `80vh`; toasts fixed bottom-right, `max-width:380px` → clipped at 360px. | `styles.css:136, :919, :1714, :682, :765-768` |
 | **No touch code at all**: no `pointer:coarse`, `hover:hover`, `touch-action`, `dvh`, safe-area insets, `:active` states, `visibilitychange`. | grep |
@@ -147,8 +166,9 @@ strip, sidebar badge for armed/attention counts.
 - [ ] **Bottom tab bar** on phones (`.tabbar`, fixed, safe-area padded,
       56px + inset): **Now (Armed) · Trade · Signals · Portfolio · More**.
       Badges: armed/attention on Now, pending count on Signals. `More` opens a
-      sheet with Dashboard, Options, Watchlists, Technique, Journal, Settings,
-      theme toggle, connection state, sign out.
+      sheet with Dashboard, Options, Watchlists, **Techniques (grouped: EM
+      Options, and any technique added later — same family model as the
+      sidebar)**, Journal, Settings, theme toggle, connection state, sign out.
 - [ ] Sidebar hidden below 640px; on tablets it's the 52px rail by default.
 - [ ] **Top bar on phones** = brand mark · **workspace chip (PRACTICE/LIVE)** ·
       **HALT** (44px, always visible, right-thumb) · search icon (opens the
@@ -333,7 +353,10 @@ through a sheet, `summary` payload < 30 KB for 40 plans, audit passes.
       automation, Trading mode, Appearance, **Mobile** (exit-only toggle, sign
       out, rotate token, install app)); `.setting-row` stacks below 640px with
       full-width controls; all `title` hints → `InfoTip` or `<small>` text
-      (the ~50-item sweep); `.switch` 44px; in-page section jump list.
+      (the ~50-item sweep); `.switch` 44px; in-page section jump list;
+      the universe controls (core · extras · most-active) keep their line
+      layout but the **Extra symbols** modal becomes a `Sheet` with a 16px
+      textarea.
 
 ### Phase 5 — Options on phones `[ ]`
 
@@ -349,7 +372,9 @@ through a sheet, `summary` payload < 30 KB for 40 plans, audit passes.
 ### Phase 6 — Technique on phones (read + arm one run) `[ ]`
 
 - [ ] `.tq-head` wraps; tabs → scrollable chip strip; rail → a "Plans"
-      sheet (remove the vertical-text handle on phones).
+      sheet (remove the vertical-text handle on phones). **Phone default tab =
+      Analyse** (desktop default is Validation since b1a96a8); the EM Options
+      sub-item deep-links to `/technique/analyse`.
 - [ ] Phone shows **Analyse** (symbol, as-of, TF, note; image via camera roll
       `<input type=file accept=image/*>`, no paste/drop copy) and **History**
       as cards (verdict · grade · symbol · when); run view (`PlanCard` /
@@ -454,8 +479,10 @@ Suggested worktrees after Phase 1 lands: `mobile-armed-now` (2),
 Full file:line detail lives in the review transcripts; the actionable items
 are already folded into the phases above. Highest-severity per area:
 
-- **Shell:** sidebar 232px cascade bug; top bar overflow pushes HALT off-screen;
-  fixed-30px banners; toasts clipped; `100vh`; no drawer/tab bar.
+- **Shell:** sidebar 232px cascade bug (items themselves are 44px now);
+  top bar overflow pushes HALT off-screen; fixed-30px banners; toasts clipped;
+  `100vh`; no drawer/tab bar; Techniques family grouping must survive the move
+  to a tab bar / `More` sheet.
 - **Trade:** 22-button toolbar (6–8 rows on a phone); `.trade-grid--tc` rail
   bug below 1100px; navigator + per-tick redraw; 14px symbol input.
 - **Ticket/Confirm:** 13px inputs; 19px dry-run switch; 17px "verify fees";
