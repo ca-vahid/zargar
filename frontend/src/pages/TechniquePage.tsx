@@ -201,9 +201,13 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
     entry: "pass 3/4 · entry plan", critic: "pass 4/4 · critic",
   };
   const stageLabel = (s?: string) => !s ? "" : STAGE[s] ?? (s.startsWith("entry_retry") ? "entry re-check" : s.replace(/_/g, " "));
+  // "working" time counts from when a run actually took a slot, not from when the
+  // whole batch was queued (88 runs created at once all read "7m" while starting)
+  const firstActive = useRef<Record<string, number>>({});
+  for (const id of Object.keys(active)) if (!firstActive.current[id]) firstActive.current[id] = now;
   const elapsedMin = (id: string) => {
-    const t = rows[id]?.createdAt;
-    return t ? Math.max(1, Math.round((now - new Date(t).getTime()) / 60000)) : null;
+    const t = firstActive.current[id] ?? (rows[id]?.createdAt ? new Date(rows[id].createdAt!).getTime() : null);
+    return t ? Math.max(1, Math.round((now - t) / 60000)) : null;
   };
 
   const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id));
