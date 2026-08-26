@@ -117,6 +117,15 @@ a number** (p. 72).
 - **2026-08-25 · Restart recovery must never rewrite live history** (GOLD phantom fire).
   Replay of corrected bars is state-rebuilding, not truth; the persisted live record
   wins (`replay_divergence` / `phantom_dropped` events, pre-seed state snapshot).
+- **2026-08-26 · No sub-minute entry bars — settled.** The method's confirmation IS the
+  closed 1m bar (close vs level + volume through the bar, T3.3); firing intra-bar acts
+  before confirmation exists and buys exactly the fakeouts the method avoids (PM's
+  triple-veto would have FILLED on sub-minute bars). Sub-minute is also unvalidatable
+  (no Yahoo history; Alpaca tick-rebuild = big cost, scalper's payoff for a 3R-levels
+  method) and microstructure noise starves the volume gates. Sub-minute stays where it
+  belongs: exits only (quote stop watch, premium stop) — protection may be fast and
+  unvalidated because reduce-only can't hurt. Fire latency was the critic's thinking
+  time, fixed with `technique.arm.critic_effort=low`, not bar size.
 - **2026-08-25 · The machine can be right and still capture nothing.** Day 1: ~2.7R
   identified, 0R captured — every dropped R traced to friction (critic prompt gap,
   spread guard with no fallback, data artifacts), not to the method. Discipline showed:
