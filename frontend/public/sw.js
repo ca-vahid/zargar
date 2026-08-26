@@ -25,7 +25,10 @@ self.addEventListener("fetch", (e) => {
   }
   if (e.request.mode === "navigate") {
     e.respondWith(fetch(e.request).then((res) => {
-      caches.open(SHELL).then((c) => c.put("/index.html", res.clone()));
+      // clone BEFORE handing the response back: once the page starts reading the
+      // body, clone() throws "Response body is already used" and the shell never caches
+      const copy = res.clone();
+      caches.open(SHELL).then((c) => c.put("/index.html", copy)).catch(() => undefined);
       return res;
     }).catch(() => caches.match("/index.html")));
   }

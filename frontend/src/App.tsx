@@ -91,13 +91,15 @@ export default function App() {
   }, [theme, accent, density, mode]);
 
   const { isPhone, isTablet } = useViewport();
-  if (!auth.checked) return <div className="login login--wait"><div className="spinner" /></div>;
-  if (!signedIn) return <LoginPage />;
+  // every hook above the sign-in gate: an early return before a hook changes the hook
+  // count between renders (React #310, blank page once the auth check resolved)
   const [sideCollapsed, setSideCollapsed] = useState(() => {
     const stored = localStorage.getItem("zargar_side_collapsed");
     if (stored !== null) return stored === "1";
     return window.matchMedia("(max-width: 1023px)").matches; // tablets start on the icon rail
   });
+  if (!auth.checked) return <div className="login login--wait"><div className="spinner" /></div>;
+  if (!signedIn) return <LoginPage />;
   void isTablet;
   return (
     <div className={`app ${isPhone ? "app--phone" : ""}`}>
