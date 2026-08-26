@@ -1000,6 +1000,37 @@ export function TechniquePage() {
     if (extra.length) setScan((s) => (s ? { ...s, ids: Array.from(new Set([...s.ids, ...extra])), done: false } : s));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runs, scan?.ids.join(",")]);
+  // The batch is the SHEET, not just tonight's fresh runs: rows whose analyst read
+  // was REUSED (finished earlier, not paid for again) belong on the panel and in
+  // "Arm N confirmed" too — an adopted panel once said 11/42 confirmed when the
+  // sheet had 26 across 88 rows (2026-08-26). Runs the sheet points at are merged
+  // in whatever their age; the panel hides restart-interrupted ones itself.
+  const sheetMerged = useRef<string>("");
+  useEffect(() => {
+    if (!scan?.armable) return;
+    const key = scan.ids.slice().sort().join(",");
+    if (sheetMerged.current === key) return;
+    sheetMerged.current = key;
+    let stop = false;
+    (async () => {
+      try {
+        const sweeps = await api.techniqueSweeps();
+        const sheet = sweeps.find((s) => s.params?.kind === "next" && s.status === "done");
+        if (!sheet) return;
+        const fullSheet = await api.techniqueSweep(sheet.id, true);
+        const promoted = (fullSheet.rows ?? []).map((r: any) => r.promotedRunId as string | null)
+          .filter((x): x is string => !!x);
+        if (stop || !promoted.length) return;
+        setScan((s) => {
+          if (!s?.armable) return s;
+          const extra = promoted.filter((id) => !s.ids.includes(id));
+          return extra.length ? { ...s, ids: [...s.ids, ...extra], done: false } : s;
+        });
+      } catch { /* the panel still shows the runs it already knows */ }
+    })();
+    return () => { stop = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scan?.armable, scan?.ids.join(",")]);
   const scanSymbols = status?.scanSymbols ?? [];
   // tonight's sheet, if one exists for the upcoming session: scan can analyst-check its graded rows
   const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;
