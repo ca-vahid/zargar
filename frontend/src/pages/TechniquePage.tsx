@@ -992,7 +992,7 @@ export function TechniquePage() {
     if (newer.some((r) => r.status === "running")) {
       const newest = Math.max(...newer.map((r) => new Date(r.createdAt!).getTime()));
       const batch = newer.filter((r) => newest - new Date(r.createdAt!).getTime() < 10 * 60_000).map((r) => r.id);
-      if (batch.length) { doneOrder.current = []; finished.current = false; setScan({ ids: batch, done: false, armable: true }); return; }
+      if (batch.length) { setScan({ ids: batch, done: false, armable: true }); return; }   // the panel resets its own state on new ids
     }
     const extra = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt && r.status !== "failed"
       && new Date(r.createdAt!).getTime() >= lo && new Date(r.createdAt!).getTime() - hi < 10 * 60_000).map((r) => r.id);
