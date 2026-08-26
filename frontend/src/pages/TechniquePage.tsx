@@ -78,9 +78,9 @@ function StatusBar({ status, onScan, scanBusy }: {
       <span className="status-pill">runs today {status.runsToday}/{status.maxRunsPerDay}</span>
       {(status.armed?.length ?? 0) > 0 && <span className="status-pill ok">{status.armed!.length} armed</span>}
       {status.running.length > 0 && <span className="tq-running-pill"><Spinner /> {status.running.length} running</span>}
-      <button className="primary-btn tq-scan-btn" onClick={onScan} disabled={scanBusy}
-        title="Analyst-check tonight's graded sheet, or run a live read of the watch list — a confirmation shows symbols and cost first">
-        {scanBusy ? "Scanning…" : "Scan now"}
+      <button className="tq-check-btn" onClick={onScan} disabled={scanBusy}
+        title="The main move: analyst-check tonight's graded sheet (or run a live watch-list read), then bulk-arm the confirmed setups — a confirmation shows symbols and cost first">
+        {scanBusy ? <><Spinner /> Checking…</> : <>⚡ Check &amp; arm</>}
       </button>
     </div>
   );
@@ -1002,7 +1002,7 @@ export function TechniquePage() {
         <StatusBar status={status} scanBusy={!!scan && !scan.done} onScan={() => setScanConfirm(true)} />
       </div>
       {scanConfirm && (
-        <Modal title={<>Scan now <span className="muted">— the analyst read costs money; choose what it reads</span></>}
+        <Modal title={<>⚡ Check &amp; arm <span className="muted">— the analyst read costs money; choose what it reads</span></>}
           onClose={() => setScanConfirm(false)}
           footer={<>
             <button className="ghost-btn" onClick={() => setScanConfirm(false)}>Cancel</button>

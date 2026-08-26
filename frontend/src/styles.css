@@ -1607,7 +1607,23 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-scan-stale button { align-self: flex-start; }
 .tq-setup-row .tq-run-t { font-variant-numeric: tabular-nums; font-size: 11px; white-space: nowrap; }
 .tq-badge.warnbadge { background: color-mix(in srgb, var(--warn) 16%, transparent); color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
-.tq-status .tq-scan-btn { padding: 4px 14px; font-weight: 700; }
+/* the page's main action: analyst-check the sheet, then bulk-arm */
+.tq-check-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 9px 22px; border-radius: 10px; border: none; cursor: pointer;
+  font-size: var(--fs-3); font-weight: 800; letter-spacing: .01em; color: #fff;
+  background: linear-gradient(135deg, var(--accent),
+              color-mix(in srgb, var(--accent) 65%, #7c3aed));
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: transform .12s ease, box-shadow .12s ease, filter .12s ease;
+}
+.tq-check-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--accent) 55%, transparent);
+  filter: brightness(1.06);
+}
+.tq-check-btn:disabled { opacity: .75; cursor: default; box-shadow: none; }
+.tq-check-btn .spinner { width: 13px; height: 13px; }
 .tq-wf-today-note { margin-top: 6px; color: color-mix(in srgb, var(--warn) 85%, var(--text)); }
 .tq-scan-table td { vertical-align: middle; }
 .tq-scan-table tr.clickable { cursor: pointer; }
