@@ -169,3 +169,11 @@ a number** (p. 72).
 - 2026-08-25 · `entry_fallback` off|shares per arm · SNOW spread skip (+1.89R untaken).
 - 2026-08-25 · Evening automation (`technique.sheet.auto`): auto sheet after close,
   optional auto analyst-check of A's.
+- 2026-08-25 · **Risk caps raised for the practice experiment** (user-approved):
+  `risk.max_option_premium_notional` 1000→2500, `risk.max_option_premium_pct` 5→25,
+  `risk.max_position_notional` 1000→5000 — the old caps blocked 7/37 armed plans
+  (BLK/GS/SPOT over the per-order cap; ADI/AMD/HD/WDC over 5% of the $10k sim
+  account). The armer also pre-checks premium caps at fire time now and uses the
+  shares fallback instead of dying at the RiskGate. ⚠ **These are GLOBAL settings:
+  re-tighten before real-money trading** (a $2,500 premium is 25% of a $10k account
+  — fine for data collection in sim, reckless with real capital).
