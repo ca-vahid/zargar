@@ -14,5 +14,5 @@ __pycache__/
 # raw AI-art sources (regenerate via infra/art/generate_art.py)
 frontend/art-src/
 
-backend/zargar-8420.log
+backend/zargar-*.log*
 technique-reviews/
