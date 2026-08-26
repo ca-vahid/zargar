@@ -1694,6 +1694,77 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
 .tq-running-pill .spinner { width: 11px; height: 11px; }
 
+/* ── the Armed page (own tab): split/strip layouts, sortable fleet ──────── */
+.armed-head { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: var(--pad); }
+.armed-head .page-title { margin: 0; }
+.armed-subtabs button { padding: 6px 16px; }
+.armed-viewtoggles { margin-left: auto; display: flex; gap: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface-1); }
+.seg button {
+  border: none; background: transparent; color: var(--text-3); cursor: pointer;
+  padding: 4px 12px; font-size: var(--fs-1); font-weight: 600;
+}
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button.on { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* B1 split view: table left (own scroll), detail pinned right */
+.armed-split { display: grid; grid-template-columns: minmax(340px, 5fr) minmax(0, 7fr); gap: var(--pad); align-items: start; }
+.armed-fleet-pane { position: sticky; top: 8px; }
+.armed-fleet-scroll { max-height: calc(100vh - 210px); overflow-y: auto; }
+.armed-fleet-scroll thead th { position: sticky; top: 0; background: var(--surface-1); z-index: 2; }
+.armed-detail-pane { min-width: 0; }
+@media (max-width: 1100px) { .armed-split { grid-template-columns: 1fr; } .armed-fleet-pane { position: static; } .armed-fleet-scroll { max-height: 300px; } }
+
+/* fleet table */
+.armed-fleet th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+.armed-fleet th.sortable:hover { color: var(--accent); }
+.armed-fleet tbody tr:nth-child(even) { background: color-mix(in srgb, var(--surface-2) 45%, transparent); }
+.armed-fleet tbody tr.tq-fleet-sel { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.armed-tech-chip {
+  font-size: 10px; font-weight: 700; letter-spacing: .03em; border-radius: 5px; padding: 1px 6px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent); color: var(--accent);
+}
+.armed-fleet.rich td { padding-top: 7px; padding-bottom: 7px; }
+.armed-spark-cell { line-height: 0; }
+.armed-dist { display: inline-flex; align-items: center; gap: 6px; }
+.armed-dist .bar { width: 54px; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; display: inline-block; }
+.armed-dist .fill { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+
+/* B2 strip view: state-colored symbol chips, sticky */
+.armed-strip { position: sticky; top: 0; z-index: 10; }
+.armed-strip-body { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; }
+.armed-chip {
+  display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px;
+  background: var(--surface-2); color: var(--text-2); font-size: var(--fs-1);
+}
+.armed-chip .g { font-size: 10px; font-weight: 800; color: var(--text-3); }
+.armed-chip.sel { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text-1); }
+.armed-chip.st-intrade { border-color: color-mix(in srgb, var(--up) 60%, transparent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--up) 22%, transparent); }
+.armed-chip.st-fired { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.armed-chip.st-attn { border-color: var(--down); color: var(--down); }
+.armed-chip.st-void, .armed-chip.st-off { opacity: .55; }
+
+/* chart style segment above the day chart */
+.tq-chartstyle { margin: 6px 0 4px; }
+
+/* dashboard widgets */
+.dash-armed { margin-bottom: var(--pad); cursor: pointer; }
+.dash-armed:hover { border-color: var(--accent); }
+.dash-armed-rows { display: flex; flex-wrap: wrap; gap: 8px; }
+.dash-armed-chip {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border);
+  border-radius: 8px; padding: 4px 10px; background: var(--surface-2); font-size: var(--fs-1);
+}
+.dash-holdings-rows, .wl-page-rows { display: flex; flex-direction: column; }
+
+/* watchlists page */
+.wl-page-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: var(--pad); align-items: start; }
+
+/* sidebar armed badge */
+.nav .badge.ok { background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--up); }
+
 /* armed fleet table (master-detail) */
 .tq-fleet tr.tq-fleet-sel { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
 .tq-fleet td { vertical-align: middle; }

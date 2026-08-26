@@ -302,7 +302,9 @@ export function DashboardPage() {
   return (
     <div>
       <h2 className="page-title">Dashboard</h2>
+      <ArmedFleetWidget />
       <div className="dash-grid">
+        <HoldingsWidget />
         <div className="panel dash-networth">
           <div className="panel-body">
             <div className="networth-row">
@@ -405,6 +407,73 @@ export function DashboardPage() {
         </div>
 
         <RecentActivity />
+      </div>
+    </div>
+  );
+}
+
+
+/* ---- Armed fleet on the dashboard (A5): the day's plans greet you ---- */
+function ArmedFleetWidget() {
+  const armed = useStore((s) => s.techniqueArmed);
+  const setPage = useStore((s) => s.setPage);
+  const active = armed.filter((a) => a.status === "armed" || a.status === "paused");
+  if (!active.length) return null;
+  const inTrade = active.filter((a) => a.openPositions > 0).length;
+  const fired = active.reduce((n, a) => n + (a.trades ?? []).length, 0);
+  const pnl = active.reduce((n, a) => n + (a.realizedPnl ?? 0), 0);
+  const top = active.slice().sort((x, y) =>
+    (y.openPositions - x.openPositions) || ((y.trades?.length ?? 0) - (x.trades?.length ?? 0))
+    || Math.abs(x.triggers?.[0]?.distancePct ?? 99) - Math.abs(y.triggers?.[0]?.distancePct ?? 99)).slice(0, 6);
+  return (
+    <div className="panel dash-armed clickable" role="button" tabIndex={0}
+      onClick={() => setPage("armed")}
+      onKeyDown={(e) => e.key === "Enter" && setPage("armed")}
+      title="Open the Armed page">
+      <div className="panel-head">Armed fleet
+        <span className="sub">{active.length} plan(s) · {inTrade} in trade · {fired} fired</span>
+        <span className={"tq-head-right " + (pnl > 0 ? "pos" : pnl < 0 ? "neg" : "muted")}>
+          {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}</span>
+      </div>
+      <div className="panel-body dash-armed-rows">
+        {top.map((a) => (
+          <span key={a.runId} className="dash-armed-chip">
+            <b>{a.symbol}</b>
+            {a.grade ? <span className={"tq-grade g" + a.grade}>{a.grade}</span> : null}
+            <span className="muted small">
+              {a.openPositions > 0 ? "in trade" : (a.trades?.length ?? 0) > 0 ? "fired" : "watching"}
+            </span>
+          </span>
+        ))}
+        {active.length > top.length && <span className="muted small">+{active.length - top.length} more</span>}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Holdings, moved off the sidebar and into the dashboard ---- */
+function HoldingsWidget() {
+  const positionsMap = useStore((s) => s.positions);
+  const portfolios = useStore((s) => s.portfolios);
+  const setPage = useStore((s) => s.setPage);
+  const holdings = useMemo(() => {
+    const real = new Set(portfolios
+      .filter((p) => p.kind === "live" || p.kind === "paper").map((p) => p.id));
+    const syms = new Set<string>();
+    for (const p of Object.values(positionsMap)) {
+      if (real.has(p.portfolioId) && Math.abs(p.qty) > 1e-9) syms.add(p.symbol);
+    }
+    return [...syms].sort();
+  }, [positionsMap, portfolios]);
+  if (!holdings.length) return null;
+  return (
+    <div className="panel dash-holdings">
+      <div className="panel-head">My holdings
+        <span className="holdings-dot" title="Live positions in your real accounts" />
+        <button className="link-btn tq-head-right" onClick={() => setPage("watchlists")}>watchlists →</button>
+      </div>
+      <div className="panel-body dash-holdings-rows">
+        {holdings.map((sym) => <WatchRow key={sym} symbol={sym} />)}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Highcharts from "highcharts/esm/highstock.js";
 import "highcharts/esm/modules/accessibility.js";
+import "highcharts/esm/modules/hollowcandlestick.js";
 import { api } from "../../lib/api";
 import { cssVar, rgbaVar } from "../../lib/highchartsTheme";
 import { onBar, watchSymbol } from "../../lib/ws";
@@ -65,11 +66,21 @@ function waitingFor(t: any, windowNow: string | null | undefined): string {
 /** The day view for one armed plan: live 1m chart with the trigger levels,
  * prime-window shading and event markers, plus a plain-language timeline of
  * what happened, what was refused and why, and what we're still waiting for. */
+type ChartStyle = "classic" | "zones" | "panes";
+
 export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
+  const [style, setStyleRaw] = useState<ChartStyle>(() => {
+    try { return (localStorage.getItem("zargar_armed_chartstyle") as ChartStyle) || "classic"; }
+    catch { return "classic"; }
+  });
+  const setStyle = (v: ChartStyle) => {
+    setStyleRaw(v);
+    try { localStorage.setItem("zargar_armed_chartstyle", v); } catch { /* private mode */ }
+  };
   const timeline = useMemo(() => buildTimeline(a), [a.events]);
   const waiting = (a.triggers ?? []).filter((t: any) => t.status === "waiting" || t.status === "observed");
 
@@ -96,14 +107,43 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     ];
 
     const plotLines: Highcharts.YAxisPlotLinesOptions[] = [];
+    const priceBands: Highcharts.YAxisPlotBandsOptions[] = [];
     for (const t of a.triggers ?? []) {
-      plotLines.push({ value: t.entry, color: accent, width: 1.5, zIndex: 4,
-        label: { text: `${t.id} ${t.kind === "bounce" ? "fires at" : "fires above"} ${fmt(t.entry)}`, align: "left", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
-      plotLines.push({ value: t.stop, color: down, width: 1, dashStyle: "Dash", zIndex: 4,
-        label: { text: `stop ${fmt(t.stop)}`, align: "left", style: { color: down, fontSize: "10px" } } });
-      for (const [i, tp] of (t.targets ?? []).entries())
-        plotLines.push({ value: tp, color: up, width: 1, dashStyle: "Dot", zIndex: 3,
-          label: { text: `TP${i + 1} ${fmt(tp)}`, align: "right", style: { color: up, fontSize: "10px" } } });
+      if (style === "zones") {
+        // the method thinks in zones: risk and first-reward become bands
+        priceBands.push({ from: Math.min(t.entry, t.stop), to: Math.max(t.entry, t.stop),
+          color: rgbaVar("--down", 0.09),
+          label: { text: `${t.id} risk ${fmt(t.stop)} to ${fmt(t.entry)}`, align: "left",
+            style: { color: down, fontSize: "9px" } } });
+        if (t.targets?.length) {
+          priceBands.push({ from: t.entry, to: t.targets[0], color: rgbaVar("--up", 0.08),
+            label: { text: `first reward to ${fmt(t.targets[0])}`, align: "left",
+              style: { color: up, fontSize: "9px" } } });
+        }
+        plotLines.push({ value: t.entry, color: accent, width: 1.2, zIndex: 4,
+          label: { text: `${t.id} fires ${fmt(t.entry)}`, align: "right", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
+        for (const [i, tp] of (t.targets ?? []).entries())
+          plotLines.push({ value: tp, color: up, width: 0, zIndex: 3,
+            label: { text: `TP${i + 1} ${fmt(tp)}`, align: "right", style: { color: up, fontSize: "9px" } } });
+      } else if (style === "classic") {
+        // edge labels, not full-width dashed lines: the old lines were the
+        // "weird zoomed-out smear"
+        plotLines.push({ value: t.entry, color: rgbaVar("--accent", 0.5), width: 1.2, zIndex: 4,
+          label: { text: `${t.id} fires ${fmt(t.entry)}`, align: "right", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
+        plotLines.push({ value: t.stop, color: rgbaVar("--down", 0.0), width: 0, zIndex: 4,
+          label: { text: `stop ${fmt(t.stop)}`, align: "right", style: { color: down, fontSize: "9px", fontWeight: "600" } } });
+        for (const [i, tp] of (t.targets ?? []).entries())
+          plotLines.push({ value: tp, color: rgbaVar("--up", 0.0), width: 0, zIndex: 3,
+            label: { text: `TP${i + 1} ${fmt(tp)}`, align: "right", style: { color: up, fontSize: "9px" } } });
+      } else {
+        plotLines.push({ value: t.entry, color: accent, width: 1.2, zIndex: 4,
+          label: { text: `${t.id} fires ${fmt(t.entry)}`, align: "left", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
+        plotLines.push({ value: t.stop, color: down, width: 1, dashStyle: "Dash", zIndex: 4,
+          label: { text: `stop ${fmt(t.stop)}`, align: "left", style: { color: down, fontSize: "9px" } } });
+        for (const [i, tp] of (t.targets ?? []).entries())
+          plotLines.push({ value: tp, color: up, width: 1, dashStyle: "Dot", zIndex: 3,
+            label: { text: `TP${i + 1} ${fmt(tp)}`, align: "right", style: { color: up, fontSize: "9px" } } });
+      }
     }
 
     const markerFor = (e: any) => {
@@ -123,18 +163,45 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
       if (cancelled || !containerRef.current) return;
       const inDay = data.bars.filter((b) => b[0] >= dayStart && b[0] <= dayEnd);
       const ohlc = inDay.map((b) => [b[0], b[1], b[2], b[3], b[4]]);
-      const volume = inDay.map((b) => [b[0], b[5]]);
+      // volume colored by bar direction; it was painted in the hairline grid
+      // color before, i.e. invisible
+      const volume = inDay.map((b) => ({ x: b[0], y: b[5],
+        color: b[4] >= b[1] ? rgbaVar("--up", 0.45) : rgbaVar("--down", 0.45) }));
+      // live trade-R pane (panes style): underlying R since the first fire
+      const trade = (a.trades ?? []).find((t: any) => t.firedTs && t.entry && t.stop);
+      const risk = trade ? Math.abs(trade.entry - trade.stop) : 0;
+      const rSeries = style === "panes" && trade && risk > 0
+        ? inDay.filter((b) => b[0] >= (trade.firedTs as number))
+            .map((b) => ({ x: b[0], y: (b[4] - trade.entry) / risk,
+              color: b[4] >= trade.entry ? rgbaVar("--up", 0.6) : rgbaVar("--down", 0.6) }))
+        : [];
       lastBarTs.current = ohlc.length ? ohlc[ohlc.length - 1][0] : 0;
       chartRef.current?.destroy();
       chartRef.current = Highcharts.stockChart(containerRef.current, {
-        chart: { backgroundColor: surface, animation: false, spacing: [8, 8, 4, 8], height: 340, style: { fontFamily: "inherit" } },
+        chart: { backgroundColor: surface, animation: false, spacing: [8, 8, 4, 8],
+          height: style === "panes" ? 400 : 340, style: { fontFamily: "inherit" } },
         time: { timezone: "America/New_York" },
-        credits: { enabled: false }, rangeSelector: { enabled: false }, navigator: { enabled: false }, scrollbar: { enabled: false },
+        credits: { enabled: false },
+        rangeSelector: style === "panes"
+          ? { enabled: true, inputEnabled: false,
+              buttons: [{ type: "minute", count: 30, text: "30m" }, { type: "minute", count: 60, text: "1h" },
+                        { type: "all", text: "day" }], selected: 2,
+              buttonTheme: { fill: "transparent", style: { color: text3 },
+                states: { select: { fill: rgbaVar("--accent", 0.15), style: { color: accent } } } } } as any
+          : { enabled: false },
+        navigator: { enabled: false }, scrollbar: { enabled: false },
         xAxis: { lineColor: grid, tickColor: grid, min: dayStart, max: dayEnd, ordinal: false,
           labels: { style: { color: text3, fontSize: "10px" } }, plotBands: bands as any,
           crosshair: { color: grid, dashStyle: "Dash" } },
-        yAxis: [
-          { labels: { style: { color: text3, fontSize: "10px" } }, gridLineColor: grid, height: "80%", lineWidth: 0, plotLines },
+        yAxis: style === "panes" ? [
+          { labels: { style: { color: text3, fontSize: "10px" } }, gridLineColor: grid, height: "58%", lineWidth: 0, plotLines },
+          { labels: { enabled: false }, gridLineWidth: 0, top: "60%", height: "16%", offset: 0 },
+          { labels: { style: { color: text3, fontSize: "9px" }, format: "{value}R" }, gridLineColor: grid,
+            top: "78%", height: "22%", offset: 0,
+            plotLines: [{ value: 0, color: grid, width: 1 }] },
+        ] : [
+          { labels: { style: { color: text3, fontSize: "10px" } }, gridLineColor: grid, height: "80%", lineWidth: 0,
+            plotLines, plotBands: priceBands },
           { labels: { enabled: false }, gridLineWidth: 0, top: "82%", height: "18%", offset: 0 },
         ],
         tooltip: {
@@ -150,17 +217,23 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
         },
         legend: { enabled: false },
         plotOptions: {
-          series: { animation: false, dataGrouping: { enabled: false },
-            // no dimming of the rest of the chart on hover — that flicker reads as "choppy"
+          series: { animation: false,
+            // dataGrouping keeps zoomed-out candles readable instead of a smear
+            dataGrouping: { enabled: true, groupPixelWidth: 4 },
             states: { inactive: { opacity: 1 } } },
           candlestick: { pointPadding: 0.12, maxPointWidth: 7 },
+          hollowcandlestick: { pointPadding: 0.12, maxPointWidth: 7 } as any,
         },
         series: [
-          { type: "candlestick", id: "main", name: a.symbol, data: ohlc,
+          { type: style === "classic" ? "hollowcandlestick" : "candlestick", id: "main", name: a.symbol, data: ohlc,
             color: down, upColor: up, lineColor: down, upLineColor: up } as any,
-          { type: "column", id: "vol", name: "Volume", data: volume, yAxis: 1, color: grid, borderWidth: 0,
+          { type: "column", id: "vol", name: "Volume", data: volume, yAxis: 1, borderWidth: 0,
+            dataGrouping: { enabled: true, approximation: "sum" },
             enableMouseTracking: false } as any,
+          ...(style === "panes" ? [{ type: "column", id: "r", name: "Trade R", data: rSeries, yAxis: 2,
+            borderWidth: 0, enableMouseTracking: false } as any] : []),
           { type: "scatter", id: "ev", name: "events", data: eventPoints, zIndex: 6,
+            dataGrouping: { enabled: false },
             marker: { enabled: true }, states: { hover: { enabled: true } } } as any,
         ],
       });
@@ -195,7 +268,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     });
     return () => { cancelled = true; offBar(); unsub(); chartRef.current?.destroy(); chartRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a.symbol, a.planFor, a.events?.length, a.triggers?.length, theme]);
+  }, [a.symbol, a.planFor, a.events?.length, a.triggers?.length, theme, style]);
 
   return (
     <div className="tq-armed-day">
@@ -204,6 +277,14 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
         {waiting.length
           ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip">{t.id}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct !== undefined ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
           : <span>{a.summary}</span>}
+      </div>
+      <div className="tq-chartstyle seg" role="group" aria-label="Chart style">
+        <button className={style === "classic" ? "on" : ""} title="Hollow candles, slim direction-colored volume, level labels at the right edge"
+          onClick={() => setStyle("classic")}>candles</button>
+        <button className={style === "zones" ? "on" : ""} title="Risk and reward as translucent bands, the way the plan thinks"
+          onClick={() => setStyle("zones")}>zones</button>
+        <button className={style === "panes" ? "on" : ""} title="Price / volume / trade-R panes with 30m, 1h and day range buttons"
+          onClick={() => setStyle("panes")}>panes</button>
       </div>
       <div ref={containerRef} className="tq-armed-day-chart" />
       <div className="tq-armed-day-tl">

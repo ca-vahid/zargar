@@ -39,6 +39,14 @@ export const IconTechnique = make("IconTechnique", <>
   <path d="M2 12.5 5.5 8l2.5 2.5L11 5l3 3.5" />
   <path d="M2 3.5h12M2 6.5h5" opacity="0.5" />
 </>);
+export const IconArmed = make("IconArmed", <>
+  <path d="M9 1.5 3.5 9h3L6.9 14.5 12.5 7h-3z" />
+</>);
+export const IconWatchlist = make("IconWatchlist", <>
+  <path d="M2 3.5h8M2 8h8M2 12.5h8" />
+  <path d="M12.5 2.5v4l2-1.3 2 1.3v-4z" transform="scale(0.78) translate(1.5 0)" />
+  <circle cx="13" cy="10.5" r="1.6" opacity="0.6" />
+</>);
 export const IconSignals = make("IconSignals", <>
   <path d="M1.5 9.5h3.2l1.3 2.5h4l1.3-2.5h3.2" />
   <path d="M2.5 9.5v3a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-3" />

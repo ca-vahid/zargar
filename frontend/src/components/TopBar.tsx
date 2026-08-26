@@ -41,7 +41,6 @@ export function TopBar() {
   const practiceTotal = practice.reduce((sum, p) => sum + (p.equity ?? p.cash), 0);
   // armed plans living in the OTHER workspace must never be invisible
   const armedPlans = useStore((s) => s.techniqueArmed);
-  const setTechniqueTab = useStore((s) => s.setTechniqueTab);
   const otherArmed = useMemo(
     () => armedPlans.filter((a) => workspaceOf(a.portfolio?.kind) !== (mode === "live" ? "live" : "practice")).length,
     [armedPlans, mode]);
@@ -158,15 +157,15 @@ export function TopBar() {
       )}
       {attention.length > 0 && (
         <button className="status-pill attention"
-          title={`${attention.length} armed plan(s) need attention (failed exit / unmanaged position) — click for the Armed dashboard. This shows regardless of workspace.`}
-          onClick={() => { setPage("technique"); setTechniqueTab("armed"); }}>
+          title={`${attention.length} armed plan(s) need attention (failed exit / unmanaged position) — click for the Armed page. This shows regardless of workspace.`}
+          onClick={() => setPage("armed")}>
           \u26a0 {attention.length} needs attention
         </button>
       )}
       {otherArmed > 0 && (
         <button className="status-pill warn ws-other-chip"
-          title={`${otherArmed} plan(s) are armed in the ${mode === "live" ? "Practice" : "LIVE"} workspace — click to open the Armed dashboard (switch workspace to manage them)`}
-          onClick={() => { setPage("technique"); setTechniqueTab("armed"); }}>
+          title={`${otherArmed} plan(s) are armed in the ${mode === "live" ? "Practice" : "LIVE"} workspace — click to open the Armed page (switch workspace to manage them)`}
+          onClick={() => setPage("armed")}>
           {otherArmed} armed in {mode === "live" ? "practice" : "LIVE"}
         </button>
       )}

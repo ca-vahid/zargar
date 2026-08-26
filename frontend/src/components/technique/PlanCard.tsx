@@ -306,7 +306,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
                 </button>
               </>
             )}
-            {isArmed && <button className="ghost-btn" onClick={() => setTab("armed")}>Open armed dashboard</button>}
+            {isArmed && <button className="ghost-btn" onClick={() => useStore.getState().setPage("armed")}>Open the Armed page</button>}
             {armOpen && (
               <ArmDialog symbol={plan.symbol} planFor={plan.planFor} onClose={() => setArmOpen(false)}
                 triggers={plan.triggers.filter((t) => t.valid)}

@@ -15,7 +15,8 @@ import type { Page } from "../store";
  */
 
 export const PAGES: Page[] = [
-  "dashboard", "trade", "options", "inbox", "technique", "portfolios", "journal", "settings",
+  "dashboard", "trade", "options", "inbox", "technique", "armed", "watchlists",
+  "portfolios", "journal", "settings",
 ];
 const OCC_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
 export const TQ_TABS = ["analyse", "chat", "history", "backtest", "validation", "armed"] as const;
@@ -53,6 +54,8 @@ export function parseLocation(pathname = window.location.pathname): RouteState {
   if (page !== "technique") return { page };
 
   const second = parts[1];
+  // Armed moved to its own page — old /technique/armed links land there
+  if (second === "armed") return { page: "armed" };
   if (second === "run" && parts[2]) return { page, techniqueTab: "analyse", runId: parts[2] };
   if (second === "chat") return { page, techniqueTab: "chat", threadId: parts[2] ?? null };
   if ((TQ_TABS as readonly string[]).includes(second)) return { page, techniqueTab: second as TqTab };

@@ -8,6 +8,9 @@ import { TradePage } from "./pages/TradePage";
 import { InboxPage } from "./pages/InboxPage";
 import { PortfoliosPage } from "./pages/PortfoliosPage";
 import { JournalPage } from "./pages/JournalPage";
+import { ArmedPage } from "./pages/ArmedPage";
+import { WatchlistsPage } from "./pages/WatchlistsPage";
+import { api } from "./lib/api";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TechniquePage } from "./pages/TechniquePage";
 import { OptionsPage } from "./pages/OptionsPage";
@@ -15,6 +18,10 @@ import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 
 export default function App() {
+  // armed fleet powers the sidebar badge and the dashboard widget on every page
+  useEffect(() => {
+    api.techniqueArmed().then((a) => useStore.getState().setTechniqueArmed(a)).catch(() => undefined);
+  }, []);
   const page = useStore((s) => s.page);
   const techniqueTab = useStore((s) => s.techniqueTab);
   const techniqueRunId = useStore((s) => s.techniqueFocusRunId);
@@ -93,6 +100,8 @@ export default function App() {
           {page === "journal" && <JournalPage />}
           {page === "settings" && <SettingsPage />}
           {page === "technique" && <TechniquePage />}
+          {page === "armed" && <ArmedPage />}
+          {page === "watchlists" && <WatchlistsPage />}
         </div>
       </div>
       <Toasts />

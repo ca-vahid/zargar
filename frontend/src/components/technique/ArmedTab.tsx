@@ -8,8 +8,8 @@ import { Spinner } from "../ui";
 import { InfoTip } from "../InfoTip";
 import { ArmedDayPanel } from "./ArmedDayPanel";
 
-function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
-function pnlCls(v: number | null | undefined) { return (v ?? 0) > 0 ? "pos" : (v ?? 0) < 0 ? "neg" : ""; }
+export function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
+export function pnlCls(v: number | null | undefined) { return (v ?? 0) > 0 ? "pos" : (v ?? 0) < 0 ? "neg" : ""; }
 
 const STATUS_LABEL: Record<string, string> = {
   waiting: "watching", observed: "touched mid-day", fired: "FIRED", gapped_past: "gapped past", gapped_through: "gapped through stop",
@@ -80,7 +80,7 @@ function Scorecard({ sc }: { sc: ArmScorecard }) {
   );
 }
 
-function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
+export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
   const toast = useStore((s) => s.toast);
   const openRun = useStore((s) => s.openTechniqueRun);
   const middayExp = useStore((s) => Boolean(s.settings["technique.arm.midday_trading"]));
@@ -220,163 +220,18 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
   );
 }
 
-const WINDOW_SHORT: Record<string, [string, string]> = {
+export const WINDOW_SHORT: Record<string, [string, string]> = {
   prime_open: ["● open", "setup"], prime_close: ["● close", "setup"],
   midday: ["⏸ mid-day", "warnbadge"], extended: ["closed", "nosetup"],
 };
 
-function nearestPct(a: ArmedPlan): number {
+export function nearestPct(a: ArmedPlan): number {
   const ds = (a.triggers ?? []).map((t) => Math.abs(t.distancePct ?? 99));
   return ds.length ? Math.min(...ds) : 99;
 }
-function fleetRank(a: ArmedPlan): number {
+export function fleetRank(a: ArmedPlan): number {
   if (a.needsAttention) return 0;
   if (a.openPositions > 0 || (a.trades ?? []).some((t) => ["open", "working", "submitting"].includes(t.status))) return 1;
   if ((a.trades ?? []).length) return 2;
   return 3;
-}
-
-/** Fleet overview: one row per armed plan; click (or ←/→) selects the detail card. */
-function FleetTable({ armed, selId, onSel }: { armed: ArmedPlan[]; selId: string; onSel: (id: string) => void }) {
-  return (
-    <div className="panel mb">
-      <div className="panel-head">Armed fleet <span className="sub">{armed.length} plan(s) · click a row (or use ← →) for the full card below</span></div>
-      <div className="panel-body" style={{ padding: 0 }}>
-        <table className="tq-table tq-fleet">
-          <thead><tr><th>Symbol</th><th title="Deterministic plan grade — tracked against outcomes for calibration">Grade</th><th>Mode</th><th>Window</th><th>Nearest trigger</th><th>Status</th><th>Realized</th><th aria-label="attention" /></tr></thead>
-          <tbody>
-            {armed.map((a) => {
-              const near = (a.triggers ?? []).slice().sort((x, y) => Math.abs(x.distancePct ?? 99) - Math.abs(y.distancePct ?? 99))[0];
-              const [wTxt, wCls] = WINDOW_SHORT[a.sessionWindowNow] ?? [a.sessionWindowNow, "nosetup"];
-              const inTrade = a.openPositions > 0 || (a.trades ?? []).some((t) => ["open", "working", "submitting"].includes(t.status));
-              return (
-                <tr key={a.runId} className={`clickable ${a.runId === selId ? "tq-fleet-sel" : ""}`} onClick={() => onSel(a.runId)}>
-                  <td className="nowrap"><b>{a.symbol}</b></td>
-                  <td>{a.grade ? <span className={`tq-grade g${a.grade}`} title="Deterministic plan grade">{a.grade}</span> : <span className="muted small">—</span>}</td>
-                  <td className="nowrap small">{a.config.mode}{a.config.instrument === "options" ? " · opt" : " · sh"}</td>
-                  <td className="nowrap"><span className={`tq-badge ${wCls}`}>{wTxt}</span></td>
-                  <td className="nowrap small">{near ? <>{near.id} {near.kind} @ {fmt(near.entry)} <span className="muted">{near.distancePct !== undefined ? `${near.distancePct > 0 ? "+" : ""}${near.distancePct.toFixed(2)}%` : ""}</span></> : "—"}</td>
-                  <td className="nowrap">{a.needsAttention ? <span className="tq-badge failed">⚠ ATTENTION</span>
-                    : inTrade ? <span className="tq-badge setup">IN TRADE</span>
-                    : (a.trades ?? []).length ? <span className="tq-badge plan">FIRED {(a.trades ?? []).length}</span>
-                    : a.status === "paused" ? <span className="tq-badge failed">PAUSED</span>
-                    : a.status !== "armed" ? <span className="tq-badge nosetup">{a.status.toUpperCase()}</span>
-                    : <span className="muted small">watching {(a.triggers ?? []).length}</span>}</td>
-                  <td className={`nowrap ${pnlCls(a.realizedPnl)}`}>{fmt(a.realizedPnl)}</td>
-                  <td>{a.stale ? <span className="tq-badge failed" title="no fresh bars">STALE</span> : null}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-/** The Armed dashboard: what is armed, in which account and mode, what it is
- *  watching, what fired, what it holds — with pause / resume / disarm / stop all. */
-export function ArmedTab() {
-  const allArmed = useStore((s) => s.techniqueArmed);
-  const setArmed = useStore((s) => s.setTechniqueArmed);
-  const halt = useStore((s) => s.halt);
-  const settings = useStore((s) => s.settings);
-  const toast = useStore((s) => s.toast);
-  const [history, setHistory] = useState<any[]>([]);
-  const ws = useWorkspace();
-  const portfolios = useStore((s) => s.portfolios);
-  const pmap = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p])), [portfolios]);
-  const armed = useMemo(() => allArmed.filter((a) => workspaceOf(a.portfolio?.kind) === ws), [allArmed, ws]);
-  // master–detail: the fleet table selects which single card shows below
-  const [selId, setSelId] = useState<string>("");
-  const effSelId = useMemo(() => {
-    if (armed.some((a) => a.runId === selId)) return selId;
-    return armed.slice().sort((x, y) => fleetRank(x) - fleetRank(y) || nearestPct(x) - nearestPct(y)
-      || x.symbol.localeCompare(y.symbol))[0]?.runId ?? "";
-  }, [armed, selId]);
-  const selArmed = useMemo(() => armed.find((a) => a.runId === effSelId) ?? null, [armed, effSelId]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (armed.length < 2) return;
-      const i = Math.max(0, armed.findIndex((a) => a.runId === effSelId));
-      setSelId(armed[(i + (e.key === "ArrowRight" ? 1 : armed.length - 1)) % armed.length].runId);
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [armed, effSelId]);
-  const otherArmed = allArmed.length - armed.length;
-  const wsHistory = useMemo(
-    () => history.filter((h) => workspaceOf(pmap[h.portfolioId]?.kind) === ws), [history, pmap, ws]);
-  const refresh = useCallback(() => {
-    api.techniqueArmed().then(setArmed).catch(() => undefined);
-    api.techniqueArmedHistory().then(setHistory).catch(() => undefined);
-  }, [setArmed]);
-  useEffect(() => { refresh(); const id = setInterval(refresh, 30_000); return () => clearInterval(id); }, [refresh]);
-  const tradingMode = String(settings["trading.mode"] ?? "practice");
-  void settings;
-  const openCount = useMemo(() => armed.reduce((n, a) => n + a.openPositions, 0), [armed]);
-  const pnl = useMemo(() => armed.reduce((n, a) => n + (a.realizedPnl ?? 0), 0), [armed]);
-  const stopAll = async (flatten: boolean) => {
-    if (!confirm(flatten ? "Sell every open armed position at market and disarm all plans?" : "Disarm all armed plans? Open positions stay open.")) return;
-    try { const r = await api.techniqueStopAll(flatten); toast("info", `Disarmed ${r.disarmed} plan(s)`); refresh(); }
-    catch (e: any) { toast("error", e.message); }
-  };
-  return (
-    <div>
-      <div className="panel mb tq-armed-top">
-        <div className="panel-body tq-armed-topbar">
-          <div className="tq-armed-kpi"><small>Armed</small><b>{armed.length}</b></div>
-          <div className="tq-armed-kpi"><small>In trade</small><b className={openCount ? "pos" : ""}>{openCount}</b></div>
-          <div className="tq-armed-kpi"><small>Realized today</small><b className={pnlCls(pnl)}>{fmt(pnl)}</b></div>
-          <div className="tq-armed-kpi"><small>Workspace <InfoTip>Everything on this page belongs to the active workspace. PRACTICE = the simulator, fake money. LIVE = your real accounts (orders route for real). Switch it next to HALT in the top bar.</InfoTip></small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
-          <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped in a position.</InfoTip></small><b className={halt.engaged ? "neg" : "pos"}>{halt.engaged ? "ENGAGED" : "off"}</b></div>
-          <div className="tq-armed-topactions">
-            {armed.length > 0 && (
-              <button className="ghost-btn" onClick={() => stopAll(false)}
-                title="Disarm every plan — open positions stay open">Stop all</button>
-            )}
-            {openCount > 0 && (
-              <button className="ghost-btn neg" onClick={() => stopAll(true)}
-                title="Sell everything the plans hold at market, then disarm every plan">Flatten &amp; stop all</button>
-            )}
-          </div>
-        </div>
-      </div>
-      {otherArmed > 0 && (
-        <div className="panel mb"><div className="panel-body tq-ws-note">
-          <b>{otherArmed}</b> plan{otherArmed === 1 ? " is" : "s are"} armed in the <b>{ws === "live" ? "Practice" : "LIVE"}</b> workspace and stay{otherArmed === 1 ? "s" : ""} active —
-          switch the workspace (next to HALT) to see and manage {otherArmed === 1 ? "it" : "them"}.
-        </div></div>
-      )}
-      {armed.length === 0 && (
-        <div className="panel mb"><div className="panel-body muted">
-          Nothing armed in this workspace. Open a plan (Analyse with a past Period, or History) and press <b>Arm for live triggers</b>, or arm today's plan for a symbol above.
-          Armed plans watch live 1-minute bars, fire only inside the prime windows (R6), and — depending on the mode — alert, propose, or execute.
-        </div></div>
-      )}
-      {armed.length > 1 && <FleetTable armed={armed} selId={effSelId} onSel={setSelId} />}
-      {selArmed && <ArmedCard key={selArmed.runId} a={selArmed} onChanged={refresh} />}
-      {history.length > 0 && (
-        <div className="panel">
-          <div className="panel-head">History <span className="sub">{history.length} armed plan(s)</span></div>
-          <div className="panel-body" style={{ padding: 0 }}>
-            <table className="tq-table tq-wf">
-              <thead><tr><th>Symbol</th><th>For</th><th>Mode</th><th>Account</th><th>Status</th><th>Fired</th><th>Realized</th><th>Armed at</th></tr></thead>
-              <tbody>{wsHistory.map((h) => (
-                <tr key={h.runId} className="clickable" onClick={() => useStore.getState().openTechniqueRun(h.runId)}>
-                  <td><b>{h.symbol}</b></td><td>{h.planFor}</td><td>{h.mode}</td>
-                  <td className="muted">{pmap[h.portfolioId]?.name ?? h.portfolioId.slice(0, 8)}{" "}
-                    <span className={`status-pill ${workspaceOf(pmap[h.portfolioId]?.kind) === "live" ? "bad" : "dim"}`}>{workspaceOf(pmap[h.portfolioId]?.kind) === "live" ? "live" : "practice"}</span></td>
-                  <td>{h.status}</td><td>{(h.state?.trades ?? []).length}</td>
-                  <td className={pnlCls(h.state?.realizedPnl)}>{fmt(h.state?.realizedPnl)}</td>
-                  <td className="muted">{h.createdAt ? fmtDateTime(h.createdAt) : ""}</td></tr>))}</tbody>
-            </table>
-          </div>
-        </div>
-      )}
-    </div>
-  );
 }

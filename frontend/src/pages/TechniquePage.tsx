@@ -4,7 +4,6 @@ import { LiveRun } from "../components/technique/LiveRun";
 import { OutcomeBadge, ReviewBadge, RunResult, VerdictBadge } from "../components/technique/RunResult";
 import { GradeChip, PlanCard } from "../components/technique/PlanCard";
 import { ValidationTab } from "../components/technique/ValidationTab";
-import { ArmedTab } from "../components/technique/ArmedTab";
 import { RailShell, useRail } from "../components/technique/RailShell";
 import { Collapse, DisclosureHead, useDisclosure } from "../components/Collapse";
 import { Modal } from "../components/Modal";
@@ -76,7 +75,10 @@ function StatusBar({ status, onScan, scanBusy }: {
     <div className="tq-status">
       {!status.llmAvailable && <span className="status-pill bad">no API key</span>}
       <span className="status-pill">runs today {status.runsToday}/{status.maxRunsPerDay}</span>
-      {(status.armed?.length ?? 0) > 0 && <span className="status-pill ok">{status.armed!.length} armed</span>}
+      {(status.armed?.length ?? 0) > 0 && (
+        <button className="status-pill ok clickable" title="Open the Armed page"
+          onClick={() => useStore.getState().setPage("armed")}>{status.armed!.length} armed</button>
+      )}
       {status.running.length > 0 && <span className="tq-running-pill"><Spinner /> {status.running.length} running</span>}
       <button className="tq-check-btn" onClick={onScan} disabled={scanBusy}
         title="The main move: analyst-check tonight's graded sheet (or run a live watch-list read), then bulk-arm the confirmed setups — a confirmation shows symbols and cost first">
@@ -720,14 +722,14 @@ function ArmedRunStrip({ currentId }: { currentId?: string | null }) {
 function ArmedPanel() {
   const armed = useStore((s) => s.techniqueArmed);
   const setArmed = useStore((s) => s.setTechniqueArmed);
-  const setTab = useStore((s) => s.setTechniqueTab);
+  const setPage = useStore((s) => s.setPage);
   const openRun = useStore((s) => s.openTechniqueRun);
   const currentRunId = useStore((s) => s.techniqueFocusRunId);
   useEffect(() => { api.techniqueArmed().then(setArmed).catch(() => undefined); }, [setArmed]);
   return (
     <div className="panel mb">
       <div className="panel-head">Armed <span className="sub">{armed.length}</span>
-        <button className="link-btn" style={{ marginLeft: "auto" }} onClick={() => setTab("armed")}
+        <button className="link-btn" style={{ marginLeft: "auto" }} onClick={() => setPage("armed")}
           title="Live management view: fills, exits, P&L">dashboard</button></div>
       <div className="panel-body tq-setups">
         {armed.length === 0 && <div className="empty">nothing armed</div>}
@@ -827,6 +829,11 @@ function Rail({ rules, open, onToggle }: { rules: Record<string, string>; open: 
 export function TechniquePage() {
   const tab = useStore((s) => s.techniqueTab);
   const setTab = useStore((s) => s.setTechniqueTab);
+  // Armed moved to its own page; a stale "armed" tab value redirects there
+  useEffect(() => {
+    if (tab === "armed") { setTab("analyse"); useStore.getState().setPage("armed"); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
   const runs = useStore((s) => s.techniqueRuns);
   const setRuns = useStore((s) => s.setTechniqueRuns);
   const focusId = useStore((s) => s.techniqueFocusRunId);
@@ -1013,12 +1020,15 @@ export function TechniquePage() {
     <div className="tq-page">
       <div className="tq-head">
         <div className="tabs tq-tabs" role="tablist" aria-label="EM Options Technique">
-          {(["analyse", "validation", "chat", "history", "backtest", "armed"] as const).map((t) => (
+          {(["analyse", "validation", "chat", "history", "backtest"] as const).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-              {t === "analyse" ? "EM Options · Analyse" : t === "validation" ? "Validation" : t === "chat" ? "Chat" : t === "history" ? "History"
-                : t === "backtest" ? "Backtest" : <>Armed{armedCount > 0 ? <span className="tq-tab-count">{armedCount}</span> : null}</>}
+              {t === "analyse" ? "EM Options · Analyse" : t === "validation" ? "Validation" : t === "chat" ? "Chat" : t === "history" ? "History" : "Backtest"}
             </button>
           ))}
+          <button role="tab" aria-selected={false} onClick={() => useStore.getState().setPage("armed")}
+            title="Armed plans moved to their own page — every technique arms into it">
+            Armed{armedCount > 0 ? <span className="tq-tab-count">{armedCount}</span> : null} ↗
+          </button>
         </div>
         <StatusBar status={status} scanBusy={!!scan && !scan.done} onScan={() => setScanConfirm(true)} />
       </div>
@@ -1105,14 +1115,12 @@ export function TechniquePage() {
           onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
           onClose={() => { localStorage.setItem("zargar_tq_scan_dismissed", scan.ids.slice().sort().join(",")); setScan(null); }}
           onOpen={(id) => { setFocusRun(id); setTab("analyse"); }}
-          onArmedAll={() => setTab("armed")} />
+          onArmedAll={() => useStore.getState().setPage("armed")} />
       )}
       {tab === "chat" ? (
         <ChatPanel />
       ) : tab === "validation" ? (
         <ValidationTab llmAvailable={status?.llmAvailable ?? true} sweepVersion={status?.sweepVersion ?? null} />
-      ) : tab === "armed" ? (
-        <ArmedTab />
       ) : (
         <div className={rail.gridClass}>
           <div className="tq-main">
