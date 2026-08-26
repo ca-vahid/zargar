@@ -651,7 +651,8 @@ class PlanArmer(SessionListener):
                 trk.status = pst["status"]
                 trk.fired_ts = pst.get("firedTs")
                 trk.fired_window = pst.get("firedWindow")
-                trk.gap_unchecked = bool(pst.get("gapUnchecked")) or trk.gap_unchecked
+                # gap_unchecked is the REPLAY's own verdict (did it see the 09:30 bar?) —
+                # never inherit an older restart's value, which may itself be the artifact
                 trk.failed_breaks = max(trk.failed_breaks, int(pst.get("failedBreaks") or 0))
                 if pst["status"] not in ("fired",):
                     trk.fill_price = None
