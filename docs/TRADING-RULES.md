@@ -85,6 +85,22 @@ a number** (p. 72).
   ≥20 fallback events. Also revisit next-strike/next-expiry retry if fallback data shows
   many skips happen with tradeable neighbours.
 
+### 1.7 Mid-day no-trade rule (R6.3) — does the watch-only window earn its keep? ⏳ new
+- **The rule (the book's):** trade only 09:30–10:30 and 14:45–16:00 ET; mid-day is
+  chop, watch-only. Until now this was untestable — we never collected mid-day fires.
+- **The experiment (2026-08-26):** `technique.arm.midday_trading` (Settings →
+  Auto-trading → Experiments, default OFF) lets armed triggers fire mid-day, **live
+  armer only** — plans, sweeps and the backtester stay R6-true, so the execution
+  scorecard's live-vs-replay diff is the built-in counterfactual. Every fire carries
+  `window="midday"` (+ `middayExperiment` on the journal event); the critic is told the
+  suspension is deliberate so it never kills on the window itself. Practice only.
+- **Decision threshold:** ≥30 scored mid-day fires. Compare R distribution vs
+  prime-window fires from the same fleet. If mid-day ΣR is clearly negative → the
+  book's rule is confirmed, turn the toggle off for good. If comparable or positive →
+  R6.3 is costing us trades; consider widening the windows (with the critic as the
+  chop filter). Watch T-1 (window asymmetry) alongside.
+- ⚠ Keep OFF on any live account until this resolves.
+
 ---
 
 ## 2. Findings (settled, with evidence)
@@ -186,6 +202,8 @@ a number** (p. 72).
 - 2026-08-25 · `entry_fallback` off|shares per arm · SNOW spread skip (+1.89R untaken).
 - 2026-08-25 · Evening automation (`technique.sheet.auto`): auto sheet after close,
   optional auto analyst-check of A's.
+- 2026-08-26 · `technique.arm.midday_trading` toggle added (default OFF) — the R6.3
+  mid-day experiment, §1.7. Live armer only; fires tagged by window.
 - 2026-08-26 · Fire-time critic hardening after the PM triple-veto: live FACTS get a
   prior-session volume baseline (was baselineSessions=0 → volume unmeasurable at every
   fire); veto cooldown `technique.arm.refire_cooldown_minutes=10` (one squeeze burned

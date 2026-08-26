@@ -383,6 +383,9 @@ export function SettingsPage() {
             <ToggleRow k="technique.arm.use_critic" label="AI double-check before auto-buying" hint="an AI reads the live chart and can veto a weak setup (needs an API key)" />
             <ToggleRow k="risk.halt_allows_exits" label="Kill switch still lets you sell" hint="ON (recommended): the halt stops new buys but stops/flatten can still close a position so you're never trapped" />
             <ToggleRow k="technique.arm.allow_live_auto" label="Allow auto-trade on REAL accounts" hint="off by default; auto on real money also needs LIVE mode and a per-plan tick" />
+            <Group>Experiments</Group>
+            <ToggleRow k="technique.arm.midday_trading" label="Trade during mid-day (R6.3 experiment)"
+              hint="normally 10:30–14:45 ET is watch-only; ON lets armed triggers fire mid-day. Fires carry window=midday so outcomes stay separable — the experiment lives in TRADING-RULES 1.7" />
           </div>
         </div>
 

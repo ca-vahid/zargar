@@ -147,6 +147,8 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.enabled": True,             # allow arming plans at all
     "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)
     "technique.arm.critic_effort": "low",      # fire-time critic thinking depth — latency is cost here
+    "technique.arm.midday_trading": False,     # R6.3 EXPERIMENT: let armed triggers fire 10:30-14:45 ET
+                                               # (fires carry window="midday" so outcomes are separable)
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols

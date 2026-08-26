@@ -83,6 +83,7 @@ function Scorecard({ sc }: { sc: ArmScorecard }) {
 function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
   const toast = useStore((s) => s.toast);
   const openRun = useStore((s) => s.openTechniqueRun);
+  const middayExp = useStore((s) => Boolean(s.settings["technique.arm.midday_trading"]));
   const [open, setOpen] = useState(false);
   const [day, setDay] = useState(a.status === "armed" || a.status === "paused");
   const [audit, setAudit] = useState<any[] | null>(null);
@@ -122,7 +123,9 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
           const w = a.sessionWindowNow;
           if (w === "prime_open") return <span className="tq-badge setup" title="R6.1 — one of the book's two trading windows">● LIVE WINDOW — can fire until 10:30 AM ET</span>;
           if (w === "prime_close") return <span className="tq-badge setup" title="R6.2 — one of the book's two trading windows">● LIVE WINDOW — can fire until 4:00 PM ET</span>;
-          if (w === "midday") return <span className="tq-badge warnbadge" title="R6.3 — mid-day chop is avoided; touches are logged, nothing fires">⏸ MID-DAY · watching only — fires again 2:45 PM ET</span>;
+          if (w === "midday") return middayExp
+            ? <span className="tq-badge setup" title="R6.3 experiment is ON (Settings → Auto-trading → Experiments): mid-day fires are allowed and tagged for analysis">● MID-DAY · EXPERIMENT — fires allowed</span>
+            : <span className="tq-badge warnbadge" title="R6.3 — mid-day chop is avoided; touches are logged, nothing fires">⏸ MID-DAY · watching only — fires again 2:45 PM ET</span>;
           if (w === "extended") return <span className="tq-badge nosetup" title="R6.4 — market closed; nothing fires until the next session's windows">MARKET CLOSED — resumes 9:30 AM ET</span>;
           return null;
         })()}

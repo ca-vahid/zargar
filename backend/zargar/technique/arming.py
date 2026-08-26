@@ -1261,7 +1261,17 @@ class PlanArmer(SessionListener):
         #    volume is misleading signal; exits above and expiry below still run)
         in_session = session_window(bar.ts) != "extended"
         open_or_working = sum(1 for t in ap.trades.values() if t.status in ("working", "open"))
+        # R6.3 experiment (technique.arm.midday_trading): fires allowed outside the
+        # prime windows — LIVE ARMER ONLY. Sweeps/backtests/plans build their own
+        # trackers and never read this, so the deterministic record stays R6-true
+        # and the execution scorecard's live-vs-replay diff becomes the experiment's
+        # own counterfactual. The in_session gate above still blocks pre/after-market.
+        s_ = self.engine.settings
+        want_enforce = (bool(s_.get("technique.enforce_session_windows", True))
+                        and not bool(s_.get("technique.arm.midday_trading", False)))
         for tid, tr in (ap.trackers.items() if in_session else ()):
+            if tr.enforce_windows != want_enforce:
+                tr.enforce_windows = want_enforce
             if tr.status in ("fired", "gapped_past", "gapped_through", "gap_void", "expired"):
                 continue
             before = tr.status
@@ -1377,6 +1387,11 @@ class PlanArmer(SessionListener):
                 # R6 window we are in, the plan's other triggers, and — for options —
                 # the contract it would buy (spread / IV / delta warnings)
                 live_ctx = [f"LIVE CONTEXT — trigger {tid} fired at {trade.entry:.2f} in the {window} window."]
+                if window == "midday" and bool(self.engine.settings.get("technique.arm.midday_trading", False)):
+                    live_ctx.append(
+                        "MID-DAY EXPERIMENT: R6.3's no-midday rule is DELIBERATELY suspended for this fire "
+                        "(controlled data collection on whether the rule earns its keep). The session window "
+                        "is NOT a kill reason here — judge the setup purely on the tape and the plan.")
                 others = [f"{t2}: {trk.kind} @ {trk.entry:.2f} ({trk.status})"
                           for t2, trk in ap.trackers.items() if t2 != tid]
                 if others:
@@ -1432,6 +1447,7 @@ class PlanArmer(SessionListener):
         if journal:
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_FIRED, {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "kind": tr.kind, "window": window,
+                "middayExperiment": window == "midday",
                 "fill": tr.fill_price, "entry": tr.entry, "stop": tr.stop, "targets": trade.targets,
                 "verdictAfterCritic": a.verdict, "confidence": round(a.confidence, 3), "critic": trade.critic,
                 "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": trace},
