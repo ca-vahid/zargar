@@ -279,10 +279,14 @@ function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: b
   const st = chipState(a);
   const trigStatuses = (a.triggers ?? []).map((t) => t.status);
   // "void" = armed but every trigger is dead — say WHY, not just "done"
+  const allExhausted = trigStatuses.length > 0 && trigStatuses.every((s) => s === "exhausted");
   const voidLabel = trigStatuses.every((s) => s === "gap_void") ? "gap-voided"
     : trigStatuses.every((s) => s === "gapped_past" || s === "gapped_through") ? "gapped past"
+    : allExhausted ? "level exhausted"
     : "no triggers left";
-  const voidTitle = "Every trigger died at the open: the overnight gap either repriced the risk "
+  const voidTitle = allExhausted
+    ? "Every level failed to hold a break twice today (R3.2: more than two false breakouts = poor price action). Nothing can fire today."
+    : "Every trigger died at the open: the overnight gap either repriced the risk "
     + "(gap rule, TRADING-RULES 1.1 — these are the experiment's counterfactual samples) or "
     + "jumped past the level (chasing is forbidden). Nothing can fire today.";
   const stLabel = st === "attn" ? "⚠ ATTENTION" : st === "intrade" ? "IN TRADE"

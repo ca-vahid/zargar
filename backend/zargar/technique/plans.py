@@ -24,7 +24,7 @@ from .rulebook import (
     next_session_date,
     session_date,
 )
-from .setups import bounce_stop, build_ladder, risk_reward, stop_buffer
+from .setups import bounce_stop, build_ladder, gate_label, gate_target, risk_reward, stop_buffer
 
 MAX_BOUNCE_TRIGGERS = 3
 MAX_BREAK_TRIGGERS = 2
@@ -55,7 +55,7 @@ class Trigger:
     stop_price: float
     stop_reference: str
     targets: list[dict]
-    risk_reward: float
+    risk_reward: float               # measured to the R2 gate target (where the position exits)
     conditions: list[Condition]
     void_if: list[str]
     confluences: list[str]
@@ -65,6 +65,7 @@ class Trigger:
     no_trade_reasons: list[str]
     notes: str = ""
     assessment: dict = field(default_factory=dict)   # grade/score/strengths/cautions
+    risk_reward_tp3: float = 0.0     # the book's figure: to the final target
 
     @property
     def risk(self) -> float:
@@ -77,6 +78,7 @@ class Trigger:
             "entry": {"price": round(self.entry_price, 4), "basis": self.entry_basis},
             "stop": {"price": round(self.stop_price, 4), "reference": self.stop_reference},
             "targets": self.targets, "riskReward": round(self.risk_reward, 2),
+            "riskRewardTp3": round(self.risk_reward_tp3, 2),
             "risk": round(self.risk, 4),
             "conditions": [c.to_dict() for c in self.conditions], "voidIf": list(self.void_if),
             "confluences": list(self.confluences), "confidence": round(self.confidence, 3),
@@ -187,7 +189,8 @@ def assess_trigger(*, kind: str, lv: Level, rep: dict, zone_size: int, rr: float
         score += 5
         cautions.append("targets are the book's 2/4/6% ladder — nothing overhead to anchor them, "
                         "so the R:R number is optimistic (T4.4)")
-    if stop_reference in ("below_zone_low", "wedge_low", "below_broken_resistance", "below_invalidation_low"):
+    if stop_reference in ("below_zone_low", "wedge_low", "below_broken_resistance", "below_invalidation_low",
+                          "below_break_base"):
         score += 8
         strengths.append("stop sits below the chart structure that invalidates the idea (T4.3d)")
     dist = abs(entry - last) / last if last else 0.0
@@ -365,6 +368,14 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         return next((r for r in all_resistances
                      if r["price"] > price + tol and r["price"] not in exclude), None)
 
+    def _break_base(level_price: float) -> float | None:
+        """The most recent trigger-tf swing low under `level_price` within the stop
+        cap (`facts.swingLows`, T4.3d) — where a failed break would prove itself."""
+        floor = level_price * (1 - t.max_stop_pct)
+        lows = [float(p["price"]) for p in (facts.get("swingLows") or {}).get(ptf) or []
+                if floor <= float(p["price"]) < level_price]
+        return lows[-1] if lows else None
+
     # Bounce triggers — nearest support zones below, within reach.
     n = 0
     for zone in _zones(supports_below):
@@ -387,7 +398,8 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         risk = entry - stop
         next_res = _next_resistance_above(entry)
         targets = build_ladder(entry, "long", next_level=(next_res["price"] if next_res else None))
-        rr = risk_reward(entry, stop, targets[-1].price)
+        rr = risk_reward(entry, stop, gate_target(targets, t).price)
+        rr3 = risk_reward(entry, stop, targets[-1].price)
         confl = []
         if "T1.3a" in lv.sources:
             confl.append("prior-day extreme (T1.3a)")
@@ -401,8 +413,8 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         if len(zone) > 1:
             confl.append(f"zone of {len(zone)} levels ({zone_low:.2f}-{zone[0]['price']:.2f})")
         reasons: list[str] = []
-        if rr < t.min_risk_reward:
-            reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
+        if rr < t.min_risk_reward - 1e-9:
+            reasons.append(f"R2 reward:risk {rr:.2f} to {gate_label(t)} below {t.min_risk_reward:.1f}")
         if lv.touches < t.min_touches and "T1.3a" not in lv.sources:
             reasons.append(f"T1.2 only {lv.touches} touch(es)")
         if risk > entry * t.max_stop_pct:
@@ -429,7 +441,7 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
                                    "members": [m["price"] for m in zone]}},
             entry_price=entry, entry_basis="at_level", stop_price=stop,
             stop_reference=stop_ref,
-            targets=[tg.to_dict() for tg in targets], risk_reward=rr,
+            targets=[tg.to_dict() for tg in targets], risk_reward=rr, risk_reward_tp3=rr3,
             conditions=[
                 Condition("T4.1", f"price trades down into {entry:.2f} (+/- {tol:.2f})", "touch"),
                 _window_condition(), _volume_floor_condition(t),
@@ -458,12 +470,21 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         if (entry - last) / last > MAX_LEVEL_DISTANCE_PCT:
             continue
         lv = _level_from_dict({**rep, "effectiveKind": "resistance"})
-        stop = zone_low - stop_buffer(zone_low, atr_value=stop_atr, thresholds=t)
+        # T4.3d — the stop sits under the base the break launches from: the most
+        # recent swing low below the zone (within the stop cap), else the zone's
+        # floor. `zone_low - buffer` alone collapsed to `level - 0.5 %` for every
+        # single-level zone (T k1 2026-08-26: 25.87 -> 25.7407), a fixed-percent
+        # stop in costume that pinned breakout R:R near 12.
+        base = _break_base(zone_low)
+        anchor = base if base is not None else zone_low
+        stop = anchor - stop_buffer(anchor, atr_value=stop_atr, thresholds=t)
+        stop_ref = "below_break_base" if base is not None else "below_broken_resistance"
         risk = entry - stop
         member_prices = {mm["price"] for mm in zone}
         next_res = _next_resistance_above(entry, exclude=member_prices)
         targets = build_ladder(entry, "long", next_level=(next_res["price"] if next_res else None))
-        rr = risk_reward(entry, stop, targets[-1].price)
+        rr = risk_reward(entry, stop, gate_target(targets, t).price)
+        rr3 = risk_reward(entry, stop, targets[-1].price)
         confl = []
         if "T1.3a" in lv.sources:
             confl.append("prior-day extreme (T1.3a)")
@@ -473,8 +494,8 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         if hta:
             confl.append("higher timeframe uptrend (T3.3g)")
         reasons = []
-        if rr < t.min_risk_reward:
-            reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
+        if rr < t.min_risk_reward - 1e-9:
+            reasons.append(f"R2 reward:risk {rr:.2f} to {gate_label(t)} below {t.min_risk_reward:.1f}")
         if risk > entry * t.max_stop_pct:
             reasons.append(f"T4.3a/R1 the stop the chart justifies ({stop:.2f}) is "
                            f"{risk / entry:.1%} away — beyond the {t.max_stop_pct:.1%} cap")
@@ -484,16 +505,17 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
             rules.append("T4.6")
         assessment = assess_trigger(kind="breakout", lv=lv, rep=rep, zone_size=len(zone), rr=rr,
                                     target_basis=targets[0].basis, risk=risk, entry=entry,
-                                    last=last, stop_reference="below_broken_resistance",
+                                    last=last, stop_reference=stop_ref,
                                     fakeout_level=fakeout_level, hta=hta, valid=valid, t=t)
         m += 1
         triggers.append(Trigger(
             id=f"k{m}", kind="breakout", direction="long", level_price=entry,
             level={**rep, "zone": {"high": zone_top, "low": zone_low,
-                                   "members": [mm["price"] for mm in zone]}},
+                                   "members": [mm["price"] for mm in zone]},
+                   **({"breakBase": round(base, 4)} if base is not None else {})},
             entry_price=entry, entry_basis="on_break", stop_price=stop,
-            stop_reference="below_broken_resistance",
-            targets=[tg.to_dict() for tg in targets], risk_reward=rr,
+            stop_reference=stop_ref,
+            targets=[tg.to_dict() for tg in targets], risk_reward=rr, risk_reward_tp3=rr3,
             conditions=[
                 Condition("T3.3b", f"a bar CLOSES above {entry:.2f}", "close_through"),
                 _window_condition(),
@@ -518,12 +540,14 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         lvl = float(w.get("breakoutLevelNow") or 0)
         if lvl <= 0:
             continue
-        stop = float(w["lowestPrice"]) - max(lvl * 0.001, 1e-9)
+        w_low = float(w["lowestPrice"])
+        stop = w_low - stop_buffer(w_low, atr_value=stop_atr, thresholds=t)
         targets = build_ladder(lvl, "long", measured_move=float(w.get("widestHeight") or 0))
-        rr = risk_reward(lvl, stop, targets[-1].price)
+        rr = risk_reward(lvl, stop, gate_target(targets, t).price)
+        rr3 = risk_reward(lvl, stop, targets[-1].price)
         reasons = []
-        if rr < t.min_risk_reward:
-            reasons.append(f"R2 reward:risk {rr:.2f} below {t.min_risk_reward:.1f}")
+        if rr < t.min_risk_reward - 1e-9:
+            reasons.append(f"R2 reward:risk {rr:.2f} to {gate_label(t)} below {t.min_risk_reward:.1f}")
         if not w.get("volumeDeclining"):
             reasons.append("T3.1c volume not declining into the wedge")
         valid = not reasons
@@ -538,7 +562,7 @@ def build_session_plan(facts: dict, *, thresholds: Thresholds | None = None,
         triggers.append(Trigger(
             id=f"w{tf}", kind="wedge_break", direction="long", level_price=lvl, level=wd,
             entry_price=lvl, entry_basis="on_break", stop_price=stop, stop_reference="wedge_low",
-            targets=[tg.to_dict() for tg in targets], risk_reward=rr,
+            targets=[tg.to_dict() for tg in targets], risk_reward=rr, risk_reward_tp3=rr3,
             conditions=[
                 Condition("T3.1d", f"a bar CLOSES above the upper wedge line (~{lvl:.2f} at the close of {built_session})", "close_through"),
                 _window_condition(),

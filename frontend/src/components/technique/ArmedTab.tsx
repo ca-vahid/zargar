@@ -14,10 +14,12 @@ export function pnlCls(v: number | null | undefined) { return (v ?? 0) > 0 ? "po
 const STATUS_LABEL: Record<string, string> = {
   waiting: "watching", observed: "touched mid-day", fired: "FIRED", gapped_past: "gapped past", gapped_through: "gapped through stop",
   gap_void: "void (gap)", not_triggered: "no trigger", expired: "expired",
+  exhausted: "done — 2 false breaks (R3.2)",
 };
 const TRADE_LABEL: Record<string, string> = {
   fired: "fired", critic_killed: "killed by critic", alert: "alert only", proposal: "proposal waiting", submitting: "submitting",
   working: "entry working", open: "IN TRADE", closed: "closed", cancelled: "cancelled", failed: "FAILED", skipped: "skipped",
+  critic_unavailable: "critic down — not sent",
 };
 
 function TradeRow({ t }: { t: ArmedTrade }) {

@@ -325,8 +325,10 @@ def test_tracker_gap_rules_and_windows():
     tr = TriggerTracker(tg, DEFAULT_THRESHOLDS, None, True, True, prev_close=100.2)
     assert tr.on_bar(_bar(d, 9, 30, 99.8, 99.9, 99.7, 99.8), 0) == "gapped_past"
     # mid-day touch is observed, not fired; the same touch fires without the gate
-    gated = TriggerTracker(tg, DEFAULT_THRESHOLDS, None, True, True, prev_close=100.6)
-    free = TriggerTracker(tg, DEFAULT_THRESHOLDS, None, False, True, prev_close=100.6)
+    prof = build_profile([Bar(symbol="T", tf="1m", ts=_ms(d - dt.timedelta(days=1), 9, 30) + i * MIN, open=100,
+                              high=100.1, low=99.9, close=100, volume=1000) for i in range(390)])
+    gated = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=100.6)
+    free = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, False, True, prev_close=100.6)
     bars = [_bar(d, 9, 30, 100.6, 100.7, 100.5, 100.6)] + [_bar(d, 12, 0, 100.3, 100.4, 99.95, 100.1)]
     for i, b in enumerate(bars):
         gated.on_bar(b, i)
@@ -456,6 +458,10 @@ async def rig(fresh_db, monkeypatch):
     await eng.start()
     await attach_technique_layer(eng)
     await eng.settings.set("technique.options.enabled", False, journal=False)
+    # the synthetic sim market is built around the book's TP3 arithmetic (R:R 3-4 to
+    # the next resistance); the app's default gate is the exit rung (TP2 for one
+    # contract) and is covered by its own unit tests
+    await eng.settings.set("technique.rr_gate_target", "tp3", journal=False)
     app = create_app(config, eng)
     transport = httpx.ASGITransport(app=app)
     days = weekdays(6)
@@ -692,3 +698,88 @@ async def test_deterministic_plan_needs_no_api_key(rig):
     # and so does a vision-backed plan
     with pytest.raises(RuntimeError):
         await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=True, wait=True)
+
+
+# --- 2026-08-26 review fixes -------------------------------------------------------------------------
+
+def _prior_profile(d):
+    return build_profile([Bar(symbol="T", tf="1m", ts=_ms(d - dt.timedelta(days=1), 9, 30) + i * MIN, open=100,
+                              high=100.1, low=99.9, close=100, volume=1000) for i in range(390)])
+
+
+def test_tracker_gap_rules_need_the_opening_bar():
+    """A1 — the open-gap rules are judged on the 09:30 bar only. When the first bar the
+    tracker sees is later (late start / restart: 08-26 the app came up at 09:50 and 22
+    triggers were 'gap-voided' against the 09:50 bar) the gap is unknowable: the trigger
+    runs without the gap rules and records `gap_unchecked` instead of voiding."""
+    d = weekdays(1)[0]
+    tg = _bounce_trigger()
+    prof = _prior_profile(d)
+    late = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=102.0)
+    # 09:50 print far from the previous close: NOT a gap decision
+    assert late.on_bar(_bar(d, 9, 50, 103.5, 103.6, 103.4, 103.5), 0) == "waiting"
+    assert late.gap_unchecked and any(e["event"] == "gap_unchecked" for e in late.events)
+    # ... and the trigger is alive: a prime-window touch fires normally
+    assert late.on_bar(_bar(d, 9, 51, 100.2, 100.3, 99.95, 100.1), 1) == "fired"
+    # the 09:30 bar itself still carries the gap decision
+    on_time = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=102.0)
+    assert on_time.on_bar(_bar(d, 9, 30, 103.5, 103.6, 103.4, 103.5), 0) == "gap_void"
+
+
+def test_tracker_never_enters_on_unknown_volume():
+    """A6 — one R3.1 policy: no baseline / no volume on the bar = no entry (the trigger
+    stays alive and is re-judged next bar)."""
+    d = weekdays(1)[0]
+    tg = _bounce_trigger()
+    tr = TriggerTracker(tg, DEFAULT_THRESHOLDS, None, True, True, prev_close=100.5)
+    assert tr.on_bar(_bar(d, 9, 31, 100.2, 100.3, 99.95, 100.1, v=0), 0) == "waiting"
+    assert tr.skipped and "volume unknown" in tr.skipped[-1]["reason"]
+    # a baseline arrives (profile) -> the next touch fires
+    tr.profile = _prior_profile(d)
+    assert tr.on_bar(_bar(d, 9, 32, 100.1, 100.2, 99.95, 100.1, v=900), 1) == "fired"
+
+
+def test_tracker_exhausts_a_level_after_two_false_breaks():
+    """A10 / R3.2 — a level that failed to hold two breaks is done for the session."""
+    d = weekdays(1)[0]
+    tg = {"id": "k1", "kind": "breakout", "setupType": "breakout", "valid": True,
+          "entry": {"price": 104.0, "basis": "on_break"}, "stop": {"price": 103.5},
+          "targets": [{"price": 105.0}, {"price": 106.0}, {"price": 107.0}], "levelPrice": 104.0, "riskReward": 6.0}
+    prof = _prior_profile(d)
+    tr = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=103.8)
+    i = 0
+    def feed(o, h, l, c, v=1000):
+        nonlocal i
+        st = tr.on_bar(_bar(d, 9, 31 + i, o, h, l, c, v=v), i)
+        i += 1
+        return st
+    feed(103.8, 103.9, 103.7, 103.8)
+    for attempt in range(2):
+        # decisive close through on 2x volume, then three bars back below the level
+        feed(103.9, 104.6, 103.9, 104.55, v=2500)
+        for _ in range(3):
+            feed(104.3, 104.4, 103.6, 103.7)
+        feed(103.7, 103.8, 103.6, 103.7)
+        if attempt == 0:
+            assert tr.status == "waiting" and tr.failed_breaks == 1
+    assert tr.status == "exhausted" and tr.failed_breaks == 2
+    assert any("R3.2" in s["reason"] for s in tr.skipped)
+    # terminal: a later clean break is ignored
+    feed(103.9, 104.6, 103.9, 104.55, v=2500)
+    assert tr.status == "exhausted"
+
+
+def test_rr_gate_target_resolves_to_the_exit_rung():
+    """A5 — R2 is measured where the position actually exits: one options contract
+    leaves at TP2, so `auto` = TP2; shares or 3+ contracts keep the book's TP3."""
+    from zargar.technique.rulebook import rr_gate_target_from_settings
+    base = {"technique.rr_gate_target": "auto", "technique.arm.instrument": "options",
+            "technique.arm.contracts": 1, "technique.arm.single_contract_exit": "tp2"}
+    get = lambda k, dflt=None: base.get(k, dflt)
+    assert rr_gate_target_from_settings(get) == 1
+    base["technique.arm.contracts"] = 3
+    assert rr_gate_target_from_settings(get) == 2
+    base.update({"technique.arm.contracts": 1, "technique.arm.instrument": "shares"})
+    assert rr_gate_target_from_settings(get) == 2
+    base["technique.rr_gate_target"] = "tp1"
+    assert rr_gate_target_from_settings(get) == 0

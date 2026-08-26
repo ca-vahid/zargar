@@ -167,11 +167,15 @@ def ground_analysis(analysis: TechniqueAnalysis, facts: dict,
     check("targets_ordered", ordered, "targets must step away from entry")
 
     # R:R recomputed from the numbers, must match and clear R2
-    rr = risk_reward(e, s, analysis.targets[-1].price)
-    check("rr_matches", abs(rr - analysis.risk_reward) <= max(0.25, rr * 0.15),
-          f"computed {rr:.2f} reported {analysis.risk_reward:.2f}")
-    check("rr_meets_R2", rr >= t.min_risk_reward, f"{rr:.2f} vs {t.min_risk_reward}")
-    if rr < t.min_risk_reward:
+    gi = min(max(int(t.rr_gate_target), 0), len(analysis.targets) - 1)
+    rr = risk_reward(e, s, analysis.targets[gi].price)
+    rr_tp3 = risk_reward(e, s, analysis.targets[-1].price)
+    # the model may report either figure (the book's TP3 or the gate's rung)
+    check("rr_matches", min(abs(rr - analysis.risk_reward), abs(rr_tp3 - analysis.risk_reward))
+          <= max(0.25, rr * 0.15),
+          f"computed {rr:.2f} (TP3 {rr_tp3:.2f}) reported {analysis.risk_reward:.2f}")
+    check("rr_meets_R2", rr >= t.min_risk_reward - 1e-9, f"{rr:.2f} vs {t.min_risk_reward}")
+    if rr < t.min_risk_reward - 1e-9:
         corrections.append(f"R:R is {rr:.2f} (< {t.min_risk_reward}); either find a better entry/stop "
                            f"or return no_setup citing R2.")
 

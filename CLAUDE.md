@@ -164,6 +164,18 @@ docker-compose.
   settings, `barsAssetId`). Add a `vp.note(...)` when you add a step to the
   pipeline; never strip the trace. `technique_runs`/`events` are never edited —
   reviews and replays are new rows.
+- **Gap rules are judged on the 09:30 bar only** (`TriggerTracker`); a plan armed/restored
+  after the open fetches the opening bars from history first (`_complete_opening_bars`),
+  else the trigger runs `gap_unchecked`. Never evaluate a gap on "the first bar seen".
+- **R2 is measured where the position exits** (`technique.rr_gate_target=auto` → TP2 for
+  < 3 contracts); tests that encode the book's TP3 arithmetic pin `tp3` in their rig.
+- Live 1m bars: `BarAggregator` holds a sampled bar ~5 s for the Alpaca exchange bar
+  (`feed.exchange_bar_hold_seconds`); consumers get ONE bar per minute (`source: exchange`
+  when corrected). The fire→critic→order chain runs off the bar loop (`_spawn_fire`);
+  tests/manual feeds call `armer.on_bar()` which awaits `wait_fires()`.
+- Auto mode never arms without a loss halt (`_ensure_loss_halt`, fallback
+  `technique.arm.daily_loss_fallback`); the critic fails OPEN with a timeout + per-day
+  budget (`technique.arm.critic_fail_budget`) that pauses the plan.
 - Armed plans also run a ~2s **quote stop watch** (`technique.arm.quote_exit*`):
   exit-only, fires when the underlying's live quote is decisively through the stop
   (excess_r × risk beyond, N consecutive polls). Never add an entry path to

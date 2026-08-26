@@ -118,16 +118,20 @@ def _count_touches(bars: list[Bar], price: float, tol: float, kind: str) -> list
     """Timestamps of bars that actually touched `price` within `tol`.
 
     A touch requires the bar's *extreme* to reach the band — for support the low,
-    for resistance the high. Consecutive bars inside the band count once, so a
-    long consolidation on the level is a single touch, not twenty.
+    for resistance the high — AND the bar must not close through the level: a
+    bar that blows straight through is a break, not a test (until 2026-08-26
+    both kinds used the same band-overlap expression and counted such bars,
+    inflating every touch count the grades and gates rest on). Consecutive bars
+    inside the band count once, so a long consolidation on the level is a single
+    touch, not twenty.
     """
     hits: list[int] = []
     in_band = False
     for b in bars:
         if kind == "support":
-            touching = b.low <= price + tol and b.high >= price - tol
+            touching = b.low <= price + tol and b.close >= price - tol
         else:
-            touching = b.high >= price - tol and b.low <= price + tol
+            touching = b.high >= price - tol and b.close <= price + tol
         if touching and not in_band:
             hits.append(b.ts)
         in_band = touching

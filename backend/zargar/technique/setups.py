@@ -89,7 +89,8 @@ class Setup:
     stop_reference: str
     targets: list[Target] = field(default_factory=list)
     runner_pct: float = RUNNER_PCT
-    risk_reward: float = 0.0
+    risk_reward: float = 0.0            # measured to the R2 gate target (where the position exits)
+    risk_reward_tp3: float = 0.0        # the book's figure: to the final target
     level_price: float | None = None
     rules: list[str] = field(default_factory=list)
     no_trade_reasons: list[str] = field(default_factory=list)
@@ -118,6 +119,7 @@ class Setup:
             "targets": [t.to_dict() for t in self.targets],
             "runnerPct": round(self.runner_pct * 100, 1),
             "riskReward": round(self.risk_reward, 2),
+            "riskRewardTp3": round(self.risk_reward_tp3, 2),
             "levelPrice": round(self.level_price, 4) if self.level_price is not None else None,
             "rules": list(self.rules),
             "noTradeReasons": list(self.no_trade_reasons),
@@ -133,6 +135,39 @@ def risk_reward(entry: float, stop: float, target: float) -> float:
     if risk <= 0:
         return 0.0
     return abs(target - entry) / risk
+
+
+def gate_target(targets: list[Target], thresholds: Thresholds | None = None) -> Target | None:
+    """R2 — the rung the reward:risk gate is measured to (`Thresholds.rr_gate_target`)."""
+    if not targets:
+        return None
+    t = thresholds or DEFAULT_THRESHOLDS
+    return targets[min(max(int(t.rr_gate_target), 0), len(targets) - 1)]
+
+
+def gate_label(thresholds: Thresholds | None = None) -> str:
+    t = thresholds or DEFAULT_THRESHOLDS
+    return f"TP{min(max(int(t.rr_gate_target), 0), 2) + 1}"
+
+
+def breakout_anchor(bars: list[Bar], level_price: float, *, thresholds: Thresholds | None = None,
+                    lookback: int = 60) -> float | None:
+    """T3.1e generalised to any break (T4.3d): the stop belongs under the base
+    the break launches from — the most recent swing low BELOW the level, within
+    the acceptable stop distance — never a percentage of the level (until
+    2026-08-26 breakouts used `level - 0.5 %`, a fixed-percent stop in costume
+    that pinned every breakout's R:R near 12). None when nothing under the level
+    qualifies; the caller then anchors on the level itself with the usual buffer."""
+    from .levels import find_pivots
+    t = thresholds or DEFAULT_THRESHOLDS
+    floor = level_price * (1 - t.max_stop_pct)
+    window = bars[-lookback:] if lookback else list(bars)
+    lows = [p.price for p in find_pivots(window, window=t.pivot_window)
+            if p.kind == "low" and floor <= p.price < level_price]
+    if lows:
+        return float(lows[-1])                        # the most recent base
+    recent = [b.low for b in window[-(t.pivot_window * 2):] if floor <= b.low < level_price]
+    return float(min(recent)) if recent else None
 
 
 def classify_breakout(
@@ -361,7 +396,9 @@ def build_bounce_setup(
         entry, "long",
         next_level=next_resistance.price if next_resistance else None,
     )
-    rr = risk_reward(entry, stop, targets[-1].price) if targets else 0.0
+    gt = gate_target(targets, t)
+    rr = risk_reward(entry, stop, gt.price) if gt else 0.0
+    rr3 = risk_reward(entry, stop, targets[-1].price) if targets else 0.0
 
     rules = ["T1.2", "T4.1", "T4.2", "T4.3a", "T4.3d", "T4.4a", "T4.4b"]
     rules.extend(level.sources)
@@ -372,8 +409,8 @@ def build_bounce_setup(
         no_trade.append("R3.1 volume below 50% of the time-of-day average")
     if not volume.measurable:
         no_trade.append("R3.1 volume could not be measured — no baseline to confirm against")
-    if rr < t.min_risk_reward:
-        no_trade.append(f"R2 reward:risk {rr:.2f} is below the {t.min_risk_reward:.1f} minimum")
+    if rr < t.min_risk_reward - 1e-9:
+        no_trade.append(f"R2 reward:risk {rr:.2f} to {gate_label(t)} is below the {t.min_risk_reward:.1f} minimum")
     if level.touches < t.min_touches:
         no_trade.append(f"T1.2 level has only {level.touches} touch(es)")
     if risk > entry * t.max_stop_pct:
@@ -407,6 +444,7 @@ def build_bounce_setup(
         stop_reference="below_invalidation_low" if inv is not None else "below_support",
         targets=targets,
         risk_reward=rr,
+        risk_reward_tp3=rr3,
         level_price=level.price,
         rules=sorted(set(rules)),
         no_trade_reasons=no_trade,
@@ -425,6 +463,8 @@ def build_breakout_setup(
     *,
     wedge: Wedge | None = None,
     thresholds: Thresholds | None = None,
+    atr_value: float = 0.0,
+    next_resistance: Level | None = None,
 ) -> Setup:
     """Setup B — breakout or falling-wedge break (spec §8).
 
@@ -435,19 +475,28 @@ def build_breakout_setup(
     entry = level.price if wedge is None else max(level.price, bars[-1].close)
 
     if wedge is not None:
-        # T3.1e — stop below the lowest point of the wedge.
-        stop = wedge.lowest_price - max(entry * 0.001, 1e-9)
+        # T3.1e — stop below the lowest point of the wedge, with the same
+        # clearance every chart stop gets (never a bare per-mille of price).
+        stop = wedge.lowest_price - stop_buffer(wedge.lowest_price, atr_value=atr_value, thresholds=t)
         stop_ref = "wedge_low"
         setup_type = "falling_wedge"
         measured = wedge.widest_height          # T3.1f
     else:
-        stop = level.price - max(entry * 0.005, 1e-9)
-        stop_ref = "below_broken_resistance"
+        # T4.3d — under the base the break launches from (most recent swing low
+        # below the level), else under the level itself; buffered like a bounce.
+        anchor = breakout_anchor(bars, level.price, thresholds=t)
+        base = anchor if anchor is not None else level.price
+        stop = base - stop_buffer(base, atr_value=atr_value, thresholds=t)
+        stop_ref = "below_break_base" if anchor is not None else "below_broken_resistance"
         setup_type = "breakout"
         measured = None
 
-    targets = build_ladder(entry, "long", measured_move=measured)
-    rr = risk_reward(entry, stop, targets[-1].price) if targets else 0.0
+    targets = build_ladder(entry, "long", measured_move=measured,
+                           next_level=(next_resistance.price if next_resistance and measured is None else None))
+    gt = gate_target(targets, t)
+    rr = risk_reward(entry, stop, gt.price) if gt else 0.0
+    rr3 = risk_reward(entry, stop, targets[-1].price) if targets else 0.0
+    risk = entry - stop
 
     rules = ["T4.1", "T4.3a", "T4.4a", "T4.4b"]
     rules.extend(level.sources)
@@ -464,8 +513,11 @@ def build_breakout_setup(
         no_trade.append("R3.1 volume below 50% of the time-of-day average")
     if not volume.measurable:
         no_trade.append("R3.1 volume could not be measured — no baseline to confirm against")
-    if rr < t.min_risk_reward:
-        no_trade.append(f"R2 reward:risk {rr:.2f} is below the {t.min_risk_reward:.1f} minimum")
+    if rr < t.min_risk_reward - 1e-9:
+        no_trade.append(f"R2 reward:risk {rr:.2f} to {gate_label(t)} is below the {t.min_risk_reward:.1f} minimum")
+    if risk > entry * t.max_stop_pct:
+        no_trade.append(f"T4.3a/R1 the stop the chart justifies ({stop:.2f}) is "
+                        f"{risk / entry:.1%} away — beyond the {t.max_stop_pct:.1%} cap")
 
     conf = _confidence(level, volume, 0.15 if verdict.is_breakout else -0.25)
 
@@ -481,6 +533,7 @@ def build_breakout_setup(
         stop_reference=stop_ref,
         targets=targets,
         risk_reward=rr,
+        risk_reward_tp3=rr3,
         level_price=level.price,
         rules=sorted(set(rules)),
         no_trade_reasons=no_trade,

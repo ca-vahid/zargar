@@ -319,3 +319,22 @@ def test_classify_close_position_labels():
 def test_classify_out_of_range_index_is_safe():
     assert classify([], 0) == []
     assert classify([bar(0, 100, 101, 99, 100)], 5) == []
+
+
+def test_touch_requires_the_extreme_to_test_the_level_without_closing_through():
+    """A3 (2026-08-26) — a bar that blows straight through a level is a break, not a
+    touch; before the fix support and resistance used the same band-overlap test and
+    counted it, inflating every touch count the grades rest on."""
+    from zargar.technique.levels import _count_touches
+    t0 = ts_at("2026-08-18", 14, 0)
+    tol = 0.15
+    # two real tests of 100.0 support (low reaches the band, close holds above) ...
+    tests = [bar(t0, 100.5, 100.6, 100.05, 100.4), bar(t0 + MIN, 100.6, 100.8, 100.5, 100.7),
+             bar(t0 + 2 * MIN, 100.4, 100.5, 99.95, 100.3)]
+    assert len(_count_touches(tests, 100.0, tol, "support")) == 2
+    # ... and a bar that opens above and closes well below is NOT a touch
+    smash = [bar(t0 + 3 * MIN, 100.6, 100.7, 99.0, 99.1)]
+    assert _count_touches(smash, 100.0, tol, "support") == []
+    # resistance mirrors it: the high must reach the band and the close must stay under
+    assert len(_count_touches([bar(t0, 99.5, 100.05, 99.4, 99.6)], 100.0, tol, "resistance")) == 1
+    assert _count_touches([bar(t0, 99.5, 101.0, 99.4, 100.9)], 100.0, tol, "resistance") == []

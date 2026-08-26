@@ -68,6 +68,7 @@ const STATUS_WORDS: Record<string, string> = {
   not_triggered: "never touched", gapped_past: "gapped past at the open (T4.1)", gapped_through: "stop gapped through (T4.3a)",
   gap_void: "plan void — open gapped too far (Q13)", expired: "touched outside the prime windows only (R6)",
   not_tradeable: "rejected in the plan", observed_midday: "touched mid-day only (R6)", voided: "voided",
+  exhausted: "level failed two breaks — done for the day (R3.2)",
 };
 
 // --- per-row reading ---------------------------------------------------------------------

@@ -210,6 +210,15 @@ class Thresholds:
     respect_mult: float = 3.0          # reversal >= respect_mult * tol counts as "respected"
     gap_void_r: float = 1.0            # |open - prevClose| > gap_void_r * risk voids the plan
     plan_entry_window_bars: int = 12   # bars a bounce trigger has to fill after the touch
+    # R3.2 — false breakouts of one level in a session before the level is done
+    # ("more than two false breakouts" = poor price action, p. 64)
+    max_false_breaks: int = 2
+    # R2 — the target the reward:risk gate is measured to (0 = TP1, 1 = TP2,
+    # 2 = TP3). The book measures to the target (TP3 here); the *app* resolves
+    # `technique.rr_gate_target = auto` to where the position actually exits —
+    # a < 3-contract options position leaves in full at TP2, so a "3.0 to TP3"
+    # plan would be a 2.25 trade. The dataclass default stays the book's.
+    rr_gate_target: int = 2
     # Round-number detection: treat multiples of these as psychological levels
     round_number_steps: tuple[float, ...] = (1.0, 5.0, 10.0, 50.0, 100.0)
 
@@ -232,6 +241,9 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.lookback_sessions": t.lookback_sessions,
         "technique.volume_spike_mult": t.volume_spike_mult,
         "technique.volume_dryup_mult": t.volume_dryup_mult,
+        "technique.volume_floor_mult": t.volume_floor_mult,
+        "technique.max_false_breaks": t.max_false_breaks,
+        "technique.rr_gate_target": "auto",
         "technique.decisive_body_ratio": t.decisive_body_ratio,
         "technique.min_risk_reward": t.min_risk_reward,
         "technique.default_risk_pct": t.default_risk_pct,
@@ -246,6 +258,25 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
     }
 
 
+def rr_gate_target_from_settings(get) -> int:
+    """R2's measuring target as a 0-based index into the ladder. `auto` = the
+    exit the armed position will actually take: with the options instrument and
+    fewer than 3 contracts that is `technique.arm.single_contract_exit` (TP2);
+    otherwise the book's TP3."""
+    v = str(get("technique.rr_gate_target", "auto") or "auto").strip().lower()
+    if v in ("tp1", "tp2", "tp3"):
+        return int(v[2]) - 1
+    try:
+        raw = get("technique.arm.contracts", 1)
+        contracts = int(raw) if raw not in (None, "") else 0
+    except (TypeError, ValueError):
+        contracts = 1
+    if str(get("technique.arm.instrument", "options") or "options") == "options" and 0 < contracts < 3:
+        ex = str(get("technique.arm.single_contract_exit", "tp2") or "tp2").lower()
+        return int(ex[2]) - 1 if ex in ("tp1", "tp2", "tp3") else 1
+    return 2
+
+
 def thresholds_from_settings(get) -> Thresholds:
     """Build a Thresholds from a settings getter, falling back to defaults.
 
@@ -253,6 +284,8 @@ def thresholds_from_settings(get) -> Thresholds:
     """
     d = DEFAULT_THRESHOLDS
     return Thresholds(
+        max_false_breaks=int(get("technique.max_false_breaks", d.max_false_breaks)),
+        rr_gate_target=rr_gate_target_from_settings(get),
         level_tolerance_pct=float(get("technique.level_tolerance_pct",
                                       d.level_tolerance_pct * 100)) / 100,
         level_tolerance_atr=d.level_tolerance_atr,
@@ -262,7 +295,7 @@ def thresholds_from_settings(get) -> Thresholds:
         lookback_sessions=int(get("technique.lookback_sessions", d.lookback_sessions)),
         volume_spike_mult=float(get("technique.volume_spike_mult", d.volume_spike_mult)),
         volume_dryup_mult=float(get("technique.volume_dryup_mult", d.volume_dryup_mult)),
-        volume_floor_mult=d.volume_floor_mult,
+        volume_floor_mult=float(get("technique.volume_floor_mult", d.volume_floor_mult)),
         decisive_body_ratio=float(get("technique.decisive_body_ratio", d.decisive_body_ratio)),
         decisive_size_mult=d.decisive_size_mult,
         max_breakout_wick_ratio=d.max_breakout_wick_ratio,

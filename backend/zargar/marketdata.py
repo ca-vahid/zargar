@@ -7,6 +7,7 @@ kept in memory per symbol and persisted so charts have history across restarts.
 from __future__ import annotations
 
 import time
+import asyncio
 from collections import defaultdict, deque
 
 from sqlalchemy import select
@@ -50,6 +51,11 @@ class QuoteCache:
         if q is not None:
             for k, v in fields.items():
                 setattr(q, k, v)
+            if "bid" in fields or "ask" in fields:
+                # a refreshed bid/ask IS fresh information: the premium stop and the
+                # risk gate judge freshness by `ts`, which the overlay never moved
+                # (an option's quote used to go stale 180 s after it was first seen)
+                q.ts = now_ms()
 
     def clear_overlay(self, symbol: str) -> None:
         self._overlays.pop(symbol, None)
@@ -68,7 +74,15 @@ class QuoteCache:
 
 
 class BarAggregator:
-    """Builds 1m bars from the quote stream; higher timeframes are resampled on read."""
+    """Builds 1m bars from the quote stream; higher timeframes are resampled on read.
+
+    When a symbol is expected to deliver real exchange bars (Alpaca), a closed
+    quote-sampled bar is HELD for a few seconds so the exchange bar for that
+    minute can replace it before consumers see either — live consumers then
+    trade on one bar per minute, the accurate one. Until 2026-08-26 the
+    exchange bar always arrived after the sampled one had been published and
+    the armer's per-minute dedupe dropped it, so the trading path never saw a
+    correction (charts and the end-of-day replay did)."""
 
     def __init__(self, bus: Bus, max_bars: int = 3000) -> None:
         self._bus = bus
@@ -76,6 +90,54 @@ class BarAggregator:
         self._bars: dict[str, deque[Bar]] = defaultdict(lambda: deque(maxlen=max_bars))
         self._forming: dict[str, Bar] = {}
         self._last_volume: dict[str, int] = {}
+        self._hold_seconds = None            # () -> float; 0 = publish sampled bars at once
+        self._expects_exchange = None        # (symbol) -> bool
+        self._pending: dict[str, tuple[Bar, object]] = {}   # held sampled bar + timer handle
+        self._early: dict[str, Bar] = {}     # exchange bar that arrived before the sampled minute rolled
+
+    def configure(self, *, hold_seconds=None, expects_exchange=None) -> None:
+        self._hold_seconds = hold_seconds
+        self._expects_exchange = expects_exchange
+
+    def _hold_for(self, symbol: str) -> float:
+        if self._hold_seconds is None or self._expects_exchange is None:
+            return 0.0
+        try:
+            return float(self._hold_seconds()) if self._expects_exchange(symbol) else 0.0
+        except Exception:
+            return 0.0
+
+    def _publish(self, bar: Bar, source: str | None) -> None:
+        msg = {"symbol": bar.symbol, "tf": "1m", "bar": bar}
+        if source:
+            msg["source"] = source
+        self._bus.publish(topics.BARS, msg)
+
+    def _close_sampled(self, symbol: str, forming: Bar) -> None:
+        dq = self._bars[symbol]
+        early = self._early.pop(symbol, None)
+        if early is not None and early.ts == forming.ts:
+            dq.append(early)                          # the exchange bar was already here
+            self._publish(early, "exchange")
+            return
+        dq.append(forming)
+        hold = self._hold_for(symbol)
+        if hold > 0:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                handle = loop.call_later(hold, self._flush_pending, symbol, forming.ts)
+                self._pending[symbol] = (forming, handle)
+                return
+        self._publish(forming, None)
+
+    def _flush_pending(self, symbol: str, ts: int) -> None:
+        p = self._pending.get(symbol)
+        if p is not None and p[0].ts == ts:
+            self._pending.pop(symbol, None)
+            self._publish(p[0], None)                 # no exchange bar came: the sampled one stands
 
     def on_quote(self, q: Quote) -> None:
         price = q.last if q.last > 0 else q.mid
@@ -87,8 +149,7 @@ class BarAggregator:
         forming = self._forming.get(q.symbol)
         if forming is None or forming.ts != bucket:
             if forming is not None and forming.ts < bucket:
-                self._bars[q.symbol].append(forming)
-                self._bus.publish(topics.BARS, {"symbol": q.symbol, "tf": "1m", "bar": forming})
+                self._close_sampled(q.symbol, forming)
             self._forming[q.symbol] = Bar(
                 symbol=q.symbol, tf="1m", ts=bucket,
                 open=price, high=price, low=price, close=price, volume=vol_delta,
@@ -117,21 +178,29 @@ class BarAggregator:
             return
         forming = self._forming.get(bar.symbol)
         if forming is not None and bar.ts >= forming.ts:
+            if bar.ts == forming.ts:
+                self._early[bar.symbol] = bar          # keep it: it replaces the sampled bar on the roll
             return                                   # don't clobber the live/forming minute
         dq = self._bars[bar.symbol]
+        pending = self._pending.get(bar.symbol)
+        held = pending is not None and pending[0].ts == bar.ts
+        if held:
+            pending[1].cancel()
+            self._pending.pop(bar.symbol, None)
         for i in range(len(dq) - 1, -1, -1):
             if dq[i].ts == bar.ts:
-                if (dq[i].open, dq[i].high, dq[i].low, dq[i].close, dq[i].volume) == \
-                        (bar.open, bar.high, bar.low, bar.close, bar.volume):
-                    return                           # already accurate — nothing to do
+                same = (dq[i].open, dq[i].high, dq[i].low, dq[i].close, dq[i].volume) == \
+                       (bar.open, bar.high, bar.low, bar.close, bar.volume)
+                if same and not held:
+                    return                           # already accurate and already published
                 dq[i] = bar
-                self._bus.publish(topics.BARS, {"symbol": bar.symbol, "tf": "1m", "bar": bar, "source": "exchange"})
+                self._publish(bar, "exchange")
                 return
             if dq[i].ts < bar.ts:
                 break
         if not dq or bar.ts > dq[-1].ts:
             dq.append(bar)
-            self._bus.publish(topics.BARS, {"symbol": bar.symbol, "tf": "1m", "bar": bar, "source": "exchange"})
+            self._publish(bar, "exchange")
 
     def bars(self, symbol: str, tf: str = "1m", limit: int = 500, include_forming: bool = True) -> list[Bar]:
         base = list(self._bars.get(symbol, ()))

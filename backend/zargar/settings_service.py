@@ -95,8 +95,11 @@ DEFAULTS: dict[str, Any] = {
     "technique.lookback_sessions": 3,
     "technique.volume_spike_mult": 1.5,
     "technique.volume_dryup_mult": 0.7,
+    "technique.volume_floor_mult": 0.5,         # R3.1 — a touch/break on less than this x the time-of-day baseline never fires
+    "technique.max_false_breaks": 2,            # R3.2 — failed breaks of one level per session before it is done
     "technique.decisive_body_ratio": 0.6,
     "technique.min_risk_reward": 3.0,
+    "technique.rr_gate_target": "auto",         # R2 measured to: auto (where the position actually exits) | tp1 | tp2 | tp3
     "technique.default_risk_pct": 1.0,
     "technique.max_risk_pct": 5.0,
     "technique.wedge_min_bars": 8,
@@ -167,6 +170,10 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.stale_seconds": 180,        # no closed bar for this long in-session = stale, no firing
     "technique.arm.max_open_trades": 1,        # positions a single armed plan may hold at once
     "technique.arm.daily_loss_limit": 0.0,     # $ realised loss that flattens + stops a plan for the day (0 = off)
+    "technique.arm.daily_loss_fallback": 100.0,  # auto mode with no limit and no readable equity: use this $ (0 = refuse to arm)
+    "technique.arm.critic_timeout_seconds": 25,  # fire-time critic hard timeout; a timeout fails OPEN with an alert
+    "technique.arm.critic_fail_budget": 3,     # critic failures/timeouts per plan per day; the last one pauses the plan
+    "feed.exchange_bar_hold_seconds": 5,       # hold a quote-sampled 1m bar this long for the exchange bar (Alpaca) to replace it
     "technique.arm.quote_exit": True,          # intra-minute safety: exit when the live quote is decisively through the stop
     "technique.arm.quote_exit_excess_r": 0.25,  # "decisively" = beyond the stop by this x planned risk
     "technique.arm.quote_exit_polls": 2,       # consecutive ~2s polls required (one bad tick is not a breach)

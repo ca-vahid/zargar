@@ -155,6 +155,7 @@ class Trade:
     critic: dict | None = None
     instrument: str = "shares"           # shares | options
     contract: dict | None = None         # options: the picked contract (OCC symbol, strike, expiry, bid/ask, ...)
+    contract_attempted: bool = False     # the chain was consulted for this trade (pick before the critic, A8)
     order_symbol: str | None = None      # what was actually bought (OCC symbol for options)
     multiplier: float = 1.0              # 100 for options
     single_exit: str = "tp2"             # options with < 3 contracts: exit everything at this target
@@ -224,6 +225,9 @@ class ArmedPlan:
     stale_noted: bool = False
     setup_ids: dict[str, str] = field(default_factory=dict)
     critic_kills: dict[str, int] = field(default_factory=dict)   # per-trigger veto count (re-arm cap)
+    critic_failures: int = 0            # critic errors/timeouts today (fail-open budget, A8)
+    fire_tasks: dict = field(default_factory=dict)   # in-flight fire -> critic -> order chains, by trigger
+    gap_seed: str = ""                  # late arm: where the opening bars came from (A1)
     refire_at: dict[str, int] = field(default_factory=dict)      # per-trigger cooldown after a veto (ms)
     # prior-session 1m bars from the run's snapshot: the fire-time FACTS need a
     # volume baseline (live engine bars are today-only -> baselineSessions=0,
@@ -246,6 +250,9 @@ class ArmedPlan:
                 probs.append(f"{t.trigger_id}: entry errored after a partial fill — {t.remaining:g} held unmanaged")
         if self.stale and any(t.remaining > 0 for t in self.trades.values()):
             probs.append("bar data is stale while a position is open")
+        if self.config.mode == "auto" and float(self.config.daily_loss_limit or 0) <= 0 \
+                and self.status in ("armed", "paused"):
+            probs.append("auto mode with NO loss halt — set dailyLossLimit (the account's equity could not be read)")
         return probs
 
     def to_dict(self, *, portfolio: dict | None = None, quote=None, now_ms: int | None = None) -> dict:
@@ -262,6 +269,7 @@ class ArmedPlan:
                  "targets": [t["price"] for t in tr.trigger.get("targets") or []],
                  "riskReward": tr.trigger.get("riskReward"), "firedTs": tr.fired_ts, "firedWindow": tr.fired_window,
                  "observedMidday": len(tr.observed_midday), "skipped": tr.skipped[-3:],
+                 "gapUnchecked": tr.gap_unchecked, "failedBreaks": tr.failed_breaks,
                  "grade": a.get("grade"), "gradeScore": a.get("score"),
                  "conditions": tr.trigger.get("conditions"), "setupId": self.setup_ids.get(tid)}
             if last:
@@ -413,9 +421,9 @@ class PlanArmer(SessionListener):
                     if obid is None:
                         miss = self._quote_breaches.get(nkey, 0) + 1
                         self._quote_breaches[nkey] = miss
-                        if miss == 150:      # ~5 minutes of consecutive misses at 2s
+                        if miss == 30:       # ~1 minute of consecutive misses at 2s
                             await self._alert(ap, f"{tr.trigger_id}: no live quote for the option "
-                                              f"{tr.order_symbol} for ~5 min while holding — the premium stop "
+                                              f"{tr.order_symbol} for ~1 min while holding — the premium stop "
                                               f"is blind; underlying stops still work", level="warning",
                                               stage="option_quote_gap")
                     else:
@@ -610,6 +618,7 @@ class PlanArmer(SessionListener):
         try:
             todays = [b for b in self.engine.bars.bars(symbol, "1m", limit=2000, include_forming=False)
                       if session_date(b.ts) == ap.plan_for]
+            todays = await self._complete_opening_bars(ap, todays)
             for b in todays:
                 # Events from replayed history carry the bar's time, not "now" —
                 # a 13:03 restart must not relabel the 09:41 refusals.
@@ -628,6 +637,7 @@ class PlanArmer(SessionListener):
             # is authoritative: apply it over any replay conclusion, and drop
             # trades the replay minted that the live plan never had.
             ap.critic_kills = {str(k): int(v) for k, v in ((prior_state or {}).get("criticKills") or {}).items()}
+            ap.critic_failures = int((prior_state or {}).get("criticFailures") or 0)
             ap.refire_at = {str(k): int(v) for k, v in ((prior_state or {}).get("refireAt") or {}).items()}
             prior_trackers = (prior_state or {}).get("trackers") or {}
             for ptid, pst in prior_trackers.items():
@@ -641,6 +651,8 @@ class PlanArmer(SessionListener):
                 trk.status = pst["status"]
                 trk.fired_ts = pst.get("firedTs")
                 trk.fired_window = pst.get("firedWindow")
+                trk.gap_unchecked = bool(pst.get("gapUnchecked")) or trk.gap_unchecked
+                trk.failed_breaks = max(trk.failed_breaks, int(pst.get("failedBreaks") or 0))
                 if pst["status"] not in ("fired",):
                     trk.fill_price = None
             if prior_state is not None:
@@ -653,18 +665,14 @@ class PlanArmer(SessionListener):
             with contextlib.suppress(Exception):
                 await self._restore_trades(ap, state=prior_state)
         await self._persist(ap)
-        if cfg.mode == "auto" and float(cfg.daily_loss_limit or 0) <= 0 and not restored:
-            eq = 0.0
-            with contextlib.suppress(Exception):
-                eq = float(await self.engine.positions.equity(cfg.portfolio_id))
-            if eq <= 0:
-                log.warning("loss-halt derivation skipped for %s: equity unavailable — arming with NO loss halt",
-                            run_id)
-            if eq > 0:
-                cfg.daily_loss_limit = round(eq * cfg.risk_pct / 100 * 2, 2)
-                self._log(ap, "loss_halt_default",
-                          f"auto mode with no loss halt set — defaulted to ${cfg.daily_loss_limit:,.0f} "
-                          f"(2 \u00d7 the per-trade risk of {cfg.risk_pct}% on ${eq:,.0f})")
+        try:
+            await self._ensure_loss_halt(ap, cfg, restored=restored)
+        except ValueError:
+            self._armed.pop(run_id, None)
+            ap.status = "disarmed"
+            await self._persist(ap)
+            raise
+        await self._persist(ap)
         self._log(ap, "armed" if not restored else "restored", f"{cfg.mode} mode on {portfolio['name']} ({portfolio['kind']})",
                   seededBars=seeded)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ARMED, {
@@ -675,6 +683,89 @@ class PlanArmer(SessionListener):
         self.start()
         self._publish(ap, "armed")
         return self._snapshot(ap)
+
+    async def _complete_opening_bars(self, ap: ArmedPlan, todays: list[Bar]) -> list[Bar]:
+        """A1 — a plan armed (or restored) AFTER the open must replay the session
+        from its 09:30 bar: the open-gap rules are judged on the opening bar only,
+        and the in-memory aggregator knows nothing from before the process started
+        (2026-08-26: a 09:50 reboot "gap-voided" 22 triggers against the 09:50
+        print). Fetch the missing opening bars from history (Alpaca-first) and
+        merge them in front; the live buffer wins on overlap. If history has
+        nothing, the trackers run with `gap_unchecked` rather than guess."""
+        from ..brokers.sim import SimQuoteFeed
+        open_ms, close_ms = session_bounds(ap.plan_for)
+        now_ms = int(time.time() * 1000)
+        if now_ms <= open_ms + 60_000 or ap.plan_for != session_date(now_ms):
+            return todays
+        if todays and todays[0].ts <= open_ms + 60_000:
+            return todays
+        if isinstance(self.engine.feed, SimQuoteFeed):
+            return todays
+        hist: list[Bar] = []
+        try:
+            from .history import fetch_session
+            tf = str(ap.plan.get("triggerTf") or "1m")
+            hist = [b for b in await fetch_session(ap.symbol, tf, ap.plan_for)
+                    if open_ms <= b.ts < min(now_ms, close_ms)]
+        except Exception as exc:
+            log.warning("opening bars for %s could not be fetched: %s", ap.symbol, exc)
+        if not hist:
+            ap.gap_seed = "unavailable"
+            self._log(ap, "opening_bars_missing",
+                      "armed after the open and history has no opening bars — the overnight gap rules "
+                      "cannot be judged (triggers run with gap_unchecked)")
+            return todays
+        have = {b.ts: b for b in hist}
+        have.update({b.ts: b for b in todays})            # the live buffer wins on overlap
+        merged = [have[k] for k in sorted(have)]
+        added = len(merged) - len(todays)
+        ap.gap_seed = f"history:{added}"
+        self._log(ap, "opening_bars_seeded",
+                  f"armed after the open — {added} opening bar(s) from history replayed first so the gap "
+                  f"rules see the 09:30 bar", added=added)
+        return merged
+
+    async def _ensure_loss_halt(self, ap: ArmedPlan, cfg: ArmConfig, *, restored: bool = False) -> None:
+        """A2 — auto mode always carries a loss halt. Derived from equity (2 x the
+        per-trade risk); when equity cannot be read, the fixed fallback is used and
+        it is said LOUDLY — 36/37 plans armed for 2026-08-26 had none because a log
+        line was the only witness. Fallback 0 = refuse to arm rather than arm
+        unprotected (a restored plan is kept, with a critical alert)."""
+        if cfg.mode != "auto" or float(cfg.daily_loss_limit or 0) > 0:
+            return
+        eq = 0.0
+        for attempt in range(2):
+            with contextlib.suppress(Exception):
+                eq = float(await self.engine.positions.equity(cfg.portfolio_id))
+            if eq > 0:
+                break
+            await asyncio.sleep(0.5)
+        if eq > 0:
+            cfg.daily_loss_limit = round(eq * cfg.risk_pct / 100 * 2, 2)
+            self._log(ap, "loss_halt_default",
+                      f"auto mode with no loss halt set — defaulted to ${cfg.daily_loss_limit:,.0f} "
+                      f"(2 \u00d7 the per-trade risk of {cfg.risk_pct}% on ${eq:,.0f})")
+            return
+        fallback = float(self.engine.settings.get("technique.arm.daily_loss_fallback", 100.0) or 0)
+        if fallback <= 0:
+            if restored:
+                await self._alert(ap, "auto mode with NO loss halt: the account's equity could not be read and "
+                                  "technique.arm.daily_loss_fallback is 0 — trading unprotected; set dailyLossLimit",
+                                  level="critical", stage="loss_halt")
+                return
+            raise ValueError("auto mode needs a loss halt: the account's equity could not be read and "
+                             "technique.arm.daily_loss_fallback is 0 — set dailyLossLimit explicitly")
+        cfg.daily_loss_limit = fallback
+        await self._alert(ap, f"the account's equity could not be read — loss halt set to the fixed fallback "
+                          f"${fallback:,.0f} (technique.arm.daily_loss_fallback), not 2 x the per-trade risk",
+                          level="warning", stage="loss_halt")
+
+    async def wait_fires(self, run_id: str | None = None) -> None:
+        """Await in-flight fire -> critic -> order chains (tests, manual replays, disarm)."""
+        aps = [self._armed[run_id]] if run_id and run_id in self._armed else list(self._armed.values())
+        tasks = [t for ap in aps for t in list(ap.fire_tasks.values())]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def set_mode(self, run_id: str, mode: str | None = None, *, allow_live: bool = False,
                        entry_fallback: str | None = None) -> dict:
@@ -693,16 +784,7 @@ class PlanArmer(SessionListener):
                                                      else ap.config.entry_fallback),
                                    "allowLive": allow_live or ap.config.allow_live})
         self.validate_config(cfg)                      # gates (mode, live-auto, options capability)
-        s = self.engine.settings
-        if cfg.mode == "auto" and float(cfg.daily_loss_limit or 0) <= 0:
-            eq = 0.0
-            with contextlib.suppress(Exception):
-                eq = float(await self.engine.positions.equity(cfg.portfolio_id))
-            if eq > 0:
-                cfg.daily_loss_limit = round(eq * cfg.risk_pct / 100 * 2, 2)
-                self._log(ap, "loss_halt_default",
-                          f"auto mode with no loss halt set — defaulted to ${cfg.daily_loss_limit:,.0f} "
-                          f"(2 × the per-trade risk of {cfg.risk_pct}% on ${eq:,.0f})")
+        await self._ensure_loss_halt(ap, cfg)
         ap.config = cfg
         changes = []
         if cfg.mode != old:
@@ -748,6 +830,11 @@ class PlanArmer(SessionListener):
         ap = self._armed.get(run_id)
         if ap is None:
             return False
+        # an in-flight fire chain must not race the disarm: mark the plan first
+        # (the chain refuses to send once the plan is no longer armed), then let
+        # it finish — never cancel mid-order (the write-ahead intent would dangle)
+        ap.status = "disarmed"
+        await self.wait_fires(run_id)
         # cancel working entries; optionally flatten open positions
         for tr in ap.trades.values():
             if tr.status == "working" and tr.entry_order_id:
@@ -1082,12 +1169,14 @@ class PlanArmer(SessionListener):
             async with self.engine.sf() as session:
                 row = await session.get(TechniqueArmed, ap.run_id)
                 state = {"trackers": {tid: {"status": tr.status, "firedTs": tr.fired_ts, "firedWindow": tr.fired_window,
-                                            "skipped": tr.skipped[-5:], "observedMidday": len(tr.observed_midday)}
+                                            "skipped": tr.skipped[-5:], "observedMidday": len(tr.observed_midday),
+                                            "gapUnchecked": tr.gap_unchecked, "failedBreaks": tr.failed_breaks}
                                       for tid, tr in ap.trackers.items()},
                          "trades": [t.to_dict() for t in ap.trades.values()],
                          "events": ap.events[-200:], "barsSeen": ap.bar_index, "lastBarTs": ap.last_bar_ts,
                          "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
                          "criticKills": ap.critic_kills, "refireAt": ap.refire_at,
+                         "criticFailures": ap.critic_failures, "gapSeed": ap.gap_seed,
                          "stopReason": ap.stop_reason, "scorecard": ap.scorecard}
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
@@ -1222,6 +1311,7 @@ class PlanArmer(SessionListener):
         if ap is None:
             return None
         await self._on_bar(ap, bar, journal=True)
+        await self.wait_fires(run_id)
         return self._snapshot(ap)
 
     async def _on_bar(self, ap: ArmedPlan, bar: Bar, *, journal: bool) -> None:
@@ -1260,7 +1350,7 @@ class PlanArmer(SessionListener):
         # 2) triggers — never evaluated on pre/after-market bars (R6.5: after-hours
         #    volume is misleading signal; exits above and expiry below still run)
         in_session = session_window(bar.ts) != "extended"
-        open_or_working = sum(1 for t in ap.trades.values() if t.status in ("working", "open"))
+        open_or_working = sum(1 for t in ap.trades.values() if t.status in ("fired", "submitting", "working", "open"))
         # R6.3 experiment (technique.arm.midday_trading): fires allowed outside the
         # prime windows — LIVE ARMER ONLY. Sweeps/backtests/plans build their own
         # trackers and never read this, so the deterministic record stays R6-true
@@ -1272,7 +1362,7 @@ class PlanArmer(SessionListener):
         for tid, tr in (ap.trackers.items() if in_session else ()):
             if tr.enforce_windows != want_enforce:
                 tr.enforce_windows = want_enforce
-            if tr.status in ("fired", "gapped_past", "gapped_through", "gap_void", "expired"):
+            if tr.status in tr.TERMINAL:
                 continue
             before = tr.status
             n_obs, n_skip = len(tr.observed_midday), len(tr.skipped)
@@ -1328,8 +1418,11 @@ class PlanArmer(SessionListener):
                             "open": open_or_working, "max": ap.config.max_open_trades, "ts": bar.ts},
                             aggregate_type="technique_run", aggregate_id=ap.run_id)
                     continue
-                await self._fire(ap, tid, tr, bar, idx, journal=journal)
-                if ap.trades.get(tid) and ap.trades[tid].status in ("working", "open", "submitting"):
+                if journal:
+                    self._spawn_fire(ap, tid, tr, bar, idx)      # off the bar loop (A8): exits never wait
+                else:
+                    await self._fire(ap, tid, tr, bar, idx, journal=False)
+                if ap.trades.get(tid) and ap.trades[tid].status in ("fired", "working", "open", "submitting"):
                     open_or_working += 1
         # 3) end of session
         if bar.ts >= close_ms - 60_000:
@@ -1348,7 +1441,7 @@ class PlanArmer(SessionListener):
             await self._persist(ap)
 
     # ---------------------------------------------------------------- fire -> execute
-    async def _fire(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int, *, journal: bool) -> None:
+    def _mint_trade(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int) -> Trade:
         window = session_window(bar.ts)
         cfg = ap.config
         trade = Trade(trigger_id=tid, kind=tr.kind, fired_ts=bar.ts, window=window, entry=float(tr.fill_price or tr.entry),
@@ -1357,6 +1450,66 @@ class PlanArmer(SessionListener):
                       multiplier=100.0 if cfg.instrument == "options" else 1.0)
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid} {tr.kind} fired at {trade.entry:.2f} ({window})", trigger=tid, window=window)
+        return trade
+
+    def _spawn_fire(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int) -> None:
+        """A8 — the fire -> critic -> contract -> order chain runs OFF the serial bar
+        loop: a slow model must never delay another plan's stop. The trade is
+        minted synchronously (so the plan's open-position count sees it at once);
+        the chain re-checks the plan is still armed before anything is sent."""
+        trade = self._mint_trade(ap, tid, tr, bar, idx)
+        task = asyncio.create_task(self._fire_rest(ap, tid, tr, bar, idx, trade, journal=True),
+                                   name=f"fire-{ap.symbol}-{tid}")
+        ap.fire_tasks[tid] = task
+
+        def _done(t: asyncio.Task, *, tid=tid, ap=ap, trade=trade) -> None:
+            ap.fire_tasks.pop(tid, None)
+            if t.cancelled():
+                if trade.status == "fired":
+                    trade.status, trade.reason = "cancelled", "fire chain cancelled before the order was sent"
+                return
+            exc = t.exception()
+            if exc is not None:
+                log.error("fire chain failed for %s %s: %s", ap.symbol, tid, exc)
+                if trade.status in ("fired", "submitting"):
+                    trade.status, trade.reason = "failed", f"fire failed: {exc}"
+                    trade.errors.append(str(exc))
+                self._log(ap, "fire_error", f"{tid}: {exc}", trigger=tid)
+        task.add_done_callback(_done)
+
+    async def _fire(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int, *, journal: bool) -> None:
+        trade = self._mint_trade(ap, tid, tr, bar, idx)
+        await self._fire_rest(ap, tid, tr, bar, idx, trade, journal=journal)
+
+    async def _critic_failed(self, ap: ArmedPlan, tid: str, trade: Trade, msg: str) -> bool:
+        """A8 — a critic error/timeout FAILS OPEN (a model outage must not silently
+        stop data collection) but never silently: a loud alert each time, and a
+        per-day budget — the failure that exhausts it sends nothing and pauses the
+        plan. Returns True when this fire must stop here."""
+        s = self.engine.settings
+        ap.critic_failures += 1
+        budget = max(1, int(s.get("technique.arm.critic_fail_budget", 3) or 3))
+        self._log(ap, "critic_error", f"{tid}: critic failed ({msg}) — {ap.critic_failures}/{budget} today", trigger=tid)
+        if ap.critic_failures >= budget:
+            trade.status = "critic_unavailable"
+            trade.reason = f"critic failed {ap.critic_failures}x today ({msg}) — plan paused, nothing sent"
+            await self._alert(ap, f"{tid}: {trade.reason} (technique.arm.critic_fail_budget)",
+                              level="critical", stage="critic")
+            with contextlib.suppress(Exception):
+                await self.pause(ap.run_id)
+            return True
+        await self._alert(ap, f"{tid}: critic failed ({msg}) — continuing WITHOUT the critic "
+                          f"({ap.critic_failures}/{budget} failures today)", level="warning", stage="critic")
+        return False
+
+    async def _fire_rest(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int, trade: Trade,
+                         *, journal: bool) -> None:
+        window, cfg = trade.window, ap.config
+        # A8 — pick the contract BEFORE the critic, so the critic judges the vehicle
+        # (spread / IV / delta / DTE) and not just the chart; the order path reuses it
+        if journal and cfg.instrument == "options" and cfg.mode in ("proposal", "auto"):
+            with contextlib.suppress(Exception):
+                await self._pick_contract(ap, trade)
         a = analysis_from_trigger(tr.trigger, ap.symbol, session_window=window)
         critic = None
         llm = self.technique.llm_config()
@@ -1392,6 +1545,11 @@ class PlanArmer(SessionListener):
                         "MID-DAY EXPERIMENT: R6.3's no-midday rule is DELIBERATELY suspended for this fire "
                         "(controlled data collection on whether the rule earns its keep). The session window "
                         "is NOT a kill reason here — judge the setup purely on the tape and the plan.")
+                if tr.gap_unchecked:
+                    live_ctx.append(
+                        "LATE START: the plan was armed after the open and the overnight gap rules "
+                        "(gapped past / through / gap void) were NOT evaluated — judge the level against the "
+                        "tape since the open, and treat an open far beyond the level as a chase (T4.1).")
                 others = [f"{t2}: {trk.kind} @ {trk.entry:.2f} ({trk.status})"
                           for t2, trk in ap.trackers.items() if t2 != tid]
                 if others:
@@ -1427,11 +1585,19 @@ class PlanArmer(SessionListener):
                     "current bar shows v=0), treat volume as UNKNOWN — a data-feed outage, not a rule violation; "
                     "do not kill on R3.1/T2 grounds alone in that case.")
                 facts_ctx = (facts_for_prompt(facts) + "\n\n" + "\n".join(live_ctx)) if facts else "\n".join(live_ctx)
-                critic = await vp.run_critic(a, {"1m": png} if png else {}, facts_ctx)
+                timeout = float(self.engine.settings.get("technique.arm.critic_timeout_seconds", 25) or 0)
+                coro = vp.run_critic(a, {"1m": png} if png else {}, facts_ctx)
+                critic = await (asyncio.wait_for(coro, timeout) if timeout > 0 else coro)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
-                log.warning("live critic failed: %s", exc)
-                trace.append({"stage": "critic", "step": "error", "reason": str(exc)})
-                self._log(ap, "critic_error", f"{tid}: critic failed ({exc}); continuing without it", trigger=tid)
+                msg = (f"timed out after {timeout:.0f}s" if isinstance(exc, asyncio.TimeoutError) else str(exc))
+                log.warning("live critic failed: %s", msg)
+                trace.append({"stage": "critic", "step": "error", "reason": msg})
+                if await self._critic_failed(ap, tid, trade, msg):
+                    await self._persist(ap)
+                    self._publish(ap, "critic_unavailable")
+                    return
         trade.critic = critic and {k: critic.get(k) for k in ("kill", "summary", "violations")}
         contract = a.to_contract()
         # setup row (always, so the run shows what fired)
@@ -1478,6 +1644,14 @@ class PlanArmer(SessionListener):
             await self._persist(ap)
             self._publish(ap, "critic_killed")
             return
+        # the chain ran off the bar loop: the plan may have been disarmed meanwhile
+        if journal and (self._armed.get(ap.run_id) is not ap or ap.status != "armed"):
+            trade.status = "cancelled"
+            trade.reason = f"plan {ap.status} before the order was sent"
+            self._log(ap, "fire_cancelled", f"{tid}: {trade.reason}", trigger=tid)
+            await self._persist(ap)
+            self._publish(ap, "fired")
+            return
         # execution mode
         if cfg.mode == "alert" or not journal:
             trade.status = "alert"
@@ -1487,7 +1661,7 @@ class PlanArmer(SessionListener):
             try:
                 contract = None
                 if cfg.instrument == "options":
-                    contract = await self._pick_contract(ap, trade)
+                    contract = trade.contract if trade.contract_attempted else await self._pick_contract(ap, trade)
                     if contract is None:
                         trade.status = "failed"
                         trade.reason = "no option contract available (see errors)"
@@ -1541,6 +1715,7 @@ class PlanArmer(SessionListener):
     async def _pick_contract(self, ap: ArmedPlan, trade: Trade) -> dict | None:
         """T5: the just-OTM call, current-week Friday / 0DTE, from the live chain."""
         s = self.engine.settings
+        trade.contract_attempted = True
         max_strike = None
         if bool(s.get("technique.arm.strike_within_targets", True)) and trade.targets:
             max_strike = float(trade.targets[1] if len(trade.targets) >= 2 else trade.targets[0])
@@ -1601,7 +1776,7 @@ class PlanArmer(SessionListener):
         use_options = cfg.instrument == "options"
         contract = None
         if use_options:
-            contract = await self._pick_contract(ap, trade)
+            contract = trade.contract if trade.contract_attempted else await self._pick_contract(ap, trade)
             # T5.3/T5.4 liquidity/IV gates
             blocked = None
             if contract is not None:
@@ -1845,7 +2020,8 @@ class PlanArmer(SessionListener):
             if in_session and ap.plan_for == now.strftime("%Y-%m-%d") and ap.last_bar_ts \
                     and now_ms - ap.last_bar_ts > stale_s * 1000 and not ap.stale:
                 ap.stale = True
-                self._log(ap, "stale", f"no closed bar for {stale_s}s — not firing until data resumes")
+                self._log(ap, "stale", f"no closed bar for {stale_s}s — triggers idle until bars resume; "
+                                       "exits keep working on quotes")
                 if any(t.remaining > 0 for t in ap.trades.values()):
                     await self._alert(ap, f"data went stale while holding a position — exits keep working "
                                       f"on quotes, but watch it (no closed bar for {stale_s}s)",

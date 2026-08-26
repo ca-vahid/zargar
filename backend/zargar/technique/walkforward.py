@@ -139,7 +139,7 @@ class TriggerTracker:
     gap_rules: bool = True
     prev_close: float | None = None
 
-    status: str = "waiting"        # waiting | gapped_past | gapped_through | gap_void | observed | fired | not_triggered | expired
+    status: str = "waiting"        # waiting | gapped_past | gapped_through | gap_void | observed | fired | not_triggered | expired | exhausted
     fired_index: int | None = None
     fired_ts: int | None = None
     fired_window: str | None = None
@@ -147,9 +147,20 @@ class TriggerTracker:
     observed_midday: list[int] = field(default_factory=list)
     skipped: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
+    # The open-gap rules can only be judged on the session's OPENING bar. When the
+    # first bar this tracker sees is a later one (a late start / restart — 08-26
+    # the app came up at 09:50 and 22 triggers were "gap-voided" against the 09:50
+    # bar) the gap cannot be known: the trigger runs WITHOUT the gap rules and
+    # says so, instead of voiding on a number that is not a gap.
+    gap_unchecked: bool = False
+    # R3.2 — breaks of this level that failed to hold this session; after
+    # `max_false_breaks` the level is done for the day (`exhausted`)
+    failed_breaks: int = 0
     _bars: list[Bar] = field(default_factory=list)
     _break_index: int | None = None
     _gap_checked: bool = False
+
+    TERMINAL = ("fired", "gapped_past", "gapped_through", "gap_void", "expired", "exhausted")
 
     # -- helpers
     @property
@@ -172,6 +183,13 @@ class TriggerTracker:
         self.events.append({"ts": bar.ts, "event": what, **detail})
 
     def _rel_volume(self, bar: Bar) -> float | None:
+        """R3.1/T2.9 — the bar's volume against its time-of-day baseline (prior
+        sessions); None when it cannot be measured. One computation for live
+        arming and replay, and one policy for None: an ENTRY never fires on
+        unknown volume (the book's only confirmation instrument) — the trigger
+        stays alive and is re-judged on the next bar."""
+        if bar.volume <= 0:
+            return None
         if self.profile is not None and self.profile.overall > 0:
             r = relative_volume(bar, self.profile)
             return r if r > 0 else None
@@ -185,16 +203,28 @@ class TriggerTracker:
     def _window_ok(self, ts: int) -> bool:
         return (not self.enforce_windows) or session_window(ts) in PRIME_WINDOWS
 
+    def _volume_unknown(self, bar: Bar, what: str) -> str:
+        self.skipped.append({"ts": bar.ts, "reason": "R3.1 volume unknown — no baseline or no volume on the bar; "
+                                                     "not entering on unconfirmed volume"})
+        self._note(bar, what)
+        return self.status
+
     # -- main
     def on_bar(self, bar: Bar, index: int) -> str:
         t = self.thresholds
         self._bars.append(bar)
-        if self.status in ("fired", "gapped_past", "gapped_through", "gap_void", "expired"):
+        if self.status in self.TERMINAL:
             return self.status
-        # opening gap checks, once
+        # opening gap checks, once — and only on the session's opening bar
         if not self._gap_checked:
             self._gap_checked = True
-            if self.gap_rules:
+            open_ms = session_bounds(session_date(bar.ts))[0]
+            if self.gap_rules and bar.ts > open_ms + 60_000:
+                # first bar seen is not the open (late start / restart): the gap
+                # is unknowable from here — run without the gap rules, and say so
+                self.gap_unchecked = True
+                self._note(bar, "gap_unchecked", firstBar=bar.ts, sessionOpen=open_ms)
+            elif self.gap_rules:
                 # specific first (through the stop / past the level), then the magnitude rule
                 if self.kind == "bounce":
                     if bar.open < self.stop:
@@ -229,7 +259,9 @@ class TriggerTracker:
                 self._note(bar, "touch_outside_window", window=w)
                 return self.status
             rel = self._rel_volume(bar)
-            if rel is not None and rel < t.volume_floor_mult:
+            if rel is None:
+                return self._volume_unknown(bar, "touch_skipped_volume_unknown")
+            if rel < t.volume_floor_mult:
                 self.skipped.append({"ts": bar.ts, "reason": f"R3.1 volume {rel:.2f}x below floor"})
                 self._note(bar, "touch_skipped_volume", rel=round(rel, 3))
                 return self.status
@@ -251,7 +283,9 @@ class TriggerTracker:
                 return self.status
             rel = self._rel_volume(bar)
             decisive, _ = is_decisive(bar, self._bars[:-1], direction="long", thresholds=t)
-            if rel is not None and rel < t.volume_spike_mult:
+            if rel is None:
+                return self._volume_unknown(bar, "break_skipped_volume_unknown")
+            if rel < t.volume_spike_mult:
                 self.skipped.append({"ts": bar.ts, "reason": f"T3.3d no volume surge ({rel:.2f}x)"})
                 self._note(bar, "break_skipped_volume", rel=round(rel, 3))
                 return self.status
@@ -276,9 +310,19 @@ class TriggerTracker:
             self.fill_price = bar.close
             self._note(bar, "fired", window=self.fired_window, fill=bar.close, confirmedAfter=t.followthrough_bars)
         else:
+            self.failed_breaks += 1
             self.skipped.append({"ts": bar.ts, "reason": "T3.3c/f no follow-through / failed to hold"})
-            self._note(bar, "break_failed_followthrough", held=held, continued=cont)
+            self._note(bar, "break_failed_followthrough", held=held, continued=cont, failedBreaks=self.failed_breaks)
             self._break_index = None
+            if t.max_false_breaks and self.failed_breaks >= t.max_false_breaks:
+                # R3.2 — "more than two false breakouts" = poor price action; the
+                # level has shown it cannot hold a break today (T 2026-08-26 broke
+                # 25.86 six times inside a 3-cent box and the paid critic had to
+                # refuse every one). Deterministic now.
+                self.status = "exhausted"
+                self.skipped.append({"ts": bar.ts, "reason": f"R3.2 {self.failed_breaks} false breakouts of this "
+                                                             f"level — done for the session"})
+                self._note(bar, "exhausted", failedBreaks=self.failed_breaks)
         return self.status
 
     def finish(self) -> str:

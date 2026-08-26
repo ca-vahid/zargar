@@ -37,6 +37,10 @@ async def rig(fresh_db, monkeypatch):
     await eng.start()
     await attach_technique_layer(eng)
     await eng.settings.set("technique.options.enabled", False, journal=False)
+    # the synthetic sim market is built around the book's TP3 arithmetic (R:R 3-4 to
+    # the next resistance); the app's default gate is the exit rung (TP2 for one
+    # contract) and is covered by its own unit tests
+    await eng.settings.set("technique.rr_gate_target", "tp3", journal=False)
     await eng.settings.set("risk.max_position_notional", 1_000_000.0, journal=False)
     await eng.settings.set("risk.max_position_pct", 100.0, journal=False)
     await eng.settings.set("risk.stale_quote_seconds", 600, journal=False)

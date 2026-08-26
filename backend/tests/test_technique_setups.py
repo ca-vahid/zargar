@@ -15,6 +15,7 @@ from zargar.technique.setups import (
     classify_breakout,
     invalidation_low,
     risk_reward,
+    stop_buffer,
 )
 from zargar.technique.structure import detect_wedge, fit_line, read_trend
 from zargar.technique.volume import VolumeAssessment
@@ -362,9 +363,33 @@ def test_wedge_setup_uses_measured_move_and_wedge_low():
     v = classify_breakout(bars, lv, len(bars) - 1, vol_assess(spike=True))
     s = build_breakout_setup("TEST", bars, lv, v, vol_assess(spike=True), wedge=w)
     assert s.setup_type == "falling_wedge"
-    assert abs(s.stop - (w.lowest_price - s.entry * 0.001)) < 1e-6
+    # T3.1e — under the wedge low with the same clearance every chart stop gets
+    # (never a bare per-mille of price); a stop wider than the cap is refused, not tightened
+    assert abs(s.stop - (w.lowest_price - stop_buffer(w.lowest_price))) < 1e-6
+    assert s.stop < w.lowest_price
+    if (s.entry - s.stop) / s.entry > 0.03:
+        assert any(r.startswith("T4.3a/R1") for r in s.no_trade_reasons)
     assert all(t.basis == "measured_move" for t in s.targets)
     assert "T3.1f" in s.rules
+
+
+def test_breakout_stop_sits_under_the_break_base_not_a_fixed_percent():
+    """T4.3d — a plain breakout's stop anchors below the most recent swing low
+    under the level (the base the break launches from), never `level - 0.5 %`."""
+    t0 = 1_700_000_000_000
+    bars = []
+    # base: a pullback low at 99.0 under a 100.0 shelf, then the break
+    path = [(99.9, 100.0), (99.8, 100.0), (99.6, 99.9), (99.5, 99.9), (99.0, 99.4), (99.3, 99.8),
+            (99.6, 100.0), (99.7, 100.0), (99.8, 100.0), (99.9, 100.4), (100.2, 100.9)]
+    for i, (lo, hi) in enumerate(path):
+        bars.append(Bar(symbol="T", tf="1m", ts=t0 + i * 60_000, open=lo + 0.05, high=hi, low=lo,
+                        close=hi - 0.05, volume=1000))
+    lv = level(100.0, "resistance")
+    v = classify_breakout(bars, lv, len(bars) - 1, vol_assess(spike=True))
+    s = build_breakout_setup("T", bars, lv, v, vol_assess(spike=True))
+    assert s.stop_reference == "below_break_base"
+    assert abs(s.stop - (99.0 - stop_buffer(99.0))) < 1e-6
+    assert abs(s.stop - (100.0 - 0.5)) > 1e-3          # not the old fixed-percent costume
 
 
 def test_setup_to_dict_is_wire_shaped():

@@ -31,6 +31,15 @@ a number** (p. 72).
   positive, raise `technique.plan.gap_void_r` toward 1.5–2.0 (settings-tunable, prove with
   `replay --set`). If negative, the rule earns its keep — leave it.
 - **Do not touch until the samples exist.**
+- **2026-08-26 · QUARANTINE today's samples.** The app was down until ~09:50 ET (machine
+  reboot). 22 of the 23 "voided at the open" decisions for 08-26 were evaluated on the
+  **09:50 bar** (journal `gap_void`/`gapped_past` payload `ts` = 13:50 UTC), because
+  `TriggerTracker` ran its one-time gap test on the first bar it saw and the post-restart
+  seed had no 09:30 bar. After 20 minutes of trading most names are > 1R from the previous
+  close, so those voids say nothing about the rule. **Exclude every 08-26 void from the
+  §1.1 counterfactual** (only CRWD b1, decided on the 09:30 bar, is a valid sample). The
+  08-25 voids (8) were all decided on the 09:30 bar and stay valid. Root cause and fix in
+  the change log (A1). The outage itself is an anomaly; the fix makes a late start harmless.
 
 ### 1.2 Grade calibration — do A > B > C outcomes actually hold? ⏳ accumulating
 - Grades (plans.assess_trigger) are rule-cited but the weights are hand-set (2026-08-23).
@@ -158,6 +167,39 @@ a number** (p. 72).
   belongs: exits only (quote stop watch, premium stop) — protection may be fast and
   unvalidated because reduce-only can't hurt. Fire latency was the critic's thinking
   time, fixed with `technique.arm.critic_effort=low`, not bar size.
+- **2026-08-26 · Full book-vs-app review** (`docs/EM-METHOD-REVIEW-2026-08-26.md`; the
+  original developer independently verified the four headline claims). Method-level
+  findings, each dated here so nothing is re-litigated:
+  - **Touch counting was band-overlap, not a test of the level** (`levels._count_touches`):
+    support and resistance used the identical expression and a bar blowing straight
+    through a level counted as a "touch". Every touch count — `min_touches`, the "3+
+    touches" confluence, the +12/+6 grade points — was inflated. Fixed (A3): a touch is a
+    bar whose extreme reaches the band *and* whose close does not break it. Grades and
+    sweep numbers produced before this fix are not comparable with those after
+    (`sweepVersion` changes).
+  - **Breakout stops were still a fixed percentage** — `level − 0.5 %` in `setups.py`, and
+    the plan path collapsed to the same for single-level zones (T k1 08-26: 25.87 → 25.7407
+    exactly). The 08-23 "chart-based stops" fix landed on bounces only. Combined with the
+    unanchored +2/4/6 % ladder this made every plain breakout grade R:R ≈ 12, which is why
+    the critic kept executing the same kill (PM, T). Fixed (A4): the stop anchors below the
+    most recent swing low under the level (the base the break launches from), buffered
+    like the bounce stop, refused when wider than `max_stop_pct`.
+  - **R:R was gated at TP3 while a < 3-contract position exits at TP2** — a "3.0" plan is a
+    2.25 trade as executed. Fixed (A5): R2 is evaluated at the exit the position will
+    actually take (`technique.rr_gate_target`, default `tp2` while `technique.arm.contracts`
+    < 3); the book's TP3 figure is still reported alongside.
+  - **R3.1 lived in four places with two conventions** — FACTS blocked on unmeasurable
+    volume, the tracker fired on it. Fixed (A6): one policy — an entry never fires on
+    unknown volume (`volume_unknown` skip, journaled, trigger stays alive), and the floor
+    is a setting (`technique.volume_floor_mult`).
+  - **The book's universe is mega caps.** T ($26, 3-cent chop box, 13-cent stop), CHPT
+    ($6), SOUN, CLF are outside what the method was written for; half the friction we
+    fight (spread skips, stub-tick fakeouts, gap voids on tiny risk denominators) is the
+    list. Decision pending (user): liquid A-list arms, wide list keeps grading for data.
+  - **Silent no-halt**: 36/37 auto plans armed for 08-26 had no loss halt — equity was
+    unavailable at the evening bulk-arm and the derivation skipped with a log line. Fixed
+    (A2): a fixed fallback (`technique.arm.daily_loss_fallback`) plus a journaled alert
+    and an attention badge; a restore also repairs it.
 - **2026-08-25 · The machine can be right and still capture nothing.** Day 1: ~2.7R
   identified, 0R captured — every dropped R traced to friction (critic prompt gap,
   spread guard with no fallback, data artifacts), not to the method. Discipline showed:
@@ -234,3 +276,45 @@ a number** (p. 72).
   shares fallback instead of dying at the RiskGate. ⚠ **These are GLOBAL settings:
   re-tighten before real-money trading** (a $2,500 premium is 25% of a $10k account
   — fine for data collection in sim, reckless with real capital).
+- 2026-08-26 (evening) · **Review fixes A1–A10** (`docs/EM-METHOD-REVIEW-2026-08-26.md`; the
+  original developer verified the headline findings and endorsed the order). Every item is
+  a code change to how the METHOD is applied, so each is logged here:
+  - **A1 gap rules only on the opening bar.** `TriggerTracker` judges gapped-past / gapped-
+    through / gap-void on the 09:30 bar only; a later first bar records `gap_unchecked` and
+    the trigger runs without the gap rules. A plan armed or restored after the open now
+    fetches the missing opening bars from history (Alpaca-first) and replays them first
+    (`opening_bars_seeded`). Evidence: 22/23 voids on 08-26 were decided on the 09:50 bar.
+  - **A2 no silent no-halt.** Auto mode derives the loss halt from equity (2 × risk, with a
+    retry); if equity is unreadable it uses `technique.arm.daily_loss_fallback` ($100) and
+    raises a journaled warning + attention badge; fallback 0 = refuse to arm. Restores are
+    repaired the same way. Evidence: 36/37 plans armed for 08-26 had no halt.
+  - **A3 touch = test of the level.** `levels._count_touches`: the extreme reaches the band
+    AND the close does not break it. Sweeps before/after are not comparable.
+  - **A4 breakout stop under the break base.** `setups.breakout_anchor` / `plans._break_base`:
+    the most recent trigger-tf swing low below the level (within `max_stop_pct`), buffered
+    like a bounce stop (`stop_reference=below_break_base`); wedge stops get the same buffer.
+    Never `level − 0.5 %` again. Evidence: T k1 25.87 → 25.7407 (= 0.995×).
+  - **A5 R2 at the exit rung.** `technique.rr_gate_target = auto` → TP2 while the options
+    instrument trades < 3 contracts (`single_contract_exit`), else the book's TP3; both
+    figures are reported (`riskReward` / `riskRewardTp3`). Expect fewer valid triggers.
+  - **A6 one R3.1 policy.** The tracker's relative volume is the trigger bar vs its
+    time-of-day baseline; unknown volume never fires an entry (`volume unknown` skip, trigger
+    stays alive). `technique.volume_floor_mult` is now a setting. Analysis-path breakouts are
+    judged with the volume AT the break bar.
+  - **A7 exchange bars reach the trading path.** `BarAggregator` holds a quote-sampled 1m bar
+    `feed.exchange_bar_hold_seconds` (5 s) for Alpaca-streamed symbols so the exchange bar
+    replaces it before consumers see either (`source: exchange`). Fires arrive ≤ 5 s later.
+  - **A8 critic hygiene.** Contract is picked BEFORE the critic (it now sees the vehicle);
+    hard timeout `technique.arm.critic_timeout_seconds` (25 s); failures fail OPEN with a loud
+    alert and a per-day budget `technique.arm.critic_fail_budget` (3) whose last failure
+    sends nothing and pauses the plan (the developer's call — an outage must not silently stop
+    data collection); the fire → critic → order chain runs off the serial bar loop, so a slow
+    model never delays another plan's stop; disarm waits for in-flight chains.
+  - **A9 option quote freshness.** A refreshed chain bid/ask stamps the quote's `ts`; OCC
+    symbols are no longer subscribed to the Alpaca equity stream; the "premium stop is blind"
+    alert fires after ~1 min, not 5.
+  - **A10 false-break counter (R3.2).** `technique.max_false_breaks` (2): a level whose break
+    failed to hold twice in a session is `exhausted` (terminal). Evidence: T k1 fired 6× into
+    the same 3-cent box; the paid critic was doing R3.2's job.
+  - Still open (B, before real money): fleet-wide position/premium caps, R1 on premium,
+    re-tightened `risk.*`, event calendar, RTH-only exits, real-time option quotes, fees.

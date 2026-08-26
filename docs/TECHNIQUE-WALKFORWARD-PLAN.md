@@ -657,6 +657,26 @@ New settings: `risk.halt_allows_exits`, `feed.exchange_bars`, `technique.arm.max
 Still open (deferred): **IBKR option contracts** (the executor builds stock contracts only — to be
 wired when IBKR activates); DB does not overwrite a corrected same-minute bar (in-memory only).
 
+### 9.4 Review fixes (2026-08-26, evening)
+
+The book-vs-app review (`docs/EM-METHOD-REVIEW-2026-08-26.md`) drove ten changes, each
+logged with its evidence in `TRADING-RULES.md` (change log, 2026-08-26 evening). In this
+design's terms: the tracker judges the open-gap rules on the **09:30 bar only** and a plan
+armed/restored after the open replays the opening bars from history first
+(`PlanArmer._complete_opening_bars`) — a late start records `gap_unchecked` instead of
+voiding; auto mode always carries a loss halt (`_ensure_loss_halt`, fallback setting); a
+touch is a test of the level (extreme reaches the band, close holds); breakout stops anchor
+under the break base (`breakout_anchor` / `_break_base`, `stop_reference=below_break_base`);
+R2 is measured at the exit rung (`technique.rr_gate_target`, `riskRewardTp3` kept); one R3.1
+policy (unknown volume never enters; `technique.volume_floor_mult`); the aggregator holds a
+sampled bar for the exchange bar (`feed.exchange_bar_hold_seconds`); the fire → critic →
+order chain runs off the bar loop with the contract picked first, a timeout and a fail-open
+budget (`technique.arm.critic_timeout_seconds` / `critic_fail_budget`); option quotes stamp
+`ts` on every chain refresh and OCC symbols stay off the Alpaca equity stream; a level whose
+break fails to hold twice is `exhausted` (`technique.max_false_breaks`, R3.2). Tests:
+`test_technique_walkforward.py` (review section), `test_technique_detection.py`
+(touch semantics), `test_technique_setups.py` (break base), `test_bars.py` (hold).
+
 ## 10. Honest limitations
 
 - **Yahoo depth**: 1m ≈ 20 d (8 d/request), 5m/15m/30m ≈ 60 d, 1h ≈ 2 y. A 100-trade

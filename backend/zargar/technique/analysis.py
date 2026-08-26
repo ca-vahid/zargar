@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from ..domain import Bar
 from .candles import classify, metrics
 from .history import HistoryError, fetch_recent, interval_available, split_sessions
-from .levels import Level, atr, detect_levels, nearest_level, session_key
+from .levels import Level, atr, detect_levels, find_pivots, nearest_level, session_key
 from .rulebook import DEFAULT_THRESHOLDS, Thresholds, session_window
 from .setups import Setup, build_bounce_setup, build_breakout_setup, classify_breakout
 from .structure import detect_wedge, read_trend
@@ -137,8 +137,9 @@ def _session_stats(bars: list[Bar]) -> dict:
 
 
 def _recent_break(bars: list[Bar], levels: list[Level], vol, t: Thresholds,
-                  lookback: int = 12) -> tuple[dict | None, Level | None, int | None]:
-    """Did a recent bar close through a resistance? Classify it if so."""
+                  lookback: int = 12, profile=None) -> tuple[dict | None, Level | None, int | None]:
+    """Did a recent bar close through a resistance? Classify it if so — with
+    the volume AT THE BREAK BAR (T3.3a), not the window's last bar."""
     if len(bars) < lookback + 2:
         return None, None, None
     res = [lv for lv in levels if lv.kind == "resistance"]
@@ -149,7 +150,8 @@ def _recent_break(bars: list[Bar], levels: list[Level], vol, t: Thresholds,
         b, prev = bars[i], bars[i - 1]
         for lv in res:
             if prev.close <= lv.price < b.close:
-                verdict = classify_breakout(bars, lv, i, vol, thresholds=t)
+                vol_at = assess_volume(bars[:i + 1][-40:], profile, thresholds=t) if profile is not None else vol
+                verdict = classify_breakout(bars, lv, i, vol_at, thresholds=t)
                 d = verdict.to_dict()
                 d.update({"levelPrice": round(lv.price, 4), "breakIndex": i,
                           "breakTs": b.ts, "breakClose": b.close})
@@ -205,6 +207,10 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
         tr = read_trend(bars[-win:], thresholds=t)
         facts["trend"][tf] = tr.to_dict()
         facts["atr"][tf] = round(atr(bars[-win:]), 4)
+        # recent swing lows — the bases a break launches from (breakout stops, T4.3d)
+        facts.setdefault("swingLows", {})[tf] = [
+            {"price": round(p.price, 4), "ts": p.ts}
+            for p in find_pivots(bars[-60:], window=t.pivot_window) if p.kind == "low"][-8:]
 
         today_key = keys[-1] if keys else None
         prof = build_profile(bars, exclude_session=today_key)
@@ -244,8 +250,8 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
 
     # --- candidate setups (deterministic) ---------------------------------
     plevels = per_tf_levels.get(primary, [])
-    pvol = assess_volume(pbars[-40:], build_profile(pbars, exclude_session=session_key(pbars[-1].ts)),
-                         thresholds=t)
+    pprof = build_profile(pbars, exclude_session=session_key(pbars[-1].ts))
+    pvol = assess_volume(pbars[-40:], pprof, thresholds=t)
     sup = nearest_level(plevels, last, "support", side="below")
     res_above = nearest_level(plevels, last, "resistance", side="above")
     candidates: list[dict] = []
@@ -263,13 +269,17 @@ def compute_facts(req: AnalysisRequest, bars_by_tf: dict[str, list[Bar]],
         d["distanceFromEntryPct"] = round((last - s.entry) / s.entry * 100, 3)
         candidates.append(d)
 
-    brk, brk_level, brk_idx = _recent_break(pbars, plevels, pvol, t)
+    brk, brk_level, brk_idx = _recent_break(pbars, plevels, pvol, t, profile=pprof)
     facts["recentBreak"] = brk
     if brk is not None and brk_level is not None and brk_idx is not None:
-        verdict = classify_breakout(pbars, brk_level, brk_idx, pvol, thresholds=t)
+        vol_at_break = assess_volume(pbars[:brk_idx + 1][-40:], pprof, thresholds=t)
+        verdict = classify_breakout(pbars, brk_level, brk_idx, vol_at_break, thresholds=t)
         wobj = detect_wedge(pbars[-min(80, len(pbars)):], thresholds=t)
-        s2 = build_breakout_setup(facts["symbol"], pbars, brk_level, verdict, pvol,
-                                  wedge=wobj, thresholds=t)
+        s2 = build_breakout_setup(facts["symbol"], pbars, brk_level, verdict, vol_at_break,
+                                  wedge=wobj, thresholds=t,
+                                  atr_value=max((float(v or 0.0) for v in facts["atr"].values()), default=0.0),
+                                  next_resistance=nearest_level(plevels, brk_level.price * (1 + t.level_tolerance_pct),
+                                                                "resistance", side="above"))
         candidates.append(s2.to_dict())
     facts["candidateSetups"] = candidates
     return facts

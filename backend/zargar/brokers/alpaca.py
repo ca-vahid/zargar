@@ -52,9 +52,14 @@ EMIT_MS = 250
 
 
 def is_us_equity(symbol: str) -> bool:
-    """Alpaca serves US-listed equities only — no .TO/.V listings, no =X FX."""
+    """Alpaca serves US-listed equities only — no .TO/.V listings, no =X FX, and
+    no OCC option symbols (those quote from the chain / Yahoo; subscribing them
+    to the equity stream used to swallow the option's real quote)."""
     s = symbol.upper()
-    return bool(s) and "." not in s and "=" not in s and "/" not in s
+    if not s or "." in s or "=" in s or "/" in s:
+        return False
+    from ..options.occ import is_occ
+    return not is_occ(s)
 
 
 def parse_rfc3339_ms(t: str) -> int:

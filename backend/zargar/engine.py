@@ -134,6 +134,13 @@ class Engine:
                                               float(self.settings.get("quotes.yahoo_poll_seconds", 1.0))),
                         on_bars=self._ingest_exchange_bars)
                     self.feed = HybridQuoteFeed(alpaca, yahoo)
+                    # the trading path evaluates the EXCHANGE bar for a minute when
+                    # one is coming (Alpaca-streamed symbol): hold the sampled bar
+                    # briefly so the correction is what consumers see (A7)
+                    self.bars.configure(
+                        hold_seconds=lambda: (float(self.settings.get("feed.exchange_bar_hold_seconds", 5))
+                                              if bool(self.settings.get("feed.exchange_bars", True)) else 0.0),
+                        expects_exchange=lambda sym: alpaca.connected and sym.upper() in alpaca.symbols)
                 else:
                     self.feed = YahooQuoteFeed(
                         on_quote=self.quotes.on_quote,
