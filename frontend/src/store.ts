@@ -126,6 +126,9 @@ interface AppState {
   setTechniqueTab: (t: "analyse" | "chat" | "history" | "backtest" | "validation" | "armed") => void;
   setTechniqueArmed: (a: ArmedPlan[]) => void;
   openTechniqueRun: (runId: string) => void;
+  armedFocusRunId: string | null;
+  openArmedPlan: (runId: string) => void;
+  clearArmedFocus: () => void;
   setTechniqueFocusRun: (runId: string | null) => void;
   setChatThreads: (t: ChatThread[]) => void;
   setChatThread: (t: ChatThread) => void;
@@ -172,6 +175,7 @@ export const useStore = create<AppState>((set, get) => ({
   techniqueSetups: [],
   techniqueTab: "analyse",
   techniqueFocusRunId: null,
+  armedFocusRunId: null,
   techniqueRunBumps: {},
   techniqueArmed: [],
   techniqueSweepBump: 0,
@@ -334,6 +338,8 @@ export const useStore = create<AppState>((set, get) => ({
       optionsContract: r.page === "options" ? (r.optionsContract ?? (r.optionsUnderlying && r.optionsUnderlying !== st.optionsUnderlying ? null : st.optionsContract)) : st.optionsContract,
     })),
   openTechniqueRun: (runId) => set({ page: "technique", techniqueTab: "analyse", techniqueFocusRunId: runId }),
+  openArmedPlan: (runId) => set({ page: "armed", armedFocusRunId: runId }),
+  clearArmedFocus: () => set({ armedFocusRunId: null }),
   setTechniqueFocusRun: (techniqueFocusRunId) => set({ techniqueFocusRunId }),
   setChatThreads: (chatThreads) => set({ chatThreads }),
   setChatThread: (t) =>

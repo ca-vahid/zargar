@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Blotter } from "../components/Blotter";
 import { IconCandles, IconLine, IconWarn } from "../components/icons";
 import { DeltaPill, ExtendedHoursChip, TickArrow } from "../components/quotekit";
 import { OrderTicket } from "../components/OrderTicket";
-import { StockChart, type ChartType, type Indicator } from "../components/StockChart";
+import { StockChart, type ChartSession, type ChartType, type ChartView, type Indicator } from "../components/StockChart";
 import { api } from "../lib/api";
 import { fmtMoney } from "../lib/format";
 import { useDaySeries } from "../lib/useDaySeries";
@@ -46,6 +46,25 @@ export function TradePage() {
     if (!rangeDef.tfs.includes(tf)) setTf(rangeDef.def);
   }, [rangeDef, tf]);
   const [chartType, setChartType] = useState<ChartType>(settings["ui.chart.type"] ?? "candlestick");
+  const [view, setViewRaw] = useState<ChartView>(
+    () => (localStorage.getItem("zargar_trade_view") as ChartView) || "candles");
+  const setView = (v: ChartView) => { localStorage.setItem("zargar_trade_view", v); setViewRaw(v); };
+  const [chSession, setChSessionRaw] = useState<ChartSession>(
+    () => (localStorage.getItem("zargar_trade_session") as ChartSession) || "eth");
+  const setChSession = (v: ChartSession) => { localStorage.setItem("zargar_trade_session", v); setChSessionRaw(v); };
+  // the armed plan watching this symbol (if any) and your live position in it
+  const armedPlan = useStore((s) => s.techniqueArmed.find(
+    (a) => a.symbol === symbol && (a.status === "armed" || a.status === "paused")) ?? null);
+  const openArmedPlan = useStore((s) => s.openArmedPlan);
+  const positionsMap = useStore((s) => s.positions);
+  const position = useMemo(() => {
+    let qty = 0, cost = 0;
+    for (const pos of Object.values(positionsMap)) {
+      if (pos.symbol !== symbol || pos.secType === "OPT" || Math.abs(pos.qty) < 1e-9) continue;
+      qty += pos.qty; cost += pos.qty * pos.avgCost;
+    }
+    return qty !== 0 ? { price: cost / qty, qty } : null;
+  }, [positionsMap, symbol]);
   const [indicators, setIndicators] = useState<Indicator[]>(
     (settings["ui.chart.indicators"] ?? ["ema20"]).filter((i: string) =>
       ["ema20", "sma50", "bb"].includes(i)) as Indicator[]);
@@ -133,10 +152,39 @@ export function TradePage() {
                 {i.label}
               </button>
             ))}
+            <span className="sep" aria-hidden="true" />
+            {(["candles", "zones", "panes"] as ChartView[]).map((v) => (
+              <button key={v} className={view === v ? "active" : ""}
+                disabled={v === "zones" && !armedPlan}
+                title={v === "candles" ? "Hollow candles, colored volume, level labels"
+                  : v === "zones" ? (armedPlan ? "The armed plan's risk/reward as bands" : "Zones need an armed plan on this symbol")
+                  : "Adds range buttons and a P&L-vs-avg-cost pane when you hold a position"}
+                onClick={() => setView(v)}>
+                {v}
+              </button>
+            ))}
+            <span className="sep" aria-hidden="true" />
+            {(["eth", "rth"] as ChartSession[]).map((v) => (
+              <button key={v} className={chSession === v ? "active" : ""}
+                title={v === "eth" ? "Show pre-market and after-hours (shaded)" : "Regular session only - 9:30 to 4:00 ET"}
+                onClick={() => setChSession(v)}>
+                {v.toUpperCase()}
+              </button>
+            ))}
           </div>
         </div>
+        {armedPlan && (
+          <button className="trade-armed-chip" onClick={() => openArmedPlan(armedPlan.runId)}
+            title="This symbol has an armed plan watching it - open its card on the Armed page">
+            <span className="zap">⚡</span> ARMED
+            {armedPlan.grade ? <span className={`tq-grade g${armedPlan.grade}`}>{armedPlan.grade}</span> : null}
+            <span className="muted">{armedPlan.summary ?? armedPlan.status}</span>
+            <span className="go">open card →</span>
+          </button>
+        )}
         <StockChart symbol={symbol} tf={tf} range={range} chartType={chartType}
-          indicators={indicators} showVolume={showVolume} />
+          indicators={indicators} showVolume={showVolume}
+          view={view} session={chSession} armed={armedPlan} avgCost={position} />
       </div>
       <OrderTicket symbol={symbol} collapsed={ticketCollapsed}
         onToggleCollapse={toggleTicket} />

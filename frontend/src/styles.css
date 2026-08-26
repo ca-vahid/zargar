@@ -1749,6 +1749,19 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 /* chart style segment above the day chart */
 .tq-chartstyle { margin: 6px 0 4px; }
 
+/* trade page: armed-bridge chip above the chart */
+.trade-armed-chip {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  margin: 4px 0 2px; padding: 5px 12px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-1));
+  color: var(--text-1); font-size: var(--fs-1); text-align: left;
+}
+.trade-armed-chip:hover { border-color: var(--accent); }
+.trade-armed-chip .zap { color: var(--accent); }
+.trade-armed-chip .muted { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trade-armed-chip .go { color: var(--accent); font-weight: 600; white-space: nowrap; }
+
 /* dashboard widgets */
 .dash-armed { margin-bottom: var(--pad); cursor: pointer; }
 .dash-armed:hover { border-color: var(--accent); }

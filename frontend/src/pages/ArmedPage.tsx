@@ -50,12 +50,16 @@ export function ArmedPage() {
   // selection: pick the most interesting plan ONCE; after that only the user moves it
   const [selId, setSelId] = useState<string>("");
   const pickedOnce = useRef(false);
+  const focusId = useStore((s) => s.armedFocusRunId);
+  const clearFocus = useStore((s) => s.clearArmedFocus);
   useEffect(() => {
+    // hand-off from elsewhere (e.g. the Trade chart's armed chip): honor it
+    if (focusId) { setSelId(focusId); pickedOnce.current = true; clearFocus(); return; }
     if (pickedOnce.current || !armed.length) return;
     pickedOnce.current = true;
     setSelId(armed.slice().sort((x, y) => fleetRank(x) - fleetRank(y) || nearestPct(x) - nearestPct(y)
       || x.symbol.localeCompare(y.symbol))[0].runId);
-  }, [armed]);
+  }, [armed, focusId, clearFocus]);
   const selArmed = useMemo(() => armed.find((a) => a.runId === selId)
     ?? (armed.length ? armed[0] : null), [armed, selId]);
 
