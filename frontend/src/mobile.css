@@ -547,3 +547,8 @@ button.bl-card:active { background: var(--surface-2); }
   .topbar-phone-ws { padding: 0 8px; font-size: 11px; }
   .topbar .halt-btn { padding: 0 10px; }
 }
+/* narrow phones: the Now strip's summary takes its own row instead of wrapping word by word */
+@media (max-width: 380px) {
+  .now-strip-txt { flex-basis: 100%; order: 3; }
+  .now-strip-age { margin-left: auto; }
+}
