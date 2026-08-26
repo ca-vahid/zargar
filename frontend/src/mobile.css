@@ -557,3 +557,6 @@ button.bl-card:active { background: var(--surface-2); }
   .panel { overflow-x: auto; }
   .tq-scan-table th, .tq-scan-table td { white-space: nowrap; }
 }
+@media (pointer: coarse), (hover: none), (max-width: 1023px) {
+  .copy-chip, .tq-act, .tq-pencil { min-width: 44px; justify-content: center; }
+}
