@@ -76,6 +76,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
   const toast = useStore((s) => s.toast);
   const chgDollar = useStore((s) => s.chgDollar);
   const toggleChgMode = useStore((s) => s.toggleChgMode);
+  const authUser = useStore((s) => s.auth.user);
   const [confirmLive, setConfirmLive] = useState(false);
   const go = (p: Page) => { setPage(p); onClose(); };
   const setMode = async (value: string) => {
@@ -127,6 +128,15 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
             <button type="button" className={chgDollar ? "on" : ""} onClick={() => { if (!chgDollar) toggleChgMode(); }}>$</button>
           </div>
         </div>
+        {authUser && authUser.provider !== "open" && (
+          <div className="more-row">
+            <span>Signed in</span>
+            <span className="muted small" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+              {authUser.picture && <img src={authUser.picture} alt="" width={24} height={24} style={{ borderRadius: "50%" }} referrerPolicy="no-referrer" />}
+              {authUser.email}
+            </span>
+          </div>
+        )}
         <div className="more-row">
           <span>Connection</span>
           <span className={`status-pill ${connected ? "ok" : "bad"}`}>{connected ? "live" : "offline"}</span>

@@ -55,26 +55,44 @@ function url(): string {
   return `${proto}://${location.host}/ws?${params.toString()}`;
 }
 
+/** Drop the current socket and open a fresh one (after sign-in / sign-out). */
+export function reconnectWS() {
+  const old = socket;
+  socket = null;                 // the old socket's onclose sees it is stale and stays quiet
+  try { old?.close(); } catch { /* ignore */ }
+  retryDelay = 1000;
+  connectWS();
+}
+
 export function connectWS() {
   const store = useStore.getState();
-  socket = new WebSocket(url());
+  const ws = new WebSocket(url());
+  socket = ws;
 
-  socket.onopen = () => {
+  ws.onopen = () => {
+    if (socket !== ws) return;   // superseded by a reconnect
     retryDelay = 1000;
     closedByVisibility = false;
     store.setConnected(true);
     // resubscribe everything the UI is showing
-    for (const sym of watched) socket?.send(JSON.stringify({ t: "watch", symbol: sym }));
+    for (const sym of watched) ws.send(JSON.stringify({ t: "watch", symbol: sym }));
   };
 
-  socket.onclose = () => {
+  ws.onclose = (ev) => {
+    if (socket !== ws) return;   // stale socket closing after a reconnect — ignore
     useStore.getState().setConnected(false);
     if (closedByVisibility) return; // reconnect happens on visibilitychange
+    if (ev.code === 4401) {
+      // not signed in: the login screen takes over; no retry storm
+      useStore.getState().setAuth({ checked: true, required: true, user: null });
+      return;
+    }
     setTimeout(connectWS, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 15000);
   };
 
-  socket.onmessage = (msg) => {
+  ws.onmessage = (msg) => {
+    if (socket !== ws) return;
     let data: any;
     try {
       data = JSON.parse(msg.data);

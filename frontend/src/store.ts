@@ -45,7 +45,19 @@ export interface OrderIntentBody {
   dry_run?: boolean;
 }
 
+export interface AuthUser { email: string; name?: string; picture?: string | null; provider: string }
+export interface AuthState {
+  checked: boolean;            // /api/auth/me answered at least once
+  required: boolean;           // the server wants a sign-in
+  user: AuthUser | null;
+  googleClientId: string | null;
+  providers: { id: string; label: string; enabled: boolean; note?: string | null }[];
+  sessionDays?: number;
+}
+
 interface AppState {
+  auth: AuthState;
+  setAuth: (patch: Partial<AuthState>) => void;
   connected: boolean;
   page: Page;
   activeSymbol: string;
@@ -173,6 +185,8 @@ export const useStore = create<AppState>((set, get) => ({
   events: [],
   toasts: [],
   alerts: [],
+  auth: { checked: false, required: false, user: null, googleClientId: null, providers: [] },
+  setAuth: (patch) => set((st) => ({ auth: { ...st.auth, ...patch } })),
   techniqueRuns: [],
   techniqueSetups: [],
   techniqueTab: "validation",

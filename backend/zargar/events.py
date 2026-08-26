@@ -121,3 +121,4 @@ class Journal:
             }
         self._bus.publish(topics.EVENTS, record)
         return record
+AUTH_SIGN_IN = "AuthSignIn"

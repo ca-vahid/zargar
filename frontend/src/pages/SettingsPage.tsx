@@ -577,12 +577,31 @@ function AccentCell() {
 function ApiTokenRow() {
   const [draft, setDraft] = useState(getAuthToken());
   const toast = useStore((s) => s.toast);
+  const auth = useStore((s) => s.auth);
+  const setAuth = useStore((s) => s.setAuth);
+  const signOut = async () => {
+    try { await api.authLogout(); } catch { /* cookie may already be gone */ }
+    setAuthToken(""); localStorage.removeItem("zargar_token");
+    setAuth({ user: null });
+    toast("info", "signed out"); setTimeout(() => location.reload(), 300);
+  };
   return (
+    <>
+      {auth.user && auth.user.provider !== "open" && (
+        <div className="setting-row">
+          <div className="lbl">Signed in as<small>{auth.user.email} · via {auth.user.provider}</small></div>
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            {auth.user.picture && <img src={auth.user.picture} alt="" width={28} height={28} style={{ borderRadius: "50%" }} referrerPolicy="no-referrer" />}
+            <button type="button" className="ghost-btn" onClick={signOut}>Sign out</button>
+          </span>
+        </div>
+      )}
     <div className="setting-row">
-      <div className="lbl">API token<small>stored in this browser; needed when ZARGAR_AUTH_TOKEN is set</small></div>
+      <div className="lbl">API token<small>for scripts / CLI (ZARGAR_AUTH_TOKEN); sign-in sessions don't need it</small></div>
       <input type="password" value={draft} onChange={(e) => setDraft(e.target.value)}
         onBlur={() => { setAuthToken(draft); toast("info", "API token saved locally"); }} />
     </div>
+    </>
   );
 }
 
@@ -726,7 +745,8 @@ function MobilePanel() {
         </div>
         <div className="setting-row">
           <div className="lbl">This device<small>forget the sign-in token stored in this browser</small></div>
-          <button type="button" className="ghost-btn" onClick={() => {
+          <button type="button" className="ghost-btn" onClick={async () => {
+            try { await api.authLogout(); } catch { /* ignore */ }
             setAuthToken(""); localStorage.removeItem("zargar_token");
             toast("info", "signed out on this device"); setTimeout(() => location.reload(), 400);
           }}>Sign out</button>
