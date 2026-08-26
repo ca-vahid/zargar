@@ -52,6 +52,7 @@ CORE_UNIVERSE: list[str] = [
 ]
 
 ALPACA_MOST_ACTIVES = "https://data.alpaca.markets/v1beta1/screener/stocks/most-actives"
+ALPACA_SNAPSHOTS = "https://data.alpaca.markets/v2/stocks/snapshots"
 YAHOO_MOST_ACTIVES = ("https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
                       "?formatted=false&lang=en-US&region=US&scrIds=most_actives&start=0&count=250")
 _UA = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) zargar/1.0"}
@@ -90,13 +91,34 @@ async def fetch_most_actives(*, alpaca_key: str = "", alpaca_secret: str = "", t
     try:
         if alpaca_key and alpaca_secret:
             try:
-                r = await client.get(ALPACA_MOST_ACTIVES, params={"by": "volume", "top": min(100, max(1, top))},
-                                     headers={"APCA-API-KEY-ID": alpaca_key, "APCA-API-SECRET-KEY": alpaca_secret})
+                hdr = {"APCA-API-KEY-ID": alpaca_key, "APCA-API-SECRET-KEY": alpaca_secret}
+                # by=trades: how many people traded it today — the "famous" signal; raw
+                # share volume is dominated by sub-$5 names the price floor removes anyway
+                r = await client.get(ALPACA_MOST_ACTIVES, params={"by": "trades", "top": min(100, max(1, top))},
+                                     headers=hdr)
                 r.raise_for_status()
                 rows = (r.json() or {}).get("most_actives") or []
                 out = [{"symbol": str(x.get("symbol") or "").upper(), "volume": int(x.get("volume") or 0),
-                        "price": None, "source": "alpaca"} for x in rows if x.get("symbol")]
+                        "trades": int(x.get("trade_count") or 0), "price": None, "source": "alpaca"}
+                       for x in rows if x.get("symbol")]
                 if out:
+                    # the screener carries no price; one snapshot call prices the whole list
+                    syms = [o["symbol"] for o in out]
+                    for i in range(0, len(syms), 100):
+                        chunk = syms[i:i + 100]
+                        try:
+                            rs = await client.get(ALPACA_SNAPSHOTS, params={"symbols": ",".join(chunk), "feed": "sip"},
+                                                  headers=hdr)
+                            rs.raise_for_status()
+                            snaps = rs.json() or {}
+                            for o in out:
+                                sn = snaps.get(o["symbol"]) or {}
+                                px = ((sn.get("latestTrade") or {}).get("p") or (sn.get("dailyBar") or {}).get("c")
+                                      or (sn.get("prevDailyBar") or {}).get("c"))
+                                if px:
+                                    o["price"] = float(px)
+                        except Exception as exc:  # pragma: no cover - network
+                            log.warning("alpaca snapshots failed (%s); auto rows without a price are skipped", exc)
                     return out
             except Exception as exc:  # pragma: no cover - network
                 log.warning("alpaca most-actives failed (%s); falling back to Yahoo", exc)
