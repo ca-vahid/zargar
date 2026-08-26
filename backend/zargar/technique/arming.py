@@ -224,6 +224,11 @@ class ArmedPlan:
     stale_noted: bool = False
     setup_ids: dict[str, str] = field(default_factory=dict)
     critic_kills: dict[str, int] = field(default_factory=dict)   # per-trigger veto count (re-arm cap)
+    refire_at: dict[str, int] = field(default_factory=dict)      # per-trigger cooldown after a veto (ms)
+    # prior-session 1m bars from the run's snapshot: the fire-time FACTS need a
+    # volume baseline (live engine bars are today-only -> baselineSessions=0,
+    # PM 2026-08-26 fired with volume the critic could not verify either way)
+    baseline_bars: list = field(default_factory=list)
     stop_reason: str = ""               # why the plan stopped firing (loss halt, etc.)
     scorecard: dict | None = None       # execution review vs the walk-forward replay (after close)
     replay_ts: int | None = None        # while seeding historical bars: stamp events with the BAR's time
@@ -587,15 +592,17 @@ class PlanArmer(SessionListener):
         enforce = bool(s.get("technique.enforce_session_windows", True))
         t = self.technique.thresholds()
         profile = None
+        baseline_bars: list = []
         with contextlib.suppress(Exception):
             snap = await self.technique.load_bars_snapshot(run_id)
             if snap and snap.get(plan.get("triggerTf") or "1m"):
-                profile = build_profile(snap[plan.get("triggerTf") or "1m"])
+                baseline_bars = list(snap[plan.get("triggerTf") or "1m"])
+                profile = build_profile(baseline_bars)
         trackers = {tg["id"]: TriggerTracker(tg, t, profile, enforce, True, float(plan.get("lastClose") or 0) or None)
                     for tg in plan.get("triggers") or [] if tg.get("valid")}
         ap = ArmedPlan(run_id=run_id, symbol=symbol, plan=plan, plan_for=plan.get("planFor") or "",
                        config=cfg, trackers=trackers, armed_at=time.time(),
-                       status="paused" if paused else "armed")
+                       status="paused" if paused else "armed", baseline_bars=baseline_bars)
         self._armed[run_id] = ap
         with contextlib.suppress(Exception):
             await self.engine.ensure_symbol(symbol)
@@ -620,6 +627,8 @@ class PlanArmer(SessionListener):
             # it at 09:44 as a phantom "alert" trade. The live-persisted record
             # is authoritative: apply it over any replay conclusion, and drop
             # trades the replay minted that the live plan never had.
+            ap.critic_kills = {str(k): int(v) for k, v in ((prior_state or {}).get("criticKills") or {}).items()}
+            ap.refire_at = {str(k): int(v) for k, v in ((prior_state or {}).get("refireAt") or {}).items()}
             prior_trackers = (prior_state or {}).get("trackers") or {}
             for ptid, pst in prior_trackers.items():
                 trk = trackers.get(ptid)
@@ -1078,6 +1087,7 @@ class PlanArmer(SessionListener):
                          "trades": [t.to_dict() for t in ap.trades.values()],
                          "events": ap.events[-200:], "barsSeen": ap.bar_index, "lastBarTs": ap.last_bar_ts,
                          "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
+                         "criticKills": ap.critic_kills, "refireAt": ap.refire_at,
                          "stopReason": ap.stop_reason, "scorecard": ap.scorecard}
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
@@ -1287,6 +1297,16 @@ class PlanArmer(SessionListener):
                             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "halt", "ts": bar.ts},
                             aggregate_type="technique_run", aggregate_id=ap.run_id)
                     continue
+                if ap.refire_at.get(tid) and bar.ts < ap.refire_at[tid]:
+                    # cooling down after a critic veto: the SAME squeeze re-firing
+                    # every bar burned all three critic calls in 3 minutes (PM
+                    # 2026-08-26) — a later, distinct touch is the point of re-arming
+                    tr.status = "observed"
+                    tr.fired_index = tr.fired_ts = tr.fired_window = tr.fill_price = None
+                    left = max(1, round((ap.refire_at[tid] - bar.ts) / 60_000))
+                    self._log(ap, "cooldown_skip",
+                              f"{tid}: conditions met but cooling down after a veto — {left}m left", trigger=tid)
+                    continue
                 if ap.config.mode == "auto" and open_or_working >= max(1, ap.config.max_open_trades):
                     tr.status = "observed"
                     tr.fired_index = tr.fired_ts = tr.fired_window = tr.fill_price = None
@@ -1333,10 +1353,21 @@ class PlanArmer(SessionListener):
         trace: list[dict] = []
         if cfg.use_critic and llm.available and journal:
             try:
+                from dataclasses import replace as dc_replace
+
                 from .analysis import AnalysisRequest, compute_facts
                 from .render import render_chart
                 from .vision import VisionPipeline
+                # fire-time reads don't need deep thinking — latency IS cost here
+                eff = str(self.engine.settings.get("technique.arm.critic_effort", "low") or "low")
+                if eff and eff != llm.effort:
+                    llm = dc_replace(llm, effort=eff)
                 bars = self.engine.bars.bars(ap.symbol, "1m", limit=600, include_forming=False)
+                if ap.baseline_bars and bars:
+                    # prepend the plan snapshot's prior sessions so the live FACTS
+                    # have a volume baseline (else rel volume reads 0.0x/unmeasurable)
+                    pre = [b for b in ap.baseline_bars if b.ts < bars[0].ts]
+                    bars = pre[-1500:] + bars
                 req = AnalysisRequest(symbol=ap.symbol, primary_tf="1m", context_tfs=(), thresholds=self.technique.thresholds())
                 facts = compute_facts(req, {"1m": bars}, []) if bars else {}
                 png = render_chart(bars[-240:], title=f"{ap.symbol} 1m", tf="1m") if bars else None
@@ -1413,13 +1444,18 @@ class PlanArmer(SessionListener):
             # paused/halt skips, the trigger goes back to watching so a later,
             # distinct touch can fire again (fresh critic, fresh data) — capped
             # so a stubborn disagreement doesn't burn critic calls all day.
+            s = self.engine.settings
+            cap = max(1, int(s.get("technique.arm.critic_kills_per_day", 3)))
+            cool = max(0, int(s.get("technique.arm.refire_cooldown_minutes", 10)))
             ap.critic_kills[tid] = ap.critic_kills.get(tid, 0) + 1
-            if ap.critic_kills[tid] < 3:
+            if ap.critic_kills[tid] < cap:
                 tr.status = "observed"
                 tr.fired_index = tr.fired_ts = tr.fired_window = tr.fill_price = None
+                if cool:
+                    ap.refire_at[tid] = int(time.time() * 1000) + cool * 60_000
                 self._log(ap, "rearmed_after_kill",
-                          f"{tid}: back to watching — a later touch can refire (veto {ap.critic_kills[tid]}/3)",
-                          trigger=tid)
+                          f"{tid}: back to watching — a later touch can refire after a {cool}m cooldown "
+                          f"(veto {ap.critic_kills[tid]}/{cap})", trigger=tid)
             else:
                 self._log(ap, "kill_cap", f"{tid}: vetoed {ap.critic_kills[tid]} times — staying down for the day",
                           trigger=tid)

@@ -146,6 +146,9 @@ DEFAULTS: dict[str, Any] = {
     # --- phase 2: arm plans for live triggers ---------------------------------
     "technique.arm.enabled": True,             # allow arming plans at all
     "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)
+    "technique.arm.critic_effort": "low",      # fire-time critic thinking depth — latency is cost here
+    "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
+    "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
     "technique.arm.mode": "proposal",          # default execution mode: alert | proposal | auto
     "technique.arm.instrument": "options",     # the book trades just-OTM weeklies / 0DTE (T5); "shares" is the alternative

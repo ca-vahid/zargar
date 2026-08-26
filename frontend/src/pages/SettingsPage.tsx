@@ -369,6 +369,15 @@ export function SettingsPage() {
               <NumCell k="technique.arm.flatten_minutes_before_close" label="Flatten before close" hint="minutes — nothing is held overnight" />
             </Cells>
             <Group>Safety</Group>
+            <Cells>
+              <SelCell k="technique.arm.critic_effort" label="Critic speed"
+                hint="thinking depth of the fire-time AI double-check — low answers in seconds, which matters when a trigger just fired"
+                options={[{ value: "low", label: "fast (low)" }, { value: "medium", label: "medium" }, { value: "high", label: "deep (high)" }]} />
+              <NumCell k="technique.arm.critic_kills_per_day" label="Vetoes / trigger / day"
+                hint="after this many AI vetoes a trigger stays down for the day" />
+              <NumCell k="technique.arm.refire_cooldown_minutes" label="Refire cooldown (min)"
+                hint="wait after a veto before the same trigger may fire again — stops one squeeze from burning every veto in minutes" />
+            </Cells>
             <ToggleRow k="technique.arm.skip_wide_spread" label="Skip options with a wide spread" hint="avoids contracts that lose money the moment you enter (T5.4) — the entry fallback above can buy shares instead" />
             <ToggleRow k="technique.arm.skip_elevated_iv" label="Skip options with high volatility" hint="avoids IV-crush (T5.3); off by default" />
             <ToggleRow k="technique.arm.use_critic" label="AI double-check before auto-buying" hint="an AI reads the live chart and can veto a weak setup (needs an API key)" />
