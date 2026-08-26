@@ -72,6 +72,16 @@ a number** (p. 72).
   technicalities"). Price rejected off that exact shelf (196.66 → 194.99). Running
   tally since prompt fix: 3/3 saves. Also evidence for 1.5: the pct-ladder R:R was
   the artifact the critic had to shoot down.
+- **2026-08-26 · T (AT&T), first mid-day-experiment fires: 4 more correct kills — tally 7/7.**
+  k1 breakout fired 4× (13:37–13:58 ET, the 5-min cooldown pacing it, 4/10 vetoes used)
+  inside a 3-cent hour-long chop box on 0.2× volume; critic killed all four citing
+  T3.3d/c/f, R3.1, R3.2 and the unanchored 12:1 ladder — price stayed pinned in the box
+  after. Two system validations inside the kills: the volume-baseline fix delivered
+  ("rel=0.232x, measurable baseline of 4 sessions — R3.1 bites for real", vs yesterday's
+  0.0x/unmeasurable), and `middayExperiment` context held — zero kills cited the window.
+  Watch item: the tracker's fire-time volume gate passed bars the critic's FACTS graded
+  0.2×— the two rel-volume computations (tracker profile vs live FACTS baseline) need
+  reconciling before trusting R3.1 at the tracker.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -100,6 +110,12 @@ a number** (p. 72).
   R6.3 is costing us trades; consider widening the windows (with the critic as the
   chop filter). Watch T-1 (window asymmetry) alongside.
 - ⚠ Keep OFF on any live account until this resolves.
+- **First session data (toggle went live 2026-08-26 ~13:30 ET):** the first mid-day
+  fires (T ×4) were exactly the chop-fakeouts R6.3 predicts — 3-cent box, 0.2× volume,
+  stub-print breaks — and the critic vetoed all four. Early shape of the answer: mid-day
+  DOES produce trigger conditions, and so far they're garbage the critic must filter.
+  If that pattern holds, the finding may be "R6.3 is right about the tape but the
+  critic can substitute for the clock" — n=4, keep counting.
 
 ---
 
