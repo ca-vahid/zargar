@@ -273,9 +273,17 @@ function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: b
   const near = (a.triggers ?? []).slice().sort((x, y) => Math.abs(x.distancePct ?? 99) - Math.abs(y.distancePct ?? 99))[0];
   const [wTxt, wCls] = WINDOW_SHORT[a.sessionWindowNow] ?? [a.sessionWindowNow, "nosetup"];
   const st = chipState(a);
+  const trigStatuses = (a.triggers ?? []).map((t) => t.status);
+  // "void" = armed but every trigger is dead — say WHY, not just "done"
+  const voidLabel = trigStatuses.every((s) => s === "gap_void") ? "gap-voided"
+    : trigStatuses.every((s) => s === "gapped_past" || s === "gapped_through") ? "gapped past"
+    : "no triggers left";
+  const voidTitle = "Every trigger died at the open: the overnight gap either repriced the risk "
+    + "(gap rule, TRADING-RULES 1.1 — these are the experiment's counterfactual samples) or "
+    + "jumped past the level (chasing is forbidden). Nothing can fire today.";
   const stLabel = st === "attn" ? "⚠ ATTENTION" : st === "intrade" ? "IN TRADE"
     : st === "fired" ? `FIRED ${(a.trades ?? []).length}` : st === "off" ? a.status.toUpperCase()
-    : st === "void" ? "done" : `watching ${(a.triggers ?? []).filter((t) => t.status === "waiting" || t.status === "observed").length}`;
+    : st === "void" ? voidLabel : `watching ${(a.triggers ?? []).filter((t) => t.status === "waiting" || t.status === "observed").length}`;
   const d = near?.distancePct;
   return (
     <tr className={`clickable ${sel ? "tq-fleet-sel" : ""}`} onClick={onSel}>
@@ -294,6 +302,7 @@ function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: b
           : st === "intrade" ? <span className="tq-badge setup">{stLabel}</span>
           : st === "fired" ? <span className="tq-badge plan">{stLabel}</span>
           : st === "off" ? <span className="tq-badge nosetup">{stLabel}</span>
+          : st === "void" ? <span className="muted small" title={voidTitle} style={{ textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{stLabel}</span>
           : <span className="muted small">{stLabel}</span>}
         {a.stale && <span className="tq-badge failed" title="no fresh bars">STALE</span>}
       </td>
