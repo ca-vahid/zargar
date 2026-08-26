@@ -1558,6 +1558,22 @@ class PlanArmer(SessionListener):
                     blocked = next(w for w in warnings if "T5.4 wide spread" in w)
                 elif cfg.skip_elevated_iv and any("T5.3 elevated IV" in w for w in warnings):
                     blocked = next(w for w in warnings if "T5.3 elevated IV" in w)
+            if contract is not None and blocked is None:
+                # Premium risk caps are checked HERE, not only at the RiskGate:
+                # a high-priced underlying (GS ~$21/contract) would otherwise
+                # fire, get rejected, and take no trade at all — with the
+                # fallback enabled the plan expresses the level in shares.
+                s = self.engine.settings
+                est = float(contract.get("ask") or contract.get("mid") or 0.0) * 100.0 * max(1, cfg.contracts)
+                cap = float(s.get("risk.max_option_premium_notional", 0.0) or 0.0)
+                pct_cap = float(s.get("risk.max_option_premium_pct", 0.0) or 0.0)
+                pf = self.engine.positions.portfolio(cfg.portfolio_id) or {}
+                eq = float(pf.get("equity") or pf.get("cash") or 0.0)
+                if est > 0 and cap and est > cap:
+                    blocked = f"premium ≈${est:,.0f} exceeds the ${cap:,.0f} per-order cap (risk.max_option_premium_notional)"
+                elif est > 0 and pct_cap and eq and est > eq * pct_cap / 100.0:
+                    blocked = (f"premium ≈${est:,.0f} is over {pct_cap:g}% of the account's ${eq:,.0f} equity "
+                               f"(risk.max_option_premium_pct)")
             if contract is None or blocked:
                 why = blocked or (trade.errors[-1] if trade.errors else "no contract available")
                 if cfg.entry_fallback == "shares":
