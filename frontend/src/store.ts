@@ -301,6 +301,8 @@ export const useStore = create<AppState>((set, get) => ({
     } else if (msg.kind === "brokerage") {
       const { kind: _kind, ...brokerages } = msg;
       get().applyBrokerages(brokerages as Brokerages);
+    } else if (msg.kind === "broker") {
+      set({ broker: msg.broker });
     } else if (msg.kind === "drift") {
       set((st) => ({
         driftWarnings: [

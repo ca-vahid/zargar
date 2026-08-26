@@ -346,6 +346,7 @@ class Engine:
         import time as _time
         down_since = 0.0
         last_alert = 0.0
+        last_state: bool | None = None
         while True:
             await asyncio.sleep(30)
             try:
@@ -353,6 +354,12 @@ class Engine:
                 alpaca = getattr(feed, "alpaca", None)
                 if alpaca is None:
                     continue
+                # push the broker pill's truth to every open UI on transition —
+                # without this the TopBar shows page-load state forever
+                state = bool(alpaca.connected)
+                if state != last_state:
+                    last_state = state
+                    self.bus.publish(topics.SYSTEM, {"kind": "broker", "broker": self.broker_state()})
                 now_et = dt.datetime.now(ET)
                 in_hours = now_et.weekday() < 5 and 4 * 60 <= now_et.hour * 60 + now_et.minute < 20 * 60
                 now = _time.time()
@@ -457,12 +464,6 @@ class Engine:
         pending = []
         if self.proposals is not None:
             pending = await self.proposals.list_pending()
-        feed_name = type(self.feed).__name__ if self.feed else None
-        quote_source = {"SimQuoteFeed": "sim", "YahooQuoteFeed": "yahoo",
-                        "HybridQuoteFeed": "alpaca", "IBKRBroker": "ibkr"}.get(feed_name or "", "sim")
-        alpaca_connected = None
-        if feed_name == "HybridQuoteFeed":
-            alpaca_connected = bool(getattr(getattr(self.feed, "alpaca", None), "connected", False))
         return {
             "settings": self.settings.all(),
             "portfolios": portfolios,
@@ -473,13 +474,25 @@ class Engine:
             "watchlists": watchlists,
             "proposals": pending,
             "brokerages": self.snaptrade_sync.payload() if self.snaptrade_sync else None,
-            "broker": {
-                "feed": feed_name,
-                "feedConnected": bool(self.feed and self.feed.connected),
-                "ibkrConnected": bool(self.ibkr and self.ibkr.connected),
-                "snaptradeConnected": bool(self.snaptrade and self.snaptrade.connected),
-                "quoteSource": quote_source,
-                "alpacaConnected": alpaca_connected,
-                "mode": self.settings.get("trading.mode"),
-            },
+            "broker": self.broker_state(),
+        }
+
+    def broker_state(self) -> dict:
+        """Feed/broker connectivity — in the boot snapshot AND re-broadcast by
+        the feed monitor on every up/down transition so the UI's data pill
+        tracks reality instead of freezing at page-load state."""
+        feed_name = type(self.feed).__name__ if self.feed else None
+        quote_source = {"SimQuoteFeed": "sim", "YahooQuoteFeed": "yahoo",
+                        "HybridQuoteFeed": "alpaca", "IBKRBroker": "ibkr"}.get(feed_name or "", "sim")
+        alpaca_connected = None
+        if feed_name == "HybridQuoteFeed":
+            alpaca_connected = bool(getattr(getattr(self.feed, "alpaca", None), "connected", False))
+        return {
+            "feed": feed_name,
+            "feedConnected": bool(self.feed and self.feed.connected),
+            "ibkrConnected": bool(self.ibkr and self.ibkr.connected),
+            "snaptradeConnected": bool(self.snaptrade and self.snaptrade.connected),
+            "quoteSource": quote_source,
+            "alpacaConnected": alpaca_connected,
+            "mode": self.settings.get("trading.mode"),
         }

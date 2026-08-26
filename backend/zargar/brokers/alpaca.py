@@ -23,10 +23,22 @@ from typing import Callable
 
 import websockets
 
+from zoneinfo import ZoneInfo
+
 from ..domain import Bar, Quote, now_ms
 from .base import QuoteFeed
 
 log = logging.getLogger(__name__)
+
+ET = ZoneInfo("America/New_York")
+
+
+def _expect_traffic() -> bool:
+    """True when the SIP tape should be printing (weekdays 4:00-20:00 ET).
+    Outside that window silence is normal, not an outage — overnight the
+    health check must not degrade an authenticated idle socket to 'down'."""
+    now = dt.datetime.now(ET)
+    return now.weekday() < 5 and 4 * 60 <= now.hour * 60 + now.minute < 20 * 60
 
 WS_URL = "wss://stream.data.alpaca.markets/v2/{feed}"
 # Emit at most one Quote per symbol per this window — the SIP quote stream can
@@ -69,6 +81,7 @@ class AlpacaQuoteFeed(QuoteFeed):
         self._ws = None
         self._task: asyncio.Task | None = None
         self._last_msg = 0
+        self._authed = False
 
     # ------------------------------------------------------------- lifecycle
     @property
@@ -77,7 +90,17 @@ class AlpacaQuoteFeed(QuoteFeed):
 
     @property
     def connected(self) -> bool:
-        return self._ws is not None and now_ms() - self._last_msg < 30_000
+        # Honest health: an open socket that never authenticated is NOT up
+        # (Alpaca allows ONE concurrent stream per subscription — a second
+        # consumer is told 406 "connection limited" on a perfectly open
+        # socket). And a silent overnight socket IS up — traffic is only
+        # expected while the tape prints (SPY is always subscribed as a
+        # heartbeat, so in-hours silence really means trouble).
+        if self._ws is None or not self._authed:
+            return False
+        if not _expect_traffic():
+            return True
+        return now_ms() - self._last_msg < 60_000
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._run(), name="alpaca-stream")
@@ -116,8 +139,10 @@ class AlpacaQuoteFeed(QuoteFeed):
                 async with websockets.connect(WS_URL.format(feed=self._feed), max_size=2 ** 23) as ws:
                     self._ws = ws
                     await ws.send(json.dumps({"action": "auth", "key": self._key, "secret": self._secret}))
-                    if self._symbols:
-                        await ws.send(json.dumps(self._sub_msg(sorted(self._symbols))))
+                    # SPY is always on the wire as a liveness heartbeat: during
+                    # market hours (incl. extended) it prints every second, so
+                    # "no message in 60s" is a real outage, not a quiet book.
+                    await ws.send(json.dumps(self._sub_msg(sorted(self._symbols | {"SPY"}))))
                     backoff = 1.0
                     async for raw in ws:
                         self._last_msg = now_ms()
@@ -129,10 +154,12 @@ class AlpacaQuoteFeed(QuoteFeed):
                             self.handle(m)
             except asyncio.CancelledError:
                 self._ws = None
+                self._authed = False
                 raise
             except Exception as exc:
                 log.warning("alpaca stream dropped: %s — reconnecting in %.0fs", exc, backoff)
             self._ws = None
+            self._authed = False
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
@@ -173,8 +200,19 @@ class AlpacaQuoteFeed(QuoteFeed):
             if self._on_bars is not None and bar.open > 0:
                 self._on_bars([bar])
         elif t == "error":
-            log.warning("alpaca stream error: %s %s", m.get("code"), m.get("msg"))
+            code = m.get("code")
+            if code in (406, "406"):
+                # the single-stream slot is taken by ANOTHER consumer — a
+                # duplicate app instance or a `zargar.tools.alpaca_check --ws`
+                self._authed = False
+                log.error("alpaca stream REFUSED (406 connection limited): another "
+                          "process holds this account's single SIP stream — find and "
+                          "stop the duplicate (second app instance / alpaca_check --ws)")
+            else:
+                log.warning("alpaca stream error: %s %s", code, m.get("msg"))
         elif t == "success":
+            if "authenticated" in str(m.get("msg") or ""):
+                self._authed = True
             log.info("alpaca stream: %s", m.get("msg"))
 
     def _emit(self, s: str, st: dict, *, force: bool = False) -> None:

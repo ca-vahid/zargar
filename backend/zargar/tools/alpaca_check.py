@@ -3,9 +3,13 @@
     cd backend && .venv/Scripts/python.exe -m zargar.tools.alpaca_check [SYMBOL...]
 
 Verifies, with the keys from backend/.env (ZARGAR_ALPACA_KEY_ID / _SECRET):
-  1. REST: SIP 1m bars + snapshot for each symbol,
-  2. Websocket: connect -> authenticate -> subscribe (trades/quotes/bars),
-  3. During market hours: waits briefly for live messages.
+  1. REST: SIP 1m bars + snapshot for each symbol (always safe),
+  2. --ws only: connect -> authenticate -> subscribe -> wait for messages.
+
+WARNING: the Algo Trader Plus plan allows ONE concurrent websocket. Running
+--ws while the app is up KICKS the app's live stream (it reconnects, but the
+war can flap for minutes). Default is REST-only; use --ws only when the app
+is stopped.
 Exit 0 = everything works.
 """
 from __future__ import annotations
@@ -24,7 +28,7 @@ DATA = "https://data.alpaca.markets/v2"
 WS = "wss://stream.data.alpaca.markets/v2/sip"
 
 
-async def run(symbols: list[str]) -> int:
+async def run(symbols: list[str], ws_check: bool = False) -> int:
     cfg = AppConfig()
     if not cfg.alpaca_key_id or not cfg.alpaca_secret:
         print("FAIL: ZARGAR_ALPACA_KEY_ID / ZARGAR_ALPACA_SECRET not set in backend/.env")
@@ -39,6 +43,10 @@ async def run(symbols: list[str]) -> int:
             print(f"REST bars  {s}: HTTP {r.status_code}, {len(bars)} bar(s)"
                   + (f", last {bars[-1]['t']} c={bars[-1]['c']}" if bars else ""))
             ok = ok and r.status_code == 200
+    if not ws_check:
+        print("WS check  : skipped (one concurrent stream allowed — --ws would kick the app's feed)")
+        print("RESULT    :", "OK - Alpaca REST data usable" if ok else "FAILED - see above")
+        return 0 if ok else 1
     try:
         async with websockets.connect(WS, max_size=2 ** 23) as ws:
             print("WS greet  :", await asyncio.wait_for(ws.recv(), 10))
@@ -64,9 +72,12 @@ async def run(symbols: list[str]) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("symbols", nargs="*", default=[])
+    ap.add_argument("--ws", action="store_true",
+                    help="also test the websocket — STEALS the app's single SIP stream; "
+                         "only run with the app stopped")
     args = ap.parse_args()
     syms = [s.upper() for s in (args.symbols or ["SPY", "SNOW"])]
-    sys.exit(asyncio.run(run(syms)))
+    sys.exit(asyncio.run(run(syms, ws_check=args.ws)))
 
 
 if __name__ == "__main__":
