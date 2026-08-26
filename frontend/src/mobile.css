@@ -79,7 +79,7 @@ html { -webkit-text-size-adjust: 100%; }
   .topbar { height: 48px; gap: 8px; padding: 0 10px; }
   .topbar .brand { font-size: var(--fs-3); gap: 6px; }
   .topbar-phone-ws {
-    display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 10px;
+    display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 10px;
     border-radius: 999px; font-weight: 800; font-size: var(--fs-1); letter-spacing: 0.4px;
     background: color-mix(in srgb, var(--accent) 12%, var(--surface-2)); color: var(--text-1);
     border: none; cursor: pointer;
@@ -93,7 +93,7 @@ html { -webkit-text-size-adjust: 100%; }
   .topbar .halt-btn { min-height: 40px; padding: 0 14px; font-size: var(--fs-2); }
   .topbar-search-btn { min-width: 44px; }
   .topbar-attn {
-    min-height: 36px; border-radius: 999px; padding: 0 10px; border: none; cursor: pointer;
+    min-height: 40px; border-radius: 999px; padding: 0 10px; border: none; cursor: pointer;
     background: var(--down); color: #fff; font-weight: 800; font-size: var(--fs-1);
     animation: tqpulse 1.6s infinite;
   }
@@ -447,8 +447,8 @@ button.bl-card:active { background: var(--surface-2); }
   .quote-head--phone .last { font-size: 18px; }
   .quote-head-sub { flex-basis: auto; margin-left: auto; }
   .trade-phone-tools { padding: 2px 10px 4px; }
-  .trade-phone-tools .seg button { min-height: 32px; }
-  .trade-phone-more { min-height: 32px; min-width: 40px; }
+  .trade-phone-tools .seg button { min-height: 40px; }
+  .trade-phone-more { min-height: 40px; min-width: 40px; }
   .trade-phone-chart .stock-chart--phone { height: calc(100dvh - 210px); min-height: 170px; }
   .trade-phone-bar { bottom: 0; padding: 5px 10px calc(5px + var(--safe-b)); }
   .trade-phone-bar .submit-btn { min-height: 40px; font-size: var(--fs-3); }
@@ -528,4 +528,32 @@ button.bl-card:active { background: var(--surface-2); }
   .tq-run { width: 100%; height: 48px; }
   .tq-plan-cell b { font-size: var(--fs-4); }
   .tq-head .tq-status { padding: 6px 0; }
+}
+
+
+/* ── audit follow-ups ─────────────────────────────────────────────────────── */
+@media (pointer: coarse), (hover: none), (max-width: 1023px) {
+  .tabs button { min-width: 44px; }
+  .mode-select, input[type="color"] { font-size: 16px; }
+  input[type="color"] { min-height: 44px !important; min-width: 44px; }
+  .sidebar.collapsed .nav button { min-width: 44px; }
+  .side-collapse { width: 40px; height: 40px; top: 6px; right: 6px; }
+}
+/* the 320px iPhone SE: the brand text goes, the logo stays — HALT must fit */
+@media (max-width: 360px) {
+  .topbar--phone .brand { font-size: 0; gap: 0; }
+  .topbar--phone .brand-logo { width: 26px; height: 26px; }
+  .topbar--phone { gap: 6px; padding: 0 8px; }
+  .topbar-phone-ws { padding: 0 8px; font-size: 11px; }
+  .topbar .halt-btn { padding: 0 10px; }
+}
+/* narrow phones: the Now strip's summary takes its own row instead of wrapping word by word */
+@media (max-width: 380px) {
+  .now-strip-txt { flex-basis: 100%; order: 3; }
+  .now-strip-age { margin-left: auto; }
+}
+/* phones: any table that stays a table scrolls inside its panel instead of widening the page */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .panel { overflow-x: auto; }
+  .tq-scan-table th, .tq-scan-table td { white-space: nowrap; }
 }

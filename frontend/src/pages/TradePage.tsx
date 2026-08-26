@@ -208,7 +208,7 @@ export function TradePage() {
           <div className="tf-row">
             {(["candlestick", "line"] as ChartType[]).map((t) => (
               <button key={t} className={chartType === t ? "active" : ""}
-                onClick={() => setChartType(t)} title={t}>
+                onClick={() => setChartType(t)} title={t} aria-label={t === "candlestick" ? "Candlestick chart" : "Line chart"}>
                 {t === "candlestick" ? <IconCandles size={13} /> : <IconLine size={13} />}
               </button>
             ))}
