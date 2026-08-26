@@ -16,3 +16,6 @@ frontend/art-src/
 
 backend/zargar-*.log*
 technique-reviews/
+
+# mobile audit output (scripts/mobile-audit.mjs)
+frontend/.mobile-shots/
