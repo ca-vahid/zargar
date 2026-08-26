@@ -7,6 +7,7 @@ import { BrokerIcon } from "./BrokerIcon";
 import { IconWarn } from "./icons";
 import { Modal } from "./Modal";
 import { Spinner } from "./ui";
+import { useViewport } from "../lib/viewport";
 
 interface RiskCheck { name: string; passed: boolean; detail: string }
 
@@ -36,6 +37,8 @@ export function ConfirmOrderDialog({
   const [preflightRejected, setPreflightRejected] = useState(false);
   const [estimated, setEstimated] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [ack, setAck] = useState(false);
+  const { isPhone } = useViewport();
   const ran = useRef(false);
 
   useEffect(() => {
@@ -77,10 +80,16 @@ export function ConfirmOrderDialog({
           <button className="ghost-btn" onClick={onCancel} disabled={submitting}>
             Cancel
           </button>
+          {isPhone && (
+            <label className="confirm-ack">
+              <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} />
+              <span>I understand this places a <b>real-money</b> order on {portfolio.name}.</span>
+            </label>
+          )}
           <button
             className={`submit-btn ${sideClass}`}
-            style={{ width: "auto", padding: "8px 18px" }}
-            disabled={checking || preflightRejected || submitting}
+            style={isPhone ? undefined : { width: "auto", padding: "8px 18px" }}
+            disabled={checking || preflightRejected || submitting || (isPhone && !ack)}
             onClick={confirm}
           >
             {submitting ? "Submitting…" : label ?? `${intent.side} ${intent.qty} ${intent.symbol}`}
@@ -118,14 +127,24 @@ export function ConfirmOrderDialog({
           </div>
         )}
         {checks !== null && (
-          <div className="check-grid">
-            {checks.map((c) => (
-              <span key={c.name} className={`check-item ${c.passed ? "ok" : "fail"}`}
-                title={c.detail || c.name}>
-                {c.passed ? c.name : c.detail || c.name}
-              </span>
-            ))}
-          </div>
+          <>
+            {failed.length > 0 && (
+              <ul className="check-list">
+                {failed.map((c) => (
+                  <li key={c.name} className="check-item fail">
+                    <b>{c.name.replace(/_/g, " ")}</b>{c.detail ? ` — ${c.detail}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="check-grid">
+              {checks.filter((c) => c.passed).map((c) => (
+                <span key={c.name} className="check-item ok" title={c.detail || c.name}>
+                  ✓ {c.name.replace(/_/g, " ")}{isPhone && c.detail ? <small> · {c.detail}</small> : null}
+                </span>
+              ))}
+            </div>
+          </>
         )}
         {preflightRejected && failed.length > 0 && (
           <div className="state-note error" style={{ padding: "6px 0" }}>

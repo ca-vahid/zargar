@@ -9,6 +9,8 @@ import { fmtMoney } from "../lib/format";
 import { useDaySeries } from "../lib/useDaySeries";
 import { watchSymbol } from "../lib/ws";
 import { useQuote, useStore } from "../store";
+import { useViewport } from "../lib/viewport";
+import { ChartSettingsSheet } from "../components/trade/ChartSettingsSheet";
 
 const TFS = ["1m", "5m", "15m", "1h", "1d"];
 /** Chart ranges (Yahoo keys) and the timeframes Yahoo serves for each. */
@@ -96,6 +98,87 @@ export function TradePage() {
   const toggleIndicator = (key: Indicator) =>
     setIndicators((cur) =>
       cur.includes(key) ? cur.filter((i) => i !== key) : [...cur, key]);
+
+  const { isPhone, landscape } = useViewport();
+  const [chartSettings, setChartSettings] = useState(false);
+  const [ticket, setTicket] = useState<null | "BUY" | "SELL">(null);
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const exitOnly = useStore((s) => s.settings["mobile.exit_only"] ?? true) as boolean;
+  const entriesBlocked = isPhone && mode === "live" && exitOnly;
+
+  if (isPhone) {
+    const PHONE_RANGES = RANGES.filter((r) => ["1d", "5d", "1mo", "1y"].includes(r.key));
+    return (
+      <div className={`trade-phone ${landscape ? "trade-phone--land" : ""}`}>
+        <div className="panel chart-area trade-phone-chart">
+          <div className="quote-head quote-head--phone">
+            <input className="symbol-input" value={symInput}
+              onChange={(e) => setSymInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && commitSymbol()}
+              onBlur={commitSymbol}
+              enterKeyHint="go" autoCapitalize="characters" autoCorrect="off"
+              spellCheck={false} aria-label="Symbol" />
+            {quote && (
+              <>
+                <span className="last"><TickArrow symbol={symbol} /> {fmtMoney(quote.last)}</span>
+                <DeltaPill quote={quote} fallbackOpen={day.open} size="md" />
+              </>
+            )}
+            {quote && (
+              <div className="quote-head-sub">
+                <ExtendedHoursChip quote={quote} fallbackOpen={day.open} />
+                <span className="ba">bid {fmtMoney(quote.bid)} · ask {fmtMoney(quote.ask)}</span>
+                {quote.halted && <span className="halted">HALTED</span>}
+                {quoteSource === "yahoo" && <span className="status-pill dim">indicative</span>}
+              </div>
+            )}
+          </div>
+          <div className="trade-phone-tools">
+            <div className="seg" role="group" aria-label="Range">
+              {PHONE_RANGES.map((r) => (
+                <button key={r.key} type="button" className={range === r.key ? "on" : ""} onClick={() => pickRange(r.key)}>{r.label}</button>
+              ))}
+            </div>
+            <span className="trade-phone-tf">{tf} bars</span>
+            <button type="button" className="ghost-btn trade-phone-more" onClick={() => setChartSettings(true)}
+              aria-label="Chart settings">⋯</button>
+          </div>
+          {armedPlan && (
+            <button className="trade-armed-chip" onClick={() => openArmedPlan(armedPlan.runId)}>
+              <span className="zap">⚡</span> ARMED
+              {armedPlan.grade ? <span className={`tq-grade g${armedPlan.grade}`}>{armedPlan.grade}</span> : null}
+              <span className="muted">{armedPlan.summary ?? armedPlan.status}</span>
+              <span className="go">open →</span>
+            </button>
+          )}
+          <StockChart symbol={symbol} tf={tf} range={range} chartType={chartType}
+            indicators={indicators.slice(0, 1)} showVolume={false}
+            view={view} session={chSession} armed={armedPlan} avgCost={position} phone />
+        </div>
+        <Blotter />
+        <div className="trade-phone-bar">
+          {position && <span className="trade-phone-pos">{position.qty > 0 ? "long" : "short"} {Math.abs(position.qty)} @ {fmtMoney(position.price)}</span>}
+          <button type="button" className="submit-btn buy" disabled={entriesBlocked && !(position && position.qty < 0)}
+            onClick={() => setTicket("BUY")}>
+            BUY
+          </button>
+          <button type="button" className="submit-btn sell" onClick={() => setTicket("SELL")}>SELL</button>
+        </div>
+        {entriesBlocked && (
+          <div className="trade-phone-note">Phone is exit-only for LIVE — buys to open are blocked (Settings → Mobile).</div>
+        )}
+        {chartSettings && (
+          <ChartSettingsSheet onClose={() => setChartSettings(false)}
+            chartType={chartType} setChartType={setChartType} tf={tf} setTf={setTf} rangeDef={rangeDef} tfs={TFS}
+            indicators={indicators} toggleIndicator={toggleIndicator} indicatorDefs={INDICATORS}
+            view={view} setView={setView} session={chSession} setSession={setChSession} hasArmed={!!armedPlan} />
+        )}
+        {ticket && (
+          <OrderTicket symbol={symbol} asSheet initialSide={ticket} onClose={() => setTicket(null)} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className={`trade-grid ${ticketCollapsed ? "trade-grid--tc" : ""}`}>

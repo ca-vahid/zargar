@@ -9,16 +9,27 @@ import type { Portfolio } from "../types";
 import { AccountSelect, type AccountOption } from "./AccountSelect";
 import { ConfirmOrderDialog } from "./ConfirmOrderDialog";
 import { IconChevron } from "./icons";
+import { Sheet } from "./Sheet";
+import { useViewport } from "../lib/viewport";
 
 export function OrderTicket({
   symbol,
   collapsed = false,
   onToggleCollapse,
+  asSheet = false,
+  initialSide = "BUY",
+  onClose,
 }: {
   symbol: string;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
+  /** phone: render as a full-screen sheet with the submit button in the footer */
+  asSheet?: boolean;
+  initialSide?: "BUY" | "SELL";
+  onClose?: () => void;
 }) {
+  const { isPhone } = useViewport();
+  const exitOnly = useStore((s) => s.settings["mobile.exit_only"] ?? true) as boolean;
   const quote = useQuote(symbol);
   const allPortfolios = useStore((s) => s.portfolios);
   const portfolios = useMemo(
@@ -29,7 +40,7 @@ export function OrderTicket({
   const brokerages = useStore((s) => s.brokerages);
   const toast = useStore((s) => s.toast);
 
-  const [side, setSide] = useState<"BUY" | "SELL">("BUY");
+  const [side, setSide] = useState<"BUY" | "SELL">(initialSide);
   const [qty, setQty] = useState<string>(String(defaultQty));
   const [orderType, setOrderType] = useState("MKT");
   const [limitPrice, setLimitPrice] = useState("");
@@ -226,6 +237,40 @@ export function OrderTicket({
     }
   };
 
+  const entriesBlocked = isPhone && mode === "live" && exitOnly && portfolio?.kind === "live";
+  const stepQty = (d: number) => setQty((q) => String(Math.max(1, (parseInt(q || "0", 10) || 0) + d)));
+
+  const submitButton = (
+    <button className={`submit-btn ${side.toLowerCase()}`}
+      disabled={busy || !quote || !pid || readOnlyVenue || (entriesBlocked && side === "BUY")}
+      onClick={submit}>
+      {dryRun ? "VALIDATE " : ""}{side} {qty || "?"} {symbol}
+    </button>
+  );
+
+  if (asSheet) {
+    return (
+      <Sheet title={`${side === "BUY" ? "Buy" : "Sell"} ${symbol}`} onClose={onClose ?? (() => undefined)} full
+        className="ticket-sheet"
+        footer={
+          <>
+            {readOnlyVenue && (
+              <div className="metric-sub">
+                {provider?.disabled ? "this brokerage connection is disconnected — re-authorize it first"
+                  : "read-only connection — upgrade it to trade access to submit orders"}
+              </div>
+            )}
+            {entriesBlocked && side === "BUY" && (
+              <div className="metric-sub">Phone is exit-only for LIVE accounts — opening positions needs the desktop, or turn it off in Settings → Mobile.</div>
+            )}
+            {submitButton}
+          </>
+        }>
+        {ticketBody({ phone: true })}
+      </Sheet>
+    );
+  }
+
   if (collapsed) {
     return (
       <div className="panel ticket-area ticket-rail">
@@ -252,6 +297,44 @@ export function OrderTicket({
         )}
       </div>
       <div className="panel-body">
+        {ticketBody({ phone: false })}
+        {submitButton}
+        {readOnlyVenue && (
+          <div className="metric-sub" style={{ marginTop: 6 }}>
+            {provider?.disabled
+              ? "this brokerage connection is disconnected — re-authorize it first"
+              : "read-only connection — upgrade it to trade access to submit orders"}
+          </div>
+        )}
+
+        {riskFails.length > 0 && (
+          <div style={{ marginTop: 10 }}>
+            {riskFails.map((c) => (
+              <div key={c.name} className="check-item fail" style={{ marginBottom: 4 }}>
+                {c.detail || c.name}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {confirming && portfolio && (
+        <ConfirmOrderDialog
+          intent={confirming}
+          portfolio={portfolio}
+          account={account}
+          provider={provider}
+          estCost={estCost}
+          onSubmitted={(order) => { setConfirming(null); handleResult(order); }}
+          onCancel={() => setConfirming(null)}
+        />
+      )}
+    </div>
+  );
+
+  function ticketBody({ phone }: { phone: boolean }) {
+    return (
+      <>
         <div className="side-toggle">
           <button className={`buy ${side === "BUY" ? "active" : ""}`} onClick={() => setSide("BUY")}>
             BUY
@@ -264,7 +347,15 @@ export function OrderTicket({
         <div className="row2">
           <label className="field">
             <span>Quantity</span>
-            <input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} />
+            {phone ? (
+              <div className="qty-stepper">
+                <button type="button" onClick={() => stepQty(-1)} aria-label="Less">−</button>
+                <input type="number" inputMode="numeric" min="1" value={qty} onChange={(e) => setQty(e.target.value)} />
+                <button type="button" onClick={() => stepQty(1)} aria-label="More">+</button>
+              </div>
+            ) : (
+              <input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} />
+            )}
           </label>
           <label className="field">
             <span>Type</span>
@@ -338,11 +429,22 @@ export function OrderTicket({
           </div>
         )}
 
-        <label className="switch" style={{ marginBottom: 8 }}>
-          <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-          <span className="track" />
-          <span>Dry run (validate only, never route)</span>
-        </label>
+        {phone ? (
+          <div className="field">
+            <span>Send as</span>
+            <div className="seg cs-seg" role="group" aria-label="Validate or place">
+              <button type="button" className={!dryRun ? "on" : ""} onClick={() => setDryRun(false)}>Place order</button>
+              <button type="button" className={dryRun ? "on" : ""} onClick={() => setDryRun(true)}>Validate only</button>
+            </div>
+            {dryRun && <div className="metric-sub">Runs every risk check and the broker pre-flight, routes nothing.</div>}
+          </div>
+        ) : (
+          <label className="switch" style={{ marginBottom: 8 }}>
+            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+            <span className="track" />
+            <span>Dry run (validate only, never route)</span>
+          </label>
+        )}
 
         <div className="fees-block">
           <div className="fee-row">
@@ -381,7 +483,7 @@ export function OrderTicket({
           )}
           {account && !dryRun && (
             <div className="fee-row">
-              <button className="link-btn" onClick={checkImpact} disabled={impactBusy}
+              <button className={phone ? "ghost-btn" : "link-btn"} onClick={checkImpact} disabled={impactBusy}
                 title="Asks the broker (via SnapTrade) for the exact commission and FX fees — read-only, nothing is reserved">
                 {impactBusy ? "checking with broker…" : "verify exact fees with broker"}
               </button>
@@ -413,21 +515,7 @@ export function OrderTicket({
           )}
           {!quote && <div className="metric-sub">waiting for quote…</div>}
         </div>
-
-        <button className={`submit-btn ${side.toLowerCase()}`}
-          disabled={busy || !quote || !pid || readOnlyVenue}
-          onClick={submit}>
-          {dryRun ? "VALIDATE " : ""}{side} {qty || "?"} {symbol}
-        </button>
-        {readOnlyVenue && (
-          <div className="metric-sub" style={{ marginTop: 6 }}>
-            {provider?.disabled
-              ? "this brokerage connection is disconnected — re-authorize it first"
-              : "read-only connection — upgrade it to trade access to submit orders"}
-          </div>
-        )}
-
-        {riskFails.length > 0 && (
+        {phone && riskFails.length > 0 && (
           <div style={{ marginTop: 10 }}>
             {riskFails.map((c) => (
               <div key={c.name} className="check-item fail" style={{ marginBottom: 4 }}>
@@ -436,19 +524,18 @@ export function OrderTicket({
             ))}
           </div>
         )}
-      </div>
-
-      {confirming && portfolio && (
-        <ConfirmOrderDialog
-          intent={confirming}
-          portfolio={portfolio}
-          account={account}
-          provider={provider}
-          estCost={estCost}
-          onSubmitted={(order) => { setConfirming(null); handleResult(order); }}
-          onCancel={() => setConfirming(null)}
-        />
-      )}
-    </div>
-  );
+        {phone && confirming && portfolio && (
+          <ConfirmOrderDialog
+            intent={confirming}
+            portfolio={portfolio}
+            account={account}
+            provider={provider}
+            estCost={estCost}
+            onSubmitted={(order) => { setConfirming(null); handleResult(order); onClose?.(); }}
+            onCancel={() => setConfirming(null)}
+          />
+        )}
+      </>
+    );
+  }
 }
