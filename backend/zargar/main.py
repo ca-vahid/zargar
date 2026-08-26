@@ -24,6 +24,12 @@ def main() -> None:
         format="%(asctime)s %(levelname)-7s %(name)s %(message)s",
         handlers=[logging.StreamHandler(), file_handler],
     )
+    # Exposed to a network (phones via LAN/Tailscale) the token is the only gate —
+    # never start reachable-and-open. Loopback (Tailscale Serve proxies to it) is fine.
+    if config.host not in ("127.0.0.1", "localhost", "::1") and not config.auth_token:
+        raise SystemExit(
+            f"refusing to bind {config.host}:{config.port} without ZARGAR_AUTH_TOKEN — "
+            "set one in backend/.env (see docs/MOBILE-ACCESS.md)")
     app = create_app(config)
     uvicorn.run(app, host=config.host, port=config.port, log_level="info")
 

@@ -49,9 +49,14 @@ export function NowView() {
   const [openRun, setOpenRun] = useState<string | null>(null);
   const [stopAll, setStopAll] = useState<null | "stop" | "flatten">(null);
   const [sellNow, setSellNow] = useState<{ runId: string; symbol: string } | null>(null);
+  const [showAllStopped, setShowAllStopped] = useState(false);
   const toast = useStore((s) => s.toast);
   const armedRef = useStore((s) => s.techniqueArmed);
   const halt = useStore((s) => s.halt);
+  const focusId = useStore((s) => s.armedFocusRunId);
+  const clearFocus = useStore((s) => s.clearArmedFocus);
+  const alerts = useStore((s) => s.alerts);
+  useEffect(() => { if (focusId) { setOpenRun(focusId); clearFocus(); } }, [focusId, clearFocus]);
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(async () => {
@@ -123,6 +128,21 @@ export function NowView() {
           </div>
         </div>
       ))}
+
+      {/* recent alerts (persist beyond the 6s toast) */}
+      {alerts.length > 0 && (
+        <div className="now-card now-timeline">
+          <div className="now-h" style={{ margin: "4px 6px 2px" }}>Alerts</div>
+          {alerts.slice(0, 5).map((a, i) => (
+            <button type="button" key={i} className={`now-tl ${a.level === "critical" ? "neg" : "warn"}`}
+              onClick={() => a.runId && setOpenRun(a.runId)}>
+              <span className="now-tl-t">{hhmm(a.ts)}</span>
+              <span className="now-tl-ic" aria-hidden="true">⚠</span>
+              <span className="now-tl-txt" style={{ gridColumn: "3 / -1", whiteSpace: "normal" }}>{a.text}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* in trade */}
       {sum.inTrade.length > 0 && <div className="now-h">In trade</div>}
@@ -198,14 +218,20 @@ export function NowView() {
       })}
 
       {/* stopped today */}
-      {sum.stoppedToday.length > 0 && <div className="now-h">Stopped today</div>}
-      {sum.stoppedToday.map((s) => (
+      {sum.stoppedToday.length > 0 && <div className="now-h">Stopped today · {sum.stoppedToday.length}</div>}
+      {(showAllStopped ? sum.stoppedToday : sum.stoppedToday.slice(0, 5)).map((s) => (
         <div key={`st-${s.runId}`} className="now-row now-row--stopped">
           <span className="now-row-sym">{s.symbol}</span>
           <span className="now-row-mid"><span className="now-row-txt">{s.reason}</span></span>
           {s.realizedPnl != null && <span className={`now-row-mode ${pnlCls(s.realizedPnl)}`}>{s.realizedPnl > 0 ? "+" : ""}{fmt(s.realizedPnl)}</span>}
         </div>
       ))}
+
+      {sum.stoppedToday.length > 5 && !showAllStopped && (
+        <button type="button" className="now-btn wide" onClick={() => setShowAllStopped(true)}>
+          show all {sum.stoppedToday.length} stopped plans
+        </button>
+      )}
 
       {/* today P&L */}
       <div className="now-card now-pnl">

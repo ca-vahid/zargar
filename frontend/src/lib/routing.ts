@@ -26,6 +26,8 @@ export interface RouteState {
   page: Page;
   techniqueTab?: TqTab;
   runId?: string | null;
+  /** armed page: /armed/<runId> opens that plan (phone sheet / desktop selection) */
+  armedRunId?: string | null;
   threadId?: string | null;
   /** options page: /options/SPY, /options/SPY/2026-08-28, /options/c/<OCC> */
   optionsUnderlying?: string;
@@ -51,6 +53,7 @@ export function parseLocation(pathname = window.location.pathname): RouteState {
     }
     return { page };
   }
+  if (page === "armed") return parts[1] ? { page, armedRunId: parts[1] } : { page };
   if (page !== "technique") return { page };
 
   const second = parts[1];
@@ -70,6 +73,7 @@ export function buildPath(s: RouteState): string {
     }
     return "/options";
   }
+  if (s.page === "armed") return s.armedRunId ? `/armed/${s.armedRunId}` : "/armed";
   if (s.page !== "technique") return `/${s.page}`;
   if (s.techniqueTab === "analyse" && s.runId) return `/technique/run/${s.runId}`;
   if (s.techniqueTab === "chat") return s.threadId ? `/technique/chat/${s.threadId}` : "/technique/chat";

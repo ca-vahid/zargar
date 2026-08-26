@@ -57,6 +57,7 @@ class Engine:
         self.telegram = None
         self._tasks: list[asyncio.Task] = []
         self._history_seeded: set[str] = set()  # symbols whose day bars were loaded
+        self.push = None            # PushService (web push to phones) — attached in start()
         self._bar_persister: BarPersister | None = None
         self._drift_warned: set[tuple[str, str]] = set()  # (pid, ET date) warned once/day
         self.options = None  # OptionsService (chain data, contract quotes, venue capability)
@@ -106,6 +107,10 @@ class Engine:
                 self._snaptrade_client, self.sf, self.journal, self.settings,
                 self.snaptrade_sync.account_for, symbol_ids=symbol_ids)
             await self.journal.append(ev.BROKER_CONNECTED, {"broker": "snaptrade"})
+
+        from .push import PushService
+        self.push = PushService(self)
+        await self.push.start()
 
         if self.feed is None:
             use_yahoo = self.config.quote_source == "yahoo" or (
@@ -192,6 +197,8 @@ class Engine:
         log.info("engine started (feed=%s)", type(self.feed).__name__)
 
     async def stop(self) -> None:
+        if self.push is not None:
+            await self.push.stop()
         self.started = False
         if self.proposals is not None:
             await self.proposals.stop()

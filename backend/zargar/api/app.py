@@ -205,6 +205,38 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         await eng.ensure_symbol(body.symbol)
         return {"ok": True, "symbol": body.symbol.upper()}
 
+    # --- web push (phones) ----------------------------------------------------
+    class PushSub(BaseModel):
+        endpoint: str
+        keys: dict = {}
+        label: str = ""
+
+    @app.get("/api/push/vapid", dependencies=[auth])
+    async def push_vapid():
+        svc = eng.push
+        if svc is None or not svc.available:
+            return {"available": False, "publicKey": None, "subscriptions": 0}
+        return {"available": True, "publicKey": svc.public_key(), "subscriptions": len(svc.subscriptions())}
+
+    @app.post("/api/push/subscribe", dependencies=[auth])
+    async def push_subscribe(body: PushSub):
+        if eng.push is None or not eng.push.available:
+            raise HTTPException(status_code=503, detail="web push unavailable (pywebpush not installed)")
+        n = await eng.push.subscribe({"endpoint": body.endpoint, "keys": body.keys}, body.label)
+        return {"ok": True, "subscriptions": n}
+
+    @app.delete("/api/push/subscribe", dependencies=[auth])
+    async def push_unsubscribe(endpoint: str):
+        if eng.push is None:
+            return {"ok": True, "subscriptions": 0}
+        return {"ok": True, "subscriptions": await eng.push.unsubscribe(endpoint)}
+
+    @app.post("/api/push/test", dependencies=[auth])
+    async def push_test():
+        if eng.push is None:
+            return {"sent": 0}
+        return {"sent": await eng.push.send("Zargar", "push notifications are working", url="/armed", tag="test")}
+
     @app.get("/api/symbols/search", dependencies=[auth])
     async def symbols_search(q: str = Query(min_length=1, max_length=64)):
         try:

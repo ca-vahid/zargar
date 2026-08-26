@@ -1,6 +1,7 @@
-import { memo, useEffect, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { fmtMoney } from "../lib/format";
 import { useQuote } from "../store";
+import { useViewport } from "../lib/viewport";
 import type { OptionCell, OptionChain as OptionChainData, OptionChainRow } from "../types";
 
 /** Strike ladder: calls | strike | puts, centred on the money. Clicking a
@@ -32,12 +33,40 @@ export function OptionChain({
     if (scrolledFor.current === key) return;
     scrolledFor.current = key;
     // scroll the ladder's own container (never the page) so the money sits mid-view
-    const row = atmRef.current;
+    const row = atmRef.current as HTMLElement | null;
     const box = row?.closest(".opt-ladder-scroll") as HTMLElement | null;
     if (row && box) box.scrollTop = Math.max(0, row.offsetTop - box.clientHeight / 2);
   }, [chain.underlying, chain.expiry, atmStrike]);
 
+  const { isPhone } = useViewport();
+  const [side, setSide] = useState<"call" | "put">("call");
+  const [col, setCol] = useState<"delta" | "iv">("delta");
   if (!chain.rows.length) return <div className="empty">no contracts for this expiry</div>;
+
+  if (isPhone) {
+    // one side at a time, three columns, strike pinned — 14 sub-40px targets per
+    // row on a 15-column ladder is how you load the wrong contract into a ticket
+    return (
+      <div className="opt-phone">
+        <div className="opt-phone-bar">
+          <div className="seg cs-seg" role="group" aria-label="Side">
+            <button type="button" className={side === "call" ? "on" : ""} onClick={() => setSide("call")}>Calls</button>
+            <button type="button" className={side === "put" ? "on" : ""} onClick={() => setSide("put")}>Puts</button>
+          </div>
+          <div className="seg" role="group" aria-label="Column">
+            <button type="button" className={col === "delta" ? "on" : ""} onClick={() => setCol("delta")}>Δ</button>
+            <button type="button" className={col === "iv" ? "on" : ""} onClick={() => setCol("iv")}>IV</button>
+          </div>
+        </div>
+        <div className="opt-phone-head"><span>Strike</span><span>Bid / Ask</span><span>{col === "delta" ? "Δ" : "IV"}</span><span>OI</span></div>
+        {chain.rows.map((row) => (
+          <PhoneRow key={row.strike} row={row} side={side} col={col} spot={chain.spot ?? 0}
+            atm={row.strike === atmStrike} selected={selected} onSelect={onSelect}
+            rowRef={row.strike === atmStrike ? (atmRef as any) : undefined} />
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="opt-ladder-wrap">
@@ -127,6 +156,33 @@ function Half({ cell, side, itm, selected, onSelect, order }: {
     </>
   );
 }
+
+const PhoneRow = memo(function PhoneRow({ row, side, col, spot, atm, selected, onSelect, rowRef }: {
+  row: OptionChainRow; side: "call" | "put"; col: "delta" | "iv"; spot: number; atm: boolean;
+  selected: string | null; onSelect: (s: string) => void; rowRef?: React.Ref<HTMLButtonElement>;
+}) {
+  const cell = side === "call" ? row.call : row.put;
+  const live = useQuote(cell?.symbol ?? "");
+  const itm = spot > 0 && (side === "call" ? row.strike < spot : row.strike > spot);
+  if (!cell) {
+    return <div className={`opt-phone-row none ${atm ? "atm" : ""}`}><span className="opt-phone-strike">{fmtStrike(row.strike)}</span><span>—</span><span>—</span><span>—</span></div>;
+  }
+  const bid = live && live.bid > 0 ? live.bid : cell.bid;
+  const ask = live && live.ask > 0 ? live.ask : cell.ask;
+  const isSel = selected === cell.symbol;
+  return (
+    <button type="button" ref={rowRef as any}
+      className={`opt-phone-row ${itm ? "itm" : "otm"} ${atm ? "atm" : ""} ${isSel ? "sel" : ""} side-${side}`}
+      onClick={() => onSelect(cell.symbol)}>
+      <span className="opt-phone-strike">{fmtStrike(row.strike)}{itm && <small>ITM</small>}</span>
+      <span className="opt-phone-ba">{fmtMoney(bid)} / {fmtMoney(ask)}</span>
+      <span className="opt-phone-col">{col === "delta"
+        ? (cell.delta != null ? cell.delta.toFixed(2) : "—")
+        : (cell.iv != null ? `${(cell.iv * 100).toFixed(0)}%` : "—")}</span>
+      <span className="opt-phone-oi">{fmtInt(cell.openInterest)}</span>
+    </button>
+  );
+});
 
 function fmtInt(v: number): string {
   return v >= 10_000 ? `${(v / 1000).toFixed(1)}k` : String(v);

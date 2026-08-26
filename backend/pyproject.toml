@@ -11,6 +11,7 @@ dependencies = [
     "pydantic>=2.8",
     "pydantic-settings>=2.4",
     "httpx>=0.27",
+    "pywebpush>=2.0",
     "anthropic>=0.40",
     "python-dateutil>=2.9",
     "tzdata; platform_system == 'Windows'",

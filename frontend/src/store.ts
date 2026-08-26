@@ -75,6 +75,7 @@ interface AppState {
   optionsPrefill: OptionsPrefill | null; // one-shot ticket prefill (close from blotter, technique pick)
   events: JournalEvent[];
   toasts: { id: number; kind: "info" | "error" | "success"; text: string }[];
+  alerts: { ts: number; level: string; text: string; runId?: string | null }[]; // persisted plan alerts (Now screen)
   // --- technique / chat ---
   techniqueRuns: TechniqueRun[];            // most recent first
   techniqueSetups: TechniqueSetup[];
@@ -135,7 +136,7 @@ interface AppState {
   setChatActive: (id: string | null) => void;
   openTechniqueChat: (threadId: string) => void;
   seedChatLive: (threadId: string, live: { passes?: any[]; grounding?: any; facts?: any }) => void;
-  applyRoute: (r: { page: Page; techniqueTab?: string; runId?: string | null; threadId?: string | null;
+  applyRoute: (r: { page: Page; techniqueTab?: string; runId?: string | null; threadId?: string | null; armedRunId?: string | null;
     optionsUnderlying?: string; optionsExpiry?: string | null; optionsContract?: string | null }) => void;
 }
 
@@ -171,6 +172,7 @@ export const useStore = create<AppState>((set, get) => ({
   optionsPrefill: null,
   events: [],
   toasts: [],
+  alerts: [],
   techniqueRuns: [],
   techniqueSetups: [],
   techniqueTab: "validation",
@@ -330,6 +332,7 @@ export const useStore = create<AppState>((set, get) => ({
   applyRoute: (r) =>
     set((st) => ({
       page: r.page,
+      armedFocusRunId: r.armedRunId ?? st.armedFocusRunId,
       techniqueTab: (r.techniqueTab as any) ?? st.techniqueTab,
       techniqueFocusRunId: r.runId ?? (r.page === "technique" ? null : st.techniqueFocusRunId),
       chatActiveThreadId: r.threadId ?? st.chatActiveThreadId,
@@ -415,6 +418,7 @@ export const useStore = create<AppState>((set, get) => ({
       else if (msg.event === "entry_rejected" || msg.event === "entry_error" || msg.event === "exit_failed") get().toast("error", `${ap.symbol}: ${msg.event.replace(/_/g, " ")} — see Armed tab`);
     } else if (msg.kind === "alert") {
       get().toast(msg.level === "warning" ? "info" : "error", `\u26a0 ${msg.text}`);
+      set((st) => ({ alerts: [{ ts: Date.now(), level: String(msg.level ?? "critical"), text: String(msg.text ?? ""), runId: msg.runId ?? null }, ...st.alerts].slice(0, 50) }));
     } else if (msg.kind === "disarmed") {
       set((st) => ({ techniqueArmed: st.techniqueArmed.filter((a) => a.runId !== msg.runId) }));
     } else if (msg.kind === "sweep" || msg.kind === "sweep_progress") {
