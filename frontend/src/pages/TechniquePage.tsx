@@ -957,9 +957,12 @@ export function TechniquePage() {
     const times = runs.filter((r) => have.has(r.id) && r.createdAt)
       .map((r) => new Date(r.createdAt!).getTime());
     if (!times.length) return;
+    // only runs created AFTER this batch began belong to it — a previous batch that
+    // died to a restart minutes earlier is not "late-arriving" (88 -> 176, 2026-08-26)
+    const lo = Math.min(...times) - 60_000;
     const hi = Math.max(...times);
-    const extra = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt
-      && Math.abs(new Date(r.createdAt!).getTime() - hi) < 10 * 60_000).map((r) => r.id);
+    const extra = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt && r.status !== "failed"
+      && new Date(r.createdAt!).getTime() >= lo && new Date(r.createdAt!).getTime() - hi < 10 * 60_000).map((r) => r.id);
     // late-arriving batch members are adopted on every poll: de-duplicate, or the queue shows the same run many times
     if (extra.length) setScan((s) => (s ? { ...s, ids: Array.from(new Set([...s.ids, ...extra])), done: false } : s));
     // eslint-disable-next-line react-hooks/exhaustive-deps

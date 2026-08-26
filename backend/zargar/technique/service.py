@@ -1665,8 +1665,12 @@ class TechniqueService:
         return d
 
     async def promote(self, sweep_id: str, symbol: str, session_day: str, *, with_vision: bool = False,
-                      wait: bool = True) -> dict:
-        """Turn one sweep row into a full, reviewable plan run (same as-of)."""
+                      wait: bool = True, force: bool = False) -> dict:
+        """Turn one sweep row into a full, reviewable plan run (same as-of).
+
+        With `with_vision`, a FINISHED analyst read for the same symbol and plan
+        close is reused instead of paid for again (unless `force`): a second
+        "Check & arm" after a restart re-reads only what is still missing."""
         async with self.engine.sf() as session:
             row = (await session.execute(select(TechniqueWalkforward).where(
                 TechniqueWalkforward.sweep_id == sweep_id, TechniqueWalkforward.symbol == symbol.upper(),
@@ -1676,6 +1680,22 @@ class TechniqueService:
             raise KeyError("sweep row not found")
         _, close_ms = session_bounds(session_day)
         params = sw.params or {}
+        if with_vision and not force:
+            async with self.engine.sf() as session:
+                prior = (await session.execute(
+                    select(TechniqueRun).where(TechniqueRun.symbol == symbol.upper(), TechniqueRun.as_of == close_ms + 1,
+                                               TechniqueRun.status == "done", TechniqueRun.mode == "plan")
+                    .order_by(TechniqueRun.created_at.desc()).limit(6))).scalars().all()
+            for pr in prior:
+                if (pr.result or {}).get("passes"):
+                    async with self.engine.sf() as session:
+                        r2 = await session.get(TechniqueWalkforward, row.id)
+                        if r2 is not None:
+                            r2.promoted_run_id = pr.id
+                            await session.commit()
+                    d = run_dict(pr)
+                    d["reused"] = True
+                    return d
         rd = await self.analyze(symbol, as_of_ms=close_ms + 1, primary_tf=params.get("triggerTf"),
                                 trigger="promote", plan=True, with_vision=with_vision, wait=wait)
         async with self.engine.sf() as session:

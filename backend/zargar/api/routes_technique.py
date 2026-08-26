@@ -152,11 +152,12 @@ def build_technique_routes(app, eng, auth, config) -> None:
         session: str
         withVision: bool = False
         wait: bool = True           # False: return the (running) run at once — the UI batches LLM reads
+        force: bool = False         # re-read even when a finished analyst read exists for this symbol/session
 
     @app.post("/api/technique/walkforward/{sweep_id}/promote", dependencies=[auth])
     async def technique_promote(sweep_id: str, body: PromoteBody):
         try:
-            return await _svc(eng).promote(sweep_id, body.symbol, body.session, with_vision=body.withVision,
+            return await _svc(eng).promote(sweep_id, body.symbol, body.session, with_vision=body.withVision, force=body.force,
                                            wait=body.wait)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
