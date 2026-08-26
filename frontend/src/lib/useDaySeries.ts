@@ -1,6 +1,7 @@
 import { useEffect, useReducer } from "react";
 import { api } from "./api";
 import { onBar } from "./ws";
+import { viewportNow } from "./viewport";
 
 export interface DayData {
   closes: number[]; // today's regular-session 1m closes, 09:30 ET -> now
@@ -59,7 +60,10 @@ export function useDaySeries(symbol: string): DayData {
       entry = { data: { closes: [], open: null }, fetched: false, listeners: new Set() };
       cache.set(symbol, entry);
       const dayStart = etDayStartMs();
-      api.get<{ bars: number[][] }>(`/api/chart/${symbol}?tf=1m&limit=600`)
+      const phone = viewportNow().isPhone;
+      api.get<{ bars: number[][] }>(phone
+        ? `/api/chart/${symbol}?tf=5m&limit=120`   // data diet: an 84px sparkline needs ~80 points
+        : `/api/chart/${symbol}?tf=1m&limit=600`)
         .then((d) => {
           const bars = (d.bars ?? []).filter((b) => inRegularSession(b[0], dayStart));
           entry!.data = {

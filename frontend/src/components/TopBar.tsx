@@ -5,6 +5,9 @@ import { netWorthByCurrency, useStore } from "../store";
 import { ConfirmDialog, PromptDialog } from "./Modal";
 import { SymbolSearch, type SymbolHit } from "./SymbolSearch";
 import { workspaceOf } from "../lib/workspace";
+import { useViewport } from "../lib/viewport";
+import { Sheet } from "./Sheet";
+import { IconSearch } from "./icons";
 
 const MODES = [
   { value: "practice", label: "Practice" },
@@ -31,6 +34,8 @@ export function TopBar() {
   const [confirmLive, setConfirmLive] = useState(false);
   const [promptHalt, setPromptHalt] = useState(false);
   const [confirmResume, setConfirmResume] = useState(false);
+  const { isPhone } = useViewport();
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // real money is the headline; practice is its own clearly-labeled chip
   const realTotals = useMemo(
@@ -119,6 +124,97 @@ export function TopBar() {
     }
   };
 
+  const dialogs = (
+    <>
+      {confirmLive && (
+        <ConfirmDialog
+          title="Switch to LIVE mode?"
+          danger
+          confirmLabel="Go live"
+          body={
+            <p style={{ margin: 0 }}>
+              Real orders will route to your brokerage accounts (SnapTrade / IBKR).
+              Every order still passes the risk gate, and real-money submits ask
+              for confirmation.
+            </p>
+          }
+          onConfirm={() => { setConfirmLive(false); void applyMode("live"); }}
+          onCancel={() => setConfirmLive(false)}
+        />
+      )}
+      {confirmResume && (
+        <ConfirmDialog
+          title="Release the kill switch?"
+          confirmLabel="Resume trading"
+          body={
+            <div>
+              <p style={{ marginTop: 0 }}>
+                Halted because: <b>{halt.reason || "manual halt"}</b>
+              </p>
+              <p style={{ marginBottom: 0 }}>
+                Resuming lets orders route again (per the trading mode and risk
+                gate). If this was an auto-halt, make sure you understand what
+                tripped it first.
+              </p>
+            </div>
+          }
+          onConfirm={() => void doResume()}
+          onCancel={() => setConfirmResume(false)}
+        />
+      )}
+      {promptHalt && (
+        <PromptDialog
+          title="Engage kill switch"
+          label="Halt reason"
+          defaultValue="manual halt"
+          submitLabel="HALT"
+          onSubmit={(v) => void doHalt(v)}
+          onCancel={() => setPromptHalt(false)}
+        />
+      )}
+    </>
+  );
+
+  if (isPhone) {
+    // phone: brand · workspace · attention · HALT · search — HALT can never be pushed off-screen
+    return (
+      <header className="topbar topbar--phone">
+        <div className="brand">
+          <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
+          Zargar
+        </div>
+        <button type="button" className={`topbar-phone-ws ${mode === "live" ? "live" : ""}`}
+          aria-label={`Workspace: ${mode === "live" ? "LIVE — real accounts" : "Practice — simulator"}`}
+          onClick={() => setPage("settings")}>
+          <span className="mode-dot" />{mode === "live" ? "LIVE" : "PRACTICE"}
+        </button>
+        <div className="spacer" />
+        {attention.length > 0 && (
+          <button type="button" className="topbar-attn" onClick={() => setPage("armed")}
+            aria-label={`${attention.length} armed plans need attention`}>
+            ⚠ {attention.length}
+          </button>
+        )}
+        <button type="button" className="icon-btn topbar-search-btn" aria-label="Search stocks"
+          onClick={() => setSearchOpen(true)}>
+          <IconSearch size={20} />
+        </button>
+        <button className={`halt-btn ${halt.engaged ? "halted" : ""}`} onClick={toggleHalt}
+          aria-label={halt.engaged ? "Resume trading" : "Halt trading"}>
+          {halt.engaged ? "RESUME" : "HALT"}
+        </button>
+        {searchOpen && (
+          <Sheet title="Search stocks" onClose={() => setSearchOpen(false)} full>
+            <SymbolSearch compact autoFocus placeholder="Ticker or company name"
+              onPick={(h) => { setSearchOpen(false); lookupPick(h); }}
+              onAdd={(h) => { setSearchOpen(false); void lookupAdd(h); }} />
+          </Sheet>
+        )}
+        {dialogs}
+      </header>
+    );
+  }
+
   return (
     <header className="topbar">
       <div className="brand">
@@ -197,53 +293,7 @@ export function TopBar() {
         aria-label={halt.engaged ? "Resume trading" : "Halt trading"}>
         {halt.engaged ? "RESUME" : "HALT"}
       </button>
-
-      {confirmLive && (
-        <ConfirmDialog
-          title="Switch to LIVE mode?"
-          danger
-          confirmLabel="Go live"
-          body={
-            <p style={{ margin: 0 }}>
-              Real orders will route to your brokerage accounts (SnapTrade / IBKR).
-              Every order still passes the risk gate, and real-money submits ask
-              for confirmation.
-            </p>
-          }
-          onConfirm={() => { setConfirmLive(false); void applyMode("live"); }}
-          onCancel={() => setConfirmLive(false)}
-        />
-      )}
-      {confirmResume && (
-        <ConfirmDialog
-          title="Release the kill switch?"
-          confirmLabel="Resume trading"
-          body={
-            <div>
-              <p style={{ marginTop: 0 }}>
-                Halted because: <b>{halt.reason || "manual halt"}</b>
-              </p>
-              <p style={{ marginBottom: 0 }}>
-                Resuming lets orders route again (per the trading mode and risk
-                gate). If this was an auto-halt, make sure you understand what
-                tripped it first.
-              </p>
-            </div>
-          }
-          onConfirm={() => void doResume()}
-          onCancel={() => setConfirmResume(false)}
-        />
-      )}
-      {promptHalt && (
-        <PromptDialog
-          title="Engage kill switch"
-          label="Halt reason"
-          defaultValue="manual halt"
-          submitLabel="HALT"
-          onSubmit={(v) => void doHalt(v)}
-          onCancel={() => setPromptHalt(false)}
-        />
-      )}
+      {dialogs}
     </header>
   );
 }

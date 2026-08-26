@@ -6,6 +6,7 @@ import { fmtCcy, fmtDateTime, fmtMoney, fmtPct, fmtQty, fmtSigned } from "../lib
 import { baseChartOptions, seriesPalette } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { groupPositions, useQuote, useStore } from "../store";
+import { useViewport } from "../lib/viewport";
 import type { BrokeragePosition, BrokerageProvider, Portfolio } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
@@ -100,6 +101,27 @@ const LiveBrokerageRow = memo(function LiveBrokerageRow({
   );
 });
 
+const BrokeragePosCard = memo(function BrokeragePosCard({ pos, accountCurrency }: { pos: BrokeragePosition; accountCurrency: string }) {
+  const quote = useQuote(pos.symbol);
+  const openTrade = useStore((s) => s.openTrade);
+  const live = quote?.last && quote.last > 0 ? quote.last : pos.price ?? 0;
+  const ccy = pos.currency ?? accountCurrency;
+  const pnlPct = pos.avgCost > 0 ? (live / pos.avgCost - 1) * 100 : null;
+  return (
+    <button type="button" className="bl-card" onClick={() => openTrade(pos.symbol)}>
+      <span className="bl-card-l">
+        <span className="bl-card-sym">{pos.symbol}</span>
+        <span className="bl-card-sub">{fmtQty(pos.qty)} @ {fmtMoney(pos.avgCost)}</span>
+      </span>
+      <span className="bl-card-r">
+        <span className="bl-card-val"><LivePrice symbol={pos.symbol} fallback={live || undefined} /></span>
+        {pnlPct !== null && <ValuePill value={pnlPct} text={fmtPct(pnlPct)} />}
+        <span className="bl-card-sub">{live ? fmtCcy(pos.qty * live, ccy) : "—"}</span>
+      </span>
+    </button>
+  );
+});
+
 function BrokerageSection({
   provider,
   onRefresh,
@@ -111,6 +133,7 @@ function BrokerageSection({
   refreshing: boolean;
   lastSyncAt: string | null;
 }) {
+  const { isPhone } = useViewport();
   const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
   const total = providerTotal(provider.accounts, usdCad);
   const warnPill = provider.disabled
@@ -133,7 +156,7 @@ function BrokerageSection({
       <div className="panel-body">
         {provider.accounts.map((a) => (
           <div key={a.id} className="mb">
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
+            <div className="acct-head" style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
               <strong>{a.name}</strong>
               {a.number && <span className="metric-sub">#{a.number}</span>}
               <span className="ccy-chip">{a.currency}</span>
@@ -152,8 +175,17 @@ function BrokerageSection({
                 )}
               </span>
             </div>
+            {a.mismatch && (
+              <div className="metric-sub mismatch-note">
+                Δ {a.mismatch.pct > 0 ? "+" : ""}{a.mismatch.pct}%: our live-priced {fmtCcy(a.mismatch.computedEquity, a.currency)} vs the broker's overnight {fmtCcy(a.mismatch.brokerTotal, a.currency)} — small drift is price/FX vintage; large drift means something is missing (Journal → Broker).
+              </div>
+            )}
             {a.positions.length === 0 ? (
               <div className="metric-sub">no positions</div>
+            ) : isPhone ? (
+              <div className="bl-cards" style={{ padding: 0 }}>
+                {a.positions.map((pos) => <BrokeragePosCard key={pos.symbol} pos={pos} accountCurrency={a.currency} />)}
+              </div>
             ) : (
               <div className="scroll-x">
                 <table className="tbl">
@@ -190,6 +222,9 @@ export function PortfoliosPage() {
   const theme = useStore((s) => s.settings["ui.theme"]);
   const chartRef = useRef<HTMLDivElement>(null);
   const chartInstance = useRef<Highcharts.Chart | null>(null);
+  const { isPhone } = useViewport();
+  const phoneRef = useRef(isPhone);
+  phoneRef.current = isPhone;
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
   const [refreshing, setRefreshing] = useState(false);
 
@@ -255,9 +290,9 @@ export function PortfoliosPage() {
     chartInstance.current?.destroy();
     chartInstance.current = Highcharts.stockChart(chartRef.current, {
       ...baseChartOptions(),
-      chart: { ...baseChartOptions().chart, height: 320 },
+      chart: { ...baseChartOptions().chart, height: phoneRef.current ? 220 : 320 },
       navigator: { enabled: false },
-      legend: { ...baseChartOptions().legend, enabled: true },
+      legend: { ...baseChartOptions().legend, enabled: !phoneRef.current },
       tooltip: { ...baseChartOptions().tooltip, valueDecimals: 2 },
       series: curves.data
         // live mode: practice series don't even enter the chart or legend

@@ -209,3 +209,41 @@ async def test_naked_short_option_blocked():
     verdict = await make_gate(settings=settings, quotes=quotes).evaluate(
         intent(symbol="OPT1", sec_type="OPT", side="SELL", qty=1, limit_price=2.0), P)
     assert not check(verdict, "no_naked_short_option").passed
+
+
+# ---------------------------------------------------------------- phone safety
+
+class LiveP:
+    kind = "live"
+
+
+async def test_phone_cannot_open_real_position_by_default():
+    quotes = FakeQuotes()
+    quotes.set("AAPL", 100.0)
+    verdict = await make_gate(quotes=quotes).evaluate(intent(client="phone"), LiveP)
+    assert not verdict.passed
+    assert not check(verdict, "phone_entry_blocked").passed
+    # the same order from a desktop passes
+    assert (await make_gate(quotes=quotes).evaluate(intent(client="desktop"), LiveP)).passed
+
+
+async def test_phone_may_reduce_and_may_trade_practice():
+    quotes = FakeQuotes()
+    quotes.set("AAPL", 100.0)
+    pos = FakePositions()
+    pos.qty["AAPL"] = 5
+    # selling part of a real position from a phone reduces risk -> allowed
+    verdict = await make_gate(quotes=quotes, positions=pos).evaluate(
+        intent(client="phone", side="SELL", qty=2), LiveP)
+    assert check(verdict, "phone_entry_blocked").passed
+    # opening on the simulator from a phone is fine
+    assert check(await make_gate(quotes=quotes).evaluate(intent(client="phone"), P),
+                 "phone_entry_blocked").passed
+
+
+async def test_phone_entries_allowed_when_setting_off():
+    quotes = FakeQuotes()
+    quotes.set("AAPL", 100.0)
+    gate = make_gate(settings=FakeSettings(**{"mobile.exit_only": False}), quotes=quotes)
+    verdict = await gate.evaluate(intent(client="phone"), LiveP)
+    assert verdict.passed, verdict.failures

@@ -63,10 +63,12 @@ interface Props {
   armed?: ArmedPlan | null;
   /** your position: average-cost line with live P&L context */
   avgCost?: { price: number; qty: number } | null;
+  /** phone: no navigator, pinch-zoom + pan, touch-following tooltip, bigger labels */
+  phone?: boolean;
 }
 
 export function StockChart({ symbol, tf, range, chartType, indicators, showVolume,
-                             view = "candles", session = "eth", armed = null, avgCost = null }: Props) {
+                             view = "candles", session = "eth", armed = null, avgCost = null , phone = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
@@ -230,9 +232,10 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
         chart: {
           backgroundColor: surface,
           animation: false,
-          spacing: [8, 8, 4, 8],
+          spacing: phone ? [6, 4, 2, 4] : [8, 8, 4, 8],
           style: { fontFamily: "inherit" },
-        },
+          ...(phone ? { zooming: { type: "x", pinchType: "x" }, panning: { enabled: true, type: "x" } } : {}),
+        } as any,
         // market time, not wall-clock time: the whole method (sessions, windows,
         // fills) speaks ET, and the armed chart already does
         time: { timezone: "America/New_York" },
@@ -246,7 +249,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
                 states: { select: { fill: rgbaVar("--accent", 0.15), style: { color: accent } } } } } as any
           : { enabled: false },
         navigator: {
-          enabled: true, height: 28,
+          enabled: !phone, height: 28,
           outlineColor: grid, maskFill: rgbaVar("--text-3", 0.12),
           series: { color: series1, lineWidth: 1 },
           xAxis: { labels: { style: { color: text3 } } },
@@ -262,9 +265,10 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
         tooltip: {
           backgroundColor: cssVar("--surface-2"),
           borderColor: cssVar("--border"),
-          style: { color: text2, fontSize: "12px" },
+          style: { color: text2, fontSize: phone ? "13px" : "12px" },
           split: false,
           shared: true,
+          ...(phone ? { followTouchMove: true, outside: false } : {}),
         },
         legend: { enabled: false },
         plotOptions: {
@@ -333,8 +337,8 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
       chartRef.current?.destroy();
       chartRef.current = null;
     };
-  }, [symbol, tf, range, chartType, indicators.join(","), showVolume, theme,
+  }, [symbol, tf, range, chartType, indicators.join(","), showVolume, theme, phone,
       view, session, armed?.runId, (armed?.triggers ?? []).length, avgCost?.price, avgCost?.qty]);
 
-  return <div ref={containerRef} style={{ flex: 1, minHeight: 320 }} />;
+  return <div ref={containerRef} style={{ flex: 1, minHeight: phone ? 300 : 320 }} className={phone ? "stock-chart--phone" : undefined} />;
 }

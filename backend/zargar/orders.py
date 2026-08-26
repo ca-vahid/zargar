@@ -52,6 +52,8 @@ class OrderIntent(BaseModel):
     signal_id: str | None = None
     proposal_id: str | None = None
     dry_run: bool = False
+    client: str = "desktop"     # phone | tablet | desktop — set by the API from X-Zargar-Client;
+    #                             phones are exit-only on real accounts (mobile.exit_only)
     reduce_only: bool = False   # an exit that only reduces exposure — RiskGate runs the
     #                             reduced (safety-only) check list so a stop/flatten is never
     #                             blocked by an entry cap, the rate/duplicate window, or the

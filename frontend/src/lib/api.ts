@@ -1,4 +1,5 @@
 import type { OrderIntentBody } from "../store";
+import { clientKind } from "./viewport";
 
 let authToken = localStorage.getItem("zargar_token") || "";
 
@@ -13,6 +14,7 @@ export function getAuthToken() {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
+  headers["X-Zargar-Client"] = clientKind(); // phone => exit-only safety policy server-side
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
   const resp = await fetch(path, {
     method,
@@ -97,7 +99,8 @@ export const api = {
     request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward", body),
   techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean; wait?: boolean }) =>
     request<import("../types").TechniqueRun>("POST", `/api/technique/walkforward/${id}/promote`, body),
-  techniqueArmed: () => request<import("../types").ArmedPlan[]>("GET", "/api/technique/armed"),
+  techniqueArmed: (slim = false) => request<import("../types").ArmedPlan[]>("GET", `/api/technique/armed${slim ? "?slim=1" : ""}`),
+  techniqueArmedSummary: () => request<import("../types").ArmedSummary>("GET", "/api/technique/armed/summary"),
   techniqueArmedDetail: (runId: string) => request<import("../types").ArmedPlan>("GET", `/api/technique/armed/${runId}`),
   techniqueArmedAudit: (runId: string) => request<any[]>("GET", `/api/technique/armed/${runId}/audit`),
   techniqueArmedHistory: () => request<any[]>("GET", "/api/technique/armed/history"),

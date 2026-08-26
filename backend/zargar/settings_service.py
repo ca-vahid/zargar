@@ -45,6 +45,8 @@ DEFAULTS: dict[str, Any] = {
     "risk.duplicate_window_seconds": 10,
     "risk.require_market_hours": False,     # enforce RTH for live orders
     "risk.halt_allows_exits": True,         # kill switch stops new entries but still lets you CLOSE a position
+    # --- phone safety ---------------------------------------------------------
+    "mobile.exit_only": True,               # a phone may HALT / flatten / exit / approve, but not OPEN a real-account position
     # --- signals / automation ------------------------------------------------
     "signals.default_ttl_minutes": 30,
     "signals.default_sizing_pct": 5.0,      # % of equity per proposal

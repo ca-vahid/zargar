@@ -16,11 +16,13 @@ import { TechniquePage } from "./pages/TechniquePage";
 import { OptionsPage } from "./pages/OptionsPage";
 import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
+import { clientKind, useViewport } from "./lib/viewport";
+import { TabBar } from "./components/TabBar";
 
 export default function App() {
   // armed fleet powers the sidebar badge and the dashboard widget on every page
   useEffect(() => {
-    api.techniqueArmed().then((a) => useStore.getState().setTechniqueArmed(a)).catch(() => undefined);
+    api.techniqueArmed(clientKind() === "phone").then((a) => useStore.getState().setTechniqueArmed(a)).catch(() => undefined);
   }, []);
   const page = useStore((s) => s.page);
   const techniqueTab = useStore((s) => s.techniqueTab);
@@ -61,9 +63,15 @@ export default function App() {
     document.documentElement.style.setProperty("--accent", accent);
   }, [theme, accent, density, mode]);
 
-  const [sideCollapsed, setSideCollapsed] = useState(() => localStorage.getItem("zargar_side_collapsed") === "1");
+  const { isPhone, isTablet } = useViewport();
+  const [sideCollapsed, setSideCollapsed] = useState(() => {
+    const stored = localStorage.getItem("zargar_side_collapsed");
+    if (stored !== null) return stored === "1";
+    return window.matchMedia("(max-width: 1023px)").matches; // tablets start on the icon rail
+  });
+  void isTablet;
   return (
-    <div className="app">
+    <div className={`app ${isPhone ? "app--phone" : ""}`}>
       <Splash />
       <TopBar />
       <div className="banners">
@@ -90,7 +98,9 @@ export default function App() {
         ))}
       </div>
       <div className={`main ${sideCollapsed ? "side-collapsed" : ""}`}>
-        <Sidebar collapsed={sideCollapsed} onToggleCollapse={() => { const next = !sideCollapsed; localStorage.setItem("zargar_side_collapsed", next ? "1" : "0"); setSideCollapsed(next); }} />
+        {!isPhone && (
+          <Sidebar collapsed={sideCollapsed} onToggleCollapse={() => { const next = !sideCollapsed; localStorage.setItem("zargar_side_collapsed", next ? "1" : "0"); setSideCollapsed(next); }} />
+        )}
         <div className="content">
           {page === "dashboard" && <DashboardPage />}
           {page === "trade" && <TradePage />}
@@ -105,6 +115,7 @@ export default function App() {
         </div>
       </div>
       <Toasts />
+      {isPhone && <TabBar />}
     </div>
   );
 }

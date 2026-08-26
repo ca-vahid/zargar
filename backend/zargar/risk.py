@@ -156,6 +156,21 @@ class RiskGate:
             new_notional = abs(new_qty) * ref_price * mult
             reduces = new_notional < old_notional
 
+        # 4a. phone safety: a phone session may only reduce risk on real accounts.
+        # `client` is stamped server-side from the X-Zargar-Client header; sim
+        # portfolios are unaffected so practice trading from a phone still works.
+        client = getattr(intent, "client", "desktop")
+        if client == "phone" and bool(s.get("mobile.exit_only", True)):
+            kind = getattr(portfolio, "kind", None)
+            if kind is None and isinstance(portfolio, dict):
+                kind = portfolio.get("kind")
+            real = kind in ("live", "paper")
+            opens_risk = not reduces
+            checks.append(RiskCheck(
+                "phone_entry_blocked", not (real and opens_risk),
+                "phones are exit-only on real accounts — turn off Settings → Mobile → "
+                "exit-only to open positions from a phone" if (real and opens_risk) else ""))
+
         # 4. shorting ------------------------------------------------------------
         allow_short = bool(s.get("risk.allow_short", False))
         goes_short = new_qty < -1e-9

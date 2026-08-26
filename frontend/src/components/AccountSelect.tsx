@@ -6,6 +6,8 @@ import type { BrokerageAccount, BrokerageProvider, Portfolio } from "../types";
 import { BrokerIcon } from "./BrokerIcon";
 import { useWorkspace, workspaceOf } from "../lib/workspace";
 import { IconChevron } from "./icons";
+import { Sheet } from "./Sheet";
+import { useViewport } from "../lib/viewport";
 
 export interface AccountOption {
   portfolio: Portfolio;
@@ -58,6 +60,7 @@ export function AccountSelect({
 }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { isPhone } = useViewport();
   const ws = useWorkspace();
   const scoped = useMemo(() => options.filter((o) => workspaceOf(o.portfolio.kind) === ws), [options, ws]);
   const isPending = (o: AccountOption) => !o.account && o.portfolio.venue === "ibkr"
@@ -96,6 +99,29 @@ export function AccountSelect({
   }), [scoped]);
 
   if (!selected) return null;
+  const list = (
+    <>
+      {groups.real.length > 0 && <div className="acct-group">Live accounts</div>}
+      {groups.real.map((o) => (
+        <button type="button" key={o.portfolio.id} role="option" disabled={isPending(o)}
+          aria-selected={o.portfolio.id === value}
+          title={isPending(o) ? "IBKR (incl. its paper account) joins the Live workspace when the gateway connects" : undefined}
+          className={`acct-opt ${o.portfolio.id === value ? "active" : ""} ${isPending(o) ? "disabled" : ""}`}
+          onClick={() => { if (!isPending(o)) { onChange(o.portfolio.id); setOpen(false); } }}>
+          <OptionRow opt={o} />
+        </button>
+      ))}
+      {groups.practice.length > 0 && <div className="acct-group">Practice</div>}
+      {groups.practice.map((o) => (
+        <button type="button" key={o.portfolio.id} role="option"
+          aria-selected={o.portfolio.id === value}
+          className={`acct-opt ${o.portfolio.id === value ? "active" : ""}`}
+          onClick={() => { onChange(o.portfolio.id); setOpen(false); }}>
+          <OptionRow opt={o} />
+        </button>
+      ))}
+    </>
+  );
   return (
     <div className="acct-select" ref={rootRef}>
       <button type="button" className="acct-btn" onClick={() => setOpen((v) => !v)}
@@ -104,28 +130,13 @@ export function AccountSelect({
         <IconChevron size={11}
           style={{ transform: open ? "rotate(-90deg)" : "rotate(90deg)", flexShrink: 0 }} />
       </button>
-      {open && (
-        <div className="acct-pop" role="listbox" aria-label="Account">
-          {groups.real.length > 0 && <div className="acct-group">Live accounts</div>}
-          {groups.real.map((o) => (
-            <button type="button" key={o.portfolio.id} role="option" disabled={isPending(o)}
-              aria-selected={o.portfolio.id === value}
-              title={isPending(o) ? "IBKR (incl. its paper account) joins the Live workspace when the gateway connects" : undefined}
-              className={`acct-opt ${o.portfolio.id === value ? "active" : ""} ${isPending(o) ? "disabled" : ""}`}
-              onClick={() => { if (!isPending(o)) { onChange(o.portfolio.id); setOpen(false); } }}>
-              <OptionRow opt={o} />
-            </button>
-          ))}
-          {groups.practice.length > 0 && <div className="acct-group">Practice</div>}
-          {groups.practice.map((o) => (
-            <button type="button" key={o.portfolio.id} role="option"
-              aria-selected={o.portfolio.id === value}
-              className={`acct-opt ${o.portfolio.id === value ? "active" : ""}`}
-              onClick={() => { onChange(o.portfolio.id); setOpen(false); }}>
-              <OptionRow opt={o} />
-            </button>
-          ))}
-        </div>
+      {open && isPhone && (
+        <Sheet title="Account" onClose={() => setOpen(false)}>
+          <div className="acct-sheet-list" role="listbox" aria-label="Account">{list}</div>
+        </Sheet>
+      )}
+      {open && !isPhone && (
+        <div className="acct-pop" role="listbox" aria-label="Account">{list}</div>
       )}
     </div>
   );

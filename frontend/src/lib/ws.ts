@@ -1,9 +1,16 @@
 import { useStore } from "../store";
 import { getAuthToken } from "./api";
+import { clientKind, viewportNow } from "./viewport";
 
 let socket: WebSocket | null = null;
 let retryDelay = 1000;
 let barListeners: ((msg: { symbol: string; tf: string; bar: number[] }) => void)[] = [];
+// every symbol asked for since boot — re-sent on every (re)connect so a phone
+// coming back from a network switch never watches a frozen quote
+const watched = new Set<string>();
+let hiddenSince = 0;
+let hiddenTimer: ReturnType<typeof setTimeout> | null = null;
+let closedByVisibility = false;
 
 export function onBar(listener: (msg: { symbol: string; tf: string; bar: number[] }) => void) {
   barListeners.push(listener);
@@ -13,25 +20,56 @@ export function onBar(listener: (msg: { symbol: string; tf: string; bar: number[
 }
 
 export function watchSymbol(symbol: string) {
+  const sym = symbol.toUpperCase();
+  watched.add(sym);
   if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify({ t: "watch", symbol }));
+    socket.send(JSON.stringify({ t: "watch", symbol: sym }));
   }
+}
+
+// ---- quote conflation: phones coalesce frames to ≤ 4 Hz, desktop applies at once
+let pendingQuotes: Map<string, any> | null = null;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function queueQuotes(list: any[]) {
+  const interval = viewportNow().isPhone ? 250 : 0;
+  if (interval === 0) { useStore.getState().applyQuotes(list); return; }
+  if (!pendingQuotes) pendingQuotes = new Map();
+  for (const q of list) pendingQuotes.set(q.symbol, q);
+  if (flushTimer === null) {
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      const batch = pendingQuotes ? [...pendingQuotes.values()] : [];
+      pendingQuotes = null;
+      if (batch.length) useStore.getState().applyQuotes(batch);
+    }, interval);
+  }
+}
+
+function url(): string {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  const token = getAuthToken();
+  const params = new URLSearchParams();
+  if (token) params.set("token", token);
+  params.set("client", clientKind());
+  return `${proto}://${location.host}/ws?${params.toString()}`;
 }
 
 export function connectWS() {
   const store = useStore.getState();
-  const proto = location.protocol === "https:" ? "wss" : "ws";
-  const token = getAuthToken();
-  const url = `${proto}://${location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ""}`;
-  socket = new WebSocket(url);
+  socket = new WebSocket(url());
 
   socket.onopen = () => {
     retryDelay = 1000;
+    closedByVisibility = false;
     store.setConnected(true);
+    // resubscribe everything the UI is showing
+    for (const sym of watched) socket?.send(JSON.stringify({ t: "watch", symbol: sym }));
   };
 
   socket.onclose = () => {
     useStore.getState().setConnected(false);
+    if (closedByVisibility) return; // reconnect happens on visibilitychange
     setTimeout(connectWS, retryDelay);
     retryDelay = Math.min(retryDelay * 2, 15000);
   };
@@ -49,7 +87,7 @@ export function connectWS() {
         s.applySnapshot(data.d);
         break;
       case "quotes":
-        s.applyQuotes(data.d);
+        queueQuotes(data.d);
         break;
       case "order":
         s.applyOrder(data.d);
@@ -87,3 +125,32 @@ export function connectWS() {
     }
   };
 }
+
+// ---- battery: a hidden tab (screen lock, app switch) drops the socket after
+// 30s; coming back reconnects immediately and the snapshot re-syncs state
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      hiddenSince = Date.now();
+      if (hiddenTimer) clearTimeout(hiddenTimer);
+      hiddenTimer = setTimeout(() => {
+        hiddenTimer = null;
+        if (document.visibilityState === "hidden" && socket && socket.readyState === WebSocket.OPEN) {
+          closedByVisibility = true;
+          socket.close();
+        }
+      }, 30_000);
+    } else {
+      if (hiddenTimer) { clearTimeout(hiddenTimer); hiddenTimer = null; }
+      const dead = !socket || socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING;
+      if (closedByVisibility || dead) {
+        closedByVisibility = false;
+        retryDelay = 1000;
+        connectWS();
+      }
+      hiddenSince = 0;
+    }
+  });
+}
+
+export function hiddenForMs(): number { return hiddenSince ? Date.now() - hiddenSince : 0; }

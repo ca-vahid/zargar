@@ -408,6 +408,30 @@ export interface ArmedPlan {
   trades: ArmedTrade[]; openPositions: number; realizedPnl: number; fired: any[]; events: { ts: number; event: string; text: string; [k: string]: any }[];
   summary: string;
 }
+/** GET /api/technique/armed/summary — the phone's "Now" payload. */
+export interface ArmedSummaryBase {
+  runId: string; symbol: string; status: string; grade?: string | null; mode: string; instrument: string;
+  workspace?: string | null; account?: string | null; stale: boolean; lastPrice: number | null;
+}
+export interface ArmedSummary {
+  asOf: number; window: string; windowOpenNow: boolean; haltEngaged: boolean; workspace: string;
+  counts: { armed: number; paused: number; inTrade: number; attention: number; watching: number; stoppedToday?: number };
+  attention: (ArmedSummaryBase & { reasons: string[]; hasPosition: boolean })[];
+  inTrade: (ArmedSummaryBase & {
+    triggerId: string; kind: string; direction: string; remaining: number; filledQty: number; entry: number;
+    stop: number; nextTarget: number | null; targets: number[]; trimsDone: number; unrealizedPnl: number;
+    unrealizedR: number | null; firedTs: number | null; window: string | null; orderSymbol: string | null;
+    contract: { symbol?: string; strike?: number; expiry?: string; right?: string; bid?: number; ask?: number } | null;
+    tradeStatus: string; realizedPnl: number;
+  })[];
+  timeline: { ts: number; runId: string; symbol: string; kind: string; text: string; pnl?: number | null }[];
+  watching: (ArmedSummaryBase & {
+    triggers: number; nearest: { id: string; kind: string; entry: number; stop: number; distancePct: number | null };
+    window: string; windowOpenNow: boolean; summary: string;
+  })[];
+  stoppedToday: { runId: string; symbol: string; status?: string; mode?: string; reason: string; realizedPnl?: number | null; at: string | null }[];
+  pnl: { realized: number; unrealized: number; lossLimit: number; lossLimitUsedPct: number | null };
+}
 export interface TechniqueSetup {
   id: string; runId: string; symbol: string; setupType: string; direction: string; entry: number; stop: number;
   targets: TechniqueTarget[]; riskReward: number; confidence: number; valid: boolean; rules: string[];

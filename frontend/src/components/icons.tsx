@@ -121,3 +121,8 @@ export const IconOptions = make("IconOptions", <>
 export const IconChevron = make("IconChevron", <>
   <path d="m5.5 3 5 5-5 5" />
 </>);
+
+export const IconSearch = make("IconSearch", <>
+  <circle cx="7" cy="7" r="4.5" />
+  <path d="m10.5 10.5 3.5 3.5" />
+</>);

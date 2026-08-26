@@ -8,6 +8,8 @@ import type { Execution, Order, Position } from "../types";
 import { LivePrice, ValuePill } from "./quotekit";
 import { useWorkspace } from "../lib/workspace";
 import { AsyncSection, EmptyState, StatusPill } from "./ui";
+import { useViewport } from "../lib/viewport";
+import { ConfirmDialog } from "./Modal";
 
 type Tab = "positions" | "orders" | "history" | "fills";
 type Scope = "real" | "practice" | "all";
@@ -104,9 +106,74 @@ const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
   );
 });
 
+/** Phone: one card per position — symbol + value, qty@avg, live P&L pill. */
+const PositionCard = memo(function PositionCard({ p }: { p: Position }) {
+  const quote = useQuote(p.symbol);
+  const portfolios = useStore((s) => s.portfolios);
+  const openTrade = useStore((s) => s.openTrade);
+  const openOptions = useStore((s) => s.openOptions);
+  const last = quote?.last ?? p.last ?? p.avgCost;
+  const isOpt = p.secType === "OPT";
+  const occ = isOpt ? parseOcc(p.symbol) : null;
+  const mult = isOpt ? 100 : 1;
+  const unreal = (last - p.avgCost) * p.qty * mult;
+  const pct = p.avgCost > 0 ? ((last / p.avgCost - 1) * 100) * Math.sign(p.qty) : 0;
+  const open = () => occ
+    ? openOptions({ contract: occ.symbol, side: p.qty > 0 ? "SELL" : "BUY", qty: Math.abs(p.qty), portfolioId: p.portfolioId })
+    : openTrade(p.symbol, p.portfolioId);
+  return (
+    <button type="button" className="bl-card" onClick={open}>
+      <span className="bl-card-l">
+        <span className="bl-card-sym">{occ ? occ.display : p.symbol}
+          {occ && <span className={`opt-dte ${occ.dte < 0 ? "bad" : occ.dte <= 1 ? "warn" : ""}`}>{occ.dte < 0 ? "expired" : occ.dte === 0 ? "0DTE" : `${occ.dte}d`}</span>}
+        </span>
+        <span className="bl-card-sub">{fmtQty(p.qty)} @ {fmtMoney(p.avgCost)} · {portfolioName(portfolios, p.portfolioId)}</span>
+      </span>
+      <span className="bl-card-r">
+        <span className="bl-card-val"><LivePrice symbol={p.symbol} fallback={last} /></span>
+        <ValuePill value={unreal} text={`${fmtSigned(unreal)} (${fmtPct(pct)})`} />
+        <span className="bl-card-sub">{fmtCcy(p.qty * last * mult, p.currency ?? "USD")}</span>
+      </span>
+    </button>
+  );
+});
+
+function OrderCard({ o, cancellable }: { o: Order; cancellable: boolean }) {
+  const portfolios = useStore((s) => s.portfolios);
+  const toast = useStore((s) => s.toast);
+  const [confirm, setConfirm] = useState(false);
+  const occ = o.secType === "OPT" ? parseOcc(o.symbol) : null;
+  return (
+    <div className="bl-card bl-card--static">
+      <span className="bl-card-l">
+        <span className="bl-card-sym"><span className={o.side === "BUY" ? "pos" : "neg"}>{o.side}</span> {fmtQty(o.qty)} {occ ? occ.display : o.symbol}</span>
+        <span className="bl-card-sub">
+          {o.orderType} {o.limitPrice ? `@ ${fmtMoney(o.limitPrice)}` : o.stopPrice ? `stp ${fmtMoney(o.stopPrice)}` : "mkt"}
+          {o.avgFillPrice ? ` · filled ${fmtQty(o.filledQty)} @ ${fmtMoney(o.avgFillPrice)}` : ""} · {portfolioName(portfolios, o.portfolioId)}
+        </span>
+        <span className="bl-card-sub">{fmtDateTime(o.createdAt)}{o.source !== "manual" ? ` · ${o.source}` : ""}</span>
+        {o.rejectReason && <span className="bl-card-sub neg">{o.rejectReason}</span>}
+      </span>
+      <span className="bl-card-r">
+        <StatusPill status={o.status} />
+        {cancellable && (
+          <button type="button" className="danger-btn bl-cancel" onClick={() => setConfirm(true)}>Cancel</button>
+        )}
+      </span>
+      {confirm && (
+        <ConfirmDialog title={`Cancel ${o.side} ${fmtQty(o.qty)} ${occ ? occ.display : o.symbol}?`} danger confirmLabel="Cancel order"
+          body={<p style={{ margin: 0 }}>The working order is pulled from the broker. Any part already filled stays filled.</p>}
+          onConfirm={() => { setConfirm(false); api.cancelOrder(o.id).catch((e) => toast("error", e.message)); }}
+          onCancel={() => setConfirm(false)} />
+      )}
+    </div>
+  );
+}
+
 function PositionsTable({ scope }: { scope: Scope }) {
   const positionsMap = useStore((s) => s.positions);
   const inScope = useScopeFilter(scope);
+  const { isPhone } = useViewport();
   const positions = useMemo(
     () => Object.values(positionsMap)
       .filter((p) => Math.abs(p.qty) > 1e-9 && inScope(p.portfolioId)),
@@ -114,6 +181,13 @@ function PositionsTable({ scope }: { scope: Scope }) {
   if (!positions.length) {
     return <EmptyState title={scope === "all" ? "No positions yet" : `No ${scope} positions`}
       hint="Fill an order from the ticket and it appears here." />;
+  }
+  if (isPhone) {
+    return (
+      <div className="bl-cards">
+        {positions.map((p) => <PositionCard key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p} />)}
+      </div>
+    );
   }
   return (
     <table className="tbl">
@@ -174,10 +248,12 @@ const HEAD = (
 function OpenOrdersTable({ scope }: { scope: Scope }) {
   const openMap = useStore((s) => s.openOrders);
   const inScope = useScopeFilter(scope);
+  const { isPhone } = useViewport();
   const open = useMemo(
     () => Object.values(openMap).filter((o) => inScope(o.portfolioId)),
     [openMap, inScope]);
   if (!open.length) return <EmptyState title="No working orders" />;
+  if (isPhone) return <div className="bl-cards">{open.map((o) => <OrderCard key={o.id} o={o} cancellable />)}</div>;
   return (
     <table className="tbl">
       <thead>{HEAD}</thead>
@@ -197,11 +273,18 @@ function OrderHistoryTable({ scope }: { scope: Scope }) {
     for (const o of loaded.data ?? []) if (!out.some((r) => r.id === o.id)) out.push(o);
     return out.filter((o) => inScope(o.portfolioId)).slice(0, 100);
   }, [recent, loaded.data, inScope]);
+  const { isPhone } = useViewport();
   return (
     <AsyncSection state={loaded}
       isEmpty={() => merged.length === 0}
       empty={<EmptyState title="No orders yet" />}>
-      {() => (
+      {() => isPhone ? (
+        <div className="bl-cards">
+          {merged.slice(0, 40).map((o) => (
+            <OrderCard key={o.id} o={o} cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)} />
+          ))}
+        </div>
+      ) : (
         <table className="tbl">
           <thead>{HEAD}</thead>
           <tbody>
@@ -226,11 +309,24 @@ function FillsTable({ scope }: { scope: Scope }) {
     for (const e of loaded.data ?? []) if (!out.some((r) => r.id === e.id)) out.push(e);
     return out.filter((e) => inScope(e.portfolioId)).slice(0, 100);
   }, [live, loaded.data, inScope]);
+  const { isPhone } = useViewport();
   return (
     <AsyncSection state={loaded}
       isEmpty={() => merged.length === 0}
       empty={<EmptyState title="No fills yet" />}>
-      {() => (
+      {() => isPhone ? (
+        <div className="bl-cards">
+          {merged.slice(0, 40).map((e) => (
+            <div key={e.id} className="bl-card bl-card--static">
+              <span className="bl-card-l">
+                <span className="bl-card-sym"><span className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</span> {fmtQty(e.qty)} {parseOcc(e.symbol)?.display ?? e.symbol}</span>
+                <span className="bl-card-sub">@ {fmtMoney(e.price)} · fee {fmtMoney(e.commission)} · {portfolioName(portfolios, e.portfolioId)}</span>
+              </span>
+              <span className="bl-card-r"><span className="bl-card-sub">{fmtDateTime(e.ts)}</span></span>
+            </div>
+          ))}
+        </div>
+      ) : (
         <table className="tbl">
           <thead>
             <tr>

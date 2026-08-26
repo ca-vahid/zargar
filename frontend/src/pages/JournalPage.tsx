@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { fmtDateTime } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
+import { useViewport } from "../lib/viewport";
 import type { JournalEvent } from "../types";
 
 const GROUPS: Record<string, string[]> = {
@@ -58,6 +59,8 @@ export function JournalPage() {
     }
   }, [requestedGroup, clearJournalGroup]);
 
+  const { isPhone } = useViewport();
+  const [shown, setShown] = useState(50);
   const merged = useMemo(() => {
     const all = [...liveEvents];
     for (const e of loaded) if (!all.some((x) => x.id === e.id)) all.push(e);
@@ -83,7 +86,7 @@ export function JournalPage() {
               </button>
             ))}
           </div>
-          <input type="text" placeholder="filter…" value={typeFilter}
+          <input type="text" placeholder="filter…" value={typeFilter} className="journal-filter"
             onChange={(e) => setTypeFilter(e.target.value)}
             style={{ marginLeft: "auto", width: 180 }} />
         </div>
@@ -95,6 +98,31 @@ export function JournalPage() {
           ) : merged.length === 0 ? (
             <EmptyState title="No events yet"
               hint="Every decision the engine makes lands here." />
+          ) : isPhone ? (
+            <div className="jr-list">
+              {merged.slice(0, shown).map((e) => (
+                <div key={e.id} className="jr-row">
+                  <div className="jr-head">
+                    <span className={`status-pill ${
+                      e.type.includes("Failed") || e.type.includes("Rejected") || e.type.includes("Halt") ? "bad"
+                      : e.type.includes("Filled") || e.type.includes("Verified") || e.type.includes("Approved") ? "ok"
+                      : "dim"}`}>{e.type}</span>
+                    <span className="jr-time">{fmtDateTime(e.ts)}</span>
+                  </div>
+                  <div className="jr-detail">{summarize(e)}</div>
+                  {e.aggregateType && (
+                    <button className="link-btn jr-agg" onClick={() => setTypeFilter((e.aggregateId ?? "").slice(0, 8))}>
+                      <code className="mono">{e.aggregateType}:{(e.aggregateId ?? "").slice(0, 8)}</code>
+                    </button>
+                  )}
+                </div>
+              ))}
+              {merged.length > shown && (
+                <button type="button" className="ghost-btn jr-more" onClick={() => setShown((n) => n + 50)}>
+                  show more ({merged.length - shown} left)
+                </button>
+              )}
+            </div>
           ) : (
             <table className="tbl">
               <thead>
