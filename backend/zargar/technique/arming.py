@@ -697,7 +697,10 @@ class PlanArmer(SessionListener):
         now_ms = int(time.time() * 1000)
         if now_ms <= open_ms + 60_000 or ap.plan_for != session_date(now_ms):
             return todays
-        if todays and todays[0].ts <= open_ms + 60_000:
+        # "have the open" means the 09:30 bar itself is present — a buffer that
+        # starts with pre-market bars and jumps to 09:50 (the process ran in
+        # pre-market, rebooted, came back) does NOT have it
+        if any(open_ms <= b.ts <= open_ms + 60_000 for b in todays):
             return todays
         if isinstance(self.engine.feed, SimQuoteFeed):
             return todays
