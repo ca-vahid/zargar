@@ -197,6 +197,11 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
     preparing: "rendering charts", context: "pass 1/4 · context", pattern: "pass 2/4 · pattern",
     entry: "pass 3/4 · entry plan", critic: "pass 4/4 · critic",
   };
+  const stageLabel = (s?: string) => !s ? "" : STAGE[s] ?? (s.startsWith("entry_retry") ? "entry re-check" : s.replace(/_/g, " "));
+  const elapsedMin = (id: string) => {
+    const t = rows[id]?.createdAt;
+    return t ? Math.max(1, Math.round((now - new Date(t).getTime()) / 60000)) : null;
+  };
 
   const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id));
   const setups = armable ? ids.filter((id) => analystOk(full[id]))
@@ -250,7 +255,7 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
             {workingIds.map((id) => (
               <span key={id} className="tq-scan-chip working">
                 <Spinner /> <b>{rows[id]?.symbol ?? active[id]?.symbol ?? id.slice(0, 6)}</b>
-                <span className="muted">{STAGE[active[id]?.stage ?? ""] ?? active[id]?.stage ?? ""}</span>
+                <span className="muted">{stageLabel(active[id]?.stage)}{elapsedMin(id) ? ` · ${elapsedMin(id)}m` : ""}</span>
               </span>
             ))}
           </div>
