@@ -112,6 +112,7 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
   const doneOrder = useRef<string[]>([]);
 
   useEffect(() => {
+    finished.current = false;   // ids can GROW mid-scan (batch adoption below)
     let stop = false;
     const poll = async () => {
       if (finished.current) return;
@@ -920,6 +921,21 @@ export function TechniquePage() {
     setScan({ ids, done: batch.every((r) => r.status !== "running"), armable: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scan, runs.length]);
+  // A batch can still be GROWING (checks launched one by one, e.g. via the API):
+  // adopt newly appearing promote runs that cluster with the open panel, so the
+  // count is the whole batch — not just the runs that existed at page load.
+  useEffect(() => {
+    if (!scan?.armable || !runs.length) return;
+    const have = new Set(scan.ids);
+    const times = runs.filter((r) => have.has(r.id) && r.createdAt)
+      .map((r) => new Date(r.createdAt!).getTime());
+    if (!times.length) return;
+    const hi = Math.max(...times);
+    const extra = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt
+      && Math.abs(new Date(r.createdAt!).getTime() - hi) < 10 * 60_000).map((r) => r.id);
+    if (extra.length) setScan((s) => (s ? { ...s, ids: [...s.ids, ...extra], done: false } : s));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runs, scan?.ids.join(",")]);
   const scanSymbols = status?.scanSymbols ?? [];
   // tonight's sheet, if one exists for the upcoming session: scan can analyst-check its graded rows
   const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;
