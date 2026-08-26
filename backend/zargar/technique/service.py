@@ -1947,9 +1947,28 @@ class TechniqueService:
                                   prime_windows_only=prime_windows_only)
 
     # ------------------------------------------------------------ scans
+    async def fail_orphaned_sweeps(self) -> int:
+        """A sweep / sheet that was `running` when the process died can never
+        finish (its task died with the process): mark it so the UI stops showing
+        a frozen progress bar and the evening automation rebuilds the sheet."""
+        n = 0
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(TechniqueSweep).where(TechniqueSweep.status == "running"))).scalars().all()
+            for sw in rows:
+                sw.status = "failed"
+                sw.error = "interrupted by a restart — re-run it (a sheet rebuilds itself in the evening window)"
+                sw.finished_at = dt.datetime.now(dt.timezone.utc)
+                n += 1
+            if n:
+                await session.commit()
+        if n:
+            log.warning("marked %d orphaned running sweep(s) as interrupted", n)
+        return n
+
     def start(self) -> None:
         if self._scan_task is None:
             self._scan_task = asyncio.create_task(self._scan_loop(), name="technique-scan")
+        asyncio.create_task(self.fail_orphaned_sweeps(), name="technique-orphaned-sweeps")
         if self._outcome_task is None:
             self._outcome_task = asyncio.create_task(self._outcome_loop(), name="technique-outcome")
         if getattr(self, "_sheet_task", None) is None:

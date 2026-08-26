@@ -98,7 +98,7 @@ def build_technique_routes(app, eng, auth, config) -> None:
     @app.post("/api/technique/walkforward", dependencies=[auth])
     async def technique_sweep(body: SweepBody):
         svc = _svc(eng)
-        syms = body.symbols or list(eng.settings.get("technique.walkforward.symbols", []))
+        syms = body.symbols or await svc.universe()
         try:
             return await svc.start_sweep(syms, body.start, body.end, structure_tfs=body.structureTfs,
                                          trigger_tf=body.triggerTf, include_invalid=body.includeInvalid,
@@ -117,7 +117,7 @@ def build_technique_routes(app, eng, auth, config) -> None:
 
     @app.post("/api/technique/walkforward/next", dependencies=[auth])
     async def technique_plan_sheet(body: SheetBody):
-        syms = body.symbols or list(eng.settings.get("technique.walkforward.symbols", []))
+        syms = body.symbols or await _svc(eng).universe()
         try:
             return await _svc(eng).start_plan_sheet(syms, label=body.label, wait=body.wait)
         except ValueError as exc:
