@@ -74,6 +74,7 @@ function WatchlistPanel({ wl }: { wl: Watchlist }) {
         <span className="sub">{wl.symbols.length} symbol(s)</span>
         <button className={`icon-btn tq-head-right ${editing ? "active" : ""}`}
           title={editing ? "Done editing" : `Edit ${wl.name}`}
+          aria-label={editing ? "Done editing" : `Edit ${wl.name}`}
           aria-pressed={editing}
           onClick={() => setEditing((v) => !v)}>
           <IconEdit size={12} />
