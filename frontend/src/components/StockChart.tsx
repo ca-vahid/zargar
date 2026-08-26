@@ -124,7 +124,9 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
           spacing: [8, 8, 4, 8],
           style: { fontFamily: "inherit" },
         },
-        time: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        // market time, not wall-clock time: the whole method (sessions, windows,
+        // fills) speaks ET, and the armed chart already does
+        time: { timezone: "America/New_York" },
         credits: { enabled: false },
         rangeSelector: { enabled: false },
         navigator: {

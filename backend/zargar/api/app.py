@@ -156,8 +156,12 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
                     rng: str | None = Query(default=None, alias="range")):
         symbol = symbol.upper()
         await eng.ensure_symbol(symbol)
-        # explicit range -> real exchange history from Yahoo (when it is the feed)
-        if rng and isinstance(eng.feed, YahooQuoteFeed):
+        # explicit range -> real exchange history from Yahoo. The Hybrid feed
+        # delegates fetch_bars to its Yahoo half; before it was included here,
+        # 1d/5d charts silently fell back to the in-memory quote-built store
+        # (restart seams, seed fragments and bad-print wicks included).
+        from ..brokers.alpaca import HybridQuoteFeed as _Hybrid
+        if rng and isinstance(eng.feed, (YahooQuoteFeed, _Hybrid)):
             if rng not in RANGE_TFS or tf not in RANGE_TFS[rng]:
                 raise HTTPException(
                     status_code=400, detail=f"unsupported range/timeframe: {rng}/{tf}")

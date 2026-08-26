@@ -41,6 +41,10 @@ def _expect_traffic() -> bool:
     return now.weekday() < 5 and 4 * 60 <= now.hour * 60 + now.minute < 20 * 60
 
 WS_URL = "wss://stream.data.alpaca.markets/v2/{feed}"
+# SIP trade conditions that do not update the consolidated last price
+# (T/U extended-hours prints stay eligible so pre/post keeps a live tape)
+_NO_LAST_CONDS = frozenset(
+    ["B", "C", "G", "H", "I", "M", "N", "P", "Q", "R", "W", "Z", "4", "7", "9"])
 # Emit at most one Quote per symbol per this window — the SIP quote stream can
 # tick hundreds of times a second on liquid names; the app conflates at ~10Hz
 # for the UI anyway and the engine reads the book, not every message.
@@ -183,7 +187,13 @@ class AlpacaQuoteFeed(QuoteFeed):
         elif t == "t" and s:
             st = self._st(s)
             px = float(m.get("p") or 0)
-            if px > 0:
+            # Prints that are NOT eligible to update the last price (odd lots,
+            # out-of-sequence, prior-reference, average-price, derivatively
+            # priced, official open/close...) still count volume but must not
+            # touch last/high/low — one such print painted a PM 1m bar with a
+            # low 5 points under the tape (2026-08-26 09:55, low 190.045).
+            conds = set(m.get("c") or [])
+            if px > 0 and not (conds & _NO_LAST_CONDS):
                 st["last"] = px
                 st["day_high"] = max(st["day_high"], px)
                 st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)
