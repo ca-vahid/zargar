@@ -143,7 +143,9 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
           try { map[id] = await api.techniqueRun(id); } catch { notFound.push(id); }
         }
         if (stop) return;
-        setRows(map);
+        // MERGE, never replace: a run outside this poll's window must not vanish and
+        // flip the panel between "checking" and "finished" every few seconds
+        setRows((prev) => ({ ...prev, ...map }));
         if (notFound.length) setMissing((m) => { const n = { ...m }; for (const id of notFound) n[id] = (n[id] ?? 0) + 1; return n; });
         for (const id of ids) {
           const r = map[id];
@@ -193,7 +195,9 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   // ---- live progress: done / working (real semaphore slots) / queued ------
   const doneIds = doneOrder.current.filter((id) => rows[id]);
   const failedIds = doneIds.filter((id) => rows[id]?.status === "failed");
-  const allDone = finished.current || (ids.length > 0 && ids.every((id) => rows[id] && rows[id].status !== "running"));
+  const allDoneNow = ids.length > 0 && ids.every((id) => rows[id] && rows[id].status !== "running");
+  if (allDoneNow) finished.current = true;          // sticky: a finished batch never flips back to "checking"
+  const allDone = finished.current || allDoneNow;
   const workingIds = ids.filter((id) => active[id] && (!rows[id] || rows[id].status === "running"));
   const queuedIds = ids.filter((id) => !active[id] && rows[id]?.status === "running");
   const loadingIds = ids.filter((id) => !rows[id]);
