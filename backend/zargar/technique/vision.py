@@ -130,14 +130,31 @@ class VisionPipeline:
             ev["pass"] = name
             await self._emit(ev)
 
-        msg = await stream_message(
-            self.client, self.cfg, on_event=fwd,
-            system=_system_blocks(), messages=messages, output_format=output_format,
-        )
-        parsed = None
-        po = getattr(msg, "parsed_output", None)
-        if po is not None:
-            parsed = po.model_dump() if hasattr(po, "model_dump") else po
+        async def attempt(cfg):
+            m = await stream_message(
+                self.client, cfg, on_event=fwd,
+                system=_system_blocks(), messages=messages, output_format=output_format,
+            )
+            p = None
+            po = getattr(m, "parsed_output", None)
+            if po is not None:
+                p = po.model_dump() if hasattr(po, "model_dump") else po
+            return m, p
+
+        try:
+            msg, parsed = await attempt(self.cfg)
+        except Exception as exc:
+            # A long-winded reply can hit max_tokens mid-JSON — the structured
+            # output then fails validation ("Invalid JSON: EOF..."). One retry
+            # with double the output budget instead of killing the whole run.
+            if "Invalid JSON" not in str(exc) and "validation error" not in str(exc):
+                raise
+            await self.note("loop", "retry_truncated",
+                            f"{name} reply was cut off mid-JSON (output cap) — retrying once "
+                            f"with a larger output budget")
+            import dataclasses as _dc
+            msg, parsed = await attempt(_dc.replace(
+                self.cfg, max_tokens=min(32000, self.cfg.max_tokens * 2)))
         u = msg.usage
         usage = {"input": u.input_tokens, "output": u.output_tokens,
                  "cacheRead": getattr(u, "cache_read_input_tokens", 0) or 0,

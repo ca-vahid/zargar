@@ -63,6 +63,7 @@ from .provenance import sweep_version, technique_source_version
 from .render import render_chart
 from .review import diff_runs, review_dict, validate_review
 from .rulebook import (
+    ET,
     PRIME_WINDOWS,
     RULES,
     WINDOW_RULE,
@@ -201,6 +202,12 @@ class TechniqueService:
             "scanEnabled": bool(self.engine.settings.get("technique.scan.enabled", False)),
             "scanSymbols": list(self.engine.settings.get("technique.scan.symbols", [])),
             "running": [rid for rid, t in self._running.items() if not t.done()],
+            # tasks actually holding a semaphore slot right now (the rest of
+            # `running` are queued) — lets the scan panel show real progress
+            "activeRuns": {rid: {"symbol": lv.get("symbol"),
+                                 "stage": (lv["passes"][-1]["name"] if lv.get("passes") else "preparing")}
+                           for rid, lv in self._live.items()
+                           if rid in self._running and not self._running[rid].done()},
             "outcomeEnabled": bool(self.engine.settings.get("technique.outcome.enabled", True)),
             "outcomeHorizonBars": int(self.engine.settings.get("technique.outcome.horizon_bars", 60)),
             "sessionWindow": session_window(int(time.time() * 1000)),
@@ -447,7 +454,8 @@ class TechniqueService:
         chat = self.chat
         t0 = time.time()
 
-        live = self._live.setdefault(run_id, {"passes": [], "grounding": None, "facts": None})
+        live = self._live.setdefault(run_id, {"passes": [], "grounding": None, "facts": None,
+                                              "symbol": symbol})
 
         async def on_event(e: dict) -> None:
             t_ = e.get("type")
@@ -834,7 +842,8 @@ class TechniqueService:
                 rd = run_dict(r)
             else:
                 rd = {"id": run_id, "status": "failed", "error": error}
-        await self.engine.journal.append(ev.TECHNIQUE_RUN_FAILED, {"runId": run_id, "error": error},
+        await self.engine.journal.append(ev.TECHNIQUE_RUN_FAILED,
+                                         {"runId": run_id, "symbol": rd.get("symbol"), "error": error},
                                          aggregate_type="technique_run", aggregate_id=run_id)
         if self.chat:
             await self.chat.append_message(thread_id, "assistant",

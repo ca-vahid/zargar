@@ -67,8 +67,12 @@ def ground_analysis(analysis: TechniqueAnalysis, facts: dict,
     def check(name: str, ok: bool, detail: str = "") -> None:
         checks.append({"name": name, "passed": bool(ok), "detail": detail})
 
-    # 1. rule ids exist
-    bad_rules = [r for r in analysis.rules_fired if r not in RULES]
+    # 1. rule ids exist — a family id like "T3.1" or "T4.4" is legitimate when
+    # the rulebook has lettered children (T3.1a..f); only truly unknown ids fail
+    def known(r: str) -> bool:
+        return r in RULES or any(len(k) == len(r) + 1 and k.startswith(r) and k[-1].isalpha()
+                                 for k in RULES)
+    bad_rules = [r for r in analysis.rules_fired if not known(r)]
     check("rule_ids_valid", not bad_rules, f"unknown: {bad_rules}" if bad_rules else "")
     if bad_rules:
         corrections.append(f"Unknown rule ids {bad_rules}; use only ids from the rulebook.")

@@ -415,6 +415,7 @@ export interface TechniqueStatus {
   llmAvailable: boolean; model: string; effort: string; thinkingDisplay: string; optionsAvailable: boolean;
   optionsProvider?: string;
   runsToday: number; maxRunsPerDay: number; scanEnabled: boolean; scanSymbols: string[]; running: string[];
+  activeRuns?: Record<string, { symbol?: string; stage?: string }>;
   rules: Record<string, string>;
   sessionWindow?: string; enforceSessionWindows?: boolean; structureTfs?: string[]; triggerTf?: string;
   armed?: ArmedPlan[]; sweepsRunning?: string[]; sweepVersion?: string; techniqueSource?: string;

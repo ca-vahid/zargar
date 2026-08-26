@@ -89,36 +89,55 @@ function StatusBar({ status, onScan, scanBusy }: {
 /** Live progress of a scan: one row per symbol, filling in as runs finish.
  *  In `armable` mode (sheet scan) rows are promoted PLAN runs: each shows its
  *  deterministic grade + the analyst's read, with per-row and bulk Arm. */
-function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
-  ids: string[]; armable?: boolean; onDone: () => void; onClose: () => void; onOpen: (id: string) => void;
+function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
+  ids: string[]; armable?: boolean; onDone: () => void; onClose: () => void;
+  onOpen: (id: string) => void; onArmedAll?: (n: number) => void;
 }) {
   const toast = useStore((s) => s.toast);
   const armed = useStore((s) => s.techniqueArmed);
   const portfolios = useStore((s) => s.portfolios);
+  const maxConcurrent = useStore((s) => Number(s.settings["technique.max_concurrent_runs"] ?? 8));
   const ws = useWorkspace();
   // arms always land in the ACTIVE workspace: practice -> the simulator,
   // live -> the default/first live account (the server guards the same way)
   const armPortfolio = useMemo(() => portfolios.find((p) =>
     workspaceOf(p.kind) === ws && (ws !== "live" ? p.kind === "sim" : true)), [portfolios, ws]);
-  const [rows, setRows] = useState<TechniqueRun[]>([]);
+  const [rows, setRows] = useState<Record<string, TechniqueRun>>({});
   const [full, setFull] = useState<Record<string, TechniqueRun>>({});
+  const [active, setActive] = useState<Record<string, { symbol?: string; stage?: string }>>({});
   const [armBusy, setArmBusy] = useState<Record<string, boolean>>({});
+  const [now, setNow] = useState(Date.now());
   const finished = useRef(false);
+  const doneOrder = useRef<string[]>([]);
+
   useEffect(() => {
     let stop = false;
     const poll = async () => {
       if (finished.current) return;
       try {
-        const all = await api.techniqueRuns(60);
+        // the list window MUST cover the whole batch — a 72-run batch once sat
+        // stuck at "60 done" because this poll only looked at the last 60 runs
+        const all = await api.techniqueRuns(Math.max(100, ids.length + 30));
         if (stop) return;
-        const mine = all.filter((r) => ids.includes(r.id));
-        setRows(mine);
-        for (const r of mine) {
-          if (r.status !== "running" && !full[r.id]) {
-            api.techniqueRun(r.id).then((fr) => setFull((m) => ({ ...m, [fr.id]: fr }))).catch(() => undefined);
+        const map: Record<string, TechniqueRun> = {};
+        for (const r of all) if (ids.includes(r.id)) map[r.id] = r;
+        // stragglers that still fell outside the window: fetch them directly
+        for (const id of ids.filter((x) => !map[x]).slice(0, 12)) {
+          try { map[id] = await api.techniqueRun(id); } catch { /* transient */ }
+        }
+        if (stop) return;
+        setRows(map);
+        for (const id of ids) {
+          const r = map[id];
+          if (r && r.status !== "running") {
+            if (!doneOrder.current.includes(id)) doneOrder.current.push(id);
+            if (!full[id] && r.status !== "failed")
+              api.techniqueRun(id).then((fr) => setFull((m) => ({ ...m, [fr.id]: fr }))).catch(() => undefined);
           }
         }
-        if (mine.length === ids.length && mine.every((r) => r.status !== "running")) {
+        api.techniqueStatus().then((st) => { if (!stop) setActive((st as any).activeRuns ?? {}); }).catch(() => undefined);
+        setNow(Date.now());
+        if (ids.length && ids.every((id) => map[id] && map[id].status !== "running")) {
           finished.current = true;
           onDone();
         }
@@ -142,51 +161,132 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
     try {
       const a = await api.techniqueArm(id, (armPortfolio ? { portfolioId: armPortfolio.id } : undefined) as any);
       toast("success", `${sym} armed — ${a.config.mode} on ${a.portfolio?.name ?? "default account"}`);
+      return true;
     }
-    catch (e: any) { toast("error", e.message); }
+    catch (e: any) { toast("error", e.message); return false; }
     finally { setArmBusy((m) => ({ ...m, [id]: false })); }
   };
 
-  const done = rows.filter((r) => r.status !== "running");
-  const allDone = finished.current || (rows.length === ids.length && done.length === ids.length);
+  // ---- live progress: done / working (real semaphore slots) / queued ------
+  const doneIds = doneOrder.current.filter((id) => rows[id]);
+  const failedIds = doneIds.filter((id) => rows[id]?.status === "failed");
+  const allDone = finished.current || (ids.length > 0 && ids.every((id) => rows[id] && rows[id].status !== "running"));
+  const workingIds = ids.filter((id) => active[id] && (!rows[id] || rows[id].status === "running"));
+  const queuedIds = ids.filter((id) => !active[id] && (!rows[id] || rows[id].status === "running"));
+  const pct = ids.length ? Math.round((doneIds.length / ids.length) * 100) : 0;
+  const startMs = useMemo(() => {
+    const ts = ids.map((id) => rows[id]?.createdAt).filter(Boolean)
+      .map((t) => new Date(t as string).getTime());
+    return ts.length ? Math.min(...ts) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Object.keys(rows).length]);
+  let eta = "";
+  if (!allDone && startMs && doneIds.length >= 3) {
+    const remainMs = ((now - startMs) / doneIds.length) * (ids.length - doneIds.length);
+    const m = Math.max(1, Math.round(remainMs / 60000));
+    eta = m >= 90 ? `~${(m / 60).toFixed(1)} h left` : `~${m} min left`;
+  }
+  const STAGE: Record<string, string> = {
+    preparing: "rendering charts", context: "pass 1/4 · context", pattern: "pass 2/4 · pattern",
+    entry: "pass 3/4 · entry plan", critic: "pass 4/4 · critic",
+  };
+
   const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id));
-  const setups = armable ? ids.filter((id) => analystOk(full[id])) : done.filter((r) => r.verdict === "setup").map((r) => r.id);
+  const setups = armable ? ids.filter((id) => analystOk(full[id]))
+    : doneIds.filter((id) => rows[id]?.verdict === "setup");
+  const armAll = async () => {
+    let n = 0;
+    for (const id of passed) if (await armOne(id, full[id]?.symbol ?? id.slice(0, 6))) n += 1;
+    if (n) onArmedAll?.(n);
+  };
+
+  // completion order while running (rows appear as they finish, no jumping);
+  // the quality sort (analyst first, then score) applies once everything is in
+  const tableIds = allDone
+    ? ids.slice().sort((a, b) => (Number(analystOk(full[b])) - Number(analystOk(full[a])))
+        || ((bestTrigger(full[b])?.assessment?.score ?? -1) - (bestTrigger(full[a])?.assessment?.score ?? -1)))
+    : doneIds;
+
+  const progress = (
+    <div className="tq-scan-progress">
+      <div className="tq-progress-bar" role="progressbar" aria-valuenow={pct}>
+        <div className="fill" style={{ width: `${pct}%` }} />
+      </div>
+      <b className="nowrap">{doneIds.length}/{ids.length} · {pct}%</b>
+      {!allDone && (
+        <span className="muted nowrap">
+          {workingIds.length} working · {queuedIds.length} queued{eta ? ` · ${eta}` : ""}
+        </span>
+      )}
+      {failedIds.length > 0 && <span className="neg nowrap">{failedIds.length} failed</span>}
+    </div>
+  );
+
+  const chipGroups = !allDone && (workingIds.length > 0 || queuedIds.length > 0) && (
+    <div className="tq-scan-groups">
+      {workingIds.length > 0 && (
+        <div className="tq-scan-group">
+          <div className="tq-scan-group-title">Working now</div>
+          <div className="tq-scan-chips">
+            {workingIds.map((id) => (
+              <span key={id} className="tq-scan-chip working">
+                <Spinner /> <b>{rows[id]?.symbol ?? active[id]?.symbol ?? id.slice(0, 6)}</b>
+                <span className="muted">{STAGE[active[id]?.stage ?? ""] ?? active[id]?.stage ?? ""}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {queuedIds.length > 0 && (
+        <div className="tq-scan-group">
+          <div className="tq-scan-group-title">Queued — {maxConcurrent} run at a time</div>
+          <div className="tq-scan-chips">
+            {queuedIds.map((id) => (
+              <span key={id} className="tq-scan-chip">{rows[id]?.symbol ?? id.slice(0, 6)}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="panel mb tq-scan-panel">
       <div className="panel-head">
         {allDone
           ? <b>{armable ? `Analyst check finished — ${setups.length}/${ids.length} confirmed` : `Scan finished — ${setups.length ? `${setups.length} setup(s) found` : "no setups"} across ${ids.length} symbol(s)`}</b>
-          : <b><Spinner /> {armable ? "Analyst-checking" : "Scanning"} — {done.length}/{ids.length} done</b>}
+          : <b><Spinner /> {armable ? "Analyst-checking" : "Scanning"}</b>}
         <span className="sub">{armable ? "grade = the plan's own read · analyst = the 4-pass model read of the same charts" : "each row is a full analysis run; they also live in History (trigger \"scan\")"}</span>
         {armable && allDone && passed.length > 0 && (
-          <button className="primary-btn tq-scan-armall" onClick={() => passed.forEach((id) => void armOne(id, full[id]?.symbol ?? id.slice(0, 6)))}>
+          <button className="primary-btn tq-scan-armall" onClick={() => void armAll()}>
             ⚡ Arm {passed.length} confirmed
           </button>
         )}
         <button className="icon-btn tq-head-right" onClick={onClose} aria-label="Dismiss scan results"><IconX /></button>
       </div>
+      {progress}
       {armable ? (
         <div className="panel-body" style={{ padding: 0 }}>
-          <div className="tq-table-wrap">
-            <table className="tq-table tq-scan-table">
-              <thead><tr><th>Symbol</th><th title="Deterministic validity grade of the best trigger">Grade</th>
-                <th title="The 4-pass model read of the same plan — advice, not a gate">Analyst</th>
-                <th>Setup</th><th>Entry</th><th>Stop</th><th>Targets</th>
-                <th title="Reward-to-risk of the graded trigger">R:R</th><th aria-label="actions" /></tr></thead>
-              <tbody>
-                {ids
-                  .map((id) => ({ id, r: rows.find((x) => x.id === id), fr: full[id] }))
-                  .sort((a, b) => (Number(analystOk(b.fr)) - Number(analystOk(a.fr)))
-                    || ((bestTrigger(b.fr)?.assessment?.score ?? -1) - (bestTrigger(a.fr)?.assessment?.score ?? -1)))
-                  .map(({ id, r, fr }) => {
+          {tableIds.length > 0 && (
+            <div className="tq-table-wrap">
+              <table className="tq-table tq-scan-table">
+                <thead><tr><th>Symbol</th><th title="Deterministic validity grade of the best trigger">Grade</th>
+                  <th title="The 4-pass model read of the same plan — advice, not a gate">Analyst</th>
+                  <th>Setup</th><th>Entry</th><th>Stop</th><th>Targets</th>
+                  <th title="Reward-to-risk of the graded trigger">R:R</th><th aria-label="actions" /></tr></thead>
+                <tbody>
+                  {tableIds.map((id) => {
+                    const r = rows[id];
+                    const fr = full[id];
                     const best = bestTrigger(fr);
-                    const running = !r || r.status === "running";
+                    const failed = r?.status === "failed";
                     const fp = (n: any) => (typeof n === "number" ? n.toFixed(2) : "—");
                     return (
                       <tr key={id} className="clickable" onClick={() => r && onOpen(r.id)} title={r ? "Open this run" : ""}>
-                        <td className="nowrap"><b>{r?.symbol ?? id.slice(0, 8)}</b>{running && <span className="muted"> <Spinner /></span>}</td>
-                        <td>{best ? <GradeChip a={best.assessment} valid /> : running ? null : <span className="muted small">none</span>}</td>
-                        <td className="nowrap">{running ? <span className="muted small">analysing…</span>
+                        <td className="nowrap"><b>{r?.symbol ?? id.slice(0, 8)}</b></td>
+                        <td>{best ? <GradeChip a={best.assessment} valid /> : failed ? null : <span className="muted small">none</span>}</td>
+                        <td className="nowrap">{failed
+                          ? <span className="neg" title={r?.error ?? ""}>✗ failed — open to retry</span>
                           : fr?.result?.analysis
                             ? <span className={analystOk(fr) ? "pos" : "muted"}
                                 title={analystOk(fr)
@@ -194,7 +294,7 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
                                   : `Would stand aside. First reason: ${fr.result.analysis.noTradeReasons?.[0] ?? "(none)"} — open the run for the full read. Advice, not a gate.`}>
                                 {analystOk(fr) ? `✓ ${(fr.result.analysis.confidence ?? 0).toFixed(2)}` : "✗ stand aside"}
                               </span>
-                            : fr ? <span className="muted small">no read</span> : <span className="muted small"><Spinner /></span>}</td>
+                            : <span className="muted small"><Spinner /></span>}</td>
                         <td>{best ? <span className={`tq-badge ${best.kind === "bounce" ? "setup" : "plan"}`}>{best.kind === "bounce" ? "BOUNCE" : best.kind === "breakout" ? "BREAKOUT" : "WEDGE"}</span> : null}</td>
                         <td className="nowrap">{best ? <>{fp(best.entry?.price)} <span className="muted small">{best.entry?.basis === "on_break" ? "on break" : "at level"}</span></> : "—"}</td>
                         <td className="nowrap neg">{best ? fp(best.stop?.price) : "—"}</td>
@@ -213,32 +313,32 @@ function ScanPanel({ ids, armable, onDone, onClose, onOpen }: {
                       </tr>
                     );
                   })}
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </div>
+          )}
+          {chipGroups}
         </div>
       ) : (
         <div className="panel-body tq-scan-rows">
-          {ids.map((id) => {
-            const r = rows.find((x) => x.id === id);
+          {doneIds.map((id) => {
+            const r = rows[id];
             return (
               <span key={id} className="tq-scan-row" role="button" tabIndex={0} onClick={() => r && onOpen(r.id)}
                 onKeyDown={(e) => { if (e.key === "Enter" && r) onOpen(r.id); }} title={r ? "Open this run" : ""}>
                 <b>{r?.symbol ?? id.slice(0, 8)}</b>
-                {!r || r.status === "running" ? <span className="muted"><Spinner /> analysing…</span> : (
-                  <>
-                    <VerdictBadge run={r} />
-                    {r.verdict !== "setup" && <span className="muted small">nothing tradeable at this moment</span>}
-                  </>
-                )}
+                <VerdictBadge run={r} />
+                {r.verdict !== "setup" && <span className="muted small">nothing tradeable at this moment</span>}
               </span>
             );
           })}
+          {chipGroups}
         </div>
       )}
     </div>
   );
 }
+
 
 // --- analyse form ---------------------------------------------------------------------
 
@@ -931,7 +1031,8 @@ export function TechniquePage() {
         <ScanPanel ids={scan.ids} armable={scan.armable}
           onDone={() => { setScan((s) => (s ? { ...s, done: true } : s)); refreshStatus(); }}
           onClose={() => { localStorage.setItem("zargar_tq_scan_dismissed", scan.ids.slice().sort().join(",")); setScan(null); }}
-          onOpen={(id) => { setFocusRun(id); setTab("analyse"); }} />
+          onOpen={(id) => { setFocusRun(id); setTab("analyse"); }}
+          onArmedAll={(n) => { toast("success", `${n} plan(s) armed — they're on the Armed dashboard now`); setTab("armed"); }} />
       )}
       {tab === "chat" ? (
         <ChatPanel />

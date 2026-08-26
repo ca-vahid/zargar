@@ -1612,6 +1612,37 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-scan-table td { vertical-align: middle; }
 .tq-scan-table tr.clickable { cursor: pointer; }
 
+/* scan progress: one live bar + counts instead of 72 spinners */
+.tq-scan-progress {
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 14px; border-bottom: 1px solid var(--border);
+  font-size: var(--fs-1);
+}
+.tq-progress-bar {
+  flex: 1; height: 8px; border-radius: 5px; overflow: hidden;
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface-2));
+}
+.tq-progress-bar .fill {
+  height: 100%; border-radius: 5px; background: var(--accent);
+  transition: width .6s ease;
+}
+.tq-scan-groups { padding: 4px 14px 12px; display: grid; gap: 10px; }
+.tq-scan-group-title {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-3); margin: 6px 0 4px;
+}
+.tq-scan-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tq-scan-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 9px; border-radius: 999px; font-size: var(--fs-0);
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2);
+}
+.tq-scan-chip.working {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
+  color: var(--text-1);
+}
+
 /* compact raised "N running" pill (was inheriting an oversized status box) */
 .tq-running-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px;
   border-radius: 999px; font-weight: 700; font-size: 12px; white-space: nowrap;

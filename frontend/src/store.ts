@@ -370,7 +370,13 @@ export const useStore = create<AppState>((set, get) => ({
       }));
       if (msg.kind === "run_done") {
         const r = msg.run as TechniqueRun;
-        if (r.status === "failed") get().toast("error", `${r.symbol} analysis failed: ${msg.error ?? r.error ?? ""}`);
+        if (r.status === "failed") {
+          const raw = String(msg.error ?? r.error ?? "");
+          const friendly = raw.includes("Invalid JSON") || raw.includes("validation error")
+            ? "the model's reply came back malformed — run it again from History"
+            : raw.slice(0, 140);
+          get().toast("error", `${r.symbol}: analysis failed — ${friendly}`);
+        }
         else if (r.verdict === "setup") get().toast("success", `${r.symbol}: ${r.setupType} setup (conf ${(r.confidence ?? 0).toFixed(2)})`);
       }
     } else if (msg.kind === "setup") {

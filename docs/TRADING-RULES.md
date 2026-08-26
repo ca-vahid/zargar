@@ -43,6 +43,11 @@ a number** (p. 72).
 - The informed analyst (post-2026-08-24 prompt fix) confirmed 10/13 A's. Track
   analyst-✓ vs analyst-✗ outcome spread. If ✗ setups perform no worse, the check is
   costume; if they underperform, raise its weight (maybe gate bulk-arm on it harder).
+- **2026-08-25 evening cohort (first large sample, 72 checks for the 08-26 session):**
+  analyst confirmed **22/72** — A: **6/12**, B: **16/60**. Notable: half the A's were
+  rejected while a quarter of the B's were endorsed — grade and analyst clearly measure
+  different things. Scorecards for 08-26 are the first real test of which read is right
+  (feeds 1.2 as well).
 
 ### 1.4 Fire-time critic — net saver or net cost? ⚠ watching closely
 - 2 kills on day one, **both wrong** (ZS: data artifact + missing plan provenance;
