@@ -40,6 +40,10 @@ Review loop (trace, provenance, outcomes, reviews, replay, bundle):
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
 Session plans + walk-forward + live arming: `docs/TECHNIQUE-WALKFORWARD-PLAN.md`
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
+**Mobile:** `docs/MOBILE-PLAN.md` is the phase plan for the phone-first UI (bottom tabs,
+`Sheet` primitive, Armed "Now" home, exit-only safety, PWA/push); Phase 1 (shell) must land
+before the others. Gate every phase with `cd frontend && npm run mobile-audit` (Playwright device
+matrix; screenshots in `frontend/.mobile-shots/`, gitignored).
 **`docs/TRADING-RULES.md` is the living judgement log** — findings, open questions with
 decision thresholds (e.g. is `gap_void_r=1.0` too strict), theories, and the change log
 of every rule/parameter change. Update it whenever a session teaches something about
