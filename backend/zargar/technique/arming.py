@@ -248,11 +248,16 @@ class ArmedPlan:
         last = float(quote.last) if quote is not None and quote.last > 0 else None
         prime_now = session_window(now_ms)
         trig = []
+        grades: list[str] = []
         for tid, tr in self.trackers.items():
+            a = tr.trigger.get("assessment") or {}
+            if a.get("grade"):
+                grades.append(str(a["grade"]))
             d = {"id": tid, "kind": tr.kind, "status": tr.status, "entry": tr.entry, "stop": tr.stop,
                  "targets": [t["price"] for t in tr.trigger.get("targets") or []],
                  "riskReward": tr.trigger.get("riskReward"), "firedTs": tr.fired_ts, "firedWindow": tr.fired_window,
                  "observedMidday": len(tr.observed_midday), "skipped": tr.skipped[-3:],
+                 "grade": a.get("grade"), "gradeScore": a.get("score"),
                  "conditions": tr.trigger.get("conditions"), "setupId": self.setup_ids.get(tid)}
             if last:
                 d["distancePct"] = round((tr.entry - last) / last * 100, 3)
@@ -262,6 +267,9 @@ class ArmedPlan:
         open_trades = [t for t in self.trades.values() if t.open]
         return {
             "runId": self.run_id, "symbol": self.symbol, "planFor": self.plan_for, "status": self.status,
+            # best deterministic grade among the watched triggers — kept visible so
+            # grade-vs-outcome calibration (TRADING-RULES 1.2) stays in front of us
+            "grade": (min(grades) if grades else None),
             "stopReason": self.stop_reason, "scorecard": self.scorecard,
             "config": self.config.to_dict(),
             "portfolio": ({k: portfolio.get(k) for k in ("id", "name", "kind", "venue", "baseCurrency")} if portfolio else

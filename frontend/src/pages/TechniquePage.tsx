@@ -700,7 +700,8 @@ function ArmedRunStrip({ currentId }: { currentId?: string | null }) {
       <div className="chips">
         {armed.map((a) => (
           <button key={a.runId} className={`tq-scan-chip ${a.runId === currentId ? "working" : ""}`}
-            onClick={() => openRun(a.runId)} title={`Open ${a.symbol}'s plan run`}>{a.symbol}</button>
+            onClick={() => openRun(a.runId)} title={`Open ${a.symbol}'s plan run${a.grade ? ` (grade ${a.grade})` : ""}`}>
+            {a.symbol}{a.grade ? <span className="muted"> {a.grade}</span> : null}</button>
         ))}
       </div>
       <button className="icon-btn" onClick={() => go(1)} aria-label="Next armed plan" title="Next armed plan">›</button>
@@ -729,7 +730,7 @@ function ArmedPanel() {
             className={`tq-setup-row ${a.status === "armed" ? "valid" : ""} ${a.runId === currentRunId ? "active" : ""}`}
             onClick={() => openRun(a.runId)}
             title="Open this plan's analysis run — the plan, chart and the model's 4-pass read">
-            <b>{a.symbol}</b> <span>{a.config.mode}{a.portfolio.kind === "live" ? " · REAL" : ""} · {a.status}</span>
+            <b>{a.symbol}</b> <span>{a.grade ? `${a.grade} · ` : ""}{a.config.mode}{a.portfolio.kind === "live" ? " · REAL" : ""} · {a.status}</span>
             <span className="muted">{a.summary}</span>
           </button>
         ))}

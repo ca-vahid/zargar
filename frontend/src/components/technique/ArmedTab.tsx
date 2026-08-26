@@ -101,6 +101,8 @@ function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => void }) {
           title={day ? "Hide the day view" : "Show today's chart + timeline: what happened, what was refused and why, what we're waiting for"}>
           {a.symbol} <span className="tq-armed-sym-caret">{day ? "▾" : "▸"}</span>
         </button>
+        {a.grade && <span className={`tq-grade g${a.grade}`}
+          title="Deterministic plan grade — outcomes are scored against it for calibration (TRADING-RULES 1.2)">{a.grade}</span>}
         <span className={`tq-badge ${a.config.mode === "auto" ? (live ? "failed" : "setup") : "nosetup"}`} title="execution mode">
           {a.config.mode === "auto" ? (live ? "AUTO · REAL MONEY" : "AUTO") : a.config.mode.toUpperCase()}
         </span>
@@ -238,7 +240,7 @@ function FleetTable({ armed, selId, onSel }: { armed: ArmedPlan[]; selId: string
       <div className="panel-head">Armed fleet <span className="sub">{armed.length} plan(s) · click a row (or use ← →) for the full card below</span></div>
       <div className="panel-body" style={{ padding: 0 }}>
         <table className="tq-table tq-fleet">
-          <thead><tr><th>Symbol</th><th>Mode</th><th>Window</th><th>Nearest trigger</th><th>Status</th><th>Realized</th><th aria-label="attention" /></tr></thead>
+          <thead><tr><th>Symbol</th><th title="Deterministic plan grade — tracked against outcomes for calibration">Grade</th><th>Mode</th><th>Window</th><th>Nearest trigger</th><th>Status</th><th>Realized</th><th aria-label="attention" /></tr></thead>
           <tbody>
             {armed.map((a) => {
               const near = (a.triggers ?? []).slice().sort((x, y) => Math.abs(x.distancePct ?? 99) - Math.abs(y.distancePct ?? 99))[0];
@@ -247,6 +249,7 @@ function FleetTable({ armed, selId, onSel }: { armed: ArmedPlan[]; selId: string
               return (
                 <tr key={a.runId} className={`clickable ${a.runId === selId ? "tq-fleet-sel" : ""}`} onClick={() => onSel(a.runId)}>
                   <td className="nowrap"><b>{a.symbol}</b></td>
+                  <td>{a.grade ? <span className={`tq-grade g${a.grade}`} title="Deterministic plan grade">{a.grade}</span> : <span className="muted small">—</span>}</td>
                   <td className="nowrap small">{a.config.mode}{a.config.instrument === "options" ? " · opt" : " · sh"}</td>
                   <td className="nowrap"><span className={`tq-badge ${wCls}`}>{wTxt}</span></td>
                   <td className="nowrap small">{near ? <>{near.id} {near.kind} @ {fmt(near.entry)} <span className="muted">{near.distancePct !== undefined ? `${near.distancePct > 0 ? "+" : ""}${near.distancePct.toFixed(2)}%` : ""}</span></> : "—"}</td>

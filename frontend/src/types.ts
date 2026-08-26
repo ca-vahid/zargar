@@ -396,12 +396,14 @@ export interface ArmedTrade {
 export interface ArmedPlan {
   needsAttention?: boolean; attentionReasons?: string[];
   runId: string; symbol: string; planFor: string; status: "armed" | "paused" | "expired" | "disarmed" | string;
+  grade?: string | null;
   stopReason?: string; scorecard?: ArmScorecard | null;
   config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };
   armedAt: string; barsSeen: number; lastBarTs: number | null; barAgeSeconds: number | null; stale: boolean;
   sessionWindowNow: string; lastPrice: number | null; quoteAgeSeconds: number | null;
   triggers: { id: string; kind: string; status: string; entry: number; stop: number; targets: number[]; riskReward: number | null;
     firedTs: number | null; firedWindow: string | null; observedMidday: number; skipped: any[]; conditions: any[]; setupId?: string | null;
+    grade?: string | null; gradeScore?: number | null;
     distancePct?: number; distance?: number; windowOpenNow?: boolean }[];
   trades: ArmedTrade[]; openPositions: number; realizedPnl: number; fired: any[]; events: { ts: number; event: string; text: string; [k: string]: any }[];
   summary: string;
