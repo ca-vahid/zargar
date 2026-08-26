@@ -5,6 +5,7 @@ import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtTime } from "../lib/format";
 import { baseChartOptions, cssVar } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { netWorthByCurrency, useStore } from "../store";
+import { useViewport } from "../lib/viewport";
 import { useWorkspaceFilter } from "../lib/workspace";
 import type { BrokerageProvider } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
@@ -51,6 +52,11 @@ function ProviderCard({ provider }: { provider: BrokerageProvider }) {
                 )}
                 <span className="bal">{fmtCcy(a.equity, a.currency)}</span>
               </div>
+              {a.mismatch && (
+                <div className="acct-detail mismatch-note">
+                  Δ {a.mismatch.pct > 0 ? "+" : ""}{a.mismatch.pct}% vs the broker's overnight total {fmtCcy(a.mismatch.brokerTotal, a.currency)}
+                </div>
+              )}
               {a.equity > 0.005 && (
                 <div className="acct-detail">
                   invested {fmtCcy(invested, a.currency)} · cash {cashText(a)}
@@ -155,6 +161,7 @@ function EquityCurvePanel() {
 }
 
 function RecentActivity() {
+  const { isPhone } = useViewport();
   const allOrders = useStore((s) => s.recentOrders);
   const allExecutions = useStore((s) => s.executions);
   const portfolios = useStore((s) => s.portfolios);
@@ -195,7 +202,29 @@ function RecentActivity() {
         </div>
       </div>
       <div className="scroll-x">
-        {tab === "orders" ? (
+        {isPhone ? (
+          <div className="bl-cards">
+            {tab === "orders" && recentOrders.length === 0 && <EmptyState title="No orders this session" hint="Orders appear here the moment they are placed." />}
+            {tab === "fills" && executions.length === 0 && <EmptyState title="No fills this session" />}
+            {tab === "orders" && recentOrders.slice(0, 8).map((o) => (
+              <button type="button" key={o.id} className="bl-card" onClick={() => goTrade(o.symbol)}>
+                <span className="bl-card-l">
+                  <span className="bl-card-sym"><span className={o.side === "BUY" ? "pos" : "neg"}>{o.side}</span> {fmtQty(o.qty)} {o.symbol}</span>
+                  <span className="bl-card-sub">{o.orderType} · {pname[o.portfolioId] ?? "—"} · {fmtTime(o.createdAt)}</span>
+                </span>
+                <span className="bl-card-r"><StatusPill status={o.status} /></span>
+              </button>
+            ))}
+            {tab === "fills" && executions.slice(0, 8).map((e) => (
+              <button type="button" key={e.id} className="bl-card" onClick={() => goTrade(e.symbol)}>
+                <span className="bl-card-l">
+                  <span className="bl-card-sym"><span className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</span> {fmtQty(e.qty)} {e.symbol}</span>
+                  <span className="bl-card-sub">@ {fmtMoney(e.price)} · {pname[e.portfolioId] ?? "—"} · {fmtTime(e.ts)}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : tab === "orders" ? (
           recentOrders.length === 0
             ? <EmptyState title="No orders this session"
                 hint="Orders appear here the moment they are placed." />
@@ -252,6 +281,7 @@ function RecentActivity() {
 }
 
 export function DashboardPage() {
+  const { isPhone } = useViewport();
   const portfolios = useStore((s) => s.portfolios);
   const brokerages = useStore((s) => s.brokerages);
   const halt = useStore((s) => s.halt);
@@ -396,7 +426,7 @@ export function DashboardPage() {
           <div className="panel-head">
             Watchlist <span className="sub">{watchlists[0]?.name ?? ""}</span>
           </div>
-          <div style={{ overflowY: "auto", maxHeight: 260 }}>
+          <div style={isPhone ? undefined : { overflowY: "auto", maxHeight: 260 }}>
             {watchSymbols.map((sym) => <WatchRow key={sym} symbol={sym} />)}
             {watchSymbols.length === 0 && (
               <EmptyState title="Watchlist is empty"

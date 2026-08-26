@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api, getAuthToken, setAuthToken } from "../lib/api";
 import { useStore } from "../store";
+import { useViewport } from "../lib/viewport";
+import { InfoTip } from "../components/InfoTip";
 import type { Watchlist } from "../types";
 import { Modal } from "../components/Modal";
 
@@ -88,7 +90,7 @@ function NumCell({ k, label, hint, step = 1 }: { k: string; label: string; hint?
   const [editing, setEditing] = useState(false);
   return (
     <label className="setting-cell" title={hint}>
-      <span className="cl">{label}</span>
+      <span className="cl">{label}{hint && <InfoTip>{hint}</InfoTip>}</span>
       <input
         type="number"
         step={step}
@@ -109,7 +111,7 @@ function SelCell({ k, label, options, hint }: {
   const patch = usePatch();
   return (
     <label className="setting-cell" title={hint}>
-      <span className="cl">{label}</span>
+      <span className="cl">{label}{hint && <InfoTip>{hint}</InfoTip>}</span>
       <select value={String(value ?? "")} onChange={(e) => patch(k, e.target.value)}>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
@@ -123,7 +125,7 @@ function TextCell({ k, label, hint, upper }: { k: string; label: string; hint?: 
   const [draft, setDraft] = useState<string | null>(null);
   return (
     <label className="setting-cell" title={hint}>
-      <span className="cl">{label}</span>
+      <span className="cl">{label}{hint && <InfoTip>{hint}</InfoTip>}</span>
       <input type="text" value={draft ?? value}
         onChange={(e) => setDraft(upper ? e.target.value.toUpperCase() : e.target.value)}
         onBlur={() => { if (draft !== null && draft !== value) patch(k, draft); setDraft(null); }}
@@ -285,10 +287,32 @@ export function SettingsPage() {
     () => allPortfolios.find((p) => p.id === defaultPortfolio && !portfolios.some((q) => q.id === p.id)),
     [allPortfolios, portfolios, defaultPortfolio]);
   const alpacaConnected = (broker as any)?.alpacaConnected;
+  // phones: every settings panel folds behind its header (Appearance stays open)
+  const { isPhone } = useViewport();
+  const gridRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+    const panels = Array.from(grid.querySelectorAll<HTMLElement>(":scope > .panel"));
+    for (const p of panels) {
+      const head = p.querySelector<HTMLElement>(":scope > .panel-head");
+      const title = head?.textContent?.trim().toLowerCase() ?? "";
+      p.classList.toggle("panel--folded", isPhone && !title.startsWith("appearance"));
+    }
+    if (!isPhone) return;
+    const onClick = (e: Event) => {
+      const head = (e.target as HTMLElement).closest(".settings-grid > .panel > .panel-head");
+      if (!head || (e.target as HTMLElement).closest("button, input, select, a, label")) return;
+      head.parentElement?.classList.toggle("panel--folded");
+    };
+    grid.addEventListener("click", onClick);
+    return () => grid.removeEventListener("click", onClick);
+  }, [isPhone]);
 
   return (
-    <div>
+    <div className="settings-page">
       <h2 className="page-title">Settings</h2>
+      <MobilePanel />
       <div className="panel mb settings-automation">
         <div className="panel-head">🌙 Evening automation
           <span className="sub">the daily ritual, hands-free: after the close, build tomorrow's graded sheet — and optionally analyst-check the A's</span></div>
@@ -311,7 +335,7 @@ export function SettingsPage() {
             <ExtraUniverse />
         </div>
       </div>
-      <div className="settings-grid">
+      <div className="settings-grid" ref={gridRef}>
         <div className="panel">
           <div className="panel-head">Trading &amp; risk
             <span className="sub">order defaults + the gate every order must pass</span></div>
@@ -671,5 +695,37 @@ function SourcesSection() {
         }}>Add source</button>
       </div>
     </>
+  );
+}
+
+
+/* ── Mobile: the phone's own safety + session controls ─────────────────── */
+function MobilePanel() {
+  const toast = useStore((s) => s.toast);
+  const chgDollar = useStore((s) => s.chgDollar);
+  const toggleChgMode = useStore((s) => s.toggleChgMode);
+  return (
+    <div className="panel mb settings-mobile">
+      <div className="panel-head">📱 Mobile
+        <span className="sub">what a phone may do — and how it signs in</span></div>
+      <div className="panel-body">
+        <ToggleRow k="mobile.exit_only" label="Phone is exit-only for LIVE"
+          hint="On (default): from a phone you can HALT, flatten, disarm, approve and SELL out of real positions, but not open new ones. Turn off to allow live entries from a phone (the confirm sheet still asks)." />
+        <div className="setting-row">
+          <div className="lbl">Day change shows<small>the pill next to every price</small></div>
+          <div className="seg" role="group" aria-label="Day change unit">
+            <button type="button" className={!chgDollar ? "on" : ""} onClick={() => { if (chgDollar) toggleChgMode(); }}>%</button>
+            <button type="button" className={chgDollar ? "on" : ""} onClick={() => { if (!chgDollar) toggleChgMode(); }}>$</button>
+          </div>
+        </div>
+        <div className="setting-row">
+          <div className="lbl">This device<small>forget the sign-in token stored in this browser</small></div>
+          <button type="button" className="ghost-btn" onClick={() => {
+            setAuthToken(""); localStorage.removeItem("zargar_token");
+            toast("info", "signed out on this device"); setTimeout(() => location.reload(), 400);
+          }}>Sign out</button>
+        </div>
+      </div>
+    </div>
   );
 }

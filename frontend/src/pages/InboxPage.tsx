@@ -6,6 +6,7 @@ import { fmtDateTime, fmtMoney, timeUntil } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
 import type { Proposal, RawContentItem, Signal } from "../types";
+import { useViewport } from "../lib/viewport";
 
 export function InboxPage() {
   const proposals = useStore((s) => s.proposals);
@@ -74,11 +75,19 @@ function ProposalCard({ p }: { p: Proposal }) {
         {p.bracket?.stop_loss && <> · stop {fmtMoney(p.bracket.stop_loss)}</>}
       </div>
       {p.rationale && <div style={{ margin: "6px 0", fontStyle: "italic" }}>{p.rationale}</div>}
+      {checks.some((c: any) => !c.passed) && (
+        <ul className="check-list">
+          {checks.filter((c: any) => !c.passed).map((c: any) => (
+            <li key={c.name} className="check-item fail">
+              <b>{c.name.replace(/_/g, " ")}</b>{c.detail ? ` — ${c.detail}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="check-grid">
-        {checks.map((c: any) => (
-          <span key={c.name} className={`check-item ${c.passed ? "ok" : "fail"}`}
-            title={c.detail}>
-            {c.passed ? <IconCheck size={10} /> : <IconX size={10} />} {c.name.replace(/_/g, " ")}
+        {checks.filter((c: any) => c.passed).map((c: any) => (
+          <span key={c.name} className="check-item ok" title={c.detail}>
+            <IconCheck size={10} /> {c.name.replace(/_/g, " ")}
           </span>
         ))}
       </div>
@@ -155,6 +164,35 @@ function SignalsPanel() {
     () => api.get<Signal[]>("/api/signals?limit=50"), [live.length]);
   const merged = [...live];
   for (const s of loadedState.data ?? []) if (!merged.some((m) => m.id === s.id)) merged.push(s);
+  const { isPhone } = useViewport();
+
+  if (isPhone) {
+    return (
+      <div className="panel mb">
+        <div className="panel-head">Extracted signals</div>
+        <div className="bl-cards">
+          {loadedState.loading && merged.length === 0 ? <Spinner />
+            : merged.length === 0 ? <EmptyState title="No signals yet" hint="Ingest an email or paste text below." />
+            : merged.slice(0, 30).map((s) => {
+              const failed = (s.verification?.checks ?? []).filter((c) => !c.passed);
+              return (
+                <div key={s.id} className="bl-card bl-card--static">
+                  <span className="bl-card-l">
+                    <span className="bl-card-sym">{s.ticker} <span className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</span>
+                      <span className={`status-pill ${s.status === "verified" || s.status === "proposed" ? "ok" : s.status === "verification_failed" ? "bad" : "dim"}`}>{s.status.replace("_", " ")}</span>
+                    </span>
+                    <span className="bl-card-sub">entry {s.entryPrice ? fmtMoney(s.entryPrice) : "—"} · target {s.targetPrice ? fmtMoney(s.targetPrice) : "—"} · stop {s.stopPrice ? fmtMoney(s.stopPrice) : "—"} · {s.confidence.replace("_", " ")}</span>
+                    {s.thesisSummary && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.thesisSummary}</span>}
+                    {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
+                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)}</span>
+                  </span>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="panel mb">
@@ -210,6 +248,27 @@ function ContentPanel() {
   const itemsState = useAsync(
     () => api.get<RawContentItem[]>("/api/content?limit=25"), [signalCount]);
   const items = itemsState.data ?? [];
+  const { isPhone } = useViewport();
+  if (isPhone) {
+    return (
+      <div className="panel">
+        <div className="panel-head">Inbound content</div>
+        <div className="bl-cards">
+          {items.length === 0 ? <EmptyState title="Nothing received yet" hint="Email ingestion and manual paste both land here." />
+            : items.map((c) => (
+              <div key={c.id} className="bl-card bl-card--static">
+                <span className="bl-card-l">
+                  <span className="bl-card-sym">{c.subject || <span className="muted">(no subject)</span>}
+                    <span className={`status-pill ${c.status === "extracted" ? "ok" : c.status === "error" ? "bad" : "dim"}`}>{c.status}</span></span>
+                  <span className="bl-card-sub">{c.sourceName ?? c.sender ?? "—"} · {c.sourceType} · {fmtDateTime(c.receivedAt)}</span>
+                  {c.preview && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{c.preview}</span>}
+                </span>
+              </div>
+            ))}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="panel">
       <div className="panel-head">Inbound content</div>

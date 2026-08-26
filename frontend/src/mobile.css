@@ -456,3 +456,34 @@ button.bl-card:active { background: var(--surface-2); }
   .trade-phone .blotter-area { display: none; }
   .now-strip { position: static; }
 }
+
+
+/* ── Phase 4: Signals · Dashboard · Portfolios · Journal · Settings on phones ── */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .proposal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .approve-btn { grid-column: 1 / -1; min-height: 54px; font-size: var(--fs-4); }
+  .half-btn, .reject-btn { min-height: 46px; }
+  .proposal-card .head { flex-wrap: wrap; }
+  .proposal-card .ttl { font-size: var(--fs-2); }
+  .dash-grid { display: flex; flex-direction: column; }
+  .acct-head { flex-wrap: wrap; }
+  .acct-head > span:last-child { margin-left: 0 !important; flex-basis: 100%; text-align: left !important; }
+  .mismatch-note { white-space: normal; text-align: left; line-height: 1.4; margin: 2px 0 6px; }
+  .journal-filter { width: 100% !important; margin-left: 0 !important; }
+  .settings-grid > .panel > .panel-head { cursor: pointer; min-height: 52px; }
+  .settings-grid > .panel > .panel-head::after { content: "▾"; margin-left: auto; color: var(--text-3); font-size: 14px; }
+  .settings-grid > .panel.panel--folded > .panel-head::after { content: "▸"; }
+  .settings-grid > .panel.panel--folded > .panel-body { display: none; }
+  .settings-grid > .panel > .panel-head .sub { flex-basis: 100%; }
+  .setting-cell .cl { font-size: var(--fs-1); }
+  .settings-mobile { border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+}
+.mismatch-note { display: block; }
+.jr-list { display: flex; flex-direction: column; padding: 8px; gap: 8px; }
+.jr-row { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: var(--surface-1); }
+.jr-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.jr-time { margin-left: auto; font-size: var(--fs-0); color: var(--text-3); font-family: var(--mono); }
+.jr-detail { margin-top: 6px; font-size: var(--fs-2); line-height: 1.45; overflow-wrap: anywhere; }
+.jr-agg { margin-top: 4px; }
+.jr-more { width: 100%; justify-content: center; }
+.settings-mobile .seg button { min-width: 56px; }
