@@ -324,7 +324,9 @@ class TriggerTracker:
             self.status = "fired"
             self.fired_index, self.fired_ts = index, bar.ts
             self.fired_window = session_window(bar.ts)
-            self.fill_price = bar.close
+            # a break is filled at or beyond the level, never inside it (T fired at
+            # 25.84 against a 25.87 level, 2026-08-26) — the guard the dev asked for
+            self.fill_price = (min(bar.close, self.entry) if short else max(bar.close, self.entry))
             self._note(bar, "fired", window=self.fired_window, fill=bar.close, confirmedAfter=t.followthrough_bars)
         else:
             self.failed_breaks += 1

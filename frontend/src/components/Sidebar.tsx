@@ -19,7 +19,7 @@ const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "trade", label: "Trade", icon: <IconTrade /> },
   { key: "options", label: "Options", icon: <IconOptions /> },
   { key: "inbox", label: "Signals", icon: <IconSignals /> },
-  { key: "technique", label: "Technique", icon: <IconTechnique /> },
+  { key: "technique", label: "Techniques", icon: <IconTechnique /> },
   { key: "armed", label: "Armed", icon: <IconArmed /> },
   { key: "watchlists", label: "Watchlists", icon: <IconWatchlist /> },
   { key: "portfolios", label: "Portfolios", icon: <IconPortfolios /> },
@@ -53,7 +53,13 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
             {p.key === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
             {p.key === "armed" && armedCount > 0 && <span className="badge ok">{armedCount}</span>}
           </button>
-        ))}
+        )).flatMap((btn, i) => PAGES[i].key === "technique" ? [btn, (
+          // techniques are a family: each one is a sub-item under "Techniques"
+          <button key="technique-em" className={`nav-sub ${page === "technique" ? "active" : ""}`}
+            title={navCollapsed ? "EM Options" : undefined} onClick={() => setPage("technique")}>
+            <span className="nav-sub-dot" aria-hidden="true" /> <span className="nav-label">EM Options</span>
+          </button>
+        )] : [btn])}
       </nav>
     </aside>
   );

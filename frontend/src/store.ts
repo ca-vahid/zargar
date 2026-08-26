@@ -173,7 +173,7 @@ export const useStore = create<AppState>((set, get) => ({
   toasts: [],
   techniqueRuns: [],
   techniqueSetups: [],
-  techniqueTab: "analyse",
+  techniqueTab: "validation",
   techniqueFocusRunId: null,
   armedFocusRunId: null,
   techniqueRunBumps: {},

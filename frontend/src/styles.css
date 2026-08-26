@@ -226,13 +226,19 @@ body {
       var(--surface-1) 70%,
       color-mix(in srgb, var(--accent) 4%, var(--surface-1)) 100%);
 }
-.nav { display: flex; flex-direction: column; padding: var(--sp-2); gap: 2px; }
+.nav { display: flex; flex-direction: column; padding: var(--sp-2); gap: 6px; }
 .nav button {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  background: none; border: none; color: var(--text-2); font-size: var(--fs-2);
-  padding: var(--row-y) 10px; border-radius: var(--radius-sm); cursor: pointer; text-align: left;
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: none; color: var(--text-2); font-size: var(--fs-3, 15px); font-weight: 500;
+  padding: 11px 12px; border-radius: var(--radius-sm); cursor: pointer; text-align: left;
 }
-.nav button svg { flex-shrink: 0; opacity: 0.85; }
+.nav button svg { flex-shrink: 0; opacity: 0.85; width: 20px; height: 20px; }
+/* sub-items (a technique under "Techniques"): indented, lighter, a dot instead of an icon */
+.nav button.nav-sub { padding: 8px 12px 8px 40px; font-size: var(--fs-2); font-weight: 500; margin-top: -4px; }
+.nav button.nav-sub .nav-sub-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; opacity: 0.55; flex-shrink: 0; }
+.nav button.nav-sub.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.nav button.nav-sub.active .nav-sub-dot { opacity: 1; }
+.sidebar.collapsed .nav button.nav-sub { padding-left: 0; padding-right: 0; justify-content: center; }
 .nav button:hover { background: var(--surface-2); color: var(--text-1); }
 .nav button.active { background: var(--surface-2); color: var(--text-1); font-weight: 600; }
 .nav button .badge {

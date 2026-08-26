@@ -29,6 +29,17 @@ log = logging.getLogger("zargar.yahoo")
 UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36")
 CHART_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+
+
+def yahoo_symbol(symbol: str) -> str:
+    """Yahoo spells US share classes with a dash (BRK-B, BF-B) where Alpaca / CBOE /
+    the OCC use a dot (BRK.B). Exchange suffixes (.TO, .V, .CN, .NE) stay as they are."""
+    s = (symbol or "").upper()
+    if "." in s:
+        base, suf = s.rsplit(".", 1)
+        if len(suf) == 1 and suf.isalpha() and suf not in ("V",):
+            return f"{base}-{suf}"
+    return s
 COOKIE_URL = "https://fc.yahoo.com"
 SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search"
 
@@ -176,7 +187,7 @@ class YahooQuoteFeed(QuoteFeed):
             async with sem:
                 try:
                     resp = await self._http.get(
-                        CHART_URL.format(symbol=symbol),
+                        CHART_URL.format(symbol=yahoo_symbol(symbol)),
                         params={
                             "interval": "1m",
                             "period1": now_s - 30 * 60,
@@ -289,7 +300,7 @@ class YahooQuoteFeed(QuoteFeed):
         await self._ensure_cookie()
         try:
             resp = await self._http.get(
-                CHART_URL.format(symbol=symbol),
+                CHART_URL.format(symbol=yahoo_symbol(symbol)),
                 params={"interval": interval, "range": range_,
                         "includePrePost": "true" if include_pre_post else "false"})
         except httpx.HTTPError:

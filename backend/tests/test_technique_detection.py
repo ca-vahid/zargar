@@ -338,3 +338,9 @@ def test_touch_requires_the_extreme_to_test_the_level_without_closing_through():
     # resistance mirrors it: the high must reach the band and the close must stay under
     assert len(_count_touches([bar(t0, 99.5, 100.05, 99.4, 99.6)], 100.0, tol, "resistance")) == 1
     assert _count_touches([bar(t0, 99.5, 101.0, 99.4, 100.9)], 100.0, tol, "resistance") == []
+
+
+def test_yahoo_symbol_maps_share_classes_but_not_exchanges():
+    from zargar.brokers.yahoo import yahoo_symbol
+    assert yahoo_symbol("BRK.B") == "BRK-B" and yahoo_symbol("bf.b") == "BF-B"
+    assert yahoo_symbol("SHOP.TO") == "SHOP.TO" and yahoo_symbol("XYZ.V") == "XYZ.V" and yahoo_symbol("AAPL") == "AAPL"

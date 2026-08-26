@@ -843,7 +843,6 @@ export function TechniquePage() {
   const [full, setFull] = useState<TechniqueRun | null>(null);
   const fetchedFor = useRef<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const armedCount = useStore((s) => s.techniqueArmed.length);
   const bump = useStore((s) => (focusId ? s.techniqueRunBumps[focusId] : undefined) ?? 0);
   const rail = useRail("tq_rail");
 
@@ -1020,15 +1019,11 @@ export function TechniquePage() {
     <div className="tq-page">
       <div className="tq-head">
         <div className="tabs tq-tabs" role="tablist" aria-label="EM Options Technique">
-          {(["analyse", "validation", "chat", "history", "backtest"] as const).map((t) => (
+          {(["validation", "analyse", "chat", "history", "backtest"] as const).map((t) => (
             <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-              {t === "analyse" ? "EM Options · Analyse" : t === "validation" ? "Validation" : t === "chat" ? "Chat" : t === "history" ? "History" : "Backtest"}
+              {t === "analyse" ? "Analyse" : t === "validation" ? "Validation" : t === "chat" ? "Chat" : t === "history" ? "History" : "Backtest"}
             </button>
           ))}
-          <button role="tab" aria-selected={false} onClick={() => useStore.getState().setPage("armed")}
-            title="Armed plans moved to their own page — every technique arms into it">
-            Armed{armedCount > 0 ? <span className="tq-tab-count">{armedCount}</span> : null} ↗
-          </button>
         </div>
         <StatusBar status={status} scanBusy={!!scan && !scan.done} onScan={() => setScanConfirm(true)} />
       </div>

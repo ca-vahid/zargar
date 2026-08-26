@@ -225,7 +225,8 @@ async def fetch_window(
             resp = None
             for attempt, pause in enumerate(_RETRY_PAUSES + (None,)):
                 async with _sem:
-                    resp = await http.get(CHART_URL.format(symbol=symbol.upper()), params=params)
+                    from ..brokers.yahoo import yahoo_symbol
+                    resp = await http.get(CHART_URL.format(symbol=yahoo_symbol(symbol)), params=params)
                 if resp.status_code != 429 or pause is None:
                     break
                 log.info("yahoo 429 for %s %s — retry %d in %.0fs", symbol, tf, attempt + 1, pause)
