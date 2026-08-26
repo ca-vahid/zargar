@@ -193,7 +193,7 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   };
 
   // ---- live progress: done / working (real semaphore slots) / queued ------
-  const doneIds = doneOrder.current.filter((id) => rows[id]);
+  const doneIds = doneOrder.current.filter((id) => rows[id] && ids.includes(id));   // never count hidden rows
   const failedIds = doneIds.filter((id) => rows[id]?.status === "failed");
   const allDoneNow = ids.length > 0 && ids.every((id) => rows[id] && rows[id].status !== "running");
   if (allDoneNow) finished.current = true;          // sticky: a finished batch never flips back to "checking"
@@ -985,6 +985,15 @@ export function TechniquePage() {
     // died to a restart minutes earlier is not "late-arriving" (88 -> 176, 2026-08-26)
     const lo = Math.min(...times) - 60_000;
     const hi = Math.max(...times);
+    // A NEWER live batch (promote runs still running, started well after this panel's
+    // own runs) replaces the panel: what is on screen must be what the server is doing
+    const newer = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt
+      && new Date(r.createdAt!).getTime() - hi >= 10 * 60_000);
+    if (newer.some((r) => r.status === "running")) {
+      const newest = Math.max(...newer.map((r) => new Date(r.createdAt!).getTime()));
+      const batch = newer.filter((r) => newest - new Date(r.createdAt!).getTime() < 10 * 60_000).map((r) => r.id);
+      if (batch.length) { doneOrder.current = []; finished.current = false; setScan({ ids: batch, done: false, armable: true }); return; }
+    }
     const extra = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt && r.status !== "failed"
       && new Date(r.createdAt!).getTime() >= lo && new Date(r.createdAt!).getTime() - hi < 10 * 60_000).map((r) => r.id);
     // late-arriving batch members are adopted on every poll: de-duplicate, or the queue shows the same run many times
