@@ -92,11 +92,18 @@ function StatusBar({ status, onScan, scanBusy }: {
 /** Live progress of a scan: one row per symbol, filling in as runs finish.
  *  In `armable` mode (sheet scan) rows are promoted PLAN runs: each shows its
  *  deterministic grade + the analyst's read, with per-row and bulk Arm. */
-function ScanPanel({ ids, armable, onDone, onClose, onOpen, onArmedAll }: {
+function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }: {
   ids: string[]; armable?: boolean; onDone: () => void; onClose: () => void;
   onOpen: (id: string) => void; onArmedAll?: (n: number) => void;
 }) {
   const toast = useStore((s) => s.toast);
+  const runsForFilter = useStore((s) => s.techniqueRuns);
+  // Runs that died with a restart are noise, not results: hide them so the list
+  // is clean when you re-run (a second Check & arm re-reads them anyway)
+  const ids = useMemo(() => rawIds.filter((id) => {
+    const r = runsForFilter.find((x) => x.id === id);
+    return !(r && r.status === "failed" && /interrupted by a restart/i.test(r.error ?? ""));
+  }), [rawIds, runsForFilter]);
   const armed = useStore((s) => s.techniqueArmed);
   const portfolios = useStore((s) => s.portfolios);
   const maxConcurrent = useStore((s) => Number(s.settings["technique.max_concurrent_runs"] ?? 8));
