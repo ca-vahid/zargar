@@ -1959,10 +1959,19 @@ class TechniqueService:
                 sw.error = "interrupted by a restart — re-run it (a sheet rebuilds itself in the evening window)"
                 sw.finished_at = dt.datetime.now(dt.timezone.utc)
                 n += 1
+            # the same for analysis runs: an LLM read that was mid-flight when the
+            # process died never finishes (88 analyst checks died to a restart on
+            # 2026-08-26 and sat 'running' — the scan panel waited on them for ever)
+            runs = (await session.execute(select(TechniqueRun).where(TechniqueRun.status == "running"))).scalars().all()
+            for r in runs:
+                r.status = "failed"
+                r.error = "interrupted by a restart — run it again"
+                r.finished_at = dt.datetime.now(dt.timezone.utc)
+                n += 1
             if n:
                 await session.commit()
         if n:
-            log.warning("marked %d orphaned running sweep(s) as interrupted", n)
+            log.warning("marked %d orphaned running sweep(s)/run(s) as interrupted", n)
         return n
 
     def start(self) -> None:
