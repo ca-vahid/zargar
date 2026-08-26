@@ -39,7 +39,10 @@ const AUDIT = `(() => {
   const vw = window.innerWidth;
   const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
   const label = (el) => el.tagName.toLowerCase() + (typeof el.className === 'string' && el.className ? '.' + el.className.trim().split(/\\s+/).slice(0, 2).join('.') : '');
-  const wide = [...document.querySelectorAll('body *')].filter(el => vis(el) && el.getBoundingClientRect().width > vw + 2 && getComputedStyle(el).position !== 'fixed').slice(0, 15).map(el => label(el) + ' w=' + Math.round(el.getBoundingClientRect().width));
+  // a wide element inside a horizontal scroller (scroll-x, table wrap, ladder) is a legitimate
+  // scrollable table, not a layout break — only count it when nothing above it scrolls it
+  const scrolls = (el) => { for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) { const o = getComputedStyle(a).overflowX; if ((o === 'auto' || o === 'scroll') && a.getBoundingClientRect().width <= vw + 2) return true; } return false; };
+  const wide = [...document.querySelectorAll('body *')].filter(el => vis(el) && el.getBoundingClientRect().width > vw + 2 && getComputedStyle(el).position !== 'fixed' && !scrolls(el)).slice(0, 15).map(el => label(el) + ' w=' + Math.round(el.getBoundingClientRect().width));
   const interactive = [...document.querySelectorAll('button, a[href], [role=button], [role=option], [role=tab], input, select, textarea, summary')].filter(vis);
   const tiny = interactive.filter(el => { const r = el.getBoundingClientRect(); return r.height < 40 || r.width < 40; }).map(el => label(el) + ' ' + Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height));
   const zoomInputs = [...document.querySelectorAll('input, select, textarea')].filter(el => vis(el) && !el.className.toString().includes('highcharts-a11y') && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => label(el) + ' ' + getComputedStyle(el).fontSize);

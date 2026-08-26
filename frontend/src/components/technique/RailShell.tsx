@@ -18,7 +18,7 @@ export function RailShell({ open, onToggle, label, children }: {
 }) {
   return (
     <aside className={`tq-rail-shell ${open ? "open" : "closed"}`} aria-label={label}>
-      <button type="button" className="tq-rail-handle" onClick={onToggle}
+      <button type="button" className="tq-rail-handle" aria-label="Toggle the side rail" onClick={onToggle}
         title={open ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`} aria-expanded={open}>
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

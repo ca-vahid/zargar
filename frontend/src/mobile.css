@@ -552,3 +552,8 @@ button.bl-card:active { background: var(--surface-2); }
   .now-strip-txt { flex-basis: 100%; order: 3; }
   .now-strip-age { margin-left: auto; }
 }
+/* phones: any table that stays a table scrolls inside its panel instead of widening the page */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .panel { overflow-x: auto; }
+  .tq-scan-table th, .tq-scan-table td { white-space: nowrap; }
+}
