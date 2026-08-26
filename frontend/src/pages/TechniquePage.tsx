@@ -682,21 +682,53 @@ function BacktestTab() {
   );
 }
 
+/** One-line switcher between the runs behind the armed plans — the fastest way
+    to review tomorrow's fleet plan by plan without leaving the Analyse view. */
+function ArmedRunStrip({ currentId }: { currentId?: string | null }) {
+  const armed = useStore((s) => s.techniqueArmed);
+  const openRun = useStore((s) => s.openTechniqueRun);
+  if (armed.length < 2) return null;
+  const idx = armed.findIndex((a) => a.runId === currentId);
+  const go = (d: number) => {
+    const n = armed[((idx < 0 ? 0 : idx) + d + armed.length) % armed.length];
+    if (n) openRun(n.runId);
+  };
+  return (
+    <div className="tq-armed-strip" role="navigation" aria-label="Armed plan runs">
+      <span className="tq-armed-strip-label">Armed plans</span>
+      <button className="icon-btn" onClick={() => go(-1)} aria-label="Previous armed plan" title="Previous armed plan">‹</button>
+      <div className="chips">
+        {armed.map((a) => (
+          <button key={a.runId} className={`tq-scan-chip ${a.runId === currentId ? "working" : ""}`}
+            onClick={() => openRun(a.runId)} title={`Open ${a.symbol}'s plan run`}>{a.symbol}</button>
+        ))}
+      </div>
+      <button className="icon-btn" onClick={() => go(1)} aria-label="Next armed plan" title="Next armed plan">›</button>
+    </div>
+  );
+}
+
 // --- right rail -----------------------------------------------------------------------
 
 function ArmedPanel() {
   const armed = useStore((s) => s.techniqueArmed);
   const setArmed = useStore((s) => s.setTechniqueArmed);
   const setTab = useStore((s) => s.setTechniqueTab);
+  const openRun = useStore((s) => s.openTechniqueRun);
+  const currentRunId = useStore((s) => s.techniqueFocusRunId);
   useEffect(() => { api.techniqueArmed().then(setArmed).catch(() => undefined); }, [setArmed]);
   return (
     <div className="panel mb">
       <div className="panel-head">Armed <span className="sub">{armed.length}</span>
-        <button className="link-btn" style={{ marginLeft: "auto" }} onClick={() => setTab("armed")}>dashboard</button></div>
+        <button className="link-btn" style={{ marginLeft: "auto" }} onClick={() => setTab("armed")}
+          title="Live management view: fills, exits, P&L">dashboard</button></div>
       <div className="panel-body tq-setups">
         {armed.length === 0 && <div className="empty">nothing armed</div>}
         {armed.map((a) => (
-          <button key={a.runId} className={`tq-setup-row ${a.status === "armed" ? "valid" : ""}`} onClick={() => setTab("armed")}>
+          <button key={a.runId}
+            className={`tq-setup-row ${a.status === "armed" ? "valid" : ""} ${a.runId === currentRunId ? "active" : ""}`}
+            onClick={() => openRun(a.runId)}
+            title="Open this plan's analysis run — the plan, chart and the model's 4-pass read">
             <b>{a.symbol}</b> <span>{a.config.mode}{a.portfolio.kind === "live" ? " · REAL" : ""} · {a.status}</span>
             <span className="muted">{a.summary}</span>
           </button>
@@ -1069,6 +1101,7 @@ export function TechniquePage() {
                 {!status?.llmAvailable && status && (
                   <EmptyState title="No API key" hint="Set ZARGAR_ANTHROPIC_API_KEY in backend/.env to run analyses." />
                 )}
+                <ArmedRunStrip currentId={shown?.id} />
                 {shown && running && <LiveRun run={shown} />}
                 {shown && !running && shown.mode === "plan" && <PlanCard run={shown} rules={rules} onRefresh={() => setRefreshKey((k) => k + 1)} />}
                 {shown && !running && shown.mode !== "plan" && <RunResult run={shown} rules={rules} onRefresh={() => setRefreshKey((k) => k + 1)} />}

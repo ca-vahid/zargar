@@ -267,8 +267,19 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
             <WindowBadge window={run.result?.sessionWindow} />
           </div>
           {run.result?.passes && run.result.passes.length > 0 && (
-            <><div className="tq-label" style={{ marginTop: 10 }}>Vision passes</div>
-              <table className="tq-passes"><tbody>{run.result.passes.map((p, i) => <tr key={i}><td>{p.name}</td><td>{p.seconds}s</td></tr>)}</tbody></table></>
+            <><div className="tq-label" style={{ marginTop: 10 }}>Vision passes
+              {run.threadId && (
+                <button className="link-btn" onClick={() => openChat(run.threadId!)}
+                  title="The full transcript — what the model thought and wrote in each pass">
+                  read the model's write-up
+                </button>
+              )}</div>
+              <table className="tq-passes"><tbody>{run.result.passes.map((p, i) => (
+                <tr key={i} className={run.threadId ? "clickable" : undefined}
+                  title={run.threadId ? "Open the run chat — the full pass-by-pass transcript" : undefined}
+                  onClick={() => run.threadId && openChat(run.threadId!)}>
+                  <td>{p.name}</td><td>{p.seconds}s</td>
+                </tr>))}</tbody></table></>
           )}
           <Provenance run={run} />
           <div className="tq-label" style={{ marginTop: 10 }}>Trace {trace.length ? `${trace.length} steps` : ""}

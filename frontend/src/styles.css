@@ -1643,6 +1643,23 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   color: var(--text-1);
 }
 
+/* armed-run switcher above the Analyse view: shuffle the fleet plan by plan */
+.tq-armed-strip {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin-bottom: var(--pad);
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.tq-armed-strip .chips { display: flex; flex-wrap: wrap; gap: 6px; flex: 1; min-width: 0; }
+.tq-armed-strip .tq-armed-strip-label {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .08em; color: var(--text-3); white-space: nowrap;
+}
+.tq-armed-strip .tq-scan-chip { cursor: pointer; }
+.tq-armed-strip .icon-btn { font-size: 16px; line-height: 1; padding: 0 6px; }
+.tq-setup-row.active { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); }
+.tq-passes tr.clickable { cursor: pointer; }
+.tq-passes tr.clickable:hover td { color: var(--accent); }
+
 /* compact raised "N running" pill (was inheriting an oversized status box) */
 .tq-running-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px;
   border-radius: 999px; font-weight: 700; font-size: 12px; white-space: nowrap;
