@@ -38,6 +38,14 @@ a number** (p. 72).
   weights are wrong — re-derive from the outcome data, don't hand-tune.
 - Early signal (1 day, anecdotal): the only two movers on 2026-08-25 (SNOW +1.89R replay,
   ZS ~+0.8R) were both armed A's. Encouraging, meaningless at n=2.
+- **C-cohort experiment (armed 2026-08-25 evening for 08-26):** all 14 grade-C rows
+  analyst-checked and armed on Practice **regardless of verdict** — deliberately
+  including analyst-✗ plans as the control group, so grade-vs-outcome is measured
+  without our own selection bias. The analyst rejected **0/14 C's**, making the
+  cohort-level agreement monotonic: analyst confirmation rate A 6/12 (50%) >
+  B 16/60 (27%) > C 0/14 (0%). The two measures rank cohorts the same way even
+  though they disagree constantly on individual A's — outcomes will arbitrate.
+  Fleet for 08-26: 37 plans (6A + 17B + 14C incl. ZS-B, CHPT-A).
 
 ### 1.3 Analyst-check hit rate — does the $0.20 read earn its keep? ⏳ accumulating
 - The informed analyst (post-2026-08-24 prompt fix) confirmed 10/13 A's. Track
