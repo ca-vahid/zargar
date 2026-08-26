@@ -887,15 +887,24 @@ export function TechniquePage() {
   // While anything is running, poll status + the run list so the running pill,
   // History rows and the rail spinners come down on their own.
   const runningCount = status?.running?.length ?? 0;
+  // Also poll while THIS client believes the open run is still running: a run that
+  // died with a restart is marked failed server-side, but a page opened before that
+  // would wait for live events for ever (MSTR 2026-08-26, "preparing bars…" for 5 min).
+  const activeRunningId = active?.status === "running" ? active.id : null;
   useEffect(() => {
-    if (!runningCount) return;
+    if (!runningCount && !activeRunningId) return;
     const tick = () => {
       refreshStatus();
       api.techniqueRuns(100).then(setRuns).catch(() => undefined);
+      if (activeRunningId) {
+        api.techniqueRun(activeRunningId)
+          .then((r) => { if (r.status !== "running") setRuns([r, ...useStore.getState().techniqueRuns.filter((x) => x.id !== r.id)]); })
+          .catch(() => undefined);
+      }
     };
     const t = setInterval(tick, 5000);
     return () => clearInterval(t);
-  }, [runningCount > 0, refreshStatus, setRuns]);
+  }, [runningCount > 0, activeRunningId, refreshStatus, setRuns]);
 
   const rules = status?.rules ?? {};
   const shown = full && active && full.id === active.id ? { ...active, ...full } : active;
