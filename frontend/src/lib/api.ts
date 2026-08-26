@@ -31,6 +31,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+  if (resp.status === 401 && !path.startsWith("/api/auth/")) {
+    // the session ended (or never existed): show the sign-in screen
+    const { useStore } = await import("../store");
+    useStore.getState().setAuth({ checked: true, required: true, user: null });
+  }
   if (!resp.ok) {
     let detail = resp.statusText;
     try {
@@ -71,6 +76,13 @@ export const api = {
       "POST", "/api/brokerages/impact", body),
   refreshBrokerages: () =>
     request<import("../types").Brokerages>("POST", "/api/brokerages/refresh"),
+  // --- sign-in ---
+  authConfig: () => request<{ required: boolean; googleClientId: string | null; sessionDays: number;
+    providers: { id: string; label: string; enabled: boolean; note?: string | null }[] }>("GET", "/api/auth/config"),
+  authMe: () => request<{ required: boolean; user: import("../store").AuthUser | null }>("GET", "/api/auth/me"),
+  authGoogle: (credential: string) =>
+    request<{ user: import("../store").AuthUser; token: string }>("POST", "/api/auth/google", { credential }),
+  authLogout: () => request<{ ok: boolean }>("POST", "/api/auth/logout"),
   pushVapid: () => request<{ available: boolean; publicKey: string | null; subscriptions: number }>("GET", "/api/push/vapid"),
   pushSubscribe: (body: { endpoint: string; keys: Record<string, string>; label?: string }) =>
     request<{ ok: boolean; subscriptions: number }>("POST", "/api/push/subscribe", body),

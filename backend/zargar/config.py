@@ -17,8 +17,16 @@ class AppConfig(BaseSettings):
     # --- api server ------------------------------------------------------
     host: str = "127.0.0.1"
     port: int = 8420
-    # Static bearer token. Empty string disables auth (local development).
+    # Static bearer token (scripts / CLI). Empty = not used.
     auth_token: str = ""
+    # --- sign-in (SSO) ---------------------------------------------------
+    # Google OAuth client id (Cloud Console -> Credentials -> OAuth client, Web).
+    # Set -> the app requires sign-in; only the allow-listed emails get in.
+    google_client_id: str = ""
+    google_allowed_emails: str = ""      # comma-separated, e.g. "you@gmail.com"
+    session_secret: str = ""             # HS256 secret for session cookies; empty = generated + kept in settings
+    session_days: int = 30
+    # With neither auth_token nor google_client_id set the API is open (local dev only).
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     # --- broker ----------------------------------------------------------

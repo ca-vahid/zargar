@@ -1799,3 +1799,41 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 /* Validation: symbol package presets (the universe / core only / custom) */
 .tq-wf-presets { display: flex; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; }
 .tq-wf-presets .chip-btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+
+/* ── sign-in ───────────────────────────────────────────────────────────── */
+.login {
+  min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px;
+  background:
+    radial-gradient(900px 420px at 80% -10%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 60%),
+    var(--bg);
+}
+.login--wait { place-items: center; }
+.login-card {
+  width: min(420px, 100%); background: var(--surface-1); border: 1px solid var(--border);
+  border-radius: 18px; padding: 28px 24px 20px; box-shadow: var(--shadow-1);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.login-brand { display: flex; flex-direction: column; align-items: center; gap: 4px; margin-bottom: 8px; }
+.login-brand img { width: 64px; height: 64px; object-fit: contain; }
+.login-word { font-size: 28px; font-weight: 800; letter-spacing: 0.5px; }
+.login-word em { color: var(--accent); font-style: normal; }
+.login-tag { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 2px; color: var(--text-3); }
+.login-h { font-size: var(--fs-4); font-weight: 700; }
+.login-p { margin: 0; color: var(--text-2); font-size: var(--fs-2); line-height: 1.5; }
+.login-google { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 0; min-height: 56px; }
+.login-gsi { min-height: 44px; }
+.login-disabled {
+  display: grid; grid-template-columns: 28px 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center;
+  width: 100%; min-height: 52px; padding: 8px 14px; border-radius: 999px; text-align: left;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-3); font: inherit; font-weight: 600;
+  opacity: 0.6; cursor: not-allowed;
+}
+.login-disabled small { grid-column: 2; font-weight: 400; font-size: var(--fs-0); }
+.login-prov-ic {
+  grid-row: 1 / span 2; width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center;
+  justify-content: center; font-weight: 800; background: var(--surface-3); color: var(--text-2);
+}
+.login-hint { font-size: var(--fs-1); color: var(--text-3); text-align: center; }
+.login-err { font-size: var(--fs-2); color: var(--down); background: color-mix(in srgb, var(--down) 10%, transparent); border-radius: 8px; padding: 8px 10px; }
+.login-foot { font-size: var(--fs-0); color: var(--text-3); text-align: center; margin-top: 4px; line-height: 1.4; }

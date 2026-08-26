@@ -26,10 +26,10 @@ def main() -> None:
     )
     # Exposed to a network (phones via LAN/Tailscale) the token is the only gate —
     # never start reachable-and-open. Loopback (Tailscale Serve proxies to it) is fine.
-    if config.host not in ("127.0.0.1", "localhost", "::1") and not config.auth_token:
+    if config.host not in ("127.0.0.1", "localhost", "::1") and not (config.auth_token or config.google_client_id):
         raise SystemExit(
-            f"refusing to bind {config.host}:{config.port} without ZARGAR_AUTH_TOKEN — "
-            "set one in backend/.env (see docs/MOBILE-ACCESS.md)")
+            f"refusing to bind {config.host}:{config.port} without sign-in — set ZARGAR_GOOGLE_CLIENT_ID "
+            "(+ ZARGAR_GOOGLE_ALLOWED_EMAILS) or ZARGAR_AUTH_TOKEN in backend/.env (docs/AUTH.md)")
     app = create_app(config)
     uvicorn.run(app, host=config.host, port=config.port, log_level="info")
 

@@ -20,12 +20,37 @@ import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 import { clientKind, useViewport } from "./lib/viewport";
 import { TabBar } from "./components/TabBar";
+import { LoginPage } from "./pages/LoginPage";
+import { reconnectWS } from "./lib/ws";
 
 export default function App() {
+  const auth = useStore((s) => s.auth);
+  const setAuth = useStore((s) => s.setAuth);
+  // who am I? (public endpoints) — decides between the login screen and the app
+  useEffect(() => {
+    (async () => {
+      try {
+        const cfg = await api.authConfig();
+        const me = await api.authMe();
+        setAuth({ checked: true, required: cfg.required, user: me.user, googleClientId: cfg.googleClientId,
+          providers: cfg.providers, sessionDays: cfg.sessionDays });
+      } catch {
+        setAuth({ checked: true });
+      }
+    })();
+  }, [setAuth]);
+  const signedIn = auth.checked && (!auth.required || !!auth.user);
   // armed fleet powers the sidebar badge and the dashboard widget on every page
   useEffect(() => {
+    if (!signedIn) return;
     api.techniqueArmed(clientKind() === "phone").then((a) => useStore.getState().setTechniqueArmed(a)).catch(() => undefined);
-  }, []);
+  }, [signedIn]);
+  // a fresh sign-in gets a fresh socket + snapshot
+  const wasSignedIn = useState({ v: false })[0];
+  useEffect(() => {
+    if (signedIn && wasSignedIn.v === false && auth.checked) { wasSignedIn.v = true; if (auth.required) reconnectWS(); }
+    if (!signedIn) wasSignedIn.v = false;
+  }, [signedIn, auth.checked, auth.required, wasSignedIn]);
   const page = useStore((s) => s.page);
   const techniqueTab = useStore((s) => s.techniqueTab);
   const techniqueRunId = useStore((s) => s.techniqueFocusRunId);
@@ -66,6 +91,8 @@ export default function App() {
   }, [theme, accent, density, mode]);
 
   const { isPhone, isTablet } = useViewport();
+  if (!auth.checked) return <div className="login login--wait"><div className="spinner" /></div>;
+  if (!signedIn) return <LoginPage />;
   const [sideCollapsed, setSideCollapsed] = useState(() => {
     const stored = localStorage.getItem("zargar_side_collapsed");
     if (stored !== null) return stored === "1";

@@ -40,6 +40,12 @@ Review loop (trace, provenance, outcomes, reviews, replay, bundle):
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
 Session plans + walk-forward + live arming: `docs/TECHNIQUE-WALKFORWARD-PLAN.md`
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
+**Sign-in (2026-08-26):** `docs/AUTH.md`. `zargar/auth.py` verifies Google ID tokens (PyJWT + Google JWKS)
+and gates on `ZARGAR_GOOGLE_ALLOWED_EMAILS`, then issues an HS256 session (HttpOnly `zargar_session`
+cookie + token in the body for WS `?token=`). `require_auth` accepts static token, bearer session, cookie
+or `?token=`; `/api/auth/*` are the only public routes. Microsoft/Office 365 are listed as disabled
+providers on the login page (`AuthService.providers()`). Frontend: `pages/LoginPage.tsx` gates `App`
+when `auth.required && !user`; a 401 anywhere flips the store to the login screen.
 **Mobile (built 2026-08-26):** `docs/MOBILE-PLAN.md` (phases, decisions) and `docs/MOBILE-ACCESS.md`
 (Tailscale/HTTPS/token handoff, real-device checklist). Phones (< 640px, or landscape ≤ 500px tall,
 `lib/viewport.ts`) get a bottom tab bar (Now · Trade · Signals · Portfolio · More), no sidebar, a

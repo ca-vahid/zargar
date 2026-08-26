@@ -8,7 +8,7 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from .. import events as ev
 from ..brokers.yahoo import RANGE_TFS, YahooQuoteFeed, search_symbols
+from ..auth import COOKIE, AuthError, AuthService, cookie_kwargs
 from ..config import AppConfig
 from ..domain import new_id
 from ..engine import Engine
@@ -62,15 +63,53 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     )
 
     # --- auth ----------------------------------------------------------------
+    auth_svc: AuthService = getattr(eng, "auth", None) or AuthService(config, eng.settings)
+    eng.auth = auth_svc
+
     async def require_auth(request: Request) -> None:
-        if not config.auth_token:
+        if not auth_svc.required:
             return
         header = request.headers.get("authorization", "")
-        token = header.removeprefix("Bearer ").strip() if header else request.query_params.get("token", "")
-        if token != config.auth_token:
-            raise HTTPException(status_code=401, detail="invalid token")
+        bearer = header.removeprefix("Bearer ").strip() if header else ""
+        user = auth_svc.authenticate(bearer=bearer or None, cookie=request.cookies.get(COOKIE),
+                                     query_token=request.query_params.get("token") or None)
+        if user is None:
+            raise HTTPException(status_code=401, detail="sign in required")
+        request.state.user = user
 
     auth = Depends(require_auth)
+
+    class GoogleCredential(BaseModel):
+        credential: str
+
+    @app.get("/api/auth/config")
+    async def auth_config():
+        return auth_svc.public_config()
+
+    @app.get("/api/auth/me")
+    async def auth_me(request: Request):
+        header = request.headers.get("authorization", "")
+        bearer = header.removeprefix("Bearer ").strip() if header else ""
+        user = auth_svc.authenticate(bearer=bearer or None, cookie=request.cookies.get(COOKIE),
+                                     query_token=request.query_params.get("token") or None)
+        return {"required": auth_svc.required, "user": user}
+
+    @app.post("/api/auth/google")
+    async def auth_google(body: GoogleCredential, request: Request, response: Response):
+        try:
+            user = auth_svc.sign_in_google(body.credential)
+        except AuthError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc))
+        token = auth_svc.issue_session(user)
+        response.set_cookie(COOKIE, token, **cookie_kwargs(config, https=request.url.scheme == "https"))
+        await eng.journal.append("AuthSignIn", {"email": user["email"], "provider": "google",
+                                                 "client": request.headers.get("x-zargar-client", "desktop")})
+        return {"user": user, "token": token}
+
+    @app.post("/api/auth/logout")
+    async def auth_logout(response: Response):
+        response.delete_cookie(COOKIE, path="/")
+        return {"ok": True}
 
     # --- health / state -----------------------------------------------------
     @app.get("/api/health")
@@ -392,9 +431,10 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     # --- websocket -----------------------------------------------------------
     @app.websocket("/ws")
     async def ws_endpoint(ws: WebSocket):
-        if config.auth_token:
-            token = ws.query_params.get("token", "")
-            if token != config.auth_token:
+        if auth_svc.required:
+            user = auth_svc.authenticate(query_token=ws.query_params.get("token") or None,
+                                         cookie=ws.cookies.get(COOKIE))
+            if user is None:
                 await ws.close(code=4401)
                 return
         await hub.handle(ws)
