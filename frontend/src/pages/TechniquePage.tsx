@@ -98,12 +98,17 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
 }) {
   const toast = useStore((s) => s.toast);
   const runsForFilter = useStore((s) => s.techniqueRuns);
+  const [rows, setRows] = useState<Record<string, TechniqueRun>>({});
+  const [missing, setMissing] = useState<Record<string, number>>({});   // id -> polls it was not found
   // Runs that died with a restart are noise, not results: hide them so the list
-  // is clean when you re-run (a second Check & arm re-reads them anyway)
+  // is clean when you re-run (a second Check & arm re-reads them anyway); ids the
+  // server cannot find after two polls are dropped the same way
   const ids = useMemo(() => rawIds.filter((id) => {
-    const r = runsForFilter.find((x) => x.id === id);
-    return !(r && r.status === "failed" && /interrupted by a restart/i.test(r.error ?? ""));
-  }), [rawIds, runsForFilter]);
+    const r = rows[id] ?? runsForFilter.find((x) => x.id === id);
+    if (r && r.status === "failed" && /interrupted by a restart/i.test(r.error ?? "")) return false;
+    if (!r && (missing[id] ?? 0) >= 2) return false;
+    return true;
+  }), [rawIds, runsForFilter, rows, missing]);
   const armed = useStore((s) => s.techniqueArmed);
   const portfolios = useStore((s) => s.portfolios);
   const maxConcurrent = useStore((s) => Number(s.settings["technique.max_concurrent_runs"] ?? 8));
@@ -112,7 +117,6 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   // live -> the default/first live account (the server guards the same way)
   const armPortfolio = useMemo(() => portfolios.find((p) =>
     workspaceOf(p.kind) === ws && (ws !== "live" ? p.kind === "sim" : true)), [portfolios, ws]);
-  const [rows, setRows] = useState<Record<string, TechniqueRun>>({});
   const [full, setFull] = useState<Record<string, TechniqueRun>>({});
   const [active, setActive] = useState<Record<string, { symbol?: string; stage?: string }>>({});
   const [armBusy, setArmBusy] = useState<Record<string, boolean>>({});
@@ -134,11 +138,13 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
         const map: Record<string, TechniqueRun> = {};
         for (const r of all) if (ids.includes(r.id)) map[r.id] = r;
         // stragglers that still fell outside the window: fetch them directly
-        for (const id of ids.filter((x) => !map[x]).slice(0, 12)) {
-          try { map[id] = await api.techniqueRun(id); } catch { /* transient */ }
+        const notFound: string[] = [];
+        for (const id of ids.filter((x) => !map[x]).slice(0, 40)) {
+          try { map[id] = await api.techniqueRun(id); } catch { notFound.push(id); }
         }
         if (stop) return;
         setRows(map);
+        if (notFound.length) setMissing((m) => { const n = { ...m }; for (const id of notFound) n[id] = (n[id] ?? 0) + 1; return n; });
         for (const id of ids) {
           const r = map[id];
           if (r && r.status !== "running") {
@@ -189,7 +195,9 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   const failedIds = doneIds.filter((id) => rows[id]?.status === "failed");
   const allDone = finished.current || (ids.length > 0 && ids.every((id) => rows[id] && rows[id].status !== "running"));
   const workingIds = ids.filter((id) => active[id] && (!rows[id] || rows[id].status === "running"));
-  const queuedIds = ids.filter((id) => !active[id] && (!rows[id] || rows[id].status === "running"));
+  const queuedIds = ids.filter((id) => !active[id] && rows[id]?.status === "running");
+  const loadingIds = ids.filter((id) => !rows[id]);
+  void loadingIds;
   const pct = ids.length ? Math.round((doneIds.length / ids.length) * 100) : 0;
   const startMs = useMemo(() => {
     const ts = ids.map((id) => rows[id]?.createdAt).filter(Boolean)
@@ -933,7 +941,8 @@ export function TechniquePage() {
   const [scan, setScan] = useState<{ ids: string[]; done: boolean; armable?: boolean } | null>(() => {
     try {
       const s = JSON.parse(localStorage.getItem("zargar_tq_scan") || "null");
-      if (s && Array.isArray(s.ids) && s.ids.length && Date.now() - (s.ts ?? 0) < 86_400_000)
+      // bring a panel back only while it is plausibly still the batch of the moment
+      if (s && Array.isArray(s.ids) && s.ids.length && Date.now() - (s.ts ?? 0) < 3 * 3_600_000)
         return { ids: s.ids, done: !!s.done, armable: !!s.armable };
     } catch { /* corrupt state — start clean */ }
     return null;
