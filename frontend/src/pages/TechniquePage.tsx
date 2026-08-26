@@ -1009,11 +1009,30 @@ export function TechniquePage() {
     setScanConfirm(false);
     try {
       if (scanSource === "sheet" && sheetScan && sheetPicked.length) {
-        const settled = await Promise.allSettled(sheetPicked.map((r) =>
+        // A row that already has a FINISHED analyst read (a promoted run with the
+        // model passes) is reused, not paid for again — a second "Check & arm" after
+        // a restart re-reads only what is still missing (2026-08-26: 88 rows were
+        // re-read when 9 already had verdicts).
+        const reused: string[] = [];
+        const todo: typeof sheetPicked = [];
+        await Promise.all(sheetPicked.map(async (r) => {
+          const pid = (r as any).promotedRunId as string | null;
+          if (pid) {
+            try {
+              const run: any = await api.techniqueRun(pid);
+              const passes = run?.result?.passes ?? [];
+              if (run?.status === "done" && passes.length > 0) { reused.push(run.id); return; }
+            } catch { /* fall through: re-run it */ }
+          }
+          todo.push(r);
+        }));
+        const settled = await Promise.allSettled(todo.map((r) =>
           api.techniquePromote(sheetScan.sweepId, { symbol: r.symbol, session: r.session, withVision: true, wait: false })));
-        const ids = settled.filter((s): s is PromiseFulfilledResult<TechniqueRun> => s.status === "fulfilled").map((s) => s.value.id);
-        const failed = settled.length - ids.length;
+        const started = settled.filter((s): s is PromiseFulfilledResult<TechniqueRun> => s.status === "fulfilled").map((s) => s.value.id);
+        const failed = settled.length - started.length;
         if (failed) toast("info", `${failed} symbol(s) could not start (daily cap / errors)`);
+        if (reused.length) toast("info", `${reused.length} setup(s) already had an analyst read — reused, not re-run`);
+        const ids = [...reused, ...started];
         if (ids.length) setScan({ ids, done: false, armable: true });
       } else {
         const r = await api.techniqueScan();
