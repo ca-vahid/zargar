@@ -12,6 +12,8 @@ import { useAsync } from "../lib/useAsync";
 import { useDaySeries } from "../lib/useDaySeries";
 import { watchSymbol } from "../lib/ws";
 import { useQuote, useStore } from "../store";
+import { useViewport } from "../lib/viewport";
+import { Sheet } from "../components/Sheet";
 
 /** Options page: underlying header → expiry strip → strike ladder, with the
  * option ticket on the right and the blotter below (same frame as Trade). */
@@ -60,6 +62,79 @@ export function OptionsPage() {
 
   const spot = chain.data?.spot ?? expiries.data?.spot ?? null;
   const expList = useMemo(() => expiries.data?.expiries ?? [], [expiries.data]);
+  const { isPhone } = useViewport();
+  const [ticketOpen, setTicketOpen] = useState(false);
+  const occSel = parseOcc(contract);
+  // picking a contract on a phone opens the ticket sheet straight away
+  const lastContract = useMemo(() => contract, [contract]);
+  useEffect(() => { if (isPhone && lastContract) setTicketOpen(true); }, [isPhone, lastContract]);
+
+  if (isPhone) {
+    return (
+      <div className="trade-phone opt-phone-page">
+        <div className="panel chart-area opt-chain-area">
+          <div className="quote-head quote-head--phone">
+            <input className="symbol-input" value={symInput}
+              onChange={(e) => setSymInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && commit()}
+              onBlur={commit} spellCheck={false} aria-label="Underlying symbol"
+              enterKeyHint="go" autoCapitalize="characters" autoCorrect="off" />
+            {quote && (
+              <>
+                <span className="last"><TickArrow symbol={underlying} /> {fmtMoney(quote.last)}</span>
+                <DeltaPill quote={quote} fallbackOpen={day.open} size="md" />
+              </>
+            )}
+            <div className="quote-head-sub">
+              {expiries.data?.iv30 != null && <span>IV30 {Number(expiries.data.iv30).toFixed(1)}%</span>}
+              {expiries.data?.delayed && <span className="status-pill dim">chain ~15 min delayed (CBOE)</span>}
+              {spot != null && chain.data && <span>{chain.data.rows.length} strikes</span>}
+            </div>
+          </div>
+          <div className="opt-expiries">
+            <AsyncSection state={expiries}
+              empty={<EmptyState title={`No US-listed options for ${underlying}`} art={false}
+                hint="CBOE lists US options only — .TO/.V symbols have no chain here." />}
+              isEmpty={(d) => !d || d.expiries.length === 0}>
+              {() => (
+                <>
+                  {expList.map((e) => (
+                    <button key={e.date}
+                      className={`chip-btn opt-exp ${e.date === expiry ? "active" : ""} ${e.is0dte ? "opt-exp--0dte" : ""}`}
+                      onClick={() => setOptionsView({ expiry: e.date })}>
+                      <span className="opt-exp-date">{fmtExp(e.date)}</span>
+                      <span className="opt-exp-dte">{e.is0dte ? "0DTE" : `${e.dte}d`}</span>
+                    </button>
+                  ))}
+                </>
+              )}
+            </AsyncSection>
+          </div>
+          <div className="opt-ladder-scroll">
+            <AsyncSection state={chain}
+              empty={<EmptyState title="Pick an expiry" art={false} />}
+              isEmpty={(d) => !d}>
+              {(d) => d ? (
+                <OptionChain chain={d} selected={contract}
+                  onSelect={(sym) => { setOptionsView({ contract: sym }); setTicketOpen(true); }} />
+              ) : null}
+            </AsyncSection>
+          </div>
+        </div>
+        <Blotter />
+        <div className="trade-phone-bar opt-phone-bar-fixed">
+          <button type="button" className="submit-btn buy" disabled={!contract} onClick={() => setTicketOpen(true)}>
+            {occSel ? `Ticket · ${occSel.short}` : "Pick a contract above"}
+          </button>
+        </div>
+        {ticketOpen && contract && (
+          <Sheet title={occSel?.display ?? "Option ticket"} onClose={() => setTicketOpen(false)} full className="ticket-sheet opt-ticket-sheet">
+            <OptionTicket contract={contract} />
+          </Sheet>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="trade-grid opt-grid">

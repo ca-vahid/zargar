@@ -40,10 +40,19 @@ Review loop (trace, provenance, outcomes, reviews, replay, bundle):
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
 Session plans + walk-forward + live arming: `docs/TECHNIQUE-WALKFORWARD-PLAN.md`
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
-**Mobile:** `docs/MOBILE-PLAN.md` is the phase plan for the phone-first UI (bottom tabs,
-`Sheet` primitive, Armed "Now" home, exit-only safety, PWA/push); Phase 1 (shell) must land
-before the others. Gate every phase with `cd frontend && npm run mobile-audit` (Playwright device
-matrix; screenshots in `frontend/.mobile-shots/`, gitignored).
+**Mobile (built 2026-08-26):** `docs/MOBILE-PLAN.md` (phases, decisions) and `docs/MOBILE-ACCESS.md`
+(Tailscale/HTTPS/token handoff, real-device checklist). Phones (< 640px, or landscape ≤ 500px tall,
+`lib/viewport.ts`) get a bottom tab bar (Now · Trade · Signals · Portfolio · More), no sidebar, a
+compact TopBar with HALT always visible, and `Sheet` instead of modals/popovers (`components/Sheet.tsx`;
+`Modal` becomes a Sheet on phones). `src/mobile.css` is the ONLY place for phone/touch rules — it loads
+after `styles.css`; never add `@media (max-width…)` to `styles.css`. Armed "Now" (`components/armed/
+NowView.tsx`) is the phone home fed by `GET /api/technique/armed/summary`. Safety: `mobile.exit_only`
+(default on) + RiskGate `phone_entry_blocked` — the API stamps `OrderIntent.client` from the
+`X-Zargar-Client` header, never from the body. Push: `zargar/push.py` (pywebpush, VAPID + subscriptions
+in settings), SW at `frontend/public/sw.js` (shell only, never `/api`). Gate every UI change with
+`cd frontend && npm run mobile-audit` (Playwright device matrix; screenshots in `frontend/.mobile-shots/`,
+gitignored); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
+parallel with it.
 **`docs/TRADING-RULES.md` is the living judgement log** — findings, open questions with
 decision thresholds (e.g. is `gap_void_r=1.0` too strict), theories, and the change log
 of every rule/parameter change. Update it whenever a session teaches something about

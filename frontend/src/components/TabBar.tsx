@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useStore, type Page } from "../store";
 import { Sheet } from "./Sheet";
@@ -33,6 +33,12 @@ export function TabBar() {
   const armedCount = armed.filter((a) => a.status === "armed" || a.status === "paused").length;
   const [more, setMore] = useState(false);
   const moreActive = MORE.some((m) => m.key === page) || page === "technique";
+  // installed app icon badge = things that need a human
+  useEffect(() => {
+    const n = attention + pending;
+    const nav = navigator as any;
+    try { if (n > 0) nav.setAppBadge?.(n); else nav.clearAppBadge?.(); } catch { /* unsupported */ }
+  }, [attention, pending]);
 
   return (
     <>

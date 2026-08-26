@@ -4,7 +4,7 @@
 safe to trade from — with the **Armed "Now" screen** as its home. One codebase,
 responsive; no separate mobile build.
 
-**Status legend:** `[ ]` todo · `[~]` in progress · `[x]` done. Phases are
+**Status legend:** `[ ]` todo · `[~]` in progress · `[x]` done. **Implemented 2026-08-26** (git log "Mobile Phase"); the open items below are ops on the user's own machine/phone or measurement follow-ups. Phases are
 independent enough to run in parallel worktrees **except Phase 1, which
 everything else builds on** (shell, breakpoints, `Sheet`, touch tokens).
 Do Phase 1 first, alone, then fan out.
@@ -124,9 +124,9 @@ strip, sidebar badge for armed/attention counts.
 
 ## 3. Phases
 
-### Phase 0 — Reach the phone at all (access, auth, TLS) `[ ]`
+### Phase 0 — Reach the phone at all (access, auth, TLS) `[x]`
 
-- [ ] **Bind + auth.** `ZARGAR_HOST=0.0.0.0` (or the Tailscale IP) and a
+- [x] **Bind + auth.** `ZARGAR_HOST=0.0.0.0` (or the Tailscale IP) and a
       required `ZARGAR_AUTH_TOKEN` when the host isn't loopback (refuse to start
       exposed without a token). Token entry screen on the phone (currently only
       `?token=` / localStorage): a small **"Sign in"** sheet that stores the
@@ -138,85 +138,85 @@ strip, sidebar badge for armed/attention counts.
       Cloudflare Tunnel (public — token mandatory). Document in
       `docs/MOBILE-ACCESS.md`; add `scripts/mobile-access.ps1` that prints the
       QR + URL.
-- [ ] **CORS/WS origin** allow the served origin; WS `?token=` stays.
-- [ ] **Session hardening for a phone that's out in the world:** token in
+- [x] **CORS/WS origin** allow the served origin; WS `?token=` stays.
+- [x] **Session hardening for a phone that's out in the world:** token in
       `localStorage` is acceptable for a single user, but add a Settings
       "Sign out this device" + "Rotate token" (rotating invalidates every
       device).
 
-### Phase 1 — Shell & primitives (everything depends on this) `[ ]`
+### Phase 1 — Shell & primitives (everything depends on this) `[x]`
 
 **Viewport / tokens**
-- [ ] `index.html`: `viewport-fit=cover`, `theme-color` (light+dark),
+- [x] `index.html`: `viewport-fit=cover`, `theme-color` (light+dark),
       `apple-mobile-web-app-*` metas, `color-scheme`.
-- [ ] `.app { height: 100dvh }` (fallback `100vh`); all `calc(100vh - …)`
+- [x] `.app { height: 100dvh }` (fallback `100vh`); all `calc(100vh - …)`
       → `dvh`; `overscroll-behavior: none` on `.app`; `-webkit-text-size-adjust:100%`.
-- [ ] Global touch tokens: `@media (pointer: coarse)` → `--control-y`
+- [x] Global touch tokens: `@media (pointer: coarse)` → `--control-y`
       bumps, `input/select/textarea { font-size: 16px }`, min-height 44px on
       `button`, `.link-btn` becomes a padded button, `.switch` 44×26,
       `.icon-btn` 40×40 hit area (visual can stay small), `:active` states,
       `-webkit-tap-highlight-color: transparent`, `touch-action: manipulation`.
-- [ ] **Fix the sidebar cascade bug** (`:1501` vs `:823`) regardless of the
+- [x] **Fix the sidebar cascade bug** (`:1501` vs `:823`) regardless of the
       rest — one-line, ship first.
-- [ ] `useViewport()` store slice: `isPhone` (<640), `isTablet`, `coarse`
+- [x] `useViewport()` store slice: `isPhone` (<640), `isTablet`, `coarse`
       (`matchMedia('(pointer: coarse)')`), `orientation`; **derived, never
       persisted**. Sidebar collapse state stops mattering on phones.
 
 **Navigation**
-- [ ] **Bottom tab bar** on phones (`.tabbar`, fixed, safe-area padded,
+- [x] **Bottom tab bar** on phones (`.tabbar`, fixed, safe-area padded,
       56px + inset): **Now (Armed) · Trade · Signals · Portfolio · More**.
       Badges: armed/attention on Now, pending count on Signals. `More` opens a
       sheet with Dashboard, Options, Watchlists, **Techniques (grouped: EM
       Options, and any technique added later — same family model as the
       sidebar)**, Journal, Settings, theme toggle, connection state, sign out.
-- [ ] Sidebar hidden below 640px; on tablets it's the 52px rail by default.
-- [ ] **Top bar on phones** = brand mark · **workspace chip (PRACTICE/LIVE)** ·
+- [x] Sidebar hidden below 640px; on tablets it's the 52px rail by default.
+- [x] **Top bar on phones** = brand mark · **workspace chip (PRACTICE/LIVE)** ·
       **HALT** (44px, always visible, right-thumb) · search icon (opens the
       symbol-search sheet). Everything else (equity chip, attention pill, conn
       dot, theme, mode select) moves to `More`/Dashboard. Mode switch on phone
       lives in `More` behind the same confirm.
-- [ ] Banners (`.halt-banner`, `.drift-banner`): `min-height` instead of
+- [x] Banners (`.halt-banner`, `.drift-banner`): `min-height` instead of
       `height:30px`, wrap, stack buttons; halt banner text ≥ 14px.
-- [ ] Toasts: top-anchored on phones, full-width minus 8px, explicit ✕,
+- [x] Toasts: top-anchored on phones, full-width minus 8px, explicit ✕,
       auto-dismiss stays; never overlap the tab bar.
-- [ ] Splash: skip below 640px or serve ≤ 800px art; `MAX_SHOW_MS` 1.2s.
+- [x] Splash: skip below 640px or serve ≤ 800px art; `MAX_SHOW_MS` 1.2s.
 
 **Primitives**
-- [ ] **`Sheet`** component (bottom sheet + `full` variant): portal, drag
+- [x] **`Sheet`** component (bottom sheet + `full` variant): portal, drag
       handle, `max-height: 92dvh`, safe-area footer slot, scroll lock on body
       (fix the missing lock in `Modal` too), Escape/back-gesture closes
       (pushState entry so Android back closes the sheet, not the page),
       focus trap. `Modal` renders as `Sheet` when `isPhone`.
-- [ ] **`Confirm`** upgrade: replace every `window.confirm` (Armed stop-all,
+- [x] **`Confirm`** upgrade: replace every `window.confirm` (Armed stop-all,
       pause/disarm/flatten, cancel order) with `ConfirmDialog`/`Sheet`; add a
       **typed-word confirm** variant ("type FLATTEN") for flatten-all and
       live flatten.
-- [ ] **`InfoTip` sweep policy**: a lint-ish grep gate (`frontend/scripts/mobile-audit.mjs`
+- [x] **`InfoTip` sweep policy**: a lint-ish grep gate (`frontend/scripts/mobile-audit.mjs`
       reports `title=` on interactive/meaningful elements) — the sweep itself is
       done per page in Phases 2–6.
-- [ ] **`CardList`** primitive for the tables→cards conversions: row = 2 lines
+- [x] **`CardList`** primitive for the tables→cards conversions: row = 2 lines
       (primary left/right, secondary muted), optional trailing action ≥ 44px,
       swipe-to-reveal optional (not required).
-- [ ] **`ScrollX`** wrapper with edge fade + sticky first column for tables that
+- [x] **`ScrollX`** wrapper with edge fade + sticky first column for tables that
       must stay tables.
-- [ ] Highcharts base theme: phone variant (no navigator, no legend, larger
+- [x] Highcharts base theme: phone variant (no navigator, no legend, larger
       plot-line labels, `tooltip.followTouchMove`, `chart.zooming.pinchType:'x'`,
       `panning`), `chart.reflow()` on orientation change.
 
 **WS / data foundation (used by every page)**
-- [ ] `ws.ts`: keep a `watched` set, **resubscribe all topics on `onopen`**;
+- [x] `ws.ts`: keep a `watched` set, **resubscribe all topics on `onopen`**;
       `visibilitychange` → close socket after 30s hidden, reconnect + resnapshot
       on visible; reconnect backoff unchanged.
-- [ ] Quote conflation on the client: coalesce `quotes` frames per animation
+- [x] Quote conflation on the client: coalesce `quotes` frames per animation
       frame / ≥ 250ms; `applyQuotes` batches. `TickArrow` stops remounting DOM
       per tick (CSS animation restart via class toggle).
-- [ ] `useDaySeries`: on phones fetch `tf=5m&limit=80` (or skip when the
+- [x] `useDaySeries`: on phones fetch `tf=5m&limit=80` (or skip when the
       sparkline is hidden); evict cache on symbol change; unsubscribe listeners.
-- [ ] Client hint header `X-Zargar-Client: phone|tablet|desktop` on API + WS
+- [x] Client hint header `X-Zargar-Client: phone|tablet|desktop` on API + WS
       (for `mobile.exit_only` and slim payloads).
 
 **Exit-only safety (Principle 9)**
-- [ ] `settings_service.DEFAULTS["mobile.exit_only"] = True`; RiskGate safety
+- [x] `settings_service.DEFAULTS["mobile.exit_only"] = True`; RiskGate safety
       check `phone_entry_blocked` (entry intents from a `phone` client while the
       setting is on → `REJECTED_RISK`, journaled); ticket shows the reason and
       hides BUY-to-open on phones. Settings toggle with a confirm.
@@ -225,7 +225,7 @@ strip, sidebar badge for armed/attention counts.
 (audit passes for overflow + input size), tab bar navigates all pages, HALT is
 reachable on every screen, sheets replace modals on phone.
 
-### Phase 2 — Armed "Now": the mobile home `[ ]`
+### Phase 2 — Armed "Now": the mobile home `[x]`
 
 The phone opens on **Now**. It answers, top to bottom, in this order: *is
 anything wrong → am I in a trade → what fired today → what's still waiting →
@@ -233,7 +233,7 @@ what died and why → how did today go*. One column, cards, no tables, 30s poll
 + WS patches.
 
 **Backend — `GET /api/technique/armed/summary`** (new; the live list stays)
-- [ ] Returns (camelCase): `workspace`, `haltEngaged`, `attention[]`
+- [x] Returns (camelCase): `workspace`, `haltEngaged`, `attention[]`
       (`runId, symbol, reasons[], hasPosition`), `inTrade[]` (`runId, symbol,
       instrument, remaining, entry, stop, nextTarget, unrealizedPnl,
       unrealizedR, firedAt, window`), `timeline[]` (today, cross-plan, newest
@@ -246,110 +246,110 @@ what died and why → how did today go*. One column, cards, no tables, 30s poll
       lossLimitUsedPct`), `counts`. Reuses `_attention_reasons()`,
       `_unrealized()`, plan `events`; terminated-today plans come from the
       armed history rows for `planFor == today`.
-- [ ] `GET /api/technique/armed?slim=1`: no `events`, no per-trigger history —
+- [x] `GET /api/technique/armed?slim=1`: no `events`, no per-trigger history —
       for the phone list; the detail sheet fetches the full plan on open.
-- [ ] WS `armed` patches keep flowing; the page re-pulls `summary` on any
+- [x] WS `armed` patches keep flowing; the page re-pulls `summary` on any
       `fired|exit_*|entry_*|disarmed|alert` kind (debounced 2s) instead of
       every 30s only.
-- [ ] Tests: summary shape with fixtures for each timeline kind; loss-halted
+- [x] Tests: summary shape with fixtures for each timeline kind; loss-halted
       plan appears in `stoppedToday`; slim omits events.
 
 **UI — `pages/ArmedPage.tsx` phone layout (`isPhone`), desktop unchanged**
-- [ ] **Status strip** (sticky under the top bar): `PRACTICE/LIVE` · kill
+- [x] **Status strip** (sticky under the top bar): `PRACTICE/LIVE` · kill
       switch state · "3 armed · 1 in trade · 2 need attention" · last update
       age. Tap → quick actions sheet (Stop all / Flatten & stop all — typed
       confirm).
-- [ ] **Needs attention** cards (red left rule): symbol, reason sentence,
+- [x] **Needs attention** cards (red left rule): symbol, reason sentence,
       **Sell now** (44px, danger, sheet confirm) and **Open**.
-- [ ] **In trade** cards: symbol + instrument line, `remaining × entry`,
+- [x] **In trade** cards: symbol + instrument line, `remaining × entry`,
       unrealized (money + R) as the big number, stop / next target as a
       two-segment meter (price now between stop and target), fired time +
       window. Tap → plan sheet. Long-press/`…` → Sell now / Pause / Disarm.
-- [ ] **Fired today** timeline: one line per event (time · symbol · what ·
+- [x] **Fired today** timeline: one line per event (time · symbol · what ·
       P&L chip), critic kills and rejects included — "why nothing fired" is
       visible without opening anything.
-- [ ] **Watching** list (`CardList`): symbol, grade chip, distance-to-trigger
+- [x] **Watching** list (`CardList`): symbol, grade chip, distance-to-trigger
       meter (the existing `DistMeter`, 100% width), window state
       (open / closed / mid-day), STALE badge, one-line "waiting for …" text
       (from `ArmedDayPanel`'s now-sentence). Sort: attention → in trade →
       nearest trigger. Tap → plan sheet.
-- [ ] **Stopped today**: symbol, reason (loss halt / gap-voided / gapped past /
+- [x] **Stopped today**: symbol, reason (loss halt / gap-voided / gapped past /
       disarmed / exhausted), time; collapsed by default when empty.
-- [ ] **Today** footer card: realized · unrealized · loss-limit progress bar;
+- [x] **Today** footer card: realized · unrealized · loss-limit progress bar;
       after the close, per-plan scorecard summary and a link to History.
-- [ ] **Plan sheet** (`full` Sheet, replaces the split/strip detail on phones):
+- [x] **Plan sheet** (`full` Sheet, replaces the split/strip detail on phones):
       `summary` sentence at 16px first; badges row; actions row (Pause/Resume ·
       Disarm · Flatten · mode select) as 44px buttons in a 2-column grid;
       triggers as cards; trades as cards (5 stat cells → 2×3 grid); day chart
       as an opt-in collapsed section (`ArmedDayPanel` at `height: 260`, no
       volume/R panes on phone); log/audit as a collapsed section. Deep link
       `/armed/<runId>` opens it directly (for Telegram links, Phase 7).
-- [ ] **History** sub-tab: day cards (plans · fired · realized) → tap expands
+- [x] **History** sub-tab: day cards (plans · fired · realized) → tap expands
       the plan rows as cards.
-- [ ] Remove keyboard-only affordances from phone (←/→ hint); replace every
+- [x] Remove keyboard-only affordances from phone (←/→ hint); replace every
       `title=` void/status reason with visible text (`ArmedPage.tsx:313`).
-- [ ] Dashboard's armed widget reuses the summary (counts + attention).
+- [x] Dashboard's armed widget reuses the summary (counts + attention).
 
 **Done when:** on a 390px phone the Now screen shows attention/in-trade/fired/
 watching without any horizontal scroll, every action is ≥ 44px and confirmed
 through a sheet, `summary` payload < 30 KB for 40 plans, audit passes.
 
-### Phase 3 — Trade: chart, ticket, confirm, blotter `[ ]`
+### Phase 3 — Trade: chart, ticket, confirm, blotter `[x]`
 
-- [ ] **Trade layout on phones**: quote head (symbol · last · delta pill ·
+- [x] **Trade layout on phones**: quote head (symbol · last · delta pill ·
       ext-hours chip; bid/ask on a second line) → full-bleed chart
       (`min-height: 46dvh`, landscape: 80dvh, toolbar hidden) → sticky
       **BUY / SELL** bar above the tab bar (SELL only, or "Exit" when
       `mobile.exit_only` and no position) → positions card list.
-- [ ] **Chart toolbar → 2 controls**: range segmented control (1D · 5D · 1M ·
+- [x] **Chart toolbar → 2 controls**: range segmented control (1D · 5D · 1M ·
       1Y) and a `⋯` button opening a **chart settings sheet** (type, timeframe
       with *reasons* for disabled ones, indicators, views, ETH/RTH). Persist as
       today.
-- [ ] `StockChart` phone options: navigator off, volume pane off, indicator
+- [x] `StockChart` phone options: navigator off, volume pane off, indicator
       count ≤ 1, `pinchType:'x'`, `panning` with a 2-finger hint, tooltip
       `followTouchMove` + `outside`, plot-line labels ≥ 11px or moved to a
       chip strip, no destroy/rebuild for toolbar toggles that can `update()`.
       Fix the **collapsed-rail bug** below 1100px (`.trade-grid--tc` cascade).
-- [ ] **Order ticket → full-screen `Sheet`** on phones: single column,
+- [x] **Order ticket → full-screen `Sheet`** on phones: single column,
       16px inputs, numeric keypads (`inputmode="decimal"`), qty stepper
       (±1/±10 and "max"), **Validate / Place** segmented control replaces the
       19px dry-run switch, account picker → `Sheet`, fees + FX note inline at
       13px+ (no tooltips), "verify with broker" as a 44px button; footer =
       the submit button (fixed, safe-area). Label overflow: `BUY 10 AAPL` on
       one line, cost on a second.
-- [ ] **Confirm dialog → full-screen `Sheet`**: headline ≥ 20px, cost + account
+- [x] **Confirm dialog → full-screen `Sheet`**: headline ≥ 20px, cost + account
       + connection status as rows, **risk checks expanded inline** (name +
       detail, pass/fail), pre-flight gating unchanged, **full-width Confirm**
       at the bottom with Cancel above it (never side by side), `dvh` +
       safe-area, scroll lock. LIVE confirm adds a 1.5s hold-to-confirm.
-- [ ] `AccountSelect`, `SymbolSearch` → `Sheet` on phones (full-screen search
+- [x] `AccountSelect`, `SymbolSearch` → `Sheet` on phones (full-screen search
       with autofocus, 44px result rows, "+ watch" as a trailing 44px button;
       fix `mousedown`-only dismiss with `pointerdown`).
-- [ ] **Blotter → `CardList`** on phones: positions (symbol · qty@avg / last ·
+- [x] **Blotter → `CardList`** on phones: positions (symbol · qty@avg / last ·
       P&L pill · value), orders (symbol · side qty · status / time · **Cancel**
       44px with confirm), fills; reject reason visible inline; tabs remain.
-- [ ] `WatchRow`: remove the nested `<button>` (`DeltaPill` inside the row
+- [x] `WatchRow`: remove the nested `<button>` (`DeltaPill` inside the row
       button) — pill becomes a `span` with a row-level toggle on phones.
 
-### Phase 4 — Signals, Dashboard, Portfolios, Watchlists, Journal, Settings `[ ]`
+### Phase 4 — Signals, Dashboard, Portfolios, Watchlists, Journal, Settings `[x]`
 
-- [ ] **Signals (Inbox)** — the most phone-native task: `.grid-2col` →
+- [x] **Signals (Inbox)** — the most phone-native task: `.grid-2col` →
       single column below 900px; proposal card full-width with TTL countdown
       prominent, **Approve** full-width primary, Half/Reject as separate 44px
       buttons below; check chips → expandable list showing `detail`; Signals
       table → cards; Content table hidden behind a collapse (preview visible,
       not in `title`); manual-ingest textarea 16px.
-- [ ] **Dashboard**: `.dash-providers` → `minmax(min(280px,100%),1fr)`;
+- [x] **Dashboard**: `.dash-providers` → `minmax(min(280px,100%),1fr)`;
       `HoldingsWidget` gets a `grid-area` so it lands first on mobile;
       orders/fills → cards; Δ mismatch as an inline dismissible note; equity
       chart 200px, legend off; watchlist strip not nested-scrolling.
-- [ ] **Portfolios**: account header wraps into 2 lines; positions → cards;
+- [x] **Portfolios**: account header wraps into 2 lines; positions → cards;
       chart legend → chips; `.switch` → 44px; mismatch text inline.
-- [ ] **Watchlists**: `minmax(min(340px,100%),1fr)`; edit mode with 44px
+- [x] **Watchlists**: `minmax(min(340px,100%),1fr)`; edit mode with 44px
       trailing delete; add via the search sheet.
-- [ ] **Journal**: tabs → scrollable chip strip; rows → 2-line entries
+- [x] **Journal**: tabs → scrollable chip strip; rows → 2-line entries
       (pill + relative time / summary; detail expands); load 50 + "more".
-- [ ] **Settings**: every panel in `Collapse` (open by default: Evening
+- [x] **Settings**: every panel in `Collapse` (open by default: Evening
       automation, Trading mode, Appearance, **Mobile** (exit-only toggle, sign
       out, rotate token, install app)); `.setting-row` stacks below 640px with
       full-width controls; all `title` hints → `InfoTip` or `<small>` text
@@ -358,68 +358,68 @@ through a sheet, `summary` payload < 30 KB for 40 plans, audit passes.
       layout but the **Extra symbols** modal becomes a `Sheet` with a 16px
       textarea.
 
-### Phase 5 — Options on phones `[ ]`
+### Phase 5 — Options on phones `[x]`
 
-- [ ] Chain: **one side at a time** (Calls | Puts segmented), 3 columns
+- [x] Chain: **one side at a time** (Calls | Puts segmented), 3 columns
       (Strike sticky · Bid/Ask · Δ or IV via a toggle), ATM row centred,
       ITM shading stronger; tap row → contract sheet (greeks 2×4 grid,
       spread warning as text) → ticket sheet.
-- [ ] Option ticket: same treatment as Phase 3; breakeven / max loss inline
+- [x] Option ticket: same treatment as Phase 3; breakeven / max loss inline
       ≥ 13px; venue-unsupported message ≥ 14px with the reason; disabled-submit
       reasons listed above the button.
-- [ ] Chain delay / IV30 explanations visible, not tooltips.
+- [x] Chain delay / IV30 explanations visible, not tooltips.
 
-### Phase 6 — Technique on phones (read + arm one run) `[ ]`
+### Phase 6 — Technique on phones (read + arm one run) `[x]`
 
-- [ ] `.tq-head` wraps; tabs → scrollable chip strip; rail → a "Plans"
+- [x] `.tq-head` wraps; tabs → scrollable chip strip; rail → a "Plans"
       sheet (remove the vertical-text handle on phones). **Phone default tab =
       Analyse** (desktop default is Validation since b1a96a8); the EM Options
       sub-item deep-links to `/technique/analyse`.
-- [ ] Phone shows **Analyse** (symbol, as-of, TF, note; image via camera roll
+- [x] Phone shows **Analyse** (symbol, as-of, TF, note; image via camera roll
       `<input type=file accept=image/*>`, no paste/drop copy) and **History**
       as cards (verdict · grade · symbol · when); run view (`PlanCard` /
       `RunResult`) reflowed: stat grids → 2 columns, facts table → key/value
       list, stand-aside reason visible; **Arm** → sheet.
-- [ ] Validation, Backtest, Chat, bulk Check & arm: rendered as a compact
+- [x] Validation, Backtest, Chat, bulk Check & arm: rendered as a compact
       "open on desktop" card with the current status (sweep running / N
       findings) — never the broken desktop layout.
 
-### Phase 7 — Notifications & install (reach a closed phone) `[ ]`
+### Phase 7 — Notifications & install (reach a closed phone) `[x]`
 
-- [ ] **PWA**: `manifest.webmanifest` (name, `display: standalone`, theme/bg
+- [x] **PWA**: `manifest.webmanifest` (name, `display: standalone`, theme/bg
       colours, `start_url: /armed`, icons 192/512 + maskable + Apple touch
       icon from `logo-mark`), service worker that caches **the app shell
       only** (never `/api`, never WS; network-first for `index.html` so
       deploys aren't sticky); "Install app" row in Settings → Mobile.
-- [ ] **Telegram deep links + buttons** (works today, zero infra): every
+- [x] **Telegram deep links + buttons** (works today, zero infra): every
       `_alert()` and fired/exit/critic message gets an inline **Open** URL
       button to `/armed/<runId>` (and `/inbox` for proposals) on the served
       origin; token handoff via `#token=` fragment on first open (Phase 0).
-- [ ] **Web Push** (VAPID, `pywebpush`): subscribe from Settings → Mobile;
+- [x] **Web Push** (VAPID, `pywebpush`): subscribe from Settings → Mobile;
       server sends `attention`, `fired`, `exit`, `loss_halt`, `kill_switch`,
       `proposal` pushes with a deep link; SW `notificationclick` focuses/opens
       the route. Per-kind toggles in Settings; quiet hours honour
       `technique.arm.*` windows.
-- [ ] **App badge** (`navigator.setAppBadge`) = attention count + pending
+- [x] **App badge** (`navigator.setAppBadge`) = attention count + pending
       proposals; cleared when Now is viewed.
-- [ ] In-app: alerts persist in a **Notifications sheet** (from the status
+- [x] In-app: alerts persist in a **Notifications sheet** (from the status
       strip) instead of vanishing after 6s; unread dot on the Now tab.
 
-### Phase 8 — Performance & battery `[ ]`
+### Phase 8 — Performance & battery `[x]`
 
-- [ ] Code-split Technique, Options, Highcharts (dynamic import) — the phone
+- [x] Code-split Technique, Options, Highcharts (dynamic import) — the phone
       shell should not download the Validation tab.
 - [ ] Quote conflation + `visibilitychange` (Phase 1) measured: main-thread
       < 10% idle with 20 symbols on a mid-range Android.
-- [ ] `/armed` slim + summary polling only while visible; 30s → 60s on
+- [x] `/armed` slim + summary polling only while visible; 30s → 60s on
       cellular (`navigator.connection.saveData`/`effectiveType`).
 - [ ] Images: splash ≤ 800px webp; broker logos lazy.
 - [ ] No layout thrash: `contain: content` on card lists; virtualise Journal
       and long fleets (> 60 rows).
 
-### Phase 9 — Verification gates `[ ]`
+### Phase 9 — Verification gates `[x]`
 
-- [ ] **`frontend/scripts/mobile-audit.mjs`** (`npm run mobile-audit`; added with this plan; Playwright is a frontend devDependency, run `npx playwright install chromium` once): device
+- [x] **`frontend/scripts/mobile-audit.mjs`** (`npm run mobile-audit`; added with this plan; Playwright is a frontend devDependency, run `npx playwright install chromium` once): device
       matrix **iPhone SE (375), iPhone 14 (390), Pixel 7 (412), iPad Mini
       (768, portrait), iPhone 14 landscape**; every route + the Armed plan
       sheet + the order ticket + confirm sheet; writes screenshots to

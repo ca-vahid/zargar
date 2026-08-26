@@ -10,6 +10,7 @@ import { Modal } from "../components/Modal";
 import { CopyChip } from "../components/CopyChip";
 import { EmptyState, Spinner } from "../components/ui";
 import { IconX } from "../components/icons";
+import { useViewport } from "../lib/viewport";
 import { SymbolSearch } from "../components/SymbolSearch";
 import { api } from "../lib/api";
 import { useWorkspace, workspaceOf } from "../lib/workspace";
@@ -829,6 +830,12 @@ function Rail({ rules, open, onToggle }: { rules: Record<string, string>; open: 
 export function TechniquePage() {
   const tab = useStore((s) => s.techniqueTab);
   const setTab = useStore((s) => s.setTechniqueTab);
+  const { isPhone } = useViewport();
+  // phones open on Analyse (Validation is a desktop job) unless a deep link asked otherwise
+  useEffect(() => {
+    if (isPhone && tab === "validation" && window.location.pathname === "/technique") setTab("analyse");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPhone]);
   // Armed moved to its own page; a stale "armed" tab value redirects there
   useEffect(() => {
     if (tab === "armed") { setTab("analyse"); useStore.getState().setPage("armed"); }
@@ -1141,7 +1148,9 @@ export function TechniquePage() {
           onOpen={(id) => { setFocusRun(id); setTab("analyse"); }}
           onArmedAll={() => useStore.getState().setPage("armed")} />
       )}
-      {tab === "chat" ? (
+      {isPhone && (tab === "chat" || tab === "validation" || tab === "backtest") ? (
+        <DesktopOnly tab={tab} status={status} onAnalyse={() => setTab("analyse")} onHistory={() => setTab("history")} />
+      ) : tab === "chat" ? (
         <ChatPanel />
       ) : tab === "validation" ? (
         <ValidationTab llmAvailable={status?.llmAvailable ?? true} sweepVersion={status?.sweepVersion ?? null} />
@@ -1168,6 +1177,30 @@ export function TechniquePage() {
           <Rail rules={rules} open={rail.open} onToggle={rail.toggle} />
         </div>
       )}
+    </div>
+  );
+}
+
+
+/** Phones: the bulk/desk work (sweeps, backtests, chat) is shown as a status
+ * card rather than the broken desktop layout. */
+function DesktopOnly({ tab, status, onAnalyse, onHistory }: {
+  tab: string; status: TechniqueStatus | null; onAnalyse: () => void; onHistory: () => void;
+}) {
+  const what = tab === "validation" ? "Validation — sweeps, the graded sheet and findings review"
+    : tab === "backtest" ? "Backtest" : "Chat with streaming analysis";
+  return (
+    <div className="panel">
+      <div className="panel-body tq-desktop-only">
+        <div className="tq-desktop-only-h">🖥 {what}</div>
+        <p className="muted">This is desk work — wide tables, multi-select review and long streams. Open it on the desktop; the phone is for reading a run and arming it.</p>
+        {status?.sweepsRunning?.length ? <p><b>{status.sweepsRunning.length}</b> sweep(s) running right now.</p> : null}
+        {status ? <p className="muted">{status.runsToday}/{status.maxRunsPerDay} analyses used today{status.running?.length ? ` · ${status.running.length} running` : ""}.</p> : null}
+        <div className="now-actions">
+          <button type="button" className="now-btn" onClick={onAnalyse}>Analyse a symbol</button>
+          <button type="button" className="now-btn" onClick={onHistory}>Recent runs</button>
+        </div>
+      </div>
     </div>
   );
 }

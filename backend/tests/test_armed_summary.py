@@ -41,3 +41,27 @@ async def test_slim_list_drops_events(app_client):
     client, eng = app_client
     r = await client.get("/api/technique/armed?slim=1")
     assert r.status_code == 200 and r.json() == []
+
+
+async def test_push_vapid_and_subscribe_roundtrip(app_client):
+    client, eng = app_client
+    r = await client.get("/api/push/vapid")
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert d["available"] is True and d["publicKey"] and d["subscriptions"] == 0
+    r = await client.post("/api/push/subscribe", json={"endpoint": "https://push.example/abc", "keys": {"p256dh": "x", "auth": "y"}, "label": "test phone"})
+    assert r.status_code == 200 and r.json()["subscriptions"] == 1
+    r = await client.get("/api/push/vapid")
+    assert r.json()["subscriptions"] == 1
+    r = await client.delete("/api/push/subscribe", params={"endpoint": "https://push.example/abc"})
+    assert r.status_code == 200 and r.json()["subscriptions"] == 0
+
+
+def test_telegram_open_keyboard():
+    from zargar.approvals.telegram import open_keyboard, proposal_keyboard
+    assert open_keyboard("", "/armed/x") is None
+    kb = open_keyboard("https://zargar.tailnet.ts.net", "/armed/abc")
+    assert kb["inline_keyboard"][0][0]["url"] == "https://zargar.tailnet.ts.net/armed/abc"
+    pk = proposal_keyboard("p1", "https://z.example")
+    assert pk["inline_keyboard"][1][0]["url"] == "https://z.example/inbox"
+    assert len(proposal_keyboard("p1")["inline_keyboard"]) == 1

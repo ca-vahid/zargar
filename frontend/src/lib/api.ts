@@ -2,6 +2,16 @@ import type { OrderIntentBody } from "../store";
 import { clientKind } from "./viewport";
 
 let authToken = localStorage.getItem("zargar_token") || "";
+// phone sign-in handoff: open https://host/#token=... once, the token is kept in
+// this browser and scrubbed from the address bar (never lands in history/logs)
+try {
+  const m = /[#&]token=([^&]+)/.exec(window.location.hash);
+  if (m) {
+    authToken = decodeURIComponent(m[1]);
+    localStorage.setItem("zargar_token", authToken);
+    window.history.replaceState({}, "", window.location.pathname + window.location.search);
+  }
+} catch { /* ignore */ }
 
 export function setAuthToken(token: string) {
   authToken = token;
@@ -61,6 +71,12 @@ export const api = {
       "POST", "/api/brokerages/impact", body),
   refreshBrokerages: () =>
     request<import("../types").Brokerages>("POST", "/api/brokerages/refresh"),
+  pushVapid: () => request<{ available: boolean; publicKey: string | null; subscriptions: number }>("GET", "/api/push/vapid"),
+  pushSubscribe: (body: { endpoint: string; keys: Record<string, string>; label?: string }) =>
+    request<{ ok: boolean; subscriptions: number }>("POST", "/api/push/subscribe", body),
+  pushUnsubscribe: (endpoint: string) =>
+    request<{ ok: boolean; subscriptions: number }>("DELETE", `/api/push/subscribe?endpoint=${encodeURIComponent(endpoint)}`),
+  pushTest: () => request<{ sent: number }>("POST", "/api/push/test"),
   searchSymbols: (q: string) =>
     request<{ results: { symbol: string; name: string; exchange: string; type: string }[] }>(
       "GET", `/api/symbols/search?q=${encodeURIComponent(q)}`),

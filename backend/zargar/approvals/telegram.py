@@ -43,12 +43,22 @@ def format_proposal_message(p: dict) -> str:
     return "\n".join(lines)
 
 
-def proposal_keyboard(proposal_id: str) -> dict:
-    return {"inline_keyboard": [[
+def proposal_keyboard(proposal_id: str, public_url: str = "") -> dict:
+    rows = [[
         {"text": "✅ Approve", "callback_data": f"approve:{proposal_id}"},
         {"text": "½ Half size", "callback_data": f"half:{proposal_id}"},
         {"text": "❌ Reject", "callback_data": f"reject:{proposal_id}"},
-    ]]}
+    ]]
+    if public_url:
+        rows.append([{"text": "📱 Open in Zargar", "url": f"{public_url}/inbox"}])
+    return {"inline_keyboard": rows}
+
+
+def open_keyboard(public_url: str, path: str) -> dict | None:
+    """A single 'Open in Zargar' URL button — the phone lands on the deep link."""
+    if not public_url:
+        return None
+    return {"inline_keyboard": [[{"text": "📱 Open in Zargar", "url": f"{public_url}{path}"}]]}
 
 
 def parse_callback(data: str) -> tuple[str, str] | None:
@@ -104,7 +114,9 @@ class TelegramBot:
             while True:
                 p = await q.get()
                 if p.get("status") == "pending":
-                    await self.send(format_proposal_message(p), proposal_keyboard(p["id"]))
+                    from ..push import public_url
+                    await self.send(format_proposal_message(p),
+                                    proposal_keyboard(p["id"], public_url(self.engine.settings)))
                 elif p.get("status") in ("executed", "failed", "expired"):
                     await self.send(f"Proposal {p['symbol']} → <b>{p['status']}</b>")
 

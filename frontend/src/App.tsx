@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Splash } from "./components/Splash";
 import { TopBar } from "./components/TopBar";
 import { Sidebar } from "./components/Sidebar";
@@ -12,8 +12,10 @@ import { ArmedPage } from "./pages/ArmedPage";
 import { WatchlistsPage } from "./pages/WatchlistsPage";
 import { api } from "./lib/api";
 import { SettingsPage } from "./pages/SettingsPage";
-import { TechniquePage } from "./pages/TechniquePage";
-import { OptionsPage } from "./pages/OptionsPage";
+// the desk-only pages (and their Highcharts/LLM streaming code) load on demand —
+// a phone opening the Now screen should not download the Validation tab
+const TechniquePage = lazy(() => import("./pages/TechniquePage").then((m) => ({ default: m.TechniquePage })));
+const OptionsPage = lazy(() => import("./pages/OptionsPage").then((m) => ({ default: m.OptionsPage })));
 import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 import { clientKind, useViewport } from "./lib/viewport";
@@ -104,12 +106,12 @@ export default function App() {
         <div className="content">
           {page === "dashboard" && <DashboardPage />}
           {page === "trade" && <TradePage />}
-          {page === "options" && <OptionsPage />}
+          {page === "options" && <Suspense fallback={<div className="state-note">loading…</div>}><OptionsPage /></Suspense>}
           {page === "inbox" && <InboxPage />}
           {page === "portfolios" && <PortfoliosPage />}
           {page === "journal" && <JournalPage />}
           {page === "settings" && <SettingsPage />}
-          {page === "technique" && <TechniquePage />}
+          {page === "technique" && <Suspense fallback={<div className="state-note">loading…</div>}><TechniquePage /></Suspense>}
           {page === "armed" && <ArmedPage />}
           {page === "watchlists" && <WatchlistsPage />}
         </div>

@@ -47,6 +47,10 @@ DEFAULTS: dict[str, Any] = {
     "risk.halt_allows_exits": True,         # kill switch stops new entries but still lets you CLOSE a position
     # --- phone safety ---------------------------------------------------------
     "mobile.exit_only": True,               # a phone may HALT / flatten / exit / approve, but not OPEN a real-account position
+    "mobile.public_url": "",                # the origin phones reach the app at (Tailscale HTTPS) — deep links in Telegram
+    "mobile.push_subscriptions": [],        # Web Push subscriptions (phones that opted in)
+    "mobile.vapid": {},                     # generated VAPID key pair (private PEM + public b64url)
+    "mobile.push_kinds": ["alert", "armed", "proposal", "halt"],   # which events push
     # --- signals / automation ------------------------------------------------
     "signals.default_ttl_minutes": 30,
     "signals.default_sizing_pct": 5.0,      # % of equity per proposal

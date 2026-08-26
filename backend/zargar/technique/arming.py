@@ -1232,7 +1232,10 @@ class PlanArmer(SessionListener):
         tg = getattr(self.engine, "telegram", None)
         if tg is not None:
             with contextlib.suppress(Exception):
-                await tg.send(f"\u26a0 {ap.symbol} armed plan: {text}")
+                from ..approvals.telegram import open_keyboard
+                from ..push import public_url
+                await tg.send(f"\u26a0 {ap.symbol} armed plan: {text}",
+                              open_keyboard(public_url(self.engine.settings), f"/armed/{ap.run_id}"))
 
     async def flatten_trade(self, run_id: str, trigger_id: str | None = None) -> dict | None:
         """Recourse button: sell what a trade (or every open trade of the plan)

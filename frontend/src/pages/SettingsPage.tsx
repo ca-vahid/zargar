@@ -718,6 +718,12 @@ function MobilePanel() {
             <button type="button" className={chgDollar ? "on" : ""} onClick={() => { if (!chgDollar) toggleChgMode(); }}>$</button>
           </div>
         </div>
+        <PushRow />
+        <InstallRow />
+        <div className="setting-row">
+          <div className="lbl">Phone link<small>the address phones open the app at (Tailscale HTTPS) — Telegram alerts get an "Open in Zargar" button</small></div>
+          <TextCell k="mobile.public_url" label="" />
+        </div>
         <div className="setting-row">
           <div className="lbl">This device<small>forget the sign-in token stored in this browser</small></div>
           <button type="button" className="ghost-btn" onClick={() => {
@@ -726,6 +732,94 @@ function MobilePanel() {
           }}>Sign out</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+function urlB64ToUint8Array(b64: string): Uint8Array {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+/** Web Push opt-in for this browser (needs HTTPS or localhost + a registered service worker). */
+function PushRow() {
+  const toast = useStore((s) => s.toast);
+  const [state, setState] = useState<"unknown" | "unsupported" | "off" | "on" | "busy">("unknown");
+  const [count, setCount] = useState(0);
+  const [available, setAvailable] = useState(true);
+  useEffect(() => {
+    (async () => {
+      if (!("serviceWorker" in navigator) || !("PushManager" in window)) { setState("unsupported"); return; }
+      try {
+        const v = await api.pushVapid(); setCount(v.subscriptions); setAvailable(v.available);
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = await reg?.pushManager.getSubscription();
+        setState(sub ? "on" : "off");
+      } catch { setState("off"); }
+    })();
+  }, []);
+  const enable = async () => {
+    setState("busy");
+    try {
+      const v = await api.pushVapid();
+      if (!v.available || !v.publicKey) throw new Error("server has no push support (pywebpush)");
+      const reg = await navigator.serviceWorker.ready;
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") throw new Error("notifications were not allowed");
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: urlB64ToUint8Array(v.publicKey) as any });
+      const j = sub.toJSON();
+      const r = await api.pushSubscribe({ endpoint: j.endpoint!, keys: (j.keys ?? {}) as Record<string, string>, label: navigator.userAgent.slice(0, 60) });
+      setCount(r.subscriptions); setState("on"); toast("success", "push notifications on for this device");
+    } catch (e: any) { toast("error", e.message); setState("off"); }
+  };
+  const disable = async () => {
+    setState("busy");
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      const sub = await reg?.pushManager.getSubscription();
+      if (sub) { await api.pushUnsubscribe(sub.endpoint).catch(() => undefined); await sub.unsubscribe(); }
+      setState("off"); toast("info", "push notifications off for this device");
+    } catch (e: any) { toast("error", e.message); setState("on"); }
+  };
+  return (
+    <div className="setting-row">
+      <div className="lbl">Push notifications<small>
+        fires, exits, failed exits, loss halts, proposals and the kill switch reach this phone even when the app is closed
+        {count ? ` · ${count} device(s) subscribed` : ""}{!available ? " · server: pywebpush missing" : ""}
+      </small></div>
+      {state === "unsupported" ? <span className="muted small">not supported in this browser (needs HTTPS + install)</span>
+        : state === "on" ? (
+          <span style={{ display: "inline-flex", gap: 8 }}>
+            <button type="button" className="ghost-btn" onClick={() => api.pushTest().then((r) => toast("info", `sent to ${r.sent} device(s)`)).catch((e) => toast("error", e.message))}>Test</button>
+            <button type="button" className="ghost-btn" onClick={disable}>Turn off</button>
+          </span>
+        ) : <button type="button" className="primary-btn" disabled={state === "busy" || state === "unknown"} onClick={enable}>Enable on this device</button>}
+    </div>
+  );
+}
+
+/** Install prompt (Android/desktop Chrome fire beforeinstallprompt; iOS is manual). */
+function InstallRow() {
+  const [prompt, setPrompt] = useState<any>(null);
+  const [installed, setInstalled] = useState(() => window.matchMedia("(display-mode: standalone)").matches);
+  useEffect(() => {
+    const onPrompt = (e: any) => { e.preventDefault(); setPrompt(e); };
+    const onInstalled = () => { setInstalled(true); setPrompt(null); };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
+  }, []);
+  const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  return (
+    <div className="setting-row">
+      <div className="lbl">Install as an app<small>
+        {installed ? "running as an installed app" : ios ? "iPhone: Share → \u201cAdd to Home Screen\u201d — it opens on the Now screen" : "home-screen icon, full screen, opens on the Now screen"}
+      </small></div>
+      {installed ? <span className="status-pill ok">installed</span>
+        : prompt ? <button type="button" className="primary-btn" onClick={() => prompt.prompt()}>Install</button>
+        : <span className="muted small">{ios ? "use Share → Add to Home Screen" : "use the browser menu → Install app"}</span>}
     </div>
   );
 }
