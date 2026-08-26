@@ -37,7 +37,8 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
   return (
     <aside className={`sidebar ${navCollapsed ? "collapsed" : ""}`}>
       <button type="button" className="side-collapse" onClick={onToggleCollapse}
-        title={navCollapsed ? "Expand the sidebar" : "Collapse the sidebar"} aria-expanded={!navCollapsed}>
+        title={navCollapsed ? "Expand the sidebar" : "Collapse the sidebar"}
+        aria-label={navCollapsed ? "Expand the sidebar" : "Collapse the sidebar"} aria-expanded={!navCollapsed}>
         <IconChevron size={12} style={{ transform: navCollapsed ? "none" : "rotate(180deg)", transition: "transform 0.2s" }} />
       </button>
       <nav className="nav" aria-label="Primary">

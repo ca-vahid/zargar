@@ -1707,8 +1707,41 @@ class TechniqueService:
     async def arm_preflight(self, run_id: str, config: dict | None = None) -> dict:
         return await self.armer.preflight(run_id, config)
 
-    def armed_plans(self) -> list[dict]:
-        return self.armer.armed()
+    def armed_plans(self, *, slim: bool = False) -> list[dict]:
+        return self.armer.armed(slim=slim)
+
+    async def armed_summary(self) -> dict:
+        """The phone's "Now" payload: the live summary plus the plans that
+        ended today (loss halt, disarm, expiry) — which the live list forgets."""
+        from zoneinfo import ZoneInfo
+        from ..models import TechniqueArmed
+        out = self.armer.summary()
+        today = dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+        seen = {s["runId"] for s in out["stoppedToday"]}
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(TechniqueArmed).where(TechniqueArmed.plan_for == today,
+                                             TechniqueArmed.status.in_(("disarmed", "expired")))
+                .order_by(TechniqueArmed.updated_at.desc()).limit(100))).scalars().all()
+        for r in rows:
+            if r.run_id in seen:
+                continue
+            st = r.state or {}
+            trades = st.get("trades") or []
+            realized = 0.0
+            for t in trades if isinstance(trades, list) else trades.values():
+                try:
+                    realized += float((t or {}).get("realizedPnl") or (t or {}).get("realized_pnl") or 0)
+                except (TypeError, ValueError):
+                    pass
+            out["stoppedToday"].append({
+                "runId": r.run_id, "symbol": r.symbol, "status": r.status, "mode": r.mode,
+                "reason": st.get("stopReason") or ("expired at the close" if r.status == "expired" else "disarmed"),
+                "realizedPnl": round(realized, 2),
+                "at": r.updated_at.isoformat() if r.updated_at else None,
+            })
+        out["counts"]["stoppedToday"] = len(out["stoppedToday"])
+        return out
 
     def armed_detail(self, run_id: str) -> dict | None:
         return self.armer.detail(run_id)

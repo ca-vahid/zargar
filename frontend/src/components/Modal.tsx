@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useViewport } from "../lib/viewport";
+import { Sheet } from "./Sheet";
 
 const FOCUSABLE =
   'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -19,10 +21,29 @@ export function Modal({
   dismissable?: boolean;
   wide?: boolean;
 }) {
+  const { isPhone } = useViewport();
+  if (isPhone) {
+    return (
+      <Sheet title={title} onClose={onClose} footer={footer} dismissable={dismissable} full={wide}>
+        {children}
+      </Sheet>
+    );
+  }
+  return <DesktopModal title={title} onClose={onClose} footer={footer} dismissable={dismissable} wide={wide}>{children}</DesktopModal>;
+}
+
+function DesktopModal({
+  title, onClose, children, footer, dismissable = true, wide = false,
+}: {
+  title: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode;
+  dismissable?: boolean; wide?: boolean;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
   useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     const previous = document.activeElement as HTMLElement | null;
     const node = ref.current;
     const first = node?.querySelector<HTMLElement>(FOCUSABLE);
@@ -50,6 +71,7 @@ export function Modal({
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
+      document.body.style.overflow = prevOverflow;
       previous?.focus();
     };
   }, [onClose, dismissable]);
@@ -150,6 +172,7 @@ export function PromptDialog({
           type="text"
           value={value}
           autoFocus
+          enterKeyHint="done"
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") onSubmit(value); }}
         />

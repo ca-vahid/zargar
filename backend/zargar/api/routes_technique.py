@@ -174,8 +174,12 @@ def build_technique_routes(app, eng, auth, config) -> None:
         return d
 
     @app.get("/api/technique/armed", dependencies=[auth])
-    async def technique_armed():
-        return _svc(eng).armed_plans()
+    async def technique_armed(slim: bool = False):
+        return _svc(eng).armed_plans(slim=slim)
+
+    @app.get("/api/technique/armed/summary", dependencies=[auth])
+    async def technique_armed_summary():
+        return await _svc(eng).armed_summary()
 
     @app.get("/api/technique/armed/options", dependencies=[auth])
     async def technique_arm_options():

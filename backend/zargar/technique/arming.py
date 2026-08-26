@@ -329,6 +329,15 @@ class ArmedPlan:
                 if nearest else f"watching {len(waiting)} trigger(s) · {w}")
 
 
+
+def _et_day_start_ms(now_ms: int) -> int:
+    """Epoch ms of midnight America/New_York for the given instant."""
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    d = dt.datetime.fromtimestamp(now_ms / 1000, tz=et)
+    start = d.replace(hour=0, minute=0, second=0, microsecond=0)
+    return int(start.timestamp() * 1000)
+
 class PlanArmer(SessionListener):
     """Arms EnhancedMarket session plans on the shared execution listener. The
     live loops (1m bars, order updates, heartbeat) and the order-id index come
@@ -487,8 +496,120 @@ class PlanArmer(SessionListener):
         return n
 
     # ---------------------------------------------------------------- queries
-    def armed(self) -> list[dict]:
-        return [self._snapshot(a) for a in self._armed.values()]
+    def armed(self, *, slim: bool = False) -> list[dict]:
+        out = [self._snapshot(a) for a in self._armed.values()]
+        if slim:
+            # phones: the list without the per-plan event log / back-compat copies
+            for d in out:
+                d["events"] = []
+                d["fired"] = []
+        return out
+
+    # what a phone's "Now" screen needs, in reading order: is anything wrong ->
+    # am I in a trade -> what happened today -> what is still waiting -> P&L
+    TIMELINE_KINDS = frozenset({
+        "armed", "adopted", "fired", "entry_submit", "entry_working", "entry_rejected", "fire_error",
+        "critic_killed", "critic_error", "position_open", "position_closed", "exit_submit", "exit_fill",
+        "exit_failed", "exit_retry", "manual_exit", "loss_halt", "paused", "resumed", "disarmed",
+        "skipped", "premium_stop", "quote_stop", "proposal", "contract_skipped", "kill_cap",
+        "cooldown_skip", "halt_skip", "max_open_skip", "stale", "preopen_check", "entry_fallback",
+        "entry_cancelled", "fire_cancelled", "rearmed_after_kill", "option_pick_failed",
+    })
+
+    def summary(self) -> dict:
+        now_ms = int(time.time() * 1000)
+        day_start = _et_day_start_ms(now_ms)
+        window_now = session_window(now_ms)
+        attention: list[dict] = []
+        in_trade: list[dict] = []
+        watching: list[dict] = []
+        timeline: list[dict] = []
+        stopped: list[dict] = []
+        realized = 0.0
+        unrealized = 0.0
+        loss_limit = 0.0
+        counts = {"armed": 0, "paused": 0, "inTrade": 0, "attention": 0, "watching": 0}
+        for ap in self._armed.values():
+            port = self.engine.positions.portfolio(ap.config.portfolio_id) or {}
+            q = self.engine.quotes.get(ap.symbol)
+            last = float(q.last) if q is not None and q.last and q.last > 0 else None
+            base = {
+                "runId": ap.run_id, "symbol": ap.symbol, "status": ap.status,
+                "grade": ap.to_dict(portfolio=port, quote=q, now_ms=now_ms).get("grade"),
+                "mode": ap.config.mode, "instrument": ap.config.instrument,
+                "workspace": port.get("kind"), "account": port.get("name"),
+                "stale": ap.stale, "lastPrice": last,
+            }
+            if ap.status == "armed":
+                counts["armed"] += 1
+            elif ap.status == "paused":
+                counts["paused"] += 1
+            realized += sum(t.realized_pnl for t in ap.trades.values())
+            loss_limit += float(ap.config.daily_loss_limit or 0)
+            reasons = ap._attention_reasons()
+            if reasons:
+                attention.append({**base, "reasons": reasons,
+                                  "hasPosition": any(t.remaining > 0 for t in ap.trades.values())})
+            for t in ap.trades.values():
+                if not t.open:
+                    continue
+                unreal = self._trade_unrealized(ap, t)
+                unrealized += unreal
+                risk = max((t.avg_fill or t.entry) - t.stop, 1e-9) * max(t.remaining, 1e-9) * t.multiplier
+                nxt = t.targets[t.trims_done] if t.trims_done < len(t.targets) else None
+                in_trade.append({
+                    **base, "triggerId": t.trigger_id, "kind": t.kind, "direction": t.direction,
+                    "remaining": t.remaining, "filledQty": t.filled_qty, "entry": t.avg_fill or t.entry,
+                    "stop": t.stop, "nextTarget": nxt, "targets": list(t.targets), "trimsDone": t.trims_done,
+                    "unrealizedPnl": round(unreal, 2),
+                    "unrealizedR": (round(unreal / risk, 2) if risk > 0 else None),
+                    "firedTs": t.fired_ts, "window": t.window, "orderSymbol": t.order_symbol,
+                    "contract": ({k: (t.contract or {}).get(k) for k in ("symbol", "strike", "expiry", "right", "bid", "ask")}
+                                 if t.contract else None),
+                    "tradeStatus": t.status, "realizedPnl": round(t.realized_pnl, 2),
+                })
+            if ap.status in ("armed", "paused"):
+                waiting = [(tid, tr) for tid, tr in ap.trackers.items() if tr.status in ("waiting", "observed")]
+                if waiting:
+                    nearest = None
+                    if last:
+                        nearest = min(waiting, key=lambda x: abs(x[1].entry - last))
+                    else:
+                        nearest = waiting[0]
+                    tid, tr = nearest
+                    watching.append({
+                        **base, "triggers": len(waiting),
+                        "nearest": {"id": tid, "kind": tr.kind, "entry": tr.entry, "stop": tr.stop,
+                                    "distancePct": (round((tr.entry - last) / last * 100, 3) if last else None)},
+                        "window": window_now, "windowOpenNow": window_now in PRIME_WINDOWS,
+                        "summary": ap._summary(window_now, last),
+                    })
+            if ap.stop_reason:
+                stopped.append({**base, "reason": ap.stop_reason, "at": None})
+            for e in ap.events:
+                if e.get("event") in self.TIMELINE_KINDS and int(e.get("ts") or 0) >= day_start:
+                    timeline.append({"ts": e.get("ts"), "runId": ap.run_id, "symbol": ap.symbol,
+                                     "kind": e.get("event"), "text": e.get("text") or "",
+                                     "pnl": e.get("pnl") or e.get("realizedPnl")})
+        timeline.sort(key=lambda x: -(x["ts"] or 0))
+        counts["inTrade"] = len(in_trade)
+        counts["attention"] = len(attention)
+        counts["watching"] = len(watching)
+        rank = {"attn": 0, "trade": 1}
+        watching.sort(key=lambda w: (w["stale"], abs(w["nearest"]["distancePct"] or 999)))
+        _ = rank
+        used = (-(realized + unrealized) / loss_limit * 100) if loss_limit > 0 else None
+        return {
+            "asOf": now_ms, "window": window_now, "windowOpenNow": window_now in PRIME_WINDOWS,
+            "haltEngaged": bool(self.engine.halt.engaged),
+            "workspace": str(self.engine.settings.get("trading.mode", "practice")),
+            "counts": counts,
+            "attention": attention, "inTrade": in_trade, "timeline": timeline[:100],
+            "watching": watching, "stoppedToday": stopped,
+            "pnl": {"realized": round(realized, 2), "unrealized": round(unrealized, 2),
+                    "lossLimit": round(loss_limit, 2),
+                    "lossLimitUsedPct": (round(max(0.0, used), 1) if used is not None else None)},
+        }
 
     def get(self, run_id: str) -> ArmedPlan | None:
         return self._armed.get(run_id)
@@ -1053,22 +1174,25 @@ class PlanArmer(SessionListener):
             "rows": rows,
         }
 
+    def _trade_unrealized(self, ap: ArmedPlan, t: Trade) -> float:
+        """One trade marked at the option's bid / the underlying's last; 0 when
+        there is no quote (never guessed)."""
+        if t.remaining <= 0 or not t.avg_fill:
+            return 0.0
+        if t.instrument == "options" and t.order_symbol:
+            q = self.engine.quotes.get(t.order_symbol)
+            px = float(q.bid) if q is not None and q.bid and q.bid > 0 else None
+        else:
+            q = self.engine.quotes.get(ap.symbol)
+            px = float(q.last) if q is not None and q.last and q.last > 0 else None
+        if px is None:
+            return 0.0
+        return (px - float(t.avg_fill)) * t.remaining * t.multiplier
+
     def _unrealized(self, ap: ArmedPlan) -> float:
         """Marked at the option's bid / the underlying's last — what a sell-now
         would roughly realize. 0 when no quote is available (never guessed)."""
-        total = 0.0
-        for t in ap.trades.values():
-            if t.remaining <= 0 or not t.avg_fill:
-                continue
-            if t.instrument == "options" and t.order_symbol:
-                q = self.engine.quotes.get(t.order_symbol)
-                px = float(q.bid) if q is not None and q.bid and q.bid > 0 else None
-            else:
-                q = self.engine.quotes.get(ap.symbol)
-                px = float(q.last) if q is not None and q.last and q.last > 0 else None
-            if px is not None:
-                total += (px - float(t.avg_fill)) * t.remaining * t.multiplier
-        return total
+        return sum(self._trade_unrealized(ap, t) for t in ap.trades.values())
 
     async def _maybe_loss_halt(self, ap: ArmedPlan) -> bool:
         """The plan's "certain loss halt": once the day's loss — realised PLUS the

@@ -1,9 +1,10 @@
 /** The chosen live-quote design system (mock F): day sparkline, delta pill,
  * arrow-pulse tick indicator. Used across sidebar, blotter, tables, headers. */
-import { memo, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { fmtMoney } from "../lib/format";
 import { usePrevLast, useQuote, useStore } from "../store";
 import type { Quote } from "../types";
+import { useViewport } from "../lib/viewport";
 
 export interface DayChange {
   abs: number;
@@ -91,10 +92,12 @@ export function DeltaPill({
 }) {
   const chgDollar = useStore((s) => s.chgDollar);
   const toggleChgMode = useStore((s) => s.toggleChgMode);
+  const { coarse } = useViewport();
   const chg = dayChange(quote, fallbackOpen);
   if (!chg) {
     return <span className={`delta-pill delta-pill--${size} dim`}>—</span>;
   }
+  const touch = coarse || !interactive;
   const up = chg.abs >= 0;
   const sign = up ? "+" : "−";
   const text = chgDollar
@@ -106,12 +109,20 @@ export function DeltaPill({
   const extText = chg.ext
     ? ` · ${SESSION_LABEL[chg.session] ?? "extended"} ${fmtMoney(chg.ext.price)} (${chg.ext.abs >= 0 ? "+" : "−"}${Math.abs(chg.ext.pct).toFixed(2)}%)`
     : "";
+  if (touch) {
+    // touch: a plain pill (no 20px nested button); the %/$ toggle is in More
+    return (
+      <span className={`delta-pill delta-pill--${size} ${up ? "up" : "down"}`}
+        title={`Today ${basisText}${extText}`}>
+        <span className="a">{up ? "▲" : "▼"}</span>{text}
+      </span>
+    );
+  }
   return (
     <button
       className={`delta-pill delta-pill--${size} ${up ? "up" : "down"}`}
-      onClick={interactive ? (e) => { e.stopPropagation(); toggleChgMode(); } : undefined}
+      onClick={(e) => { e.stopPropagation(); toggleChgMode(); }}
       title={`Today ${basisText}${extText} — click to switch % / $`}
-      tabIndex={interactive ? 0 : -1}
     >
       <span className="a">{up ? "▲" : "▼"}</span>{text}
     </button>
@@ -150,18 +161,18 @@ export const TickArrow = memo(function TickArrow({ symbol }: { symbol: string })
   const quote = useQuote(symbol);
   const prev = usePrevLast(symbol);
   const lastDir = useRef<"up" | "down">("up");
+  const el = useRef<HTMLSpanElement>(null);
   if (quote && prev !== undefined) {
     if (quote.last > prev) lastDir.current = "up";
     else if (quote.last < prev) lastDir.current = "down";
   }
-  const ticked = quote && prev !== undefined && quote.last !== prev;
-  return (
-    <span
-      key={ticked ? quote?.ts ?? 0 : 0}
-      className={`tick-arrow ${lastDir.current} ${ticked ? "tick" : ""}`}
-      aria-hidden="true"
-    />
-  );
+  const ticked = !!quote && prev !== undefined && quote.last !== prev;
+  // pulse via the Web Animations API — no key-remount per tick (mobile main thread)
+  useEffect(() => {
+    if (!ticked || !el.current || typeof el.current.animate !== "function") return;
+    el.current.animate([{ opacity: 1 }, { opacity: 0.28 }], { duration: 900, easing: "ease-out", fill: "forwards" });
+  }, [ticked, quote?.ts]);
+  return <span ref={el} className={`tick-arrow ${lastDir.current}`} aria-hidden="true" />;
 });
 
 /** Small live price with the tick arrow — the standard "price cell". */

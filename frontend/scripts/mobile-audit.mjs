@@ -42,7 +42,7 @@ const AUDIT = `(() => {
   const wide = [...document.querySelectorAll('body *')].filter(el => vis(el) && el.getBoundingClientRect().width > vw + 2 && getComputedStyle(el).position !== 'fixed').slice(0, 15).map(el => label(el) + ' w=' + Math.round(el.getBoundingClientRect().width));
   const interactive = [...document.querySelectorAll('button, a[href], [role=button], [role=option], [role=tab], input, select, textarea, summary')].filter(vis);
   const tiny = interactive.filter(el => { const r = el.getBoundingClientRect(); return r.height < 40 || r.width < 40; }).map(el => label(el) + ' ' + Math.round(el.getBoundingClientRect().width) + 'x' + Math.round(el.getBoundingClientRect().height));
-  const zoomInputs = [...document.querySelectorAll('input, select, textarea')].filter(el => vis(el) && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => label(el) + ' ' + getComputedStyle(el).fontSize);
+  const zoomInputs = [...document.querySelectorAll('input, select, textarea')].filter(el => vis(el) && !el.className.toString().includes('highcharts-a11y') && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => label(el) + ' ' + getComputedStyle(el).fontSize);
   const titled = interactive.filter(el => el.hasAttribute('title') && !el.getAttribute('aria-label') && !el.textContent.trim()).map(label);
   const tables = [...document.querySelectorAll('table')].filter(vis).map(t => ({ cols: t.querySelectorAll('thead th').length || (t.rows[0]?.cells.length ?? 0), w: Math.round(t.getBoundingClientRect().width) }));
   return { vw, scrollW: document.documentElement.scrollWidth, overflowX: document.documentElement.scrollWidth > vw + 1,

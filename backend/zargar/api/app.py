@@ -83,7 +83,10 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
     # --- orders ---------------------------------------------------------------
     @app.post("/api/orders", dependencies=[auth])
-    async def place_order(intent: OrderIntent):
+    async def place_order(intent: OrderIntent, request: Request):
+        # the client class is a server-side fact, never trusted from the body
+        client = (request.headers.get("x-zargar-client") or "desktop").lower()
+        intent.client = client if client in ("phone", "tablet", "desktop") else "desktop"
         try:
             order = await eng.orders.place(intent)
         except ValueError as exc:

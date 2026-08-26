@@ -9,6 +9,8 @@ import { InfoTip } from "../components/InfoTip";
 import {
   ArmedCard, fleetRank, fmt, nearestPct, pnlCls, WINDOW_SHORT,
 } from "../components/technique/ArmedTab";
+import { useViewport } from "../lib/viewport";
+import { NowView } from "../components/armed/NowView";
 
 /* The Armed hub: every armed plan from every technique, its own page.
    Layout toggle: split (table left, detail pinned right) / strip (chip bar,
@@ -76,11 +78,12 @@ export function ArmedPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [armed, selArmed]);
 
+  const { isPhone } = useViewport();
   const [history, setHistory] = useState<any[]>([]);
   const refresh = useCallback(() => {
-    api.techniqueArmed().then(setArmed).catch(() => undefined);
+    api.techniqueArmed(isPhone).then(setArmed).catch(() => undefined);
     api.techniqueArmedHistory().then(setHistory).catch(() => undefined);
-  }, [setArmed]);
+  }, [setArmed, isPhone]);
   useEffect(() => { refresh(); const id = setInterval(refresh, 30_000); return () => clearInterval(id); }, [refresh]);
 
   const tradingMode = String(settings["trading.mode"] ?? "practice");
@@ -91,6 +94,24 @@ export function ArmedPage() {
     try { const r = await api.techniqueStopAll(flatten); toast("info", `Disarmed ${r.disarmed} plan(s)`); refresh(); }
     catch (e: any) { toast("error", e.message); }
   };
+
+  if (isPhone) {
+    return (
+      <div className="armed-page armed-page--phone">
+        <div className="armed-head">
+          <h2 className="page-title">Now</h2>
+          <div className="tabs armed-subtabs" role="tablist">
+            <button role="tab" aria-selected={sub === "live"} className={sub === "live" ? "active" : ""}
+              onClick={() => setSub("live")}>Live{armed.length ? ` · ${armed.length}` : ""}</button>
+            <button role="tab" aria-selected={sub === "history"} className={sub === "history" ? "active" : ""}
+              onClick={() => setSub("history")}>History</button>
+          </div>
+        </div>
+        {sub === "live" && <NowView />}
+        {sub === "history" && <PhoneHistory history={history} pmap={pmap} />}
+      </div>
+    );
+  }
 
   return (
     <div className="armed-page">
@@ -397,6 +418,40 @@ function HistoryTable({ history, pmap, ws }: { history: any[]; pmap: Record<stri
                     <td className="muted">{h.createdAt ? fmtDateTime(h.createdAt) : ""}</td></tr>))}</tbody>
               </table>
             </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+
+/** Phone history: one card per day, rows inside. */
+function PhoneHistory({ history, pmap }: { history: any[]; pmap: Record<string, any> }) {
+  const days = useMemo(() => {
+    const m = new Map<string, any[]>();
+    for (const h of history) { const k = h.planFor || "?"; if (!m.has(k)) m.set(k, []); m.get(k)!.push(h); }
+    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+  }, [history]);
+  if (!days.length) return <div className="now-empty">No armed history yet.</div>;
+  return (
+    <div className="now">
+      {days.map(([day, rows]) => {
+        const fired = rows.filter((r) => (r.state?.trades ?? []).length || (r.state?.fired ?? []).length).length;
+        const realized = rows.reduce((n, r) => n + ((r.state?.trades ?? []) as any[]).reduce((m: number, t: any) => m + (t.realizedPnl ?? t.realized_pnl ?? 0), 0), 0);
+        return (
+          <div key={day} className="now-card">
+            <div className="now-card-head">
+              <span className="now-sym">{day}</span>
+              <span className="now-acct">{rows.length} plan(s) · {fired} fired</span>
+              <span className={`now-row-mode ${pnlCls(realized)}`}>{realized > 0 ? "+" : ""}{fmt(realized)}</span>
+            </div>
+            {rows.map((r) => (
+              <div key={r.runId} className="now-hist-row">
+                <span className="now-row-sym">{r.symbol}</span>
+                <span className="now-row-txt">{r.mode} · {pmap[r.portfolioId]?.name ?? "?"} · {r.status}{r.state?.stopReason ? ` · ${r.state.stopReason}` : ""}</span>
+              </div>
+            ))}
           </div>
         );
       })}
