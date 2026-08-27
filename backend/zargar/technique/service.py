@@ -233,11 +233,17 @@ class TechniqueService:
             q = self.engine.quotes.get(sym)
             if q is not None and q.last > 0:
                 prices[sym] = float(q.last)
+        flow_syms: list[str] = []
+        flow_svc = getattr(self.engine, "flow_service", None)
+        if flow_svc is not None:
+            with contextlib.suppress(Exception):
+                flow_syms = await flow_svc.universe_layer()
         r = uni.resolve(core=list(s.get("technique.walkforward.symbols", []) or []),
                         extra=list(s.get("technique.universe.extra", []) or []),
                         exclude=list(s.get("technique.universe.exclude", []) or []), auto=auto,
                         min_price=float(s.get("technique.universe.min_price", 20.0) or 0),
-                        auto_top=int(s.get("technique.universe.auto_top", 40) or 0), prices=prices)
+                        auto_top=int(s.get("technique.universe.auto_top", 40) or 0), prices=prices,
+                        flow=flow_syms)
         out = {"date": uni.today_key(), "refreshedAt": int(time.time() * 1000), "autoSource": source, **r}
         await s.set("technique.universe.resolved", out, journal=False)
         log.info("universe refreshed: %d symbols (%s)", len(out["symbols"]), out["counts"])
@@ -468,6 +474,16 @@ class TechniqueService:
                                   "withVision": bool(with_vision),
                                   "planFor": next_session_date(as_of_ms) if as_of_ms else None,
                                   "referencePrice": reference_price}
+        # options-flow context rides along as an informational note (never a rule —
+        # UI-PLAN F1); recorded in provenance so reviews can judge whether it helped
+        flow_line = None
+        flow_svc = getattr(self.engine, "flow_service", None)
+        if symbol and flow_svc is not None:
+            with contextlib.suppress(Exception):
+                flow_line = await flow_svc.context_for(symbol)
+        if flow_line:
+            config["flowContext"] = flow_line
+            note = (note + "\n\n" if note else "") + f"OPTIONS FLOW (context, not a rule): {flow_line}"
 
         if thread_id is None:
             title = (f"{symbol} plan for {next_session_date(as_of_ms) if as_of_ms else 'next session'}"
@@ -498,6 +514,10 @@ class TechniqueService:
             "overrides": config.get("overrides")},
             aggregate_type="technique_run", aggregate_id=run.id)
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "run", "run": run_summary(run)})
+        if flow_line:
+            # journal the delivery against this run (the Symbol Story's "where it went")
+            with contextlib.suppress(Exception):
+                await flow_svc.context_for(symbol, consumer="em", ref_id=run.id)
 
         task = asyncio.create_task(self._execute(run.id, thread_id, symbol, tf, as_of_ms, mode,
                                                  image, note, trigger, thresholds=thresholds,

@@ -9,11 +9,12 @@ Status: **Phase A built 2026-08-27** — pure scan math (`techniques/flow/scan.p
 after the `chain_snapshots` research feed; reads `option_chain_snapshots` — single writer
 is the research feed — with a scoring-only live fallback; verdicts in `flow_reads`),
 routes (`/api/flow/reads|context|scan|status`), registry entry, settings keys, context
-line consumed by Tip verification; tests in `tests/test_flow_scan.py`. Still open in
-Phase A: the universe auto-layer contribution and the UI badge/tab — **now specced in
-`UI-PLAN.md`** (user picked from five mockups 2026-08-27: Desk main view + C's evidence
-badges/strip, Symbol Story drill-down, Morning Brief tab). Phase B (sweep → maybe swing
-variant) unchanged.*
+line consumed by Tip verification; tests in `tests/test_flow_scan.py`. **UI + the
+remaining Phase A items BUILT same day** per `UI-PLAN.md` (Desk main view + evidence
+badges/strip, Symbol Story drill-down with journaled `FlowContextServed` deliveries,
+Morning Brief tab, universe flow layer, EM context injection, Tips flow chip; visual pass
+against a live-CBOE scan — calibration findings in UI-PLAN §3a). Phase B (sweep → maybe
+swing variant) unchanged.*
 
 ## 0. What it is — and what it is not
 

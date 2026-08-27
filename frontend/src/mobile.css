@@ -592,3 +592,26 @@ button.bl-card:active { background: var(--surface-2); }
 @media (pointer: coarse), (hover: none), (max-width: 1023px) {
   .copy-chip, .tq-act, .tq-pencil { min-width: 44px; justify-content: center; }
 }
+
+/* ── Flow page (phones) — cards + Sheet; docs/techniques/flow/UI-PLAN.md F5 ── */
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  .flow-head { gap: var(--sp-2); }
+  .flow-head-sub { display: none; }
+  .flow-strip { gap: var(--sp-2); padding: 8px 10px; }
+  .flow-strip-sep { display: none; }
+  .flow-detail { width: auto; border: none; }
+  .flow-detail-head { padding: var(--sp-2) 0; }
+  .flow-detail-body { padding: var(--sp-2) 0; }
+  .flow-daycols { flex-direction: column; }
+  .flow-story-grid { flex-direction: column; }
+  .flow-story-head .flow-detail-sym { font-size: var(--fs-4); }
+  .flow-brief-duo { flex-direction: column; }
+  .flow-brief-sym { width: 44px; }
+  .flow-brief-contract { width: 84px; }
+}
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  .flow-page { height: auto; }
+  .flow-strip-lbl { display: none; }
+  .flow-prem-bar { max-width: none; flex: 1 1 100%; order: 2; }
+  .flow-strip { row-gap: 6px; }
+}

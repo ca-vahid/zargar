@@ -143,12 +143,15 @@ async def fetch_most_actives(*, alpaca_key: str = "", alpaca_secret: str = "", t
 
 
 def resolve(*, core: list[str], extra: list[str], exclude: list[str], auto: list[dict],
-            min_price: float = 20.0, auto_top: int = 40, prices: dict[str, float] | None = None) -> dict:
+            min_price: float = 20.0, auto_top: int = 40, prices: dict[str, float] | None = None,
+            flow: list[str] | None = None) -> dict:
     """Merge the layers into the working universe. Order: core (already ranked
-    by liquidity) -> extras -> auto additions not already present. Auto rows
-    need a price >= `min_price` (from the row or `prices`) and a US-equity
-    symbol shape; anything in `exclude` is dropped from every layer.
-    Returns {"symbols": [...], "provenance": {sym: "core|extra|auto"}, "dropped": [...]}."""
+    by liquidity) -> extras -> flow (symbols the options-flow scanner is
+    tracking — docs/techniques/flow/UI-PLAN.md F5) -> auto additions not
+    already present. Auto rows need a price >= `min_price` (from the row or
+    `prices`) and a US-equity symbol shape; anything in `exclude` is dropped
+    from every layer.
+    Returns {"symbols": [...], "provenance": {sym: "core|extra|flow|auto"}, "dropped": [...]}."""
     ex = set(_clean(exclude))
     prices = prices or {}
     symbols: list[str] = []
@@ -167,6 +170,9 @@ def resolve(*, core: list[str], extra: list[str], exclude: list[str], auto: list
         add(s, "core")
     for s in _clean(extra):
         add(s, "extra")
+    for s in _clean(flow or []):
+        if is_us_optionable_symbol(s):
+            add(s, "flow")
     n_auto = 0
     for row in auto or []:
         sym = str(row.get("symbol") or "").upper()
@@ -189,6 +195,7 @@ def resolve(*, core: list[str], extra: list[str], exclude: list[str], auto: list
     return {"symbols": symbols, "provenance": prov, "dropped": dropped,
             "counts": {"core": sum(1 for v in prov.values() if v == "core"),
                        "extra": sum(1 for v in prov.values() if v == "extra"),
+                       "flow": sum(1 for v in prov.values() if v == "flow"),
                        "auto": sum(1 for v in prov.values() if v == "auto")}}
 
 

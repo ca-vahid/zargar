@@ -42,6 +42,7 @@ SIGNAL_PARKED = "SignalParked"            # only price-position checks failed; t
 SIGNAL_SEEN_AGAIN = "SignalSeenAgain"     # duplicate tip attached to the original
 SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before the tip's horizon/expiry
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads
+FLOW_CONTEXT_SERVED = "FlowContextServed" # a flow read's context line was delivered to a consumer (tip/em)
 PROPOSAL_CREATED = "ProposalCreated"
 PROPOSAL_APPROVED = "ProposalApproved"
 PROPOSAL_REJECTED = "ProposalRejected"

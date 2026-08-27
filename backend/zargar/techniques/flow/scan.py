@@ -153,7 +153,8 @@ def aggregate_symbol(rows: list[dict], *, stock_volume: int | None) -> dict:
 
 
 def build_read(symbol: str, day: str, *, flags: list[dict], confirmed: list[dict],
-               repeats: dict[str, int], agg: dict, t: FlowThresholds) -> dict:
+               repeats: dict[str, int], agg: dict, t: FlowThresholds,
+               spot: float | None = None) -> dict:
     """The day's verdict for one symbol: a transparent additive score with a
     plain-language reason per point, and a directional lean from where the
     flagged premium sits. Context, not a trade."""
@@ -196,7 +197,7 @@ def build_read(symbol: str, day: str, *, flags: list[dict], confirmed: list[dict
         reasons.append("call flow against a bearish O/S ratio — treated as mixed")
     return {
         "symbol": symbol.upper(), "day": day, "score": round(score, 1), "lean": lean,
-        "reasons": reasons, "flags": flags[:10], "confirmed": confirmed[:10],
+        "spot": spot, "reasons": reasons, "flags": flags[:10], "confirmed": confirmed[:10],
         "repeatHits": hot, "aggregates": agg,
     }
 

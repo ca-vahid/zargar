@@ -295,6 +295,21 @@ function ArmButton({ s }: { s: Signal }) {
   );
 }
 
+function FlowChip({ sym, flow }: { sym: string; flow: Record<string, { score: number; lean: string }> }) {
+  const setPage = useStore((s) => s.setPage);
+  const setFlowFocus = useStore((s) => s.setFlowFocus);
+  const f = flow[sym];
+  if (!f) return null;
+  const cls = f.lean === "bull" ? "ok" : f.lean === "bear" ? "bad" : "wait";
+  return (
+    <button className={`status-pill ${cls}`} style={{ cursor: "pointer", border: "none" }}
+      title={`options flow: ${f.lean}, score ${f.score} — open the story`}
+      onClick={(e) => { e.stopPropagation(); setFlowFocus(sym); setPage("flow"); }}>
+      flow {f.score}
+    </button>
+  );
+}
+
 function SignalsPanel() {
   const live = useStore((s) => s.signals);
   const loadedState = useAsync(
@@ -302,6 +317,14 @@ function SignalsPanel() {
   const merged = [...live];
   for (const s of loadedState.data ?? []) if (!merged.some((m) => m.id === s.id)) merged.push(s);
   const { isPhone } = useViewport();
+  const [flow, setFlow] = useState<Record<string, { score: number; lean: string }>>({});
+  useEffect(() => {
+    api.flowDays(1)
+      .then((d) => (d.length ? api.flowReads(d[0].day) : Promise.resolve([])))
+      .then((reads) => setFlow(Object.fromEntries(
+        reads.filter((r) => r.score > 0).map((r) => [r.symbol, { score: r.score, lean: r.lean }]))))
+      .catch(() => undefined);
+  }, []);
 
   if (isPhone) {
     return (
@@ -320,6 +343,7 @@ function SignalsPanel() {
                       {contract && <span className="muted"> {contract}</span>}
                       <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
                       {(s.seenCount ?? 1) > 1 && <span className="status-pill dim">×{s.seenCount}</span>}
+                      <FlowChip sym={s.ticker} flow={flow} />
                     </span>
                     <span className="bl-card-sub">entry {s.entryPrice ? fmtMoney(s.entryPrice) : "—"} · target {s.targetPrice ? fmtMoney(s.targetPrice) : "—"} · stop {s.stopPrice ? fmtMoney(s.stopPrice) : "—"} · {s.confidence.replace("_", " ")}</span>
                     {s.thesisSummary && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.thesisSummary}</span>}
@@ -359,7 +383,7 @@ function SignalsPanel() {
                 <tr key={s.id}
                   title={[s.thesisSummary, s.verification?.flowContext,
                     s.verification?.calendarContext].filter(Boolean).join("\n")}>
-                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>}</td>
+                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>} <FlowChip sym={s.ticker} flow={flow} /></td>
                   <td className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</td>
                   <td className="muted">{contractLabel(s) ?? "—"}</td>
                   <td className="muted">{s.confidence.replace("_", " ")}</td>

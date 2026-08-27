@@ -22,7 +22,7 @@ import type {
   ArmedPlan,
 } from "./types";
 
-export type Page = "dashboard" | "trade" | "options" | "inbox" | "portfolios" | "journal" | "settings" | "technique" | "armed" | "watchlists";
+export type Page = "dashboard" | "trade" | "options" | "inbox" | "portfolios" | "journal" | "settings" | "technique" | "flow" | "armed" | "watchlists";
 
 export interface OptionsPrefill { side?: "BUY" | "SELL"; qty?: number; portfolioId?: string }
 
@@ -103,6 +103,8 @@ interface AppState {
   chatLive: Record<string, ChatLive>;            // threadId -> streaming state
 
   setPage: (p: Page) => void;
+  flowFocusSymbol: string | null;
+  setFlowFocus: (s: string | null) => void;
   moreOpen: boolean;                    // phone More sheet (TabBar renders it; TopBar can open it)
   setMoreOpen: (v: boolean) => void;
   setActiveSymbol: (s: string) => void;
@@ -181,6 +183,7 @@ export const useStore = create<AppState>((set, get) => ({
   journalGroup: null,
   portfoliosFocus: null,
   ticketPortfolioId: null,
+  flowFocusSymbol: null,
   optionsUnderlying: localStorage.getItem("zargar_options_underlying") || "SPY",
   optionsExpiry: null,
   optionsContract: null,
@@ -204,6 +207,7 @@ export const useStore = create<AppState>((set, get) => ({
   chatLive: {},
 
   setPage: (page) => set({ page }),
+  setFlowFocus: (flowFocusSymbol) => set({ flowFocusSymbol }),
   setMoreOpen: (moreOpen) => set({ moreOpen }),
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),
   openJournal: (group) => set({ page: "journal", journalGroup: group }),

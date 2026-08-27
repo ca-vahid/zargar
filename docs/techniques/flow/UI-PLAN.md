@@ -3,7 +3,8 @@
 *Written 2026-08-27 after the user picked from five mockups
 (claude.ai/code/artifact/9185e731-0987-417c-ac07-3bbf283cee09). Companion:
 `PLAN.md` (the technique), `docs/TECHNIQUE-PLATFORM-PLAN.md` §2.3/phase 4 (UI shell —
-this page is technique-owned until the shell goes generic). Status: **plan, not built**.*
+this page is technique-owned until the shell goes generic). Status: **BUILT 2026-08-27**
+(all phases; §3a below is the as-built record + what the first real scan taught).*
 
 ## 0. The decision (user, 2026-08-27)
 
@@ -37,88 +38,113 @@ receive flow context yet (only Tip does).
 
 ## 2. Phases
 
-### Phase F1 — backend: the read APIs `[ ]`
+### Phase F1 — backend: the read APIs `[x]` *(built 2026-08-27)*
 
-- [ ] **Journal context deliveries.** `FlowService.context_for()` currently serves a line and
+- [x] **Journal context deliveries.** `FlowService.context_for()` currently serves a line and
       forgets it. Add a `consumer` kwarg (`"tip"`, `"em"`, `"api"`) and journal
       `FlowContextServed` {symbol, day, score, consumer, refId (signal/run id)} — register the
       kind in `events.py` + note in PLATFORM-RULES §4. This is what makes D's "where it went"
       panel real. Callers updated: tip verification (`signals/service.py`).
-- [ ] **EM context note (opt-in).** Inject `context_for(symbol, consumer="em")` into EM's
+- [x] **EM context note (opt-in).** Inject `context_for(symbol, consumer="em")` into EM's
       analyze context as an informational note (mirror of the Tip injection; never a gate).
       Journaled by the same event. Confirm with the EM team it lands in their prompt context
       the way `gap_unchecked` does — a note, not a rule.
-- [ ] **`GET /api/flow/days?limit=10`** — trailing scan days with per-day summary computed
+- [x] **`GET /api/flow/days?limit=10`** — trailing scan days with per-day summary computed
       from `flow_reads`: {day, scanned, flagged, callPremium, putPremium, confirmed, churn,
       repeatStreaks: [{symbol, contract, days}]}. Powers the day picker + the slim strip.
-- [ ] **`GET /api/flow/symbol/{sym}?days=6`** — the story: that symbol's reads oldest→newest
+- [x] **`GET /api/flow/symbol/{sym}?days=6`** — the story: that symbol's reads oldest→newest
       (score, flags, confirmed, repeats per day) + `deliveries` (from the journal: consumer,
       refId, ts, the line) + `universe` (is the symbol currently held by the flow layer).
-- [ ] **`GET /api/flow/brief?day=`** — server-composed sections so the UI stays thin:
+- [x] **`GET /api/flow/brief?day=`** — server-composed sections so the UI stays thin:
       `confirmedOvernight` (today's `confirmed` + yesterday's flags whose OI stayed flat =
       churn), `accumulation` (repeatHits ≥ 2 with day-dot vectors), `newToday` (first flag in
       the window), `dying` (flagged contracts with DTE ≤ 1, and streaks that broke),
       `contextLines` (today's verbatim lines for symbols score ≥ threshold).
-- [ ] Tests (`tests/test_flow_api.py`): seed `flow_reads` fixtures across 3 synthetic days →
+- [x] Tests (`tests/test_flow_api.py`): seed `flow_reads` fixtures across 3 synthetic days →
       days summary math, story ordering + deliveries join, brief sections (confirmed vs churn
       split, dying by DTE), context delivery journaling from a tip verification.
-- [ ] Gate: full backend suite green.
+- [x] Gate: full backend suite green.
 
-### Phase F2 — frontend: page shell + the Reads desk `[ ]`
+### Phase F2 — frontend: page shell + the Reads desk `[x]` *(built 2026-08-27)*
 
-- [ ] Route the page: `App.tsx` `page === "flow"` → `<FlowPage />` (lazy like TechniquePage);
+- [x] Route the page: `App.tsx` `page === "flow"` → `<FlowPage />` (lazy like TechniquePage);
       phone TabBar: Flow lives under **More** (no new bottom tab).
-- [ ] `api.ts` + `types.ts`: `flowDays`, `flowReads`, `flowSymbol`, `flowBrief`, `flowScan`
+- [x] `api.ts` + `types.ts`: `flowDays`, `flowReads`, `flowSymbol`, `flowBrief`, `flowScan`
       + `FlowRead`/`FlowDay`/`FlowStory`/`FlowBrief` types (camelCase wire).
-- [ ] `pages/FlowPage.tsx`: header (title, day picker from `/days`, scan status line,
+- [x] `pages/FlowPage.tsx`: header (title, day picker from `/days`, scan status line,
       "Scan now" button → `POST /api/flow/scan` with toast), tabs **Reads | Brief**.
-- [ ] `components/flow/DayStrip.tsx` — the C-derived slim strip: premium bar (calls vs puts),
+- [x] `components/flow/DayStrip.tsx` — the C-derived slim strip: premium bar (calls vs puts),
       flagged/confirmed/churn counts, repeat streaks as `COIN 4 · MU 3` chips.
-- [ ] `components/flow/ReadsTable.tsx` — ranked table: Sym, Last, Score (mini bar), Lean
+- [x] `components/flow/ReadsTable.tsx` — ranked table: Sym, Last, Score (mini bar), Lean
       pill, Top contract (mono), Premium, Vol/OI, Evidence badges (`OI ✓ +n` / `churn` /
       `Rpt n/5` / `Strong`). Row order frozen between sorts; selection never auto-moves
       (the Armed-page anti-jump rules). Footer: "N symbols quiet · show all".
-- [ ] `components/flow/ReadDetail.tsx` — pinned right pane: header (sym, last, lean, score),
+- [x] `components/flow/ReadDetail.tsx` — pinned right pane: header (sym, last, lean, score),
       "Why this score" reasons, flagged-contracts table, repeat tracker (day dots), score
       sparkline (last 6 reads, plain SVG — no Highcharts for a 6-point line), the verbatim
       context-line box, actions (Analyze in EM · Open chain · Chart · **How was this
       built? →** opens the Story).
-- [ ] Keyboard: ←/→ moves selection (as ArmedPage).
-- [ ] Gate: `npm run build`.
+- [x] Keyboard: ←/→ moves selection (as ArmedPage).
+- [x] Gate: `npm run build`.
 
-### Phase F3 — the Symbol Story drill-down `[ ]`
+### Phase F3 — the Symbol Story drill-down `[x]` *(built 2026-08-27)*
 
-- [ ] `components/flow/SymbolStory.tsx` — replaces the detail pane (with "← back to read")
+- [x] `components/flow/SymbolStory.tsx` — replaces the detail pane (with "← back to read")
       or full-width on narrow screens: the day-column pipeline (snapshot count → flags →
       OI verdict → repeat streak → day score), the score/premium buildup chart (SVG bars +
       line, per the mockup), and the "Where this read went" cards driven by `deliveries`
       (Tip verification with source + link to the signal, EM run link, universe chip).
-- [ ] Deep links: from a Tip's `flowContext` line on the Tips page → this story; from the
+- [x] Deep links: from a Tip's `flowContext` line on the Tips page → this story; from the
       story's delivery card → the signal/run.
-- [ ] Gate: `npm run build`.
+- [x] Gate: `npm run build`.
 
-### Phase F4 — the Brief tab `[ ]`
+### Phase F4 — the Brief tab `[x]` *(built 2026-08-27)*
 
-- [ ] `components/flow/BriefTab.tsx` — the E layout: Confirmed overnight (with churn rows),
+- [x] `components/flow/BriefTab.tsx` — the E layout: Confirmed overnight (with churn rows),
       Accumulation watch (day-dot strips + DTE pills), New today / Dying flags side by side,
       "What Tips & EM receive today" (mono verbatim lines), footer (next scan time, Scan now).
       All from `GET /api/flow/brief` — no client-side composition.
-- [ ] "Previous briefs": the day picker drives the same endpoint.
-- [ ] Gate: `npm run build`.
+- [x] "Previous briefs": the day picker drives the same endpoint.
+- [x] Gate: `npm run build`.
 
-### Phase F5 — mobile, polish, wiring the loose ends `[ ]`
+### Phase F5 — mobile, polish, wiring the loose ends `[x]` *(built 2026-08-27)*
 
-- [ ] Phone layout: Reads as `bl-cards` (score + lean + top contract + badges per card),
-      detail/Story/Brief in a `Sheet`; ALL phone rules in `mobile.css` only.
-- [ ] `npm run mobile-audit` pass (mint a session; screenshots reviewed).
-- [ ] **Universe flow layer** (PLAN.md open item): symbols with score ≥
+- [x] Phone layout: Reads as `bl-cards` (score + lean + top contract + badges per card),
+      detail + Story in a `Sheet` (the Brief renders as the tab full-width — a sheet adds
+      nothing to a report layout; deliberate deviation); ALL phone rules in `mobile.css` only.
+- [x] Device screenshots pass: desktop 1440×900 + iPhone 390×844 via Playwright against a
+      dedicated server (port 8799, own DB) — seven states reviewed, three defects found and
+      fixed (see §3a). The official `npm run mobile-audit` targets the RUNNING app, which is
+      still the pre-Flow build — run it once after the next restart deploys this.
+- [x] **Universe flow layer** (PLAN.md open item): symbols with score ≥
       `techniques.flow.universe_score_min` (new setting, default 5) for ≥ 2 of the last 3
       sessions join the working universe as provenance `flow`; drop when quiet 3 sessions.
       Surfaced in the story's universe chip and the universe endpoint's provenance.
-- [ ] Flow badge on the Tips page: a small score chip next to a signal's ticker when a
+- [x] Flow badge on the Tips page: a small score chip next to a signal's ticker when a
       fresh read exists (links to the story).
-- [ ] Docs: PLAN.md status updated; PLATFORM-RULES §4 entry for `FlowContextServed`;
+- [x] Docs: PLAN.md status updated; PLATFORM-RULES §4 entry for `FlowContextServed`;
       screenshots refreshed in the mockup artifact if the built page drifts from Option A+C.
+
+## 3a. As-built notes + what the first real scan taught (2026-08-27)
+
+The visual pass ran against a dedicated server whose boot scheduler ran a **real scan on
+live CBOE chains** (56 symbols, 42 flagged, $600M flagged premium) — an accidental but
+valuable full-integration test. Verified working end to end: the reads desk with real
+badges, day picker, multi-day Symbol Story (day columns, next-morning OI verdicts
+attributed to the right day, score/premium chart), the Brief with churn rows, the Tips
+`flow N` chip → story hand-off, phone cards + sheets. Defects found by inspection and
+fixed: the Brief's "yesterday had no flags" copy showed even when churn rows followed;
+the phone day strip clipped; the detail's contracts table clipped OTM/DTE on phones (now
+scrolls); the Last column was empty for unwatched symbols (reads now persist the scan-time
+`spot` as the fallback).
+
+**Calibration observation for TRADING-RULES-style follow-up (not a UI matter):** with the
+default thresholds, a real day flags 42 of 56 symbols, almost all score 4, dominated by
+1-DTE contracts (whole GLD/META expiry boards land in "dying flags"). The premium floor
+($100k) barely filters a modern chain. Candidate tunings to evaluate against accumulating
+snapshots before trusting scores: `dte_min` (exclude ≤1 DTE from flags — their OI verdict
+never arrives), a higher `premium_min`, and/or per-symbol flag caps. The scoring machinery
+is fine; the thresholds are book-naive.
 
 ## 3. Decisions taken / open
 

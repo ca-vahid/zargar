@@ -16,6 +16,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 // a phone opening the Now screen should not download the Validation tab
 const TechniquePage = lazy(() => import("./pages/TechniquePage").then((m) => ({ default: m.TechniquePage })));
 const OptionsPage = lazy(() => import("./pages/OptionsPage").then((m) => ({ default: m.OptionsPage })));
+const FlowPage = lazy(() => import("./pages/FlowPage").then((m) => ({ default: m.FlowPage })));
 import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 import { clientKind, useViewport } from "./lib/viewport";
@@ -141,6 +142,7 @@ export default function App() {
           {page === "journal" && <JournalPage />}
           {page === "settings" && <SettingsPage />}
           {page === "technique" && <Suspense fallback={<div className="state-note">loading…</div>}><TechniquePage /></Suspense>}
+          {page === "flow" && <Suspense fallback={<div className="state-note">loading…</div>}><FlowPage /></Suspense>}
           {page === "armed" && <ArmedPage />}
           {page === "watchlists" && <WatchlistsPage />}
         </div>

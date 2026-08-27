@@ -29,7 +29,7 @@ def test_resolve_merges_layers_with_floor_and_exclusions():
     reasons = {d["symbol"]: d["reason"] for d in r["dropped"]}
     assert reasons["T"] == "excluded" and reasons["IREN"] == "excluded"
     assert reasons["SOFI"].startswith("price 18.80") and "US equity" in reasons["SHOP.TO"] and "no price" in reasons["RKLB"]
-    assert r["counts"] == {"core": 2, "extra": 1, "auto": 1}
+    assert r["counts"] == {"core": 2, "extra": 1, "flow": 0, "auto": 1}
     # the auto cap
     r2 = resolve(core=[], extra=[], exclude=[], auto=auto, min_price=20.0, auto_top=1)
     assert r2["symbols"] == ["SNDK"]
