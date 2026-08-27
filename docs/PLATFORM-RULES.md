@@ -95,6 +95,13 @@ runtime ones to `execution.*`).
   `avoid_0dte_after`=10:30 (D2) · user decision; re-tighten before real money.
 - 2026-08-26 · `technique.stop_on_close`=true (D3) · the runtime judges stops on the closed bar,
   the quote breach stays the brake.
+- 2026-08-27 · **Settled (user + EM team): `technique.arm.midday_trading` is EM-only, never a
+  platform key** — audited: read in exactly one place, EM's `entry_windows_enforced()` hook; the
+  runner never sees it. If technique #2 wants a schedule experiment it gets its own key.
+- 2026-08-27 · **Settled (user + EM team): veto/critic budgets are platform defaults with
+  per-technique override** — phase-3 resolution `techniques.<id>.<key>` → `execution.<key>` for
+  every runner-read key; old `technique.*` names become deprecated aliases with `SettingChanged`
+  journal continuity. Spec in the platform plan §8.4.
 - 2026-08-27 · Clock-driven session close (EM team #1): expiry + scorecard at 16:05 ET by the
   clock (`PlanRunner._end_session`), never dependent on the 15:59 bar · 08-26 unscored plans.
 - 2026-08-27 · Daily 09:00 ET feed self-test (EM team #2): REST bar fetch + WS auth, journal
