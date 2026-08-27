@@ -63,7 +63,10 @@ class WSHub:
         self._clients.add(ws)
         try:
             snapshot = await self.engine.snapshot()
-            await ws.send_text(json.dumps({"t": "snapshot", "d": snapshot}))
+            try:
+                await ws.send_text(json.dumps({"t": "snapshot", "d": snapshot}))
+            except RuntimeError:
+                return   # client closed while the snapshot was in flight (phone reconnect race)
             while True:
                 raw = await ws.receive_text()
                 try:
