@@ -5,14 +5,14 @@ import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, timeUntil } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { useStore } from "../store";
-import type { Proposal, RawContentItem, Signal } from "../types";
+import type { Proposal, RawContentItem, Signal, SourceScorecard } from "../types";
 import { useViewport } from "../lib/viewport";
 
 export function InboxPage() {
   const proposals = useStore((s) => s.proposals);
   return (
     <div>
-      <h2 className="page-title">Signals &amp; proposals</h2>
+      <h2 className="page-title">Tips &amp; proposals</h2>
       <div className="grid-2col">
         <div>
           <div className="panel mb">
@@ -26,6 +26,7 @@ export function InboxPage() {
             </div>
           </div>
           <ManualIngest />
+          <SourcesPanel />
         </div>
         <div>
           <SignalsPanel />
@@ -34,6 +35,23 @@ export function InboxPage() {
       </div>
     </div>
   );
+}
+
+function statusPill(status: string): string {
+  if (status === "verified" || status === "proposed") return "ok";
+  if (status === "parked") return "wait";
+  if (status === "verification_failed") return "bad";
+  return "dim";
+}
+
+function contractLabel(s: Signal): string | null {
+  if (s.instrument === "call" || s.instrument === "put") {
+    const k = s.strike ? `${s.strike}${s.instrument === "call" ? "C" : "P"}` : s.instrument;
+    const exp = s.expiry ? ` ${s.expiry.slice(5)}` : s.dteHintDays ? ` ~${s.dteHintDays}d` : "";
+    return `${k}${exp}`;
+  }
+  if (s.instrument === "shares") return "shares";
+  return null;
 }
 
 function ProposalCard({ p }: { p: Proposal }) {
@@ -115,18 +133,35 @@ function ManualIngest() {
   const [source, setSource] = useState("manual");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string>("");
+  const [image, setImage] = useState<string | null>(null);   // data URL
+
+  const readFile = (f: File) => {
+    const reader = new FileReader();
+    reader.onload = () => setImage(String(reader.result));
+    reader.readAsDataURL(f);
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    for (const item of Array.from(e.clipboardData?.items ?? [])) {
+      if (item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) { readFile(f); e.preventDefault(); return; }
+      }
+    }
+  };
 
   const run = async () => {
     setBusy(true);
     setResult("");
     try {
-      const out = await api.ingestManual(text, source, "manual paste");
+      const out = await api.ingestManual(text, source, "manual paste", image ?? undefined);
       if (out.note) setResult(out.note);
       else {
         const n = out.signals?.length ?? 0;
         setResult(`Extracted ${n} signal${n === 1 ? "" : "s"}.`);
-        if (n > 0) toast("success", `Extracted ${n} signal(s) from pasted text`);
+        if (n > 0) toast("success", `Extracted ${n} signal(s)`);
       }
+      if (!out.note) setImage(null);
     } catch (e: any) {
       toast("error", e.message);
     } finally {
@@ -135,24 +170,85 @@ function ManualIngest() {
   };
 
   return (
-    <div className="panel">
+    <div className="panel mb">
       <div className="panel-head">
-        Test the pipeline <span className="sub">paste newsletter text, no email setup needed</span>
+        Add a tip <span className="sub">paste text or a screenshot of your own chat client</span>
       </div>
       <div className="panel-body">
         <label className="field">
-          <span>Source name (matches trust stats later)</span>
+          <span>Source name (builds this source's track record)</span>
           <input type="text" value={source} onChange={(e) => setSource(e.target.value)} />
         </label>
         <label className="field">
-          <span>Content</span>
-          <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)}
-            placeholder="ALERT: We are buying AAPL today. Entry at $230, stop $220, target $260…" />
+          <span>Content — text, or paste a screenshot right here</span>
+          <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} onPaste={onPaste}
+            placeholder="NVDA 180c 9/19 🚀 … or: ALERT: buying AAPL, entry $230, stop $220, target $260" />
         </label>
-        <button className="primary-btn" disabled={busy || !text.trim()} onClick={run}>
-          {busy ? "Extracting…" : "Run extraction"}
-        </button>
+        {image && (
+          <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
+            <img src={image} alt="tip screenshot" style={{ maxHeight: 90, maxWidth: "60%", borderRadius: 4 }} />
+            <button className="link-btn danger" onClick={() => setImage(null)}>remove screenshot</button>
+          </div>
+        )}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="primary-btn" disabled={busy || (!text.trim() && !image)} onClick={run}>
+            {busy ? "Extracting…" : "Run extraction"}
+          </button>
+          <label className="link-btn" style={{ cursor: "pointer" }}>
+            attach screenshot…
+            <input type="file" accept="image/*" style={{ display: "none" }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
+          </label>
+        </div>
         {result && <div className="muted" style={{ marginTop: 8 }}>{result}</div>}
+      </div>
+    </div>
+  );
+}
+
+function SourcesPanel() {
+  const signalCount = useStore((s) => s.signals.length);
+  const state = useAsync(() => api.sourceScorecards(), [signalCount]);
+  const cards = state.data ?? [];
+  return (
+    <div className="panel">
+      <div className="panel-head">
+        Source scorecards
+        <span className="sub">a source earns trust here before it earns money</span>
+      </div>
+      <div className="scroll-x">
+        {state.loading && cards.length === 0 ? <Spinner />
+          : cards.length === 0 ? (
+            <EmptyState title="No sources yet" hint="Every tip source gets a shadow portfolio and a track record." />
+          ) : (
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Source</th><th className="num">Tips</th><th className="num">OK/Parked/Fail</th>
+                  <th className="num">Shadow P&amp;L</th><th>Policy</th><th>Bar</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cards.map((c: SourceScorecard) => (
+                  <tr key={c.source}>
+                    <td><b>{c.source}</b>{(c.seenAgain ?? 0) > 0 && <span className="muted"> ·{c.seenAgain} repeats</span>}</td>
+                    <td className="num">{c.signals}</td>
+                    <td className="num muted">{c.verified}/{c.parked}/{c.failed}</td>
+                    <td className={`num ${(c.shadowPnl ?? 0) > 0 ? "pos" : (c.shadowPnl ?? 0) < 0 ? "neg" : "muted"}`}>
+                      {c.shadowPnl != null ? `${fmtMoney(c.shadowPnl)} (${(c.shadowPnlPct ?? 0).toFixed(1)}%)` : "—"}
+                    </td>
+                    <td className="muted">{c.policy ? `${c.policy.entry.replace("_", " ")} · ${c.policy.mode}` : "—"}</td>
+                    <td>
+                      <span className={`status-pill ${c.barCleared ? "ok" : "dim"}`}
+                        title="Bar: enough verified tips AND positive shadow P&L — required before auto mode or tip-time entry">
+                        {c.barCleared ? "cleared" : "shadow"}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
       </div>
     </div>
   );
@@ -175,14 +271,18 @@ function SignalsPanel() {
             : merged.length === 0 ? <EmptyState title="No signals yet" hint="Ingest an email or paste text below." />
             : merged.slice(0, 30).map((s) => {
               const failed = (s.verification?.checks ?? []).filter((c) => !c.passed);
+              const contract = contractLabel(s);
               return (
                 <div key={s.id} className="bl-card bl-card--static">
                   <span className="bl-card-l">
                     <span className="bl-card-sym">{s.ticker} <span className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</span>
-                      <span className={`status-pill ${s.status === "verified" || s.status === "proposed" ? "ok" : s.status === "verification_failed" ? "bad" : "dim"}`}>{s.status.replace("_", " ")}</span>
+                      {contract && <span className="muted"> {contract}</span>}
+                      <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
+                      {(s.seenCount ?? 1) > 1 && <span className="status-pill dim">×{s.seenCount}</span>}
                     </span>
                     <span className="bl-card-sub">entry {s.entryPrice ? fmtMoney(s.entryPrice) : "—"} · target {s.targetPrice ? fmtMoney(s.targetPrice) : "—"} · stop {s.stopPrice ? fmtMoney(s.stopPrice) : "—"} · {s.confidence.replace("_", " ")}</span>
                     {s.thesisSummary && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.thesisSummary}</span>}
+                    {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
                     {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
                     <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)}</span>
                   </span>
@@ -208,24 +308,24 @@ function SignalsPanel() {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Ticker</th><th>Dir</th><th>Conf</th><th className="num">Entry</th>
+                <th>Ticker</th><th>Dir</th><th>Contract</th><th>Conf</th><th className="num">Entry</th>
                 <th className="num">Tgt/Stop</th><th>Status</th><th>Source</th><th>When</th>
               </tr>
             </thead>
             <tbody>
               {merged.slice(0, 50).map((s) => (
-                <tr key={s.id} title={s.thesisSummary ?? ""}>
-                  <td><b>{s.ticker}</b></td>
+                <tr key={s.id}
+                  title={[s.thesisSummary, s.verification?.flowContext].filter(Boolean).join("\n")}>
+                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>}</td>
                   <td className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</td>
+                  <td className="muted">{contractLabel(s) ?? "—"}</td>
                   <td className="muted">{s.confidence.replace("_", " ")}</td>
                   <td className="num">{s.entryPrice ? fmtMoney(s.entryPrice) : "—"}</td>
                   <td className="num muted">
                     {s.targetPrice ? fmtMoney(s.targetPrice) : "—"}/{s.stopPrice ? fmtMoney(s.stopPrice) : "—"}
                   </td>
                   <td>
-                    <span className={`status-pill ${
-                      s.status === "verified" || s.status === "proposed" ? "ok"
-                      : s.status === "verification_failed" ? "bad" : "dim"}`}
+                    <span className={`status-pill ${statusPill(s.status)}`}
                       title={(s.verification?.checks ?? [])
                         .filter((c) => !c.passed).map((c) => c.detail || c.name).join("; ")}>
                       {s.status.replace("_", " ")}

@@ -58,6 +58,35 @@ DEFAULTS: dict[str, Any] = {
     "verification.max_spread_pct": 1.5,
     "verification.min_price": 1.0,
     "verification.require_actionable": True,
+    # --- tip technique (docs/techniques/tip/PLAN.md; per-source overrides in .sources) ---
+    "techniques.tip.entry": "level_touch",   # level_touch | tip_time (tip_time is EARNED per source)
+    "techniques.tip.mode": "proposal",       # shadow | alert | proposal | auto (per-source override)
+    "techniques.tip.risk_pct": 1.0,
+    "techniques.tip.budget_per_tip": 500.0,
+    "techniques.tip.budget_open_max": 2000.0,
+    "techniques.tip.dte_min": 10,            # option expression window — never 0DTE
+    "techniques.tip.dte_max": 30,
+    "techniques.tip.horizon_sessions": 10,   # tip expires unfilled after N sessions
+    "techniques.tip.min_conviction": "implied",
+    "techniques.tip.max_open_tips": 3,
+    "techniques.tip.dedupe_window_hours": 24,
+    "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
+    "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none
+    "techniques.tip.target_r": [1.5, 3.0],   # R-multiple targets when the tip states none
+    "techniques.tip.sources": {},            # {name: {entry, mode, risk_pct, budget_per_tip, ...}}
+    # --- flow technique (docs/techniques/flow/PLAN.md; context only in v1, no orders) ---
+    "techniques.flow.vol_oi_min": 1.25,      # flag: today's volume / open interest
+    "techniques.flow.vol_oi_strong": 5.0,
+    "techniques.flow.premium_min": 100_000.0,  # $ mid*volume*100 to flag a contract
+    "techniques.flow.min_contract_volume": 500,
+    "techniques.flow.min_open_interest": 100,
+    "techniques.flow.dte_max": 45,
+    "techniques.flow.otm_min_pct": 0.0,      # flagged footprint: 0–12% OTM
+    "techniques.flow.otm_max_pct": 12.0,
+    "techniques.flow.repeat_days": 3,        # same zone flagged N days in the window
+    "techniques.flow.repeat_window": 5,
+    "techniques.flow.os_ratio_flag": 0.5,    # options volume / stock volume (bearish flag)
+    "techniques.flow.scan_top": 60,          # universe cap per nightly scan
     # --- integrations ----------------------------------------------------------
     "telegram.enabled": False,
     "snaptrade.enabled": False,

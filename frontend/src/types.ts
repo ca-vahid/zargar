@@ -170,6 +170,14 @@ export interface Signal {
   ticker: string;
   direction: string;
   action: string;
+  instrument?: string;            // shares | call | put | either | unspecified
+  strike?: number | null;
+  expiry?: string | null;         // YYYY-MM-DD
+  dteHintDays?: number | null;
+  horizonSessions?: number | null;
+  catalyst?: string | null;
+  seenCount?: number;
+  lastSeenAt?: string | null;
   entryPrice: number | null;
   targetPrice: number | null;
   stopPrice: number | null;
@@ -177,9 +185,27 @@ export interface Signal {
   thesisSummary: string | null;
   confidence: string;
   isActionable: boolean;
-  verification: { passed: boolean; checks: { name: string; passed: boolean; detail: string }[] } | null;
+  verification: { passed: boolean; park?: boolean; flowContext?: string;
+    checks: { name: string; passed: boolean; detail: string; fatal?: boolean }[] } | null;
   status: string;
   createdAt: string;
+}
+
+export interface SourceScorecard {
+  source: string;
+  signals: number;
+  verified: number;
+  parked: number;
+  failed: number;
+  seenAgain: number;
+  lastSignalAt: string | null;
+  shadowPortfolioId?: string;
+  shadowEquity?: number | null;
+  shadowPnl?: number | null;
+  shadowPnlPct?: number | null;
+  barCleared?: boolean;
+  policy?: { entry: string; mode: string; risk_pct: number; budget_per_tip: number;
+    dte_min: number; dte_max: number; horizon_sessions: number };
 }
 
 export interface RawContentItem {

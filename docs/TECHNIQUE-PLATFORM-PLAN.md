@@ -291,10 +291,14 @@ Settled (dated in `PLATFORM-RULES.md` §4 and EM's TRADING-RULES):
 - 2026-08-27 · `technique.arm.midday_trading` is **EM-only, never a platform key** (user + EM team).
 - 2026-08-27 · Veto/critic budgets: **platform defaults with per-technique override** — resolution `techniques.<id>.<key>` → `execution.<key>`, spec in §8.4 (user + EM team).
 
+- 2026-08-27 · **Tip IS the second technique** (and Flow the third, context-only); entry is a
+  **per-source policy** — level-touch by default, tip-time earned by a positive scorecard (user).
+  Plans: `docs/techniques/tip/PLAN.md`, `docs/techniques/flow/PLAN.md`; candidates research in
+  `docs/TECHNIQUE-CANDIDATES.md`.
+
 Still open:
-1. Is **Tip** the second technique, and does it enter at tip time or wait for a level touch?
-2. Overnight policy default `venue_stop_required` — assumed yes, confirm before phase 2b starts.
-3. Phase 2b timing (the second money path; ships with the chaos suite or not at all).
+1. Overnight policy default `venue_stop_required` — assumed yes, confirm before phase 2b starts.
+2. Phase 2b timing (the second money path; ships with the chaos suite or not at all).
 
 ## 8. Engine backlog — the EM team's operating list (2026-08-27)
 

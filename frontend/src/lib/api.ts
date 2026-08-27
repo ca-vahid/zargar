@@ -65,8 +65,11 @@ export const api = {
   approveProposal: (id: string, half = false) =>
     request<any>("POST", `/api/proposals/${id}/approve`, { half }),
   rejectProposal: (id: string) => request<any>("POST", `/api/proposals/${id}/reject`),
-  ingestManual: (text: string, source_name: string, subject: string) =>
-    request<any>("POST", "/api/ingest/manual", { text, source_name, subject }),
+  ingestManual: (text: string, source_name: string, subject: string, imageDataUrl?: string) =>
+    request<any>("POST", "/api/ingest/manual",
+      imageDataUrl ? { text, source_name, subject, imageDataUrl } : { text, source_name, subject }),
+  sourceScorecards: () =>
+    request<import("../types").SourceScorecard[]>("GET", "/api/signals/sources"),
   getBrokerages: () => request<import("../types").Brokerages>("GET", "/api/brokerages"),
   orderImpact: (body: { portfolio_id: string; symbol: string; side: string; qty: number;
     order_type?: string; limit_price?: number | null }) =>

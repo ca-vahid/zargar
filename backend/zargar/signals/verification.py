@@ -1,11 +1,22 @@
 """Deterministic verification of extracted signals against live market data.
 
 Runs after extraction + grounding and before any proposal is created.
+
+v2 (tip technique): checks are either **fatal** (ungrounded, non-actionable,
+unresolvable ticker, halted, penny stock, wide spread, incoherent prices) or
+**parking** (price has moved away from the stated entry / already reached the
+target). A signal failing only parking checks is not killed — it is *parked*:
+the tip technique watches for price to come back to its level and re-judges
+then. The old behaviour killed a tip 4% off its entry forever, which is
+exactly wrong for a technique whose default entry is "wait for the level".
 """
 from __future__ import annotations
 
 from ..marketdata import QuoteCache
 from .schemas import TradeSignal
+
+# Failing ONLY these parks the signal instead of killing it.
+PARKING_CHECKS = {"price_deviation", "not_past_target"}
 
 
 async def verify_signal(
@@ -18,7 +29,8 @@ async def verify_signal(
     checks: list[dict] = []
 
     def add(name: str, passed: bool, detail: str = "") -> None:
-        checks.append({"name": name, "passed": passed, "detail": detail})
+        checks.append({"name": name, "passed": passed, "detail": detail,
+                       "fatal": name not in PARKING_CHECKS})
 
     # 0. grounding (from the extraction stage)
     if grounding is not None:
@@ -54,28 +66,46 @@ async def verify_signal(
             f"spread {quote.spread_pct:.2f}% exceeds {max_spread:.2f}%"
             if quote.spread_pct > max_spread else "")
 
-        # 6. price deviation vs claimed entry (staleness / chasing guard)
+        # 6. price deviation vs claimed entry — PARKING, not fatal: the tip
+        # technique waits for the level instead of chasing or dying
         if signal.entry_price:
             max_dev = float(settings.get("verification.max_price_deviation_pct", 3.0))
             dev = abs(quote.last - signal.entry_price) / signal.entry_price * 100
             add("price_deviation", dev <= max_dev,
                 f"live price {quote.last:.2f} is {dev:.1f}% from claimed entry "
                 f"{signal.entry_price:.2f} (max {max_dev:.1f}%)" if dev > max_dev else "")
-            # already past target = chasing a move that happened
-            if signal.target_price and signal.direction == "long":
-                add("not_past_target", quote.last < signal.target_price,
-                    f"live price {quote.last:.2f} already at/past target {signal.target_price:.2f}"
-                    if quote.last >= signal.target_price else "")
+        # already past target = the move already happened (both directions)
+        first_target = signal.target_price or (signal.target_prices[0] if signal.target_prices else None)
+        if first_target:
+            if signal.direction == "long":
+                add("not_past_target", quote.last < first_target,
+                    f"live price {quote.last:.2f} already at/past target {first_target:.2f}"
+                    if quote.last >= first_target else "")
+            else:
+                add("not_past_target", quote.last > first_target,
+                    f"live price {quote.last:.2f} already at/past target {first_target:.2f}"
+                    if quote.last <= first_target else "")
 
-    # 7. internal price ordering
-    if signal.direction == "long" and signal.entry_price:
+    # 7. internal price ordering (direction-aware)
+    if signal.entry_price:
         ok = True
         detail = ""
-        if signal.stop_price and signal.stop_price >= signal.entry_price:
-            ok, detail = False, f"stop {signal.stop_price} not below entry {signal.entry_price}"
-        if signal.target_price and signal.target_price <= signal.entry_price:
-            ok, detail = False, f"target {signal.target_price} not above entry {signal.entry_price}"
+        if signal.direction == "long":
+            if signal.stop_price and signal.stop_price >= signal.entry_price:
+                ok, detail = False, f"stop {signal.stop_price} not below entry {signal.entry_price}"
+            if signal.target_price and signal.target_price <= signal.entry_price:
+                ok, detail = False, f"target {signal.target_price} not above entry {signal.entry_price}"
+        else:
+            if signal.stop_price and signal.stop_price <= signal.entry_price:
+                ok, detail = False, f"stop {signal.stop_price} not above entry {signal.entry_price}"
+            if signal.target_price and signal.target_price >= signal.entry_price:
+                ok, detail = False, f"target {signal.target_price} not below entry {signal.entry_price}"
         add("price_ordering", ok, detail)
 
     passed = all(c["passed"] for c in checks)
-    return {"passed": passed, "checks": checks}
+    fatal_passed = all(c["passed"] for c in checks if c["fatal"])
+    return {
+        "passed": passed,
+        "park": (not passed) and fatal_passed,   # only price-position checks failed
+        "checks": checks,
+    }

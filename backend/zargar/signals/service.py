@@ -1,7 +1,17 @@
-"""Signal pipeline service: raw content → extraction → grounding → verification → proposal."""
+"""Signal pipeline service: raw content → extraction → grounding → verification → proposal.
+
+Rebuilt 2026-08-27 for the tip technique (docs/techniques/tip/PLAN.md §A):
+extraction v2 carries the whole trade (instrument/strike/expiry/horizon),
+screenshots of the user's own client are transcribed and extracted, duplicate
+tips attach to the original as "seen again" instead of minting a second
+proposal, price-position failures *park* a signal (the tip technique waits for
+the level) instead of killing it, and every verified signal shadow-trades so
+the per-source scorecard exists regardless of the human decision.
+"""
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import logging
 
 from sqlalchemy import select
@@ -9,9 +19,10 @@ from sqlalchemy import select
 from .. import bus as topics
 from .. import events as ev
 from ..domain import new_id
-from ..models import RawContent, Signal
+from ..models import ChatAsset, Portfolio as PortfolioRow, RawContent, Signal
 from .extraction import Extractor, ground_signal
 from .schemas import ExtractionResult, TradeSignal
+from .sources import SourcePolicy, resolve_policy
 from .verification import verify_signal
 
 log = logging.getLogger("zargar.signals")
@@ -26,6 +37,14 @@ def signal_dict(row: Signal) -> dict:
         "exchangeHint": row.exchange_hint,
         "direction": row.direction,
         "action": row.action,
+        "instrument": row.instrument,
+        "strike": row.strike,
+        "expiry": row.expiry,
+        "dteHintDays": row.dte_hint_days,
+        "horizonSessions": row.horizon_sessions,
+        "catalyst": row.catalyst,
+        "seenCount": row.seen_count,
+        "lastSeenAt": row.last_seen_at.isoformat() if row.last_seen_at else None,
         "entryPrice": row.entry_price,
         "entryType": row.entry_type,
         "targetPrice": row.target_price,
@@ -39,6 +58,16 @@ def signal_dict(row: Signal) -> dict:
         "status": row.status,
         "createdAt": row.created_at.isoformat() if row.created_at else None,
     }
+
+
+def dedupe_key_for(source: str | None, sig: TradeSignal) -> str:
+    """Semantic identity of a tip: same source + same trade = the same tip,
+    however it was worded. Repeat mentions bump `seen_count` on the original."""
+    raw = "|".join([
+        (source or "unknown").lower(), sig.ticker.upper(), sig.direction,
+        sig.instrument, f"{sig.strike:g}" if sig.strike else "", sig.expiry or "",
+    ])
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:40]
 
 
 class SignalService:
@@ -78,16 +107,27 @@ class SignalService:
         return await self.process_content(row.id)
 
     async def ingest_manual(self, text: str, *, source_name: str = "manual",
-                            subject: str = "") -> dict:
-        """Paste-in path for testing the pipeline without email plumbing."""
+                            subject: str = "", image: bytes | None = None,
+                            image_media_type: str = "image/png") -> dict:
+        """Paste-in path — text, or a screenshot of the user's own client (the
+        model transcribes it; the image is kept as evidence in chat_assets)."""
         eng = self.engine
+        meta: dict = {}
+        if image is not None:
+            asset = ChatAsset(id=new_id(), thread_id=None, media_type=image_media_type,
+                              data=image, meta={"kind": "tip_screenshot"})
+            async with eng.sf() as session:
+                session.add(asset)
+                await session.commit()
+            meta["imageAssetId"] = asset.id
         row = RawContent(id=new_id(), source_type="manual", source_name=source_name,
-                         subject=subject, body_text=text)
+                         subject=subject, body_text=text, meta=meta)
         async with eng.sf() as session:
             session.add(row)
             await session.commit()
         await eng.journal.append(
-            ev.CONTENT_RECEIVED, {"id": row.id, "source": source_name, "sourceType": "manual"},
+            ev.CONTENT_RECEIVED, {"id": row.id, "source": source_name, "sourceType": "manual",
+                                  "hasImage": image is not None},
             aggregate_type="content", aggregate_id=row.id)
         return await self.process_content(row.id)
 
@@ -107,8 +147,14 @@ class SignalService:
             content = await session.get(RawContent, content_id)
         if content is None:
             raise ValueError("unknown content")
+        image: bytes | None = None
+        asset_id = (content.meta or {}).get("imageAssetId")
+        if asset_id:
+            async with eng.sf() as session:
+                asset = await session.get(ChatAsset, asset_id)
+            image = asset.data if asset else None
         text = content.body_text or content.body_html or ""
-        if not text.strip():
+        if not text.strip() and image is None:
             await self._set_content_status(content_id, "ignored")
             return {"contentId": content_id, "status": "ignored", "signals": []}
         if not self.extractor.available:
@@ -120,25 +166,69 @@ class SignalService:
                 text,
                 subject=content.subject or "",
                 source_name=content.source_name or "",
-                received_at=content.received_at.isoformat() if content.received_at else "")
+                received_at=content.received_at.isoformat() if content.received_at else "",
+                image=image)
         except Exception as exc:
             log.exception("extraction failed for %s", content_id)
             await self._set_content_status(content_id, "error")
             return {"contentId": content_id, "status": "error", "error": str(exc), "signals": []}
 
-        out = await self.handle_extraction(content, result, source_text=text)
+        source_text = text
+        if image is not None and result.source_transcript:
+            # the transcript IS the source for grounding + display; keep it
+            source_text = result.source_transcript
+            async with eng.sf() as session:
+                db_content = await session.get(RawContent, content_id)
+                if db_content is not None and not (db_content.body_text or "").strip():
+                    db_content.body_text = result.source_transcript
+                    await session.commit()
+
+        out = await self.handle_extraction(content, result, source_text=source_text)
         await self._set_content_status(content_id, "extracted")
         return {"contentId": content_id, "status": "extracted",
                 "sourceType": result.source_type, "signals": out}
 
+    async def _find_duplicate(self, key: str, window_hours: float) -> Signal | None:
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=window_hours)
+        async with self.engine.sf() as session:
+            return (await session.execute(
+                select(Signal).where(Signal.dedupe_key == key,
+                                     Signal.created_at >= cutoff,
+                                     Signal.status != "dismissed")
+                .order_by(Signal.created_at.desc()).limit(1)
+            )).scalars().first()
+
     async def handle_extraction(self, content: RawContent, result: ExtractionResult,
                                 *, source_text: str) -> list[dict]:
-        """Grounding → persistence → verification → proposal, per signal.
+        """Grounding → dedupe → persistence → verification → proposal, per signal.
         Split out so tests can drive it with a canned ExtractionResult (no API)."""
         eng = self.engine
         out: list[dict] = []
         for sig in result.signals:
+            policy = resolve_policy(eng.settings, content.source_name)
             grounding = ground_signal(sig, source_text)
+
+            # --- dedupe: the same tip seen again attaches to the original ---
+            key = dedupe_key_for(content.source_name, sig)
+            window = float(eng.settings.get("techniques.tip.dedupe_window_hours", 24))
+            dup = await self._find_duplicate(key, window)
+            if dup is not None:
+                async with eng.sf() as session:
+                    db_dup = await session.get(Signal, dup.id)
+                    db_dup.seen_count = int(db_dup.seen_count or 1) + 1
+                    db_dup.last_seen_at = dt.datetime.now(dt.timezone.utc)
+                    await session.commit()
+                    dup = db_dup
+                await eng.journal.append(
+                    ev.SIGNAL_SEEN_AGAIN,
+                    {"ticker": dup.ticker, "source": content.source_name,
+                     "seenCount": dup.seen_count, "contentId": content.id},
+                    aggregate_type="signal", aggregate_id=dup.id)
+                eng.bus.publish(topics.SIGNALS, signal_dict(dup))
+                out.append({"signal": signal_dict(dup), "duplicateOf": dup.id,
+                            "proposal": None, "shadowOrder": None})
+                continue
+
             row = Signal(
                 id=new_id(),
                 raw_content_id=content.id,
@@ -147,16 +237,24 @@ class SignalService:
                 exchange_hint=sig.exchange_hint,
                 direction=sig.direction,
                 action=sig.action,
+                instrument=sig.instrument,
+                strike=sig.strike,
+                expiry=sig.expiry,
+                dte_hint_days=sig.dte_hint_days,
+                horizon_sessions=sig.horizon_sessions,
+                catalyst=sig.catalyst,
+                dedupe_key=key,
                 entry_price=sig.entry_price,
                 entry_type=sig.entry_type,
-                target_price=sig.target_price,
+                target_price=sig.target_price or (sig.target_prices[0] if sig.target_prices else None),
                 stop_price=sig.stop_price,
                 timeframe=sig.timeframe,
                 thesis_summary=sig.thesis_summary,
                 confidence=sig.confidence,
                 is_actionable=sig.is_actionable,
                 extraction={"signal": sig.model_dump(), "grounding": grounding,
-                            "sourceType": result.source_type},
+                            "sourceType": result.source_type,
+                            "policy": policy.to_dict()},
             )
             async with eng.sf() as session:
                 session.add(row)
@@ -164,30 +262,54 @@ class SignalService:
             await eng.journal.append(
                 ev.SIGNAL_EXTRACTED,
                 {"ticker": row.ticker, "direction": row.direction,
-                 "confidence": row.confidence, "grounded": grounding["passed"]},
+                 "instrument": row.instrument, "confidence": row.confidence,
+                 "grounded": grounding["passed"], "source": content.source_name},
                 aggregate_type="signal", aggregate_id=row.id)
 
             await eng.ensure_symbol(row.ticker)
             verification = await verify_signal(sig, eng.quotes, eng.settings,
                                                grounding=grounding)
-            status = "verified" if verification["passed"] else "verification_failed"
+            # flow context rides along (informational, never a check): does the
+            # options tape agree with the tip?
+            flow = getattr(eng, "flow_service", None)
+            if flow is not None:
+                try:
+                    line = await flow.context_for(row.ticker)
+                    if line:
+                        verification["flowContext"] = line
+                except Exception:  # pragma: no cover - context is best-effort
+                    log.debug("flow context lookup failed for %s", row.ticker)
+            if verification["passed"]:
+                status = "verified"
+            elif verification.get("park"):
+                status = "parked"
+            else:
+                status = "verification_failed"
             async with eng.sf() as session:
                 db_row = await session.get(Signal, row.id)
                 db_row.verification = verification
                 db_row.status = status
                 await session.commit()
                 row = db_row
-            await eng.journal.append(
-                ev.SIGNAL_VERIFIED if verification["passed"] else ev.SIGNAL_VERIFICATION_FAILED,
-                verification, aggregate_type="signal", aggregate_id=row.id)
+            if status == "verified":
+                kind = ev.SIGNAL_VERIFIED
+            elif status == "parked":
+                kind = ev.SIGNAL_PARKED
+            else:
+                kind = ev.SIGNAL_VERIFICATION_FAILED
+            await eng.journal.append(kind, verification,
+                                     aggregate_type="signal", aggregate_id=row.id)
             eng.bus.publish(topics.SIGNALS, signal_dict(row))
 
             proposal = None
             shadow_order = None
-            if verification["passed"]:
-                if eng.proposals is not None:
-                    proposal = await eng.proposals.create_from_signal(row, sig, verification)
+            if status == "verified":
+                # shadow ALWAYS trades a verified signal — the per-source track
+                # record exists regardless of policy mode or the human decision
                 shadow_order = await self._shadow_execute(row, sig)
+                if (eng.proposals is not None and policy.mode in ("proposal", "auto")
+                        and policy.meets_conviction(sig.confidence)):
+                    proposal = await eng.proposals.create_from_signal(row, sig, verification)
             out.append({"signal": signal_dict(row), "proposal": proposal,
                         "shadowOrder": shadow_order})
         return out
@@ -197,7 +319,6 @@ class SignalService:
         'what would have happened' record exists regardless of the human decision."""
         import math
 
-        from ..models import Portfolio as PortfolioRow
         from ..orders import BracketSpec, OrderIntent
 
         eng = self.engine
@@ -241,6 +362,52 @@ class SignalService:
                 row.status = status
                 await session.commit()
 
+    # ------------------------------------------------------------- tip plans
+    async def build_tip_plan_for(self, signal_id: str) -> dict:
+        """Signal → the tip SessionPlan the runner will arm (preview; no side
+        effects). Verified and parked signals both plan — parked is exactly the
+        case where the plan waits at the level."""
+        import time as _time
+
+        from ..marketstructure.history import fetch_window
+        from ..techniques.tip import build_tip_plan
+
+        eng = self.engine
+        async with eng.sf() as session:
+            row = await session.get(Signal, signal_id)
+        if row is None:
+            raise ValueError("unknown signal")
+        if row.status not in ("verified", "parked", "proposed"):
+            raise ValueError(f"signal is {row.status} — only verified/parked tips plan")
+        policy = resolve_policy(eng.settings, row.source_name)
+        now_ms = int(_time.time() * 1000)
+        bars = await fetch_window(row.ticker, "5m", now_ms - 10 * 86_400_000, now_ms)
+        quote = eng.quotes.get(row.ticker)
+        ref = (quote.last if quote and quote.last > 0 else None) or (bars[-1].close if bars else None)
+        if not ref:
+            raise ValueError(f"no price for {row.ticker}")
+        extraction_sig = (row.extraction or {}).get("signal") or {}
+        plan = build_tip_plan(
+            symbol=row.ticker,
+            direction=row.direction,
+            reference_price=float(ref),
+            bars=bars,
+            as_of_ms=now_ms,
+            entry_mode=policy.entry,
+            tip_entry=row.entry_price,
+            tip_stop=row.stop_price,
+            tip_targets=extraction_sig.get("target_prices")
+            or ([row.target_price] if row.target_price else []),
+            horizon_sessions=row.horizon_sessions or policy.horizon_sessions,
+            stop_atr_mult=float(eng.settings.get("techniques.tip.stop_atr_mult", 1.0)),
+            target_r=tuple(eng.settings.get("techniques.tip.target_r") or (1.5, 3.0)),
+            signal_id=row.id,
+            source=row.source_name,
+            thesis=row.thesis_summary or "",
+            instrument_hint=row.instrument,
+        )
+        return plan.to_dict()
+
     # ------------------------------------------------------------- queries
     async def list_signals(self, limit: int = 100) -> list[dict]:
         async with self.engine.sf() as session:
@@ -259,7 +426,57 @@ class SignalService:
             "sender": r.sender, "subject": r.subject, "status": r.status,
             "receivedAt": r.received_at.isoformat() if r.received_at else None,
             "preview": (r.body_text or "")[:280],
+            "hasImage": bool((r.meta or {}).get("imageAssetId")),
         } for r in rows]
+
+    async def source_scorecards(self) -> list[dict]:
+        """Per-source track record: signal counts by status + the shadow
+        portfolio's P&L. This is the trust ladder's evidence — a source earns
+        proposal/auto mode (and tip-time entry) here, or it doesn't."""
+        eng = self.engine
+        async with eng.sf() as session:
+            rows = (await session.execute(select(Signal))).scalars().all()
+        by_source: dict[str, dict] = {}
+        for r in rows:
+            src = r.source_name or "unknown"
+            card = by_source.setdefault(src, {
+                "source": src, "signals": 0, "verified": 0, "parked": 0,
+                "failed": 0, "seenAgain": 0, "lastSignalAt": None})
+            card["signals"] += 1
+            card["seenAgain"] += max(0, int(r.seen_count or 1) - 1)
+            if r.status in ("verified", "proposed"):
+                card["verified"] += 1
+            elif r.status == "parked":
+                card["parked"] += 1
+            elif r.status == "verification_failed":
+                card["failed"] += 1
+            ts = r.created_at.isoformat() if r.created_at else None
+            if ts and (card["lastSignalAt"] is None or ts > card["lastSignalAt"]):
+                card["lastSignalAt"] = ts
+        for p in eng.positions.portfolios():
+            if p.get("kind") != "shadow" or not p.get("sourceName"):
+                continue
+            card = by_source.setdefault(p["sourceName"], {
+                "source": p["sourceName"], "signals": 0, "verified": 0, "parked": 0,
+                "failed": 0, "seenAgain": 0, "lastSignalAt": None})
+            try:
+                equity = await eng.positions.equity(p["id"])
+            except Exception:  # pragma: no cover - portfolio math hiccup
+                equity = None
+            card["shadowPortfolioId"] = p["id"]
+            card["shadowEquity"] = equity
+            start = p.get("startingCash") or 10_000.0
+            card["shadowPnl"] = (equity - start) if equity is not None else None
+            card["shadowPnlPct"] = ((equity - start) / start * 100) if equity is not None and start else None
+        cards = list(by_source.values())
+        min_n = int(eng.settings.get("techniques.tip.scorecard_min_n", 20))
+        for c in cards:
+            policy = resolve_policy(eng.settings, c["source"])
+            c["policy"] = policy.to_dict()
+            pnl = c.get("shadowPnl")
+            c["barCleared"] = bool(c["verified"] >= min_n and pnl is not None and pnl > 0)
+        cards.sort(key=lambda c: -(c.get("signals") or 0))
+        return cards
 
 
 async def attach_signal_layer(engine) -> None:

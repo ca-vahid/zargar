@@ -48,11 +48,15 @@ def test_em_thresholds_are_duck_compatible_with_market_rules():
 
 
 def test_registry_lists_enhanced_market():
+    # EM stays first (the default); tip + flow joined 2026-08-27 (wave one)
     ids = [t.id for t in all_techniques()]
-    assert ids == ["enhanced_market"]
+    assert ids[0] == "enhanced_market"
+    assert set(ids) == {"enhanced_market", "tip", "flow"}
     assert get_technique("enhanced_market") is ENHANCED_MARKET
     d = ENHANCED_MARKET.to_dict()
     assert d["label"] == "EM Options" and d["page"] == "technique" and "validation" in d["tabs"]
+    assert get_technique("tip").settings_prefix == "techniques.tip."
+    assert get_technique("flow").settings_prefix == "techniques.flow."
 
 
 def test_order_intent_carries_the_technique_id():

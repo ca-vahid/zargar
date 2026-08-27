@@ -211,13 +211,25 @@ class Signal(Base):
     target_price: Mapped[float | None] = mapped_column(Float)
     stop_price: Mapped[float | None] = mapped_column(Float)
     timeframe: Mapped[str] = mapped_column(String(16), default="unspecified")
+    # --- extraction v2 (tip technique): the whole trade, not just the stock ---
+    instrument: Mapped[str] = mapped_column(String(12), default="unspecified")  # shares|call|put|either|unspecified
+    strike: Mapped[float | None] = mapped_column(Float)
+    expiry: Mapped[str | None] = mapped_column(String(10))          # YYYY-MM-DD when stated
+    dte_hint_days: Mapped[int | None] = mapped_column(Integer)
+    horizon_sessions: Mapped[int | None] = mapped_column(Integer)
+    catalyst: Mapped[str | None] = mapped_column(String(256))
+    dedupe_key: Mapped[str | None] = mapped_column(String(64), index=True)
+    seen_count: Mapped[int] = mapped_column(Integer, default=1)     # repeat mentions attach here
+    last_seen_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     thesis_summary: Mapped[str | None] = mapped_column(Text)
     confidence: Mapped[str] = mapped_column(String(20), default="commentary_only")
     is_actionable: Mapped[bool] = mapped_column(Boolean, default=False)
     extraction: Mapped[dict] = mapped_column(JSONVariant, default=dict)  # full LLM output + grounding
     verification: Mapped[dict | None] = mapped_column(JSONVariant)      # check results
     status: Mapped[str] = mapped_column(String(20), default="extracted", index=True)
-    # extracted | verified | verification_failed | proposed | dismissed
+    # extracted | verified | parked | verification_failed | proposed | dismissed
+    # parked = live checks failed only on price position (deviation / past target):
+    # the tip technique watches for the level instead of killing the signal
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
@@ -481,3 +493,46 @@ class ChatAsset(Base):
 
 
 Index("ix_chat_messages_thread_seq", ChatMessage.thread_id, ChatMessage.seq, unique=True)
+
+
+class FlowSnapshot(Base):
+    """One contract's end-of-day chain row (Flow technique). Written by the
+    nightly scan; this history cannot be backfilled (OI has no history at any
+    free source), so rows are never deleted. Minimal on purpose — price paths
+    come from bars/Alpaca, this table is for volume/OI/IV deltas."""
+    __tablename__ = "flow_snapshots"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)        # ET session date YYYY-MM-DD
+    underlying: Mapped[str] = mapped_column(String(32), index=True)
+    contract: Mapped[str] = mapped_column(String(32))               # unpadded OCC
+    expiry: Mapped[str] = mapped_column(String(10))
+    option_type: Mapped[str] = mapped_column(String(4))             # call | put
+    strike: Mapped[float] = mapped_column(Float)
+    volume: Mapped[int] = mapped_column(BigInteger, default=0)
+    open_interest: Mapped[int] = mapped_column(BigInteger, default=0)
+    mid: Mapped[float | None] = mapped_column(Float)
+    iv: Mapped[float | None] = mapped_column(Float)
+    spot: Mapped[float | None] = mapped_column(Float)               # underlying at snapshot time
+
+
+Index("ix_flow_snapshots_day_contract", FlowSnapshot.day, FlowSnapshot.contract, unique=True)
+Index("ix_flow_snapshots_underlying_day", FlowSnapshot.underlying, FlowSnapshot.day)
+
+
+class FlowRead(Base):
+    """The Flow technique's daily verdict per symbol — flagged contracts,
+    aggregates, repeat-hit state and the plain-language reasons. Context for
+    Tip verification and EM reads; never an order path in v1."""
+    __tablename__ = "flow_reads"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    score: Mapped[float] = mapped_column(Float, default=0.0)
+    lean: Mapped[str] = mapped_column(String(8), default="none")    # bull | bear | mixed | none
+    read: Mapped[dict] = mapped_column(JSONVariant, default=dict)   # flags, aggregates, reasons
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+Index("ix_flow_reads_day_symbol", FlowRead.day, FlowRead.symbol, unique=True)

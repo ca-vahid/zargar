@@ -45,3 +45,19 @@ ENHANCED_MARKET = register(TechniqueInfo(
     description="EnhancedMarket method: support/resistance bounces, breakouts and their short mirrors, "
                 "expressed with just-OTM weeklies / 0DTE in the two prime windows.",
 ))
+
+TIP = register(TechniqueInfo(
+    id="tip", label="Tips", version="0.1", page="inbox", settings_prefix="techniques.tip.",
+    tabs=("tips", "sources"),
+    description="Human-relayed tips (Discord screenshot, newsletter, paste) become monitored plans: "
+                "per-source entry policy (level-touch until tip-time is earned), budgets, and a "
+                "shadow scorecard every source must clear before real money.",
+))
+
+FLOW = register(TechniqueInfo(
+    id="flow", label="Flow", version="0.1", page="flow", settings_prefix="techniques.flow.",
+    tabs=("reads",),
+    description="Daily unusual-options-activity scan over the chains: Vol/OI, premium size, "
+                "repeat hits with overnight OI confirmation. Context for Tips and EM — "
+                "places no orders.",
+))
