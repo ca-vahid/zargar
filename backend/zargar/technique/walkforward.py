@@ -160,7 +160,7 @@ class TriggerTracker:
     _break_index: int | None = None
     _gap_checked: bool = False
 
-    TERMINAL = ("fired", "gapped_past", "gapped_through", "gap_void", "expired", "exhausted")
+    TERMINAL = ("fired", "gapped_past", "gapped_through", "gap_void", "expired", "exhausted", "invalidated")
 
     # -- helpers
     @property
@@ -257,9 +257,25 @@ class TriggerTracker:
                         return self.status
         w = session_window(bar.ts)
         short = self.direction == "short"
+        # T4.3d — a close through the STOP before entry breaks the level: the idea
+        # this trigger trades no longer exists, and any later "touch" would be a
+        # re-test of a failed level from the wrong side. Terminal — without this,
+        # a critic-vetoed trigger re-armed into a broken level refires forever
+        # (LITE b1 / MSTR r2, 2026-08-27).
+        if (bar.close > self.stop) if short else (bar.close < self.stop):
+            self.status = "invalidated"
+            self._note(bar, "invalidated", close=bar.close, stop=self.stop)
+            return self.status
         if self.kind in ("bounce", "reject"):
             tol = max(self.entry * t.level_tolerance_pct, 1e-9)
-            touched = (bar.high >= self.entry - tol) if short else (bar.low <= self.entry + tol)
+            # A touch is a bar that reaches INTO the level band — a bar wholly
+            # beyond the level is a break of it, not a test (LITE 2026-08-27:
+            # price 2.5% BELOW a bounce level "touched" on every bar and the
+            # trigger zombie-fired at a fantasy fill through ten critic vetoes)
+            if short:
+                touched = bar.high >= self.entry - tol and bar.low <= self.entry + tol
+            else:
+                touched = bar.low <= self.entry + tol and bar.high >= self.entry - tol
             if not touched:
                 return self.status
             if not self._window_ok(bar.ts):

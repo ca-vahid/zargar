@@ -14,6 +14,7 @@ export function pnlCls(v: number | null | undefined) { return (v ?? 0) > 0 ? "po
 const STATUS_LABEL: Record<string, string> = {
   waiting: "watching", observed: "touched mid-day", fired: "FIRED", gapped_past: "gapped past", gapped_through: "gapped through stop",
   gap_void: "void (gap)", not_triggered: "no trigger", expired: "expired",
+  exhausted: "level exhausted", invalidated: "level broken",
   exhausted: "done — 2 false breaks (R3.2)",
 };
 const TRADE_LABEL: Record<string, string> = {
