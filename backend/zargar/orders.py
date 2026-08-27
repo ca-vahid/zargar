@@ -52,6 +52,7 @@ class OrderIntent(BaseModel):
     signal_id: str | None = None
     proposal_id: str | None = None
     technique_id: str | None = None   # registry id of the technique that raised it (source stays "technique")
+    tags: list[str] = Field(default_factory=list)   # free-form exposure tags (e.g. source:xyz) — capped in RiskGate
     dry_run: bool = False
     client: str = "desktop"     # phone | tablet | desktop — set by the API from X-Zargar-Client;
     #                             phones are exit-only on real accounts (mobile.exit_only)
@@ -199,6 +200,8 @@ class OrderManager:
             qty=intent.qty,
             order_type=intent.order_type,
             limit_price=intent.limit_price,
+            technique=intent.technique_id,
+            tags=list(intent.tags or []),
             stop_price=intent.stop_price,
             tif=intent.tif,
             status=OrderStatus.NEW.value,
@@ -264,6 +267,10 @@ class OrderManager:
         # throttled by the very budget that protects entries.
         if not intent.reduce_only:
             self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
+            if intent.side == "BUY" and not intent.reduce_only:
+                px = intent.limit_price or intent.stop_price or 0.0
+                mult = 100.0 if intent.sec_type == "OPT" else 1.0
+                self._risk.note_exposure(intent, float(intent.qty) * float(px or 0.0) * mult)
         # practice: simulated venues only; live: everything (sim/shadow still
         # fill on the simulator — live/paper route to their real venue)
         allowed = {

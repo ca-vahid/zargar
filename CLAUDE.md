@@ -72,7 +72,9 @@ in settings), SW at `frontend/public/sw.js` (shell only, never `/api`). Gate eve
 gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tools.mint_session)` from
 `backend/` or every route screenshots the login page); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
 parallel with it.
-**`docs/PLATFORM-RULES.md` is the shared judgement log** (invariants, engine-level findings, shared-knob
+**New technique? Start at `docs/BUILDING-A-TECHNIQUE.md`** — the engine's capabilities (marketstructure,
+PlanRunner hooks, settings resolver `techniques.<id>.<key>` → `execution.<key>`, scheduler, calendar,
+chain snapshots, tags/caps, never-list) and the testing bar. **`docs/PLATFORM-RULES.md` is the shared judgement log** (invariants, engine-level findings, shared-knob
 change log) — read it before touching the runtime. **`docs/techniques/enhanced-market/TRADING-RULES.md` is
 EM's own judgement log** — findings, open questions with
 decision thresholds (e.g. is `gap_void_r=1.0` too strict), theories, and the change log

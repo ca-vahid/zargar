@@ -33,6 +33,18 @@ DEFAULTS: dict[str, Any] = {
     "risk.max_gross_exposure_pct": 100.0,
     "risk.price_collar_pct": 5.0,           # limit/market sanity vs last quote
     "risk.max_orders_per_minute": 10,
+    "risk.max_day_notional_per_technique": 0.0,  # $ BUY notional per technique per ET day (0 = off; EM team B3)
+    # --- research feeds (nightly jobs on the engine scheduler; research B4/B5) ---
+    "execution.paused": False,                  # per-technique pause: set techniques.<id>.paused (kill switch stays global; exits are never blocked)
+    "research.chain_snapshots.enabled": True,   # nightly per-contract OI/IV/volume rows (history is NOT backfillable)
+    "research.chain_snapshots.at": "16:30",     # ET
+    "research.chain_snapshots.keep_days": 400,  # prune beyond this window (0 = keep forever)
+    "research.daily_bars.enabled": True,        # tf=1d bars for the universe into the bars table
+    "research.daily_bars.at": "20:05",          # ET
+    "research.daily_bars.range": "1mo",         # per-night fetch window (idempotent upserts)
+
+    "risk.max_day_notional_per_tag": 0.0,        # $ BUY notional per tag (e.g. source:xyz) per ET day (0 = off)
+
     "risk.stale_quote_seconds": 10,
     "risk.daily_loss_halt_pct": 3.0,
     "risk.allow_short": False,
@@ -200,6 +212,45 @@ DEFAULTS: dict[str, Any] = {
 }
 
 
+
+# --- platform settings scoping (phase 3; spec: platform plan §8.4, decisions 2026-08-27) ----
+# Canonical names for every key the shared runner (`execution/planrunner.py`) reads live
+# under `execution.*`; the old `technique.arm.*` names stay as DEPRECATED ALIASES —
+# `get`/`set` redirect transparently and a stored legacy value is migrated once with
+# `SettingChanged` journal continuity. A technique overrides a runtime key with
+# `techniques.<id>.<key>` (resolved by `PlanRunner.rt()`): techniques.<id>.<key>
+# -> execution.<key>. EM-policy keys are NOT platform keys and are excluded:
+# `technique.arm.midday_trading` by explicit decision (EM-only, forever), plus the
+# keys only EM's hooks read (pre-open, critic effort, strike caps, Friday/0DTE sizing).
+_ALIAS_EXCLUDE = {
+    "technique.arm.midday_trading",       # decision 2026-08-27: EM-only, never a platform key
+    "technique.arm.critic_effort",        # EM's reviewer prompt policy
+    "technique.arm.preopen_at",           # EM's 09:25 judgement
+    "technique.arm.preopen_replan",
+    "technique.arm.strike_within_targets",  # EM's T5 expression policy
+    "technique.arm.avoid_0dte_after",
+    "technique.arm.friday_size_mult",     # EM's T5.2 sizing policy
+}
+ALIASES: dict[str, str] = {
+    k: "execution." + k[len("technique.arm."):]
+    for k in list(DEFAULTS)
+    if k.startswith("technique.arm.") and k not in _ALIAS_EXCLUDE
+}
+for _legacy, _canon in ALIASES.items():
+    DEFAULTS.setdefault(_canon, copy.deepcopy(DEFAULTS[_legacy]))
+
+
+def _technique_override_canonical(key: str) -> str | None:
+    """`techniques.<id>.<suffix>` is a valid per-technique override iff
+    `execution.<suffix>` is a known runtime key; returns that canonical key."""
+    parts = key.split(".", 2)
+    if len(parts) == 3 and parts[0] == "techniques" and parts[1]:
+        canon = "execution." + parts[2]
+        if canon in DEFAULTS:
+            return canon
+    return None
+
+
 class SettingsService:
     def __init__(self, session_factory: async_sessionmaker, bus: Bus, journal: Journal) -> None:
         self._sf = session_factory
@@ -211,9 +262,28 @@ class SettingsService:
         async with self._sf() as session:
             rows = (await session.execute(select(Setting))).scalars().all()
         merged = copy.deepcopy(DEFAULTS)
+        by_key = {row.key: row for row in rows}
         for row in rows:
-            if row.key in DEFAULTS or row.key.startswith("system."):
+            if row.key in DEFAULTS or row.key.startswith("system.") \
+                    or _technique_override_canonical(row.key) is not None:
                 merged[row.key] = row.value.get("v")
+        # one-time migration of stored legacy runtime keys to their canonical
+        # execution.* names (phase 3): the canonical row wins if both exist
+        migrated: list[tuple[str, str, Any]] = []
+        for legacy, canon in ALIASES.items():
+            if legacy in by_key and canon not in by_key:
+                v = by_key[legacy].value.get("v")
+                merged[canon] = v
+                migrated.append((legacy, canon, v))
+        if migrated:
+            async with self._sf() as session:
+                for _legacy, canon, v in migrated:
+                    session.add(Setting(key=canon, value={"v": v}))
+                await session.commit()
+            for legacy, canon, v in migrated:
+                await self._journal.append(ev.SETTING_CHANGED, {
+                    "key": canon, "old": DEFAULTS.get(canon), "new": v,
+                    "note": f"migrated from the deprecated name {legacy} (platform plan phase 3)"})
         # one-time migration of pre-v0.3 mode values
         raw_mode = merged.get("trading.mode")
         canon = MODE_ALIASES.get(raw_mode, raw_mode)
@@ -230,21 +300,35 @@ class SettingsService:
         self._cache = merged
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self._cache.get(key, default)
+        return self._cache.get(ALIASES.get(key, key), default)
 
     def all(self) -> dict[str, Any]:
-        return {k: v for k, v in self._cache.items() if not k.startswith("system.")}
+        out = {k: v for k, v in self._cache.items() if not k.startswith("system.")}
+        # deprecated aliases mirror their canonical value so the existing UI keeps
+        # showing (and editing) the truth during the migration window
+        for legacy, canon in ALIASES.items():
+            if canon in out:
+                out[legacy] = out[canon]
+        return out
 
     async def set(self, key: str, value: Any, *, journal: bool = True, broadcast: bool = True) -> None:
         """`broadcast=False` keeps the change off the `system` bus topic (which every
         WS client receives) — use it for secrets."""
-        if key not in DEFAULTS and not key.startswith("system."):
+        alias_of = None
+        if key in ALIASES:
+            alias_of, key = key, ALIASES[key]      # deprecated name: write the canonical key
+        if key not in DEFAULTS and not key.startswith("system.") \
+                and _technique_override_canonical(key) is None:
             raise KeyError(f"unknown setting: {key}")
         if key == "trading.mode":
             value = MODE_ALIASES.get(value, value)
             if value not in ("practice", "live"):
                 raise KeyError(f"trading.mode must be practice or live, got {value!r}")
         expected = DEFAULTS.get(key)
+        if expected is None:
+            ov = _technique_override_canonical(key)
+            if ov is not None:
+                expected = DEFAULTS.get(ov)
         if expected is not None and value is not None and not key.startswith("system."):
             # light type coercion so "3" from a form works for a numeric setting
             if isinstance(expected, bool):
@@ -264,7 +348,10 @@ class SettingsService:
         old = self._cache.get(key)
         self._cache[key] = value
         if journal and not key.startswith("system."):
-            await self._journal.append(ev.SETTING_CHANGED, {"key": key, "old": old, "new": value})
+            payload = {"key": key, "old": old, "new": value}
+            if alias_of:
+                payload["aliasOf"] = alias_of      # journal continuity: edits via the old name stay findable
+            await self._journal.append(ev.SETTING_CHANGED, payload)
         if broadcast:
             self._bus.publish(topics.SYSTEM, {"kind": "setting", "key": key, "value": value})
 

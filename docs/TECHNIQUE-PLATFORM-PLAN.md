@@ -248,7 +248,7 @@ and 08-26 sweeps re-run must produce byte-identical rows.
 | **1 · library** ✅ *built 2026-08-27* | `zargar/marketstructure/` = levels, volume, candles, structure, history, outcome, **tracker** (TriggerTracker / level_respect / score_trigger cut out of walkforward), **sessions** (the ET clock, cut out of rulebook), **rules** (`MarketRules`, duck-compatible with EM's `Thresholds`, with `windows`); old `technique.*` paths are shims; `distance_pct` / `count_touches` public; `tests/test_platform_phase0.py` asserts the library imports without the technique package. Still in EM: `analysis.py` (imports `setups`) — moves with phase 2 | none (full suite) | medium |
 | **2 · runner** ✅ *built 2026-08-27* | `execution/planrunner.py` = `PlanRunner(SessionListener)`: everything that moves money, moved verbatim from `arming.py` (2,334 → 375 lines of EM). Hooks (the EM dev team's list, safest first): `size_multiplier` (Friday/0DTE), `pick_contract` (T5 vehicle; the shares fallback stays runner-side), `entry_windows_enforced` + `rules().windows` (R6; R6.5 extended-hours suppression stays runner-core), `preopen_due`/`preopen` (09:25 judgement + re-plan), `analyze_fire` + `reviewer_available`/`review_fire` (EM owns prompt assembly + verdict; the **runner** owns timeout, fail-open budget, pause-on-exhaust, veto cooldown, kill cap, re-arming and their persistence), `record_fire`/`emit_proposal`/`after_fire`, `load_plan`/`load_baseline_bars`, `arm_today`. **Hooks never journal** — the runner journals hook results, so the event schema stays uniform. `gap_unchecked` and `middayExperiment` still flow into the review context. Exit policy (ladder / single-contract exit / flatten minutes) stays `ArmConfig` data for now. The pre-open judgement is now runner-orchestrated too (`_run_preopen` journals; EM's `preopen_check` returns keep\|replan data and `build_replacement_plan` builds the fresh run) — **no hook journals anywhere** | none (arming + walk-forward + review suites; include-invalid replay) | large — done as one verbatim move with the seams as hooks, deployed after the close |
 | **2b · durable positions** | `execution/positions.py` + `policies.py` + `simulate.py`; `managed_positions` table; venue-side GTC protection; reconciliation loop; the chaos suite (§2.5). Independent of EM — EM keeps its session plans | new capability | large — the second money path; ships with the chaos suite or not at all |
-| **3 · research + API + settings** | `research/` for runs/outcomes/reviews/replay/bundles/sweeps/sheets keyed by technique; `/api/techniques/{id}`; settings namespaces with a one-time key migration | key renames only | medium |
+| **3 · research + API + settings** ✅ *engine half built 2026-08-27* | Settings resolver as specced (§8.4): `techniques.<id>.<key>` → `execution.<key>`, 31 runner keys aliased from `technique.arm.*` with `SettingChanged` continuity, EM-policy keys excluded; `PlanRunner.rt()`; live re-read of `technique.max_concurrent_runs`. Event-schema contracts (`zargar/research/events_contract.py` + contract test + advisory runtime check) and the daily `TechniqueHookStats` roll-up. `tags` on runs/outcomes/orders; `list_runs(tag=, technique=)`. RiskGate: per-technique/per-tag day-notional caps (`risk.max_day_notional_per_*`), never-list hard rules (share shorting; 0DTE outside EM). Engine scheduler (`engine.scheduler`) + nightly **chain snapshots** (`option_chain_snapshots` — OI/IV history, not backfillable) + **daily bars** (tf=1d layer). `engine.calendar` (earnings/ex-div v1). Per-technique pause (`/api/techniques/{id}/pause`, exits exempt) + scoped routes + service registry. Venue probes ran (see §9). Deferred to technique #2: physically moving `service.py` into `research/` (records already keyed by technique + tags) | key renames only | medium |
 | **4 · UI shell** | `TechniquePage` → generic shell + per-technique panels (EM keeps Validation/Analyse/Chat/History/Backtest); Settings gets a per-technique section; Armed chip | cosmetic | medium |
 | **5 · second technique** | Build **Tip** (below) on the platform. Every gap it finds becomes a protocol hook, never a fork of the runner | new feature | medium |
 
@@ -293,7 +293,7 @@ Settled (dated in `PLATFORM-RULES.md` §4 and EM's TRADING-RULES):
 
 Still open:
 1. Is **Tip** the second technique, and does it enter at tip time or wait for a level touch?
-2. Overnight policy default `venue_stop_required` — assumed yes, confirm before phase 2b starts.
+2. Overnight policy (updated 2026-08-27 from the probes + Alpaca addendum): venue-side GTC stops where they truly exist; for **long options** the default is `app_managed`-with-acknowledgement + `dte_close` + premium stop (Webull CA accepts GTC option orders; an option STOP at the venue is unproven — SnapTrade impact 503; Alpaca options are day-TIF).
 3. Phase 2b timing (the second money path; ships with the chaos suite or not at all).
 
 ## 8. Engine backlog — the EM team's operating list (2026-08-27)
@@ -311,3 +311,62 @@ Ranked; ✅ = built the same day, the rest are scheduled into the phases.
 | 7 | **Per-technique pause** — HALT stays global; "stop EM, keep X" is a first-class control whose exits stay reduce-only-exempt like the kill switch | phase 4/5 (needs a second technique to mean anything; API shape reserved: `POST /api/techniques/{id}/pause`) |
 | 8 | **Replay outputs carry plan-side validity** — includeInvalid sweeps stamped every trigger `valid: true` (two wrong tallies in the 08-27 gate audit) | ✅ `replay_plan` joins `valid` from the plan trigger |
 | 9 | **Version-stamp marketstructure into sweepVersion** — a parity diff must be attributable to a library version | ✅ `technique_source_version()` hashes `marketstructure/` too (extends the existing `sweepVersion`) |
+
+## 9. Requirements intake — techniques research + Alpaca addendum (2026-08-27)
+
+The new-techniques team's requirements (T1 Tip / T2 Flow / T3 Drift / T4 intraday / T5 premium)
+against this plan, with dispositions. Engine = capabilities; trading rules stay technique-side.
+
+**Built the same day (P0 engine capabilities):**
+- B1 settings resolver (§8.4) — live, with the veto/critic family platform-owned + overridable.
+- B2 `tags` on runs/outcomes (+ orders) with tag-filtered listing — per-source scorecards group by
+  `source:<x>` tags; closing the shadow-portfolio scoring loop is a research-layer follow-up.
+- B3 per-technique / per-tag exposure caps in RiskGate — v1 is BUY-notional per ET day
+  (`risk.max_day_notional_per_technique/_tag`); position-attributed open exposure lands with 2b.
+- B4 engine scheduler + daily-bar layer (tf=1d rows for the universe, nightly).
+- B5 **daily chain snapshots** — `option_chain_snapshots`, one row/contract/night (volume, OI, IV,
+  delta, bid/ask/mid/last), 16:30 ET, pruned at `research.chain_snapshots.keep_days`. Landed first
+  as asked: OI history cannot be backfilled (Alpaca can backfill price history to Feb 2024, not OI).
+- B6 venue probe (read-only impact previews, ran 2026-08-27): **Webull CA accepts SELL_TO_OPEN and
+  a native 2-leg defined-risk credit spread** (CASH and MARGIN; margin field null — verify with a
+  1-contract real order before building on it); Wealthsimple stays code-1156 no-options.
+- B7 never-list in RiskGate, not settings: share shorting hard-rejected everywhere
+  (`risk.allow_short` ignored+logged); 0DTE hard-rejected for any `technique_id` except
+  `enhanced_market`; naked-short-option block unchanged (spread-aware gating is the engine work
+  item that B6's "yes" now justifies).
+- A5 calendar service v1 (`engine.calendar`): Yahoo quoteSummary earnings (dates + BMO/AMC from the
+  timestamp) and ex-dividend, cached ~12h, `confirmed=False` — advisory until a second source is
+  layered on. A scan input and risk-reducer, not a firing trigger.
+- A7 verification: Webull CA accepts **GTC** on option orders via SnapTrade; venue-side option
+  STOP is unproven (impact 503). Combined with Alpaca options being day-TIF: the overnight default
+  for long options is **app_managed-with-acknowledgement** (loud on Armed) + `dte_close` + premium
+  stop; venue stops used where they genuinely exist.
+
+**Folded into phase 2b's spec (§2.4/§2.5), to build with the durable manager:**
+- A1 exit-policy vocabulary additions: `profit_target_pct_of_credit(pct)` (primary T5 exit),
+  `time_stop` in TRADING SESSIONS, explicit journaled `no_stop` mode (legal only with a declared
+  portfolio-level guard), `trail_after(+R)`.
+- A2 multi-leg positions as ONE ManagedPosition (legs as a child list — the table is designed
+  leg-ready even though single-leg ships first).
+- A3 reconciliation classifies options lifecycle transitions as *explained* changes (expiry
+  worthless → closed+scored; short-put assignment → shares adopted under the same position +
+  cash delta; short-call assignment mirror); daily pre-open reconciliation pass is the cadence;
+  unexplained drift → alert + halt new entries on that symbol.
+- A4 `dte_close` runner-enforced, `execution.min_dte` a platform key techniques may only raise.
+- A6 budget-based sizing modes (fixed $ per position, per-source budget) beside risk-%.
+- A8 `simulate_position` simulates the underlying for options and marks premium-path effects
+  (theta/IV) as unsimulated in the outcome record — no pricing model.
+- A9 chaos-suite additions: overnight assignment, expiry-Friday ITM long, multi-leg partial close,
+  3-day weekend + stale Monday quote.
+- 2b test rig: **Alpaca paper** for options (native mleg) — independent of the Webull answer.
+
+**Alpaca addendum (2026-08-27):** Canada is data+paper only (no live Alpaca brokerage) — live money
+stays SnapTrade/IBKR. If the sub stays at Algo Trader Plus: chain provider selection remains the
+platform setting `options.provider` (an Alpaca OPRA provider is a backlog item, CBOE stays the
+fallback), intraday warm-ups/sweeps should prefer Alpaca SIP 1m history (years) over Yahoo (~20d),
+and the exchange-bar feed is un-degraded. Chain snapshots stand (OI is the non-backfillable part).
+Never-list, calendar ask and RiskGate scope: unchanged.
+
+**Explicitly out of scope (their list):** real-time options flow, paid data, Discord scraping
+(tips come through the signals front door), intraday options analytics, an options pricing engine,
+changes to EM's session-scoped runner semantics (T4 runs on it as-is).

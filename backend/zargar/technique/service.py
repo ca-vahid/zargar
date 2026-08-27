@@ -95,6 +95,7 @@ RTH_END = dt.time(16, 0)
 def run_dict(r: TechniqueRun) -> dict:
     return {
         "id": r.id, "technique": getattr(r, "technique", None) or "enhanced_market",
+        "tags": list(getattr(r, "tags", None) or []),
         "threadId": r.thread_id, "symbol": r.symbol, "asOf": r.as_of,
         "primaryTf": r.primary_tf, "mode": r.mode, "trigger": r.trigger, "status": r.status,
         "verdict": r.verdict, "setupType": r.setup_type, "confidence": r.confidence,
@@ -298,7 +299,8 @@ class TechniqueService:
     async def list_runs(self, *, limit: int = 50, symbol: str | None = None,
                         verdict: str | None = None, reviewed: bool | None = None,
                         outcome: str | None = None, review_verdict: str | None = None,
-                        process_version: str | None = None, trigger: str | None = None) -> list[dict]:
+                        process_version: str | None = None, trigger: str | None = None,
+                        tag: str | None = None, technique: str | None = None) -> list[dict]:
         """Recent runs (newest first) with their outcome + review summaries.
         `reviewed`, `outcome` (e.g. stopped / tp1 / not_filled, matched on the
         analysis plan, or `scored` / `pending` for any) and `review_verdict`
@@ -307,6 +309,8 @@ class TechniqueService:
         fetch = min(limit * 6, 1500) if post_filter else limit
         async with self.engine.sf() as session:
             stmt = select(TechniqueRun).order_by(TechniqueRun.created_at.desc()).limit(fetch)
+            if technique:
+                stmt = stmt.where(TechniqueRun.technique == technique)
             if symbol:
                 stmt = stmt.where(TechniqueRun.symbol == symbol.upper())
             if verdict:
@@ -349,6 +353,9 @@ class TechniqueService:
             out.append(d)
             if len(out) >= limit:
                 break
+        if tag:
+            _r = out
+            return [d for d in _r if tag in (d.get("tags") or [])]
         return out
 
     async def get_run(self, run_id: str) -> dict | None:
@@ -389,7 +396,8 @@ class TechniqueService:
         return [setup_dict(s) for s in rows]
 
     # ------------------------------------------------------------ analyze
-    async def analyze(self, symbol: str, *, as_of_ms: int | None = None, primary_tf: str | None = None,
+    async def analyze(self, symbol: str, *, tags: list[str] | None = None,
+                      as_of_ms: int | None = None, primary_tf: str | None = None,
                       trigger: str = "manual", image: bytes | None = None, note: str = "",
                       thread_id: str | None = None, wait: bool = False,
                       parent_run_id: str | None = None, thresholds_override: dict | None = None,
@@ -468,7 +476,8 @@ class TechniqueService:
             thread = await self.chat.create_thread(title=title, kind="run", symbol=symbol or None)
             thread_id = thread["id"]
 
-        run = TechniqueRun(id=new_id(), thread_id=thread_id, symbol=symbol or "IMAGE", as_of=as_of_ms,
+        run = TechniqueRun(id=new_id(), tags=[str(t) for t in (tags or [])],
+                           thread_id=thread_id, symbol=symbol or "IMAGE", as_of=as_of_ms,
                            primary_tf=tf, mode=mode, trigger=trigger, status="running",
                            llm={"model": cfg.model, "effort": cfg.effort,
                                 "thinkingDisplay": cfg.thinking_display},
@@ -506,9 +515,12 @@ class TechniqueService:
                        thresholds: Thresholds | None = None,
                        bars_override: dict[str, list[Bar]] | None = None,
                        with_vision: bool = False, reference_price: float | None = None) -> None:
-      if self._run_sem is None:
-          self._run_sem = asyncio.Semaphore(
-              max(1, int(self.engine.settings.get("technique.max_concurrent_runs", 8))))
+      # re-read live (EM team #4): a changed cap applies to the NEXT run without a
+      # restart (runs already inside the old semaphore finish under it)
+      want = max(1, int(self.engine.settings.get("technique.max_concurrent_runs", 8)))
+      if self._run_sem is None or getattr(self, "_run_sem_size", 0) != want:
+          self._run_sem = asyncio.Semaphore(want)
+          self._run_sem_size = want
       async with self._run_sem:
         cfg = self.llm_config()
         client = self._get_client() if cfg.available else None
@@ -2329,5 +2341,8 @@ async def attach_technique_layer(engine) -> None:
     chat = ChatService(engine, svc)
     svc.chat = chat
     engine.technique = svc
+    if getattr(engine, "techniques", None) is None:
+        engine.techniques = {}
+    engine.techniques["enhanced_market"] = engine.technique   # service registry (phase 3): /api/techniques/{id}
     engine.chat = chat
     svc.start()

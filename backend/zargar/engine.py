@@ -41,6 +41,10 @@ class Engine:
         self.halt = HaltState()
         self.positions = PositionKeeper(self.sf, self.bus, self.journal, self.quotes)
         self.risk = RiskGate(self.settings, self.quotes, self.positions, self.halt)
+        from .scheduler import Scheduler
+        self.scheduler = Scheduler(self)   # engine-level daily jobs (techniques register scans here)
+        from .calendar_service import EventCalendar
+        self.calendar = EventCalendar()    # earnings / ex-dividend dates (policies + scans read this)
 
         # Executors / feeds are attached in start() (sim always; ibkr when configured)
         self.sim_executor = None
@@ -69,6 +73,14 @@ class Engine:
 
         await create_all(self.db)
         await self.settings.load()
+        try:
+            from .marketdata import cleanup_stub_bars
+            stubs = await cleanup_stub_bars(self.sf)
+            if stubs:
+                log.info("bars hygiene: deleted stub rows %s", stubs)
+                await self.journal.append("BarsHygiene", {"deleted": stubs})
+        except Exception:
+            log.exception("bars hygiene failed (continuing)")
         await self._seed()
         await self.positions.load()
 
@@ -194,9 +206,23 @@ class Engine:
             self._tasks.append(
                 asyncio.create_task(self.snaptrade_sync.run(), name="snaptrade-sync"))
         self.started = True
+        try:
+            from .research.snapshots import register_jobs
+            register_jobs(self)
+        except Exception:
+            log.exception("registering research jobs failed")
+        self.scheduler.start()
         log.info("engine started (feed=%s)", type(self.feed).__name__)
 
     async def stop(self) -> None:
+        try:
+            await self.scheduler.stop()
+        except Exception:
+            log.exception("scheduler stop failed")
+        try:
+            await self.calendar.aclose()
+        except Exception:
+            log.exception("calendar close failed")
         if self.push is not None:
             await self.push.stop()
         self.started = False

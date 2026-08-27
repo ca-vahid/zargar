@@ -7,6 +7,7 @@ so there is always an answer to "why was this allowed/blocked".
 from __future__ import annotations
 
 import datetime as dt
+import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -72,6 +73,9 @@ def is_us_market_hours(now: dt.datetime | None = None) -> bool:
     return 9 * 60 + 30 <= minutes < 16 * 60
 
 
+log = logging.getLogger("zargar.risk")
+
+
 class RiskGate:
     def __init__(self, settings, quote_cache, position_keeper, halt: HaltState) -> None:
         self._settings = settings
@@ -79,9 +83,35 @@ class RiskGate:
         self._positions = position_keeper
         self._halt = halt
         self._recent: deque[tuple[float, str]] = deque(maxlen=500)  # (ts, dedupe_key)
+        # per-technique / per-tag BUY-notional taken today (EM team B3). In-memory v1:
+        # resets on restart and at the ET day roll; position-attributed open exposure
+        # replaces it with the durable position manager (plan phase 2b).
+        self._day_notional: dict[str, float] = {}
+        self._day_key = ""
 
     def note_submission(self, symbol: str, side: str, qty: float, order_type: str) -> None:
         self._recent.append((time.time(), f"{symbol}|{side}|{float(qty):g}|{order_type}"))
+
+    def _exposure_keys(self, intent) -> list[str]:
+        keys = []
+        tid = getattr(intent, "technique_id", None)
+        if tid:
+            keys.append(f"tech:{tid}")
+        for t in getattr(intent, "tags", None) or []:
+            keys.append(f"tag:{t}")
+        return keys
+
+    def _exposure_roll(self) -> None:
+        day = dt.datetime.now(tz=ET).strftime("%Y-%m-%d")
+        if day != self._day_key:
+            self._day_key = day
+            self._day_notional.clear()
+
+    def note_exposure(self, intent, notional: float) -> None:
+        """Called by OrderManager after a risk-passed, non-reduce BUY is routed."""
+        self._exposure_roll()
+        for k in self._exposure_keys(intent):
+            self._day_notional[k] = self._day_notional.get(k, 0.0) + max(0.0, float(notional))
 
     async def evaluate(self, intent, portfolio) -> RiskVerdict:
         """intent: OrderManager's OrderIntent; portfolio: Portfolio row."""
@@ -172,11 +202,16 @@ class RiskGate:
                 "exit-only to open positions from a phone" if (real and opens_risk) else ""))
 
         # 4. shorting ------------------------------------------------------------
-        allow_short = bool(s.get("risk.allow_short", False))
+        # NEVER-LIST (2026-08-27, techniques research): share shorting is a hard
+        # rejection everywhere — the short side of any idea is expressed with long
+        # puts. Deliberately NOT a setting (`risk.allow_short` is ignored and logged).
         goes_short = new_qty < -1e-9
+        if goes_short and not is_option and bool(s.get("risk.allow_short", False)):
+            log.warning("risk.allow_short is set but ignored: share shorting is on the never-list")
         checks.append(RiskCheck(
-            "short_allowed", allow_short or not goes_short,
-            f"order would result in short position of {new_qty:g} {symbol}" if goes_short else ""))
+            "short_allowed", is_option or not goes_short,
+            f"share shorting is never allowed (never-list) — would be short {new_qty:g} {symbol}; "
+            f"express shorts with long puts" if (goes_short and not is_option) else ""))
 
         # 5. options -----------------------------------------------------------
         if is_option:
@@ -194,6 +229,23 @@ class RiskGate:
                 "no_naked_short_option", not (goes_short and is_option),
                 "naked short options are blocked" if (goes_short and is_option) else ""))
             checks.extend(self._option_checks(intent, quote, ref_price, qty, side, reduces))
+
+        # 5b. per-technique / per-tag day-notional caps (EM team B3) --------------
+        if side == OrderSide.BUY and ref_price and not reduces:
+            self._exposure_roll()
+            cap_tech = float(s.get("risk.max_day_notional_per_technique", 0.0) or 0)
+            cap_tag = float(s.get("risk.max_day_notional_per_tag", 0.0) or 0)
+            add = qty * ref_price * mult
+            for k in self._exposure_keys(intent):
+                cap = cap_tech if k.startswith("tech:") else cap_tag
+                if cap <= 0:
+                    continue
+                taken = self._day_notional.get(k, 0.0)
+                ok = taken + add <= cap
+                checks.append(RiskCheck(
+                    f"day_notional_{k.split(':', 1)[0]}", ok,
+                    "" if ok else f"{k}: ${taken + add:,.0f} would exceed the ${cap:,.0f}/day cap "
+                                  f"(risk.max_day_notional_per_{'technique' if k.startswith('tech:') else 'tag'})"))
 
         # 6/7. per-position and gross caps (only when increasing exposure) -----
         if ref_price and not reduces:
@@ -289,9 +341,17 @@ class RiskGate:
             out.append(RiskCheck("option_not_expired", False,
                                  f"{o.display()} expired on {o.expiry.isoformat()}"))
         elif dte == 0:
-            allow = bool(s.get("risk.allow_0dte", True))
-            out.append(RiskCheck("option_not_expired", allow,
-                                 "" if allow else "0DTE contracts disabled (risk.allow_0dte)"))
+            # NEVER-LIST: 0DTE is only for EnhancedMarket's gated path (its own
+            # morning cutoff + sizing rules). Any OTHER technique is hard-rejected;
+            # manual orders keep the risk.allow_0dte switch.
+            tid = getattr(intent, "technique_id", None)
+            if tid and tid != "enhanced_market":
+                out.append(RiskCheck("option_not_expired", False,
+                                     f"0DTE is never allowed for technique '{tid}' (never-list; EM's gated path only)"))
+            else:
+                allow = bool(s.get("risk.allow_0dte", True))
+                out.append(RiskCheck("option_not_expired", allow,
+                                     "" if allow else "0DTE contracts disabled (risk.allow_0dte)"))
         else:
             out.append(RiskCheck("option_not_expired", True, ""))
         max_contracts = int(s.get("risk.max_option_contracts", 10))

@@ -113,6 +113,8 @@ class Order(Base):
     filled_qty: Mapped[float] = mapped_column(Float, default=0.0)
     avg_fill_price: Mapped[float | None] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(12), default="manual")
+    technique: Mapped[str | None] = mapped_column(String(32), index=True)   # registry id when source=technique
+    tags: Mapped[list] = mapped_column(JSONVariant, default=list)           # e.g. ["source:discord-x"] (EM team B2/B3)
     parent_id: Mapped[str | None] = mapped_column(String(64), index=True)  # bracket parent
     oca_group: Mapped[str | None] = mapped_column(String(64))
     broker_order_id: Mapped[str | None] = mapped_column(String(64))
@@ -264,11 +266,39 @@ class Watchlist(Base):
 
 # --- technique pipeline (docs/techniques/enhanced-market/PIPELINE-PLAN.md) --------------------
 
+class OptionChainSnapshot(Base):
+    """One nightly row per (date, contract): volume, OI, IV, bid/ask/mid (research
+    B5, 2026-08-27). OI history cannot be backfilled from any source, which is why
+    this table exists; the Flow repeat-hit signal and IV-percentile gates read it."""
+    __tablename__ = "option_chain_snapshots"
+    __table_args__ = (
+        UniqueConstraint("date", "occ", name="uq_chain_snapshot"),
+        Index("ix_chain_snapshot_underlying", "underlying", "date"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    date: Mapped[str] = mapped_column(String(10))            # ET date of the snapshot
+    occ: Mapped[str] = mapped_column(String(21))             # unpadded OCC contract symbol
+    underlying: Mapped[str] = mapped_column(String(32))
+    expiry: Mapped[str | None] = mapped_column(String(10))
+    strike: Mapped[float | None] = mapped_column(Float)
+    option_type: Mapped[str | None] = mapped_column(String(4))
+    volume: Mapped[int] = mapped_column(BigInteger, default=0)
+    open_interest: Mapped[int] = mapped_column(BigInteger, default=0)
+    iv: Mapped[float | None] = mapped_column(Float)
+    delta: Mapped[float | None] = mapped_column(Float)
+    bid: Mapped[float | None] = mapped_column(Float)
+    ask: Mapped[float | None] = mapped_column(Float)
+    mid: Mapped[float | None] = mapped_column(Float)
+    last: Mapped[float | None] = mapped_column(Float)
+
+
 class TechniqueRun(Base):
     """One analysis run. Created at start, completed once; never edited after
     `status` leaves `running`."""
     __tablename__ = "technique_runs"
     technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
+    tags: Mapped[list] = mapped_column(JSONVariant, default=list)   # free-form, e.g. source:xyz — scorecards group by tag
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     thread_id: Mapped[str | None] = mapped_column(ForeignKey("chat_threads.id"), index=True)
@@ -307,6 +337,7 @@ class TechniqueOutcome(Base):
     rejected (so missed trades are measurable too). Re-scored while `partial`."""
     __tablename__ = "technique_outcomes"
     technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
+    tags: Mapped[list] = mapped_column(JSONVariant, default=list)   # free-form, e.g. source:xyz — scorecards group by tag
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)
