@@ -103,7 +103,7 @@ class Journal:
         portfolio_id: str | None = None,
     ) -> dict:
         payload = payload or {}
-        if type_.startswith("Technique"):
+        if type_.startswith(("Technique", "ManagedPosition")):
             try:
                 from .research.events_contract import check
                 check(type_, payload)

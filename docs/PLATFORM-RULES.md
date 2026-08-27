@@ -95,6 +95,13 @@ runtime ones to `execution.*`).
   (OI/IV history — not backfillable) + tf=1d bar layer; `engine.calendar` (earnings/ex-div v1,
   advisory); per-technique pause `/api/techniques/{id}/pause` (exits exempt, HALT untouched);
   bars hygiene (bucket alignment at write, stub cleanup at boot — 1d rows exempt).
+- 2026-08-27 · **Phase 2b: the durable position manager** — policies-as-data + `PositionManager`
+  (multi-leg, write-ahead, restart-proof, RTH-closed-bar decisions, crash brake, watchdog, venue GTC
+  stops for shares, app-managed-with-ack for options overnight, assignment-aware pre-open
+  reconciliation with unexplained-drift symbol halts) + `simulate_position` (same evaluator; premium
+  path explicitly unsimulated) + sizing modes. Chaos suite = 14 green scenarios incl. live-vs-sim
+  parity. New shared knobs: `execution.min_dte` (floor techniques may only raise),
+  `execution.reconcile_at`. New event kinds: `ManagedPosition*` (contracts registered).
 - 2026-08-27 · Venue probes (read-only impact previews): Webull CA accepts SELL_TO_OPEN, native
   2-leg spreads, and GTC on options; venue-side option STOP unproven (503); Wealthsimple 1156.
 - 2026-08-27 · **Wave-one techniques (Tip + Flow) Phase A** (techniques team): new non-Technique

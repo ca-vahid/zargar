@@ -48,6 +48,44 @@ class MyTechnique(PlanRunner):
 results so the event shapes stay uniform (they are contracts, §5). Two context flags always flow
 into your reviewer: `gap_unchecked` and the mid-day experiment marker.
 
+## 2b. Holding for days or weeks — durable positions
+
+For anything beyond one session, do not touch the session runner: hand the position to the
+manager (`engine.position_manager`). You give it DATA — legs, a policy, sizing, an overnight
+mode — and it does everything risky:
+
+```python
+await engine.position_manager.open({            # or .adopt({...}) for fills that already exist
+    "portfolioId": pf, "symbol": "AAPL", "direction": "long",
+    "techniqueId": "tip", "tags": ["source:discord-x"], "runId": run_id,
+    "entry": 100.0, "risk": 1.0,                 # underlying reference + risk unit (R)
+    "legs": [{"symbol": "AAPL261016C00105000", "secType": "OPT", "side": "BUY", "qty": 2,
+              "limitPrice": 2.10}],
+    "overnight": "app_managed", "overnightAck": True,    # options can't rest a venue stop
+    "policy": {"timeframe": "15m",
+               "stop": {"kind": "fixed", "price": 97.0},
+               "ladder": {"targets": [104.0, 108.0], "fractions": [0.5, 0.5]},
+               "trailing": {"mode": "structure", "after_r": 1.0},
+               "time_stop_sessions": 10, "dte_close": 7,
+               "flatten_before": {"event": "earnings", "days": 1}},
+})
+```
+
+Rules the manager enforces (not requests): a no-stop policy must declare its guard and be
+acknowledged; option legs held overnight need `app_managed` + `overnightAck` (loud on the UI);
+`dte_close` is clamped to `execution.min_dte` — no technique ever holds to expiry; exits are
+reduce-only and watchdogged; decisions happen on CLOSED bars of your policy timeframe, RTH only;
+a stale quote never fires the crash brake; reconciliation runs pre-open and classifies expiry and
+assignment (a short put assigned becomes shares INSIDE the same position — the wheel continues);
+anything unexplained halts new entries on that symbol until a person clears it
+(`POST /api/positions/managed/{id}/reconcile-clear`).
+
+Backtest the exact policy with `zargar.execution.simulate.simulate_position(policy, bars, ...)` —
+it runs the same evaluator the live manager runs (the chaos suite asserts the parity). For option
+positions it simulates the underlying and stamps `premiumPathSimulated: false`; treat premium
+effects (theta/IV) as unmodelled. Size with `zargar.execution.sizing`
+(`size_by_risk` / `size_by_budget` / `source_budget_left` + `open_cost`).
+
 ## 3. Settings
 
 Resolution for every runtime key: `techniques.<your_id>.<key>` → `execution.<key>` (platform

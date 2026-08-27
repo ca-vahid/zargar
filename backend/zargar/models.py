@@ -278,6 +278,26 @@ class Watchlist(Base):
 
 # --- technique pipeline (docs/techniques/enhanced-market/PIPELINE-PLAN.md) --------------------
 
+class ManagedPositionRow(Base):
+    """A durable (multi-day) managed position — platform plan phase 2b. Legs are a
+    child LIST (multi-leg-ready); `config` holds the policy/overnight/entry data;
+    `state` is the write-ahead runtime projection. Never deleted; closed rows are
+    the history the scorecards read."""
+    __tablename__ = "managed_positions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    technique: Mapped[str] = mapped_column(String(32), default="generic", server_default="generic", index=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    portfolio_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(16), default="open", index=True)  # opening|open|closing|closed|attention
+    tags: Mapped[list] = mapped_column(JSONVariant, default=list, server_default='[]')
+    config: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    legs: Mapped[list] = mapped_column(JSONVariant, default=list)
+    state: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class OptionChainSnapshot(Base):
     """One nightly row per (date, contract): volume, OI, IV, bid/ask/mid (research
     B5, 2026-08-27). OI history cannot be backfilled from any source, which is why

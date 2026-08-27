@@ -35,6 +35,8 @@ DEFAULTS: dict[str, Any] = {
     "risk.max_orders_per_minute": 10,
     "risk.max_day_notional_per_technique": 0.0,  # $ BUY notional per technique per ET day (0 = off; EM team B3)
     # --- research feeds (nightly jobs on the engine scheduler; research B4/B5) ---
+    "execution.min_dte": 1,                     # NEVER hold an option to expiry: platform floor for dte_close (techniques may only raise it)
+    "execution.reconcile_at": "09:05",          # daily pre-open reconciliation pass (positions vs the broker)
     "execution.paused": False,                  # per-technique pause: set techniques.<id>.paused (kill switch stays global; exits are never blocked)
     "research.chain_snapshots.enabled": True,   # nightly per-contract OI/IV/volume rows (history is NOT backfillable)
     "research.chain_snapshots.at": "16:30",     # ET

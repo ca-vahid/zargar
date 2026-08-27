@@ -45,6 +45,8 @@ class Engine:
         self.scheduler = Scheduler(self)   # engine-level daily jobs (techniques register scans here)
         from .calendar_service import EventCalendar
         self.calendar = EventCalendar()    # earnings / ex-dividend dates (policies + scans read this)
+        from .execution.positions import PositionManager
+        self.position_manager = PositionManager(self)   # durable multi-day positions (plan phase 2b)
 
         # Executors / feeds are attached in start() (sim always; ibkr when configured)
         self.sim_executor = None
@@ -211,6 +213,14 @@ class Engine:
             register_jobs(self)
         except Exception:
             log.exception("registering research jobs failed")
+        try:
+            n = await self.position_manager.restore()
+            if n:
+                self.position_manager.start()
+            self.scheduler.register("position_reconcile", str(self.settings.get("execution.reconcile_at", "09:05")),
+                                    self.position_manager.reconcile)
+        except Exception:
+            log.exception("position manager restore failed")
         self.scheduler.start()
         log.info("engine started (feed=%s)", type(self.feed).__name__)
 
@@ -223,6 +233,10 @@ class Engine:
             await self.calendar.aclose()
         except Exception:
             log.exception("calendar close failed")
+        try:
+            await self.position_manager.stop()
+        except Exception:
+            log.exception("position manager stop failed")
         if self.push is not None:
             await self.push.stop()
         self.started = False

@@ -40,6 +40,29 @@ def build_technique_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=404, detail=f"unknown technique: {tid}")
         return info, svc
 
+    @app.get("/api/positions/managed", dependencies=[auth])
+    async def managed_positions(status: str | None = None):
+        return eng.position_manager.positions(status=status)
+
+    @app.post("/api/positions/managed/{pid}/close", dependencies=[auth])
+    async def managed_close(pid: str, fraction: float = 1.0):
+        out = await eng.position_manager.close(pid, fraction=fraction, reason="manual close (API)")
+        if out is None:
+            raise HTTPException(status_code=404, detail="unknown position")
+        return out
+
+    @app.post("/api/positions/managed/{pid}/reconcile-clear", dependencies=[auth])
+    async def managed_clear(pid: str):
+        p = eng.position_manager.get(pid)
+        if p is None:
+            raise HTTPException(status_code=404, detail="unknown position")
+        eng.position_manager.clear_entry_halt(p.symbol)
+        p.halt_entries = False
+        p.attention.clear()
+        if p.status == "attention" and p.open_legs:
+            p.status = "open"
+        return p.to_dict()
+
     @app.get("/api/techniques/{tid}", dependencies=[auth])
     async def technique_info(tid: str):
         info, svc = _tech(tid)

@@ -1,0 +1,376 @@
+"""Phase 2b chaos suite — the acceptance gate for the durable position manager
+(plan §2.5 + the techniques research A9). The manager ships with this or not
+at all.
+
+Share scenarios run through the REAL OrderManager → RiskGate → sim executor.
+Option-leg scenarios use a recording fake order layer: the order plumbing for
+options is already exercised end-to-end by the arming suite; what the chaos
+suite must prove is the MANAGER's behaviour — write-ahead, restore, policy
+decisions, watchdog, reconciliation classification, halts and parity."""
+from __future__ import annotations
+
+import asyncio
+import datetime as dt
+
+import pytest
+
+from zargar.domain import Bar
+from zargar.execution.policies import PolicyState
+from zargar.execution.positions import PositionManager
+from zargar.execution.simulate import simulate_position
+from zargar.marketstructure.sessions import ET, session_bounds
+
+pytestmark = pytest.mark.usefixtures("fresh_db")
+
+
+def rth_bar(day: str, minute: int, px: float, symbol: str = "AAPL", spread: float = 0.2) -> Bar:
+    open_ms, _ = session_bounds(day)
+    ts = open_ms + minute * 60_000
+    return Bar(symbol=symbol, tf="1m", ts=ts, open=px, high=px + spread, low=px - spread, close=px, volume=5000)
+
+
+class FakeOrders:
+    """Recording order layer for option-leg scenarios. `script` maps call index ->
+    status override (default FILLED at the limit/close)."""
+
+    def __init__(self):
+        self.placed = []
+        self.cancelled = []
+        self.script: dict[int, dict] = {}
+        self.n = 0
+
+    async def place(self, intent):
+        i = self.n
+        self.n += 1
+        self.placed.append(intent)
+        over = self.script.get(i, {})
+        if over.get("raise"):
+            raise ConnectionError("venue disconnected")
+        status = over.get("status", "FILLED")
+        px = over.get("price", intent.limit_price or intent.stop_price or 1.0)
+        out = {"id": f"o{i}", "status": status, "symbol": intent.symbol,
+               "filledQty": intent.qty if status in ("FILLED", "PARTIALLY_FILLED") else 0.0,
+               "avgFillPrice": px if status in ("FILLED", "PARTIALLY_FILLED") else None,
+               "rejectReason": over.get("reason")}
+        return out
+
+    async def cancel(self, order_id):
+        self.cancelled.append(order_id)
+        return {"id": order_id, "status": "CANCELLED"}
+
+
+async def make_manager(engine, *, fake_orders: bool):
+    pm = PositionManager(engine)
+    if fake_orders:
+        fo = FakeOrders()
+        engine.orders = fo
+        return pm, fo
+    return pm, None
+
+
+def spread_spec(pf, *, qty: int = 2) -> dict:
+    """A defined-risk put credit spread on AAPL, adopted (fills known)."""
+    return {
+        "portfolioId": pf, "symbol": "AAPL", "direction": "long", "techniqueId": "premium",
+        "tags": ["source:test"], "entry": 100.0, "risk": 1.0, "entryMark": -1.00,
+        "overnight": "app_managed", "overnightAck": True, "guardAccepted": True,
+        "policy": {"timeframe": "5m", "stop": {"kind": "none", "guard": "defined-risk spread; sized 1%"},
+                   "profit_target_pct_of_credit": 60, "dte_close": 7, "time_stop_sessions": 20},
+        "legs": [
+            {"symbol": "AAPL261016P00095000", "secType": "OPT", "qty": -qty, "avgFill": 2.00, "multiplier": 100},
+            {"symbol": "AAPL261016P00090000", "secType": "OPT", "qty": qty, "avgFill": 1.00, "multiplier": 100},
+        ],
+    }
+
+
+# ------------------------------------------------------------------ validation gates
+async def test_open_refuses_unsafe_specs(engine):
+    pm, _ = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    base = spread_spec(pf)
+    bad = {**base, "overnightAck": False}
+    with pytest.raises(ValueError) as e:
+        await pm.adopt(bad)
+    assert "acknowledg" in str(e.value)
+    bad = {**base, "policy": {**base["policy"], "stop": {"kind": "none"}}}
+    with pytest.raises(ValueError) as e:
+        await pm.adopt(bad)
+    assert "guard" in str(e.value)
+    bad = {**base, "overnight": "venue_stop", "overnightAck": False}
+    with pytest.raises(ValueError) as e:
+        await pm.adopt(bad)
+    assert "venue" in str(e.value)
+
+
+# ------------------------------------------------------------------ restart mid-position
+async def test_restart_restores_position_and_venue_stop(engine):
+    pm, _ = await make_manager(engine, fake_orders=False)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    sym = engine.config.sim_symbols[0] if getattr(engine.config, "sim_symbols", None) else "AAPL"
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": sym, "direction": "long", "techniqueId": "tip",
+        "entry": 100.0, "risk": 1.0, "overnight": "venue_stop",
+        "policy": {"timeframe": "5m", "stop": {"kind": "fixed", "price": 99.0},
+                   "ladder": {"targets": [102.0], "fractions": [1.0]}},
+        "legs": [{"symbol": sym, "secType": "STK", "qty": 50, "avgFill": 100.0}],
+    })
+    pid = d["id"]
+    p = pm.get(pid)
+    assert p is not None and p.venue_stop_order_id, "a share position held overnight must carry a venue GTC stop"
+    stop_id = p.venue_stop_order_id
+    await pm.stop()
+    # ---- the process dies; a new manager restores from the DB ----
+    pm2 = PositionManager(engine)
+    n = await pm2.restore()
+    assert n == 1
+    p2 = pm2.get(pid)
+    assert p2 is not None and p2.status == "open"
+    assert p2.venue_stop_order_id == stop_id            # the resting stop survived the restart
+    assert p2.state.stop == 99.0 and p2.sessions_seen   # policy state and the session ledger too
+    await pm2.stop()
+
+
+async def test_restart_mid_open_flags_attention_and_halts_entries(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    p_dict = await pm.adopt(spread_spec(pf))
+    p = pm.get(p_dict["id"])
+    p.status = "opening"                                # simulate a crash mid-open
+    await pm._persist(p)
+    pm2 = PositionManager(engine)
+    engine.orders = fo
+    await pm2.restore()
+    p2 = pm2.get(p.id)
+    assert p2.status == "attention" and p2.halt_entries
+    with pytest.raises(ValueError) as e:
+        await pm2.open({**spread_spec(pf), "legs": [{"symbol": "AAPL", "secType": "STK", "qty": 1, "side": "BUY"}],
+                        "overnight": "venue_stop", "overnightAck": False,
+                        "policy": {"stop": {"kind": "fixed", "price": 1.0}}})
+    assert "halted" in str(e.value)
+
+
+# ------------------------------------------------------------------ policy decisions on bars
+async def test_credit_target_closes_both_legs_together(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt(spread_spec(pf))
+    p = pm.get(d["id"])
+
+    class Q:
+        def __init__(self, bid, ask):
+            self.bid, self.ask, self.last, self.ts = bid, ask, (bid + ask) / 2, pm.now_ms()
+    marks = {"AAPL261016P00095000": Q(0.55, 0.65), "AAPL261016P00090000": Q(0.30, 0.34)}
+    engine.quotes.get = lambda s: marks.get(s)          # net buy-back = 0.65 - 0.30 = 0.35 -> 65% captured
+    await pm.on_minute_bar(p, rth_bar("2026-08-27", 34, 101.0))   # closes the 09:30-09:35 5m bar
+    assert any(x["kind"] == "credit_target" for x in p.exits), p.events[-3:]
+    legs_ordered = [i.symbol for i in fo.placed]
+    assert "AAPL261016P00095000" in legs_ordered and "AAPL261016P00090000" in legs_ordered
+    buyback = next(i for i in fo.placed if i.symbol == "AAPL261016P00095000")
+    assert buyback.side == "BUY" and buyback.reduce_only            # short leg buys back reduce-only
+
+
+async def test_multi_leg_partial_close_stays_proportional(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt(spread_spec(pf, qty=2))
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    await pm.close(p.id, fraction=0.5, reason="test partial")
+    qtys = {i.symbol: i.qty for i in fo.placed}
+    assert qtys.get("AAPL261016P00095000") == 1 and qtys.get("AAPL261016P00090000") == 1
+    # fills arrive -> legs reduce, position stays open
+    for i, intent in enumerate(fo.placed):
+        await pm.on_order_update({"id": f"o{i}", "status": "FILLED", "symbol": intent.symbol,
+                                  "filledQty": intent.qty, "avgFillPrice": 1.0})
+    assert p.status != "closed" and all(abs(l.qty) == 1 for l in p.open_legs)
+
+
+async def test_expiry_friday_dte_close_fires(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    soon = (dt.datetime.now(ET).date() + dt.timedelta(days=1)).strftime("%y%m%d")
+    spec = spread_spec(pf)
+    spec["legs"] = [{"symbol": f"AAPL{soon}C00100000", "secType": "OPT", "qty": 1, "avgFill": 2.0,
+                     "multiplier": 100}]
+    spec["entryMark"] = 2.0
+    d = await pm.adopt(spec)
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    await pm.on_minute_bar(p, rth_bar("2026-08-27", 34, 105.0))     # deep ITM, 1 DTE
+    assert any(x["kind"] == "dte" for x in p.exits), "an ITM contract must never reach auto-exercise"
+
+
+async def test_weekend_and_extended_bars_make_no_decisions(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt(spread_spec(pf))
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    open_ms, _ = session_bounds("2026-08-27")
+    pre = Bar(symbol="AAPL", tf="1m", ts=open_ms - 3600_000, open=90, high=90, low=90, close=90, volume=1)
+    sat = Bar(symbol="AAPL", tf="1m", ts=open_ms + 3 * 86400_000, open=90, high=90, low=90, close=90, volume=1)
+    n_exits = len(p.exits)
+    await pm.on_minute_bar(p, pre)
+    await pm.on_minute_bar(p, sat)                       # Sunday by ET -> extended
+    assert len(p.exits) == n_exits and p.sessions_held() == 0
+
+
+async def test_time_stop_counts_trading_sessions_across_days(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    spec = spread_spec(pf)
+    spec["policy"] = {"timeframe": "5m", "stop": {"kind": "none", "guard": "defined risk"},
+                      "time_stop_sessions": 2}
+    d = await pm.adopt(spec)
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    for day in ("2026-08-24", "2026-08-25", "2026-08-26"):   # Mon..Wed
+        await pm.on_minute_bar(p, rth_bar(day, 34, 100.5))
+    assert any(x["kind"] == "time" for x in p.exits), (p.sessions_seen, p.exits)
+
+
+# ------------------------------------------------------------------ watchdog + stale quotes
+async def test_failed_exit_watchdog_retries_then_alerts(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt(spread_spec(pf, qty=1))
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    fo.script = {i: {"status": "REJECTED", "reason": "venue says no"} for i in range(20)}
+    await pm.close(p.id, fraction=1.0, reason="test")
+    assert p.exits[-1]["status"] == "REJECTED"
+    t = [pm._now()]
+    pm._now = lambda: t[0]
+    retries = 0
+    for _ in range(8):
+        t[0] += 31.0
+        before = fo.n
+        await pm._watch_once()
+        retries += 1 if fo.n > before else 0
+    assert retries == 5, "the watchdog retries exactly 5 times, then hands it to a person"
+    assert any("needs a person" in e.get("text", "") for e in p.events if e["event"] == "alert")
+
+
+async def test_stale_monday_quote_makes_no_crash_brake_decision(engine):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    spec = spread_spec(pf, qty=1)
+    spec["policy"] = {"timeframe": "5m", "stop": {"kind": "fixed", "price": 99.0}}
+    d = await pm.adopt(spec)
+    p = pm.get(d["id"])
+
+    class StaleQ:
+        bid = ask = 0.0
+        last = 90.0                                      # WAY through the stop…
+        ts = 0                                           # …but three days old
+    engine.quotes.get = lambda s: StaleQ()
+    n = len(fo.placed)
+    for _ in range(4):
+        await pm._watch_once()
+    assert len(fo.placed) == n, "a stale quote must never fire the crash brake"
+
+
+async def test_halt_does_not_trap_the_exit(engine):
+    """Kill switch on -> a reduce-only close still routes (the REAL gate)."""
+    pm, _ = await make_manager(engine, fake_orders=False)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    sym = engine.config.sim_symbols[0] if getattr(engine.config, "sim_symbols", None) else "AAPL"
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": sym, "direction": "long", "techniqueId": "tip",
+        "entry": 100.0, "risk": 1.0, "overnight": "day_only",
+        "policy": {"timeframe": "5m", "stop": {"kind": "fixed", "price": 99.0}},
+        "legs": [{"symbol": sym, "secType": "STK", "qty": 10, "avgFill": 100.0}],
+    })
+    engine.halt.engage("chaos test")
+    try:
+        await pm.close(d["id"], fraction=1.0, reason="halted exit test")
+        p = pm.get(d["id"])
+        rec = p.exits[-1]
+        assert rec["status"] not in ("REJECTED_RISK",), rec
+    finally:
+        engine.halt.release()
+
+
+# ------------------------------------------------------------------ reconciliation
+async def test_reconcile_classifies_assignment_and_expiry(engine, monkeypatch):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    yday = (dt.datetime.now(ET).date() - dt.timedelta(days=1)).strftime("%y%m%d")
+    spec = spread_spec(pf)
+    spec["legs"] = [
+        {"symbol": f"AAPL{yday}P00105000", "secType": "OPT", "qty": -1, "avgFill": 2.0, "multiplier": 100},
+        {"symbol": f"AAPL{yday}P00090000", "secType": "OPT", "qty": 1, "avgFill": 0.5, "multiplier": 100},
+    ]
+    d = await pm.adopt(spec)
+    p = pm.get(d["id"])
+
+    class Q:
+        bid = ask = 0.0
+        last = 100.0                                     # 90P OTM (worthless), 105P ITM (assigned)
+        def __init__(self):
+            self.ts = pm.now_ms()
+    engine.quotes.get = lambda s: Q()
+    monkeypatch.setattr(engine.positions, "positions_list",
+                        lambda pid=None: [{"symbol": "AAPL", "qty": 100.0}])
+    report = await pm.reconcile()
+    whats = " | ".join(x["what"] for x in report["explained"])
+    assert "assigned" in whats and "expired worthless" in whats
+    assert report["unexplained"] == []
+    stk = [l for l in p.legs if l.sec_type == "STK"]
+    assert stk and stk[0].qty == 100 and stk[0].origin == "assignment" and stk[0].avg_fill == 105.0
+
+
+async def test_reconcile_unexplained_drift_halts_the_symbol(engine, monkeypatch):
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt(spread_spec(pf))
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    monkeypatch.setattr(engine.positions, "positions_list", lambda pid=None: [])   # broker shows nothing
+    report = await pm.reconcile()
+    assert report["unexplained"] and p.status == "attention" and pm.entries_halted("AAPL")
+    pm.clear_entry_halt("AAPL")
+    assert not pm.entries_halted("AAPL")
+
+
+# ------------------------------------------------------------------ parity: live == simulate
+async def test_live_and_simulated_policy_decisions_match(engine):
+    policy = {"timeframe": "5m", "stop": {"kind": "fixed", "price": 99.0},
+              "ladder": {"targets": [101.0, 102.0], "fractions": [0.5, 0.5]},
+              "breakeven_after_r": 1.0, "trailing": {"mode": "pct", "value": 1.0, "after_r": 1.5}}
+    path = [100.2, 100.6, 101.2, 101.6, 102.2, 101.8, 101.1, 100.4, 99.9, 99.4]
+    bars5 = [Bar(symbol="T", tf="5m", ts=session_bounds("2026-08-27")[0] + (30 + 5 * i) * 60_000,
+                 open=px, high=px + 0.3, low=px - 0.3, close=px, volume=1000) for i, px in enumerate(path)]
+    sim = simulate_position(policy, bars5, direction="long", entry=100.0, risk=1.0)
+
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": "T", "direction": "long", "techniqueId": "tip",
+        "entry": 100.0, "risk": 1.0, "overnight": "day_only", "policy": policy,
+        "legs": [{"symbol": "T", "secType": "STK", "qty": 100, "avgFill": 100.0}],
+    })
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    engine.bars.bars = lambda *a, **k: []               # force the raw-bar path
+    live_kinds = []
+    for b in bars5:
+        one_m = Bar(symbol="T", tf="1m", ts=b.ts + 4 * 60_000, open=b.open, high=b.high, low=b.low,
+                    close=b.close, volume=b.volume)
+        n0 = len(p.exits)
+        await pm.on_minute_bar(p, one_m)
+        live_kinds += [x["kind"] for x in p.exits[n0:]]
+        # apply the fills so the next bar sees the reduced position
+        for i, intent in enumerate(fo.placed[len(fo.cancelled) + 0:]):
+            pass
+        for i, intent in enumerate(fo.placed):
+            oid = f"o{i}"
+            if any(x.get("orderId") == oid and not x.get("filledQty") for x in p.exits):
+                await pm.on_order_update({"id": oid, "status": "FILLED", "symbol": intent.symbol,
+                                          "filledQty": intent.qty, "avgFillPrice": b.close})
+    sim_kinds = [x["kind"] for x in sim["exits"]]
+    assert live_kinds == sim_kinds, (live_kinds, sim_kinds)
+    assert p.state.trims_done == sim["state"]["trimsDone"]
+    assert (p.state.stop is None) == (sim["finalStop"] is None)
+    if p.state.stop is not None:
+        assert abs(p.state.stop - sim["finalStop"]) < 1e-6

@@ -59,6 +59,14 @@ CONTRACTS: dict[str, dict] = {
     "TechniquePlanPreopen":   {"version": 1, "required": ("runId", "symbol", "planFor", "premarket", "triggers", "replan")},
     "TechniquePlanReplanned": {"version": 1, "required": ("runId", "parentRunId", "symbol", "planFor")},
     "TechniqueHookStats":     {"version": 1, "required": ("technique", "date", "hooks")},
+    # --- durable positions (phase 2b; produced ONLY by execution/positions.py) ---
+    "ManagedPositionOpened":  {"version": 1, "required": ("positionId", "technique", "symbol", "portfolioId", "legs", "policy")},
+    "ManagedPositionAdopted": {"version": 1, "required": ("positionId", "technique", "symbol", "portfolioId", "legs", "policy")},
+    "ManagedPositionExit":    {"version": 1, "required": ("positionId", "symbol", "kind", "leg", "qty", "reduceOnly")},
+    "ManagedPositionClosed":  {"version": 1, "required": ("positionId", "symbol", "realizedPnl", "reason")},
+    "ManagedPositionPolicyChanged": {"version": 1, "required": ("positionId", "symbol", "policy")},
+    "ManagedPositionReconciled": {"version": 1, "required": ("positions",)},
+    "ManagedPositionAttention": {"version": 1, "required": ("positionId", "symbol", "error")},
 }
 
 
