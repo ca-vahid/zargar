@@ -280,6 +280,15 @@ a number** (p. 72).
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
+- 2026-08-27 · **Platform scoping decisions (user):** the R6.3 mid-day experiment
+  toggle (`technique.arm.midday_trading`) is **EM-scoped** — read only inside EM's
+  `entry_windows_enforced()` hook, never by the generic runner, and never promoted
+  to a platform key. Veto/critic budgets (`critic_kills_per_day`,
+  `refire_cooldown_minutes`, `critic_fail_budget`, `critic_timeout_seconds`)
+  **inherit platform defaults with per-technique override** — spec handed to the
+  engine team for phase 3 settings scoping (`techniques.<id>.<key>` override, else
+  `execution.<key>` platform default; old `technique.*` names as deprecated aliases).
+
 - 2026-08-23 · Stops → chart-based (zone floor + structure ATR, `max_stop_pct=3%` cap);
   zones (`zone_merge_pct=1%`); target anchors above entry · MARA review `f055c5c6`.
 - 2026-08-23 · Trigger grades (A/B/C, rule-cited) + plan bottom line; pct-ladder R:R
