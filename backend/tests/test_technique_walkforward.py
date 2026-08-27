@@ -860,3 +860,41 @@ async def test_plan_builds_short_triggers_when_not_long_only(rig):
     await rig.eng.settings.set("technique.long_only", True, journal=False)
     run2 = await rig.svc.analyze("TEST", as_of_ms=close_ts, with_vision=False, wait=True)
     assert all(t["direction"] == "long" for t in run2["result"]["plan"]["triggers"])
+
+
+def test_tracker_touch_is_in_band_not_through_it():
+    """LITE 2026-08-27: price 2.5% BELOW a bounce level 'touched' on every bar
+    and zombie-fired at a fantasy fill. A touch reaches INTO the band; a bar
+    wholly beyond the level (or through the stop) never fires."""
+    d = weekdays(1)[0]
+    prior = [Bar(symbol="T", tf="1m", ts=_ms(d - dt.timedelta(days=1), 9, 30) + i * MIN, open=100, high=100.1,
+                 low=99.9, close=100, volume=1000) for i in range(390)]
+    prof = build_profile(prior)
+    tg = _bounce_trigger()          # entry 100.0, stop 99.5
+    tr = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=100.2)
+    # opens fine, then price collapses far below the level AND the stop
+    assert tr.on_bar(_bar(d, 9, 30, 100.4, 100.5, 100.3, 100.4), 0) == "waiting"
+    st = tr.on_bar(_bar(d, 9, 45, 97.5, 97.6, 97.2, 97.4), 1)
+    # a 97.x bar must NOT count as a touch of 100.0 — and closing through the
+    # 99.5 stop breaks the level for the day
+    assert st == "invalidated"
+    assert tr.status in tr.TERMINAL
+    # nothing refires afterwards, even back inside the band
+    assert tr.on_bar(_bar(d, 9, 50, 100.0, 100.1, 99.9, 100.0), 2) == "invalidated"
+
+
+def test_tracker_short_reject_mirror_invalidation():
+    """MSTR r2 mirror: price ripping far ABOVE a reject level must not 'touch'
+    it, and a close above the stop kills the short idea."""
+    d = weekdays(1)[0]
+    prior = [Bar(symbol="T", tf="1m", ts=_ms(d - dt.timedelta(days=1), 9, 30) + i * MIN, open=100, high=100.1,
+                 low=99.9, close=100, volume=1000) for i in range(390)]
+    prof = build_profile(prior)
+    tg = _bounce_trigger(entry=100.0, stop=100.5, targets=(98.4, 97.0, 96.0))
+    tg["kind"] = "reject"
+    tg["direction"] = "short"
+    tr = TriggerTracker(tg, DEFAULT_THRESHOLDS, prof, True, True, prev_close=99.8)
+    assert tr.on_bar(_bar(d, 9, 30, 99.6, 99.7, 99.5, 99.6), 0) == "waiting"
+    st = tr.on_bar(_bar(d, 9, 45, 102.4, 102.6, 102.2, 102.5), 1)
+    assert st == "invalidated"
+    assert tr.on_bar(_bar(d, 9, 50, 100.0, 100.1, 99.9, 100.0), 2) == "invalidated"

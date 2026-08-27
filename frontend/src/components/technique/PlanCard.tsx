@@ -112,7 +112,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
   const upcoming = !!plan && plan.planFor >= todayEt;
   const trigOuts = outs.filter((o) => o.planSource.startsWith("trigger:"));
   const scoredTrig = trigOuts.filter((o) => o.status === "scored" || o.status === "partial");
-  const fired = scoredTrig.filter((o) => o.outcome && !["not_triggered", "observed", "gapped_past", "gapped_through", "gap_void", "not_tradeable"].includes(o.outcome));
+  const fired = scoredTrig.filter((o) => o.outcome && !["not_triggered", "observed", "gapped_past", "gapped_through", "gap_void", "not_tradeable", "invalidated", "exhausted"].includes(o.outcome));
   const verdictLine = (() => {
     if (!plan) return "";
     if (upcoming) return "";
