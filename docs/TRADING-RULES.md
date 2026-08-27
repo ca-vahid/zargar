@@ -130,6 +130,18 @@ a number** (p. 72).
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-08-27 · A trigger's level can die intraday — track it or fire zombies.** The
+  pre-open re-planner (new) builds levels near pre-market price; when the open then
+  walks THROUGH a bounce level and its stop, nothing killed the trigger: a long bounce
+  "touched" whenever price was anywhere below the level (no far-side bound), fired at a
+  fantasy fill equal to the level price, was critic-vetoed, re-armed, and refired every
+  cooldown (LITE b1 fired 10x at 947.53 while the tape was at 923; MSTR r2 the short
+  mirror). Fixes: touches must reach INTO the band; a pre-entry close through the stop
+  is terminal (`invalidated`, T4.3d). The critic was the only line of defense and went
+  20/20 — but 20 saves that a `bar.close < stop` comparison should have made for free
+  is the graduation principle (1.4) restated by the machine itself.
+
+
 - **2026-08-23 · Stops must be chart-based in fact, not in name** (MARA run `f055c5c6`).
   `level − max(2·tol, 0.5%, 0.25·ATR_1m)` was a fixed-percent stop in costume: identical
   $0.056 risk at three ladder rungs inside Friday's chop band. Fixed: stops anchor below
