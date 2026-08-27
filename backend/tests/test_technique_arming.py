@@ -759,3 +759,44 @@ async def test_managed_proposal_is_adopted_and_managed(rig):
     await _quote(rig, stop - 0.02)
     await wait_for(lambda: _pt().get("status") == "closed", timeout=5)
     assert _pt()["exits"][-1]["kind"] == "stop"
+
+
+# --- EM experiment data contracts ------------------------------------------------------------------
+# TRADING-RULES 1.x experiments read specific fields off the journal/snapshot/state.
+# Platform phase 3 (event-schema work, runner evolution) must not sever them:
+#   1.1 gap rule      -> trigger snapshot: gapUnchecked; state: gapSeed
+#   1.2 grades        -> armed snapshot + triggers: grade; row: technique
+#   1.4 critic tally  -> state: criticKills, refireAt, criticFailures
+#   1.7 mid-day exp   -> TechniquePlanTriggerFired payload: window, middayExperiment
+async def test_experiment_field_contracts(rig):
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"],
+                                         "riskPct": 1.0, "maxQty": 50, "slippagePct": 1.0})).json()
+    plan_for = armed["planFor"]
+    # snapshot trigger contract (pre-fire)
+    for t in armed["triggers"]:
+        for key in ("gapUnchecked", "grade", "status", "id"):
+            assert key in t, f"trigger snapshot lost '{key}' — an experiment in TRADING-RULES reads it"
+    bars = rig.sessions[plan_for]
+    async def q(bar):
+        await _quote(rig, bar.close)
+    snap, _ = await _feed_until(rig, run["id"], bars, lambda s: any(s["trades"]), quote_fn=q)
+    assert snap and snap["trades"]
+    # journal contract on the fire event
+    audit = (await rig.client.get(f"/api/technique/armed/{run['id']}/audit")).json()
+    fired = [e for e in audit if e["type"] == "TechniquePlanTriggerFired"]
+    assert fired, [e["type"] for e in audit][-8:]
+    p = fired[-1]["payload"]
+    for key in ("window", "middayExperiment", "symbol", "trigger", "fill"):
+        assert key in p, f"TriggerFired payload lost '{key}' — 1.7/1.1 experiments read it"
+    # persisted-state contract
+    hist = (await rig.client.get("/api/technique/armed/history")).json()
+    row = next(h for h in hist if h["runId"] == run["id"])
+    assert row.get("technique") == "enhanced_market", "armed row lost its technique identity"
+    st = row["state"]
+    for key in ("criticKills", "refireAt", "criticFailures", "gapSeed"):
+        assert key in st, f"persisted armed state lost '{key}' — 1.4/1.1 experiments read it"
+    for tid, tr in st["trackers"].items():
+        for key in ("gapUnchecked", "failedBreaks", "status"):
+            assert key in tr, f"persisted tracker lost '{key}' ({tid})"
