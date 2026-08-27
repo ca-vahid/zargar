@@ -152,6 +152,51 @@ def test_policy_rejects_junk_modes():
     assert p.entry == "level_touch" and p.mode == "proposal"
 
 
+# --- expiry-aware waiting (options tips die at expiry) ---------------------------
+
+def test_wait_window_capped_by_contract_expiry():
+    import datetime as dt
+
+    from zargar.techniques.tip.horizon import effective_wait_sessions, tip_expiry
+    today = dt.date(2026, 8, 27)                      # a Thursday
+    # "NVDA 180c 9/4" — expiry next Friday, cutoff 2d => last entry day Sep 2 (Wed)
+    exp = tip_expiry("2026-09-04", None, today)
+    wait = effective_wait_sessions(policy_horizon=10, tip_horizon=None,
+                                   expiry=exp, today=today, entry_cutoff_dte=2)
+    assert wait == 4                                   # Fri 28, Mon 31, Tue 1, Wed 2
+    # expiring tomorrow: cutoff has passed — too late, don't chase theta
+    exp2 = tip_expiry("2026-08-28", None, today)
+    assert effective_wait_sessions(policy_horizon=10, tip_horizon=None,
+                                   expiry=exp2, today=today, entry_cutoff_dte=2) == 0
+
+
+def test_wait_window_from_dte_hint_and_policy():
+    import datetime as dt
+
+    from zargar.techniques.tip.horizon import effective_wait_sessions, tip_expiry
+    today = dt.date(2026, 8, 27)
+    # "weeklies" hint ~5 days from receipt; cutoff 2 => last entry Sun Aug 30,
+    # so only Friday the 28th remains as a session to wait in
+    exp = tip_expiry(None, 5, today)
+    assert exp == dt.date(2026, 9, 1)
+    wait = effective_wait_sessions(policy_horizon=10, tip_horizon=None,
+                                   expiry=exp, today=today, entry_cutoff_dte=2)
+    assert wait == 1                                   # Fri 28 only
+    # no expiry info at all: the policy/tip horizon rules
+    assert effective_wait_sessions(policy_horizon=10, tip_horizon=4, expiry=None,
+                                   today=today, entry_cutoff_dte=2) == 4
+
+
+def test_hold_cap_is_the_thesis_expiry():
+    import datetime as dt
+
+    from zargar.techniques.tip.horizon import hold_sessions_cap
+    today = dt.date(2026, 8, 27)
+    assert hold_sessions_cap(expiry=dt.date(2026, 9, 4), today=today, fallback=10) == 6
+    assert hold_sessions_cap(expiry=None, today=today, fallback=10) == 10
+    assert hold_sessions_cap(expiry=dt.date(2026, 8, 27), today=today, fallback=10) == 1
+
+
 # --- the tip plan builder --------------------------------------------------------
 
 def bars_with_support(symbol="NVDA", tf="5m", support=100.0, n=60):

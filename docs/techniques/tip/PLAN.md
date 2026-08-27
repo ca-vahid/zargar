@@ -148,8 +148,35 @@ Lands when Phase 2b ships; everything here is policy/data on shared machinery:
 ## 4. Decisions taken / still open
 
 - ✅ Entry: per-source policy, default level_touch, tip_time earned (user, 2026-08-27).
-- ✅ Shadow bar: 20 scored tips + positive expectancy (proposed default — tune in
+- ✅ **Dual shadow books** (user, 2026-08-27 — built same day): every source keeps TWO
+  pretend accounts (`Portfolio.book`): **immediate** ("buy the moment the tip verified" —
+  the source's raw quality; the old shadow market order) and **armed** ("wait for the
+  level with managed exits" — what the app actually does; the morning loop
+  `tip_shadow_arm` on the scheduler auto-arms every open level-touch tip there in auto
+  mode, budget-sized). The scorecard shows both side by side; `barCleared` judges the
+  ARMED book (real money would trade that way); `tipTimeEarned` flags a source whose
+  immediate book demonstrably beats its armed book — the evidence that its tips run away
+  and it has earned tip-time entry. One tip, two books, never blended.
+- ✅ **Options tips die at expiry** (user, 2026-08-27 — built same day): the wait-for-the-
+  level window is capped at `expiry − techniques.tip.entry_cutoff_dte` (default 2 days —
+  entering later is buying theta), using the tip's stated expiry or its DTE hint
+  (`techniques/tip/horizon.py`). Past the cutoff the signal becomes **expired** (journaled
+  `SignalExpiredUnfilled`) — itself a scorecard datum ("the level never came"). The same
+  expiry caps how long a FILLED position may be held (`time_stop_sessions` = sessions to
+  the thesis expiry), even when expressed in shares.
+- ✅ **Phase 2b handoff** (built same day, on the engine team's `PositionManager`): when an
+  auto entry FILLS, the trade leaves the session runner and becomes a durable managed
+  position — policy: fixed stop, ladder 50/50 on the tip's first two targets, structure
+  trail after +1R (`techniques.tip.trailing_after_r`), time stop at the thesis expiry,
+  earnings flatten unless the tip's catalyst IS earnings; shares rest a venue GTC stop.
+  The runner's end-of-day flatten never touches a handed-off position. An entry unfilled
+  after 10 minutes stays session-scoped (flatten applies — safe).
+- ✅ Shadow bar: 20 scored tips + positive ARMED-book P&L (default — tune in
   TRADING-RULES once real sources exist).
+- Known measurement gap: the armed book cannot express SHORT tips until options
+  expression lands (share shorting is never-listed; shorts are puts) — short tips today
+  live only in the immediate book's record.
 - Open: keep email ingest webhook auth as-is or move behind session auth; whether repeat
   mentions ("seen again") should bump conviction automatically or just display; Telegram
-  as an *intake* (today it's outbound + approvals only).
+  as an *intake* (today it's outbound + approvals only); options expression for BOTH
+  books at once (Phase B — instrument must match across books or the comparison breaks).

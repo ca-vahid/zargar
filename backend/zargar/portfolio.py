@@ -73,6 +73,7 @@ class PositionKeeper:
             "id": p.id, "name": p.name, "kind": p.kind, "cash": p.cash,
             "startingCash": p.starting_cash, "baseCurrency": p.base_currency,
             "sourceName": p.source_name, "isDefault": p.is_default,
+            "book": getattr(p, "book", None),
             "venue": venue,
         }
 

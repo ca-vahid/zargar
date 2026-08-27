@@ -189,8 +189,66 @@ async def test_tip_arms_fires_and_enters_on_sim(tip_rig):
     async with eng.sf() as session:
         order = await session.get(Order, trade["entryOrderId"])
     assert order is not None and order.technique == "tip"
-    await _quote(eng, 99.5)   # sim executor fills after its latency on a fresh quote
-    await _quote(eng, 99.5)
+
+    # fill the entry (sim executor fills after its latency on a fresh quote),
+    # then the 2b HANDOFF: the filled position leaves the session runner and
+    # becomes a durable managed position with the tip exit policy
+    for _ in range(6):
+        await _quote(eng, 99.5)
+
+    async def handed_off():
+        pos = [p for p in eng.position_manager.positions()
+               if p.get("technique") == "tip" and p.get("runId") == run_id]
+        return pos[0] if pos else None
+    pos = await wait_for(handed_off, timeout=15)
+    assert pos["symbol"] == "TEST" and pos["status"] in ("open", "attention")
+    assert "source:TestRoom" in pos["tags"]
+    assert pos["policy"]["stop"]["price"] == 98.0
+    assert pos["policy"]["ladder"]["targets"] == [103.0]
+    assert pos["policy"]["time_stop_sessions"] >= 1
+    assert pos["policy"]["trailing"]["mode"] == "structure"
+    # the session runner forgot the trade — end-of-day flatten can't touch it
+    # (the pop happens a beat after the position becomes visible: wait for it)
+    async def trade_gone():
+        snap = next(a for a in eng.tip_runner.armed() if a["runId"] == run_id)
+        return all(t["triggerId"] != trade["triggerId"] for t in snap["trades"])
+    await wait_for(trade_gone, timeout=10)
+
+
+async def test_shadow_arm_loop_dual_books(tip_rig):
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    out = await eng.tip_runner.shadow_arm_open_tips()
+    assert out["armed"] == 1, out
+    # the ARMED book portfolio exists next to the immediate one
+    books = {p.get("book") for p in eng.positions.portfolios()
+             if p["kind"] == "shadow" and p.get("sourceName") == "TestRoom"}
+    assert books == {None, "armed"} or books == {"immediate", "armed"}
+    # idempotent: the tip is already armed today
+    out2 = await eng.tip_runner.shadow_arm_open_tips()
+    assert out2["armed"] == 0 and out2["skipped"] >= 1
+    # scorecard shows both books
+    cards = await eng.signals_service.source_scorecards()
+    card = next(c for c in cards if c["source"] == "TestRoom")
+    assert "immediate" in card["books"] and "armed" in card["books"]
+    assert card["books"]["armed"].get("portfolioId")
+
+
+async def test_expired_option_tip_never_arms(tip_rig):
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    from zargar.models import Signal
+    async with eng.sf() as session:
+        row = await session.get(Signal, sid)
+        row.expiry = (dt.date.today() + dt.timedelta(days=1)).isoformat()  # inside the 2d cutoff
+        await session.commit()
+    with pytest.raises(ValueError, match="too late"):
+        await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    out = await eng.tip_runner.shadow_arm_open_tips()
+    assert out["expired"] == 1 and out["armed"] == 0
+    async with eng.sf() as session:
+        row = await session.get(Signal, sid)
+    assert row.status == "expired"
 
 
 async def test_tip_time_sources_cannot_arm(tip_rig):

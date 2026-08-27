@@ -10,6 +10,7 @@ the per-source scorecard exists regardless of the human decision.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import hashlib
 import logging
@@ -327,25 +328,44 @@ class SignalService:
                         "shadowOrder": shadow_order})
         return out
 
+    async def shadow_portfolio(self, source: str, book: str) -> dict:
+        """The per-source shadow account for one BOOK: 'immediate' (buy at tip
+        time — the source's raw quality) or 'armed' (wait for the level, managed
+        exits — what the app actually does). Two books per source so the
+        scorecard can compare the strategies without blending their P&L
+        (user decision 2026-08-27). Pre-split rows (book NULL) are immediate."""
+        eng = self.engine
+
+        def match(p: dict) -> bool:
+            if p["kind"] != "shadow" or p.get("sourceName") != source:
+                return False
+            b = p.get("book")
+            return b == book or (b is None and book == "immediate")
+
+        shadow = next((p for p in eng.positions.portfolios() if match(p)), None)
+        if shadow is None:
+            name = f"Shadow: {source}" + (" (armed)" if book == "armed" else "")
+            row = PortfolioRow(id=new_id(), name=name, kind="shadow",
+                               starting_cash=10_000.0, cash=10_000.0,
+                               source_name=source, book=book)
+            async with eng.sf() as session:
+                session.add(row)
+                await session.commit()
+            eng.positions.register_portfolio(row)
+            shadow = eng.positions.portfolio(row.id)
+        return shadow
+
     async def _shadow_execute(self, signal_row: Signal, sig: TradeSignal) -> dict | None:
-        """Every verified signal also trades in a per-source shadow portfolio, so the
-        'what would have happened' record exists regardless of the human decision."""
+        """Every verified signal also trades in the source's IMMEDIATE shadow
+        book, so the 'what if we'd bought the moment they spoke' record exists
+        regardless of the human decision (the armed book is the tip runner's)."""
         import math
 
         from ..orders import BracketSpec, OrderIntent
 
         eng = self.engine
         source = signal_row.source_name or "unknown"
-        shadow = next((p for p in eng.positions.portfolios()
-                       if p["kind"] == "shadow" and p.get("sourceName") == source), None)
-        if shadow is None:
-            row = PortfolioRow(id=new_id(), name=f"Shadow: {source}", kind="shadow",
-                               starting_cash=10_000.0, cash=10_000.0, source_name=source)
-            async with eng.sf() as session:
-                session.add(row)
-                await session.commit()
-            eng.positions.register_portfolio(row)
-            shadow = eng.positions.portfolio(row.id)
+        shadow = await self.shadow_portfolio(source, "immediate")
 
         symbol = sig.ticker.upper()
         quote = eng.quotes.get(symbol)
@@ -394,6 +414,20 @@ class SignalService:
         if row.status not in ("verified", "parked", "proposed"):
             raise ValueError(f"signal is {row.status} — only verified/parked tips plan")
         policy = resolve_policy(eng.settings, row.source_name)
+        # an options tip dies at its contract's expiry: the wait window is capped
+        # by (expiry - entry_cutoff_dte), never just the policy horizon
+        from ..techniques.tip.horizon import effective_wait_sessions, tip_expiry
+        today = dt.datetime.now(dt.timezone.utc).date()
+        expiry = tip_expiry(row.expiry, row.dte_hint_days,
+                            (row.created_at.date() if row.created_at else today))
+        wait = effective_wait_sessions(
+            policy_horizon=policy.horizon_sessions, tip_horizon=row.horizon_sessions,
+            expiry=expiry, today=today,
+            entry_cutoff_dte=int(eng.settings.get("techniques.tip.entry_cutoff_dte", 2)))
+        if wait <= 0:
+            raise ValueError(
+                f"too late — the tip's contract expires {expiry} and the entry cutoff "
+                f"({eng.settings.get('techniques.tip.entry_cutoff_dte', 2)}d before expiry) has passed")
         now_ms = int(_time.time() * 1000)
         bars = await fetch_window(row.ticker, "5m", now_ms - 10 * 86_400_000, now_ms)
         quote = eng.quotes.get(row.ticker)
@@ -412,7 +446,7 @@ class SignalService:
             tip_stop=row.stop_price,
             tip_targets=extraction_sig.get("target_prices")
             or ([row.target_price] if row.target_price else []),
-            horizon_sessions=row.horizon_sessions or policy.horizon_sessions,
+            horizon_sessions=wait,
             stop_atr_mult=float(eng.settings.get("techniques.tip.stop_atr_mult", 1.0)),
             target_r=tuple(eng.settings.get("techniques.tip.target_r") or (1.5, 3.0)),
             signal_id=row.id,
@@ -444,18 +478,25 @@ class SignalService:
         } for r in rows]
 
     async def source_scorecards(self) -> list[dict]:
-        """Per-source track record: signal counts by status + the shadow
-        portfolio's P&L. This is the trust ladder's evidence — a source earns
-        proposal/auto mode (and tip-time entry) here, or it doesn't."""
+        """Per-source track record, TWO books side by side (user decision
+        2026-08-27): 'immediate' = buy the moment the tip verified (the
+        source's raw quality); 'armed' = wait for the level with managed exits
+        (what the app actually does). The comparison is what decides whether a
+        source has EARNED tip-time entry — if immediate beats armed for a
+        source, their tips run away and waiting costs money."""
         eng = self.engine
         async with eng.sf() as session:
             rows = (await session.execute(select(Signal))).scalars().all()
         by_source: dict[str, dict] = {}
-        for r in rows:
-            src = r.source_name or "unknown"
-            card = by_source.setdefault(src, {
+
+        def card_for(src: str) -> dict:
+            return by_source.setdefault(src, {
                 "source": src, "signals": 0, "verified": 0, "parked": 0,
-                "failed": 0, "seenAgain": 0, "lastSignalAt": None})
+                "failed": 0, "expiredUnfilled": 0, "seenAgain": 0, "lastSignalAt": None,
+                "books": {"immediate": {}, "armed": {}}})
+
+        for r in rows:
+            card = card_for(r.source_name or "unknown")
             card["signals"] += 1
             card["seenAgain"] += max(0, int(r.seen_count or 1) - 1)
             if r.status in ("verified", "proposed"):
@@ -464,31 +505,67 @@ class SignalService:
                 card["parked"] += 1
             elif r.status == "verification_failed":
                 card["failed"] += 1
+            elif r.status == "expired":
+                card["expiredUnfilled"] += 1      # the level never came before the tip died
             ts = r.created_at.isoformat() if r.created_at else None
             if ts and (card["lastSignalAt"] is None or ts > card["lastSignalAt"]):
                 card["lastSignalAt"] = ts
+
         for p in eng.positions.portfolios():
             if p.get("kind") != "shadow" or not p.get("sourceName"):
                 continue
-            card = by_source.setdefault(p["sourceName"], {
-                "source": p["sourceName"], "signals": 0, "verified": 0, "parked": 0,
-                "failed": 0, "seenAgain": 0, "lastSignalAt": None})
+            book = p.get("book") or "immediate"
+            if book not in ("immediate", "armed"):
+                continue
+            card = card_for(p["sourceName"])
             try:
                 equity = await eng.positions.equity(p["id"])
             except Exception:  # pragma: no cover - portfolio math hiccup
                 equity = None
-            card["shadowPortfolioId"] = p["id"]
-            card["shadowEquity"] = equity
             start = p.get("startingCash") or 10_000.0
-            card["shadowPnl"] = (equity - start) if equity is not None else None
-            card["shadowPnlPct"] = ((equity - start) / start * 100) if equity is not None and start else None
+            card["books"][book] = {
+                "portfolioId": p["id"], "equity": equity,
+                "pnl": (equity - start) if equity is not None else None,
+                "pnlPct": ((equity - start) / start * 100) if equity is not None and start else None,
+            }
+
+        # armed-book activity: managed positions opened by the tip runner, per source tag
+        mgr = getattr(eng, "position_manager", None)
+        if mgr is not None:
+            with contextlib.suppress(Exception):
+                for pos in mgr.positions():
+                    if pos.get("technique") != "tip":
+                        continue
+                    src = next((t.split(":", 1)[1] for t in (pos.get("tags") or [])
+                                if t.startswith("source:")), None)
+                    if not src:
+                        continue
+                    book = card_for(src)["books"]["armed"]
+                    book["positions"] = int(book.get("positions") or 0) + 1
+                    if pos.get("status") == "closed":
+                        book["closed"] = int(book.get("closed") or 0) + 1
+                        book["realizedPnl"] = round(
+                            float(book.get("realizedPnl") or 0) + float(pos.get("realizedPnl") or 0), 2)
+
         cards = list(by_source.values())
         min_n = int(eng.settings.get("techniques.tip.scorecard_min_n", 20))
         for c in cards:
             policy = resolve_policy(eng.settings, c["source"])
             c["policy"] = policy.to_dict()
-            pnl = c.get("shadowPnl")
-            c["barCleared"] = bool(c["verified"] >= min_n and pnl is not None and pnl > 0)
+            # back-compat fields (UI + older callers): the immediate book
+            imm = c["books"]["immediate"]
+            c["shadowPortfolioId"] = imm.get("portfolioId")
+            c["shadowEquity"] = imm.get("equity")
+            c["shadowPnl"] = imm.get("pnl")
+            c["shadowPnlPct"] = imm.get("pnlPct")
+            # the bar judges the ARMED book — real money would trade the armed way
+            armed_pnl = c["books"]["armed"].get("pnl")
+            c["barCleared"] = bool(c["verified"] >= min_n and armed_pnl is not None and armed_pnl > 0)
+            # tip-time entry is EARNED when immediate demonstrably beats armed
+            imm_pnl = imm.get("pnl")
+            c["tipTimeEarned"] = bool(
+                c["verified"] >= min_n and imm_pnl is not None and armed_pnl is not None
+                and imm_pnl > 0 and imm_pnl > armed_pnl)
         cards.sort(key=lambda c: -(c.get("signals") or 0))
         return cards
 

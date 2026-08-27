@@ -61,6 +61,15 @@ def build_signal_routes(app, eng, auth, config) -> None:
         dailyLossLimit: float | None = None
         allowLive: bool = False
 
+    @app.post("/api/signals/shadow-arm", dependencies=[auth])
+    async def shadow_arm_now():
+        """Run the armed-book morning loop on demand (it also runs on the
+        scheduler at techniques.tip.shadow_arm_at)."""
+        runner = getattr(eng, "tip_runner", None)
+        if runner is None:
+            raise HTTPException(status_code=503, detail="tip runner not attached")
+        return await runner.shadow_arm_open_tips()
+
     @app.post("/api/signals/{sid}/arm", dependencies=[auth])
     async def arm_tip(sid: str, body: ArmTipBody | None = None):
         runner = getattr(eng, "tip_runner", None)

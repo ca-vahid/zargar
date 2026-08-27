@@ -157,6 +157,11 @@ is in §3 and the platform plan.
 3. **Tip budgets**: per-tip budget + risk %, per-source cap, shadow-only until the scorecard
    bar clears (proposed default: 20 scored tips, positive expectancy) — defaults in the Tip
    plan, tunable.
+3b. **Dual shadow books** (user, 2026-08-27 evening): each source runs an *immediate* book
+   (buy at tip time) AND an *armed* book (wait for the level, managed exits) side by side —
+   the comparison is the evidence that earns a source tip-time entry. Options tips are
+   expiry-bounded: never wait for a level past `expiry − entry_cutoff_dte`. Built same day
+   on Phase 2b (see tip PLAN §4).
 4. Venue short-options probe + daily chain snapshots: handed to the engine team in the
    2026-08-27 Phase 2b/3 requirements memo (with the Alpaca addendum: data/paper only —
    Canada is ineligible for live Alpaca brokerage).

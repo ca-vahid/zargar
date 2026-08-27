@@ -206,6 +206,16 @@ function ManualIngest() {
   );
 }
 
+function BookCell({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }) {
+  const pnl = b?.pnl;
+  if (pnl == null) return <td className="num muted">—</td>;
+  return (
+    <td className={`num ${pnl > 0 ? "pos" : pnl < 0 ? "neg" : "muted"}`}>
+      {fmtMoney(pnl)} ({(b?.pnlPct ?? 0).toFixed(1)}%)
+    </td>
+  );
+}
+
 function SourcesPanel() {
   const signalCount = useStore((s) => s.signals.length);
   const state = useAsync(() => api.sourceScorecards(), [signalCount]);
@@ -214,18 +224,21 @@ function SourcesPanel() {
     <div className="panel">
       <div className="panel-head">
         Source scorecards
-        <span className="sub">a source earns trust here before it earns money</span>
+        <span className="sub">two books per source: buy-at-tip-time vs wait-for-the-level</span>
       </div>
       <div className="scroll-x">
         {state.loading && cards.length === 0 ? <Spinner />
           : cards.length === 0 ? (
-            <EmptyState title="No sources yet" hint="Every tip source gets a shadow portfolio and a track record." />
+            <EmptyState title="No sources yet" hint="Every tip source gets two shadow books and a track record." />
           ) : (
             <table className="tbl">
               <thead>
                 <tr>
-                  <th>Source</th><th className="num">Tips</th><th className="num">OK/Parked/Fail</th>
-                  <th className="num">Shadow P&amp;L</th><th>Policy</th><th>Bar</th>
+                  <th>Source</th><th className="num">Tips</th>
+                  <th className="num" title="verified / parked / failed / expired-unfilled">V/P/F/X</th>
+                  <th className="num" title="Immediate book: buy the moment the tip verified — the source's raw quality">Tip-time P&amp;L</th>
+                  <th className="num" title="Armed book: wait for the level, managed exits — what the app actually does">Level-touch P&amp;L</th>
+                  <th>Policy</th><th>Trust</th>
                 </tr>
               </thead>
               <tbody>
@@ -233,16 +246,21 @@ function SourcesPanel() {
                   <tr key={c.source}>
                     <td><b>{c.source}</b>{(c.seenAgain ?? 0) > 0 && <span className="muted"> ·{c.seenAgain} repeats</span>}</td>
                     <td className="num">{c.signals}</td>
-                    <td className="num muted">{c.verified}/{c.parked}/{c.failed}</td>
-                    <td className={`num ${(c.shadowPnl ?? 0) > 0 ? "pos" : (c.shadowPnl ?? 0) < 0 ? "neg" : "muted"}`}>
-                      {c.shadowPnl != null ? `${fmtMoney(c.shadowPnl)} (${(c.shadowPnlPct ?? 0).toFixed(1)}%)` : "—"}
-                    </td>
+                    <td className="num muted">{c.verified}/{c.parked}/{c.failed}/{c.expiredUnfilled ?? 0}</td>
+                    <BookCell b={c.books?.immediate ?? { pnl: c.shadowPnl, pnlPct: c.shadowPnlPct }} />
+                    <BookCell b={c.books?.armed} />
                     <td className="muted">{c.policy ? `${c.policy.entry.replace("_", " ")} · ${c.policy.mode}` : "—"}</td>
                     <td>
                       <span className={`status-pill ${c.barCleared ? "ok" : "dim"}`}
-                        title="Bar: enough verified tips AND positive shadow P&L — required before auto mode or tip-time entry">
+                        title="Bar: enough verified tips AND a positive ARMED book — required before real money">
                         {c.barCleared ? "cleared" : "shadow"}
                       </span>
+                      {c.tipTimeEarned && (
+                        <span className="status-pill wait" style={{ marginLeft: 4 }}
+                          title="Buying immediately beats waiting for this source — their tips run away; consider tip_time entry in the source policy">
+                          tip-time?
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))}

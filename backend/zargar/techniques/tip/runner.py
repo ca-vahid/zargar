@@ -9,28 +9,50 @@ this class supplies the tip's opinions, which are deliberately few:
   windows (extended-hours suppression stays runner-core).
 - no reviewer in v1 (the human/source policy is the judge); analyze_fire says
   "setup" with the trigger's own confidence.
-- v1 arms **level-touch** tips only. A tip-time tip is an immediate proposal
+- arms **level-touch** tips only. A tip-time tip is an immediate proposal
   (the signals pipeline already does that); arming is for the waiting game.
+
+Beyond the session runner (user decisions 2026-08-27):
+- **The armed shadow book**: every open level-touch tip is auto-armed each
+  morning in the source's "(armed)" shadow portfolio (dual-book scorecards —
+  the immediate book buys at tip time; this book waits for the level). The
+  loop runs on `engine.scheduler` and stops re-arming a tip once it has been
+  played, or when its contract's expiry cutoff passes (options tips die at
+  expiry — `techniques.tip.entry_cutoff_dte`).
+- **The 2b handoff**: a tip position must outlive the session (the thesis is
+  days, not minutes), so when an auto entry FILLS, the trade is handed to
+  `engine.position_manager` with the tip exit policy (ladder 50/50, structure
+  trail after +1R, time stop capped at the thesis expiry, earnings flatten)
+  and removed from the session runner — the runner's end-of-day flatten never
+  touches it.
 
 Settings resolve `techniques.tip.<key>` → `execution.<key>` via `self.rt`
 (instrument defaults to shares in v1 — option expression is Phase B).
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import datetime as dt
 import logging
 import time
 
 from sqlalchemy import select
 
+from ... import bus as topics
 from ... import events as ev
 from ...domain import new_id
 from ...execution.planrunner import ArmConfig, FireJudgement, PlanRunner
+from ...execution.sizing import size_by_budget
 from ...marketstructure import SESSION_WINDOWS, MarketRules
-from ...models import Signal, TechniqueRun
+from ...models import Order, Signal, TechniqueRun
+from .horizon import effective_wait_sessions, hold_sessions_cap, tip_expiry
 
 log = logging.getLogger("zargar.techniques.tip")
 
 ARMABLE_STATUSES = ("verified", "parked", "proposed")
+HANDOFF_POLL_SECONDS = 1.0
+HANDOFF_WINDOW_SECONDS = 600.0     # give an entry 10 min to fill before leaving it session-scoped
 
 
 class TipRunner(PlanRunner):
@@ -38,6 +60,16 @@ class TipRunner(PlanRunner):
 
     def __init__(self, engine) -> None:
         super().__init__(engine, name="tip-runner")
+        self._handoff_tasks: dict[str, asyncio.Task] = {}
+
+    async def stop(self) -> None:
+        self.engine.scheduler.unregister("tip_shadow_arm")
+        for t in list(self._handoff_tasks.values()):
+            t.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await t
+        self._handoff_tasks.clear()
+        await super().stop()
 
     # ------------------------------------------------------------- hooks
     def rules(self) -> MarketRules:
@@ -80,10 +112,16 @@ class TipRunner(PlanRunner):
         if policy.entry != "level_touch":
             raise ValueError("this source's policy is tip_time — tip-time tips propose "
                              "immediately; arming is for level-touch tips")
-        plan_dict = await svc.build_tip_plan_for(signal_id)
+        plan_dict = await svc.build_tip_plan_for(signal_id)   # raises "too late" past the expiry cutoff
         if not any(t.get("valid") for t in plan_dict.get("triggers") or []):
             reasons = "; ".join((plan_dict.get("triggers") or [{}])[0].get("noTradeReasons") or [])
             raise ValueError(f"the tip plan has no valid trigger ({reasons or 'degenerate'})")
+        # budget sizing: qty from the source's per-tip budget at the plan's entry
+        if isinstance(config, dict) and config.pop("budgetSize", False) and not config.get("qty"):
+            entry_px = float((plan_dict["triggers"][0].get("entry") or {}).get("price") or 0)
+            if entry_px > 0:
+                config["qty"] = max(1, size_by_budget(policy.budget_per_tip, entry_px,
+                                                      max_units=10_000))
         source = sig.source_name or "unknown"
         run_id = new_id()
         row = TechniqueRun(
@@ -114,6 +152,209 @@ class TipRunner(PlanRunner):
                  "createdAt": r.created_at.isoformat() if r.created_at else None}
                 for r in rows if (r.result or {}).get("signalId") == signal_id]
 
+    # ------------------------------------------------------------- the armed shadow book
+    async def arm_shadow(self, signal_id: str) -> dict:
+        """Arm one tip in its source's ARMED shadow book: auto mode on the sim
+        venue, sized by the source's per-tip budget. This is the level-touch
+        counterfactual the scorecard compares against the immediate book."""
+        svc = self.engine.signals_service
+        async with self.engine.sf() as session:
+            sig = await session.get(Signal, signal_id)
+        if sig is None:
+            raise ValueError("unknown signal")
+        source = sig.source_name or "unknown"
+        shadow = await svc.shadow_portfolio(source, "armed")
+        from ...signals.sources import resolve_policy
+        policy = resolve_policy(self.engine.settings, source)
+        return await self.arm_signal(signal_id, {
+            "portfolioId": shadow["id"], "mode": "auto", "instrument": "shares",
+            "budgetSize": True, "dailyLossLimit": policy.budget_per_tip,
+            "flattenMinutesBeforeClose": 5,   # only un-handed-off remainders; fills hand off to the manager
+        })
+
+    async def shadow_arm_open_tips(self) -> dict:
+        """The morning loop (engine.scheduler): every open level-touch tip gets
+        today's plan armed in the armed shadow book — until it is played, or its
+        contract's entry cutoff passes (then it is EXPIRED, which is itself a
+        scorecard datum: 'the level never came')."""
+        eng = self.engine
+        if not bool(eng.settings.get("techniques.tip.shadow_auto", True)):
+            return {"skipped": "techniques.tip.shadow_auto is off"}
+        if eng.signals_service is None:
+            return {"skipped": "signals layer not attached"}
+        from ...signals.sources import resolve_policy
+        cutoff = int(eng.settings.get("techniques.tip.entry_cutoff_dte", 2))
+        async with eng.sf() as session:
+            open_tips = (await session.execute(select(Signal).where(
+                Signal.status.in_(ARMABLE_STATUSES)))).scalars().all()
+        armed, skipped, expired, errors = 0, 0, 0, []
+        today = dt.datetime.now(dt.timezone.utc).date()
+        for sig in open_tips:
+            policy = resolve_policy(eng.settings, sig.source_name)
+            if policy.entry != "level_touch":
+                skipped += 1          # tip-time sources live in the immediate book only
+                continue
+            expiry = tip_expiry(sig.expiry, sig.dte_hint_days,
+                                (sig.created_at.date() if sig.created_at else today))
+            wait = effective_wait_sessions(
+                policy_horizon=policy.horizon_sessions, tip_horizon=sig.horizon_sessions,
+                expiry=expiry, today=today, entry_cutoff_dte=cutoff)
+            if wait <= 0:
+                await self._expire_signal(sig, expiry)
+                expired += 1
+                continue
+            if await self._signal_played(sig.id) or self._armed_today(sig.id):
+                skipped += 1
+                continue
+            try:
+                await self.arm_shadow(sig.id)
+                armed += 1
+            except Exception as exc:
+                errors.append(f"{sig.ticker}: {exc}")
+                log.warning("shadow arm failed for %s: %s", sig.ticker, exc)
+        out = {"armed": armed, "skipped": skipped, "expired": expired}
+        if errors:
+            out["errors"] = errors[:5]
+        return out
+
+    def _armed_today(self, signal_id: str) -> bool:
+        today = dt.datetime.now(dt.timezone.utc).date().isoformat()
+        for ap in self._armed.values():
+            if (ap.plan.get("context") or {}).get("signalId") == signal_id \
+                    and ap.plan_for >= today and ap.status in ("armed", "paused"):
+                return True
+        return False
+
+    async def _signal_played(self, signal_id: str) -> bool:
+        """A tip is played once any of its armed plans produced a fill — a
+        managed position (open or closed) or a filled trade in an armed row."""
+        run_ids = {r["id"] for r in await self.runs_for_signal(signal_id)}
+        if not run_ids:
+            return False
+        mgr = getattr(self.engine, "position_manager", None)
+        if mgr is not None and any((p.get("runId") in run_ids) for p in mgr.positions()):
+            return True
+        from ...models import TechniqueArmed
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(TechniqueArmed).where(
+                TechniqueArmed.run_id.in_(run_ids)))).scalars().all()
+        for row in rows:
+            for t in ((row.state or {}).get("trades") or []):
+                if float(t.get("filledQty") or 0) > 0:
+                    return True
+        return False
+
+    async def _expire_signal(self, sig: Signal, expiry) -> None:
+        from ...signals.service import signal_dict
+        async with self.engine.sf() as session:
+            row = await session.get(Signal, sig.id)
+            if row is None or row.status not in ARMABLE_STATUSES:
+                return
+            row.status = "expired"
+            await session.commit()
+            sig = row
+        await self.engine.journal.append(
+            ev.SIGNAL_EXPIRED_UNFILLED,
+            {"ticker": sig.ticker, "source": sig.source_name,
+             "expiry": expiry.isoformat() if expiry else None,
+             "reason": "the level never came before the tip's contract/horizon died"},
+            aggregate_type="signal", aggregate_id=sig.id)
+        self.engine.bus.publish(topics.SIGNALS, signal_dict(sig))
+
+    # ------------------------------------------------------------- the 2b handoff
+    async def after_fire(self, ap, tid, tr, trade, judgement, bar) -> None:
+        """A filled tip entry must OUTLIVE the session: watch the entry order
+        and hand the position to the durable manager the moment it fills."""
+        if ap.config.mode == "auto" and trade.entry_order_id \
+                and trade.status in ("submitting", "working", "open"):
+            key = f"{ap.run_id}:{tid}"
+            self._handoff_tasks[key] = asyncio.create_task(
+                self._handoff_when_filled(ap, tid, trade), name=f"tip-handoff-{key}")
+            self._handoff_tasks[key].add_done_callback(
+                lambda t, k=key: self._handoff_tasks.pop(k, None))
+
+    async def _handoff_when_filled(self, ap, tid, trade) -> None:
+        deadline = time.monotonic() + HANDOFF_WINDOW_SECONDS
+        order = None
+        while time.monotonic() < deadline:
+            async with self.engine.sf() as session:
+                order = await session.get(Order, trade.entry_order_id)
+            if order is None:
+                return
+            if order.status == "FILLED":
+                break
+            if order.status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
+                return
+            await asyncio.sleep(HANDOFF_POLL_SECONDS)
+        else:
+            self._log(ap, "handoff_skipped",
+                      f"{tid}: entry not filled within {HANDOFF_WINDOW_SECONDS:.0f}s — "
+                      "stays session-scoped (flatten applies)", trigger=tid)
+            return
+        try:
+            await self._handoff(ap, tid, trade, order)
+        except Exception as exc:
+            log.exception("tip handoff failed for %s %s", ap.symbol, tid)
+            await self._alert(ap, f"{tid}: handing the filled position to the durable manager "
+                                  f"FAILED ({exc}) — it stays session-scoped and will flatten at "
+                                  "the close", level="critical", stage="handoff")
+
+    async def _handoff(self, ap, tid, trade, order) -> None:
+        mgr = getattr(self.engine, "position_manager", None)
+        if mgr is None:
+            raise RuntimeError("position manager not attached")
+        ctx = ap.plan.get("context") or {}
+        signal_id = ctx.get("signalId")
+        sig = None
+        if signal_id:
+            async with self.engine.sf() as session:
+                sig = await session.get(Signal, signal_id)
+        today = dt.datetime.now(dt.timezone.utc).date()
+        expiry = tip_expiry(sig.expiry, sig.dte_hint_days,
+                            (sig.created_at.date() if sig.created_at else today)) if sig else None
+        fallback = int(ctx.get("horizonSessions") or 10)
+        hold_cap = hold_sessions_cap(expiry=expiry, today=today, fallback=fallback)
+        fill = float(order.avg_fill_price or trade.entry)
+        risk = abs(fill - trade.stop) or abs(trade.entry - trade.stop)
+        policy: dict = {
+            "timeframe": "15m",
+            "stop": {"kind": "fixed", "price": trade.stop},
+            "ladder": {"targets": [float(t) for t in trade.targets[:2]],
+                       "fractions": [0.5, 0.5][:max(1, len(trade.targets[:2]))]},
+            "trailing": {"mode": "structure",
+                         "after_r": float(self.engine.settings.get("techniques.tip.trailing_after_r", 1.0))},
+            "time_stop_sessions": hold_cap,      # the thesis dies with the contract
+        }
+        catalyst = (sig.catalyst or "").lower() if sig else ""
+        if "earnings" not in catalyst:
+            policy["flatten_before"] = {"event": "earnings", "days": 1}
+        source = ctx.get("source") or "unknown"
+        qty = float(order.filled_qty or trade.filled_qty or trade.qty)
+        pos = await mgr.adopt({
+            "portfolioId": ap.config.portfolio_id, "symbol": ap.symbol,
+            "direction": trade.direction, "techniqueId": self.TECHNIQUE_ID,
+            "tags": [f"source:{source}"], "runId": ap.run_id,
+            "entry": fill, "risk": risk,
+            "legs": [{"symbol": ap.symbol, "secType": "STK",
+                      "qty": qty if trade.direction == "long" else -qty,
+                      "avgFill": fill, "entryOrderId": order.id, "origin": "adoption"}],
+            "overnight": "venue_stop",           # shares CAN rest a venue stop
+            "policy": policy,
+        })
+        # the manager owns it now — the session runner forgets the trade so the
+        # end-of-day flatten and the session expiry never touch it
+        ap.trades.pop(tid, None)
+        self.forget_order(order.id)
+        for oid in trade.exit_order_ids:
+            self.forget_order(oid)
+        await self._persist(ap)
+        self._log(ap, "handoff",
+                  f"{tid}: filled {qty:g} @ {fill:.2f} — handed to the durable manager "
+                  f"(position {pos['id']}, hold cap {hold_cap} session(s)"
+                  + (f", thesis expiry {expiry}" if expiry else "") + ")",
+                  trigger=tid, positionId=pos["id"])
+        self._publish(ap, "handoff")
+
 
 async def attach_tip_runner(engine) -> None:
     """Called from the FastAPI lifespan after the engine + signals layer start."""
@@ -126,3 +367,8 @@ async def attach_tip_runner(engine) -> None:
             log.info("tip runner restored %d armed plan(s)", restored)
     except Exception:  # pragma: no cover - restore must never block startup
         log.exception("tip runner restore failed")
+    # the armed shadow book's morning loop (after the 09:05 managed-positions
+    # reconciliation; a post-09:12 restart still runs it that day)
+    at = str(engine.settings.get("techniques.tip.shadow_arm_at", "09:12"))
+    engine.scheduler.register("tip_shadow_arm", at,
+                              lambda: engine.tip_runner.shadow_arm_open_tips())

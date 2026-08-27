@@ -90,6 +90,11 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.target_r": [1.5, 3.0],   # R-multiple targets when the tip states none
     "techniques.tip.instrument": "shares",   # runner expression v1 (options = Phase B)
     "techniques.tip.touch_tolerance_pct": 0.002,   # level-touch band for tip triggers
+    # options tips die at their contract's expiry — never wait for a level past it:
+    "techniques.tip.entry_cutoff_dte": 2,    # stop trying to enter when < N calendar days to the tip's expiry
+    "techniques.tip.shadow_auto": True,      # the armed-book loop: auto-arm every open tip in shadow each morning
+    "techniques.tip.shadow_arm_at": "09:12", # ET, on engine.scheduler (after the 09:05 reconciliation)
+    "techniques.tip.trailing_after_r": 1.0,  # managed-position trail activates after +N R
     "techniques.tip.sources": {},            # {name: {entry, mode, risk_pct, budget_per_tip, ...}}
     # --- flow technique (docs/techniques/flow/PLAN.md; context only in v1, no orders) ---
     "techniques.flow.vol_oi_min": 1.25,      # flag: today's volume / open interest

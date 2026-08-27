@@ -59,6 +59,11 @@ class Portfolio(Base):
     starting_cash: Mapped[float] = mapped_column(Float, default=0.0)
     cash: Mapped[float] = mapped_column(Float, default=0.0)
     source_name: Mapped[str | None] = mapped_column(String(128))  # for shadow portfolios
+    # shadow portfolios keep TWO books per source (user decision 2026-08-27):
+    # "immediate" = buy the moment the tip verifies (the source's raw quality);
+    # "armed" = what the app actually does (wait for the level, managed exits).
+    # NULL = immediate (rows from before the split) or not a shadow portfolio.
+    book: Mapped[str | None] = mapped_column(String(12))
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

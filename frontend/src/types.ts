@@ -191,19 +191,32 @@ export interface Signal {
   createdAt: string;
 }
 
+export interface ShadowBook {
+  portfolioId?: string;
+  equity?: number | null;
+  pnl?: number | null;
+  pnlPct?: number | null;
+  positions?: number;      // armed book: managed positions opened
+  closed?: number;
+  realizedPnl?: number;
+}
+
 export interface SourceScorecard {
   source: string;
   signals: number;
   verified: number;
   parked: number;
   failed: number;
+  expiredUnfilled?: number;   // level never came before the tip's contract died
   seenAgain: number;
   lastSignalAt: string | null;
-  shadowPortfolioId?: string;
+  books?: { immediate: ShadowBook; armed: ShadowBook };
+  shadowPortfolioId?: string;      // back-compat: the immediate book
   shadowEquity?: number | null;
   shadowPnl?: number | null;
   shadowPnlPct?: number | null;
-  barCleared?: boolean;
+  barCleared?: boolean;            // judged on the ARMED book
+  tipTimeEarned?: boolean;         // immediate demonstrably beats armed
   policy?: { entry: string; mode: string; risk_pct: number; budget_per_tip: number;
     dte_min: number; dte_max: number; horizon_sessions: number };
 }

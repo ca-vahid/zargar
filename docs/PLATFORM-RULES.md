@@ -119,7 +119,15 @@ runtime ones to `execution.*`).
   `technique=TECHNIQUE_ID` on new `technique_armed` rows instead of relying on the EM column
   default. Tracker: `volume_floor_mult <= 0` now means "no volume confirmation required" on the
   touch path (the §2.1 promise; EM's floor is 0.5 — unaffected, parity suites green).
-- 2026-08-27 · **Wave-one techniques (Tip + Flow) Phase A** (techniques team): new non-Technique
+- 2026-08-27 · **Tip consumes Phase 2b + dual shadow books** (techniques team, user decisions):
+  `Portfolio.book` column splits each source's shadow record into an **immediate** book (buy at
+  tip time) and an **armed** book (wait for the level; the `tip_shadow_arm` scheduler job
+  auto-arms every open level-touch tip there each morning, budget-sized) — one tip, two books,
+  never blended; `tipTimeEarned` on the scorecard is the earned-entry evidence. Options tips are
+  expiry-bounded end to end (`techniques.tip.entry_cutoff_dte`; `horizon.py`; signals expire as
+  `SignalExpiredUnfilled` when the level never comes). Filled tip entries HAND OFF from the
+  session runner to `PositionManager.adopt` (ladder 50/50 + structure trail after +1R + thesis-
+  expiry time stop + earnings flatten; venue GTC stop for shares) — the first consumer of 2b. new non-Technique
   event kinds `SignalParked` (price-position checks failed → parked, not killed), `SignalSeenAgain`
   (dedupe attach), `FlowScanCompleted` (daily flow scan summary); new table `flow_reads` (Flow's
   daily per-symbol verdicts — chain data stays in `option_chain_snapshots`, single writer: the
