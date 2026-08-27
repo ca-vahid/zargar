@@ -2,7 +2,7 @@
   "name": "Zargar",
   "short_name": "Zargar",
   "description": "Personal trading desk — armed plans, positions, kill switch.",
-  "start_url": "/armed",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",

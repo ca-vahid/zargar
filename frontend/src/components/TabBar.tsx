@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { signOut } from "../lib/auth";
 import { api } from "../lib/api";
 import { useStore, type Page } from "../store";
 import { useTechniques } from "../lib/techniques";
@@ -32,7 +33,8 @@ export function TabBar() {
   const armed = useStore((s) => s.techniqueArmed);
   const attention = armed.filter((a) => a.needsAttention).length;
   const armedCount = armed.filter((a) => a.status === "armed" || a.status === "paused").length;
-  const [more, setMore] = useState(false);
+  const more = useStore((s) => s.moreOpen);
+  const setMore = useStore((s) => s.setMoreOpen);
   const moreActive = MORE.some((m) => m.key === page) || page === "technique";
   // installed app icon badge = things that need a human
   useEffect(() => {
@@ -134,11 +136,11 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
         </div>
         {authUser && authUser.provider !== "open" && (
           <div className="more-row">
-            <span>Signed in</span>
-            <span className="muted small" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span className="muted small" style={{ display: "inline-flex", alignItems: "center", gap: 8, minWidth: 0 }}>
               {authUser.picture && <img src={authUser.picture} alt="" width={24} height={24} style={{ borderRadius: "50%" }} referrerPolicy="no-referrer" />}
-              {authUser.email}
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{authUser.email}</span>
             </span>
+            <button type="button" className="ghost-btn" onClick={() => void signOut()}>Sign out</button>
           </div>
         )}
         <div className="more-row">

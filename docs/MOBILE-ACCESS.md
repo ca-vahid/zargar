@@ -25,7 +25,9 @@ clipboard all require it), and (3) the token on the phone.
 5. On the phone: install Tailscale, sign in with the same account, open
    `https://<machine>.<tailnet>.ts.net` and **Sign in with Google** (30-day
    session). Then Share → **Add to Home Screen** (iOS) or the browser's
-   *Install app* (Android/Chrome). The app opens on the **Now** screen.
+   *Install app* (Android/Chrome). The app opens on the **Dashboard** (changed
+   2026-08-27; an already-installed app keeps the old `/armed` start page until it
+   is removed and added to the Home Screen again — the tab bar's Now is one tap).
    (`/#token=<ZARGAR_AUTH_TOKEN>` still works as a one-time handoff for the
    static token, if you use one.)
 6. Settings → Mobile → **Push notifications → Enable on this device**
@@ -92,7 +94,7 @@ Implementation + the Highcharts 12 rules behind it: `frontend/src/lib/chartTouch
       tap shows O·H·L·C top-left, double-tap fits back to the live edge
 - [ ] Sheets close with the back gesture and never leave the page
 - [ ] Keyboard up in the ticket: submit button still reachable (dvh)
-- [ ] Installed app: opens on `/armed`, status bar colour matches theme,
+- [ ] Installed app: opens on the Dashboard, status bar colour matches theme,
       app icon badge shows attention count
 - [ ] Push: Settings → Mobile → Test arrives with the app closed; tapping it
       opens the deep link

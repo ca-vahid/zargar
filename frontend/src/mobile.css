@@ -346,6 +346,18 @@ button.now-card:active { background: var(--surface-2); }
 .now-side { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 4px; }
 .now-side.call { background: color-mix(in srgb, var(--up) 16%, transparent); color: var(--up); }
 .now-side.put { background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
+/* rich armed-snapshot cards (2026-08-27): level, stop, target, live price, size at a glance */
+.now-watch { border-left: 4px solid var(--surface-3); text-align: left; }
+.now-watch.paused { opacity: 0.75; }
+.now-watch.stale { border-left-color: var(--warn); }
+.now-size { margin-left: auto; font-size: var(--fs-0); font-family: var(--mono); color: var(--text-2); background: var(--surface-3); padding: 2px 7px; border-radius: 6px; white-space: nowrap; }
+.now-watch-line { font-size: var(--fs-2); color: var(--text-2); margin-top: 4px; }
+.now-watch-line b { font-family: var(--mono); color: var(--text-1); }
+.now-close { color: var(--warn); font-weight: 700; }
+.now-tag.warn { background: color-mix(in srgb, var(--warn) 18%, transparent); color: var(--warn); }
+.now-meter-dot--out { background: var(--surface-1); border-color: var(--accent); }
+.now-meter-tick { position: absolute; top: -3px; bottom: -3px; width: 2px; border-radius: 1px; background: var(--text-2); transform: translateX(-50%); }
+.now-meter--short { background: linear-gradient(90deg, color-mix(in srgb, var(--up) 35%, var(--surface-3)), var(--surface-3) 40%, color-mix(in srgb, var(--down) 35%, var(--surface-3))); }
 .now-row-sym { flex-wrap: wrap; }
 /* the phone's pre-session card: what tomorrow holds, the three closest levels */
 .now-next { border-left: 4px solid var(--accent); }

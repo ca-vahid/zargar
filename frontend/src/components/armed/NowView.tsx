@@ -53,6 +53,7 @@ export function NowView() {
   const [stopAll, setStopAll] = useState<null | "stop" | "flatten">(null);
   const [sellNow, setSellNow] = useState<{ runId: string; symbol: string } | null>(null);
   const [showAllStopped, setShowAllStopped] = useState(false);
+  const [showAllTl, setShowAllTl] = useState(false);
   const toast = useStore((s) => s.toast);
   const armedRef = useStore((s) => s.techniqueArmed);
   const halt = useStore((s) => s.halt);
@@ -176,18 +177,85 @@ export function NowView() {
               <span className="pos">{t.nextTarget != null ? `target ${fmt(t.nextTarget)}` : "runner"}</span>
             </div>
             <div className="now-sub">
-              {t.remaining}{t.instrument === "options" ? " contract(s)" : ""} left · in at {fmt(t.entry)} · fired {hhmm(t.firedTs)}
-              {t.trimsDone ? ` · ${t.trimsDone} trim(s)` : ""}
+              {t.remaining}{t.instrument === "options" ? " contract(s)" : " sh"} of {t.filledQty} left · in at {fmt(t.entry)}
+              {" · paid "}{fmt(t.entry * t.filledQty * (t.multiplier ?? (t.instrument === "options" ? 100 : 1)))}
+              {" · fired "}{hhmm(t.firedTs)}{t.trimsDone ? ` · ${t.trimsDone} trim(s)` : ""}
             </div>
           </button>
         );
       })}
 
-      {/* fired today */}
-      {sum.timeline.length > 0 && <div className="now-h">Today</div>}
+      {/* before the session: the simplified runway — what tomorrow holds, nearest first */}
+      {sum.window === "extended" && sum.watching.length > 0 && sum.inTrade.length === 0 && (() => {
+        const puts = sum.watching.filter((w) => isPut(w.nearest.kind)).length;
+        return (
+          <div className="now-card now-next">
+            <div className="now-card-head">
+              <span className="now-tag">next session</span>
+              <span className="now-next-txt">{sum.watching.length} plan{sum.watching.length === 1 ? "" : "s"} · {sum.watching.length - puts} calls · {puts} puts · closest first below</span>
+            </div>
+            <div className="now-next-note">Plans fire only in the 9:30–10:30 and 2:45–4:00 ET windows; a gap through a level at the open voids it.</div>
+          </div>
+        );
+      })()}
+
+      {/* armed snapshot: one visual card per plan, closest to firing first */}
+      {sum.watching.length > 0 && <div className="now-h">Armed · {sum.watching.length}</div>}
+      {sum.watching.map((w) => {
+        const n = w.nearest;
+        const short = n.direction === "short" || isPut(n.kind);
+        const tp1 = n.targets && n.targets.length ? n.targets[0] : null;
+        const span = [n.stop, n.entry, ...(tp1 != null ? [tp1] : [])];
+        const lo = Math.min(...span), hi = Math.max(...span);
+        const posPct = (v: number) => (hi > lo ? Math.min(100, Math.max(0, ((v - lo) / (hi - lo)) * 100)) : 50);
+        const px = w.lastPrice;
+        const d = n.distancePct;
+        const size = w.size?.contracts != null ? `${w.size.contracts} contract${w.size.contracts === 1 ? "" : "s"}`
+          : w.size?.qty != null ? `${w.size.qty} sh`
+          : w.size?.riskPct != null ? `${w.size.riskPct}% risk` : "";
+        const L = short ? { v: tp1, cls: "pos", t: "tp1" } : { v: n.stop, cls: "neg", t: "stop" };
+        const R = short ? { v: n.stop, cls: "neg", t: "stop" } : { v: tp1, cls: "pos", t: "tp1" };
+        return (
+          <button type="button" key={`w-${w.runId}`}
+            className={`now-card now-watch ${w.stale ? "stale" : ""} ${w.status === "paused" ? "paused" : ""}`}
+            onClick={() => setOpenRun(w.runId)}>
+            <div className="now-card-head">
+              <span className="now-sym">{w.symbol}</span>
+              {w.grade ? <span className={`tq-grade g${w.grade}`}>{w.grade}</span> : null}
+              <span className={`now-side ${short ? "put" : "call"}`}>{short ? "put" : "call"}</span>
+              {w.triggers > 1 && <span className="now-tag">{w.triggers} trg</span>}
+              {w.status === "paused" && <span className="now-tag warn">paused</span>}
+              {w.stale && <span className="now-tag bad">stale</span>}
+              {size && <span className="now-size">{size}</span>}
+              <span className={`now-row-mode ${w.mode === "auto" ? (live ? "neg" : "pos") : ""}`}>{w.mode}</span>
+            </div>
+            <div className="now-watch-line">
+              {n.kind.replace(/_/g, " ")} @ <b>{fmt(n.entry)}</b>
+              {px != null && <> · now <b>{fmt(px)}</b></>}
+              {d != null && (
+                <span className={Math.abs(d) < 0.35 ? "now-close" : "muted"}>
+                  {" "}· level {Math.abs(d).toFixed(2)}% {d > 0 ? "above" : "below"}
+                </span>
+              )}
+            </div>
+            <div className={`now-meter ${short ? "now-meter--short" : ""}`} aria-hidden="true">
+              <span className="now-meter-tick" style={{ left: `${posPct(n.entry)}%` }} />
+              {px != null && <span className={`now-meter-dot ${px < lo || px > hi ? "now-meter-dot--out" : ""}`} style={{ left: `${posPct(px)}%` }} />}
+            </div>
+            <div className="now-meter-lbl">
+              <span className={L.cls}>{L.v != null ? `${L.t} ${fmt(L.v)}` : ""}</span>
+              <span>entry {fmt(n.entry)}</span>
+              <span className={R.cls}>{R.v != null ? `${R.t} ${fmt(R.v)}` : ""}</span>
+            </div>
+          </button>
+        );
+      })}
+
+      {/* today's activity — after the snapshot, collapsed to the recent few */}
+      {sum.timeline.length > 0 && <div className="now-h">Today's activity</div>}
       {sum.timeline.length > 0 && (
         <div className="now-card now-timeline">
-          {sum.timeline.slice(0, 40).map((e, i) => (
+          {sum.timeline.slice(0, showAllTl ? 100 : 8).map((e, i) => (
             <button type="button" key={i} className={`now-tl ${KIND_CLS[e.kind] ?? ""}`} onClick={() => setOpenRun(e.runId)}>
               <span className="now-tl-t">{hhmm(e.ts)}</span>
               <span className="now-tl-ic" aria-hidden="true">{KIND_ICON[e.kind] ?? "·"}</span>
@@ -196,60 +264,13 @@ export function NowView() {
               {e.pnl != null && <span className={`now-tl-pnl ${pnlCls(e.pnl)}`}>{e.pnl > 0 ? "+" : ""}{fmt(e.pnl)}</span>}
             </button>
           ))}
+          {sum.timeline.length > 8 && !showAllTl && (
+            <button type="button" className="now-btn wide" onClick={() => setShowAllTl(true)}>
+              show all {sum.timeline.length} events
+            </button>
+          )}
         </div>
       )}
-
-      {/* before the session: the simplified runway — what tomorrow holds, nearest first */}
-      {sum.window === "extended" && sum.watching.length > 0 && sum.inTrade.length === 0 && (() => {
-        const puts = sum.watching.filter((w) => isPut(w.nearest.kind)).length;
-        const nearest = sum.watching.slice()
-          .filter((w) => w.nearest.distancePct != null)
-          .sort((a, b) => Math.abs(a.nearest.distancePct!) - Math.abs(b.nearest.distancePct!)).slice(0, 3);
-        return (
-          <div className="now-card now-next">
-            <div className="now-card-head">
-              <span className="now-tag">next session</span>
-              <span className="now-next-txt">{sum.watching.length} plan{sum.watching.length === 1 ? "" : "s"} · {sum.watching.length - puts} calls · {puts} puts</span>
-            </div>
-            {nearest.length > 0 && (
-              <div className="now-next-near">
-                <small>closest to firing at the open</small>
-                {nearest.map((w) => (
-                  <button type="button" key={`nn-${w.runId}`} className="now-next-item" onClick={() => setOpenRun(w.runId)}>
-                    <b>{w.symbol}</b>
-                    <span className={`now-side ${isPut(w.nearest.kind) ? "put" : "call"}`}>{isPut(w.nearest.kind) ? "put" : "call"}</span>
-                    <span>{fmt(w.nearest.entry)}</span>
-                    <span className="muted">{Math.abs(w.nearest.distancePct!).toFixed(2)}% {w.nearest.distancePct! > 0 ? "above" : "below"}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="now-next-note">Plans fire only in the 9:30–10:30 and 2:45–4:00 ET windows; a gap through a level at the open voids it.</div>
-          </div>
-        );
-      })()}
-
-      {/* watching */}
-      {sum.watching.length > 0 && <div className="now-h">Watching · {sum.watching.length}</div>}
-      {sum.watching.map((w) => {
-        const d = w.nearest.distancePct;
-        const far = d == null ? 100 : Math.min(100, Math.abs(d) / 3 * 100);
-        return (
-          <button type="button" key={`w-${w.runId}`} className={`now-row ${w.stale ? "stale" : ""} ${w.status === "paused" ? "paused" : ""}`}
-            onClick={() => setOpenRun(w.runId)}>
-            <span className="now-row-sym">{w.symbol}{w.grade ? <span className={`tq-grade g${w.grade}`}>{w.grade}</span> : null}
-              <span className={`now-side ${isPut(w.nearest.kind) ? "put" : "call"}`}>{isPut(w.nearest.kind) ? "put" : "call"}</span></span>
-            <span className="now-row-mid">
-              <span className="now-dist" aria-hidden="true"><span style={{ width: `${100 - far}%` }} /></span>
-              <span className="now-row-txt">
-                {w.nearest.kind} {fmt(w.nearest.entry)}{d != null ? ` · ${Math.abs(d).toFixed(2)}% ${d > 0 ? "above" : "below"}` : ""}
-                {w.status === "paused" ? " · paused" : ""}{w.stale ? " · STALE" : ""}
-              </span>
-            </span>
-            <span className={`now-row-mode ${w.mode === "auto" ? (live ? "neg" : "pos") : ""}`}>{w.mode}</span>
-          </button>
-        );
-      })}
 
       {/* stopped today */}
       {sum.stoppedToday.length > 0 && <div className="now-h">Stopped today · {sum.stoppedToday.length}</div>}

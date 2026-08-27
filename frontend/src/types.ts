@@ -426,11 +426,14 @@ export interface ArmedSummary {
     stop: number; nextTarget: number | null; targets: number[]; trimsDone: number; unrealizedPnl: number;
     unrealizedR: number | null; firedTs: number | null; window: string | null; orderSymbol: string | null;
     contract: { symbol?: string; strike?: number; expiry?: string; right?: string; bid?: number; ask?: number } | null;
-    tradeStatus: string; realizedPnl: number;
+    tradeStatus: string; realizedPnl: number; multiplier?: number;
   })[];
   timeline: { ts: number; runId: string; symbol: string; kind: string; text: string; pnl?: number | null }[];
   watching: (ArmedSummaryBase & {
-    triggers: number; nearest: { id: string; kind: string; entry: number; stop: number; distancePct: number | null };
+    triggers: number;
+    nearest: { id: string; kind: string; entry: number; stop: number; distancePct: number | null;
+               direction?: string; targets?: number[] };
+    size?: { contracts?: number | null; riskPct?: number | null; qty?: number | null };
     window: string; windowOpenNow: boolean; summary: string;
   })[];
   stoppedToday: { runId: string; symbol: string; status?: string; mode?: string; reason: string; realizedPnl?: number | null; at: string | null }[];
