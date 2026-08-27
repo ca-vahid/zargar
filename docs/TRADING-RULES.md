@@ -126,6 +126,22 @@ a number** (p. 72).
   If that pattern holds, the finding may be "R6.3 is right about the tape but the
   critic can substitute for the clock" — n=4, keep counting.
 
+### 1.8 Is the R2 bar (3.0) leaving a 2.0-3.0 band on the table? ⏳ new
+- **First gate audit (2026-08-26 session, include-invalid sweep `57156a57`):** every
+  trigger the validity gates rejected was simulated against the real session.
+  Verdict: the gates dropped nothing worth having. Gate-rejected fires: 150 for
+  +9.2R TOTAL — mean +0.06R, median +0.10R, 68% win rate: a micro-scalp profile
+  that dies under option spreads/fees. Stop-cap (T4.3a/R1) rejects: 47 fires,
+  net NEGATIVE. Meanwhile the plan-VALID set fired 6 for −3.1R — 08-26 offered
+  the method nothing, and standing aside beat everything.
+- **The tail worth watching:** the day's three best rejected trades (PLUG r1 +2.9R,
+  CVNA r1 +2.4R, GS r1 +1.9R) all had planned R:R in the 2.2–2.6 band — just under
+  the 3.0 bar. One gap day proves nothing, but it frames the question.
+- **Decision threshold:** repeat this audit weekly (free, deterministic). If the
+  2.0–3.0 R:R band shows mean ≥ +0.3R over ≥100 simulated fires net of a spread
+  estimate, consider a reduced-size tier for it; if it stays ≤ +0.1R, R2 is
+  confirmed and this question closes.
+
 ---
 
 ## 2. Findings (settled, with evidence)
