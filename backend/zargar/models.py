@@ -114,7 +114,7 @@ class Order(Base):
     avg_fill_price: Mapped[float | None] = mapped_column(Float)
     source: Mapped[str] = mapped_column(String(12), default="manual")
     technique: Mapped[str | None] = mapped_column(String(32), index=True)   # registry id when source=technique
-    tags: Mapped[list] = mapped_column(JSONVariant, default=list)           # e.g. ["source:discord-x"] (EM team B2/B3)
+    tags: Mapped[list] = mapped_column(JSONVariant, default=list, server_default='[]')           # e.g. ["source:discord-x"] (EM team B2/B3)
     parent_id: Mapped[str | None] = mapped_column(String(64), index=True)  # bracket parent
     oca_group: Mapped[str | None] = mapped_column(String(64))
     broker_order_id: Mapped[str | None] = mapped_column(String(64))
@@ -298,7 +298,7 @@ class TechniqueRun(Base):
     `status` leaves `running`."""
     __tablename__ = "technique_runs"
     technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
-    tags: Mapped[list] = mapped_column(JSONVariant, default=list)   # free-form, e.g. source:xyz — scorecards group by tag
+    tags: Mapped[list] = mapped_column(JSONVariant, default=list, server_default='[]')   # free-form, e.g. source:xyz — scorecards group by tag
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     thread_id: Mapped[str | None] = mapped_column(ForeignKey("chat_threads.id"), index=True)
@@ -337,7 +337,7 @@ class TechniqueOutcome(Base):
     rejected (so missed trades are measurable too). Re-scored while `partial`."""
     __tablename__ = "technique_outcomes"
     technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
-    tags: Mapped[list] = mapped_column(JSONVariant, default=list)   # free-form, e.g. source:xyz — scorecards group by tag
+    tags: Mapped[list] = mapped_column(JSONVariant, default=list, server_default='[]')   # free-form, e.g. source:xyz — scorecards group by tag
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)
