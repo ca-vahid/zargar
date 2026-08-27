@@ -40,6 +40,15 @@ Review loop (trace, provenance, outcomes, reviews, replay, bundle):
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
 Session plans + walk-forward + live arming: `docs/TECHNIQUE-WALKFORWARD-PLAN.md`
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
+**Multi-technique platform (plan, 2026-08-27):** `docs/TECHNIQUE-PLATFORM-PLAN.md`. The app is meant to
+run MANY techniques on one engine; EM is the first. Rules for new code: pure bar analysis (levels,
+touches, distance %, volume, candles, structure, the `TriggerTracker` state machine, `simulate_plan`)
+is a **shared library** — write it parameterised by a rules value, never by reading EM's `rulebook`
+inside; money handling (arm/fire/enter/manage/exit/alerts) belongs to `zargar/execution/`, not to a
+technique; a technique owns only its plan construction, prompts/schemas, grading, policies
+(expression, exits, critic) and its own `TRADING-RULES.md` section. Put new technique-specific
+knobs under `technique.<id>.*`, shared runtime knobs under `execution.*`. Don't add another
+`"EM Options"` hard-code to the UI — the nav will list a registry.
 **Sign-in (2026-08-26):** `docs/AUTH.md`. `zargar/auth.py` verifies Google ID tokens (PyJWT + Google JWKS)
 and gates on `ZARGAR_GOOGLE_ALLOWED_EMAILS`, then issues an HS256 session (HttpOnly `zargar_session`
 cookie + token in the body for WS `?token=`). `require_auth` accepts static token, bearer session, cookie
