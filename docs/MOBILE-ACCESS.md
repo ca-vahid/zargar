@@ -73,11 +73,23 @@ with `nslookup -type=A zargar-desk.tail97d481.ts.net ns1.dnsimple.com`: relay IP
 - Settings → Mobile → **Sign out** forgets the token on that device. Rotating
   `ZARGAR_AUTH_TOKEN` (restart) signs out every device.
 
+## Chart gestures on the phone (Trade)
+
+One finger drags the chart through time, two fingers pinch-zoom (never closer than
+~8 bars), a tap pins that bar's O·H·L·C readout in the top-left corner, a **double-tap**
+fits the last screenful again and re-follows the live edge. A vertical drag always
+scrolls the page — even after a pinch. The chart opens on the last ~50 bars (sized to
+the screen) and keeps sliding with new bars until you pan away from the right edge.
+Implementation + the Highcharts 12 rules behind it: `frontend/src/lib/chartTouch.ts`
+(built 2026-08-26 after the finger-scroll bug: `followTouchMove` had been on).
+
 ## Real-device checklist (after each mobile phase)
 
 - [ ] Now screen loads inside 2 s on cellular; tab bar and HALT visible; no
       horizontal scroll on any tab
 - [ ] Rotate to landscape on Trade: chart fills, BUY/SELL still reachable
+- [ ] Trade chart: one-finger drag pans, pinch zooms, vertical drag scrolls the page,
+      tap shows O·H·L·C top-left, double-tap fits back to the live edge
 - [ ] Sheets close with the back gesture and never leave the page
 - [ ] Keyboard up in the ticket: submit button still reachable (dvh)
 - [ ] Installed app: opens on `/armed`, status bar colour matches theme,

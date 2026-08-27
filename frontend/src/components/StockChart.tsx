@@ -4,7 +4,9 @@ import "highcharts/esm/indicators/indicators.js"; // registers sma + ema
 import "highcharts/esm/indicators/bollinger-bands.js";
 import "highcharts/esm/modules/accessibility.js";
 import "highcharts/esm/modules/hollowcandlestick.js";
+import "highcharts/esm/modules/price-indicator.js"; // series.lastPrice — without it the option is silently inert
 import { api } from "../lib/api";
+import { attachPhoneTouch, phoneChartOptions, type PhoneTouch } from "../lib/chartTouch";
 import { cssVar, rgbaVar } from "../lib/highchartsTheme";
 import { onBar, watchSymbol } from "../lib/ws";
 import { useStore } from "../store";
@@ -63,7 +65,7 @@ interface Props {
   armed?: ArmedPlan | null;
   /** your position: average-cost line with live P&L context */
   avgCost?: { price: number; qty: number } | null;
-  /** phone: no navigator, pinch-zoom + pan, touch-following tooltip, bigger labels */
+  /** phone: no navigator; one finger pans, two pinch-zoom, tap reads a bar, double-tap fits the last screenful (lib/chartTouch) */
   phone?: boolean;
 }
 
@@ -72,6 +74,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
+  const touchRef = useRef<PhoneTouch | null>(null);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
 
   useEffect(() => {
@@ -90,6 +93,8 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
 
     const accent = cssVar("--accent") || "#5b8cff";
     const intraday = INTRADAY.has(tf);
+    const barMs = TF_MS[tf] ?? 60_000;
+    const ph = phone ? phoneChartOptions() : null;
 
     async function build() {
       const data = await api.get<{ bars: number[][] }>(
@@ -195,7 +200,14 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
               id: "main", name: symbol, data: ohlc,
               color: down, upColor: up, lineColor: down, upLineColor: up,
               // @ts-ignore — lastPrice is a stock option missing from some type versions
-              lastPrice: { enabled: true, color: text3, label: { enabled: false } },
+              lastPrice: { enabled: true, color: text3,
+                // phone: the last price tagged on the axis, broker-style
+                label: phone ? { enabled: true, format: "{value:.2f}", backgroundColor: text3, borderRadius: 3,
+                                 padding: 2, style: { color: surface, fontSize: "10px", fontWeight: "600" } }
+                             : { enabled: false } },
+              // phone: one-line readout (the tooltip is pinned to a corner, so keep it short)
+              ...(phone ? { tooltip: { valueDecimals: 2,
+                pointFormat: "O {point.open} · H {point.high} · L {point.low} · C {point.close}<br/>" } } : {}),
             };
 
       const series: Highcharts.SeriesOptionsType[] = [mainSeries];
@@ -215,16 +227,16 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
         } as Highcharts.SeriesOptionsType);
       }
       if (chartType !== "line") {
+        const ind = { marker: { enabled: false }, tooltip: { valueDecimals: 2 } };
         if (indicators.includes("ema20"))
           series.push({ type: "ema", linkedTo: "main", params: { period: 20 },
-            color: series1, lineWidth: 1.5, marker: { enabled: false } } as any);
+            color: series1, lineWidth: 1.5, ...ind } as any);
         if (indicators.includes("sma50"))
           series.push({ type: "sma", linkedTo: "main", params: { period: 50 },
-            color: series7, lineWidth: 1.5, marker: { enabled: false } } as any);
+            color: series7, lineWidth: 1.5, ...ind } as any);
         if (indicators.includes("bb"))
           series.push({ type: "bb", linkedTo: "main",
-            color: series4, lineWidth: 1, fillColor: rgbaVar("--series-4", 0.06),
-            marker: { enabled: false } } as any);
+            color: series4, lineWidth: 1, fillColor: rgbaVar("--series-4", 0.06), ...ind } as any);
       }
 
       chartRef.current?.destroy();
@@ -234,7 +246,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
           animation: false,
           spacing: phone ? [6, 4, 2, 4] : [8, 8, 4, 8],
           style: { fontFamily: "inherit" },
-          ...(phone ? { zooming: { type: "x", pinchType: "x" }, panning: { enabled: true, type: "x" } } : {}),
+          ...(ph ? ph.chart : {}),
         } as any,
         // market time, not wall-clock time: the whole method (sessions, windows,
         // fills) speaks ET, and the armed chart already does
@@ -260,6 +272,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
           labels: { style: { color: text3, fontSize: "11px" } },
           crosshair: { color: grid, dashStyle: "Dash" },
           plotBands: sessionBands,
+          ...(phone ? { minRange: 8 * barMs } : {}),   // pinch can't zoom into fewer than ~8 bars
         },
         yAxis: yAxes,
         tooltip: {
@@ -268,7 +281,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
           style: { color: text2, fontSize: phone ? "13px" : "12px" },
           split: false,
           shared: true,
-          ...(phone ? { followTouchMove: true, outside: false } : {}),
+          ...(ph ? ph.tooltip : {}),
         },
         legend: { enabled: false },
         plotOptions: {
@@ -280,6 +293,12 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
         },
         series,
       });
+      touchRef.current?.detach();
+      touchRef.current = null;
+      if (phone && chartRef.current) {
+        touchRef.current = attachPhoneTouch(chartRef.current, barMs);
+        touchRef.current.fit();
+      }
     }
 
     build().catch(() => undefined);
@@ -297,6 +316,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
       const point = chartType === "line" ? [ts, c] : [ts, o, h, l, c];
       main.addPoint(point as any, false, main.data.length > 600);
       (chart.get("vol") as Highcharts.Series | undefined)?.addPoint([ts, v], false);
+      touchRef.current?.onAppend(ts);
       chart.redraw(false);
     });
 
@@ -326,6 +346,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
         lastBarTs.current = bucket;
         const point = chartType === "line" ? [bucket, price] : [bucket, price, price, price, price];
         main.addPoint(point, false, main.data.length > 600);
+        touchRef.current?.onAppend(bucket);
         chart.redraw(false);
       }
     });
@@ -334,6 +355,8 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
       cancelled = true;
       offBar();
       unsub();
+      touchRef.current?.detach();
+      touchRef.current = null;
       chartRef.current?.destroy();
       chartRef.current = null;
     };

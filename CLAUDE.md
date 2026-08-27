@@ -57,7 +57,8 @@ NowView.tsx`) is the phone home fed by `GET /api/technique/armed/summary`. Safet
 `X-Zargar-Client` header, never from the body. Push: `zargar/push.py` (pywebpush, VAPID + subscriptions
 in settings), SW at `frontend/public/sw.js` (shell only, never `/api`). Gate every UI change with
 `cd frontend && npm run mobile-audit` (Playwright device matrix; screenshots in `frontend/.mobile-shots/`,
-gitignored); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
+gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tools.mint_session)` from
+`backend/` or every route screenshots the login page); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
 parallel with it.
 **`docs/TRADING-RULES.md` is the living judgement log** — findings, open questions with
 decision thresholds (e.g. is `gap_void_r=1.0` too strict), theories, and the change log
@@ -95,6 +96,10 @@ docker-compose.
   `highcharts/esm/highstock.js`); EMA+SMA both register via
   `esm/indicators/indicators.js`; `time.useUTC` is gone (use `time.timezone`).
   Chart updates are imperative via ref — never route ticks through React props.
+  Highcharts 12 keeps series data in a DataTable: `series.xData` is **undefined** — use
+  `series.getColumn("x")`. Phone charts: `tooltip.followTouchMove` must be OFF or a finger
+  can never pan (Pointer.pinch sets `initiated=false`); gestures live in `lib/chartTouch.ts`
+  (`touch-action: pan-y`, pan/pinch/tap/double-tap, live-edge follow) — reuse it, don't re-derive.
 - ib_async ≥ 2.0: `qualifyContractsAsync` returns `None` **in-slot** for
   failed contracts — always check before use. Canadian listings:
   `.TO` → `primaryExchange="TSE"`, `.V` → `"VENTURE"`, currency CAD.

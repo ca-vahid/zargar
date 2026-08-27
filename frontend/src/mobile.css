@@ -382,6 +382,10 @@ button.now-card:active { background: var(--surface-2); }
 .trade-phone { display: flex; flex-direction: column; gap: 10px; padding-bottom: 72px; }
 .trade-phone-chart { display: flex; flex-direction: column; min-width: 0; }
 .trade-phone-chart .stock-chart--phone { height: 46dvh; min-height: 300px; }
+/* phone chart gestures live in lib/chartTouch.ts: vertical drags stay with the page,
+   horizontal drags pan, pinch zooms, double-tap fits - so no "Reset zoom" chip */
+.stock-chart--phone { touch-action: pan-y; }
+.stock-chart--phone .highcharts-reset-zoom { display: none; }
 .trade-phone--land .trade-phone-chart .stock-chart--phone { height: 74dvh; }
 .trade-phone--land .quote-head--phone, .trade-phone--land .trade-phone-tools { padding-top: 4px; padding-bottom: 4px; }
 .quote-head--phone { gap: 8px 10px; padding: 10px 12px 4px; align-items: center; }

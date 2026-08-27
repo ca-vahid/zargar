@@ -21,6 +21,9 @@ import { fileURLToPath } from "node:url";
 
 const BASE = process.argv[2] ?? "http://127.0.0.1:8420";
 const REPORT_ONLY = !!process.env.MOBILE_AUDIT_REPORT_ONLY;
+// sign-in is enforced: pass a session from `python -m zargar.tools.mint_session`
+// (backend/) as ZARGAR_SESSION, else every route screenshots the login page
+const SESSION = process.env.ZARGAR_SESSION ?? "";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const OUT = path.join(ROOT, "frontend", ".mobile-shots");
 fs.mkdirSync(OUT, { recursive: true });
@@ -58,6 +61,7 @@ const results = {};
 let failures = 0;
 for (const m of MATRIX) {
   const ctx = await browser.newContext({ ...m.device, locale: "en-US", timezoneId: "America/New_York" });
+  if (SESSION) await ctx.addCookies([{ name: "zargar_session", value: SESSION, url: BASE }]);
   const page = await ctx.newPage();
   for (const route of m.routes ?? ROUTES) {
     const key = `${m.name} ${route}`;
