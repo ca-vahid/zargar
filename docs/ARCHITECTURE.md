@@ -53,6 +53,21 @@ default setup) serves the built UI. PostgreSQL is the only external service.
 | `api/ws.py` | WS hub: snapshot on connect, per-topic delta fan-out, quotes conflated to ~10 Hz. |
 | `tools/ibkr_check.py` | Read-only IBKR connectivity self-test (`python -m zargar.tools.ibkr_check`). |
 
+### Technique platform (2026-08-27, `docs/TECHNIQUE-PLATFORM-PLAN.md`)
+
+One engine, many techniques. Three shared layers and a thin package per technique:
+
+| Layer | Package | What lives there |
+|---|---|---|
+| Market structure | `zargar/marketstructure/` | Pure functions over bars, parameterised by `MarketRules` (never a technique's rulebook): levels/pivots/in-band touches (`levels`), `distance_pct`, volume vs its time-of-day baseline (`volume`), candles, trendlines/wedges (`structure`), the ET session clock (`sessions`), **`TriggerTracker`** — the touch/break/gap/volume/false-break/invalidation state machine shared by live, plan and sweep (`tracker`), `simulate_plan` (`outcome`), bars fetch (`history`). `zargar.technique.<module>` paths are shims. |
+| Execution | `zargar/execution/` | The money path: `SessionListener` (1m bars + orders + heartbeat + quote watch), `exits` (pure decisions, reduce-only intents), `book.ManagedTrade`, and **`planrunner.PlanRunner`** — arm/restore/persist, the off-loop fire chain, entry with retry, sizing, contract/premium caps, ladder/stop/flatten management, loss halt, quote-stop + premium-stop watch, failed-exit watchdog, alerts, audit, phone summary. Hooks a technique overrides: `rules`, `load_plan`, `load_baseline_bars`, `entry_windows_enforced`, `analyze_fire`, `reviewer_available`/`review_fire`, `record_fire`, `emit_proposal`, `after_fire`, `pick_contract`, `size_multiplier`, `preopen_due`/`preopen`, `arm_today`. The runner owns the reviewer's timeout, fail-open budget, veto cooldown, kill cap and re-arming; **hooks never journal** — the runner journals their results. |
+| Research | `zargar/technique/service.py` (to become `research/`) | Runs, provenance, outcomes, reviews, replay, bundles, sweeps/sheets, LLM plumbing. |
+| Techniques | `zargar/techniques/` (registry) + `zargar/technique/` (EnhancedMarket) | `TechniqueInfo` registry (`GET /api/techniques`); EM = rulebook, setups, plans, prompts/schemas, vision, chat, and `arming.PlanArmer(PlanRunner)` — the hook implementations. |
+
+Identity: `technique` column on `technique_runs/outcomes/sweeps/armed/setups` (DB default
+`enhanced_market`), `OrderIntent.technique_id`, `ArmedPlan.technique`. Docs: `docs/PLATFORM-RULES.md`
+(shared lessons) and `docs/techniques/<id>/` (the technique's spec, plans and `TRADING-RULES.md`).
+
 ### Order lifecycle
 
 ```

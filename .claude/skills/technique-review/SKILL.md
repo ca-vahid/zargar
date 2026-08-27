@@ -5,7 +5,7 @@ description: Review one technique (EnhancedMarket) analysis run end-to-end — r
 
 # Technique run review
 
-The technique pipeline (`backend/zargar/technique/`, spec `docs/TECHNIQUE-ENHANCEDMARKET.md`,
+The technique pipeline (`backend/zargar/technique/`, spec `docs/techniques/enhanced-market/METHOD.md`,
 book `docs/Day Trading 101 - From Beginer to Expert.pdf`) records everything per run id:
 the bars it saw, the deterministic FACTS, every model pass (prompt, thinking, text,
 structured output), a **decision trace** (each step + why), the provenance of the process
@@ -128,7 +128,7 @@ implement in a worktree. After a fix lands, re-run the replay, `diff`, and add a
 review (`--verdict correct`, `--note "fixed in <sha>"`) so the run's history shows the
 before/after.
 
-Append any durable lesson to `docs/TECHNIQUE-PIPELINE-PLAN.md` → "What was learned".
+Append any durable lesson to `docs/techniques/enhanced-market/PIPELINE-PLAN.md` → "What was learned".
 
 ## Guardrails
 - Never edit `technique_runs` / `events` rows; reviews are new rows, runs are replayed

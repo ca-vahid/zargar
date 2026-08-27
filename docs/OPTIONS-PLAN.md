@@ -5,9 +5,9 @@ single source of truth for the options feature: what SnapTrade actually
 supports for our Canadian brokers (verified against the real connections, not
 just the docs), the design decisions that follow, and the phased build order.
 
-Companion docs: `ARCHITECTURE.md` (engine), `TECHNIQUE-ENHANCEDMARKET.md` §6
+Companion docs: `ARCHITECTURE.md` (engine), `techniques/enhanced-market/METHOD.md` §6
 (module T5 — the option *selection* rules the technique pipeline already
-implements), `TECHNIQUE-PIPELINE-PLAN.md` §4 (CBOE chain provider).
+implements), `techniques/enhanced-market/PIPELINE-PLAN.md` §4 (CBOE chain provider).
 
 ---
 

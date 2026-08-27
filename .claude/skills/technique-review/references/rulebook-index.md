@@ -1,7 +1,7 @@
 # Rulebook index — rule id → statement → spec section
 
 Generated from `backend/zargar/technique/rulebook.py` (`RULES`) and the headings of
-`docs/TECHNIQUE-ENHANCEDMARKET.md` (which cites the PDF pages). When a review needs the
+`docs/techniques/enhanced-market/METHOD.md` (which cites the PDF pages). When a review needs the
 book's own words, read the spec section first; for the PDF use the `pdf` skill or
 `Read` with `pages=` on `docs/Day Trading 101 - From Beginer to Expert.pdf`.
 

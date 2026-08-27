@@ -2,7 +2,7 @@
 
 The book trades "mega cap stocks" (p. 8) where "wide bid/ask spreads are rarely
 an issue" (p. 31) and open interest "is always enough" (p. 28). Three days of
-live data (docs/EM-METHOD-REVIEW-2026-08-26.md §0.6) showed half our friction
+live data (docs/techniques/enhanced-market/METHOD-REVIEW-2026-08-26.md §0.6) showed half our friction
 came from names outside that world (T's 13-cent stop, CHPT at $6). The user's
 decision (2026-08-26): a LARGE default set of big, famous, heavily-traded names,
 refreshed daily from what is actually trading, plus anything they add by hand.

@@ -32,13 +32,13 @@ Code: `backend/zargar/options/` (occ symbology, chain providers, OptionsService)
 `components/OptionChain.tsx` / `OptionTicket.tsx`. Internal option symbol =
 **unpadded OCC** (`F260828C00014500`); `occ.to_snaptrade()` pads at the venue.
 
-Technique pipeline (EnhancedMarket method): spec in `docs/TECHNIQUE-ENHANCEDMARKET.md`,
-build plan + lessons in `docs/TECHNIQUE-PIPELINE-PLAN.md`, code in
+Technique pipeline (EnhancedMarket method): spec in `docs/techniques/enhanced-market/METHOD.md`,
+build plan + lessons in `docs/techniques/enhanced-market/PIPELINE-PLAN.md`, code in
 `backend/zargar/technique/`, UI in `frontend/src/pages/TechniquePage.tsx`.
 Review loop (trace, provenance, outcomes, reviews, replay, bundle):
-`docs/TECHNIQUE-REVIEW-PLAN.md`; the `/technique-review` skill
+`docs/techniques/enhanced-market/REVIEW-PLAN.md`; the `/technique-review` skill
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
-Session plans + walk-forward + live arming: `docs/TECHNIQUE-WALKFORWARD-PLAN.md`
+Session plans + walk-forward + live arming: `docs/techniques/enhanced-market/WALKFORWARD-PLAN.md`
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
 **Multi-technique platform (plan, 2026-08-27):** `docs/TECHNIQUE-PLATFORM-PLAN.md`. The app is meant to
 run MANY techniques on one engine; EM is the first. Rules for new code: pure bar analysis (levels,
@@ -46,7 +46,7 @@ touches, distance %, volume, candles, structure, the `TriggerTracker` state mach
 is a **shared library** — write it parameterised by a rules value, never by reading EM's `rulebook`
 inside; money handling (arm/fire/enter/manage/exit/alerts) belongs to `zargar/execution/`, not to a
 technique; a technique owns only its plan construction, prompts/schemas, grading, policies
-(expression, exits, critic) and its own `TRADING-RULES.md` section. Put new technique-specific
+(expression, exits, critic) and its own `docs/techniques/enhanced-market/TRADING-RULES.md` section. Put new technique-specific
 knobs under `technique.<id>.*`, shared runtime knobs under `execution.*`. Don't add another
 `"EM Options"` hard-code to the UI — the nav will list a registry. The runtime must also hold positions
 for **days or weeks** (plan §2.4): exits are policies-as-data (ladder / trailing / time / DTE), state is
@@ -72,7 +72,9 @@ in settings), SW at `frontend/public/sw.js` (shell only, never `/api`). Gate eve
 gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tools.mint_session)` from
 `backend/` or every route screenshots the login page); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
 parallel with it.
-**`docs/TRADING-RULES.md` is the living judgement log** — findings, open questions with
+**`docs/PLATFORM-RULES.md` is the shared judgement log** (invariants, engine-level findings, shared-knob
+change log) — read it before touching the runtime. **`docs/techniques/enhanced-market/TRADING-RULES.md` is
+EM's own judgement log** — findings, open questions with
 decision thresholds (e.g. is `gap_void_r=1.0` too strict), theories, and the change log
 of every rule/parameter change. Update it whenever a session teaches something about
 the METHOD (not the code); date every claim and cite its run/scorecard/sweep. Check its

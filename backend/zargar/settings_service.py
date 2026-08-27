@@ -93,7 +93,7 @@ DEFAULTS: dict[str, Any] = {
     "llm.thinking_display": "summarized",   # summarized | omitted (raw CoT is never returned)
     "llm.max_tokens": 16000,
     "llm.max_passes": 6,                    # vision pipeline call budget per run
-    # --- technique (docs/TECHNIQUE-ENHANCEDMARKET.md section 10 thresholds) ---
+    # --- technique (docs/techniques/enhanced-market/METHOD.md section 10 thresholds) ---
     "technique.enabled": True,
     "technique.long_only": False,               # False = also plan the short side (rejection at resistance / breakdown, puts)
     "technique.level_tolerance_pct": 0.15,
@@ -127,12 +127,12 @@ DEFAULTS: dict[str, Any] = {
     "technique.scan.windows": ["prime_open", "prime_close"],   # R6.1/R6.2 (when enforced)
     "technique.max_runs_per_day": 40,
     "technique.max_concurrent_runs": 8,     # scan-now / bulk analyst-check parallelism (takes effect on restart)
-    # --- technique review loop (docs/TECHNIQUE-REVIEW-PLAN.md) -------------
+    # --- technique review loop (docs/techniques/enhanced-market/REVIEW-PLAN.md) -------------
     "technique.outcome.enabled": True,        # score what price did after each run
     "technique.outcome.horizon_bars": 60,     # bars after as_of to walk forward
     "technique.outcome.entry_window_bars": 12,  # bars a bounce entry has to fill
     "technique.outcome.interval_minutes": 30, # scoring loop cadence
-    # --- session plans + walk-forward (docs/TECHNIQUE-WALKFORWARD-PLAN.md) ----
+    # --- session plans + walk-forward (docs/techniques/enhanced-market/WALKFORWARD-PLAN.md) ----
     "technique.plan.gap_void_r": 1.0,          # Q13 (ours): gap > 1R voids the plan
     "technique.plan.respect_mult": 3.0,        # Q14 (ours): reversal >= 3x tol = level respected
     "technique.plan.entry_window_bars": 12,    # bars a bounce has to fill after the touch

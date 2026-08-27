@@ -28,7 +28,7 @@ ROOT_CAUSE_STAGES: dict[str, str] = {
     "grounding": "the FACTS verification accepted or rejected wrongly (grounding.py)",
     "options": "contract pick (options.py)",
     "thresholds": "a tunable number in technique.* settings (rulebook.Thresholds)",
-    "rulebook": "the method itself as codified disagrees with the book (rulebook.RULES, TECHNIQUE-ENHANCEDMARKET.md)",
+    "rulebook": "the method itself as codified disagrees with the book (rulebook.RULES, docs/techniques/enhanced-market/METHOD.md)",
     "other": "anything else — say what in notes",
 }
 

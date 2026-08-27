@@ -2,8 +2,8 @@
 
 *Written 2026-08-27 after the first live day of the EnhancedMarket (EM) technique. Status: **plan,
 not built**. Owner: the technique layer. Companion docs: `ARCHITECTURE.md` (the app),
-`TECHNIQUE-PIPELINE-PLAN.md` / `TECHNIQUE-WALKFORWARD-PLAN.md` (how EM was built),
-`TRADING-RULES.md` (the method judgement log).*
+`techniques/enhanced-market/PIPELINE-PLAN.md` / `techniques/enhanced-market/WALKFORWARD-PLAN.md` (how EM was built),
+`techniques/enhanced-market/TRADING-RULES.md` (the method judgement log).*
 
 ## 0. The idea
 
@@ -222,7 +222,7 @@ and 08-26 sweeps re-run must produce byte-identical rows.
 |---|---|---|---|
 | **0 · identity** ✅ *built 2026-08-27* | `technique` column on the five tables; `techniques/base.py` + registry with one entry; run/armed/sweep/setup dicts carry `technique`; Sidebar/TabBar read `GET /api/techniques` (fallback: EM); `OrderIntent.technique_id` on every intent the armer raises | none | small |
 | **1 · library** ✅ *built 2026-08-27* | `zargar/marketstructure/` = levels, volume, candles, structure, history, outcome, **tracker** (TriggerTracker / level_respect / score_trigger cut out of walkforward), **sessions** (the ET clock, cut out of rulebook), **rules** (`MarketRules`, duck-compatible with EM's `Thresholds`, with `windows`); old `technique.*` paths are shims; `distance_pct` / `count_touches` public; `tests/test_platform_phase0.py` asserts the library imports without the technique package. Still in EM: `analysis.py` (imports `setups`) — moves with phase 2 | none (full suite) | medium |
-| **2 · runner** | Split `arming.py`: `execution/planrunner.py` (generic lifecycle) + `techniques/enhanced_market/live.py` (windows, gap on the 09:30 bar, pre-open re-plan, critic prompt, 0DTE cutoff, Friday multiplier, TP2 single exit) as hook implementations; `execution/sizing.py`, `execution/expression.py`; `ArmedPlan.technique` | none (arming tests) | large — the money path; do it in a quiet week, one hook at a time |
+| **2 · runner** ✅ *built 2026-08-27* | `execution/planrunner.py` = `PlanRunner(SessionListener)`: everything that moves money, moved verbatim from `arming.py` (2,334 → 375 lines of EM). Hooks (the EM dev team's list, safest first): `size_multiplier` (Friday/0DTE), `pick_contract` (T5 vehicle; the shares fallback stays runner-side), `entry_windows_enforced` + `rules().windows` (R6; R6.5 extended-hours suppression stays runner-core), `preopen_due`/`preopen` (09:25 judgement + re-plan), `analyze_fire` + `reviewer_available`/`review_fire` (EM owns prompt assembly + verdict; the **runner** owns timeout, fail-open budget, pause-on-exhaust, veto cooldown, kill cap, re-arming and their persistence), `record_fire`/`emit_proposal`/`after_fire`, `load_plan`/`load_baseline_bars`, `arm_today`. **Hooks never journal** — the runner journals hook results, so the event schema stays uniform. `gap_unchecked` and `middayExperiment` still flow into the review context. Exit policy (ladder / single-contract exit / flatten minutes) stays `ArmConfig` data for now. Still EM-side and un-hooked: the pre-open re-plan journals `TECHNIQUE_PLAN_PREOPEN/REPLANNED` itself — to be moved into the runner with the `preopen_check → keep \| replan(reference)` shape | none (arming + walk-forward + review suites; include-invalid replay) | large — done as one verbatim move with the seams as hooks, deployed after the close |
 | **2b · durable positions** | `execution/positions.py` + `policies.py` + `simulate.py`; `managed_positions` table; venue-side GTC protection; reconciliation loop; the chaos suite (§2.5). Independent of EM — EM keeps its session plans | new capability | large — the second money path; ships with the chaos suite or not at all |
 | **3 · research + API + settings** | `research/` for runs/outcomes/reviews/replay/bundles/sweeps/sheets keyed by technique; `/api/techniques/{id}`; settings namespaces with a one-time key migration | key renames only | medium |
 | **4 · UI shell** | `TechniquePage` → generic shell + per-technique panels (EM keeps Validation/Analyse/Chat/History/Backtest); Settings gets a per-technique section; Armed chip | cosmetic | medium |
@@ -258,7 +258,7 @@ Every order through `RiskGate.evaluate()` via `OrderManager.place()`; journal ev
 write-ahead money paths; reduce-only exits that halts cannot trap; **one tracker shared by
 live / plan / sweep with parity tests** (now per `TriggerRules`, still one class); the
 live-persisted record beats replay on restore; restarts only mid-day or after the close; every
-method change logged in `TRADING-RULES.md` under the technique's own heading.
+method change logged in `techniques/enhanced-market/TRADING-RULES.md` under the technique's own heading.
 
 ## 7. Decisions needed
 1. Technique ids and labels (`enhanced_market` / "EM Options" assumed).

@@ -30,7 +30,7 @@ Keep it short; the table is the substance.
 1. `schemas.SYSTEM_PROMPT`: "R3.1 applies only when FACTS volume.belowFloor is true" — test: replay <id> → setup.
 2. `grounding.ground_analysis`: no_setup reason citing R3.1 requires volume.belowFloor — test in `test_technique_api.py`.
 
-**Lesson for docs/TECHNIQUE-PIPELINE-PLAN.md:** <one line>
+**Lesson for docs/techniques/enhanced-market/PIPELINE-PLAN.md:** <one line>
 ```
 
 Then:

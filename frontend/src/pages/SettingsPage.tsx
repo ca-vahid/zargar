@@ -416,7 +416,7 @@ export function SettingsPage() {
               <NumCell k="llm.max_passes" label="Max calls / run" hint="context, pattern, entry, critic + retries" />
               <NumCell k="technique.max_runs_per_day" label="Daily run cap" hint="cost guard across manual + scans" />
             </Cells>
-            <Group>Method thresholds — check docs/TRADING-RULES.md before tuning</Group>
+            <Group>Method thresholds — check docs/techniques/enhanced-market/TRADING-RULES.md before tuning</Group>
             <Cells>
               <SelCell k="technique.trigger_tf" label="Trigger timeframe"
                 hint="where entries/triggers are decided — used by manual runs, session plans, sweeps and armed plans"

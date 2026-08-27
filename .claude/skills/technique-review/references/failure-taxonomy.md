@@ -29,7 +29,7 @@ Source of truth: `backend/zargar/technique/review.py` (`REVIEW_VERDICTS`, `ROOT_
 | `grounding` | `grounding.py` | accepted an ungrounded number, or rejected a grounded one / forced a bad retry? |
 | `options` | `options.py` | contract pick wrong (strike/expiry/IV/spread)? |
 | `thresholds` | `rulebook.Thresholds` via `technique.*` settings | a number (tolerance, touches, R:R floor, volume mults) produced the miss — fix is a setting, prove with `replay --set` |
-| `rulebook` | `rulebook.RULES`, `docs/TECHNIQUE-ENHANCEDMARKET.md` | the codified rule disagrees with the book |
+| `rulebook` | `rulebook.RULES`, `docs/techniques/enhanced-market/METHOD.md` | the codified rule disagrees with the book |
 | `other` | — | say what in notes |
 
 ## Choosing

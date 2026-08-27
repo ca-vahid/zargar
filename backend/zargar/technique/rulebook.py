@@ -1,7 +1,7 @@
 """Rule identifiers and tunable thresholds for the EnhancedMarket technique.
 
 Every rule id here maps 1:1 to a numbered rule in
-`docs/TECHNIQUE-ENHANCEDMARKET.md`. Detection code, LLM prompts, and journal
+`docs/techniques/enhanced-market/METHOD.md`. Detection code, LLM prompts, and journal
 events all cite these ids so a setup can always be explained after the fact.
 
 Thresholds marked "gap" are places where the book gives no number (spec §10).

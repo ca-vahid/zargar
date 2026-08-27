@@ -1,5 +1,5 @@
 """Session plans, walk-forward validation, R6 session windows, and live arming
-(docs/TECHNIQUE-WALKFORWARD-PLAN.md). No network, no real LLM: Yahoo fetchers
+(docs/techniques/enhanced-market/WALKFORWARD-PLAN.md). No network, no real LLM: Yahoo fetchers
 are monkeypatched with a continuous synthetic market; the Anthropic client is
 faked only where a full-mode run is needed (R6 watch-only test)."""
 from __future__ import annotations

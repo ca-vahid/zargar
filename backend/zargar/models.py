@@ -262,7 +262,7 @@ class Watchlist(Base):
     symbols: Mapped[list] = mapped_column(JSONVariant, default=list)  # ordered list of symbols
 
 
-# --- technique pipeline (docs/TECHNIQUE-PIPELINE-PLAN.md) --------------------
+# --- technique pipeline (docs/techniques/enhanced-market/PIPELINE-PLAN.md) --------------------
 
 class TechniqueRun(Base):
     """One analysis run. Created at start, completed once; never edited after
