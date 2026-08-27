@@ -94,8 +94,28 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
                                      query_token=request.query_params.get("token") or None)
         return {"required": auth_svc.required, "user": user}
 
+    # the sign-in endpoint is the one thing the public internet can poke at (Funnel):
+    # 10 attempts per minute per client ip, then 429 — Google tokens are not guessable,
+    # this just keeps a scripted hammering from burning CPU on JWKS verification
+    auth_attempts: dict[str, list[float]] = {}
+
+    def client_ip(request: Request) -> str:
+        fwd = request.headers.get("x-forwarded-for", "")
+        return (fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "?"))
+
     @app.post("/api/auth/google")
     async def auth_google(body: GoogleCredential, request: Request, response: Response):
+        ip = client_ip(request)
+        now = time.monotonic()
+        recent = [t for t in auth_attempts.get(ip, []) if now - t < 60]
+        if len(recent) >= 10:
+            raise HTTPException(status_code=429, detail="too many sign-in attempts — wait a minute")
+        recent.append(now)
+        auth_attempts[ip] = recent
+        if len(auth_attempts) > 1000:   # never grow without bound
+            auth_attempts.clear()
+        if len(body.credential) > 4096:
+            raise HTTPException(status_code=400, detail="credential too large")
         try:
             user = auth_svc.sign_in_google(body.credential)
         except AuthError as exc:

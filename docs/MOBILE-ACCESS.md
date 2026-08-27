@@ -31,6 +31,20 @@ clipboard all require it), and (3) the token on the phone.
 6. Settings → Mobile → **Push notifications → Enable on this device**
    (installed app on iOS 16.4+; any Chrome on Android).
 
+
+## Public access without Tailscale on the client (Funnel) — ON since 2026-08-26
+
+`tailscale funnel --bg http://127.0.0.1:8420` publishes the same
+`https://zargar-desk.tail97d481.ts.net` to the public internet through
+Tailscale's relays (no ports opened on the router; TLS terminates at Tailscale).
+Any browser can reach the login page; the API still needs a Google session
+(allow-listed emails only) — there is no password to guess. Hardening in place:
+`POST /api/auth/google` is rate-limited (10/min per client IP → 429), oversized
+credentials are rejected, `/api/auth/*` + `/api/health` are the only public
+routes, phones stay exit-only on real accounts. Turn it off with
+`tailscale funnel --https=443 off` (Serve keeps working inside the tailnet);
+`tailscale funnel status` shows the current state.
+
 ## Alternatives
 
 - **LAN only:** `ZARGAR_HOST=0.0.0.0` + `ZARGAR_AUTH_TOKEN` + a local cert

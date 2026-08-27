@@ -110,3 +110,11 @@ async def test_api_requires_sign_in_then_cookie_session(sso_client):
     assert (await client.get("/api/state")).status_code == 401
     assert (await client.get("/api/state", headers={"Authorization": f"Bearer {body['token']}"})).status_code == 200
     assert (await client.get("/api/state", params={"token": body["token"]})).status_code == 200
+
+
+async def test_sign_in_is_rate_limited(sso_client):
+    client = sso_client
+    codes = []
+    for _ in range(12):
+        codes.append((await client.post("/api/auth/google", json={"credential": "stranger"})).status_code)
+    assert codes[:10] == [403] * 10 and codes[10:] == [429, 429]
