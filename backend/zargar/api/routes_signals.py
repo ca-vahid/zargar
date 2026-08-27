@@ -52,6 +52,32 @@ def build_signal_routes(app, eng, auth, config) -> None:
         except RuntimeError as exc:
             raise HTTPException(status_code=502, detail=str(exc))
 
+    class ArmTipBody(BaseModel):
+        portfolioId: str | None = None
+        mode: str | None = None          # alert | proposal | auto
+        instrument: str | None = None    # shares (v1 default)
+        riskPct: float | None = None
+        qty: float | None = None
+        dailyLossLimit: float | None = None
+        allowLive: bool = False
+
+    @app.post("/api/signals/{sid}/arm", dependencies=[auth])
+    async def arm_tip(sid: str, body: ArmTipBody | None = None):
+        runner = getattr(eng, "tip_runner", None)
+        if runner is None:
+            raise HTTPException(status_code=503, detail="tip runner not attached")
+        body = body or ArmTipBody()
+        cfg = {k: v for k, v in {
+            "portfolioId": body.portfolioId, "mode": body.mode, "instrument": body.instrument,
+            "riskPct": body.riskPct, "qty": body.qty, "dailyLossLimit": body.dailyLossLimit,
+            "allowLive": body.allowLive}.items() if v is not None}
+        try:
+            return await runner.arm_signal(sid, cfg or None)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except (ValueError, RuntimeError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
     # --- signals / content ----------------------------------------------------
     @app.get("/api/signals", dependencies=[auth])
     async def list_signals(limit: int = 100):

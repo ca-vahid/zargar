@@ -518,8 +518,12 @@ class PlanRunner(SessionListener):
         must survive a restart; only plans whose session has passed expire."""
         today = session_date(int(time.time() * 1000))
         async with self.engine.sf() as session:
+            # each runner restores ONLY its own technique's rows — with two
+            # runners live, an unfiltered restore would re-arm the other
+            # technique's plans through the wrong hooks (found building tip)
             rows = (await session.execute(select(TechniqueArmed).where(
-                TechniqueArmed.status.in_(("armed", "paused"))))).scalars().all()
+                TechniqueArmed.status.in_(("armed", "paused")),
+                TechniqueArmed.technique == self.TECHNIQUE_ID))).scalars().all()
         n = 0
         for row in rows:
             if (row.plan_for or "") < today:
@@ -1358,7 +1362,8 @@ class PlanRunner(SessionListener):
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
                                          portfolio_id=ap.config.portfolio_id, mode=ap.config.mode,
-                                         config=ap.config.to_dict(), status=ap.status, state=state)
+                                         config=ap.config.to_dict(), status=ap.status, state=state,
+                                         technique=self.TECHNIQUE_ID)
                     session.add(row)
                 else:
                     row.status = ap.status

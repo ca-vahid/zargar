@@ -70,6 +70,8 @@ export const api = {
       imageDataUrl ? { text, source_name, subject, imageDataUrl } : { text, source_name, subject }),
   sourceScorecards: () =>
     request<import("../types").SourceScorecard[]>("GET", "/api/signals/sources"),
+  armTipSignal: (sid: string, body?: { portfolioId?: string; mode?: string }) =>
+    request<any>("POST", `/api/signals/${sid}/arm`, body ?? {}),
   getBrokerages: () => request<import("../types").Brokerages>("GET", "/api/brokerages"),
   orderImpact: (body: { portfolio_id: string; symbol: string; side: string; qty: number;
     order_type?: string; limit_price?: number | null }) =>

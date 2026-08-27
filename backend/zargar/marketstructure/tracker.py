@@ -264,13 +264,18 @@ class TriggerTracker:
                 self.status = "observed"
                 self._note(bar, "touch_outside_window", window=w)
                 return self.status
-            rel = self._rel_volume(bar)
-            if rel is None:
-                return self._volume_unknown(bar, "touch_skipped_volume_unknown")
-            if rel < t.volume_floor_mult:
-                self.skipped.append({"ts": bar.ts, "reason": f"R3.1 volume {rel:.2f}x below floor"})
-                self._note(bar, "touch_skipped_volume", rel=round(rel, 3))
-                return self.status
+            # volume_floor_mult <= 0 = this technique does not require volume
+            # confirmation (platform plan §2.1: a tip passes volume_floor=None
+            # and reuses the machinery). EM's floor is 0.5, so EM is unaffected.
+            rel = None
+            if t.volume_floor_mult > 0:
+                rel = self._rel_volume(bar)
+                if rel is None:
+                    return self._volume_unknown(bar, "touch_skipped_volume_unknown")
+                if rel < t.volume_floor_mult:
+                    self.skipped.append({"ts": bar.ts, "reason": f"R3.1 volume {rel:.2f}x below floor"})
+                    self._note(bar, "touch_skipped_volume", rel=round(rel, 3))
+                    return self.status
             self.status = "fired"
             self.fired_index, self.fired_ts, self.fired_window = index, bar.ts, w
             self.fill_price = self.entry

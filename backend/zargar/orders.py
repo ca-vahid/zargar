@@ -329,11 +329,17 @@ class OrderManager:
 
     # ------------------------------------------------------------- reports
     async def on_report(self, report: ExecReport) -> None:
+        # NOTE: bracket children are spawned OUTSIDE the lock. Submitting a
+        # child emits its "accepted" report synchronously (sim, and any venue
+        # that acks in-band), which re-enters this method — doing that while
+        # holding the non-reentrant lock deadlocked the whole report pipeline
+        # (found 2026-08-27 by the tip-runner rig; latent since day one).
+        bracket_parent = None
         async with self._report_lock:
             if report.kind == "accepted":
                 await self._transition(report.order_id, OrderStatus.ACCEPTED, ev.ORDER_ACCEPTED)
             elif report.kind == "fill":
-                await self._apply_fill(report)
+                bracket_parent = await self._apply_fill(report)
             elif report.kind == "cancelled":
                 await self._transition(report.order_id, OrderStatus.CANCELLED, ev.ORDER_CANCELLED,
                                        extra={"reason": report.reason})
@@ -342,8 +348,13 @@ class OrderManager:
                                        reject_reason=report.reason)
             elif report.kind == "expired":
                 await self._transition(report.order_id, OrderStatus.EXPIRED, ev.ORDER_EXPIRED)
+        if bracket_parent is not None:
+            await self._spawn_bracket_children(bracket_parent)
 
-    async def _apply_fill(self, report: ExecReport) -> None:
+    async def _apply_fill(self, report: ExecReport) -> "Order | None":
+        """Apply one fill. Returns the parent Order when its bracket children
+        should be spawned (fully filled, has a bracket, not itself a child) —
+        the caller spawns them outside the report lock."""
         async with self._sf() as session:
             order = await session.get(Order, report.order_id)
             if order is None:
@@ -388,7 +399,8 @@ class OrderManager:
         self._bus.publish(topics.ORDERS, odict)
 
         if fully and order.bracket and not order.parent_id:
-            await self._spawn_bracket_children(order)
+            return order          # caller spawns the children OUTSIDE the report lock
+        return None
 
     async def _spawn_bracket_children(self, parent: Order) -> None:
         spec = BracketSpec(**parent.bracket)

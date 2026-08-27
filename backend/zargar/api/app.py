@@ -45,9 +45,13 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         await attach_technique_layer(eng)
         from ..techniques.flow.service import attach_flow_layer
         attach_flow_layer(eng)
+        from ..techniques.tip.runner import attach_tip_runner
+        await attach_tip_runner(eng)
         await hub.start()
         yield
         await hub.stop()
+        if getattr(eng, "tip_runner", None) is not None:
+            await eng.tip_runner.stop()
         if getattr(eng, "flow_service", None) is not None:
             await eng.flow_service.stop()
         if eng.technique is not None:

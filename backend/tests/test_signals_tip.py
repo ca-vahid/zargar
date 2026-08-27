@@ -174,7 +174,8 @@ def test_level_touch_long_plan():
                           signal_id="sig123", thesis="going up")
     assert plan.symbol == "NVDA"
     [t] = plan.triggers
-    assert t.kind == "tip" and t.direction == "long" and t.valid
+    # level_touch rides the tracker's touch-fire mechanics (bounce/reject)
+    assert t.kind == "bounce" and t.direction == "long" and t.valid
     assert t.entry_basis == "at_level"
     assert t.entry_price <= 102.5 * 1.001
     assert t.stop_price < t.entry_price
