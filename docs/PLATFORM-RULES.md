@@ -86,6 +86,28 @@ runtime ones to `execution.*`).
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-08-27 · **Phase 3 engine batch** (techniques-research P0s): settings resolver
+  `techniques.<id>.<key>` → `execution.<key>` (31 aliased runner keys, journal-continuous
+  migration); event-schema contracts + `TechniqueHookStats` daily roll-up; `tags` on
+  runs/outcomes/orders; `risk.max_day_notional_per_technique/_tag`; **never-list hardened**
+  (share shorting rejected everywhere, `risk.allow_short` ignored; 0DTE rejected for every
+  technique except `enhanced_market`); engine scheduler + nightly `option_chain_snapshots`
+  (OI/IV history — not backfillable) + tf=1d bar layer; `engine.calendar` (earnings/ex-div v1,
+  advisory); per-technique pause `/api/techniques/{id}/pause` (exits exempt, HALT untouched);
+  bars hygiene (bucket alignment at write, stub cleanup at boot — 1d rows exempt).
+- 2026-08-27 · Venue probes (read-only impact previews): Webull CA accepts SELL_TO_OPEN, native
+  2-leg spreads, and GTC on options; venue-side option STOP unproven (503); Wealthsimple 1156.
+- 2026-08-27 · **Wave-one techniques (Tip + Flow) Phase A** (techniques team): new non-Technique
+  event kinds `SignalParked` (price-position checks failed → parked, not killed), `SignalSeenAgain`
+  (dedupe attach), `FlowScanCompleted` (daily flow scan summary); new table `flow_reads` (Flow's
+  daily per-symbol verdicts — chain data stays in `option_chain_snapshots`, single writer: the
+  research feed; Flow reads it with a scoring-only live fallback); `flow_scan` job on the engine
+  scheduler at `techniques.flow.scan_at` (16:45, after chain snapshots); tip shadow orders carry
+  `technique_id="tip"` + `tags=["source:<name>"]` so the per-tag day-notional cap sees them;
+  settings families `techniques.tip.*` / `techniques.flow.*` in DEFAULTS. Verification signals
+  now carry advisory `flowContext` / `calendarContext` lines (informational, never checks).
+  Overnight default for long options → app_managed-with-acknowledgement (see plan §9).
+
 - 2026-08-25 · Alpaca full-SIP stream + Alpaca-first history; feed-down alerting · Yahoo 429 incident.
 - 2026-08-26 · `feed.exchange_bar_hold_seconds`=5 (A7) · exchange bars never reached the armer.
 - 2026-08-26 · `technique.arm.critic_timeout_seconds`=25, `critic_fail_budget`=3 (A8) · fail-open

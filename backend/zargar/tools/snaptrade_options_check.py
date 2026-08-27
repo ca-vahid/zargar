@@ -73,13 +73,15 @@ async def cheap_contract(underlying: str) -> dict | None:
     return best
 
 
-async def run(underlying: str, as_json: bool) -> int:
+async def run(underlying: str, as_json: bool, probe: str | None = None) -> int:
     cfg = get_config()
     if not cfg.snaptrade_client_id or not cfg.snaptrade_consumer_key:
         print(f"{RED} SnapTrade credentials missing (ZARGAR_SNAPTRADE_CLIENT_ID / _CONSUMER_KEY).")
         return 1
     st = SnapTradeClient(cfg.snaptrade_client_id, cfg.snaptrade_consumer_key)
     try:
+        if probe:
+            return await _run_probe(st, underlying, probe, as_json)
         return await _run(st, underlying, as_json)
     finally:
         await st.aclose()
@@ -152,17 +154,119 @@ async def _run(st: SnapTradeClient, underlying: str, as_json: bool) -> int:
     return code
 
 
+
+def _probe_bodies(kind: str, sym: str, sym2: str | None, bid: float, ask: float) -> list[tuple[str, dict]]:
+    """Impact-preview bodies for the capability probes (nothing is ever placed).
+
+    income (research B6 — gates the T5/covered-call/wheel family):
+      - SELL_TO_OPEN one contract (does the venue accept opening short options at all,
+        and what margin does the impact quote?)
+      - a 2-leg defined-risk put spread in ONE impact call (native multi-leg support)
+    gtc (research A7 — venue-side protection for overnight option positions):
+      - the SAME buy with time_in_force GTC (can an option order rest overnight?)
+      - a STOP sell (can a protective stop exist venue-side for options?)
+    """
+    limit = f"{max(0.01, float(bid or 0.01)):.2f}"
+    if kind == "income":
+        out = [
+            ("SELL_TO_OPEN 1x (short option accepted? margin?)", {
+                "order_type": "LIMIT", "time_in_force": "Day", "price_effect": "CREDIT",
+                "limit_price": limit,
+                "legs": [{"instrument": {"symbol": sym, "instrument_type": "OPTION"},
+                          "action": "SELL_TO_OPEN", "units": 1}],
+            }),
+        ]
+        if sym2:
+            out.append(("2-leg defined-risk spread in one order (native mleg?)", {
+                "order_type": "LIMIT", "time_in_force": "Day", "price_effect": "CREDIT",
+                "limit_price": limit,
+                "legs": [{"instrument": {"symbol": sym, "instrument_type": "OPTION"},
+                          "action": "SELL_TO_OPEN", "units": 1},
+                         {"instrument": {"symbol": sym2, "instrument_type": "OPTION"},
+                          "action": "BUY_TO_OPEN", "units": 1}],
+            }))
+        return out
+    if kind == "gtc":
+        return [
+            ("BUY_TO_OPEN with GTC (can an option order rest overnight?)", {
+                "order_type": "LIMIT", "time_in_force": "GTC", "price_effect": "DEBIT",
+                "limit_price": limit,
+                "legs": [{"instrument": {"symbol": sym, "instrument_type": "OPTION"},
+                          "action": "BUY_TO_OPEN", "units": 1}],
+            }),
+            ("STOP sell (venue-side protective stop on an option?)", {
+                "order_type": "STOP_LOSS_MARKET", "time_in_force": "GTC", "price_effect": "CREDIT",
+                "stop_price": limit,
+                "legs": [{"instrument": {"symbol": sym, "instrument_type": "OPTION"},
+                          "action": "SELL_TO_CLOSE", "units": 1}],
+            }),
+        ]
+    raise SystemExit(f"unknown probe kind: {kind}")
+
+
+async def _run_probe(st: SnapTradeClient, underlying: str, kind: str, as_json: bool) -> int:
+    """One impact preview per account per probe body. Read-only by construction:
+    only `/trading/options/impact` is ever called."""
+    out: dict = {"underlying": underlying, "probe": kind}
+    pick = await cheap_contract(underlying)
+    if pick is None:
+        print(f"{RED} CBOE has no usable chain for {underlying}.")
+        return 1
+    sym = occ_padded(pick["root"], pick["expiry"], "P", pick["strike"])
+    # the long wing of the spread: the next strike down (defined risk)
+    wing = None
+    if pick.get("strike"):
+        wing = occ_padded(pick["root"], pick["expiry"], "P", max(0.5, float(pick["strike"]) - 1.0))
+    bodies = _probe_bodies(kind, sym, wing, pick["bid"], pick["ask"])
+    accounts = await st.request("GET", "/api/v1/accounts")
+    out["cases"] = []
+    for label, body in bodies:
+        case = {"label": label, "request": body, "accounts": []}
+        if not as_json:
+            print(f"\n== {label}")
+        for acct in accounts or []:
+            aid = str(acct.get("id") or "")
+            name = f"{acct.get('institution_name', '?'):<18} {acct.get('name') or aid[:8]}"
+            try:
+                res = await st.request("POST", f"/api/v1/accounts/{aid}/trading/options/impact", body)
+                case["accounts"].append({"id": aid, "institution": acct.get("institution_name"),
+                                         "ok": True, "impact": res})
+                if not as_json:
+                    print(f"{GREEN} {name:<42} ACCEPTED — cash {res.get('cash_change_direction')} "
+                          f"{res.get('estimated_cash_change')} fees {res.get('estimated_fee_total')} "
+                          f"margin {res.get('estimated_margin_requirement')}")
+            except SnapTradeError as exc:
+                detail = exc.body.get("detail") if isinstance(exc.body, dict) else exc.body
+                scode = exc.body.get("code") if isinstance(exc.body, dict) else None
+                case["accounts"].append({"id": aid, "institution": acct.get("institution_name"),
+                                         "ok": False, "status": exc.status, "code": scode, "detail": detail})
+                if not as_json:
+                    print(f"{RED} {name:<42} {exc.status} [{scode}] {detail}")
+            except SnapTradeUnknownOutcome as exc:
+                case["accounts"].append({"id": aid, "ok": None, "unknown": str(exc)})
+                if not as_json:
+                    print(f"{WARN} {name:<42} unknown outcome: {exc}")
+        out["cases"].append(case)
+    if as_json:
+        print(json.dumps(out, indent=2, default=str))
+    else:
+        print("\nRead-only: every call above was an impact preview; no order exists anywhere.")
+    return 0
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Zargar ↔ SnapTrade options capability probe (read-only)")
     parser.add_argument("--underlying", default="F", help="US underlying to pick the probe contract from (default F)")
     parser.add_argument("--json", action="store_true", help="print raw payloads as JSON")
+    parser.add_argument("--probe", choices=["income", "gtc"],
+                        help="capability probe (impact previews only): income = SELL_TO_OPEN + 2-leg "
+                             "spread (research B6); gtc = GTC + STOP on options (research A7)")
     args = parser.parse_args()
     # Windows consoles default to cp1252; the ✓/✗ markers would otherwise crash the run.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
     try:
-        code = asyncio.run(run(args.underlying, args.json))
+        code = asyncio.run(run(args.underlying, args.json, args.probe))
     except KeyboardInterrupt:
         code = 130
     sys.exit(code)

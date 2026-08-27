@@ -2,6 +2,8 @@
 
 NOTE: no `from __future__ import annotations` — see api/app.py.
 """
+import contextlib
+
 from fastapi import HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -29,6 +31,61 @@ def build_technique_routes(app, eng, auth, config) -> None:
         """The technique registry — what the nav lists (platform plan phase 0)."""
         from ..techniques import all_techniques
         return [t.to_dict() for t in all_techniques()]
+
+    def _tech(tid: str):
+        from ..techniques import get_technique
+        info = get_technique(tid)
+        svc = (getattr(eng, "techniques", None) or {}).get(tid)
+        if info is None or svc is None:
+            raise HTTPException(status_code=404, detail=f"unknown technique: {tid}")
+        return info, svc
+
+    @app.get("/api/techniques/{tid}", dependencies=[auth])
+    async def technique_info(tid: str):
+        info, svc = _tech(tid)
+        paused = bool(eng.settings.get(f"techniques.{tid}.paused", False))
+        armed = [a for a in svc.armer.armed(slim=True) if (a.get("technique") or tid) == tid]
+        return {**info.to_dict(), "paused": paused,
+                "armed": len(armed), "inTrade": sum(1 for a in armed if a.get("openPositions"))}
+
+    @app.post("/api/techniques/{tid}/pause", dependencies=[auth])
+    async def technique_pause(tid: str):
+        """Stop ONE technique: no new arms, no new fires — every armed plan is paused
+        and the technique flag blocks future arms. Exits and open-position management
+        keep running (reduce-only exempt, exactly like the kill switch); the global
+        HALT is untouched."""
+        info, svc = _tech(tid)
+        await eng.settings.set(f"techniques.{tid}.paused", True)
+        paused = []
+        for a in list(svc.armer.armed(slim=True)):
+            if (a.get("technique") or tid) == tid and a.get("status") == "armed":
+                with contextlib.suppress(Exception):
+                    await svc.armer.pause(a["runId"])
+                    paused.append(a["runId"])
+        return {"technique": tid, "paused": True, "plansPaused": len(paused)}
+
+    @app.post("/api/techniques/{tid}/resume", dependencies=[auth])
+    async def technique_resume(tid: str):
+        info, svc = _tech(tid)
+        await eng.settings.set(f"techniques.{tid}.paused", False)
+        resumed = []
+        for a in list(svc.armer.armed(slim=True)):
+            if (a.get("technique") or tid) == tid and a.get("status") == "paused":
+                with contextlib.suppress(Exception):
+                    await svc.armer.resume(a["runId"])
+                    resumed.append(a["runId"])
+        return {"technique": tid, "paused": False, "plansResumed": len(resumed)}
+
+    @app.get("/api/techniques/{tid}/runs", dependencies=[auth])
+    async def technique_runs_scoped(tid: str, limit: int = 50, symbol: str | None = None,
+                                    tag: str | None = None):
+        _tech(tid)
+        return await _svc(eng).list_runs(limit=min(limit, 500), symbol=symbol, tag=tag, technique=tid)
+
+    @app.get("/api/techniques/{tid}/armed", dependencies=[auth])
+    async def technique_armed_scoped(tid: str):
+        _, svc = _tech(tid)
+        return [a for a in svc.armer.armed() if (a.get("technique") or tid) == tid]
 
     @app.get("/api/technique/status", dependencies=[auth])
     async def technique_status():
@@ -304,10 +361,12 @@ def build_technique_routes(app, eng, auth, config) -> None:
                              reviewed: bool | None = None, outcome: str | None = None,
                              review_verdict: str | None = Query(default=None, alias="reviewVerdict"),
                              process_version: str | None = Query(default=None, alias="processVersion"),
-                             trigger: str | None = None):
+                             trigger: str | None = None, tag: str | None = None,
+                             technique: str | None = None):
         return await _svc(eng).list_runs(limit=min(limit, 500), symbol=symbol, verdict=verdict,
                                          reviewed=reviewed, outcome=outcome, review_verdict=review_verdict,
-                                         process_version=process_version, trigger=trigger)
+                                         process_version=process_version, trigger=trigger,
+                                         tag=tag, technique=technique)
 
     @app.get("/api/technique/runs/{run_id}", dependencies=[auth])
     async def technique_run(run_id: str):

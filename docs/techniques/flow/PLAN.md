@@ -5,12 +5,13 @@ Evidence base: options order flow is informative at **daily-to-weekly** horizons
 (Pan-Poteshman 2006; Johnson-So 2012; Hilliard et al. 2025); real-time sweep chasing and
 alert-room following are on the never list. ⚙ = engine-team dependency (2026-08-27 memo).
 Status: **Phase A built 2026-08-27** — pure scan math (`techniques/flow/scan.py`),
-`FlowService` (nightly 16:45 ET loop + on-demand scan, snapshot + read persistence in
-`flow_snapshots`/`flow_reads` — the service persists its own snapshots until the engine
-team's B5 job lands), routes (`/api/flow/reads|context|scan|status`), registry entry,
-settings keys, context line consumed by Tip verification; tests in
-`tests/test_flow_scan.py`. Still open in Phase A: the universe auto-layer contribution and
-the UI badge/tab. Phase B (sweep → maybe swing variant) unchanged.*
+`FlowService` (registered on `engine.scheduler` at `techniques.flow.scan_at` = 16:45 ET,
+after the `chain_snapshots` research feed; reads `option_chain_snapshots` — single writer
+is the research feed — with a scoring-only live fallback; verdicts in `flow_reads`),
+routes (`/api/flow/reads|context|scan|status`), registry entry, settings keys, context
+line consumed by Tip verification; tests in `tests/test_flow_scan.py`. Still open in
+Phase A: the universe auto-layer contribution and the UI badge/tab. Phase B (sweep →
+maybe swing variant) unchanged.*
 
 ## 0. What it is — and what it is not
 

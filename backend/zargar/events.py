@@ -82,7 +82,8 @@ TECHNIQUE_PLAN_ERROR = "TechniquePlanError"
 TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs the walk-forward replay
 TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time
 TECHNIQUE_PLAN_PREOPEN = "TechniquePlanPreopen"        # 09:25 pre-market judgement of the plan's triggers
-TECHNIQUE_PLAN_REPLANNED = "TechniquePlanReplanned"    # a plan re-anchored to the pre-market price replaced another
+TECHNIQUE_PLAN_REPLANNED = "TechniquePlanReplanned"
+TECHNIQUE_HOOK_STATS = "TechniqueHookStats"        # daily roll-up of per-hook latency/errors (EM team #6)    # a plan re-anchored to the pre-market price replaced another
 CHAT_THREAD_CREATED = "ChatThreadCreated"
 CHAT_TOOL_CALLED = "ChatToolCalled"
 
@@ -102,6 +103,12 @@ class Journal:
         portfolio_id: str | None = None,
     ) -> dict:
         payload = payload or {}
+        if type_.startswith("Technique"):
+            try:
+                from .research.events_contract import check
+                check(type_, payload)
+            except Exception:   # the contract layer must never block a journal write
+                pass
         async with self._sf() as session:
             evt = Event(
                 type=type_,

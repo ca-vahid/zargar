@@ -283,6 +283,7 @@ function SignalsPanel() {
                     <span className="bl-card-sub">entry {s.entryPrice ? fmtMoney(s.entryPrice) : "—"} · target {s.targetPrice ? fmtMoney(s.targetPrice) : "—"} · stop {s.stopPrice ? fmtMoney(s.stopPrice) : "—"} · {s.confidence.replace("_", " ")}</span>
                     {s.thesisSummary && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.thesisSummary}</span>}
                     {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
+                    {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
                     {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
                     <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)}</span>
                   </span>
@@ -315,7 +316,8 @@ function SignalsPanel() {
             <tbody>
               {merged.slice(0, 50).map((s) => (
                 <tr key={s.id}
-                  title={[s.thesisSummary, s.verification?.flowContext].filter(Boolean).join("\n")}>
+                  title={[s.thesisSummary, s.verification?.flowContext,
+                    s.verification?.calendarContext].filter(Boolean).join("\n")}>
                   <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>}</td>
                   <td className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</td>
                   <td className="muted">{contractLabel(s) ?? "—"}</td>

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import time
 import asyncio
+import logging
 from collections import defaultdict, deque
 
 from sqlalchemy import select
@@ -20,9 +21,16 @@ from .bus import Bus
 from .domain import Bar, Quote, now_ms
 from .models import BarRow
 
+log = logging.getLogger("zargar.marketdata")
+
+# tfs whose bars sit on fixed UTC-ms buckets; 1d bars are session-anchored and exempt
+# from the alignment rule and the stub cleanup
+INTRADAY_TF_MS: dict[str, int] = {}
+
 MINUTE_MS = 60_000
 TF_MS = {"1m": MINUTE_MS, "5m": 5 * MINUTE_MS, "15m": 15 * MINUTE_MS, "1h": 60 * MINUTE_MS,
          "1d": 24 * 60 * MINUTE_MS}
+INTRADAY_TF_MS.update({k: v for k, v in TF_MS.items() if k != "1d"})
 
 
 class QuoteCache:
@@ -230,6 +238,15 @@ class BarAggregator:
 async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar]) -> None:
     if not bars:
         return
+    # Bucket alignment is enforced AT WRITE (EM team #5, 2026-08-27): a bar whose ts
+    # is not on its timeframe's boundary is a stub (a seed fragment / restart seam),
+    # and stubs in the table read as phantom duplicates to every consumer.
+    aligned = [b for b in bars if b.tf not in INTRADAY_TF_MS or b.ts % INTRADAY_TF_MS[b.tf] == 0]
+    if len(aligned) != len(bars):
+        log.warning("persist_bars: dropped %d non-bucket-aligned stub bar(s)", len(bars) - len(aligned))
+    bars = aligned
+    if not bars:
+        return
     rows = [
         {"symbol": b.symbol, "tf": b.tf, "ts": b.ts, "open": b.open,
          "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
@@ -243,6 +260,24 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar]) -> 
             stmt = sqlite_insert(BarRow).values(rows).prefix_with("OR IGNORE")
         await session.execute(stmt)
         await session.commit()
+
+
+async def cleanup_stub_bars(session_factory: async_sessionmaker) -> dict[str, int]:
+    """One-time-per-boot hygiene (EM team #5): delete rows whose ts is not on the
+    timeframe's bucket boundary — the 'duplicate' rows were these stubs. The unique
+    index (symbol, tf, ts) already prevents true duplicates; alignment at write
+    prevents new stubs. Returns {tf: deleted}."""
+    from sqlalchemy import text
+    out: dict[str, int] = {}
+    async with session_factory() as session:
+        for tf, step in INTRADAY_TF_MS.items():
+            res = await session.execute(
+                text("DELETE FROM bars WHERE tf = :tf AND ts % :step != 0"),
+                {"tf": tf, "step": step})
+            if res.rowcount:
+                out[tf] = int(res.rowcount)
+        await session.commit()
+    return out
 
 
 async def load_bars(

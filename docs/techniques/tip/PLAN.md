@@ -10,8 +10,12 @@ grounding, screenshot→transcript intake), dedupe with seen-again, verification
 per-source policy (`signals/sources.py`), the tip plan builder (`techniques/tip/plan.py`,
 simulate_plan-compatible), source scorecards (`GET /api/signals/sources`), registry entry,
 settings keys, flow-context injection into verification; tests in
-`tests/test_signals_tip.py`. Still open in Phase A: shadow arming through the runner (today
-the shadow market-order path remains), the Tips UI rebuild. Phase B unchanged (⚙ 2b).
+`tests/test_signals_tip.py`. Post-merge with the engine Phase 3 batch (same day): shadow
+orders carry `technique_id="tip"` + `tags=["source:<name>"]` (per-tag day-notional caps see
+them), and verification also gets an advisory `calendarContext` line from `engine.calendar`
+when earnings fall inside the tip's horizon. Still open in Phase A: shadow arming through
+the runner (today the shadow market-order path remains), the Tips UI rebuild beyond the
+scorecard panel. Phase B unchanged (⚙ 2b).
 Decision taken during the build: the platform default source mode is **proposal**, not
 shadow — a human approval is itself a gate, and the paste-by-hand user is the common case;
 "shadow until the scorecard clears" governs the AUTO mode specifically. Unknown sources can

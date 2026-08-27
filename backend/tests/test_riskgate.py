@@ -150,13 +150,16 @@ async def test_short_blocked_by_default():
     assert not check(verdict, "short_allowed").passed
 
 
-async def test_short_allowed_when_enabled():
+async def test_share_shorting_is_never_allowed():
+    """NEVER-LIST (2026-08-27): share shorting is a hard rejection even with
+    risk.allow_short set — shorts are expressed with long puts only."""
     quotes = FakeQuotes()
     quotes.set("AAPL", 100.0)
     settings = FakeSettings(**{"risk.allow_short": True})
     verdict = await make_gate(settings=settings, quotes=quotes).evaluate(
         intent(side="SELL", qty=2), P)
-    assert check(verdict, "short_allowed").passed
+    c = check(verdict, "short_allowed")
+    assert not c.passed and "never" in c.detail
 
 
 async def test_halted_instrument_blocks():

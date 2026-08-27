@@ -185,7 +185,7 @@ export interface Signal {
   thesisSummary: string | null;
   confidence: string;
   isActionable: boolean;
-  verification: { passed: boolean; park?: boolean; flowContext?: string;
+  verification: { passed: boolean; park?: boolean; flowContext?: string; calendarContext?: string;
     checks: { name: string; passed: boolean; detail: string; fatal?: boolean }[] } | null;
   status: string;
   createdAt: string;

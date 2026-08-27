@@ -382,6 +382,21 @@ class PlanRunner(SessionListener):
         # is a query, not a hunt — surfaced on the armed summary as `hookStats`
         self._hook_stats: dict[str, dict] = {}
 
+
+    # ---------------------------------------------------------------- runtime settings
+    _RT_MISSING = object()
+
+    def rt(self, key: str, default=None):
+        """Runtime setting with per-technique override (phase 3, spec §8.4):
+        `techniques.<TECHNIQUE_ID>.<key>` beats `execution.<key>` (the platform
+        default; the old `technique.arm.<key>` names are deprecated aliases the
+        settings service migrates and redirects)."""
+        s = self.engine.settings
+        v = s.get(f"techniques.{self.TECHNIQUE_ID}.{key}", self._RT_MISSING)
+        if v is not self._RT_MISSING and v is not None:
+            return v
+        return s.get(f"execution.{key}", default)
+
     # ---------------------------------------------------------------- listener hooks
     async def on_minute_bar(self, symbol, bar) -> None:
         for ap in [a for a in self._armed.values() if a.symbol == symbol and a.status in ("armed", "paused")]:
@@ -393,25 +408,25 @@ class PlanRunner(SessionListener):
     # ------------------------------------------------------------- quote stop watch
     def quote_watch_seconds(self) -> float:
         try:
-            return max(0.05, float(self.engine.settings.get("technique.arm.quote_exit_seconds", 2.0)))
+            return max(0.05, float(self.rt("quote_exit_seconds", 2.0)))
         except (TypeError, ValueError):
             return 2.0
 
     async def on_quote_watch(self) -> None:
         """Between bar closes, exit an open trade whose *underlying* quote is
         decisively through the stop (`execution.exits.quote_stop_breach`) for
-        `technique.arm.quote_exit_polls` consecutive polls (one bad tick is not a
+        `execution.quote_exit_polls` consecutive polls (one bad tick is not a
         breach). Safety only: this path can only sell what is already open —
         reduce-only, same `_exit` machinery, journaled with its own reason."""
         s = self.engine.settings
-        if not bool(s.get("technique.arm.quote_exit", True)):
+        if not bool(self.rt("quote_exit", True)):
             return
         try:
-            excess = float(s.get("technique.arm.quote_exit_excess_r", 0.25))
-            need = max(1, int(s.get("technique.arm.quote_exit_polls", 2)))
+            excess = float(self.rt("quote_exit_excess_r", 0.25))
+            need = max(1, int(self.rt("quote_exit_polls", 2)))
         except (TypeError, ValueError):
             excess, need = 0.25, 2
-        max_age = int(s.get("technique.arm.stale_seconds", 180))
+        max_age = int(self.rt("stale_seconds", 180))
         now_ms = int(time.time() * 1000)
         for ap in list(self._armed.values()):
             if ap.status not in ("armed", "paused"):
@@ -422,7 +437,7 @@ class PlanRunner(SessionListener):
             q = self.engine.quotes.get(ap.symbol)
             last = float(q.last) if q is not None and q.last and q.last > 0 else None
             fresh = q is not None and (now_ms - q.ts) <= max_age * 1000
-            prem_pct = float(s.get("technique.arm.premium_stop_pct", 50.0) or 0)
+            prem_pct = float(self.rt("premium_stop_pct", 50.0) or 0)
             for tr in open_trades:
                 # 1) failed-exit watchdog: a position whose exit errored must never
                 #    sit un-managed — retry at market every 30s (5 tries), alert once
@@ -663,7 +678,7 @@ class PlanRunner(SessionListener):
             raise ValueError(f"mode must be one of {MODES}")
         if cfg.entry_fallback not in ("off", "shares"):
             raise ValueError("entryFallback must be 'off' or 'shares'")
-        pid = cfg.portfolio_id or str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", ""))
+        pid = cfg.portfolio_id or str(self.rt("default_portfolio", "")) or str(s.get("trading.default_portfolio", ""))
         portfolio = self.engine.positions.portfolio(pid) if pid else None
         sims = [p for p in self.engine.positions.portfolios() if p["kind"] == "sim"]
         # Workspace safety: a DEFAULTED account must match the trading mode — in
@@ -681,9 +696,9 @@ class PlanRunner(SessionListener):
                 raise ValueError("portfolio (account) is required — pick the account this plan trades in")
         cfg.portfolio_id = portfolio["id"]
         if cfg.mode == "auto" and portfolio["kind"] in ("live", "paper"):
-            if not bool(s.get("technique.arm.allow_live_auto", False)):
+            if not bool(self.rt("allow_live_auto", False)):
                 raise ValueError("auto execution on a live/paper account is disabled "
-                                 "(technique.arm.allow_live_auto)")
+                                 "(execution.allow_live_auto)")
             if not cfg.allow_live:
                 raise ValueError("auto execution on a live/paper account needs the explicit acknowledgement (allowLive)")
             if str(s.get("trading.mode", "practice")) != "live":
@@ -725,8 +740,11 @@ class PlanRunner(SessionListener):
     # ---------------------------------------------------------------- arm / disarm
     async def arm(self, run_id: str, config: ArmConfig | dict | None = None, *, restored: bool = False,
                   paused: bool = False, prior_state: dict | None = None) -> dict:
-        if not bool(self.engine.settings.get("technique.arm.enabled", True)):
-            raise RuntimeError("technique.arm.enabled is off")
+        if not bool(self.rt("enabled", True)):
+            raise RuntimeError("execution.enabled is off (the runner is disabled)")
+        if bool(self.rt("paused", False)):
+            raise RuntimeError(f"technique {self.TECHNIQUE_ID!r} is paused "
+                               f"(techniques.{self.TECHNIQUE_ID}.paused) — resume it before arming new plans")
         if run_id in self._armed:
             return self._snapshot(self._armed[run_id])
         run = await self.load_plan(run_id)          # hook: the technique's run record (result.plan)
@@ -737,19 +755,19 @@ class PlanRunner(SessionListener):
             raise ValueError("only plan runs (mode=plan) can be armed")
         s = self.engine.settings
         cfg = config if isinstance(config, ArmConfig) else ArmConfig.from_dict({
-            "portfolioId": str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
-            "mode": str(s.get("technique.arm.mode", "proposal")), "riskPct": s.get("technique.arm.risk_pct", 0.5),
-            "maxQty": s.get("technique.arm.max_qty", 100), "useCritic": s.get("technique.arm.use_critic", True),
-            "flattenMinutesBeforeClose": s.get("technique.arm.flatten_minutes_before_close", 5),
-            "slippagePct": s.get("technique.arm.slippage_pct", 0.1), "maxRetries": s.get("technique.arm.max_retries", 2),
-            "instrument": s.get("technique.arm.instrument", "options"), "contracts": s.get("technique.arm.contracts", 1),
-            "maxContracts": s.get("technique.arm.max_contracts", 5),
-            "singleContractExit": s.get("technique.arm.single_contract_exit", "tp2"),
-            "maxOpenTrades": s.get("technique.arm.max_open_trades", 1),
-            "dailyLossLimit": s.get("technique.arm.daily_loss_limit", 0.0),
-            "skipWideSpread": s.get("technique.arm.skip_wide_spread", True),
-            "skipElevatedIv": s.get("technique.arm.skip_elevated_iv", False),
-            "entryFallback": s.get("technique.arm.entry_fallback", "off"),
+            "portfolioId": str(self.rt("default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
+            "mode": str(self.rt("mode", "proposal")), "riskPct": self.rt("risk_pct", 0.5),
+            "maxQty": self.rt("max_qty", 100), "useCritic": self.rt("use_critic", True),
+            "flattenMinutesBeforeClose": self.rt("flatten_minutes_before_close", 5),
+            "slippagePct": self.rt("slippage_pct", 0.1), "maxRetries": self.rt("max_retries", 2),
+            "instrument": self.rt("instrument", "options"), "contracts": self.rt("contracts", 1),
+            "maxContracts": self.rt("max_contracts", 5),
+            "singleContractExit": self.rt("single_contract_exit", "tp2"),
+            "maxOpenTrades": self.rt("max_open_trades", 1),
+            "dailyLossLimit": self.rt("daily_loss_limit", 0.0),
+            "skipWideSpread": self.rt("skip_wide_spread", True),
+            "skipElevatedIv": self.rt("skip_elevated_iv", False),
+            "entryFallback": self.rt("entry_fallback", "off"),
             **(config or {})})
         explicit_pid = (bool(config.portfolio_id) if isinstance(config, ArmConfig)
                         else bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
@@ -908,18 +926,18 @@ class PlanRunner(SessionListener):
                       f"auto mode with no loss halt set — defaulted to ${cfg.daily_loss_limit:,.0f} "
                       f"(2 \u00d7 the per-trade risk of {cfg.risk_pct}% on ${eq:,.0f})")
             return
-        fallback = float(self.engine.settings.get("technique.arm.daily_loss_fallback", 100.0) or 0)
+        fallback = float(self.rt("daily_loss_fallback", 100.0) or 0)
         if fallback <= 0:
             if restored:
                 await self._alert(ap, "auto mode with NO loss halt: the account's equity could not be read and "
-                                  "technique.arm.daily_loss_fallback is 0 — trading unprotected; set dailyLossLimit",
+                                  "execution.daily_loss_fallback is 0 — trading unprotected; set dailyLossLimit",
                                   level="critical", stage="loss_halt")
                 return
             raise ValueError("auto mode needs a loss halt: the account's equity could not be read and "
-                             "technique.arm.daily_loss_fallback is 0 — set dailyLossLimit explicitly")
+                             "execution.daily_loss_fallback is 0 — set dailyLossLimit explicitly")
         cfg.daily_loss_limit = fallback
         await self._alert(ap, f"the account's equity could not be read — loss halt set to the fixed fallback "
-                          f"${fallback:,.0f} (technique.arm.daily_loss_fallback), not 2 x the per-trade risk",
+                          f"${fallback:,.0f} (execution.daily_loss_fallback), not 2 x the per-trade risk",
                           level="warning", stage="loss_halt")
 
     async def wait_fires(self, run_id: str | None = None) -> None:
@@ -1039,9 +1057,9 @@ class PlanRunner(SessionListener):
         plan = (run.get("result") or {}).get("plan") or {}
         s = self.engine.settings
         cfg = config if isinstance(config, ArmConfig) else ArmConfig.from_dict({
-            "portfolioId": str(s.get("technique.arm.default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
-            "mode": str(s.get("technique.arm.mode", "proposal")),
-            "instrument": s.get("technique.arm.instrument", "options"), **(config or {})})
+            "portfolioId": str(self.rt("default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
+            "mode": str(self.rt("mode", "proposal")),
+            "instrument": self.rt("instrument", "options"), **(config or {})})
         # config validation (account, live gate, options capability)
         gate_ok, gate_msg = True, ""
         try:
@@ -1656,12 +1674,12 @@ class PlanRunner(SessionListener):
         plan. Returns True when this fire must stop here."""
         s = self.engine.settings
         ap.critic_failures += 1
-        budget = max(1, int(s.get("technique.arm.critic_fail_budget", 3) or 3))
+        budget = max(1, int(self.rt("critic_fail_budget", 3) or 3))
         self._log(ap, "critic_error", f"{tid}: critic failed ({msg}) — {ap.critic_failures}/{budget} today", trigger=tid)
         if ap.critic_failures >= budget:
             trade.status = "critic_unavailable"
             trade.reason = f"critic failed {ap.critic_failures}x today ({msg}) — plan paused, nothing sent"
-            await self._alert(ap, f"{tid}: {trade.reason} (technique.arm.critic_fail_budget)",
+            await self._alert(ap, f"{tid}: {trade.reason} (execution.critic_fail_budget)",
                               level="critical", stage="critic")
             with contextlib.suppress(Exception):
                 await self.pause(ap.run_id)
@@ -1683,7 +1701,7 @@ class PlanRunner(SessionListener):
         # budget, pause-on-exhaust, the veto cooldown, the kill cap and re-arming
         j = await self._hook("analyze_fire", self.analyze_fire(ap, tid, tr, trade))
         if journal and cfg.use_critic and self.reviewer_available():
-            timeout = float(self.engine.settings.get("technique.arm.critic_timeout_seconds", 25) or 0)
+            timeout = float(self.rt("critic_timeout_seconds", 25) or 0)
             try:
                 coro = self.review_fire(ap, tid, tr, trade, j)
                 verdict, confidence, critic = await self._hook(
@@ -1724,8 +1742,8 @@ class PlanRunner(SessionListener):
             # distinct touch can fire again (fresh critic, fresh data) — capped
             # so a stubborn disagreement doesn't burn critic calls all day.
             s = self.engine.settings
-            cap = max(1, int(s.get("technique.arm.critic_kills_per_day", 3)))
-            cool = max(0, int(s.get("technique.arm.refire_cooldown_minutes", 10)))
+            cap = max(1, int(self.rt("critic_kills_per_day", 3)))
+            cool = max(0, int(self.rt("refire_cooldown_minutes", 10)))
             ap.critic_kills[tid] = ap.critic_kills.get(tid, 0) + 1
             if ap.critic_kills[tid] < cap:
                 tr.status = "observed"
@@ -1805,7 +1823,7 @@ class PlanRunner(SessionListener):
         premium = float(contract.get("ask") or contract.get("mid") or 0) * 100.0
         if premium <= 0:
             return 1
-        prem_stop = float(s.get("technique.arm.premium_stop_pct", 50.0) or 0)
+        prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
         risk_per = premium * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
         equity = await self.engine.positions.equity(cfg.portfolio_id)
         raw = equity * cfg.risk_pct / 100 / max(risk_per, 1e-9)
@@ -2143,7 +2161,7 @@ class PlanRunner(SessionListener):
         heartbeat snapshot every minute so the dashboard's numbers stay live.
         Runs on the shared SessionListener heartbeat (every 60 s)."""
         s = self.engine.settings
-        stale_s = int(s.get("technique.arm.stale_seconds", 180))
+        stale_s = int(self.rt("stale_seconds", 180))
         now = dt.datetime.now(ET)
         now_ms = int(time.time() * 1000)
         in_session = now.weekday() < 5 and (9 * 60 + 30) <= now.hour * 60 + now.minute < 16 * 60
@@ -2155,6 +2173,15 @@ class PlanRunner(SessionListener):
                         await self._run_preopen(ap)
                     except Exception:
                         log.exception("pre-open check failed for %s", ap.symbol)
+        # Daily hook-stats roll-up (EM team #6): after the close, journal per-hook
+        # latency/error counters so "which hook, how often, how slow" is a query
+        if (now.weekday() < 5 and now.hour * 60 + now.minute >= 16 * 60 + 5
+                and self._hook_stats and getattr(self, "_hook_stats_day", "") != now.strftime("%Y-%m-%d")):
+            self._hook_stats_day = now.strftime("%Y-%m-%d")
+            with contextlib.suppress(Exception):
+                await self.engine.journal.append(ev.TECHNIQUE_HOOK_STATS, {
+                    "technique": self.TECHNIQUE_ID, "date": self._hook_stats_day, "hooks": self.hook_stats()})
+            self._hook_stats.clear()
         # Clock-driven close (2026-08-27, EM team): expiry and the scorecard must not
         # depend on the 15:59 bar arriving — a feed outage at the close would
         # otherwise leave plans armed and unscored (08-26). 16:05 ET, by the clock.
@@ -2184,8 +2211,8 @@ class PlanRunner(SessionListener):
                     "lastBarTs": ap.last_bar_ts}, aggregate_type="technique_run", aggregate_id=ap.run_id)
             if ap.status in ("armed", "paused"):
                 self._publish(ap, "heartbeat")
-        syms = [str(x).upper() for x in s.get("technique.arm.auto_symbols", [])]
-        if syms and bool(s.get("technique.arm.enabled", True)):
+        syms = [] if bool(self.rt("paused", False)) else [str(x).upper() for x in self.rt("auto_symbols", [])]
+        if syms and bool(self.rt("enabled", True)):
             today = now.strftime("%Y-%m-%d")
             if now.weekday() < 5 and (9 * 60 + 20) <= now.hour * 60 + now.minute < 16 * 60:
                 for sym in syms:

@@ -279,6 +279,19 @@ class SignalService:
                         verification["flowContext"] = line
                 except Exception:  # pragma: no cover - context is best-effort
                     log.debug("flow context lookup failed for %s", row.ticker)
+            # calendar context (advisory — Yahoo dates are unconfirmed): a tip
+            # riding into earnings should say so where the human decides
+            cal = getattr(eng, "calendar", None)
+            if cal is not None:
+                try:
+                    days = await cal.days_to_earnings(row.ticker)
+                    horizon = row.horizon_sessions or 10
+                    if days is not None and days <= horizon + 4:
+                        verification["calendarContext"] = (
+                            f"earnings in ~{days} calendar day(s) — inside this tip's horizon "
+                            "(dates are advisory, not confirmed)")
+                except Exception:  # pragma: no cover - context is best-effort
+                    log.debug("calendar lookup failed for %s", row.ticker)
             if verification["passed"]:
                 status = "verified"
             elif verification.get("park"):
@@ -350,7 +363,8 @@ class SignalService:
                 portfolio_id=shadow["id"], symbol=symbol,
                 side="BUY" if sig.direction == "long" else "SELL",
                 qty=qty, order_type="MKT", bracket=bracket,
-                source="auto", signal_id=signal_row.id))
+                source="auto", signal_id=signal_row.id,
+                technique_id="tip", tags=[f"source:{source}"]))
         except Exception:
             log.exception("shadow execution failed for signal %s", signal_row.id)
             return None
