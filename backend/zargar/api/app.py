@@ -133,8 +133,25 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
     # --- health / state -----------------------------------------------------
     @app.get("/api/health")
-    async def health():
-        return {"ok": True, "started": eng.started}
+    async def health(request: Request):
+        out = {"ok": True, "started": eng.started}
+        # the restart guard (scripts/start.ps1) runs on this machine and must see whether
+        # paid analyst reads / armed plans are in flight even though the API is closed.
+        # Loopback AND no proxy headers = a local caller (Tailscale serve/funnel proxies
+        # from 127.0.0.1 too, but always with X-Forwarded-For).
+        local = bool(request.client and request.client.host in ("127.0.0.1", "::1"))             and not request.headers.get("x-forwarded-for")
+        if local:
+            svc = getattr(eng, "technique", None)
+            running = armed = 0
+            if svc is not None:
+                try:
+                    st = await svc.status()
+                    running = len(st.get("running") or [])
+                    armed = len(st.get("armed") or [])
+                except Exception:
+                    log.debug("health: technique status unavailable", exc_info=True)
+            out["local"] = {"techniqueRunning": running, "armed": armed}
+        return out
 
     @app.get("/api/state", dependencies=[auth])
     async def state():
