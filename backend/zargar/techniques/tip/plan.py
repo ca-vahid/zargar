@@ -6,15 +6,19 @@ the plan waits for price to trade to a structural level on the tip's side) or
 EM produces, so the tracker, `simulate_plan`, the runner and the outcome
 scorer consume a tip without knowing it is one:
 
-    level_touch -> entry_basis "at_level"  (fills when price trades to entry)
-    tip_time    -> entry_basis "on_break"  (fills at the decision bar's close)
+    level_touch -> kind "bounce"/"reject", entry_basis "at_level"
+                   (the tracker's touch-fire mechanics; volume optional via
+                   the tip rules' volume_floor_mult=0 — these ARE armable)
+    tip_time    -> kind "tip", entry_basis "on_break" (fills at the decision
+                   bar's close in simulate_plan; live tip-time tips go through
+                   the immediate-proposal path, not the runner)
 
 Pure function — no I/O, no settings reads; the caller resolves the policy.
 """
 from __future__ import annotations
 
 from ...domain import Bar
-from ...marketstructure import atr, detect_levels, nearest_level, session_date
+from ...marketstructure import atr, detect_levels, nearest_level, next_session_date, session_bounds, session_date
 from ...technique.plans import Condition, SessionPlan, Trigger
 
 # Ladder used by the tip exit policy in Phase B: 50/50 across two targets.
@@ -123,9 +127,13 @@ def build_tip_plan(
         Condition("TIP.1", f"tip from {who}" + (f": {thesis}" if thesis else ""), "touch"),
         Condition("TIP.2", f"valid for {horizon_sessions} sessions from receipt", "window"),
     ]
+    # level-touch tips ride the tracker's bounce/reject (touch-fire) mechanics;
+    # tip-time keeps the neutral kind (simulate-only immediate fill)
+    kind = ("tip" if entry_mode == "tip_time"
+            else ("bounce" if long else "reject"))
     trigger = Trigger(
         id=f"tip-{(signal_id or 'manual')[:12]}",
-        kind="tip",
+        kind=kind,
         direction=direction,
         level_price=entry if level is None else float(level.price),
         level=level.to_dict() if level is not None else {"price": round(entry, 4), "kind": "tip",
@@ -147,9 +155,15 @@ def build_tip_plan(
         risk_reward_tp3=round(rr_last, 2),
     )
 
+    # a tip armed after the close plans for the NEXT session — a plan for a
+    # session that is already over would expire the moment it armed
+    plan_day = session_date(as_of_ms)
+    if as_of_ms >= session_bounds(plan_day)[1]:
+        plan_day = next_session_date(as_of_ms)
+
     return SessionPlan(
         symbol=symbol.upper(),
-        plan_for=session_date(as_of_ms),
+        plan_for=plan_day,
         built_from_ms=as_of_ms,
         built_from_session=session_date(bars[-1].ts) if bars else session_date(as_of_ms),
         structure_tfs=[tf],

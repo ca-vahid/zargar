@@ -97,6 +97,21 @@ runtime ones to `execution.*`).
   bars hygiene (bucket alignment at write, stub cleanup at boot — 1d rows exempt).
 - 2026-08-27 · Venue probes (read-only impact previews): Webull CA accepts SELL_TO_OPEN, native
   2-leg spreads, and GTC on options; venue-side option STOP unproven (503); Wealthsimple 1156.
+- 2026-08-27 · **Order-pipeline deadlock fixed** (`orders.py`, latent since day one, found by the
+  tip-runner sim rig): a fully-filled bracket PARENT spawned its children while `on_report` still
+  held `_report_lock`; the child's `submit` emits its "accepted" report synchronously (sim — and
+  any venue that acks in-band), re-entering `on_report` on the same non-reentrant lock. The task
+  froze silently (position effects commit before the deadlock point, so tests that only checked
+  positions passed) and every later exec report queued behind the poisoned lock — engine-wide.
+  Fix: `_apply_fill` returns the parent; `on_report` spawns bracket children AFTER releasing the
+  lock. Only the signals/shadow path used OrderManager brackets, which is why three weeks of EM
+  live days never hit it.
+- 2026-08-27 · **Runner is now truly multi-technique** (`planrunner.py`, found building tip #2):
+  `restore()` re-arms only rows whose `technique` matches the runner (an unfiltered restore would
+  re-arm another technique's plans through the wrong hooks), and `_persist` stamps
+  `technique=TECHNIQUE_ID` on new `technique_armed` rows instead of relying on the EM column
+  default. Tracker: `volume_floor_mult <= 0` now means "no volume confirmation required" on the
+  touch path (the §2.1 promise; EM's floor is 0.5 — unaffected, parity suites green).
 - 2026-08-27 · **Wave-one techniques (Tip + Flow) Phase A** (techniques team): new non-Technique
   event kinds `SignalParked` (price-position checks failed → parked, not killed), `SignalSeenAgain`
   (dedupe attach), `FlowScanCompleted` (daily flow scan summary); new table `flow_reads` (Flow's

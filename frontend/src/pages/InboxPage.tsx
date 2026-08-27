@@ -254,6 +254,29 @@ function SourcesPanel() {
   );
 }
 
+function ArmButton({ s }: { s: Signal }) {
+  const toast = useStore((st) => st.toast);
+  const [busy, setBusy] = useState(false);
+  if (s.status !== "verified" && s.status !== "parked") return null;
+  const arm = async () => {
+    setBusy(true);
+    try {
+      const snap = await api.armTipSignal(s.id, { mode: "alert" });
+      toast("success", `Armed ${s.ticker} for ${snap.planFor} (alert mode) — see the Armed page`);
+    } catch (e: any) {
+      toast("error", e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className="link-btn" disabled={busy} onClick={arm}
+      title="Arm this tip as a level-touch plan (alert mode — watches the level, no orders). Switch modes on the Armed page.">
+      {busy ? "arming…" : "arm"}
+    </button>
+  );
+}
+
 function SignalsPanel() {
   const live = useStore((s) => s.signals);
   const loadedState = useAsync(
@@ -285,7 +308,7 @@ function SignalsPanel() {
                     {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
                     {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
                     {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
-                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)}</span>
+                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <ArmButton s={s} /></span>
                   </span>
                 </div>
               );
@@ -334,7 +357,7 @@ function SignalsPanel() {
                     </span>
                   </td>
                   <td className="muted">{s.sourceName ?? "—"}</td>
-                  <td className="muted">{fmtDateTime(s.createdAt)}</td>
+                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /></td>
                 </tr>
               ))}
             </tbody>

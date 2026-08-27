@@ -13,9 +13,17 @@ settings keys, flow-context injection into verification; tests in
 `tests/test_signals_tip.py`. Post-merge with the engine Phase 3 batch (same day): shadow
 orders carry `technique_id="tip"` + `tags=["source:<name>"]` (per-tag day-notional caps see
 them), and verification also gets an advisory `calendarContext` line from `engine.calendar`
-when earnings fall inside the tip's horizon. Still open in Phase A: shadow arming through
-the runner (today the shadow market-order path remains), the Tips UI rebuild beyond the
-scorecard panel. Phase B unchanged (⚙ 2b).
+when earnings fall inside the tip's horizon. **TipRunner built same day**
+(`techniques/tip/runner.py` + `POST /api/signals/{id}/arm`, tests `tests/test_tip_runner.py`):
+level-touch tips arm through the shared `PlanRunner` — tip rules are touch-fire with NO volume
+requirement (tracker opt-out `volume_floor_mult=0`), no gap-magnitude void, all RTH windows,
+no critic in v1, shares expression (options = Phase B); a tip armed after the close plans for
+the NEXT session; tip-time sources are refused (they propose immediately instead). Runs are
+minted as `technique="tip"` rows with `source:` tags. Building it surfaced and fixed two
+platform bugs (order-pipeline bracket deadlock; unfiltered runner restore) — PLATFORM-RULES §4.
+Still open in Phase A: the automatic per-source shadow-arm loop (portfolio-accounting decision:
+armed shadow plans and the tip-time shadow market order must not double-count one source's
+P&L), and the Tips UI beyond the scorecard panel (arm button + armed chip). Phase B unchanged (⚙ 2b).
 Decision taken during the build: the platform default source mode is **proposal**, not
 shadow — a human approval is itself a gate, and the paste-by-hand user is the common case;
 "shadow until the scorecard clears" governs the AUTO mode specifically. Unknown sources can

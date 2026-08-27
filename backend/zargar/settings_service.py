@@ -85,6 +85,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
     "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none
     "techniques.tip.target_r": [1.5, 3.0],   # R-multiple targets when the tip states none
+    "techniques.tip.instrument": "shares",   # runner expression v1 (options = Phase B)
+    "techniques.tip.touch_tolerance_pct": 0.002,   # level-touch band for tip triggers
     "techniques.tip.sources": {},            # {name: {entry, mode, risk_pct, budget_per_tip, ...}}
     # --- flow technique (docs/techniques/flow/PLAN.md; context only in v1, no orders) ---
     "techniques.flow.vol_oi_min": 1.25,      # flag: today's volume / open interest
