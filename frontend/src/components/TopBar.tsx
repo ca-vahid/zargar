@@ -8,6 +8,7 @@ import { workspaceOf } from "../lib/workspace";
 import { useViewport } from "../lib/viewport";
 import { Sheet } from "./Sheet";
 import { IconSearch } from "./icons";
+import { signOut } from "../lib/auth";
 
 const MODES = [
   { value: "practice", label: "Practice" },
@@ -35,6 +36,9 @@ export function TopBar() {
   const [promptHalt, setPromptHalt] = useState(false);
   const [confirmResume, setConfirmResume] = useState(false);
   const { isPhone } = useViewport();
+  const authUser = useStore((s) => s.auth.user);
+  const authRequired = useStore((s) => s.auth.required);
+  const [accountOpen, setAccountOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   // real money is the headline; practice is its own clearly-labeled chip
@@ -278,6 +282,26 @@ export function TopBar() {
         }}>
         {theme === "dark" ? "☀" : "🌙"}
       </button>
+      {authRequired && authUser && (
+        <div className="account-wrap">
+          <button className="icon-btn account-btn" aria-label="Account" aria-expanded={accountOpen}
+            title={`${authUser.name || authUser.email} — account`} onClick={() => setAccountOpen((v) => !v)}>
+            {authUser.picture
+              ? <img src={authUser.picture} alt="" referrerPolicy="no-referrer" />
+              : <span>{(authUser.name || authUser.email).slice(0, 1).toUpperCase()}</span>}
+          </button>
+          {accountOpen && (
+            <>
+              <div className="account-backdrop" onClick={() => setAccountOpen(false)} />
+              <div className="account-pop" role="menu">
+                <b>{authUser.name || authUser.email}</b>
+                {authUser.name && <span className="muted small">{authUser.email}</span>}
+                <button className="ghost-btn" role="menuitem" onClick={() => { setAccountOpen(false); void signOut(); }}>Sign out</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
       <div className={`mode-indicator mode-indicator--${mode}`}
         title={mode === "live"
           ? "LIVE workspace — you see real accounts only, and real orders route to your brokerages. Switch to Practice to see the simulator."

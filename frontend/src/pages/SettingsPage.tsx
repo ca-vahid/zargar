@@ -5,6 +5,7 @@ import { useViewport } from "../lib/viewport";
 import { InfoTip } from "../components/InfoTip";
 import type { Watchlist } from "../types";
 import { Modal } from "../components/Modal";
+import { signOut } from "../lib/auth";
 
 function usePatch() {
   const toast = useStore((s) => s.toast);
@@ -271,6 +272,30 @@ function SheetUniverse() {
 
 /* ── the page ─────────────────────────────────────────────────────────── */
 
+/** Who is signed in, and the way out — on every device (the phone reaches it via More → Settings). */
+function AccountPanel() {
+  const auth = useStore((s) => s.auth);
+  const [busy, setBusy] = useState(false);
+  if (!auth.required || !auth.user) return null;
+  const u = auth.user;
+  return (
+    <div className="panel mb account-panel">
+      <div className="panel-head">Account <span className="sub">signed in with {u.provider === "google" ? "Google" : u.provider}</span></div>
+      <div className="panel-body account-row">
+        {u.picture ? <img className="account-pic" src={u.picture} alt="" referrerPolicy="no-referrer" />
+          : <span className="account-pic account-initial">{(u.name || u.email).slice(0, 1).toUpperCase()}</span>}
+        <div className="account-who">
+          <b>{u.name || u.email}</b>
+          {u.name && <span className="muted small">{u.email}</span>}
+          <span className="muted small">Signing out ends the session in this browser only; other devices stay signed in.</span>
+        </div>
+        <button className="ghost-btn account-signout" disabled={busy}
+          onClick={() => { setBusy(true); void signOut().finally(() => setBusy(false)); }}>Sign out</button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const broker = useStore((s) => s.broker);
   const allPortfolios = useStore((s) => s.portfolios);
@@ -312,6 +337,7 @@ export function SettingsPage() {
   return (
     <div className="settings-page">
       <h2 className="page-title">Settings</h2>
+      <AccountPanel />
       <MobilePanel />
       <div className="panel mb settings-automation">
         <div className="panel-head">🌙 Evening automation
