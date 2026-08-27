@@ -1,8 +1,9 @@
 # Technique platform — one engine, many techniques
 
 *Written 2026-08-27 after the first live day of the EnhancedMarket (EM) technique. Status:
-**phases 0, 1 and 2 are built, parity-tested and live (same day)**; 2b (durable positions), 3
-(research/API/settings), 4 (UI shell) and 5 (the second technique) remain. §1–§2 keep the original
+**phases 0–3 and 2b are built, parity-tested and live (all on 2026-08-27)**; what remains is 4 (UI
+shell — another team), the physical `research/` class move (with technique #2's needs), and the
+real-money gate for overnight holds (Alpaca-paper chaos pass + practice soak). §1–§2 keep the original
 analysis as the record of the starting point, with as-built notes. Owner: the technique layer.
 Companion docs: `ARCHITECTURE.md` (the app — its "Technique platform" section is the as-built
 reference), `PLATFORM-RULES.md` (the shared judgement log),
@@ -85,14 +86,20 @@ backend/zargar/
                             entry+retry, sizing + premium caps, ladder/stop/flatten management, loss
                             halt, quote/premium stop watch, failed-exit watchdog, alerts, audit,
                             phone summary, pre-open orchestration, clock-driven close, hookStats
-    positions.py policies.py simulate.py                       → phase 2b (durable multi-day manager)
-  research/               → phase 3 (today: the generic halves of technique/service.py)
+    positions.py          ✔ PositionManager — durable multi-day positions (2b; managed_positions table)
+    policies.py           ✔ exit policies as data + the pure evaluator (2b)
+    simulate.py sizing.py ✔ simulate_position (same evaluator) · risk/budget sizing modes (2b)
+  research/               ✔ events_contract.py (versioned journal shapes) · snapshots.py (nightly chain
+                            OI/IV + tf=1d bars); runs/outcomes/reviews stay in technique/service.py
+                            (keyed by technique + tags) until technique #2 needs the class moved
+  scheduler.py            ✔ engine-level daily ET jobs · calendar_service.py ✔ earnings/ex-div (v1)
   techniques/
     base.py               ✔ TechniqueInfo + registry (GET /api/techniques)
     enhanced_market/      → phase 3/4 rename; TODAY EM still lives at zargar/technique/ —
                             arming.py = PlanArmer(PlanRunner), 319 lines of hooks; rulebook, setups,
                             plans, schemas, vision, chat, analysis stay there
-    tip/                  → phase 5
+    tip/                  ✔ (techniques team, 2026-08-27 evening): plan.py + runner.py — TipRunner is
+                            the second PlanRunner subclass; Flow's scan runs on the engine scheduler
 ```
 
 ### 2.1 The technique protocol
@@ -250,7 +257,7 @@ and 08-26 sweeps re-run must produce byte-identical rows.
 | **2b · durable positions** ✅ *built 2026-08-27 evening* | `execution/policies.py` (exit policies as data: fixed/none-with-declared-guard stop, ladder, `profit_target_pct_of_credit`, premium stop debit+credit, breakeven_after_r, trailing pct/atr/structure with `after_r`, `time_stop_sessions` in TRADING sessions, `dte_close` clamped by `execution.min_dte`, `flatten_before(event)` via `engine.calendar`); `execution/positions.py` (`PositionManager` + `managed_positions` table: multi-leg as a child list, write-ahead, restored on boot whatever the date, decisions on closed policy-tf bars RTH-only, quote-watch crash brake, failed-exit watchdog 5×→person, venue GTC stop for shares with cancel/replace on tighten, options overnight = app_managed-with-ack + loud flag, pre-open reconciliation classifying expiry/assignment with unexplained-drift symbol halts, scheduler job `position_reconcile` 09:05 ET); `execution/simulate.py` (`simulate_position` — the SAME evaluator over history; options simulated on the underlying, `premiumPathSimulated:false`); `execution/sizing.py` (risk / fixed-budget / per-source-budget modes); API `GET /api/positions/managed`, `POST /{id}/close`, `/{id}/reconcile-clear`; `ManagedPosition*` event contracts. **Chaos suite green: 14 scenarios** (`tests/test_position_chaos.py`) incl. live-vs-simulate parity | new capability | large — shipped WITH the chaos suite |
 | **3 · research + API + settings** ✅ *engine half built 2026-08-27* | Settings resolver as specced (§8.4): `techniques.<id>.<key>` → `execution.<key>`, 31 runner keys aliased from `technique.arm.*` with `SettingChanged` continuity, EM-policy keys excluded; `PlanRunner.rt()`; live re-read of `technique.max_concurrent_runs`. Event-schema contracts (`zargar/research/events_contract.py` + contract test + advisory runtime check) and the daily `TechniqueHookStats` roll-up. `tags` on runs/outcomes/orders; `list_runs(tag=, technique=)`. RiskGate: per-technique/per-tag day-notional caps (`risk.max_day_notional_per_*`), never-list hard rules (share shorting; 0DTE outside EM). Engine scheduler (`engine.scheduler`) + nightly **chain snapshots** (`option_chain_snapshots` — OI/IV history, not backfillable) + **daily bars** (tf=1d layer). `engine.calendar` (earnings/ex-div v1). Per-technique pause (`/api/techniques/{id}/pause`, exits exempt) + scoped routes + service registry. Venue probes ran (see §9). Deferred to technique #2: physically moving `service.py` into `research/` (records already keyed by technique + tags) | key renames only | medium |
 | **4 · UI shell** | `TechniquePage` → generic shell + per-technique panels (EM keeps Validation/Analyse/Chat/History/Backtest); Settings gets a per-technique section; Armed chip | cosmetic | medium |
-| **5 · second technique** | Build **Tip** (below) on the platform. Every gap it finds becomes a protocol hook, never a fork of the runner | new feature | medium |
+| **5 · second technique** ✅ *underway by the techniques team (2026-08-27 evening)* | Wave one Phase A shipped the same day the platform landed: **Tip** (`zargar/techniques/tip/` — plan.py + runner.py, `TipRunner(PlanRunner)`) and **Flow** (nightly scan registered on `engine.scheduler`, reading `option_chain_snapshots`). Every gap they hit becomes a hook/capability request, never a fork — the engine side of this phase is done | new feature | theirs |
 
 Phases 0–1 are cheap and give the library immediately; 2 is the risky one and should not start
 while a live-money gate is open; 3–4 can interleave with method work.
@@ -308,11 +315,11 @@ Ranked; ✅ = built the same day, the rest are scheduled into the phases.
 |---|---|---|
 | 1 | **Clock-driven session close** — expiry + scorecard fire at 16:05 ET by the clock, not on the 15:59 bar (08-26: the bar never came, nothing scored) | ✅ `PlanRunner._end_session` shared by the bar path and a heartbeat clock check |
 | 2 | **Daily pre-open feed self-test** — 09:00 ET REST bar fetch + WS auth handshake, loud alert on failure (the 08-26 subscription lapse degraded silently) | ✅ `engine._feed_monitor`: `FeedSelfTestPassed/Failed` journal + critical toast + Telegram |
-| 3 | **Event-schema contracts** — versioned schema per `TECHNIQUE_PLAN_*` kind + a contract test; N techniques journaling through shared machinery makes payload shapes an API | phase 3 (research split) — the contract test lands with the event registry |
-| 4 | **Per-technique settings scoping + live re-read** — spec settled with the EM team 2026-08-27 (user decisions: mid-day toggle EM-scoped; veto budgets inherit-with-override): **resolution for every key `planrunner.py` reads directly is `techniques.<id>.<key>` (per-technique override) → else `execution.<key>` (platform default)** — the veto/critic family (`critic_kills_per_day`, `refire_cooldown_minutes`, `critic_fail_budget`, `critic_timeout_seconds`) explicitly included, plus quote-exit, stale-seconds, premium-stop and the live-auto gate. Old `technique.*` names stay as deprecated aliases for a migration window with `SettingChanged` journal continuity. **`technique.arm.midday_trading` is explicitly excluded: EM-only, never a platform key** (read in exactly one place — EM's `entry_windows_enforced()`). Plus: `max_concurrent_runs` re-read without a restart | phase 3 — spec ready |
-| 5 | **Bars table hygiene** — unique index on (symbol, tf, ts), bucket alignment enforced at write, stub-row cleanup | phase 3, cheap-now item; do before technique #2 writes bars |
+| 3 | **Event-schema contracts** — versioned schema per `TECHNIQUE_PLAN_*` kind + a contract test; N techniques journaling through shared machinery makes payload shapes an API | ✅ built 2026-08-27: `zargar/research/events_contract.py` (33 kinds versioned incl. `ManagedPosition*`), advisory runtime check in `Journal.append`, contract test in `tests/test_platform_phase3.py` |
+| 4 | **Per-technique settings scoping + live re-read** — spec settled with the EM team 2026-08-27 (user decisions: mid-day toggle EM-scoped; veto budgets inherit-with-override): **resolution for every key `planrunner.py` reads directly is `techniques.<id>.<key>` (per-technique override) → else `execution.<key>` (platform default)** — the veto/critic family (`critic_kills_per_day`, `refire_cooldown_minutes`, `critic_fail_budget`, `critic_timeout_seconds`) explicitly included, plus quote-exit, stale-seconds, premium-stop and the live-auto gate. Old `technique.*` names stay as deprecated aliases for a migration window with `SettingChanged` journal continuity. **`technique.arm.midday_trading` is explicitly excluded: EM-only, never a platform key** (read in exactly one place — EM's `entry_windows_enforced()`). Plus: `max_concurrent_runs` re-read without a restart | ✅ built 2026-08-27 (resolver live, 31 aliases migrated with journal continuity, `PlanRunner.rt()`, run cap re-read) |
+| 5 | **Bars table hygiene** — unique index on (symbol, tf, ts), bucket alignment enforced at write, stub-row cleanup | ✅ built 2026-08-27: unique index existed; bucket alignment enforced at write (1d exempt); boot cleanup deleted 14,197 stub rows on first run |
 | 6 | **Hook observability** — per-hook latency / exception / veto-rate ("which hook, how often, how slow" = a query) | ✅ counters: `PlanRunner._hook()` wraps analyze/review/pick/record/proposal/preopen; `hookStats` on the armed summary. Journal roll-up still open (with #3's event registry) |
-| 7 | **Per-technique pause** — HALT stays global; "stop EM, keep X" is a first-class control whose exits stay reduce-only-exempt like the kill switch | phase 4/5 (needs a second technique to mean anything; API shape reserved: `POST /api/techniques/{id}/pause`) |
+| 7 | **Per-technique pause** — HALT stays global; "stop EM, keep X" is a first-class control whose exits stay reduce-only-exempt like the kill switch | ✅ built 2026-08-27: `POST /api/techniques/{id}/pause` + `/resume` (techniques.<id>.paused blocks arms; per-plan pause; exits exempt). Was scoped phase 4/5 (needs a second technique to mean anything; API shape reserved: `POST /api/techniques/{id}/pause`) |
 | 8 | **Replay outputs carry plan-side validity** — includeInvalid sweeps stamped every trigger `valid: true` (two wrong tallies in the 08-27 gate audit) | ✅ `replay_plan` joins `valid` from the plan trigger |
 | 9 | **Version-stamp marketstructure into sweepVersion** — a parity diff must be attributable to a library version | ✅ `technique_source_version()` hashes `marketstructure/` too (extends the existing `sweepVersion`) |
 

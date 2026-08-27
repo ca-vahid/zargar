@@ -21,6 +21,7 @@ cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTr
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-auth a connection to trade
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_options_check   # read-only: which accounts can trade options
 cd backend && .venv/bin/python -m pytest tests/test_technique_*.py       # technique pipeline (no LLM calls)
+cd backend && .venv/bin/python -m pytest tests/test_position_*.py tests/test_platform_*.py  # platform + durable positions (chaos suite)
 cd backend && .venv/bin/python -m pytest tests/test_options_*.py tests/test_snaptrade_options.py  # options (stubbed CBOE/SnapTrade)
 cd backend && .venv/bin/python -m zargar.tools.technique_review list --unreviewed   # review loop CLI (dump/score/review/diff/replay)
 cd backend && .venv/bin/python -m zargar.tools.technique_review sweep --start 2026-07-01 --end 2026-08-20   # walk-forward sweep (deterministic)
@@ -48,10 +49,13 @@ inside; money handling (arm/fire/enter/manage/exit/alerts) belongs to `zargar/ex
 technique; a technique owns only its plan construction, prompts/schemas, grading, policies
 (expression, exits, critic) and its own `docs/techniques/enhanced-market/TRADING-RULES.md` section. Put new technique-specific
 knobs under `technique.<id>.*`, shared runtime knobs under `execution.*`. Don't add another
-`"EM Options"` hard-code to the UI — the nav will list a registry. The runtime must also hold positions
-for **days or weeks** (plan §2.4): exits are policies-as-data (ladder / trailing / time / DTE), state is
-write-ahead and restored regardless of date, anything held overnight needs a venue-side GTC stop, and
-no technique holds real money overnight until the chaos suite (§2.5) passes.
+`"EM Options"` hard-code to the UI — the nav will list a registry. The runtime also holds positions
+for **days or weeks** (BUILT 2026-08-27: `execution/positions.py` + `policies.py` + `simulate.py`;
+guide in `docs/BUILDING-A-TECHNIQUE.md` §2b): exits are policies-as-data (ladder / trailing / time /
+DTE / credit-target), state is write-ahead and restored regardless of date, shares held overnight get
+a venue-side GTC stop, options overnight require `app_managed` + the explicit acknowledgement, and
+the chaos suite (`tests/test_position_chaos.py`, 14 scenarios incl. live-vs-simulate parity) is the
+acceptance gate — real money holds overnight only after an Alpaca-paper pass + practice soak.
 **Sign-in (2026-08-26):** `docs/AUTH.md`. `zargar/auth.py` verifies Google ID tokens (PyJWT + Google JWKS)
 and gates on `ZARGAR_GOOGLE_ALLOWED_EMAILS`, then issues an HS256 session (HttpOnly `zargar_session`
 cookie + token in the body for WS `?token=`). `require_auth` accepts static token, bearer session, cookie
