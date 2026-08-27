@@ -28,8 +28,7 @@ __all__ = [
 ]
 
 # T4.4a — the author's own scale-out ladder.
-LADDER_TRIMS = (0.30, 0.40, 0.15)
-RUNNER_PCT = 0.15
+from ..marketstructure.rules import DEFAULT_LADDER as LADDER_TRIMS, DEFAULT_RUNNER_PCT as RUNNER_PCT  # noqa: E402
 # T4.4 — his worked example is +2/+4/+6 on a $100 entry.
 LADDER_PCTS = (0.02, 0.04, 0.06)
 

@@ -51,6 +51,7 @@ class OrderIntent(BaseModel):
     source: str = "manual"
     signal_id: str | None = None
     proposal_id: str | None = None
+    technique_id: str | None = None   # registry id of the technique that raised it (source stays "technique")
     dry_run: bool = False
     client: str = "desktop"     # phone | tablet | desktop — set by the API from X-Zargar-Client;
     #                             phones are exit-only on real accounts (mobile.exit_only)

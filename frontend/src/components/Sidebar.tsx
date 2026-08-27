@@ -1,5 +1,6 @@
 import { type ReactNode } from "react";
 import { useStore, type Page } from "../store";
+import { useTechniques } from "../lib/techniques";
 import {
   IconArmed,
   IconChevron,
@@ -28,6 +29,7 @@ const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
 ];
 
 export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: { collapsed?: boolean; onToggleCollapse?: () => void } = {}) {
+  const techniques = useTechniques();
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   const pending = useStore((s) => s.proposals.length);
@@ -54,13 +56,13 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
             {p.key === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
             {p.key === "armed" && armedCount > 0 && <span className="badge ok">{armedCount}</span>}
           </button>
-        )).flatMap((btn, i) => PAGES[i].key === "technique" ? [btn, (
-          // techniques are a family: each one is a sub-item under "Techniques"
-          <button key="technique-em" className={`nav-sub ${page === "technique" ? "active" : ""}`}
-            title={navCollapsed ? "EM Options" : undefined} onClick={() => setPage("technique")}>
-            <span className="nav-sub-dot" aria-hidden="true" /> <span className="nav-label">EM Options</span>
+        )).flatMap((btn, i) => PAGES[i].key === "technique" ? [btn, ...techniques.map((t) => (
+          // techniques are a family: each registered one is a sub-item under "Techniques"
+          <button key={`technique-${t.id}`} className={`nav-sub ${page === t.page ? "active" : ""}`}
+            title={navCollapsed ? t.label : undefined} onClick={() => setPage(t.page as Page)}>
+            <span className="nav-sub-dot" aria-hidden="true" /> <span className="nav-label">{t.label}</span>
           </button>
-        )] : [btn])}
+        ))] : [btn])}
       </nav>
     </aside>
   );

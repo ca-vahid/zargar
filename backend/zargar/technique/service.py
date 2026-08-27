@@ -94,7 +94,8 @@ RTH_END = dt.time(16, 0)
 
 def run_dict(r: TechniqueRun) -> dict:
     return {
-        "id": r.id, "threadId": r.thread_id, "symbol": r.symbol, "asOf": r.as_of,
+        "id": r.id, "technique": getattr(r, "technique", None) or "enhanced_market",
+        "threadId": r.thread_id, "symbol": r.symbol, "asOf": r.as_of,
         "primaryTf": r.primary_tf, "mode": r.mode, "trigger": r.trigger, "status": r.status,
         "verdict": r.verdict, "setupType": r.setup_type, "confidence": r.confidence,
         "grounded": r.grounded, "facts": r.facts or {}, "result": r.result or {},
@@ -122,7 +123,8 @@ def run_summary(r: TechniqueRun) -> dict:
 
 def setup_dict(s: TechniqueSetup) -> dict:
     return {
-        "id": s.id, "runId": s.run_id, "symbol": s.symbol, "setupType": s.setup_type,
+        "id": s.id, "technique": getattr(s, "technique", None) or "enhanced_market",
+        "runId": s.run_id, "symbol": s.symbol, "setupType": s.setup_type,
         "direction": s.direction, "entry": s.entry, "stop": s.stop, "targets": s.targets or [],
         "riskReward": s.risk_reward, "confidence": s.confidence, "valid": s.valid,
         "rules": s.rules or [], "noTradeReasons": s.no_trade_reasons or [], "options": s.options,
@@ -2246,7 +2248,8 @@ def _slim_plan_summary(plan: dict | None) -> dict | None:
 
 
 def sweep_dict(s: TechniqueSweep) -> dict:
-    return {"id": s.id, "label": s.label, "symbols": list(s.symbols or []), "start": s.start, "end": s.end,
+    return {"id": s.id, "technique": getattr(s, "technique", None) or "enhanced_market",
+            "label": s.label, "symbols": list(s.symbols or []), "start": s.start, "end": s.end,
             "params": s.params or {}, "status": s.status, "progress": s.progress or {}, "summary": s.summary or {},
             "error": s.error, "createdAt": s.created_at.isoformat() if s.created_at else None,
             "finishedAt": s.finished_at.isoformat() if s.finished_at else None}

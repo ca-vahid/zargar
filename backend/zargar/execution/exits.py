@@ -148,7 +148,8 @@ def stale_working_exit(trade, bar_index: int, *, reprice_bars: int = EXIT_REPRIC
 
 
 def reduce_only_exit_intent(*, portfolio_id: str, symbol: str, sec_type: str, qty: float,
-                            bid: float | None = None, force_market: bool = False, source: str = "technique"):
+                            bid: float | None = None, force_market: bool = False, source: str = "technique",
+                            technique_id: str | None = None):
     """Build the SELL order that closes `qty`. Reduce-only, so RiskGate can't
     trap it. Options: marketable limit at the live bid when we have one, else
     market; force_market skips the limit (used when re-pricing a stuck exit).
@@ -158,6 +159,6 @@ def reduce_only_exit_intent(*, portfolio_id: str, symbol: str, sec_type: str, qt
     if sec_type == "OPT" and not force_market and bid and bid > 0:
         return OrderIntent(portfolio_id=portfolio_id, symbol=symbol, sec_type="OPT", side="SELL",
                            qty=qty, order_type="LMT", limit_price=round(float(bid), 2), tif="DAY",
-                           source=source, reduce_only=True)
+                           source=source, technique_id=technique_id, reduce_only=True)
     return OrderIntent(portfolio_id=portfolio_id, symbol=symbol, sec_type=sec_type, side="SELL",
-                       qty=qty, order_type="MKT", tif="DAY", source=source, reduce_only=True)
+                       qty=qty, order_type="MKT", tif="DAY", source=source, technique_id=technique_id, reduce_only=True)

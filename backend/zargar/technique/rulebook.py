@@ -92,58 +92,11 @@ RULES: dict[str, str] = {
 }
 
 # --- Session windows (R6) ---------------------------------------------------
-ET = ZoneInfo("America/New_York")
-WINDOW_RULE = {"prime_open": "R6.1", "prime_close": "R6.2", "midday": "R6.3", "extended": "R6.4"}
-PRIME_WINDOWS = ("prime_open", "prime_close")
-
-
-def session_window(ts_ms: int) -> str:
-    """Classify an instant by the book's trading schedule (pp. 114-115):
-    prime_open 09:30-10:30, midday 10:30-14:45, prime_close 14:45-16:00,
-    extended for pre-market / after-hours / weekends. Times are ET."""
-    t = dt.datetime.fromtimestamp(ts_ms / 1000, ET)
-    if t.weekday() >= 5:
-        return "extended"
-    m = t.hour * 60 + t.minute
-    if 9 * 60 + 30 <= m < 10 * 60 + 30:
-        return "prime_open"
-    if 10 * 60 + 30 <= m < 14 * 60 + 45:
-        return "midday"
-    if 14 * 60 + 45 <= m < 16 * 60:
-        return "prime_close"
-    return "extended"
-
-
-def is_prime(ts_ms: int) -> bool:
-    return session_window(ts_ms) in PRIME_WINDOWS
-
-
-def session_date(ts_ms: int) -> str:
-    """ET calendar date (YYYY-MM-DD) of an instant."""
-    return dt.datetime.fromtimestamp(ts_ms / 1000, ET).strftime("%Y-%m-%d")
-
-
-def session_bounds(date: str) -> tuple[int, int]:
-    """(open_ms, close_ms) of the regular session on an ET date."""
-    y, m, d = (int(x) for x in date.split("-"))
-    o = dt.datetime(y, m, d, 9, 30, tzinfo=ET)
-    c = dt.datetime(y, m, d, 16, 0, tzinfo=ET)
-    return int(o.timestamp() * 1000), int(c.timestamp() * 1000)
-
-
-def next_session_date(ts_ms: int) -> str:
-    """The next regular session after `ts_ms` (skips weekends; holidays are not
-    modelled — a holiday simply yields a session with no bars)."""
-    t = dt.datetime.fromtimestamp(ts_ms / 1000, ET)
-    d = t.date()
-    # before the open counts as "today's" session
-    if t.hour * 60 + t.minute < 9 * 60 + 30 and d.weekday() < 5:
-        return d.strftime("%Y-%m-%d")
-    d = d + dt.timedelta(days=1)
-    while d.weekday() >= 5:
-        d += dt.timedelta(days=1)
-    return d.strftime("%Y-%m-%d")
-
+# The ET session helpers moved to the shared library (platform plan phase 1,
+# 2026-08-27); re-exported here so `rulebook.session_window` etc. keep working.
+from ..marketstructure.sessions import (  # noqa: E402,F401
+    ET, PRIME_WINDOWS, WINDOW_RULE, is_prime, next_session_date, session_bounds, session_date, session_window,
+)
 
 def rule(rid: str) -> str:
     """Text for a rule id. Raises on unknown ids so typos fail loudly."""
@@ -230,6 +183,9 @@ class Thresholds:
     # setups. The dataclass default is the book's; the app's setting
     # `technique.long_only` decides (user decision 2026-08-26: both sides).
     long_only: bool = True
+    # R6 — the windows an entry may fire in; the shared tracker reads this, so a
+    # technique with no schedule rule passes all four (MarketRules.windows)
+    windows: tuple[str, ...] = PRIME_WINDOWS
     # Round-number detection: treat multiples of these as psychological levels
     round_number_steps: tuple[float, ...] = (1.0, 5.0, 10.0, 50.0, 100.0)
 

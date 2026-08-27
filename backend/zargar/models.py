@@ -268,6 +268,7 @@ class TechniqueRun(Base):
     """One analysis run. Created at start, completed once; never edited after
     `status` leaves `running`."""
     __tablename__ = "technique_runs"
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     thread_id: Mapped[str | None] = mapped_column(ForeignKey("chat_threads.id"), index=True)
@@ -305,6 +306,7 @@ class TechniqueOutcome(Base):
     analysis plan and, when the run declined, the deterministic candidate it
     rejected (so missed trades are measurable too). Re-scored while `partial`."""
     __tablename__ = "technique_outcomes"
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)
@@ -356,6 +358,7 @@ class TechniqueSweep(Base):
     for each symbol and score it on the next session. Rows live in
     `technique_walkforward`; `summary` is `walkforward.aggregate()` over them."""
     __tablename__ = "technique_sweeps"
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     label: Mapped[str] = mapped_column(String(120), default="")
@@ -398,6 +401,7 @@ class TechniqueArmed(Base):
     today's plans and the dashboard can show history. `events` (journal) holds
     the full audit trail; this row is the projection."""
     __tablename__ = "technique_armed"
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
 
     run_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     symbol: Mapped[str] = mapped_column(String(32), index=True)
@@ -414,6 +418,7 @@ class TechniqueArmed(Base):
 class TechniqueSetup(Base):
     """A setup emitted by a run (valid or not; invalid ones keep their reasons)."""
     __tablename__ = "technique_setups"
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)

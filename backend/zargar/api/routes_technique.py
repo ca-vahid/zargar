@@ -24,6 +24,12 @@ def _chat(eng):
 def build_technique_routes(app, eng, auth, config) -> None:
 
     # --- status / rules ------------------------------------------------------------
+    @app.get("/api/techniques", dependencies=[auth])
+    async def techniques_list():
+        """The technique registry — what the nav lists (platform plan phase 0)."""
+        from ..techniques import all_techniques
+        return [t.to_dict() for t in all_techniques()]
+
     @app.get("/api/technique/status", dependencies=[auth])
     async def technique_status():
         return await _svc(eng).status()

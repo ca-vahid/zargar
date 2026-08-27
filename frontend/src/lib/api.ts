@@ -111,6 +111,7 @@ export const api = {
   optionsExpiring: (days = 2) =>
     request<any[]>("GET", `/api/options/expiring?days=${days}`),
   // --- technique ---
+  techniques: () => request<import("../types").TechniqueInfo[]>("GET", "/api/techniques"),
   techniqueStatus: () => request<import("../types").TechniqueStatus>("GET", "/api/technique/status"),
   techniqueUniverse: () => request<{ date: string | null; symbols: string[]; provenance: Record<string, string>; counts: { core: number; extra: number; auto: number }; autoSource?: string | null }>("GET", "/api/technique/universe"),
   techniqueUniverseRefresh: () => request<{ date: string | null; symbols: string[]; provenance: Record<string, string>; counts: { core: number; extra: number; auto: number }; autoSource?: string | null }>("POST", "/api/technique/universe/refresh"),

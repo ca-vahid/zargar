@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { useStore, type Page } from "../store";
+import { useTechniques } from "../lib/techniques";
 import { Sheet } from "./Sheet";
 import { ConfirmDialog } from "./Modal";
 import {
@@ -68,6 +69,7 @@ export function TabBar() {
 }
 
 function MoreSheet({ onClose }: { onClose: () => void }) {
+  const techniques = useTechniques();
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   const connected = useStore((s) => s.connected);
@@ -101,10 +103,12 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
       </div>
       <div className="more-group">
         <div className="more-group-title"><IconTechnique /> Techniques</div>
-        <button type="button" className={`more-item more-item--sub ${page === "technique" ? "active" : ""}`}
-          onClick={() => go("technique")}>
-          <span className="nav-sub-dot" aria-hidden="true" /><span>EM Options</span>
-        </button>
+        {techniques.map((t) => (
+          <button type="button" key={`technique-${t.id}`} className={`more-item more-item--sub ${page === t.page ? "active" : ""}`}
+            onClick={() => go(t.page as Page)}>
+            <span className="nav-sub-dot" aria-hidden="true" /><span>{t.label}</span>
+          </button>
+        ))}
       </div>
       <div className="more-rows">
         <div className="more-row">

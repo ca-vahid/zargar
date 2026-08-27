@@ -55,6 +55,8 @@ from .walkforward import TriggerTracker, score_trigger
 
 log = logging.getLogger("zargar.technique.arming")
 
+TECHNIQUE_ID = "enhanced_market"   # registry id (zargar.techniques) stamped on plans and order intents
+
 MODES = ("alert", "proposal", "auto")
 TRANSIENT_ERRORS = ("timeout", "connection", "temporarily", "rate limit", "503", "502", "unavailable")
 
@@ -287,7 +289,8 @@ class ArmedPlan:
             trig.append(d)
         open_trades = [t for t in self.trades.values() if t.open]
         return {
-            "runId": self.run_id, "symbol": self.symbol, "planFor": self.plan_for, "status": self.status,
+            "runId": self.run_id, "technique": TECHNIQUE_ID, "symbol": self.symbol, "planFor": self.plan_for,
+            "status": self.status,
             # best deterministic grade among the watched triggers — kept visible so
             # grade-vs-outcome calibration (TRADING-RULES 1.2) stays in front of us
             "grade": (min(grades) if grades else None),
@@ -1038,7 +1041,7 @@ class PlanArmer(SessionListener):
                 return {"ok": False, "blocked": "position sizes to 0 shares at this risk % / equity", "checks": [],
                         "size": {"shares": 0}}
             intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=symbol, sec_type="STK", side="BUY",
-                                 qty=qty, order_type="LMT", limit_price=round(entry, 2), dry_run=True, source="technique")
+                                 qty=qty, order_type="LMT", limit_price=round(entry, 2), dry_run=True, source="technique", technique_id=TECHNIQUE_ID)
             try:
                 res = await self.engine.orders.place(intent)
             except Exception as exc:
@@ -2029,7 +2032,7 @@ class PlanArmer(SessionListener):
         trade.limit_price = limit
         trade.status = "submitting"
         intent = OrderIntent(portfolio_id=cfg.portfolio_id, symbol=order_symbol, sec_type=sec_type, side="BUY",
-                             qty=qty, order_type="LMT", limit_price=limit, tif="DAY", source="technique")
+                             qty=qty, order_type="LMT", limit_price=limit, tif="DAY", source="technique", technique_id=TECHNIQUE_ID)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_ORDER_INTENT, {
             "runId": ap.run_id, "symbol": ap.symbol, "orderSymbol": order_symbol, "secType": sec_type,
             "trigger": trade.trigger_id, "side": "BUY", "qty": qty, "limitPrice": limit, "entry": trade.entry,
@@ -2148,7 +2151,7 @@ class PlanArmer(SessionListener):
             bid = float(q.bid) if q is not None and q.bid > 0 else None
         symbol = tr.order_symbol if tr.instrument == "options" and tr.order_symbol else ap.symbol
         intent = reduce_only_exit_intent(portfolio_id=cfg.portfolio_id, symbol=symbol, sec_type=tr.sec_type,
-                                         qty=qty, bid=bid, force_market=force_market, source="technique")
+                                         qty=qty, bid=bid, force_market=force_market, source="technique", technique_id=TECHNIQUE_ID)
         rec = {"kind": kind, "qty": qty, "orderId": None, "status": None, "filledQty": 0.0, "price": None,
                "ts": int(time.time() * 1000), "barIndex": ap.bar_index - 1}
         tr.exits.append(rec)

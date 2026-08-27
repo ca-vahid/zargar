@@ -296,6 +296,7 @@ export interface TechniqueRunConfig {
   overrides?: Record<string, any>; barsAssetId?: string;
 }
 export interface TechniqueRun {
+  technique?: string;   // registry id (platform plan phase 0); absent from older servers
   id: string; threadId: string | null; symbol: string; asOf: number | null; primaryTf: string;
   mode: string; trigger: string; status: "running" | "done" | "failed";
   verdict: string | null; setupType: string | null; confidence: number | null; grounded: boolean | null;
@@ -337,6 +338,7 @@ export interface SessionPlan {
   gapPolicy: any; notes: string[]; validTriggers: number; bottomLine?: string;
 }
 export interface TechniqueSweep {
+  technique?: string;   // registry id (platform plan phase 0); absent from older servers
   id: string; label: string; symbols: string[]; start: string; end: string; params: any; status: string; progress: any;
   summary: any; error: string | null; createdAt: string | null; finishedAt: string | null; rows?: WalkforwardRow[];
 }
@@ -394,6 +396,7 @@ export interface ArmedTrade {
   openedTs: number | null; closedTs: number | null; critic: { kill?: boolean; summary?: string; violations?: string[] } | null;
 }
 export interface ArmedPlan {
+  technique?: string;   // registry id (platform plan phase 0); absent from older servers
   needsAttention?: boolean; attentionReasons?: string[];
   runId: string; symbol: string; planFor: string; status: "armed" | "paused" | "expired" | "disarmed" | string;
   grade?: string | null;
@@ -434,10 +437,16 @@ export interface ArmedSummary {
   pnl: { realized: number; unrealized: number; lossLimit: number; lossLimitUsedPct: number | null };
 }
 export interface TechniqueSetup {
+  technique?: string;   // registry id (platform plan phase 0); absent from older servers
   id: string; runId: string; symbol: string; setupType: string; direction: string; entry: number; stop: number;
   targets: TechniqueTarget[]; riskReward: number; confidence: number; valid: boolean; rules: string[];
   noTradeReasons: string[]; options: any; proposalId: string | null; status: string; createdAt: string | null;
 }
+/** GET /api/techniques — the technique registry (platform plan phase 0). */
+export interface TechniqueInfo {
+  id: string; label: string; version: string; page: string; settingsPrefix?: string; tabs: string[]; description?: string;
+}
+
 export interface TechniqueStatus {
   llmAvailable: boolean; model: string; effort: string; thinkingDisplay: string; optionsAvailable: boolean;
   optionsProvider?: string;
