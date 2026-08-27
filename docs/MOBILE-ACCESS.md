@@ -14,8 +14,12 @@ clipboard all require it), and (3) the token on the phone.
    ZARGAR_AUTH_TOKEN=<long random>  # REQUIRED before exposing anything
    ```
    Generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
-3. Expose it: `tailscale serve --bg https / http://127.0.0.1:8420`
-   Tailscale issues a real certificate for `https://<machine>.<tailnet>.ts.net`.
+3. Expose it: `tailscale serve --bg http://127.0.0.1:8420` (Tailscale ≥ 1.60 syntax).
+   The first run prints a link to enable Serve/HTTPS for the tailnet — approve it once.
+   Tailscale issues a real certificate for `https://<machine>.<tailnet>.ts.net`, the
+   config persists, and the Windows service brings it back after reboots.
+   `tailscale serve status` shows it; `tailscale serve --https=443 off` removes it.
+   (Set up 2026-08-26: machine `zargar-desk` → `https://zargar-desk.tail97d481.ts.net`.)
 4. In Settings → Mobile → **Phone link**, paste that origin
    (`https://<machine>.<tailnet>.ts.net`). Telegram alerts now carry an
    "Open in Zargar" button that deep-links the phone to the plan.
