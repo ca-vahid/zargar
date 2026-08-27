@@ -283,7 +283,8 @@ class ArmedPlan:
             if last:
                 d["distancePct"] = round((tr.entry - last) / last * 100, 3)
                 d["distance"] = round(tr.entry - last, 4)
-            d["windowOpenNow"] = prime_now in PRIME_WINDOWS
+            # "can it fire right now" — the prime clock OR the window gate being off
+            d["windowOpenNow"] = (prime_now in PRIME_WINDOWS) or not tr.enforce_windows
             trig.append(d)
         open_trades = [t for t in self.trades.values() if t.open]
         return {
@@ -330,7 +331,12 @@ class ArmedPlan:
         nearest = None
         if last:
             nearest = min(((abs(self.trackers[t].entry - last) / last * 100, t) for t in waiting), default=None)
-        w = "prime window open" if window_now in PRIME_WINDOWS else f"{window_now}: watching only"
+        # honest label: with the window gate off (e.g. EM's mid-day experiment)
+        # a "midday" summary must not claim watching-only — it CAN fire
+        gate_off = any(not self.trackers[t].enforce_windows for t in waiting)
+        w = ("prime window open" if window_now in PRIME_WINDOWS
+             else f"{window_now}: can fire (window gate off)" if gate_off
+             else f"{window_now}: watching only")
         return (f"watching {len(waiting)} trigger(s) · nearest {nearest[1]} {nearest[0]:.2f}% away · {w}"
                 if nearest else f"watching {len(waiting)} trigger(s) · {w}")
 
