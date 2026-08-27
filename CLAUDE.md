@@ -48,7 +48,10 @@ inside; money handling (arm/fire/enter/manage/exit/alerts) belongs to `zargar/ex
 technique; a technique owns only its plan construction, prompts/schemas, grading, policies
 (expression, exits, critic) and its own `TRADING-RULES.md` section. Put new technique-specific
 knobs under `technique.<id>.*`, shared runtime knobs under `execution.*`. Don't add another
-`"EM Options"` hard-code to the UI — the nav will list a registry.
+`"EM Options"` hard-code to the UI — the nav will list a registry. The runtime must also hold positions
+for **days or weeks** (plan §2.4): exits are policies-as-data (ladder / trailing / time / DTE), state is
+write-ahead and restored regardless of date, anything held overnight needs a venue-side GTC stop, and
+no technique holds real money overnight until the chaos suite (§2.5) passes.
 **Sign-in (2026-08-26):** `docs/AUTH.md`. `zargar/auth.py` verifies Google ID tokens (PyJWT + Google JWKS)
 and gates on `ZARGAR_GOOGLE_ALLOWED_EMAILS`, then issues an HS256 session (HttpOnly `zargar_session`
 cookie + token in the body for WS `?token=`). `require_auth` accepts static token, bearer session, cookie

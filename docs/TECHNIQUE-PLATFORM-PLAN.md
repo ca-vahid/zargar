@@ -145,6 +145,72 @@ out     = simulate_plan(plan, bars, stop_on=rules.stop_on)        # what would h
 - UI: Sidebar/TabBar list the registry (`Techniques ▸ EM Options ▸ Tip …`); the technique page
   becomes a shell whose tabs come from `TechniqueUI`; the Armed page shows a technique chip.
 
+### 2.4 The durable position manager — holding for days or weeks
+*(added 2026-08-27 after the user's requirement: the library must monitor a stock for days or
+weeks and take profits automatically, and it must be iron-clad.)*
+
+EM's runner is **session-scoped**: a plan is armed for one date, expires at the close,
+`flatten_minutes_before_close=5` closes everything, `restore()` re-arms only `plan_for >= today`,
+exits are judged on 1m bars during the session, and outcomes are scored from Yahoo 1m depth
+(~20 days). None of that is wrong for EM — but a tip technique that buys a 3-week call and wants
+to scale out over ten sessions cannot be built on it. So the shared runtime gets a second
+object next to the session plan:
+
+```
+execution/
+  planrunner.py     session plans: watch triggers for ONE session (EM today)
+  positions.py      ManagedPosition: a position that lives until its policy closes it —
+                    days, weeks, across restarts, weekends, holidays and feed outages
+  policies.py       exit policies as DATA, evaluated by shared code:
+                    ladder(targets, fractions) · trailing(atr_mult | pct | structure="last swing low")
+                    · breakeven_after(+R) · time_stop(sessions) · dte_close(min_dte)
+                    · premium_stop(pct) · strength_exit(extension) · flatten_before(event)
+  simulate.py       simulate_position(policy, bars_by_tf) — the same evaluation over history,
+                    so a policy is backtested by the code that will run it live
+```
+
+How it must behave (these are requirements, not suggestions):
+- **Position-scoped state, write-ahead.** `managed_positions` table: policy, legs, fills, the
+  bar-timeframe it is judged on, last decision, provenance (technique, plan, trigger). Persisted
+  before every order; restored on boot regardless of date. The plan that opened it is history.
+- **Venue-side protection whenever the venue can do it.** For anything held overnight the manager
+  places a resting GTC stop (and optionally the first target) at the broker — `OrderManager`
+  already builds GTC bracket children (`orders.py`), SnapTrade maps `GTC`, IBKR supports it —
+  so the app being down does not leave a naked position. Where the venue cannot (a venue with
+  no GTC stops on options), the policy must say `overnight="venue_stop_required"` and the manager
+  refuses to hold, or `overnight="app_managed"` with an explicit acknowledgement and a loud
+  "app-managed only" flag on the Armed page.
+- **Judged on closed bars of the policy's timeframe** (5m / 15m / 1d), with the quote watch as
+  the crash brake (as today: decisive breach × N polls), **only while the venue can fill** — RTH
+  for options, and never a decision on a stale quote (staleness → exits allowed on last known,
+  no new entries).
+- **Reconciliation, not trust.** On boot and every N minutes: our positions vs broker positions
+  (`/positions/all`, IBKR portfolio). Drift → adopt (`adopt_order` exists) or alert; a position
+  the broker no longer has is closed in our book with a journaled reason; one we don't know about
+  is surfaced, never silently managed.
+- **Idempotent money.** Client order ids on every intent; unknown submit outcomes reconcile
+  against the venue (SnapTrade `_reconcile_unknown` today) and never resubmit blindly.
+- **Options expiry is a policy, not an accident.** `dte_close(min_dte)` closes before expiry; an
+  ITM contract must never be left to auto-exercise/assignment. (Today expiry settlement exists
+  only for practice portfolios — `OptionsService.settle_expired`.)
+- **Exits are reduce-only and unblockable** (halt, caps, rate window never stop a stop); the
+  failed-exit watchdog (retry ×5 then alert) and the `_alert` escalation (log + journal + toast +
+  Telegram) are the shared path for every failure mode.
+- **Event awareness.** Earnings/ex-dividend calendar gate (the B-list item) becomes a policy
+  input: `flatten_before("earnings")` or `reduce_before(...)`.
+- **Fleet-wide caps** (open positions, gross exposure, per-symbol) live in RiskGate, not in a
+  technique.
+
+### 2.5 What "iron clad" means as tests
+A position manager is only as reliable as the failures it has been run through. Before any
+technique holds real money overnight the shared layer needs a **chaos suite** on the sim rig:
+restart mid-position (state restored, venue stop still there), feed outage during RTH (no false
+exits, alert raised), partial fills and rejected exits (watchdog retries, reduce-only), venue
+disconnect on an exit (reconcile, never duplicate), expiry day (dte_close fires), a weekend and
+a holiday (no decisions, no drift), a halt while holding (exits still allowed), and the same
+policy replayed by `simulate_position` over the fixture bars producing the same decisions the
+live path made (parity, as with the tracker). These are the acceptance tests for Phase 2b below.
+
 ## 3. Migration — five phases, EM green throughout
 
 Parity harness that gates every phase: `tests/test_technique_walkforward.py` (sweep rows equal
@@ -157,6 +223,7 @@ and 08-26 sweeps re-run must produce byte-identical rows.
 | **0 · identity** | `technique` column on the five tables; `techniques/base.py` + registry with one entry; run/armed dicts carry `technique`; Sidebar/TabBar read the registry (still one item); order intent meta gets `techniqueId` | none | small |
 | **1 · library** | Create `marketstructure/`; *move* levels/volume/candles/structure/analysis/outcome/tracker there (old paths re-export, so nothing breaks); introduce `TriggerRules`, built by `rulebook.rules_from_settings()`, consumed by tracker / outcome / exits instead of `Thresholds` directly; `distance_pct`/`count_touches` become public | none (parity fixture) | medium |
 | **2 · runner** | Split `arming.py`: `execution/planrunner.py` (generic lifecycle) + `techniques/enhanced_market/live.py` (windows, gap on the 09:30 bar, pre-open re-plan, critic prompt, 0DTE cutoff, Friday multiplier, TP2 single exit) as hook implementations; `execution/sizing.py`, `execution/expression.py`; `ArmedPlan.technique` | none (arming tests) | large — the money path; do it in a quiet week, one hook at a time |
+| **2b · durable positions** | `execution/positions.py` + `policies.py` + `simulate.py`; `managed_positions` table; venue-side GTC protection; reconciliation loop; the chaos suite (§2.5). Independent of EM — EM keeps its session plans | new capability | large — the second money path; ships with the chaos suite or not at all |
 | **3 · research + API + settings** | `research/` for runs/outcomes/reviews/replay/bundles/sweeps/sheets keyed by technique; `/api/techniques/{id}`; settings namespaces with a one-time key migration | key renames only | medium |
 | **4 · UI shell** | `TechniquePage` → generic shell + per-technique panels (EM keeps Validation/Analyse/Chat/History/Backtest); Settings gets a per-technique section; Armed chip | cosmetic | medium |
 | **5 · second technique** | Build **Tip** (below) on the platform. Every gap it finds becomes a protocol hook, never a fork of the runner | new feature | medium |
@@ -198,3 +265,4 @@ method change logged in `TRADING-RULES.md` under the technique's own heading.
 2. Keep `/api/technique/*` as the EM alias during phases 0–4 (assumed yes).
 3. Is **Tip** the second technique, and does it enter on tip-time or wait for a level touch?
 4. Phase 2 timing — which quiet week; it must not overlap a live-money gate.
+5. Overnight policy default: `venue_stop_required` (refuse to hold without a resting venue stop) — assumed yes.
