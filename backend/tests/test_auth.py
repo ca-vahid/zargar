@@ -118,3 +118,21 @@ async def test_sign_in_is_rate_limited(sso_client):
     for _ in range(12):
         codes.append((await client.post("/api/auth/google", json={"credential": "stranger"})).status_code)
     assert codes[:10] == [403] * 10 and codes[10:] == [429, 429]
+
+
+async def test_generated_session_secret_survives_restart(engine):
+    """No ZARGAR_SESSION_SECRET: the generated secret is persisted (hidden) so a restart
+    keeps every device signed in; it must never appear in the settings the API lists."""
+    from zargar.auth import SECRET_KEY
+    from .conftest import wait_for
+
+    class NoSecret(Cfg):
+        session_secret = ""
+    first = AuthService(NoSecret(), engine.settings)
+    tok = first.issue_session({"email": "visper@gmail.com", "name": "V", "provider": "google"})
+    await wait_for(lambda: engine.settings.get(SECRET_KEY) == first.secret())
+    assert SECRET_KEY not in engine.settings.all()
+    # "restart": a fresh service over the same settings verifies the old cookie
+    second = AuthService(NoSecret(), engine.settings)
+    assert second.secret() == first.secret()
+    assert second.verify_session(tok)["email"] == "visper@gmail.com"

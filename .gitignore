@@ -19,3 +19,7 @@ technique-reviews/
 
 # mobile audit output (scripts/mobile-audit.mjs)
 frontend/.mobile-shots/
+
+# tailscale cert output (never commit private keys)
+*.ts.net.crt
+*.ts.net.key

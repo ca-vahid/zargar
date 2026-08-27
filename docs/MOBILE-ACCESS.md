@@ -45,6 +45,15 @@ routes, phones stay exit-only on real accounts. Turn it off with
 `tailscale funnel --https=443 off` (Serve keeps working inside the tailnet);
 `tailscale funnel status` shows the current state.
 
+How it resolves (learned 2026-08-26): inside the tailnet the name is the node's
+`100.x` address; once Funnel is on, Tailscale rewrites the **public** record to its
+relay servers (`208.111.34.x`, plus AAAA) and that swap took **~15 minutes** to
+reach the authoritative `ns*.dnsimple.com` servers — until then outside devices get
+"could not find host" and public resolvers cache the miss for 5 more minutes. Check
+with `nslookup -type=A zargar-desk.tail97d481.ts.net ns1.dnsimple.com`: relay IPs
+= live, `100.x` = still propagating. Nothing to fix locally while
+`tailscale serve status --json` shows `"AllowFunnel": {...: true}`.
+
 ## Alternatives
 
 - **LAN only:** `ZARGAR_HOST=0.0.0.0` + `ZARGAR_AUTH_TOKEN` + a local cert
