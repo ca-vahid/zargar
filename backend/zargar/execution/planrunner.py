@@ -372,6 +372,9 @@ class PlanRunner(SessionListener):
         # (run_id, trigger_id) -> (last retry ts, attempts) for the failed-exit watchdog
         self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
         self._auto_done: set[tuple[str, str]] = set()
+        # per-hook observability (EM team #6): "which hook, how often, how slow"
+        # is a query, not a hunt — surfaced on the armed summary as `hookStats`
+        self._hook_stats: dict[str, dict] = {}
 
     # ---------------------------------------------------------------- listener hooks
     async def on_minute_bar(self, symbol, bar) -> None:
@@ -624,6 +627,7 @@ class PlanRunner(SessionListener):
             "counts": counts,
             "attention": attention, "inTrade": in_trade, "timeline": timeline[:100],
             "watching": watching, "stoppedToday": stopped,
+            "hookStats": self.hook_stats(),
             "pnl": {"realized": round(realized, 2), "unrealized": round(unrealized, 2),
                     "lossLimit": round(loss_limit, 2),
                     "lossLimitUsedPct": (round(max(0.0, used), 1) if used is not None else None)},
@@ -1661,16 +1665,17 @@ class PlanRunner(SessionListener):
         # (spread / IV / delta / DTE) and not just the chart; the order path reuses it
         if journal and cfg.instrument == "options" and cfg.mode in ("proposal", "auto"):
             with contextlib.suppress(Exception):
-                await self.pick_contract(ap, trade)
+                await self._hook("pick_contract", self.pick_contract(ap, trade))
         # the technique's deterministic read of the fire (hook, no I/O), then its
         # optional reviewer (hook) — the RUNNER owns the timeout, the fail-open
         # budget, pause-on-exhaust, the veto cooldown, the kill cap and re-arming
-        j = await self.analyze_fire(ap, tid, tr, trade)
+        j = await self._hook("analyze_fire", self.analyze_fire(ap, tid, tr, trade))
         if journal and cfg.use_critic and self.reviewer_available():
             timeout = float(self.engine.settings.get("technique.arm.critic_timeout_seconds", 25) or 0)
             try:
                 coro = self.review_fire(ap, tid, tr, trade, j)
-                verdict, confidence, critic = await (asyncio.wait_for(coro, timeout) if timeout > 0 else coro)
+                verdict, confidence, critic = await self._hook(
+                    "review_fire", asyncio.wait_for(coro, timeout) if timeout > 0 else coro)
                 j.verdict, j.confidence, j.critic = verdict, float(confidence), critic
             except asyncio.CancelledError:
                 raise
@@ -1687,7 +1692,7 @@ class PlanRunner(SessionListener):
         # the technique's own record of the fire (EM: the setup row), always, so the run shows what fired
         if journal:
             try:
-                await self.record_fire(ap, tid, tr, trade, j)
+                await self._hook("record_fire", self.record_fire(ap, tid, tr, trade, j))
             except Exception:
                 log.exception("recording fired setup failed")
         if journal:
@@ -1741,14 +1746,14 @@ class PlanRunner(SessionListener):
             try:
                 contract = None
                 if cfg.instrument == "options":
-                    contract = trade.contract if trade.contract_attempted else await self.pick_contract(ap, trade)
+                    contract = trade.contract if trade.contract_attempted else await self._hook("pick_contract", self.pick_contract(ap, trade))
                     if contract is None:
                         trade.status = "failed"
                         trade.reason = "no option contract available (see errors)"
                 if trade.status != "failed":
-                    pid = await self.emit_proposal(      # hook (EM: technique proposal from the setup row)
+                    pid = await self._hook("emit_proposal", self.emit_proposal(
                         ap, trade, j, contract,
-                        contracts=(await self._size_contracts(ap, trade, contract) if contract else None))
+                        contracts=(await self._size_contracts(ap, trade, contract) if contract else None)))
             except Exception as exc:
                 log.exception("proposal emission failed")
                 trade.errors.append(f"proposal: {exc}")
@@ -1820,7 +1825,7 @@ class PlanRunner(SessionListener):
             return
         contract = None
         if use_options:
-            contract = trade.contract if trade.contract_attempted else await self.pick_contract(ap, trade)
+            contract = trade.contract if trade.contract_attempted else await self._hook("pick_contract", self.pick_contract(ap, trade))
             # T5.3/T5.4 liquidity/IV gates
             blocked = None
             if contract is not None:
@@ -2056,6 +2061,71 @@ class PlanRunner(SessionListener):
     def _publish(self, ap: ArmedPlan, what: str) -> None:
         self.engine.bus.publish(topics.TECHNIQUE, {"kind": "armed", "event": what, "armed": self._snapshot(ap)})
 
+
+    async def _run_preopen(self, ap: ArmedPlan) -> None:
+        """The pre-open judgement, orchestrated (and journaled) by the runner: the
+        technique's `preopen_check` hook says keep | replan(reference); a replan asks
+        `build_replacement_plan` for a fresh run and this method swaps the plans.
+        Hooks stay judgement-only — every journal entry and alert happens here, so
+        the event shapes are the same for every technique."""
+        q = self.engine.quotes.get(ap.symbol)
+        now_ms = int(time.time() * 1000)
+        last = float(q.last) if q is not None and q.last and q.last > 0 else 0.0
+        fresh = q is not None and (now_ms - q.ts) <= 15 * 60_000
+        if last <= 0 or not fresh:
+            self._log(ap, "preopen_check", "no fresh pre-market print — nothing to judge before the open")
+            return
+        v = await self._hook("preopen_check", self.preopen_check(ap, last))
+        if not v:
+            return
+        rows, prev, pct = v.get("rows") or [], float(v.get("reference") or 0), float(v.get("gapPct") or 0)
+        summary = ", ".join(f"{r['trigger']} {r['verdict']}" for r in rows) or "no live triggers"
+        self._log(ap, "preopen_check",
+                  f"pre-market {last:.2f} vs {prev:.2f} ({pct:+.2f}%): {summary}", rows=rows, premarket=last)
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_PREOPEN, {
+            "runId": ap.run_id, "symbol": ap.symbol, "planFor": ap.plan_for, "premarket": last,
+            "reference": prev, "gapPct": round(pct, 3), "triggers": rows, "replan": bool(v.get("replan"))},
+            aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        if not v.get("replan"):
+            return
+        # every trigger would die at the open: ask the technique for a plan around the actual price
+        try:
+            run = await self._hook("build_replacement_plan", self.build_replacement_plan(ap, reference_price=last))
+        except Exception as exc:
+            await self._alert(ap, f"pre-open re-plan failed ({exc}) — keeping the evening plan", level="warning",
+                              stage="preopen")
+            return
+        new_plan = ((run or {}).get("result") or {}).get("plan") or {}
+        n_valid = int(new_plan.get("validTriggers") or 0)
+        if not run or run.get("status") != "done" or n_valid <= 0:
+            self._log(ap, "preopen_replan_empty",
+                      f"re-plan at {last:.2f} found no tradeable level — keeping the evening plan "
+                      f"(its triggers will void at the open)", runId=(run or {}).get("id"))
+            return
+        cfg = ap.config
+        old_id = ap.run_id
+        await self.disarm(old_id, reason=f"pre-open re-plan: pre-market {last:.2f} ({pct:+.2f}%) killed every trigger")
+        try:
+            await self.arm(run["id"], ArmConfig.from_dict(cfg.to_dict()))
+        except Exception as exc:
+            await self._alert(ap, f"pre-open re-plan built {run.get('id', '?')[:8]} but arming it failed: {exc}",
+                              level="critical", stage="preopen")
+            return
+        new_ap = self._armed.get(run["id"])
+        if new_ap is not None:
+            new_ap.preopen_done = True
+            self._log(new_ap, "preopen_replanned",
+                      f"replaces {old_id[:8]}: {n_valid} trigger(s) around the pre-market price {last:.2f}",
+                      parentRunId=old_id)
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_REPLANNED, {
+            "runId": run["id"], "parentRunId": old_id, "symbol": ap.symbol, "planFor": ap.plan_for,
+            "premarket": last, "reference": prev, "gapPct": round(pct, 3), "validTriggers": n_valid},
+            aggregate_type="technique_run", aggregate_id=run["id"], portfolio_id=cfg.portfolio_id)
+        self.engine.bus.publish(topics.TECHNIQUE, {
+            "kind": "alert", "level": "info",
+            "text": f"{ap.symbol}: pre-open re-plan — {n_valid} trigger(s) around {last:.2f} ({pct:+.2f}% vs close)",
+            "runId": run["id"], "symbol": ap.symbol})
+
     async def on_heartbeat(self) -> None:
         """Auto-arm configured symbols at the open; mark stale plans; publish a
         heartbeat snapshot every minute so the dashboard's numbers stay live.
@@ -2070,7 +2140,7 @@ class PlanRunner(SessionListener):
                 if ap.plan_for == now.strftime("%Y-%m-%d") and ap.status == "armed" and not ap.preopen_done:
                     ap.preopen_done = True
                     try:
-                        await self.preopen(ap)
+                        await self._run_preopen(ap)
                     except Exception:
                         log.exception("pre-open check failed for %s", ap.symbol)
         # Clock-driven close (2026-08-27, EM team): expiry and the scorecard must not
@@ -2116,6 +2186,25 @@ class PlanRunner(SessionListener):
                     except Exception as exc:
                         log.warning("auto-arm %s failed: %s", sym, exc)
 
+
+
+    async def _hook(self, name: str, coro):
+        """Await a technique hook with per-hook latency / error accounting."""
+        st = self._hook_stats.setdefault(name, {"calls": 0, "errors": 0, "totalMs": 0.0, "maxMs": 0.0})
+        st["calls"] += 1
+        t0 = time.perf_counter()
+        try:
+            return await coro
+        except BaseException:
+            st["errors"] += 1
+            raise
+        finally:
+            ms = (time.perf_counter() - t0) * 1000.0
+            st["totalMs"] = round(st["totalMs"] + ms, 1)
+            st["maxMs"] = round(max(st["maxMs"], ms), 1)
+
+    def hook_stats(self) -> dict:
+        return {k: dict(v) for k, v in self._hook_stats.items()}
 
     # ================================================================ technique hooks
     # A technique subclass overrides these; every default is the "no opinion" path.
@@ -2183,8 +2272,16 @@ class PlanRunner(SessionListener):
         """Is it time for the technique's pre-open judgement (EM: 09:25 ET)?"""
         return False
 
-    async def preopen(self, ap: "ArmedPlan") -> None:
-        """The pre-open judgement / re-plan itself."""
+    async def preopen_check(self, ap: "ArmedPlan", premarket: float) -> dict | None:
+        """Judge the plan against the pre-market print. Returns
+        {"rows": [...], "reference": prev_close, "gapPct": float, "replan": bool}
+        or None when there is nothing to judge. Judgement only — the runner logs,
+        journals and orchestrates any replacement."""
+        return None
+
+    async def build_replacement_plan(self, ap: "ArmedPlan", *, reference_price: float) -> dict | None:
+        """Build a fresh plan run around the actual price (returns the run record,
+        or None). Called only when `preopen_check` said replan."""
         return None
 
     async def arm_today(self, symbol: str, config: dict | None = None, *, with_vision: bool | None = None) -> dict:

@@ -84,8 +84,6 @@ class PlanArmer(PlanRunner):
     def preopen_due(self, now: dt.datetime) -> bool:
         return self._preopen_window(now)
 
-    async def preopen(self, ap: ArmedPlan) -> None:
-        await self._preopen_check(ap)
 
     async def analyze_fire(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, trade: Trade) -> FireJudgement:
         """The deterministic read of the trigger that fired (T-rules, no model)."""
@@ -282,24 +280,12 @@ class PlanArmer(PlanRunner):
         m = now.hour * 60 + now.minute
         return hh * 60 + mm <= m < 9 * 60 + 30
 
-    async def _preopen_check(self, ap: ArmedPlan) -> None:
-        """Q5 (user decision 2026-08-26) — use the pre-market tape smartly, without
-        trading on it (R6.4/R6.5). At `technique.arm.preopen_at` the plan is judged
-        against the pre-market print: which triggers the open would gap past /
-        through / void is recorded (journal + log, so the fleet says WHY before
-        09:30), and when EVERY valid trigger is already dead a fresh plan is built
-        from the same prior-session structure re-anchored to the pre-market price
-        (`build_session_plan(reference_price=...)`) and armed in this one's place —
-        the levels near the new price, not the ones last night's close saw. The
-        gap-void rule then measures the surprise between 09:25 and 09:30."""
-        s = self.engine.settings
-        q = self.engine.quotes.get(ap.symbol)
-        now_ms = int(time.time() * 1000)
-        last = float(q.last) if q is not None and q.last and q.last > 0 else 0.0
-        fresh = q is not None and (now_ms - q.ts) <= 15 * 60_000
-        if last <= 0 or not fresh:
-            self._log(ap, "preopen_check", "no fresh pre-market print — nothing to judge before the open")
-            return
+    async def preopen_check(self, ap: ArmedPlan, premarket: float) -> dict | None:
+        """Q5 (user decision 2026-08-26) — judge the plan against the pre-market print,
+        without trading on it (R6.4/R6.5): which triggers the open would gap past /
+        through / void, and whether EVERY valid trigger is already dead (then the
+        runner asks for a replacement plan). Judgement only — the runner journals."""
+        last = premarket
         prev = float(ap.plan.get("referencePrice") or ap.plan.get("lastClose") or 0)
         t = self.technique.thresholds()
         rows = []
@@ -322,54 +308,12 @@ class PlanArmer(PlanRunner):
             rows.append({"trigger": tid, "kind": tr.kind, "entry": tr.entry, "stop": tr.stop,
                          "verdict": verdict, "gapR": round(abs(last - prev) / tr.risk, 2) if prev else None})
         pct = ((last - prev) / prev * 100) if prev else 0.0
-        summary = ", ".join(f"{r['trigger']} {r['verdict']}" for r in rows) or "no live triggers"
-        self._log(ap, "preopen_check",
-                  f"pre-market {last:.2f} vs {prev:.2f} ({pct:+.2f}%): {summary}", rows=rows, premarket=last)
-        await self.engine.journal.append(ev.TECHNIQUE_PLAN_PREOPEN, {
-            "runId": ap.run_id, "symbol": ap.symbol, "planFor": ap.plan_for, "premarket": last,
-            "reference": prev, "gapPct": round(pct, 3), "triggers": rows,
-            "replan": bool(rows) and alive == 0 and bool(s.get("technique.arm.preopen_replan", True))},
-            aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
-        if not rows or alive > 0 or not bool(s.get("technique.arm.preopen_replan", True)):
-            return
-        # every trigger would die at the open: re-plan around where price actually is
-        try:
-            run = await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
-                                               primary_tf=str(ap.plan.get("triggerTf") or "1m"),
-                                               trigger="preopen_replan", plan=True, with_vision=False, wait=True,
-                                               parent_run_id=ap.run_id, reference_price=last)
-        except Exception as exc:
-            await self._alert(ap, f"pre-open re-plan failed ({exc}) — keeping the evening plan", level="warning",
-                              stage="preopen")
-            return
-        new_plan = ((run or {}).get("result") or {}).get("plan") or {}
-        n_valid = int(new_plan.get("validTriggers") or 0)
-        if run.get("status") != "done" or n_valid <= 0:
-            self._log(ap, "preopen_replan_empty",
-                      f"re-plan at {last:.2f} found no tradeable level — keeping the evening plan "
-                      f"(its triggers will void at the open)", runId=run.get("id"))
-            return
-        cfg = ap.config
-        old_id = ap.run_id
-        await self.disarm(old_id, reason=f"pre-open re-plan: pre-market {last:.2f} ({pct:+.2f}%) killed every trigger")
-        try:
-            snap = await self.arm(run["id"], ArmConfig.from_dict(cfg.to_dict()))
-        except Exception as exc:
-            await self._alert(ap, f"pre-open re-plan built {run.get('id', '?')[:8]} but arming it failed: {exc}",
-                              level="critical", stage="preopen")
-            return
-        new_ap = self._armed.get(run["id"])
-        if new_ap is not None:
-            new_ap.preopen_done = True
-            self._log(new_ap, "preopen_replanned",
-                      f"replaces {old_id[:8]}: {n_valid} trigger(s) around the pre-market price {last:.2f}",
-                      parentRunId=old_id)
-        await self.engine.journal.append(ev.TECHNIQUE_PLAN_REPLANNED, {
-            "runId": run["id"], "parentRunId": old_id, "symbol": ap.symbol, "planFor": ap.plan_for,
-            "premarket": last, "reference": prev, "gapPct": round(pct, 3), "validTriggers": n_valid},
-            aggregate_type="technique_run", aggregate_id=run["id"], portfolio_id=cfg.portfolio_id)
-        self.engine.bus.publish(topics.TECHNIQUE, {
-            "kind": "alert", "level": "info",
-            "text": f"{ap.symbol}: pre-open re-plan — {n_valid} trigger(s) around {last:.2f} ({pct:+.2f}% vs close)",
-            "runId": run["id"], "symbol": ap.symbol})
+        replan = bool(rows) and alive == 0 and bool(self.engine.settings.get("technique.arm.preopen_replan", True))
+        return {"rows": rows, "reference": prev, "gapPct": pct, "replan": replan}
+
+    async def build_replacement_plan(self, ap: ArmedPlan, *, reference_price: float) -> dict | None:
+        return await self.technique.analyze(ap.symbol, as_of_ms=int(ap.plan.get("builtFromMs") or 0) or None,
+                                            primary_tf=str(ap.plan.get("triggerTf") or "1m"),
+                                            trigger="preopen_replan", plan=True, with_vision=False, wait=True,
+                                            parent_run_id=ap.run_id, reference_price=reference_price)
 
