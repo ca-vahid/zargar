@@ -1,7 +1,11 @@
 # Technique platform — one engine, many techniques
 
-*Written 2026-08-27 after the first live day of the EnhancedMarket (EM) technique. Status: **plan,
-not built**. Owner: the technique layer. Companion docs: `ARCHITECTURE.md` (the app),
+*Written 2026-08-27 after the first live day of the EnhancedMarket (EM) technique. Status:
+**phases 0, 1 and 2 are built, parity-tested and live (same day)**; 2b (durable positions), 3
+(research/API/settings), 4 (UI shell) and 5 (the second technique) remain. §1–§2 keep the original
+analysis as the record of the starting point, with as-built notes. Owner: the technique layer.
+Companion docs: `ARCHITECTURE.md` (the app — its "Technique platform" section is the as-built
+reference), `PLATFORM-RULES.md` (the shared judgement log),
 `techniques/enhanced-market/PIPELINE-PLAN.md` / `techniques/enhanced-market/WALKFORWARD-PLAN.md` (how EM was built),
 `techniques/enhanced-market/TRADING-RULES.md` (the method judgement log).*
 
@@ -19,7 +23,7 @@ configured and wired as if EM were the only technique. This plan turns it into t
 libraries plus a thin per-technique package, without a big-bang rewrite: every phase keeps EM
 running and its parity tests green.
 
-## 1. What we have (as of `77f5a97`)
+## 1. The starting point (as of `77f5a97`, the morning of the build — kept as the record)
 
 ### 1.1 Already shared and technique-agnostic
 | Where | What |
@@ -51,7 +55,7 @@ pre-session routine, trigger grading), `schemas.py` / `vision.py` / `tools.py` /
 (prompts, the 4-pass read, chat tools), `options.py` (just-OTM weekly/0DTE pick — an EM
 *policy* over the shared chain providers), `backtest.py`, the docs and TRADING-RULES entries.
 
-### 1.4 Entangled — where the real work is
+### 1.4 Entangled — where the real work was *(resolved by phases 0–2 the same day; the table is the before-picture)*
 | Piece | Size | Generic part | EM part |
 |---|---|---|---|
 | `technique/arming.py` (`PlanArmer`) | 2,334 lines | arm/restore/persist, `_spawn_fire`, entry with retry, contract pick + sizing, `_manage`/`_exit`, loss halt, quote stop watch, premium stop, failed-exit watchdog, `_alert`, audit, `summary()` for the phone | R6 session windows, gap rule on the 09:30 bar, pre-open re-plan, the critic prompt, 0DTE cutoff, Friday multiplier, TP2 single-contract exit, `max_false_breaks` |
@@ -64,44 +68,64 @@ pre-session routine, trigger grading), `schemas.py` / `vision.py` / `tools.py` /
 
 ## 2. Target shape
 
+As built (2026-08-27) — ✔ = exists, → = still to come:
+
 ```
 backend/zargar/
-  marketstructure/        SHARED LIBRARY — pure functions over bars, no I/O, no settings reads
-    levels.py  volume.py  candles.py  structure.py  facts.py  distance.py
-    tracker.py            TriggerTracker + TriggerRules (parameters, not rulebook lookups)
-    outcome.py            simulate_plan
-  execution/              SHARED RUNTIME — turning a plan into managed money (exists; grows)
-    listener.py  exits.py  book.py
-    planrunner.py         generic PlanRunner(SessionListener): arm/restore/fire/enter/manage/exit/alert
-    sizing.py             risk-based sizing, caps, day-of-week / DTE multipliers as parameters
-    expression.py         "how to express a level idea": shares vs option pick (shared chain access)
-  research/               SHARED RESEARCH — runs, provenance, outcomes, reviews, replay, bundles, sweeps/sheets, LLM plumbing
+  marketstructure/        ✔ SHARED LIBRARY — pure functions over bars, no I/O, no settings reads
+    levels.py volume.py candles.py structure.py history.py     ✔ moved verbatim (old paths are shims)
+    sessions.py           ✔ the ET session clock (cut out of EM's rulebook)
+    rules.py              ✔ MarketRules (duck-compatible with EM's Thresholds) + windows + DEFAULT_LADDER
+    tracker.py            ✔ TriggerTracker / level_respect / score_trigger (cut out of walkforward)
+    outcome.py            ✔ simulate_plan · __init__ exports distance_pct / count_touches
+    (facts stays in EM's analysis.py until phase 2's tail — it imports setups)
+  execution/              ✔ SHARED RUNTIME
+    listener.py exits.py book.py                               ✔ (pre-existing)
+    planrunner.py         ✔ PlanRunner(SessionListener): arm/restore/persist, off-loop fire chain,
+                            entry+retry, sizing + premium caps, ladder/stop/flatten management, loss
+                            halt, quote/premium stop watch, failed-exit watchdog, alerts, audit,
+                            phone summary, pre-open orchestration, clock-driven close, hookStats
+    positions.py policies.py simulate.py                       → phase 2b (durable multi-day manager)
+  research/               → phase 3 (today: the generic halves of technique/service.py)
   techniques/
-    base.py               the Technique protocol + registry
-    enhanced_market/      today's technique/ minus what moved out: rulebook, setups, plans, schemas, vision, chat, live hooks
-    tip/                  (future) signal-driven technique
+    base.py               ✔ TechniqueInfo + registry (GET /api/techniques)
+    enhanced_market/      → phase 3/4 rename; TODAY EM still lives at zargar/technique/ —
+                            arming.py = PlanArmer(PlanRunner), 319 lines of hooks; rulebook, setups,
+                            plans, schemas, vision, chat, analysis stay there
+    tip/                  → phase 5
 ```
 
 ### 2.1 The technique protocol
 A technique produces **data** — a `SessionPlan` with `Trigger`s — and a handful of policies.
 The shared runner does everything risky.
 
-```python
-class Technique(Protocol):
-    id: str                      # "enhanced_market", "tip"  (settings prefix technique.<id>.*)
-    label: str                   # "EM Options"
-    version: str                 # goes into run provenance
+As built, the protocol is the **hook set of `PlanRunner`** (every default is the "no opinion"
+path; hooks judge, the runner journals — none of them may journal):
 
-    def universe(self, ctx) -> list[str]                       # default: shared universe layers
-    async def plan(self, ctx, symbol: str, as_of: int, *, reference_price=None) -> SessionPlan
-    def trigger_rules(self, ctx) -> TriggerRules               # tolerance, volume floor, gap policy,
-                                                               # windows, max false breaks, stop_on, cooldown
-    def express(self, ctx, trigger) -> Expression              # shares | option pick policy (strike/expiry/DTE rules)
-    def exit_policy(self, ctx, trade) -> ExitPolicy            # ladder, single-contract exit, flatten time, trail/time stops
-    async def critic(self, ctx, fire) -> Verdict | None        # optional second opinion; None = no critic
-    def score(self, plan, bars) -> Outcome                     # default: marketstructure.simulate_plan
-    ui: TechniqueUI                                            # tabs to show, settings sections, labels
+```python
+class PlanRunner(SessionListener):
+    TECHNIQUE_ID: str                                     # registry id on plans + order intents
+    def rules(self) -> MarketRules                        # what the trackers/exits read
+    async def load_plan(self, run_id) -> dict             # the run record with result.plan
+    async def load_baseline_bars(self, run_id, tf)        # prior-session bars (volume baseline)
+    def entry_windows_enforced(self) -> bool              # EM: R6 unless the mid-day experiment
+    async def analyze_fire(self, ap, tid, tr, trade) -> FireJudgement     # deterministic, no I/O
+    def reviewer_available(self) -> bool
+    async def review_fire(self, ap, tid, tr, trade, j) -> (verdict, confidence, critic)
+                                                          # EM: prompt assembly + verdict; the RUNNER
+                                                          # owns timeout, fail-open budget, veto
+                                                          # cooldown, kill cap, re-arming
+    async def record_fire(...); async def emit_proposal(...); async def after_fire(...)
+    async def pick_contract(self, ap, trade) -> dict | None   # expression (T5 pick for EM)
+    def size_multiplier(self, contract) -> (mult, why)        # EM: Friday x0.5, 0DTE x0.5
+    def preopen_due(self, now) -> bool
+    async def preopen_check(self, ap, premarket) -> {rows, reference, gapPct, replan}
+    async def build_replacement_plan(self, ap, *, reference_price) -> run | None
+    async def arm_today(self, symbol, ...)                # build + arm today's plan on demand
 ```
+
+The wider `Technique` protocol (plan construction, `score()`, `ui`) arrives with phases 3–4 when
+the research layer and the UI shell go generic; `TechniqueInfo.tabs` is its first slice.
 
 Shared data types (most already exist in `plans.py` / `walkforward.py` / `book.py` and move to
 `marketstructure` / `execution`): `Level`, `Trigger`, `Condition`, `SessionPlan`,
@@ -129,7 +153,7 @@ tr      = TriggerTracker(trigger, rules); state = tr.on_bar(bar)  # waiting → 
 out     = simulate_plan(plan, bars, stop_on=rules.stop_on)        # what would have happened
 ```
 
-### 2.3 Identity everywhere
+### 2.3 Identity everywhere *(built in phase 0; settings scoping is the phase-3 piece — spec in §8.4)*
 - DB: a `technique` column (String(32), default `"enhanced_market"`) on `technique_runs`,
   `technique_sweeps`, `technique_armed`, `technique_setups`, `technique_outcomes`
   (`db.create_all` adds columns additively — no manual migration).
@@ -260,12 +284,17 @@ live / plan / sweep with parity tests** (now per `TriggerRules`, still one class
 live-persisted record beats replay on restore; restarts only mid-day or after the close; every
 method change logged in `techniques/enhanced-market/TRADING-RULES.md` under the technique's own heading.
 
-## 7. Decisions needed
-1. Technique ids and labels (`enhanced_market` / "EM Options" assumed).
-2. Keep `/api/technique/*` as the EM alias during phases 0–4 (assumed yes).
-3. Is **Tip** the second technique, and does it enter on tip-time or wait for a level touch?
-4. Phase 2 timing — which quiet week; it must not overlap a live-money gate.
-5. Overnight policy default: `venue_stop_required` (refuse to hold without a resting venue stop) — assumed yes.
+## 7. Decisions
+Settled (dated in `PLATFORM-RULES.md` §4 and EM's TRADING-RULES):
+- 2026-08-27 · Technique ids/labels: `enhanced_market` / "EM Options"; `/api/technique/*` stays the EM alias through phase 4.
+- 2026-08-27 · Phase 2 timing: done same-day with user authorization (practice money), one verbatim move with hook seams, parity suites + the include-invalid audit after each step.
+- 2026-08-27 · `technique.arm.midday_trading` is **EM-only, never a platform key** (user + EM team).
+- 2026-08-27 · Veto/critic budgets: **platform defaults with per-technique override** — resolution `techniques.<id>.<key>` → `execution.<key>`, spec in §8.4 (user + EM team).
+
+Still open:
+1. Is **Tip** the second technique, and does it enter at tip time or wait for a level touch?
+2. Overnight policy default `venue_stop_required` — assumed yes, confirm before phase 2b starts.
+3. Phase 2b timing (the second money path; ships with the chaos suite or not at all).
 
 ## 8. Engine backlog — the EM team's operating list (2026-08-27)
 
