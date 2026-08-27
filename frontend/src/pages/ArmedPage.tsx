@@ -29,7 +29,6 @@ function lsGet(k: string, dflt: string): string {
 }
 function lsSet(k: string, v: string) { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
 
-const TECH_LABEL = "EM Options";   // per-plan once multiple techniques arm
 
 export function ArmedPage() {
   const allArmed = useStore((s) => s.techniqueArmed);
@@ -125,20 +124,13 @@ export function ArmedPage() {
         </div>
         {sub === "live" && (
           <div className="armed-viewtoggles">
+            {/* page-wide switch only; dense/rich lives on the fleet table it changes (2026-08-26) */}
             <div className="seg" role="group" aria-label="Layout">
               <button className={layout === "split" ? "on" : ""} title="Split view — table left, detail pinned right"
                 onClick={() => setLayout("split")}>⫞ split</button>
               <button className={layout === "strip" ? "on" : ""} title="Strip view — symbol chips on top, full-width detail (laptop friendly)"
                 onClick={() => setLayout("strip")}>☰ strip</button>
             </div>
-            {layout === "split" && (
-              <div className="seg" role="group" aria-label="Table style">
-                <button className={tstyle === "dense" ? "on" : ""} title="Dense table — most rows per screen"
-                  onClick={() => setTstyle("dense")}>dense</button>
-                <button className={tstyle === "rich" ? "on" : ""} title="Rich rows — sparkline + distance-to-trigger meter"
-                  onClick={() => setTstyle("rich")}>rich</button>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -181,7 +173,8 @@ export function ArmedPage() {
           {armed.length > 0 && layout === "split" && (
             <div className="armed-split">
               <div className="armed-fleet-pane">
-                <FleetSortTable armed={armed} selId={selArmed?.runId ?? ""} onSel={setSelId} rich={tstyle === "rich"} />
+                <FleetSortTable armed={armed} selId={selArmed?.runId ?? ""} onSel={setSelId}
+                  rich={tstyle === "rich"} onRich={(v) => setTstyle(v ? "rich" : "dense")} />
               </div>
               <div className="armed-detail-pane">
                 {selArmed && <ArmedCard key={selArmed.runId} a={selArmed} onChanged={refresh} />}
@@ -246,10 +239,13 @@ const SORTERS: Record<SortKey, (a: ArmedPlan, b: ArmedPlan) => number> = {
   pnl: (a, b) => (b.realizedPnl ?? 0) - (a.realizedPnl ?? 0),
 };
 
-function FleetSortTable({ armed, selId, onSel, rich }: {
-  armed: ArmedPlan[]; selId: string; onSel: (id: string) => void; rich: boolean;
+function FleetSortTable({ armed, selId, onSel, rich, onRich }: {
+  armed: ArmedPlan[]; selId: string; onSel: (id: string) => void; rich: boolean; onRich: (rich: boolean) => void;
 }) {
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "status", dir: 1 });
+  const [q, setQ] = useState("");
+  const needle = q.trim().toUpperCase();
+  const shorts = armed.filter((a) => nearestTrigger(a) && isShortTrigger(nearestTrigger(a))).length;
   // FROZEN ORDER: recompute only when the sort or the membership changes —
   // never on a data heartbeat, so rows stop leaping around under the cursor
   const memberKey = armed.map((a) => a.runId).sort().join(",");
@@ -266,15 +262,28 @@ function FleetSortTable({ armed, selId, onSel, rich }: {
   const TH = ({ k, children, title }: { k: SortKey; children: any; title?: string }) => (
     <th className="sortable" title={title ?? "Click to sort"} onClick={() => clickSort(k)}>{children}{arrow(k)}</th>
   );
+  const shown = needle ? order.filter((id) => byId[id]?.symbol.includes(needle)) : order;
   return (
     <div className="panel armed-fleet-panel">
-      <div className="panel-head">Fleet <span className="sub">{armed.length} plan(s) · ← → to move</span></div>
-      <div className="panel-body armed-fleet-scroll" style={{ padding: 0 }}>
+      {/* the table's own toolbar: filter, what's in it, and the density switch (user's pick 2B) */}
+      <div className="panel-head armed-fleet-toolbar">
+        <input className="armed-filter" value={q} onChange={(e) => setQ(e.target.value)} placeholder="filter symbols…"
+          aria-label="Filter armed plans by symbol" spellCheck={false} />
+        <span className="sub">
+          {needle ? `${shown.length} of ${armed.length}` : `${armed.length} plan${armed.length === 1 ? "" : "s"}`}
+          {" · "}{armed.length - shorts} long · {shorts} short · ← → to move
+        </span>
+        <div className="seg sm armed-density" role="group" aria-label="Table style">
+          <button className={rich ? "" : "on"} title="Dense table — most rows per screen" onClick={() => onRich(false)}>dense</button>
+          <button className={rich ? "on" : ""} title="Rich rows — sparkline + distance-to-trigger meter" onClick={() => onRich(true)}>rich</button>
+        </div>
+      </div>
+      <div className="panel-body armed-fleet-body" style={{ padding: 0 }}>
         <table className={`tq-table tq-fleet armed-fleet ${rich ? "rich" : ""}`}>
           <thead><tr>
             <TH k="symbol">Symbol</TH>
             <TH k="grade" title="Deterministic plan grade — tracked against outcomes (TRADING-RULES 1.2)">Gr</TH>
-            <th title="Technique that armed this plan">Tech</th>
+            <th title="The trigger this plan is watching (the nearest one): bounce/breakout = calls, reject/breakdown = puts">Setup</th>
             <TH k="window">Window</TH>
             {rich && <th title="Today's price path">Day</th>}
             <TH k="dist" title="Distance from the nearest trigger">{rich ? "To trigger" : "Dist"}</TH>
@@ -282,11 +291,14 @@ function FleetSortTable({ armed, selId, onSel, rich }: {
             <TH k="pnl">P&amp;L</TH>
           </tr></thead>
           <tbody>
-            {order.map((id) => {
+            {shown.map((id) => {
               const a = byId[id];
               if (!a) return null;
               return <FleetRow key={id} a={a} sel={id === selId} rich={rich} onSel={() => onSel(id)} />;
             })}
+            {needle && !shown.length && (
+              <tr><td colSpan={rich ? 8 : 7} className="muted small">No armed plan matches “{q.trim()}”.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -294,8 +306,23 @@ function FleetSortTable({ armed, selId, onSel, rich }: {
   );
 }
 
+type ArmedTrigger = ArmedPlan["triggers"][number];
+const nearestTrigger = (a: ArmedPlan): ArmedTrigger | undefined =>
+  (a.triggers ?? []).slice().sort((x, y) => Math.abs(x.distancePct ?? 99) - Math.abs(y.distancePct ?? 99))[0];
+const isShortTrigger = (t?: ArmedTrigger) => !!t && (t.direction === "short" || t.kind === "reject" || t.kind === "breakdown");
+
+/** The trigger kind as a chip: colour says the side (calls / puts), text says the entry style. */
+function SetupBadge({ t }: { t?: ArmedTrigger }) {
+  if (!t) return <span className="muted small">—</span>;
+  const short = isShortTrigger(t);
+  const brk = t.kind === "breakout" || t.kind === "breakdown";
+  const label = t.kind === "reject" ? "reject ↓" : t.kind === "breakdown" ? "breakdown ↓" : t.kind.replace(/_/g, " ");
+  return <span className={`tq-badge ${short ? "dir-short" : brk ? "dir-break" : "dir-long"}`}
+    title={short ? "Short side — expressed with a put" : "Long side — expressed with a call"}>{label}</span>;
+}
+
 function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: boolean; onSel: () => void }) {
-  const near = (a.triggers ?? []).slice().sort((x, y) => Math.abs(x.distancePct ?? 99) - Math.abs(y.distancePct ?? 99))[0];
+  const near = nearestTrigger(a);
   const [wTxt, wCls] = WINDOW_SHORT[a.sessionWindowNow] ?? [a.sessionWindowNow, "nosetup"];
   const st = chipState(a);
   const trigStatuses = (a.triggers ?? []).map((t) => t.status);
@@ -318,7 +345,7 @@ function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: b
     <tr className={`clickable ${sel ? "tq-fleet-sel" : ""}`} onClick={onSel}>
       <td className="nowrap"><b>{a.symbol}</b></td>
       <td>{a.grade ? <span className={`tq-grade g${a.grade}`}>{a.grade}</span> : <span className="muted small">—</span>}</td>
-      <td className="nowrap"><span className="armed-tech-chip">{TECH_LABEL}</span></td>
+      <td className="nowrap"><SetupBadge t={near} /></td>
       <td className="nowrap"><span className={`tq-badge ${wCls}`}>{wTxt}</span></td>
       {rich && <td className="armed-spark-cell"><Spark symbol={a.symbol} /></td>}
       <td className="nowrap small">

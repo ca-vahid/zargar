@@ -28,6 +28,9 @@ const KIND_CLS: Record<string, string> = {
   stale: "warn", critic_error: "warn", option_pick_failed: "warn", paused: "warn",
 };
 
+/** reject/breakdown triggers are the short side — always expressed with a put. */
+const isPut = (kind: string) => kind === "reject" || kind === "breakdown";
+
 function hhmm(ts: number | null | undefined): string {
   if (!ts) return "";
   return new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/New_York" });
@@ -196,6 +199,36 @@ export function NowView() {
         </div>
       )}
 
+      {/* before the session: the simplified runway — what tomorrow holds, nearest first */}
+      {sum.window === "extended" && sum.watching.length > 0 && sum.inTrade.length === 0 && (() => {
+        const puts = sum.watching.filter((w) => isPut(w.nearest.kind)).length;
+        const nearest = sum.watching.slice()
+          .filter((w) => w.nearest.distancePct != null)
+          .sort((a, b) => Math.abs(a.nearest.distancePct!) - Math.abs(b.nearest.distancePct!)).slice(0, 3);
+        return (
+          <div className="now-card now-next">
+            <div className="now-card-head">
+              <span className="now-tag">next session</span>
+              <span className="now-next-txt">{sum.watching.length} plan{sum.watching.length === 1 ? "" : "s"} · {sum.watching.length - puts} calls · {puts} puts</span>
+            </div>
+            {nearest.length > 0 && (
+              <div className="now-next-near">
+                <small>closest to firing at the open</small>
+                {nearest.map((w) => (
+                  <button type="button" key={`nn-${w.runId}`} className="now-next-item" onClick={() => setOpenRun(w.runId)}>
+                    <b>{w.symbol}</b>
+                    <span className={`now-side ${isPut(w.nearest.kind) ? "put" : "call"}`}>{isPut(w.nearest.kind) ? "put" : "call"}</span>
+                    <span>{fmt(w.nearest.entry)}</span>
+                    <span className="muted">{Math.abs(w.nearest.distancePct!).toFixed(2)}% {w.nearest.distancePct! > 0 ? "above" : "below"}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="now-next-note">Plans fire only in the 9:30–10:30 and 2:45–4:00 ET windows; a gap through a level at the open voids it.</div>
+          </div>
+        );
+      })()}
+
       {/* watching */}
       {sum.watching.length > 0 && <div className="now-h">Watching · {sum.watching.length}</div>}
       {sum.watching.map((w) => {
@@ -204,7 +237,8 @@ export function NowView() {
         return (
           <button type="button" key={`w-${w.runId}`} className={`now-row ${w.stale ? "stale" : ""} ${w.status === "paused" ? "paused" : ""}`}
             onClick={() => setOpenRun(w.runId)}>
-            <span className="now-row-sym">{w.symbol}{w.grade ? <span className={`tq-grade g${w.grade}`}>{w.grade}</span> : null}</span>
+            <span className="now-row-sym">{w.symbol}{w.grade ? <span className={`tq-grade g${w.grade}`}>{w.grade}</span> : null}
+              <span className={`now-side ${isPut(w.nearest.kind) ? "put" : "call"}`}>{isPut(w.nearest.kind) ? "put" : "call"}</span></span>
             <span className="now-row-mid">
               <span className="now-dist" aria-hidden="true"><span style={{ width: `${100 - far}%` }} /></span>
               <span className="now-row-txt">

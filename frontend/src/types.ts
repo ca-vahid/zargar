@@ -404,7 +404,8 @@ export interface ArmedPlan {
   triggers: { id: string; kind: string; status: string; entry: number; stop: number; targets: number[]; riskReward: number | null;
     firedTs: number | null; firedWindow: string | null; observedMidday: number; skipped: any[]; conditions: any[]; setupId?: string | null;
     grade?: string | null; gradeScore?: number | null;
-    distancePct?: number; distance?: number; windowOpenNow?: boolean }[];
+    distancePct?: number; distance?: number; windowOpenNow?: boolean;
+    direction?: string; levelTouches?: number | null; levelAge?: number | null }[];
   trades: ArmedTrade[]; openPositions: number; realizedPnl: number; fired: any[]; events: { ts: number; event: string; text: string; [k: string]: any }[];
   summary: string;
 }

@@ -11,7 +11,14 @@ import type { ArmedPlan, Quote } from "../../types";
 function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
 
 const ET_FMT = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false });
+const ET_DATE = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
 function etTime(ts: number) { return ET_FMT.format(ts) + " ET"; }
+/** Minutes since 09:30 ET for a timestamp (negative before the open). */
+function etMinutes(ts: number): number {
+  const [h, m] = ET_FMT.format(ts).split(":").map(Number);
+  return h * 60 + m - 570;
+}
+const isShort = (t: any) => t?.direction === "short" || t?.kind === "reject" || t?.kind === "breakdown";
 
 /** UTC ms for h:m ET on the given YYYY-MM-DD, DST-safe (tries both offsets). */
 function etToUtcMs(dateStr: string, h: number, m: number): number {
@@ -85,6 +92,19 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
   };
   const timeline = useMemo(() => buildTimeline(a), [a.events]);
   const waiting = (a.triggers ?? []).filter((t: any) => t.status === "waiting" || t.status === "observed");
+  // Before the plan's session has opened there is nothing to plot in it — the
+  // "runway" shows the last five sessions and tomorrow's slot instead (user's
+  // pick 1A, 2026-08-26) and flips to the live day chart at 09:30 ET.
+  const [sessionStarted, setSessionStarted] = useState(() => Date.now() >= etToUtcMs(a.planFor, 9, 30));
+  useEffect(() => {
+    const openAt = etToUtcMs(a.planFor, 9, 30);
+    if (Date.now() >= openAt) { setSessionStarted(true); return; }
+    setSessionStarted(false);
+    const t = setTimeout(() => setSessionStarted(true), Math.max(1000, openAt - Date.now() + 1500));
+    return () => clearTimeout(t);
+  }, [a.planFor]);
+  const preRef = useRef(!sessionStarted);
+  preRef.current = !sessionStarted;
 
   useEffect(() => {
     let cancelled = false;
@@ -161,9 +181,58 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
         custom: { what: e.event === "skipped" ? `refused: ${e.text}` : e.event === "observed_midday" ? "touched (watch-only, R6.3)" : e.text } }));
 
     async function build() {
-      const data = await api.get<{ bars: number[][] }>(`/api/chart/${a.symbol}?tf=1m&range=1d&limit=500`);
+      const preSession = !sessionStarted;
+      const data = await api.get<{ bars: number[][] }>(preSession
+        ? `/api/chart/${a.symbol}?tf=5m&range=5d&limit=900`
+        : `/api/chart/${a.symbol}?tf=1m&range=1d&limit=500`);
       if (cancelled || !containerRef.current) return;
-      const inDay = data.bars.filter((b) => b[0] >= dayStart && b[0] <= dayEnd);
+      let inDay: number[][];
+      const touchPts: any[] = [];
+      const slotPts: any[] = [];
+      const xPlotLines: Highcharts.XAxisPlotLinesOptions[] = [];
+      const extraYLines: Highcharts.YAxisPlotLinesOptions[] = [];
+      if (preSession) {
+        // tomorrow's slot is a sixth of the width: short window labels or they wrap
+        const shortText = ["● open", "mid-day · watch", "● close"];
+        bands.forEach((b, i) => { (b.label as any).text = shortText[i]; });
+        // regular-hours 5m bars of the last five sessions, in session order
+        const bySess = new Map<string, number[][]>();
+        for (const b of data.bars) {
+          const m = etMinutes(b[0]);
+          if (m < 0 || m >= 390) continue;
+          const k = ET_DATE.format(b[0]);
+          if (!bySess.has(k)) bySess.set(k, []);
+          bySess.get(k)!.push(b);
+        }
+        inDay = [...bySess.values()].slice(-5).flat();
+        const lastClose = inDay.length ? inDay[inDay.length - 1][4] : (a.lastPrice ?? null);
+        const lastTs = inDay.length ? inDay[inDay.length - 1][0] : null;
+        // past touches of each waiting level: the level's credibility, on the chart
+        for (const t of waiting) {
+          const tol = t.entry * 0.0015, short = isShort(t);
+          for (const b of inDay) {
+            const hit = short ? (b[2] >= t.entry - tol && b[4] <= t.entry + tol) : (b[3] <= t.entry + tol && b[4] >= t.entry - tol);
+            if (hit) touchPts.push({ x: b[0], y: short ? b[2] : b[3], custom: { what: `touched ${t.id} ${fmt(t.entry)} — close ${fmt(b[4])}` } });
+          }
+          const prov = t.levelTouches ? `level touched ${t.levelTouches}× · last ${t.levelAge ?? "?"} sessions ago` : null;
+          if (prov) extraYLines.push({ value: t.entry, width: 0, zIndex: 4,
+            label: { text: prov, align: "left", x: 4, y: -4, style: { color: accent, fontSize: "9px" } } });
+        }
+        // tomorrow's slot: invisible points every 5 min reserve the x positions on the ordinal axis
+        const anchor = waiting[0]?.entry ?? lastClose ?? 0;
+        for (let m = 0; m <= 390; m += 5) slotPts.push({ x: etToUtcMs(a.planFor, 9, 30) + m * 60_000, y: anchor });
+        if (lastClose !== null && lastTs !== null && waiting[0]) {
+          const near = waiting.slice().sort((x: any, y: any) => Math.abs(x.entry - lastClose) - Math.abs(y.entry - lastClose))[0];
+          const d = (near.entry - lastClose) / lastClose * 100;
+          extraYLines.push({ value: lastClose, color: text3, width: 1, dashStyle: "Dot", zIndex: 3,
+            label: { text: `last ${fmt(lastClose)}`, align: "right", x: -6, style: { color: cssVar("--text-1"), fontSize: "10px", fontWeight: "700" } } });
+          xPlotLines.push({ value: lastTs, color: rgbaVar("--accent", 0.6), width: 1, dashStyle: "Dash", zIndex: 3,
+            label: { text: `${d > 0 ? "+" : ""}${d.toFixed(2)}% to ${near.id}`, rotation: 0, align: "right", x: -6, y: 16,
+              style: { color: accent, fontSize: "10px", fontWeight: "700" } } });
+        }
+      } else {
+        inDay = data.bars.filter((b) => b[0] >= dayStart && b[0] <= dayEnd);
+      }
       const ohlc = inDay.map((b) => [b[0], b[1], b[2], b[3], b[4]]);
       // volume colored by bar direction; it was painted in the hairline grid
       // color before, i.e. invisible
@@ -192,9 +261,13 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
                 states: { select: { fill: rgbaVar("--accent", 0.15), style: { color: accent } } } } } as any
           : { enabled: false },
         navigator: { enabled: false }, scrollbar: { enabled: false },
-        xAxis: { lineColor: grid, tickColor: grid, min: dayStart, max: dayEnd, ordinal: false,
-          labels: { style: { color: text3, fontSize: "10px" } }, plotBands: bands as any,
-          crosshair: { color: grid, dashStyle: "Dash" } },
+        xAxis: preSession
+          // the runway: five sessions abut (ordinal axis skips the nights), then tomorrow's slot
+          ? { lineColor: grid, tickColor: grid, ordinal: true, plotBands: bands as any, plotLines: xPlotLines,
+              labels: { style: { color: text3, fontSize: "10px" } }, crosshair: { color: grid, dashStyle: "Dash" } }
+          : { lineColor: grid, tickColor: grid, min: dayStart, max: dayEnd, ordinal: false,
+              labels: { style: { color: text3, fontSize: "10px" } }, plotBands: bands as any,
+              crosshair: { color: grid, dashStyle: "Dash" } },
         yAxis: style === "panes" ? [
           { labels: { style: { color: text3, fontSize: "10px" } }, gridLineColor: grid, height: "58%", lineWidth: 0, plotLines },
           { labels: { enabled: false }, gridLineWidth: 0, top: "60%", height: "16%", offset: 0 },
@@ -203,7 +276,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
             plotLines: [{ value: 0, color: grid, width: 1 }] },
         ] : [
           { labels: { style: { color: text3, fontSize: "10px" } }, gridLineColor: grid, height: "80%", lineWidth: 0,
-            plotLines, plotBands: priceBands },
+            plotLines: [...plotLines, ...extraYLines], plotBands: priceBands },
           { labels: { enabled: false }, gridLineWidth: 0, top: "82%", height: "18%", offset: 0 },
         ],
         tooltip: {
@@ -213,7 +286,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
           // quiet hover: only the event markers speak; candles/volume just get the crosshair
           formatter(this: any) {
             const p = this.point ?? this;
-            if (p?.series?.options?.id !== "ev") return false;
+            if (p?.series?.options?.id !== "ev" && p?.series?.options?.id !== "touch") return false;
             return `<b>${etTime(p.x)}</b><br/>${p.custom?.what ?? ""}`;
           },
         },
@@ -237,6 +310,13 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
           { type: "scatter", id: "ev", name: "events", data: eventPoints, zIndex: 6,
             dataGrouping: { enabled: false },
             marker: { enabled: true }, states: { hover: { enabled: true } } } as any,
+          ...(preSession ? [
+            { type: "scatter", id: "slot", name: "tomorrow", data: slotPts, marker: { enabled: false },
+              enableMouseTracking: false, dataGrouping: { enabled: false }, showInLegend: false } as any,
+            { type: "scatter", id: "touch", name: "past touches", data: touchPts, zIndex: 5,
+              dataGrouping: { enabled: false },
+              marker: { enabled: true, symbol: "circle", radius: 3, fillColor: accent, lineWidth: 0 } } as any,
+          ] : []),
         ],
       });
     }
@@ -255,6 +335,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     const unsub = useStore.subscribe((state, prevState) => {
       const q: Quote | undefined = state.quotes[a.symbol];
       if (!q || q === prevState.quotes[a.symbol] || !chartRef.current) return;
+      if (preRef.current) return;   // after-hours prints must not repaint the runway's last history bar
       const main = chartRef.current.get("main") as any;
       if (!main?.points?.length) return;
       const bucket = Math.floor(q.ts / 60_000) * 60_000;
@@ -270,7 +351,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     });
     return () => { cancelled = true; offBar(); unsub(); chartRef.current?.destroy(); chartRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a.symbol, a.planFor, a.events?.length, a.triggers?.length, theme, style]);
+  }, [a.symbol, a.planFor, a.events?.length, a.triggers?.length, theme, style, sessionStarted]);
 
   return (
     <div className="tq-armed-day">
@@ -280,6 +361,12 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
           ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip">{t.id}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct !== undefined ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
           : <span>{a.summary}</span>}
       </div>
+      {!sessionStarted && (
+        <div className="muted small tq-armed-runway-note">
+          The session hasn't opened — showing the last five sessions and tomorrow's slot; the level's past touches are the dots.
+          Live 1‑minute bars take over at 9:30 ET.
+        </div>
+      )}
       <div className="tq-chartstyle seg" role="group" aria-label="Chart style">
         <button className={style === "classic" ? "on" : ""} title="Hollow candles, slim direction-colored volume, level labels at the right edge"
           onClick={() => setStyle("classic")}>candles</button>

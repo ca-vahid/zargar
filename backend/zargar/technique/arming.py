@@ -274,7 +274,12 @@ class ArmedPlan:
                  "observedMidday": len(tr.observed_midday), "skipped": tr.skipped[-3:],
                  "gapUnchecked": tr.gap_unchecked, "failedBreaks": tr.failed_breaks,
                  "grade": a.get("grade"), "gradeScore": a.get("score"),
-                 "conditions": tr.trigger.get("conditions"), "setupId": self.setup_ids.get(tid)}
+                 "conditions": tr.trigger.get("conditions"), "setupId": self.setup_ids.get(tid),
+                 # the day view annotates the level before the session exists: which side
+                 # the trade is on, and how well-worn the level is (touches / age)
+                 "direction": getattr(tr, "direction", None) or tr.trigger.get("direction") or "long",
+                 "levelTouches": (tr.trigger.get("level") or {}).get("touches"),
+                 "levelAge": (tr.trigger.get("level") or {}).get("ageSessions")}
             if last:
                 d["distancePct"] = round((tr.entry - last) / last * 100, 3)
                 d["distance"] = round(tr.entry - last, 4)

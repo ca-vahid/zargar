@@ -343,6 +343,22 @@ button.now-card:active { background: var(--surface-2); }
 .now-row-mid { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .now-row-txt { font-size: var(--fs-1); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .now-row-mode { font-size: var(--fs-0); font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-3); }
+.now-side { font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; padding: 1px 5px; border-radius: 4px; }
+.now-side.call { background: color-mix(in srgb, var(--up) 16%, transparent); color: var(--up); }
+.now-side.put { background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
+.now-row-sym { flex-wrap: wrap; }
+/* the phone's pre-session card: what tomorrow holds, the three closest levels */
+.now-next { border-left: 4px solid var(--accent); }
+.now-next-txt { font-size: var(--fs-1); color: var(--text-2); }
+.now-next-near { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.now-next-near small { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-3); }
+.now-next-item {
+  display: grid; grid-template-columns: 64px auto auto 1fr; gap: 8px; align-items: center; width: 100%;
+  background: transparent; border: 0; border-top: 1px solid var(--border); padding: 6px 0; text-align: left; color: inherit; font: inherit;
+  font-size: var(--fs-1); font-variant-numeric: tabular-nums; cursor: pointer;
+}
+.now-next-item:active { background: var(--surface-2); }
+.now-next-note { margin-top: 8px; font-size: var(--fs-0); color: var(--text-3); }
 .now-dist { display: block; height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
 .now-dist > span { display: block; height: 100%; background: var(--accent); border-radius: 3px; }
 .now-pnl { padding: 10px 14px; }
