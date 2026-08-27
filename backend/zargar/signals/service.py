@@ -358,27 +358,80 @@ class SignalService:
     async def _shadow_execute(self, signal_row: Signal, sig: TradeSignal) -> dict | None:
         """Every verified signal also trades in the source's IMMEDIATE shadow
         book, so the 'what if we'd bought the moment they spoke' record exists
-        regardless of the human decision (the armed book is the tip runner's)."""
+        regardless of the human decision (the armed book is the tip runner's).
+
+        Phase B (BUILD-PLAN T1): the per-tip vehicle rule — a tip that names an
+        option buys the CONTRACT (buy-and-hold counterfactual: no bracket,
+        expiry settlement closes it); anything else buys shares with the tip's
+        bracket as before. A failed pick falls back to shares, recorded on the
+        signal — the book never silently skips a tip."""
         import math
 
         from ..orders import BracketSpec, OrderIntent
+        from ..techniques.tip.express import pick_tip_contract, tip_is_option
 
         eng = self.engine
         source = signal_row.source_name or "unknown"
         shadow = await self.shadow_portfolio(source, "immediate")
+        policy = resolve_policy(eng.settings, source)
+        expression: dict = {"vehicle": "shares"}
 
-        symbol = sig.ticker.upper()
-        quote = eng.quotes.get(symbol)
-        ref = (quote.ask if quote and quote.ask > 0 else None) or sig.entry_price
-        if not ref or ref <= 0:
-            return None
-        equity = await eng.positions.equity(shadow["id"])
-        pct = float(eng.settings.get("signals.default_sizing_pct", 5.0))
-        qty = max(1, math.floor(equity * pct / 100 / ref))
-        bracket = None
-        if sig.target_price or sig.stop_price:
-            bracket = BracketSpec(take_profit=sig.target_price, stop_loss=sig.stop_price)
         try:
+            if tip_is_option(signal_row):
+                targets = ((signal_row.extraction or {}).get("signal") or {}).get("target_prices") \
+                    or ([sig.target_price] if sig.target_price else [])
+                cap = float(targets[-1]) if targets else None
+                pick = await pick_tip_contract(
+                    eng, symbol=sig.ticker.upper(), direction=sig.direction,
+                    dte_min=policy.dte_min, dte_max=policy.dte_max,
+                    strike=signal_row.strike, expiry=signal_row.expiry,
+                    max_strike=cap if sig.direction == "long" else None,
+                    min_strike=cap if sig.direction == "short" else None)
+                ask = float(pick.get("ask") or pick.get("mid") or 0) if pick.get("available") else 0.0
+                if pick.get("available") and pick.get("symbol") and ask > 0:
+                    from ..execution.sizing import size_by_budget
+                    contracts = size_by_budget(policy.budget_per_tip, ask,
+                                               max_units=1_000, multiplier=100.0)
+                    if contracts < 1:
+                        contracts = 1     # one contract slightly over budget beats skipping the tip
+                        expression["note"] = (f"premium ${ask * 100:,.0f} exceeds the "
+                                              f"${policy.budget_per_tip:,.0f} budget — 1 contract anyway")
+                    occ_sym = str(pick["symbol"])
+                    await eng.ensure_symbol(occ_sym)      # track + quotes so sim can fill
+                    expression.update({"vehicle": "option", "contract": occ_sym,
+                                       "display": pick.get("display"), "ask": ask,
+                                       "contracts": contracts,
+                                       "warnings": pick.get("warnings") or []})
+                    await self._record_expression(signal_row.id, expression)
+                    return await eng.orders.place(OrderIntent(
+                        portfolio_id=shadow["id"], symbol=occ_sym, sec_type="OPT",
+                        side="BUY", qty=contracts, order_type="MKT",
+                        source="auto", signal_id=signal_row.id,
+                        technique_id="tip", tags=[f"source:{source}"]))
+                expression["fallback"] = pick.get("error") or "no usable contract"
+
+            if sig.direction == "short":
+                # shorts are puts only (never-listed share shorting) — a short tip
+                # with no usable contract cannot be expressed; record that honestly
+                expression["note"] = "short tip needs a put — " + str(
+                    expression.get("fallback") or "no chain") + "; not expressed"
+                await self._record_expression(signal_row.id, expression)
+                return None
+
+            symbol = sig.ticker.upper()
+            quote = eng.quotes.get(symbol)
+            ref = (quote.ask if quote and quote.ask > 0 else None) or sig.entry_price
+            if not ref or ref <= 0:
+                expression["note"] = "no reference price — nothing bought"
+                await self._record_expression(signal_row.id, expression)
+                return None
+            equity = await eng.positions.equity(shadow["id"])
+            pct = float(eng.settings.get("signals.default_sizing_pct", 5.0))
+            qty = max(1, math.floor(equity * pct / 100 / ref))
+            bracket = None
+            if sig.target_price or sig.stop_price:
+                bracket = BracketSpec(take_profit=sig.target_price, stop_loss=sig.stop_price)
+            await self._record_expression(signal_row.id, expression)
             return await eng.orders.place(OrderIntent(
                 portfolio_id=shadow["id"], symbol=symbol,
                 side="BUY" if sig.direction == "long" else "SELL",
@@ -388,6 +441,16 @@ class SignalService:
         except Exception:
             log.exception("shadow execution failed for signal %s", signal_row.id)
             return None
+
+    async def _record_expression(self, signal_id: str, expression: dict) -> None:
+        """How the immediate book expressed this tip (vehicle, contract,
+        fallback reason) — kept on the signal so the scorecard and the UI can
+        show it; no new journal kind (the order path journals the money)."""
+        async with self.engine.sf() as session:
+            row = await session.get(Signal, signal_id)
+            if row is not None:
+                row.extraction = {**(row.extraction or {}), "shadowExpression": expression}
+                await session.commit()
 
     async def _set_content_status(self, content_id: str, status: str) -> None:
         async with self.engine.sf() as session:

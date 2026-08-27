@@ -27,9 +27,9 @@ Contract choice honors the tip first: a stated strike+expiry is used verbatim
 (`occ.make`); a bare "calls"/"puts" gets the just-OTM pick inside the source policy's
 DTE window (10–30d default, never 0DTE — RiskGate hard-rejects it for non-EM anyway).
 
-## Phase T1 — the expression module + the immediate book `[ ]`
+## Phase T1 — the expression module + the immediate book `[x]` *(built 2026-08-27)*
 
-- [ ] `techniques/tip/express.py` — pure-ish picker: `tip_is_option(sig)` (the vehicle
+- [x] `techniques/tip/express.py` — pure-ish picker: `tip_is_option(sig)` (the vehicle
       rule) and `pick_tip_contract(engine, sig, policy, *, spot)` →
       stated strike+expiry → exact OCC (existence-checked against the chain; graceful
       "contract not listed" error), else DTE-window just-OTM via the shared chain client
@@ -37,7 +37,7 @@ DTE window (10–30d default, never 0DTE — RiskGate hard-rejects it for non-EM
       puts with the `min_strike` mirror (no strike below the downside target). Returns the
       contract dict shape the runner already consumes (symbol, bid/ask/mid, dte,
       spreadPct, warnings).
-- [ ] `signals/service._shadow_execute` v2: option tips buy the CONTRACT in the immediate
+- [x] `signals/service._shadow_execute` v2: option tips buy the CONTRACT in the immediate
       book — `OrderIntent(sec_type="OPT", symbol=<unpadded OCC>, qty=size_by_budget(
       policy.budget_per_tip, ask, multiplier=100))`, `engine.ensure_symbol(occ)` +
       `options.track` so sim quotes flow; **no bracket** (tip targets are underlying
@@ -46,39 +46,37 @@ DTE window (10–30d default, never 0DTE — RiskGate hard-rejects it for non-EM
       a practice-kind portfolio). Shares tips keep today's behavior (bracket included).
       Pick failure (no chain, not listed) falls back to shares with a journal note —
       the book must never silently skip a tip.
-- [ ] Tests (`test_signals_tip.py` + rig): vehicle rule truth table; stated-contract pick
+- [x] Tests (`test_tip_express.py` + rig): vehicle rule truth table; stated-contract pick
       vs DTE-window pick vs short-put mirror (fixture chain via `use_client` mock);
-      immediate-book option order carries OPT/OCC/tags; fallback-to-shares on a `.TO`
-      symbol (no CBOE chain).
+      immediate-book option order carries OPT/OCC/tags + budget sizing (4 contracts on a
+      $500 budget at $1.15 ask); fallback-to-shares on a dead chain with the reason
+      recorded on the signal. *(Bonus find: the fixture's first draft had an 18% spread
+      and the runner's wide-spread gate correctly forced the shares fallback — the gates
+      compose with tips unchanged.)*
 
-## Phase T2 — the armed book goes options `[ ]`
+## Phase T2 — the armed book goes options `[x]` *(built 2026-08-27)*
 
-- [ ] `TipRunner.arm_signal`: per-tip instrument — the vehicle rule decides
-      `ArmConfig.instrument` (explicit config still overrides); `techniques.tip.instrument`
-      default flips `shares` → `auto`.
-- [ ] `TipRunner.pick_contract` hook (fires at fire time, before sizing): delegate to
-      `express.pick_tip_contract`; the runner's existing gates then apply (skip-wide-spread,
-      elevated IV, `entry_fallback="shares"` set as the tip default so a blocked contract
-      expresses in shares rather than skipping — SNOW lesson).
-- [ ] **Budget cap on contracts**: the runner sizes options by risk%; a tip must also
-      respect `budget_per_tip` — clamp in the hook: `contracts ≤ size_by_budget(budget,
-      ask, multiplier=100)` (hook stores the clamp on the trade; never journals).
-- [ ] Handoff v2 (options): legs `secType="OPT"` (qty = +contracts, multiplier 100,
-      avgFill = premium), `overnight="app_managed"` + `overnightAck=True` **for shadow
-      books only** (a real-money arm still requires the per-arm acknowledgement — the
-      runner's existing live gates stand); policy adds `premium_stop_pct` (resolved
-      `techniques.tip.*` → `execution.*`) and `dte_close` (platform floor
-      `execution.min_dte`); `time_stop_sessions` still capped by the thesis expiry;
-      entry/risk stay in underlying terms (the manager's `net_mark` handles premium).
-- [ ] Short tips end-to-end: direction=short + puts through arm → fire → handoff (closes
-      the armed book's measurement gap; the scorecard caveat in PLAN.md §4 comes out).
-- [ ] Tests (tip rig): armed option tip fires → contract picked (stated strike) → budget
-      clamp respected → sim fill (option quote via `engine.quotes.on_quote`, published
-      twice past the 120ms latency) → handoff produces an OPT ManagedPosition with
-      premium_stop + dte_close + app_managed ack; short-put mirror; wide-spread fallback
-      to shares.
-- [ ] **Both-books gate:** T1 and T2 merge to main TOGETHER (a release where one book is
-      options and the other shares would poison the comparison from that day on).
+- [x] `TipRunner.arm_signal`: per-tip instrument — the vehicle rule decides
+      `ArmConfig.instrument` (explicit config still overrides). `techniques.tip.instrument`
+      stays `shares` as the FALLBACK for non-option tips (no `auto` value needed — the
+      rule lives in `arm_signal`, the only tip arming path).
+- [x] `TipRunner.pick_contract` hook: delegates to `express.pick_tip_contract`; the
+      runner's gates apply unchanged; `entry_fallback="shares"` is the tip default.
+- [x] **Budget cap on contracts** — built as a small platform extension instead of hook
+      state: `ArmConfig.premium_budget` ($, 0=off), applied inside `_size_contracts`
+      (floors at 1 with a warning when one premium exceeds the budget; the RiskGate
+      premium caps still backstop; fixed `contracts` still wins). Logged in
+      PLATFORM-RULES §4.
+- [x] Handoff v2 (options): OPT leg (multiplier 100, avgFill=premium), app_managed +
+      auto-ack (a live arm already carried the per-arm allowLive acknowledgement),
+      `premium_stop_pct` + `dte_close` in the policy, entry/risk in underlying terms.
+- [x] Short tips end-to-end rig test (`test_short_tip_puts_end_to_end`): put arm →
+      reject-touch fire → put fill → handoff with the mirrored stop above entry —
+      the armed book's short-side measurement gap is CLOSED (PLAN.md §4 caveat lifted).
+- [x] Tests (tip rig): armed option tip fires → stated-strike pick → premium-budget
+      clamp → sim fill via `quotes.on_quote` → OPT ManagedPosition with premium_stop +
+      dte_close + app_managed ack; dead-chain fallback to shares.
+- [x] **Both-books gate:** T1 and T2 built and land in one merge.
 
 ## Phase T3 — R-based outcomes + scorecard depth `[ ]`
 

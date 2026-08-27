@@ -76,6 +76,7 @@ class ArmConfig:
     max_retries: int = 2
     max_open_trades: int = 1         # how many positions this plan may hold at once (R5 spirit)
     daily_loss_limit: float = 0.0    # $ realised loss that stops the plan (flatten + disarm); 0 = off
+    premium_budget: float = 0.0      # options: cap contracts so premium*100*n <= this $ (tip budgets); 0 = off
     skip_wide_spread: bool = True    # options: skip the entry if T5.4 warns the contract spread is wide
     skip_elevated_iv: bool = False   # options: skip the entry if T5.3 warns IV is elevated (IV-crush risk)
     # When the options entry is blocked (wide spread / elevated IV / no
@@ -92,6 +93,7 @@ class ArmConfig:
                 "allowLive": self.allow_live, "flattenMinutesBeforeClose": self.flatten_minutes_before_close,
                 "slippagePct": self.slippage_pct, "maxRetries": self.max_retries,
                 "maxOpenTrades": self.max_open_trades, "dailyLossLimit": self.daily_loss_limit,
+                "premiumBudget": self.premium_budget,
                 "skipWideSpread": self.skip_wide_spread, "skipElevatedIv": self.skip_elevated_iv,
                 "entryFallback": self.entry_fallback}
 
@@ -114,6 +116,7 @@ class ArmConfig:
                    max_retries=int(d.get("maxRetries", d.get("max_retries", 2)) or 2),
                    max_open_trades=int(d.get("maxOpenTrades", d.get("max_open_trades", 1)) or 1),
                    daily_loss_limit=float(d.get("dailyLossLimit", d.get("daily_loss_limit", 0.0)) or 0.0),
+                   premium_budget=float(d.get("premiumBudget", d.get("premium_budget", 0.0)) or 0.0),
                    skip_wide_spread=bool(d.get("skipWideSpread", d.get("skip_wide_spread", True))),
                    skip_elevated_iv=bool(d.get("skipElevatedIv", d.get("skip_elevated_iv", False))),
                    entry_fallback=str(d.get("entryFallback", d.get("entry_fallback", "off")) or "off"))
@@ -1834,6 +1837,16 @@ class PlanRunner(SessionListener):
         raw = equity * cfg.risk_pct / 100 / max(risk_per, 1e-9)
         mult, why = self.size_multiplier(contract)        # hook (EM: Friday x0.5, 0DTE x0.5)
         n = int(raw * mult)
+        if cfg.premium_budget > 0:
+            # per-plan dollar budget (tip technique): never spend more premium than
+            # the budget allows. Floors at 1 — a single contract slightly over
+            # budget is accepted (the RiskGate premium caps still backstop) and
+            # warned, rather than silently skipping the tip.
+            afford = int(cfg.premium_budget // max(premium, 1e-9))
+            if afford < 1:
+                why.append(f"premium ${premium:,.0f} exceeds the ${cfg.premium_budget:,.0f} budget — 1 contract anyway")
+            n = min(n, max(1, afford))
+            why.append(f"budget ${cfg.premium_budget:,.0f}")
         n = int(max(1, min(n, cfg.max_contracts)))
         self._log(ap, "sized",
                   f"{trade.trigger_id}: {n} contract(s) — ${equity * cfg.risk_pct / 100:,.0f} at risk "

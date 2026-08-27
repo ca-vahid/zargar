@@ -173,9 +173,11 @@ Lands when Phase 2b ships; everything here is policy/data on shared machinery:
   after 10 minutes stays session-scoped (flatten applies — safe).
 - ✅ Shadow bar: 20 scored tips + positive ARMED-book P&L (default — tune in
   TRADING-RULES once real sources exist).
-- Known measurement gap: the armed book cannot express SHORT tips until options
-  expression lands (share shorting is never-listed; shorts are puts) — short tips today
-  live only in the immediate book's record.
+- ~~Known measurement gap: short tips~~ **CLOSED 2026-08-27 by Phase B** (`BUILD-PLAN.md`
+  T1/T2): both books express option-shaped tips as contracts (stated strike/expiry
+  verbatim, else the policy DTE window) and shorts as puts end-to-end; a tip with no
+  usable contract falls back to shares (longs) or is honestly recorded as not expressed
+  (shorts), never silently skipped.
 - Open: keep email ingest webhook auth as-is or move behind session auth; whether repeat
   mentions ("seen again") should bump conviction automatically or just display; Telegram
   as an *intake* (today it's outbound + approvals only); options expression for BOTH

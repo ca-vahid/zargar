@@ -119,6 +119,10 @@ runtime ones to `execution.*`).
   `technique=TECHNIQUE_ID` on new `technique_armed` rows instead of relying on the EM column
   default. Tracker: `volume_floor_mult <= 0` now means "no volume confirmation required" on the
   touch path (the §2.1 promise; EM's floor is 0.5 — unaffected, parity suites green).
+- 2026-08-27 · **`ArmConfig.premium_budget`** (techniques team, for Tip Phase B): per-plan $
+  cap on options premium, applied in `_size_contracts` after risk sizing (floors at 1 contract
+  with a warning when a single premium exceeds the budget; RiskGate premium caps backstop;
+  fixed `contracts` still wins). 0 = off; EM plans unaffected.
 - 2026-08-27 · **Tip consumes Phase 2b + dual shadow books** (techniques team, user decisions):
   `Portfolio.book` column splits each source's shadow record into an **immediate** book (buy at
   tip time) and an **armed** book (wait for the level; the `tip_shadow_arm` scheduler job
