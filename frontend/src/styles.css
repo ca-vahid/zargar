@@ -1869,3 +1869,23 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .login-hint { font-size: var(--fs-1); color: var(--text-3); text-align: center; }
 .login-err { font-size: var(--fs-2); color: var(--down); background: color-mix(in srgb, var(--down) 10%, transparent); border-radius: 8px; padding: 8px 10px; }
 .login-foot { font-size: var(--fs-0); color: var(--text-3); text-align: center; margin-top: 4px; line-height: 1.4; }
+
+/* ── Tips page (redesign 2026-08-28) ─────────────────────────────── */
+.tips-page { max-width: 1180px; }
+.tips-head { display: flex; align-items: baseline; gap: 18px; margin-bottom: 12px; flex-wrap: wrap; }
+.tips-head .page-title { margin: 0; }
+.tips-head-sub { font-size: var(--fs-1); margin-left: auto; }
+.tips-compose { max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.tips-drop { border: 1px dashed var(--border); border-radius: var(--radius); background: var(--surface-2); transition: border-color 0.15s, background 0.15s; }
+.tips-drop.drag { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--surface-2)); }
+.tips-drop textarea { width: 100%; border: none; background: transparent; resize: vertical; min-height: 150px; font-size: var(--fs-3); line-height: 1.5; padding: 12px; outline: none; color: var(--text-1); font-family: var(--font); }
+.tips-drop-hint { font-size: var(--fs-0); color: var(--text-3); padding: 0 12px 10px; }
+.tips-shot { display: flex; align-items: center; gap: 10px; padding: 0 12px 10px; }
+.tips-shot img { max-height: 88px; max-width: 55%; border-radius: var(--radius-sm); border: 1px solid var(--border); }
+.tips-compose-row { display: flex; gap: 12px; align-items: flex-end; margin-top: 12px; }
+.tip-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.tip-card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tip-sym { font-size: var(--fs-5); font-weight: 800; letter-spacing: 0.2px; }
+.tip-prices { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--mono); font-size: var(--fs-2); font-variant-numeric: tabular-nums; }
+.tip-prices b { font-family: var(--font); font-weight: 500; font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-3); margin-right: 4px; }
+.tips-compose-row .field input { width: 100%; }

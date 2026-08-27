@@ -9,17 +9,17 @@ import {
   IconOptions,
   IconPortfolios,
   IconSettings,
-  IconSignals,
   IconTechnique,
   IconTrade,
   IconWatchlist,
 } from "./icons";
 
+// NOTE: no top-level "Signals" entry — the Tips page lives under Techniques
+// (the registry sub-item), which used to double-list it. Phone TabBar unchanged.
 const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "dashboard", label: "Dashboard", icon: <IconDashboard /> },
   { key: "trade", label: "Trade", icon: <IconTrade /> },
   { key: "options", label: "Options", icon: <IconOptions /> },
-  { key: "inbox", label: "Signals", icon: <IconSignals /> },
   { key: "technique", label: "Techniques", icon: <IconTechnique /> },
   { key: "armed", label: "Armed", icon: <IconArmed /> },
   { key: "watchlists", label: "Watchlists", icon: <IconWatchlist /> },
@@ -53,7 +53,6 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
             onClick={() => setPage(p.key)}
           >
             {p.icon} <span className="nav-label">{p.label}</span>
-            {p.key === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
             {p.key === "armed" && armedCount > 0 && <span className="badge ok">{armedCount}</span>}
           </button>
         )).flatMap((btn, i) => PAGES[i].key === "technique" ? [btn, ...techniques.map((t) => (
@@ -61,6 +60,7 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
           <button key={`technique-${t.id}`} className={`nav-sub ${page === t.page ? "active" : ""}`}
             title={navCollapsed ? t.label : undefined} onClick={() => setPage(t.page as Page)}>
             <span className="nav-sub-dot" aria-hidden="true" /> <span className="nav-label">{t.label}</span>
+            {t.page === "inbox" && pending > 0 && <span className="badge">{pending}</span>}
           </button>
         ))] : [btn])}
       </nav>

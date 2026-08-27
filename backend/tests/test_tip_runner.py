@@ -463,6 +463,53 @@ async def test_share_tip_stays_shares_and_no_chain_falls_back(tip_rig):
     assert expr.get("vehicle") == "shares" and "404" in str(expr.get("fallback"))
 
 
+async def test_source_auto_detection(tip_rig):
+    """source_name='auto' resolves from the extractor's source_hint: exact/fuzzy
+    match to a known source, else the hint becomes a new source's name."""
+    eng, sim = tip_rig
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    await eng.settings.set("sources.registry",
+                           [{"name": "Alpha Alerts", "emails": []}], journal=False)
+
+    async def ingest(hint, source_name="auto", text=SOURCE_TEXT):
+        row = RawContent(id=new_id(), source_type="manual", source_name=source_name,
+                         subject="tip", body_text=text)
+        async with eng.sf() as session:
+            session.add(row)
+            await session.commit()
+        ext = canned_tip()
+        ext.source_hint = hint
+        return await eng.signals_service.handle_extraction(row, ext, source_text=text)
+
+    # fuzzy match: '#alpha-alerts' -> the registered 'Alpha Alerts'
+    out = await ingest("#alpha-alerts")
+    assert out[0]["signal"]["sourceName"] == "Alpha Alerts"
+
+    # a genuinely new hint becomes its own source (new dedupe scope, so no dup)
+    out2 = await ingest("TraderJoe")
+    assert out2[0]["signal"]["sourceName"] == "TraderJoe"
+    assert "duplicateOf" not in out2[0]
+
+    # an explicit source name is never overridden
+    out3 = await ingest("SomebodyElse", source_name="MyPick")
+    assert out3[0]["signal"]["sourceName"] == "MyPick"
+
+    # no hint at all -> 'unknown'
+    row = RawContent(id=new_id(), source_type="manual", source_name="auto",
+                     subject="tip", body_text=SOURCE_TEXT)
+    async with eng.sf() as session:
+        session.add(row)
+        await session.commit()
+    ext = canned_tip()
+    assert ext.source_hint is None
+    out4 = await eng.signals_service.handle_extraction(row, ext, source_text=SOURCE_TEXT)
+    assert out4[0]["signal"]["sourceName"] == "unknown"
+
+    names = await eng.signals_service.known_sources()
+    assert "Alpha Alerts" in names and "TraderJoe" in names and "MyPick" in names
+
+
 async def test_tip_time_sources_cannot_arm(tip_rig):
     eng, sim = tip_rig
     await eng.settings.set("techniques.tip.sources",

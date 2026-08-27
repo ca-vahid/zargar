@@ -43,6 +43,10 @@ def build_signal_routes(app, eng, auth, config) -> None:
     async def source_scorecards():
         return await eng.signals_service.source_scorecards()
 
+    @app.get("/api/signals/source-names", dependencies=[auth])
+    async def source_names():
+        return await eng.signals_service.known_sources()
+
     @app.get("/api/signals/{sid}/plan", dependencies=[auth])
     async def signal_tip_plan(sid: str):
         try:
