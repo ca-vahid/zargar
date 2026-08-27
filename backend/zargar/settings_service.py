@@ -235,7 +235,9 @@ class SettingsService:
     def all(self) -> dict[str, Any]:
         return {k: v for k, v in self._cache.items() if not k.startswith("system.")}
 
-    async def set(self, key: str, value: Any, *, journal: bool = True) -> None:
+    async def set(self, key: str, value: Any, *, journal: bool = True, broadcast: bool = True) -> None:
+        """`broadcast=False` keeps the change off the `system` bus topic (which every
+        WS client receives) — use it for secrets."""
         if key not in DEFAULTS and not key.startswith("system."):
             raise KeyError(f"unknown setting: {key}")
         if key == "trading.mode":
@@ -263,7 +265,8 @@ class SettingsService:
         self._cache[key] = value
         if journal and not key.startswith("system."):
             await self._journal.append(ev.SETTING_CHANGED, {"key": key, "old": old, "new": value})
-        self._bus.publish(topics.SYSTEM, {"kind": "setting", "key": key, "value": value})
+        if broadcast:
+            self._bus.publish(topics.SYSTEM, {"kind": "setting", "key": key, "value": value})
 
     async def set_many(self, values: dict[str, Any]) -> None:
         for k, v in values.items():

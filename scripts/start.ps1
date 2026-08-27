@@ -11,9 +11,11 @@ $Root = (Get-Location).Path
 # dies with the process) or armed plans holding a position. 2026-08-26: five
 # restarts in one evening killed ~200 model reads. Pass -Force to override.
 try {
-  $st = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/technique/status" -TimeoutSec 4
-  $running = @($st.running).Count
-  $armed = @($st.armed).Count
+  # /api/health is public but only tells a LOCAL caller about in-flight work
+  # (the technique status route is behind sign-in now)
+  $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4
+  $running = [int]$h.local.techniqueRunning
+  $armed = [int]$h.local.armed
   if (-not $Force -and $running -gt 0) {
     Write-Host "! $running technique run(s) are in flight - a restart would kill them (they cost money)." -ForegroundColor Red
     Write-Host "  Wait for the batch to finish, or run again with -Force." -ForegroundColor Yellow

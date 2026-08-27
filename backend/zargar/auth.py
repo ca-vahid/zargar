@@ -32,6 +32,7 @@ import jwt
 log = logging.getLogger("zargar.auth")
 
 COOKIE = "zargar_session"
+SECRET_KEY = "system.session_secret"   # settings key holding the generated signing secret
 GOOGLE_JWKS = "https://www.googleapis.com/oauth2/v3/certs"
 GOOGLE_ISSUERS = ["https://accounts.google.com", "accounts.google.com"]
 
@@ -86,7 +87,7 @@ class AuthService:
             return self.config.session_secret
         if self._secret_cache:
             return self._secret_cache
-        stored = self.settings.get("auth.session_secret", "") if self.settings is not None else ""
+        stored = self.settings.get(SECRET_KEY, "") if self.settings is not None else ""
         if stored:
             self._secret_cache = str(stored)
             return self._secret_cache
@@ -94,10 +95,19 @@ class AuthService:
         if self.settings is not None:
             try:
                 loop = asyncio.get_running_loop()
-                loop.create_task(self.settings.set("auth.session_secret", self._secret_cache, journal=False))
+                self._persist_task = loop.create_task(self._persist_secret(self._secret_cache))
             except RuntimeError:
                 pass  # no loop (tests / tools): in-memory secret is fine
         return self._secret_cache
+
+    async def _persist_secret(self, value: str) -> None:
+        # A hidden `system.*` key: never listed by /api/settings, never journaled,
+        # never broadcast on the WS `system` topic. (Before 2026-08-26 this used an
+        # undeclared key, `set()` raised, and every restart signed every device out.)
+        try:
+            await self.settings.set(SECRET_KEY, value, journal=False, broadcast=False)
+        except Exception:
+            log.exception("could not persist the session secret — sessions will not survive a restart")
 
     # ------------------------------------------------------------------ google
     def _verify_google_id_token(self, credential: str) -> dict:
