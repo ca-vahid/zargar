@@ -103,6 +103,8 @@ interface AppState {
   chatLive: Record<string, ChatLive>;            // threadId -> streaming state
 
   setPage: (p: Page) => void;
+  moreOpen: boolean;                    // phone More sheet (TabBar renders it; TopBar can open it)
+  setMoreOpen: (v: boolean) => void;
   setActiveSymbol: (s: string) => void;
   openJournal: (group: string) => void;
   clearJournalGroup: () => void;
@@ -158,6 +160,7 @@ let toastSeq = 1;
 export const useStore = create<AppState>((set, get) => ({
   connected: false,
   page: "dashboard",
+  moreOpen: false,
   activeSymbol: "AAPL",
   settings: {},
   portfolios: [],
@@ -201,6 +204,7 @@ export const useStore = create<AppState>((set, get) => ({
   chatLive: {},
 
   setPage: (page) => set({ page }),
+  setMoreOpen: (moreOpen) => set({ moreOpen }),
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),
   openJournal: (group) => set({ page: "journal", journalGroup: group }),
   clearJournalGroup: () => set({ journalGroup: null }),

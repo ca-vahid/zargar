@@ -28,6 +28,7 @@ export function TopBar() {
 
   const brokerages = useStore((s) => s.brokerages);
   const setPage = useStore((s) => s.setPage);
+  const setMoreOpen = useStore((s) => s.setMoreOpen);
   const openTrade = useStore((s) => s.openTrade);
   const watchlists = useStore((s) => s.watchlists);
   const setWatchlists = useStore((s) => s.setWatchlists);
@@ -183,13 +184,13 @@ export function TopBar() {
     // phone: brand · workspace · attention · HALT · search — HALT can never be pushed off-screen
     return (
       <header className="topbar topbar--phone">
-        <div className="brand">
+        <button type="button" className="brand" onClick={() => setPage("dashboard")} aria-label="Home — Dashboard">
           <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
           Zargar
-        </div>
+        </button>
         <button type="button" className={`topbar-phone-ws ${mode === "live" ? "live" : ""}`}
-          aria-label={`Workspace: ${mode === "live" ? "LIVE — real accounts" : "Practice — simulator"}`}
-          onClick={() => setPage("settings")}>
+          aria-label={`Workspace: ${mode === "live" ? "LIVE — real accounts" : "Practice — simulator"} — switch in the More sheet`}
+          onClick={() => setMoreOpen(true)}>
           <span className="mode-dot" />{mode === "live" ? "LIVE" : "PRACTICE"}
         </button>
         <div className="spacer" />
@@ -221,10 +222,10 @@ export function TopBar() {
 
   return (
     <header className="topbar">
-      <div className="brand">
+      <button type="button" className="brand" onClick={() => setPage("dashboard")} aria-label="Home — Dashboard">
         <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
         Zargar
-      </div>
+      </button>
       {quoteSource === "alpaca" && (broker as any)?.alpacaConnected === false && (
         <span className="status-pill warn"
           title="The Alpaca data stream is down — quotes and bars are running on the slower Yahoo fallback. Check backend/.env keys or status.alpaca.markets.">

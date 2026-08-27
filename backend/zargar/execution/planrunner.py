@@ -608,6 +608,7 @@ class PlanRunner(SessionListener):
                     "firedTs": t.fired_ts, "window": t.window, "orderSymbol": t.order_symbol,
                     "contract": ({k: (t.contract or {}).get(k) for k in ("symbol", "strike", "expiry", "right", "bid", "ask")}
                                  if t.contract else None),
+                    "multiplier": t.multiplier,
                     "tradeStatus": t.status, "realizedPnl": round(t.realized_pnl, 2),
                 })
             if ap.status in ("armed", "paused"):
@@ -621,7 +622,12 @@ class PlanRunner(SessionListener):
                     tid, tr = nearest
                     watching.append({
                         **base, "triggers": len(waiting),
+                        # what would be bought: fixed contracts/qty, else risk-%% sizing
+                        "size": {"contracts": ap.config.contracts, "riskPct": ap.config.risk_pct,
+                                 "qty": ap.config.qty},
                         "nearest": {"id": tid, "kind": tr.kind, "entry": tr.entry, "stop": tr.stop,
+                                    "direction": tr.direction,
+                                    "targets": [tg["price"] for tg in (tr.trigger.get("targets") or [])],
                                     "distancePct": (round((tr.entry - last) / last * 100, 3) if last else None)},
                         "window": window_now, "windowOpenNow": window_now in PRIME_WINDOWS,
                         "summary": ap._summary(window_now, last),

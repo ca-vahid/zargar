@@ -227,7 +227,8 @@ reachable on every screen, sheets replace modals on phone.
 
 ### Phase 2 — Armed "Now": the mobile home `[x]`
 
-The phone opens on **Now**. It answers, top to bottom, in this order: *is
+The phone opens on the **Dashboard** (totals first — changed 2026-08-27); **Now**
+is the first tab. Now answers, top to bottom, in this order: *is
 anything wrong → am I in a trade → what fired today → what's still waiting →
 what died and why → how did today go*. One column, cards, no tables, 30s poll
 + WS patches.
