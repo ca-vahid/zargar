@@ -95,6 +95,12 @@ runtime ones to `execution.*`).
   `avoid_0dte_after`=10:30 (D2) · user decision; re-tighten before real money.
 - 2026-08-26 · `technique.stop_on_close`=true (D3) · the runtime judges stops on the closed bar,
   the quote breach stays the brake.
+- 2026-08-27 · Clock-driven session close (EM team #1): expiry + scorecard at 16:05 ET by the
+  clock (`PlanRunner._end_session`), never dependent on the 15:59 bar · 08-26 unscored plans.
+- 2026-08-27 · Daily 09:00 ET feed self-test (EM team #2): REST bar fetch + WS auth, journal
+  `FeedSelfTestPassed/Failed`, critical alert + Telegram on failure · 08-26 silent lapse.
+- 2026-08-27 · Replay outputs carry plan-side validity; `sweepVersion` hashes `marketstructure/`
+  (EM team #8/#9) · gate-audit mistallies; attributable parity diffs.
 - 2026-08-27 · Platform phases 0–2: `marketstructure` library, technique registry + `technique`
   identity column, `OrderIntent.technique_id`, `execution/planrunner.py` (generic runner) with EM as
   `PlanArmer(PlanRunner)` hooks · `docs/TECHNIQUE-PLATFORM-PLAN.md`; parity suites green.

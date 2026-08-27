@@ -75,7 +75,10 @@ def replay_plan(plan: dict, bars: list[Bar], *, thresholds: Thresholds | None = 
         scored = {k: score_trigger(v, bars, thresholds=t) for k, v in variants.items()}
         base = scored["base"]
         out_triggers.append({
-            "id": tg["id"], "kind": tg["kind"], "valid": True, "levelPrice": tg["levelPrice"],
+            # validity comes from the PLAN side: an includeInvalid replay must not
+            # relabel a no-trade trigger as tradeable (it cost the 08-27 gate audit
+            # two wrong tallies)
+            "id": tg["id"], "kind": tg["kind"], "valid": bool(tg.get("valid")), "levelPrice": tg["levelPrice"],
             "entry": tg["entry"]["price"], "stop": tg["stop"]["price"], "riskReward": tg["riskReward"],
             "confluences": tg.get("confluences"), "confidence": tg.get("confidence"),
             **base,

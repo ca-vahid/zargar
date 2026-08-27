@@ -102,7 +102,9 @@ def technique_source_version() -> str:
     so two sweeps run minutes apart on different code are told apart."""
     h = hashlib.sha256()
     here = Path(__file__).parent
-    for pkg in (here, here.parent / "execution"):
+    # marketstructure is in the fingerprint since the platform split (2026-08-27):
+    # a parity diff must be attributable to a library version, not archaeology
+    for pkg in (here, here.parent / "execution", here.parent / "marketstructure"):
         if not pkg.is_dir():
             continue
         for f in sorted(pkg.glob("*.py")):

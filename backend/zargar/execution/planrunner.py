@@ -1567,19 +1567,29 @@ class PlanRunner(SessionListener):
                     open_or_working += 1
         # 3) end of session
         if bar.ts >= close_ms - 60_000:
-            ap.status = "expired"
-            if journal:
-                ap.scorecard = self._score_execution(ap)     # score BEFORE finish() (it mutates trackers)
-                if ap.scorecard:
-                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_SCORED, {
-                        "runId": ap.run_id, "symbol": ap.symbol, **ap.scorecard},
-                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
-            for tr in ap.trackers.values():
-                tr.finish()
-            if journal:
-                await self.disarm(ap.run_id, reason="session closed")
+            await self._end_session(ap, journal=journal, reason="session closed")
         elif journal:
             await self._persist(ap)
+
+
+    async def _end_session(self, ap: ArmedPlan, *, journal: bool, reason: str = "session closed") -> None:
+        """Expire the plan, write the execution scorecard, finish the trackers and
+        disarm — one implementation for the bar-driven close AND the clock-driven
+        close (the 15:59 bar may simply never arrive: on 2026-08-26 a feed outage
+        meant the scorecards never wrote). Idempotent."""
+        if ap.status in ("expired", "disarmed") and ap.run_id not in self._armed:
+            return
+        ap.status = "expired"
+        if journal and ap.scorecard is None:
+            ap.scorecard = self._score_execution(ap)     # score BEFORE finish() (it mutates trackers)
+            if ap.scorecard:
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_SCORED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, **ap.scorecard},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        for tr in ap.trackers.values():
+            tr.finish()
+        if journal:
+            await self.disarm(ap.run_id, reason=reason)
 
     # ---------------------------------------------------------------- fire -> execute
     def _mint_trade(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int) -> Trade:
@@ -2063,6 +2073,20 @@ class PlanRunner(SessionListener):
                         await self.preopen(ap)
                     except Exception:
                         log.exception("pre-open check failed for %s", ap.symbol)
+        # Clock-driven close (2026-08-27, EM team): expiry and the scorecard must not
+        # depend on the 15:59 bar arriving — a feed outage at the close would
+        # otherwise leave plans armed and unscored (08-26). 16:05 ET, by the clock.
+        if now.weekday() < 5 and now.hour * 60 + now.minute >= 16 * 60 + 5:
+            today_str = now.strftime("%Y-%m-%d")
+            for ap in list(self._armed.values()):
+                if ap.plan_for == today_str and ap.status in ("armed", "paused"):
+                    self._log(ap, "session_closed_clock",
+                              "16:05 ET and the closing bar never arrived — closing by the clock")
+                    try:
+                        await self._end_session(ap, journal=True,
+                                                reason="session closed (clock — no closing bar seen)")
+                    except Exception:
+                        log.exception("clock-driven close failed for %s", ap.symbol)
         for ap in list(self._armed.values()):
             if in_session and ap.plan_for == now.strftime("%Y-%m-%d") and ap.last_bar_ts \
                     and now_ms - ap.last_bar_ts > stale_s * 1000 and not ap.stale:

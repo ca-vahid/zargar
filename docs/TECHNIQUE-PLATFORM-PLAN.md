@@ -266,3 +266,19 @@ method change logged in `techniques/enhanced-market/TRADING-RULES.md` under the 
 3. Is **Tip** the second technique, and does it enter on tip-time or wait for a level touch?
 4. Phase 2 timing — which quiet week; it must not overlap a live-money gate.
 5. Overnight policy default: `venue_stop_required` (refuse to hold without a resting venue stop) — assumed yes.
+
+## 8. Engine backlog — the EM team's operating list (2026-08-27)
+
+Ranked; ✅ = built the same day, the rest are scheduled into the phases.
+
+| # | Idea | Status / phase |
+|---|---|---|
+| 1 | **Clock-driven session close** — expiry + scorecard fire at 16:05 ET by the clock, not on the 15:59 bar (08-26: the bar never came, nothing scored) | ✅ `PlanRunner._end_session` shared by the bar path and a heartbeat clock check |
+| 2 | **Daily pre-open feed self-test** — 09:00 ET REST bar fetch + WS auth handshake, loud alert on failure (the 08-26 subscription lapse degraded silently) | ✅ `engine._feed_monitor`: `FeedSelfTestPassed/Failed` journal + critical toast + Telegram |
+| 3 | **Event-schema contracts** — versioned schema per `TECHNIQUE_PLAN_*` kind + a contract test; N techniques journaling through shared machinery makes payload shapes an API | phase 3 (research split) — the contract test lands with the event registry |
+| 4 | **Per-technique settings scoping + live re-read** — `technique.<id>.*` namespacing with `SettingChanged` journal continuity; `max_concurrent_runs` re-read without a restart | phase 3 (already the settings-migration step; live re-read added to it) |
+| 5 | **Bars table hygiene** — unique index on (symbol, tf, ts), bucket alignment enforced at write, stub-row cleanup | phase 3, cheap-now item; do before technique #2 writes bars |
+| 6 | **Hook observability** — per-hook latency / exception / veto-rate journaled by the runner ("which hook, how often, how slow" = a query) | phase 2 follow-up; runner-side timing wrapper around every hook call |
+| 7 | **Per-technique pause** — HALT stays global; "stop EM, keep X" is a first-class control whose exits stay reduce-only-exempt like the kill switch | phase 4/5 (needs a second technique to mean anything; API shape reserved: `POST /api/techniques/{id}/pause`) |
+| 8 | **Replay outputs carry plan-side validity** — includeInvalid sweeps stamped every trigger `valid: true` (two wrong tallies in the 08-27 gate audit) | ✅ `replay_plan` joins `valid` from the plan trigger |
+| 9 | **Version-stamp marketstructure into sweepVersion** — a parity diff must be attributable to a library version | ✅ `technique_source_version()` hashes `marketstructure/` too (extends the existing `sweepVersion`) |

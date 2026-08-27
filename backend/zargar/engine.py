@@ -361,6 +361,7 @@ class Engine:
         down_since = 0.0
         last_alert = 0.0
         last_state: bool | None = None
+        selftest_day = ""
         while True:
             await asyncio.sleep(30)
             try:
@@ -399,6 +400,38 @@ class Engine:
                     last_alert = 0.0
                 elif not in_hours:
                     down_since = 0.0
+                # Daily 09:00 ET self-test (2026-08-27, EM team): the 08-26 Alpaca
+                # subscription lapse (billing, not code) degraded silently until it
+                # was visible. Prove BOTH halves before the open — a REST bar fetch
+                # and the WS auth handshake — and alert loudly if either fails.
+                if (now_et.weekday() < 5 and 9 * 60 <= now_et.hour * 60 + now_et.minute < 9 * 60 + 10
+                        and selftest_day != now_et.strftime("%Y-%m-%d")):
+                    selftest_day = now_et.strftime("%Y-%m-%d")
+                    problems: list[str] = []
+                    try:
+                        bars = await feed.fetch_bars("SPY", tf="1m", range_="1d")
+                        if not bars:
+                            problems.append("REST bar fetch returned nothing")
+                    except Exception as exc:
+                        problems.append(f"REST bar fetch failed: {exc}")
+                    if not alpaca.connected:
+                        problems.append("stream not authenticated (409/401 = subscription or keys)")
+                    if problems:
+                        msg = "Pre-open feed self-test FAILED: " + "; ".join(problems) + \
+                              " — check the Alpaca subscription/keys before 09:30."
+                        log.error(msg)
+                        with contextlib.suppress(Exception):
+                            await self.journal.append("FeedSelfTestFailed",
+                                                      {"feed": "alpaca", "problems": problems})
+                        self.bus.publish(topics.TECHNIQUE, {"kind": "alert", "level": "critical", "text": msg})
+                        tg = getattr(self, "telegram", None)
+                        if tg is not None:
+                            with contextlib.suppress(Exception):
+                                await tg.send("\u26a0 " + msg)
+                    else:
+                        log.info("pre-open feed self-test passed (REST bars + stream auth)")
+                        with contextlib.suppress(Exception):
+                            await self.journal.append("FeedSelfTestPassed", {"feed": "alpaca"})
             except Exception:
                 log.exception("feed monitor error")
 
