@@ -94,6 +94,53 @@ class TipRunner(PlanRunner):
         conf = float((tr.trigger.get("confidence") or 0.5))
         return FireJudgement(verdict="setup", confidence=conf)
 
+    async def pick_contract(self, ap, trade):
+        """The tip's expression policy (BUILD-PLAN T2): the stated contract
+        verbatim when the tip named one, else the source policy's DTE window —
+        never EM's weekly/0DTE pick."""
+        import contextlib as _ctx
+
+        from ...signals.sources import resolve_policy
+        from .express import pick_tip_contract
+
+        trade.contract_attempted = True
+        ctx = ap.plan.get("context") or {}
+        sig = None
+        if ctx.get("signalId"):
+            async with self.engine.sf() as session:
+                sig = await session.get(Signal, ctx["signalId"])
+        policy = resolve_policy(self.engine.settings, ctx.get("source"))
+        cap = float(trade.targets[-1]) if trade.targets else None
+        pick = await pick_tip_contract(
+            self.engine, symbol=ap.symbol, direction=trade.direction,
+            dte_min=policy.dte_min, dte_max=policy.dte_max,
+            strike=(sig.strike if sig else None), expiry=(sig.expiry if sig else None),
+            spot=float(trade.last_price or trade.entry),
+            max_strike=cap if trade.direction == "long" else None,
+            min_strike=cap if trade.direction == "short" else None)
+        if not pick.get("available") or not pick.get("symbol"):
+            why = pick.get("error") or "no usable contract"
+            trade.errors.append(f"option pick: {why}")
+            self._log(ap, "option_pick_failed", f"{trade.trigger_id}: {why}",
+                      trigger=trade.trigger_id)
+            return None
+        trade.contract = {k: pick.get(k) for k in (
+            "symbol", "display", "underlying", "expiry", "strike", "optionType",
+            "bid", "ask", "mid", "spreadPct", "delta", "theta", "iv", "dte",
+            "is0dte", "openInterest", "volume", "warnings", "provider", "statedContract")}
+        trade.order_symbol = pick["symbol"]
+        self._log(ap, "option_picked",
+                  f"{trade.trigger_id}: {pick.get('display') or pick['symbol']} "
+                  f"bid/ask {pick.get('bid')}/{pick.get('ask')}"
+                  + ("; stated by the tip" if pick.get("statedContract") else "")
+                  + (f"; warnings: {'; '.join(pick.get('warnings') or [])}"
+                     if pick.get("warnings") else ""),
+                  trigger=trade.trigger_id, contract=trade.contract)
+        with _ctx.suppress(Exception):
+            if getattr(self.engine, "options", None) is not None:
+                await self.engine.options.track(pick["symbol"])
+        return trade.contract
+
     # ------------------------------------------------------------- tip-specific
     async def arm_signal(self, signal_id: str, config: ArmConfig | dict | None = None) -> dict:
         """Signal → today's tip plan → a minted `technique="tip"` run → armed.
@@ -116,12 +163,24 @@ class TipRunner(PlanRunner):
         if not any(t.get("valid") for t in plan_dict.get("triggers") or []):
             reasons = "; ".join((plan_dict.get("triggers") or [{}])[0].get("noTradeReasons") or [])
             raise ValueError(f"the tip plan has no valid trigger ({reasons or 'degenerate'})")
-        # budget sizing: qty from the source's per-tip budget at the plan's entry
-        if isinstance(config, dict) and config.pop("budgetSize", False) and not config.get("qty"):
-            entry_px = float((plan_dict["triggers"][0].get("entry") or {}).get("price") or 0)
-            if entry_px > 0:
-                config["qty"] = max(1, size_by_budget(policy.budget_per_tip, entry_px,
-                                                      max_units=10_000))
+        # the per-tip vehicle rule (BUILD-PLAN §0): an option-shaped tip arms as
+        # options, anything else as shares; an explicit config wins either way
+        from .express import tip_is_option
+        if isinstance(config, dict):
+            vehicle = "options" if tip_is_option(sig) else "shares"
+            config.setdefault("instrument", vehicle)
+            # a blocked contract expresses the idea in shares (SNOW lesson)
+            config.setdefault("entryFallback", "shares")
+            if config["instrument"] == "options":
+                config.pop("budgetSize", None)
+                config.setdefault("premiumBudget", policy.budget_per_tip)
+                config.setdefault("contracts", None)      # risk-based, budget-clamped
+            # shares: qty from the source's per-tip budget at the plan's entry
+            elif config.pop("budgetSize", False) and not config.get("qty"):
+                entry_px = float((plan_dict["triggers"][0].get("entry") or {}).get("price") or 0)
+                if entry_px > 0:
+                    config["qty"] = max(1, size_by_budget(policy.budget_per_tip, entry_px,
+                                                          max_units=10_000))
         source = sig.source_name or "unknown"
         run_id = new_id()
         row = TechniqueRun(
@@ -314,8 +373,10 @@ class TipRunner(PlanRunner):
                             (sig.created_at.date() if sig.created_at else today)) if sig else None
         fallback = int(ctx.get("horizonSessions") or 10)
         hold_cap = hold_sessions_cap(expiry=expiry, today=today, fallback=fallback)
-        fill = float(order.avg_fill_price or trade.entry)
-        risk = abs(fill - trade.stop) or abs(trade.entry - trade.stop)
+        is_opt = trade.instrument == "options"
+        fill = float(order.avg_fill_price or trade.entry)     # OPT: this is the PREMIUM
+        entry_ref = float(trade.entry) if is_opt else fill    # policies judge the UNDERLYING
+        risk = abs(entry_ref - trade.stop) or abs(trade.entry - trade.stop)
         policy: dict = {
             "timeframe": "15m",
             "stop": {"kind": "fixed", "price": trade.stop},
@@ -325,20 +386,34 @@ class TipRunner(PlanRunner):
                          "after_r": float(self.engine.settings.get("techniques.tip.trailing_after_r", 1.0))},
             "time_stop_sessions": hold_cap,      # the thesis dies with the contract
         }
+        if is_opt:
+            policy["premium_stop_pct"] = float(self.rt("premium_stop_pct", 50.0) or 50.0)
+            policy["dte_close"] = max(1, int(self.engine.settings.get("execution.min_dte", 1)))
         catalyst = (sig.catalyst or "").lower() if sig else ""
         if "earnings" not in catalyst:
             policy["flatten_before"] = {"event": "earnings", "days": 1}
         source = ctx.get("source") or "unknown"
         qty = float(order.filled_qty or trade.filled_qty or trade.qty)
+        # options are always LONG the contract (calls for longs, puts for shorts);
+        # a positive leg qty is correct for both directions
+        leg = ({"symbol": trade.order_symbol or order.symbol, "secType": "OPT",
+                "qty": qty, "avgFill": fill, "multiplier": 100.0,
+                "entryOrderId": order.id, "origin": "adoption"}
+               if is_opt else
+               {"symbol": ap.symbol, "secType": "STK",
+                "qty": qty if trade.direction == "long" else -qty,
+                "avgFill": fill, "entryOrderId": order.id, "origin": "adoption"})
         pos = await mgr.adopt({
             "portfolioId": ap.config.portfolio_id, "symbol": ap.symbol,
             "direction": trade.direction, "techniqueId": self.TECHNIQUE_ID,
             "tags": [f"source:{source}"], "runId": ap.run_id,
-            "entry": fill, "risk": risk,
-            "legs": [{"symbol": ap.symbol, "secType": "STK",
-                      "qty": qty if trade.direction == "long" else -qty,
-                      "avgFill": fill, "entryOrderId": order.id, "origin": "adoption"}],
-            "overnight": "venue_stop",           # shares CAN rest a venue stop
+            "entry": entry_ref, "risk": risk,
+            "legs": [leg],
+            # options cannot rest a venue stop (probed 2026-08-27): app-managed
+            # with the acknowledgement — shadow books auto-ack; a LIVE arm
+            # already required the per-arm allowLive acknowledgement upstream
+            "overnight": "app_managed" if is_opt else "venue_stop",
+            "overnightAck": True if is_opt else False,
             "policy": policy,
         })
         # the manager owns it now — the session runner forgets the trade so the

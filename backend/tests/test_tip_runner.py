@@ -251,6 +251,218 @@ async def test_expired_option_tip_never_arms(tip_rig):
     assert row.status == "expired"
 
 
+OPT_SOURCE = "TEST 101c — buy the dip at 99.5, stop 98, target 103."
+
+
+def canned_option_tip(expiry: str):
+    return ExtractionResult(
+        signals=[TradeSignal(
+            ticker="TEST", direction="long", action="open",
+            instrument="call", strike=101.0, expiry=expiry,
+            entry_price=99.5, target_price=103.0, stop_price=98.0,
+            entry_type="limit", timeframe="swing", thesis_summary="dip buy calls",
+            evidence_quotes=["TEST 101c", "buy the dip at 99.5, stop 98, target 103"],
+            confidence="explicit_call", is_actionable=True)],
+        source_type="trade_alert")
+
+
+async def _opt_quote(eng, occ_sym: str, mid: float):
+    q = Quote(symbol=occ_sym, bid=round(mid - 0.05, 2), ask=round(mid + 0.05, 2), last=mid,
+              bid_size=500, ask_size=500, volume=1_000)
+    q.ts = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    eng.quotes.on_quote(q)     # cache + bus in one call (gate freshness + sim fills)
+    await asyncio.sleep(0.15)
+
+
+async def test_option_tip_both_books_end_to_end(tip_rig):
+    """Phase B: the per-tip vehicle rule — an option-shaped tip buys the
+    CONTRACT in the immediate book AND arms as options; a fill hands off an
+    OPT managed position with premium stop, dte_close and the app-managed ack."""
+    eng, sim = tip_rig
+    from zargar.options import occ as occ_mod
+
+    from .test_tip_express import FakeChain, row as chain_row
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    fake = FakeChain(spot=100.0, expiries=(exp14,),
+                     rows=[chain_row(101.0, expiry=exp14), chain_row(103.0, expiry=exp14),
+                           chain_row(99.0, "put", expiry=exp14)])
+    eng.options.use_client(fake)
+    occ_sym = occ_mod.make("TEST", exp14, "C", 101.0).symbol
+
+    # ---- immediate book: bought the contract, no bracket, budget-sized ----
+    from zargar.domain import new_id
+    from zargar.models import RawContent, Signal as SignalRow
+    content = RawContent(id=new_id(), source_type="manual", source_name="TestRoom",
+                         subject="tip", body_text=OPT_SOURCE)
+    async with eng.sf() as session:
+        session.add(content)
+        await session.commit()
+    out = await eng.signals_service.handle_extraction(content, canned_option_tip(exp14),
+                                                      source_text=OPT_SOURCE)
+    sig = out[0]["signal"]
+    assert sig["status"] in ("verified", "parked"), sig["verification"]
+    shadow_order = out[0]["shadowOrder"]
+    assert shadow_order is not None and shadow_order["secType"] == "OPT", shadow_order
+    assert shadow_order["symbol"] == occ_sym
+    assert shadow_order["qty"] == 4          # $500 budget / $1.20 ask x100 -> 4 contracts
+    async with eng.sf() as session:
+        srow = await session.get(SignalRow, sig["id"])
+    assert (srow.extraction.get("shadowExpression") or {}).get("vehicle") == "option"
+
+    # ---- armed book: vehicle rule arms options with the premium budget ----
+    snap = await eng.tip_runner.arm_signal(sig["id"], {
+        "portfolioId": sim["id"], "mode": "auto", "dailyLossLimit": 200.0})
+    assert snap["config"]["instrument"] == "options"
+    assert snap["config"]["premiumBudget"] == 500.0
+    assert snap["config"]["entryFallback"] == "shares"
+    run_id = snap["runId"]
+
+    await _quote(eng, 99.6)
+    await _opt_quote(eng, occ_sym, 1.1)      # fresh contract quote for the gate
+    day = snap["planFor"]
+    from zargar.marketstructure.sessions import ET as REAL_ET
+    y, m, d = (int(x) for x in day.split("-"))
+    ts0 = int(dt.datetime(y, m, d, 10, 0, tzinfo=REAL_ET).timestamp() * 1000)
+    if snap.get("lastBarTs"):
+        ts0 = max(ts0, int(snap["lastBarTs"]) + MIN)
+    await _quote(eng, 99.5)
+    s2 = await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0, open=99.8,
+                                                 high=99.9, low=99.4, close=99.6, volume=0))
+    assert s2["triggers"][0]["status"] == "fired"
+    trade = s2["trades"][0]
+    assert trade["instrument"] == "options", trade
+    assert trade["orderSymbol"] == occ_sym
+    assert trade["contract"]["statedContract"] is True
+    assert trade["status"] in ("submitting", "working", "open"), trade
+
+    # fill the option entry, then the 2b handoff carries the OPT leg
+    for _ in range(6):
+        await _opt_quote(eng, occ_sym, 1.15)
+
+    async def handed_off():
+        pos = [p for p in eng.position_manager.positions()
+               if p.get("technique") == "tip" and p.get("runId") == run_id]
+        return pos[0] if pos else None
+    pos = await wait_for(handed_off, timeout=15)
+    [leg] = pos["legs"]
+    assert leg["secType"] == "OPT" and leg["symbol"] == occ_sym and leg["multiplier"] == 100.0
+    assert pos["overnight"] == "app_managed" and pos["overnightAck"] is True
+    assert pos["policy"]["premium_stop_pct"] == 50.0
+    assert pos["policy"]["dte_close"] >= 1
+    assert pos["policy"]["stop"]["price"] == 98.0
+    assert pos["entry"] == 99.5              # policies judge the UNDERLYING
+
+
+async def test_short_tip_puts_end_to_end(tip_rig):
+    """A short tip (puts) arms, fires on the reject touch, buys the PUT, and
+    hands off — the armed book's short-side measurement gap is closed."""
+    eng, sim = tip_rig
+    from zargar.options import occ as occ_mod
+
+    from .test_tip_express import FakeChain, row as chain_row
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    fake = FakeChain(spot=100.0, expiries=(exp14,),
+                     rows=[chain_row(99.0, "put", expiry=exp14),
+                           chain_row(97.0, "put", expiry=exp14)])
+    eng.options.use_client(fake)
+    occ_sym = occ_mod.make("TEST", exp14, "P", 99.0).symbol
+
+    src = "TEST 99p — fade this pop at 100.5, stop 102, target 96."
+    ext = ExtractionResult(
+        signals=[TradeSignal(
+            ticker="TEST", direction="short", action="open",
+            instrument="put", strike=99.0, expiry=exp14,
+            entry_price=100.5, target_price=96.0, stop_price=102.0,
+            entry_type="limit", timeframe="swing", thesis_summary="fade",
+            evidence_quotes=["TEST 99p", "fade this pop at 100.5, stop 102, target 96"],
+            confidence="explicit_call", is_actionable=True)],
+        source_type="trade_alert")
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    content = RawContent(id=new_id(), source_type="manual", source_name="TestRoom",
+                         subject="tip", body_text=src)
+    async with eng.sf() as session:
+        session.add(content)
+        await session.commit()
+    out = await eng.signals_service.handle_extraction(content, ext, source_text=src)
+    sig = out[0]["signal"]
+    assert sig["status"] in ("verified", "parked"), sig["verification"]
+    # immediate book: BUYS the put (never a share short)
+    assert out[0]["shadowOrder"] is not None
+    assert out[0]["shadowOrder"]["secType"] == "OPT"
+    assert out[0]["shadowOrder"]["side"] == "BUY"
+
+    snap = await eng.tip_runner.arm_signal(sig["id"], {
+        "portfolioId": sim["id"], "mode": "auto", "dailyLossLimit": 200.0})
+    assert snap["config"]["instrument"] == "options"
+    [trig] = snap["triggers"]
+    assert trig["kind"] == "reject" and trig["direction"] == "short"
+    run_id = snap["runId"]
+
+    await _quote(eng, 100.2)
+    await _opt_quote(eng, occ_sym, 1.1)
+    day = snap["planFor"]
+    from zargar.marketstructure.sessions import ET as REAL_ET
+    y, m, d = (int(x) for x in day.split("-"))
+    ts0 = int(dt.datetime(y, m, d, 10, 0, tzinfo=REAL_ET).timestamp() * 1000)
+    if snap.get("lastBarTs"):
+        ts0 = max(ts0, int(snap["lastBarTs"]) + MIN)
+    s2 = await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0, open=100.2,
+                                                 high=100.6, low=100.1, close=100.3, volume=0))
+    assert s2["triggers"][0]["status"] == "fired", s2["triggers"]
+    trade = s2["trades"][0]
+    assert trade["instrument"] == "options" and trade["orderSymbol"] == occ_sym, trade
+
+    for _ in range(6):
+        await _opt_quote(eng, occ_sym, 1.15)
+
+    async def handed_off():
+        pos = [p for p in eng.position_manager.positions()
+               if p.get("technique") == "tip" and p.get("runId") == run_id]
+        return pos[0] if pos else None
+    pos = await wait_for(handed_off, timeout=15)
+    assert pos["direction"] == "short"
+    [leg] = pos["legs"]
+    assert leg["secType"] == "OPT" and leg["qty"] > 0     # long the PUT
+    assert pos["policy"]["stop"]["price"] == 102.0        # above entry: the short mirror
+
+
+async def test_share_tip_stays_shares_and_no_chain_falls_back(tip_rig):
+    """A bare 'buy TEST' tip stays shares in both books; an option tip whose
+    chain is unreachable falls back to shares with the reason recorded."""
+    eng, sim = tip_rig
+
+    from .test_tip_express import FakeChain
+    class Dead(FakeChain):
+        async def expirations(self, symbol):
+            from zargar.options.chain import OptionsError
+            raise OptionsError("no US-listed options (CBOE 404)")
+    eng.options.use_client(Dead())
+
+    # share tip -> shares (vehicle rule)
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    assert snap["config"]["instrument"] == "shares"
+
+    # option tip, dead chain -> immediate book expressed in SHARES with the reason
+    from zargar.domain import new_id
+    from zargar.models import RawContent, Signal as SignalRow
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    content = RawContent(id=new_id(), source_type="manual", source_name="OtherRoom",
+                         subject="tip", body_text=OPT_SOURCE)
+    async with eng.sf() as session:
+        session.add(content)
+        await session.commit()
+    out = await eng.signals_service.handle_extraction(content, canned_option_tip(exp14),
+                                                      source_text=OPT_SOURCE)
+    shadow_order = out[0]["shadowOrder"]
+    assert shadow_order is not None and shadow_order["secType"] == "STK"
+    async with eng.sf() as session:
+        srow = await session.get(SignalRow, out[0]["signal"]["id"])
+    expr = srow.extraction.get("shadowExpression") or {}
+    assert expr.get("vehicle") == "shares" and "404" in str(expr.get("fallback"))
+
+
 async def test_tip_time_sources_cannot_arm(tip_rig):
     eng, sim = tip_rig
     await eng.settings.set("techniques.tip.sources",

@@ -128,6 +128,10 @@ runtime ones to `execution.*`).
   score ≥ `techniques.flow.universe_score_min` on 2 of the last 3 scan days). Reads persist the
   scan-time `spot`. First real-scan calibration findings recorded in UI-PLAN §3a (default
   thresholds flag 42/56 symbols, mostly 1-DTE noise — tune before trusting scores).
+- 2026-08-27 · **`ArmConfig.premium_budget`** (techniques team, for Tip Phase B): per-plan $
+  cap on options premium, applied in `_size_contracts` after risk sizing (floors at 1 contract
+  with a warning when a single premium exceeds the budget; RiskGate premium caps backstop;
+  fixed `contracts` still wins). 0 = off; EM plans unaffected.
 - 2026-08-27 · **Tip consumes Phase 2b + dual shadow books** (techniques team, user decisions):
   `Portfolio.book` column splits each source's shadow record into an **immediate** book (buy at
   tip time) and an **armed** book (wait for the level; the `tip_shadow_arm` scheduler job
