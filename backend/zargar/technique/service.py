@@ -1777,6 +1777,7 @@ class TechniqueService:
             rows = (await session.execute(select(TechniqueArmed).order_by(TechniqueArmed.created_at.desc())
                                           .limit(limit))).scalars().all()
         return [{"runId": r.run_id, "symbol": r.symbol, "planFor": r.plan_for, "portfolioId": r.portfolio_id,
+                 "technique": getattr(r, "technique", None) or "enhanced_market",
                  "mode": r.mode, "status": r.status, "config": r.config or {}, "state": r.state or {},
                  "createdAt": r.created_at.isoformat() if r.created_at else None,
                  "updatedAt": r.updated_at.isoformat() if r.updated_at else None} for r in rows]
