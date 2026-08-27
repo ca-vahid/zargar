@@ -39,6 +39,7 @@ DEFAULTS: dict[str, Any] = {
     "research.chain_snapshots.enabled": True,   # nightly per-contract OI/IV/volume rows (history is NOT backfillable)
     "research.chain_snapshots.at": "16:30",     # ET
     "research.chain_snapshots.keep_days": 400,  # prune beyond this window (0 = keep forever)
+    "research.chain_snapshots.skip_dead": True, # drop rows with 0 volume AND 0 OI (no signal, ~60% of the chain)
     "research.daily_bars.enabled": True,        # tf=1d bars for the universe into the bars table
     "research.daily_bars.at": "20:05",          # ET
     "research.daily_bars.range": "1mo",         # per-night fetch window (idempotent upserts)
