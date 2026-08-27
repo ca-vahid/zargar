@@ -64,9 +64,15 @@ async def snapshot_chains(engine) -> dict:
         except Exception as exc:
             failures.append(f"{sym}: {exc}")
             continue
+        skip_dead = bool(s.get("research.chain_snapshots.skip_dead", True))
         values = []
         for r in rows:
             g = r.get("greeks") or {}
+            # a contract nobody holds and nobody traded today carries no signal for the
+            # repeat-hit / OI-delta / IV-percentile consumers — first live night was
+            # 366k rows across 145 names, ~60%+ of them dead (2026-08-27)
+            if skip_dead and not int(r.get("volume") or 0) and not int(r.get("open_interest") or 0):
+                continue
             bid, ask = float(r.get("bid") or 0), float(r.get("ask") or 0)
             values.append({
                 "date": day, "occ": r["symbol"], "underlying": sym,
