@@ -8,12 +8,11 @@ clipboard all require it), and (3) the token on the phone.
 ## Recommended: Tailscale Serve (private, HTTPS, works on cellular)
 
 1. Install Tailscale on the desktop and on the phone, same tailnet.
-2. In `backend/.env`:
-   ```
-   ZARGAR_HOST=127.0.0.1           # keep loopback — Tailscale proxies to it
-   ZARGAR_AUTH_TOKEN=<long random>  # REQUIRED before exposing anything
-   ```
-   Generate one: `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
+2. Sign-in must be on before exposing anything: Google SSO (`ZARGAR_GOOGLE_CLIENT_ID`
+   + `ZARGAR_GOOGLE_ALLOWED_EMAILS`, see `docs/AUTH.md`) — or, for scripts only,
+   `ZARGAR_AUTH_TOKEN`. Keep `ZARGAR_HOST=127.0.0.1`; Tailscale proxies to it.
+   Add the `.ts.net` origin to the Google OAuth client's *Authorized JavaScript
+   origins* or the Google button won't render on the phone.
 3. Expose it: `tailscale serve --bg http://127.0.0.1:8420` (Tailscale ≥ 1.60 syntax).
    The first run prints a link to enable Serve/HTTPS for the tailnet — approve it once.
    Tailscale issues a real certificate for `https://<machine>.<tailnet>.ts.net`, the
@@ -23,10 +22,12 @@ clipboard all require it), and (3) the token on the phone.
 4. In Settings → Mobile → **Phone link**, paste that origin
    (`https://<machine>.<tailnet>.ts.net`). Telegram alerts now carry an
    "Open in Zargar" button that deep-links the phone to the plan.
-5. On the phone open `https://<machine>.<tailnet>.ts.net/#token=<your token>`
-   once — the token is stored in that browser and stripped from the address.
-   Then Share → **Add to Home Screen** (iOS) or the browser's *Install app*
-   (Android/Chrome). The app opens on the **Now** screen.
+5. On the phone: install Tailscale, sign in with the same account, open
+   `https://<machine>.<tailnet>.ts.net` and **Sign in with Google** (30-day
+   session). Then Share → **Add to Home Screen** (iOS) or the browser's
+   *Install app* (Android/Chrome). The app opens on the **Now** screen.
+   (`/#token=<ZARGAR_AUTH_TOKEN>` still works as a one-time handoff for the
+   static token, if you use one.)
 6. Settings → Mobile → **Push notifications → Enable on this device**
    (installed app on iOS 16.4+; any Chrome on Android).
 
