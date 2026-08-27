@@ -18,14 +18,39 @@ def build_signal_routes(app, eng, auth, config) -> None:
         return await eng.signals_service.ingest_email(payload)
 
     class ManualIngest(BaseModel):
-        text: str
+        text: str = ""
         source_name: str = "manual"
         subject: str = ""
+        imageDataUrl: str | None = None   # screenshot of the user's own client
 
     @app.post("/api/ingest/manual", dependencies=[auth])
     async def ingest_manual(body: ManualIngest):
+        image = None
+        media_type = "image/png"
+        if body.imageDataUrl:
+            from ..technique.llm import decode_data_url
+            try:
+                image, media_type = decode_data_url(body.imageDataUrl)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc))
+        if not body.text.strip() and image is None:
+            raise HTTPException(status_code=400, detail="text or imageDataUrl required")
         return await eng.signals_service.ingest_manual(
-            body.text, source_name=body.source_name, subject=body.subject)
+            body.text, source_name=body.source_name, subject=body.subject,
+            image=image, image_media_type=media_type)
+
+    @app.get("/api/signals/sources", dependencies=[auth])
+    async def source_scorecards():
+        return await eng.signals_service.source_scorecards()
+
+    @app.get("/api/signals/{sid}/plan", dependencies=[auth])
+    async def signal_tip_plan(sid: str):
+        try:
+            return await eng.signals_service.build_tip_plan_for(sid)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
 
     # --- signals / content ----------------------------------------------------
     @app.get("/api/signals", dependencies=[auth])

@@ -97,6 +97,15 @@ runtime ones to `execution.*`).
   bars hygiene (bucket alignment at write, stub cleanup at boot — 1d rows exempt).
 - 2026-08-27 · Venue probes (read-only impact previews): Webull CA accepts SELL_TO_OPEN, native
   2-leg spreads, and GTC on options; venue-side option STOP unproven (503); Wealthsimple 1156.
+- 2026-08-27 · **Wave-one techniques (Tip + Flow) Phase A** (techniques team): new non-Technique
+  event kinds `SignalParked` (price-position checks failed → parked, not killed), `SignalSeenAgain`
+  (dedupe attach), `FlowScanCompleted` (daily flow scan summary); new table `flow_reads` (Flow's
+  daily per-symbol verdicts — chain data stays in `option_chain_snapshots`, single writer: the
+  research feed; Flow reads it with a scoring-only live fallback); `flow_scan` job on the engine
+  scheduler at `techniques.flow.scan_at` (16:45, after chain snapshots); tip shadow orders carry
+  `technique_id="tip"` + `tags=["source:<name>"]` so the per-tag day-notional cap sees them;
+  settings families `techniques.tip.*` / `techniques.flow.*` in DEFAULTS. Verification signals
+  now carry advisory `flowContext` / `calendarContext` lines (informational, never checks).
   Overnight default for long options → app_managed-with-acknowledgement (see plan §9).
 
 - 2026-08-25 · Alpaca full-SIP stream + Alpaca-first history; feed-down alerting · Yahoo 429 incident.

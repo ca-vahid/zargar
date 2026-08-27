@@ -43,9 +43,13 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         await attach_telegram(eng)
         from ..technique.service import attach_technique_layer
         await attach_technique_layer(eng)
+        from ..techniques.flow.service import attach_flow_layer
+        attach_flow_layer(eng)
         await hub.start()
         yield
         await hub.stop()
+        if getattr(eng, "flow_service", None) is not None:
+            await eng.flow_service.stop()
         if eng.technique is not None:
             await eng.technique.stop()
         await eng.stop()
@@ -486,6 +490,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
     from .routes_options import build_options_routes
     build_options_routes(app, eng, auth, config)
+
+    from .routes_flow import build_flow_routes
+    build_flow_routes(app, eng, auth, config)
 
     # --- static SPA -----------------------------------------------------------
     if config.frontend_dist and Path(config.frontend_dist).is_dir():

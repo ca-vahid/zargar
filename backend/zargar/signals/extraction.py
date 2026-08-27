@@ -24,8 +24,26 @@ def quote_in_source(quote: str, source: str) -> bool:
     return bool(q) and q in s
 
 
+_NUM_TOKEN = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _numeric_tokens(quotes: list[str]) -> set[float]:
+    """Every number appearing in the grounded quotes, shorthand included:
+    '$180', '180c', '1,250.50', '150p' all yield their numeric value."""
+    out: set[float] = set()
+    for tok in _NUM_TOKEN.findall(" ".join(quotes).replace(",", "")):
+        try:
+            out.add(float(tok))
+        except ValueError:  # pragma: no cover - regex guarantees a float
+            pass
+    return out
+
+
 def _price_evidenced(price: float | None, quotes: list[str]) -> bool:
-    """A stated price must literally appear in at least one grounded quote."""
+    """A stated price must appear in at least one grounded quote — literally
+    ('184.50') or as a shorthand token ('$184.50', '184.5c', '1,250'). Discord
+    tips write '180c'; the literal-substring rule alone would fail exactly the
+    messages the tip technique exists for."""
     if price is None:
         return True
     variants = {
@@ -33,7 +51,9 @@ def _price_evidenced(price: float | None, quotes: list[str]) -> bool:
         f"{price:,.2f}", f"{price:,.0f}",
     }
     joined = " ".join(quotes)
-    return any(v in joined for v in variants)
+    if any(v in joined for v in variants):
+        return True
+    return any(abs(t - price) < 1e-9 for t in _numeric_tokens(quotes))
 
 
 def ground_signal(signal: TradeSignal, source_text: str) -> dict:
@@ -47,8 +67,10 @@ def ground_signal(signal: TradeSignal, source_text: str) -> dict:
             signal.ticker.upper() in q.upper() for q in grounded_quotes)
         or quote_in_source(signal.ticker, source_text),
         "entry_evidenced": _price_evidenced(signal.entry_price, grounded_quotes),
-        "target_evidenced": _price_evidenced(signal.target_price, grounded_quotes),
+        "target_evidenced": _price_evidenced(signal.target_price, grounded_quotes)
+        and all(_price_evidenced(t, grounded_quotes) for t in signal.target_prices),
         "stop_evidenced": _price_evidenced(signal.stop_price, grounded_quotes),
+        "strike_evidenced": _price_evidenced(signal.strike, grounded_quotes),
     }
     return {
         "passed": all(checks.values()),
@@ -77,16 +99,31 @@ class Extractor:
         return self._client
 
     async def extract(self, text: str, *, subject: str = "", source_name: str = "",
-                      received_at: str = "") -> ExtractionResult:
+                      received_at: str = "", image: bytes | None = None) -> ExtractionResult:
+        """Text extraction, or screenshot extraction when `image` is given (the
+        model transcribes the visible text into `source_transcript`, and the
+        evidence quotes are grounded against that transcript downstream)."""
         if not self.available:
             raise RuntimeError("extraction unavailable: ZARGAR_ANTHROPIC_API_KEY not configured")
         client = self._get_client()
-        user_content = (
+        header = (
             f"Source: {source_name or 'unknown'}\n"
             f"Subject: {subject or '(none)'}\n"
             f"Received: {received_at or 'unknown'}\n"
-            f"--- CONTENT START ---\n{text}\n--- CONTENT END ---"
         )
+        if image is not None:
+            from ..technique.llm import image_block  # shared vision plumbing (sniffs media type)
+            user_content: list | str = [
+                image_block(image),
+                {"type": "text", "text": header + (
+                    "The content is the attached screenshot (the user's own chat/newsletter "
+                    "client). First transcribe ALL visible text verbatim into "
+                    "source_transcript, then extract signals from that transcription. "
+                    "Evidence quotes must be copied character-for-character from your "
+                    "transcription." + (f"\nUser note: {text}" if text.strip() else ""))},
+            ]
+        else:
+            user_content = header + f"--- CONTENT START ---\n{text}\n--- CONTENT END ---"
         response = await client.messages.parse(
             model=self.model,
             max_tokens=16000,

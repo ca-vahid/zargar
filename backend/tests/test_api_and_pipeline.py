@@ -173,12 +173,15 @@ async def test_hallucinated_signal_never_proposed(app_client):
     assert (await client.get("/api/proposals")).json() == []
 
 
-async def test_stale_price_signal_rejected(app_client):
+async def test_stale_price_signal_parked_not_killed(app_client):
+    # v2 semantics (tip technique): a signal whose only failure is price
+    # position is PARKED — the tip watches for the level — never proposed.
     client, eng = app_client
     await wait_quote(eng, "AAPL")
     await eng.settings.set("verification.max_price_deviation_pct", 0.0001)
     out = await run_pipeline(eng, canned_extraction())
-    assert out[0]["signal"]["status"] == "verification_failed"
+    assert out[0]["signal"]["status"] == "parked"
+    assert out[0]["proposal"] is None
     checks = out[0]["signal"]["verification"]["checks"]
     assert any(c["name"] == "price_deviation" and not c["passed"] for c in checks)
 
@@ -187,6 +190,8 @@ async def test_proposal_reject_and_expiry(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")
     await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    # this test deliberately ingests the same tip twice — opt out of dedupe
+    await eng.settings.set("techniques.tip.dedupe_window_hours", 0)
     out = await run_pipeline(eng, canned_extraction())
     proposal = out[0]["proposal"]
     r = await client.post(f"/api/proposals/{proposal['id']}/reject")
@@ -217,3 +222,23 @@ async def test_shadow_portfolio_tracks_verified_signal(app_client):
     # a second signal from the same source reuses the portfolio
     out2 = await run_pipeline(eng, canned_extraction())
     assert len([p for p in eng.positions.portfolios() if p["kind"] == "shadow"]) == 1
+
+
+async def test_duplicate_tip_attaches_not_reproposes(app_client):
+    """v2 dedupe: the same tip seen twice bumps seen_count on the original —
+    no second proposal, no second shadow fill, and the scorecard counts it."""
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    out = await run_pipeline(eng, canned_extraction())
+    assert out[0]["proposal"] is not None
+    out2 = await run_pipeline(eng, canned_extraction())
+    assert out2[0].get("duplicateOf") == out[0]["signal"]["id"]
+    assert out2[0]["proposal"] is None and out2[0]["shadowOrder"] is None
+    assert out2[0]["signal"]["seenCount"] == 2
+
+    cards = (await client.get("/api/signals/sources")).json()
+    card = next(c for c in cards if c["source"] == "TestLetter")
+    assert card["signals"] == 1 and card["seenAgain"] == 1
+    assert card["policy"]["entry"] == "level_touch"
+    assert card["barCleared"] is False   # one tip is nowhere near the bar
