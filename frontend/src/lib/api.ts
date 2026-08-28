@@ -73,6 +73,11 @@ export const api = {
   sourceNames: () => request<string[]>("GET", "/api/signals/source-names"),
   armTipSignal: (sid: string, body?: { portfolioId?: string; mode?: string }) =>
     request<any>("POST", `/api/signals/${sid}/arm`, body ?? {}),
+  // --- discord intake catalog + watchlist ---
+  discordCatalog: () => request<import("../types").DiscordCatalog>("GET", "/api/tip/discord/catalog"),
+  discordWatch: () => request<{ watch: import("../types").DiscordWatch[] }>("GET", "/api/tip/discord/watch"),
+  setDiscordWatch: (watch: import("../types").DiscordWatch[]) =>
+    request<{ watch: import("../types").DiscordWatch[] }>("PUT", "/api/tip/discord/watch", { watch }),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

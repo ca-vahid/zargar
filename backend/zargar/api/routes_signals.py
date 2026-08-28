@@ -108,6 +108,29 @@ def build_signal_routes(app, eng, auth, config) -> None:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    # --- discord intake: catalog (from the gateway) + watchlist (from the UI) --
+    @app.post("/api/tip/discord/catalog", dependencies=[auth])
+    async def discord_report_catalog(request: Request):
+        """The gateway reports the DMs/channels it can see so the UI can offer them."""
+        eng.signals_service.discord_set_catalog(await request.json())
+        return {"ok": True}
+
+    @app.get("/api/tip/discord/catalog", dependencies=[auth])
+    async def discord_catalog():
+        return eng.signals_service.discord_get_catalog()
+
+    @app.get("/api/tip/discord/watch", dependencies=[auth])
+    async def discord_watch():
+        """The allowlist the gateway polls: which DMs/channels to ingest."""
+        return {"watch": eng.signals_service.discord_get_watch()}
+
+    class DiscordWatchBody(BaseModel):
+        watch: list = []
+
+    @app.put("/api/tip/discord/watch", dependencies=[auth])
+    async def discord_set_watch(body: DiscordWatchBody):
+        return {"watch": await eng.signals_service.discord_set_watch(body.watch)}
+
     # --- proposals -----------------------------------------------------------
     @app.get("/api/proposals", dependencies=[auth])
     async def list_proposals(all: bool = False, limit: int = 100):

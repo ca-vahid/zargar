@@ -206,6 +206,25 @@ export interface ShadowBook {
   };
 }
 
+export interface DiscordCatalogChannel { channelId: string; name: string; }
+export interface DiscordCatalogGuild { guildId: string; guildName: string; channels: DiscordCatalogChannel[]; }
+export interface DiscordCatalogDM { channelId: string; name: string; isBot?: boolean; }
+export interface DiscordCatalog {
+  user?: { id?: string; username?: string } | null;
+  at?: string | null;
+  dms: DiscordCatalogDM[];
+  guilds: DiscordCatalogGuild[];
+}
+export interface DiscordWatch {
+  channelId: string;
+  kind: "dm" | "channel";
+  sourceName: string;
+  label?: string;
+  guildName?: string;
+  botsOnly?: boolean;
+  enabled?: boolean;
+}
+
 export interface SourceScorecard {
   source: string;
   signals: number;

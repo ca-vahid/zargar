@@ -1963,3 +1963,14 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .flow-legend b { color: var(--text-2); font-weight: 600; }
 .flow-whatnow { background: color-mix(in srgb, var(--warn) 7%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); border-radius: var(--radius-sm); padding: 10px 12px; }
 .flow-detail-head .flow-story-btn { padding: 5px 10px; font-size: var(--fs-1); }
+
+/* Discord intake source picker (Tips > Sources) */
+.disc-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+@media (max-width: 720px) { .disc-cols { grid-template-columns: 1fr; } }
+.disc-head { font-weight: 600; color: var(--text-2); font-size: var(--fs-1); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.04em; }
+.disc-guild { margin-bottom: 10px; }
+.disc-guild-name { font-weight: 600; font-size: var(--fs-1); margin: 6px 0 2px; }
+.disc-row { display: flex; align-items: center; gap: 10px; padding: 3px 0; flex-wrap: wrap; }
+.disc-toggle { display: flex; align-items: center; gap: 7px; cursor: pointer; min-width: 180px; }
+.disc-opts { display: flex; align-items: center; gap: 10px; font-size: var(--fs-1); }
+.disc-src { width: 130px; padding: 2px 6px; font-size: var(--fs-1); }

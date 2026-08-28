@@ -125,6 +125,40 @@ async def fetch_image_data_url(http, url: str) -> str | None:
         return None
 
 
+TEXT_CHANNEL_TYPES = {0, 5, 15}     # text, announcement, forum
+DM_CHANNEL_TYPES = {1, 3}           # dm, group dm
+
+
+def build_catalog(ready_d: dict) -> dict:
+    """READY payload -> the menu the UI shows: your DMs and every readable
+    text channel, grouped by server. Names, not ids, so you can pick."""
+    user = ready_d.get("user") or {}
+    dms = []
+    for ch in ready_d.get("private_channels") or []:
+        recips = ch.get("recipients") or []
+        if ch.get("type") == 3:      # group DM
+            name = ch.get("name") or ", ".join(
+                r.get("global_name") or r.get("username") or "?" for r in recips) or "group"
+            is_bot = False
+        else:
+            r = recips[0] if recips else {}
+            name = r.get("global_name") or r.get("username") or "unknown"
+            is_bot = bool(r.get("bot"))
+        dms.append({"channelId": str(ch.get("id")), "name": name, "isBot": is_bot})
+    guilds = []
+    for g in ready_d.get("guilds") or []:
+        chans = [{"channelId": str(c.get("id")), "name": c.get("name") or "?"}
+                 for c in (g.get("channels") or [])
+                 if c.get("type") in TEXT_CHANNEL_TYPES]
+        chans.sort(key=lambda c: c["name"])
+        if chans:
+            guilds.append({"guildId": str(g.get("id")),
+                           "guildName": g.get("name") or "server", "channels": chans})
+    guilds.sort(key=lambda x: x["guildName"].lower())
+    return {"user": {"id": str(user.get("id") or ""), "username": user.get("username")},
+            "dms": sorted(dms, key=lambda d: d["name"].lower()), "guilds": guilds}
+
+
 def flatten_message(msg: dict) -> str:
     """A DM message → plain text the extractor can read: content plus every
     embed's title/description/fields/footer (alert bots put the trade in an
@@ -157,7 +191,7 @@ class Gateway:
     def __init__(self, token: str, api: str, session_token: str, log_path: Path,
                  *, ingest: bool, dump: bool, bots_only: bool,
                  author_id: str, channel_id: str, include_self: bool = False,
-                 status_minutes: float = 15.0) -> None:
+                 status_minutes: float = 15.0, all_dms: bool = False) -> None:
         self.token = token
         self.api = api
         self.session_token = session_token
@@ -165,12 +199,16 @@ class Gateway:
         self.ingest = ingest
         self.dump = dump
         self.bots_only = bots_only
+        self.all_dms = all_dms
         self.author_id = author_id
         self.channel_id = channel_id
         self.include_self = include_self
         self.status_minutes = status_minutes
         self.user_id = ""
         self.seen_count = 0
+        self._watch: dict[str, dict] = {}   # channelId -> watch entry (the allowlist)
+        self._watch_loaded = False
+        self._http = None                   # shared client for catalog/watch calls
         self._seq: int | None = None
         self._hb_interval = 41.25
         self._acked = True
@@ -202,13 +240,47 @@ class Gateway:
         print(f"[gateway] connected; heartbeat every {self._hb_interval:.1f}s; "
               f"{'DUMP only' if not self.ingest else 'ingesting to ' + self.api}")
         headers = {"Authorization": f"Bearer {self.session_token}"} if self.session_token else {}
+        poll = None
         try:
             async with httpx.AsyncClient(timeout=30) as http:
+                self._http = http
+                poll = asyncio.create_task(self._watch_loop(http, headers))
                 async for raw in ws:
                     await self._on_frame(json.loads(raw), http, headers)
         finally:
             hb.cancel()
             status.cancel()
+            if poll:
+                poll.cancel()
+
+    async def _watch_loop(self, http, headers) -> None:
+        """Poll the app for the watchlist (the allowlist). Empty = manual flags
+        decide; non-empty = ingest only channels the user enabled in the UI."""
+        while True:
+            try:
+                r = await http.get(f"{self.api}/api/tip/discord/watch", headers=headers)
+                if r.status_code == 200:
+                    entries = (r.json() or {}).get("watch") or []
+                    self._watch = {str(e["channelId"]): e for e in entries
+                                   if e.get("enabled") and e.get("channelId")}
+                    if not self._watch_loaded:
+                        self._watch_loaded = True
+                        print(f"[gateway] watchlist: {len(self._watch)} source(s) enabled"
+                              + ("" if self._watch else " (none yet — pick them in the app, "
+                                 "Tips > Sources > Discord)"))
+            except Exception:
+                pass
+            await asyncio.sleep(30)
+
+    async def _report_catalog(self, ready_d, http, headers) -> None:
+        try:
+            cat = build_catalog(ready_d)
+            await http.post(f"{self.api}/api/tip/discord/catalog", headers=headers, json=cat)
+            nch = sum(len(g["channels"]) for g in cat["guilds"])
+            print(f"[gateway] reported catalog: {len(cat['dms'])} DM(s), "
+                  f"{len(cat['guilds'])} server(s), {nch} channel(s) — pick sources in the app")
+        except Exception as exc:
+            print(f"[gateway] catalog report failed: {exc}")
 
     async def _status_loop(self) -> None:
         """Periodic proof-of-life so a quiet window is distinguishable from a
@@ -253,33 +325,43 @@ class Gateway:
             u = (data["d"].get("user") or {})
             self.user_id = str(u.get("id") or "")
             print(f"[gateway] READY as {u.get('username')} "
-                  f"({len(data['d'].get('private_channels') or [])} DM channels) — "
-                  f"{'bot DMs only' if self.bots_only else 'all DMs'}"
-                  f"{'; self-DMs included (test mode)' if self.include_self else ''}")
-            print("[gateway] listening. Send yourself a DM (with --include-self) "
-                  "or wait for an alert.")
+                  f"({len(data['d'].get('private_channels') or [])} DM channels)")
+            await self._report_catalog(data["d"], http, headers)
+            print("[gateway] listening.")
             return
         if t != "MESSAGE_CREATE":
             return
         await self._on_message(data["d"], http, headers)
 
+    def _match(self, msg: dict, is_dm: bool, author: dict, is_self: bool):
+        """(should_ingest, source_name). The WATCHLIST is the allowlist; manual
+        flags are testing overrides. Default (no flags, empty watchlist) matches
+        nothing — personal DMs never leak in."""
+        cid = str(msg.get("channel_id"))
+        if self.channel_id:                       # explicit single-channel test
+            return (cid == self.channel_id, "auto")
+        if self.author_id:                        # explicit single-author test
+            return (str(author.get("id")) == self.author_id, "auto")
+        entry = self._watch.get(cid)              # the UI-chosen allowlist
+        if entry:
+            if entry.get("botsOnly") and not author.get("bot"):
+                if not (self.include_self and is_self):
+                    return (False, None)
+            return (True, entry.get("sourceName") or "auto")
+        if self.include_self and is_self and is_dm:   # DM-yourself self test
+            return (True, "auto")
+        if self.bots_only:                        # legacy: all bot DMs
+            return (is_dm and bool(author.get("bot")), "auto")
+        if self.all_dms:                          # legacy: every DM
+            return (is_dm, "auto")
+        return (False, None)                      # allowlist default: no match
+
     async def _on_message(self, msg: dict, http, headers) -> None:
         is_dm = msg.get("guild_id") is None          # DMs carry no guild
         author = msg.get("author") or {}
-        is_self = self.user_id and str(author.get("id")) == self.user_id
-        # filters
-        if self.channel_id and str(msg.get("channel_id")) != self.channel_id:
-            return
-        if self.author_id and str(author.get("id")) != self.author_id:
-            return
-        if self.bots_only and not author.get("bot"):
-            # your own DMs pass when --include-self: that is the self-test path
-            # (DM yourself an alert and watch it flow end to end)
-            if not (self.include_self and is_self and is_dm):
-                return
-        if not self.channel_id and not is_dm:
-            # default scope is DMs only (that is the sanctioned-ish alert path);
-            # a channel filter opts into one specific channel deliberately
+        is_self = bool(self.user_id and str(author.get("id")) == self.user_id)
+        matched, source_name = self._match(msg, is_dm, author, is_self)
+        if not matched:
             return
         text = flatten_message(msg)
         images = collect_images(msg)
@@ -306,8 +388,8 @@ class Gateway:
             print("    -> nothing to ingest (no text, no usable image)")
             return
         try:
-            body = {"text": text, "source_name": "auto",
-                    "subject": f"discord dm: {describe_author(msg)}"}
+            body = {"text": text, "source_name": source_name or "auto",
+                    "subject": f"discord: {describe_author(msg)}"}
             if image_data_url:
                 body["imageDataUrl"] = image_data_url
             r = await http.post(f"{self.api}/api/ingest/manual", headers=headers,
@@ -334,8 +416,10 @@ def main() -> None:
     p.add_argument("--log", default="discord_dms.jsonl")
     p.add_argument("--ingest", action="store_true", help="post DMs to the app (default: dump only)")
     p.add_argument("--dump", action="store_true", help="explicit dump-only (no ingest)")
+    p.add_argument("--all-dms", action="store_true",
+                   help="ignore the watchlist and ingest every DM (testing)")
     p.add_argument("--from-bots-only", action="store_true",
-                   help="ingest only DMs authored by a bot (alert relays)")
+                   help="ingest all bot-authored DMs (legacy; prefer the watchlist)")
     p.add_argument("--author-id", default="", help="only this author id")
     p.add_argument("--channel-id", default="", help="only this channel id (opts into a channel, not just DMs)")
     p.add_argument("--include-self", action="store_true",
@@ -360,7 +444,7 @@ def main() -> None:
                  ingest=a.ingest and not a.dump, dump=a.dump,
                  bots_only=a.from_bots_only, author_id=a.author_id,
                  channel_id=a.channel_id, include_self=a.include_self,
-                 status_minutes=a.status_minutes)
+                 status_minutes=a.status_minutes, all_dms=a.all_dms)
     try:
         asyncio.run(gw.run())
     except KeyboardInterrupt:

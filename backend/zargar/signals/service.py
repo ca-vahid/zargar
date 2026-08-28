@@ -80,6 +80,40 @@ class SignalService:
         self.extractor = extractor
         self._replay_fetch = None      # tests inject a bars fetcher for replays
         self._analyst_client = None    # tests inject a fake Anthropic client
+        self._discord_catalog: dict | None = None   # last catalog the gateway reported
+
+    # ---------------------------------------------------- discord intake config
+    # The gateway (zargar/tools/discord_gateway.py) reports the DMs/channels it
+    # can see (the CATALOG); the user picks which to monitor (the WATCHLIST, in
+    # settings). The gateway polls the watchlist and only ingests matches — an
+    # allowlist, so personal DMs never become tips (user, 2026-08-28).
+    def discord_set_catalog(self, catalog: dict) -> None:
+        self._discord_catalog = {**catalog,
+                                 "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+
+    def discord_get_catalog(self) -> dict:
+        return self._discord_catalog or {"dms": [], "guilds": [], "user": None, "at": None}
+
+    def discord_get_watch(self) -> list[dict]:
+        return list(self.engine.settings.get("techniques.tip.discord.watch") or [])
+
+    async def discord_set_watch(self, watch: list[dict]) -> list[dict]:
+        clean: list[dict] = []
+        for w in watch or []:
+            cid = str(w.get("channelId") or "").strip()
+            if not cid:
+                continue
+            clean.append({
+                "channelId": cid,
+                "kind": "dm" if w.get("kind") == "dm" else "channel",
+                "sourceName": str(w.get("sourceName") or "").strip() or "auto",
+                "label": str(w.get("label") or "")[:120],
+                "guildName": str(w.get("guildName") or "")[:120],
+                "botsOnly": bool(w.get("botsOnly", w.get("kind") != "dm")),
+                "enabled": bool(w.get("enabled", True)),
+            })
+        await self.engine.settings.set("techniques.tip.discord.watch", clean)
+        return clean
 
     # ------------------------------------------------------------- intake
     async def ingest_email(self, payload: dict) -> dict:

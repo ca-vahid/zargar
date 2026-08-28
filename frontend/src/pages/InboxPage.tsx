@@ -573,11 +573,125 @@ function BookCell({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }
   return <td className="num"><BookVal b={b} /></td>;
 }
 
+function DiscordSourcesPanel() {
+  const toast = useStore((s) => s.toast);
+  const catState = useAsync(() => api.discordCatalog(), []);
+  const watchState = useAsync(() => api.discordWatch(), []);
+  const [sel, setSel] = useState<Record<string, import("../types").DiscordWatch>>({});
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const w = watchState.data?.watch;
+    if (w) setSel(Object.fromEntries(w.map((e) => [e.channelId, e])));
+  }, [watchState.data]);
+
+  const cat = catState.data;
+  const toggle = (channelId: string, kind: "dm" | "channel", label: string,
+                  guildName: string, defaultName: string) =>
+    setSel((prev) => {
+      const next = { ...prev };
+      if (next[channelId]) delete next[channelId];
+      else next[channelId] = {
+        channelId, kind, label, guildName, sourceName: defaultName,
+        botsOnly: kind === "channel", enabled: true,
+      };
+      return next;
+    });
+  const setField = (channelId: string, patch: Partial<import("../types").DiscordWatch>) =>
+    setSel((prev) => ({ ...prev, [channelId]: { ...prev[channelId], ...patch } }));
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.setDiscordWatch(Object.values(sel));
+      toast("success", `Monitoring ${Object.keys(sel).length} Discord source(s)`);
+    } catch (e: any) { toast("error", e.message); }
+    finally { setBusy(false); }
+  };
+
+  const catalogEmpty = cat && cat.dms.length === 0 && cat.guilds.length === 0;
+  const ageMin = cat?.at ? Math.round((Date.now() - new Date(cat.at).getTime()) / 60000) : null;
+
+  const Row = ({ channelId, name, kind, guildName, isBot }:
+    { channelId: string; name: string; kind: "dm" | "channel"; guildName?: string; isBot?: boolean }) => {
+    const on = !!sel[channelId];
+    return (
+      <div className="disc-row">
+        <label className="disc-toggle">
+          <input type="checkbox" checked={on}
+            onChange={() => toggle(channelId, kind, name, guildName ?? "", name)} />
+          <span>{kind === "channel" ? "#" : ""}{name}{isBot ? <span className="muted"> · bot</span> : null}</span>
+        </label>
+        {on && (
+          <span className="disc-opts">
+            <input className="disc-src" value={sel[channelId].sourceName}
+              title="source name (its own scorecard)"
+              onChange={(e) => setField(channelId, { sourceName: e.target.value })} />
+            <label className="muted" title="only ingest posts from a bot in this channel">
+              <input type="checkbox" checked={!!sel[channelId].botsOnly}
+                onChange={(e) => setField(channelId, { botsOnly: e.target.checked })} /> bots only
+            </label>
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="panel mb">
+      <div className="panel-head">
+        Discord intake
+        <span className="sub">
+          {catState.loading ? "loading…"
+            : !cat?.user ? "no catalog yet — start the intake window (scripts\\start.ps1)"
+            : `connected as ${cat.user.username} · catalog ${ageMin ?? "?"} min ago`}
+        </span>
+        <span style={{ flex: 1 }} />
+        <button className="primary-btn" disabled={busy} onClick={save}>Save monitored sources</button>
+      </div>
+      <div className="panel-body">
+        <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+          Pick which DMs and channels feed the pipeline. Nothing else is read — your personal
+          messages never become tips. Each enabled source keeps its own scorecard.
+        </div>
+        {catState.loading ? <Spinner />
+          : catalogEmpty || !cat?.user ? (
+            <div className="empty">Start the intake (it launches with the app) — it reports the
+              DMs and channels you can see here, then pick sources.</div>
+          ) : (
+            <div className="disc-cols">
+              <div>
+                <div className="disc-head">Direct messages</div>
+                {cat.dms.length === 0 ? <div className="muted">none</div>
+                  : cat.dms.map((d) => (
+                    <Row key={d.channelId} channelId={d.channelId} name={d.name} kind="dm" isBot={d.isBot} />
+                  ))}
+              </div>
+              <div>
+                <div className="disc-head">Server channels</div>
+                {cat.guilds.map((g) => (
+                  <div key={g.guildId} className="disc-guild">
+                    <div className="disc-guild-name">{g.guildName}</div>
+                    {g.channels.map((c) => (
+                      <Row key={c.channelId} channelId={c.channelId} name={c.name}
+                        kind="channel" guildName={g.guildName} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+      </div>
+    </div>
+  );
+}
+
 function SourcesTab() {
   const signalCount = useStore((s) => s.signals.length);
   const state = useAsync(() => api.sourceScorecards(), [signalCount]);
   const cards = state.data ?? [];
   return (
+    <>
+    <DiscordSourcesPanel />
     <div className="panel">
       <div className="panel-head">
         Source scorecards
@@ -635,6 +749,7 @@ function SourcesTab() {
           )}
       </div>
     </div>
+    </>
   );
 }
 

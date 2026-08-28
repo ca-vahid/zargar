@@ -95,6 +95,23 @@ strict grammar and their own timestamps.*
   `discord_watch.py --dry` through a trading day; inspect the JSONL for the
   OWLS toast shape; fix the filter/parse; then drop `--dry`. Decide toast vs
   OCR-fallback here.
+- [x] **P4b — source selection (allowlist)** (2026-08-28, user: "I don't want
+  EVERY notification"): the gateway is now an ALLOWLIST, not a firehose.
+  - The gateway reports its **catalog** (every DM + readable text channel, from
+    the READY payload — names, grouped by server) to `POST /api/tip/discord/catalog`.
+  - The user picks sources in the app (**Tips > Sources > Discord**): a toggle per
+    DM/channel, each mapped to its own source name (so jon-and-kian and muggzone
+    build separate scorecards); `botsOnly` per entry. Stored in
+    `techniques.tip.discord.watch`; `GET/PUT /api/tip/discord/watch`.
+  - The gateway polls the watchlist every 30s and ingests ONLY enabled channels
+    (empty watchlist ⇒ nothing — personal DMs never become tips). Manual flags
+    (`--all-dms`, `--from-bots-only`, `--channel-id`, `--author-id`,
+    `--include-self`) remain for testing. **Channels work the same as DMs** — no
+    Discord notification settings needed; if the account can read the channel,
+    the gateway sees it.
+  - VERIFY on a busy guild channel: message events for large servers may need a
+    channel-subscribe frame (op 14); DMs and small guilds deliver without one.
+
 - [ ] **P5 — alert lifecycle → book management**: an `Update/TRIM/CLOSE` from
   the same source+ticker should attach to the OPEN signal (dedupe-style key)
   and drive the immediate book's exit — giving a *source-managed* exit

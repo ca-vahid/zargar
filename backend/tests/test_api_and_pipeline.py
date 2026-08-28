@@ -372,6 +372,30 @@ async def test_analyst_failure_never_blocks(app_client):
     assert "analyst" not in (sig["extraction"] or {})
 
 
+async def test_discord_catalog_and_watch(app_client):
+    # the gateway reports a catalog; the UI reads it and sets the allowlist
+    client, eng = app_client
+    cat = {"user": {"id": "1", "username": "me"},
+           "dms": [{"channelId": "10", "name": "OWLSbot", "isBot": True}],
+           "guilds": [{"guildId": "5", "guildName": "OWLS",
+                       "channels": [{"channelId": "600", "name": "jon-and-kian"}]}]}
+    r = await client.post("/api/tip/discord/catalog", json=cat)
+    assert r.status_code == 200
+    got = (await client.get("/api/tip/discord/catalog")).json()
+    assert got["guilds"][0]["channels"][0]["name"] == "jon-and-kian"
+    assert got["at"]                                   # stamped on report
+
+    # empty watchlist by default (allowlist)
+    assert (await client.get("/api/tip/discord/watch")).json()["watch"] == []
+    # enable one channel as a source
+    r = await client.put("/api/tip/discord/watch", json={"watch": [
+        {"channelId": "600", "kind": "channel", "sourceName": "jon-and-kian",
+         "label": "#jon-and-kian", "enabled": True}]})
+    saved = r.json()["watch"]
+    assert saved[0]["channelId"] == "600" and saved[0]["botsOnly"] is True  # channel default
+    assert (await client.get("/api/tip/discord/watch")).json()["watch"][0]["sourceName"] == "jon-and-kian"
+
+
 async def test_proposal_reject_and_expiry(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")

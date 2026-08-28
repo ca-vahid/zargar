@@ -60,6 +60,60 @@ def test_image_only_message_flattens_empty_but_has_image():
     assert collect_images(msg) == ["https://cdn/x.png"]   # ...but a picture to see
 
 
+def test_build_catalog_from_ready():
+    from zargar.tools.discord_gateway import build_catalog
+    ready = {"user": {"id": "1", "username": "me"},
+             "private_channels": [
+                 {"id": "10", "type": 1, "recipients": [
+                     {"id": "99", "username": "OWLSbot", "bot": True}]},
+                 {"id": "11", "type": 1, "recipients": [
+                     {"id": "98", "global_name": "A Friend", "username": "friend"}]}],
+             "guilds": [
+                 {"id": "500", "name": "OWLS Capital", "channels": [
+                     {"id": "600", "name": "jon-and-kian", "type": 0},
+                     {"id": "601", "name": "voice", "type": 2},          # skipped
+                     {"id": "602", "name": "announcements", "type": 5}]}]}
+    cat = build_catalog(ready)
+    assert cat["user"]["username"] == "me"
+    assert {d["name"] for d in cat["dms"]} == {"OWLSbot", "A Friend"}
+    assert next(d for d in cat["dms"] if d["name"] == "OWLSbot")["isBot"]
+    g = cat["guilds"][0]
+    assert g["guildName"] == "OWLS Capital"
+    assert [c["name"] for c in g["channels"]] == ["announcements", "jon-and-kian"]  # no voice
+
+
+def test_watchlist_match():
+    from pathlib import Path
+
+    from zargar.tools.discord_gateway import Gateway
+    gw = Gateway("t", "http://x", "", Path("x.jsonl"),
+                 ingest=True, dump=False, bots_only=False, author_id="", channel_id="")
+    gw.user_id = "1"
+    gw._watch = {"600": {"channelId": "600", "sourceName": "jon-and-kian", "botsOnly": True}}
+    bot = {"id": "99", "bot": True}
+    human = {"id": "98"}
+    # a bot post in the watched channel → ingest, tagged with the source
+    ok, src = gw._match({"channel_id": "600"}, False, bot, False)
+    assert ok and src == "jon-and-kian"
+    # a human post in a botsOnly watched channel → skip
+    ok, _ = gw._match({"channel_id": "600"}, False, human, False)
+    assert not ok
+    # an unwatched channel → skip (allowlist)
+    ok, _ = gw._match({"channel_id": "999"}, True, bot, False)
+    assert not ok
+
+
+def test_watchlist_empty_ingests_nothing():
+    from pathlib import Path
+
+    from zargar.tools.discord_gateway import Gateway
+    gw = Gateway("t", "http://x", "", Path("x.jsonl"),
+                 ingest=True, dump=False, bots_only=False, author_id="", channel_id="")
+    # default: empty watchlist, no flags → personal DMs never leak in
+    ok, _ = gw._match({"channel_id": "5"}, True, {"id": "7", "bot": True}, False)
+    assert not ok
+
+
 def test_describe_author_bot_flag():
     assert describe_author({"author": {"global_name": "Clanker", "bot": True}}) == "Clanker [bot]"
     assert describe_author({"author": {"username": "jon"}}) == "jon"

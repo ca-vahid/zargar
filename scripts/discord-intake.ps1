@@ -1,10 +1,10 @@
 # Zargar experimental Discord intake — runs the gateway DM listener in its own
 # window. Launched by scripts\start.ps1 (unless -NoDiscord), or on its own:
 #
-#   scripts\discord-intake.ps1                 wait for the app, then listen+ingest
-#   scripts\discord-intake.ps1 -All            ingest ALL DMs (not just bot alerts)
-#   scripts\discord-intake.ps1 -IncludeSelf    also ingest DMs you send yourself
-#                                              (self-test: DM yourself an alert)
+#   scripts\discord-intake.ps1                 monitor the sources you picked in the app
+#                                              (Tips > Sources > Discord); nothing else
+#   scripts\discord-intake.ps1 -AllDms         ignore the watchlist, ingest every DM
+#   scripts\discord-intake.ps1 -IncludeSelf    also ingest DMs you send yourself (self-test)
 #   scripts\discord-intake.ps1 -NoWait         start listening immediately
 #   scripts\discord-intake.ps1 -DumpOnly       log DMs to JSONL, ingest nothing
 #
@@ -13,7 +13,7 @@
 # docs\techniques\tip\INTAKE-PLAN.md. Close this window to stop the intake.
 
 param(
-  [switch]$All,          # ingest every DM, not only bot-authored alerts
+  [switch]$AllDms,       # ignore the watchlist, ingest every DM (testing)
   [switch]$NoWait,       # do not wait for the API first
   [switch]$DumpOnly,     # capture to JSONL, never ingest
   [switch]$IncludeSelf,  # also ingest DMs you send yourself (end-to-end test)
@@ -66,8 +66,8 @@ if (-not $DumpOnly) {
 $gwArgs = @("-m", "zargar.tools.discord_gateway")
 if ($DumpOnly) { $gwArgs += "--dump" }
 else {
-  $gwArgs += "--ingest"
-  if (-not $All) { $gwArgs += "--from-bots-only" }
+  $gwArgs += "--ingest"                 # default: watchlist governs (allowlist)
+  if ($AllDms) { $gwArgs += "--all-dms" }
 }
 if ($IncludeSelf) { $gwArgs += "--include-self" }
 Step ("Starting listener: python " + ($gwArgs -join " "))
