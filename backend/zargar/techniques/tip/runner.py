@@ -183,6 +183,14 @@ class TipRunner(PlanRunner):
                                                           max_units=10_000))
         source = sig.source_name or "unknown"
         run_id = new_id()
+        # snapshot the TIP rules into the run (provenance): the outcome scorer
+        # replays with `config.thresholds` — without this it would replay a tip
+        # plan under EM's rules (volume floor, prime-only windows) and the
+        # scored outcome would contradict what the live tracker did
+        import dataclasses as _dc
+        rules = self.rules()
+        thresholds = {f.name: (list(v) if isinstance(v := getattr(rules, f.name), tuple) else v)
+                      for f in _dc.fields(type(rules))}
         row = TechniqueRun(
             id=run_id, technique=self.TECHNIQUE_ID, tags=[f"source:{source}"],
             symbol=sig.ticker, as_of=int(time.time() * 1000),
@@ -190,7 +198,8 @@ class TipRunner(PlanRunner):
             mode="plan", trigger="tip", status="done", verdict="plan",
             result={"plan": plan_dict, "signalId": signal_id},
             config={"technique": self.TECHNIQUE_ID, "signalId": signal_id,
-                    "source": source, "policy": policy.to_dict()},
+                    "source": source, "policy": policy.to_dict(),
+                    "thresholds": thresholds},
         )
         async with self.engine.sf() as session:
             session.add(row)

@@ -200,6 +200,10 @@ export interface ShadowBook {
   positions?: number;      // armed book: managed positions opened
   closed?: number;
   realizedPnl?: number;
+  outcomes?: {             // armed book: R-based, from scored tip-run outcomes
+    scored: number; fired: number; neverTriggered: number;
+    winRate: number | null; avgR: number | null; expectancyR: number | null;
+  };
 }
 
 export interface SourceScorecard {
