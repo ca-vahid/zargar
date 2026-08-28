@@ -88,7 +88,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
     "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none
     "techniques.tip.target_r": [1.5, 3.0],   # R-multiple targets when the tip states none
-    "techniques.tip.instrument": "shares",   # runner expression v1 (options = Phase B)
+    "techniques.tip.instrument": "shares",   # FALLBACK vehicle for non-option tips; option-shaped
+    #                                          tips arm as options via the per-tip vehicle rule
     "techniques.tip.touch_tolerance_pct": 0.002,   # level-touch band for tip triggers
     # options tips die at their contract's expiry — never wait for a level past it:
     "techniques.tip.entry_cutoff_dte": 2,    # stop trying to enter when < N calendar days to the tip's expiry

@@ -21,7 +21,8 @@ from ...domain import Bar
 from ...marketstructure import atr, detect_levels, nearest_level, next_session_date, session_bounds, session_date
 from ...technique.plans import Condition, SessionPlan, Trigger
 
-# Ladder used by the tip exit policy in Phase B: 50/50 across two targets.
+# The tip exit ladder (mirrored in the handoff's managed-position policy):
+# 50/50 across the first two targets.
 TIP_LADDER = (0.5, 0.5)
 
 

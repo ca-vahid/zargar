@@ -119,6 +119,17 @@ runtime ones to `execution.*`).
   `technique=TECHNIQUE_ID` on new `technique_armed` rows instead of relying on the EM column
   default. Tracker: `volume_floor_mult <= 0` now means "no volume confirmation required" on the
   touch path (the §2.1 promise; EM's floor is 0.5 — unaffected, parity suites green).
+- 2026-08-28 · **Run rules snapshots are a PARITY requirement, not bookkeeping** (techniques
+  team, found building Tip T3): the outcome scorer replays every plan run with
+  `run.config.thresholds`; a run minted without the snapshot replays under the DEFAULT
+  technique's rules — a tip plan was about to be re-judged under EM's volume floor and
+  prime-only windows, contradicting its own live tracker. Rule: **every runner that mints plan
+  runs must snapshot its `rules()` into `config.thresholds`** (TipRunner does; EM always did via
+  its provenance snapshot). Also: `SignalService` gained source auto-detection
+  (`ExtractionResult.source_hint` → `_resolve_source`, punctuation/case-insensitive match
+  against known sources; explicit names never overridden) and the Tips page was rebuilt
+  (tabs, hero composer, sidebar's duplicate "Signals" entry removed — Techniques ▸ Tips is
+  the one home).
 - 2026-08-27 · **`ArmConfig.premium_budget`** (techniques team, for Tip Phase B): per-plan $
   cap on options premium, applied in `_size_contracts` after risk sizing (floors at 1 contract
   with a warning when a single premium exceeds the budget; RiskGate premium caps backstop;

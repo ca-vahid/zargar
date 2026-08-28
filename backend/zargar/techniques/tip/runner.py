@@ -26,8 +26,10 @@ Beyond the session runner (user decisions 2026-08-27):
   and removed from the session runner — the runner's end-of-day flatten never
   touches it.
 
-Settings resolve `techniques.tip.<key>` → `execution.<key>` via `self.rt`
-(instrument defaults to shares in v1 — option expression is Phase B).
+Settings resolve `techniques.tip.<key>` → `execution.<key>` via `self.rt`.
+The vehicle is per tip (BUILD-PLAN §0): an option-shaped tip arms as options
+(the tip's stated contract when it named one), anything else as shares;
+`techniques.tip.instrument` is only the fallback for non-option tips.
 """
 from __future__ import annotations
 

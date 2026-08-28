@@ -149,9 +149,13 @@ is in §3 and the platform plan.
 
 ## 7. The trim (decided 2026-08-27 with the user)
 
-1. **Wave one = T1 Tip + T2 Flow** — build plans: `docs/techniques/tip/PLAN.md`,
-   `docs/techniques/flow/PLAN.md`. T4 (intraday momentum) and T3 (Drift) stay warm in this
-   doc, not planned. T5 (Premium) waits on the venue short-options probe.
+1. **Wave one = T1 Tip + T2 Flow — BOTH BUILT** (2026-08-27/28). Tip: design +
+   decisions in `docs/techniques/tip/PLAN.md`, task record in
+   `docs/techniques/tip/BUILD-PLAN.md` (Phase A + B + T3 done; T4 editor / T5 intake
+   remain). Flow: `docs/techniques/flow/PLAN.md` + `UI-PLAN.md` (built by the Flow
+   team). T4 (intraday momentum) and T3 (Drift) stay warm in this doc, not planned.
+   T5 (Premium) is venue-viable (probe ✓) and waits on the structure-aware RiskGate
+   change + prioritization.
 2. **Tip entry policy: per-source** — default level-touch for unproven sources; tip-time
    entry must be earned by a positive scorecard (user decision).
 3. **Tip budgets**: per-tip budget + risk %, per-source cap, shadow-only until the scorecard

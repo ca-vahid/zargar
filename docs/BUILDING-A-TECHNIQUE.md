@@ -124,6 +124,10 @@ unknown fields; you must never remove/rename a required field without a version 
 - **Parity**: your tracker path must produce identical results live and in replay (see
   `tests/test_technique_walkforward.py` for the pattern EM uses; the sim rig in
   `tests/test_technique_arming.py` drives the real runner on the sim broker).
+- **Snapshot your rules into every plan run you mint** (`config.thresholds` =
+  your `rules()` as a dict): the outcome scorer replays runs with that snapshot and falls
+  back to the DEFAULT technique's thresholds without it — your replay would then contradict
+  your own live tracker (found 2026-08-28 building Tip T3; PLATFORM-RULES §4).
 - **Include-invalid audit**: every gate you add must be replayable with the gate off
   (`replay_plan(include_invalid=True)`, sweep `--include-invalid`) so the gate's value is
   measurable. Replay rows carry plan-side `valid` — do not restamp it.
