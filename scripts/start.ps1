@@ -148,17 +148,9 @@ if ($Detach) {
   }
   Step "Zargar is up -> http://127.0.0.1:8420 (armed plans restored: $restored)"
   if (-not $Quiet) {
-    $log = Join-Path $Root "backend\zargar-8420.log"
-    foreach ($i in 1..10) {
-      if (Test-Path $log) { break }
-      Start-Sleep -Seconds 1
-    }
-    if (Test-Path $log) {
-      Step "Following $log - Ctrl+C stops this viewer, NOT the server"
-      Get-Content $log -Tail 40 -Wait
-    } else {
-      Warn "log file not found at $log"
-    }
+    # hand off to the colorized log viewer (also usable on its own, anytime:
+    # scripts\logs.ps1 attaches to the live log without touching the server)
+    & (Join-Path $PSScriptRoot "logs.ps1")
   }
 } else {
   Step "Zargar -> http://127.0.0.1:8420 (Ctrl+C stops it)"
