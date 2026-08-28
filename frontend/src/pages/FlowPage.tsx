@@ -19,7 +19,10 @@ type Tab = "reads" | "brief";
 export function FlowPage() {
   const toast = useStore((s) => s.toast);
   const quotes = useStore((s) => s.quotes);
-  const [tab, setTab] = useState<Tab>("reads");
+  const pageTab = useStore((s) => s.pageTab);
+  const setPageTab = useStore((s) => s.setPageTab);
+  const tab: Tab = pageTab === "brief" ? "brief" : "reads";
+  const setTab = (t: Tab) => setPageTab(t);
   const [days, setDays] = useState<FlowDaySummary[]>([]);
   const [day, setDay] = useState<string | null>(null);
   const [reads, setReads] = useState<FlowReadItem[]>([]);

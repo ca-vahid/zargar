@@ -59,6 +59,8 @@ export default function App() {
   const optionsUnderlying = useStore((s) => s.optionsUnderlying);
   const optionsExpiry = useStore((s) => s.optionsExpiry);
   const optionsContract = useStore((s) => s.optionsContract);
+  const pageTab = useStore((s) => s.pageTab);
+  const flowFocusSymbol = useStore((s) => s.flowFocusSymbol);
   const applyRoute = useStore((s) => s.applyRoute);
 
   // URL is the source of truth on load and on back/forward; state drives it after.
@@ -69,11 +71,11 @@ export default function App() {
 
   useEffect(() => {
     const next = { page, techniqueTab, runId: techniqueRunId, threadId: chatThreadId,
-      optionsUnderlying, optionsExpiry, optionsContract };
+      optionsUnderlying, optionsExpiry, optionsContract, pageTab, flowSymbol: flowFocusSymbol };
     // pushState only when the destination really changes, so back/forward walks
     // the places the user visited rather than every incidental state write.
     syncUrl(next, buildPath(next) !== window.location.pathname);
-  }, [page, techniqueTab, techniqueRunId, chatThreadId, optionsUnderlying, optionsExpiry, optionsContract]);
+  }, [page, techniqueTab, techniqueRunId, chatThreadId, optionsUnderlying, optionsExpiry, optionsContract, pageTab, flowFocusSymbol]);
   const halt = useStore((s) => s.halt);
   const driftWarnings = useStore((s) => s.driftWarnings);
   const openJournal = useStore((s) => s.openJournal);

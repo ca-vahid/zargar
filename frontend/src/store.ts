@@ -153,7 +153,10 @@ interface AppState {
   openTechniqueChat: (threadId: string) => void;
   seedChatLive: (threadId: string, live: { passes?: any[]; grounding?: any; facts?: any }) => void;
   applyRoute: (r: { page: Page; techniqueTab?: string; runId?: string | null; threadId?: string | null; armedRunId?: string | null;
-    optionsUnderlying?: string; optionsExpiry?: string | null; optionsContract?: string | null }) => void;
+    optionsUnderlying?: string; optionsExpiry?: string | null; optionsContract?: string | null;
+    pageTab?: string; flowSymbol?: string | null }) => void;
+  pageTab: string;                 // active tab on a tabbed page (inbox/flow); "" = default
+  setPageTab: (t: string) => void;
 }
 
 const posKey = (p: Position) => `${p.portfolioId}:${p.symbol}:${p.secType}`;
@@ -206,7 +209,9 @@ export const useStore = create<AppState>((set, get) => ({
   chatMessages: {},
   chatLive: {},
 
-  setPage: (page) => set({ page }),
+  pageTab: "",
+  setPageTab: (pageTab) => set({ pageTab }),
+  setPage: (page) => set({ page, pageTab: "" }),   // a fresh page starts on its default tab
   setFlowFocus: (flowFocusSymbol) => set({ flowFocusSymbol }),
   setMoreOpen: (moreOpen) => set({ moreOpen }),
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),
@@ -354,6 +359,8 @@ export const useStore = create<AppState>((set, get) => ({
   applyRoute: (r) =>
     set((st) => ({
       page: r.page,
+      pageTab: r.pageTab ?? "",
+      flowFocusSymbol: r.page === "flow" ? (r.flowSymbol ?? null) : st.flowFocusSymbol,
       armedFocusRunId: r.armedRunId ?? st.armedFocusRunId,
       techniqueTab: (r.techniqueTab as any) ?? st.techniqueTab,
       techniqueFocusRunId: r.runId ?? (r.page === "technique" ? null : st.techniqueFocusRunId),

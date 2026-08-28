@@ -16,9 +16,13 @@ import { useViewport } from "../lib/viewport";
    tabs as an attention strip (they expire in minutes). */
 
 type Tab = "compose" | "tips" | "sources" | "inbox";
+const TABS: Tab[] = ["compose", "tips", "sources", "inbox"];
 
 export function InboxPage() {
-  const [tab, setTab] = useState<Tab>("compose");
+  const pageTab = useStore((s) => s.pageTab);
+  const setPageTab = useStore((s) => s.setPageTab);
+  const tab: Tab = (TABS as string[]).includes(pageTab) ? (pageTab as Tab) : "compose";
+  const setTab = (t: Tab) => setPageTab(t);
   const proposals = useStore((s) => s.proposals);
   const signals = useStore((s) => s.signals);
   return (

@@ -22,6 +22,13 @@ const OCC_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
 export const TQ_TABS = ["analyse", "chat", "history", "backtest", "validation", "armed"] as const;
 export type TqTab = (typeof TQ_TABS)[number];
 
+// Pages with their own top-level tabs, so /inbox/sources, /flow/brief etc. are
+// deep-linkable and survive F5. The FIRST entry is the default (bare /<page>).
+export const PAGE_TABS: Partial<Record<Page, readonly string[]>> = {
+  inbox: ["compose", "tips", "sources", "inbox"],
+  flow: ["reads", "brief"],
+};
+
 export interface RouteState {
   page: Page;
   techniqueTab?: TqTab;
@@ -33,6 +40,10 @@ export interface RouteState {
   optionsUnderlying?: string;
   optionsExpiry?: string | null;
   optionsContract?: string | null;
+  /** a tabbed page's active tab (see PAGE_TABS): /inbox/sources, /flow/brief */
+  pageTab?: string;
+  /** flow page symbol drill-in: /flow/story/<symbol> */
+  flowSymbol?: string | null;
 }
 
 export function parseLocation(pathname = window.location.pathname): RouteState {
@@ -54,6 +65,13 @@ export function parseLocation(pathname = window.location.pathname): RouteState {
     return { page };
   }
   if (page === "armed") return parts[1] ? { page, armedRunId: parts[1] } : { page };
+  if (PAGE_TABS[page]) {
+    if (page === "flow" && parts[1] === "story" && parts[2]) {
+      return { page, flowSymbol: parts[2].toUpperCase() };
+    }
+    const tab = parts[1];
+    return tab && PAGE_TABS[page]!.includes(tab) ? { page, pageTab: tab } : { page };
+  }
   if (page !== "technique") return { page };
 
   const second = parts[1];
@@ -74,6 +92,11 @@ export function buildPath(s: RouteState): string {
     return "/options";
   }
   if (s.page === "armed") return s.armedRunId ? `/armed/${s.armedRunId}` : "/armed";
+  if (s.page === "flow" && s.flowSymbol) return `/flow/story/${s.flowSymbol}`;
+  if (PAGE_TABS[s.page]) {
+    const def = PAGE_TABS[s.page]![0];
+    return s.pageTab && s.pageTab !== def ? `/${s.page}/${s.pageTab}` : `/${s.page}`;
+  }
   if (s.page !== "technique") return `/${s.page}`;
   if (s.techniqueTab === "analyse" && s.runId) return `/technique/run/${s.runId}`;
   if (s.techniqueTab === "chat") return s.threadId ? `/technique/chat/${s.threadId}` : "/technique/chat";
