@@ -97,22 +97,30 @@ a number** (p. 72).
   Watch item: the tracker's fire-time volume gate passed bars the critic's FACTS graded
   0.2×— the two rel-volume computations (tracker profile vs live FACTS baseline) need
   reconciling before trusting R3.1 at the tracker.
-- **2026-08-28 · Day 4: 16 fires, 16 kills — mostly right on outcome, but one kill
-  reason was structurally INVALID.** All fires were genuine in-band level touches
-  (tape verified; the 08-27 zombie fix held — 13 dead triggers were retired pre-entry
-  by `invalidated`, 7 by gap_void, 11 would-be fires blocked by R3.1). Outcome ledger:
-  NVDL b1 ×2 (long 36.615 → closed 34.41, certain stop-out: **2 saves ≈ +2R**),
-  OKLO b2 ×2 (41.11 → 40.60: likely stop-out, ~2 saves), LRCX b2 ×2 (306.18, day low
-  302.80: likely save), INTU r2 ×10 (short 355.50, stop 357.28 never threatened,
-  closed 354.32 ≈ +0.66R foregone, TP1 untouched — a small cost). Net: the critic
-  saved several R today. BUT the INTU kills cited *"the draft is a short — the method
-  is long-only"* — a FALSE premise from a stale `SYSTEM_PROMPT` line (see §5 fix,
-  same root cause as the CVNA analyst miss). Those 10 kills are **excluded from the
-  correctness tally** (right outcome, invalid reasoning). Tally: 27/27 on outcome
-  through day 4; reasoned tally 17/17 valid + 10 invalidated-reason. INTU r2 also
-  burned its full 10/10 veto cap by 12:51 (5-min cooldown pacing ~7 min/fire) —
-  second cap-burn pattern after T; graduation (deterministic retirement after N
-  identical kills) is now the top backlog candidate.
+- **2026-08-28 · Day 4: 17 fires, 17 kills — ALL correct on outcome (EOD-scored),
+  but the 10 INTU kills cited an INVALID reason.** All fires were genuine in-band
+  level touches (tape verified; the 08-27 zombie fix held — 13 dead triggers retired
+  pre-entry by `invalidated`, 7 by gap_void, 11 would-be fires blocked by R3.1).
+  EOD scorecard (simulate_plan, close job 16:00): NVDL b1 ×2 → sim `tp1` but net
+  **−0.46R** (tagged TP1, runner gave it back — kill = save), OKLO b2/b3 ×2+1 →
+  **−1.25R stopped** (saves), LRCX b2 ×2 → trigger `invalidated` in replay (fires
+  were churn on a dying level), INTU r2 ×10 → **−1.09R stopped in prime_close**
+  (INTU rallied through the 357.28 stop in the afternoon; the mid-day "+0.66R
+  foregone" read was premature — the kills were saves, not costs). BUT the INTU
+  kills cited *"the draft is a short — the method is long-only"* — a FALSE premise
+  from a stale `SYSTEM_PROMPT` line (§5 fix, same root cause as the CVNA analyst
+  miss); right outcome, invalid reasoning, so they count separately: outcome tally
+  **44/44** kills correct through day 4; reasoned tally 34 valid + 10
+  invalidated-reason. INTU r2 burned its full 10/10 veto cap by 12:51 (~7 min/fire
+  on the 5-min cooldown) — second cap-burn after T; deterministic graduation
+  (retire after N identical kills) is the top backlog candidate.
+- **2026-08-28 · Day 4 EOD, whole-universe replay (sweep `e8f039e0`, 113 symbols,
+  117 planned triggers): ONE valid fire all day** — a prime_close reject, stopped,
+  −1.16R. Zero bounce/breakout/breakdown fires anywhere; 37 gap-voids (+samples for
+  1.1); counterfactuals all lose (noGapRules: 6 fires −2.18R; noWindowGate: 4 fires
+  −2.20R — every gate relaxation was negative today). Trading zero on Friday was
+  the correct call end to end. Bonus: first **[pass]** on a book claim — prior-day
+  HOD/LOD levels respected 27.1% vs 23.0% for other levels (tested n=554, T1.3a).
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
