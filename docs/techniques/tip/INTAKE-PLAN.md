@@ -103,9 +103,16 @@ strict grammar and their own timestamps.*
 - [ ] **P6 — analyst → proposal handshake**: a `take` opinion on a
   proposal-mode source pre-fills the proposal with the analyst's contract +
   limit; human still approves. Auto mode stays scorecard-earned.
-- [ ] **P7 — watcher as a service**: run `discord_watch.py` under the
-  engine's process (optional task) or a Scheduled Task at logon; health line
-  on the Tips page ("intake: watching / stalled / off").
+- [x] **P7 — launched by start.ps1** (2026-08-28): `scripts\start.ps1` opens
+  the gateway listener in ITS OWN window via `scripts\discord-intake.ps1`
+  (waits for the API, mints a 30-day local session so ingest passes auth,
+  auto-grabs the token, runs the gateway `--from-bots-only --ingest`). A
+  restart stops the prior intake first (matched by command line) so windows
+  never stack. Opt out with `-NoDiscord`; run standalone with
+  `scripts\discord-intake.ps1` (`-All`, `-DumpOnly`, `-NoWait`). Still TODO:
+  a health line on the Tips page ("intake: watching / stalled / off").
+  NOTE: like the app, it needs `backend\.venv` — runs from the main checkout,
+  not a worktree.
 
 ## 4. Open questions
 

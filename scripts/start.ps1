@@ -4,6 +4,11 @@
 #   scripts\start.ps1 -Detach    run hidden in the background and return
 #   scripts\start.ps1 -Force     restart even if analyst runs are in flight
 #   scripts\start.ps1 -NoBuild   skip the frontend rebuild check
+#   scripts\start.ps1 -NoDiscord skip the experimental Discord intake window
+#
+# The Discord intake (a DM listener that feeds tips into the pipeline) launches
+# by default in ITS OWN window (scripts\discord-intake.ps1). It is experimental
+# and uses your Discord user token — see docs\techniques\tip\INTAKE-PLAN.md.
 #
 # To watch the running server's log (colorized, attach/detach anytime):
 #   scripts\logs.ps1             see its header for -Tail/-Errors/-Match/-NoFollow
@@ -21,7 +26,8 @@
 param(
   [switch]$Force,
   [switch]$Detach,
-  [switch]$NoBuild
+  [switch]$NoBuild,
+  [switch]$NoDiscord
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -30,6 +36,30 @@ Set-Location $Root
 function Step($msg) { Write-Host "> $msg" -ForegroundColor Cyan }
 function Warn($msg) { Write-Host "! $msg" -ForegroundColor Yellow }
 function Fail($msg, $code) { Write-Host "x $msg" -ForegroundColor Red; exit $code }
+
+# Stop any running Discord intake (gateway python + its host window) so a
+# restart never stacks windows. Matches by command line, own processes only.
+function Stop-DiscordIntake {
+  try {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -match "discord_gateway|discord-intake\.ps1") } |
+      ForEach-Object {
+        Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue
+      }
+  } catch { }
+}
+
+# Launch scripts\discord-intake.ps1 in its OWN window (never this terminal).
+function Start-DiscordIntake {
+  $intake = Join-Path $Root "scripts\discord-intake.ps1"
+  if (-not (Test-Path $intake)) { Warn "discord-intake.ps1 missing - skipping intake"; return }
+  $psHost = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+  if (-not $psHost) { $psHost = "powershell.exe" }
+  Step "Launching Discord intake in its own window (experimental; -NoDiscord to skip)"
+  Start-Process -FilePath $psHost `
+    -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $intake `
+    -WorkingDirectory $Root | Out-Null
+}
 
 # --- 1. safety check ---------------------------------------------------------
 # Never restart over live work: analyst reads in flight die with the process and
@@ -72,6 +102,8 @@ if ($procIds.Count -gt 0) {
     Start-Sleep -Milliseconds 500
   }
 }
+# also stop any prior Discord intake so it re-launches fresh against the new server
+Stop-DiscordIntake
 
 # --- 3. postgres -------------------------------------------------------------
 docker info *> $null
@@ -148,7 +180,11 @@ if ($Detach) {
   }
   Step "Zargar is up -> http://127.0.0.1:8420 (armed plans restored: $restored)"
   Write-Host "  Watch the log anytime: scripts\logs.ps1 (Ctrl+C detaches, server unaffected)" -ForegroundColor DarkGray
+  if (-not $NoDiscord) { Start-DiscordIntake }
 } else {
+  # launch the intake window first (it waits for the API), then run the app in
+  # the foreground - the intake keeps its own window regardless of Ctrl+C here
+  if (-not $NoDiscord) { Start-DiscordIntake }
   Step "Zargar -> http://127.0.0.1:8420 (Ctrl+C stops it)"
   Set-Location (Join-Path $Root "backend")
   & $py -m zargar.main
