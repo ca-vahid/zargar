@@ -6,6 +6,7 @@ import { OrderTicket } from "../components/OrderTicket";
 import { StockChart, type ChartSession, type ChartType, type ChartView, type Indicator } from "../components/StockChart";
 import { api } from "../lib/api";
 import { fmtMoney } from "../lib/format";
+import { canGoBack } from "../lib/routing";
 import { useDaySeries } from "../lib/useDaySeries";
 import { watchSymbol } from "../lib/ws";
 import { useQuote, useStore } from "../store";
@@ -13,15 +14,22 @@ import { useViewport } from "../lib/viewport";
 import { ChartSettingsSheet } from "../components/trade/ChartSettingsSheet";
 
 const TFS = ["1m", "5m", "15m", "1h", "1d"];
-/** Chart ranges (Yahoo keys) and the timeframes Yahoo serves for each. */
-const RANGES: { key: string; label: string; tfs: string[]; def: string }[] = [
-  { key: "1d", label: "1D", tfs: ["1m", "5m", "15m", "1h"], def: "1m" },
-  { key: "5d", label: "5D", tfs: ["1m", "5m", "15m", "1h", "1d"], def: "5m" },
-  { key: "1mo", label: "1M", tfs: ["5m", "15m", "1h", "1d"], def: "1h" },
-  { key: "3mo", label: "3M", tfs: ["1h", "1d"], def: "1d" },
-  { key: "6mo", label: "6M", tfs: ["1h", "1d"], def: "1d" },
-  { key: "1y", label: "1Y", tfs: ["1h", "1d"], def: "1d" },
-  { key: "5y", label: "5Y", tfs: ["1d"], def: "1d" },
+/** Chart ranges: `fetch` is the Yahoo range key, `clip` trims it to specific
+ * ET trading days (2D/3D, this week, last week, last two weeks) client-side,
+ * and `tfs` are the timeframes Yahoo serves for that fetch window. */
+const RANGES: { key: string; label: string; title: string; fetch: string; clip?: string; tfs: string[]; def: string }[] = [
+  { key: "1d", label: "1D", title: "Today", fetch: "1d", tfs: ["1m", "5m", "15m", "1h"], def: "1m" },
+  { key: "2d", label: "2D", title: "Last 2 trading days", fetch: "5d", clip: "d2", tfs: ["1m", "5m", "15m", "1h"], def: "1m" },
+  { key: "3d", label: "3D", title: "Last 3 trading days", fetch: "5d", clip: "d3", tfs: ["1m", "5m", "15m", "1h"], def: "5m" },
+  { key: "5d", label: "5D", title: "Last 5 trading days", fetch: "5d", tfs: ["1m", "5m", "15m", "1h", "1d"], def: "5m" },
+  { key: "tw", label: "TW", title: "This week (Monday to now)", fetch: "5d", clip: "tw", tfs: ["1m", "5m", "15m", "1h"], def: "5m" },
+  { key: "lw", label: "LW", title: "Last week (Mon-Fri)", fetch: "1mo", clip: "lw", tfs: ["5m", "15m", "1h", "1d"], def: "5m" },
+  { key: "2w", label: "2W", title: "Last two weeks, up to now", fetch: "1mo", clip: "2w", tfs: ["5m", "15m", "1h", "1d"], def: "15m" },
+  { key: "1mo", label: "1M", title: "Last month", fetch: "1mo", tfs: ["5m", "15m", "1h", "1d"], def: "1h" },
+  { key: "3mo", label: "3M", title: "Last 3 months", fetch: "3mo", tfs: ["1h", "1d"], def: "1d" },
+  { key: "6mo", label: "6M", title: "Last 6 months", fetch: "6mo", tfs: ["1h", "1d"], def: "1d" },
+  { key: "1y", label: "1Y", title: "Last year", fetch: "1y", tfs: ["1h", "1d"], def: "1d" },
+  { key: "5y", label: "5Y", title: "Last 5 years", fetch: "5y", tfs: ["1d"], def: "1d" },
 ];
 const INDICATORS: { key: Indicator; label: string }[] = [
   { key: "ema20", label: "EMA 20" },
@@ -112,6 +120,10 @@ export function TradePage() {
       <div className={`trade-phone ${landscape ? "trade-phone--land" : ""}`}>
         <div className="panel chart-area trade-phone-chart">
           <div className="quote-head quote-head--phone">
+            {canGoBack() && (
+              <button type="button" className="ghost-btn trade-back" onClick={() => window.history.back()}
+                aria-label="Back">←</button>
+            )}
             <input className="symbol-input" value={symInput}
               onChange={(e) => setSymInput(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && commitSymbol()}
@@ -151,7 +163,7 @@ export function TradePage() {
               <span className="go">open →</span>
             </button>
           )}
-          <StockChart symbol={symbol} tf={tf} range={range} chartType={chartType}
+          <StockChart symbol={symbol} tf={tf} range={rangeDef.fetch} clip={rangeDef.clip} chartType={chartType}
             indicators={indicators.slice(0, 1)} showVolume={false}
             view={view} session={chSession} armed={armedPlan} avgCost={position} phone />
         </div>
@@ -184,6 +196,10 @@ export function TradePage() {
     <div className={`trade-grid ${ticketCollapsed ? "trade-grid--tc" : ""}`}>
       <div className="panel chart-area">
         <div className="quote-head">
+          {canGoBack() && (
+            <button type="button" className="ghost-btn trade-back" onClick={() => window.history.back()}
+              title="Back to the page you came from" aria-label="Back">←</button>
+          )}
           <input className="symbol-input" value={symInput}
             onChange={(e) => setSymInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && commitSymbol()}
@@ -215,7 +231,7 @@ export function TradePage() {
             <span className="sep" aria-hidden="true" />
             {RANGES.map((r) => (
               <button key={r.key} className={range === r.key ? "active" : ""}
-                onClick={() => pickRange(r.key)} title={`Show the last ${r.label}`}>
+                onClick={() => pickRange(r.key)} title={r.title}>
                 {r.label}
               </button>
             ))}
@@ -265,7 +281,7 @@ export function TradePage() {
             <span className="go">open card →</span>
           </button>
         )}
-        <StockChart symbol={symbol} tf={tf} range={range} chartType={chartType}
+        <StockChart symbol={symbol} tf={tf} range={rangeDef.fetch} clip={rangeDef.clip} chartType={chartType}
           indicators={indicators} showVolume={showVolume}
           view={view} session={chSession} armed={armedPlan} avgCost={position} />
       </div>
