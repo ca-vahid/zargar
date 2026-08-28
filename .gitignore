@@ -23,3 +23,8 @@ frontend/.mobile-shots/
 # tailscale cert output (never commit private keys)
 *.ts.net.crt
 *.ts.net.key
+
+# discord intake POC captures — contain your own DM contents; never commit
+backend/discord_dms.jsonl
+backend/discord_toasts.jsonl
+*.discord.jsonl

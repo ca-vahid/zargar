@@ -10,7 +10,7 @@ strict grammar and their own timestamps.*
 
 | | verdict | why |
 |---|---|---|
-| User-token automation ("self-bot", discord.py-self, reading DMs via the API as you) | **NEVER** | Explicit Discord ToS violation; account termination risk. Stays on the never-list. |
+| User-token automation ("self-bot", reading DMs via the gateway as you) | **POC-only, opted-in** | Violates Discord ToS; risk is to THIS account (ban if detected). User knowingly opted in 2026-08-28 for the laptop POC because desktop toasts proved unreliable. **Kept read-only** (listen, never write); auto-execution stays gated. `zargar/tools/discord_gateway.py`. Not for any shared/production build. |
 | Bot-token automation in a server we don't own | **N/A** | We can't add a bot to OWLS Capital, and bots can't read your DMs anyway. |
 | **Reading the OS notifications Discord already delivered to you** | **OK** | No Discord API touched, nothing automated inside Discord — the programmatic equivalent of the already-allowed "screenshot of your own client". Local, read-only. |
 | Screenshot/OCR of your own Discord window | OK (fallback) | Same principle; we already have vision transcription. |
@@ -34,6 +34,20 @@ strict grammar and their own timestamps.*
   bobby-spx-coms) → each is its own SOURCE with its own scorecard/policy.
 
 ## 2. Intake options, ranked for the laptop POC
+
+0. **[BUILT 2026-08-28, EXPERIMENTAL — ToS-unsanctioned] Discord gateway
+   listener** — `zargar/tools/discord_gateway.py`. A bare websocket to
+   `wss://gateway.discord.gg/?v=10` with the user token: HELLO → heartbeat →
+   IDENTIFY (user-shaped, no intents) → listen for `MESSAGE_CREATE` DMs, flatten
+   embeds (the trade lives in the embed, not `content`), post to
+   `/api/ingest/manual`. **Read-only** — never sends/reacts/types. Minimal
+   footprint on purpose (no REST polling → less detectable than discord.py-self
+   / discum). This is the *reliable* feed (works headless, survives a closed
+   lid, no truncation) but carries account-ban risk; chosen for the POC after
+   toasts proved flaky. Token in `ZARGAR_DISCORD_TOKEN` (never committed; the
+   `discord_dms.jsonl` capture is gitignored — it holds DM contents). Modes:
+   `--dump` (log only), `--ingest`, `--from-bots-only`, `--author-id`,
+   `--channel-id`.
 
 1. **[BUILT 2026-08-28] Windows notification listener** —
    `zargar/tools/discord_watch.py`. WinRT `UserNotificationListener` (pywinrt
