@@ -1,11 +1,12 @@
 # Start (or restart) Zargar on http://127.0.0.1:8420
 #
 #   scripts\start.ps1            run in this terminal (Ctrl+C stops it)
-#   scripts\start.ps1 -Detach    run hidden in the background, then follow the
-#                                log (Ctrl+C stops the log viewer, NOT the server)
-#   scripts\start.ps1 -Detach -Quiet   same, but return instead of following the log
+#   scripts\start.ps1 -Detach    run hidden in the background and return
 #   scripts\start.ps1 -Force     restart even if analyst runs are in flight
 #   scripts\start.ps1 -NoBuild   skip the frontend rebuild check
+#
+# To watch the running server's log (colorized, attach/detach anytime):
+#   scripts\logs.ps1             see its header for -Tail/-Errors/-Match/-NoFollow
 #
 # What it does, in order:
 #   1. safety check   refuses to kill in-flight analyst runs (they cost money)
@@ -20,8 +21,7 @@
 param(
   [switch]$Force,
   [switch]$Detach,
-  [switch]$NoBuild,
-  [switch]$Quiet
+  [switch]$NoBuild
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -147,11 +147,7 @@ if ($Detach) {
     } catch { }
   }
   Step "Zargar is up -> http://127.0.0.1:8420 (armed plans restored: $restored)"
-  if (-not $Quiet) {
-    # hand off to the colorized log viewer (also usable on its own, anytime:
-    # scripts\logs.ps1 attaches to the live log without touching the server)
-    & (Join-Path $PSScriptRoot "logs.ps1")
-  }
+  Write-Host "  Watch the log anytime: scripts\logs.ps1 (Ctrl+C detaches, server unaffected)" -ForegroundColor DarkGray
 } else {
   Step "Zargar -> http://127.0.0.1:8420 (Ctrl+C stops it)"
   Set-Location (Join-Path $Root "backend")
