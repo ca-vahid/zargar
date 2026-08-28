@@ -6,7 +6,7 @@ import { DayStrip } from "../components/flow/DayStrip";
 import { EvidenceBadges, ReadsTable, ScoreCell } from "../components/flow/ReadsTable";
 import { ReadDetail } from "../components/flow/ReadDetail";
 import { SymbolStory } from "../components/flow/SymbolStory";
-import { Occ, fmtPrem, topFlag } from "../components/flow/lib";
+import { Occ, fmtPrem, leanPill, topFlag } from "../components/flow/lib";
 import { Sheet } from "../components/Sheet";
 import { EmptyState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
@@ -164,7 +164,9 @@ export function FlowPage() {
                 <button key={r.symbol} type="button" className="bl-card"
                   onClick={() => { setSelected(r.symbol); setStoryOpen(false); setSheetOpen(true); }}>
                   <span className="bl-card-l">
-                    <span className="bl-card-sym">{r.symbol} <ScoreCell score={r.score} lean={r.lean} /></span>
+                    <span className="bl-card-sym">{r.symbol} <ScoreCell score={r.score} lean={r.lean} />
+                      <span className={`status-pill ${leanPill(r.lean)}`}>{r.lean}</span>
+                      {quoteMap[r.symbol] != null && <span className="mono-num muted flow-card-last">{quoteMap[r.symbol]!.toFixed(2)}</span>}</span>
                     <span className="bl-card-sub">
                       {f ? <><Occ contract={f.contract} /> · {fmtPrem(f.premium)} · V/OI {f.volOi.toFixed(1)}</> : "no flags"}
                     </span>
