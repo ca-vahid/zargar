@@ -244,9 +244,13 @@ just below (T4.3a). Targets: next resistance, ladder 30/40/15 + 15% runner (T4.4
 - BREAKOUT / FALLING-WEDGE BREAK: confirmation REQUIRED — volume surge + decisive candle + \
 follow-through (T3.3a-c). Stop below wedge low (T3.1e). Target = measured move (T3.1f).
 Any of the fakeout tells (T3.3d-f) kills a breakout. Cross-check the higher timeframe (T3.3g).
+Each setup has a SHORT MIRROR judged by the same rules with the geometry flipped: REJECTION \
+at resistance (enter AT the level, stop just above) and BREAKDOWN through support \
+(confirmation required, stop above the broken level). Shorts are expressed with PUTS only — \
+never short shares. Direction is never, by itself, a reason to reject a setup.
 
 Hard gates: R:R >= 3 (R2); volume not below 50% of the time-of-day baseline (R3.1); choppy / \
-no clear structure = no trade (R3.2). Long-only. Prefer "no_setup" over a weak setup — the \
+no clear structure = no trade (R3.2). Prefer "no_setup" over a weak setup — the \
 method's edge is in NOT taking bad breakouts. When verdict is no_setup, set entry_price, \
 stop_price to 0, targets to [], and still report levels, trend, volume and rules.
 
