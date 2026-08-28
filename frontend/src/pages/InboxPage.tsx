@@ -470,14 +470,18 @@ function TipsTab() {
 
 /* ---------------------------------------------------------------- sources */
 
-function BookCell({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }) {
+function BookVal({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }) {
   const pnl = b?.pnl;
-  if (pnl == null) return <td className="num muted">—</td>;
+  if (pnl == null) return <span className="muted">—</span>;
   return (
-    <td className={`num ${pnl > 0 ? "pos" : pnl < 0 ? "neg" : "muted"}`}>
+    <span className={pnl > 0 ? "pos" : pnl < 0 ? "neg" : "muted"}>
       {fmtMoney(pnl)} ({(b?.pnlPct ?? 0).toFixed(1)}%)
-    </td>
+    </span>
   );
+}
+
+function BookCell({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }) {
+  return <td className="num"><BookVal b={b} /></td>;
 }
 
 function SourcesTab() {
@@ -512,7 +516,16 @@ function SourcesTab() {
                     <td className="num">{c.signals}</td>
                     <td className="num muted">{c.verified}/{c.parked}/{c.failed}/{c.expiredUnfilled ?? 0}</td>
                     <BookCell b={c.books?.immediate ?? { pnl: c.shadowPnl, pnlPct: c.shadowPnlPct }} />
-                    <BookCell b={c.books?.armed} />
+                    <td className="num">
+                      <BookVal b={c.books?.armed} />
+                      {c.books?.armed?.outcomes?.expectancyR != null && (
+                        <div className={`mono ${(c.books.armed.outcomes.expectancyR ?? 0) > 0 ? "pos" : "neg"}`}
+                          style={{ fontSize: 11 }}
+                          title={`Per tip taken (unfilled = 0R): ${c.books.armed.outcomes.fired} fired, ${c.books.armed.outcomes.neverTriggered} never triggered, win rate ${c.books.armed.outcomes.winRate ?? "—"}`}>
+                          E[R] {c.books.armed.outcomes.expectancyR > 0 ? "+" : ""}{c.books.armed.outcomes.expectancyR} · {c.books.armed.outcomes.scored} scored
+                        </div>
+                      )}
+                    </td>
                     <td className="muted">{c.policy ? `${c.policy.entry.replace("_", " ")} · ${c.policy.mode}` : "—"}</td>
                     <td>
                       <span className={`status-pill ${c.barCleared ? "ok" : "dim"}`}

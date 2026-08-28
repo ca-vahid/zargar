@@ -669,6 +669,42 @@ class SignalService:
                         book["realizedPnl"] = round(
                             float(book.get("realizedPnl") or 0) + float(pos.get("realizedPnl") or 0), 2)
 
+        # R-based armed-book outcomes (BUILD-PLAN T3): every tip run's trigger
+        # outcome, grouped by the run's source. Expectancy counts an unfilled
+        # (never-triggered) tip as 0R — it measures the strategy per tip taken.
+        from ..models import TechniqueOutcome, TechniqueRun
+        async with eng.sf() as session:
+            runs = (await session.execute(
+                select(TechniqueRun.id, TechniqueRun.config)
+                .where(TechniqueRun.technique == "tip"))).all()
+        run_src = {r.id: ((r.config or {}).get("source") or "unknown") for r in runs}
+        if run_src:
+            async with eng.sf() as session:
+                outs = (await session.execute(
+                    select(TechniqueOutcome)
+                    .where(TechniqueOutcome.run_id.in_(list(run_src))))).scalars().all()
+            per: dict[str, dict] = {}
+            for o in outs:
+                if not (o.plan_source or "").startswith("trigger:") or o.status != "scored":
+                    continue
+                st = per.setdefault(run_src.get(o.run_id) or "unknown",
+                                    {"n": 0, "fired": 0, "wins": 0, "sumR": 0.0, "never": 0})
+                st["n"] += 1
+                if o.r_multiple is not None:
+                    st["fired"] += 1
+                    st["sumR"] += float(o.r_multiple)
+                    if o.r_multiple > 0:
+                        st["wins"] += 1
+                else:
+                    st["never"] += 1
+            for src, st in per.items():
+                card_for(src)["books"]["armed"]["outcomes"] = {
+                    "scored": st["n"], "fired": st["fired"], "neverTriggered": st["never"],
+                    "winRate": round(st["wins"] / st["fired"], 3) if st["fired"] else None,
+                    "avgR": round(st["sumR"] / st["fired"], 3) if st["fired"] else None,
+                    "expectancyR": round(st["sumR"] / st["n"], 3) if st["n"] else None,
+                }
+
         cards = list(by_source.values())
         min_n = int(eng.settings.get("techniques.tip.scorecard_min_n", 20))
         for c in cards:
@@ -680,9 +716,17 @@ class SignalService:
             c["shadowEquity"] = imm.get("equity")
             c["shadowPnl"] = imm.get("pnl")
             c["shadowPnlPct"] = imm.get("pnlPct")
-            # the bar judges the ARMED book — real money would trade the armed way
+            # the bar judges the ARMED book — real money would trade the armed
+            # way. Once enough outcomes are SCORED the bar flips on expectancy
+            # in R (the honest per-tip measure); until then, book P&L in $.
+            oc = c["books"]["armed"].get("outcomes") or {}
             armed_pnl = c["books"]["armed"].get("pnl")
-            c["barCleared"] = bool(c["verified"] >= min_n and armed_pnl is not None and armed_pnl > 0)
+            if (oc.get("scored") or 0) >= min_n:
+                c["barCleared"] = bool((oc.get("expectancyR") or 0) > 0)
+                c["barBasis"] = "expectancyR"
+            else:
+                c["barCleared"] = bool(c["verified"] >= min_n and armed_pnl is not None and armed_pnl > 0)
+                c["barBasis"] = "pnl"
             # tip-time entry is EARNED when immediate demonstrably beats armed
             imm_pnl = imm.get("pnl")
             c["tipTimeEarned"] = bool(

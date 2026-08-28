@@ -463,6 +463,65 @@ async def test_share_tip_stays_shares_and_no_chain_falls_back(tip_rig):
     assert expr.get("vehicle") == "shares" and "404" in str(expr.get("fallback"))
 
 
+async def test_scorecard_expectancy_from_outcomes(tip_rig):
+    """T3: scored tip-run outcomes roll up per source (expectancy counts an
+    unfilled tip as 0R) and the trust bar flips on R once enough are scored."""
+    eng, sim = tip_rig
+    await eng.settings.set("techniques.tip.scorecard_min_n", 3, journal=False)
+    await _ingest_tip(eng)                     # mints the TestRoom source
+    from zargar.domain import new_id
+    from zargar.models import TechniqueOutcome, TechniqueRun
+
+    async def seed(source: str, rs: list[float | None]):
+        rids = []
+        async with eng.sf() as session:
+            for _ in rs:
+                rid = new_id()
+                rids.append(rid)
+                session.add(TechniqueRun(
+                    id=rid, technique="tip", symbol="TEST", mode="plan", trigger="tip",
+                    status="done", verdict="plan", result={"plan": {}},
+                    config={"technique": "tip", "source": source}))
+            await session.commit()
+        async with eng.sf() as session:
+            for rid, r in zip(rids, rs):
+                session.add(TechniqueOutcome(
+                    id=new_id(), run_id=rid, plan_source="trigger:tip-x", status="scored",
+                    plan={}, outcome=("not_triggered" if r is None else "tp1" if r > 0 else "stopped"),
+                    r_multiple=r))
+            await session.commit()
+
+    await seed("TestRoom", [1.5, -1.0, None])       # 2 fired + 1 never-triggered
+    await seed("LoserRoom", [-1.0, -1.0, -0.5])
+
+    cards = await eng.signals_service.source_scorecards()
+    card = next(c for c in cards if c["source"] == "TestRoom")
+    oc = card["books"]["armed"]["outcomes"]
+    assert oc["scored"] == 3 and oc["fired"] == 2 and oc["neverTriggered"] == 1
+    assert oc["winRate"] == 0.5 and oc["avgR"] == 0.25
+    assert abs(oc["expectancyR"] - 0.167) < 0.001
+    assert card["barBasis"] == "expectancyR" and card["barCleared"] is True
+
+    loser = next(c for c in cards if c["source"] == "LoserRoom")
+    assert loser["books"]["armed"]["outcomes"]["expectancyR"] < 0
+    assert loser["barBasis"] == "expectancyR" and loser["barCleared"] is False
+
+
+async def test_tip_run_snapshots_its_rules(tip_rig):
+    """The outcome scorer replays with config.thresholds — a tip run must carry
+    TIP rules (no volume floor, RTH windows), never EM's."""
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    from zargar.models import TechniqueRun
+    async with eng.sf() as session:
+        run = await session.get(TechniqueRun, snap["runId"])
+    thr = (run.config or {}).get("thresholds") or {}
+    assert thr.get("volume_floor_mult") == 0.0
+    assert thr.get("gap_void_r") == 1e9
+    assert "midday" in (thr.get("windows") or [])
+
+
 async def test_source_auto_detection(tip_rig):
     """source_name='auto' resolves from the extractor's source_hint: exact/fuzzy
     match to a known source, else the hint becomes a new source's name."""

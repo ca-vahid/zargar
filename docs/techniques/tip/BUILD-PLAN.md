@@ -78,17 +78,24 @@ DTE window (10–30d default, never 0DTE — RiskGate hard-rejects it for non-EM
       dte_close + app_managed ack; dead-chain fallback to shares.
 - [x] **Both-books gate:** T1 and T2 built and land in one merge.
 
-## Phase T3 — R-based outcomes + scorecard depth `[ ]`
+## Phase T3 — R-based outcomes + scorecard depth `[x]` *(built 2026-08-28)*
 
-- [ ] Tip runs enter the outcomes loop: `technique="tip"` plan runs scored by
-      `simulate_plan` like EM's (underlying terms; note `premiumPathSimulated: false`
-      analog for option tips). Verify the research outcomes loop picks up non-EM runs;
-      if it is EM-keyed, fix it there (research layer, not a fork).
-- [ ] Scorecard v2: per source per book — n scored, win rate, avg R, expectancy,
-      never-triggered and expired-unfilled rates — alongside the portfolio P&L; the
-      `barCleared` / `tipTimeEarned` rules re-read from expectancy (R) instead of raw
-      P&L once ≥ `scorecard_min_n` outcomes exist.
-- [ ] Tests: seeded runs/outcomes → expectancy math; the bar flips on R, not $.
+- [x] Tip runs enter the outcomes loop: `score_pending` already selects every
+      `mode="plan"` run regardless of technique — the real gap was PARITY: the scorer
+      replays with `run.config.thresholds`, so a tip run without a snapshot would replay
+      under EM's rules (volume floor, prime-only windows) and contradict its own live
+      tracker. Fixed at the source: `arm_signal` snapshots the TIP MarketRules into
+      `config.thresholds` (`test_tip_run_snapshots_its_rules`).
+- [x] Scorecard v2: `books.armed.outcomes` per source — scored / fired /
+      never-triggered / win rate / avg R / **expectancyR** (an unfilled tip counts as
+      0R: it measures the strategy per tip taken). Surfaced as an `E[R] +x.xx · n scored`
+      line under the Level-touch column.
+- [x] `barCleared` flips to expectancy-in-R once ≥ `scorecard_min_n` outcomes are
+      scored (`barBasis: "expectancyR"`); until then the $-P&L rule stands
+      (`barBasis: "pnl"`). **Decision:** `tipTimeEarned` stays a $-vs-$ book comparison —
+      the immediate book is market orders with no runs, so it has no R to compare.
+- [x] Tests: seeded runs/outcomes → expectancy math; the bar flips on R (winning and
+      losing sources both covered).
 
 ## Phase T4 — Tips page v2 `[~]` *(redesign built 2026-08-28; editor + T3 line pending)*
 
