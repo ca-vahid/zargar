@@ -85,6 +85,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.min_conviction": "implied",
     "techniques.tip.max_open_tips": 5,
     "techniques.tip.max_tip_age_hours": 72,  # older content is REPLAYED on history, never traded
+    "techniques.tip.quote_wait_seconds": 6.0,  # wait for a cold ticker's first quote before verifying
     "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
     "techniques.tip.analyst_model": "",      # empty = the extraction model

@@ -10,10 +10,12 @@ the per-source scorecard exists regardless of the human decision.
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime as dt
 import hashlib
 import logging
+import time as _time
 
 from sqlalchemy import select
 
@@ -336,7 +338,16 @@ class SignalService:
                  "grounded": grounding["passed"], "source": content.source_name},
                 aggregate_type="signal", aggregate_id=row.id)
 
+            # ensure_symbol only REQUESTS the feed; a freshly-seen ticker (not
+            # in the universe, e.g. BOIL from a Discord alert) needs a beat for
+            # its first Yahoo quote to land. Wait briefly so ticker_resolves
+            # doesn't fatally fail a good tip on a cold symbol (found 2026-08-28,
+            # image-only BOIL alert). Bounded; a truly bad ticker still fails.
             await eng.ensure_symbol(row.ticker)
+            wait_s = float(eng.settings.get("techniques.tip.quote_wait_seconds", 6.0))
+            deadline = _time.monotonic() + max(0.0, wait_s)
+            while eng.quotes.get(row.ticker.upper()) is None and _time.monotonic() < deadline:
+                await asyncio.sleep(0.25)
             verification = await verify_signal(sig, eng.quotes, eng.settings,
                                                grounding=grounding)
             # flow context rides along (informational, never a check): does the
@@ -633,7 +644,6 @@ class SignalService:
         """Signal → the tip SessionPlan the runner will arm (preview; no side
         effects). Verified and parked signals both plan — parked is exactly the
         case where the plan waits at the level."""
-        import time as _time
 
         from ..marketstructure.history import fetch_window
         from ..techniques.tip import build_tip_plan

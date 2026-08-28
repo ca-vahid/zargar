@@ -31,6 +31,35 @@ def test_flatten_embed_fields():
     assert "Trade" in text and "Ticker: AAPL" in text and "Strike: 240C" in text
 
 
+def test_collect_images_attachments_and_embeds():
+    # alert rooms often post a CHART with little or no text — the picture must
+    # reach the vision path (user, 2026-08-28)
+    from zargar.tools.discord_gateway import collect_images
+    msg = {"attachments": [
+        {"content_type": "image/png", "url": "https://cdn.discordapp.com/a/chart.png"},
+        {"content_type": "application/pdf", "url": "https://cdn.discordapp.com/a/doc.pdf"},
+        {"filename": "SPY.JPEG", "url": "https://cdn.discordapp.com/a/spy.jpeg"}],
+        "embeds": [{"image": {"url": "https://cdn.discordapp.com/e/embed.png"},
+                    "thumbnail": {"url": "https://cdn.discordapp.com/a/chart.png"}}]}
+    urls = collect_images(msg)
+    assert urls == ["https://cdn.discordapp.com/a/chart.png",   # attachment first
+                    "https://cdn.discordapp.com/a/spy.jpeg",    # by extension
+                    "https://cdn.discordapp.com/e/embed.png"]   # embed, deduped
+
+
+def test_collect_images_none():
+    from zargar.tools.discord_gateway import collect_images
+    assert collect_images({"content": "SPY 750P", "embeds": [{"title": "x"}]}) == []
+
+
+def test_image_only_message_flattens_empty_but_has_image():
+    from zargar.tools.discord_gateway import collect_images
+    msg = {"content": "", "embeds": [],
+           "attachments": [{"content_type": "image/png", "url": "https://cdn/x.png"}]}
+    assert flatten_message(msg) == ""          # nothing to read...
+    assert collect_images(msg) == ["https://cdn/x.png"]   # ...but a picture to see
+
+
 def test_describe_author_bot_flag():
     assert describe_author({"author": {"global_name": "Clanker", "bot": True}}) == "Clanker [bot]"
     assert describe_author({"author": {"username": "jon"}}) == "jon"
