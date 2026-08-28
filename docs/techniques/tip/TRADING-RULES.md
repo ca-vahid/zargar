@@ -22,7 +22,26 @@ live in `docs/PLATFORM-RULES.md`.*
 - **Flag-day thresholds untouched**: verification price gates (deviation 3%,
   spread 1.5%) have not yet been tested against a real tip flow.
 
+- **Breakout stops are built from the trigger-tf ATR** (2026-08-28, PeloSwing
+  BOIL replay): a daily-chart wedge tip got a 1h-ATR stop 1.4% under the $22
+  level (2x leveraged ETF!) with matching tight R targets. Candidate rule:
+  scale the ATR (or the stop reference) to the tip's own timeframe — a
+  "daily chart" thesis wants a daily-ATR stop. Decision threshold: first few
+  filled breakout tips; check whether the tight stop gets wicked out.
+- **Leveraged ETFs carry decay** (2026-08-28, BOIL = 2x natgas): a 15-session
+  hold in a 2x commodity ETF pays decay the tip never mentions. Candidate:
+  advisory context line ("2x leveraged — decay over weeks") the way
+  `calendarContext` works. No gate — information only.
+
 ## Change log
+
+- 2026-08-28 — **Breakout tips honoured as breakouts**: a stated level on the
+  far side of price ("watch $22 for a breakout", price 20.4) now mints a
+  breakout/breakdown trigger at the tip's own level (`entry_basis=on_break`,
+  tracker close-through + 1.5x volume + follow-through discipline). Before,
+  the plan builder silently substituted a dip-buy at the nearest support —
+  the opposite trade wearing the tip's name. The replay lane emulates the
+  close-through fill for scoring.
 
 - 2026-08-28 — **Shadow-implied lane**: `is_actionable=false` demotes to the
   shadow books instead of killing the tip (status `shadow`; proposals still

@@ -63,6 +63,7 @@ def build_tip_plan(
     notes: list[str] = []
 
     # --- entry -----------------------------------------------------------------
+    breakout = False
     if entry_mode == "tip_time":
         entry = reference_price
         basis = "on_break"                       # simulate_plan/tracker: immediate fill
@@ -70,9 +71,10 @@ def build_tip_plan(
         notes.append("tip-time entry (source has earned it)")
     else:
         basis = "at_level"
-        # the tip's own entry wins when it sits on the correct side of price
-        # (long: at/below; short: at/above) — otherwise the nearest structural
-        # level on that side; otherwise a shallow ATR pullback, flagged.
+        # the tip's own entry wins when it sits on the pullback side of price
+        # (long: at/below; short: at/above); a stated level on the OTHER side is
+        # a breakout tip and is honoured as one — otherwise the nearest
+        # structural level; otherwise a shallow ATR pullback, flagged.
         tip_ok = tip_entry is not None and (
             tip_entry <= reference_price * 1.001 if long else tip_entry >= reference_price * 0.999)
         level = nearest_level(levels, reference_price,
@@ -81,6 +83,17 @@ def build_tip_plan(
         if tip_ok:
             entry = float(tip_entry)
             notes.append("entry from the tip itself")
+        elif tip_entry is not None:
+            # "watch $22 for a breakout": the level is above price (long) /
+            # below (short). Wait for the CLOSE through it (tracker breakout
+            # mechanics) — never substitute a dip-buy for a breakout tip
+            # (found 2026-08-28, the PeloSwing BOIL case).
+            entry = float(tip_entry)
+            basis = "on_break"
+            breakout = True
+            level = None
+            notes.append(f"breakout entry from the tip itself "
+                         f"({'above' if long else 'below'} current price — fires on the close through)")
         elif level is not None:
             entry = float(level.price)
             notes.append(f"entry at the nearest {'support' if long else 'resistance'} "
@@ -129,9 +142,11 @@ def build_tip_plan(
         Condition("TIP.2", f"valid for {horizon_sessions} sessions from receipt", "window"),
     ]
     # level-touch tips ride the tracker's bounce/reject (touch-fire) mechanics;
-    # tip-time keeps the neutral kind (simulate-only immediate fill)
+    # a breakout-side tip level rides breakout/breakdown (close through +
+    # confirmation); tip-time keeps the neutral kind (simulate-only immediate fill)
     kind = ("tip" if entry_mode == "tip_time"
-            else ("bounce" if long else "reject"))
+            else (("breakout" if long else "breakdown") if breakout
+                  else ("bounce" if long else "reject")))
     trigger = Trigger(
         id=f"tip-{(signal_id or 'manual')[:12]}",
         kind=kind,

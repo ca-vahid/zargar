@@ -63,14 +63,28 @@ async def replay_tip(
         tip_entry=tip_entry, tip_stop=tip_stop, tip_targets=tuple(tip_targets or ()),
         horizon_sessions=horizon_sessions, source=source, thesis=thesis)
     trg = plan.triggers[0]
-    sim = simulate_plan(
-        bars, start,
-        {"setupType": trg.kind, "direction": direction,
-         "entry": {"price": trg.entry_price, "basis": trg.entry_basis},
-         "stop": {"price": trg.stop_price},
-         "targets": [{"price": t["price"]} for t in trg.targets]},
-        entry_window=horizon_sessions * BARS_PER_SESSION,
-        horizon=horizon_sessions * BARS_PER_SESSION)
+    window = horizon_sessions * BARS_PER_SESSION
+    plan_dict = {"setupType": trg.kind, "direction": direction,
+                 "entry": {"price": trg.entry_price, "basis": trg.entry_basis},
+                 "stop": {"price": trg.stop_price},
+                 "targets": [{"price": t["price"]} for t in trg.targets]}
+    if trg.kind in ("breakout", "breakdown"):
+        # emulate the live tracker: a breakout fills on the first CLOSE through
+        # the level (raw on_break would fill at the tip bar, at_level would
+        # phantom-fill a level that is above/below the market)
+        last_i = min(start + window, len(bars) - 1)
+        cross = next((i for i in range(start + 1, last_i + 1)
+                      if (bars[i].close >= trg.entry_price if long
+                          else bars[i].close <= trg.entry_price)), None)
+        if cross is None:
+            sim = {"filled": False, "outcome": "not_filled", "rMultiple": 0.0,
+                   "mfeR": 0.0, "resolved": (len(bars) - 1) >= start + window}
+        else:
+            sim = simulate_plan(bars, cross, plan_dict,
+                                entry_window=window, horizon=window)
+    else:
+        sim = simulate_plan(bars, start, plan_dict,
+                            entry_window=window, horizon=window)
 
     # --- immediate book: buy the tip-time price, tip bracket else time exit --
     cap = start + horizon_sessions * BARS_PER_SESSION

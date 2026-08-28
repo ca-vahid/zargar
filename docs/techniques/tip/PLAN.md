@@ -138,6 +138,9 @@ overnight options; real money never does.
 - ✅ Extraction is **prompted JSON + local validation** (2026-08-28): the schema blew
   the structured-output grammar budget on the first real screenshot ("Schema is too
   complex"); the wire schema lives in the prompt, pydantic validators enforce the vocab.
+- ✅ **Breakout tips are breakouts** (2026-08-28, PeloSwing BOIL): a stated level on
+  the far side of price mints a breakout/breakdown trigger at the tip's level with the
+  tracker's close-through discipline — never a substitute dip-buy.
 - Open: email webhook auth (HMAC upgrade, T5); repeat-mention conviction — auto-bump vs
   display-only (default display-only until decided); Telegram as an *intake* (today it
   is outbound + approvals only); the per-source policy editor UI (T4's last piece);

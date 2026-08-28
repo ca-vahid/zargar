@@ -239,6 +239,72 @@ def test_tip_entry_price_wins_when_on_right_side():
     assert [x["price"] for x in t.targets] == [105.0, 110.0]
 
 
+def test_breakout_tip_level_honoured():
+    # "watch $22 for a breakout" with price at 20.5 (2026-08-28, PeloSwing BOIL):
+    # the stated level is ABOVE price — it must become a breakout trigger at the
+    # tip's own level, never a substitute dip-buy at a support below
+    bars = bars_with_support()
+    plan = build_tip_plan(symbol="BOIL", direction="long", reference_price=102.5,
+                          bars=bars, as_of_ms=NOW_MS, tip_entry=106.0,
+                          source="PeloSwing", thesis="wedge breakout")
+    [t] = plan.triggers
+    assert t.kind == "breakout" and t.direction == "long" and t.valid
+    assert t.entry_price == 106.0                # the tip's level, verbatim
+    assert t.entry_basis == "on_break"           # fires on the close through
+    assert t.stop_price < 106.0
+    assert all(tgt["price"] > 106.0 for tgt in t.targets)
+    assert "breakout entry from the tip itself" in t.notes
+
+
+def test_breakdown_tip_level_honoured():
+    bars = bars_with_support()
+    plan = build_tip_plan(symbol="XYZ", direction="short", reference_price=102.5,
+                          bars=bars, as_of_ms=NOW_MS, tip_entry=99.0)
+    [t] = plan.triggers
+    assert t.kind == "breakdown" and t.entry_price == 99.0
+    assert t.entry_basis == "on_break"
+    assert t.stop_price > 99.0                   # short mirror
+    assert all(tgt["price"] < 99.0 for tgt in t.targets)
+
+
+async def test_replay_breakout_fills_on_close_through():
+    # the replay emulates the tracker for breakout tips: fill on the first
+    # CLOSE through the level, or honestly report "never filled"
+    from zargar.techniques.tip.replay import replay_tip
+    HOUR = 3_600_000
+    now = NOW_MS
+
+    def mk_bars(crosses: bool) -> list[Bar]:
+        out = []
+        n = 400
+        for i in range(n):
+            frac = i / n
+            if frac < 0.6:
+                c = 100.0 + (i % 4) * 0.2            # coil below the level
+            else:
+                c = (107.0 + (frac - 0.6) * 20) if crosses else 104.0
+            out.append(Bar(symbol="T", tf="1h", ts=now - (n - i) * HOUR,
+                           open=c, high=c + 0.5, low=c - 0.5, close=c, volume=1000))
+        return out
+
+    async def fetch_cross(sym, tf, s, e):
+        return mk_bars(True)
+
+    async def fetch_flat(sym, tf, s, e):
+        return mk_bars(False)
+
+    stated = now - 300 * HOUR                        # inside the bar span, before the cross
+    out = await replay_tip(symbol="T", direction="long", stated_at_ms=stated,
+                           tip_entry=106.0, horizon_sessions=40, fetch=fetch_cross)
+    assert out["ok"] and out["armed"]["filled"]
+    assert out["armed"]["entry"] == 106.0            # the tip's level, not a dip-buy
+
+    out2 = await replay_tip(symbol="T", direction="long", stated_at_ms=stated,
+                            tip_entry=106.0, horizon_sessions=40, fetch=fetch_flat)
+    assert out2["ok"] and not out2["armed"]["filled"]
+    assert out2["armed"]["outcome"] == "not_filled"  # never crossed — says so
+
+
 def test_tip_time_short_plan():
     bars = bars_with_support()
     plan = build_tip_plan(symbol="NVDA", direction="short", reference_price=102.5,
