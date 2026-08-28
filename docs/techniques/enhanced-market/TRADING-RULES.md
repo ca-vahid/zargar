@@ -97,6 +97,22 @@ a number** (p. 72).
   Watch item: the tracker's fire-time volume gate passed bars the critic's FACTS graded
   0.2×— the two rel-volume computations (tracker profile vs live FACTS baseline) need
   reconciling before trusting R3.1 at the tracker.
+- **2026-08-28 · Day 4: 16 fires, 16 kills — mostly right on outcome, but one kill
+  reason was structurally INVALID.** All fires were genuine in-band level touches
+  (tape verified; the 08-27 zombie fix held — 13 dead triggers were retired pre-entry
+  by `invalidated`, 7 by gap_void, 11 would-be fires blocked by R3.1). Outcome ledger:
+  NVDL b1 ×2 (long 36.615 → closed 34.41, certain stop-out: **2 saves ≈ +2R**),
+  OKLO b2 ×2 (41.11 → 40.60: likely stop-out, ~2 saves), LRCX b2 ×2 (306.18, day low
+  302.80: likely save), INTU r2 ×10 (short 355.50, stop 357.28 never threatened,
+  closed 354.32 ≈ +0.66R foregone, TP1 untouched — a small cost). Net: the critic
+  saved several R today. BUT the INTU kills cited *"the draft is a short — the method
+  is long-only"* — a FALSE premise from a stale `SYSTEM_PROMPT` line (see §5 fix,
+  same root cause as the CVNA analyst miss). Those 10 kills are **excluded from the
+  correctness tally** (right outcome, invalid reasoning). Tally: 27/27 on outcome
+  through day 4; reasoned tally 17/17 valid + 10 invalidated-reason. INTU r2 also
+  burned its full 10/10 veto cap by 12:51 (5-min cooldown pacing ~7 min/fire) —
+  second cap-burn pattern after T; graduation (deterministic retirement after N
+  identical kills) is now the top backlog candidate.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -291,7 +307,13 @@ a number** (p. 72).
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
-- 2026-08-27 · **Platform scoping decisions (user):** the R6.3 mid-day experiment
+- 2026-08-28 · **SYSTEM_PROMPT taught the short mirrors; stale "Long-only." clause
+  removed** (`schemas.py`), and `review_fire` adds a DIRECTION clause on
+  reject/breakdown fires (`arming.py`). Why: the prompt still predated the
+  2026-08-26 both-sides decision — the analyst dropped CVNA's +2.5R put on it
+  (day-3 replay) and today the fire critic vetoed INTU r2 ×10 citing "the method
+  is long-only". Evidence: day-4 event stream + INTU critic summaries. New
+  promptVersion via provenance hash; deployed after the 08-28 close. the R6.3 mid-day experiment
   toggle (`technique.arm.midday_trading`) is **EM-scoped** — read only inside EM's
   `entry_windows_enforced()` hook, never by the generic runner, and never promoted
   to a platform key. Veto/critic budgets (`critic_kills_per_day`,
