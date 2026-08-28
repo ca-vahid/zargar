@@ -90,8 +90,28 @@ DTE window (10–30d default, never 0DTE — RiskGate hard-rejects it for non-EM
       P&L once ≥ `scorecard_min_n` outcomes exist.
 - [ ] Tests: seeded runs/outcomes → expectancy math; the bar flips on R, not $.
 
-## Phase T4 — Tips page v2 `[ ]`
+## Phase T4 — Tips page v2 `[~]` *(redesign built 2026-08-28; editor + T3 line pending)*
 
+- [x] **Full page redesign** (user: "exactly the crude page we had on day 1 — redesign"):
+      tabs replace the container pile (**New tip | Tips | Sources | Inbox**), pending
+      proposals ride above the tabs as an attention strip (they expire in minutes), and
+      the **composer is the hero** — a centered card with clipboard screenshot paste,
+      drag-and-drop, a full-width source box that defaults to **Auto-detect** (datalist
+      of known sources from `GET /api/signals/source-names`), and an inline result card
+      after extraction (status/park explanation, prices, vehicle chip from
+      `shadowExpression`, flow/calendar context, arm button, duplicate notice). Quiet
+      text empty states replace the illustration. Sidebar deduped: the top-level
+      "Signals" entry is gone (Techniques ▸ Tips is the one home; the proposals badge
+      moved onto it); the phone TabBar is untouched. Verified visually on a dedicated
+      server (own DB, port 8421, screenshots).
+- [x] **Source auto-detection** (user): `ExtractionResult.source_hint` — the extractor
+      reads attribution out of the content itself (channel name, poster's handle,
+      newsletter masthead; screenshots included via the transcript) and
+      `_resolve_source` matches it punctuation/case-insensitively against the registry +
+      every source ever seen ('#alpha-alerts' → 'Alpha Alerts'); a new hint becomes a
+      new source; an explicit name is never overridden; no hint → 'unknown'. Recorded on
+      the content row (`sourceDetected`/`sourceHint`/`sourceMatchedExisting`) and
+      returned to the composer ("source: X (detected from the content)").
 - [ ] Source policy editor (a Sheet from the scorecard row): entry mode, mode, budgets,
       DTE window, conviction bar — writes `techniques.tip.sources` (journaled settings).
 - [ ] Tip lifecycle row: received → parked/verified → armed today (chip → Armed page) →

@@ -74,6 +74,13 @@ class ExtractionResult(BaseModel):
         description="ONLY when the source is an image: a verbatim transcription of every piece "
                     "of text visible in it, in reading order. Evidence quotes must be copied "
                     "from this transcription. Null for text sources.")
+    source_hint: Optional[str] = Field(
+        default=None,
+        description="WHO/WHERE this content visibly came from, when the content itself shows it: "
+                    "a Discord channel or server name, the poster's handle, a newsletter or "
+                    "service name, an email sender. One short name, exactly as written "
+                    "(e.g. 'TraderJoe', '#alpha-alerts', 'Motley Rich Daily'). Null when the "
+                    "content carries no such attribution — never guess.")
 
 
 EXTRACTION_SYSTEM_PROMPT = """You extract stock and option trade signals from newsletters, \
@@ -100,4 +107,7 @@ with instrument="put" — never direction="long".
 with entry/stop/target; "implied" when clearly bullish/bearish without a call; otherwise \
 "commentary_only".
 - The message's received timestamp is provided; treat stale or undated calls with suspicion.
+- If the content VISIBLY shows where it came from — a channel name, a poster's username or \
+avatar label in a screenshot, a newsletter masthead, a signature — put that name in \
+source_hint exactly as written. Attribution builds the source's track record; never invent one.
 """

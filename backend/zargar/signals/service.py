@@ -141,6 +141,45 @@ class SignalService:
                     return src.get("name")
         return None
 
+    async def known_sources(self) -> list[str]:
+        """Every source name the app has seen: the registry + prior signals.
+        Feeds the compose box's suggestions and auto-detect matching."""
+        names: list[str] = []
+        for src in self.engine.settings.get("sources.registry") or []:
+            if src.get("name"):
+                names.append(str(src["name"]))
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(Signal.source_name).distinct())).scalars().all()
+        for n in rows:
+            if n and n not in names:
+                names.append(n)
+        return sorted(names, key=str.casefold)
+
+    async def _resolve_source(self, hint: str) -> tuple[str, bool]:
+        """A detected source hint -> a canonical source name. Exact casefold
+        match on known sources first, then containment either way (a screenshot
+        says '#alpha-alerts' and the source is 'Alpha Alerts'); a genuinely new
+        hint becomes a new source under its own (cleaned) name. Returns
+        (name, matched_existing)."""
+        clean = " ".join(str(hint).split()).strip("#@ ")[:64] or "unknown"
+
+        def key(s: str) -> str:
+            # punctuation/case-insensitive: '#alpha-alerts' matches 'Alpha Alerts'
+            return "".join(ch for ch in s.casefold() if ch.isalnum())
+
+        cf = key(clean)
+        known = await self.known_sources()
+        if cf:
+            for name in known:
+                if key(name) == cf:
+                    return name, True
+            for name in known:
+                nk = key(name)
+                if nk and (cf in nk or nk in cf):
+                    return name, True
+        return clean, False
+
     # ------------------------------------------------------------- pipeline
     async def process_content(self, content_id: str) -> dict:
         eng = self.engine
@@ -186,8 +225,12 @@ class SignalService:
 
         out = await self.handle_extraction(content, result, source_text=source_text)
         await self._set_content_status(content_id, "extracted")
+        async with eng.sf() as session:               # source may have been auto-detected
+            refreshed = await session.get(RawContent, content_id)
         return {"contentId": content_id, "status": "extracted",
-                "sourceType": result.source_type, "signals": out}
+                "sourceType": result.source_type, "signals": out,
+                "source": (refreshed.source_name if refreshed else content.source_name),
+                "sourceDetected": bool((refreshed.meta or {}).get("sourceDetected")) if refreshed else False}
 
     async def _find_duplicate(self, key: str, window_hours: float) -> Signal | None:
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=window_hours)
@@ -204,6 +247,22 @@ class SignalService:
         """Grounding → dedupe → persistence → verification → proposal, per signal.
         Split out so tests can drive it with a canned ExtractionResult (no API)."""
         eng = self.engine
+        # auto-detect the source when the user didn't name one: the extractor
+        # reads attribution out of the content itself (channel name, poster's
+        # handle, newsletter masthead) and we match it to a known source
+        if (content.source_name or "").strip().lower() in ("", "auto") :
+            detected, matched = (await self._resolve_source(result.source_hint)
+                                 if result.source_hint else ("unknown", False))
+            async with eng.sf() as session:
+                row = await session.get(RawContent, content.id)
+                if row is not None:
+                    row.source_name = detected
+                    row.meta = {**(row.meta or {}),
+                                "sourceDetected": bool(result.source_hint),
+                                "sourceHint": result.source_hint,
+                                "sourceMatchedExisting": matched}
+                    await session.commit()
+                    content = row
         out: list[dict] = []
         for sig in result.signals:
             policy = resolve_policy(eng.settings, content.source_name)

@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconCheck, IconClock, IconHalf, IconX } from "../components/icons";
-import { EmptyState, ErrorState, Spinner } from "../components/ui";
+import { ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, timeUntil } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
@@ -8,31 +8,51 @@ import { useStore } from "../store";
 import type { Proposal, RawContentItem, Signal, SourceScorecard } from "../types";
 import { useViewport } from "../lib/viewport";
 
+/* The Tips page (redesigned 2026-08-28): the composer is the product — paste
+   text or a screenshot, the app extracts the trade AND the source, verifies it
+   against the live market and shows what both shadow books did with it.
+   Tabs: New tip · Tips · Sources · Inbox; pending proposals ride above the
+   tabs as an attention strip (they expire in minutes). */
+
+type Tab = "compose" | "tips" | "sources" | "inbox";
+
 export function InboxPage() {
+  const [tab, setTab] = useState<Tab>("compose");
   const proposals = useStore((s) => s.proposals);
+  const signals = useStore((s) => s.signals);
   return (
-    <div>
-      <h2 className="page-title">Tips &amp; proposals</h2>
-      <div className="grid-2col">
-        <div>
-          <div className="panel mb">
-            <div className="panel-head">
-              Pending proposals
-              <span className="sub">{proposals.length} awaiting your decision</span>
-            </div>
-            <div className="panel-body">
-              {proposals.length === 0 && <div className="empty">Nothing waiting for approval</div>}
-              {proposals.map((p) => <ProposalCard key={p.id} p={p} />)}
-            </div>
-          </div>
-          <ManualIngest />
-          <SourcesPanel />
+    <div className="tips-page">
+      <div className="tips-head">
+        <h2 className="page-title">Tips</h2>
+        <div className="tabs" role="tablist">
+          <button role="tab" aria-selected={tab === "compose"} className={tab === "compose" ? "active" : ""}
+            onClick={() => setTab("compose")}>New tip</button>
+          <button role="tab" aria-selected={tab === "tips"} className={tab === "tips" ? "active" : ""}
+            onClick={() => setTab("tips")}>Tips{signals.length ? ` · ${signals.length}` : ""}</button>
+          <button role="tab" aria-selected={tab === "sources"} className={tab === "sources" ? "active" : ""}
+            onClick={() => setTab("sources")}>Sources</button>
+          <button role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""}
+            onClick={() => setTab("inbox")}>Inbox</button>
         </div>
-        <div>
-          <SignalsPanel />
-          <ContentPanel />
-        </div>
+        <span className="muted tips-head-sub">every source runs two shadow books: buy at tip time vs wait for the level</span>
       </div>
+
+      {proposals.length > 0 && (
+        <div className="panel mb">
+          <div className="panel-head">
+            Awaiting your decision
+            <span className="sub">{proposals.length} proposal{proposals.length === 1 ? "" : "s"} — they expire</span>
+          </div>
+          <div className="panel-body">
+            {proposals.map((p) => <ProposalCard key={p.id} p={p} />)}
+          </div>
+        </div>
+      )}
+
+      {tab === "compose" && <ComposeTab goTips={() => setTab("tips")} />}
+      {tab === "tips" && <TipsTab />}
+      {tab === "sources" && <SourcesTab />}
+      {tab === "inbox" && <InboxTab />}
     </div>
   );
 }
@@ -53,6 +73,241 @@ function contractLabel(s: Signal): string | null {
   if (s.instrument === "shares") return "shares";
   return null;
 }
+
+function vehicleChip(s: Signal) {
+  const expr = (s as any).extraction?.shadowExpression;
+  if (!expr) return null;
+  if (expr.vehicle === "option") {
+    return <span className="status-pill dim" title={`Immediate book bought ${expr.contracts ?? "?"}× ${expr.display ?? expr.contract}`}>
+      {expr.display ?? "option"}{expr.contracts ? ` ×${expr.contracts}` : ""}</span>;
+  }
+  if (expr.fallback) {
+    return <span className="status-pill wait" title={`Wanted the option but: ${expr.fallback}`}>shares (fallback)</span>;
+  }
+  return null;
+}
+
+function ArmButton({ s }: { s: Signal }) {
+  const toast = useStore((st) => st.toast);
+  const [busy, setBusy] = useState(false);
+  if (s.status !== "verified" && s.status !== "parked") return null;
+  const arm = async () => {
+    setBusy(true);
+    try {
+      const snap = await api.armTipSignal(s.id, { mode: "alert" });
+      toast("success", `Armed ${s.ticker} for ${snap.planFor} (alert mode) — see the Armed page`);
+    } catch (e: any) {
+      toast("error", e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className="link-btn" disabled={busy} onClick={arm}
+      title="Arm this tip as a level-touch plan (alert mode — watches the level, no orders). Switch modes on the Armed page.">
+      {busy ? "arming…" : "arm"}
+    </button>
+  );
+}
+
+/* ---------------------------------------------------------------- compose */
+
+function ComposeTab({ goTips }: { goTips: () => void }) {
+  const toast = useStore((s) => s.toast);
+  const [text, setText] = useState("");
+  const [source, setSource] = useState("");          // empty = auto-detect
+  const [image, setImage] = useState<string | null>(null);
+  const [drag, setDrag] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<any | null>(null);
+  const boxRef = useRef<HTMLTextAreaElement>(null);
+  const namesState = useAsync(() => api.sourceNames(), []);
+  const names = namesState.data ?? [];
+
+  const readFile = (f: File) => {
+    const reader = new FileReader();
+    reader.onload = () => setImage(String(reader.result));
+    reader.readAsDataURL(f);
+  };
+
+  const onPaste = (e: React.ClipboardEvent) => {
+    for (const item of Array.from(e.clipboardData?.items ?? [])) {
+      if (item.type.startsWith("image/")) {
+        const f = item.getAsFile();
+        if (f) { readFile(f); e.preventDefault(); return; }
+      }
+    }
+  };
+
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDrag(false);
+    const f = e.dataTransfer?.files?.[0];
+    if (f && f.type.startsWith("image/")) readFile(f);
+  };
+
+  const run = async () => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const out = await api.ingestManual(text, source.trim() || "auto", "manual paste", image ?? undefined);
+      setResult(out);
+      const n = out.signals?.length ?? 0;
+      if (out.note) toast("info", out.note);
+      else if (n === 0) toast("info", "No actionable tip found in that content");
+      else {
+        toast("success", `Extracted ${n} tip${n === 1 ? "" : "s"} from ${out.source ?? "content"}`);
+        setText("");
+        setImage(null);
+      }
+    } catch (e: any) {
+      toast("error", e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="tips-compose">
+      <div className="panel">
+        <div className="panel-head">
+          New tip
+          <span className="sub">paste the message or a screenshot of your own chat client — nothing is scraped</span>
+        </div>
+        <div className="panel-body">
+          <div className={`tips-drop ${drag ? "drag" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={onDrop}>
+            <textarea ref={boxRef} rows={7} value={text} onChange={(e) => setText(e.target.value)}
+              onPaste={onPaste}
+              placeholder={'"NVDA 180c 9/19" · "buying AAPL, entry $230, stop $220, target $260" · or just Ctrl+V a screenshot'} />
+            {image && (
+              <div className="tips-shot">
+                <img src={image} alt="tip screenshot" />
+                <button className="link-btn danger" onClick={() => setImage(null)}>remove</button>
+              </div>
+            )}
+            <div className="tips-drop-hint">Ctrl+V pastes a screenshot straight from the clipboard · drag &amp; drop works too</div>
+          </div>
+
+          <div className="tips-compose-row">
+            <label className="field" style={{ flex: 1, marginBottom: 0 }}>
+              <span>Source — who said it (their track record depends on this)</span>
+              <input list="tip-source-names" value={source} placeholder="Auto-detect from the content"
+                onChange={(e) => setSource(e.target.value)} />
+              <datalist id="tip-source-names">
+                {names.map((n) => <option key={n} value={n} />)}
+              </datalist>
+            </label>
+            <label className="link-btn" style={{ cursor: "pointer", paddingBottom: 9 }}>
+              attach image…
+              <input type="file" accept="image/*" style={{ display: "none" }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
+            </label>
+            <button className="primary-btn" disabled={busy || (!text.trim() && !image)} onClick={run}>
+              {busy ? "Reading…" : "Extract & verify"}
+            </button>
+          </div>
+          {!source.trim() && (
+            <div className="muted" style={{ fontSize: 11, marginTop: 6 }}>
+              Left on auto: the channel name, poster's handle or newsletter masthead visible in the
+              content becomes the source, matched against the {names.length || "known"} source{names.length === 1 ? "" : "s"} you already track.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {result && <ExtractionOutcome out={result} goTips={goTips} />}
+    </div>
+  );
+}
+
+function ExtractionOutcome({ out, goTips }: { out: any; goTips: () => void }) {
+  if (out.note) {
+    return <div className="panel mb"><div className="panel-body muted">{out.note}</div></div>;
+  }
+  const sigs: any[] = out.signals ?? [];
+  return (
+    <div className="panel mb">
+      <div className="panel-head">
+        What the app read
+        {out.source && (
+          <span className="sub">
+            source: <b>{out.source}</b>{out.sourceDetected ? " (detected from the content)" : ""}
+          </span>
+        )}
+        <span style={{ flex: 1 }} />
+        <button className="link-btn" onClick={goTips}>all tips →</button>
+      </div>
+      <div className="panel-body" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {sigs.length === 0 && (
+          <div className="muted">No actionable tip in that content — recaps, marketing and commentary
+            are ignored on purpose.</div>
+        )}
+        {sigs.map((item, i) => <TipResultCard key={i} item={item} />)}
+      </div>
+    </div>
+  );
+}
+
+function TipResultCard({ item }: { item: any }) {
+  const s: Signal = item.signal;
+  const failed = (s.verification?.checks ?? []).filter((c) => !c.passed);
+  const contract = contractLabel(s);
+  if (item.duplicateOf) {
+    return (
+      <div className="tip-card">
+        <div className="tip-card-head">
+          <span className="tip-sym">{s.ticker}</span>
+          <span className="status-pill dim">seen ×{s.seenCount}</span>
+          <span className="muted">same tip already tracked — repeat mentions are counted, not re-traded</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="tip-card">
+      <div className="tip-card-head">
+        <span className="tip-sym">{s.ticker}</span>
+        <span className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</span>
+        {contract && <span className="status-pill dim">{contract}</span>}
+        <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
+        {vehicleChip(s)}
+        <FlowChip sym={s.ticker} />
+        <span style={{ flex: 1 }} />
+        <ArmButton s={s} />
+      </div>
+      <div className="tip-prices">
+        <span><b>entry</b> {s.entryPrice ? fmtMoney(s.entryPrice) : "—"}</span>
+        <span><b>stop</b> {s.stopPrice ? fmtMoney(s.stopPrice) : "—"}</span>
+        <span><b>target</b> {s.targetPrice ? fmtMoney(s.targetPrice) : "—"}</span>
+        {s.horizonSessions ? <span><b>horizon</b> {s.horizonSessions} sessions</span> : null}
+        {s.catalyst ? <span><b>catalyst</b> {s.catalyst}</span> : null}
+      </div>
+      {s.thesisSummary && <div className="muted" style={{ fontSize: 12 }}>{s.thesisSummary}</div>}
+      {s.status === "parked" && (
+        <div className="muted" style={{ fontSize: 12 }}>
+          Parked: price has moved away from the stated entry — the app watches for it to come back
+          (arm it, or the morning sweep arms it in shadow automatically).
+        </div>
+      )}
+      {s.verification?.flowContext && <div className="muted" style={{ fontSize: 12 }}>{s.verification.flowContext}</div>}
+      {s.verification?.calendarContext && <div className="muted" style={{ fontSize: 12 }}>⚠ {s.verification.calendarContext}</div>}
+      {failed.length > 0 && (
+        <ul className="check-list">
+          {failed.map((c) => (
+            <li key={c.name} className="check-item fail">
+              <b>{c.name.replace(/_/g, " ")}</b>{c.detail ? ` — ${c.detail}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------- proposals */
 
 function ProposalCard({ p }: { p: Proposal }) {
   const toast = useStore((s) => s.toast);
@@ -102,13 +357,6 @@ function ProposalCard({ p }: { p: Proposal }) {
           ))}
         </ul>
       )}
-      <div className="check-grid">
-        {checks.filter((c: any) => c.passed).map((c: any) => (
-          <span key={c.name} className="check-item ok" title={c.detail}>
-            <IconCheck size={10} /> {c.name.replace(/_/g, " ")}
-          </span>
-        ))}
-      </div>
       <div className="proposal-actions">
         <button className="approve-btn" disabled={busy}
           onClick={() => act(() => api.approveProposal(p.id), `Approved ${p.symbol}`)}>
@@ -127,84 +375,102 @@ function ProposalCard({ p }: { p: Proposal }) {
   );
 }
 
-function ManualIngest() {
-  const toast = useStore((s) => s.toast);
-  const [text, setText] = useState("");
-  const [source, setSource] = useState("manual");
-  const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<string>("");
-  const [image, setImage] = useState<string | null>(null);   // data URL
+/* ---------------------------------------------------------------- tips list */
 
-  const readFile = (f: File) => {
-    const reader = new FileReader();
-    reader.onload = () => setImage(String(reader.result));
-    reader.readAsDataURL(f);
-  };
+function TipsTab() {
+  const live = useStore((s) => s.signals);
+  const loadedState = useAsync(
+    () => api.get<Signal[]>("/api/signals?limit=50"), [live.length]);
+  const merged = [...live];
+  for (const s of loadedState.data ?? []) if (!merged.some((m) => m.id === s.id)) merged.push(s);
+  const { isPhone } = useViewport();
 
-  const onPaste = (e: React.ClipboardEvent) => {
-    for (const item of Array.from(e.clipboardData?.items ?? [])) {
-      if (item.type.startsWith("image/")) {
-        const f = item.getAsFile();
-        if (f) { readFile(f); e.preventDefault(); return; }
-      }
-    }
-  };
-
-  const run = async () => {
-    setBusy(true);
-    setResult("");
-    try {
-      const out = await api.ingestManual(text, source, "manual paste", image ?? undefined);
-      if (out.note) setResult(out.note);
-      else {
-        const n = out.signals?.length ?? 0;
-        setResult(`Extracted ${n} signal${n === 1 ? "" : "s"}.`);
-        if (n > 0) toast("success", `Extracted ${n} signal(s)`);
-      }
-      if (!out.note) setImage(null);
-    } catch (e: any) {
-      toast("error", e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
+  if (isPhone) {
+    return (
+      <div className="panel mb">
+        <div className="panel-head">Tips</div>
+        <div className="bl-cards">
+          {loadedState.loading && merged.length === 0 ? <Spinner />
+            : merged.length === 0 ? <div className="empty">No tips yet — add one from the New tip tab.</div>
+            : merged.slice(0, 30).map((s) => {
+              const failed = (s.verification?.checks ?? []).filter((c) => !c.passed);
+              const contract = contractLabel(s);
+              return (
+                <div key={s.id} className="bl-card bl-card--static">
+                  <span className="bl-card-l">
+                    <span className="bl-card-sym">{s.ticker} <span className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</span>
+                      {contract && <span className="muted"> {contract}</span>}
+                      <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
+                      {(s.seenCount ?? 1) > 1 && <span className="status-pill dim">×{s.seenCount}</span>}
+                      <FlowChip sym={s.ticker} />
+                    </span>
+                    <span className="bl-card-sub">entry {s.entryPrice ? fmtMoney(s.entryPrice) : "—"} · target {s.targetPrice ? fmtMoney(s.targetPrice) : "—"} · stop {s.stopPrice ? fmtMoney(s.stopPrice) : "—"} · {s.confidence.replace("_", " ")}</span>
+                    {s.thesisSummary && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.thesisSummary}</span>}
+                    {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
+                    {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
+                    {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
+                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <ArmButton s={s} /></span>
+                  </span>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="panel mb">
-      <div className="panel-head">
-        Add a tip <span className="sub">paste text or a screenshot of your own chat client</span>
-      </div>
-      <div className="panel-body">
-        <label className="field">
-          <span>Source name (builds this source's track record)</span>
-          <input type="text" value={source} onChange={(e) => setSource(e.target.value)} />
-        </label>
-        <label className="field">
-          <span>Content — text, or paste a screenshot right here</span>
-          <textarea rows={5} value={text} onChange={(e) => setText(e.target.value)} onPaste={onPaste}
-            placeholder="NVDA 180c 9/19 🚀 … or: ALERT: buying AAPL, entry $230, stop $220, target $260" />
-        </label>
-        {image && (
-          <div style={{ marginBottom: 8, display: "flex", alignItems: "center", gap: 8 }}>
-            <img src={image} alt="tip screenshot" style={{ maxHeight: 90, maxWidth: "60%", borderRadius: 4 }} />
-            <button className="link-btn danger" onClick={() => setImage(null)}>remove screenshot</button>
-          </div>
+      <div className="panel-head">Tips <span className="sub">every tip the app has read, newest first</span></div>
+      <div className="scroll-x">
+        {loadedState.loading && merged.length === 0 ? (
+          <Spinner />
+        ) : loadedState.error && merged.length === 0 ? (
+          <ErrorState message={loadedState.error} onRetry={loadedState.reload} />
+        ) : merged.length === 0 ? (
+          <div className="empty">No tips yet — add one from the New tip tab.</div>
+        ) : (
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Ticker</th><th>Dir</th><th>Contract</th><th>Book vehicle</th><th>Conf</th><th className="num">Entry</th>
+                <th className="num">Tgt/Stop</th><th>Status</th><th>Source</th><th>When</th>
+              </tr>
+            </thead>
+            <tbody>
+              {merged.slice(0, 50).map((s) => (
+                <tr key={s.id}
+                  title={[s.thesisSummary, s.verification?.flowContext,
+                    s.verification?.calendarContext].filter(Boolean).join("\n")}>
+                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>} <FlowChip sym={s.ticker} /></td>
+                  <td className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</td>
+                  <td className="muted">{contractLabel(s) ?? "—"}</td>
+                  <td>{vehicleChip(s) ?? <span className="muted">—</span>}</td>
+                  <td className="muted">{s.confidence.replace("_", " ")}</td>
+                  <td className="num">{s.entryPrice ? fmtMoney(s.entryPrice) : "—"}</td>
+                  <td className="num muted">
+                    {s.targetPrice ? fmtMoney(s.targetPrice) : "—"}/{s.stopPrice ? fmtMoney(s.stopPrice) : "—"}
+                  </td>
+                  <td>
+                    <span className={`status-pill ${statusPill(s.status)}`}
+                      title={(s.verification?.checks ?? [])
+                        .filter((c) => !c.passed).map((c) => c.detail || c.name).join("; ")}>
+                      {s.status.replace("_", " ")}
+                    </span>
+                  </td>
+                  <td className="muted">{s.sourceName ?? "—"}</td>
+                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         )}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="primary-btn" disabled={busy || (!text.trim() && !image)} onClick={run}>
-            {busy ? "Extracting…" : "Run extraction"}
-          </button>
-          <label className="link-btn" style={{ cursor: "pointer" }}>
-            attach screenshot…
-            <input type="file" accept="image/*" style={{ display: "none" }}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) readFile(f); e.target.value = ""; }} />
-          </label>
-        </div>
-        {result && <div className="muted" style={{ marginTop: 8 }}>{result}</div>}
       </div>
     </div>
   );
 }
+
+/* ---------------------------------------------------------------- sources */
 
 function BookCell({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }) {
   const pnl = b?.pnl;
@@ -216,7 +482,7 @@ function BookCell({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }
   );
 }
 
-function SourcesPanel() {
+function SourcesTab() {
   const signalCount = useStore((s) => s.signals.length);
   const state = useAsync(() => api.sourceScorecards(), [signalCount]);
   const cards = state.data ?? [];
@@ -224,12 +490,12 @@ function SourcesPanel() {
     <div className="panel">
       <div className="panel-head">
         Source scorecards
-        <span className="sub">two books per source: buy-at-tip-time vs wait-for-the-level</span>
+        <span className="sub">a source earns trust here — tip-time entry and real money are both evidence-gated</span>
       </div>
       <div className="scroll-x">
         {state.loading && cards.length === 0 ? <Spinner />
           : cards.length === 0 ? (
-            <EmptyState title="No sources yet" hint="Every tip source gets two shadow books and a track record." />
+            <div className="empty">No sources yet — every tip source gets two shadow books and a track record.</div>
           ) : (
             <table className="tbl">
               <thead>
@@ -272,32 +538,32 @@ function SourcesPanel() {
   );
 }
 
-function ArmButton({ s }: { s: Signal }) {
-  const toast = useStore((st) => st.toast);
-  const [busy, setBusy] = useState(false);
-  if (s.status !== "verified" && s.status !== "parked") return null;
-  const arm = async () => {
-    setBusy(true);
-    try {
-      const snap = await api.armTipSignal(s.id, { mode: "alert" });
-      toast("success", `Armed ${s.ticker} for ${snap.planFor} (alert mode) — see the Armed page`);
-    } catch (e: any) {
-      toast("error", e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <button className="link-btn" disabled={busy} onClick={arm}
-      title="Arm this tip as a level-touch plan (alert mode — watches the level, no orders). Switch modes on the Armed page.">
-      {busy ? "arming…" : "arm"}
-    </button>
-  );
+/* ---------------------------------------------------------------- inbox */
+
+// the latest scan's per-symbol flow reads, fetched once per page load
+type FlowMap = Record<string, { score: number; lean: string }>;
+let _flowCache: FlowMap | null = null;
+let _flowFetch: Promise<FlowMap> | null = null;
+
+export function useFlowMap(): FlowMap {
+  const [flow, setFlow] = useState<FlowMap>(_flowCache ?? {});
+  useEffect(() => {
+    if (_flowCache) return;
+    _flowFetch ??= api.flowDays(1)
+      .then((d) => (d.length ? api.flowReads(d[0].day) : Promise.resolve([])))
+      .then((reads) => (_flowCache = Object.fromEntries(
+        reads.filter((r) => r.score > 0).map((r) => [r.symbol, { score: r.score, lean: r.lean }]))));
+    _flowFetch.then((m) => setFlow(m ?? {})).catch(() => undefined);
+  }, []);
+  return flow;
 }
 
-function FlowChip({ sym, flow }: { sym: string; flow: Record<string, { score: number; lean: string }> }) {
+/** "flow 7" chip when the options tape has something to say about a ticker —
+    clicking opens the symbol's Flow story. */
+export function FlowChip({ sym }: { sym: string }) {
   const setPage = useStore((s) => s.setPage);
   const setFlowFocus = useStore((s) => s.setFlowFocus);
+  const flow = useFlowMap();
   const f = flow[sym];
   if (!f) return null;
   const cls = f.lean === "bull" ? "ok" : f.lean === "bear" ? "bad" : "wait";
@@ -310,107 +576,7 @@ function FlowChip({ sym, flow }: { sym: string; flow: Record<string, { score: nu
   );
 }
 
-function SignalsPanel() {
-  const live = useStore((s) => s.signals);
-  const loadedState = useAsync(
-    () => api.get<Signal[]>("/api/signals?limit=50"), [live.length]);
-  const merged = [...live];
-  for (const s of loadedState.data ?? []) if (!merged.some((m) => m.id === s.id)) merged.push(s);
-  const { isPhone } = useViewport();
-  const [flow, setFlow] = useState<Record<string, { score: number; lean: string }>>({});
-  useEffect(() => {
-    api.flowDays(1)
-      .then((d) => (d.length ? api.flowReads(d[0].day) : Promise.resolve([])))
-      .then((reads) => setFlow(Object.fromEntries(
-        reads.filter((r) => r.score > 0).map((r) => [r.symbol, { score: r.score, lean: r.lean }]))))
-      .catch(() => undefined);
-  }, []);
-
-  if (isPhone) {
-    return (
-      <div className="panel mb">
-        <div className="panel-head">Extracted signals</div>
-        <div className="bl-cards">
-          {loadedState.loading && merged.length === 0 ? <Spinner />
-            : merged.length === 0 ? <EmptyState title="No signals yet" hint="Ingest an email or paste text below." />
-            : merged.slice(0, 30).map((s) => {
-              const failed = (s.verification?.checks ?? []).filter((c) => !c.passed);
-              const contract = contractLabel(s);
-              return (
-                <div key={s.id} className="bl-card bl-card--static">
-                  <span className="bl-card-l">
-                    <span className="bl-card-sym">{s.ticker} <span className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</span>
-                      {contract && <span className="muted"> {contract}</span>}
-                      <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
-                      {(s.seenCount ?? 1) > 1 && <span className="status-pill dim">×{s.seenCount}</span>}
-                      <FlowChip sym={s.ticker} flow={flow} />
-                    </span>
-                    <span className="bl-card-sub">entry {s.entryPrice ? fmtMoney(s.entryPrice) : "—"} · target {s.targetPrice ? fmtMoney(s.targetPrice) : "—"} · stop {s.stopPrice ? fmtMoney(s.stopPrice) : "—"} · {s.confidence.replace("_", " ")}</span>
-                    {s.thesisSummary && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.thesisSummary}</span>}
-                    {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
-                    {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
-                    {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
-                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <ArmButton s={s} /></span>
-                  </span>
-                </div>
-              );
-            })}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="panel mb">
-      <div className="panel-head">Extracted signals</div>
-      <div className="scroll-x">
-        {loadedState.loading && merged.length === 0 ? (
-          <Spinner />
-        ) : loadedState.error && merged.length === 0 ? (
-          <ErrorState message={loadedState.error} onRetry={loadedState.reload} />
-        ) : merged.length === 0 ? (
-          <EmptyState title="No signals yet" hint="Ingest an email or paste text below." />
-        ) : (
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Ticker</th><th>Dir</th><th>Contract</th><th>Conf</th><th className="num">Entry</th>
-                <th className="num">Tgt/Stop</th><th>Status</th><th>Source</th><th>When</th>
-              </tr>
-            </thead>
-            <tbody>
-              {merged.slice(0, 50).map((s) => (
-                <tr key={s.id}
-                  title={[s.thesisSummary, s.verification?.flowContext,
-                    s.verification?.calendarContext].filter(Boolean).join("\n")}>
-                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>} <FlowChip sym={s.ticker} flow={flow} /></td>
-                  <td className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</td>
-                  <td className="muted">{contractLabel(s) ?? "—"}</td>
-                  <td className="muted">{s.confidence.replace("_", " ")}</td>
-                  <td className="num">{s.entryPrice ? fmtMoney(s.entryPrice) : "—"}</td>
-                  <td className="num muted">
-                    {s.targetPrice ? fmtMoney(s.targetPrice) : "—"}/{s.stopPrice ? fmtMoney(s.stopPrice) : "—"}
-                  </td>
-                  <td>
-                    <span className={`status-pill ${statusPill(s.status)}`}
-                      title={(s.verification?.checks ?? [])
-                        .filter((c) => !c.passed).map((c) => c.detail || c.name).join("; ")}>
-                      {s.status.replace("_", " ")}
-                    </span>
-                  </td>
-                  <td className="muted">{s.sourceName ?? "—"}</td>
-                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ContentPanel() {
+function InboxTab() {
   const signalCount = useStore((s) => s.signals.length);
   const itemsState = useAsync(
     () => api.get<RawContentItem[]>("/api/content?limit=25"), [signalCount]);
@@ -421,7 +587,7 @@ function ContentPanel() {
       <div className="panel">
         <div className="panel-head">Inbound content</div>
         <div className="bl-cards">
-          {items.length === 0 ? <EmptyState title="Nothing received yet" hint="Email ingestion and manual paste both land here." />
+          {items.length === 0 ? <div className="empty">Nothing received yet — email ingestion and pastes land here.</div>
             : items.map((c) => (
               <div key={c.id} className="bl-card bl-card--static">
                 <span className="bl-card-l">
@@ -438,15 +604,14 @@ function ContentPanel() {
   }
   return (
     <div className="panel">
-      <div className="panel-head">Inbound content</div>
+      <div className="panel-head">Inbound content <span className="sub">the raw material every tip was read from</span></div>
       <div className="scroll-x">
         {itemsState.loading && items.length === 0 ? (
           <Spinner />
         ) : itemsState.error ? (
           <ErrorState message={itemsState.error} onRetry={itemsState.reload} />
         ) : items.length === 0 ? (
-          <EmptyState title="Nothing received yet"
-            hint="Email ingestion and manual paste both land here." />
+          <div className="empty">Nothing received yet — email ingestion and pastes land here.</div>
         ) : (
           <table className="tbl">
             <thead>

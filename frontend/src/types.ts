@@ -187,6 +187,7 @@ export interface Signal {
   isActionable: boolean;
   verification: { passed: boolean; park?: boolean; flowContext?: string; calendarContext?: string;
     checks: { name: string; passed: boolean; detail: string; fatal?: boolean }[] } | null;
+  extraction?: any;               // full LLM output + grounding + shadowExpression (vehicle record)
   status: string;
   createdAt: string;
 }
