@@ -612,7 +612,31 @@ button.bl-card:active { background: var(--surface-2); }
 }
 @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
   .flow-page { height: auto; }
+  /* story sheet: back link on its own line, actions in one thumb row (no stranded Chart) */
+  .flow-story-head { row-gap: 8px; }
+  .flow-story-head > .link-btn:first-child { flex-basis: 100%; text-align: left; }
+  .flow-story-head > span:empty { display: none; }   /* the desktop spacer */
+  .flow-story-head .primary-btn, .flow-story-head .ghost-btn { flex: 1 1 auto; min-height: 44px; }
+  .flow-card-last { margin-left: auto; font-size: var(--fs-2); }
+  /* New tip: the paste zone must not eat the screen; source + actions stack.
+     16px font on the inputs or iOS zooms the page on focus; 40px tap height. */
+  .tips-drop textarea { font-size: 16px; }
+  .tips-compose-row .field input { font-size: 16px; min-height: 40px; }
+  .tips-drop textarea { min-height: 100px; height: 132px; }
+  .tips-compose-row { flex-wrap: wrap; gap: 10px; }
+  .tips-compose-row .field { flex: 1 1 100% !important; }  /* beats the desktop inline flex:1 */
+  .tips-compose-row .primary-btn { flex: 1 1 auto; min-height: 44px; }
   .flow-strip-lbl { display: none; }
   .flow-prem-bar { max-width: none; flex: 1 1 100%; order: 2; }
   .flow-strip { row-gap: 6px; }
+}
+
+/* ── touch devices incl. iPads (pointer: coarse): no focus-zoom, real tap targets ── */
+@media (pointer: coarse) {
+  /* iOS/iPadOS zooms the page when a focused input's font is under 16px */
+  .tips-drop textarea, .tips-compose-row .field input { font-size: 16px; }
+  .armed-page input { font-size: 16px; min-height: 38px; }
+  /* technique desk chips (scan grid, status pills) grow to thumb size */
+  .tq-scan-chip { min-height: 40px; padding: 6px 10px; }
+  .tq-status button.status-pill, .tq-scan-progress button.status-pill { min-height: 40px; }
 }
