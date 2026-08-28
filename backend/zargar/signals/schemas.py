@@ -45,7 +45,16 @@ class TradeSignal(BaseModel):
         default=None,
         description="Approximate days-to-expiry when the source says something like 'weeklies' "
                     "(~5), 'next week' (~10), 'monthlies' (~30) without an exact date.")
-    entry_price: Optional[float] = Field(default=None, description="Suggested entry price if stated")
+    entry_price: Optional[float] = Field(
+        default=None,
+        description="Suggested entry price for the UNDERLYING stock, if stated. NOT the "
+                    "option's own price — that goes in `premium`.")
+    premium: Optional[float] = Field(
+        default=None,
+        description="The OPTION CONTRACT's own price when the source quotes it — alert-room "
+                    "grammar like 'NTR 82.5C 03/19/2027 Exp. At 4.60' or 'paid 1.20' means "
+                    "premium 4.60 / 1.20. Null for share tips and when no contract price is "
+                    "stated. Never put a premium in entry_price.")
     entry_type: str = Field(
         default="unspecified", description='One of: "market", "limit", "range", "unspecified"')
     target_price: Optional[float] = None
@@ -163,6 +172,12 @@ Rules:
 is unambiguous; when inferring, the evidence quote must contain the company name you mapped.
 - Every extracted price, strike and ticker must be backed by a verbatim quote in \
 evidence_quotes, copied character-for-character from the source text.
+- Alert-room bot grammar (Discord trade-alert services): "OPEN:" = action open, "CLOSE:"/"STC" \
+= close, "TRIM" = trim, "Update:" usually references an earlier position (action per its text). \
+"NTR 82.5C 03/19/2027 Exp. At 4.60" = NTR calls, strike 82.5, expiry 2027-03-19, premium 4.60 \
+(the contract's price — put it in `premium`, never entry_price). Ignore boilerplate \
+(disclaimers, "Informational purposes only", bot version lines) but transcribe it in \
+source_transcript when reading a screenshot.
 - Chat shorthand: "NVDA 180c 9/19" = NVDA calls, strike 180, expiry Sep 19 (instrument="call"); \
 "150p" = puts at 150 (instrument="put", direction usually "short" on the stock unless it is a \
 hedge); "BTO"/"STC" = buy to open / sell to close; a bare month/day date is this year unless \

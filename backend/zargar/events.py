@@ -40,6 +40,7 @@ SIGNAL_VERIFIED = "SignalVerified"
 SIGNAL_VERIFICATION_FAILED = "SignalVerificationFailed"
 SIGNAL_PARKED = "SignalParked"            # only price-position checks failed; tip watches the level
 SIGNAL_REPLAYED = "SignalReplayed"        # content too old to trade — replayed on history instead
+SIGNAL_ANALYZED = "SignalAnalyzed"        # the tips analyst's advisory opinion (verdict + expression)
 SIGNAL_SEEN_AGAIN = "SignalSeenAgain"     # duplicate tip attached to the original
 SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before the tip's horizon/expiry
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads

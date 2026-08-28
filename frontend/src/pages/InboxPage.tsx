@@ -313,6 +313,7 @@ function TipResultCard({ item }: { item: any }) {
         </div>
       )}
       {s.status === "replayed" && <ReplayBlock s={s} />}
+      <AnalystBlock s={s} />
       {s.verification?.flowContext && <div className="muted" style={{ fontSize: 12 }}>{s.verification.flowContext}</div>}
       {s.verification?.calendarContext && <div className="muted" style={{ fontSize: 12 }}>⚠ {s.verification.calendarContext}</div>}
       {failed.length > 0 && (
@@ -361,6 +362,30 @@ function ReplayBlock({ s }: { s: Signal }) {
           {im.pnlPct > 0 ? "+" : ""}{im.pnlPct}% ({im.reason})</span>
         {im.toTodayPct != null && <span className="muted"> · held to today {im.toTodayPct > 0 ? "+" : ""}{im.toTodayPct}%</span>}
       </span>
+    </div>
+  );
+}
+
+/** The tips analyst's advisory opinion (extraction.analyst): verdict + the
+    expression it would buy + rationale. Never a gate — a second pair of eyes. */
+function AnalystBlock({ s }: { s: Signal }) {
+  const a = (s as any).extraction?.analyst;
+  if (!a) return null;
+  const cls = a.verdict === "take" ? "ok" : a.verdict === "watch" ? "wait" : "bad";
+  const suggest = a.contract_label || a.contract
+    ? `${a.contract_label ?? a.contract}${a.limit_price ? ` @ ≤${a.limit_price}` : ""}${a.quantity ? ` ×${a.quantity}` : ""}`
+    : a.instrument === "shares" && a.quantity ? `${a.quantity} shares${a.limit_price ? ` @ ≤${a.limit_price}` : ""}` : null;
+  return (
+    <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+      <span>
+        <span className={`status-pill ${cls}`}
+          title={`Analyst confidence ${Math.round((a.confidence ?? 0.5) * 100)}% · ${(a.toolsUsed ?? []).length} tool call(s)`}>
+          analyst: {a.verdict}
+        </span>
+        {suggest && <> <b>{suggest}</b></>}
+      </span>
+      {a.rationale && <span className="muted">{a.rationale}</span>}
+      {a.invalidation && <span className="muted">Invalid if: {a.invalidation}</span>}
     </div>
   );
 }

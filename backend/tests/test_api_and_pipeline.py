@@ -293,6 +293,85 @@ async def test_immediate_book_sized_by_budget(app_client):
     assert expr["closeAfter"] > dt.date.today().isoformat()  # the time exit is booked
 
 
+class _Block:
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+
+
+class _FakeAnthropicResp:
+    def __init__(self, content):
+        self.content = content
+        self.stop_reason = "end_turn"
+
+
+class _FakeAnthropic:
+    """Scripted analyst: one get_quote tool call, then the final JSON opinion."""
+
+    def __init__(self):
+        self.calls = 0
+        self.messages = self
+
+    async def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            return _FakeAnthropicResp([
+                _Block(type="tool_use", id="tu1", name="get_quote",
+                       input={"symbol": "AAPL"})])
+        return _FakeAnthropicResp([_Block(type="text", text=(
+            '{"verdict": "take", "instrument": "option",'
+            ' "contract": "AAPL261016C00240000", "contract_label": "AAPL 240C 2026-10-16",'
+            ' "limit_price": 4.6, "quantity": 2,'
+            ' "invalidation": "close below 225",'
+            ' "rationale": "Uptrend intact and the tip names a liquid strike.",'
+            ' "confidence": 0.7}'))])
+
+
+async def test_tips_analyst_opinion_attached(app_client):
+    # the analyst agent (LLM + tools, advisory) appraises every tradable tip;
+    # its opinion rides on extraction.analyst and never gates the pipeline
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    fake = _FakeAnthropic()
+    eng.signals_service._analyst_client = fake
+    tip = canned_extraction()
+    tip.signals[0].premium = 4.60                     # alert-room "At 4.60"
+    out = await run_pipeline(eng, tip)
+    sig = out[0]["signal"]
+    assert sig["status"] == "verified"
+    assert sig["premium"] == 4.60                     # premium survives extraction->row->wire
+    a = sig["extraction"]["analyst"]
+    assert a["verdict"] == "take" and a["quantity"] == 2
+    assert a["toolsUsed"] == [{"tool": "get_quote", "args": {"symbol": "AAPL"}}]
+    assert fake.calls == 2                            # tool round + final answer
+    # journaled as SignalAnalyzed
+    from sqlalchemy import select as _sel
+    from zargar.models import Event
+    async with eng.sf() as session:
+        kinds = (await session.execute(
+            _sel(Event.type).where(Event.aggregate_id == sig["id"]))).scalars().all()
+    assert "SignalAnalyzed" in kinds
+
+
+async def test_analyst_failure_never_blocks(app_client):
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+
+    class Boom:
+        def __init__(self):
+            self.messages = self
+
+        async def create(self, **kw):
+            raise RuntimeError("api down")
+
+    eng.signals_service._analyst_client = Boom()
+    out = await run_pipeline(eng, canned_extraction())
+    sig = out[0]["signal"]
+    assert sig["status"] == "verified"                # pipeline unaffected
+    assert "analyst" not in (sig["extraction"] or {})
+
+
 async def test_proposal_reject_and_expiry(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")

@@ -221,6 +221,7 @@ class Signal(Base):
     # --- extraction v2 (tip technique): the whole trade, not just the stock ---
     instrument: Mapped[str] = mapped_column(String(12), default="unspecified")  # shares|call|put|either|unspecified
     strike: Mapped[float | None] = mapped_column(Float)
+    premium: Mapped[float | None] = mapped_column(Float)            # the CONTRACT's stated price ("At 4.60")
     expiry: Mapped[str | None] = mapped_column(String(10))          # YYYY-MM-DD when stated
     dte_hint_days: Mapped[int | None] = mapped_column(Integer)
     horizon_sessions: Mapped[int | None] = mapped_column(Integer)

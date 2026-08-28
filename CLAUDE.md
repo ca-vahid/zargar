@@ -57,7 +57,12 @@ runtime keys resolve `techniques.<id>.<key>` → `execution.<key>` (read via `Pl
 method-specific knobs are plain `techniques.<id>.*` keys in `settings_service.DEFAULTS` (EM's
 legacy `technique.*` prefix is grandfathered — don't copy it).
 **Tip technique (BUILT 2026-08-27, incl. options expression):** `docs/techniques/tip/PLAN.md` +
-`BUILD-PLAN.md`. Human-relayed tips only — never Discord scraping or alert-room auto-execution.
+`BUILD-PLAN.md`. Never user-token Discord automation (self-bots — ToS ban risk) and never
+alert-room auto-execution; reading the OS notifications Discord delivered to the user IS allowed
+(`zargar/tools/discord_watch.py`, POC 2026-08-28) — boundary table + intake phases in
+`docs/techniques/tip/INTAKE-PLAN.md`. The **Tips Analyst** (`techniques/tip/analyst.py`, advisory
+LLM + market tools, `techniques.tip.analyst_*` knobs) appraises each tradable tip onto
+`extraction.analyst`.
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
 dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
 non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose

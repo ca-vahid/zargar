@@ -40,6 +40,7 @@ def signal_dict(row: Signal) -> dict:
         "action": row.action,
         "instrument": row.instrument,
         "strike": row.strike,
+        "premium": row.premium,
         "expiry": row.expiry,
         "dteHintDays": row.dte_hint_days,
         "horizonSessions": row.horizon_sessions,
@@ -76,6 +77,7 @@ class SignalService:
         self.engine = engine
         self.extractor = extractor
         self._replay_fetch = None      # tests inject a bars fetcher for replays
+        self._analyst_client = None    # tests inject a fake Anthropic client
 
     # ------------------------------------------------------------- intake
     async def ingest_email(self, payload: dict) -> dict:
@@ -306,6 +308,7 @@ class SignalService:
                 action=sig.action,
                 instrument=sig.instrument,
                 strike=sig.strike,
+                premium=sig.premium,
                 expiry=sig.expiry,
                 dte_hint_days=sig.dte_hint_days,
                 horizon_sessions=sig.horizon_sessions,
@@ -405,6 +408,30 @@ class SignalService:
                 shadow_order = await self._shadow_execute(row, sig)
                 async with eng.sf() as session:   # pick up the recorded expression
                     row = await session.get(Signal, row.id) or row
+            if status in ("verified", "shadow", "parked"):
+                # the tips analyst appraises the tip with market tools —
+                # strictly advisory, fail-open (POC 2026-08-28)
+                try:
+                    from ..techniques.tip.analyst import analyze_tip
+                    opinion = await analyze_tip(eng, row, verification, policy,
+                                                client=self._analyst_client)
+                except Exception:                  # never block the pipeline
+                    log.exception("tip analyst crashed for %s", row.id)
+                    opinion = None
+                if opinion is not None:
+                    async with eng.sf() as session:
+                        db_row = await session.get(Signal, row.id)
+                        db_row.extraction = {**(db_row.extraction or {}),
+                                             "analyst": opinion}
+                        await session.commit()
+                        row = db_row
+                    await eng.journal.append(
+                        ev.SIGNAL_ANALYZED,
+                        {k: opinion.get(k) for k in ("verdict", "contract",
+                                                     "contractLabel", "limit_price",
+                                                     "quantity", "rationale")},
+                        aggregate_type="signal", aggregate_id=row.id)
+                    eng.bus.publish(topics.SIGNALS, signal_dict(row))
             if status == "verified":
                 # proposals need an explicit call (status "shadow" never proposes)
                 if (eng.proposals is not None and policy.mode in ("proposal", "auto")

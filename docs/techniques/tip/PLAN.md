@@ -35,9 +35,11 @@ option (or shares when no option is named), manages it out with a profit ladder 
 trailing + time stop, and — before any source touches real money — builds that source a
 shadow track record it must earn its way out of.
 
-Hard boundaries (from the research, non-negotiable):
-- Tips arrive via a **human or a service's own bot/API**. No Discord scraping, no
-  autonomous execution of room alerts. Screenshot-of-your-own-client → vision is fine.
+Hard boundaries (from the research; refined 2026-08-28 — full table in `INTAKE-PLAN.md`):
+- Tips arrive via a **human, a service's own bot/API, or the OS notifications Discord
+  already delivered to the user** (`tools/discord_watch.py`). Never user-token
+  automation/self-bots (ToS), never autonomous execution of room alerts.
+  Screenshot-of-your-own-client → vision is fine.
 - **Shadow-first per source**: real money only for sources whose scorecard clears the bar.
 - Sizing is budget- and risk-capped per tip AND per source; the never-list (0DTE, naked
   calls, share shorts) is RiskGate's job.

@@ -85,6 +85,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.min_conviction": "implied",
     "techniques.tip.max_open_tips": 5,
     "techniques.tip.max_tip_age_hours": 72,  # older content is REPLAYED on history, never traded
+    "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
+    "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
+    "techniques.tip.analyst_model": "",      # empty = the extraction model
     "techniques.tip.dedupe_window_hours": 24,
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
     "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none
