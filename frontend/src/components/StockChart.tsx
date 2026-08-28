@@ -5,6 +5,7 @@ import "highcharts/esm/indicators/bollinger-bands.js";
 import "highcharts/esm/modules/accessibility.js";
 import "highcharts/esm/modules/hollowcandlestick.js";
 import "highcharts/esm/modules/price-indicator.js"; // series.lastPrice — without it the option is silently inert
+import "highcharts/esm/modules/mouse-wheel-zoom.js"; // explicit: wheel-zoom must never depend on what the bundle happens to include
 import { api } from "../lib/api";
 import { attachPhoneTouch, phoneChartOptions, type PhoneTouch } from "../lib/chartTouch";
 import { cssVar, rgbaVar } from "../lib/highchartsTheme";
@@ -39,6 +40,39 @@ const TF_MS: Record<string, number> = {
   "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "1d": 86_400_000,
 };
 
+function fmtVol(v: number): string {
+  if (v >= 1e9) return (v / 1e9).toFixed(2) + "B";
+  if (v >= 1e6) return (v / 1e6).toFixed(1) + "M";
+  if (v >= 1e3) return (v / 1e3).toFixed(1) + "K";
+  return String(Math.round(v));
+}
+
+/** Keep only the ET trading days a preset asks for (2D/3D, this/last/two weeks).
+ * Day boundaries come from the bars themselves so holidays cost nothing. */
+function clipToDays(bars: number[][], clip: string): number[][] {
+  if (!bars.length) return bars;
+  const days = [...new Set(bars.map((b) => ET_DAY_FMT.format(b[0])))].sort();
+  const mondayOf = (d: string) => {
+    const dt = new Date(`${d}T12:00:00Z`);
+    dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7));
+    return dt.toISOString().slice(0, 10);
+  };
+  const monday = mondayOf(days[days.length - 1]);
+  const prevMonday = (() => {
+    const dt = new Date(`${monday}T12:00:00Z`);
+    dt.setUTCDate(dt.getUTCDate() - 7);
+    return dt.toISOString().slice(0, 10);
+  })();
+  let keep: Set<string>;
+  if (clip === "d2") keep = new Set(days.slice(-2));
+  else if (clip === "d3") keep = new Set(days.slice(-3));
+  else if (clip === "tw") keep = new Set(days.filter((d) => d >= monday));
+  else if (clip === "lw") keep = new Set(days.filter((d) => d >= prevMonday && d < monday));
+  else if (clip === "2w") keep = new Set(days.filter((d) => d >= prevMonday));
+  else return bars;
+  return bars.filter((b) => keep.has(ET_DAY_FMT.format(b[0])));
+}
+
 /** Live bars/ticks are only appended during the extended session (04:00–20:00
  * ET, weekdays) — overnight the feed just repeats the close, and drawing that
  * produces the flat "01:00–09:00" line brokers never show. */
@@ -54,6 +88,8 @@ interface Props {
   symbol: string;
   tf: string;
   range: string; // Yahoo range key: 1d | 5d | 1mo | 3mo | 6mo | 1y | 5y
+  /** trim the fetched range to specific ET trading days: d2 | d3 | tw | lw | 2w */
+  clip?: string;
   chartType: ChartType;
   indicators: Indicator[];
   showVolume: boolean;
@@ -69,12 +105,15 @@ interface Props {
   phone?: boolean;
 }
 
-export function StockChart({ symbol, tf, range, chartType, indicators, showVolume,
+export function StockChart({ symbol, tf, range, clip, chartType, indicators, showVolume,
                              view = "candles", session = "eth", armed = null, avgCost = null , phone = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
   const touchRef = useRef<PhoneTouch | null>(null);
+  // compact corner readout by default; a click on the chart toggles the detailed one
+  const tipFull = useRef(localStorage.getItem("zargar_chart_tip") === "full");
+  const lastLiveDraw = useRef(0);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
 
   useEffect(() => {
@@ -98,10 +137,11 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
 
     async function build() {
       const data = await api.get<{ bars: number[][] }>(
-        `/api/chart/${symbol}?tf=${tf}&range=${range}&limit=500`,
+        `/api/chart/${symbol}?tf=${tf}&range=${range}&limit=5000`,
       );
       if (cancelled || !containerRef.current) return;
       let bars = data.bars;
+      if (clip) bars = clipToDays(bars, clip);
       if (session === "rth" && intraday) {
         bars = bars.filter((b) => { const m = etMinutes(b[0]); return m >= 570 && m < 960; });
       }
@@ -168,7 +208,14 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
           gridLineColor: grid,
           height: priceH,
           lineWidth: 0,
-          crosshair: { color: grid, dashStyle: "Dash" },
+          // free-floating price readout at the cursor (snap: false), broker-style
+          crosshair: {
+            color: grid, dashStyle: "Dash", snap: false,
+            label: phone ? { enabled: false } : {
+              enabled: true, padding: 3, borderRadius: 3, backgroundColor: text2,
+              format: "{value:.2f}", style: { color: surface, fontSize: "10px", fontWeight: "600" },
+            },
+          } as any,
           plotLines: priceLines,
           plotBands: priceBands,
         },
@@ -201,10 +248,9 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
               color: down, upColor: up, lineColor: down, upLineColor: up,
               // @ts-ignore — lastPrice is a stock option missing from some type versions
               lastPrice: { enabled: true, color: text3,
-                // phone: the last price tagged on the axis, broker-style
-                label: phone ? { enabled: true, format: "{value:.2f}", backgroundColor: text3, borderRadius: 3,
-                                 padding: 2, style: { color: surface, fontSize: "10px", fontWeight: "600" } }
-                             : { enabled: false } },
+                // the last price tagged on the axis, broker-style
+                label: { enabled: true, format: "{value:.2f}", backgroundColor: text3, borderRadius: 3,
+                         padding: 2, style: { color: surface, fontSize: "10px", fontWeight: "600" } } },
               // phone: one-line readout (the tooltip is pinned to a corner, so keep it short)
               ...(phone ? { tooltip: { valueDecimals: 2,
                 pointFormat: "O {point.open} · H {point.high} · L {point.low} · C {point.close}<br/>" } } : {}),
@@ -246,6 +292,16 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
           animation: false,
           spacing: phone ? [6, 4, 2, 4] : [8, 8, 4, 8],
           style: { fontFamily: "inherit" },
+          // broker-style: wheel zooms time, drag pans. Explicit so it can't
+          // silently regress with a bundle change.
+          zooming: { mouseWheel: { enabled: true, type: "x" } },
+          panning: { enabled: true, type: "x" },
+          events: {
+            click: function (this: Highcharts.Chart) {
+              tipFull.current = !tipFull.current;
+              localStorage.setItem("zargar_chart_tip", tipFull.current ? "full" : "mini");
+            },
+          },
           ...(ph ? ph.chart : {}),
         } as any,
         // market time, not wall-clock time: the whole method (sessions, windows,
@@ -261,8 +317,9 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
                 states: { select: { fill: rgbaVar("--accent", 0.15), style: { color: accent } } } } } as any
           : { enabled: false },
         navigator: {
-          enabled: !phone, height: 28,
+          enabled: !phone, height: 34,
           outlineColor: grid, maskFill: rgbaVar("--text-3", 0.12),
+          handles: { width: 9, height: 22, backgroundColor: surface, borderColor: text3 },
           series: { color: series1, lineWidth: 1 },
           xAxis: { labels: { style: { color: text3 } } },
         },
@@ -270,24 +327,76 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
         xAxis: {
           lineColor: grid, tickColor: grid,
           labels: { style: { color: text3, fontSize: "11px" } },
-          crosshair: { color: grid, dashStyle: "Dash" },
+          crosshair: {
+            color: grid, dashStyle: "Dash",
+            label: phone ? { enabled: false } : {
+              enabled: true, padding: 3, borderRadius: 3, backgroundColor: text2,
+              format: intraday ? "{value:%a %b %e · %H:%M}" : "{value:%b %e, %Y}",
+              style: { color: surface, fontSize: "10px" },
+            },
+          },
           plotBands: sessionBands,
-          ...(phone ? { minRange: 8 * barMs } : {}),   // pinch can't zoom into fewer than ~8 bars
+          minRange: 5 * barMs,   // zoom floor: never fewer than ~5 bars (wheel can't wedge itself)
         },
         yAxis: yAxes,
-        tooltip: {
-          backgroundColor: cssVar("--surface-2"),
-          borderColor: cssVar("--border"),
-          style: { color: text2, fontSize: phone ? "13px" : "12px" },
-          split: false,
-          shared: true,
-          ...(ph ? ph.tooltip : {}),
-        },
+        tooltip: phone
+          ? {
+              backgroundColor: cssVar("--surface-2"),
+              borderColor: cssVar("--border"),
+              style: { color: text2, fontSize: "13px" },
+              split: false,
+              shared: true,
+              ...(ph ? ph.tooltip : {}),
+            }
+          : ({
+              // one compact readout pinned to the top corner AWAY from the
+              // cursor — never a box chasing the mouse over the candles.
+              // Click the chart to toggle the detailed version (indicators).
+              split: false, shared: true, useHTML: true, animation: false, shadow: false,
+              backgroundColor: rgbaVar("--surface-2", 0.95),
+              borderWidth: 0, borderRadius: 6, padding: 6,
+              style: { color: text2, fontSize: "11px", pointerEvents: "none" },
+              positioner: function (this: any, w: number, _h: number, point: any) {
+                const c = this.chart;
+                const onLeft = point.plotX < c.plotWidth / 2;
+                return { x: onLeft ? c.plotLeft + c.plotWidth - w - 8 : c.plotLeft + 8, y: c.plotTop + 4 };
+              },
+              formatter: function (this: any): string {
+                const pts: any[] = this.points ?? [];
+                const main = pts.find((pt) => pt.series?.options?.id === "main");
+                const time = main?.series?.chart?.time;
+                const head = time ? time.dateFormat(intraday ? "%a %b %e · %H:%M" : "%b %e, %Y", this.x) : "";
+                let html = `<span style="color:${text3};font-size:10px">${head}</span><br/>`;
+                const p = main?.point;
+                if (p && p.open !== undefined) {
+                  const dir = p.close >= p.open ? up : down;
+                  const chg = p.open ? ((p.close - p.open) / p.open) * 100 : 0;
+                  html += `<span style="color:${text3}">O</span> ${p.open.toFixed(2)} `
+                    + `<span style="color:${text3}">H</span> ${p.high.toFixed(2)} `
+                    + `<span style="color:${text3}">L</span> ${p.low.toFixed(2)} `
+                    + `<b style="color:${dir};font-size:13px">${p.close.toFixed(2)}</b> `
+                    + `<span style="color:${dir}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span>`;
+                } else if (main && main.y != null) {
+                  html += `<b style="color:${accent};font-size:13px">${Number(main.y).toFixed(2)}</b>`;
+                }
+                const vol = pts.find((pt) => pt.series?.options?.id === "vol");
+                if (vol && vol.y != null) html += ` <span style="color:${text3}">· V ${fmtVol(vol.y)}</span>`;
+                if (tipFull.current) {
+                  for (const pt of pts) {
+                    const id = pt.series?.options?.id;
+                    if (id === "main" || id === "vol" || pt.y == null) continue;
+                    html += `<br/><span style="color:${pt.series?.color ?? text3}">${pt.series?.name}</span> ${Number(pt.y).toFixed(2)}`;
+                  }
+                }
+                return html;
+              },
+            } as any),
         legend: { enabled: false },
         plotOptions: {
           // dataGrouping aggregates candles when they'd be subpixel — the old
-          // "weird lines when zoomed out" was hundreds of 1px candles
-          series: { animation: false, dataGrouping: { enabled: true, groupPixelWidth: 4 } },
+          // "weird lines when zoomed out" was hundreds of 1px candles. 10px
+          // per grouped candle keeps bodies readable instead of hairlines.
+          series: { animation: false, dataGrouping: { enabled: true, groupPixelWidth: 10 } },
           candlestick: { pointPadding: 0.08 },
           hollowcandlestick: { pointPadding: 0.08 } as any,
         },
@@ -308,6 +417,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
       const chart = chartRef.current;
       if (!chart || msg.symbol !== symbol) return;
       if (tf !== "1m") return; // higher TFs rebuilt from quote stream below
+      if (clip === "lw") return; // last-week view: today's bars don't belong on it
       const main = chart.get("main") as Highcharts.Series | undefined;
       if (!main) return;
       const [ts, o, h, l, c, v] = msg.bar;
@@ -320,12 +430,18 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
       chart.redraw(false);
     });
 
-    // forming bar from the conflated quote stream
+    // forming bar from the conflated quote stream. Redraws are throttled to
+    // 4/s — a redraw mid wheel-zoom or navigator drag eats the gesture, which
+    // was the "sometimes I can't zoom until I click around" bug.
     const step = TF_MS[tf] ?? 60_000;
     const unsub = useStore.subscribe((state, prevState) => {
       const q: Quote | undefined = state.quotes[symbol];
       const prevQ: Quote | undefined = prevState.quotes[symbol];
       if (!q || q === prevQ || !chartRef.current) return;
+      if (clip === "lw") return; // last-week view: no live ticks
+      const now = Date.now();
+      if (now - lastLiveDraw.current < 250) return;
+      lastLiveDraw.current = now;
       const chart = chartRef.current;
       const main = chart.get("main") as any;
       if (!main || !main.points || main.points.length === 0) return;
@@ -360,7 +476,7 @@ export function StockChart({ symbol, tf, range, chartType, indicators, showVolum
       chartRef.current?.destroy();
       chartRef.current = null;
     };
-  }, [symbol, tf, range, chartType, indicators.join(","), showVolume, theme, phone,
+  }, [symbol, tf, range, clip, chartType, indicators.join(","), showVolume, theme, phone,
       view, session, armed?.runId, (armed?.triggers ?? []).length, avgCost?.price, avgCost?.qty]);
 
   return <div ref={containerRef} style={{ flex: 1, minHeight: phone ? 300 : 320 }} className={phone ? "stock-chart--phone" : undefined} />;
