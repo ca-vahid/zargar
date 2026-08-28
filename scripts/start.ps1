@@ -1,32 +1,74 @@
-# Start Zargar (Windows PowerShell):
-#   powershell -ExecutionPolicy Bypass -File scripts\start.ps1
-# Brings up Postgres (Docker Desktop), rebuilds the UI if sources changed,
-# then runs engine + API + UI as one process on http://127.0.0.1:8420
-param([switch]$Force)
-$ErrorActionPreference = "Stop"
-Set-Location (Join-Path $PSScriptRoot "..")
-$Root = (Get-Location).Path
+# Start (or restart) Zargar on http://127.0.0.1:8420
+#
+#   scripts\start.ps1            run in this terminal (Ctrl+C stops it)
+#   scripts\start.ps1 -Detach    run hidden in the background and return
+#   scripts\start.ps1 -Force     restart even if analyst runs are in flight
+#   scripts\start.ps1 -NoBuild   skip the frontend rebuild check
+#
+# What it does, in order:
+#   1. safety check   refuses to kill in-flight analyst runs (they cost money)
+#   2. stop           stops the old server on :8420, wherever it was started
+#   3. postgres       docker compose up + wait until ready
+#   4. frontend       rebuild dist only when sources changed
+#   5. run            engine + API + UI as one process
+#
+# Exit codes: 0 ok / 1 build or launch failure / 2 refused (runs in flight)
+#             3 port 8420 held by something that is not Zargar
 
-# Never restart over live work: analyst reads in flight (each one costs money and
-# dies with the process) or armed plans holding a position. 2026-08-26: five
-# restarts in one evening killed ~200 model reads. Pass -Force to override.
+param(
+  [switch]$Force,
+  [switch]$Detach,
+  [switch]$NoBuild
+)
+$ErrorActionPreference = "Stop"
+$Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+Set-Location $Root
+
+function Step($msg) { Write-Host "> $msg" -ForegroundColor Cyan }
+function Warn($msg) { Write-Host "! $msg" -ForegroundColor Yellow }
+function Fail($msg, $code) { Write-Host "x $msg" -ForegroundColor Red; exit $code }
+
+# --- 1. safety check ---------------------------------------------------------
+# Never restart over live work: analyst reads in flight die with the process and
+# each one costs money (2026-08-26: five restarts in one evening killed ~200
+# reads). Armed plans are write-ahead and restore on startup - warning only.
 try {
-  # /api/health is public but only tells a LOCAL caller about in-flight work
-  # (the technique status route is behind sign-in now)
   $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4
   $running = [int]$h.local.techniqueRunning
-  $armed = [int]$h.local.armed
-  if (-not $Force -and $running -gt 0) {
-    Write-Host "! $running technique run(s) are in flight - a restart would kill them (they cost money)." -ForegroundColor Red
-    Write-Host "  Wait for the batch to finish, or run again with -Force." -ForegroundColor Yellow
-    exit 2
+  $armed   = [int]$h.local.armed
+  if ($running -gt 0 -and -not $Force) {
+    Warn "$running analyst run(s) in flight - a restart would kill them (they cost money)."
+    Fail "Wait for the batch to finish, or run again with -Force." 2
   }
-  if ($running -gt 0) { Write-Host "! -Force: restarting over $running in-flight run(s)" -ForegroundColor Yellow }
-  if ($armed -gt 0) { Write-Host "! $armed armed plan(s) will be restored after the restart" -ForegroundColor Yellow }
+  if ($running -gt 0) { Warn "-Force: restarting over $running in-flight run(s)" }
+  if ($armed -gt 0)   { Warn "$armed armed plan(s) will be restored after the restart" }
 } catch {
-  # no app on :8420 - nothing to protect
+  # nothing answering on :8420 - nothing to protect
 }
 
+# --- 2. stop the old server --------------------------------------------------
+# The server may have been started in another terminal or detached; find it by
+# the port it holds. Refuse to touch a process that is not python (typo'd
+# config, another app squatting on 8420).
+$procIds = @(Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyContinue |
+             Select-Object -ExpandProperty OwningProcess -Unique)
+foreach ($procId in $procIds) {
+  $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
+  if (-not $proc) { continue }
+  if ($proc.ProcessName -notmatch "python") {
+    Fail "Port 8420 is held by '$($proc.ProcessName)' (pid $procId), not Zargar - not touching it." 3
+  }
+  Step "Stopping old server (pid $procId)"
+  Stop-Process -Id $procId -Force -Confirm:$false
+}
+if ($procIds.Count -gt 0) {
+  foreach ($i in 1..20) {
+    if (-not (Get-NetTCPConnection -LocalPort 8420 -State Listen -ErrorAction SilentlyContinue)) { break }
+    Start-Sleep -Milliseconds 500
+  }
+}
+
+# --- 3. postgres -------------------------------------------------------------
 docker info *> $null
 if ($LASTEXITCODE -eq 0) {
   docker compose up -d
@@ -36,25 +78,58 @@ if ($LASTEXITCODE -eq 0) {
     Start-Sleep -Seconds 1
   }
 } else {
-  Write-Host "! Docker is not running - assuming Postgres is available some other way" -ForegroundColor Yellow
+  Warn "Docker is not running - assuming Postgres is available some other way"
 }
 
-# rebuild the UI only when sources are newer than the last build
-$dist = "$Root\frontend\dist"
-$needBuild = -not (Test-Path $dist)
-if (-not $needBuild) {
-  $distTime = (Get-Item $dist).LastWriteTime
-  $newest = Get-ChildItem "$Root\frontend\src" -Recurse -File |
-    Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if ($newest -and $newest.LastWriteTime -gt $distTime) { $needBuild = $true }
-}
-if ($needBuild) {
-  Write-Host "> Rebuilding frontend" -ForegroundColor Cyan
-  Set-Location "$Root\frontend"
-  npm run build
-  if ($LASTEXITCODE -ne 0) { exit 1 }
+# --- 4. frontend -------------------------------------------------------------
+# Rebuild only when an input is newer than the last build. Inputs = src/,
+# public/, index.html and the build config - not just src/.
+if (-not $NoBuild) {
+  $marker = Join-Path $Root "frontend\dist\index.html"
+  $needBuild = -not (Test-Path $marker)
+  if (-not $needBuild) {
+    $built = (Get-Item $marker).LastWriteTime
+    $inputs = @()
+    foreach ($dir in @("frontend\src", "frontend\public")) {
+      $p = Join-Path $Root $dir
+      if (Test-Path $p) { $inputs += Get-ChildItem $p -Recurse -File }
+    }
+    foreach ($f in @("frontend\index.html", "frontend\package.json", "frontend\vite.config.ts")) {
+      $p = Join-Path $Root $f
+      if (Test-Path $p) { $inputs += Get-Item $p }
+    }
+    $newest = $inputs | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($newest -and $newest.LastWriteTime -gt $built) { $needBuild = $true }
+  }
+  if ($needBuild) {
+    Step "Rebuilding frontend"
+    Push-Location (Join-Path $Root "frontend")
+    npm run build
+    $buildExit = $LASTEXITCODE
+    Pop-Location
+    if ($buildExit -ne 0) { Fail "frontend build failed" 1 }
+  }
 }
 
-Write-Host "> Zargar -> http://127.0.0.1:8420" -ForegroundColor Cyan
-Set-Location "$Root\backend"
-& ".venv\Scripts\python.exe" -m zargar.main
+# --- 5. run ------------------------------------------------------------------
+$py = Join-Path $Root "backend\.venv\Scripts\python.exe"
+if (-not (Test-Path $py)) { Fail "backend\.venv not found - create the venv first" 1 }
+
+if ($Detach) {
+  Step "Starting Zargar in the background"
+  Start-Process -FilePath $py -ArgumentList "-m", "zargar.main" `
+    -WorkingDirectory (Join-Path $Root "backend") -WindowStyle Hidden
+  foreach ($i in 1..30) {
+    Start-Sleep -Seconds 1
+    try {
+      $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 2
+      Step "Zargar is up -> http://127.0.0.1:8420 (armed plans restored: $([int]$h.local.armed))"
+      exit 0
+    } catch { }
+  }
+  Fail "server did not answer on :8420 within 30s - check backend\zargar-8420.log" 1
+} else {
+  Step "Zargar -> http://127.0.0.1:8420 (Ctrl+C stops it)"
+  Set-Location (Join-Path $Root "backend")
+  & $py -m zargar.main
+}
