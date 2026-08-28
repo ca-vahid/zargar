@@ -331,10 +331,16 @@ export function StockChart({ symbol, tf, range, clip, chartType, indicators, sho
             color: grid, dashStyle: "Dash",
             label: phone ? { enabled: false } : {
               enabled: true, padding: 3, borderRadius: 3, backgroundColor: text2,
-              format: intraday ? "{value:%a %b %e · %H:%M}" : "{value:%b %e, %Y}",
+              // a formatter, not a format string — crosshair labels don't run
+              // date templating, "{value:%a...}" renders literally
+              formatter: function (this: any, value: number) {
+                const t = this?.chart?.time ?? this?.axis?.chart?.time;
+                const fmt = intraday ? "%a %b %e · %H:%M" : "%b %e, %Y";
+                return t ? t.dateFormat(fmt, value) : (Highcharts as any).dateFormat(fmt, value);
+              },
               style: { color: surface, fontSize: "10px" },
             },
-          },
+          } as any,
           plotBands: sessionBands,
           minRange: 5 * barMs,   // zoom floor: never fewer than ~5 bars (wheel can't wedge itself)
         },
