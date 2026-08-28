@@ -1955,3 +1955,9 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tip-prices { display: flex; gap: 18px; flex-wrap: wrap; font-family: var(--mono); font-size: var(--fs-2); font-variant-numeric: tabular-nums; }
 .tip-prices b { font-family: var(--font); font-weight: 500; font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-3); margin-right: 4px; }
 .tips-compose-row .field input { width: 100%; }
+
+/* Flow desk: guidance additions (2026-08-28 — "wtf am I looking at" fixes) */
+.flow-legend { padding: 7px 12px; border-bottom: 1px solid var(--border); font-size: var(--fs-1); color: var(--text-3); line-height: 1.5; }
+.flow-legend b { color: var(--text-2); font-weight: 600; }
+.flow-whatnow { background: color-mix(in srgb, var(--warn) 7%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent); border-radius: var(--radius-sm); padding: 10px 12px; }
+.flow-detail-head .flow-story-btn { padding: 5px 10px; font-size: var(--fs-1); }

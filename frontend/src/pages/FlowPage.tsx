@@ -192,7 +192,8 @@ export function FlowPage() {
           <DayStrip d={daySummary} />
           <div className="flow-split">
             <ReadsTable reads={reads} selected={selected} quotes={quoteMap}
-              onSelect={(sym) => setSelected(sym)} />
+              onSelect={(sym) => setSelected(sym)}
+              onStory={(sym) => { setSelected(sym); setStoryOpen(true); }} />
             {selectedRead
               ? <ReadDetail read={selectedRead} story={story} last={lastOf(selectedRead.symbol)}
                   onStory={() => setStoryOpen(true)} />

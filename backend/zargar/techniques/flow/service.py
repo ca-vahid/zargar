@@ -308,6 +308,69 @@ class FlowService:
                 universe = {"inUniverse": prov is not None, "provenance": prov}
         return {"symbol": sym, "reads": reads, "deliveries": deliveries, "universe": universe}
 
+    async def to_tip(self, symbol: str) -> dict:
+        """Turn the latest read into a TIP — the user judged the flow worth
+        acting on, so it enters the normal tip pipeline (grounding, dedupe,
+        both shadow books, arming, scorecards) under the source "flow-scan".
+        Flow itself still never places an order; the Tip machinery does, with
+        every gate it already has. Sending the same read twice dedupes into
+        a seen-again bump like any repeated tip."""
+        svc = getattr(self.engine, "signals_service", None)
+        if svc is None:
+            raise RuntimeError("signals layer not attached")
+        sym = symbol.upper()
+        async with self.engine.sf() as session:
+            row = (await session.execute(
+                select(FlowReadRow).where(FlowReadRow.symbol == sym)
+                .order_by(FlowReadRow.day.desc()).limit(1))).scalars().first()
+        if row is None or (row.score or 0) <= 0:
+            raise ValueError(f"no flagged flow read for {sym}")
+        read = _read_dict(row)
+        lean = read.get("lean")
+        if lean not in ("bull", "bear"):
+            raise ValueError(f"{sym}'s flow is {lean or 'quiet'} — two-sided or directionless "
+                             "flow gives no side to trade; nothing to send")
+        want = "call" if lean == "bull" else "put"
+        flag = next((f for f in (read.get("flags") or [])
+                     if f.get("optionType") == want and (f.get("dte") or 0) >= 2), None)
+        if flag is None:
+            raise ValueError(f"{sym}'s flagged {want}s all expire within a day — "
+                             "expiry-board noise, not a tradeable thesis")
+        from ...models import RawContent
+        from ...signals.schemas import ExtractionResult, TradeSignal
+        direction = "long" if lean == "bull" else "short"
+        strike = float(flag.get("strike") or 0)
+        expiry = str(flag.get("expiry") or "")
+        spot = read.get("spot")
+        reason = (read.get("reasons") or ["unusual options activity"])[0]
+        text = (f"Flow scan {read['day']}: {sym} {lean} — {reason}. "
+                f"Contract {want} strike {strike:g} expiry {expiry}, "
+                f"premium ${flag.get('premium', 0):,.0f} at Vol/OI {flag.get('volOi')}. "
+                f"Direction {direction}.")
+        content = RawContent(id=new_id(), source_type="flow", source_name="flow-scan",
+                             subject=f"{sym} flow read {read['day']}", body_text=text,
+                             meta={"flowDay": read["day"], "flowScore": read["score"]})
+        async with self.engine.sf() as session:
+            session.add(content)
+            await session.commit()
+        extraction = ExtractionResult(signals=[TradeSignal(
+            ticker=sym, direction=direction, action="open",
+            instrument=want, strike=strike, expiry=expiry or None,
+            timeframe="swing",
+            thesis_summary=f"Options flow: {reason}",
+            evidence_quotes=[f"{sym} {lean}", f"{want} strike {strike:g} expiry {expiry}",
+                             f"Direction {direction}"],
+            confidence="implied", is_actionable=True)], source_type="trade_alert")
+        out = await svc.handle_extraction(content, extraction, source_text=text)
+        result = out[0] if out else {}
+        await self.engine.journal.append(
+            ev.FLOW_CONTEXT_SERVED,
+            {"symbol": sym, "day": read["day"], "score": read["score"], "lean": lean,
+             "line": f"sent to Tips as a {want} tip", "consumer": "tip",
+             "refId": (result.get("signal") or {}).get("id")},
+            aggregate_type="flow_context", aggregate_id=sym)
+        return {**result, "spot": spot}
+
     async def universe_layer(self) -> list[str]:
         """Symbols the scanner is actively tracking: score >= the threshold on
         >= 2 of the last 3 scan days. They join the working universe with
