@@ -83,6 +83,7 @@ export const api = {
   flowBrief: (day?: string) =>
     request<import("../types").FlowBrief>("GET", `/api/flow/brief${day ? `?day=${day}` : ""}`),
   flowScan: () => request<any>("POST", "/api/flow/scan", {}),
+  flowToTip: (symbol: string) => request<any>("POST", `/api/flow/${symbol}/tip`, {}),
   getBrokerages: () => request<import("../types").Brokerages>("GET", "/api/brokerages"),
   orderImpact: (body: { portfolio_id: string; symbol: string; side: string; qty: number;
     order_type?: string; limit_price?: number | null }) =>

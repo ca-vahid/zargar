@@ -51,3 +51,14 @@ def build_flow_routes(app, eng, auth, config) -> None:
     @app.get("/api/flow/status", dependencies=[auth])
     async def flow_status():
         return {"lastScan": _svc(eng).last_scan}
+
+    @app.post("/api/flow/{symbol}/tip", dependencies=[auth])
+    async def flow_to_tip(symbol: str):
+        """The read looked worth acting on: make it a TIP (source 'flow-scan')
+        so the tip pipeline judges, books and arms it like any other tip."""
+        try:
+            return await _svc(eng).to_tip(symbol)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))

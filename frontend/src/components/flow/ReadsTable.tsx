@@ -32,10 +32,11 @@ export function ScoreCell({ score, lean }: { score: number; lean: string }) {
   );
 }
 
-export function ReadsTable({ reads, selected, onSelect, quotes }: {
+export function ReadsTable({ reads, selected, onSelect, onStory, quotes }: {
   reads: FlowReadItem[];
   selected: string | null;
   onSelect: (sym: string) => void;
+  onStory: (sym: string) => void;
   quotes: Record<string, number | undefined>;
 }) {
   const [showQuiet, setShowQuiet] = useState(false);
@@ -52,12 +53,18 @@ export function ReadsTable({ reads, selected, onSelect, quotes }: {
       <div className="panel-head">
         Reads <span className="sub">{flagged.length} flagged · ranked by score</span>
       </div>
+      <div className="flow-legend">
+        <b>Strong</b> = urgent size (Vol/OI ≥ 5) · <b>OI ✓</b> = yesterday's buying became real open
+        positions overnight · <b>Rpt n/5</b> = the same contract bought n of the last 5 sessions — the
+        strongest signal here. Flow suggests <i>where to look</i>, never what to buy: pick a row, read
+        <b> What now</b>, drill into the <b>story</b>, and <b>Send to Tips</b> when you judge it tradeable.
+      </div>
       <div className="scroll-x flow-table-scroll">
         <table className="tbl">
           <thead>
             <tr>
               <th>Sym</th><th className="num">Last</th><th className="num">Score</th><th>Lean</th>
-              <th>Top contract</th><th className="num">Premium</th><th className="num">Vol/OI</th><th>Evidence</th>
+              <th>Top contract</th><th className="num">Premium</th><th className="num">Vol/OI</th><th>Evidence</th><th></th>
             </tr>
           </thead>
           <tbody>
@@ -75,11 +82,17 @@ export function ReadsTable({ reads, selected, onSelect, quotes }: {
                   <td className="num">{f ? fmtPrem(f.premium) : "—"}</td>
                   <td className="num">{f ? f.volOi.toFixed(1) : "—"}</td>
                   <td><EvidenceBadges r={r} /></td>
+                  <td>
+                    <button className="link-btn" title="Drill down: how this read was built, day by day"
+                      onClick={(e) => { e.stopPropagation(); onSelect(r.symbol); onStory(r.symbol); }}>
+                      story ›
+                    </button>
+                  </td>
                 </tr>
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={8} className="empty">Nothing flagged this day — the scan found only routine activity.</td></tr>
+              <tr><td colSpan={9} className="empty">Nothing flagged this day — the scan found only routine activity.</td></tr>
             )}
           </tbody>
         </table>

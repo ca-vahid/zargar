@@ -129,6 +129,38 @@ async def test_brief_sections(flow_rig):
     assert brief2["day"] == DAYS[1] and brief2["prevDay"] == DAYS[0]
 
 
+async def test_flow_read_becomes_a_tip(flow_rig):
+    """'Send to Tips': the latest read enters the normal tip pipeline under the
+    source 'flow-scan' — grounded, deduped, both books, armable like any tip."""
+    from zargar.signals.service import attach_signal_layer
+
+    from .conftest import wait_for
+
+    eng = flow_rig
+    await attach_signal_layer(eng)
+    await eng.ensure_symbol("COIN")
+    await wait_for(lambda: eng.quotes.get("COIN") is not None)
+
+    out = await eng.flow_service.to_tip("COIN")     # bull; top call flag: 300C 2026-09-12, dte 8
+    sig = out["signal"]
+    assert sig["sourceName"] == "flow-scan"
+    assert sig["direction"] == "long" and sig["instrument"] == "call"
+    assert sig["strike"] == 300.0 and sig["expiry"] == "2026-09-12"
+    assert sig["status"] in ("verified", "parked"), sig["verification"]
+    # the delivery is journaled into the symbol's story
+    story = await eng.flow_service.story("COIN")
+    assert any(d["consumer"] == "tip" and d["refId"] == sig["id"] for d in story["deliveries"])
+    # sending it again dedupes (a repeat mention, not a second tip)
+    out2 = await eng.flow_service.to_tip("COIN")
+    assert out2.get("duplicateOf") == sig["id"]
+    # TSLA's latest flagged put expires in 1 day -> refused as expiry noise
+    with pytest.raises(ValueError, match="expire within a day"):
+        await eng.flow_service.to_tip("TSLA")
+    # quiet symbols have nothing to send
+    with pytest.raises(ValueError, match="no flagged"):
+        await eng.flow_service.to_tip("KO")
+
+
 async def test_universe_flow_layer(flow_rig):
     """score >= 5 on 2 of the last 3 scan days joins the universe as 'flow'."""
     eng = flow_rig
