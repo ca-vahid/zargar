@@ -47,7 +47,13 @@ strict grammar and their own timestamps.*
    toasts proved flaky. Token in `ZARGAR_DISCORD_TOKEN` (never committed; the
    `discord_dms.jsonl` capture is gitignored — it holds DM contents). Modes:
    `--dump` (log only), `--ingest`, `--from-bots-only`, `--author-id`,
-   `--channel-id`.
+   `--channel-id`. **Token auto-grab** (`zargar/tools/discord_token.py`): the
+   desktop app stores your token in leveldb, AES-GCM-encrypted under a DPAPI
+   key bound to your Windows user; the tool decrypts it the way Discord does
+   (ctypes `CryptUnprotectData` + `cryptography` AESGCM — no new deps), so the
+   gateway auto-grabs it and you never touch DevTools. Works only as the same
+   Windows user (DPAPI feature). Output is account-access-equivalent — never
+   shared/committed.
 
 1. **[BUILT 2026-08-28] Windows notification listener** —
    `zargar/tools/discord_watch.py`. WinRT `UserNotificationListener` (pywinrt

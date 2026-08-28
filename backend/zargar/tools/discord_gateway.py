@@ -233,9 +233,19 @@ def main() -> None:
                    help="ingest only DMs authored by a bot (alert relays)")
     p.add_argument("--author-id", default="", help="only this author id")
     p.add_argument("--channel-id", default="", help="only this channel id (opts into a channel, not just DMs)")
+    p.add_argument("--no-auto-token", action="store_true",
+                   help="do NOT auto-grab the token from the local Discord app")
     a = p.parse_args()
+    if not a.token and not a.no_auto_token:
+        try:
+            from .discord_token import grab_token
+            a.token = grab_token()
+            print("[gateway] token auto-grabbed from the local Discord app")
+        except Exception as exc:
+            print(f"[gateway] could not auto-grab token ({exc})")
     if not a.token:
-        print("ZARGAR_DISCORD_TOKEN not set (your Discord user token). Aborting.")
+        print("No token: set ZARGAR_DISCORD_TOKEN, or let it auto-grab from the "
+              "local Discord app (drop --no-auto-token).")
         sys.exit(2)
     gw = Gateway(a.token, a.api, a.session, Path(a.log),
                  ingest=a.ingest and not a.dump, dump=a.dump,

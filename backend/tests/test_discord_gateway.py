@@ -45,3 +45,32 @@ def test_identify_is_user_shaped():
     assert "intents" not in ident["d"]
     assert ident["d"]["properties"]["os"] == "Windows"
     assert ident["d"]["compress"] is False
+
+
+def test_token_decrypt_roundtrip():
+    # the leveldb value shape: base64('v10' + 12-byte nonce + AES-GCM(token)).
+    # Round-trip it with a known key so the parse+decrypt path is locked
+    # without a real Discord install (the DPAPI half is Windows/user-bound).
+    import base64
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    from zargar.tools.discord_token import _decrypt_token
+
+    key = AESGCM.generate_key(bit_length=256)
+    nonce = os.urandom(12)
+    token = "Mzg0.abc.def-user-token"
+    ct = AESGCM(key).encrypt(nonce, token.encode(), None)
+    blob = base64.b64encode(b"v10" + nonce + ct)
+    assert _decrypt_token(blob, key) == token
+    # wrong key / non-v10 payload → None, never a crash
+    assert _decrypt_token(blob, AESGCM.generate_key(bit_length=256)) is None
+    assert _decrypt_token(base64.b64encode(b"junk"), key) is None
+
+
+def test_token_marker_regex():
+    from zargar.tools.discord_token import TOKEN_RE
+    raw = b'somekey"dQw4w9WgXcQ:QUJDREVG"otherkey"dQw4w9WgXcQ:XYZ123"'
+    matches = [m.group(1) for m in TOKEN_RE.finditer(raw)]
+    assert matches == [b"QUJDREVG", b"XYZ123"]
