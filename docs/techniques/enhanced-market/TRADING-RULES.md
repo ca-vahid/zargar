@@ -152,6 +152,17 @@ a number** (p. 72).
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-08-27 · Day 3 (first clean day: fixed tracker, hooks, both directions): 0 live
+  fires, and the replay says that was nearly right.** Whole-universe replay (sweep
+  `830ecaa4`, 141 symbols): 3 valid fires, net +1.71R — CVNA r2 (a put) +2.5R to TP2,
+  HYG b1 +0.21R, BSX b2 −1.0R. None of the three were in the armed 26: the day's only
+  meaningful trade (CVNA) was dropped at the ANALYST/selection layer, not by the gates —
+  a concrete case for 1.3. The armed set's own replay fired nothing: the afternoon's
+  deterministic refusals (MSTR/LITE/SMTC on volume + candle) were all correct and cost
+  ZERO critic calls (vs ~20 paid refusals the day before — the graduation principle,
+  measured). +68 valid gap-void samples accumulated for 1.1. Clock-driven 16:00 close
+  scored and expired all 26 plans on its first live run.
+
 - **2026-08-27 · A trigger's level can die intraday — track it or fire zombies.** The
   pre-open re-planner (new) builds levels near pre-market price; when the open then
   walks THROUGH a bounce level and its stop, nothing killed the trigger: a long bounce

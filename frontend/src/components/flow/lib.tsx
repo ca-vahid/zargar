@@ -29,6 +29,30 @@ export function leanColor(lean: string): string {
     : lean === "mixed" ? "var(--warn)" : "var(--text-3)";
 }
 
+/** Which side an OCC contract is — the C/P letter, not a field lookup, so it
+    works on bare contract strings (brief rows, repeat keys). */
+export function occSide(contract: string): "call" | "put" | null {
+  const m = /\d{6}([CP])\d{8}$/.exec(contract || "");
+  return m ? (m[1] === "C" ? "call" : "put") : null;
+}
+
+export function occColor(contract: string): string | undefined {
+  const side = occSide(contract);
+  return side === "call" ? "var(--up)" : side === "put" ? "var(--down)" : undefined;
+}
+
+/** A contract rendered so calls and puts differ at a glance: green calls,
+    red puts, mono, full OCC + side on hover. */
+export function Occ({ contract, className }: { contract: string; className?: string }) {
+  const side = occSide(contract);
+  return (
+    <span className={className} title={side ? `${contract} — ${side}` : contract}
+      style={{ fontFamily: "var(--mono)", color: occColor(contract), fontWeight: 600 }}>
+      {fmtOcc(contract)}
+    </span>
+  );
+}
+
 export function topFlag(r: FlowReadItem): FlowFlag | null {
   return (r.flags && r.flags.length) ? r.flags[0] : null;
 }
