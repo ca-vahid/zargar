@@ -3,7 +3,7 @@
 // auto-moves (the Armed page's anti-jump rules).
 import { useMemo, useState } from "react";
 import type { FlowReadItem } from "../../types";
-import { fmtOcc, fmtPrem, leanColor, leanPill, maxRepeat, topFlag } from "./lib";
+import { Occ, fmtPrem, leanColor, leanPill, maxRepeat, topFlag } from "./lib";
 
 const MAX_SCORE = 10;
 
@@ -54,6 +54,7 @@ export function ReadsTable({ reads, selected, onSelect, onStory, quotes }: {
         Reads <span className="sub">{flagged.length} flagged · ranked by score</span>
       </div>
       <div className="flow-legend">
+        <b style={{ color: "var(--up)" }}>Calls green</b> · <b style={{ color: "var(--down)" }}>puts red</b> ·{" "}
         <b>Strong</b> = urgent size (Vol/OI ≥ 5) · <b>OI ✓</b> = yesterday's buying became real open
         positions overnight · <b>Rpt n/5</b> = the same contract bought n of the last 5 sessions — the
         strongest signal here. Flow suggests <i>where to look</i>, never what to buy: pick a row, read
@@ -78,7 +79,7 @@ export function ReadsTable({ reads, selected, onSelect, onStory, quotes }: {
                   <td className="num">{last != null ? last.toFixed(2) : "—"}</td>
                   <td className="num"><ScoreCell score={r.score} lean={r.lean} /></td>
                   <td><span className={`status-pill ${leanPill(r.lean)}`}>{r.lean}</span></td>
-                  <td className="num" style={{ textAlign: "left", fontFamily: "var(--mono)" }}>{f ? fmtOcc(f.contract) : "—"}</td>
+                  <td className="num" style={{ textAlign: "left" }}>{f ? <Occ contract={f.contract} /> : "—"}</td>
                   <td className="num">{f ? fmtPrem(f.premium) : "—"}</td>
                   <td className="num">{f ? f.volOi.toFixed(1) : "—"}</td>
                   <td><EvidenceBadges r={r} /></td>
