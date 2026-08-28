@@ -334,7 +334,7 @@ class SignalService:
             flow = getattr(eng, "flow_service", None)
             if flow is not None:
                 try:
-                    line = await flow.context_for(row.ticker)
+                    line = await flow.context_for(row.ticker, consumer="tip", ref_id=row.id)
                     if line:
                         verification["flowContext"] = line
                 except Exception:  # pragma: no cover - context is best-effort

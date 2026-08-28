@@ -274,6 +274,7 @@ function TipResultCard({ item }: { item: any }) {
         {contract && <span className="status-pill dim">{contract}</span>}
         <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
         {vehicleChip(s)}
+        <FlowChip sym={s.ticker} />
         <span style={{ flex: 1 }} />
         <ArmButton s={s} />
       </div>
@@ -401,6 +402,7 @@ function TipsTab() {
                       {contract && <span className="muted"> {contract}</span>}
                       <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
                       {(s.seenCount ?? 1) > 1 && <span className="status-pill dim">×{s.seenCount}</span>}
+                      <FlowChip sym={s.ticker} />
                     </span>
                     <span className="bl-card-sub">entry {s.entryPrice ? fmtMoney(s.entryPrice) : "—"} · target {s.targetPrice ? fmtMoney(s.targetPrice) : "—"} · stop {s.stopPrice ? fmtMoney(s.stopPrice) : "—"} · {s.confidence.replace("_", " ")}</span>
                     {s.thesisSummary && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.thesisSummary}</span>}
@@ -440,7 +442,7 @@ function TipsTab() {
                 <tr key={s.id}
                   title={[s.thesisSummary, s.verification?.flowContext,
                     s.verification?.calendarContext].filter(Boolean).join("\n")}>
-                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>}</td>
+                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>} <FlowChip sym={s.ticker} /></td>
                   <td className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</td>
                   <td className="muted">{contractLabel(s) ?? "—"}</td>
                   <td>{vehicleChip(s) ?? <span className="muted">—</span>}</td>
@@ -550,6 +552,42 @@ function SourcesTab() {
 }
 
 /* ---------------------------------------------------------------- inbox */
+
+// the latest scan's per-symbol flow reads, fetched once per page load
+type FlowMap = Record<string, { score: number; lean: string }>;
+let _flowCache: FlowMap | null = null;
+let _flowFetch: Promise<FlowMap> | null = null;
+
+export function useFlowMap(): FlowMap {
+  const [flow, setFlow] = useState<FlowMap>(_flowCache ?? {});
+  useEffect(() => {
+    if (_flowCache) return;
+    _flowFetch ??= api.flowDays(1)
+      .then((d) => (d.length ? api.flowReads(d[0].day) : Promise.resolve([])))
+      .then((reads) => (_flowCache = Object.fromEntries(
+        reads.filter((r) => r.score > 0).map((r) => [r.symbol, { score: r.score, lean: r.lean }]))));
+    _flowFetch.then((m) => setFlow(m ?? {})).catch(() => undefined);
+  }, []);
+  return flow;
+}
+
+/** "flow 7" chip when the options tape has something to say about a ticker —
+    clicking opens the symbol's Flow story. */
+export function FlowChip({ sym }: { sym: string }) {
+  const setPage = useStore((s) => s.setPage);
+  const setFlowFocus = useStore((s) => s.setFlowFocus);
+  const flow = useFlowMap();
+  const f = flow[sym];
+  if (!f) return null;
+  const cls = f.lean === "bull" ? "ok" : f.lean === "bear" ? "bad" : "wait";
+  return (
+    <button className={`status-pill ${cls}`} style={{ cursor: "pointer", border: "none" }}
+      title={`options flow: ${f.lean}, score ${f.score} — open the story`}
+      onClick={(e) => { e.stopPropagation(); setFlowFocus(sym); setPage("flow"); }}>
+      flow {f.score}
+    </button>
+  );
+}
 
 function InboxTab() {
   const signalCount = useStore((s) => s.signals.length);

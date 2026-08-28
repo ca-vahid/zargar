@@ -24,6 +24,18 @@ def build_flow_routes(app, eng, auth, config) -> None:
         line = await _svc(eng).context_for(symbol)
         return {"symbol": symbol.upper(), "context": line}
 
+    @app.get("/api/flow/days", dependencies=[auth])
+    async def flow_days(limit: int = 10):
+        return await _svc(eng).days(limit=min(30, max(1, limit)))
+
+    @app.get("/api/flow/symbol/{symbol}", dependencies=[auth])
+    async def flow_symbol(symbol: str, days: int = 6):
+        return await _svc(eng).story(symbol, days=min(20, max(1, days)))
+
+    @app.get("/api/flow/brief", dependencies=[auth])
+    async def flow_brief(day: str | None = None):
+        return await _svc(eng).brief(day=day)
+
     class ScanBody(BaseModel):
         day: str | None = None
         symbols: list[str] | None = None

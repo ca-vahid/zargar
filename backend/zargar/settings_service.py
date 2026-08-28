@@ -111,6 +111,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.flow.os_ratio_flag": 0.5,    # options volume / stock volume (bearish flag)
     "techniques.flow.scan_top": 60,          # universe cap per nightly scan
     "techniques.flow.scan_at": "16:45",      # ET, on engine.scheduler — after chain_snapshots (16:30)
+    "techniques.flow.universe_score_min": 5, # score >= this on 2 of 3 days joins the working universe (provenance "flow")
     # --- integrations ----------------------------------------------------------
     "telegram.enabled": False,
     "snaptrade.enabled": False,

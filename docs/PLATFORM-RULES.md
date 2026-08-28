@@ -130,6 +130,15 @@ runtime ones to `execution.*`).
   against known sources; explicit names never overridden) and the Tips page was rebuilt
   (tabs, hero composer, sidebar's duplicate "Signals" entry removed — Techniques ▸ Tips is
   the one home).
+- 2026-08-27 · **Flow UI shipped + context deliveries journaled** (techniques team,
+  docs/techniques/flow/UI-PLAN.md): new event kind `FlowContextServed` (aggregate_id = the
+  symbol) — every context line served to a consumer (tip verification, EM analyze) is journaled
+  with the refId, which is what the Symbol Story's "where this read went" panel reads. EM's
+  `analyze()` now receives the flow line as an informational note (recorded in run provenance as
+  `config.flowContext`, never a rule). Universe gains a **flow layer** (provenance "flow":
+  score ≥ `techniques.flow.universe_score_min` on 2 of the last 3 scan days). Reads persist the
+  scan-time `spot`. First real-scan calibration findings recorded in UI-PLAN §3a (default
+  thresholds flag 42/56 symbols, mostly 1-DTE noise — tune before trusting scores).
 - 2026-08-27 · **`ArmConfig.premium_budget`** (techniques team, for Tip Phase B): per-plan $
   cap on options premium, applied in `_size_contracts` after risk sizing (floors at 1 contract
   with a warning when a single premium exceeds the budget; RiskGate premium caps backstop;

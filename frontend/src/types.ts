@@ -226,6 +226,84 @@ export interface SourceScorecard {
     dte_min: number; dte_max: number; horizon_sessions: number };
 }
 
+// --- Flow technique (docs/techniques/flow/UI-PLAN.md) ---
+export interface FlowFlag {
+  contract: string;            // unpadded OCC
+  expiry: string | null;
+  optionType: string;          // call | put
+  strike: number;
+  volume: number;
+  openInterest: number;
+  volOi: number;
+  mid: number | null;
+  premium: number;
+  otmPct: number;
+  dte: number;
+  strong: boolean;
+  iv?: number | null;
+  oiDelta?: number;            // on confirmed entries
+  oiConfirmed?: boolean;
+}
+
+export interface FlowReadItem {
+  id: string;
+  day: string;
+  symbol: string;
+  score: number;
+  lean: string;                // bull | bear | mixed | none
+  spot?: number | null;        // underlying at scan time (fallback when no live quote)
+  flags: FlowFlag[];
+  confirmed: FlowFlag[];
+  repeatHits: Record<string, number>;
+  reasons: string[];
+  aggregates: { callVolume?: number; putVolume?: number; totalVolume?: number;
+    pcVolumeRatio?: number | null; callPremium?: number; putPremium?: number;
+    osRatio?: number | null };
+  createdAt: string | null;
+}
+
+export interface FlowDaySummary {
+  day: string;
+  scanned: number;
+  flagged: number;
+  callPremium: number;
+  putPremium: number;
+  confirmed: number;
+  churn: number;
+  repeatStreaks: { symbol: string; contract: string; days: number }[];
+}
+
+export interface FlowDelivery {
+  consumer: string;            // tip | em
+  refId: string | null;
+  day: string;
+  score: number;
+  line: string;
+  ts: string | null;
+}
+
+export interface FlowStory {
+  symbol: string;
+  reads: FlowReadItem[];       // oldest -> newest
+  deliveries: FlowDelivery[];
+  universe: { inUniverse: boolean; provenance: string | null };
+}
+
+export interface FlowBrief {
+  day: string;
+  prevDay: string | null;
+  empty: boolean;
+  summary?: FlowDaySummary;
+  sections: {
+    confirmedOvernight: { symbol: string; contract: string; oiDelta: number; volume: number; score: number }[];
+    churn: { symbol: string; contract: string; premium: number }[];
+    accumulation: { symbol: string; contract: string; days: number; dte: number | null; premium: number | null }[];
+    newToday: { symbol: string; contract: string; premium: number; volOi: number; lean: string; strong: boolean }[];
+    dying: { symbol: string | null; contract: string; dte: number | null; reason: string }[];
+    contextLines: { symbol: string; line: string }[];
+  };
+}
+
 export interface RawContentItem {
   id: string;
   sourceType: string;

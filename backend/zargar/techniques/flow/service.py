@@ -15,6 +15,7 @@ no positions: Flow v1 is context.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import logging
 
@@ -162,7 +163,7 @@ class FlowService:
         stock_volume = getattr(quote, "day_volume", None) or getattr(quote, "volume", None)
         agg = aggregate_symbol(rows, stock_volume=int(stock_volume) if stock_volume else None)
         return build_read(sym, day, flags=flags, confirmed=confirmed, repeats=repeats,
-                          agg=agg, t=t)
+                          agg=agg, t=t, spot=spot or None)
 
     # ------------------------------------------------------------------ persistence
     async def _persist_read(self, read: dict) -> None:
@@ -212,8 +213,13 @@ class FlowService:
             rows = (await session.execute(q.limit(limit))).scalars().all()
         return [_read_dict(r) for r in rows]
 
-    async def context_for(self, symbol: str, *, max_age_days: int = 3) -> str | None:
-        """The plain-language flow context line for another technique, or None."""
+    async def context_for(self, symbol: str, *, max_age_days: int = 3,
+                          consumer: str | None = None, ref_id: str | None = None) -> str | None:
+        """The plain-language flow context line for another technique, or None.
+
+        When `consumer` is given (tip / em), the delivery is JOURNALED
+        (`FlowContextServed`, aggregate_id = the symbol) — this is what makes
+        the Symbol Story's "where this read went" panel real (UI-PLAN F1)."""
         async with self.engine.sf() as session:
             row = (await session.execute(
                 select(FlowReadRow).where(FlowReadRow.symbol == symbol.upper())
@@ -226,7 +232,166 @@ class FlowService:
             return None
         if age > max_age_days:
             return None
-        return context_line(_read_dict(row))
+        line = context_line(_read_dict(row))
+        if line and consumer:
+            await self.engine.journal.append(
+                ev.FLOW_CONTEXT_SERVED,
+                {"symbol": row.symbol, "day": row.day, "score": row.score, "lean": row.lean,
+                 "line": line, "consumer": consumer, "refId": ref_id},
+                aggregate_type="flow_context", aggregate_id=row.symbol)
+        return line
+
+    # ------------------------------------------------------------------ UI queries (UI-PLAN F1)
+    async def days(self, limit: int = 10) -> list[dict]:
+        """Trailing scan days with per-day aggregates for the day picker + strip."""
+        async with self.engine.sf() as session:
+            day_rows = (await session.execute(
+                select(FlowReadRow.day).distinct().order_by(FlowReadRow.day.desc())
+                .limit(limit + 1))).scalars().all()
+        out: list[dict] = []
+        for i, day in enumerate(day_rows[:limit]):
+            prev_day = day_rows[i + 1] if i + 1 < len(day_rows) else None
+            reads = await self.reads(day=day, limit=500)
+            prev = await self.reads(day=prev_day, limit=500) if prev_day else []
+            out.append(self._day_summary(day, reads, prev))
+        return out
+
+    def _day_summary(self, day: str, reads: list[dict], prev: list[dict]) -> dict:
+        call_prem = put_prem = 0.0
+        confirmed = 0
+        streaks: list[dict] = []
+        for r in reads:
+            for f in r.get("flags") or []:
+                if f.get("optionType") == "put":
+                    put_prem += float(f.get("premium") or 0)
+                else:
+                    call_prem += float(f.get("premium") or 0)
+            confirmed += len(r.get("confirmed") or [])
+            for contract, n in (r.get("repeatHits") or {}).items():
+                streaks.append({"symbol": r["symbol"], "contract": contract, "days": int(n)})
+        prev_flagged = {f.get("contract") for r in prev for f in (r.get("flags") or [])}
+        confirmed_contracts = {c.get("contract") for r in reads for c in (r.get("confirmed") or [])}
+        churn = len([c for c in prev_flagged if c and c not in confirmed_contracts])
+        streaks.sort(key=lambda s: -s["days"])
+        return {"day": day, "scanned": len(reads),
+                "flagged": len([r for r in reads if (r.get("score") or 0) > 0]),
+                "callPremium": round(call_prem, 0), "putPremium": round(put_prem, 0),
+                "confirmed": confirmed, "churn": churn, "repeatStreaks": streaks[:6]}
+
+    async def story(self, symbol: str, *, days: int = 6) -> dict:
+        """One symbol's flow story: reads oldest-to-newest, every journaled
+        context delivery, and whether the universe currently holds it."""
+        sym = symbol.upper()
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(FlowReadRow).where(FlowReadRow.symbol == sym)
+                .order_by(FlowReadRow.day.desc()).limit(days))).scalars().all()
+        reads = [_read_dict(r) for r in reversed(rows)]
+        from ...models import Event
+        async with self.engine.sf() as session:
+            evrows = (await session.execute(
+                select(Event).where(Event.type == ev.FLOW_CONTEXT_SERVED,
+                                    Event.aggregate_id == sym)
+                .order_by(Event.ts.desc()).limit(20))).scalars().all()
+        deliveries = [{"consumer": (e.payload or {}).get("consumer"),
+                       "refId": (e.payload or {}).get("refId"),
+                       "day": (e.payload or {}).get("day"),
+                       "score": (e.payload or {}).get("score"),
+                       "line": (e.payload or {}).get("line"),
+                       "ts": e.ts.isoformat() if e.ts else None} for e in evrows]
+        universe = {"inUniverse": False, "provenance": None}
+        svc = getattr(self.engine, "technique", None)
+        if svc is not None:
+            with contextlib.suppress(Exception):
+                cached = svc.universe_cached() or {}
+                prov = (cached.get("provenance") or {}).get(sym)
+                universe = {"inUniverse": prov is not None, "provenance": prov}
+        return {"symbol": sym, "reads": reads, "deliveries": deliveries, "universe": universe}
+
+    async def universe_layer(self) -> list[str]:
+        """Symbols the scanner is actively tracking: score >= the threshold on
+        >= 2 of the last 3 scan days. They join the working universe with
+        provenance "flow" and drop out when the chain goes quiet (UI-PLAN F5)."""
+        floor = float(self.engine.settings.get("techniques.flow.universe_score_min", 5))
+        async with self.engine.sf() as session:
+            day_rows = (await session.execute(
+                select(FlowReadRow.day).distinct().order_by(FlowReadRow.day.desc())
+                .limit(3))).scalars().all()
+            if not day_rows:
+                return []
+            rows = (await session.execute(
+                select(FlowReadRow.symbol, FlowReadRow.day, FlowReadRow.score)
+                .where(FlowReadRow.day.in_(day_rows), FlowReadRow.score >= floor))).all()
+        hits: dict[str, set[str]] = {}
+        for sym, d, _score in rows:
+            hits.setdefault(sym, set()).add(d)
+        return sorted(s for s, ds in hits.items() if len(ds) >= 2)
+
+    async def brief(self, day: str | None = None) -> dict:
+        """The Morning Brief, composed server-side (UI-PLAN F4 reads this)."""
+        async with self.engine.sf() as session:
+            day_rows = (await session.execute(
+                select(FlowReadRow.day).distinct().order_by(FlowReadRow.day.desc())
+                .limit(8))).scalars().all()
+        if not day_rows:
+            return {"day": day, "sections": {}, "empty": True}
+        if day is None or day not in day_rows:
+            day = day if day in day_rows else day_rows[0]
+        idx = day_rows.index(day)
+        prev_day = day_rows[idx + 1] if idx + 1 < len(day_rows) else None
+        reads = await self.reads(day=day, limit=500)
+        prev = await self.reads(day=prev_day, limit=500) if prev_day else []
+        flagged = [r for r in reads if (r.get("score") or 0) > 0]
+        flagged.sort(key=lambda r: -(r.get("score") or 0))
+
+        confirmed_rows: list[dict] = []
+        confirmed_contracts: set[str] = set()
+        for r in flagged:
+            for c in (r.get("confirmed") or []):
+                confirmed_contracts.add(str(c.get("contract")))
+                confirmed_rows.append({"symbol": r["symbol"], "contract": c.get("contract"),
+                                       "expiry": c.get("expiry"), "optionType": c.get("optionType"),
+                                       "strike": c.get("strike"), "oiDelta": c.get("oiDelta"),
+                                       "volume": c.get("volume"), "score": r.get("score")})
+        churn_rows = []
+        for r in prev:
+            for f in (r.get("flags") or []):
+                if str(f.get("contract")) not in confirmed_contracts:
+                    churn_rows.append({"symbol": r["symbol"], "contract": f.get("contract"),
+                                       "premium": f.get("premium")})
+        prev_contracts = {str(f.get("contract"))
+                         for r in prev for f in (r.get("flags") or [])}
+        prev_hot = {str(c) for r in prev for c in (r.get("repeatHits") or {})}
+
+        accumulation = []
+        new_today = []
+        dying = []
+        for r in flagged:
+            for contract, n in (r.get("repeatHits") or {}).items():
+                flag = next((f for f in (r.get("flags") or []) if f.get("contract") == contract), {})
+                accumulation.append({"symbol": r["symbol"], "contract": contract, "days": int(n),
+                                     "dte": flag.get("dte"), "premium": flag.get("premium")})
+            for f in (r.get("flags") or []):
+                if str(f.get("contract")) not in prev_contracts:
+                    new_today.append({"symbol": r["symbol"], "contract": f.get("contract"),
+                                      "premium": f.get("premium"), "volOi": f.get("volOi"),
+                                      "lean": r.get("lean"), "strong": f.get("strong")})
+                if (f.get("dte") or 99) <= 1:
+                    dying.append({"symbol": r["symbol"], "contract": f.get("contract"),
+                                  "dte": f.get("dte"), "reason": "expires tomorrow — the OI verdict never arrives"})
+        today_hot = {str(c) for r in flagged for c in (r.get("repeatHits") or {})}
+        for c in prev_hot - today_hot:
+            sym = next((r["symbol"] for r in prev if c in (r.get("repeatHits") or {})), None)
+            dying.append({"symbol": sym, "contract": c, "dte": None, "reason": "repeat streak broke"})
+
+        context_lines = [{"symbol": r["symbol"], "line": context_line(r)}
+                         for r in flagged if (r.get("score") or 0) >= 3 and context_line(r)]
+        summary = self._day_summary(day, reads, prev)
+        return {"day": day, "prevDay": prev_day, "summary": summary, "empty": False,
+                "sections": {"confirmedOvernight": confirmed_rows[:8], "churn": churn_rows[:6],
+                             "accumulation": sorted(accumulation, key=lambda a: -a["days"])[:6],
+                             "newToday": sorted(new_today, key=lambda n: -(n.get("premium") or 0))[:8],
+                             "dying": dying[:6], "contextLines": context_lines[:6]}}
 
 
 def attach_flow_layer(engine) -> None:

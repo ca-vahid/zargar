@@ -73,6 +73,16 @@ export const api = {
   sourceNames: () => request<string[]>("GET", "/api/signals/source-names"),
   armTipSignal: (sid: string, body?: { portfolioId?: string; mode?: string }) =>
     request<any>("POST", `/api/signals/${sid}/arm`, body ?? {}),
+  // --- flow technique ---
+  flowDays: (limit = 10) =>
+    request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),
+  flowReads: (day?: string) =>
+    request<import("../types").FlowReadItem[]>("GET", `/api/flow/reads${day ? `?day=${day}` : ""}`),
+  flowSymbol: (symbol: string, days = 6) =>
+    request<import("../types").FlowStory>("GET", `/api/flow/symbol/${symbol}?days=${days}`),
+  flowBrief: (day?: string) =>
+    request<import("../types").FlowBrief>("GET", `/api/flow/brief${day ? `?day=${day}` : ""}`),
+  flowScan: () => request<any>("POST", "/api/flow/scan", {}),
   getBrokerages: () => request<import("../types").Brokerages>("GET", "/api/brokerages"),
   orderImpact: (body: { portfolio_id: string; symbol: string; side: string; qty: number;
     order_type?: string; limit_price?: number | null }) =>
