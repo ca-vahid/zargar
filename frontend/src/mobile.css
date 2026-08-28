@@ -604,6 +604,7 @@ button.bl-card:active { background: var(--surface-2); }
   .flow-detail-body { padding: var(--sp-2) 0; }
   .flow-daycols { flex-direction: column; }
   .flow-story-grid { flex-direction: column; }
+  .flow-story-main, .flow-story-side { width: 100%; }
   .flow-story-head .flow-detail-sym { font-size: var(--fs-4); }
   .flow-brief-duo { flex-direction: column; }
   .flow-brief-sym { width: 44px; }

@@ -6,7 +6,7 @@ import { DayStrip } from "../components/flow/DayStrip";
 import { EvidenceBadges, ReadsTable, ScoreCell } from "../components/flow/ReadsTable";
 import { ReadDetail } from "../components/flow/ReadDetail";
 import { SymbolStory } from "../components/flow/SymbolStory";
-import { fmtOcc, fmtPrem, topFlag } from "../components/flow/lib";
+import { Occ, fmtPrem, topFlag } from "../components/flow/lib";
 import { Sheet } from "../components/Sheet";
 import { EmptyState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
@@ -166,7 +166,7 @@ export function FlowPage() {
                   <span className="bl-card-l">
                     <span className="bl-card-sym">{r.symbol} <ScoreCell score={r.score} lean={r.lean} /></span>
                     <span className="bl-card-sub">
-                      {f ? `${fmtOcc(f.contract)} · ${fmtPrem(f.premium)} · V/OI ${f.volOi.toFixed(1)}` : "no flags"}
+                      {f ? <><Occ contract={f.contract} /> · {fmtPrem(f.premium)} · V/OI {f.volOi.toFixed(1)}</> : "no flags"}
                     </span>
                     <span className="bl-card-sub"><EvidenceBadges r={r} compact /></span>
                   </span>
@@ -179,14 +179,14 @@ export function FlowPage() {
             <Sheet title={storyOpen ? `${selectedRead.symbol} — the story` : `${selectedRead.symbol} flow read`}
               onClose={() => { setSheetOpen(false); setStoryOpen(false); }} full>
               {storyOpen && story
-                ? <SymbolStory story={story} onBack={() => setStoryOpen(false)} />
+                ? <SymbolStory story={story} onBack={() => setStoryOpen(false)} last={lastOf(story.symbol)} />
                 : <ReadDetail read={selectedRead} story={story} last={lastOf(selectedRead.symbol)}
                     onStory={() => setStoryOpen(true)} />}
             </Sheet>
           )}
         </>
       ) : storyOpen && story ? (
-        <SymbolStory story={story} onBack={() => setStoryOpen(false)} />
+        <SymbolStory story={story} onBack={() => setStoryOpen(false)} last={lastOf(story.symbol)} />
       ) : (
         <>
           <DayStrip d={daySummary} />

@@ -2,7 +2,7 @@
 // server-side (GET /api/flow/brief). The UI only lays it out.
 import type { FlowBrief } from "../../types";
 import { EmptyState } from "../ui";
-import { fmtOcc, fmtPrem, leanPill } from "./lib";
+import { Occ, fmtPrem, leanPill } from "./lib";
 
 function Row({ children }: { children: React.ReactNode }) {
   return <div className="flow-brief-row">{children}</div>;
@@ -35,7 +35,7 @@ export function BriefTab({ brief, onScanNow, scanning }: {
         {s.confirmedOvernight.map((c) => (
           <Row key={`${c.symbol}-${c.contract}`}>
             <b className="flow-brief-sym">{c.symbol}</b>
-            <span className="flow-brief-contract">{fmtOcc(c.contract)}</span>
+            <Occ className="flow-brief-contract" contract={c.contract} />
             <span className="status-pill ok">OI +{(c.oiDelta ?? 0).toLocaleString()}</span>
             <span className="muted" style={{ flex: 1 }}>against {(c.volume ?? 0).toLocaleString()} traded</span>
             <span className="mono-num pos">score {c.score}</span>
@@ -44,7 +44,7 @@ export function BriefTab({ brief, onScanNow, scanning }: {
         {s.churn.map((c) => (
           <Row key={`churn-${c.symbol}-${c.contract}`}>
             <b className="flow-brief-sym">{c.symbol}</b>
-            <span className="flow-brief-contract">{fmtOcc(c.contract)}</span>
+            <Occ className="flow-brief-contract" contract={c.contract} />
             <span className="status-pill bad">OI flat</span>
             <span className="muted" style={{ flex: 1 }}>yesterday's {fmtPrem(c.premium)} was churn, not opening — flag dropped</span>
           </Row>
@@ -59,7 +59,7 @@ export function BriefTab({ brief, onScanNow, scanning }: {
         {s.accumulation.map((a) => (
           <Row key={`${a.symbol}-${a.contract}`}>
             <b className="flow-brief-sym">{a.symbol}</b>
-            <span className="flow-brief-contract">{fmtOcc(a.contract)}</span>
+            <Occ className="flow-brief-contract" contract={a.contract} />
             <span className="flow-dots">
               {[...Array(5)].map((_, i) => (
                 <span key={i} className="flow-dot" style={{ background: i >= 5 - a.days ? "var(--up)" : "var(--surface-3)" }} />
@@ -78,7 +78,7 @@ export function BriefTab({ brief, onScanNow, scanning }: {
           {s.newToday.map((n) => (
             <Row key={`${n.symbol}-${n.contract}`}>
               <b className="flow-brief-sym">{n.symbol}</b>
-              <span className="flow-brief-contract">{fmtOcc(n.contract)}</span>
+              <Occ className="flow-brief-contract" contract={n.contract} />
               <span className="muted" style={{ flex: 1 }}>{fmtPrem(n.premium)} at V/OI {n.volOi?.toFixed?.(1) ?? n.volOi}{n.strong ? " — aggressive" : ""}</span>
               <span className={`status-pill ${leanPill(n.lean)}`}>{n.lean}</span>
             </Row>
@@ -90,7 +90,7 @@ export function BriefTab({ brief, onScanNow, scanning }: {
           {s.dying.map((d, i) => (
             <Row key={i}>
               <b className="flow-brief-sym">{d.symbol ?? "—"}</b>
-              <span className="flow-brief-contract">{fmtOcc(d.contract)}</span>
+              <Occ className="flow-brief-contract" contract={d.contract} />
               <span className="muted" style={{ flex: 1 }}>{d.reason}</span>
               {d.dte != null && <span className="status-pill bad">{d.dte} DTE</span>}
             </Row>

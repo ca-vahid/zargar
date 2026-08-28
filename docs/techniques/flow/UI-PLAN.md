@@ -146,6 +146,25 @@ snapshots before trusting scores: `dte_min` (exclude ≤1 DTE from flags — the
 never arrives), a higher `premium_min`, and/or per-symbol flag caps. The scoring machinery
 is fine; the thresholds are book-naive.
 
+**Live-usability round 2 (2026-08-27, evening, after the user drove the deployed page):**
+the day-one experience was rebuilt around three complaints — "how do I drill down",
+"what am I looking at", "how do I arm". (1) Drill-down is now always visible: a
+"story ›" link on every table row plus "The story →" in the detail header. (2) The
+detail and the story both open with a plain-language **What now** verdict (four derived
+states: first-sighting / OI-confirmed / repeat+confirmed / expiry-noise) and the table
+legend decodes the badges. (3) **Send to Tips** (detail + story header): `FlowService.
+to_tip()` turns the latest read into a grounded tip under source `flow-scan` through the
+normal pipeline — both shadow books, dedupe→seen_count, armable; refuses MIXED leans and
+≤1-DTE noise. The Symbol Story got its chart-style hero, **Price & the bets**: 3 months
+of real daily closes (`/api/chart?tf=1d&range=3mo`) with each flagged strike drawn as a
+dashed level — calls green above, puts red below, line weight ∝ premium, staggered
+labels — so a single-day story is no longer an empty box (the buildup chart now renders
+only with ≥2 sessions, and takes the lean's color). Puts vs calls are color-coded
+everywhere a contract appears (`Occ` in `components/flow/lib.tsx`: green call / red put,
+desk, detail, story, brief, phone cards). Note: the price panel needs a Yahoo/Hybrid
+feed — on a sim-feed dev server `/api/chart` falls back to local bars and the map
+degrades gracefully.
+
 ## 3. Decisions taken / open
 
 - Taken: Reads default day = latest scan day; sparkline = plain SVG (Highcharts is for the
