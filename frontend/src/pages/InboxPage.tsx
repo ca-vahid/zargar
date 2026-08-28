@@ -60,7 +60,7 @@ export function InboxPage() {
 
 function statusPill(status: string): string {
   if (status === "verified" || status === "proposed") return "ok";
-  if (status === "parked") return "wait";
+  if (status === "parked" || status === "shadow") return "wait";
   if (status === "verification_failed") return "bad";
   return "dim";
 }
@@ -91,7 +91,7 @@ function vehicleChip(s: Signal) {
 function ArmButton({ s }: { s: Signal }) {
   const toast = useStore((st) => st.toast);
   const [busy, setBusy] = useState(false);
-  if (s.status !== "verified" && s.status !== "parked") return null;
+  if (s.status !== "verified" && s.status !== "parked" && s.status !== "shadow") return null;
   const arm = async () => {
     setBusy(true);
     try {
@@ -306,6 +306,13 @@ function TipResultCard({ item }: { item: any }) {
           (arm it, or the morning sweep arms it in shadow automatically).
         </div>
       )}
+      {s.status === "shadow" && (
+        <div className="muted" style={{ fontSize: 12 }}>
+          Shadow only: a directional lean, not an explicit call — both shadow books trade it and
+          the source's scorecard learns from it, but it never becomes a proposal.
+        </div>
+      )}
+      {s.status === "replayed" && <ReplayBlock s={s} />}
       {s.verification?.flowContext && <div className="muted" style={{ fontSize: 12 }}>{s.verification.flowContext}</div>}
       {s.verification?.calendarContext && <div className="muted" style={{ fontSize: 12 }}>⚠ {s.verification.calendarContext}</div>}
       {failed.length > 0 && (
@@ -317,6 +324,43 @@ function TipResultCard({ item }: { item: any }) {
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** A stale tip's history replay: what both books WOULD have done had it
+    arrived on time (extraction.replay, built by techniques/tip/replay.py). */
+function ReplayBlock({ s }: { s: Signal }) {
+  const x = (s as any).extraction ?? {};
+  const r = x.replay;
+  const age = x.ageHours != null ? `${Math.round(x.ageHours / 24)} day(s) old` : "stale";
+  if (!r?.ok) {
+    return (
+      <div className="muted" style={{ fontSize: 12 }}>
+        This content is {age} — too old to trade{r?.note ? `, and the replay could not run (${r.note})` : ""}.
+      </div>
+    );
+  }
+  const a = r.armed ?? {};
+  const im = r.immediate ?? {};
+  return (
+    <div style={{ fontSize: 12, display: "flex", flexDirection: "column", gap: 2 }}>
+      <span className="muted">This content is {age} — replayed on history instead of traded
+        (tip-time price {fmtMoney(r.referencePrice)}, now {fmtMoney(r.lastPrice)}):</span>
+      <span>
+        <b>Waiting for the level</b> ({a.entry ? fmtMoney(a.entry) : "—"}):{" "}
+        {a.filled
+          ? <span className={(a.rMultiple ?? 0) >= 0 ? "pos" : "neg"}>
+              filled → {String(a.outcome)} at {a.rMultiple > 0 ? "+" : ""}{a.rMultiple}R
+              {a.mfeR ? ` (best ${a.mfeR}R)` : ""}</span>
+          : <span className="muted">never filled</span>}
+      </span>
+      <span>
+        <b>Buying at tip time</b>:{" "}
+        <span className={(im.pnlPct ?? 0) >= 0 ? "pos" : "neg"}>
+          {im.pnlPct > 0 ? "+" : ""}{im.pnlPct}% ({im.reason})</span>
+        {im.toTodayPct != null && <span className="muted"> · held to today {im.toTodayPct > 0 ? "+" : ""}{im.toTodayPct}%</span>}
+      </span>
     </div>
   );
 }

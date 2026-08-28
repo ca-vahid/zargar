@@ -75,6 +75,7 @@ class SignalService:
     def __init__(self, engine, extractor: Extractor) -> None:
         self.engine = engine
         self.extractor = extractor
+        self._replay_fetch = None      # tests inject a bars fetcher for replays
 
     # ------------------------------------------------------------- intake
     async def ingest_email(self, payload: dict) -> dict:
@@ -263,6 +264,12 @@ class SignalService:
                                 "sourceMatchedExisting": matched}
                     await session.commit()
                     content = row
+        # --- freshness: a tip whose content shows an old post date is REPLAYED
+        # on history, never traded against today's price (decision 2026-08-28)
+        max_age = float(eng.settings.get("techniques.tip.max_tip_age_hours", 72))
+        stated_ms, age_hours = self._stated_age(result.stated_at, content.received_at)
+        stale = age_hours is not None and age_hours > max_age
+
         out: list[dict] = []
         for sig in result.signals:
             policy = resolve_policy(eng.settings, content.source_name)
@@ -352,40 +359,106 @@ class SignalService:
                             "(dates are advisory, not confirmed)")
                 except Exception:  # pragma: no cover - context is best-effort
                     log.debug("calendar lookup failed for %s", row.ticker)
-            if verification["passed"]:
+            replay = None
+            if stale:
+                # too old to trade — replay it on history so the paste still
+                # teaches something (both books' counterfactuals, no orders)
+                verification["checks"].append({
+                    "name": "fresh", "passed": False, "fatal": True,
+                    "detail": f"content is ~{age_hours:.0f}h old "
+                              f"(max {max_age:.0f}h) — replayed on history, not traded"})
+                verification["passed"] = False
+                verification["park"] = False
+                verification["shadow_only"] = False
+                status = "replayed"
+                replay = await self._replay_signal(row, sig, stated_ms)
+            elif verification["passed"]:
                 status = "verified"
             elif verification.get("park"):
                 status = "parked"
+            elif verification.get("shadow_only"):
+                status = "shadow"
             else:
                 status = "verification_failed"
             async with eng.sf() as session:
                 db_row = await session.get(Signal, row.id)
                 db_row.verification = verification
                 db_row.status = status
+                extra = {"statedAt": result.stated_at, "ageHours": age_hours}
+                if replay is not None:
+                    extra["replay"] = replay
+                db_row.extraction = {**(db_row.extraction or {}), **extra}
                 await session.commit()
                 row = db_row
-            if status == "verified":
-                kind = ev.SIGNAL_VERIFIED
-            elif status == "parked":
-                kind = ev.SIGNAL_PARKED
-            else:
-                kind = ev.SIGNAL_VERIFICATION_FAILED
-            await eng.journal.append(kind, verification,
+            kind = {"verified": ev.SIGNAL_VERIFIED, "shadow": ev.SIGNAL_VERIFIED,
+                    "parked": ev.SIGNAL_PARKED, "replayed": ev.SIGNAL_REPLAYED,
+                    }.get(status, ev.SIGNAL_VERIFICATION_FAILED)
+            await eng.journal.append(kind, {**verification, "status": status},
                                      aggregate_type="signal", aggregate_id=row.id)
             eng.bus.publish(topics.SIGNALS, signal_dict(row))
 
             proposal = None
             shadow_order = None
-            if status == "verified":
-                # shadow ALWAYS trades a verified signal — the per-source track
-                # record exists regardless of policy mode or the human decision
+            if status in ("verified", "shadow"):
+                # the shadow books ALWAYS trade a verified/shadow signal — the
+                # per-source track record exists regardless of the human decision
                 shadow_order = await self._shadow_execute(row, sig)
+                async with eng.sf() as session:   # pick up the recorded expression
+                    row = await session.get(Signal, row.id) or row
+            if status == "verified":
+                # proposals need an explicit call (status "shadow" never proposes)
                 if (eng.proposals is not None and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
                     proposal = await eng.proposals.create_from_signal(row, sig, verification)
             out.append({"signal": signal_dict(row), "proposal": proposal,
                         "shadowOrder": shadow_order})
         return out
+
+    @staticmethod
+    def _stated_age(stated_at: str | None,
+                    received: dt.datetime | None) -> tuple[int | None, float | None]:
+        """(stated_at as epoch ms, age in hours at receipt). (None, None) when the
+        content shows no parseable date. Naive timestamps are assumed ET; a bare
+        date is treated as noon ET — generous in the tip's favour."""
+        if not stated_at:
+            return None, None
+        try:
+            s = stated_at.strip()
+            if len(s) == 10:                      # YYYY-MM-DD
+                parsed = dt.datetime.fromisoformat(s + "T12:00")
+            else:
+                parsed = dt.datetime.fromisoformat(s)
+        except ValueError:
+            return None, None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt.timezone(dt.timedelta(hours=-4)))
+        ref = received or dt.datetime.now(dt.timezone.utc)
+        if ref.tzinfo is None:
+            ref = ref.replace(tzinfo=dt.timezone.utc)
+        age = (ref - parsed).total_seconds() / 3600
+        return int(parsed.timestamp() * 1000), age
+
+    async def _replay_signal(self, row: Signal, sig: TradeSignal,
+                             stated_ms: int | None) -> dict:
+        """Run the stale tip's history replay (techniques/tip/replay.py)."""
+        if stated_ms is None:
+            return {"ok": False, "note": "no parseable tip time"}
+        from ..techniques.tip.replay import replay_tip
+        policy = resolve_policy(self.engine.settings, row.source_name)
+        try:
+            kwargs = {}
+            if self._replay_fetch is not None:            # test injection
+                kwargs["fetch"] = self._replay_fetch
+            return await replay_tip(
+                symbol=row.ticker, direction=row.direction, stated_at_ms=stated_ms,
+                tip_entry=sig.entry_price, tip_stop=sig.stop_price,
+                tip_targets=tuple(sig.target_prices or
+                                  ([sig.target_price] if sig.target_price else [])),
+                horizon_sessions=sig.horizon_sessions or policy.horizon_sessions,
+                source=row.source_name, thesis=sig.thesis_summary, **kwargs)
+        except Exception as exc:                          # replay is best-effort
+            log.exception("replay failed for signal %s", row.id)
+            return {"ok": False, "note": f"replay failed: {exc}"}
 
     async def shadow_portfolio(self, source: str, book: str) -> dict:
         """The per-source shadow account for one BOOK: 'immediate' (buy at tip
@@ -484,12 +557,22 @@ class SignalService:
                 expression["note"] = "no reference price — nothing bought"
                 await self._record_expression(signal_row.id, expression)
                 return None
-            equity = await eng.positions.equity(shadow["id"])
-            pct = float(eng.settings.get("signals.default_sizing_pct", 5.0))
-            qty = max(1, math.floor(equity * pct / 100 / ref))
+            # shares are sized by the SAME per-tip budget as options — the two
+            # books/vehicles must be dollar-comparable on the scorecard
+            # (decision 2026-08-28; was 5% of equity, which dwarfed option tips)
+            qty = max(1, math.floor(policy.budget_per_tip / ref))
             bracket = None
             if sig.target_price or sig.stop_price:
                 bracket = BracketSpec(take_profit=sig.target_price, stop_loss=sig.stop_price)
+            # a bracket-less share position must still die: the morning loop
+            # closes it once the tip's thesis window has passed
+            from ..techniques.tip.horizon import add_sessions, hold_sessions_cap, tip_expiry
+            today = dt.datetime.now(dt.timezone.utc).date()
+            cap = hold_sessions_cap(
+                expiry=tip_expiry(signal_row.expiry, signal_row.dte_hint_days, today),
+                today=today, fallback=policy.horizon_sessions)
+            expression.update({"qty": qty, "entryRef": round(float(ref), 4),
+                               "closeAfter": add_sessions(today, cap).isoformat()})
             await self._record_expression(signal_row.id, expression)
             return await eng.orders.place(OrderIntent(
                 portfolio_id=shadow["id"], symbol=symbol,
@@ -642,8 +725,8 @@ class SignalService:
             card = card_for(r.source_name or "unknown")
             card["signals"] += 1
             card["seenAgain"] += max(0, int(r.seen_count or 1) - 1)
-            if r.status in ("verified", "proposed"):
-                card["verified"] += 1
+            if r.status in ("verified", "proposed", "shadow"):
+                card["verified"] += 1      # shadow = verified for the books (implied call)
             elif r.status == "parked":
                 card["parked"] += 1
             elif r.status == "verification_failed":

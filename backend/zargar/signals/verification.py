@@ -18,6 +18,14 @@ from .schemas import TradeSignal
 # Failing ONLY these parks the signal instead of killing it.
 PARKING_CHECKS = {"price_deviation", "not_past_target"}
 
+# Failing ONLY these (plus parking) demotes the signal to SHADOW-ONLY instead of
+# killing it: the shadow books trade it and the source's scorecard learns from
+# it, but no proposal is ever created. Decision 2026-08-28 (the PeloSwing CRM
+# case): implied-but-directional chart tips are the commonest real-world tip
+# shape, and killing them left the books blind to exactly the sources we are
+# trying to measure. Shadow costs nothing; explicit calls still gate proposals.
+SHADOW_CHECKS = {"actionable"}
+
 
 async def verify_signal(
     signal: TradeSignal,
@@ -30,17 +38,19 @@ async def verify_signal(
 
     def add(name: str, passed: bool, detail: str = "") -> None:
         checks.append({"name": name, "passed": passed, "detail": detail,
-                       "fatal": name not in PARKING_CHECKS})
+                       "fatal": name not in PARKING_CHECKS and name not in SHADOW_CHECKS})
 
     # 0. grounding (from the extraction stage)
     if grounding is not None:
         add("quote_grounding", bool(grounding.get("passed")),
             "" if grounding.get("passed") else "evidence quotes not found in source text")
 
-    # 1. actionability
+    # 1. actionability — SHADOW-gating, not fatal: an implied directional lean
+    # still trades in the shadow books; it just never becomes a proposal
     require_actionable = bool(settings.get("verification.require_actionable", True))
     add("actionable", signal.is_actionable or not require_actionable,
-        "" if signal.is_actionable else "signal marked non-actionable by extraction")
+        "" if signal.is_actionable
+        else "no explicit call to act — shadow books only, no proposal")
     add("explicit_or_implied", signal.confidence != "commentary_only",
         "commentary-only content is never traded" if signal.confidence == "commentary_only" else "")
 
@@ -104,8 +114,14 @@ async def verify_signal(
 
     passed = all(c["passed"] for c in checks)
     fatal_passed = all(c["passed"] for c in checks if c["fatal"])
+    parking_failed = any(not c["passed"] for c in checks if c["name"] in PARKING_CHECKS)
+    shadow_failed = any(not c["passed"] for c in checks if c["name"] in SHADOW_CHECKS)
     return {
         "passed": passed,
-        "park": (not passed) and fatal_passed,   # only price-position checks failed
+        # price-position failed → wait for the level (wins over shadow: a tip
+        # whose price already ran away should not be bought immediately either)
+        "park": (not passed) and fatal_passed and parking_failed,
+        # not an explicit call (and price is fine) → books trade it, no proposal
+        "shadow_only": (not passed) and fatal_passed and shadow_failed and not parking_failed,
         "checks": checks,
     }

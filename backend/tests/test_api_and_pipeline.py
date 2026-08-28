@@ -1,4 +1,6 @@
 """API surface + full signal→proposal→approval pipeline (extraction stubbed)."""
+import datetime as dt
+
 import httpx
 import pytest
 
@@ -208,6 +210,87 @@ async def test_stale_price_signal_parked_not_killed(app_client):
     assert out[0]["proposal"] is None
     checks = out[0]["signal"]["verification"]["checks"]
     assert any(c["name"] == "price_deviation" and not c["passed"] for c in checks)
+
+
+async def test_implied_tip_trades_shadow_books_only(app_client):
+    # 2026-08-28 (PeloSwing CRM case): an implied directional lean with no
+    # explicit call — the commonest real-world tip shape — must reach the
+    # shadow books and the scorecard, but never the proposal queue.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    tip = ExtractionResult(
+        signals=[TradeSignal(
+            ticker="AAPL", direction="long", action="open",
+            timeframe="swing", catalyst="buyback",
+            thesis_summary="Turning off trendline support; buyback at the lows.",
+            evidence_quotes=["We are buying AAPL today"],
+            confidence="implied", is_actionable=False)],
+        source_type="other")
+    out = await run_pipeline(eng, tip)
+    sig = out[0]["signal"]
+    assert sig["status"] == "shadow", sig["verification"]
+    checks = {c["name"]: c for c in sig["verification"]["checks"]}
+    assert not checks["actionable"]["passed"] and not checks["actionable"]["fatal"]
+    assert out[0]["shadowOrder"] is not None          # the immediate book bought it
+    assert out[0]["proposal"] is None                 # but no proposal, ever
+    assert (await client.get("/api/proposals")).json() == []
+    cards = (await client.get("/api/signals/sources")).json()
+    card = next(c for c in cards if c["source"] == "TestLetter")
+    assert card["verified"] == 1                      # shadow counts as verified-for-books
+
+
+async def test_stale_tip_replayed_not_traded(app_client):
+    # content whose own visible date is older than max_tip_age_hours is
+    # replayed on history (both books' counterfactuals) instead of traded
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    stated = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=10)
+
+    from zargar.domain import Bar
+    MIN = 60_000
+
+    async def fake_fetch(symbol, tf, start_ms, end_ms):
+        # 1h path: flat 100 before the tip, dip to 98.5 then rally to 112 after
+        now_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+        n = 300
+        out = []
+        for i in range(n):
+            ts = now_ms - (n - i) * 60 * MIN
+            frac = i / n
+            c = 100.0 if frac < 0.55 else (98.5 if frac < 0.6 else 100 + (frac - 0.6) * 30)
+            out.append(Bar(symbol=symbol, tf="1h", ts=ts, open=c, high=c + 0.6,
+                           low=c - 0.6, close=c, volume=10_000))
+        return out
+
+    eng.signals_service._replay_fetch = fake_fetch
+    tip = canned_extraction()
+    tip.stated_at = stated.strftime("%Y-%m-%dT%H:%M")
+    out = await run_pipeline(eng, tip)
+    sig = out[0]["signal"]
+    assert sig["status"] == "replayed", sig["verification"]
+    assert out[0]["shadowOrder"] is None and out[0]["proposal"] is None
+    replay = sig["extraction"]["replay"]
+    assert replay["ok"] is True
+    assert "armed" in replay and "immediate" in replay
+    assert sig["extraction"]["ageHours"] > 72
+    fresh = next(c for c in sig["verification"]["checks"] if c["name"] == "fresh")
+    assert not fresh["passed"] and "replayed" in fresh["detail"]
+
+
+async def test_immediate_book_sized_by_budget(app_client):
+    # shares use the SAME per-tip budget as options (was 5% of equity) so the
+    # scorecard's dollar comparisons are apples-to-apples across vehicles
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.budget_per_tip", 5000.0)
+    out = await run_pipeline(eng, canned_extraction())
+    assert out[0]["signal"]["status"] == "verified"
+    order = out[0]["shadowOrder"]
+    assert order is not None and order["qty"] >= 10   # ~$5000/$232 ≈ 21; 5% of 10k was 2
+    expr = out[0]["signal"]["extraction"]["shadowExpression"]
+    assert expr["vehicle"] == "shares" and expr["qty"] == order["qty"]
+    assert expr["closeAfter"] > dt.date.today().isoformat()  # the time exit is booked
 
 
 async def test_proposal_reject_and_expiry(app_client):

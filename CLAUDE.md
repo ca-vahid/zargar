@@ -59,8 +59,10 @@ legacy `technique.*` prefix is grandfathered — don't copy it).
 **Tip technique (BUILT 2026-08-27, incl. options expression):** `docs/techniques/tip/PLAN.md` +
 `BUILD-PLAN.md`. Human-relayed tips only — never Discord scraping or alert-room auto-execution.
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
-dedupe→`seen_count`, verification where price-position failures **park** the signal instead of
-killing it); the technique is `zargar/techniques/tip/` (plan.py builds level-touch plans, horizon.py
+dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
+non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose
+own `stated_at` is > `techniques.tip.max_tip_age_hours` old is **replayed** on history via
+`techniques/tip/replay.py` instead of traded); the technique is `zargar/techniques/tip/` (plan.py builds level-touch plans, horizon.py
 bounds waiting by the tip's contract expiry − `techniques.tip.entry_cutoff_dte`, express.py picks
 the stated contract verbatim, runner.py = `TipRunner(PlanRunner)`). **Dual shadow books per source**
 (`Portfolio.book`): "immediate" buys at tip time, "armed" waits for the level (morning

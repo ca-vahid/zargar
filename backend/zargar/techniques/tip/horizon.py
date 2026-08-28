@@ -42,6 +42,17 @@ def sessions_between(start: dt.date, end: dt.date) -> int:
     return n
 
 
+def add_sessions(start: dt.date, n: int) -> dt.date:
+    """The date `n` trading sessions (weekdays) after `start`."""
+    d = start
+    left = max(0, int(n))
+    while left > 0:
+        d += dt.timedelta(days=1)
+        if d.weekday() < 5:
+            left -= 1
+    return d
+
+
 def effective_wait_sessions(*, policy_horizon: int, tip_horizon: int | None,
                             expiry: dt.date | None, today: dt.date,
                             entry_cutoff_dte: int) -> int:

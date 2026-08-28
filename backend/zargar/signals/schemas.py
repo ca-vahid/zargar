@@ -128,6 +128,12 @@ class ExtractionResult(BaseModel):
         description="ONLY when the source is an image: a verbatim transcription of every piece "
                     "of text visible in it, in reading order. Evidence quotes must be copied "
                     "from this transcription. Null for text sources.")
+    stated_at: Optional[str] = Field(
+        default=None,
+        description="WHEN the content itself shows it was posted or sent — a visible timestamp "
+                    "on a post/screenshot ('11:05 AM · Jun 23, 2026'), an email date header, a "
+                    "dateline. ISO 8601: 'YYYY-MM-DDTHH:MM' when the time is visible, else "
+                    "'YYYY-MM-DD'. Null when the content shows no date — never guess.")
     source_hint: Optional[str] = Field(
         default=None,
         description="WHO/WHERE this content visibly came from, when the content itself shows it: "
@@ -167,6 +173,9 @@ with instrument="put" — never direction="long".
 with entry/stop/target; "implied" when clearly bullish/bearish without a call; otherwise \
 "commentary_only".
 - The message's received timestamp is provided; treat stale or undated calls with suspicion.
+- If the content VISIBLY shows when it was posted or sent — a timestamp on the post, an email \
+date, a dateline — put it in stated_at (ISO 8601). Freshness is checked downstream; a stale \
+tip is replayed on history instead of traded. Never infer a date that is not shown.
 - If the content VISIBLY shows where it came from — a channel name, a poster's username or \
 avatar label in a screenshot, a newsletter masthead, a signature — put that name in \
 source_hint exactly as written. Attribution builds the source's track record; never invent one.

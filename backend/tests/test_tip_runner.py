@@ -234,6 +234,40 @@ async def test_shadow_arm_loop_dual_books(tip_rig):
     assert card["books"]["armed"].get("portfolioId")
 
 
+async def test_immediate_book_time_exit(tip_rig):
+    # a bracket-less immediate-book share buy dies at its closeAfter date —
+    # the morning sweep sells it (found 2026-08-28: it lived forever before)
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    from zargar.models import Signal
+    svc = eng.signals_service
+    shadow = await svc.shadow_portfolio("TestRoom", "immediate")
+
+    async def bought():
+        return any(p["symbol"] == "TEST" and p["qty"] > 0
+                   for p in eng.positions.positions_list(shadow["id"]))
+    await wait_for(bought)
+    async with eng.sf() as session:               # force the hold cap into the past
+        row = await session.get(Signal, sid)
+        expr = dict((row.extraction or {}).get("shadowExpression") or {})
+        assert expr.get("closeAfter"), expr        # the buy booked its exit date
+        expr["closeAfter"] = (dt.date.today() - dt.timedelta(days=1)).isoformat()
+        row.extraction = {**(row.extraction or {}), "shadowExpression": expr}
+        await session.commit()
+    out = await eng.tip_runner.shadow_arm_open_tips()
+    assert out.get("immediateClosed") == 1, out
+    await _quote(eng, 100.0)                       # sim needs a quote after latency
+    await _quote(eng, 100.0)
+
+    async def flat():
+        return all(p["qty"] == 0 for p in eng.positions.positions_list(shadow["id"])
+                   if p["symbol"] == "TEST")
+    await wait_for(flat)
+    # idempotent: expression is marked closed, the sweep won't sell again
+    out2 = await eng.tip_runner.shadow_arm_open_tips()
+    assert out2.get("immediateClosed") == 0
+
+
 async def test_expired_option_tip_never_arms(tip_rig):
     eng, sim = tip_rig
     sid = await _ingest_tip(eng)
@@ -304,7 +338,7 @@ async def test_option_tip_both_books_end_to_end(tip_rig):
     shadow_order = out[0]["shadowOrder"]
     assert shadow_order is not None and shadow_order["secType"] == "OPT", shadow_order
     assert shadow_order["symbol"] == occ_sym
-    assert shadow_order["qty"] == 4          # $500 budget / $1.20 ask x100 -> 4 contracts
+    assert shadow_order["qty"] == 8          # $1000 budget / $1.20 ask x100 -> 8 contracts
     async with eng.sf() as session:
         srow = await session.get(SignalRow, sig["id"])
     assert (srow.extraction.get("shadowExpression") or {}).get("vehicle") == "option"
@@ -313,7 +347,7 @@ async def test_option_tip_both_books_end_to_end(tip_rig):
     snap = await eng.tip_runner.arm_signal(sig["id"], {
         "portfolioId": sim["id"], "mode": "auto", "dailyLossLimit": 200.0})
     assert snap["config"]["instrument"] == "options"
-    assert snap["config"]["premiumBudget"] == 500.0
+    assert snap["config"]["premiumBudget"] == 1000.0   # default budget_per_tip
     assert snap["config"]["entryFallback"] == "shares"
     run_id = snap["runId"]
 

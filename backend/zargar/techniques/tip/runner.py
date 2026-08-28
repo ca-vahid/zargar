@@ -53,7 +53,7 @@ from .horizon import effective_wait_sessions, hold_sessions_cap, tip_expiry
 
 log = logging.getLogger("zargar.techniques.tip")
 
-ARMABLE_STATUSES = ("verified", "parked", "proposed")
+ARMABLE_STATUSES = ("verified", "parked", "proposed", "shadow")
 HANDOFF_POLL_SECONDS = 1.0
 HANDOFF_WINDOW_SECONDS = 600.0     # give an entry 10 min to fill before leaving it session-scoped
 
@@ -284,9 +284,46 @@ class TipRunner(PlanRunner):
                 errors.append(f"{sig.ticker}: {exc}")
                 log.warning("shadow arm failed for %s: %s", sig.ticker, exc)
         out = {"armed": armed, "skipped": skipped, "expired": expired}
+        try:
+            out["immediateClosed"] = await self._close_due_immediate(open_tips, today)
+        except Exception:                          # never let cleanup kill arming
+            log.exception("immediate-book close sweep failed")
         if errors:
             out["errors"] = errors[:5]
         return out
+
+    async def _close_due_immediate(self, open_tips: list, today) -> int:
+        """The immediate book's time exit: a bracket-less share buy records a
+        `closeAfter` date at expression time (the tip's hold cap) — once it
+        passes, sell what was bought. Options settle at their own expiry; this
+        sweep is shares only. Without it a bracket-less tip lives forever
+        (found 2026-08-28: the PeloSwing CRM replay)."""
+        from ...orders import OrderIntent
+        eng = self.engine
+        svc = eng.signals_service
+        closed = 0
+        for sig in open_tips:
+            expr = ((sig.extraction or {}).get("shadowExpression") or {})
+            due = expr.get("closeAfter")
+            if (expr.get("vehicle") != "shares" or not due or expr.get("closed")
+                    or not expr.get("qty")):
+                continue
+            if dt.date.fromisoformat(due) > today:
+                continue
+            shadow = await svc.shadow_portfolio(sig.source_name or "unknown", "immediate")
+            pos = next((p for p in eng.positions.positions_list(shadow["id"])
+                        if p["symbol"] == sig.ticker and p["qty"] > 0), None)
+            qty = min(float(expr["qty"]), float(pos["qty"])) if pos else 0
+            if qty > 0:
+                await eng.orders.place(OrderIntent(
+                    portfolio_id=shadow["id"], symbol=sig.ticker, side="SELL",
+                    qty=qty, order_type="MKT", reduce_only=True,
+                    source="auto", signal_id=sig.id,
+                    technique_id="tip", tags=[f"source:{sig.source_name or 'unknown'}"]))
+                closed += 1
+            await svc._record_expression(sig.id, {**expr, "closed": True,
+                                                  "closedOn": today.isoformat()})
+        return closed
 
     def _armed_today(self, signal_id: str) -> bool:
         today = dt.datetime.now(dt.timezone.utc).date().isoformat()

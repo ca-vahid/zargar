@@ -77,13 +77,14 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.entry": "level_touch",   # level_touch | tip_time (tip_time is EARNED per source)
     "techniques.tip.mode": "proposal",       # shadow | alert | proposal | auto (per-source override)
     "techniques.tip.risk_pct": 1.0,
-    "techniques.tip.budget_per_tip": 500.0,
-    "techniques.tip.budget_open_max": 2000.0,
+    "techniques.tip.budget_per_tip": 1000.0,
+    "techniques.tip.budget_open_max": 5000.0,
     "techniques.tip.dte_min": 10,            # option expression window — never 0DTE
     "techniques.tip.dte_max": 30,
-    "techniques.tip.horizon_sessions": 10,   # tip expires unfilled after N sessions
+    "techniques.tip.horizon_sessions": 15,   # tip expires unfilled after N sessions
     "techniques.tip.min_conviction": "implied",
-    "techniques.tip.max_open_tips": 3,
+    "techniques.tip.max_open_tips": 5,
+    "techniques.tip.max_tip_age_hours": 72,  # older content is REPLAYED on history, never traded
     "techniques.tip.dedupe_window_hours": 24,
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
     "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none

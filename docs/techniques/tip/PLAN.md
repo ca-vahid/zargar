@@ -59,17 +59,27 @@ against the registry + every source ever seen; an explicit name is never overrid
 Duplicates (same source + ticker + direction + strike + expiry inside
 `dedupe_window_hours`) bump `seen_count` on the original instead of re-trading.
 
-**Verification**: the deterministic checks split fatal (ungrounded, unknown ticker,
-halted, penny, spread, incoherent prices) from **parking** (price moved away from the
-stated entry / already past target) — a parked tip waits for its level. Advisory
-context rides along: the Flow read (`flowContext`) and earnings-in-horizon
+**Verification**: the deterministic checks split three ways — fatal (ungrounded,
+unknown ticker, halted, penny, spread, incoherent prices), **parking** (price moved
+away from the stated entry / already past target — the tip waits for its level), and
+**shadow-gating** (`actionable`: an implied directional lean with no explicit call
+trades in both shadow books, status `shadow`, but never becomes a proposal —
+2026-08-28, the PeloSwing CRM case). **Freshness** is checked first: the extractor
+reads the content's own visible post date into `stated_at`; older than
+`techniques.tip.max_tip_age_hours` (72) → status `replayed` — the tip is run through
+`techniques/tip/replay.py` (real plan builder + walk-forward on 1h history, both
+books' counterfactuals on `extraction.replay`) and never traded. Advisory context
+rides along: the Flow read (`flowContext`) and earnings-in-horizon
 (`calendarContext`). Both are information, never checks.
 
 **Two books per tip** (the vehicle rule: an option-shaped tip — instrument call/put or a
 stated strike/expiry/DTE hint — is an OPTION in both books; else shares in both):
 - *Immediate book*: buys at verification. Options are budget-sized contracts with no
-  bracket (buy-and-hold counterfactual; expiry settlement closes them); shares keep the
-  tip's bracket. A failed pick falls back to shares (longs) or is recorded "not
+  bracket (buy-and-hold counterfactual; expiry settlement closes them); shares are
+  sized by the SAME `budget_per_tip` (2026-08-28 — was 5% of equity, which made the
+  vehicles incomparable) and keep the tip's bracket; a bracket-less share buy books a
+  `closeAfter` time exit that the morning sweep enforces (before this they were held
+  forever). A failed pick falls back to shares (longs) or is recorded "not
   expressed" (shorts) — never silently skipped (`extraction.shadowExpression`).
 - *Armed book*: the `tip_shadow_arm` morning loop (scheduler, 09:12 ET) arms every open
   level-touch tip with today's plan — entry at the tip's level (or nearest structural
@@ -118,6 +128,16 @@ overnight options; real money never does.
   before that. `tipTimeEarned` stays $-vs-$ (decision, 2026-08-28).
 - ✅ Source auto-detection (user, 2026-08-28): `source_hint` from the content itself;
   explicit names always win; unmatched hints become new sources.
+- ✅ **Shadow-implied lane** (user, 2026-08-28): a non-actionable but directional tip
+  gets status `shadow` — books + scorecard yes, proposal never. Found via the
+  PeloSwing CRM replay: the old fatal gate blinded the books to the commonest tip shape.
+- ✅ **Freshness + replay lane** (user, 2026-08-28): `stated_at` from the content,
+  72h max age, stale tips replayed on history instead of traded.
+- ✅ **Generous defaults** (user, 2026-08-28): budget 1000/tip, 5000 open, horizon 15
+  sessions, 5 open tips. Logged in `TRADING-RULES.md`.
+- ✅ Extraction is **prompted JSON + local validation** (2026-08-28): the schema blew
+  the structured-output grammar budget on the first real screenshot ("Schema is too
+  complex"); the wire schema lives in the prompt, pydantic validators enforce the vocab.
 - Open: email webhook auth (HMAC upgrade, T5); repeat-mention conviction — auto-bump vs
   display-only (default display-only until decided); Telegram as an *intake* (today it
   is outbound + approvals only); the per-source policy editor UI (T4's last piece);
