@@ -396,6 +396,20 @@ async def test_discord_catalog_and_watch(app_client):
     assert (await client.get("/api/tip/discord/watch")).json()["watch"][0]["sourceName"] == "jon-and-kian"
 
 
+async def test_discord_peek_roundtrip(app_client):
+    # UI queues a peek; gateway takes it, posts the last message; UI reads it
+    client, eng = app_client
+    assert (await client.post("/api/tip/discord/peek", json={"channelId": "600"})).status_code == 200
+    pending = (await client.get("/api/tip/discord/peek-pending")).json()["channelIds"]
+    assert pending == ["600"]
+    assert (await client.get("/api/tip/discord/peek-pending")).json()["channelIds"] == []  # taken once
+    await client.post("/api/tip/discord/peek-result", json={
+        "channelId": "600", "text": "OPEN: NTR 82.5C", "author": "Jon [bot]",
+        "messageAt": "2026-08-28T13:25:00Z"})
+    res = (await client.get("/api/tip/discord/peek?channelId=600")).json()["result"]
+    assert res["text"] == "OPEN: NTR 82.5C" and res["author"] == "Jon [bot]" and res["at"]
+
+
 async def test_proposal_reject_and_expiry(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")

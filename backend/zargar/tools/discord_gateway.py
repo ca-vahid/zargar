@@ -130,31 +130,41 @@ DM_CHANNEL_TYPES = {1, 3}           # dm, group dm
 
 
 def build_catalog(ready_d: dict) -> dict:
-    """READY payload -> the menu the UI shows: your DMs and every readable
-    text channel, grouped by server. Names, not ids, so you can pick."""
-    user = ready_d.get("user") or {}
+    """READY payload -> the menu the UI shows. The user-account READY (verified
+    2026-08-28) puts DM recipients in `recipient_ids` (names live in a top-level
+    `users` array) and the guild name in `properties.name`, not `name`."""
+    users = {str(u.get("id")): u for u in ready_d.get("users") or []}
+
+    def uname(uid: str) -> tuple[str, bool]:
+        u = users.get(str(uid)) or {}
+        return (u.get("global_name") or u.get("username") or "unknown", bool(u.get("bot")))
+
     dms = []
     for ch in ready_d.get("private_channels") or []:
-        recips = ch.get("recipients") or []
-        if ch.get("type") == 3:      # group DM
-            name = ch.get("name") or ", ".join(
-                r.get("global_name") or r.get("username") or "?" for r in recips) or "group"
+        if ch.get("is_spam"):
+            continue
+        rids = [str(x) for x in (ch.get("recipient_ids") or [])]
+        if ch.get("type") == 3:                  # group DM
+            name = ch.get("name") or ", ".join(uname(r)[0] for r in rids) or "group"
             is_bot = False
         else:
-            r = recips[0] if recips else {}
-            name = r.get("global_name") or r.get("username") or "unknown"
-            is_bot = bool(r.get("bot"))
-        dms.append({"channelId": str(ch.get("id")), "name": name, "isBot": is_bot})
+            name, is_bot = uname(rids[0]) if rids else ("unknown", False)
+        dms.append({"channelId": str(ch.get("id")), "name": name, "isBot": is_bot,
+                    "isRequest": bool(ch.get("is_message_request"))})
     guilds = []
     for g in ready_d.get("guilds") or []:
-        chans = [{"channelId": str(c.get("id")), "name": c.get("name") or "?"}
+        props = g.get("properties") or {}
+        gname = props.get("name") or g.get("name") or "server"
+        chans = [{"channelId": str(c.get("id")), "name": c.get("name") or "?",
+                  "position": c.get("position", 0)}
                  for c in (g.get("channels") or [])
                  if c.get("type") in TEXT_CHANNEL_TYPES]
-        chans.sort(key=lambda c: c["name"])
+        chans.sort(key=lambda c: (c["position"], c["name"]))
         if chans:
-            guilds.append({"guildId": str(g.get("id")),
-                           "guildName": g.get("name") or "server", "channels": chans})
+            guilds.append({"guildId": str(g.get("id")), "guildName": gname,
+                           "channelCount": len(chans), "channels": chans})
     guilds.sort(key=lambda x: x["guildName"].lower())
+    user = ready_d.get("user") or {}
     return {"user": {"id": str(user.get("id") or ""), "username": user.get("username")},
             "dms": sorted(dms, key=lambda d: d["name"].lower()), "guilds": guilds}
 
@@ -240,11 +250,12 @@ class Gateway:
         print(f"[gateway] connected; heartbeat every {self._hb_interval:.1f}s; "
               f"{'DUMP only' if not self.ingest else 'ingesting to ' + self.api}")
         headers = {"Authorization": f"Bearer {self.session_token}"} if self.session_token else {}
-        poll = None
+        poll = peek = None
         try:
             async with httpx.AsyncClient(timeout=30) as http:
                 self._http = http
                 poll = asyncio.create_task(self._watch_loop(http, headers))
+                peek = asyncio.create_task(self._peek_loop(http, headers))
                 async for raw in ws:
                     await self._on_frame(json.loads(raw), http, headers)
         finally:
@@ -252,6 +263,49 @@ class Gateway:
             status.cancel()
             if poll:
                 poll.cancel()
+            if peek:
+                peek.cancel()
+
+    async def _peek_loop(self, http, headers) -> None:
+        """Serve the UI's 'show last message' tests: poll the app for pending
+        channel ids, fetch each channel's most recent message via Discord REST
+        (read-only), and post the preview back."""
+        while True:
+            try:
+                r = await http.get(f"{self.api}/api/tip/discord/peek-pending", headers=headers)
+                cids = (r.json() or {}).get("channelIds") or [] if r.status_code == 200 else []
+            except Exception:
+                cids = []
+            for cid in cids:
+                res = await self._fetch_last_message(http, str(cid))
+                try:
+                    await http.post(f"{self.api}/api/tip/discord/peek-result",
+                                    headers=headers, json={"channelId": str(cid), **res})
+                except Exception:
+                    pass
+            await asyncio.sleep(2.5)
+
+    async def _fetch_last_message(self, http, channel_id: str) -> dict:
+        try:
+            r = await http.get(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=1",
+                headers={"Authorization": self.token}, timeout=20)
+            if r.status_code == 403:
+                return {"error": "no access to this channel"}
+            if r.status_code != 200:
+                return {"error": f"discord {r.status_code}"}
+            msgs = r.json() or []
+            if not msgs:
+                return {"error": "no messages yet"}
+            m = msgs[0]
+            text = flatten_message(m)
+            imgs = collect_images(m)
+            if not text and imgs:
+                text = f"[image] {imgs[0].split('/')[-1][:40]}"
+            return {"text": text[:400], "author": describe_author(m),
+                    "messageAt": str(m.get("timestamp") or "")}
+        except Exception as exc:
+            return {"error": str(exc)[:200]}
 
     async def _watch_loop(self, http, headers) -> None:
         """Poll the app for the watchlist (the allowlist). Empty = manual flags

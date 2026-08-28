@@ -81,6 +81,8 @@ class SignalService:
         self._replay_fetch = None      # tests inject a bars fetcher for replays
         self._analyst_client = None    # tests inject a fake Anthropic client
         self._discord_catalog: dict | None = None   # last catalog the gateway reported
+        self._discord_peek_queue: set[str] = set()  # channelIds the UI asked to peek
+        self._discord_peek_results: dict[str, dict] = {}  # channelId -> last-message preview
 
     # ---------------------------------------------------- discord intake config
     # The gateway (zargar/tools/discord_gateway.py) reports the DMs/channels it
@@ -114,6 +116,24 @@ class SignalService:
             })
         await self.engine.settings.set("techniques.tip.discord.watch", clean)
         return clean
+
+    # peek: the UI asks to see a channel's last message (a connection test); the
+    # gateway (which holds the token) fetches it and posts the result back.
+    def discord_queue_peek(self, channel_id: str) -> None:
+        self._discord_peek_queue.add(str(channel_id))
+        self._discord_peek_results.pop(str(channel_id), None)
+
+    def discord_take_peeks(self) -> list[str]:
+        out = sorted(self._discord_peek_queue)
+        self._discord_peek_queue.clear()
+        return out
+
+    def discord_set_peek_result(self, channel_id: str, result: dict) -> None:
+        self._discord_peek_results[str(channel_id)] = {
+            **result, "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+
+    def discord_get_peek_result(self, channel_id: str) -> dict | None:
+        return self._discord_peek_results.get(str(channel_id))
 
     # ------------------------------------------------------------- intake
     async def ingest_email(self, payload: dict) -> dict:

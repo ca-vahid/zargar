@@ -573,12 +573,57 @@ function BookCell({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } }
   return <td className="num"><BookVal b={b} /></td>;
 }
 
+function timeAgo(iso?: string): string {
+  if (!iso) return "";
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.round(h / 24)}d ago`;
+}
+
+function PeekButton({ channelId }: { channelId: string }) {
+  const [state, setState] = useState<"idle" | "loading" | "done">("idle");
+  const [res, setRes] = useState<any>(null);
+  const test = async () => {
+    setState("loading"); setRes(null);
+    try {
+      await api.discordPeek(channelId);
+      for (let i = 0; i < 12; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const out = await api.discordPeekResult(channelId);
+        if (out.result) { setRes(out.result); setState("done"); return; }
+      }
+      setRes({ error: "no response — is the intake running?" }); setState("done");
+    } catch (e: any) { setRes({ error: e.message }); setState("done"); }
+  };
+  return (
+    <span className="disc-peek">
+      <button className="link-btn" disabled={state === "loading"} onClick={test}
+        title="Fetch this channel's last message to confirm it's connected">
+        {state === "loading" ? "testing…" : "test"}
+      </button>
+      {state === "done" && res && (
+        res.error
+          ? <span className="neg" style={{ fontSize: 11 }}> {res.error}</span>
+          : <span className="muted" style={{ fontSize: 11 }}>
+              {" "}last: <b>{res.author}</b> {timeAgo(res.messageAt)} — {(res.text || "(no text)").slice(0, 80)}
+            </span>
+      )}
+    </span>
+  );
+}
+
 function DiscordSourcesPanel() {
   const toast = useStore((s) => s.toast);
   const catState = useAsync(() => api.discordCatalog(), []);
   const watchState = useAsync(() => api.discordWatch(), []);
   const [sel, setSel] = useState<Record<string, import("../types").DiscordWatch>>({});
   const [busy, setBusy] = useState(false);
+  const [q, setQ] = useState("");
+  const [monitoredOnly, setMonitoredOnly] = useState(false);
+  const [open, setOpen] = useState<Record<string, boolean>>({});
   useEffect(() => {
     const w = watchState.data?.watch;
     if (w) setSel(Object.fromEntries(w.map((e) => [e.channelId, e])));
@@ -608,8 +653,10 @@ function DiscordSourcesPanel() {
     finally { setBusy(false); }
   };
 
-  const catalogEmpty = cat && cat.dms.length === 0 && cat.guilds.length === 0;
+  const needle = q.trim().toLowerCase();
+  const hit = (s: string) => !needle || s.toLowerCase().includes(needle);
   const ageMin = cat?.at ? Math.round((Date.now() - new Date(cat.at).getTime()) / 60000) : null;
+  const selCount = Object.keys(sel).length;
 
   const Row = ({ channelId, name, kind, guildName, isBot }:
     { channelId: string; name: string; kind: "dm" | "channel"; guildName?: string; isBot?: boolean }) => {
@@ -621,6 +668,7 @@ function DiscordSourcesPanel() {
             onChange={() => toggle(channelId, kind, name, guildName ?? "", name)} />
           <span>{kind === "channel" ? "#" : ""}{name}{isBot ? <span className="muted"> · bot</span> : null}</span>
         </label>
+        <PeekButton channelId={channelId} />
         {on && (
           <span className="disc-opts">
             <input className="disc-src" value={sel[channelId].sourceName}
@@ -636,47 +684,70 @@ function DiscordSourcesPanel() {
     );
   };
 
+  const dms = (cat?.dms ?? []).filter((d) => hit(d.name) && (!monitoredOnly || sel[d.channelId]));
+  const guilds = (cat?.guilds ?? []).map((g) => {
+    const chans = g.channels.filter((c) => (hit(c.name) || hit(g.guildName))
+      && (!monitoredOnly || sel[c.channelId]));
+    return { ...g, shown: chans };
+  }).filter((g) => g.shown.length > 0);
+
   return (
     <div className="panel mb">
       <div className="panel-head">
         Discord intake
         <span className="sub">
           {catState.loading ? "loading…"
-            : !cat?.user ? "no catalog yet — start the intake window (scripts\\start.ps1)"
-            : `connected as ${cat.user.username} · catalog ${ageMin ?? "?"} min ago`}
+            : !cat?.user ? "no catalog yet — start the intake (scripts\\start.ps1)"
+            : `connected as ${cat.user.username} · ${selCount} monitored · catalog ${ageMin ?? "?"} min ago`}
         </span>
         <span style={{ flex: 1 }} />
-        <button className="primary-btn" disabled={busy} onClick={save}>Save monitored sources</button>
+        <button className="link-btn" onClick={() => catState.reload()}>refresh</button>
+        <button className="primary-btn" disabled={busy} onClick={save}>Save</button>
       </div>
       <div className="panel-body">
         <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-          Pick which DMs and channels feed the pipeline. Nothing else is read — your personal
-          messages never become tips. Each enabled source keeps its own scorecard.
+          Pick which DMs and channels feed the pipeline — nothing else is read. Use <b>test</b> to
+          confirm a source is connected (shows its last message). Each enabled source keeps its own scorecard.
+        </div>
+        <div className="disc-controls">
+          <input className="disc-search" placeholder="Filter by name (e.g. jon, alerts, OWLS)…"
+            value={q} onChange={(e) => setQ(e.target.value)} />
+          <label className="muted"><input type="checkbox" checked={monitoredOnly}
+            onChange={(e) => setMonitoredOnly(e.target.checked)} /> monitored only</label>
         </div>
         {catState.loading ? <Spinner />
-          : catalogEmpty || !cat?.user ? (
+          : !cat?.user ? (
             <div className="empty">Start the intake (it launches with the app) — it reports the
               DMs and channels you can see here, then pick sources.</div>
           ) : (
             <div className="disc-cols">
               <div>
-                <div className="disc-head">Direct messages</div>
-                {cat.dms.length === 0 ? <div className="muted">none</div>
-                  : cat.dms.map((d) => (
+                <div className="disc-head">Direct messages {dms.length ? `(${dms.length})` : ""}</div>
+                {dms.length === 0 ? <div className="muted">none match</div>
+                  : dms.map((d) => (
                     <Row key={d.channelId} channelId={d.channelId} name={d.name} kind="dm" isBot={d.isBot} />
                   ))}
               </div>
               <div>
-                <div className="disc-head">Server channels</div>
-                {cat.guilds.map((g) => (
-                  <div key={g.guildId} className="disc-guild">
-                    <div className="disc-guild-name">{g.guildName}</div>
-                    {g.channels.map((c) => (
-                      <Row key={c.channelId} channelId={c.channelId} name={c.name}
-                        kind="channel" guildName={g.guildName} />
-                    ))}
-                  </div>
-                ))}
+                <div className="disc-head">Servers {guilds.length ? `(${guilds.length})` : ""}</div>
+                {guilds.length === 0 ? <div className="muted">none match</div>
+                  : guilds.map((g) => {
+                    const isOpen = !!open[g.guildId] || !!needle || monitoredOnly;
+                    const enabledHere = g.shown.filter((c) => sel[c.channelId]).length;
+                    return (
+                      <div key={g.guildId} className="disc-guild">
+                        <button className="disc-guild-name" onClick={() =>
+                          setOpen((p) => ({ ...p, [g.guildId]: !isOpen }))}>
+                          <span>{isOpen ? "▾" : "▸"} {g.guildName}</span>
+                          <span className="muted"> {g.shown.length} ch{enabledHere ? ` · ${enabledHere} on` : ""}</span>
+                        </button>
+                        {isOpen && g.shown.map((c) => (
+                          <Row key={c.channelId} channelId={c.channelId} name={c.name}
+                            kind="channel" guildName={g.guildName} />
+                        ))}
+                      </div>
+                    );
+                  })}
               </div>
             </div>
           )}

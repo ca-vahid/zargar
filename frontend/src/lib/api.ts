@@ -78,6 +78,10 @@ export const api = {
   discordWatch: () => request<{ watch: import("../types").DiscordWatch[] }>("GET", "/api/tip/discord/watch"),
   setDiscordWatch: (watch: import("../types").DiscordWatch[]) =>
     request<{ watch: import("../types").DiscordWatch[] }>("PUT", "/api/tip/discord/watch", { watch }),
+  discordPeek: (channelId: string) =>
+    request<{ ok: boolean }>("POST", "/api/tip/discord/peek", { channelId }),
+  discordPeekResult: (channelId: string) =>
+    request<{ result: any }>("GET", `/api/tip/discord/peek?channelId=${encodeURIComponent(channelId)}`),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

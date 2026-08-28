@@ -131,6 +131,40 @@ def build_signal_routes(app, eng, auth, config) -> None:
     async def discord_set_watch(body: DiscordWatchBody):
         return {"watch": await eng.signals_service.discord_set_watch(body.watch)}
 
+    class PeekBody(BaseModel):
+        channelId: str = ""
+
+    @app.post("/api/tip/discord/peek", dependencies=[auth])
+    async def discord_peek(body: PeekBody):
+        """UI: show a channel/DM's last message (a connection test)."""
+        if not body.channelId:
+            raise HTTPException(status_code=400, detail="channelId required")
+        eng.signals_service.discord_queue_peek(body.channelId)
+        return {"ok": True, "queued": body.channelId}
+
+    @app.get("/api/tip/discord/peek", dependencies=[auth])
+    async def discord_peek_result(channelId: str = ""):
+        return {"result": eng.signals_service.discord_get_peek_result(channelId)}
+
+    @app.get("/api/tip/discord/peek-pending", dependencies=[auth])
+    async def discord_peek_pending():
+        """Gateway polls this: channels the UI wants peeked (taken once)."""
+        return {"channelIds": eng.signals_service.discord_take_peeks()}
+
+    class PeekResultBody(BaseModel):
+        channelId: str = ""
+        text: str = ""
+        author: str = ""
+        messageAt: str = ""
+        error: str = ""
+
+    @app.post("/api/tip/discord/peek-result", dependencies=[auth])
+    async def discord_peek_report(body: PeekResultBody):
+        eng.signals_service.discord_set_peek_result(body.channelId, {
+            "text": body.text, "author": body.author,
+            "messageAt": body.messageAt, "error": body.error})
+        return {"ok": True}
+
     # --- proposals -----------------------------------------------------------
     @app.get("/api/proposals", dependencies=[auth])
     async def list_proposals(all: bool = False, limit: int = 100):

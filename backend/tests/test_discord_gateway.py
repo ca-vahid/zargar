@@ -61,25 +61,30 @@ def test_image_only_message_flattens_empty_but_has_image():
 
 
 def test_build_catalog_from_ready():
+    # matches the REAL user-account READY shape (verified 2026-08-28): DM names
+    # come from recipient_ids + a top-level users array; guild name is in
+    # properties.name (guild.name is null); channels order by position.
     from zargar.tools.discord_gateway import build_catalog
     ready = {"user": {"id": "1", "username": "me"},
+             "users": [{"id": "99", "username": "OWLSbot", "bot": True},
+                       {"id": "98", "global_name": "A Friend", "username": "friend"}],
              "private_channels": [
-                 {"id": "10", "type": 1, "recipients": [
-                     {"id": "99", "username": "OWLSbot", "bot": True}]},
-                 {"id": "11", "type": 1, "recipients": [
-                     {"id": "98", "global_name": "A Friend", "username": "friend"}]}],
+                 {"id": "10", "type": 1, "recipient_ids": ["99"]},
+                 {"id": "11", "type": 1, "recipient_ids": ["98"]},
+                 {"id": "12", "type": 1, "recipient_ids": ["98"], "is_spam": True}],  # skipped
              "guilds": [
-                 {"id": "500", "name": "OWLS Capital", "channels": [
-                     {"id": "600", "name": "jon-and-kian", "type": 0},
-                     {"id": "601", "name": "voice", "type": 2},          # skipped
-                     {"id": "602", "name": "announcements", "type": 5}]}]}
+                 {"id": "500", "name": None, "properties": {"name": "OWLS Capital"},
+                  "channels": [
+                     {"id": "600", "name": "jon-and-kian", "type": 0, "position": 2},
+                     {"id": "601", "name": "voice", "type": 2, "position": 1},   # skipped
+                     {"id": "602", "name": "announcements", "type": 5, "position": 0}]}]}
     cat = build_catalog(ready)
-    assert cat["user"]["username"] == "me"
-    assert {d["name"] for d in cat["dms"]} == {"OWLSbot", "A Friend"}
+    assert {d["name"] for d in cat["dms"]} == {"OWLSbot", "A Friend"}   # not "unknown"
     assert next(d for d in cat["dms"] if d["name"] == "OWLSbot")["isBot"]
+    assert len(cat["dms"]) == 2                                        # spam DM dropped
     g = cat["guilds"][0]
-    assert g["guildName"] == "OWLS Capital"
-    assert [c["name"] for c in g["channels"]] == ["announcements", "jon-and-kian"]  # no voice
+    assert g["guildName"] == "OWLS Capital" and g["channelCount"] == 2
+    assert [c["name"] for c in g["channels"]] == ["announcements", "jon-and-kian"]  # by position
 
 
 def test_watchlist_match():
