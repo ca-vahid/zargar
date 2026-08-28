@@ -27,9 +27,10 @@ Beyond the session runner (user decisions 2026-08-27):
   touches it.
 
 Settings resolve `techniques.tip.<key>` → `execution.<key>` via `self.rt`.
-The vehicle is per tip (BUILD-PLAN §0): an option-shaped tip arms as options
-(the tip's stated contract when it named one), anything else as shares;
-`techniques.tip.instrument` is only the fallback for non-option tips.
+Expression follows the per-tip vehicle rule (BUILD-PLAN §0): an option-shaped
+tip arms as options (the stated contract verbatim via `express.pick_tip_contract`
+when the tip named one), anything else as shares; a dead chain falls back to
+shares and says so. `techniques.tip.instrument` is only the non-option fallback.
 """
 from __future__ import annotations
 

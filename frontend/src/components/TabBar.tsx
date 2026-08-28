@@ -14,7 +14,7 @@ import {
 const TABS: { key: Page; label: string; icon: React.ReactNode }[] = [
   { key: "armed", label: "Now", icon: <IconArmed /> },
   { key: "trade", label: "Trade", icon: <IconTrade /> },
-  { key: "inbox", label: "Signals", icon: <IconSignals /> },
+  { key: "inbox", label: "Tips", icon: <IconSignals /> },
   { key: "portfolios", label: "Portfolio", icon: <IconPortfolios /> },
 ];
 
