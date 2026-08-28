@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { CopyChip } from "../components/CopyChip";
 import { IconCheck, IconClock, IconHalf, IconX } from "../components/icons";
 import { ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
@@ -225,13 +226,23 @@ function ComposeTab({ goTips }: { goTips: () => void }) {
 
 function ExtractionOutcome({ out, goTips }: { out: any; goTips: () => void }) {
   if (out.note) {
-    return <div className="panel mb"><div className="panel-body muted">{out.note}</div></div>;
+    return (
+      <div className="panel mb">
+        <div className="panel-body muted">
+          {out.note}
+          {out.contentId && <> <CopyChip value={out.contentId}
+            title={`extraction ${out.contentId} — click to copy; quote this id to review the run`} /></>}
+        </div>
+      </div>
+    );
   }
   const sigs: any[] = out.signals ?? [];
   return (
     <div className="panel mb">
       <div className="panel-head">
         What the app read
+        {out.contentId && <CopyChip value={out.contentId}
+          title={`extraction ${out.contentId} — click to copy; quote this id to review how this content was read`} />}
         {out.source && (
           <span className="sub">
             source: <b>{out.source}</b>{out.sourceDetected ? " (detected from the content)" : ""}
@@ -261,6 +272,7 @@ function TipResultCard({ item }: { item: any }) {
         <div className="tip-card-head">
           <span className="tip-sym">{s.ticker}</span>
           <span className="status-pill dim">seen ×{s.seenCount}</span>
+          <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} />
           <span className="muted">same tip already tracked — repeat mentions are counted, not re-traded</span>
         </div>
       </div>
@@ -275,6 +287,8 @@ function TipResultCard({ item }: { item: any }) {
         <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
         {vehicleChip(s)}
         <FlowChip sym={s.ticker} />
+        <CopyChip value={s.id}
+          title={`tip ${s.id} — click to copy; quote this id to review the extract & verify of this tip`} />
         <span style={{ flex: 1 }} />
         <ArmButton s={s} />
       </div>
@@ -340,6 +354,8 @@ function ProposalCard({ p }: { p: Proposal }) {
           <b>{p.side}</b> {p.qty} @ {p.orderType} {p.limitPrice ? fmtMoney(p.limitPrice) : ""}
         </span>
         <span className="ttl"><IconClock size={11} /> {timeUntil(p.expiresAt)}</span>
+        {p.signalId && <CopyChip value={p.signalId}
+          title={`tip ${p.signalId} — click to copy; quote this id to review the tip behind this proposal`} />}
       </div>
       <div className="muted" style={{ fontSize: 12 }}>
         {p.context?.sourceName ?? "unknown source"} · {p.context?.confidence ?? "?"}
@@ -409,7 +425,7 @@ function TipsTab() {
                     {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
                     {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
                     {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
-                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <ArmButton s={s} /></span>
+                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <ArmButton s={s} /></span>
                   </span>
                 </div>
               );
@@ -435,6 +451,7 @@ function TipsTab() {
               <tr>
                 <th>Ticker</th><th>Dir</th><th>Contract</th><th>Book vehicle</th><th>Conf</th><th className="num">Entry</th>
                 <th className="num">Tgt/Stop</th><th>Status</th><th>Source</th><th>When</th>
+                <th title="Quote a tip's id to review its extract & verify">Id</th>
               </tr>
             </thead>
             <tbody>
@@ -460,6 +477,7 @@ function TipsTab() {
                   </td>
                   <td className="muted">{s.sourceName ?? "—"}</td>
                   <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /></td>
+                  <td><CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /></td>
                 </tr>
               ))}
             </tbody>
@@ -606,7 +624,7 @@ function InboxTab() {
                 <span className="bl-card-l">
                   <span className="bl-card-sym">{c.subject || <span className="muted">(no subject)</span>}
                     <span className={`status-pill ${c.status === "extracted" ? "ok" : c.status === "error" ? "bad" : "dim"}`}>{c.status}</span></span>
-                  <span className="bl-card-sub">{c.sourceName ?? c.sender ?? "—"} · {c.sourceType} · {fmtDateTime(c.receivedAt)}</span>
+                  <span className="bl-card-sub">{c.sourceName ?? c.sender ?? "—"} · {c.sourceType} · {fmtDateTime(c.receivedAt)} <CopyChip value={c.id} title={`extraction ${c.id} — click to copy`} /></span>
                   {c.preview && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{c.preview}</span>}
                 </span>
               </div>
@@ -628,7 +646,8 @@ function InboxTab() {
         ) : (
           <table className="tbl">
             <thead>
-              <tr><th>Source</th><th>Subject</th><th>Type</th><th>Status</th><th>Received</th></tr>
+              <tr><th>Source</th><th>Subject</th><th>Type</th><th>Status</th><th>Received</th>
+                <th title="Quote an extraction's id to review how the content was read">Id</th></tr>
             </thead>
             <tbody>
               {items.map((c) => (
@@ -638,6 +657,7 @@ function InboxTab() {
                   <td className="muted">{c.sourceType}</td>
                   <td><span className={`status-pill ${c.status === "extracted" ? "ok" : c.status === "error" ? "bad" : "dim"}`}>{c.status}</span></td>
                   <td className="muted">{fmtDateTime(c.receivedAt)}</td>
+                  <td><CopyChip value={c.id} title={`extraction ${c.id} — click to copy`} /></td>
                 </tr>
               ))}
             </tbody>

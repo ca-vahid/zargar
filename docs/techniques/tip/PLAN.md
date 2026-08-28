@@ -16,7 +16,10 @@ blended), the tip plan builder (`techniques/tip/plan.py`), `TipRunner`
 the `tip_shadow_arm` morning loop, the Phase 2b handoff to `PositionManager`), **options
 expression in both books** under the per-tip vehicle rule (`express.py`), R-based outcome
 scoring with per-source expectancy on the scorecard, and the redesigned Tips page
-(tabs, hero composer, auto-detect source). Tests: `test_signals_tip.py`,
+(tabs, hero composer, auto-detect source). Every extract & verify surfaces a
+**click-to-copy id** (extraction = content id, tip = signal id — same `CopyChip` as EM
+runs) and `GET /api/content/{id}` dumps the full record behind it, so a run can be
+quoted by number when fine-tuning the process. Tests: `test_signals_tip.py`,
 `test_tip_express.py`, `test_tip_runner.py`.
 
 **Not yet built:** the per-source policy editor UI, Telegram intake, HMAC webhook auth,

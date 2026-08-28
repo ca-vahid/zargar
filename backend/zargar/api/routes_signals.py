@@ -100,6 +100,14 @@ def build_signal_routes(app, eng, auth, config) -> None:
     async def list_content(limit: int = 50):
         return await eng.signals_service.list_content(limit)
 
+    @app.get("/api/content/{cid}", dependencies=[auth])
+    async def content_bundle(cid: str):
+        """The full record behind one Extract & verify (the UI's copyable #id)."""
+        try:
+            return await eng.signals_service.content_bundle(cid)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
     # --- proposals -----------------------------------------------------------
     @app.get("/api/proposals", dependencies=[auth])
     async def list_proposals(all: bool = False, limit: int = 100):

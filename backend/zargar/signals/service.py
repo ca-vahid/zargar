@@ -586,6 +586,27 @@ class SignalService:
             )).scalars().all()
         return [signal_dict(r) for r in rows]
 
+    async def content_bundle(self, content_id: str) -> dict:
+        """Everything about one Extract & verify by its id — the raw content
+        (text/transcript, source detection meta) plus every signal it produced
+        with full extraction + verification. This is the record behind the
+        UI's copyable #id: quote the id, pull this, discuss the run."""
+        async with self.engine.sf() as session:
+            row = await session.get(RawContent, content_id)
+            if row is None:
+                raise KeyError(f"content {content_id} not found")
+            sigs = (await session.execute(
+                select(Signal).where(Signal.raw_content_id == content_id)
+                .order_by(Signal.created_at))).scalars().all()
+        return {
+            "id": row.id, "sourceType": row.source_type, "sourceName": row.source_name,
+            "sender": row.sender, "subject": row.subject, "status": row.status,
+            "receivedAt": row.received_at.isoformat() if row.received_at else None,
+            "bodyText": row.body_text, "meta": row.meta or {},
+            "hasImage": bool((row.meta or {}).get("imageAssetId")),
+            "signals": [signal_dict(s) for s in sigs],
+        }
+
     async def list_content(self, limit: int = 50) -> list[dict]:
         async with self.engine.sf() as session:
             rows = (await session.execute(

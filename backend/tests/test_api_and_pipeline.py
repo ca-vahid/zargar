@@ -162,6 +162,30 @@ async def test_full_signal_to_proposal_to_execution(app_client):
     assert r.status_code == 400  # cannot approve twice
 
 
+async def test_content_bundle_by_id(app_client):
+    # The Tips UI surfaces a copyable id per Extract & verify; GET /api/content/{id}
+    # is the record behind it — raw content + every signal with full verification.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    out = await run_pipeline(eng, canned_extraction())
+    cid = out[0]["signal"]["rawContentId"]
+
+    r = await client.get(f"/api/content/{cid}")
+    assert r.status_code == 200
+    bundle = r.json()
+    assert bundle["id"] == cid
+    assert bundle["bodyText"] == SOURCE_TEXT
+    assert len(bundle["signals"]) == 1
+    sig = bundle["signals"][0]
+    assert sig["id"] == out[0]["signal"]["id"]
+    assert sig["ticker"] == "AAPL"
+    assert sig["verification"]["checks"]  # the "verify" half rides along
+
+    r = await client.get("/api/content/nope")
+    assert r.status_code == 404
+
+
 async def test_hallucinated_signal_never_proposed(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")
