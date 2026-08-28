@@ -91,8 +91,16 @@ export function absoluteUrl(s: RouteState): string {
 export function syncUrl(s: RouteState, push = false): void {
   const next = buildPath(s);
   if (next === window.location.pathname) return;
-  if (push) window.history.pushState({}, "", next);
-  else window.history.replaceState({}, "", next);
+  // each entry carries its in-app depth so pages can offer a Back button
+  // that never walks out of the app (canGoBack)
+  const idx = (window.history.state as { idx?: number } | null)?.idx ?? 0;
+  if (push) window.history.pushState({ idx: idx + 1 }, "", next);
+  else window.history.replaceState({ idx }, "", next);
+}
+
+/** True when the previous history entry is another page of this app. */
+export function canGoBack(): boolean {
+  return ((window.history.state as { idx?: number } | null)?.idx ?? 0) > 0;
 }
 
 export function onRouteChange(fn: (s: RouteState) => void): () => void {

@@ -134,6 +134,12 @@ class PlanArmer(PlanRunner):
                 "LATE START: the plan was armed after the open and the overnight gap rules "
                 "(gapped past / through / gap void) were NOT evaluated — judge the level against the "
                 "tape since the open, and treat an open far beyond the level as a chase (T4.1).")
+        if tr.kind in ("reject", "breakdown"):
+            live_ctx.append(
+                "DIRECTION: this is a SHORT-side trigger (rejection at resistance / breakdown), a "
+                "planned part of the method expressed via PUTS (technique.long_only is OFF — the "
+                "2026-08-26 decision plans both sides). Being short is NEVER a kill reason; judge "
+                "the level, volume and tape exactly as you would the long mirror.")
         others = [f"{t2}: {trk.kind} @ {trk.entry:.2f} ({trk.status})"
                   for t2, trk in ap.trackers.items() if t2 != tid]
         if others:
