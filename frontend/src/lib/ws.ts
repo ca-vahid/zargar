@@ -19,6 +19,13 @@ export function onBar(listener: (msg: { symbol: string; tf: string; bar: number[
   };
 }
 
+// live tips-analyst play-by-play: { runId, step }
+let analystListeners: ((msg: { runId: string; step: any }) => void)[] = [];
+export function onAnalystStep(listener: (msg: { runId: string; step: any }) => void) {
+  analystListeners.push(listener);
+  return () => { analystListeners = analystListeners.filter((l) => l !== listener); };
+}
+
 export function watchSymbol(symbol: string) {
   const sym = symbol.toUpperCase();
   watched.add(sym);
@@ -139,6 +146,9 @@ export function connectWS() {
         break;
       case "chat":
         s.applyChat(data.d);
+        break;
+      case "tipAnalyst":
+        for (const l of analystListeners) l(data.d);
         break;
     }
   };

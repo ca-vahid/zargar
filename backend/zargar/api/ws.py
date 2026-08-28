@@ -30,6 +30,7 @@ TOPIC_TO_TYPE = {
     topics.EVENTS: "event",
     topics.TECHNIQUE: "technique",
     topics.CHAT: "chat",
+    topics.TIP_ANALYST: "tipAnalyst",
 }
 
 

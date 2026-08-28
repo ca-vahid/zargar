@@ -165,6 +165,30 @@ def build_signal_routes(app, eng, auth, config) -> None:
             "messageAt": body.messageAt, "error": body.error})
         return {"ok": True}
 
+    @app.post("/api/tip/discord/process-last", dependencies=[auth])
+    async def discord_process_last(body: PeekBody):
+        """Fetch a channel's last message and run it through the tip pipeline."""
+        if not body.channelId:
+            raise HTTPException(status_code=400, detail="channelId required")
+        eng.signals_service.discord_queue_process(body.channelId)
+        return {"ok": True, "queued": body.channelId}
+
+    @app.get("/api/tip/discord/process-pending", dependencies=[auth])
+    async def discord_process_pending():
+        return {"channelIds": eng.signals_service.discord_take_processes()}
+
+    # --- tips analyst run history (the play-by-play, per run) -----------------
+    @app.get("/api/tip/analyst/runs", dependencies=[auth])
+    async def analyst_runs(limit: int = 40):
+        return await eng.signals_service.analyst_runs(limit)
+
+    @app.get("/api/tip/analyst/runs/{run_id}", dependencies=[auth])
+    async def analyst_run(run_id: str):
+        try:
+            return await eng.signals_service.analyst_run(run_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+
     # --- proposals -----------------------------------------------------------
     @app.get("/api/proposals", dependencies=[auth])
     async def list_proposals(all: bool = False, limit: int = 100):

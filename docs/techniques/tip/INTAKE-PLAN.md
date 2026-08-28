@@ -112,6 +112,17 @@ strict grammar and their own timestamps.*
   - VERIFY on a busy guild channel: message events for large servers may need a
     channel-subscribe frame (op 14); DMs and small guilds deliver without one.
 
+- [x] **P4c — analyst run history + live view + process-on-demand** (2026-08-28):
+  the Tips analyst now persists a full **TipAnalystRun** per appraisal —
+  tools available, every LLM turn, every tool call + args + result, the final
+  verdict — streamed live on the `tip_analyst` bus topic (WS type `tipAnalyst`).
+  UI: **Tips > Analyst** tab (`/inbox/analyst`) = a run list + chat-style
+  play-by-play with a copyable run id; it follows a running appraisal live
+  (WS) and polls as a fallback. `GET /api/tip/analyst/runs[/{id}]`. A **"▶ tip"**
+  action on each Discord source fetches its last message and runs it through
+  the pipeline on demand (`POST /api/tip/discord/process-last`, served by the
+  gateway peek loop) — the resulting analyst run appears live in the Analyst tab.
+
 - [ ] **P5 — alert lifecycle → book management**: an `Update/TRIM/CLOSE` from
   the same source+ticker should attach to the OPEN signal (dedupe-style key)
   and drive the immediate book's exit — giving a *source-managed* exit

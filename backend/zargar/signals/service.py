@@ -83,6 +83,42 @@ class SignalService:
         self._discord_catalog: dict | None = None   # last catalog the gateway reported
         self._discord_peek_queue: set[str] = set()  # channelIds the UI asked to peek
         self._discord_peek_results: dict[str, dict] = {}  # channelId -> last-message preview
+        self._discord_process_queue: set[str] = set()  # channelIds to fetch+ingest as a tip
+
+    # ---------------------------------------------------- analyst run history
+    async def analyst_runs(self, limit: int = 40) -> list[dict]:
+        from ..models import TipAnalystRun
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(TipAnalystRun).order_by(TipAnalystRun.created_at.desc()).limit(limit)
+            )).scalars().all()
+        return [{"id": r.id, "ticker": r.ticker, "source": r.source, "status": r.status,
+                 "verdict": r.verdict, "model": r.model, "signalId": r.signal_id,
+                 "traceSteps": len(r.trace or []),
+                 "createdAt": r.created_at.isoformat() if r.created_at else None,
+                 "finishedAt": r.finished_at.isoformat() if r.finished_at else None}
+                for r in rows]
+
+    async def analyst_run(self, run_id: str) -> dict:
+        from ..models import TipAnalystRun
+        async with self.engine.sf() as session:
+            r = await session.get(TipAnalystRun, run_id)
+        if r is None:
+            raise KeyError(f"analyst run {run_id} not found")
+        return {"id": r.id, "ticker": r.ticker, "source": r.source, "status": r.status,
+                "verdict": r.verdict, "model": r.model, "signalId": r.signal_id,
+                "tools": r.tools or [], "trace": r.trace or [], "opinion": r.opinion or {},
+                "tip": r.tip or {}, "error": r.error,
+                "createdAt": r.created_at.isoformat() if r.created_at else None,
+                "finishedAt": r.finished_at.isoformat() if r.finished_at else None}
+
+    def discord_queue_process(self, channel_id: str) -> None:
+        self._discord_process_queue.add(str(channel_id))
+
+    def discord_take_processes(self) -> list[str]:
+        out = sorted(self._discord_process_queue)
+        self._discord_process_queue.clear()
+        return out
 
     # ---------------------------------------------------- discord intake config
     # The gateway (zargar/tools/discord_gateway.py) reports the DMs/channels it

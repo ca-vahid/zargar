@@ -60,3 +60,4 @@ SYSTEM = "system"          # halt state, broker connectivity, notices
 BARS = "bars"              # closed bars {symbol, tf, bar}
 TECHNIQUE = "technique"
 CHAT = "chat"
+TIP_ANALYST = "tip_analyst"   # tips analyst run steps (live play-by-play)

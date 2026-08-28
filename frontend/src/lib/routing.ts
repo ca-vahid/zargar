@@ -25,7 +25,7 @@ export type TqTab = (typeof TQ_TABS)[number];
 // Pages with their own top-level tabs, so /inbox/sources, /flow/brief etc. are
 // deep-linkable and survive F5. The FIRST entry is the default (bare /<page>).
 export const PAGE_TABS: Partial<Record<Page, readonly string[]>> = {
-  inbox: ["compose", "tips", "sources", "inbox"],
+  inbox: ["compose", "tips", "sources", "analyst", "inbox"],
   flow: ["reads", "brief"],
 };
 

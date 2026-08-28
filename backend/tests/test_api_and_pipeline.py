@@ -344,6 +344,16 @@ async def test_tips_analyst_opinion_attached(app_client):
     assert a["verdict"] == "take" and a["quantity"] == 2
     assert a["toolsUsed"] == [{"tool": "get_quote", "args": {"symbol": "AAPL"}}]
     assert fake.calls == 2                            # tool round + final answer
+    # a full analyst run was persisted with the play-by-play, listable + fetchable
+    assert a["runId"]
+    runs = (await client.get("/api/tip/analyst/runs")).json()
+    assert any(r["id"] == a["runId"] and r["status"] == "done" for r in runs)
+    run = (await client.get(f"/api/tip/analyst/runs/{a['runId']}")).json()
+    assert run["ticker"] == "AAPL" and run["verdict"] == "take"
+    kinds = [s["kind"] for s in run["trace"]]
+    assert "start" in kinds and "tool_call" in kinds and "tool_result" in kinds and "final" in kinds
+    assert "get_quote" in run["tools"]                # tools available recorded
+    assert (await client.get("/api/tip/analyst/runs/nope")).status_code == 404
     # journaled as SignalAnalyzed
     from sqlalchemy import select as _sel
     from zargar.models import Event

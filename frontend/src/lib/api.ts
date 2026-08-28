@@ -82,6 +82,13 @@ export const api = {
     request<{ ok: boolean }>("POST", "/api/tip/discord/peek", { channelId }),
   discordPeekResult: (channelId: string) =>
     request<{ result: any }>("GET", `/api/tip/discord/peek?channelId=${encodeURIComponent(channelId)}`),
+  discordProcessLast: (channelId: string) =>
+    request<{ ok: boolean }>("POST", "/api/tip/discord/process-last", { channelId }),
+  // --- tips analyst runs ---
+  analystRuns: (limit = 40) =>
+    request<import("../types").AnalystRunSummary[]>("GET", `/api/tip/analyst/runs?limit=${limit}`),
+  analystRun: (id: string) =>
+    request<import("../types").AnalystRun>("GET", `/api/tip/analyst/runs/${id}`),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

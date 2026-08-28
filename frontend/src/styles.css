@@ -1984,3 +1984,22 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .disc-guild-name:hover { color: var(--accent); }
 .disc-peek { margin-left: 4px; }
 .disc-cols { max-height: 62vh; overflow-y: auto; }
+
+/* Tips analyst runs — history list + chat-style play-by-play */
+.an-layout { display: grid; grid-template-columns: 300px 1fr; gap: 14px; align-items: start; }
+@media (max-width: 800px) { .an-layout { grid-template-columns: 1fr; } }
+.an-list-body { max-height: 68vh; overflow-y: auto; }
+.an-run { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left;
+  background: none; border: none; border-bottom: 1px solid var(--border); padding: 8px 12px; cursor: pointer; }
+.an-run:hover { background: var(--bg-2); }
+.an-run.active { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.an-run-l { display: flex; align-items: center; gap: 8px; }
+.an-run-sub { font-size: 11px; color: var(--text-2); }
+.an-steps { display: flex; flex-direction: column; gap: 8px; }
+.an-step { display: flex; gap: 10px; align-items: flex-start; }
+.an-kind { flex-shrink: 0; min-width: 92px; text-align: center; }
+.an-body { flex: 1; min-width: 0; }
+.an-text { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.an-json { background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 6px 8px; font-size: 11px; overflow-x: auto; margin-top: 4px; max-height: 220px; }
+.an-detail .panel-head { flex-wrap: wrap; gap: 8px; }

@@ -225,6 +225,19 @@ export interface DiscordWatch {
   enabled?: boolean;
 }
 
+export interface AnalystStep {
+  seq: number; kind: string; text: string; at?: string;
+  tool?: string; args?: any; result?: any; opinion?: any; tip?: any; verification?: any;
+}
+export interface AnalystRunSummary {
+  id: string; ticker: string; source?: string | null; status: string;
+  verdict?: string | null; model?: string | null; signalId?: string | null;
+  traceSteps: number; createdAt?: string | null; finishedAt?: string | null;
+}
+export interface AnalystRun extends AnalystRunSummary {
+  tools: string[]; trace: AnalystStep[]; opinion: any; tip: any; error?: string | null;
+}
+
 export interface SourceScorecard {
   source: string;
   signals: number;

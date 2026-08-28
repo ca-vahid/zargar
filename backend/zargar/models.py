@@ -570,3 +570,27 @@ class FlowRead(Base):
 
 
 Index("ix_flow_reads_day_symbol", FlowRead.day, FlowRead.symbol, unique=True)
+
+
+class TipAnalystRun(Base):
+    """One Tips-analyst appraisal, with its full play-by-play so a run can be
+    reviewed and the process tuned. `trace` is the ordered record of every
+    step (llm turn, tool call, tool result, note, final). Streamed live on the
+    `tip_analyst` bus topic while running; never edited after `status` leaves
+    running. Copyable `id` is the reference."""
+    __tablename__ = "tip_analyst_runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    signal_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    ticker: Mapped[str] = mapped_column(String(32), index=True)
+    source: Mapped[str | None] = mapped_column(String(120))
+    status: Mapped[str] = mapped_column(String(16), default="running", index=True)  # running|done|failed
+    verdict: Mapped[str | None] = mapped_column(String(16))     # take|watch|skip
+    model: Mapped[str | None] = mapped_column(String(64))
+    tools: Mapped[list] = mapped_column(JSONVariant, default=list)    # tool names available
+    trace: Mapped[list] = mapped_column(JSONVariant, default=list)    # ordered steps
+    opinion: Mapped[dict] = mapped_column(JSONVariant, default=dict)  # the AnalystOpinion dump
+    tip: Mapped[dict] = mapped_column(JSONVariant, default=dict)      # the tip snapshot analysed
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))

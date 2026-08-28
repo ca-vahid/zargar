@@ -283,6 +283,14 @@ class Gateway:
                                     headers=headers, json={"channelId": str(cid), **res})
                 except Exception:
                     pass
+            # 'process last message as a tip' requests (ingest, not just preview)
+            try:
+                r = await http.get(f"{self.api}/api/tip/discord/process-pending", headers=headers)
+                procs = (r.json() or {}).get("channelIds") or [] if r.status_code == 200 else []
+            except Exception:
+                procs = []
+            for cid in procs:
+                await self._process_channel(http, headers, str(cid))
             await asyncio.sleep(2.5)
 
     async def _fetch_last_message(self, http, channel_id: str) -> dict:
@@ -431,13 +439,14 @@ class Gateway:
               f"{text[:110]!r}")
         if not self.ingest:
             return
-        # an image-only alert (a chart, no words) is still a tip — send the
-        # picture through the vision transcription path
-        image_data_url = None
-        if images:
-            image_data_url = await fetch_image_data_url(http, images[0])
-            if len(images) > 1:
-                print(f"    ! {len(images)} images; only the first is ingested")
+        await self._ingest_message(http, headers, msg, source_name or "auto")
+
+    async def _ingest_message(self, http, headers, msg: dict, source_name: str) -> None:
+        """Post one message (text + first image, if any) to /api/ingest/manual —
+        the shared path for live alerts AND 'process last message'."""
+        text = flatten_message(msg)
+        images = collect_images(msg)
+        image_data_url = await fetch_image_data_url(http, images[0]) if images else None
         if not text.strip() and image_data_url is None:
             print("    -> nothing to ingest (no text, no usable image)")
             return
@@ -447,7 +456,7 @@ class Gateway:
             if image_data_url:
                 body["imageDataUrl"] = image_data_url
             r = await http.post(f"{self.api}/api/ingest/manual", headers=headers,
-                                json=body, timeout=180)
+                                json=body, timeout=200)
             out = r.json() if r.status_code == 200 else {"error": r.text[:200]}
             n = len(out.get("signals") or [])
             print(f"    -> ingest {r.status_code}: {n} signal(s) "
@@ -455,11 +464,28 @@ class Gateway:
             for item in (out.get("signals") or []):
                 s = item.get("signal") or {}
                 print(f"       {s.get('ticker')} {s.get('direction')} "
-                      f"{s.get('instrument')} strike={s.get('strike')} "
-                      f"exp={s.get('expiry')} prem={s.get('premium')} "
-                      f"[{s.get('status')}] id={s.get('id', '')[:8]}")
+                      f"{s.get('instrument')} [{s.get('status')}] id={s.get('id', '')[:8]}")
         except Exception as exc:
             print(f"    -> ingest failed: {exc}")
+
+    async def _process_channel(self, http, headers, channel_id: str) -> None:
+        """'Process last message as a tip': fetch a channel's most recent message
+        via REST and run it through the pipeline (source from the watchlist)."""
+        try:
+            r = await http.get(
+                f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=1",
+                headers={"Authorization": self.token}, timeout=20)
+            msgs = r.json() if r.status_code == 200 else []
+        except Exception as exc:
+            print(f"    ! process fetch failed: {exc}")
+            return
+        if not msgs:
+            print(f"    ! process: no messages in {channel_id}")
+            return
+        entry = self._watch.get(str(channel_id)) or {}
+        src = entry.get("sourceName") or "auto"
+        print(f"[{dt.datetime.now():%H:%M:%S}] processing last message of {channel_id} as {src}")
+        await self._ingest_message(http, headers, msgs[0], src)
 
 
 def main() -> None:

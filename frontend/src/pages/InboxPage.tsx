@@ -5,8 +5,9 @@ import { ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, timeUntil } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
+import { onAnalystStep } from "../lib/ws";
 import { useStore } from "../store";
-import type { Proposal, RawContentItem, Signal, SourceScorecard } from "../types";
+import type { AnalystRun, AnalystStep, Proposal, RawContentItem, Signal, SourceScorecard } from "../types";
 import { useViewport } from "../lib/viewport";
 
 /* The Tips page (redesigned 2026-08-28): the composer is the product — paste
@@ -15,8 +16,8 @@ import { useViewport } from "../lib/viewport";
    Tabs: New tip · Tips · Sources · Inbox; pending proposals ride above the
    tabs as an attention strip (they expire in minutes). */
 
-type Tab = "compose" | "tips" | "sources" | "inbox";
-const TABS: Tab[] = ["compose", "tips", "sources", "inbox"];
+type Tab = "compose" | "tips" | "sources" | "analyst" | "inbox";
+const TABS: Tab[] = ["compose", "tips", "sources", "analyst", "inbox"];
 
 export function InboxPage() {
   const pageTab = useStore((s) => s.pageTab);
@@ -36,6 +37,8 @@ export function InboxPage() {
             onClick={() => setTab("tips")}>Tips{signals.length ? ` · ${signals.length}` : ""}</button>
           <button role="tab" aria-selected={tab === "sources"} className={tab === "sources" ? "active" : ""}
             onClick={() => setTab("sources")}>Sources</button>
+          <button role="tab" aria-selected={tab === "analyst"} className={tab === "analyst" ? "active" : ""}
+            onClick={() => setTab("analyst")}>Analyst</button>
           <button role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""}
             onClick={() => setTab("inbox")}>Inbox</button>
         </div>
@@ -57,6 +60,7 @@ export function InboxPage() {
       {tab === "compose" && <ComposeTab goTips={() => setTab("tips")} />}
       {tab === "tips" && <TipsTab />}
       {tab === "sources" && <SourcesTab />}
+      {tab === "analyst" && <AnalystTab />}
       {tab === "inbox" && <InboxTab />}
     </div>
   );
@@ -602,11 +606,25 @@ function PeekButton({ channelId }: { channelId: string }) {
       setRes({ error: "no response — is the intake running?" }); setState("done");
     } catch (e: any) { setRes({ error: e.message }); setState("done"); }
   };
+  const toast = useStore((s) => s.toast);
+  const [processing, setProcessing] = useState(false);
+  const process = async () => {
+    setProcessing(true);
+    try {
+      await api.discordProcessLast(channelId);
+      toast("info", "Processing last message as a tip — watch the Analyst tab");
+    } catch (e: any) { toast("error", e.message); }
+    finally { setProcessing(false); }
+  };
   return (
     <span className="disc-peek">
       <button className="link-btn" disabled={state === "loading"} onClick={test}
         title="Fetch this channel's last message to confirm it's connected">
         {state === "loading" ? "testing…" : "test"}
+      </button>
+      <button className="link-btn" disabled={processing} onClick={process}
+        title="Process this channel's last message as a tip (runs extraction + analyst)">
+        {processing ? "…" : "▶ tip"}
       </button>
       {state === "done" && res && (
         res.error
@@ -825,6 +843,135 @@ function SourcesTab() {
       </div>
     </div>
     </>
+  );
+}
+
+/* ---------------------------------------------------------------- analyst */
+
+const STEP_META: Record<string, { icon: string; cls: string; label: string }> = {
+  start: { icon: "▶", cls: "dim", label: "start" },
+  llm: { icon: "🧠", cls: "", label: "analyst" },
+  tool_call: { icon: "→", cls: "wait", label: "tool call" },
+  tool_result: { icon: "←", cls: "ok", label: "tool result" },
+  note: { icon: "•", cls: "dim", label: "note" },
+  final: { icon: "✓", cls: "ok", label: "verdict" },
+  error: { icon: "✕", cls: "bad", label: "error" },
+};
+
+function StepRow({ s }: { s: AnalystStep }) {
+  const m = STEP_META[s.kind] ?? { icon: "•", cls: "dim", label: s.kind };
+  return (
+    <div className="an-step">
+      <span className={`an-kind status-pill ${m.cls}`}>{m.icon} {m.label}</span>
+      <div className="an-body">
+        <div className="an-text">{s.text}</div>
+        {s.kind === "tool_result" && s.result != null && (
+          <pre className="an-json">{JSON.stringify(s.result, null, 1).slice(0, 1200)}</pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AnalystRunDetail({ id }: { id: string }) {
+  const [run, setRun] = useState<AnalystRun | null>(null);
+  const [live, setLive] = useState<AnalystStep[]>([]);
+  useEffect(() => {
+    setRun(null); setLive([]);
+    let dead = false;
+    api.analystRun(id).then((r) => !dead && setRun(r)).catch(() => undefined);
+    // live: append steps for THIS run as they stream in
+    const off = onAnalystStep(({ runId, step }) => {
+      if (runId === id) setLive((prev) => prev.some((p) => p.seq === step.seq) ? prev : [...prev, step]);
+    });
+    return () => { dead = true; off(); };
+  }, [id]);
+  // if the run is still running, poll once more when live stops arriving
+  useEffect(() => {
+    if (run && run.status === "running") {
+      const t = setInterval(() => api.analystRun(id).then((r) => {
+        setRun(r); if (r.status !== "running") clearInterval(t);
+      }).catch(() => undefined), 4000);
+      return () => clearInterval(t);
+    }
+  }, [run?.status, id]);
+
+  if (!run) return <Spinner />;
+  // merge persisted trace with any live steps not yet persisted
+  const bySeq = new Map<number, AnalystStep>();
+  for (const s of run.trace) bySeq.set(s.seq, s);
+  for (const s of live) if (!bySeq.has(s.seq)) bySeq.set(s.seq, s);
+  const steps = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+  const running = run.status === "running";
+  return (
+    <div className="panel an-detail">
+      <div className="panel-head">
+        {run.ticker} · {run.source ?? "?"}
+        <span className={`status-pill ${running ? "wait" : run.verdict === "take" ? "ok" : run.verdict === "skip" ? "bad" : "dim"}`}>
+          {running ? "running…" : run.verdict ?? run.status}
+        </span>
+        <CopyChip value={run.id} title={`analyst run ${run.id} — click to copy; quote it to review/tune`} />
+        <span style={{ flex: 1 }} />
+        <span className="muted" style={{ fontSize: 11 }}>
+          {run.model} · {run.tools.length} tools available
+        </span>
+      </div>
+      <div className="panel-body">
+        <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>
+          Tools available: {run.tools.join(", ")}
+        </div>
+        <div className="an-steps">
+          {steps.map((s) => <StepRow key={s.seq} s={s} />)}
+          {running && <div className="an-step"><span className="an-kind status-pill wait">…</span>
+            <div className="an-body"><div className="muted">working…</div></div></div>}
+        </div>
+        {run.error && <div className="neg" style={{ fontSize: 12, marginTop: 8 }}>{run.error}</div>}
+      </div>
+    </div>
+  );
+}
+
+function AnalystTab() {
+  const signalCount = useStore((s) => s.signals.length);
+  const state = useAsync(() => api.analystRuns(50), [signalCount]);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [bump, setBump] = useState(0);
+  // a fresh run streaming in refreshes the list + auto-opens the newest
+  useEffect(() => {
+    const off = onAnalystStep(({ runId, step }) => {
+      if (step.kind === "start") { setSelected(runId); setBump((b) => b + 1); }
+    });
+    return off;
+  }, []);
+  useEffect(() => { if (bump) state.reload(); }, [bump]);
+  const runs = state.data ?? [];
+  const sel = selected ?? runs[0]?.id ?? null;
+  return (
+    <div className="an-layout">
+      <div className="panel an-list">
+        <div className="panel-head">Analyst runs <span className="sub">the play-by-play of each appraisal</span></div>
+        <div className="an-list-body">
+          {state.loading && runs.length === 0 ? <Spinner />
+            : runs.length === 0 ? <div className="empty">No analyst runs yet — a tip triggers one.</div>
+            : runs.map((r) => (
+              <button key={r.id} className={`an-run ${r.id === sel ? "active" : ""}`}
+                onClick={() => setSelected(r.id)}>
+                <span className="an-run-l">
+                  <b>{r.ticker}</b>
+                  <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
+                    {r.status === "running" ? "running" : r.verdict ?? r.status}
+                  </span>
+                </span>
+                <span className="an-run-sub">{r.source ?? "?"} · {r.traceSteps} steps · {r.createdAt ? fmtDateTime(r.createdAt) : ""}</span>
+              </button>
+            ))}
+        </div>
+      </div>
+      <div className="an-main">
+        {sel ? <AnalystRunDetail id={sel} />
+          : <div className="panel"><div className="panel-body empty">Select a run to see its play-by-play.</div></div>}
+      </div>
+    </div>
   );
 }
 

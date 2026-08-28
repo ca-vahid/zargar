@@ -182,10 +182,58 @@ def _parse_opinion(raw: str) -> AnalystOpinion:
     return AnalystOpinion.model_validate_json(s[i:j + 1])
 
 
+class _Recorder:
+    """Captures the analyst's play-by-play: appends each step to a trace, streams
+    it live on the `tip_analyst` bus topic, and periodically persists the run so
+    an in-flight run is visible in history. Every step is a plain dict with a
+    monotonic `seq`, a `kind` and a prose `text` for the review UI."""
+
+    def __init__(self, eng, run_id: str):
+        self.eng = eng
+        self.run_id = run_id
+        self.trace: list[dict] = []
+
+    def step(self, kind: str, text: str, **extra) -> None:
+        rec = {"seq": len(self.trace), "kind": kind, "text": text,
+               "at": dt.datetime.now(dt.timezone.utc).isoformat(), **extra}
+        self.trace.append(rec)
+        try:
+            from ... import bus as topics
+            self.eng.bus.publish(topics.TIP_ANALYST, {"runId": self.run_id, "step": rec})
+        except Exception:      # streaming is best-effort
+            pass
+
+
+async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
+                       opinion=None, error: str | None = None, **fields) -> None:
+    from ...models import TipAnalystRun
+    import datetime as _dt
+    async with eng.sf() as session:
+        row = await session.get(TipAnalystRun, run_id)
+        if row is None:
+            return
+        row.status = status
+        row.trace = list(rec.trace)
+        if opinion is not None:
+            row.opinion = opinion
+            row.verdict = opinion.get("verdict")
+        if error is not None:
+            row.error = error
+        if status in ("done", "failed"):
+            row.finished_at = _dt.datetime.now(_dt.timezone.utc)
+        for k, v in fields.items():
+            setattr(row, k, v)
+        await session.commit()
+
+
 async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                       client=None) -> dict | None:
-    """Appraise one tip. Returns the opinion dict (stored on
-    extraction.analyst) or None on any failure — strictly advisory."""
+    """Appraise one tip. Persists a full TipAnalystRun (trace + tools + opinion),
+    streams the play-by-play live, and returns the opinion dict (stored on
+    extraction.analyst) or None on failure — strictly advisory."""
+    from ...domain import new_id
+    from ...models import TipAnalystRun
+
     s = eng.settings
     if not bool(s.get("techniques.tip.analyst_enabled", True)):
         return None
@@ -209,6 +257,21 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         "confidence": signal_row.confidence, "source": signal_row.source_name,
         "status": signal_row.status,
     }
+    tool_names = [t["name"] for t in TOOLS]
+    run_id = new_id()
+    async with eng.sf() as session:            # create the run row (visible immediately)
+        session.add(TipAnalystRun(
+            id=run_id, signal_id=getattr(signal_row, "id", None),
+            ticker=signal_row.ticker, source=signal_row.source_name,
+            status="running", model=model, tools=tool_names, tip=tip))
+        await session.commit()
+
+    rec = _Recorder(eng, run_id)
+    rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
+             f"from {signal_row.source_name or 'unknown'}. Tools available: "
+             f"{', '.join(tool_names)}.", tip=tip,
+             verification={k: verification.get(k) for k in ("passed", "park", "shadow_only")})
+
     header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
               f"Per-tip budget: ${policy.budget_per_tip:,.0f} · option DTE window "
               f"{policy.dte_min}-{policy.dte_max} (tip's own contract may override)\n"
@@ -225,32 +288,52 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 model=model, max_tokens=2000, system=system,
                 messages=messages, tools=TOOLS)
             calls = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
+            think = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+            if think.strip():
+                rec.step("llm", think.strip())
             if not calls or len(tools_used) >= max_tools:
-                text = "".join(b.text for b in resp.content
-                               if getattr(b, "type", "") == "text")
-                return _parse_opinion(text)
+                await _persist_run(eng, run_id, status="running", rec=rec)
+                return _parse_opinion(think)
             messages.append({"role": "assistant", "content": resp.content})
             results = []
             for c in calls:
+                args = dict(c.input)
                 if len(tools_used) >= max_tools:
                     out = {"error": "tool budget exhausted — answer now"}
+                    rec.step("note", "Tool budget exhausted — asking for the final answer.")
                 else:
+                    rec.step("tool_call", f"→ {c.name}({json.dumps(args, default=str)})",
+                             tool=c.name, args=args)
                     try:
-                        out = await _run_tool(eng, c.name, dict(c.input))
+                        out = await _run_tool(eng, c.name, args)
                     except Exception as exc:
                         out = {"error": str(exc)[:300]}
-                    tools_used.append({"tool": c.name, "args": dict(c.input)})
+                    tools_used.append({"tool": c.name, "args": args})
+                    rec.step("tool_result", f"← {c.name}: {json.dumps(out, default=str)[:500]}",
+                             tool=c.name, result=out)
                 results.append({"type": "tool_result", "tool_use_id": c.id,
                                 "content": json.dumps(out, default=str)[:6000]})
             messages.append({"role": "user", "content": results})
+            await _persist_run(eng, run_id, status="running", rec=rec)   # progress visible
         return None
 
     try:
         opinion = await asyncio.wait_for(loop(), timeout=TIMEOUT_S)
     except Exception as exc:
         log.warning("tip analyst failed for %s: %s", signal_row.id, exc)
+        rec.step("error", f"Analyst failed: {exc}")
+        await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500])
         return None
     if opinion is None:
+        rec.step("error", "No opinion produced (loop exhausted).")
+        await _persist_run(eng, run_id, status="failed", rec=rec, error="no opinion")
         return None
-    return {**opinion.model_dump(), "model": model, "toolsUsed": tools_used,
-            "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    result = {**opinion.model_dump(), "model": model, "toolsUsed": tools_used,
+              "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    rec.step("final", f"Verdict: {opinion.verdict.upper()}"
+             + (f" — {opinion.contract_label or opinion.contract}" if opinion.contract else "")
+             + (f" @ ≤{opinion.limit_price}" if opinion.limit_price else "")
+             + (f" ×{opinion.quantity}" if opinion.quantity else "")
+             + f". {opinion.rationale}", opinion=result)
+    await _persist_run(eng, run_id, status="done", rec=rec, opinion=result)
+    return result
