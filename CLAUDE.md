@@ -200,7 +200,11 @@ docker-compose.
   tab "Prepare the next session") is a sweep with `params.kind == "next"` whose rows are
   `result.pending` until `score_sheet` replays them — it mints no runs and calls no LLM.
 - Technique/LLM: structured-output schemas must stay **flat** (nested models +
-  enums → 400 "compiled grammar is too large"); Opus 5 defaults thinking display
+  enums → 400 "compiled grammar is too large"); signal extraction outgrew the
+  budget entirely (nested 18-field list → "Schema is too complex" even with all
+  enums flattened to str) — `signals/extraction.py` uses **prompted JSON +
+  local pydantic validation** (enum vocab enforced by validators in
+  `signals/schemas.py`), not `messages.parse`; Opus 5 defaults thinking display
   to `omitted` — pass `display: "summarized"` to stream it; never trust an
   image's extension, sniff the bytes (`technique/llm.py::sniff_media_type`);
   Yahoo 1m history ≈ 20 days back (8 days/request), 5m 60 d, 1h 2 y.

@@ -124,18 +124,48 @@ class Extractor:
             ]
         else:
             user_content = header + f"--- CONTENT START ---\n{text}\n--- CONTENT END ---"
-        response = await client.messages.parse(
-            model=self.model,
-            max_tokens=16000,
-            system=EXTRACTION_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_content}],
-            output_format=ExtractionResult,
-        )
-        if response.stop_reason == "refusal":
-            log.warning("extraction refused by safety classifier")
-            return ExtractionResult(signals=[], source_type="other")
-        result = response.parsed_output
-        if result is None:
-            log.warning("extraction returned unparseable output")
-            return ExtractionResult(signals=[], source_type="other")
-        return result
+        # Prompted JSON + local pydantic validation, NOT API structured outputs:
+        # ExtractionResult (a nested 18-field list) exceeds the structured-output
+        # grammar budget ("Schema is too complex", 2026-08-28) even with every
+        # enum flattened to str. The schema lives in the prompt instead and the
+        # model's own field descriptions do double duty as extraction guidance.
+        import json as _json
+        schema = _json.dumps(ExtractionResult.model_json_schema(), separators=(",", ":"))
+        system = (EXTRACTION_SYSTEM_PROMPT
+                  + "\n\nReply with ONLY one JSON object that validates against this JSON "
+                    "Schema — no prose, no markdown fences:\n" + schema)
+        messages: list = [{"role": "user", "content": user_content}]
+        last_err = ""
+        for attempt in range(2):
+            response = await client.messages.create(
+                model=self.model, max_tokens=16000, system=system, messages=messages)
+            if response.stop_reason == "refusal":
+                log.warning("extraction refused by safety classifier")
+                return ExtractionResult(signals=[], source_type="other")
+            raw = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
+            try:
+                return _parse_result_json(raw)
+            except Exception as exc:           # invalid JSON / failed validation
+                last_err = str(exc)
+                log.warning("extraction JSON invalid (attempt %d): %s", attempt + 1, exc)
+                messages = messages + [
+                    {"role": "assistant", "content": raw[:8000]},
+                    {"role": "user", "content":
+                        f"That JSON failed validation: {last_err[:1500]}\n"
+                        "Reply again with ONLY the corrected JSON object."}]
+        log.warning("extraction returned unparseable output: %s", last_err)
+        return ExtractionResult(signals=[], source_type="other")
+
+
+def _parse_result_json(raw: str) -> ExtractionResult:
+    """Model text -> ExtractionResult. Tolerates markdown fences and prose
+    around the object; pydantic validation (incl. the enum normalizers in
+    schemas.py) is the contract."""
+    s = raw.strip()
+    if s.startswith("```"):
+        s = s.split("\n", 1)[1] if "\n" in s else s
+        s = s.rsplit("```", 1)[0]
+    i, j = s.find("{"), s.rfind("}")
+    if i == -1 or j <= i:
+        raise ValueError("no JSON object in response")
+    return ExtractionResult.model_validate_json(s[i:j + 1])
