@@ -44,8 +44,8 @@ default setup) serves the built UI. PostgreSQL is the only external service.
 | `portfolio.py` | `PositionKeeper` — avg-cost positions, realized/unrealized P&L, cash, equity, daily-loss %, equity snapshots. Options use a 100× multiplier. |
 | `signals/schemas.py` | Pydantic schemas for Claude structured extraction + the extraction system prompt. |
 | `signals/extraction.py` | Claude call (`messages.parse`) + **quote grounding**: every extracted ticker/price must be backed by a verbatim quote found in the source, verified in code. |
-| `signals/verification.py` | Deterministic checks vs live data: grounding, actionability, ticker resolves, halt, min price, spread, price deviation, past-target, price ordering. |
-| `signals/service.py` | Pipeline orchestration: ingest → extract → ground → persist → verify → propose + **shadow-execute** into a per-source shadow portfolio. |
+| `signals/verification.py` | Deterministic checks vs live data: grounding, actionability, ticker resolves, halt, min price, spread, price ordering (fatal) — price deviation / past-target only **park** the signal (the tip technique keeps watching the level). |
+| `signals/service.py` | Pipeline orchestration: ingest (text / screenshot→transcript) → extract → ground → dedupe (repeats bump `seen_count`) → persist → verify (verified / parked / failed) → propose + **shadow-execute** into the source's immediate book; per-source policies in `signals/sources.py`; two-book scorecards. |
 | `approvals/proposals.py` | Proposal queue: sizing (% of equity), TTL expiry loop, approve/half/reject → order placement. |
 | `approvals/telegram.py` | Long-polling bot: proposal cards with inline buttons, `/halt` `/resume` `/status`. Only the configured chat id may act. |
 | `engine.py` | Wires everything; background tasks: quote consumer, bar persister, equity snapshotter (30 s), daily-loss monitor (auto-halt). |
@@ -62,7 +62,7 @@ One engine, many techniques. Three shared layers and a thin package per techniqu
 | Market structure | `zargar/marketstructure/` | Pure functions over bars, parameterised by `MarketRules` (never a technique's rulebook): levels/pivots/in-band touches (`levels`), `distance_pct`, volume vs its time-of-day baseline (`volume`), candles, trendlines/wedges (`structure`), the ET session clock (`sessions`), **`TriggerTracker`** — the touch/break/gap/volume/false-break/invalidation state machine shared by live, plan and sweep (`tracker`), `simulate_plan` (`outcome`), bars fetch (`history`). `zargar.technique.<module>` paths are shims. |
 | Execution | `zargar/execution/` | The money path: `SessionListener` (1m bars + orders + heartbeat + quote watch), `exits` (pure decisions, reduce-only intents), `book.ManagedTrade`, **`positions.PositionManager`** — durable multi-day positions (phase 2b: policies-as-data via `policies.py`, multi-leg as a leg list, write-ahead + restored on boot, closed policy-tf-bar decisions RTH-only, quote crash brake, failed-exit watchdog, venue GTC stops for shares / app-managed-with-ack for options, assignment-aware pre-open reconciliation at 09:05 ET, `simulate.simulate_position` = the same evaluator over history, `sizing` risk/budget modes, chaos suite `tests/test_position_chaos.py`) — and **`planrunner.PlanRunner`** — arm/restore/persist, the off-loop fire chain, entry with retry, sizing, contract/premium caps, ladder/stop/flatten management, loss halt, quote-stop + premium-stop watch, failed-exit watchdog, alerts, audit, phone summary. Hooks a technique overrides: `rules`, `load_plan`, `load_baseline_bars`, `entry_windows_enforced`, `analyze_fire`, `reviewer_available`/`review_fire`, `record_fire`, `emit_proposal`, `after_fire`, `pick_contract`, `size_multiplier`, `preopen_due`/`preopen`, `arm_today`. The runner owns the reviewer's timeout, fail-open budget, veto cooldown, kill cap and re-arming; **hooks never journal** — the runner journals their results. |
 | Research | `zargar/research/` + `zargar/technique/service.py` | Event-schema contracts (`research/events_contract.py` — every `Technique*`/`ManagedPosition*` journal kind is versioned; contract test + advisory runtime check) and the nightly feeds (`research/snapshots.py`: `option_chain_snapshots` at 16:30 ET — per-contract OI/IV/volume, not backfillable — and the tf=1d bar layer at 20:05). Runs/outcomes/reviews/replay/sweeps stay in `technique/service.py`, keyed by the `technique` column + free-form `tags`; the class moves into `research/` when technique #2 needs it. |
-| Techniques | `zargar/techniques/` (registry) + `zargar/technique/` (EnhancedMarket) | `TechniqueInfo` registry (`GET /api/techniques`); EM = rulebook, setups, plans, prompts/schemas, vision, chat, and `arming.PlanArmer(PlanRunner)` — the hook implementations. |
+| Techniques | `zargar/techniques/` (registry + tip + flow) + `zargar/technique/` (EnhancedMarket) | `TechniqueInfo` registry (`GET /api/techniques`) lists three: **EM** (`technique/` — rulebook, setups, plans, prompts/schemas, vision, chat, `arming.PlanArmer(PlanRunner)`), **Tip** (`techniques/tip/` — plan/horizon/express + `runner.TipRunner(PlanRunner)`; intake stays in `signals/`; dual shadow books via `Portfolio.book`; filled entries hand off to the PositionManager), **Flow** (`techniques/flow/` — pure scan math + `FlowService` on the scheduler; context-only, never orders; `FlowContextServed` journals every delivery). |
 
 Engine services added 2026-08-27: `scheduler.py` (named once-a-day ET jobs — techniques register
 scans; journaled `ScheduledJobRan/Failed`, failure-alerted), `calendar_service.py`
@@ -120,7 +120,7 @@ justifies auto-execution.
 |---|---|
 | Dry run | `trading.mode=dry_run` or per-order flag — validated + journaled, never routed |
 | Simulation | `SimExecutor` fills against live quotes (sim feed today; IBKR feed when connected) |
-| Shadow | Automatic per-source portfolios on verified signals |
+| Shadow | TWO automatic per-source pretend books (`Portfolio.book`): **immediate** buys at tip time; **armed** waits for the level (morning `tip_shadow_arm` sweep) — the Tips scorecard compares them |
 | IBKR paper | `ZARGAR_BROKER=ibkr` + mode `paper` |
 
 ## Wire formats
@@ -156,7 +156,7 @@ ROADMAP).
 | `components/OrderTicket.tsx` | Side/qty/type/tif/bracket/dry-run; shows failed risk checks inline. |
 | `pages/OptionsPage.tsx`, `components/OptionChain.tsx`, `components/OptionTicket.tsx` | Options: underlying header → expiry strip → strike ladder (calls / strike / puts, centred on ATM) → single-leg option ticket (greeks strip, derived open/close, fees, max loss, breakeven, broker preview, confirm dialog). Deep links `/options/SPY`, `/options/SPY/<expiry>`, `/options/c/<OCC>`. `lib/occ.ts` mirrors the backend symbology. |
 | `components/Blotter.tsx` | Positions / open orders / history / fills tabs. |
-| `pages/` | `TradePage`, `InboxPage` (proposals+signals+pipeline tester), `PortfoliosPage` (equity curves), `JournalPage` (audit browser), `SettingsPage` (every runtime knob, watchlists, sources). |
+| `pages/` | `TradePage`, `InboxPage` = the **Tips** page (New tip composer · Tips · Sources scorecards · Inbox), `FlowPage` (Reads desk · Symbol Story · Brief), `PortfoliosPage` (equity curves), `JournalPage` (audit browser), `SettingsPage` (every runtime knob, watchlists, sources). |
 | `styles.css` | Design tokens: dark default + light theme, user-set accent, density; market colors `--up/--down`; categorical `--series-1..8`. |
 
 ## Testing

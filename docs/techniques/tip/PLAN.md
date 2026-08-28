@@ -5,29 +5,18 @@ signals path) after the wave-one trim (user decisions: T1+T2 greenlit; entry pol
 per-source, default level-touch, tip-time only for sources with a positive scorecard).
 Runs on the technique platform (`docs/TECHNIQUE-PLATFORM-PLAN.md`); the engine team owns
 Phase 2b/3 per the 2026-08-27 requirements memo — those dependencies are marked ⚙ below.
-Status: **Phase A largely built 2026-08-27** — extraction v2 (option-aware schema, shorthand
-grounding, screenshot→transcript intake), dedupe with seen-again, verification parking,
-per-source policy (`signals/sources.py`), the tip plan builder (`techniques/tip/plan.py`,
-simulate_plan-compatible), source scorecards (`GET /api/signals/sources`), registry entry,
-settings keys, flow-context injection into verification; tests in
-`tests/test_signals_tip.py`. Post-merge with the engine Phase 3 batch (same day): shadow
-orders carry `technique_id="tip"` + `tags=["source:<name>"]` (per-tag day-notional caps see
-them), and verification also gets an advisory `calendarContext` line from `engine.calendar`
-when earnings fall inside the tip's horizon. **TipRunner built same day**
-(`techniques/tip/runner.py` + `POST /api/signals/{id}/arm`, tests `tests/test_tip_runner.py`):
-level-touch tips arm through the shared `PlanRunner` — tip rules are touch-fire with NO volume
-requirement (tracker opt-out `volume_floor_mult=0`), no gap-magnitude void, all RTH windows,
-no critic in v1, shares expression (options = Phase B); a tip armed after the close plans for
-the NEXT session; tip-time sources are refused (they propose immediately instead). Runs are
-minted as `technique="tip"` rows with `source:` tags. Building it surfaced and fixed two
-platform bugs (order-pipeline bracket deadlock; unfiltered runner restore) — PLATFORM-RULES §4.
-Still open in Phase A: the automatic per-source shadow-arm loop (portfolio-accounting decision:
-armed shadow plans and the tip-time shadow market order must not double-count one source's
-P&L), and the Tips UI beyond the scorecard panel (arm button + armed chip). Phase B unchanged (⚙ 2b).
-Decision taken during the build: the platform default source mode is **proposal**, not
-shadow — a human approval is itself a gate, and the paste-by-hand user is the common case;
-"shadow until the scorecard clears" governs the AUTO mode specifically. Unknown sources can
-still be demoted to shadow per source.*
+Status: **FULLY BUILT 2026-08-27** — Phase A (intake/extraction v2, dedupe, parking,
+per-source policies, plan builder, scorecards), the `TipRunner` (level-touch arming through the
+shared `PlanRunner`; tip-time sources propose immediately instead), the **dual shadow books**
+with the morning `tip_shadow_arm` loop and expiry-bounded waiting (§4), the **Phase 2b handoff**
+of filled entries to the durable position manager (§4), and **Phase B options expression in both
+books** (`BUILD-PLAN.md` — the per-tip vehicle rule, `express.py`, premium budgets, shorts as
+puts). The Tips page was redesigned 2026-08-28 (New tip · Tips · Sources · Inbox tabs, source
+auto-detection via `source_hint`). Tests: `tests/test_signals_tip.py`, `tests/test_tip_runner.py`.
+§2/§3 below are kept as the build record; §4 is the decision log. Building this surfaced and
+fixed two platform bugs (order-pipeline bracket deadlock; unfiltered runner restore) —
+PLATFORM-RULES §4. Standing decision: the platform default source mode is **proposal** (a human
+approval is itself a gate); "shadow until the scorecard clears" governs AUTO mode specifically.*
 
 ## 0. What it is
 
@@ -127,7 +116,7 @@ no LLM — the `canned_extraction` convention); dedupe window; parked-plan re-ar
 returns; plan construction both entry modes; shadow scorecard math; the tracker parity
 suite picks up `kind="tip"` triggers automatically.
 
-## 3. Phase B — the money path (⚙ engine-gated)
+## 3. Phase B — the money path *(BUILT 2026-08-27 — the as-built record is `BUILD-PLAN.md`; this section is the original plan)*
 
 Lands when Phase 2b ships; everything here is policy/data on shared machinery:
 - `express()`: option pick via the shared chain access with the source's `dte_window`

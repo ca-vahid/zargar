@@ -26,8 +26,10 @@ Beyond the session runner (user decisions 2026-08-27):
   and removed from the session runner — the runner's end-of-day flatten never
   touches it.
 
-Settings resolve `techniques.tip.<key>` → `execution.<key>` via `self.rt`
-(instrument defaults to shares in v1 — option expression is Phase B).
+Settings resolve `techniques.tip.<key>` → `execution.<key>` via `self.rt`.
+Expression follows the per-tip vehicle rule (BUILD-PLAN): option-shaped tips
+buy the stated contract via `express.pick_tip_contract`; share-shaped tips
+buy shares; a dead chain falls back to shares and says so.
 """
 from __future__ import annotations
 

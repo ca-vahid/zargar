@@ -21,6 +21,8 @@ cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTr
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-auth a connection to trade
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_options_check   # read-only: which accounts can trade options
 cd backend && .venv/bin/python -m pytest tests/test_technique_*.py       # technique pipeline (no LLM calls)
+cd backend && .venv/bin/python -m pytest tests/test_signals_tip.py tests/test_tip_runner.py  # Tip technique (no LLM)
+cd backend && .venv/bin/python -m pytest tests/test_flow_scan.py tests/test_flow_api.py      # Flow technique (no chain fetches)
 cd backend && .venv/bin/python -m pytest tests/test_position_*.py tests/test_platform_*.py  # platform + durable positions (chaos suite)
 cd backend && .venv/bin/python -m pytest tests/test_options_*.py tests/test_snaptrade_options.py  # options (stubbed CBOE/SnapTrade)
 cd backend && .venv/bin/python -m zargar.tools.technique_review list --unreviewed   # review loop CLI (dump/score/review/diff/replay)
@@ -41,15 +43,44 @@ Review loop (trace, provenance, outcomes, reviews, replay, bundle):
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
 Session plans + walk-forward + live arming: `docs/techniques/enhanced-market/WALKFORWARD-PLAN.md`
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
-**Multi-technique platform (plan, 2026-08-27):** `docs/TECHNIQUE-PLATFORM-PLAN.md`. The app is meant to
-run MANY techniques on one engine; EM is the first. Rules for new code: pure bar analysis (levels,
-touches, distance %, volume, candles, structure, the `TriggerTracker` state machine, `simulate_plan`)
-is a **shared library** — write it parameterised by a rules value, never by reading EM's `rulebook`
-inside; money handling (arm/fire/enter/manage/exit/alerts) belongs to `zargar/execution/`, not to a
-technique; a technique owns only its plan construction, prompts/schemas, grading, policies
-(expression, exits, critic) and its own `docs/techniques/enhanced-market/TRADING-RULES.md` section. Put new technique-specific
-knobs under `technique.<id>.*`, shared runtime knobs under `execution.*`. Don't add another
-`"EM Options"` hard-code to the UI — the nav will list a registry. The runtime also holds positions
+**Multi-technique platform (BUILT through phase 5, 2026-08-27):** `docs/TECHNIQUE-PLATFORM-PLAN.md`;
+**start any new technique at `docs/BUILDING-A-TECHNIQUE.md`**. The registry
+(`zargar/techniques/base.py`, `GET /api/techniques`) lists THREE techniques: `enhanced_market`
+("EM Options"), `tip` ("Tips") and `flow` ("Flow") — the nav renders it; never hard-code a
+technique name into the UI. Rules for new code: pure bar analysis (levels, touches, distance %,
+volume, candles, structure, the `TriggerTracker` state machine, `simulate_plan`) lives in
+`zargar/marketstructure/` — parameterised by a `MarketRules` value, never by reading a technique's
+rulebook; money handling (arm/fire/enter/manage/exit/alerts, durable positions) belongs to
+`zargar/execution/`; a technique owns only its plan construction, prompts/schemas, grading,
+policies (expression, exits, critic) and its own `docs/techniques/<id>/TRADING-RULES.md`. Settings:
+runtime keys resolve `techniques.<id>.<key>` → `execution.<key>` (read via `PlanRunner.rt()`);
+method-specific knobs are plain `techniques.<id>.*` keys in `settings_service.DEFAULTS` (EM's
+legacy `technique.*` prefix is grandfathered — don't copy it).
+**Tip technique (BUILT 2026-08-27, incl. options expression):** `docs/techniques/tip/PLAN.md` +
+`BUILD-PLAN.md`. Human-relayed tips only — never Discord scraping or alert-room auto-execution.
+Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
+dedupe→`seen_count`, verification where price-position failures **park** the signal instead of
+killing it); the technique is `zargar/techniques/tip/` (plan.py builds level-touch plans, horizon.py
+bounds waiting by the tip's contract expiry − `techniques.tip.entry_cutoff_dte`, express.py picks
+the stated contract verbatim, runner.py = `TipRunner(PlanRunner)`). **Dual shadow books per source**
+(`Portfolio.book`): "immediate" buys at tip time, "armed" waits for the level (morning
+`tip_shadow_arm` scheduler job) — never blended; the scorecard compares them and the trust bar is
+judged on the ARMED book. Filled tip entries hand off to `engine.position_manager` (2b) and the
+session runner forgets them. UI: `pages/InboxPage.tsx` = the **Tips** page (New tip · Tips ·
+Sources · Inbox tabs).
+**Flow technique (BUILT 2026-08-27, context-only — places no orders):** `docs/techniques/flow/PLAN.md`
++ `UI-PLAN.md`. Nightly scan (16:45 ET, engine scheduler) reads `option_chain_snapshots` (research
+feed is the single writer; scoring-only live fallback) → `flow_reads` verdicts (Vol/OI flags,
+overnight OI confirmation, repeat streaks). Context lines are journaled per delivery
+(`FlowContextServed`) into tip verification and EM analyze (`config.flowContext` — a note, never a
+rule); symbols scoring ≥ `techniques.flow.universe_score_min` on 2 of 3 days join the universe as
+provenance "flow". UI: `pages/FlowPage.tsx` (Reads desk · Symbol Story drill-in · Brief tab).
+Default flag thresholds are UNCALIBRATED on real chains (42/56 flagged, mostly 1-DTE noise —
+UI-PLAN §3a) — don't trust raw scores until tuned.
+**Parallel Claude sessions:** the shared test DB (`zargar_test`) is dropped/recreated per test —
+concurrent sessions corrupt each other's runs (phantom FK errors, DROP deadlocks). When another
+session may be testing, create your own DB on :5433 and set
+`ZARGAR_TEST_DATABASE_URL=postgresql+asyncpg://zargar:zargar@127.0.0.1:5433/zargar_test_<name>`. The runtime also holds positions
 for **days or weeks** (BUILT 2026-08-27: `execution/positions.py` + `policies.py` + `simulate.py`;
 guide in `docs/BUILDING-A-TECHNIQUE.md` §2b): exits are policies-as-data (ladder / trailing / time /
 DTE / credit-target), state is write-ahead and restored regardless of date, shares held overnight get
@@ -64,7 +95,7 @@ providers on the login page (`AuthService.providers()`). Frontend: `pages/LoginP
 when `auth.required && !user`; a 401 anywhere flips the store to the login screen.
 **Mobile (built 2026-08-26):** `docs/MOBILE-PLAN.md` (phases, decisions) and `docs/MOBILE-ACCESS.md`
 (Tailscale/HTTPS/token handoff, real-device checklist). Phones (< 640px, or landscape ≤ 500px tall,
-`lib/viewport.ts`) get a bottom tab bar (Now · Trade · Signals · Portfolio · More), no sidebar, a
+`lib/viewport.ts`) get a bottom tab bar (Now · Trade · Tips · Portfolio · More), no sidebar, a
 compact TopBar with HALT always visible, and `Sheet` instead of modals/popovers (`components/Sheet.tsx`;
 `Modal` becomes a Sheet on phones). `src/mobile.css` is the ONLY place for phone/touch rules — it loads
 after `styles.css`; never add `@media (max-width…)` to `styles.css`. Armed "Now" (`components/armed/

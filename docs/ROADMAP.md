@@ -1,5 +1,13 @@
 # Zargar — plan & next steps
 
+> **⚠ Historical document (v0.1/v0.2 era).** The live plans moved: the technique platform is
+> `docs/TECHNIQUE-PLATFORM-PLAN.md` (phases 0–3 + 2b + 5 built), new-technique candidates and
+> decisions are `docs/TECHNIQUE-CANDIDATES.md`, per-technique plans live in `docs/techniques/<id>/`,
+> and options are `docs/OPTIONS-PLAN.md`. The "v0.2 Trust & tooling" section below was superseded:
+> per-source scorecards exist (dual shadow books on the Tips page), and auto-execution is governed
+> by the per-source policy + trust bar (`techniques.tip.*`), not a `signals.auto_execute_enabled`
+> switch (which no longer exists). Kept for the v0.1/v0.2 record.
+
 ## Where things stand (v0.1, on this branch)
 
 | Area | Status |

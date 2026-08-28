@@ -32,6 +32,10 @@ Two structural facts sorted the whole menu:
 
 ## 1. The shortlist (recommendation: build these, in roughly this order)
 
+*Status 2026-08-28: **T1 Tip and T2 Flow are BUILT** (docs/techniques/tip/, docs/techniques/flow/
+— including the Flow UI and Tip options expression). T3/T4 remain warm candidates; T5 is
+venue-viable (probe passed) pending the structure-aware RiskGate change.*
+
 | # | Candidate | Family | Hold | Evidence | Expected (honest) | Platform gap it forces |
 |---|---|---|---|---|---|---|
 | T1 | **Tip** — human-relayed tips (Discord/newsletter/manual), option expression, budgeted, monitored | signal-following | days–weeks | n/a (source-dependent; the app *measures* each source) | whatever the source is worth — the point is the harness + track record | Phase 2b durable positions; signals rebuild (§3) |
