@@ -91,18 +91,18 @@ B3). Webull CA ACCEPTS a native 2-leg order in one impact call (probed live
 1-DTE noise — flow UI-PLAN §3a). Now urgent-adjacent: flow-scan tips feed the
 analyst (the HOOD at-level arm came from flow).*
 
-- [ ] **FL1** — a calibration sweep over the accumulated
+- [x] **FL1** — a calibration sweep over the accumulated
   `option_chain_snapshots` (2+ weeks of history by early September): for each
   candidate threshold set, how many symbols flag per day and how do flagged
   contracts do over the next 1–3 sessions (OI confirmation rate, premium
   follow-through)?
-- [ ] **FL2** — kill the 1-DTE noise: a `min_dte` floor on flag eligibility
+- [x] **FL2** — kill the 1-DTE noise: a `min_dte` floor on flag eligibility
   and a premium-weighted (not count-weighted) score.
-- [ ] **FL3** — pick thresholds where ≤ ~10 symbols/day flag and the
+- [x] **FL3** — pick thresholds where ≤ ~10 symbols/day flag and the
   overnight-OI confirmation rate visibly separates flagged from unflagged;
   write the chosen values + evidence into `docs/techniques/flow/PLAN.md`'s
   judgement log and the settings.
-- [ ] **FL4** — only then: let flow-scan tips carry a conviction above
+- [x] **FL4** — only then: let flow-scan tips carry a conviction above
   `implied` (today they park/appraise; a calibrated flag could propose).
 
 ## 4. The real-money gate (tips + multi-day machinery)
