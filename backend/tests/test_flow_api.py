@@ -175,6 +175,49 @@ async def test_flow_read_becomes_a_tip(flow_rig):
         await eng.flow_service.to_tip("KO")
 
 
+async def test_to_tip_queued_returns_instantly_and_streams(flow_rig):
+    """The API path: refusals 400 on the spot, the pipeline runs in the
+    background as a live intake run (the 'Sending…' hang, found 2026-08-29)."""
+    import time as _t
+
+    from sqlalchemy import select as _sel
+
+    from zargar.models import Signal, TipAnalystRun
+    from zargar.signals.service import attach_signal_layer
+
+    from .conftest import wait_for
+
+    eng = flow_rig
+    await attach_signal_layer(eng)
+    await eng.ensure_symbol("COIN")
+    await wait_for(lambda: eng.quotes.get("COIN") is not None)
+
+    # refusal is still synchronous
+    with pytest.raises(ValueError, match="no flagged"):
+        await eng.flow_service.to_tip_queued("KO")
+
+    t0 = _t.monotonic()
+    out = await eng.flow_service.to_tip_queued("COIN")
+    assert _t.monotonic() - t0 < 2.0                 # returns before the pipeline
+    assert out["queued"] is True and out["contract"] == "09/12 300C"
+
+    async def tip_landed():
+        async with eng.sf() as session:
+            sig = (await session.execute(_sel(Signal).where(
+                Signal.ticker == "COIN", Signal.source_name == "flow-scan"
+            ))).scalars().first()
+            return sig is not None and sig.status in ("verified", "parked", "proposed")
+    await wait_for(tip_landed, timeout=15)
+    # the pipeline ran as a finished intake run, watchable in Tips > Analyst
+    async def intake_done():
+        async with eng.sf() as session:
+            run = (await session.execute(_sel(TipAnalystRun).where(
+                TipAnalystRun.source == "flow-scan",
+                TipAnalystRun.kind == "intake"))).scalars().first()
+            return run is not None and run.status == "done" and run.verdict == "1 tip"
+    await wait_for(intake_done, timeout=15)
+
+
 async def test_analyst_gets_the_full_flow_evidence(flow_rig):
     """The tips analyst's get_flow tool returns the whole pack — flags, OI
     confirmations, repeat streaks, aggregates, story — not one context line."""

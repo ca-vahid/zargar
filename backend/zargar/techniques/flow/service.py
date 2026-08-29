@@ -426,7 +426,36 @@ class FlowService:
         both shadow books, arming, scorecards) under the source "flow-scan".
         Flow itself still never places an order; the Tip machinery does, with
         every gate it already has. Sending the same read twice dedupes into
-        a seen-again bump like any repeated tip."""
+        a seen-again bump like any repeated tip. Awaits the WHOLE pipeline
+        (analyst included) — the API uses `to_tip_queued` so the button never
+        hangs for the appraisal's minutes."""
+        case = await self._tip_case(symbol)
+        return await self._tip_pipeline(case)
+
+    async def to_tip_queued(self, symbol: str) -> dict:
+        """The API shape: validate + persist the case NOW (refusals still 400
+        instantly), then run the pipeline in the background as a live intake
+        run — the button returns in milliseconds and Tips > Analyst shows the
+        extraction/verification/appraisal streaming (found live 2026-08-29:
+        the synchronous version pinned 'Sending…' for the analyst's minutes)."""
+        case = await self._tip_case(symbol)
+        asyncio.create_task(self._tip_pipeline_logged(case),
+                            name=f"flow-tip-{case['sym']}")
+        flag = case["flag"]
+        return {"queued": True, "symbol": case["sym"], "day": case["read"]["day"],
+                "contract": fmt_occ(flag.get("contract")),
+                "note": "appraising in the background — Tips > Analyst shows the live run"}
+
+    async def _tip_pipeline_logged(self, case: dict) -> None:
+        try:
+            await self._tip_pipeline(case)
+        except Exception:                        # background — never silently lost
+            log.exception("flow to_tip pipeline failed for %s", case.get("sym"))
+
+    async def _tip_case(self, symbol: str) -> dict:
+        """The fast, validated half: pick the read + contract (raising the
+        user-facing refusals), compose the full-evidence message, persist the
+        RawContent, build the canned extraction."""
         svc = getattr(self.engine, "signals_service", None)
         if svc is None:
             raise RuntimeError("signals layer not attached")
@@ -505,15 +534,46 @@ class FlowService:
             evidence_quotes=[f"{sym} {lean}", f"{want} strike {strike:g} expiry {expiry}",
                              f"Direction {direction}"],
             confidence="implied", is_actionable=True)], source_type="trade_alert")
-        out = await svc.handle_extraction(content, extraction, source_text=text)
+        return {"sym": sym, "read": read, "flag": flag, "want": want, "spot": spot,
+                "content": content, "extraction": extraction, "text": text}
+
+    async def _tip_pipeline(self, case: dict) -> dict:
+        """The slow half: the normal tip pipeline, streamed as an intake run so
+        it is watchable live in Tips > Analyst exactly like a Discord message."""
+        from ..tip.analyst import IntakeRun
+        eng = self.engine
+        svc = eng.signals_service
+        sym, read, want = case["sym"], case["read"], case["want"]
+        text, content, extraction = case["text"], case["content"], case["extraction"]
+        intake = IntakeRun(eng)
+        await intake.start(source="flow-scan", chars=len(text), has_image=False,
+                           preview=text)
+        intake.step("extract", f"Flow read sent to Tips by the user: {sym} "
+                    f"{read['lean']}, score {read['score']:g} on {read['day']} — "
+                    "verification and appraisal next.")
+        await intake.checkpoint(ticker=sym)
+        out = await svc.handle_extraction(content, extraction, source_text=text,
+                                          intake=intake)
         result = out[0] if out else {}
-        await self.engine.journal.append(
+        sig = result.get("signal") or {}
+        if result.get("duplicateOf"):
+            await intake.finish("seen again",
+                                f"{sym}: already on the desk — attached to the original "
+                                f"tip (seen ×{sig.get('seenCount')}).")
+        elif sig.get("status") in ("verified", "shadow", "parked", "proposed"):
+            await intake.finish("1 tip", f"{sym} entered the tip pipeline as "
+                                f"{str(sig.get('status')).upper()} — arm it from Tips, "
+                                "or the morning sweep arms it in shadow.")
+        else:
+            await intake.finish("0 tips", f"{sym} did not survive verification "
+                                f"({sig.get('status')}) — see the steps above.")
+        await eng.journal.append(
             ev.FLOW_CONTEXT_SERVED,
-            {"symbol": sym, "day": read["day"], "score": read["score"], "lean": lean,
-             "line": f"sent to Tips as a {want} tip", "consumer": "tip",
-             "refId": (result.get("signal") or {}).get("id")},
+            {"symbol": sym, "day": read["day"], "score": read["score"],
+             "lean": read["lean"], "line": f"sent to Tips as a {want} tip",
+             "consumer": "tip", "refId": sig.get("id")},
             aggregate_type="flow_context", aggregate_id=sym)
-        return {**result, "spot": spot}
+        return {**result, "spot": case["spot"]}
 
     async def universe_layer(self) -> list[str]:
         """Symbols the scanner is actively tracking: score >= the threshold on
