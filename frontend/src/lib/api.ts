@@ -112,6 +112,8 @@ export const api = {
     request<{ ok: boolean }>("DELETE", `/api/tip/notes/${id}`),
   resolveTipNote: (id: string) =>
     request<{ ok: boolean }>("POST", `/api/tip/notes/${id}/resolve`),
+  dismissSignals: (ids: string[]) =>
+    request<{ dismissed: number }>("POST", "/api/signals/dismiss", { ids }),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

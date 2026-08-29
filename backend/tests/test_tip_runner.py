@@ -1696,3 +1696,35 @@ async def test_native_mleg_failure_falls_back_to_sequencing(tip_rig, monkeypatch
             Order.symbol == "TEST260911C00100000",
             Order.status == "FILLED"))).scalars().all()
     assert rows and all("mleg" not in (r.tags or []) for r in rows)
+
+
+# --- tip deletion (user request 2026-08-29) -----------------------------------------
+
+async def test_dismiss_signal_cleans_up_everything(tip_rig):
+    """Deleting a tip: status -> dismissed (soft — the row stays), it leaves
+    the list, its waiting armed plan disarms, its pending proposal expires,
+    and re-ingesting the same text is NOT deduped onto the corpse."""
+    from sqlalchemy import select as _sel
+    from zargar.models import Proposal
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)                      # default source: pending proposal minted
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    run_id = snap["runId"]
+    async with eng.sf() as session:
+        pending = (await session.execute(_sel(Proposal).where(
+            Proposal.signal_id == sid, Proposal.status == "pending"))).scalars().all()
+    assert pending, "expected a pending proposal"
+
+    n = await eng.signals_service.dismiss_signals([sid, "nonexistent"])
+    assert n == 1
+    async with eng.sf() as session:
+        sig = await session.get(Signal, sid)
+        p = await session.get(Proposal, pending[0].id)
+    assert sig.status == "dismissed"
+    assert p.status == "expired" and "deleted" in (p.context or {}).get("expiredReason", "")
+    assert run_id not in {a["runId"] for a in eng.tip_runner.armed()}
+    listed = await eng.signals_service.list_signals(50)
+    assert all(x["id"] != sid for x in listed)
+    # dedupe must not attach a fresh tip to the dismissed one
+    out = await _ingest_tip_again(eng)
+    assert not out[0].get("duplicateOf"), out[0]

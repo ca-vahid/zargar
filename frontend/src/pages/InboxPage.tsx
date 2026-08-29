@@ -72,12 +72,18 @@ export function InboxPage() {
   );
 }
 
+// Less is more (user, 2026-08-29): only the statuses that can still ACT keep a
+// color; dead/informational rows read as quiet gray text, not alarm pills.
 function statusPill(status: string): string {
   if (status === "verified" || status === "proposed") return "ok";
-  if (status === "parked" || status === "shadow") return "wait";
-  if (status === "verification_failed") return "bad";
   return "dim";
 }
+
+const STATUS_LABEL: Record<string, string> = {
+  verification_failed: "failed", verified: "verified", proposed: "proposed",
+  parked: "parked", shadow: "shadow", expired: "expired", replayed: "replayed",
+};
+const statusLabel = (s: string) => STATUS_LABEL[s] ?? s.replace(/_/g, " ");
 
 function contractLabel(s: Signal): string | null {
   if (s.instrument === "call" || s.instrument === "put") {
@@ -93,11 +99,11 @@ function vehicleChip(s: Signal) {
   const expr = (s as any).extraction?.shadowExpression;
   if (!expr) return null;
   if (expr.vehicle === "option") {
-    return <span className="status-pill dim" title={`Immediate book bought ${expr.contracts ?? "?"}× ${expr.display ?? expr.contract}`}>
+    return <span className="muted" title={`Immediate book bought ${expr.contracts ?? "?"}× ${expr.display ?? expr.contract}`}>
       {expr.display ?? "option"}{expr.contracts ? ` ×${expr.contracts}` : ""}</span>;
   }
   if (expr.fallback) {
-    return <span className="status-pill wait" title={`Wanted the option but: ${expr.fallback}`}>shares (fallback)</span>;
+    return <span className="muted" title={`Wanted the option but: ${expr.fallback}`}>shares (fallback)</span>;
   }
   return null;
 }
@@ -528,11 +534,27 @@ function ProposalCard({ p }: { p: Proposal }) {
 
 function TipsTab() {
   const live = useStore((s) => s.signals);
+  const toast = useStore((s) => s.toast);
   const loadedState = useAsync(
     () => api.get<Signal[]>("/api/signals?limit=50"), [live.length]);
   const merged = [...live];
   for (const s of loadedState.data ?? []) if (!merged.some((m) => m.id === s.id)) merged.push(s);
+  // deleted tips leave the list immediately (the WS update flips them to dismissed)
+  const visible = merged.filter((s) => s.status !== "dismissed");
   const { isPhone } = useViewport();
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const selIds = Object.keys(sel).filter((k) => sel[k]);
+  const toggleSel = (id: string) => setSel((p) => ({ ...p, [id]: !p[id] }));
+  const bulkDelete = async () => {
+    if (!selIds.length) return;
+    if (!confirm(`Delete ${selIds.length} tip(s)? Waiting armed plans disarm and pending proposals expire.`)) return;
+    try {
+      const r = await api.dismissSignals(selIds);
+      toast("info", `${r.dismissed} tip(s) deleted`);
+      setSel({});
+      loadedState.reload();
+    } catch (e: any) { toast("error", e.message); }
+  };
 
   if (isPhone) {
     return (
@@ -541,7 +563,7 @@ function TipsTab() {
         <div className="bl-cards">
           {loadedState.loading && merged.length === 0 ? <Spinner />
             : merged.length === 0 ? <div className="empty">No tips yet — add one from the New tip tab.</div>
-            : merged.slice(0, 30).map((s) => {
+            : visible.slice(0, 30).map((s) => {
               const failed = (s.verification?.checks ?? []).filter((c) => !c.passed);
               const contract = contractLabel(s);
               return (
@@ -549,7 +571,7 @@ function TipsTab() {
                   <span className="bl-card-l">
                     <span className="bl-card-sym">{s.ticker} <span className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</span>
                       {contract && <span className="muted"> {contract}</span>}
-                      <span className={`status-pill ${statusPill(s.status)}`}>{s.status.replace("_", " ")}</span>
+                      <span className={`status-pill ${statusPill(s.status)}`}>{statusLabel(s.status)}</span>
                       {(s.seenCount ?? 1) > 1 && <span className="status-pill dim">×{s.seenCount}</span>}
                       <FlowChip sym={s.ticker} />
                     </span>
@@ -558,7 +580,7 @@ function TipsTab() {
                     {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
                     {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
                     {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
-                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <ArmButton s={s} /> <AnalystLink s={s} /> <ArmedChip s={s} /></span>
+                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <ArmButton s={s} /> <AnalystLink s={s} /> <ArmedChip s={s} /> <DeleteTipButton s={s} onDone={loadedState.reload} /></span>
                   </span>
                 </div>
               );
@@ -570,7 +592,13 @@ function TipsTab() {
 
   return (
     <div className="panel mb">
-      <div className="panel-head">Tips <span className="sub">every tip the app has read, newest first</span></div>
+      <div className="panel-head">Tips <span className="sub">every tip the app has read, newest first</span>
+        {selIds.length > 0 && (
+          <button className="ghost-btn neg" style={{ marginLeft: "auto" }} onClick={bulkDelete}>
+            Delete {selIds.length} selected
+          </button>
+        )}
+      </div>
       <div className="scroll-x">
         {loadedState.loading && merged.length === 0 ? (
           <Spinner />
@@ -582,18 +610,23 @@ function TipsTab() {
           <table className="tbl">
             <thead>
               <tr>
+                <th style={{ width: 26 }}><input type="checkbox" title="select all shown"
+                  checked={visible.length > 0 && selIds.length === Math.min(visible.length, 50)}
+                  onChange={(e) => setSel(e.target.checked
+                    ? Object.fromEntries(visible.slice(0, 50).map((s) => [s.id, true])) : {})} /></th>
                 <th>Ticker</th><th>Dir</th><th>Contract</th><th>Book vehicle</th><th>Conf</th><th className="num">Entry</th>
                 <th className="num">Tgt/Stop</th><th>Status</th><th>Source</th><th>When</th>
                 <th title="Quote a tip's id to review its extract & verify">Id</th>
               </tr>
             </thead>
             <tbody>
-              {merged.slice(0, 50).map((s) => (
+              {visible.slice(0, 50).map((s) => (
                 <tr key={s.id}
                   title={[s.thesisSummary, s.verification?.flowContext,
                     s.verification?.calendarContext].filter(Boolean).join("\n")}>
+                  <td><input type="checkbox" checked={!!sel[s.id]} onChange={() => toggleSel(s.id)} /></td>
                   <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>} <FlowChip sym={s.ticker} /></td>
-                  <td className={s.direction === "long" ? "pos" : "neg"}>{s.direction}</td>
+                  <td className="muted">{s.direction === "short" ? <span className="neg">short ↓</span> : "long"}</td>
                   <td className="muted">{contractLabel(s) ?? "—"}</td>
                   <td>{vehicleChip(s) ?? <span className="muted">—</span>}</td>
                   <td className="muted">{s.confidence.replace("_", " ")}</td>
@@ -605,12 +638,12 @@ function TipsTab() {
                     <span className={`status-pill ${statusPill(s.status)}`}
                       title={(s.verification?.checks ?? [])
                         .filter((c) => !c.passed).map((c) => c.detail || c.name).join("; ")}>
-                      {s.status.replace("_", " ")}
+                      {statusLabel(s.status)}
                     </span>
                   </td>
                   <td className="muted">{s.sourceName ?? "—"}</td>
                   <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /> <AnalystLink s={s} /> <ArmedChip s={s} /></td>
-                  <td><CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /></td>
+                  <td><CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <DeleteTipButton s={s} onDone={loadedState.reload} /></td>
                 </tr>
               ))}
             </tbody>
@@ -1001,6 +1034,18 @@ function MirrorViewer() {
       </div>
     </div>
   );
+}
+
+function DeleteTipButton({ s, onDone }: { s: any; onDone: () => void }) {
+  const toast = useStore((st) => st.toast);
+  const del = async (e: any) => {
+    e.stopPropagation();
+    if (!confirm(`Delete the ${s.ticker} tip from ${s.sourceName ?? "?"}? Any waiting armed plan disarms and any pending proposal expires.`)) return;
+    try { await api.dismissSignals([s.id]); toast("info", `${s.ticker} tip deleted`); onDone(); }
+    catch (err: any) { toast("error", err.message); }
+  };
+  return <button className="an-note-del" title="delete this tip (waiting plans disarm, pending proposals expire)"
+    onClick={del}>×</button>;
 }
 
 function ArmedChip({ s }: { s: any }) {
@@ -1705,12 +1750,13 @@ export function FlowChip({ sym }: { sym: string }) {
   const flow = useFlowMap();
   const f = flow[sym];
   if (!f) return null;
-  const cls = f.lean === "bull" ? "ok" : f.lean === "bear" ? "bad" : "wait";
+  // quiet by design (less is more): the lean shows as a tiny glyph, not a color block
+  const glyph = f.lean === "bull" ? "↑" : f.lean === "bear" ? "↓" : "·";
   return (
-    <button className={`status-pill ${cls}`} style={{ cursor: "pointer", border: "none" }}
+    <button className="status-pill dim" style={{ cursor: "pointer", border: "none" }}
       title={`options flow: ${f.lean}, score ${f.score} — open the story`}
       onClick={(e) => { e.stopPropagation(); setFlowFocus(sym); setPage("flow"); }}>
-      flow {f.score}
+      flow {f.score}{glyph}
     </button>
   );
 }
