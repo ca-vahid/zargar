@@ -585,7 +585,8 @@ class TipAnalystRun(Base):
     ticker: Mapped[str] = mapped_column(String(32), index=True)
     source: Mapped[str | None] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(16), default="running", index=True)  # running|done|failed
-    verdict: Mapped[str | None] = mapped_column(String(16))     # take|watch|skip
+    kind: Mapped[str] = mapped_column(String(12), default="appraise")  # appraise|intake
+    verdict: Mapped[str | None] = mapped_column(String(16))     # take|watch|skip|review
     model: Mapped[str | None] = mapped_column(String(64))
     tools: Mapped[list] = mapped_column(JSONVariant, default=list)    # tool names available
     trace: Mapped[list] = mapped_column(JSONVariant, default=list)    # ordered steps

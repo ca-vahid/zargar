@@ -175,6 +175,29 @@ strict grammar and their own timestamps.*
   NOTE: like the app, it needs `backend\.venv` — runs from the main checkout,
   not a worktree.
 
+- [x] **P8 — intake runs: the whole message streamed live + update review**
+  (2026-08-28, after the EvaPanda positions-recap dead end: 6× "verification
+  failed", no analyst run, "refreshed page showed me nothing new"). Every
+  processed message now creates ONE **intake run** (`TipAnalystRun.kind=
+  "intake"`) the moment processing starts — extraction progress, per-signal
+  verification verdict WITH the failed checks spelled out, and appraisal
+  hand-offs (linked) all stream live on the same `tip_analyst` topic, so the
+  Analyst tab always has a run to watch (auto-focused on start). When any
+  extracted signal is discarded by verification, the SAME run continues into
+  **review mode** (`IntakeRun.review`, off-switch `techniques.tip.
+  review_enabled`): the analyst reconciles the update against the desk —
+  new tools **`get_positions`** (OUR portfolios' share/option positions +
+  managed 2b positions; shadow books excluded) and **`get_open_tips`**
+  (open tips by source/ticker with status + analyst verdict), both also
+  available to every appraisal — saves durable notes (exits, adds, the
+  source's open book) and reports `missed_tip` when a line verification
+  discarded was actually a fresh call. Fixes ridden along: `ticker_resolves`
+  is now a PARKING check ("no market data yet" is a feed state, not a bad
+  tip — the AMZN "Added Today" case), and a cold symbol forces one
+  `feed.poll_once()` sweep instead of losing the race against Yahoo's ~20 s
+  backoff. Gateway reports + `ProcessResultBody` carry `intakeRunId`; the
+  process banner focuses it.
+
 ## 4. Open questions
 
 - Does the OWLS DM toast carry the embed text or a stub? (P4 decides.)

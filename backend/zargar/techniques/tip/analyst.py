@@ -73,6 +73,21 @@ TOOLS = [
     {"name": "get_earnings", "description": "Days until the symbol's next earnings, if known.",
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string"}}, "required": ["symbol"]}},
+    {"name": "get_positions",
+     "description": "OUR OWN open positions: every share/option position across the app's "
+                    "portfolios (live, practice, sim), plus multi-day managed positions with "
+                    "their exit policies. Use it to judge a tip against what the desk already "
+                    "holds (adds, hedges of OUR book, overlap with the source's idea).",
+     "input_schema": {"type": "object", "properties": {
+         "symbol": {"type": "string",
+                    "description": "optional — only positions touching this underlying"}}}},
+    {"name": "get_open_tips",
+     "description": "Open tips already on the desk (verified/parked/shadow/proposed), newest "
+                    "first — status, direction, contract, seen count, analyst verdict. Filter "
+                    "by ticker and/or source to see whether this message updates an existing "
+                    "tip instead of opening a new one.",
+     "input_schema": {"type": "object", "properties": {
+         "ticker": {"type": "string"}, "source": {"type": "string"}}}},
     {"name": "save_note",
      "description": "Save a durable note to the shared tips knowledge base. Use it for context "
                     "that matters BEYOND this run: the tip's own framing (e.g. 'the SPY put is "
@@ -137,8 +152,77 @@ def _compact_chain(chain: dict, want: float | None = None) -> dict:
             "dte": chain.get("dte"), "spot": chain.get("spot"), "strikes": slim}
 
 
+def _our_positions(eng, symbol: str = "") -> dict:
+    """Compact snapshot of the desk's own book for the analyst."""
+    want = symbol.upper()
+    rows = []
+    for pos in eng.positions.positions_list():
+        if abs(float(pos.get("qty") or 0)) < 1e-9:
+            continue
+        pf = eng.positions.portfolio(pos.get("portfolioId")) or {}
+        if pf.get("book"):                       # shadow-book fills are not OUR positions
+            continue
+        opt = pos.get("option") or {}
+        under = (opt.get("underlying") or pos.get("symbol") or "").upper()
+        if want and want not in (under, str(pos.get("symbol") or "").upper()):
+            continue
+        rows.append({"portfolio": pf.get("name") or pos.get("portfolioId"),
+                     "kind": pf.get("kind"), "symbol": pos.get("symbol"),
+                     "secType": pos.get("secType"), "qty": pos.get("qty"),
+                     "avgCost": pos.get("avgCost"), "last": pos.get("last"),
+                     "unrealizedPnl": pos.get("unrealizedPnl"),
+                     "unrealizedPnlPct": pos.get("unrealizedPnlPct")})
+    managed = []
+    pm = getattr(eng, "position_manager", None)
+    if pm is not None:
+        try:
+            for p in pm.positions(status="open"):
+                if want and str(p.get("symbol") or "").upper() != want:
+                    continue
+                managed.append({k: p.get(k) for k in
+                                ("symbol", "status", "technique", "sessionsHeld")
+                                if k in p})
+        except Exception:                          # advisory — never fail the tool
+            pass
+    out: dict = {"positions": rows[:40], "managed": managed[:20]}
+    if not rows and not managed:
+        out["note"] = f"no open positions{f' touching {want}' if want else ''}"
+    return out
+
+
+async def _open_tips(eng, ticker: str = "", source: str = "") -> dict:
+    import datetime as _dt
+
+    from sqlalchemy import select
+
+    from ...models import Signal
+    cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=30)
+    stmt = (select(Signal)
+            .where(Signal.status.in_(("verified", "parked", "shadow", "proposed")),
+                   Signal.created_at >= cutoff)
+            .order_by(Signal.created_at.desc()).limit(25))
+    if ticker:
+        stmt = stmt.where(Signal.ticker == ticker.upper())
+    if source:
+        stmt = stmt.where(Signal.source_name == source)
+    async with eng.sf() as session:
+        rows = (await session.execute(stmt)).scalars().all()
+    tips = [{"ticker": r.ticker, "source": r.source_name, "direction": r.direction,
+             "action": r.action, "instrument": r.instrument, "strike": r.strike,
+             "expiry": r.expiry, "status": r.status, "seenCount": r.seen_count,
+             "created": (r.created_at.isoformat()[:16] if r.created_at else None),
+             "analystVerdict": (((r.extraction or {}).get("analyst") or {}).get("verdict"))}
+            for r in rows]
+    return {"tips": tips} if tips else {"note": "no open tips match"}
+
+
 async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
     sym = str(args.get("symbol") or "").upper()
+    if name == "get_positions":
+        return _our_positions(eng, sym)
+    if name == "get_open_tips":
+        return await _open_tips(eng, str(args.get("ticker") or ""),
+                                str(args.get("source") or ""))
     if name == "save_note":
         ctx = ctx or {}
         kind = str(args.get("scope") or "general").lower()
@@ -252,6 +336,47 @@ async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
         await session.commit()
 
 
+async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
+                         rec: _Recorder, run_id: str, max_tools: int,
+                         tool_ctx: dict, tools_used: list[dict]) -> str | None:
+    """The shared tool loop: LLM turns with metered tool calls, every step
+    streamed + persisted. Returns the final text (the JSON answer) or None."""
+    messages: list = [{"role": "user", "content": header}]
+    for _ in range(max_tools + 2):
+        resp = await client.messages.create(
+            model=model, max_tokens=2000, system=system,
+            messages=messages, tools=TOOLS)
+        calls = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
+        think = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        if think.strip():
+            rec.step("llm", think.strip())
+        if not calls or len(tools_used) >= max_tools:
+            await _persist_run(eng, run_id, status="running", rec=rec)
+            return think
+        messages.append({"role": "assistant", "content": resp.content})
+        results = []
+        for c in calls:
+            args = dict(c.input)
+            if len(tools_used) >= max_tools:
+                out = {"error": "tool budget exhausted — answer now"}
+                rec.step("note", "Tool budget exhausted — asking for the final answer.")
+            else:
+                rec.step("tool_call", f"→ {c.name}({json.dumps(args, default=str)})",
+                         tool=c.name, args=args)
+                try:
+                    out = await _run_tool(eng, c.name, args, ctx=tool_ctx)
+                except Exception as exc:
+                    out = {"error": str(exc)[:300]}
+                tools_used.append({"tool": c.name, "args": args})
+                rec.step("tool_result", f"← {c.name}: {json.dumps(out, default=str)[:500]}",
+                         tool=c.name, result=out)
+            results.append({"type": "tool_result", "tool_use_id": c.id,
+                            "content": json.dumps(out, default=str)[:6000]})
+        messages.append({"role": "user", "content": results})
+        await _persist_run(eng, run_id, status="running", rec=rec)   # progress visible
+    return None
+
+
 async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                       client=None) -> dict | None:
     """Appraise one tip. Persists a full TipAnalystRun (trace + tools + opinion),
@@ -321,45 +446,16 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"failed checks: {[c['name'] for c in verification.get('checks', []) if not c['passed']]}\n"
               f"SHARED NOTES (desk knowledge from earlier runs):\n{notes_txt}")
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))
-    messages: list = [{"role": "user", "content": header}]
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id}
 
     async def loop() -> AnalystOpinion | None:
-        for _ in range(max_tools + 2):
-            resp = await client.messages.create(
-                model=model, max_tokens=2000, system=system,
-                messages=messages, tools=TOOLS)
-            calls = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
-            think = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-            if think.strip():
-                rec.step("llm", think.strip())
-            if not calls or len(tools_used) >= max_tools:
-                await _persist_run(eng, run_id, status="running", rec=rec)
-                return _parse_opinion(think)
-            messages.append({"role": "assistant", "content": resp.content})
-            results = []
-            for c in calls:
-                args = dict(c.input)
-                if len(tools_used) >= max_tools:
-                    out = {"error": "tool budget exhausted — answer now"}
-                    rec.step("note", "Tool budget exhausted — asking for the final answer.")
-                else:
-                    rec.step("tool_call", f"→ {c.name}({json.dumps(args, default=str)})",
-                             tool=c.name, args=args)
-                    try:
-                        out = await _run_tool(eng, c.name, args, ctx=tool_ctx)
-                    except Exception as exc:
-                        out = {"error": str(exc)[:300]}
-                    tools_used.append({"tool": c.name, "args": args})
-                    rec.step("tool_result", f"← {c.name}: {json.dumps(out, default=str)[:500]}",
-                             tool=c.name, result=out)
-                results.append({"type": "tool_result", "tool_use_id": c.id,
-                                "content": json.dumps(out, default=str)[:6000]})
-            messages.append({"role": "user", "content": results})
-            await _persist_run(eng, run_id, status="running", rec=rec)   # progress visible
-        return None
+        text = await run_agent_loop(
+            eng, client, model=model, system=system, header=header, rec=rec,
+            run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
+            tools_used=tools_used)
+        return _parse_opinion(text) if text is not None else None
 
     try:
         opinion = await asyncio.wait_for(loop(), timeout=TIMEOUT_S)
@@ -381,3 +477,171 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
              + f". {opinion.rationale}", opinion=result)
     await _persist_run(eng, run_id, status="done", rec=rec, opinion=result)
     return result
+
+
+# --------------------------------------------------------------- intake runs
+# One streamed run per processed message: the live play-by-play of extraction
+# → per-signal verification → appraisal hand-offs — and, when a message
+# extracts signals but none is tradable (a positions recap, an exit note),
+# the analyst REVIEWS the update against the desk's own book instead of
+# going silent (user, 2026-08-28: "refreshed page showed me nothing new").
+
+class ReviewOpinion(BaseModel):
+    headline: str = Field(description="One sentence: what this message told the desk")
+    details: str = Field(default="", description="2-4 sentences: reconciliation vs our "
+                                                 "positions/open tips; what changed")
+    watch: list[str] = Field(default_factory=list,
+                             description="Tickers worth watching after this update")
+    missed_tip: Optional[str] = Field(
+        default=None, description="If something in the message actually IS a fresh "
+                                  "actionable trade that verification discarded, say "
+                                  "which and why; else null")
+    confidence: float = Field(default=0.5)
+
+
+REVIEW_SYSTEM = """You are the tips-desk analyst. This message from a tip source \
+extracted signals, but NONE became a tradable tip (a positions recap, an update on \
+running trades, an exit note — the per-signal outcomes are attached). Your job is to \
+make the update USEFUL instead of discarded:
+
+- Reconcile it against the desk: call get_open_tips (this source) and get_positions to \
+see what we hold or track that this message updates.
+- save_note durable context the desk must remember: the source's open book, exits \
+("expiring worthless", "trimmed"), hedge rationale, adds. Scope notes to the ticker or \
+source. A few precise notes beat many vague ones.
+- If any line is actually a FRESH actionable call that verification wrongly discarded \
+(e.g. "Added Today"), say so in missed_tip with the exact ticker/contract — a human \
+will decide.
+- Never suggest orders here; this is bookkeeping and context.
+
+Use at most a few tool calls (metered). Then reply with ONLY one JSON object matching \
+this schema — no prose, no markdown fences:
+"""
+
+
+class IntakeRun:
+    """Lifecycle of one message's intake run (kind='intake'). Fail-open: every
+    method swallows its own errors so intake visibility never breaks intake."""
+
+    def __init__(self, eng):
+        self.eng = eng
+        self.id: str | None = None
+        self.rec: _Recorder | None = None
+
+    async def start(self, *, source: str, chars: int, has_image: bool,
+                    preview: str = "") -> None:
+        from ...domain import new_id
+        from ...models import TipAnalystRun
+        try:
+            self.id = new_id()
+            async with self.eng.sf() as session:
+                session.add(TipAnalystRun(
+                    id=self.id, signal_id=None, ticker="message", source=source,
+                    status="running", kind="intake", model=None,
+                    tools=[t["name"] for t in TOOLS],
+                    tip={"chars": chars, "hasImage": has_image,
+                         "preview": preview[:400]}))
+                await session.commit()
+            self.rec = _Recorder(self.eng, self.id)
+            self.rec.step("start", f"Message from {source or 'unknown'} — {chars} chars"
+                          + (" + image" if has_image else "")
+                          + ". Extraction → verification → appraisal, live.",
+                          preview=preview[:400])
+        except Exception:
+            log.exception("intake run start failed")
+            self.id, self.rec = None, None
+
+    def step(self, kind: str, text: str, **extra) -> None:
+        if self.rec is not None:
+            try:
+                self.rec.step(kind, text, **extra)
+            except Exception:
+                pass
+
+    async def checkpoint(self, **fields) -> None:
+        if self.id and self.rec:
+            try:
+                await _persist_run(self.eng, self.id, status="running", rec=self.rec,
+                                   **fields)
+            except Exception:
+                pass
+
+    async def finish(self, verdict: str, text: str, *, failed: bool = False,
+                     opinion: dict | None = None) -> None:
+        if not self.id or not self.rec:
+            return
+        try:
+            self.step("final", text, opinion=opinion or {"verdict": verdict,
+                                                         "rationale": text})
+            await _persist_run(self.eng, self.id,
+                               status="failed" if failed else "done", rec=self.rec,
+                               opinion=opinion or {}, verdict=verdict[:16],
+                               error=text[:500] if failed else None)
+        except Exception:
+            log.exception("intake run finish failed")
+
+    async def review(self, *, source: str, message_text: str, outcomes: list[dict],
+                     client=None) -> dict | None:
+        """The analyst reviews a non-tradable update in THIS run. Advisory,
+        fail-open; returns the review dict or None."""
+        eng = self.eng
+        if not self.id or not self.rec:
+            return None
+        s = eng.settings
+        if not bool(s.get("techniques.tip.review_enabled", True)):
+            self.step("note", "Review disabled (techniques.tip.review_enabled).")
+            return None
+        api_key = getattr(eng.config, "anthropic_api_key", "")
+        if client is None and not api_key:
+            return None
+        if client is None:
+            import anthropic
+            client = anthropic.AsyncAnthropic(api_key=api_key)
+        model = str(s.get("techniques.tip.analyst_model") or "") or eng.config.extraction_model
+        max_tools = int(s.get("techniques.tip.analyst_max_tools", 8))
+        notes_txt = "(none yet)"
+        try:
+            notes = await eng.signals_service.notes_for_tip(
+                None, source, limit=int(s.get("techniques.tip.analyst_notes_max", 12)))
+            if notes:
+                notes_txt = "\n".join(
+                    f"- [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]})"
+                    for n in notes)
+        except Exception:
+            pass
+        self.step("note", "Nothing tradable — reviewing the update against the desk's "
+                          "own book (positions, open tips, notes).")
+        header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
+                  f"SOURCE: {source}\n"
+                  f"MESSAGE:\n{message_text[:4000]}\n\n"
+                  f"PER-SIGNAL OUTCOMES: {json.dumps(outcomes, default=str)[:2500]}\n"
+                  f"SHARED NOTES (desk knowledge):\n{notes_txt}")
+        system = REVIEW_SYSTEM + json.dumps(ReviewOpinion.model_json_schema(),
+                                            separators=(",", ":"))
+        tools_used: list[dict] = []
+        tool_ctx = {"ticker": (outcomes[0].get("ticker") if outcomes else ""),
+                    "source": source, "signal_id": None, "run_id": self.id}
+        try:
+            text = await asyncio.wait_for(run_agent_loop(
+                eng, client, model=model, system=system, header=header,
+                rec=self.rec, run_id=self.id, max_tools=max_tools,
+                tool_ctx=tool_ctx, tools_used=tools_used), timeout=TIMEOUT_S)
+            if text is None:
+                raise ValueError("no review produced (loop exhausted)")
+            op = ReviewOpinion.model_validate_json(
+                text[text.find("{"):text.rfind("}") + 1])
+        except Exception as exc:
+            log.warning("intake review failed: %s", exc)
+            self.step("error", f"Review failed: {exc}")
+            await self.finish("review", f"Review failed: {exc}", failed=True)
+            return None
+        result = {"verdict": "review", "rationale": op.headline
+                  + (f" {op.details}" if op.details else ""),
+                  "watch": op.watch, "missedTip": op.missed_tip,
+                  "confidence": op.confidence, "model": model,
+                  "toolsUsed": tools_used}
+        await self.finish("review", f"Review: {op.headline}"
+                          + (f" Watch: {', '.join(op.watch)}." if op.watch else "")
+                          + (f" POSSIBLE MISSED TIP: {op.missed_tip}" if op.missed_tip else ""),
+                          opinion=result)
+        return result

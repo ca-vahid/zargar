@@ -15,8 +15,11 @@ from __future__ import annotations
 from ..marketdata import QuoteCache
 from .schemas import TradeSignal
 
-# Failing ONLY these parks the signal instead of killing it.
-PARKING_CHECKS = {"price_deviation", "not_past_target"}
+# Failing ONLY these parks the signal instead of killing it. `ticker_resolves`
+# is parking (2026-08-28, the AMZN case): a cold symbol with no quote yet is a
+# FEED state, not a bad tip — parked tips are re-judged when data arrives; a
+# truly bogus ticker just expires unfilled.
+PARKING_CHECKS = {"price_deviation", "not_past_target", "ticker_resolves"}
 
 # Failing ONLY these (plus parking) demotes the signal to SHADOW-ONLY instead of
 # killing it: the shadow books trade it and the source's scorecard learns from
@@ -58,7 +61,8 @@ async def verify_signal(
     symbol = signal.ticker.upper()
     quote = quotes.get(symbol)
     add("ticker_resolves", quote is not None,
-        f"no market data for {symbol}" if quote is None else "")
+        f"no market data for {symbol} yet — parked until the feed warms"
+        if quote is None else "")
 
     if quote is not None:
         # 3. halt
