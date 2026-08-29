@@ -167,6 +167,14 @@ a number** (p. 72).
 - **The tail worth watching:** the day's three best rejected trades (PLUG r1 +2.9R,
   CVNA r1 +2.4R, GS r1 +1.9R) all had planned R:R in the 2.2–2.6 band — just under
   the 3.0 bar. One gap day proves nothing, but it frames the question.
+- **2026-08-29 · Week-1 funnel autopsy (Aug 24–28, n=1,489 trigger-outcomes): R2 IS
+  the funnel.** not_tradeable 988 (66%), 981 of them on R2; median failed R:R 0.57
+  (structurally far, not near-misses), but +121 triggers pass at ≥2.0 and +206 at
+  ≥1.5. Everything that survived all gates and fired: n=16, +5.47R, avg +0.34R,
+  7/16 wins with big winners — the survivors are profitable, the funnel is just
+  ~1%. The author's own practice (see notes/2026-08-28-author-video.md) trades
+  continuation setups whose natural R:R to the NEXT zone is 1–2, exited fast —
+  the R2=3.0-to-TP3 arithmetic may simply not describe his modern style.
 - **Decision threshold:** repeat this audit weekly (free, deterministic). If the
   2.0–3.0 R:R band shows mean ≥ +0.3R over ≥100 simulated fires net of a spread
   estimate, consider a reduced-size tier for it; if it stays ≤ +0.1R, R2 is
@@ -293,6 +301,27 @@ a number** (p. 72).
   re-examine the floor after ~2 weeks of streamed data.
 - **T-5 Analyst as position-sizer:** instead of gating, size by agreement
   (A+✓ full risk, A+✗ half risk). Needs 1.2/1.3 data first.
+- **T-6 Continuation-breakout archetype (author's live style, 2026-08-28 video):**
+  "sitting just below prior-day resistance → break at the open → long to the NEXT
+  zone / gap edge, exit fast." Natural R:R 1–2, high intended win rate, 0DTE-friendly.
+  Friday's ground truth: MSFT clean win (his 512–513 target hit), SPY/QQQ pop-then-fade
+  (scalp wins, holds lose), IWM 7-cent fakeout. Test as a NEW trigger kind in the
+  shared tracker with its own rr gate and a TP1-heavy or time-boxed exit — never by
+  loosening R2 for the existing kinds. Entry archetype and exit tempo are a pair.
+- **T-7 Gap-fill targets:** an unfilled overnight gap in the trade's path is a target
+  magnet in the author's practice (IWM/QQQ longs "into the gap", AMD short "gap to
+  fill below"), not only a hazard. Experiment: add gap edges to the target-anchor set
+  and re-sweep; keep gap_void for entry-side gaps (its samples say it saves R).
+- **T-8 Index-ETF lane (SPY/QQQ/IWM):** his #1 setups; penny-wide 0DTE spreads kill
+  the spread-cost argument from the 1.8 gate audit. Check why they never survive our
+  funnel (likely R2 — index levels are close together) and sweep them under T-6 rules.
+- **T-9 Liquidity-grab reclaim:** a false break through resistance that quickly
+  reclaims reads as bullish fuel to the author (MU); our tracker counts it toward
+  `exhausted`. Test: false-break-then-reclaim within N bars as a confirmation signal
+  instead of a strike.
+- **T-10 Earnings-gap veto:** his only gap rule is "earnings gap = untouchable"
+  (AFRM +11%). We have no event calendar yet (B-gate list) — until then, a crude
+  |gap| > 5% next-session veto in the sheet builder would mimic it.
 
 ---
 
@@ -310,6 +339,9 @@ a number** (p. 72).
 7. **Blue-sky TP1 from ATR** (1.5) — pending fired-breakout data.
 8. **Full Settings redesign** (task chip exists); slow-DB-writes investigation (chip
    exists); persist critic veto counts across restarts.
+9. **T-6 continuation-breakout walk-forward** (2026-08-29): sweep the archetype over
+   60 days on the universe + SPY/QQQ/IWM before any live arming — deterministic,
+   free, and it directly answers "are we too strict or missing a lane".
 
 ---
 
