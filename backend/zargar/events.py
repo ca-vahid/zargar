@@ -47,6 +47,7 @@ TIP_POSITION_ADOPTED = "TipPositionAdopted"        # filled tip proposal → man
 TIP_POSITION_NOT_ADOPTED = "TipPositionNotAdopted" # ...or why it wasn't (unfilled, invalid plan, no manager)
 TIP_EXIT_PLAN_UPDATED = "TipExitPlanUpdated"       # analyst rewrote an open position's exit campaign (exit-only)
 TIP_LANE_DECIDED = "TipLaneDecided"                # which lane a take went down (now-proposal vs at-level arm) + preflight warnings
+TIP_SPREAD_LEG_FAILED = "TipSpreadLegFailed"       # spread short leg died AND the long rollback failed — naked long, needs a person
 SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before the tip's horizon/expiry
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads
 FLOW_CONTEXT_SERVED = "FlowContextServed" # a flow read's context line was delivered to a consumer (tip/em)

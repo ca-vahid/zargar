@@ -550,16 +550,37 @@ class TipRunner(PlanRunner):
             if order.status == "FILLED":
                 break
             if order.status in ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED"):
+                if float(order.filled_qty or 0) > 0:
+                    # a PARTIAL fill is a real position (ARM-GAPS B2): the filled
+                    # part outlives the session under management
+                    self._log(ap, "handoff_partial",
+                              f"{tid}: entry ended {order.status} with {order.filled_qty:g} "
+                              f"filled — handing off the partial", trigger=tid)
+                    break
                 return
             await asyncio.sleep(HANDOFF_POLL_SECONDS)
         else:
-            self._log(ap, "handoff_skipped",
-                      f"{tid}: entry not filled within {HANDOFF_WINDOW_SECONDS:.0f}s — "
-                      "stays session-scoped (flatten applies)", trigger=tid)
-            return
+            if order is not None and float(order.filled_qty or 0) > 0:
+                # timed out partially filled: cancel the resting remainder and
+                # hand off what we hold — never flatten a multi-day thesis whole
+                with contextlib.suppress(Exception):
+                    await self.engine.orders.cancel(trade.entry_order_id)
+                await asyncio.sleep(HANDOFF_POLL_SECONDS)
+                async with self.engine.sf() as session:
+                    order = await session.get(Order, trade.entry_order_id) or order
+                self._log(ap, "handoff_partial",
+                          f"{tid}: entry timed out with {order.filled_qty:g} filled — "
+                          f"remainder cancelled, handing off the partial", trigger=tid)
+            else:
+                self._log(ap, "handoff_skipped",
+                          f"{tid}: entry not filled within {HANDOFF_WINDOW_SECONDS:.0f}s — "
+                          "stays session-scoped (flatten applies)", trigger=tid)
+                return
+        trade.handoff_pending = True          # ARM-GAPS B5: the flatten must not race the adopt
         try:
             await self._handoff(ap, tid, trade, order)
         except Exception as exc:
+            trade.handoff_pending = False     # let the session machinery protect it again
             log.exception("tip handoff failed for %s %s", ap.symbol, tid)
             await self._alert(ap, f"{tid}: handing the filled position to the durable manager "
                                   f"FAILED ({exc}) — it stays session-scoped and will flatten at "
@@ -607,7 +628,16 @@ class TipRunner(PlanRunner):
                 hold=hold_cap, is_option=is_opt, settings=self.engine.settings,
                 avoid_earnings="earnings" not in catalyst)
         source = ctx.get("source") or "unknown"
-        qty = float(order.filled_qty or trade.filled_qty or trade.qty)
+        # ARM-GAPS B5: a session exit may have raced the fill before the
+        # handoff claimed it — adopt only what is still actually held
+        already_exited = sum(float(e.get("filledQty") or 0) for e in trade.exits)
+        qty = float(order.filled_qty or trade.filled_qty or trade.qty) - already_exited
+        if qty <= 0:
+            self._log(ap, "handoff_aborted",
+                      f"{tid}: the session machinery already exited the fill — nothing to adopt",
+                      trigger=tid)
+            trade.handoff_pending = False
+            return
         # options are always LONG the contract (calls for longs, puts for shorts);
         # a positive leg qty is correct for both directions
         leg = ({"symbol": trade.order_symbol or order.symbol, "secType": "OPT",

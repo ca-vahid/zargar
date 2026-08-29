@@ -989,3 +989,173 @@ async def test_gapped_past_trigger_revives_at_roll(tip_rig):
     s2 = await eng.tip_runner.on_bar(run_id, _mbar(close1 - MIN, 98.5, 98.7, 98.3, 98.6))
     assert s2["status"] == "armed" and s2["planFor"] > day1
     assert s2["triggers"][0]["status"] == "waiting"
+
+
+# --- no orphaned money (ARM-GAPS cluster B) -----------------------------------------
+
+async def test_partial_fill_adopts_and_journals(tip_rig):
+    """B1: an order that ends terminal with a partial fill adopts the FILLED
+    part as a managed position (journaled partial), never abandons it."""
+    from zargar.domain import new_id
+    from zargar.models import Event, Order
+    from zargar.techniques.tip.lifecycle import adopt_when_filled
+    eng, sim = tip_rig
+    oid = new_id()
+    async with eng.sf() as session:
+        session.add(Order(id=oid, portfolio_id=sim["id"], symbol="TEST", sec_type="STK",
+                          side="BUY", qty=5.0, order_type="LMT", status="CANCELLED",
+                          filled_qty=2.0, avg_fill_price=99.5))
+        await session.commit()
+    proposal = {"id": new_id(), "portfolioId": sim["id"], "symbol": "TEST",
+                "secType": "STK", "qty": 5.0, "limitPrice": 99.5,
+                "context": {"techniqueId": "tip", "sourceName": "TestRoom",
+                            "vehicle": {"kind": "shares"},
+                            "signalPrices": {"entry": 99.5, "stop": 98.0},
+                            "exitPlan": {"targets": [103.0], "underlyingStop": 98.0,
+                                         "maxHoldSessions": 5}}}
+    pos = await adopt_when_filled(eng, proposal, {"id": oid})
+    assert pos is not None and pos["technique"] == "tip"
+    assert sum(l["qty"] for l in pos["legs"]) == 2.0
+    from sqlalchemy import select as _sel
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(Event.payload)
+                                      .where(Event.type == "TipPositionAdopted"))).scalars().all()
+    mine = [r for r in rows if r.get("proposalId") == proposal["id"]]
+    assert mine and mine[0].get("partial") is True and mine[0].get("filled") == 2.0
+
+
+async def test_timeout_partial_cancels_remainder_and_adopts(tip_rig, monkeypatch):
+    """B1: the fill-wait timeout with a partial cancels the resting remainder
+    and adopts what filled."""
+    import zargar.techniques.tip.lifecycle as lc
+    from zargar.domain import new_id
+    from zargar.models import Order
+    eng, sim = tip_rig
+    monkeypatch.setattr(lc, "FILL_WAIT_S", 0.3)
+    monkeypatch.setattr(lc, "POLL_S", 0.05)
+    oid = new_id()
+    async with eng.sf() as session:
+        session.add(Order(id=oid, portfolio_id=sim["id"], symbol="TEST", sec_type="STK",
+                          side="BUY", qty=5.0, order_type="LMT", status="WORKING",
+                          filled_qty=1.0, avg_fill_price=99.4))
+        await session.commit()
+    cancels = []
+    orig_cancel = eng.orders.cancel
+    async def spy_cancel(order_id, *a, **k):
+        cancels.append(order_id)
+        try:
+            return await orig_cancel(order_id, *a, **k)
+        except Exception:
+            return None
+    monkeypatch.setattr(eng.orders, "cancel", spy_cancel)
+    proposal = {"id": new_id(), "portfolioId": sim["id"], "symbol": "TEST",
+                "secType": "STK", "qty": 5.0, "limitPrice": 99.4,
+                "context": {"techniqueId": "tip", "sourceName": "TestRoom",
+                            "vehicle": {"kind": "shares"},
+                            "signalPrices": {"entry": 99.4, "stop": 98.0},
+                            "exitPlan": {"targets": [103.0], "underlyingStop": 98.0,
+                                         "maxHoldSessions": 5}}}
+    pos = await lc.adopt_when_filled(eng, proposal, {"id": oid})
+    assert oid in cancels
+    assert pos is not None and sum(l["qty"] for l in pos["legs"]) == 1.0
+
+
+async def test_shares_fallback_respects_budget(tip_rig):
+    """B4: an option tip whose chain is dead falls back to shares CAPPED by the
+    plan budget — never a bare risk-%-sized position."""
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    from .test_tip_express import FakeChain
+    eng, sim = tip_rig
+
+    class Dead(FakeChain):
+        async def expirations(self, symbol):
+            from zargar.options.chain import OptionsError
+            raise OptionsError("no US-listed options (CBOE 404)")
+    eng.options.use_client(Dead())
+
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    content = RawContent(id=new_id(), source_type="manual", source_name="BudgetRoom",
+                         subject="tip", body_text=OPT_SOURCE)
+    async with eng.sf() as session:
+        session.add(content)
+        await session.commit()
+    out = await eng.signals_service.handle_extraction(content, canned_option_tip(exp14),
+                                                      source_text=OPT_SOURCE)
+    sid = out[0]["signal"]["id"]
+    snap = await eng.tip_runner.arm_signal(sid, {
+        "portfolioId": sim["id"], "mode": "auto", "dailyLossLimit": 200.0})
+    assert snap["config"]["instrument"] == "options"
+    assert snap["config"]["premiumBudget"] == 1000.0
+    run_id = snap["runId"]
+    from zargar.marketstructure.sessions import session_bounds
+    open1, _ = session_bounds(snap["planFor"])
+    ts0 = max(open1 + 30 * MIN, int(snap.get("lastBarTs") or 0) + MIN)
+    await _quote(eng, 99.6)
+    await eng.tip_runner.on_bar(run_id, _mbar(ts0, 100.0, 100.3, 99.9, 100.1))
+    s2 = await eng.tip_runner.on_bar(run_id, _mbar(ts0 + MIN, 99.8, 99.9, 99.45, 99.8))
+    tr = s2["trades"][0]
+    assert tr["instrument"] == "shares"          # dead chain -> fallback
+    # $1000 budget at ~99.5 entry -> at most 10 shares, though risk sizing allows more
+    assert 1 <= tr["qty"] <= 10, tr["qty"]
+
+
+async def test_handoff_pending_blocks_session_exits(tip_rig):
+    """B5: a trade the handoff has claimed is invisible to the session exit
+    machinery — the pre-close flatten cannot double-sell it."""
+    from zargar.execution.planrunner import Trade
+    from zargar.marketstructure.sessions import session_bounds
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "auto",
+                                                 "instrument": "shares", "qty": 2,
+                                                 "dailyLossLimit": 200.0})
+    run_id = snap["runId"]
+    ap = eng.tip_runner._armed[run_id]
+    t = Trade(trigger_id="tip-x", kind="bounce", fired_ts=0, window="prime_close",
+              entry=99.5, stop=98.0, targets=[103.0], status="open",
+              qty=2.0, filled_qty=2.0, remaining=2.0, avg_fill=99.5,
+              instrument="shares", handoff_pending=True)
+    ap.trades["tip-x"] = t
+    _, close1 = session_bounds(snap["planFor"])
+    await eng.tip_runner.on_bar(run_id, _mbar(close1 - 3 * MIN, 100.3, 100.5, 100.2, 100.4))
+    assert t.remaining == 2.0 and not t.exits     # flatten window, but untouched
+
+
+async def test_spread_rollback_failure_adopts_attention_position(tip_rig, monkeypatch):
+    """B3: short leg rejected AND the rollback rejected -> journaled, alerted,
+    and the naked long is adopted as an ATTENTION-flagged managed position."""
+    from zargar.domain import new_id
+    from zargar.models import Event, Order
+    from zargar.techniques.tip.lifecycle import open_spread
+    eng, sim = tip_rig
+
+    async def fake_place(intent):
+        oid = new_id()
+        if intent.side == "BUY":
+            async with eng.sf() as session:
+                session.add(Order(id=oid, portfolio_id=intent.portfolio_id,
+                                  symbol=intent.symbol, sec_type="OPT", side="BUY",
+                                  qty=float(intent.qty), order_type="LMT", status="FILLED",
+                                  filled_qty=float(intent.qty), avg_fill_price=1.0))
+                await session.commit()
+            return {"id": oid, "status": "FILLED"}
+        return {"id": oid, "status": "REJECTED_RISK", "rejectReason": "forced by test"}
+    monkeypatch.setattr(eng.orders, "place", fake_place)
+
+    with pytest.raises(ValueError, match="short leg"):
+        await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
+                          direction="long", qty=1, source="TestRoom",
+                          legs=[{"side": "BUY", "symbol": "TEST260911C00100000",
+                                 "ask": 1.0, "strike": 100.0},
+                                {"side": "SELL", "symbol": "TEST260911C00105000",
+                                 "bid": 0.5, "strike": 105.0}])
+    from sqlalchemy import select as _sel
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(Event.payload)
+                                      .where(Event.type == "TipSpreadLegFailed"))).scalars().all()
+    assert rows and rows[0].get("legSymbol") == "TEST260911C00100000"
+    orphans = [p for p in eng.position_manager.positions()
+               if "spread-orphan" in (p.get("tags") or [])]
+    assert orphans and orphans[0]["status"] == "attention"
+    assert sum(l["qty"] for l in orphans[0]["legs"]) == 1.0

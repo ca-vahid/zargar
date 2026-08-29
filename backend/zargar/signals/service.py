@@ -1222,6 +1222,14 @@ class SignalService:
                     except Exception as exc:
                         expression["fallback"] = f"spread shadow failed: {exc}"
                         await self._record_expression(signal_row.id, expression)
+                        # journaled, never swallowed (ARM-GAPS B3): the scorecard
+                        # reader must see the book expressed a DIFFERENT vehicle
+                        with contextlib.suppress(Exception):
+                            await eng.journal.append(
+                                ev.TIP_LANE_DECIDED,
+                                {"signalId": signal_row.id, "lane": "shadow",
+                                 "downgrade": f"spread -> single-leg: {exc}"},
+                                aggregate_type="signal", aggregate_id=signal_row.id)
                         # falls through to the single-leg expression below
                 else:
                     expression["fallback"] = f"spread: {pick.get('error')}"
