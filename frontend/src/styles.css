@@ -989,6 +989,11 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .chat-composer textarea { width: 100%; resize: vertical; min-height: 64px; }
 .chat-composer-actions { display: flex; align-items: center; gap: var(--sp-3); }
 .chat-composer-actions .primary-btn { margin-left: auto; }
+/* a disabled action must LOOK disabled — an unchanged blue button eats clicks
+   silently (Flow's Send to Tips on a MIXED read, 2026-08-29) */
+.primary-btn:disabled, .ghost-btn:disabled, .danger-btn:disabled {
+  opacity: 0.55; cursor: not-allowed;
+}
 .chat-attach { display: flex; gap: 6px; flex-wrap: wrap; }
 .chat-attach-item { position: relative; display: inline-block; }
 .chat-attach-item img { height: 56px; border-radius: 4px; border: 1px solid var(--border); }
