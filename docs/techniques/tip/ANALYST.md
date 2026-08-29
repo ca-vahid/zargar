@@ -167,9 +167,14 @@ The armed path (level-touch plans via `TipRunner`) keeps its own handoff
   `attach_tip_runner` (like armed-plan restore).
 - **A6 (armed-path unification) still open**: level-touch armed tips hand off
   with the fixed 50/50 ladder, not the analyst's plan.
-- **Mirror stores CDN image URLs, not bytes** — Discord's signed links expire
-  (~24h). The ingested copy holds the transcription; if image retention
-  matters, add a small blob store later.
+- ~~Mirror stores CDN image URLs, not bytes~~ **FIXED 2026-08-29**: images are
+  downloaded at mirror time (while the links are still signed) into
+  `backend/discord_media/` (gitignored), recorded on the row
+  (`local_images`), served by `GET /api/tip/discord/media/{messageId}/{i}`
+  (the viewer shows real thumbnails), and the analyst has a **view_image**
+  tool that returns the picture as an actual image block — chart-only alerts
+  can be LOOKED at during appraisals, reviews and retros. Source-history
+  lines carry `[images: <messageId> — view_image to look]` markers.
 - **Risk-config clash**: `techniques.tip.budget_per_tip` ($1,000) exceeds
   `risk.max_option_premium_pct` (5% of a $10k practice book = $500) and
   `risk.max_position_notional` ($1,000 — a full-budget fill plus one tick

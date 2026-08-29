@@ -947,10 +947,20 @@ function MirrorViewer() {
                       <div className="mir-text">{m.text || <span className="muted">(no text)</span>}</div>
                       {m.images.length > 0 && (
                         <div className="mir-imgs">
-                          {m.images.map((u, i) => (
-                            <a key={i} href={u} target="_blank" rel="noreferrer">image {i + 1} ↗</a>
-                          ))}
-                          <span className="muted"> (Discord CDN links — may expire)</span>
+                          {(m.localImages?.length ?? 0) > 0
+                            ? m.localImages!.map((_, i) => (
+                              <a key={i} href={`/api/tip/discord/media/${m.id}/${i}`}
+                                target="_blank" rel="noreferrer">
+                                <img className="mir-thumb" loading="lazy" alt={`image ${i + 1}`}
+                                  src={`/api/tip/discord/media/${m.id}/${i}`} />
+                              </a>
+                            ))
+                            : m.images.map((u, i) => (
+                              <a key={i} href={u} target="_blank" rel="noreferrer">image {i + 1} ↗</a>
+                            ))}
+                          {(m.localImages?.length ?? 0) === 0 && (
+                            <span className="muted"> (not yet in our store — CDN links may expire)</span>
+                          )}
                         </div>
                       )}
                     </div>

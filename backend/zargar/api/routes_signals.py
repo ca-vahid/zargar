@@ -201,6 +201,18 @@ def build_signal_routes(app, eng, auth, config) -> None:
         """Per-channel mirror coverage — drives the gateway's onboarding backfill."""
         return await eng.signals_service.discord_mirror_stats()
 
+    @app.get("/api/tip/discord/media/{message_id}/{index}", dependencies=[auth])
+    async def discord_media(message_id: str, index: int = 0):
+        """A mirrored image, served from OUR store (CDN links expire)."""
+        from fastapi.responses import Response
+        got = await eng.signals_service.discord_media_bytes(message_id, index)
+        if got is None:
+            raise HTTPException(status_code=404,
+                                detail="image not in the mirror (and the CDN link has expired)")
+        blob, media_type = got
+        return Response(content=blob, media_type=media_type,
+                        headers={"Cache-Control": "private, max-age=86400"})
+
     @app.get("/api/tip/discord/process-result", dependencies=[auth])
     async def discord_process_result(channelId: str = ""):
         """UI polls this after 'process last message' — what actually happened

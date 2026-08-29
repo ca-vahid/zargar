@@ -525,7 +525,7 @@ async def test_discord_mirror_and_search(app_client):
     out = await _run_tool(eng, "search_messages", {"source": src, "contains": "NVDA"})
     assert len(out["messages"]) == 2
     hist = await _source_history(eng, src, hours=24 * 365)
-    assert "sold 40%" in hist and "+1 image(s)" in hist
+    assert "sold 40%" in hist and "[images: m2 — view_image to look]" in hist
     # coverage stats drive the gateway's onboarding (how far back to fetch)
     stats = (await client.get("/api/tip/discord/mirror-stats")).json()
     assert stats["42"]["count"] == 2 and stats["42"]["oldestId"] == "m1"
@@ -533,6 +533,38 @@ async def test_discord_mirror_and_search(app_client):
     older = (await client.get("/api/tip/discord/messages",
                               params={"before": "2026-08-28T14:10:00+00:00"})).json()
     assert [x["id"] for x in older] == ["m1"]
+
+
+async def test_mirror_downloads_image_bytes(app_client, tmp_path):
+    # images are downloaded at mirror time (CDN links expire; the LLM cannot
+    # fetch URLs) — served from OUR store, viewable by the analyst
+    client, eng = app_client
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+
+    async def fake_fetch(url):
+        return png
+    eng.signals_service._media_fetch = fake_fetch
+    eng.signals_service.MEDIA_DIR = str(tmp_path / "media")
+    r = await client.post("/api/tip/discord/messages", json={"messages": [
+        {"id": "img1", "channelId": "42", "source": "src", "author": "bot", "isBot": True,
+         "text": "chart only", "images": ["https://cdn.discordapp.com/attachments/a/b/c.png"],
+         "postedAt": "2026-08-29T10:00:00+00:00"}]})
+    assert r.json()["stored"] == 1
+
+    async def downloaded():
+        m = await eng.signals_service.discord_get_message("img1")
+        return (m.get("localImages") or []) == ["img1-0.png"]
+    await wait_for(downloaded)
+    resp = await client.get("/api/tip/discord/media/img1/0")
+    assert resp.status_code == 200 and resp.headers["content-type"] == "image/png"
+    assert resp.content == png
+    # the analyst can LOOK at it (image block, not a URL)
+    from zargar.techniques.tip.analyst import _run_tool
+    out = await _run_tool(eng, "view_image", {"message_id": "img1"})
+    assert out["_media_type"] == "image/png" and out["_image_b64"]
+    out = await _run_tool(eng, "view_image", {"message_id": "nope"})
+    assert "unavailable" in out["error"]
+    assert (await client.get("/api/tip/discord/media/nope/0")).status_code == 404
 
 
 async def test_analyst_manage_tools_exit_only(app_client):

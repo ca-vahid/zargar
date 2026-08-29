@@ -615,7 +615,8 @@ class DiscordMessage(Base):
     author_id: Mapped[str | None] = mapped_column(String(32))
     is_bot: Mapped[bool] = mapped_column(Boolean, default=False)
     text: Mapped[str] = mapped_column(Text, default="")
-    images: Mapped[list] = mapped_column(JSONVariant, default=list)
+    images: Mapped[list] = mapped_column(JSONVariant, default=list)          # original CDN URLs
+    local_images: Mapped[list] = mapped_column(JSONVariant, default=list)    # filenames in discord_media/
     posted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

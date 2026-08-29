@@ -119,6 +119,14 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {
          "source": {"type": "string"}, "contains": {"type": "string"},
          "hours": {"type": "number"}, "limit": {"type": "integer"}}}},
+    {"name": "view_image",
+     "description": "LOOK at an image from a mirrored Discord message (charts, screenshots — "
+                    "alert rooms often post the chart instead of words). The image is returned "
+                    "to you visually. message_id comes from the source history / search_messages "
+                    "([images: <id>] markers); index = which image (0-based).",
+     "input_schema": {"type": "object", "properties": {
+         "message_id": {"type": "string"}, "index": {"type": "integer"}},
+         "required": ["message_id"]}},
     {"name": "update_exit_plan",
      "description": "Rewrite the exit campaign of an OPEN managed tip position (get_positions "
                     "shows ids). EXIT-ONLY: this changes when/how we sell — it can never add "
@@ -349,9 +357,23 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             limit=int(args.get("limit") or 20))
         slim = [{"at": (r.get("postedAt") or "")[:16], "source": r.get("source"),
                  "author": r.get("author"), "text": (r.get("text") or "")[:280],
-                 "images": len(r.get("images") or [])} for r in rows]
+                 **({"images": len(r.get("images") or []), "messageId": r.get("id")}
+                    if r.get("images") else {})} for r in rows]
         return {"messages": slim} if slim else {"note": "no mirrored messages match "
                                                         "(is the intake running with the mirror?)"}
+    if name == "view_image":
+        got = await eng.signals_service.discord_media_bytes(
+            str(args.get("message_id") or ""), int(args.get("index") or 0))
+        if got is None:
+            return {"error": "image unavailable — not in the mirror and the CDN link expired"}
+        blob, media_type = got
+        if len(blob) > 4 * 1024 * 1024:
+            return {"error": f"image too large to view ({len(blob) // 1024} kB)"}
+        import base64
+        return {"_image_b64": base64.b64encode(blob).decode("ascii"),
+                "_media_type": media_type,
+                "note": f"image {args.get('index') or 0} of message "
+                        f"{args.get('message_id')} ({len(blob) // 1024} kB)"}
     if name == "update_exit_plan":
         p, err = _manage_guard(eng, str(args.get("position_id") or ""))
         if err:
@@ -474,7 +496,7 @@ async def _source_history(eng, source: str | None, *, hours: float = 72,
         return "(nothing mirrored yet — the intake mirrors watched channels while it runs)"
     return "\n".join(f"- [{(r.get('postedAt') or '')[:16]}] {r.get('author')}: "
                      f"{(r.get('text') or '').strip()[:220]}"
-                     + (f" [+{len(r.get('images') or [])} image(s)]"
+                     + (f" [images: {r.get('id')} — view_image to look]"
                         if r.get("images") else "")
                      for r in rows)
 
@@ -581,10 +603,22 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 except Exception as exc:
                     out = {"error": str(exc)[:300]}
                 tools_used.append({"tool": c.name, "args": args})
-                rec.step("tool_result", f"← {c.name}: {json.dumps(out, default=str)[:500]}",
-                         tool=c.name, result=out)
-            results.append({"type": "tool_result", "tool_use_id": c.id,
-                            "content": json.dumps(out, default=str)[:6000]})
+                if "_image_b64" in out:
+                    # the model SEES the image; the trace records only a stub
+                    rec.step("tool_result", f"← {c.name}: {out.get('note') or 'image shown'}",
+                             tool=c.name, result={"image": True, "note": out.get("note")})
+                else:
+                    rec.step("tool_result", f"← {c.name}: {json.dumps(out, default=str)[:500]}",
+                             tool=c.name, result=out)
+            if "_image_b64" in out:
+                results.append({"type": "tool_result", "tool_use_id": c.id, "content": [
+                    {"type": "image", "source": {"type": "base64",
+                                                 "media_type": out["_media_type"],
+                                                 "data": out["_image_b64"]}},
+                    {"type": "text", "text": out.get("note") or "the image"}]})
+            else:
+                results.append({"type": "tool_result", "tool_use_id": c.id,
+                                "content": json.dumps(out, default=str)[:6000]})
         messages.append({"role": "user", "content": results})
         await _persist_run(eng, run_id, status="running", rec=rec)   # progress visible
     return None

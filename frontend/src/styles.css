@@ -2116,3 +2116,5 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   line-height: 1.45; margin-top: 1px; }
 .mir-imgs { font-size: var(--fs-1); display: flex; gap: 10px; margin-top: 2px; flex-wrap: wrap; }
 .an-note-scope--rule { border-color: var(--accent); color: var(--accent); font-weight: 700; }
+.mir-thumb { max-height: 180px; max-width: 320px; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); display: block; }

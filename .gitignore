@@ -26,5 +26,6 @@ frontend/.mobile-shots/
 
 # discord intake POC captures — contain your own DM contents; never commit
 backend/discord_dms.jsonl
+backend/discord_media/
 backend/discord_toasts.jsonl
 *.discord.jsonl

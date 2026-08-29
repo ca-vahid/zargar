@@ -152,7 +152,10 @@ strict grammar and their own timestamps.*
   (<= 17) and the gateway backfills that deep on startup/when a source is
   added (`mirror-stats` driven, paginated, throttled, no re-downloads). The
   analyst gets the source's last ~3 days in every run + `search_messages`;
-  the user gets the **Mirror** panel (Tips > Sources).
+  the user gets the **Mirror** panel (Tips > Sources). Image BYTES are
+  downloaded at mirror time into `backend/discord_media/` and served from
+  the app (2026-08-29 — CDN links expire and the LLM can't fetch URLs);
+  the analyst's `view_image` tool shows it the actual picture.
 - [ ] **P5 — alert lifecycle → book management**: an `Update/TRIM/CLOSE` from
   the same source+ticker should attach to the OPEN signal (dedupe-style key)
   and drive the immediate book's exit — giving a *source-managed* exit

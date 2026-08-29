@@ -230,6 +230,8 @@ export interface DiscordWatch {
 export interface DiscordMirrorMessage {
   id: string; channelId: string; source?: string | null; guild?: string | null;
   author: string; isBot?: boolean; text: string; images: string[];
+  /** filenames in our local media store — served via /api/tip/discord/media/<id>/<i> */
+  localImages?: string[];
   postedAt?: string | null;
 }
 

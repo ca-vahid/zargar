@@ -187,13 +187,112 @@ class SignalService:
         return {"id": m.id, "channelId": m.channel_id, "source": m.source_name,
                 "guild": m.guild_name, "author": m.author, "isBot": m.is_bot,
                 "text": m.text, "images": m.images or [],
+                "localImages": list(getattr(m, "local_images", None) or []),
                 "postedAt": m.posted_at.isoformat() if m.posted_at else None}
+
+    # --- mirrored media: image BYTES live locally (CDN links expire and the
+    # --- analyst LLM cannot fetch URLs — user, 2026-08-29) ---------------------
+    MEDIA_DIR = "discord_media"
+    MEDIA_MAX_BYTES = 8 * 1024 * 1024
+
+    def discord_media_dir(self):
+        from pathlib import Path
+        d = Path(self.MEDIA_DIR)
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
+    async def _download_media(self, message_id: str, urls: list[str],
+                              offset: int = 0) -> list[str]:
+        """CDN URLs -> local files (message-id-based names). Best-effort; only
+        files that landed are recorded. Tests may inject `_media_fetch`."""
+        from ..technique.llm import sniff_media_type
+        ext_for = {"image/png": "png", "image/jpeg": "jpg",
+                   "image/gif": "gif", "image/webp": "webp"}
+        out: list[str] = []
+        fetch = getattr(self, "_media_fetch", None)
+        d = self.discord_media_dir()
+        for i, url in enumerate(urls[:6], start=offset):
+            try:
+                if fetch is not None:
+                    blob = await fetch(url)
+                else:
+                    import httpx
+                    async with httpx.AsyncClient(timeout=30) as http:
+                        r = await http.get(url)
+                        blob = r.content if r.status_code == 200 else None
+                if not blob or len(blob) > self.MEDIA_MAX_BYTES:
+                    continue
+                try:
+                    mt = sniff_media_type(blob)
+                except ValueError:
+                    continue                        # not an image we understand
+                name = f"{message_id}-{i}.{ext_for[mt]}"
+                (d / name).write_bytes(blob)
+                out.append(name)
+            except Exception:
+                log.debug("media download failed for %s image %d", message_id, i)
+        return out
+
+    async def _download_media_for(self, ids_with_urls: list[tuple[str, list[str]]]) -> None:
+        """Background task: fetch the images of freshly-mirrored messages while
+        the CDN links are still signed, then record the local filenames."""
+        from ..models import DiscordMessage
+        for mid, urls in ids_with_urls:
+            names = await self._download_media(mid, urls)
+            if not names:
+                continue
+            try:
+                async with self.engine.sf() as session:
+                    row = await session.get(DiscordMessage, mid)
+                    if row is not None:
+                        row.local_images = names
+                        await session.commit()
+            except Exception:
+                log.exception("recording local media failed for %s", mid)
+
+    async def discord_get_message(self, message_id: str) -> dict | None:
+        from ..models import DiscordMessage
+        async with self.engine.sf() as session:
+            row = await session.get(DiscordMessage, str(message_id))
+        return self._msg_dict(row) if row is not None else None
+
+    async def discord_media_bytes(self, message_id: str, index: int = 0) -> tuple[bytes, str] | None:
+        """(bytes, media_type) of one mirrored image — from disk, or fetched on
+        the spot if the link is still alive; None when unavailable."""
+        from ..technique.llm import sniff_media_type
+        m = await self.discord_get_message(message_id)
+        if m is None:
+            return None
+        local = m.get("localImages") or []
+        if index < len(local):
+            p = self.discord_media_dir() / local[index]
+            if p.exists():
+                blob = p.read_bytes()
+                try:
+                    return blob, sniff_media_type(blob)
+                except ValueError:
+                    return None
+        urls = m.get("images") or []
+        if index < len(urls):                       # last chance: link may still be signed
+            names = await self._download_media(str(message_id), [urls[index]], offset=index)
+            if names:
+                p = self.discord_media_dir() / names[0]
+                blob = p.read_bytes()
+                async with self.engine.sf() as session:   # remember it for next time
+                    from ..models import DiscordMessage
+                    row = await session.get(DiscordMessage, str(message_id))
+                    if row is not None and names[0] not in (row.local_images or []):
+                        row.local_images = list(row.local_images or []) + names
+                        await session.commit()
+                return blob, sniff_media_type(blob)
+        return None
 
     async def discord_store_messages(self, messages: list[dict]) -> int:
         """Upsert mirrored messages (id = the discord message id); prune the
         mirror past techniques.tip.mirror_max_messages, oldest first."""
         from ..models import DiscordMessage
         stored = 0
+        to_fetch: list[tuple[str, list[str]]] = []   # new messages with images
         async with self.engine.sf() as session:
             for m in messages[:200]:
                 mid = str(m.get("id") or "").strip()
@@ -208,6 +307,7 @@ class SignalService:
                     posted = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
                 except ValueError:
                     posted = None
+                urls = [str(u) for u in (m.get("images") or [])][:6]
                 session.add(DiscordMessage(
                     id=mid, channel_id=str(m.get("channelId") or ""),
                     source_name=(m.get("source") or None),
@@ -216,10 +316,17 @@ class SignalService:
                     author_id=(str(m.get("authorId")) if m.get("authorId") else None),
                     is_bot=bool(m.get("isBot")),
                     text=str(m.get("text") or "")[:8000],
-                    images=[str(u) for u in (m.get("images") or [])][:6],
+                    images=urls,
                     posted_at=posted))
                 stored += 1
+                if urls:
+                    to_fetch.append((mid, urls))
             await session.commit()
+        if to_fetch:
+            # download the bytes NOW, while the CDN links are still signed —
+            # local copies are what the viewer and the analyst's view_image use
+            asyncio.create_task(self._download_media_for(to_fetch),
+                                name=f"discord-media-{to_fetch[0][0][:8]}")
         if stored:
             await self._prune_mirror()
         return stored
