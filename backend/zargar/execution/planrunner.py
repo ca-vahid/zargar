@@ -38,7 +38,14 @@ from .. import bus as topics
 from .. import events as ev
 from ..domain import Bar, new_id  # noqa: F401
 from ..marketstructure.rules import DEFAULT_MARKET_RULES, MarketRules
-from ..marketstructure.sessions import ET, PRIME_WINDOWS, session_bounds, session_date, session_window
+from ..marketstructure.sessions import (
+    ET,
+    PRIME_WINDOWS,
+    next_session_date,
+    session_bounds,
+    session_date,
+    session_window,
+)
 from ..marketstructure.tracker import TriggerTracker, score_trigger
 from ..marketstructure.volume import build_profile
 from ..models import TechniqueArmed
@@ -242,6 +249,13 @@ class ArmedPlan:
     scorecard: dict | None = None       # execution review vs the walk-forward replay (after close)
     replay_ts: int | None = None        # while seeding historical bars: stamp events with the BAR's time
     technique: str = "generic"          # registry id of the technique that armed it
+    # multi-day plans (ARM-GAPS A): a plan whose horizon spans sessions STAYS
+    # ARMED at the close and rolls in place — plan_for advances, trackers
+    # rebuild, sessions_used counts. Single-session plans (all of EM) keep
+    # horizon_sessions=1 and expire exactly as before.
+    horizon_sessions: int = 1           # total sessions the plan may watch
+    sessions_used: int = 0              # completed (or missed-while-down) sessions
+    expires_session: str = ""           # last session date the plan may still fire ("" = plan_for)
 
     def _attention_reasons(self) -> list[str]:
         """Human sentences for anything that needs a person: a failed exit with the
@@ -254,6 +268,8 @@ class ArmedPlan:
                 probs.append(f"{t.trigger_id}: exit {last_exit.get('kind')} failed — {t.remaining:g} still held")
             if t.status == "failed" and t.filled_qty > 0 and t.remaining > 0:
                 probs.append(f"{t.trigger_id}: entry errored after a partial fill — {t.remaining:g} held unmanaged")
+            if t.status == "failed" and t.filled_qty <= 0:
+                probs.append(f"{t.trigger_id}: fire produced nothing — {t.reason or 'failed'}")
         if self.stale and any(t.remaining > 0 for t in self.trades.values()):
             probs.append("bar data is stale while a position is open")
         if self.config.mode == "auto" and float(self.config.daily_loss_limit or 0) <= 0 \
@@ -292,6 +308,9 @@ class ArmedPlan:
         open_trades = [t for t in self.trades.values() if t.open]
         return {
             "runId": self.run_id, "technique": self.technique, "symbol": self.symbol, "planFor": self.plan_for,
+            "horizonSessions": self.horizon_sessions, "sessionsUsed": self.sessions_used,
+            "expiresSession": self.expires_session or self.plan_for,
+            "sessionDay": min(self.sessions_used + 1, max(1, self.horizon_sessions)),
             "status": self.status,
             # best deterministic grade among the watched triggers — kept visible so
             # grade-vs-outcome calibration (TRADING-RULES 1.2) stays in front of us
@@ -532,13 +551,64 @@ class PlanRunner(SessionListener):
                 TechniqueArmed.status.in_(("armed", "paused")),
                 TechniqueArmed.technique == self.TECHNIQUE_ID))).scalars().all()
         n = 0
+        now_ms = int(time.time() * 1000)
+        # the session a boot-rolled PAST plan should target: today while today's
+        # session can still trade, else the next session (a weekend/evening
+        # restart must not strand a plan on a non-session date). Plans for today
+        # or a future session restore unchanged.
+        _td = dt.date.fromisoformat(today)
+        target = today if (_td.weekday() < 5 and now_ms < session_bounds(today)[1]) \
+            else next_session_date(now_ms)
         for row in rows:
-            if (row.plan_for or "") < today:
+            state = dict(row.state or {})
+            # the COLUMN is authoritative (both are written by _persist; the
+            # column is also what tests/ops hand-edit) — the state's copy only
+            # backfills rows persisted before rolls existed
+            plan_for = str(row.plan_for or state.get("planFor") or "")
+            expires = str(state.get("expiresSession") or "") or plan_for
+            if plan_for < today:
+                if expires >= target:
+                    # multi-day plan whose horizon is still live: BOOT-ROLL it
+                    # forward (ARM-GAPS A4) — sessions missed while the app was
+                    # down count against the horizon; trackers rebuild fresh
+                    # (arm() seeds today's bars incl. the opening-bar fetch),
+                    # only consumed rungs carry over
+                    missed = _weekday_sessions_between(plan_for, target)
+                    state["planFor"] = target
+                    state["sessionsUsed"] = int(state.get("sessionsUsed") or 0) + missed
+                    state["trackers"] = {tid: t for tid, t in (state.get("trackers") or {}).items()
+                                         if t.get("status") == "fired"}
+                    try:
+                        await self.arm(row.run_id, ArmConfig.from_dict(row.config or {}), restored=True,
+                                       paused=(row.status == "paused"), prior_state=state)
+                        n += 1
+                        ap = self._armed.get(row.run_id)
+                        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ROLLED, {
+                            "runId": row.run_id, "symbol": row.symbol, "from": plan_for, "to": target,
+                            "bootRoll": True, "missedSessions": missed,
+                            "sessionsUsed": (ap.sessions_used if ap else None),
+                            "horizonSessions": (ap.horizon_sessions if ap else None)},
+                            aggregate_type="technique_run", aggregate_id=row.run_id)
+                    except Exception as exc:
+                        log.warning("boot-roll re-arm %s failed: %s", row.run_id, exc)
+                    continue
+                # horizon passed while the app was down: expire SCORED — with a
+                # stop reason and the journal trail, never a silent status write
                 async with self.engine.sf() as session:
                     r2 = await session.get(TechniqueArmed, row.run_id)
                     if r2 is not None:
                         r2.status = "expired"
+                        st2 = dict(r2.state or {})
+                        st2["stopReason"] = "horizon passed while the app was down"
+                        r2.state = st2
                         await session.commit()
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_DISARMED, {
+                    "runId": row.run_id, "symbol": row.symbol,
+                    "reason": "expired on restore — the plan's last session passed while the app was down",
+                    "planFor": plan_for, "expiresSession": expires},
+                    aggregate_type="technique_run", aggregate_id=row.run_id)
+                with contextlib.suppress(Exception):
+                    await self.on_plan_expired_offline(row)
                 continue
             try:
                 await self.arm(row.run_id, ArmConfig.from_dict(row.config or {}), restored=True,
@@ -804,6 +874,24 @@ class PlanRunner(SessionListener):
         ap = ArmedPlan(run_id=run_id, symbol=symbol, plan=plan, plan_for=plan.get("planFor") or "",
                        config=cfg, trackers=trackers, armed_at=time.time(), technique=self.TECHNIQUE_ID,
                        status="paused" if paused else "armed", baseline_bars=baseline_bars)
+        # multi-day horizon (ARM-GAPS A1): the technique says how many sessions
+        # this plan may watch and the last session it may still fire in
+        try:
+            h, exp = await self._hook("plan_horizon", self.plan_horizon(run, plan))
+            ap.horizon_sessions = max(1, int(h or 1))
+            ap.expires_session = str(exp or "") or ap.plan_for
+        except Exception:
+            log.exception("plan_horizon hook failed — treating as single-session")
+            ap.horizon_sessions, ap.expires_session = 1, ap.plan_for
+        if restored and prior_state:
+            # a rolled plan's CURRENT session lives in the state, not the plan
+            # doc — but a roll only ever moves FORWARD (never let a stale state
+            # rewind a plan below the day it was built for)
+            ap.sessions_used = int(prior_state.get("sessionsUsed") or 0)
+            if prior_state.get("planFor") and str(prior_state["planFor"]) > ap.plan_for:
+                ap.plan_for = str(prior_state["planFor"])
+            if prior_state.get("expiresSession"):
+                ap.expires_session = str(prior_state["expiresSession"])
         self._armed[run_id] = ap
         with contextlib.suppress(Exception):
             await self.engine.ensure_symbol(symbol)
@@ -1371,7 +1459,11 @@ class PlanRunner(SessionListener):
                          "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
                          "criticKills": ap.critic_kills, "refireAt": ap.refire_at,
                          "criticFailures": ap.critic_failures, "gapSeed": ap.gap_seed,
-                         "stopReason": ap.stop_reason, "scorecard": ap.scorecard}
+                         "stopReason": ap.stop_reason, "scorecard": ap.scorecard,
+                         # multi-day roll bookkeeping (ARM-GAPS A): the CURRENT
+                         # session and horizon survive a restart via the state
+                         "planFor": ap.plan_for, "horizonSessions": ap.horizon_sessions,
+                         "sessionsUsed": ap.sessions_used, "expiresSession": ap.expires_session}
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
                                          portfolio_id=ap.config.portfolio_id, mode=ap.config.mode,
@@ -1383,6 +1475,7 @@ class PlanRunner(SessionListener):
                     row.config = ap.config.to_dict()
                     row.portfolio_id = ap.config.portfolio_id
                     row.mode = ap.config.mode
+                    row.plan_for = ap.plan_for          # rolls advance the session (ARM-GAPS A2)
                     row.state = state
                     row.updated_at = dt.datetime.now(dt.timezone.utc)
                 await session.commit()
@@ -1607,6 +1700,14 @@ class PlanRunner(SessionListener):
                         "window": session_window(bar.ts), "close": bar.close, "reason": reason},
                         aggregate_type="technique_run", aggregate_id=ap.run_id)
                     self._publish(ap, what)
+                # a multi-day plan gapped past/through its level: loud, not silent
+                # (ARM-GAPS A6) — the trigger revives at the roll for a retest
+                if journal and st != before and self._multi_day(ap) \
+                        and st in ("gapped_past", "gapped_through", "gap_void"):
+                    await self._alert(ap, f"{tid}: {ap.symbol} opened {st.replace('_', ' ')} the "
+                                      f"{tr.entry:.2f} level — not chasing; the plan stays armed and "
+                                      f"watches for a retest (rolls to the next session at the close)",
+                                      level="warning", stage="gap_roll")
             if st == "fired" and before != "fired":
                 if ap.status == "paused":
                     tr.status = "observed"           # keep watching; a paused plan never fires
@@ -1661,11 +1762,19 @@ class PlanRunner(SessionListener):
 
 
     async def _end_session(self, ap: ArmedPlan, *, journal: bool, reason: str = "session closed") -> None:
-        """Expire the plan, write the execution scorecard, finish the trackers and
-        disarm — one implementation for the bar-driven close AND the clock-driven
-        close (the 15:59 bar may simply never arrive: on 2026-08-26 a feed outage
-        meant the scorecards never wrote). Idempotent."""
+        """Session close for a plan: a multi-day plan with sessions left ROLLS in
+        place (stays armed — ARM-GAPS A2); otherwise expire, write the execution
+        scorecard, finish the trackers and disarm — one implementation for the
+        bar-driven close AND the clock-driven close (the 15:59 bar may simply
+        never arrive: on 2026-08-26 a feed outage meant the scorecards never
+        wrote). Idempotent."""
         if ap.status in ("expired", "disarmed") and ap.run_id not in self._armed:
+            return
+        if self._should_roll(ap):
+            if journal:
+                await self._roll_session(ap)
+            # seed replay (journal=False): leave the plan armed — the live close
+            # already rolled it, or the 16:05 heartbeat clock will
             return
         ap.status = "expired"
         if journal and ap.scorecard is None:
@@ -1678,6 +1787,109 @@ class PlanRunner(SessionListener):
             tr.finish()
         if journal:
             await self.disarm(ap.run_id, reason=reason)
+            # the plan expired at the close with no roll left: the technique may
+            # expire its upstream record (the tip's signal — "the level never
+            # came"). Base hook is a no-op; a rolled plan never reaches here.
+            with contextlib.suppress(Exception):
+                await self._hook("on_plan_horizon_expired", self.on_plan_horizon_expired(ap))
+
+    # ---------------------------------------------------------------- multi-day roll
+    # Tracker statuses that get a fresh chance next session. Terminal-for-good:
+    # `invalidated` (price closed through the stop before entry — the thesis is
+    # broken) and a consumed fire (the rung was played). Gap verdicts and
+    # exhaustion are judgements about ONE session's open/price action.
+    _REVIVABLE = frozenset({"waiting", "observed", "gap_void", "gapped_past",
+                            "gapped_through", "exhausted"})
+
+    def _multi_day(self, ap: ArmedPlan) -> bool:
+        return (ap.expires_session or ap.plan_for) > ap.plan_for
+
+    def _next_session_after(self, plan_for: str) -> str:
+        return next_session_date(session_bounds(plan_for)[1] + 60_000)
+
+    def _trigger_revivable(self, ap: ArmedPlan, tid: str, tr: TriggerTracker) -> bool:
+        if tr.status in self._REVIVABLE:
+            return True
+        if tr.status == "fired":
+            trade = ap.trades.get(tid)
+            # fired but never filled (entry window elapsed / rejected / failed dry):
+            # the level gets a fresh chance; a fill (or a handed-off trade, which
+            # was popped from ap.trades) consumed the rung
+            return trade is not None and trade.filled_qty <= 0 \
+                and trade.status in ("cancelled", "failed", "alert", "proposal")
+        return False
+
+    def _should_roll(self, ap: ArmedPlan) -> bool:
+        if not self._multi_day(ap) or ap.status not in ("armed", "paused"):
+            return False
+        nxt = self._next_session_after(ap.plan_for)
+        if nxt > (ap.expires_session or ap.plan_for):
+            return False
+        return any(self._trigger_revivable(ap, tid, tr) for tid, tr in ap.trackers.items())
+
+    async def _roll_session(self, ap: ArmedPlan) -> None:
+        """Advance a multi-day plan to its next session IN PLACE (ARM-GAPS A2):
+        cancel resting entries, flatten anything session-scoped still open,
+        rebuild the trackers fresh (next open gets a real 09:30 judgement via
+        the live bars / `_complete_opening_bars` on a restore), count the
+        session, keep the run id and the audit trail."""
+        old = ap.plan_for
+        nxt = self._next_session_after(old)
+        consumed: dict[str, str] = {}
+        for tid, tr in ap.trackers.items():
+            if not self._trigger_revivable(ap, tid, tr):
+                consumed[tid] = tr.status if tr.status in tr.TERMINAL or tr.status == "fired" \
+                    else "exhausted"
+        for tr_ in ap.trades.values():
+            if tr_.status == "working" and tr_.entry_order_id:
+                with contextlib.suppress(Exception):
+                    await self.engine.orders.cancel(tr_.entry_order_id)
+                tr_.status = "cancelled"
+                tr_.reason = "session ended unfilled — the level gets a fresh chance next session"
+                self._log(ap, "entry_cancelled", f"{tr_.trigger_id}: {tr_.reason}", trigger=tr_.trigger_id)
+            elif tr_.status == "open" and tr_.remaining > 0:
+                # still session-scoped at the close (no handoff claimed it):
+                # session-scoped stays session-scoped — never held overnight
+                await self._exit(ap, tr_, "flatten", tr_.remaining, journal=True, force_market=True,
+                                 reason="session-scoped position at the roll — flattened, not held overnight")
+        ap.sessions_used += 1
+        ap.plan_for = nxt
+        ap.bar_index = 0
+        ap.last_bar_ts = None
+        ap.stale = ap.stale_noted = False
+        ap.preopen_done = False
+        ap.gap_seed = ""
+        ap.critic_failures = 0
+        ap.critic_kills = {}
+        ap.refire_at = {}
+        self._guard_closes.pop(ap.run_id, None)
+        enforce = bool(self.engine.settings.get("technique.enforce_session_windows", True))
+        rules = self.rules()
+        profile = None
+        with contextlib.suppress(Exception):
+            if ap.baseline_bars:
+                profile = build_profile(ap.baseline_bars)
+        q = self.engine.quotes.get(ap.symbol)
+        ref_px = (float(q.last) if q is not None and q.last and q.last > 0 else None) \
+            or float(ap.plan.get("referencePrice") or ap.plan.get("lastClose") or 0) or None
+        ap.trackers = {tg["id"]: TriggerTracker(tg, rules, profile, enforce, True, ref_px)
+                       for tg in ap.plan.get("triggers") or [] if tg.get("valid")}
+        for tid, st in consumed.items():
+            if tid in ap.trackers:
+                ap.trackers[tid].status = st
+        self._log(ap, "rolled",
+                  f"session {old} closed — rolled to {nxt} "
+                  f"(day {ap.sessions_used + 1} of {ap.horizon_sessions}, "
+                  f"last session {ap.expires_session or nxt})")
+        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ROLLED, {
+            "runId": ap.run_id, "symbol": ap.symbol, "from": old, "to": nxt,
+            "sessionsUsed": ap.sessions_used, "horizonSessions": ap.horizon_sessions,
+            "expiresSession": ap.expires_session,
+            "consumed": consumed,
+            "realizedPnl": round(sum(t.realized_pnl for t in ap.trades.values()), 2)},
+            aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=ap.config.portfolio_id)
+        await self._persist(ap)
+        self._publish(ap, "rolled")
 
     # ---------------------------------------------------------------- fire -> execute
     def _mint_trade(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int) -> Trade:
@@ -1846,6 +2058,12 @@ class PlanRunner(SessionListener):
                 trade.status = "proposal" if pid else "failed"
                 trade.reason = ("proposal created — approve it in Signals" if pid else "no proposal could be created")
             self._log(ap, "proposal" if pid else "proposal_failed", f"{tid}: {trade.reason}", trigger=tid, proposalId=pid)
+            if not pid:
+                # a proposal-mode fire that produced NOTHING is a failure a person
+                # must see (ARM-GAPS A5/F4) — the plan waited days for this touch
+                await self._alert(ap, f"{tid}: the trigger fired but {trade.reason}"
+                                  + (f" ({'; '.join(trade.errors[-2:])})" if trade.errors else ""),
+                                  stage="proposal")
         else:
             await self._enter(ap, trade, tr, journal=journal)
         await self._persist(ap)
@@ -2407,3 +2625,36 @@ class PlanRunner(SessionListener):
     async def arm_today(self, symbol: str, config: dict | None = None, *, with_vision: bool | None = None) -> dict:
         """Build and arm today's plan for a symbol on demand (auto-arm at the open)."""
         raise RuntimeError("this runner does not build plans on demand")
+
+    async def plan_horizon(self, run: dict, plan: dict) -> tuple[int, str | None]:
+        """How many sessions this plan may watch, and the LAST session date it may
+        still fire in (ARM-GAPS A1). Default: single-session (all of EM)."""
+        return 1, None
+
+    async def on_plan_horizon_expired(self, ap: "ArmedPlan") -> None:
+        """A multi-day plan expired with its horizon spent and the level never
+        filled — the technique may expire its own upstream record (the tip's
+        signal). Called after the scored expire."""
+        return None
+
+    async def on_plan_expired_offline(self, row) -> None:
+        """restore() expired a persisted plan whose horizon passed while the app
+        was down (row = the TechniqueArmed row). Same purpose as
+        `on_plan_horizon_expired`, for a plan that never re-armed."""
+        return None
+
+
+def _weekday_sessions_between(a: str, b: str) -> int:
+    """Weekday sessions in [a, b): how many sessions a plan armed for `a` has
+    completed or missed by the time `b` is the current session."""
+    try:
+        d = dt.date.fromisoformat(a)
+        end = dt.date.fromisoformat(b)
+    except ValueError:
+        return 0
+    n = 0
+    while d < end:
+        if d.weekday() < 5:
+            n += 1
+        d += dt.timedelta(days=1)
+    return n

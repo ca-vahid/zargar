@@ -440,7 +440,7 @@ function HistoryTable({ history, pmap, ws }: { history: any[]; pmap: Record<stri
                     <td>{h.mode}</td>
                     <td className="muted">{pmap[h.portfolioId]?.name ?? h.portfolioId?.slice(0, 8)}{" "}
                       <span className={`status-pill ${workspaceOf(pmap[h.portfolioId]?.kind) === "live" ? "bad" : "dim"}`}>{workspaceOf(pmap[h.portfolioId]?.kind) === "live" ? "live" : "practice"}</span></td>
-                    <td>{h.status}</td><td>{(h.state?.trades ?? []).length}</td>
+                    <td>{h.status}{(h.state?.sessionsUsed ?? 0) > 0 ? ` · ran ${h.state.sessionsUsed + 1} session(s)` : ""}</td><td>{(h.state?.trades ?? []).length}</td>
                     <td className={pnlCls(h.state?.realizedPnl)}>{fmt(h.state?.realizedPnl)}</td>
                     <td className="muted">{h.createdAt ? fmtDateTime(h.createdAt) : ""}</td></tr>))}</tbody>
               </table>

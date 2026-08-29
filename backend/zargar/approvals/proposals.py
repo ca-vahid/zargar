@@ -79,6 +79,90 @@ class ProposalService:
         self._adopt_tasks: dict[str, asyncio.Task] = {}   # proposalId -> adopt-on-fill waiter
 
     # ------------------------------------------------------------- create
+    async def create_from_armed_fire(self, signal_row: Signal, *, run_id: str, trigger_id: str,
+                                     portfolio_id: str, direction: str, entry: float, stop: float,
+                                     targets: list[float], contract: dict | None,
+                                     contracts: int | None, exit_plan: dict | None,
+                                     analyst_run_id: str | None) -> dict | None:
+        """A proposal minted by an ARMED plan's fire (ARM-GAPS A5): the level the
+        plan waited for finally touched, in proposal mode — the card asks the
+        human to take the trade NOW, with the vehicle the fire actually picked.
+        Same shape and notification path as `create_from_signal` (Telegram + push
+        ride topics.PROPOSALS)."""
+        eng = self.engine
+        from ..signals.sources import resolve_policy
+        policy = resolve_policy(eng.settings, signal_row.source_name)
+        budget = float(policy.budget_per_tip)
+        pf = eng.positions.portfolio(portfolio_id) or {}
+        analyst = (signal_row.extraction or {}).get("analyst") or {}
+        bracket = None
+        if contract and contract.get("symbol"):
+            occ = str(contract["symbol"]).upper()
+            live_ask = float(contract.get("ask") or 0) or None
+            # never chase above the analyst's/tip's stated premium — a live ask
+            # may only IMPROVE the limit (same guard as the tip-time proposal)
+            ref = analyst.get("limit_price") or signal_row.premium or live_ask
+            if live_ask and ref and live_ask < float(ref):
+                ref = live_ask
+            if not ref or float(ref) <= 0:
+                log.warning("armed fire %s: no premium reference for %s — no proposal", run_id, occ)
+                return None
+            limit = round(float(ref), 2)
+            qty = int(contracts or 0) or max(1, math.floor(budget / (limit * 100)))
+            symbol, sec_type = occ, "OPT"
+            label = contract.get("display") or occ
+            vehicle = {"kind": "option", "display": label, "underlying": signal_row.ticker,
+                       "optionType": contract.get("optionType"), "pickedBy": "armed_fire",
+                       "multiplier": 100}
+            explain = (f"The level this plan waited for touched: buy {qty} contract"
+                       f"{'s' if qty != 1 else ''} of {label} at a ${limit:.2f} limit "
+                       f"≈ ${limit * qty * 100:,.0f} in “{pf.get('name', portfolio_id)}” "
+                       f"({pf.get('kind', '?')}). RiskGate still checks the order on approval.")
+        else:
+            if direction == "short":
+                log.warning("armed fire %s: short with no contract — share shorting is never proposed", run_id)
+                return None
+            q = eng.quotes.get(signal_row.ticker)
+            ref = (float(q.ask) if q is not None and q.ask and q.ask > 0 else None) or float(entry or 0)
+            if not ref or ref <= 0:
+                return None
+            limit = round(ref, 2)
+            qty = max(1, math.floor(budget / limit))
+            symbol, sec_type = signal_row.ticker, "STK"
+            vehicle = {"kind": "shares"}
+            if targets or stop:
+                bracket = {"take_profit": (targets[0] if targets else None), "stop_loss": stop or None,
+                           "take_profit_pct": None, "stop_loss_pct": None}
+            explain = (f"The level this plan waited for touched: buy {qty} share"
+                       f"{'s' if qty != 1 else ''} of {symbol} at a ${limit:.2f} limit "
+                       f"≈ ${limit * qty:,.0f} in “{pf.get('name', portfolio_id)}” "
+                       f"({pf.get('kind', '?')}). RiskGate still checks the order on approval.")
+        ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
+        row = Proposal(
+            id=new_id(), signal_id=signal_row.id, portfolio_id=portfolio_id,
+            symbol=symbol, sec_type=sec_type, side="BUY", qty=float(qty),
+            order_type="LMT", limit_price=limit, bracket=bracket,
+            rationale=signal_row.thesis_summary,
+            context={"techniqueId": "tip", "sourceName": signal_row.source_name,
+                     "armedRunId": run_id, "triggerId": trigger_id,
+                     "vehicle": vehicle, "explain": explain,
+                     "signalPrices": {"entry": entry, "stop": stop,
+                                      "target": (targets[0] if targets else None)},
+                     **({"exitPlan": exit_plan} if exit_plan else {}),
+                     **({"analystRunId": analyst_run_id} if analyst_run_id else {})},
+            expires_at=_ttl_expiry(ttl_min))
+        async with eng.sf() as session:
+            session.add(row)
+            sig_db = await session.get(Signal, signal_row.id)
+            if sig_db is not None and sig_db.status in ("verified", "parked"):
+                sig_db.status = "proposed"
+            await session.commit()
+        pdict = proposal_dict(row)
+        await eng.journal.append(ev.PROPOSAL_CREATED, pdict, aggregate_type="proposal",
+                                 aggregate_id=row.id, portfolio_id=portfolio_id)
+        eng.bus.publish(topics.PROPOSALS, pdict)
+        return pdict
+
     async def create_from_signal(self, signal_row: Signal, sig: TradeSignal,
                                  verification: dict) -> dict | None:
         """Verified tip → the order the human is asked to approve. The proposal

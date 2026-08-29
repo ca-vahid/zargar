@@ -49,7 +49,7 @@ from ...execution.planrunner import ArmConfig, FireJudgement, PlanRunner
 from ...execution.sizing import size_by_budget
 from ...marketstructure import SESSION_WINDOWS, MarketRules
 from ...models import Order, Signal, TechniqueRun
-from .horizon import effective_wait_sessions, hold_sessions_cap, tip_expiry
+from .horizon import add_sessions, effective_wait_sessions, hold_sessions_cap, tip_expiry
 
 log = logging.getLogger("zargar.techniques.tip")
 
@@ -96,6 +96,86 @@ class TipRunner(PlanRunner):
     async def analyze_fire(self, ap, tid, tr, trade) -> FireJudgement:
         conf = float((tr.trigger.get("confidence") or 0.5))
         return FireJudgement(verdict="setup", confidence=conf)
+
+    async def plan_horizon(self, run: dict, plan: dict) -> tuple[int, str | None]:
+        """A tip plan may wait its whole horizon (ARM-GAPS A1): sessions from the
+        plan context, last session additionally capped by the contract's expiry
+        minus the entry cutoff — the same bound `effective_wait_sessions` applied
+        at build time, frozen here so every roll can check it for free."""
+        ctx = plan.get("context") or {}
+        n = max(1, int(ctx.get("horizonSessions") or 1))
+        try:
+            start = dt.date.fromisoformat(str(plan.get("planFor")))
+        except (TypeError, ValueError):
+            return n, None
+        last = add_sessions(start, n - 1)
+        sig_id = ctx.get("signalId")
+        if sig_id:
+            async with self.engine.sf() as session:
+                sig = await session.get(Signal, sig_id)
+            if sig is not None:
+                received = sig.created_at.date() if sig.created_at else start
+                expiry = tip_expiry(sig.expiry, sig.dte_hint_days, received)
+                if expiry is not None:
+                    cutoff = int(self.engine.settings.get("techniques.tip.entry_cutoff_dte", 2))
+                    lim = expiry - dt.timedelta(days=max(0, cutoff))
+                    while lim.weekday() >= 5:
+                        lim -= dt.timedelta(days=1)
+                    last = min(last, lim)
+        if last < start:
+            last = start
+        return n, last.isoformat()
+
+    async def on_plan_horizon_expired(self, ap) -> None:
+        """The plan's last session closed and the level never filled: expire the
+        SIGNAL too (ARM-GAPS A3) — unless another plan for it is still live or
+        the tip was actually played."""
+        await self._expire_signal_if_dead((ap.plan.get("context") or {}).get("signalId"))
+
+    async def on_plan_expired_offline(self, row) -> None:
+        async with self.engine.sf() as session:
+            run = await session.get(TechniqueRun, row.run_id)
+        await self._expire_signal_if_dead((run.result or {}).get("signalId") if run else None)
+
+    async def _expire_signal_if_dead(self, signal_id: str | None) -> None:
+        if not signal_id:
+            return
+        if self._armed_today(signal_id) or await self._signal_played(signal_id):
+            return
+        async with self.engine.sf() as session:
+            sig = await session.get(Signal, signal_id)
+        if sig is None or sig.status not in ARMABLE_STATUSES:
+            return
+        today = dt.datetime.now(dt.timezone.utc).date()
+        expiry = tip_expiry(sig.expiry, sig.dte_hint_days,
+                            (sig.created_at.date() if sig.created_at else today))
+        await self._expire_signal(sig, expiry)
+
+    async def emit_proposal(self, ap, trade, judgement, contract, *, contracts):
+        """Proposal mode at the touch (ARM-GAPS A5): the level the plan waited
+        for arrived — mint a real proposal for the vehicle the fire picked
+        (Telegram + push ride topics.PROPOSALS). Returns the proposal id."""
+        ctx = ap.plan.get("context") or {}
+        sig_id = ctx.get("signalId")
+        if not sig_id:
+            return None
+        async with self.engine.sf() as session:
+            sig = await session.get(Signal, sig_id)
+        if sig is None:
+            return None
+        svc = getattr(self.engine, "proposals", None)
+        if svc is None:
+            return None
+        run_cfg = (await self.load_plan(ap.run_id) or {}).get("config") or {}
+        pdict = await svc.create_from_armed_fire(
+            sig, run_id=ap.run_id, trigger_id=trade.trigger_id,
+            portfolio_id=ap.config.portfolio_id, direction=trade.direction,
+            entry=float(trade.entry), stop=float(trade.stop),
+            targets=[float(t) for t in trade.targets],
+            contract=trade.contract, contracts=contracts,
+            exit_plan=run_cfg.get("exitPlan"),
+            analyst_run_id=run_cfg.get("analystRunId"))
+        return (pdict or {}).get("id")
 
     async def pick_contract(self, ap, trade):
         """The tip's expression policy (BUILD-PLAN T2): the stated contract

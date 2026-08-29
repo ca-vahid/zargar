@@ -92,6 +92,7 @@ TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs 
 TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time
 TECHNIQUE_PLAN_PREOPEN = "TechniquePlanPreopen"        # 09:25 pre-market judgement of the plan's triggers
 TECHNIQUE_PLAN_REPLANNED = "TechniquePlanReplanned"
+TECHNIQUE_PLAN_ROLLED = "TechniquePlanRolled"          # multi-day plan rolled to the next session (stays armed)
 TECHNIQUE_HOOK_STATS = "TechniqueHookStats"        # daily roll-up of per-hook latency/errors (EM team #6)    # a plan re-anchored to the pre-market price replaced another
 CHAT_THREAD_CREATED = "ChatThreadCreated"
 CHAT_TOOL_CALLED = "ChatToolCalled"
