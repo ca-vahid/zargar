@@ -155,11 +155,25 @@ def build_catalog(ready_d: dict) -> dict:
     for g in ready_d.get("guilds") or []:
         props = g.get("properties") or {}
         gname = props.get("name") or g.get("name") or "server"
-        chans = [{"channelId": str(c.get("id")), "name": c.get("name") or "?",
-                  "position": c.get("position", 0)}
-                 for c in (g.get("channels") or [])
-                 if c.get("type") in TEXT_CHANNEL_TYPES]
-        chans.sort(key=lambda c: (c["position"], c["name"]))
+        raw = g.get("channels") or []
+        # type 4 = category ("folder"); text channels point at one via parent_id.
+        # Carrying the category name/order lets the UI mirror Discord's sidebar.
+        cats = {str(c.get("id")): {"name": c.get("name") or "",
+                                   "position": c.get("position", 0)}
+                for c in raw if c.get("type") == 4}
+        chans = []
+        for c in raw:
+            if c.get("type") not in TEXT_CHANNEL_TYPES:
+                continue
+            cat = cats.get(str(c.get("parent_id") or ""))
+            chans.append({"channelId": str(c.get("id")), "name": c.get("name") or "?",
+                          "position": c.get("position", 0),
+                          "category": cat["name"] if cat else "",
+                          "categoryPos": cat["position"] if cat else -1})
+        # Discord order: uncategorized first, then categories by position,
+        # channels by position inside each
+        chans.sort(key=lambda c: (c["categoryPos"], c["category"].lower(),
+                                  c["position"], c["name"]))
         if chans:
             guilds.append({"guildId": str(g.get("id")), "guildName": gname,
                            "channelCount": len(chans), "channels": chans})

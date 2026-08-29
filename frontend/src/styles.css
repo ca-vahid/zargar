@@ -2081,3 +2081,18 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .an-dot--bar { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
   background: var(--accent); animation: an-pulse 1.1s ease-in-out infinite; flex-shrink: 0; }
 .an-procbar .an-note-del { margin-left: auto; }
+
+/* the Sources tab is configuration, not desk work — set it apart on the right */
+.tabs .tab-config { margin-left: 18px; border: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  border-radius: 999px; padding: 3px 12px; align-self: center; background: var(--surface-2); }
+.tabs .tab-config.active { color: var(--text-1); border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent); }
+
+/* Discord folder structure inside a server (category = Discord's "folder") */
+.disc-cat { margin: 2px 0 2px 8px; }
+.disc-cat-name { display: flex; justify-content: space-between; width: 100%; align-items: center;
+  background: none; border: none; cursor: pointer; padding: 3px 0;
+  font-size: var(--fs-0); font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase;
+  color: var(--text-3); text-align: left; }
+.disc-cat-name:hover { color: var(--accent); }
+.disc-cat .disc-row { margin-left: 14px; }

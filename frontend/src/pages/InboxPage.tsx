@@ -17,12 +17,12 @@ import { useViewport } from "../lib/viewport";
    tabs as an attention strip (they expire in minutes). */
 
 type Tab = "compose" | "tips" | "sources" | "analyst" | "inbox";
-const TABS: Tab[] = ["compose", "tips", "sources", "analyst", "inbox"];
+const TABS: Tab[] = ["tips", "compose", "analyst", "inbox", "sources"];
 
 export function InboxPage() {
   const pageTab = useStore((s) => s.pageTab);
   const setPageTab = useStore((s) => s.setPageTab);
-  const tab: Tab = (TABS as string[]).includes(pageTab) ? (pageTab as Tab) : "compose";
+  const tab: Tab = (TABS as string[]).includes(pageTab) ? (pageTab as Tab) : "tips";
   const setTab = (t: Tab) => setPageTab(t);
   const proposals = useStore((s) => s.proposals);
   const signals = useStore((s) => s.signals);
@@ -31,16 +31,21 @@ export function InboxPage() {
       <div className="tips-head">
         <h2 className="page-title">Tips</h2>
         <div className="tabs" role="tablist">
-          <button role="tab" aria-selected={tab === "compose"} className={tab === "compose" ? "active" : ""}
-            onClick={() => setTab("compose")}>New tip</button>
           <button role="tab" aria-selected={tab === "tips"} className={tab === "tips" ? "active" : ""}
             onClick={() => setTab("tips")}>Tips{signals.length ? ` · ${signals.length}` : ""}</button>
-          <button role="tab" aria-selected={tab === "sources"} className={tab === "sources" ? "active" : ""}
-            onClick={() => setTab("sources")}>Sources</button>
+          <button role="tab" aria-selected={tab === "compose"} className={tab === "compose" ? "active" : ""}
+            onClick={() => setTab("compose")}>New tip</button>
           <button role="tab" aria-selected={tab === "analyst"} className={tab === "analyst" ? "active" : ""}
             onClick={() => setTab("analyst")}>Analyst</button>
           <button role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""}
             onClick={() => setTab("inbox")}>Inbox</button>
+          {/* configuration, not desk work — set apart from the flow tabs */}
+          <button role="tab" aria-selected={tab === "sources"}
+            className={`tab-config ${tab === "sources" ? "active" : ""}`}
+            onClick={() => setTab("sources")}
+            title="Configure where tips come from (Discord sources, scorecards)">
+            ⚙ Sources
+          </button>
         </div>
         <span className="muted tips-head-sub">every source runs two shadow books: buy at tip time vs wait for the level</span>
       </div>
@@ -752,10 +757,23 @@ function DiscordSourcesPanel() {
 
   const dms = (cat?.dms ?? []).filter((d) => hit(d.name) && (!monitoredOnly || sel[d.channelId]));
   const guilds = (cat?.guilds ?? []).map((g) => {
-    const chans = g.channels.filter((c) => (hit(c.name) || hit(g.guildName))
+    const chans = g.channels.filter((c) => (hit(c.name) || hit(g.guildName) || hit(c.category ?? ""))
       && (!monitoredOnly || sel[c.channelId]));
     return { ...g, shown: chans };
   }).filter((g) => g.shown.length > 0);
+
+  // Discord's folder structure: channels arrive sorted by category — group the
+  // consecutive runs so each category renders as a collapsible folder
+  const byCategory = (chans: import("../types").DiscordCatalogChannel[]) => {
+    const groups: { category: string; chans: typeof chans }[] = [];
+    for (const c of chans) {
+      const catName = c.category ?? "";
+      const last = groups[groups.length - 1];
+      if (last && last.category === catName) last.chans.push(c);
+      else groups.push({ category: catName, chans: [c] });
+    }
+    return groups;
+  };
 
   return (
     <div className="panel mb">
@@ -788,13 +806,6 @@ function DiscordSourcesPanel() {
           ) : (
             <div className="disc-cols">
               <div>
-                <div className="disc-head">Direct messages {dms.length ? `(${dms.length})` : ""}</div>
-                {dms.length === 0 ? <div className="muted">none match</div>
-                  : dms.map((d) => (
-                    <Row key={d.channelId} channelId={d.channelId} name={d.name} kind="dm" isBot={d.isBot} />
-                  ))}
-              </div>
-              <div>
                 <div className="disc-head">Servers {guilds.length ? `(${guilds.length})` : ""}</div>
                 {guilds.length === 0 ? <div className="muted">none match</div>
                   : guilds.map((g) => {
@@ -807,13 +818,36 @@ function DiscordSourcesPanel() {
                           <span>{isOpen ? "▾" : "▸"} {g.guildName}</span>
                           <span className="muted"> {g.shown.length} ch{enabledHere ? ` · ${enabledHere} on` : ""}</span>
                         </button>
-                        {isOpen && g.shown.map((c) => (
-                          <Row key={c.channelId} channelId={c.channelId} name={c.name}
-                            kind="channel" guildName={g.guildName} />
-                        ))}
+                        {isOpen && byCategory(g.shown).map(({ category, chans }) => {
+                          const key = `${g.guildId}/${category}`;
+                          const catOpen = open[key] !== false || !!needle || monitoredOnly;
+                          const onHere = chans.filter((c) => sel[c.channelId]).length;
+                          return (
+                            <div key={key || "_"} className="disc-cat">
+                              {category && (
+                                <button className="disc-cat-name" onClick={() =>
+                                  setOpen((p) => ({ ...p, [key]: !catOpen }))}>
+                                  <span>{catOpen ? "▾" : "▸"} {category}</span>
+                                  <span className="muted"> {chans.length}{onHere ? ` · ${onHere} on` : ""}</span>
+                                </button>
+                              )}
+                              {catOpen && chans.map((c) => (
+                                <Row key={c.channelId} channelId={c.channelId} name={c.name}
+                                  kind="channel" guildName={g.guildName} />
+                              ))}
+                            </div>
+                          );
+                        })}
                       </div>
                     );
                   })}
+              </div>
+              <div>
+                <div className="disc-head">Direct messages {dms.length ? `(${dms.length})` : ""}</div>
+                {dms.length === 0 ? <div className="muted">none match</div>
+                  : dms.map((d) => (
+                    <Row key={d.channelId} channelId={d.channelId} name={d.name} kind="dm" isBot={d.isBot} />
+                  ))}
               </div>
             </div>
           )}

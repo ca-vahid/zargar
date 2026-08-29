@@ -108,7 +108,9 @@ strict grammar and their own timestamps.*
     (`--all-dms`, `--from-bots-only`, `--channel-id`, `--author-id`,
     `--include-self`) remain for testing. **Channels work the same as DMs** — no
     Discord notification settings needed; if the account can read the channel,
-    the gateway sees it.
+    the gateway sees it. The catalog carries Discord's **category folders**
+    (type-4 channels via `parent_id`, 2026-08-28) and the picker mirrors the
+    sidebar: servers (left, collapsible categories) · DMs (right).
   - VERIFY on a busy guild channel: message events for large servers may need a
     channel-subscribe frame (op 14); DMs and small guilds deliver without one.
 

@@ -80,8 +80,8 @@ the stated contract verbatim, runner.py = `TipRunner(PlanRunner)`). **Dual shado
 (`Portfolio.book`): "immediate" buys at tip time, "armed" waits for the level (morning
 `tip_shadow_arm` scheduler job) — never blended; the scorecard compares them and the trust bar is
 judged on the ARMED book. Filled tip entries hand off to `engine.position_manager` (2b) and the
-session runner forgets them. UI: `pages/InboxPage.tsx` = the **Tips** page (New tip · Tips ·
-Sources · Inbox tabs).
+session runner forgets them. UI: `pages/InboxPage.tsx` = the **Tips** page (Tips · New tip · Analyst · Inbox tabs,
++ a set-apart ⚙ Sources config tab; bare `/inbox` = the Tips list).
 **Flow technique (BUILT 2026-08-27, context-only — places no orders):** `docs/techniques/flow/PLAN.md`
 + `UI-PLAN.md`. Nightly scan (16:45 ET, engine scheduler) reads `option_chain_snapshots` (research
 feed is the single writer; scoring-only live fallback) → `flow_reads` verdicts (Vol/OI flags,

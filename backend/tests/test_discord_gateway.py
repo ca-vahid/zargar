@@ -75,16 +75,23 @@ def test_build_catalog_from_ready():
              "guilds": [
                  {"id": "500", "name": None, "properties": {"name": "OWLS Capital"},
                   "channels": [
-                     {"id": "600", "name": "jon-and-kian", "type": 0, "position": 2},
+                     {"id": "600", "name": "jon-and-kian", "type": 0, "position": 2,
+                      "parent_id": "700"},
                      {"id": "601", "name": "voice", "type": 2, "position": 1},   # skipped
-                     {"id": "602", "name": "announcements", "type": 5, "position": 0}]}]}
+                     {"id": "602", "name": "announcements", "type": 5, "position": 0},
+                     {"id": "700", "name": "🌞 | TRADE-ALERTS", "type": 4, "position": 5},
+                     {"id": "603", "name": "eva", "type": 0, "position": 0,
+                      "parent_id": "700"}]}]}
     cat = build_catalog(ready)
     assert {d["name"] for d in cat["dms"]} == {"OWLSbot", "A Friend"}   # not "unknown"
     assert next(d for d in cat["dms"] if d["name"] == "OWLSbot")["isBot"]
     assert len(cat["dms"]) == 2                                        # spam DM dropped
     g = cat["guilds"][0]
-    assert g["guildName"] == "OWLS Capital" and g["channelCount"] == 2
-    assert [c["name"] for c in g["channels"]] == ["announcements", "jon-and-kian"]  # by position
+    assert g["guildName"] == "OWLS Capital" and g["channelCount"] == 3
+    # Discord order: uncategorized first, then categories by position,
+    # channels by position inside each — the category rides on every channel
+    assert [c["name"] for c in g["channels"]] == ["announcements", "eva", "jon-and-kian"]
+    assert [c["category"] for c in g["channels"]] == ["", "🌞 | TRADE-ALERTS", "🌞 | TRADE-ALERTS"]
 
 
 def test_watchlist_match():
