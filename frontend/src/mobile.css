@@ -658,3 +658,8 @@ button.bl-card:active { background: var(--surface-2); }
   .disc-cols { max-height: none; }   /* one scroll context on touch — the page */
   .trade-back { min-width: 44px; min-height: 40px; }
 }
+
+/* phones: the Sources config tab shows only its gear */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .tab-config .tab-config-label { display: none; }
+}

@@ -40,12 +40,12 @@ export function InboxPage() {
             onClick={() => setTab("analyst")}>Analyst</button>
           <button role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""}
             onClick={() => setTab("inbox")}>Inbox</button>
-          {/* configuration, not desk work — set apart from the flow tabs */}
+          {/* configuration, not desk work — the gear is the only differentiator */}
           <button role="tab" aria-selected={tab === "sources"}
             className={`tab-config ${tab === "sources" ? "active" : ""}`}
             onClick={() => setTab("sources")}
             title="Configure where tips come from (Discord sources, scorecards)">
-            ⚙ Sources
+            ⚙<span className="tab-config-label"> Sources</span>
           </button>
         </div>
         <span className="muted tips-head-sub">every source runs two shadow books: buy at tip time vs wait for the level</span>
@@ -668,13 +668,13 @@ function PeekButton({ channelId, label }: { channelId: string; label?: string })
   };
   return (
     <span className="disc-peek">
-      <button className="link-btn" disabled={state === "loading"} onClick={test}
-        title="Fetch this channel's last message to confirm it's connected">
-        {state === "loading" ? "testing…" : "test"}
+      <button className="disc-act" disabled={state === "loading"} onClick={test}
+        title="Test the connection: fetch this channel's last message">
+        {state === "loading" ? "…" : "⟳"}
       </button>
-      <button className="link-btn" disabled={processing} onClick={process}
-        title="Process this channel's last message as a tip (runs extraction + analyst)">
-        {processing ? "…" : "▶ tip"}
+      <button className="disc-act" disabled={processing} onClick={process}
+        title="Process this channel's last message as a tip (extraction + analyst)">
+        {processing ? "…" : "▶"}
       </button>
       {state === "done" && res && (
         res.error
@@ -735,14 +735,16 @@ function DiscordSourcesPanel() {
     const on = !!sel[channelId];
     return (
       <div className="disc-row">
-        <label className="disc-toggle">
-          <input type="checkbox" checked={on}
-            onChange={() => toggle(channelId, kind, name, guildName ?? "", name)} />
-          <span>{kind === "channel" ? "#" : ""}{name}{isBot ? <span className="muted"> · bot</span> : null}</span>
-        </label>
-        <PeekButton channelId={channelId} label={`${kind === "channel" ? "#" : ""}${name}`} />
+        <div className="disc-row-main">
+          <label className="disc-toggle">
+            <input type="checkbox" checked={on}
+              onChange={() => toggle(channelId, kind, name, guildName ?? "", name)} />
+            <span>{kind === "channel" ? "#" : ""}{name}{isBot ? <span className="muted"> · bot</span> : null}</span>
+          </label>
+          <PeekButton channelId={channelId} label={`${kind === "channel" ? "#" : ""}${name}`} />
+        </div>
         {on && (
-          <span className="disc-opts">
+          <div className="disc-opts">
             <input className="disc-src" value={sel[channelId].sourceName}
               title="source name (its own scorecard)"
               onChange={(e) => setField(channelId, { sourceName: e.target.value })} />
@@ -756,7 +758,7 @@ function DiscordSourcesPanel() {
                 onChange={(e) => setField(channelId, {
                   onboardDays: Math.max(0, Math.min(17, Number(e.target.value) || 0)) })} />d
             </label>
-          </span>
+          </div>
         )}
       </div>
     );
