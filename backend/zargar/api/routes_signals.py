@@ -177,6 +177,28 @@ def build_signal_routes(app, eng, auth, config) -> None:
     async def discord_process_pending():
         return {"channelIds": eng.signals_service.discord_take_processes()}
 
+    @app.get("/api/tip/discord/process-result", dependencies=[auth])
+    async def discord_process_result(channelId: str = ""):
+        """UI polls this after 'process last message' — what actually happened
+        (no tip in the message, error, or the signals + analyst runs it made)."""
+        return {"result": eng.signals_service.discord_get_process_result(channelId)}
+
+    class ProcessResultBody(BaseModel):
+        channelId: str = ""
+        ok: bool = False
+        note: str = ""
+        error: str = ""
+        author: str = ""
+        text: str = ""
+        signals: list = []
+
+    @app.post("/api/tip/discord/process-result", dependencies=[auth])
+    async def discord_process_report(body: ProcessResultBody):
+        eng.signals_service.discord_set_process_result(body.channelId, {
+            "ok": body.ok, "note": body.note, "error": body.error,
+            "author": body.author, "text": body.text, "signals": body.signals})
+        return {"ok": True}
+
     # --- tips analyst run history (the play-by-play, per run) -----------------
     @app.get("/api/tip/analyst/runs", dependencies=[auth])
     async def analyst_runs(limit: int = 40):

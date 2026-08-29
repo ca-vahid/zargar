@@ -441,15 +441,16 @@ class Gateway:
             return
         await self._ingest_message(http, headers, msg, source_name or "auto")
 
-    async def _ingest_message(self, http, headers, msg: dict, source_name: str) -> None:
+    async def _ingest_message(self, http, headers, msg: dict, source_name: str) -> dict:
         """Post one message (text + first image, if any) to /api/ingest/manual —
-        the shared path for live alerts AND 'process last message'."""
+        the shared path for live alerts AND 'process last message'. Returns a
+        summary of what the pipeline did (for the process-result report)."""
         text = flatten_message(msg)
         images = collect_images(msg)
         image_data_url = await fetch_image_data_url(http, images[0]) if images else None
         if not text.strip() and image_data_url is None:
             print("    -> nothing to ingest (no text, no usable image)")
-            return
+            return {"ok": False, "note": "nothing to ingest — the message has no text and no usable image"}
         try:
             body = {"text": text, "source_name": source_name or "auto",
                     "subject": f"discord: {describe_author(msg)}"}
@@ -461,31 +462,59 @@ class Gateway:
             n = len(out.get("signals") or [])
             print(f"    -> ingest {r.status_code}: {n} signal(s) "
                   f"src={out.get('source') or '?'} {out.get('error') or ''}")
+            sigs = []
             for item in (out.get("signals") or []):
                 s = item.get("signal") or {}
                 print(f"       {s.get('ticker')} {s.get('direction')} "
                       f"{s.get('instrument')} [{s.get('status')}] id={s.get('id', '')[:8]}")
+                sigs.append({"id": s.get("id"), "ticker": s.get("ticker"),
+                             "status": s.get("status"),
+                             "analystRunId": ((s.get("extraction") or {})
+                                              .get("analyst") or {}).get("runId")})
+            if r.status_code != 200:
+                return {"ok": False, "error": f"ingest {r.status_code}: {out.get('error') or ''}"}
+            if n == 0:
+                return {"ok": True, "signals": [],
+                        "note": out.get("note") or "the message did not extract as a trade tip"}
+            return {"ok": True, "signals": sigs}
         except Exception as exc:
             print(f"    -> ingest failed: {exc}")
+            return {"ok": False, "error": f"ingest failed: {str(exc)[:200]}"}
 
     async def _process_channel(self, http, headers, channel_id: str) -> None:
         """'Process last message as a tip': fetch a channel's most recent message
-        via REST and run it through the pipeline (source from the watchlist)."""
+        via REST, run it through the pipeline (source from the watchlist), and
+        REPORT the outcome back to the app — a message that isn't a tip must not
+        look like silence (user, 2026-08-28)."""
+        async def report(res: dict) -> None:
+            try:
+                await http.post(f"{self.api}/api/tip/discord/process-result",
+                                headers=headers, json={"channelId": str(channel_id), **res})
+            except Exception:
+                pass
         try:
             r = await http.get(
                 f"https://discord.com/api/v10/channels/{channel_id}/messages?limit=1",
                 headers={"Authorization": self.token}, timeout=20)
             msgs = r.json() if r.status_code == 200 else []
+            if r.status_code == 403:
+                print(f"    ! process: no access to {channel_id}")
+                return await report({"ok": False, "error": "no access to this channel"})
+            if r.status_code != 200:
+                print(f"    ! process: discord {r.status_code} for {channel_id}")
+                return await report({"ok": False, "error": f"discord {r.status_code}"})
         except Exception as exc:
             print(f"    ! process fetch failed: {exc}")
-            return
+            return await report({"ok": False, "error": f"fetch failed: {str(exc)[:200]}"})
         if not msgs:
             print(f"    ! process: no messages in {channel_id}")
-            return
+            return await report({"ok": False, "error": "no messages in this channel yet"})
         entry = self._watch.get(str(channel_id)) or {}
         src = entry.get("sourceName") or "auto"
         print(f"[{dt.datetime.now():%H:%M:%S}] processing last message of {channel_id} as {src}")
-        await self._ingest_message(http, headers, msgs[0], src)
+        res = await self._ingest_message(http, headers, msgs[0], src)
+        await report({"author": describe_author(msgs[0]),
+                      "text": flatten_message(msgs[0])[:200], **res})
 
 
 def main() -> None:

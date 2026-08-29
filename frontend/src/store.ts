@@ -160,6 +160,10 @@ interface AppState {
   analystFocusRunId: string | null;   // selected run on Tips > Analyst (deep-linkable)
   setAnalystFocus: (id: string | null) => void;
   openAnalystRun: (id: string) => void;   // navigate to Tips > Analyst with this run open
+  /** a "process last message as a tip" in flight — the Analyst tab shows its
+      progress and outcome (set by the ▶ tip button) */
+  tipProcess: { channelId: string; label: string; startedAt: number } | null;
+  setTipProcess: (p: { channelId: string; label: string; startedAt: number } | null) => void;
 }
 
 const posKey = (p: Position) => `${p.portfolioId}:${p.symbol}:${p.secType}`;
@@ -218,6 +222,8 @@ export const useStore = create<AppState>((set, get) => ({
   analystFocusRunId: null,
   setAnalystFocus: (analystFocusRunId) => set({ analystFocusRunId }),
   openAnalystRun: (id) => set({ page: "inbox", pageTab: "analyst", analystFocusRunId: id }),
+  tipProcess: null,
+  setTipProcess: (tipProcess) => set({ tipProcess }),
   setFlowFocus: (flowFocusSymbol) => set({ flowFocusSymbol }),
   setMoreOpen: (moreOpen) => set({ moreOpen }),
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),

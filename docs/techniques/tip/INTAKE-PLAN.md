@@ -127,7 +127,13 @@ strict grammar and their own timestamps.*
   timeline nodes + cards (SVG icons), analyst prose rendered as rich text,
   tool results folded behind a one-line summary, auto-scroll that follows the
   tail only while the user is at it, verdict card; tip rows and proposal cards
-  link to their run ("analysis" / "view the analysis").
+  link to their run ("analysis" / "view the analysis"). **Process outcomes are
+  reported** (2nd live find: a non-tip message looked like silence): the
+  gateway posts every "▶ tip" result to `POST /api/tip/discord/process-result`
+  (fetch error / nothing to ingest / "did not extract as a trade tip" / the
+  signals + analyst run ids) and the Analyst tab shows a progress bar that
+  polls it — auto-opens the run on success, states the reason otherwise, and
+  calls out a dead intake after 90 s.
 
 - [x] **P4d — shared tips knowledge (notes)** (2026-08-28): `tip_notes` table —
   durable notes scoped `general` / `source:<name>` / `ticker:<SYM>` /

@@ -84,6 +84,8 @@ export const api = {
     request<{ result: any }>("GET", `/api/tip/discord/peek?channelId=${encodeURIComponent(channelId)}`),
   discordProcessLast: (channelId: string) =>
     request<{ ok: boolean }>("POST", "/api/tip/discord/process-last", { channelId }),
+  discordProcessResult: (channelId: string) =>
+    request<{ result: any }>("GET", `/api/tip/discord/process-result?channelId=${encodeURIComponent(channelId)}`),
   // --- tips analyst runs ---
   analystRuns: (limit = 40) =>
     request<import("../types").AnalystRunSummary[]>("GET", `/api/tip/analyst/runs?limit=${limit}`),

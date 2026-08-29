@@ -84,6 +84,7 @@ class SignalService:
         self._discord_peek_queue: set[str] = set()  # channelIds the UI asked to peek
         self._discord_peek_results: dict[str, dict] = {}  # channelId -> last-message preview
         self._discord_process_queue: set[str] = set()  # channelIds to fetch+ingest as a tip
+        self._discord_process_results: dict[str, dict] = {}  # channelId -> what happened
 
     # ---------------------------------------------------- analyst run history
     async def analyst_runs(self, limit: int = 40) -> list[dict]:
@@ -177,11 +178,21 @@ class SignalService:
 
     def discord_queue_process(self, channel_id: str) -> None:
         self._discord_process_queue.add(str(channel_id))
+        self._discord_process_results.pop(str(channel_id), None)
 
     def discord_take_processes(self) -> list[str]:
         out = sorted(self._discord_process_queue)
         self._discord_process_queue.clear()
         return out
+
+    def discord_set_process_result(self, channel_id: str, result: dict) -> None:
+        """The gateway reports what 'process last message' actually did — the
+        UI shows it, so a message that extracts as NO tip is not silence."""
+        self._discord_process_results[str(channel_id)] = {
+            **result, "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+
+    def discord_get_process_result(self, channel_id: str) -> dict | None:
+        return self._discord_process_results.get(str(channel_id))
 
     # ---------------------------------------------------- discord intake config
     # The gateway (zargar/tools/discord_gateway.py) reports the DMs/channels it

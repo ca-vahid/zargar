@@ -630,7 +630,7 @@ function timeAgo(iso?: string): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
-function PeekButton({ channelId }: { channelId: string }) {
+function PeekButton({ channelId, label }: { channelId: string; label?: string }) {
   const [state, setState] = useState<"idle" | "loading" | "done">("idle");
   const [res, setRes] = useState<any>(null);
   const test = async () => {
@@ -647,13 +647,16 @@ function PeekButton({ channelId }: { channelId: string }) {
   };
   const toast = useStore((s) => s.toast);
   const setPageTab = useStore((s) => s.setPageTab);
+  const setTipProcess = useStore((s) => s.setTipProcess);
   const [processing, setProcessing] = useState(false);
   const process = async () => {
     setProcessing(true);
     try {
       await api.discordProcessLast(channelId);
-      toast("info", "Processing the last message as a tip — the run appears in a few seconds");
-      setPageTab("analyst");                 // take the user to where it will show up
+      // take the user to the Analyst tab, which tracks this request until the
+      // gateway reports what happened (a non-tip message must not look like silence)
+      setTipProcess({ channelId, label: label ?? channelId, startedAt: Date.now() });
+      setPageTab("analyst");
     } catch (e: any) { toast("error", e.message); }
     finally { setProcessing(false); }
   };
@@ -731,7 +734,7 @@ function DiscordSourcesPanel() {
             onChange={() => toggle(channelId, kind, name, guildName ?? "", name)} />
           <span>{kind === "channel" ? "#" : ""}{name}{isBot ? <span className="muted"> · bot</span> : null}</span>
         </label>
-        <PeekButton channelId={channelId} />
+        <PeekButton channelId={channelId} label={`${kind === "channel" ? "#" : ""}${name}`} />
         {on && (
           <span className="disc-opts">
             <input className="disc-src" value={sel[channelId].sourceName}
@@ -1005,7 +1008,19 @@ function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => voi
       </div>
     );
   } else if (s.kind === "llm") {
-    body = <div className="an-card an-card--llm"><RichText text={s.text} /></div>;
+    const t = s.text.trim();
+    // the model's last turn is often the raw JSON opinion — the verdict card
+    // below renders it readably, so fold the blob instead of duplicating it
+    body = t.startsWith("{") && t.endsWith("}")
+      ? (
+        <div className="an-card an-card--llm">
+          <details className="an-fold">
+            <summary>final answer as raw JSON — the verdict card below is the readable form</summary>
+            <pre className="an-json">{t}</pre>
+          </details>
+        </div>
+      )
+      : <div className="an-card an-card--llm"><RichText text={s.text} /></div>;
   } else {
     body = <div className={`an-card an-card--plain ${s.kind === "error" ? "neg" : ""}`}>{s.text}</div>;
   }
@@ -1147,6 +1162,75 @@ function NotesPanel() {
   );
 }
 
+/** Tracks a "▶ tip" request until the gateway reports what happened, so a
+    message that extracts as no tip (or an intake that's down) never looks
+    like silence. */
+function ProcessBanner() {
+  const pending = useStore((s) => s.tipProcess);
+  const setTipProcess = useStore((s) => s.setTipProcess);
+  const setFocus = useStore((s) => s.setAnalystFocus);
+  const toast = useStore((s) => s.toast);
+  const [outcome, setOutcome] = useState<{ cls: string; msg: string; detail?: string } | null>(null);
+  useEffect(() => {
+    if (!pending) return;
+    setOutcome(null);
+    let dead = false;
+    const preview = (r: any) =>
+      r?.author ? `Last message — ${r.author}: “${(r.text || "").slice(0, 140)}”` : undefined;
+    const t = setInterval(async () => {
+      try {
+        const { result } = await api.discordProcessResult(pending.channelId);
+        if (dead) return;
+        if (!result) {
+          if (Date.now() - pending.startedAt > 90_000) {
+            setTipProcess(null);
+            setOutcome({ cls: "neg", msg: "No response from the intake — is the Discord intake window running? (scripts\\start.ps1 launches it)" });
+          }
+          return;
+        }
+        setTipProcess(null);
+        if (result.error) {
+          setOutcome({ cls: "neg", msg: result.error, detail: preview(result) });
+          return;
+        }
+        const sigs: any[] = result.signals ?? [];
+        const withRun = sigs.find((s) => s.analystRunId);
+        if (withRun) {
+          toast("success", `Tip ${withRun.ticker} (${withRun.status}) — opening its analyst run`);
+          setFocus(withRun.analystRunId);
+          setOutcome(null);
+        } else if (sigs.length > 0) {
+          setOutcome({
+            cls: "",
+            msg: `Extracted ${sigs.map((s) => `${s.ticker} [${(s.status || "").replace("_", " ")}]`).join(", ")} — no analyst run (it only appraises tradable tips); see the Tips tab.`,
+            detail: preview(result),
+          });
+        } else {
+          setOutcome({ cls: "", msg: result.note || "The message did not extract as a trade tip.", detail: preview(result) });
+        }
+      } catch { /* keep polling */ }
+    }, 2000);
+    return () => { dead = true; clearInterval(t); };
+  }, [pending?.channelId, pending?.startedAt]);
+  if (!pending && !outcome) return null;
+  return (
+    <div className="an-procbar">
+      {pending ? (
+        <>
+          <span className="an-dot an-dot--bar" />
+          <span>Processing the last message from <b>{pending.label}</b>… extraction + appraisal can take ~30 s.</span>
+        </>
+      ) : (
+        <>
+          <span className={outcome!.cls}>{outcome!.msg}</span>
+          {outcome!.detail && <span className="muted">{outcome!.detail}</span>}
+          <button className="an-note-del" title="dismiss" onClick={() => setOutcome(null)}>×</button>
+        </>
+      )}
+    </div>
+  );
+}
+
 function AnalystTab() {
   const focus = useStore((s) => s.analystFocusRunId);
   const setFocus = useStore((s) => s.setAnalystFocus);
@@ -1165,6 +1249,8 @@ function AnalystTab() {
   }, [setFocus]);
   const sel = focus ?? runs?.[0]?.id ?? null;
   return (
+    <>
+    <ProcessBanner />
     <div className="an-layout">
       <div className="an-side">
         <div className="panel an-list">
@@ -1196,6 +1282,7 @@ function AnalystTab() {
           : <div className="panel"><div className="panel-body empty">Select a run to see its play-by-play.</div></div>}
       </div>
     </div>
+    </>
   );
 }
 

@@ -498,6 +498,29 @@ async def test_analyst_failure_never_blocks(app_client):
     assert "analyst" not in (sig["extraction"] or {})
 
 
+async def test_discord_process_result_roundtrip(app_client):
+    # "▶ tip" outcomes are reported back and polled by the UI — a message that
+    # extracts as no tip must not look like silence (found live 2026-08-28)
+    client, eng = app_client
+    r = await client.post("/api/tip/discord/process-last", json={"channelId": "42"})
+    assert r.status_code == 200
+    assert (await client.get("/api/tip/discord/process-pending")).json() == {"channelIds": ["42"]}
+    r = await client.post("/api/tip/discord/process-result", json={
+        "channelId": "42", "ok": True,
+        "note": "the message did not extract as a trade tip",
+        "author": "me", "text": "hello", "signals": []})
+    assert r.status_code == 200
+    out = (await client.get("/api/tip/discord/process-result",
+                            params={"channelId": "42"})).json()
+    assert out["result"]["note"].startswith("the message did not")
+    assert out["result"]["author"] == "me"
+    # re-queueing clears the stale result so the UI never shows the previous outcome
+    await client.post("/api/tip/discord/process-last", json={"channelId": "42"})
+    out = (await client.get("/api/tip/discord/process-result",
+                            params={"channelId": "42"})).json()
+    assert out["result"] is None
+
+
 async def test_discord_catalog_and_watch(app_client):
     # the gateway reports a catalog; the UI reads it and sets the allowlist
     client, eng = app_client
