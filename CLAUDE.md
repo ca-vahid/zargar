@@ -75,7 +75,9 @@ Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries
 `vehicle`/`explain`/`analystRunId`. `mode: auto` sources self-approve (analyst "take" or
-analyst off; live portfolios also need `techniques.tip.allow_live_auto`).
+analyst off; live portfolios also need `techniques.tip.allow_live_auto`). **Tips → arm
+enrichment plan (5 phases, checkboxes): `docs/techniques/tip/ARM-PLAN.md`** — analyst-chosen
+now-vs-at-level, one exit authority, zones/scale-ins, conditions, spreads.
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
 dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
 non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose
