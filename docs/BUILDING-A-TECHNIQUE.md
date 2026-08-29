@@ -39,6 +39,10 @@ class MyTechnique(PlanRunner):
                                                   # fail-open budget, veto cooldown, kill cap, re-arming
     async def record_fire(...); emit_proposal(...); after_fire(...)
     async def pick_contract(...)                  # expression policy (which option, which DTE window)
+    async def plan_horizon(run, plan)             # (sessions, last-session-date) — >1 session makes the
+                                                  # plan MULTI-DAY: it rolls at each close instead of
+                                                  # expiring (ARM-GAPS A; base = single-session)
+    async def entry_limit_cap(ap, trade, contract)  # never-chase: max premium an auto entry pays (base None)
     def size_multiplier(contract) -> (mult, why)  # policy multipliers on risk-based size
     def preopen_due(now) / preopen_check(ap, premarket) -> {rows, reference, gapPct, replan}
     async def build_replacement_plan(ap, *, reference_price)

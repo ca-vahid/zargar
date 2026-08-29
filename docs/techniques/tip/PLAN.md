@@ -17,6 +17,12 @@ Runs on the technique platform (`docs/TECHNIQUE-PLATFORM-PLAN.md`); read
 - **`ARM-PLAN.md`** — the tip→arm enrichment (5 phases, all built 2026-08-29):
   analyst-chosen now-vs-at-level, one exit authority, scale-ins, conditional/timed
   entries, defined-risk spreads. Its §0 is the current wiring map + findings log.
+- **`ARM-GAPS-PLAN.md`** — the gap-closure clusters A–F (built 2026-08-29): MULTI-DAY
+  STAY-ARMED plans (roll at each close until the horizon), partial-fill adoption,
+  verified spread rollback, never-chase, action-aware follow-ups (a "close" expires
+  pending proposals + flags waiting plans; the analyst can `disarm_plan`), re-arm
+  replaces, lane grading + unfilled retros, tip-scoped knobs + the Settings/Sources
+  editors, and the UI wiring (day-N badges, armed chips, honest window copy).
 - **`TRADING-RULES.md`** — the METHOD judgement log (findings, decisions, change log).
 
 ## Status (as of 2026-08-29)
@@ -57,10 +63,10 @@ Every extract & verify and every analyst run surfaces a **click-to-copy id** and
 `test_signals_tip.py`, `test_tip_express.py`, `test_tip_runner.py`,
 `test_api_and_pipeline.py`, `test_discord_gateway.py`.
 
-**Not yet built:** the per-source policy editor UI, Telegram intake, HMAC webhook auth,
-the repeat-mention conviction decision, native multi-leg spread orders (leg-sequencing
-ships today; Webull CA accepts native mleg — ARM-PLAN P5), the official `mobile-audit`
-pass, and the real-money gates (below).
+**Not yet built:** Telegram intake, HMAC webhook auth, native multi-leg spread orders
+(leg-sequencing ships today; Webull CA accepts native mleg — ARM-PLAN P5), the A8 rule
+quality loop, and the real-money gates (below). *(The per-source policy editor and the
+repeat-mention decision shipped with ARM-GAPS E6/D6, 2026-08-29.)*
 
 ## 0. What it is
 

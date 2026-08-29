@@ -113,6 +113,13 @@ DEFAULTS: dict[str, Any] = {
     # its horizon window / queue a fresh appraisal (only when a plan is live)
     "techniques.tip.seen_again_extends": False,
     "techniques.tip.seen_again_reappraise": True,
+    # tip-scoped runner knobs (ARM-GAPS E1) — these win over the EM-named
+    # legacy keys for TIP plans; EM keeps reading its own technique.* names
+    "techniques.tip.enforce_session_windows": True,
+    "techniques.tip.options_enabled": True,
+    "techniques.tip.max_risk_pct": 5.0,
+    # a tip entry FILL (auto mode) tells the phone via Telegram too (ARM-GAPS F5)
+    "techniques.tip.telegram_fills": True,
     "techniques.tip.shadow_auto": True,      # the armed-book loop: auto-arm every open tip in shadow each morning
     "techniques.tip.shadow_arm_at": "09:12", # ET, on engine.scheduler (after the 09:05 reconciliation)
     "techniques.tip.trailing_after_r": 1.0,  # managed-position trail activates after +N R

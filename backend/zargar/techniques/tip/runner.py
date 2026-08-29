@@ -275,6 +275,10 @@ class TipRunner(PlanRunner):
             raise ValueError(f"signal is {sig.status} — only verified/parked tips arm")
         from ...signals.sources import resolve_policy
         policy = resolve_policy(self.engine.settings, sig.source_name)
+        # a config-less arm (raw API) gets the same vehicle defaults the UI
+        # path gets (ARM-GAPS E4) — never a budget-less, fallback-less plan
+        if config is None:
+            config = {}
         # analyst-driven arms (ARM-PLAN P1) may override the source doctrine and
         # the tip's entry — the analyst chose to wait for ITS level
         entry_override = analyst_run_id = exit_plan = entry_ladder = None
@@ -365,7 +369,42 @@ class TipRunner(PlanRunner):
             {"runId": run_id, "technique": self.TECHNIQUE_ID, "symbol": sig.ticker,
              "mode": "plan", "verdict": "plan", "signalId": signal_id, "source": source},
             aggregate_type="technique_run", aggregate_id=run_id)
-        return await self.arm(run_id, config)
+        snap = await self.arm(run_id, config)
+        # cap preflight on EVERY arm path (ARM-GAPS E3): the budget-vs-caps
+        # clash shows on the card at arm time, not as a fill-time rejection
+        ap = self._armed.get(run_id)
+        if ap is not None:
+            warns = await self._cap_warnings(policy, ap.config.portfolio_id)
+            if warns:
+                ap.risk_warning = "; ".join(warns)
+                self._log(ap, "risk_warning", ap.risk_warning)
+                await self.engine.journal.append(
+                    ev.TIP_LANE_DECIDED, {"signalId": signal_id, "lane": "arm",
+                                          "riskWarning": ap.risk_warning},
+                    aggregate_type="signal", aggregate_id=signal_id)
+                await self._persist(ap)
+                snap = self._snapshot(ap)
+        return snap
+
+    async def _cap_warnings(self, policy, portfolio_id: str) -> list[str]:
+        """Budget vs the platform risk caps — advisory, never blocking."""
+        eng = self.engine
+        warns: list[str] = []
+        try:
+            equity = await eng.positions.equity(portfolio_id)
+            budget = float(policy.budget_per_tip)
+            cap_notional = float(eng.settings.get("risk.max_position_notional", 1000.0))
+            prem_pct = float(eng.settings.get("risk.max_option_premium_pct", 5.0))
+            prem_abs = float(eng.settings.get("risk.max_option_premium_notional", 1000.0))
+            if budget > cap_notional:
+                warns.append(f"per-tip budget ${budget:,.0f} exceeds risk.max_position_notional "
+                             f"${cap_notional:,.0f} — a full-size fill will be risk-rejected")
+            if equity > 0 and budget > min(equity * prem_pct / 100, prem_abs):
+                warns.append(f"per-tip budget ${budget:,.0f} exceeds the option premium caps "
+                             f"({prem_pct:g}% of ${equity:,.0f} / ${prem_abs:,.0f})")
+        except Exception:                                # advisory only
+            log.debug("arm preflight cap check failed", exc_info=True)
+        return warns
 
     async def arm_from_analyst(self, sig, opinion: dict, policy) -> dict:
         """The analyst said take + at_level (ARM-PLAN P1): arm the tip in the
@@ -383,27 +422,7 @@ class TipRunner(PlanRunner):
         from ...signals.sources import resolve_policy  # noqa: F401  (docs anchor)
         from .lifecycle import build_exit_plan
         exit_plan = build_exit_plan(sig, sig, opinion, policy)
-        # ---- preflight coherence: budget vs the platform risk caps (F7)
-        warns: list[str] = []
-        try:
-            equity = await eng.positions.equity(pid)
-            budget = float(policy.budget_per_tip)
-            cap_notional = float(eng.settings.get("risk.max_position_notional", 1000.0))
-            prem_pct = float(eng.settings.get("risk.max_option_premium_pct", 5.0))
-            prem_abs = float(eng.settings.get("risk.max_option_premium_notional", 1000.0))
-            if budget > cap_notional:
-                warns.append(f"per-tip budget ${budget:,.0f} exceeds risk.max_position_notional "
-                             f"${cap_notional:,.0f} — a full-size fill will be risk-rejected")
-            if equity > 0 and budget > min(equity * prem_pct / 100, prem_abs):
-                warns.append(f"per-tip budget ${budget:,.0f} exceeds the option premium caps "
-                             f"({prem_pct:g}% of ${equity:,.0f} / ${prem_abs:,.0f})")
-        except Exception:                                # advisory only
-            log.debug("arm preflight cap check failed", exc_info=True)
-        if warns:
-            await eng.journal.append(
-                ev.TIP_LANE_DECIDED, {"signalId": sig.id, "lane": "arm",
-                                      "riskWarning": "; ".join(warns)},
-                aggregate_type="signal", aggregate_id=sig.id)
+        # the cap preflight now runs inside arm_signal for EVERY arm path (E3)
         levels = [float(x) for x in (opinion.get("entry_levels") or []) if x]
         fracs = [float(x) for x in (opinion.get("entry_fractions") or [])]
         ladder = ([{"price": p, "fraction": (fracs[i] if i < len(fracs) else 0)}
@@ -419,10 +438,7 @@ class TipRunner(PlanRunner):
                      if opinion.get("contract")
                      and str(opinion.get("instrument") or "option") == "option" else {}),
                   "allowAnyEntry": True, "replace": True}
-        snap = await self.arm_signal(sig.id, config)
-        if warns:
-            snap["riskWarning"] = "; ".join(warns)
-        return snap
+        return await self.arm_signal(sig.id, config)
 
     async def runs_for_signal(self, signal_id: str) -> list[dict]:
         async with self.engine.sf() as session:
@@ -794,6 +810,17 @@ class TipRunner(PlanRunner):
                   + (f", thesis expiry {expiry}" if expiry else "") + ")",
                   trigger=tid, positionId=pos["id"])
         self._publish(ap, "handoff")
+        # the phone hears about a FILL, not just proposals (ARM-GAPS F5)
+        if bool(self.engine.settings.get("techniques.tip.telegram_fills", True)):
+            tg = getattr(self.engine, "telegram", None)
+            if tg is not None:
+                with contextlib.suppress(Exception):
+                    from ...approvals.telegram import open_keyboard
+                    from ...push import public_url
+                    await tg.send(
+                        f"✅ {ap.symbol} tip filled: {qty:g} @ {fill:.2f} — now a managed "
+                        f"position under its exit campaign (hold cap {hold_cap} session(s))",
+                        open_keyboard(public_url(self.engine.settings), f"/armed/{ap.run_id}"))
 
 
 async def attach_tip_runner(engine) -> None:

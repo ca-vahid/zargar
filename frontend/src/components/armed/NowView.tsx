@@ -194,7 +194,7 @@ export function NowView() {
               <span className="now-tag">next session</span>
               <span className="now-next-txt">{sum.watching.length} plan{sum.watching.length === 1 ? "" : "s"} · {sum.watching.length - puts} calls · {puts} puts · closest first below</span>
             </div>
-            <div className="now-next-note">Plans fire only in the 9:30–10:30 and 2:45–4:00 ET windows; a gap through a level at the open voids it.</div>
+            <div className="now-next-note">Each plan fires in its own technique's windows (EM: 9:30–10:30 and 2:45–4:00 ET; tips: any RTH window). A multi-day tip that doesn't fill rolls to the next session.</div>
           </div>
         );
       })()}
@@ -228,6 +228,11 @@ export function NowView() {
               {w.stale && <span className="now-tag bad">stale</span>}
               {size && <span className="now-size">{size}</span>}
               <span className={`now-row-mode ${w.mode === "auto" ? (live ? "neg" : "pos") : ""}`}>{w.mode}</span>
+              {((w as any).horizonSessions ?? 1) > 1 && (
+                <span className="now-tag" title="multi-day plan — stays armed and rolls at each close">
+                  day {(w as any).sessionDay}/{(w as any).horizonSessions}
+                </span>
+              )}
             </div>
             <div className="now-watch-line">
               {n.kind.replace(/_/g, " ")} @ <b>{fmt(n.entry)}</b>

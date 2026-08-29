@@ -47,6 +47,17 @@ def build_signal_routes(app, eng, auth, config) -> None:
     async def source_names():
         return await eng.signals_service.known_sources()
 
+    @app.get("/api/signals/{sid}/runs", dependencies=[auth])
+    async def signal_runs(sid: str):
+        """The tip's plan runs + its LIVE armed state (ARM-GAPS F2)."""
+        runner = getattr(eng, "tip_runner", None)
+        if runner is None:
+            return {"runs": [], "armed": None}
+        runs = await runner.runs_for_signal(sid)
+        rid = runner.live_run_for_signal(sid)
+        armed = runner.detail(rid) if rid else None
+        return {"runs": runs, "armed": armed}
+
     @app.get("/api/signals/{sid}/plan", dependencies=[auth])
     async def signal_tip_plan(sid: str):
         try:

@@ -1444,3 +1444,55 @@ async def test_grade_lanes_writes_verdict(tip_rig):
     mine = [r for r in rows if r.get("signalId") == sid]
     assert mine and mine[0]["verdict"] == "now_better", mine
     assert mine[0]["immediatePnl"] == 50.0 and mine[0]["armedPnl"] == 0.0
+
+
+# --- config & knob coherence (ARM-GAPS cluster E) -----------------------------------
+
+async def test_tip_scoped_settings_beat_em_legacy(tip_rig):
+    """E1: techniques.tip.enforce_session_windows overrides the EM-named key
+    for tip plans (and the EM key still works as the fallback)."""
+    eng, sim = tip_rig
+    # EM legacy says enforce, tip override says do not
+    await eng.settings.set("technique.enforce_session_windows", True, journal=False)
+    await eng.settings.set("techniques.tip.enforce_session_windows", False, journal=False)
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    ap = eng.tip_runner._armed[snap["runId"]]
+    assert all(not tr.enforce_windows for tr in ap.trackers.values())
+
+
+async def test_arm_preflight_warns_on_snapshot(tip_rig):
+    """E3: the budget-vs-caps clash rides the armed snapshot on EVERY arm path."""
+    eng, sim = tip_rig
+    await eng.settings.set("risk.max_position_notional", 200.0, journal=False)
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    assert snap.get("riskWarning") and "max_position_notional" in snap["riskWarning"]
+    # and it survives in the runner's live snapshot
+    s = next(a for a in eng.tip_runner.armed() if a["runId"] == snap["runId"])
+    assert s.get("riskWarning") == snap["riskWarning"]
+
+
+async def test_configless_arm_gets_vehicle_defaults(tip_rig):
+    """E4: arm_signal(config=None) applies the same shape-derived defaults as
+    the UI path — an option tip arms as options with the budget attached."""
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    from .test_tip_express import FakeChain, row as chain_row
+    eng, sim = tip_rig
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    eng.options.use_client(FakeChain(spot=100.0, expiries=(exp14,),
+                                     rows=[chain_row(101.0, expiry=exp14)]))
+    content = RawContent(id=new_id(), source_type="manual", source_name="BareRoom",
+                         subject="tip", body_text=OPT_SOURCE)
+    async with eng.sf() as session:
+        session.add(content)
+        await session.commit()
+    out = await eng.signals_service.handle_extraction(content, canned_option_tip(exp14),
+                                                      source_text=OPT_SOURCE)
+    sid = out[0]["signal"]["id"]
+    await eng.settings.set("trading.default_portfolio", sim["id"], journal=False)
+    snap = await eng.tip_runner.arm_signal(sid, None)
+    assert snap["config"]["instrument"] == "options"
+    assert snap["config"]["premiumBudget"] == 1000.0
+    assert snap["config"]["entryFallback"] == "shares"

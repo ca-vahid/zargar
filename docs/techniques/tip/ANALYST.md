@@ -36,11 +36,22 @@ a persistent, self-maintained memory. Its job, per tip and over time:
    shared policy engine executes it on closed bars (ladder / trailing /
    premium stop / DTE / time — `execution/policies.py`), so exits are
    deterministic, journaled and backtestable even though the PLAN was authored
-   by an LLM.
+   by an LLM. Management covers the desk's WAITING commitments too (ARM-GAPS
+   D2/D3): `get_open_tips` shows each tip's live armed plan (run id, waiting
+   levels, day N of M) and pending proposal, and the **`disarm_plan` tool**
+   kills a waiting plan when the source exited before our level filled (a plan
+   holding a position refuses — `close_position` is that path). Shadow-book
+   positions are quarantined from all manage tools (D9).
 4. **Learn** — when a tip position closes, a **retro run** reviews what
    happened (fills, trims, exit reasons, P&L) against the entry-time opinion
    and writes lessons to the shared knowledge base — and updates its OWN
-   TRADING RULES when the evidence warrants.
+   TRADING RULES when the evidence warrants. The nightly sweep
+   (`nightly_tip_review`, 17:10 ET) also runs **unfilled-tip batch retros**
+   (one per source over recently expired never-filled tips — "were these
+   levels ever realistic?", ARM-GAPS D8) and the deterministic **lane
+   grader** (`grade_lanes`, D7): once a tip resolves, the analyst's
+   now-vs-at_level choice is scored against the shadow books' own orders and
+   a LANE GRADE note lands in the knowledge the next runs read.
 
 ## 3. The safety floor (platform-enforced, not the analyst's to change)
 
@@ -159,8 +170,15 @@ The armed path (level-touch plans via `TipRunner`) keeps its own handoff
 | `techniques.tip.analyst_notes_max` | 12 | notes handed to a run (rules are always all) |
 | `techniques.tip.review_enabled` | true | non-tradable-update reviews |
 | `techniques.tip.retro_enabled` | true | the retro loop |
-| `techniques.tip.retro_at` | "17:10" | ET time of the daily retro sweep |
+| `techniques.tip.retro_at` | "17:10" | ET time of the nightly self-review (retros + unfilled batches + lane grading) |
 | `techniques.tip.allow_live_auto` | false | auto mode may self-approve into LIVE |
+| `techniques.tip.max_chase_pct` | 10.0 | never-chase: an armed fire pays at most the stated premium × (1 + this %) |
+| `techniques.tip.seen_again_reappraise` | true | a re-posted tip with a live waiting plan gets a fresh appraisal |
+| `techniques.tip.seen_again_extends` | false | a re-post pushes the waiting plan's horizon window forward |
+
+All the analyst/tip knobs are editable in **Settings → Tips technique**
+(ARM-GAPS E2); per-source policy (mode, entry doctrine, budget, horizon,
+conviction floor) is edited on **Tips → Sources → Per-source policy** (E6).
 
 ## 8. Known gaps (found in the 2026-08-28 review pass)
 
@@ -177,11 +195,12 @@ The armed path (level-touch plans via `TipRunner`) keeps its own handoff
   tool that returns the picture as an actual image block — chart-only alerts
   can be LOOKED at during appraisals, reviews and retros. Source-history
   lines carry `[images: <messageId> — view_image to look]` markers.
-- **Risk-config clash**: `techniques.tip.budget_per_tip` ($1,000) exceeds
-  `risk.max_option_premium_pct` (5% of a $10k practice book = $500) and
-  `risk.max_position_notional` ($1,000 — a full-budget fill plus one tick
-  breaches it). A full-budget tip WILL be risk-rejected until these are
-  aligned in Settings. Deliberately not auto-raised — the user should pick.
-- **Rule consolidation (A7)**: rules only accrete; nothing yet merges or
+- ~~Risk-config clash~~ **RESOLVED in practice 2026-08-29**: the runtime raised
+  `risk.max_option_premium_pct` to 25% and `risk.max_position_notional` to
+  $5,000 (Settings), and the arm preflight (ARM-GAPS E3) now warns on EVERY
+  arm path — journaled, persisted on the plan (`riskWarning`) and rendered on
+  the Armed card — so a fresh install is loudly warned instead of silently
+  risk-rejected at fill time. Stock DEFAULTS stay conservative deliberately.
+- **Rule consolidation (A8)**: rules only accrete; nothing yet merges or
   expires them. The prompt asks the analyst to refine-not-duplicate, but a
-  periodic self-audit is the real fix.
+  periodic self-audit is the real fix. *(The one still-open item.)*

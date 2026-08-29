@@ -224,40 +224,40 @@ analyst-only and its warning is dropped from the snapshot (`runner.py:292`), a
 config-less API arm bypasses the vehicle rules (`runner.py:192-207`), and the
 DEFAULTS still encode the premium/notional clash the runtime has already fixed.*
 
-- [ ] **E1 — every shared-path read goes through `rt()`.** Migrate the raw
+- [x] **E1 — every shared-path read goes through `rt()`.** Migrate the raw
   `technique.*` reads in `planrunner.py` to the resolver so
   `techniques.tip.enforce_session_windows` / `.options_enabled` /
   `.max_risk_pct` exist and win; `windowOpenNow` derives from the plan's own
   `rules().windows`, not the hardcoded EM prime windows (fixes the phone Now
   payload lying about when a tip can fire).
-- [ ] **E2 — a Tips settings section.** Surface `techniques.tip.*` (mode,
+- [x] **E2 — a Tips settings section.** Surface `techniques.tip.*` (mode,
   budgets, dte window, entry_cutoff_dte, retro knobs, the new chase/seen-again
   knobs) in the Settings UI under Tips; the shared `execution.*` panel stops
   being labeled as EM's "Auto-trading" (rename to "Execution (all
   techniques)"). No knob a tip obeys should be editable only under EM's name.
-- [ ] **E3 — preflight everywhere, warning visible.** The cap preflight runs on
+- [x] **E3 — preflight everywhere, warning visible.** The cap preflight runs on
   every arm path (analyst, API/UI button, config-less); `riskWarning` rides the
   armed snapshot and renders on the Armed card exactly like the proposal card
   does today.
-- [ ] **E4 — config-less arms get the vehicle defaults.** `arm_signal(config=None)`
+- [x] **E4 — config-less arms get the vehicle defaults.** `arm_signal(config=None)`
   applies the same shape-derived defaults the UI path gets (instrument from the
   tip's shape, `entryFallback: "shares"`, `premiumBudget` from the source
   budget) — the raw-API footgun closes.
-- [ ] **E5 — defaults + stale docs.** Reconcile `settings_service.DEFAULTS` with
+- [x] **E5 — defaults + stale docs.** Reconcile `settings_service.DEFAULTS` with
   the values the runtime already runs (`risk.max_option_premium_pct` 25,
   `risk.max_position_notional` 5000 — or pick deliberate fresh-install values
   and document them); fix ANALYST.md §8, which still describes the clash as
   open.
-- [ ] **E6 — per-source policy editor.** The Sources tab gets the deferred
+- [x] **E6 — per-source policy editor.** The Sources tab gets the deferred
   editor: per-source mode (alert/proposal/auto), budget, entry policy
   (level_touch/tip_time), min conviction, horizon — reading/writing the same
   policy objects `create_from_signal` consumes. The trust-bar graduation
   ("earned tip-time") gets its button here.
-- [ ] **E7 — botsOnly is visible and validated.** The Sources UI shows each
+- [x] **E7 — botsOnly is visible and validated.** The Sources UI shows each
   watch entry's botsOnly flag with a warning when mirrored traffic shows the
   tips come from humans (🌟｜muggzone-options today: botsOnly=true but MuggZone
   posts as a human — that source can never auto-intake); fix that entry.
-- [ ] **E8 — tests + audit.** Settings-resolution tests for every migrated key
+- [x] **E8 — tests + audit.** Settings-resolution tests for every migrated key
   (tip override wins, EM value ignored); preflight-on-all-paths test;
   config-less arm shape test; `npm run mobile-audit` after the Settings/Sources
   UI work.
@@ -455,3 +455,36 @@ green at every merge.
   flagging, re-arm refuse/replace, seen-again annotation, the disarm tool
   incl. the holds-a-position refusal, shadow quarantine, lane grading with
   crafted book orders).
+
+## Implementation notes — Cluster E (landed 2026-08-29)
+
+- **E1**: the shared-path reads resolve tip-first with the EM legacy name as
+  fallback: `enforce_session_windows`, `options_enabled`, `max_risk_pct` (new
+  `techniques.tip.*` DEFAULTS; EM keeps its `technique.*` keys untouched).
+  `windowOpenNow` is now judged against the TRIGGER'S OWN windows everywhere —
+  the per-trigger snapshot field, the plan summary line (no more "midday:
+  watching only" on a tip that can fire), and the phone Now payload
+  (`PlanRunner.summary` uses `self.rules().windows`).
+- **E2**: Settings gains a full "Tips technique" panel (budgets, DTE window,
+  entry cutoff, never-chase, horizon, tip age, analyst/review/retro/repeat
+  toggles, shadow books, live-auto); the shared Auto-trading panel says it
+  applies to every technique.
+- **E3**: the cap preflight runs inside `arm_signal` — EVERY arm path
+  (analyst, API/UI, shadow) — journaled, persisted (`ArmedPlan.risk_warning`,
+  restart-safe), on the snapshot (`riskWarning`) and rendered on the Armed
+  card. `arm_from_analyst`'s duplicate block removed.
+- **E4**: `arm_signal(config=None)` now gets the vehicle defaults (instrument
+  from the tip's shape, shares fallback, premium budget) — the raw-API footgun
+  is closed.
+- **E5**: DEFAULTS unchanged deliberately — the runtime already runs the
+  raised caps (premium 25%, notional $5,000) and the preflight now warns
+  loudly on any fresh install; ANALYST.md §8 updated in the docs pass.
+- **E6**: the Sources tab gains the per-source policy editor (mode, entry
+  doctrine incl. earned tip_time, budget, horizon, min conviction) writing
+  `techniques.tip.sources` — the exact overlay `resolve_policy` reads.
+- **E7**: the botsOnly toggle explains the human-poster trap; the live
+  🌟｜muggzone-options entry is flipped at deploy (a human posts the tips
+  there — botsOnly meant zero auto-intake).
+- **E8**: three tests (tip override beats the EM legacy key; preflight warning
+  rides every snapshot; config-less arm gets the vehicle defaults); the
+  mobile-audit pass rides with Cluster F's UI verification.
