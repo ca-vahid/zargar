@@ -1496,3 +1496,73 @@ async def test_configless_arm_gets_vehicle_defaults(tip_rig):
     assert snap["config"]["instrument"] == "options"
     assert snap["config"]["premiumBudget"] == 1000.0
     assert snap["config"]["entryFallback"] == "shares"
+
+
+# --- the rule quality loop (NEXT-GAPS A8) -------------------------------------------
+
+class _FakeAuditClient:
+    """anthropic-shaped stub: .messages.create returns one canned text block."""
+    def __init__(self, payload: dict):
+        self._payload = payload
+        class _Msgs:
+            def __init__(s, outer): s.outer = outer
+            async def create(s, **kw):
+                import json as _json
+                class _Blk:
+                    type = "text"
+                    def __init__(b, t): b.text = t
+                class _Resp:
+                    def __init__(r, t): r.content = [_Blk(t)]
+                return _Resp(_json.dumps(s.outer._payload))
+        self.messages = _Msgs(self)
+
+
+async def test_rule_audit_merges_expires_and_flags(tip_rig):
+    """A8: the audit merges duplicates (supersede, never delete), expires an
+    evidence-free rule, FLAGS a contradiction for the human, and the analyst
+    injection excludes superseded rules."""
+    from zargar.techniques.tip.analyst import _rules_text
+    from zargar.techniques.tip.rule_audit import run_rule_audit
+    eng, _sim = tip_rig
+    svc = eng.signals_service
+    a = await svc.add_tip_note("rule", "Never chase premium more than 7% above the alert (position 11112222).", author="analyst:aaaa")
+    b = await svc.add_tip_note("rule", "Do not pay more than ~7% over the stated premium (run 33334444).", author="analyst:bbbb")
+    c = await svc.add_tip_note("rule", "Always size hedges small.", author="analyst:cccc")   # no evidence
+    d = await svc.add_tip_note("rule", "Take profits fast into strength (retro 2026-08-20).", author="analyst:dddd")
+    e = await svc.add_tip_note("rule", "Let winners run, never trim early (retro 2026-08-21).", author="analyst:eeee")
+    payload = {
+        "merges": [{"new_rule": "Never pay more than ~7% over the stated premium — a bad quote is not a price (positions 11112222/33334444).",
+                    "supersedes": [a["id"], b["id"]], "why": "duplicates"}],
+        "expires": [{"id": c["id"], "why": "no evidence"}],
+        "contradictions": [{"ids": [d["id"], e["id"]], "why": "trim fast vs never trim"}],
+        "summary": "merged the chase rules, expired the hedge platitude, flagged the trim conflict",
+    }
+    out = await run_rule_audit(eng, client=_FakeAuditClient(payload))
+    assert out is not None and out["merged"] == 2 and out["expired"] == 1
+    assert out["contradictions"] == 2 and len(out["newRules"]) == 1
+
+    live = await svc.tip_notes(["rule"])
+    live_ids = {n["id"] for n in live}
+    assert a["id"] not in live_ids and b["id"] not in live_ids and c["id"] not in live_ids
+    assert d["id"] in live_ids and e["id"] in live_ids
+    flagged = [n for n in live if n["needsHuman"]]
+    assert {n["id"] for n in flagged} == {d["id"], e["id"]}
+    # history is kept, not deleted
+    hist = await svc.tip_notes(["rule"], include_superseded=True)
+    assert {a["id"], b["id"], c["id"]} <= {n["id"] for n in hist}
+    # the injection reads only live rules
+    txt, n = await _rules_text(eng)
+    assert "7% over the stated premium" in txt and "size hedges small" not in txt
+    # human resolves the contradiction
+    assert await svc.flag_tip_notes([d["id"]], needs_human=False) == 1
+    live2 = await svc.tip_notes(["rule"])
+    assert [x for x in live2 if x["id"] == d["id"]][0]["needsHuman"] is False
+
+
+async def test_rule_audit_skips_below_min_rules(tip_rig):
+    from zargar.techniques.tip.rule_audit import run_rule_audit
+    eng, _sim = tip_rig
+    await eng.signals_service.add_tip_note("rule", "solo rule (run 1)", author="analyst:x")
+    out = await run_rule_audit(eng, client=_FakeAuditClient({"merges": [], "expires": [],
+                                                             "contradictions": [], "summary": ""}))
+    assert out is None

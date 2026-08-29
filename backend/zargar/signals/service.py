@@ -131,17 +131,50 @@ class SignalService:
     def note_dict(n) -> dict:
         return {"id": n.id, "scope": n.scope, "text": n.text, "author": n.author,
                 "signalId": n.signal_id, "runId": n.run_id,
+                "supersededBy": getattr(n, "superseded_by", None),
+                "needsHuman": bool(getattr(n, "needs_human", False)),
                 "createdAt": n.created_at.isoformat() if n.created_at else None}
 
     async def tip_notes(self, scopes: list[str] | None = None,
-                        limit: int = 100) -> list[dict]:
+                        limit: int = 100, *, include_superseded: bool = False) -> list[dict]:
         from ..models import TipNote
         async with self.engine.sf() as session:
             q = select(TipNote).order_by(TipNote.created_at.desc()).limit(limit)
             if scopes:
                 q = q.where(TipNote.scope.in_(scopes))
+            if not include_superseded:
+                # superseded rules are history, not live knowledge (A8.2)
+                q = q.where(TipNote.superseded_by.is_(None))
             rows = (await session.execute(q)).scalars().all()
         return [self.note_dict(r) for r in rows]
+
+    async def supersede_tip_notes(self, note_ids: list[str], by: str) -> int:
+        """Rule lifecycle (A8.2): mark rules superseded — never delete. `by` is
+        the refined rule's id, or 'expired:<run8>'."""
+        from ..models import TipNote
+        n = 0
+        async with self.engine.sf() as session:
+            for nid in note_ids:
+                row = await session.get(TipNote, nid)
+                if row is not None and row.superseded_by is None:
+                    row.superseded_by = str(by)[:80]
+                    n += 1
+            await session.commit()
+        return n
+
+    async def flag_tip_notes(self, note_ids: list[str], *, needs_human: bool) -> int:
+        """A8.3: raise (the audit) or clear (the human's click) the
+        needs-your-call flag on notes. Journaled by the caller."""
+        from ..models import TipNote
+        n = 0
+        async with self.engine.sf() as session:
+            for nid in note_ids:
+                row = await session.get(TipNote, nid)
+                if row is not None and bool(row.needs_human) != needs_human:
+                    row.needs_human = needs_human
+                    n += 1
+            await session.commit()
+        return n
 
     async def add_tip_note(self, scope: str, text: str, *, author: str = "user",
                            signal_id: str | None = None,

@@ -257,6 +257,9 @@ export interface AnalystRun extends AnalystRunSummary {
 export interface TipNote {
   id: string; scope: string; text: string; author: string;
   signalId?: string | null; runId?: string | null; createdAt?: string | null;
+  // rule lifecycle (NEXT-GAPS A8): superseded rules are hidden history; a
+  // contradiction the audit surfaced awaits the human's ✓
+  supersededBy?: string | null; needsHuman?: boolean;
 }
 
 export interface SourceScorecard {

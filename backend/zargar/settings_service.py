@@ -120,6 +120,10 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.max_risk_pct": 5.0,
     # a tip entry FILL (auto mode) tells the phone via Telegram too (ARM-GAPS F5)
     "techniques.tip.telegram_fills": True,
+    # the weekly rule audit (NEXT-GAPS A8): consolidate/expire the analyst's
+    # rules; contradictions surface to the human, never self-resolved
+    "techniques.tip.rule_audit_enabled": True,
+    "techniques.tip.rule_audit_day": "Sat",   # ET weekday (Mon..Sun), runs with the nightly review
     "techniques.tip.shadow_auto": True,      # the armed-book loop: auto-arm every open tip in shadow each morning
     "techniques.tip.shadow_arm_at": "09:12", # ET, on engine.scheduler (after the 09:05 reconciliation)
     "techniques.tip.trailing_after_r": 1.0,  # managed-position trail activates after +N R

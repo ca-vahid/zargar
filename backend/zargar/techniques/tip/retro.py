@@ -392,8 +392,9 @@ async def run_unfilled_retros(eng, *, client=None, limit: int = 3) -> dict:
 
 
 async def nightly_tip_review(eng, *, client=None) -> dict:
-    """The nightly sweep (scheduler job `tip_retro`): position retros, then the
-    unfilled-tips batch retros, then the deterministic lane grading."""
+    """The nightly sweep (scheduler job `tip_retro`): position retros, the
+    unfilled-tips batch retros, the deterministic lane grading — and, on the
+    configured weekday, the rule audit (NEXT-GAPS A8)."""
     out = await run_tip_retros(eng, client=client)
     try:
         out["unfilled"] = await run_unfilled_retros(eng, client=client)
@@ -403,4 +404,10 @@ async def nightly_tip_review(eng, *, client=None) -> dict:
         out["lanes"] = await grade_lanes(eng)
     except Exception:
         log.exception("lane grading failed")
+    try:
+        from .rule_audit import audit_due_today, run_rule_audit
+        if audit_due_today(eng.settings):
+            out["ruleAudit"] = await run_rule_audit(eng, client=client)
+    except Exception:
+        log.exception("rule audit failed")
     return out

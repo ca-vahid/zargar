@@ -638,4 +638,10 @@ class TipNote(Base):
     author: Mapped[str] = mapped_column(String(80), default="user")  # "user" | "analyst:<run8>"
     signal_id: Mapped[str | None] = mapped_column(String(64), index=True)
     run_id: Mapped[str | None] = mapped_column(String(64))
+    # rule lifecycle (NEXT-GAPS A8): an audit SUPERSEDES, never deletes — the
+    # id of the refined rule (or "expired:<run8>"); superseded rules are
+    # excluded from the analyst's injection but stay as history
+    superseded_by: Mapped[str | None] = mapped_column(String(80))
+    # a contradiction the audit surfaced — resolving it is a HUMAN click
+    needs_human: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

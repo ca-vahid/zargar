@@ -296,6 +296,18 @@ def build_signal_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=404, detail="note not found")
         return {"ok": True}
 
+    @app.post("/api/tip/notes/{note_id}/resolve", dependencies=[auth])
+    async def resolve_tip_note(note_id: str):
+        """A8.3: the human resolved a contradiction the rule audit surfaced —
+        clears the needs-your-call flag (keeping/deleting rules is separate)."""
+        from .. import events as ev
+        if not await eng.signals_service.flag_tip_notes([note_id], needs_human=False):
+            raise HTTPException(status_code=404, detail="note not found or not flagged")
+        await eng.journal.append(ev.TIP_RULE_AUDITED,
+                                 {"resolved": note_id, "by": "user"},
+                                 aggregate_type="signal", aggregate_id=note_id)
+        return {"ok": True}
+
     # --- proposals -----------------------------------------------------------
     @app.get("/api/proposals", dependencies=[auth])
     async def list_proposals(all: bool = False, limit: int = 100):

@@ -49,6 +49,7 @@ TIP_EXIT_PLAN_UPDATED = "TipExitPlanUpdated"       # analyst rewrote an open pos
 TIP_LANE_DECIDED = "TipLaneDecided"                # which lane a take went down (now-proposal vs at-level arm) + preflight warnings
 TIP_SPREAD_LEG_FAILED = "TipSpreadLegFailed"       # spread short leg died AND the long rollback failed — naked long, needs a person
 TIP_LANE_GRADED = "TipLaneGraded"                  # now-vs-at_level counterfactual, graded once the tip resolved
+TIP_RULE_AUDITED = "TipRuleAudited"                # weekly rule audit: merges/expiries applied, contradictions flagged
 SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before the tip's horizon/expiry
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads
 FLOW_CONTEXT_SERVED = "FlowContextServed" # a flow read's context line was delivered to a consumer (tip/em)

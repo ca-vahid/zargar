@@ -156,9 +156,15 @@ The armed path (level-touch plans via `TipRunner`) keeps its own handoff
   (2026-08-29, ARM-PLAN P1/P3/P4/P5): the analyst chooses now-vs-at-level,
   authors entry ladders and guard conditions, and expresses defined-risk
   spreads. See `ARM-PLAN.md`.
-- [ ] **A8 — rule quality loop**: periodic self-audit run that reads ALL rules
-  + the last N retros and consolidates/expires stale rules (rules must cite
-  evidence; contradictions surface to the human). *(The one still-open item.)*
+- [x] **A8 — rule quality loop** (2026-08-29, NEXT-GAPS A8): the weekly
+  `rule_audit` run (`techniques/tip/rule_audit.py`, rides the nightly review on
+  `techniques.tip.rule_audit_day`, default Sat) reads ALL live rules + recent
+  retros + lane grades and consolidates: merges → one refined rule (old ones
+  SUPERSEDED, never deleted — `tip_notes.superseded_by`), evidence-free/stale
+  rules expired, contradictions FLAGGED for the human (`needs_human` → the
+  "needs your call" badge + ✓ resolve on Tips > Analyst > Knowledge; the audit
+  never resolves a disagreement itself). The LLM only judges; the apply step is
+  deterministic. Journal `TipRuleAudited`.
 
 ## 7. Knobs
 
@@ -202,6 +208,5 @@ conviction floor) is edited on **Tips → Sources → Per-source policy** (E6).
   the plan (`riskWarning`) and rendered on the Armed card. Stock DEFAULTS stay
   conservative deliberately; the pre-live tightening is gap R3 in
   NEXT-GAPS-PLAN.
-- **Rule consolidation (A8)**: rules only accrete; nothing yet merges or
-  expires them. The prompt asks the analyst to refine-not-duplicate, but a
-  periodic self-audit is the real fix. *(The one still-open item.)*
+- ~~Rule consolidation (A8)~~ **BUILT 2026-08-29** — the weekly rule audit
+  (see §6 A8). The charter has no open items.
