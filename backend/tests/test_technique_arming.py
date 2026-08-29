@@ -489,13 +489,19 @@ async def test_arm_config_roundtrip():
 
 # --- options instrument (the book's expression) ------------------------------------------------------
 
-OCC = "TEST260828C00101000"
+# a contract that is ALWAYS in the future (a hardcoded date expired on
+# 2026-08-29 and killed the lifecycle test — never pin an expiry to a literal)
+_OCC_EXP = dt.date.today() + dt.timedelta(days=5)
+while _OCC_EXP.weekday() != 4:                       # the next Friday, >= 5 days out
+    _OCC_EXP += dt.timedelta(days=1)
+OCC = f"TEST{_OCC_EXP:%y%m%d}C00101000"
 
 
 async def _fake_pick(rig, monkeypatch, *, ask=2.50, bid=2.40):
     await rig.eng.settings.set("technique.options.enabled", True, journal=False)   # the pick is faked, no chain call
     async def pick(symbol, direction="long", *, spot=None, **kw):
-        return {"available": True, "symbol": OCC, "display": "TEST 28AUG26 101C", "underlying": "TEST", "expiry": "2026-08-28",
+        return {"available": True, "symbol": OCC, "display": f"TEST {_OCC_EXP:%d%b%y} 101C".upper(),
+                "underlying": "TEST", "expiry": _OCC_EXP.isoformat(),
                 "strike": 101.0, "optionType": "call", "bid": bid, "ask": ask, "mid": round((bid + ask) / 2, 2), "spreadPct": 4.0,
                 "delta": 0.45, "theta": -0.08, "iv": 0.55, "dte": 5, "is0dte": False, "openInterest": 1200, "volume": 300,
                 "warnings": [], "provider": "fake", "chainSize": 40}

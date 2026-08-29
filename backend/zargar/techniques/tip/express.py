@@ -114,6 +114,64 @@ def _row_pick(row: dict, expiry: str, today: dt.date, want: str) -> dict:
     }
 
 
+async def pick_spread(engine, *, symbol: str, legs: list[dict],
+                      expiry: str | None, dte_min: int, dte_max: int,
+                      today: dt.date | None = None) -> dict:
+    """Resolve a stated multi-leg spread (ARM-PLAN P5) against the chain: both
+    legs must exist with a real market. legs: [{"action": "buy"|"sell",
+    "type": "call"|"put", "strike": 340.0}]. Returns {"available", "legs":
+    [{symbol, side, strike, bid, ask, optionType}], "net" (+debit/-credit),
+    "width", "warnings"} — never raises for 'no contract'."""
+    today = today or dt.date.today()
+    opts = getattr(engine, "options", None)
+    if opts is None:
+        return {"available": False, "error": "options service not attached"}
+    client = opts.provider()
+    try:
+        exps = await client.expirations(symbol)
+        chosen, warnings = choose_expiry_window(exps, today, dte_min=dte_min,
+                                                dte_max=dte_max, stated=expiry)
+        if not chosen:
+            return {"available": False, "error": "; ".join(warnings) or "no usable expiry"}
+        chain = await client.chain(symbol, chosen)
+        out_legs: list[dict] = []
+        net = 0.0
+        for leg in legs[:2]:
+            want = str(leg.get("type") or "").lower()
+            strike = float(leg.get("strike") or 0)
+            side = "BUY" if str(leg.get("action") or "buy").lower() == "buy" else "SELL"
+            row = next((c for c in chain
+                        if (c.get("option_type") or "").lower() == want
+                        and abs(float(c.get("strike") or 0) - strike) < 1e-9), None)
+            if row is None:
+                return {"available": False, "expiry": chosen,
+                        "error": f"{strike:g}{want[:1].upper()} not listed at {chosen}"}
+            bid, ask = float(row.get("bid") or 0), float(row.get("ask") or 0)
+            if side == "BUY" and ask <= 0:
+                return {"available": False, "error": f"{strike:g}{want[:1].upper()} has no ask"}
+            if side == "SELL" and bid <= 0:
+                return {"available": False, "error": f"{strike:g}{want[:1].upper()} has no bid"}
+            if int(row.get("open_interest") or 0) < MIN_OPEN_INTEREST:
+                warnings.append(f"T5.4 thin OI on {strike:g}{want[:1].upper()}")
+            net += ask if side == "BUY" else -bid
+            out_legs.append({"symbol": str(row.get("symbol")), "side": side,
+                             "strike": strike, "optionType": want,
+                             "bid": bid, "ask": ask,
+                             "display": occ_mod.display(str(row.get("symbol") or ""))})
+        if len(out_legs) != 2:
+            return {"available": False, "error": "a spread needs exactly two legs"}
+        width = abs(out_legs[0]["strike"] - out_legs[1]["strike"])
+        if width <= 0:
+            return {"available": False, "error": "zero-width spread"}
+        return {"available": True, "expiry": chosen, "legs": out_legs,
+                "net": round(net, 4), "width": round(width, 4),
+                "credit": net < 0, "warnings": warnings}
+    except OptionsError as exc:
+        return {"available": False, "error": str(exc)}
+    except Exception as exc:                            # network etc.
+        return {"available": False, "error": f"{type(exc).__name__}: {exc}"}
+
+
 async def pick_tip_contract(engine, *, symbol: str, direction: str,
                             dte_min: int, dte_max: int,
                             strike: float | None = None, expiry: str | None = None,

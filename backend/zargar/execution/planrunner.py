@@ -384,6 +384,10 @@ class PlanRunner(SessionListener):
         # per-hook observability (EM team #6): "which hook, how often, how slow"
         # is a query, not a hunt — surfaced on the armed summary as `hookStats`
         self._hook_stats: dict[str, dict] = {}
+        # conditional entries (ARM-PLAN P4): trailing closes per run for the
+        # EMA/holds guards, and once-per-session dormant journaling
+        self._guard_closes: dict[str, list[float]] = {}
+        self._guard_noted: set[tuple[str, str, str]] = set()
 
 
     # ---------------------------------------------------------------- runtime settings
@@ -1542,14 +1546,50 @@ class PlanRunner(SessionListener):
         # and the execution scorecard's live-vs-replay diff becomes the experiment's
         # own counterfactual. The in_session gate above still blocks pre/after-market.
         want_enforce = self.entry_windows_enforced()      # hook (EM: R6 windows unless the mid-day experiment is on)
+        # guard bookkeeping (ARM-PLAN P4): trailing closes for EMA/holds guards,
+        # live-only state (a restart just re-warms the window)
+        closes = self._guard_closes.setdefault(ap.run_id, [])
+        closes.append(float(bar.close))
+        del closes[:-120]
         for tid, tr in (ap.trackers.items() if in_session else ()):
             if tr.enforce_windows != want_enforce:
                 tr.enforce_windows = want_enforce
             if tr.status in tr.TERMINAL:
                 continue
+            trig_dict = next((t for t in (ap.plan.get("triggers") or [])
+                              if t.get("id") == tid), {})
+            guards = trig_dict.get("guards") or []
+            if guards:
+                from ..marketstructure.guards import evaluate_guards
+                ok, reasons = evaluate_guards(
+                    guards, direction=str(trig_dict.get("direction") or "long"),
+                    bar=bar, closes=closes, quote_of=self.engine.quotes.get)
+                if not ok:
+                    # dormant: the trigger never sees this bar; journal once/session
+                    key = (ap.run_id, tid, session_date(bar.ts))
+                    if key not in self._guard_noted:
+                        self._guard_noted.add(key)
+                        self._log(ap, "guarded", f"{tid}: dormant — {'; '.join(reasons)}",
+                                  trigger=tid)
+                        if journal:
+                            await self.engine.journal.append(
+                                ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED,
+                                {"runId": ap.run_id, "symbol": ap.symbol, "trigger": tid,
+                                 "event": "guarded", "ts": bar.ts,
+                                 "reason": "; ".join(reasons)},
+                                aggregate_type="technique_run", aggregate_id=ap.run_id)
+                    continue
             before = tr.status
             n_obs, n_skip = len(tr.observed_midday), len(tr.skipped)
-            st = tr.on_bar(bar, idx)
+            if trig_dict.get("kind") == "timed":
+                # timed entry (ARM-PLAN P4): no level to track — the guards
+                # (time_at et al.) opening IS the signal; enter at this close
+                tr.entry = float(bar.close)
+                trig_dict.setdefault("entry", {})["price"] = float(bar.close)
+                tr.fired_index, tr.fired_ts, tr.fill_price = idx, bar.ts, float(bar.close)
+                st = tr.status = "fired"
+            else:
+                st = tr.on_bar(bar, idx)
             changed = st != before or len(tr.observed_midday) != n_obs or len(tr.skipped) != n_skip
             if changed and st != "fired":
                 what = st if st != before else ("observed_midday" if len(tr.observed_midday) != n_obs else "skipped")
@@ -1808,6 +1848,18 @@ class PlanRunner(SessionListener):
             with contextlib.suppress(Exception):
                 await self.after_fire(ap, tid, tr, trade, j, bar)   # hook (EM: chat thread note)
 
+    def _trigger_fraction(self, ap: ArmedPlan, trade: Trade) -> float:
+        """This trigger's share of the plan's total size (scale-in plans,
+        ARM-PLAN P3). Single-trigger plans (all of EM) carry no sizeFraction
+        and size exactly as before."""
+        for t in (ap.plan.get("triggers") or []):
+            if t.get("id") == trade.trigger_id:
+                f = t.get("sizeFraction")
+                if f:
+                    return max(0.05, min(1.0, float(f)))
+                break
+        return 1.0
+
     async def _size(self, ap: ArmedPlan, trade: Trade) -> float:
         cfg = ap.config
         if cfg.qty:
@@ -1929,8 +1981,11 @@ class PlanRunner(SessionListener):
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "contract_quality",
                         "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
                     return
+        frac = self._trigger_fraction(ap, trade)      # scale-in plans (ARM-PLAN P3)
         if use_options:
             qty = float(await self._size_contracts(ap, trade, contract))
+            if frac < 1.0:
+                qty = float(max(1, int(qty * frac)))
             limit = round(float(contract.get("ask") or contract.get("mid") or 0), 2)
             if limit <= 0:
                 trade.status = "failed"
@@ -1939,6 +1994,8 @@ class PlanRunner(SessionListener):
             order_symbol, sec_type = contract["symbol"], "OPT"
         else:
             qty = await self._size(ap, trade)
+            if frac < 1.0:
+                qty = float(max(1, int(qty * frac))) if qty >= 1 else qty
             if qty < 1:
                 trade.status = "skipped"
                 trade.reason = "size rounds to 0 shares at this risk % — not sent"

@@ -225,9 +225,30 @@ class RiskGate:
                     "option_premium_cap", ok,
                     f"premium ${premium:,.0f} exceeds {cap_pct:.1f}% of equity (${equity:,.0f})"
                     if not ok else ""))
+            # defined-risk exception (tips ARM-PLAN P5): a short leg inside a
+            # spread group (intent tagged spread:<gid>) is legal when the
+            # portfolio already holds the covering LONG leg — same underlying,
+            # same expiry, same right, at least the same size. The long leg is
+            # always filled first (lifecycle.open_spread sequences it), so a
+            # lone short leg can never sneak through as "covered".
+            covered = False
+            if goes_short and is_option and any(
+                    str(t).startswith("spread:") for t in (getattr(intent, "tags", None) or [])):
+                o = occ.parse(symbol)
+                if o is not None:
+                    for pos in self._positions.positions_list(intent.portfolio_id):
+                        if pos.get("secType") != "OPT" or float(pos.get("qty") or 0) < qty:
+                            continue
+                        po = occ.parse(str(pos.get("symbol") or ""))
+                        if (po is not None and po.underlying == o.underlying
+                                and po.expiry == o.expiry and po.right == o.right):
+                            covered = True
+                            break
             checks.append(RiskCheck(
-                "no_naked_short_option", not (goes_short and is_option),
-                "naked short options are blocked" if (goes_short and is_option) else ""))
+                "no_naked_short_option", not (goes_short and is_option) or covered,
+                "naked short options are blocked (a spread's short leg needs the long leg "
+                "FILLED first and a spread:<id> tag)"
+                if (goes_short and is_option and not covered) else ""))
             checks.extend(self._option_checks(intent, quote, ref_price, qty, side, reduces))
 
         # 5b. per-technique / per-tag day-notional caps (EM team B3) --------------
@@ -280,8 +301,10 @@ class RiskGate:
             f"{recent} orders in the last 60s (max {per_min})" if recent >= per_min else ""))
 
         # 9. duplicate ------------------------------------------------------------
+        # keyed per PORTFOLIO (2026-08-29): a shadow book expressing the same
+        # tip milliseconds earlier is not a duplicate of the real order
         window = float(s.get("risk.duplicate_window_seconds", 10))
-        key = f"{symbol}|{side.value}|{qty:g}|{intent.order_type}"
+        key = f"{intent.portfolio_id}|{symbol}|{side.value}|{qty:g}|{intent.order_type}"
         dup = any(k == key and now - ts <= window for ts, k in self._recent)
         checks.append(RiskCheck(
             "duplicate_order", not dup,

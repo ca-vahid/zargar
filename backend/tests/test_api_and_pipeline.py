@@ -754,6 +754,99 @@ async def test_retro_sweep_teaches_rules(app_client):
     assert out2["retros"] == 0 and out2["failed"] == 0
 
 
+class _FakeAnthropicAtLevel:
+    """Scripted analyst: take, but WAIT for the level (ARM-PLAN P1)."""
+
+    def __init__(self):
+        self.calls = 0
+        self.messages = self
+
+    async def create(self, **kw):
+        self.calls += 1
+        return _FakeAnthropicResp([_Block(type="text", text=(
+            '{"verdict": "take", "instrument": "option",'
+            ' "contract": "AAPL261016C00240000", "contract_label": "AAPL 240C 2026-10-16",'
+            ' "limit_price": 4.6, "quantity": 2,'
+            ' "entry_mode": "at_level", "entry_level": 225.0,'
+            ' "entry_note": "extended — wait for the retest",'
+            ' "exit_targets": [245.0], "exit_fractions": [0.5],'
+            ' "underlying_stop": 220.0, "max_hold_sessions": 7,'
+            ' "rationale": "Good tip, wrong price — arm the retest.",'
+            ' "confidence": 0.66}'))])
+
+
+async def test_take_at_level_arms_instead_of_proposing(app_client):
+    # ARM-PLAN P1: the analyst chooses WHEN — at_level arms a waiting plan in
+    # the source's mode; no tip-time proposal is minted
+    client, eng = app_client
+    from zargar.techniques.tip.runner import attach_tip_runner
+    await attach_tip_runner(eng)                      # the arm lane needs the runner
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    eng.signals_service._analyst_client = _FakeAnthropicAtLevel()
+    out = await run_pipeline(eng, canned_extraction())
+    item = out[0]
+    assert item["proposal"] is None, "at_level must not mint a tip-time proposal"
+    armed = item["armed"]
+    assert armed is not None and armed["technique"] == "tip"
+    assert armed["config"]["mode"] == "proposal"       # the source's default mode
+    [trig] = armed["triggers"]
+    assert trig["entry"] == 225.0                      # the ANALYST'S level, not the tip's
+    sig = item["signal"]
+    assert sig["extraction"]["analyst"]["armedRunId"] == armed["runId"]
+    # journaled lane decision
+    from sqlalchemy import select as _sel
+    from zargar.models import Event
+    async with eng.sf() as session:
+        rows = (await session.execute(
+            _sel(Event.payload).where(Event.type == "TipLaneDecided"))).scalars().all()
+    assert any(r.get("lane") == "arm" and r.get("armedRunId") == armed["runId"]
+               for r in rows)
+
+
+async def test_resume_pending_adoptions_after_restart(app_client):
+    # ARM-PLAN P2: an approved tip proposal whose order was resting at shutdown
+    # is adopted on boot; already-adopted ones are skipped (idempotent)
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    pid = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")["id"]
+    from zargar.models import Order, Proposal
+    occ = "AAPL261016C00240000"
+    async with eng.sf() as session:
+        session.add(Order(id="ord-r1", portfolio_id=pid, symbol=occ, sec_type="OPT",
+                          side="BUY", qty=2, order_type="LMT", limit_price=4.6,
+                          status="FILLED", filled_qty=2, avg_fill_price=4.5,
+                          source="signal"))
+        session.add(Proposal(id="prop-r1", portfolio_id=pid, symbol=occ, sec_type="OPT",
+                             side="BUY", qty=2, order_type="LMT", limit_price=4.6,
+                             status="executed", order_id="ord-r1",
+                             context={"techniqueId": "tip", "sourceName": "TestLetter",
+                                      "vehicle": {"kind": "option", "underlying": "AAPL",
+                                                  "optionType": "call"},
+                                      "exitPlan": {"targets": [245.0], "fractions": [1.0],
+                                                   "underlyingStop": 224.0,
+                                                   "maxHoldSessions": 5,
+                                                   "avoidEarnings": True},
+                                      "signalPrices": {"entry": 231.5}},
+                             expires_at=dt.datetime.now(dt.timezone.utc)
+                             + dt.timedelta(hours=1)))
+        await session.commit()
+    from zargar.techniques.tip.lifecycle import resume_pending_adoptions
+    assert await resume_pending_adoptions(eng) == 1
+
+    async def adopted():
+        for p in eng.position_manager.positions():
+            if p.get("technique") == "tip" and any(
+                    l.get("entryOrderId") == "ord-r1" for l in p.get("legs", [])):
+                return p
+        return None
+    pos = await wait_for(adopted, timeout=10)
+    assert pos["policy"]["ladder"]["targets"] == [245.0]
+    assert pos["policy"]["stop"] == {"kind": "fixed", "price": 224.0}
+    # idempotent: the adopted order is not re-armed
+    assert await resume_pending_adoptions(eng) == 0
+
+
 class _FakeAnthropicNotes:
     """Scripted analyst: saves a note first, then answers 'watch'."""
 
@@ -1028,10 +1121,16 @@ async def test_proposal_reject_and_expiry(app_client):
     r = await client.post(f"/api/proposals/{proposal['id']}/reject")
     assert r.json()["status"] == "rejected"
 
-    # expiry path
-    await eng.settings.set("signals.default_ttl_minutes", 0)
+    # expiry path — off-hours proposals now expire relative to the NEXT open
+    # (ARM-PLAN P1), so force this one due instead of relying on a 0-min TTL
     out2 = await run_pipeline(eng, canned_extraction())
-    assert out2[0]["proposal"] is not None
+    p2 = out2[0]["proposal"]
+    assert p2 is not None
+    from zargar.models import Proposal as _P
+    async with eng.sf() as session:
+        rowp = await session.get(_P, p2["id"])
+        rowp.expires_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=1)
+        await session.commit()
     expired = await eng.proposals.expire_due()
     assert expired == 1
 
@@ -1073,3 +1172,114 @@ async def test_duplicate_tip_attaches_not_reproposes(app_client):
     assert card["signals"] == 1 and card["seenAgain"] == 1
     assert card["policy"]["entry"] == "level_touch"
     assert card["barCleared"] is False   # one tip is nowhere near the bar
+
+
+def _spread_cboe(exp: str):
+    """A CBOE mock serving one AAPL expiry with the 240/250 calls."""
+    import httpx as _hx
+
+    def _row(sym, bid, ask):
+        return {"option": sym, "bid": bid, "ask": ask, "last_trade_price": (bid + ask) / 2,
+                "volume": 500, "open_interest": 2000, "delta": 0.5, "gamma": 0.05,
+                "theta": -0.03, "vega": 0.1, "iv": 0.2}
+
+    d = dt.date.fromisoformat(exp)
+    occ240 = f"AAPL{d:%y%m%d}C{240000:08d}"
+    occ250 = f"AAPL{d:%y%m%d}C{250000:08d}"
+    payload = {"data": {"current_price": 232.0, "close": 231.5, "prev_day_close": 231.0,
+                        "iv30": 0.22,
+                        "options": [_row(occ240, 4.4, 4.6), _row(occ250, 1.4, 1.6)]}}
+
+    def handler(request: _hx.Request) -> _hx.Response:
+        return _hx.Response(200, json=payload)
+    from zargar.options.chain import CboeClient
+    return CboeClient(_hx.AsyncClient(transport=_hx.MockTransport(handler))), occ240, occ250
+
+
+async def test_spread_tip_proposes_and_opens_defined_risk(app_client):
+    # ARM-PLAN P5 end-to-end: a stated 340/360-style call spread proposes as ONE
+    # unit; approval opens it leg-sequenced (long fills FIRST, short leg covered)
+    import asyncio as _aio
+
+    from zargar.domain import Quote
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    # the long leg alone is ~$1.4k of premium — align the risk caps like a real
+    # config would have to (the preflight warning covers the mismatch case)
+    await eng.settings.set("risk.max_position_notional", 5000.0)
+    await eng.settings.set("risk.max_option_premium_pct", 25.0)
+    await eng.settings.set("risk.max_option_premium_notional", 5000.0)
+    await eng.settings.set("risk.max_position_pct", 30.0)
+    exp = (dt.date.today() + dt.timedelta(days=17)).isoformat()
+    fake, occ240, occ250 = _spread_cboe(exp)
+    eng.options.use_client(fake)
+
+    tip = canned_extraction()
+    tip.signals[0].legs = [{"action": "buy", "type": "call", "strike": 240.0},
+                           {"action": "sell", "type": "call", "strike": 250.0}]
+    tip.signals[0].expiry = exp
+
+    # keep quotes flowing for both legs so the sequenced fills land
+    stop = False
+
+    async def pump():
+        while not stop:
+            eng.quotes.on_quote(Quote(symbol=occ240, bid=4.4, ask=4.6, last=4.5,
+                                      bid_size=500, ask_size=500, volume=100))
+            eng.quotes.on_quote(Quote(symbol=occ250, bid=1.4, ask=1.6, last=1.5,
+                                      bid_size=500, ask_size=500, volume=100))
+            await _aio.sleep(0.1)
+    pump_task = _aio.create_task(pump())
+    try:
+        out = await run_pipeline(eng, tip)
+        p = out[0]["proposal"]
+        assert p is not None and p["secType"] == "SPREAD"
+        v = p["context"]["vehicle"]
+        assert v["kind"] == "spread" and len(v["legs"]) == 2
+        assert abs(p["limitPrice"] - 3.2) < 0.01              # buy ask 4.6 - sell bid 1.4
+        assert "defined-risk" in p["context"]["explain"]
+        # the shadow book expressed the same spread (one managed position)
+        expr = out[0]["signal"]["extraction"]["shadowExpression"]
+        assert expr["vehicle"] == "spread", expr.get("fallback")
+
+        r = await client.post(f"/api/proposals/{p['id']}/approve", json={})
+        assert r.status_code == 200
+        res = r.json()
+        assert res["proposal"]["status"] == "executed", res["proposal"]
+
+        async def adopted():
+            for pos in eng.position_manager.positions():
+                if (pos.get("technique") == "tip" and pos.get("portfolioId") == p["portfolioId"]
+                        and len(pos.get("legs", [])) == 2):
+                    return pos
+            return None
+        pos = await wait_for(adopted, timeout=20)
+    finally:
+        stop = True
+        await pump_task
+    legs = {l["symbol"]: l["qty"] for l in pos["legs"]}
+    assert legs[occ240] > 0 and legs[occ250] < 0             # long 240C, short 250C
+    assert pos["policy"]["stop"]["kind"] == "none"
+    assert "defined-risk" in pos["policy"]["stop"]["guard"]
+
+
+async def test_lone_short_option_leg_is_still_naked(app_client):
+    # the defined-risk exception NEVER lets a lone short leg through: without
+    # the covering long position, a spread-tagged SELL is rejected as naked
+    from zargar.orders import OrderIntent
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    pid = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")["id"]
+    exp = (dt.date.today() + dt.timedelta(days=17)).isoformat()
+    d = dt.date.fromisoformat(exp)
+    occ = f"AAPL{d:%y%m%d}C{250000:08d}"
+    from zargar.domain import Quote
+    eng.quotes.on_quote(Quote(symbol=occ, bid=1.4, ask=1.6, last=1.5,
+                              bid_size=500, ask_size=500, volume=100))
+    out = await eng.orders.place(OrderIntent(
+        portfolio_id=pid, symbol=occ, sec_type="OPT", side="SELL", qty=1,
+        order_type="LMT", limit_price=1.4, source="technique", technique_id="tip",
+        tags=["spread:deadbeef"]))
+    assert out["status"] == "REJECTED_RISK"
+    assert "naked short options" in (out.get("rejectReason") or "")

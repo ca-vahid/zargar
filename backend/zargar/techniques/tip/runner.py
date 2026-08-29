@@ -159,10 +159,31 @@ class TipRunner(PlanRunner):
             raise ValueError(f"signal is {sig.status} — only verified/parked tips arm")
         from ...signals.sources import resolve_policy
         policy = resolve_policy(self.engine.settings, sig.source_name)
-        if policy.entry != "level_touch":
+        # analyst-driven arms (ARM-PLAN P1) may override the source doctrine and
+        # the tip's entry — the analyst chose to wait for ITS level
+        entry_override = analyst_run_id = exit_plan = entry_ladder = None
+        allow_any_entry = False
+        if isinstance(config, dict):
+            entry_override = config.pop("entryOverride", None)
+            allow_any_entry = bool(config.pop("allowAnyEntry", False))
+            analyst_run_id = config.pop("analystRunId", None)
+            exit_plan = config.pop("exitPlan", None)
+            entry_ladder = config.pop("entryLadder", None)   # analyst scale-in (P3)
+            entry_guards = config.pop("entryGuards", None)   # analyst conditions (P4)
+        else:
+            entry_guards = None
+        if policy.entry != "level_touch" and not allow_any_entry:
             raise ValueError("this source's policy is tip_time — tip-time tips propose "
                              "immediately; arming is for level-touch tips")
-        plan_dict = await svc.build_tip_plan_for(signal_id)   # raises "too late" past the expiry cutoff
+        plan_dict = await svc.build_tip_plan_for(
+            signal_id, entry_override=entry_override,
+            force_level_touch=allow_any_entry,
+            scale_ins=entry_ladder,
+            guards=entry_guards)   # raises "too late" past the expiry cutoff
+        # a scale-in plan needs one open slot per rung (they share ONE campaign)
+        n_valid = sum(1 for t in plan_dict.get("triggers") or [] if t.get("valid"))
+        if isinstance(config, dict) and n_valid > 1:
+            config.setdefault("maxOpenTrades", n_valid)
         if not any(t.get("valid") for t in plan_dict.get("triggers") or []):
             reasons = "; ".join((plan_dict.get("triggers") or [{}])[0].get("noTradeReasons") or [])
             raise ValueError(f"the tip plan has no valid trigger ({reasons or 'degenerate'})")
@@ -202,7 +223,11 @@ class TipRunner(PlanRunner):
             result={"plan": plan_dict, "signalId": signal_id},
             config={"technique": self.TECHNIQUE_ID, "signalId": signal_id,
                     "source": source, "policy": policy.to_dict(),
-                    "thresholds": thresholds},
+                    "thresholds": thresholds,
+                    # analyst provenance (ARM-PLAN P1): the appraisal that chose
+                    # this level, and its exit campaign (the handoff runs it)
+                    **({"analystRunId": analyst_run_id} if analyst_run_id else {}),
+                    **({"exitPlan": exit_plan} if exit_plan else {})},
         )
         async with self.engine.sf() as session:
             session.add(row)
@@ -213,6 +238,59 @@ class TipRunner(PlanRunner):
              "mode": "plan", "verdict": "plan", "signalId": signal_id, "source": source},
             aggregate_type="technique_run", aggregate_id=run_id)
         return await self.arm(run_id, config)
+
+    async def arm_from_analyst(self, sig, opinion: dict, policy) -> dict:
+        """The analyst said take + at_level (ARM-PLAN P1): arm the tip in the
+        source's mode, waiting for the ANALYST'S level, with its exit campaign
+        riding on the run. Preflight warns (journaled) when the tip budget
+        exceeds the platform risk caps instead of failing silently at fill."""
+        eng = self.engine
+        pid = str(eng.settings.get("trading.default_portfolio", ""))
+        if not pid or eng.positions.portfolio(pid) is None:
+            sims = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
+            if not sims:
+                raise RuntimeError("no portfolio available for an analyst arm")
+            pid = sims[0]["id"]
+        mode = policy.mode if policy.mode in ("alert", "proposal", "auto") else "alert"
+        from ...signals.sources import resolve_policy  # noqa: F401  (docs anchor)
+        from .lifecycle import build_exit_plan
+        exit_plan = build_exit_plan(sig, sig, opinion, policy)
+        # ---- preflight coherence: budget vs the platform risk caps (F7)
+        warns: list[str] = []
+        try:
+            equity = await eng.positions.equity(pid)
+            budget = float(policy.budget_per_tip)
+            cap_notional = float(eng.settings.get("risk.max_position_notional", 1000.0))
+            prem_pct = float(eng.settings.get("risk.max_option_premium_pct", 5.0))
+            prem_abs = float(eng.settings.get("risk.max_option_premium_notional", 1000.0))
+            if budget > cap_notional:
+                warns.append(f"per-tip budget ${budget:,.0f} exceeds risk.max_position_notional "
+                             f"${cap_notional:,.0f} — a full-size fill will be risk-rejected")
+            if equity > 0 and budget > min(equity * prem_pct / 100, prem_abs):
+                warns.append(f"per-tip budget ${budget:,.0f} exceeds the option premium caps "
+                             f"({prem_pct:g}% of ${equity:,.0f} / ${prem_abs:,.0f})")
+        except Exception:                                # advisory only
+            log.debug("arm preflight cap check failed", exc_info=True)
+        if warns:
+            await eng.journal.append(
+                ev.TIP_LANE_DECIDED, {"signalId": sig.id, "lane": "arm",
+                                      "riskWarning": "; ".join(warns)},
+                aggregate_type="signal", aggregate_id=sig.id)
+        levels = [float(x) for x in (opinion.get("entry_levels") or []) if x]
+        fracs = [float(x) for x in (opinion.get("entry_fractions") or [])]
+        ladder = ([{"price": p, "fraction": (fracs[i] if i < len(fracs) else 0)}
+                   for i, p in enumerate(levels)] if len(levels) > 1 else None)
+        config = {"portfolioId": pid, "mode": mode, "budgetSize": True,
+                  "dailyLossLimit": policy.budget_per_tip,
+                  "analystRunId": opinion.get("runId"), "exitPlan": exit_plan,
+                  "entryOverride": opinion.get("entry_level"),
+                  "entryLadder": ladder,
+                  "entryGuards": opinion.get("entry_conditions") or None,
+                  "allowAnyEntry": True}
+        snap = await self.arm_signal(sig.id, config)
+        if warns:
+            snap["riskWarning"] = "; ".join(warns)
+        return snap
 
     async def runs_for_signal(self, signal_id: str) -> list[dict]:
         async with self.engine.sf() as session:
@@ -426,21 +504,28 @@ class TipRunner(PlanRunner):
         fill = float(order.avg_fill_price or trade.entry)     # OPT: this is the PREMIUM
         entry_ref = float(trade.entry) if is_opt else fill    # policies judge the UNDERLYING
         risk = abs(entry_ref - trade.stop) or abs(trade.entry - trade.stop)
-        policy: dict = {
-            "timeframe": "15m",
-            "stop": {"kind": "fixed", "price": trade.stop},
-            "ladder": {"targets": [float(t) for t in trade.targets[:2]],
-                       "fractions": [0.5, 0.5][:max(1, len(trade.targets[:2]))]},
-            "trailing": {"mode": "structure",
-                         "after_r": float(self.engine.settings.get("techniques.tip.trailing_after_r", 1.0))},
-            "time_stop_sessions": hold_cap,      # the thesis dies with the contract
-        }
-        if is_opt:
-            policy["premium_stop_pct"] = float(self.rt("premium_stop_pct", 50.0) or 50.0)
-            policy["dte_close"] = max(1, int(self.engine.settings.get("execution.min_dte", 1)))
+        # ---- ONE exit authority (ARM-PLAN P2 / ANALYST.md A6): a real-money
+        # armed fill runs the ANALYST'S exit campaign when the appraisal wrote
+        # one; SHADOW-book fills keep the standard ladder so the per-source
+        # scorecard's counterfactual stays comparable across sources.
+        from ...signals.sources import resolve_policy
+        from .lifecycle import build_exit_plan, default_policy, policy_from_exit_plan
+        pf = self.engine.positions.portfolio(ap.config.portfolio_id) or {}
+        analyst = ((sig.extraction or {}).get("analyst") or {}) if sig is not None else {}
         catalyst = (sig.catalyst or "").lower() if sig else ""
-        if "earnings" not in catalyst:
-            policy["flatten_before"] = {"event": "earnings", "days": 1}
+        exit_author = "default"
+        if analyst.get("exit_targets") and not pf.get("book") and sig is not None:
+            src_policy = resolve_policy(self.engine.settings, ctx.get("source"))
+            plan = build_exit_plan(sig, sig, analyst, src_policy)
+            plan["maxHoldSessions"] = min(int(plan.get("maxHoldSessions") or hold_cap), hold_cap)
+            policy = policy_from_exit_plan(plan, is_option=is_opt,
+                                           settings=self.engine.settings)
+            exit_author = f"analyst:{str(analyst.get('runId') or '')[:8]}"
+        else:
+            policy = default_policy(
+                stop=float(trade.stop), targets=[float(t) for t in trade.targets],
+                hold=hold_cap, is_option=is_opt, settings=self.engine.settings,
+                avoid_earnings="earnings" not in catalyst)
         source = ctx.get("source") or "unknown"
         qty = float(order.filled_qty or trade.filled_qty or trade.qty)
         # options are always LONG the contract (calls for longs, puts for shorts);
@@ -452,19 +537,29 @@ class TipRunner(PlanRunner):
                {"symbol": ap.symbol, "secType": "STK",
                 "qty": qty if trade.direction == "long" else -qty,
                 "avgFill": fill, "entryOrderId": order.id, "origin": "adoption"})
-        pos = await mgr.adopt({
-            "portfolioId": ap.config.portfolio_id, "symbol": ap.symbol,
-            "direction": trade.direction, "techniqueId": self.TECHNIQUE_ID,
-            "tags": [f"source:{source}"], "runId": ap.run_id,
-            "entry": entry_ref, "risk": risk,
-            "legs": [leg],
-            # options cannot rest a venue stop (probed 2026-08-27): app-managed
-            # with the acknowledgement — shadow books auto-ack; a LIVE arm
-            # already required the per-arm allowLive acknowledgement upstream
-            "overnight": "app_managed" if is_opt else "venue_stop",
-            "overnightAck": True if is_opt else False,
-            "policy": policy,
-        })
+        # scale-in plans (ARM-PLAN P3): a later trigger's fill JOINS the run's
+        # existing position — one campaign over the combined size
+        existing = next((p for p in mgr.positions(status="open")
+                         if p.get("runId") == ap.run_id
+                         and p.get("technique") == self.TECHNIQUE_ID), None)
+        if existing is not None:
+            pos = await mgr.append_leg(existing["id"], leg, entry_ref=entry_ref)
+            if pos is None:                    # closed in the same beat — adopt fresh
+                existing = None
+        if existing is None:
+            pos = await mgr.adopt({
+                "portfolioId": ap.config.portfolio_id, "symbol": ap.symbol,
+                "direction": trade.direction, "techniqueId": self.TECHNIQUE_ID,
+                "tags": [f"source:{source}", f"exit:{exit_author}"], "runId": ap.run_id,
+                "entry": entry_ref, "risk": risk,
+                "legs": [leg],
+                # options cannot rest a venue stop (probed 2026-08-27): app-managed
+                # with the acknowledgement — shadow books auto-ack; a LIVE arm
+                # already required the per-arm allowLive acknowledgement upstream
+                "overnight": "app_managed" if is_opt else "venue_stop",
+                "overnightAck": True if is_opt else False,
+                "policy": policy,
+            })
         # the manager owns it now — the session runner forgets the trade so the
         # end-of-day flatten and the session expiry never touch it
         ap.trades.pop(tid, None)
@@ -501,3 +596,10 @@ async def attach_tip_runner(engine) -> None:
     retro_at = str(engine.settings.get("techniques.tip.retro_at", "17:10"))
     engine.scheduler.register("tip_retro", retro_at,
                               lambda: run_tip_retros(engine))
+    # restart safety: re-arm adopt-on-fill waiters for approved tip proposals
+    # whose orders were still resting at shutdown (ARM-PLAN P2)
+    try:
+        from .lifecycle import resume_pending_adoptions
+        await resume_pending_adoptions(engine)
+    except Exception:  # pragma: no cover - resume must never block startup
+        log.exception("resuming pending tip adoptions failed")

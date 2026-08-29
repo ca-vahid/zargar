@@ -57,6 +57,35 @@ class TradeSignal(BaseModel):
                     "stated. Never put a premium in entry_price.")
     entry_type: str = Field(
         default="unspecified", description='One of: "market", "limit", "range", "unspecified"')
+    entry_zone_low: Optional[float] = Field(
+        default=None,
+        description="Lower edge of a stated entry ZONE on the underlying ('buy 22-23', "
+                    "'accumulate between 95 and 97'). Null when a single price or none.")
+    entry_zone_high: Optional[float] = Field(
+        default=None, description="Upper edge of the stated entry zone. Null otherwise.")
+    scale_in: List[dict] = Field(
+        default_factory=list,
+        description='Stated SCALE-IN ladder on the underlying: [{"price": 22.6, "fraction": 0.5}, '
+                    '{"price": 22.1, "fraction": 0.5}] for "half now at 22.60, half at 22.10". '
+                    'Fractions sum to <= 1. Empty when the source names one entry.')
+    legs: List[dict] = Field(
+        default_factory=list,
+        description='MULTI-LEG structure when stated (defined-risk spreads): '
+                    '"340/360 call spread" -> [{"action": "buy", "type": "call", "strike": 340}, '
+                    '{"action": "sell", "type": "call", "strike": 360}]; '
+                    '"95/90 put credit spread" -> [{"action": "sell", "type": "put", "strike": 95}, '
+                    '{"action": "buy", "type": "put", "strike": 90}]. The shared expiry goes in '
+                    '`expiry`. Empty for single-leg tips.')
+    entry_conditions: List[dict] = Field(
+        default_factory=list,
+        description='Stated CONDITIONS gating the entry, as guard documents: '
+                    '[{"kind": "ema_reclaim", "period": 8}] for "if it reclaims the 8EMA"; '
+                    '[{"kind": "holds_above", "price": 640, "bars": 3}] for "as long as it holds 640" '
+                    '(holds_below for the mirror); '
+                    '[{"kind": "guard_symbol", "symbol": "SPY", "op": ">=", "price": 640}] for '
+                    '"while SPY holds 640"; '
+                    '[{"kind": "time_at", "et": "09:45"}] for "at/after 9:45 ET" ("at the open" = 09:30). '
+                    'Empty when the entry is unconditional.')
     target_price: Optional[float] = None
     target_prices: List[float] = Field(
         default_factory=list,
@@ -89,6 +118,77 @@ class TradeSignal(BaseModel):
 
     # local normalization of the enum-ish strings (see module docstring: real
     # Literal enums in the schema draw a 400 from the structured-output grammar)
+    @field_validator("scale_in", mode="before")
+    @classmethod
+    def _norm_scale_in(cls, v):
+        """[{price, fraction}] — junk dropped, fractions clamped; a ladder whose
+        fractions don't sum sanely gets an even split."""
+        out: list[dict] = []
+        for item in (v or [])[:4]:
+            try:
+                if isinstance(item, dict):
+                    price = float(item.get("price") or 0)
+                    frac = float(item.get("fraction") or 0)
+                else:
+                    price, frac = float(item[0]), float(item[1])
+            except (TypeError, ValueError, IndexError, KeyError):
+                continue
+            if price > 0:
+                out.append({"price": price, "fraction": max(0.0, min(1.0, frac))})
+        total = sum(x["fraction"] for x in out)
+        if out and (total <= 0 or total > 1.0 + 1e-9):
+            even = round(1.0 / len(out), 4)
+            for x in out:
+                x["fraction"] = even
+        return out
+
+    @field_validator("legs", mode="before")
+    @classmethod
+    def _norm_legs(cls, v):
+        out: list[dict] = []
+        for leg in (v or [])[:2]:
+            if not isinstance(leg, dict):
+                continue
+            action = str(leg.get("action") or "buy").lower()
+            typ = str(leg.get("type") or "").lower()
+            try:
+                strike = float(leg.get("strike") or 0)
+            except (TypeError, ValueError):
+                continue
+            if typ in ("call", "put") and strike > 0:
+                out.append({"action": "sell" if action.startswith("s") else "buy",
+                            "type": typ, "strike": strike})
+        return out if len(out) == 2 else []
+
+    @field_validator("entry_conditions", mode="before")
+    @classmethod
+    def _norm_conditions(cls, v):
+        """Whitelist guard kinds, coerce numbers; junk dropped. Unknown kinds are
+        KEPT (the armer degrades them to watch-only, journaled) — losing the
+        source's stated condition silently would be worse."""
+        out: list[dict] = []
+        for g in (v or [])[:4]:
+            if not isinstance(g, dict):
+                continue
+            kind = str(g.get("kind") or "").strip().lower()
+            if not kind:
+                continue
+            clean: dict = {"kind": kind}
+            for key, cast in (("period", int), ("price", float), ("bars", int)):
+                if g.get(key) is not None:
+                    try:
+                        clean[key] = cast(g[key])
+                    except (TypeError, ValueError):
+                        pass
+            if g.get("symbol"):
+                clean["symbol"] = str(g["symbol"]).upper()[:12]
+            if g.get("op"):
+                clean["op"] = ">=" if str(g["op"]) in (">", ">=") else "<="
+            if g.get("et"):
+                clean["et"] = str(g["et"])[:5]
+            out.append(clean)
+        return out
+
     @field_validator("direction", mode="before")
     @classmethod
     def _v_direction(cls, v: object) -> str:

@@ -88,21 +88,217 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
                           "after_r": float(settings.get("techniques.tip.trailing_after_r", 1.0))}
     policy["time_stop_sessions"] = max(1, int(plan.get("maxHoldSessions") or 10))
     if is_option:
-        policy["premium_stop_pct"] = float(plan.get("premiumStopPct") or 50.0)
+        # premium stop: the plan's own figure, else the technique's knob
+        # (resolver semantics: techniques.tip.premium_stop_pct → execution.*)
+        fallback_ps = settings.get("techniques.tip.premium_stop_pct",
+                                   settings.get("execution.premium_stop_pct", 50.0))
+        policy["premium_stop_pct"] = float(plan.get("premiumStopPct") or fallback_ps or 50.0)
         policy["dte_close"] = max(1, int(settings.get("execution.min_dte", 1)))
     if plan.get("avoidEarnings", True):
         policy["flatten_before"] = {"event": "earnings", "days": 1}
     return policy
 
 
+# The technique's standard exit ladder — THE single executable source (plan.py's
+# RR arithmetic mirrors it; the shadow books always run it for comparability).
+DEFAULT_TIP_FRACTIONS = (0.5, 0.5)
+
+
 def default_policy(*, stop: float | None, targets: list[float],
-                   hold: int, is_option: bool, settings) -> dict:
-    """The technique's fallback (mirrors the armed path's handoff policy) for
-    when the analyst plan fails validation."""
+                   hold: int, is_option: bool, settings,
+                   avoid_earnings: bool = True) -> dict:
+    """The technique's standard policy (50/50 across the first two targets +
+    structure trail): shadow-book fills, and the fallback when an analyst plan
+    is absent or fails validation."""
     return policy_from_exit_plan(
-        {"targets": targets[:2], "fractions": [], "underlyingStop": stop,
-         "maxHoldSessions": hold, "avoidEarnings": True},
+        {"targets": targets[:2],
+         "fractions": list(DEFAULT_TIP_FRACTIONS)[:max(1, len(targets[:2]))],
+         "underlyingStop": stop,
+         "maxHoldSessions": hold, "avoidEarnings": avoid_earnings},
         is_option=is_option, settings=settings)
+
+
+async def open_spread(eng, *, portfolio_id: str, underlying: str, direction: str,
+                      legs: list[dict], qty: int, exit_plan: dict | None = None,
+                      source: str = "unknown", analyst_run_id: str | None = None,
+                      signal_id: str | None = None) -> dict:
+    """Defined-risk spread entry (ARM-PLAN P5). Sequenced so risk stays defined
+    at every instant: the LONG leg is placed and must FILL first; only then the
+    short leg goes out (tagged spread:<gid> — the risk gate accepts a short leg
+    only when the covering long is already held). A rejected/unfilled short leg
+    rolls the long back at market. The pair is adopted as ONE managed position
+    (net-credit positions use the credit-target policy the engine already has)."""
+    import uuid
+
+    from ...orders import OrderIntent
+
+    long_leg = next((l for l in legs if l.get("side") == "BUY"), None)
+    short_leg = next((l for l in legs if l.get("side") == "SELL"), None)
+    if long_leg is None or short_leg is None or len(legs) != 2:
+        raise ValueError("a defined-risk spread is exactly one long and one short leg")
+    gid = uuid.uuid4().hex[:8]
+    tags = [f"source:{source}", f"spread:{gid}"]
+    qty = max(1, int(qty))
+
+    # ---- leg 1: the LONG leg, and wait for the fill (defined risk needs it held)
+    o1 = await eng.orders.place(OrderIntent(
+        portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
+        side="BUY", qty=qty, order_type="LMT",
+        limit_price=round(float(long_leg.get("ask") or 0), 2) or None,
+        tif="DAY", source="technique", technique_id="tip", tags=tags,
+        signal_id=signal_id))
+    if o1.get("status") in ("REJECTED", "REJECTED_RISK", "ERROR"):
+        raise ValueError(f"long leg rejected: {o1.get('rejectReason') or o1.get('status')}")
+    deadline = asyncio.get_event_loop().time() + 90
+    row1 = None
+    while True:
+        row1 = await _order_row(eng, o1["id"])
+        if (row1 or {}).get("status") == "FILLED":
+            break
+        if (row1 or {}).get("status") in ("CANCELLED", "REJECTED", "EXPIRED"):
+            raise ValueError(f"long leg ended {(row1 or {}).get('status')}")
+        if asyncio.get_event_loop().time() > deadline:
+            with contextlib_suppress():
+                await eng.orders.cancel(o1["id"])
+            raise ValueError("long leg did not fill in time — spread abandoned")
+        await asyncio.sleep(0.5)
+
+    # ---- leg 2: the short leg (covered now); rollback the long if it dies
+    o2 = await eng.orders.place(OrderIntent(
+        portfolio_id=portfolio_id, symbol=short_leg["symbol"], sec_type="OPT",
+        side="SELL", qty=qty, order_type="LMT",
+        limit_price=round(float(short_leg.get("bid") or 0), 2) or None,
+        tif="DAY", source="technique", technique_id="tip", tags=tags,
+        signal_id=signal_id))
+    if o2.get("status") in ("REJECTED", "REJECTED_RISK", "ERROR"):
+        await eng.orders.place(OrderIntent(                # roll the long back
+            portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
+            side="SELL", qty=qty, order_type="MKT", tif="DAY", source="technique",
+            technique_id="tip", tags=tags, reduce_only=True))
+        raise ValueError(f"short leg rejected ({o2.get('rejectReason') or o2.get('status')}) "
+                         f"— long leg rolled back at market")
+    deadline = asyncio.get_event_loop().time() + 90
+    while True:
+        row2 = await _order_row(eng, o2["id"])
+        if (row2 or {}).get("status") == "FILLED":
+            break
+        if (row2 or {}).get("status") in ("CANCELLED", "REJECTED", "EXPIRED") \
+                or asyncio.get_event_loop().time() > deadline:
+            with contextlib_suppress():
+                await eng.orders.cancel(o2["id"])
+            await eng.orders.place(OrderIntent(
+                portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
+                side="SELL", qty=qty, order_type="MKT", tif="DAY", source="technique",
+                technique_id="tip", tags=tags, reduce_only=True))
+            raise ValueError("short leg did not fill — long leg rolled back at market")
+        await asyncio.sleep(0.5)
+
+    mgr = eng.position_manager
+    fill1 = float(row1.get("avgFillPrice") or long_leg.get("ask") or 0)
+    fill2 = float(row2.get("avgFillPrice") or short_leg.get("bid") or 0)
+    q = eng.quotes.get(underlying.upper())
+    entry_ref = float(q.last) if q and q.last > 0 else float(long_leg.get("strike") or 0)
+    width = abs(float(long_leg.get("strike", 0)) - float(short_leg.get("strike", 0)))
+    net = fill1 - fill2                                    # +debit / -credit
+    policy = {"timeframe": "15m",
+              # a defined-risk spread's max loss is structural — declare it
+              "stop": {"kind": "none",
+                       "guard": f"defined-risk spread: max loss = "
+                                f"{'debit paid' if net > 0 else 'width - credit'} "
+                                f"(${(net if net > 0 else width - abs(net)) * 100 * qty:,.0f})"},
+              "time_stop_sessions": int((exit_plan or {}).get("maxHoldSessions") or 10),
+              "dte_close": max(1, int(eng.settings.get("execution.min_dte", 1)))}
+    if net < 0:
+        policy["profit_target_pct_of_credit"] = 60.0
+    elif (exit_plan or {}).get("targets"):
+        policy["ladder"] = {"targets": [float(t) for t in exit_plan["targets"]],
+                            "fractions": [float(f) for f in (exit_plan.get("fractions") or [])]}
+    pos = await mgr.adopt({
+        "portfolioId": portfolio_id, "symbol": underlying.upper(),
+        "direction": direction, "techniqueId": "tip",
+        "tags": tags + ([f"exit:analyst:{str(analyst_run_id)[:8]}"] if analyst_run_id
+                        else ["exit:default"]),
+        "runId": analyst_run_id, "entry": entry_ref,
+        "risk": max((net if net > 0 else width - abs(net)), 0.01),
+        "legs": [
+            {"symbol": long_leg["symbol"], "secType": "OPT", "qty": qty,
+             "avgFill": fill1, "multiplier": 100.0, "entryOrderId": o1["id"],
+             "origin": "adoption"},
+            {"symbol": short_leg["symbol"], "secType": "OPT", "qty": -qty,
+             "avgFill": fill2, "multiplier": 100.0, "entryOrderId": o2["id"],
+             "origin": "adoption"},
+        ],
+        "overnight": "app_managed", "overnightAck": True,
+        "policy": policy, "guardAccepted": True,
+    })
+    log.info("spread opened: %s %s/%s x%d net %+.2f (%s) -> position %s",
+             underlying, long_leg.get("strike"), short_leg.get("strike"), qty, net,
+             "debit" if net > 0 else "credit", pos["id"])
+    return pos
+
+
+def contextlib_suppress():
+    import contextlib
+    return contextlib.suppress(Exception)
+
+
+async def _note_on_run(eng, run_id: str | None, text: str) -> None:
+    """Append a note step to a finished analyst run (adoption fallbacks must be
+    visible where the plan was written, not only in the journal)."""
+    if not run_id:
+        return
+    import datetime as _dt
+
+    from ...models import TipAnalystRun
+    try:
+        async with eng.sf() as session:
+            row = await session.get(TipAnalystRun, run_id)
+            if row is None:
+                return
+            trace = list(row.trace or [])
+            trace.append({"seq": len(trace), "kind": "note", "text": text,
+                          "at": _dt.datetime.now(_dt.timezone.utc).isoformat()})
+            row.trace = trace
+            await session.commit()
+    except Exception:
+        log.debug("run note append failed for %s", run_id)
+
+
+async def resume_pending_adoptions(eng, *, days: float = 5.0) -> int:
+    """Restart safety (ARM-PLAN P2/F6): an approved tip proposal whose order was
+    still resting at shutdown gets its adopt-on-fill waiter re-armed on boot.
+    Idempotent — a proposal whose order already lives in a managed position is
+    skipped."""
+    import datetime as _dt
+
+    from sqlalchemy import select
+
+    from ...models import ManagedPositionRow, Proposal
+
+    cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
+    async with eng.sf() as session:
+        props = (await session.execute(
+            select(Proposal).where(Proposal.status == "executed",
+                                   Proposal.created_at >= cutoff))).scalars().all()
+        props = [p for p in props
+                 if (p.context or {}).get("techniqueId") == "tip" and p.order_id]
+        rows = (await session.execute(
+            select(ManagedPositionRow).where(ManagedPositionRow.technique == "tip",
+                                             ManagedPositionRow.created_at >= cutoff)
+        )).scalars().all()
+    adopted = {str(leg.get("entryOrderId"))
+               for r in rows for leg in (r.legs or []) if leg.get("entryOrderId")}
+    from ...approvals.proposals import proposal_dict
+    n = 0
+    for p in props:
+        if str(p.order_id) in adopted:
+            continue
+        asyncio.create_task(adopt_when_filled(eng, proposal_dict(p), {"id": p.order_id}),
+                            name=f"tip-adopt-resume-{p.id[:8]}")
+        n += 1
+    if n:
+        log.info("resumed %d pending tip adoption(s) after restart", n)
+    return n
 
 
 async def _order_row(eng, order_id: str) -> dict | None:
@@ -218,6 +414,9 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         await note(ev.TIP_POSITION_ADOPTED,
                    {"positionId": pos["id"], "policy": spec["policy"],
                     "fallback": f"analyst plan invalid: {exc}"})
+        await _note_on_run(eng, ctx.get("analystRunId"),
+                           f"Exit plan REJECTED by the position manager ({exc}) — the "
+                           f"position ({pos['id'][:8]}) runs the default 50/50 ladder instead.")
         return pos
     await note(ev.TIP_POSITION_ADOPTED,
                {"positionId": pos["id"], "policy": policy,

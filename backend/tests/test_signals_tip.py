@@ -348,3 +348,131 @@ def test_tip_plan_is_simulatable_by_shared_walkforward():
     assert out["filled"]
     assert out["outcome"] in ("tp1", "horizon")
     assert out["rMultiple"] > 0
+
+
+def test_scale_in_ladder_builds_multi_trigger_plan():
+    # ARM-PLAN P3: one trigger per rung, sizeFraction each, ONE shared stop
+    # beyond the deepest rung; a rung on the wrong side of price is dropped
+    bars = bars_with_support()
+    plan = build_tip_plan(symbol="NVDA", direction="long", reference_price=102.5,
+                          bars=bars, as_of_ms=NOW_MS, tip_stop=99.0,
+                          tip_targets=[105.0, 110.0], signal_id="sigsc1",
+                          scale_ins=[{"price": 101.5, "fraction": 0.5},
+                                     {"price": 100.5, "fraction": 0.5},
+                                     {"price": 103.9, "fraction": 0.5}])  # wrong side: dropped
+    assert len(plan.triggers) == 2
+    t1, t2 = plan.triggers
+    assert (t1.entry_price, t2.entry_price) == (101.5, 100.5)   # nearest rung first
+    assert t1.size_fraction == 0.5 and t2.size_fraction == 0.5
+    assert t1.stop_price == t2.stop_price == 99.0               # one campaign, one stop
+    assert t1.valid and t2.valid
+    d = t1.to_dict()
+    assert d["sizeFraction"] == 0.5                             # serialized for the armer
+    # single-trigger plans stay unchanged on the wire (EM untouched)
+    single = build_tip_plan(symbol="NVDA", direction="long", reference_price=102.5,
+                            bars=bars, as_of_ms=NOW_MS, tip_entry=101.0)
+    assert "sizeFraction" not in single.triggers[0].to_dict()
+
+
+def test_scale_in_short_side_and_shared_atr_stop():
+    bars = bars_with_support()
+    plan = build_tip_plan(symbol="NVDA", direction="short", reference_price=102.5,
+                          bars=bars, as_of_ms=NOW_MS,
+                          tip_targets=[98.0],
+                          scale_ins=[{"price": 103.5, "fraction": 0.4},
+                                     {"price": 104.5, "fraction": 0.6}])
+    assert len(plan.triggers) == 2
+    t1, t2 = plan.triggers
+    assert (t1.entry_price, t2.entry_price) == (103.5, 104.5)   # nearest first (short: lower)
+    assert t1.kind == "reject" and t2.kind == "reject"
+    assert t1.stop_price == t2.stop_price > 104.5               # ATR stop beyond the deepest rung
+
+
+def test_guards_evaluator_kinds():
+    # ARM-PLAN P4: the pure guard evaluator, one case per kind
+    from zargar.domain import Bar
+    from zargar.marketstructure.guards import evaluate_guards
+    mk = lambda ts, close: Bar(symbol="T", tf="1m", ts=ts, open=close, high=close + 0.1,
+                               low=close - 0.1, close=close, volume=0)
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    at = lambda h, m: int(_dt.datetime(2026, 8, 28, h, m, tzinfo=et).timestamp() * 1000)
+
+    closes = [100.0] * 8 + [101.0]
+    ok, why = evaluate_guards([{"kind": "ema_reclaim", "period": 8}], direction="long",
+                              bar=mk(at(10, 0), 101.0), closes=closes)
+    assert ok, why
+    ok, why = evaluate_guards([{"kind": "ema_reclaim", "period": 8}], direction="long",
+                              bar=mk(at(10, 0), 99.0), closes=[100.0] * 8 + [99.0])
+    assert not ok and "ema_reclaim" in why[0]
+
+    ok, _ = evaluate_guards([{"kind": "holds_above", "price": 640, "bars": 3}],
+                            direction="long", bar=mk(at(10, 0), 641.0),
+                            closes=[641.0, 642.0, 641.5])
+    assert ok
+    ok, why = evaluate_guards([{"kind": "holds_above", "price": 640, "bars": 3}],
+                              direction="long", bar=mk(at(10, 0), 641.0),
+                              closes=[639.0, 642.0, 641.0])
+    assert not ok
+
+    class _Q:
+        last = 645.0
+    ok, _ = evaluate_guards([{"kind": "guard_symbol", "symbol": "SPY", "op": ">=", "price": 640}],
+                            direction="long", bar=mk(at(10, 0), 100.0), closes=[100.0],
+                            quote_of=lambda s: _Q())
+    assert ok
+    ok, why = evaluate_guards([{"kind": "guard_symbol", "symbol": "SPY", "op": ">=", "price": 640}],
+                              direction="long", bar=mk(at(10, 0), 100.0), closes=[100.0],
+                              quote_of=None)
+    assert not ok and "unsupported" in why[0]       # replay degrade: watch-only
+
+    ok, why = evaluate_guards([{"kind": "time_at", "et": "09:45"}], direction="long",
+                              bar=mk(at(9, 40), 100.0), closes=[100.0])
+    assert not ok
+    ok, _ = evaluate_guards([{"kind": "time_at", "et": "09:45"}], direction="long",
+                            bar=mk(at(9, 45), 100.0), closes=[100.0])
+    assert ok
+    ok, why = evaluate_guards([{"kind": "astrology"}], direction="long",
+                              bar=mk(at(10, 0), 100.0), closes=[100.0])
+    assert not ok and "unsupported guard" in why[0]
+
+
+def test_guard_fired_plan_and_simulated_fill():
+    # conditions with NO level => a guard-fired ("timed") plan that enters at
+    # the close of the first bar where the guards open — live and replay agree
+    from zargar.marketstructure.outcome import simulate_plan
+    bars = bars_with_support()
+    plan = build_tip_plan(symbol="NVDA", direction="long", reference_price=102.5,
+                          bars=bars, as_of_ms=NOW_MS, tip_stop=99.0,
+                          tip_targets=[106.0, 110.0],
+                          guards=[{"kind": "time_at", "et": "09:45"}])
+    [t] = plan.triggers
+    assert t.kind == "timed" and t.entry_basis == "on_break"
+    assert t.guards == [{"kind": "time_at", "et": "09:45"}]
+    assert "guards" in t.to_dict()
+
+    # simulate: bars 09:30..: fill lands on the first >= 09:45 bar's close
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    from zargar.domain import Bar
+    et = ZoneInfo("America/New_York")
+    day = _dt.datetime(2026, 8, 28, 9, 30, tzinfo=et)
+    sim_bars = []
+    for i in range(40):
+        ts = int((day + _dt.timedelta(minutes=i)).timestamp() * 1000)
+        c = 102.0 + i * 0.2
+        sim_bars.append(Bar(symbol="NVDA", tf="1m", ts=ts, open=c, high=c + 0.3,
+                            low=c - 0.3, close=c, volume=100))
+    out = simulate_plan(sim_bars, 0, t.to_dict(), horizon=39)
+    assert out["filled"] and out["fillIndex"] == 15      # the 09:45 bar
+    assert out["entry"] == sim_bars[15].close            # entered at that close
+
+    # a guard that never opens => not filled, honestly labelled
+    plan2 = build_tip_plan(symbol="NVDA", direction="long", reference_price=102.5,
+                           bars=bars, as_of_ms=NOW_MS, tip_stop=99.0,
+                           tip_targets=[106.0],
+                           guards=[{"kind": "guard_symbol", "symbol": "SPY",
+                                    "op": ">=", "price": 640}])
+    out2 = simulate_plan(sim_bars, 0, plan2.triggers[0].to_dict(), horizon=39)
+    assert not out2["filled"] and "never opened" in out2["note"]

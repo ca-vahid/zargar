@@ -25,8 +25,13 @@ MIN = 60_000
 
 
 def _today_et(h: int, m: int) -> int:
+    """h:m ET on the most recent WEEKDAY — the tracker's session windows are
+    weekday-gated, so 'today' broke every fire assertion on weekends (found
+    Saturday 2026-08-29)."""
     from zargar.marketstructure.sessions import ET as REAL_ET
     now = dt.datetime.now(REAL_ET)
+    while now.weekday() >= 5:
+        now -= dt.timedelta(days=1)
     return int(now.replace(hour=h, minute=m, second=0, microsecond=0).timestamp() * 1000)
 
 
@@ -622,3 +627,188 @@ async def test_unverified_signal_cannot_arm(tip_rig):
         await session.commit()
     with pytest.raises(ValueError, match="verified"):
         await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+
+async def test_handoff_runs_the_analyst_exit_plan(tip_rig):
+    # ARM-PLAN P2 (one exit authority): a REAL-portfolio armed fill runs the
+    # ANALYST'S exit campaign; the default 50/50 ladder is only the fallback
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    from zargar.models import Signal
+    async with eng.sf() as session:
+        row = await session.get(Signal, sid)
+        row.extraction = {**(row.extraction or {}), "analyst": {
+            "verdict": "take", "runId": "an-run-1",
+            "exit_targets": [101.0, 104.0, 107.0], "exit_fractions": [0.4, 0.4, 0.2],
+            "underlying_stop": 98.5, "max_hold_sessions": 6,
+            "exit_rationale": "trim into strength, runner rides"}}
+        await session.commit()
+    snap = await eng.tip_runner.arm_signal(sid, {
+        "portfolioId": sim["id"], "mode": "auto", "instrument": "shares",
+        "qty": 5, "dailyLossLimit": 200.0})
+    run_id = snap["runId"]
+
+    await _quote(eng, 99.6)
+    day = snap["planFor"]
+    from zargar.marketstructure.sessions import ET as REAL_ET
+    y, m, d = (int(x) for x in day.split("-"))
+    ts0 = int(dt.datetime(y, m, d, 10, 0, tzinfo=REAL_ET).timestamp() * 1000)
+    if snap.get("lastBarTs"):
+        ts0 = max(ts0, int(snap["lastBarTs"]) + MIN)
+    await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0, open=100.0,
+                                            high=100.2, low=99.8, close=100.0, volume=0))
+    await _quote(eng, 99.5)
+    s2 = await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0 + MIN,
+                                                 open=99.8, high=99.9, low=99.4,
+                                                 close=99.6, volume=0))
+    assert s2["triggers"][0]["status"] == "fired"
+    for _ in range(6):
+        await _quote(eng, 99.5)
+
+    async def handed_off():
+        pos = [p for p in eng.position_manager.positions()
+               if p.get("technique") == "tip" and p.get("runId") == run_id]
+        return pos[0] if pos else None
+    pos = await wait_for(handed_off, timeout=15)
+    assert pos["policy"]["ladder"] == {"targets": [101.0, 104.0, 107.0],
+                                       "fractions": [0.4, 0.4, 0.2]}
+    assert pos["policy"]["stop"] == {"kind": "fixed", "price": 98.5}
+    assert pos["policy"]["time_stop_sessions"] == 6
+    assert "exit:analyst:an-run-1" in pos["tags"]
+
+
+async def test_shadow_handoff_keeps_standard_ladder(tip_rig):
+    # the ARMED shadow book stays on the comparable 50/50 ladder even when an
+    # analyst plan exists (scorecard comparability decision, ARM-PLAN P2)
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    from zargar.models import Signal
+    async with eng.sf() as session:
+        row = await session.get(Signal, sid)
+        row.extraction = {**(row.extraction or {}), "analyst": {
+            "verdict": "take", "runId": "an-run-2",
+            "exit_targets": [110.0], "exit_fractions": [1.0],
+            "underlying_stop": 97.0}}
+        await session.commit()
+    snap = await eng.tip_runner.arm_shadow(sid)
+    run_id = snap["runId"]
+    await _quote(eng, 99.6)
+    day = snap["planFor"]
+    from zargar.marketstructure.sessions import ET as REAL_ET
+    y, m, d = (int(x) for x in day.split("-"))
+    ts0 = int(dt.datetime(y, m, d, 10, 0, tzinfo=REAL_ET).timestamp() * 1000)
+    if snap.get("lastBarTs"):
+        ts0 = max(ts0, int(snap["lastBarTs"]) + MIN)
+    await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0, open=100.0,
+                                            high=100.2, low=99.8, close=100.0, volume=0))
+    await _quote(eng, 99.5)
+    await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0 + MIN,
+                                            open=99.8, high=99.9, low=99.4,
+                                            close=99.6, volume=0))
+    for _ in range(6):
+        await _quote(eng, 99.5)
+
+    async def handed_off():
+        pos = [p for p in eng.position_manager.positions()
+               if p.get("technique") == "tip" and p.get("runId") == run_id]
+        return pos[0] if pos else None
+    pos = await wait_for(handed_off, timeout=15)
+    # NOT the analyst's plan: the book runs the standard ladder for comparability
+    assert pos["policy"]["ladder"]["fractions"] == [0.5]
+    assert pos["policy"]["stop"]["price"] == 98.0
+    assert "exit:default" in pos["tags"]
+
+
+async def test_scale_in_two_rungs_one_position(tip_rig):
+    # ARM-PLAN P3 end-to-end: two rungs fire on different bars; the second fill
+    # JOINS the first position (legs accumulate, entry re-averages)
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {
+        "portfolioId": sim["id"], "mode": "auto", "instrument": "shares",
+        "qty": 4, "dailyLossLimit": 500.0,
+        # distinct rung sizes: back-to-back identical orders would trip the
+        # risk gate's duplicate window (same symbol|side|qty|type within 10s)
+        "entryLadder": [{"price": 99.5, "fraction": 0.5},
+                        {"price": 99.0, "fraction": 0.25}],
+        "allowAnyEntry": True})
+    run_id = snap["runId"]
+    trigs = snap["triggers"]
+    assert len(trigs) == 2
+    assert [t["entry"] for t in trigs] == [99.5, 99.0]
+
+    await _quote(eng, 99.8)
+    day = snap["planFor"]
+    from zargar.marketstructure.sessions import ET as REAL_ET
+    y, m, d = (int(x) for x in day.split("-"))
+    ts0 = int(dt.datetime(y, m, d, 10, 0, tzinfo=REAL_ET).timestamp() * 1000)
+    if snap.get("lastBarTs"):
+        ts0 = max(ts0, int(snap["lastBarTs"]) + MIN)
+    # rung 1 touches (low 99.45 — inside rung1's band, above rung2's)
+    await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0, open=99.9,
+                                            high=100.0, low=99.45, close=99.7, volume=0))
+    for _ in range(6):
+        await _quote(eng, 99.5)
+
+    async def one_leg():
+        pos = [p for p in eng.position_manager.positions()
+               if p.get("technique") == "tip" and p.get("runId") == run_id]
+        return pos[0] if pos and len(pos[0]["legs"]) == 1 else None
+    pos1 = await wait_for(one_leg, timeout=15)
+    assert abs(pos1["legs"][0]["qty"]) == 2               # 4 shares x 0.5 fraction
+
+    # rung 2 touches on a later bar
+    await _quote(eng, 99.0)
+    await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0 + MIN, open=99.4,
+                                            high=99.5, low=98.95, close=99.1, volume=0))
+    for _ in range(6):
+        await _quote(eng, 99.0)
+
+    async def two_legs():
+        pos = [p for p in eng.position_manager.positions()
+               if p.get("technique") == "tip" and p.get("runId") == run_id]
+        return pos[0] if pos and len(pos[0]["legs"]) == 2 else None
+    pos2 = await wait_for(two_legs, timeout=15)
+    # ONE position: combined size, re-averaged entry between the rungs
+    assert sum(abs(l["qty"]) for l in pos2["legs"]) == 3   # 2 (50%) + 1 (25%)
+    assert 99.0 < pos2["entry"] < 100.0
+    # still exactly one managed position for the run
+    assert len([p for p in eng.position_manager.positions()
+                if p.get("runId") == run_id]) == 1
+
+
+async def test_guarded_trigger_stays_dormant_until_condition_opens(tip_rig):
+    # ARM-PLAN P4 live: a holds_above guard keeps the trigger blind to a touch;
+    # once the guard opens, the same touch fires
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {
+        "portfolioId": sim["id"], "mode": "alert", "instrument": "shares", "qty": 2,
+        "entryGuards": [{"kind": "holds_above", "price": 99.2, "bars": 2}],
+        "allowAnyEntry": True})
+    run_id = snap["runId"]
+    day = snap["planFor"]
+    from zargar.marketstructure.sessions import ET as REAL_ET
+    y, m, d = (int(x) for x in day.split("-"))
+    ts0 = int(dt.datetime(y, m, d, 10, 0, tzinfo=REAL_ET).timestamp() * 1000)
+    if snap.get("lastBarTs"):
+        ts0 = max(ts0, int(snap["lastBarTs"]) + MIN)
+    # touch bars, but closes sit BELOW the guard price: dormant
+    s1 = await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0, open=99.1,
+                                                 high=99.6, low=99.4, close=99.1, volume=0))
+    assert s1["triggers"][0]["status"] == "waiting"
+    s2 = await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0 + MIN, open=99.1,
+                                                 high=99.6, low=99.45, close=99.15, volume=0))
+    assert s2["triggers"][0]["status"] == "waiting"     # still dormant
+    # two closes above the guard price, then the touch fires
+    await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0 + 2 * MIN, open=99.2,
+                                            high=99.8, low=99.25, close=99.5, volume=0))
+    s4 = await eng.tip_runner.on_bar(run_id, Bar(symbol="TEST", tf="1m", ts=ts0 + 3 * MIN, open=99.5,
+                                                 high=99.6, low=99.45, close=99.4, volume=0))
+    assert s4["triggers"][0]["status"] == "fired"
+    # the dormancy was journaled once
+    from sqlalchemy import select as _sel
+    from zargar.models import Event
+    async with eng.sf() as session:
+        rows = (await session.execute(
+            _sel(Event.payload).where(Event.type == "TechniquePlanTriggerSkipped"))).scalars().all()
+    assert any(r.get("event") == "guarded" and r.get("runId") == run_id for r in rows)

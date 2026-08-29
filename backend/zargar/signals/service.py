@@ -1026,11 +1026,53 @@ class SignalService:
                                                      "quantity", "rationale")},
                         aggregate_type="signal", aggregate_id=row.id)
                     eng.bus.publish(topics.SIGNALS, signal_dict(row))
-            if status == "verified":
+            # ---- lane decision (ARM-PLAN P1): a take that says at_level ARMS a
+            # plan waiting for the analyst's price instead of proposing at market
+            armed = None
+            op = (row.extraction or {}).get("analyst") or {}
+            wants_arm = (op.get("verdict") == "take" and op.get("entry_mode") == "at_level"
+                         and status in ("verified", "parked")
+                         and getattr(eng, "tip_runner", None) is not None)
+            if wants_arm:
+                try:
+                    armed = await eng.tip_runner.arm_from_analyst(row, op, policy)
+                    async with eng.sf() as session:      # link the arm onto the opinion
+                        db_row = await session.get(Signal, row.id)
+                        db_row.extraction = {**(db_row.extraction or {}),
+                                             "analyst": {**op, "armedRunId": armed.get("runId")}}
+                        await session.commit()
+                        row = db_row
+                    armed_mode = (armed.get("config") or {}).get("mode") or armed.get("mode")
+                    await eng.journal.append(
+                        ev.TIP_LANE_DECIDED,
+                        {"signalId": row.id, "lane": "arm", "mode": armed_mode,
+                         "armedRunId": armed.get("runId"),
+                         "entryLevel": op.get("entry_level")},
+                        aggregate_type="signal", aggregate_id=row.id)
+                    istep("handoff",
+                          f"{row.ticker}: analyst chose AT-LEVEL — armed a plan waiting for "
+                          f"{op.get('entry_level') or row.entry_price} "
+                          f"({armed_mode} mode, run {str(armed.get('runId'))[:8]}). "
+                          f"No tip-time proposal.", ticker=row.ticker,
+                          armedRunId=armed.get("runId"))
+                    eng.bus.publish(topics.SIGNALS, signal_dict(row))
+                except Exception as exc:
+                    log.exception("analyst arm failed for %s — falling back to the proposal lane",
+                                  row.id)
+                    istep("note", f"{row.ticker}: at-level arm failed ({exc}) — "
+                                  "falling back to the proposal lane.")
+                    armed = None
+            if status == "verified" and armed is None:
                 # proposals need an explicit call (status "shadow" never proposes)
                 if (eng.proposals is not None and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
                     proposal = await eng.proposals.create_from_signal(row, sig, verification)
+                    if proposal is not None and op:
+                        await eng.journal.append(
+                            ev.TIP_LANE_DECIDED,
+                            {"signalId": row.id, "lane": "proposal",
+                             "entryMode": op.get("entry_mode") or "now"},
+                            aggregate_type="signal", aggregate_id=row.id)
                 # full auto: a "take" from the analyst self-approves the proposal —
                 # same path a human click takes (RiskGate inside OrderManager.place).
                 # A live portfolio additionally needs techniques.tip.allow_live_auto.
@@ -1052,7 +1094,7 @@ class SignalService:
                         except Exception:
                             log.exception("auto-approve failed for proposal %s", proposal["id"])
             out.append({"signal": signal_dict(row), "proposal": proposal,
-                        "shadowOrder": shadow_order})
+                        "armed": armed, "shadowOrder": shadow_order})
         return out
 
     @staticmethod
@@ -1150,6 +1192,39 @@ class SignalService:
         expression: dict = {"vehicle": "shares"}
 
         try:
+            # stated 2-leg spread (ARM-PLAN P5): the immediate book expresses it
+            # as the defined-risk pair, leg-sequenced like the real lane
+            sig_legs = ((signal_row.extraction or {}).get("signal") or {}).get("legs") or []
+            if len(sig_legs) == 2:
+                from ..techniques.tip.express import pick_spread
+                pick = await pick_spread(
+                    eng, symbol=sig.ticker.upper(), legs=sig_legs,
+                    expiry=signal_row.expiry,
+                    dte_min=policy.dte_min, dte_max=policy.dte_max)
+                if pick.get("available"):
+                    from ..techniques.tip.lifecycle import open_spread
+                    for leg in pick["legs"]:
+                        await eng.ensure_symbol(leg["symbol"])
+                    net, width = float(pick["net"]), float(pick["width"])
+                    max_loss = net if net > 0 else max(width - abs(net), 0.01)
+                    qty = max(1, int(policy.budget_per_tip // (max_loss * 100)))
+                    expression.update({"vehicle": "spread", "qty": qty, "net": net,
+                                       "legs": [l["symbol"] for l in pick["legs"]],
+                                       "warnings": pick.get("warnings") or []})
+                    await self._record_expression(signal_row.id, expression)
+                    try:
+                        pos = await open_spread(
+                            eng, portfolio_id=shadow["id"],
+                            underlying=sig.ticker.upper(), direction=sig.direction,
+                            legs=pick["legs"], qty=qty, source=source,
+                            signal_id=signal_row.id)
+                        return {"positionId": pos["id"], "spread": True}
+                    except Exception as exc:
+                        expression["fallback"] = f"spread shadow failed: {exc}"
+                        await self._record_expression(signal_row.id, expression)
+                        # falls through to the single-leg expression below
+                else:
+                    expression["fallback"] = f"spread: {pick.get('error')}"
             if tip_is_option(signal_row):
                 targets = ((signal_row.extraction or {}).get("signal") or {}).get("target_prices") \
                     or ([sig.target_price] if sig.target_price else [])
@@ -1243,10 +1318,16 @@ class SignalService:
                 await session.commit()
 
     # ------------------------------------------------------------- tip plans
-    async def build_tip_plan_for(self, signal_id: str) -> dict:
+    async def build_tip_plan_for(self, signal_id: str, *,
+                                 entry_override: float | None = None,
+                                 force_level_touch: bool = False,
+                                 scale_ins: list[dict] | None = None,
+                                 guards: list[dict] | None = None) -> dict:
         """Signal → the tip SessionPlan the runner will arm (preview; no side
         effects). Verified and parked signals both plan — parked is exactly the
-        case where the plan waits at the level."""
+        case where the plan waits at the level. `entry_override` is the
+        analyst's chosen level (ARM-PLAN P1); `force_level_touch` makes an
+        analyst-armed tip wait for the level even on a tip_time source."""
 
         from ..marketstructure.history import fetch_window
         from ..techniques.tip import build_tip_plan
@@ -1280,14 +1361,29 @@ class SignalService:
         if not ref:
             raise ValueError(f"no price for {row.ticker}")
         extraction_sig = (row.extraction or {}).get("signal") or {}
+        # scale-in / zone entries (ARM-PLAN P3): an explicit ladder from the
+        # caller (the analyst) wins; else the tip's own stated ladder; else a
+        # stated entry ZONE becomes a 2-rung ladder (near edge first)
+        if scale_ins is None:
+            stated_ladder = extraction_sig.get("scale_in") or []
+            if stated_ladder:
+                scale_ins = stated_ladder
+            else:
+                lo = extraction_sig.get("entry_zone_low")
+                hi = extraction_sig.get("entry_zone_high")
+                if lo and hi and float(lo) < float(hi):
+                    near, far = ((float(hi), float(lo)) if row.direction == "long"
+                                 else (float(lo), float(hi)))
+                    scale_ins = [{"price": near, "fraction": 0.5},
+                                 {"price": far, "fraction": 0.5}]
         plan = build_tip_plan(
             symbol=row.ticker,
             direction=row.direction,
             reference_price=float(ref),
             bars=bars,
             as_of_ms=now_ms,
-            entry_mode=policy.entry,
-            tip_entry=row.entry_price,
+            entry_mode="level_touch" if force_level_touch else policy.entry,
+            tip_entry=(float(entry_override) if entry_override else row.entry_price),
             tip_stop=row.stop_price,
             tip_targets=extraction_sig.get("target_prices")
             or ([row.target_price] if row.target_price else []),
@@ -1298,6 +1394,9 @@ class SignalService:
             source=row.source_name,
             thesis=row.thesis_summary or "",
             instrument_hint=row.instrument,
+            scale_ins=scale_ins,
+            guards=(guards if guards is not None
+                    else extraction_sig.get("entry_conditions") or None),
         )
         return plan.to_dict()
 

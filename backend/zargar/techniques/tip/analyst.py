@@ -48,6 +48,29 @@ class AnalystOpinion(BaseModel):
         default=None, description="One sentence: what kills the idea (level/premium/date)")
     rationale: str = Field(description="2-3 sentences: why this verdict and this expression")
     confidence: float = Field(default=0.5, description="0..1")
+    # --- entry timing (a take chooses WHEN, not just what — ARM-PLAN P1) -------
+    entry_mode: str = Field(
+        default="now", description='"now" = buy immediately (proposal at your limit); '
+                                   '"at_level" = ARM a plan that waits for entry_level')
+    entry_level: Optional[float] = Field(
+        default=None, description="UNDERLYING price to wait for when entry_mode is "
+                                  "at_level (defaults to the tip's own entry)")
+    entry_note: Optional[str] = Field(
+        default=None, description="One sentence: why now / why wait")
+    entry_levels: list[float] = Field(
+        default_factory=list,
+        description="SCALE-IN: underlying prices to buy at, nearest first (with "
+                    "entry_mode=at_level). Empty = the single entry_level.")
+    entry_fractions: list[float] = Field(
+        default_factory=list,
+        description="Fraction of the size at each entry level; sums to <= 1")
+    entry_conditions: list[dict] = Field(
+        default_factory=list,
+        description='CONDITIONS gating the entry (with entry_mode=at_level): guard docs like '
+                    '{"kind": "ema_reclaim", "period": 8}, {"kind": "holds_above", "price": 640, '
+                    '"bars": 3}, {"kind": "guard_symbol", "symbol": "SPY", "op": ">=", "price": 640}, '
+                    '{"kind": "time_at", "et": "09:45"}. With conditions but NO entry_level the plan '
+                    'enters at the close of the first bar where they all pass.')
     # --- the exit campaign (required on a take; the position manager runs it) ---
     exit_targets: list[float] = Field(
         default_factory=list,
@@ -65,6 +88,14 @@ class AnalystOpinion(BaseModel):
         default=None, description="Time box in TRADING sessions; re-evaluate dies with it")
     exit_rationale: Optional[str] = Field(
         default=None, description="One sentence: the exit campaign in words")
+    legs: list[dict] = Field(
+        default_factory=list,
+        description='DEFINED-RISK SPREAD expression (exactly 2 legs, one buy one sell, '
+                    'same type): [{"action": "buy", "type": "call", "strike": 340}, '
+                    '{"action": "sell", "type": "call", "strike": 360}]. Empty for '
+                    'single-leg trades. Never a lone short leg.')
+    legs_expiry: Optional[str] = Field(
+        default=None, description="Shared expiry (YYYY-MM-DD) for the spread legs")
 
 
 TOOLS = [
@@ -185,7 +216,19 @@ get_open_tips = tips already on the desk — is this an update, an add, a hedge?
 - When the tip names an exact contract, prefer it verbatim unless the market says it is \
 untradeable — and say why when you deviate.
 - verdict "take" = trade it (contract, limit, quantity AND your exit plan). "watch" = \
-right idea, wrong moment. "skip" = stale, incoherent, or the market contradicts it.
+right idea but nothing to do yet. "skip" = stale, incoherent, or the market contradicts it.
+- ENTRY MODE — a take also chooses WHEN. entry_mode "now" buys immediately (a proposal \
+at your limit). entry_mode "at_level" ARMS a plan that waits for entry_level on the \
+underlying and fires only when price actually trades there (1m bars; the plan dies with \
+the tip's horizon/contract). Choose "at_level" when the tip says wait for a retest, when \
+price is extended past the stated entry, or when chasing would break your rules — a \
+PARKED tip (price already ran away) is almost always "at_level". Set entry_level to the \
+price you would pay; it defaults to the tip's own entry. You may also SCALE IN: \
+entry_levels + entry_fractions ("half at 22.60, half at 22.10") arm one rung per level \
+sharing a single stop and one exit campaign — use it for zones and accumulation tips. \
+And you may set entry_conditions ("if it reclaims the 8EMA", "while SPY holds 640", \
+"at 09:45 ET"): the plan stays dormant until every condition passes; with conditions \
+and no entry_level it enters at the first bar where they open.
 - EXIT PLAN — required on every take. You manage the position after the fill, so plan \
 the whole campaign now: exit_targets = UNDERLYING prices where you trim, exit_fractions \
 = how much at each (sell in pieces at opportune levels, never all-or-nothing on size), \

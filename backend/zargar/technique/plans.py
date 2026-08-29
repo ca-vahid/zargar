@@ -66,6 +66,12 @@ class Trigger:
     notes: str = ""
     assessment: dict = field(default_factory=dict)   # grade/score/strengths/cautions
     risk_reward_tp3: float = 0.0     # the book's figure: to the final target
+    # scale-in plans (tips, ARM-PLAN P3): this trigger's share of the plan's
+    # total size. 1.0 = the whole size (every single-trigger plan; all of EM).
+    size_fraction: float = 1.0
+    # conditional entries (tips, ARM-PLAN P4): guard documents evaluated by
+    # marketstructure.guards — bars reach the tracker only while all pass.
+    guards: list[dict] = field(default_factory=list)
 
     @property
     def risk(self) -> float:
@@ -87,6 +93,10 @@ class Trigger:
             "assessment": self.assessment,
             "setupType": {"bounce": "support_bounce", "breakout": "breakout", "wedge_break": "falling_wedge",
                           "reject": "resistance_reject", "breakdown": "breakdown"}.get(self.kind, self.kind),
+            # only scale-in / guarded plans carry the keys (EM dicts unchanged)
+            **({"sizeFraction": round(self.size_fraction, 4)}
+               if self.size_fraction != 1.0 else {}),
+            **({"guards": list(self.guards)} if self.guards else {}),
         }
 
 

@@ -160,13 +160,11 @@ The armed path (level-touch plans via `TipRunner`) keeps its own handoff
 
 ## 8. Known gaps (found in the 2026-08-28 review pass)
 
-- **Adopt-on-fill does not survive a restart**: the waiter is an in-process
-  task; an approved-but-unfilled order at shutdown never becomes a managed
-  position. Mitigation for now: proposals expire in ~30 min and practice fills
-  are immediate. Fix path: persist pending adoptions and re-arm them in
-  `attach_tip_runner` (like armed-plan restore).
-- **A6 (armed-path unification) still open**: level-touch armed tips hand off
-  with the fixed 50/50 ladder, not the analyst's plan.
+- ~~Adopt-on-fill does not survive a restart~~ **FIXED 2026-08-29**
+  (`lifecycle.resume_pending_adoptions`, called from `attach_tip_runner`).
+- ~~A6 (armed-path unification)~~ **CLOSED 2026-08-29** (ARM-PLAN P2): real
+  armed fills run the analyst's exit plan; shadow books keep the standard
+  ladder for scorecard comparability.
 - ~~Mirror stores CDN image URLs, not bytes~~ **FIXED 2026-08-29**: images are
   downloaded at mirror time (while the links are still signed) into
   `backend/discord_media/` (gitignored), recorded on the row

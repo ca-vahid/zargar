@@ -21,9 +21,9 @@ from ...domain import Bar
 from ...marketstructure import atr, detect_levels, nearest_level, next_session_date, session_bounds, session_date
 from ...technique.plans import Condition, SessionPlan, Trigger
 
-# The tip exit ladder (mirrored in the handoff's managed-position policy):
-# 50/50 across the first two targets.
-TIP_LADDER = (0.5, 0.5)
+# The RR arithmetic below assumes the technique's STANDARD exit ladder —
+# 50/50 across the first two targets. The single executable source of that
+# ladder is `lifecycle.DEFAULT_TIP_FRACTIONS`; change one, change both.
 
 
 def _fallback_atr(bars: list[Bar], reference_price: float) -> float:
@@ -50,6 +50,8 @@ def build_tip_plan(
     thesis: str = "",
     instrument_hint: str = "unspecified",
     confidence: float = 0.5,
+    scale_ins: list[dict] | None = None,   # [{price, fraction}] — multi-rung entry (ARM-PLAN P3)
+    guards: list[dict] | None = None,      # guard docs gating the entry (ARM-PLAN P4)
 ) -> SessionPlan:
     if direction not in ("long", "short"):
         raise ValueError(f"direction must be long|short, got {direction!r}")
@@ -61,6 +63,12 @@ def build_tip_plan(
     a = _fallback_atr(bars, reference_price)
     levels = detect_levels(bars, timeframe=tf) if len(bars) >= 3 else []
     notes: list[str] = []
+    guards = list(guards or [])
+    # guard-fired entry (ARM-PLAN P4): conditions but NO level and no ladder —
+    # "buy when it reclaims the 8EMA" / "at tomorrow's open" — enter at the
+    # close of the first bar whose guards all pass
+    guard_fired = bool(guards) and tip_entry is None and not scale_ins \
+        and entry_mode != "tip_time"
 
     # --- entry -----------------------------------------------------------------
     breakout = False
@@ -94,6 +102,12 @@ def build_tip_plan(
             level = None
             notes.append(f"breakout entry from the tip itself "
                          f"({'above' if long else 'below'} current price — fires on the close through)")
+        elif guard_fired:
+            entry = reference_price
+            basis = "on_break"
+            level = None
+            notes.append("guard-fired entry: enters at the close of the first bar "
+                         "whose conditions all pass")
         elif level is not None:
             entry = float(level.price)
             notes.append(f"entry at the nearest {'support' if long else 'resistance'} "
@@ -145,6 +159,7 @@ def build_tip_plan(
     # a breakout-side tip level rides breakout/breakdown (close through +
     # confirmation); tip-time keeps the neutral kind (simulate-only immediate fill)
     kind = ("tip" if entry_mode == "tip_time"
+            else "timed" if guard_fired
             else (("breakout" if long else "breakdown") if breakout
                   else ("bounce" if long else "reject")))
     trigger = Trigger(
@@ -169,12 +184,65 @@ def build_tip_plan(
         no_trade_reasons=no_trade,
         notes="; ".join(notes),
         risk_reward_tp3=round(rr_last, 2),
+        guards=guards,
     )
 
+    triggers = [trigger]
+    # --- scale-in ladder (ARM-PLAN P3): one trigger per rung, each with its
+    # size fraction; ONE shared stop beyond the deepest rung, one campaign.
+    # Rungs on the wrong side of price are dropped (a chase is not a rung).
+    if scale_ins and entry_mode != "tip_time":
+        rungs: list[tuple[float, float]] = []
+        for r in scale_ins[:4]:
+            px = float((r or {}).get("price") or 0)
+            frac = float((r or {}).get("fraction") or 0) or round(1.0 / len(scale_ins), 4)
+            ok_side = px <= reference_price * 1.001 if long else px >= reference_price * 0.999
+            if px > 0 and ok_side:
+                rungs.append((px, frac))
+        if rungs:
+            rungs.sort(key=lambda x: (-x[0] if long else x[0]))   # nearest rung first
+            deepest = rungs[-1][0]
+            deep_stop_ok = tip_stop is not None and (tip_stop < deepest if long else tip_stop > deepest)
+            stop2 = float(tip_stop) if deep_stop_ok else deepest - sgn * stop_atr_mult * a
+            triggers = []
+            for i, (px, frac) in enumerate(rungs):
+                risk_i = sgn * (px - stop2)
+                stated_i = [t for t in targets if (t > px if long else t < px)] or list(targets)
+                tgt_i = [{"price": round(t, 4), "label": f"TP{j + 1}"}
+                         for j, t in enumerate(stated_i)]
+                exits_i = stated_i[:2]
+                wexit = sum(exits_i) / len(exits_i)
+                triggers.append(Trigger(
+                    id=f"tip-{(signal_id or 'manual')[:12]}-{i + 1}",
+                    kind="bounce" if long else "reject", direction=direction,
+                    level_price=px,
+                    level={"price": round(px, 4), "kind": "tip", "touches": 0, "sources": ["TIP"]},
+                    entry_price=round(px, 4), entry_basis="at_level",
+                    stop_price=round(stop2, 4),
+                    stop_reference="tip" if deep_stop_ok else f"atr_x{stop_atr_mult:g}",
+                    targets=tgt_i,
+                    risk_reward=round(sgn * (wexit - px) / risk_i, 2) if risk_i > 0 else 0.0,
+                    conditions=conditions,
+                    void_if=[f"not filled within {horizon_sessions} sessions"],
+                    confluences=[], confidence=float(confidence), rules=["TIP.1", "TIP.2"],
+                    valid=risk_i > 0 and bool(stated_i),
+                    no_trade_reasons=[] if (risk_i > 0 and stated_i) else ["degenerate rung"],
+                    notes=f"scale-in rung {i + 1}/{len(rungs)} ({int(round(frac * 100))}%)",
+                    risk_reward_tp3=round(sgn * (stated_i[-1] - px) / risk_i, 2) if risk_i > 0 else 0.0,
+                    size_fraction=frac,
+                    guards=guards,
+                ))
+            notes.append("scale-in ladder: "
+                         + ", ".join(f"{int(round(f * 100))}% @ {p:g}" for p, f in rungs))
+
     # a tip armed after the close plans for the NEXT session — a plan for a
-    # session that is already over would expire the moment it armed
+    # session that is already over would expire the moment it armed; a tip
+    # armed on a WEEKEND plans for Monday (found Saturday 2026-08-29: the plan
+    # targeted Saturday itself, which the tracker's weekday gate can never fire)
+    import datetime as _dt
     plan_day = session_date(as_of_ms)
-    if as_of_ms >= session_bounds(plan_day)[1]:
+    if as_of_ms >= session_bounds(plan_day)[1] \
+            or _dt.date.fromisoformat(plan_day).weekday() >= 5:
         plan_day = next_session_date(as_of_ms)
 
     return SessionPlan(
@@ -189,7 +257,7 @@ def build_tip_plan(
         context={"technique": "tip", "source": who, "signalId": signal_id,
                  "instrumentHint": instrument_hint, "entryMode": entry_mode,
                  "horizonSessions": horizon_sessions},
-        triggers=[trigger],
+        triggers=triggers,
         invalidations=[{"rule": "TIP.2", "text": f"expires after {horizon_sessions} sessions"}],
         gap_policy={"policy": "ignore", "rule": "TIP",
                     "note": "tips carry no gap rule — the level either fills or it doesn't"},

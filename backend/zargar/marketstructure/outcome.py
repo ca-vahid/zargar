@@ -107,13 +107,55 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
                 "hits": [], "note": "invalid plan (stop above entry or no targets)"}
 
     # --- fill ------------------------------------------------------------------
-    if plan["entry"].get("basis") == "on_break":
-        fill_i = start
+    # conditional / timed entries (ARM-PLAN P4): the same guard documents the
+    # live armer evaluates gate the fill here — change one, change both
+    guards = plan.get("guards") or []
+    timed = plan.get("kind") == "timed"
+
+    def _guards_ok(i: int) -> bool:
+        if not guards:
+            return True
+        from .guards import evaluate_guards
+        closes = [b.close for b in bars[max(0, i - 119):i + 1]]
+        ok, _ = evaluate_guards(guards, direction=str(plan.get("direction") or "long"),
+                                bar=bars[i], closes=closes, quote_of=None)
+        return ok
+
+    if timed:
+        fill_i = next((i for i in range(start, min(len(bars), start + horizon + 1))
+                       if _guards_ok(i)), None)
+        if fill_i is None:
+            done = (len(bars) - 1) >= start + horizon
+            return {**base, "filled": False, "fillTs": None, "fillIndex": None,
+                    "outcome": "not_filled", "rMultiple": 0.0, "mfeR": 0.0, "maeR": 0.0,
+                    "barsHeld": 0, "resolved": done, "hits": [],
+                    "note": "the timed/guarded entry never opened"}
+        entry = float(bars[fill_i].close)            # timed = enter at that close
+        risk = (stop - entry) if short else (entry - stop)
+        base["entry"] = entry
+        if risk <= 0:
+            return {**base, "filled": False, "fillTs": None, "fillIndex": None,
+                    "outcome": "not_filled", "rMultiple": 0.0, "mfeR": 0.0, "maeR": 0.0,
+                    "barsHeld": 0, "resolved": True, "hits": [],
+                    "note": "timed fill landed beyond the stop — no trade"}
+    elif plan["entry"].get("basis") == "on_break":
+        if guards:
+            fill_i = next((i for i in range(start, min(len(bars), start + horizon + 1))
+                           if _guards_ok(i)), None)
+            if fill_i is None:
+                done = (len(bars) - 1) >= start + horizon
+                return {**base, "filled": False, "fillTs": None, "fillIndex": None,
+                        "outcome": "not_filled", "rMultiple": 0.0, "mfeR": 0.0,
+                        "maeR": 0.0, "barsHeld": 0, "resolved": done, "hits": [],
+                        "note": "guards never opened within the horizon"}
+        else:
+            fill_i = start
     else:
         fill_i = None
         last_i = min(len(bars) - 1, start + entry_window)
         for i in range(start + 1, last_i + 1):
-            if (bars[i].high >= entry) if short else (bars[i].low <= entry):
+            touched = (bars[i].high >= entry) if short else (bars[i].low <= entry)
+            if touched and _guards_ok(i):
                 fill_i = i
                 break
         if fill_i is None:
@@ -121,7 +163,8 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
             return {**base, "filled": False, "fillTs": None, "fillIndex": None, "outcome": "not_filled",
                     "rMultiple": 0.0, "mfeR": 0.0, "maeR": 0.0, "barsHeld": 0,
                     "resolved": window_done, "hits": [],
-                    "note": ("price never traded down to the entry within the window" if window_done
+                    "note": ("price never traded down to the entry within the window"
+                             + (" (or the guards never opened)" if guards else "") if window_done
                              else "entry window still open")}
 
     # --- walk forward --------------------------------------------------------------

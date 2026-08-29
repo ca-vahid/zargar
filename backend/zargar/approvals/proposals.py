@@ -42,6 +42,36 @@ def proposal_dict(p: Proposal) -> dict:
     }
 
 
+def build_exit_plan_spread(signal_row, sig, analyst: dict, policy) -> dict:
+    """The spread's exit context: hold cap + analyst campaign when present
+    (credit spreads run the engine's credit-target policy regardless)."""
+    from ..techniques.tip.lifecycle import build_exit_plan
+    return build_exit_plan(signal_row, sig, analyst or {}, policy)
+
+
+def _ttl_expiry(ttl_min: int, now: dt.datetime | None = None) -> dt.datetime:
+    """Proposal expiry that respects the clock (ARM-PLAN P1/F9): during regular
+    hours it is now+TTL; off-hours (evening, weekend, pre-open) the countdown
+    starts at the NEXT session open, so an overnight take is still standing when
+    the market can actually act on it."""
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    now_utc = now or dt.datetime.now(dt.timezone.utc)
+    now_et = now_utc.astimezone(et)
+    open_t = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    close_t = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+    if now_et.weekday() < 5 and open_t <= now_et <= close_t:
+        base = now_et
+    else:
+        day = now_et.date()
+        if now_et.weekday() >= 5 or now_et > close_t:
+            day += dt.timedelta(days=1)
+        while day.weekday() >= 5:
+            day += dt.timedelta(days=1)
+        base = dt.datetime.combine(day, dt.time(9, 30), tzinfo=et)
+    return (base + dt.timedelta(minutes=ttl_min)).astimezone(dt.timezone.utc)
+
+
 class ProposalService:
     def __init__(self, engine) -> None:
         self.engine = engine
@@ -74,6 +104,68 @@ class ProposalService:
         extraction = signal_row.extraction or {}
         analyst = extraction.get("analyst") or {}
         expr = extraction.get("shadowExpression") or {}
+
+        # ---- spread vehicle (ARM-PLAN P5): a stated/analyst 2-leg defined-risk
+        # spread proposes as ONE unit; approve() opens it leg-sequenced
+        a_legs = (analyst.get("legs") or []) if analyst.get("verdict") == "take" else []
+        sig_legs = (extraction.get("signal") or {}).get("legs") or []
+        spread_legs = a_legs if len(a_legs) == 2 else (sig_legs if len(sig_legs) == 2 else None)
+        if spread_legs:
+            from ..techniques.tip.express import pick_spread
+            pick = await pick_spread(
+                eng, symbol=sig.ticker.upper(), legs=spread_legs,
+                expiry=analyst.get("legs_expiry") or signal_row.expiry,
+                dte_min=policy.dte_min, dte_max=policy.dte_max)
+            if pick.get("available"):
+                net, width = float(pick["net"]), float(pick["width"])
+                max_loss = net if net > 0 else max(width - abs(net), 0.01)
+                qty = max(1, math.floor(budget / (max_loss * 100)))
+                disp = (f"{sig.ticker.upper()} "
+                        f"{pick['legs'][0]['strike']:g}/{pick['legs'][1]['strike']:g} "
+                        f"{pick['legs'][0]['optionType']} spread {pick['expiry']}")
+                explain = (f"Approve = open {qty} x {disp} as a defined-risk spread "
+                           f"({'debit' if net > 0 else 'credit'} {abs(net):.2f}, width {width:g}; "
+                           f"max loss ≈ ${max_loss * 100 * qty:,.0f}) in "
+                           f"“{pf.get('name', pid)}” ({pf.get('kind', '?')}). The long leg fills "
+                           f"FIRST, then the short leg — risk is defined at every instant.")
+                ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
+                row = Proposal(
+                    id=new_id(), signal_id=signal_row.id, portfolio_id=pid,
+                    symbol=sig.ticker.upper(), sec_type="SPREAD",
+                    side="BUY" if net > 0 else "SELL", qty=float(qty),
+                    order_type="LMT", limit_price=round(net, 2), bracket=None,
+                    rationale=sig.thesis_summary,
+                    context={"techniqueId": "tip", "sourceName": signal_row.source_name,
+                             "confidence": sig.confidence, "verification": verification,
+                             "sizing": {"budget": round(budget, 2), "qty": qty,
+                                        "maxLossPerSpread": round(max_loss * 100, 2)},
+                             "vehicle": {"kind": "spread", "display": disp,
+                                         "underlying": sig.ticker.upper(),
+                                         "direction": sig.direction,
+                                         "legs": pick["legs"], "net": net,
+                                         "width": width, "credit": bool(net < 0),
+                                         "expiry": pick["expiry"]},
+                             "explain": explain,
+                             "exitPlan": build_exit_plan_spread(signal_row, sig, analyst, policy),
+                             "analystRunId": analyst.get("runId"),
+                             "analyst": ({k: analyst.get(k) for k in
+                                          ("verdict", "rationale", "invalidation",
+                                           "confidence")} if analyst else None)},
+                    expires_at=_ttl_expiry(ttl_min))
+                async with eng.sf() as session:
+                    session.add(row)
+                    sig_db = await session.get(Signal, signal_row.id)
+                    if sig_db is not None:
+                        sig_db.status = "proposed"
+                    await session.commit()
+                pdict = proposal_dict(row)
+                await eng.journal.append(ev.PROPOSAL_CREATED, pdict,
+                                         aggregate_type="proposal", aggregate_id=row.id,
+                                         portfolio_id=pid)
+                eng.bus.publish(topics.PROPOSALS, pdict)
+                return pdict
+            log.info("stated spread not tradable (%s) — falling back to single-leg",
+                     pick.get("error"))
 
         # ---- vehicle: the analyst's contract beats the book's, both beat shares
         occ = label = None
@@ -169,6 +261,28 @@ class ProposalService:
         if bits:
             explain += f" Exit campaign ({exit_plan.get('author', 'tip')}): {'; '.join(bits)}."
 
+        # ---- preflight coherence (ARM-PLAN P1/F7): compare this order against
+        # the platform risk caps NOW, on the card — not as a silent risk
+        # rejection at fill time
+        warns: list[str] = []
+        try:
+            equity = await eng.positions.equity(pid)
+            mult = 100 if sec_type == "OPT" else 1
+            notional = limit * qty * mult
+            cap_notional = float(eng.settings.get("risk.max_position_notional", 1000.0))
+            if notional > cap_notional:
+                warns.append(f"${notional:,.0f} exceeds risk.max_position_notional "
+                             f"(${cap_notional:,.0f}) — the fill will be risk-rejected")
+            if sec_type == "OPT":
+                prem_pct = float(eng.settings.get("risk.max_option_premium_pct", 5.0))
+                prem_abs = float(eng.settings.get("risk.max_option_premium_notional", 1000.0))
+                cap_prem = min(equity * prem_pct / 100 if equity > 0 else prem_abs, prem_abs)
+                if notional > cap_prem:
+                    warns.append(f"premium ${notional:,.0f} exceeds the option caps "
+                                 f"({prem_pct:g}% of equity / ${prem_abs:,.0f})")
+        except Exception:                                # advisory only
+            log.debug("proposal preflight cap check failed", exc_info=True)
+
         ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
         row = Proposal(
             id=new_id(),
@@ -197,8 +311,9 @@ class ProposalService:
                 "analyst": ({k: analyst.get(k) for k in
                              ("verdict", "rationale", "invalidation", "confidence")}
                             if analyst else None),
+                **({"riskWarning": "; ".join(warns)} if warns else {}),
             },
-            expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=ttl_min),
+            expires_at=_ttl_expiry(ttl_min),
         )
         async with eng.sf() as session:
             session.add(row)
@@ -238,6 +353,34 @@ class ProposalService:
             ev.PROPOSAL_APPROVED, {"via": via, "half": half, "qty": qty},
             aggregate_type="proposal", aggregate_id=proposal_id,
             portfolio_id=pdict["portfolioId"])
+
+        # defined-risk spread approval (ARM-PLAN P5): leg-sequenced open, not a
+        # single OrderIntent — risk stays defined at every instant
+        if pdict["secType"] == "SPREAD":
+            from ..techniques.tip.lifecycle import open_spread
+            v = (pdict.get("context") or {}).get("vehicle") or {}
+            try:
+                pos = await open_spread(
+                    eng, portfolio_id=pdict["portfolioId"],
+                    underlying=str(v.get("underlying") or pdict["symbol"]),
+                    direction=str(v.get("direction") or "long"),
+                    legs=list(v.get("legs") or []), qty=int(qty),
+                    exit_plan=(pdict.get("context") or {}).get("exitPlan"),
+                    source=(pdict.get("context") or {}).get("sourceName") or "unknown",
+                    analyst_run_id=(pdict.get("context") or {}).get("analystRunId"),
+                    signal_id=pdict.get("signalId"))
+                new_status, pos_id = "executed", pos.get("id")
+            except Exception as exc:
+                log.warning("spread open failed for proposal %s: %s", proposal_id, exc)
+                new_status, pos_id = "failed", None
+            async with eng.sf() as session:
+                row = await session.get(Proposal, proposal_id)
+                row.status = new_status
+                row.order_id = pos_id
+                await session.commit()
+                pdict = proposal_dict(row)
+            eng.bus.publish(topics.PROPOSALS, pdict)
+            return {"proposal": pdict, "order": None}
 
         bracket = None
         if pdict["bracket"]:

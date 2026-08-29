@@ -80,6 +80,7 @@ POSITION_CLOSED = "ManagedPositionClosed"
 POSITION_POLICY = "ManagedPositionPolicyChanged"
 POSITION_RECONCILED = "ManagedPositionReconciled"
 POSITION_ATTENTION = "ManagedPositionAttention"
+POSITION_SCALED = "ManagedPositionScaledIn"
 
 TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "1d": 390}
 
@@ -476,6 +477,31 @@ class PositionManager:
         await self._journal(POSITION_ADOPTED, p, {"legs": [l.to_dict() for l in p.legs], "policy": p.policy})
         await self._ensure_venue_stop(p)
         self.start()
+        return p.to_dict()
+
+    async def append_leg(self, pid: str, leg: dict, *,
+                         entry_ref: float | None = None) -> dict | None:
+        """Scale-in accumulation (tips, ARM-PLAN P3): a later fill of the same
+        idea joins the existing position — the leg list grows, the underlying
+        reference entry re-averages (weighted by |qty|), the entry mark
+        recomputes. The policy is untouched: ONE exit campaign over the
+        combined size."""
+        p = self._pos.get(pid)
+        if p is None or p.status not in ("open", "attention"):
+            return None
+        new = Leg.from_dict({**leg, "origin": leg.get("origin") or "scale_in"})
+        old_abs = sum(abs(l.qty) for l in p.legs) or 1.0
+        p.legs.append(new)
+        if entry_ref and entry_ref > 0:
+            tot = old_abs + abs(new.qty)
+            p.entry = (p.entry * old_abs + float(entry_ref) * abs(new.qty)) / tot
+        p.entry_mark = self._entry_mark(p)
+        await self._persist(p)
+        await self._journal(POSITION_SCALED, p, {"leg": new.to_dict(),
+                                                 "entry": round(p.entry, 4)})
+        self._log(p, "scaled_in",
+                  f"+{abs(new.qty):g} {new.symbol} — entry re-averaged to {p.entry:.4f}")
+        await self._ensure_venue_stop(p)
         return p.to_dict()
 
     def _entry_mark(self, p: Managed) -> float | None:

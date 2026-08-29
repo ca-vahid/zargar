@@ -486,6 +486,12 @@ function ProposalCard({ p }: { p: Proposal }) {
       {p.context?.explain && (
         <div className="prop-explain">{p.context.explain}</div>
       )}
+      {p.context?.riskWarning && (
+        <div className="neg" style={{ fontSize: 12, margin: "4px 0" }}
+          title="Preflight check against the platform risk caps — align Settings → Risk with the tip budget, or approve half size">
+          ⚠ {p.context.riskWarning}
+        </div>
+      )}
       {checks.some((c: any) => !c.passed) && (
         <ul className="check-list">
           {checks.filter((c: any) => !c.passed).map((c: any) => (
@@ -1232,7 +1238,12 @@ function outcomeLine(run: AnalystRun): string | null {
     if (v === "no signals") return "Nothing tradable in the message — no action anywhere.";
     return "Each tradable tip got its own appraisal run (linked above) — the verdicts and any proposals live there.";
   }
-  if (v === "take") return "TAKE — a proposal was created: approve/reject it in the strip at the top of this page (an auto-mode source self-approves through the risk gate). On the fill it becomes a managed position running the analyst's exit plan.";
+  if (v === "take") {
+    if (run.opinion?.entry_mode === "at_level") {
+      return `TAKE at the level — a plan was ARMED waiting for ${run.opinion?.entry_level ?? "the tip's entry"} on the underlying (see the Armed page). No market order now; if the level never comes, the plan expires with the tip's horizon.`;
+    }
+    return "TAKE — a proposal was created: approve/reject it in the strip at the top of this page (an auto-mode source self-approves through the risk gate). On the fill it becomes a managed position running the analyst's exit plan.";
+  }
   if (v === "watch") return "WATCH — right idea, wrong moment: nothing was ordered and nothing needs your approval. The tip stays on the Tips tab (arm it there if you want the level watched); the shadow books still track the source's call.";
   if (v === "skip") return "SKIP — the analyst passed: nothing was ordered, nothing needs you. The shadow books may still record it for the source's scorecard.";
   return null;
