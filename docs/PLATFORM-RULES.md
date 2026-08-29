@@ -103,6 +103,12 @@ runtime ones to `execution.*`).
   (conservative fresh-install); the pre-live re-tightening is
   `docs/NEXT-GAPS-PLAN.md` §0/R3. Kill switch, never-list, reduce-only exits
   untouched.
+- 2026-08-29 · **Native multi-leg spreads** (NEXT-GAPS M): `OrderManager.place_spread`
+  is the ONE sanctioned combined-order path — write-ahead per-leg rows, a single
+  `RiskGate.evaluate_spread` verdict on the structure's max loss, `Executor.submit_mleg`
+  (sim + SnapTrade legs-array). It carries `place()`'s full guarantees; never submit a
+  spread around it. Venue opt-in per account via `options.mleg_accounts`; every native
+  failure falls back to the verified leg-sequencing.
 - 2026-08-29 · **ARM-GAPS engine batch** (tips gap-closure, clusters A–F): MULTI-DAY
   plans on the shared runner — `plan_horizon(run, plan)` hook (base single-session),
   `ArmedPlan.horizon_sessions/sessions_used/expires_session/risk_warning`,

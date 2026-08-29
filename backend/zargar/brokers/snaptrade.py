@@ -418,6 +418,68 @@ class SnapTradeBroker(Executor):
         tracked.accepted_emitted = True
         await self.emit(ExecReport(kind="accepted", order_id=order.id))
 
+    # native multi-leg (NEXT-GAPS M1): one combined /trading/options order with
+    # a `legs` array — the shape the impact probe verified Webull CA accepts
+    # (2026-08-29, `snaptrade_options_check --probe income`). Fill tracking
+    # rides the shared recentOrders poll like every other option order.
+    supports_mleg = True
+
+    async def submit_mleg(self, orders: list[BrokerOrder], *, net_limit: float,
+                          price_effect: str, gid: str) -> None:
+        if not orders:
+            return
+        account_id = self._account_for(orders[0].portfolio_id or "")
+        if account_id is None:
+            for o in orders:
+                await self.emit(ExecReport(kind="rejected", order_id=o.id,
+                                           reason="portfolio is not linked to a SnapTrade account"))
+            return
+        try:
+            legs = []
+            for o in orders:
+                action = o.option_action or ("BUY_TO_OPEN" if o.side.value == "BUY" else "SELL_TO_OPEN")
+                units = int(round(o.qty))
+                if units <= 0:
+                    raise ValueError("option quantity must be a whole number of contracts")
+                legs.append({"instrument": {"symbol": occ.to_snaptrade(o.symbol),
+                                            "instrument_type": "OPTION"},
+                             "action": action, "units": units})
+        except ValueError as exc:
+            for o in orders:
+                await self.emit(ExecReport(kind="rejected", order_id=o.id, reason=str(exc)))
+            return
+        body = {"order_type": "LIMIT", "time_in_force": "Day",
+                "price_effect": price_effect.upper(),
+                "limit_price": f"{abs(net_limit):.2f}", "legs": legs}
+        path = f"/api/v1/accounts/{account_id}/trading/options"
+        try:
+            async with self._throttle(account_id):
+                result = await self._client.request("POST", path, body)
+            self._healthy = True
+        except SnapTradeError as exc:
+            for o in orders:
+                await self.emit(ExecReport(kind="rejected", order_id=o.id, reason=str(exc)))
+            return
+        except SnapTradeUnknownOutcome as exc:
+            for o in orders:
+                await self._journal.append(
+                    ev.BROKER_SUBMIT_UNKNOWN,
+                    {"error": str(exc), "mlegGroup": gid},
+                    aggregate_type="order", aggregate_id=o.id)
+                tracked = _Tracked(o.id, account_id, dashed_uuid(o.id))
+                await self._reconcile_unknown(o, tracked)
+            return
+        broker_id = str(result.get("brokerage_order_id") or "") or None
+        if not broker_id and isinstance(result.get("orders"), list) and result["orders"]:
+            broker_id = str((result["orders"][0] or {}).get("brokerage_order_id") or "") or None
+        for o in orders:
+            tracked = _Tracked(o.id, account_id, dashed_uuid(o.id), broker_order_id=broker_id)
+            tracked.accepted_emitted = True
+            self._tracked[o.id] = tracked
+            if broker_id:
+                await self._link_broker_order(o.id, broker_id)
+            await self.emit(ExecReport(kind="accepted", order_id=o.id))
+
     def _throttle(self, account_id: str):
         return _SubmitThrottle(self, account_id)
 

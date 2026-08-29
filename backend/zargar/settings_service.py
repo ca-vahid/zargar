@@ -124,6 +124,10 @@ DEFAULTS: dict[str, Any] = {
     # rules; contradictions surface to the human, never self-resolved
     "techniques.tip.rule_audit_enabled": True,
     "techniques.tip.rule_audit_day": "Sat",   # ET weekday (Mon..Sun), runs with the nightly review
+    # native multi-leg spreads (NEXT-GAPS M): SnapTrade ACCOUNT ids verified to
+    # accept a legs-array order (Webull CA probes clean; Wealthsimple is 1156).
+    # Empty = leg-sequencing everywhere except the simulator.
+    "options.mleg_accounts": [],
     "techniques.tip.shadow_auto": True,      # the armed-book loop: auto-arm every open tip in shadow each morning
     "techniques.tip.shadow_arm_at": "09:12", # ET, on engine.scheduler (after the 09:05 reconciliation)
     "techniques.tip.trailing_after_r": 1.0,  # managed-position trail activates after +N R

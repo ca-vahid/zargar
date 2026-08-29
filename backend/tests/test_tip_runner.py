@@ -4,6 +4,7 @@ and (auto mode) places a RiskGate-checked entry on the sim venue."""
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 
 import pytest
@@ -1125,10 +1126,12 @@ async def test_handoff_pending_blocks_session_exits(tip_rig):
 async def test_spread_rollback_failure_adopts_attention_position(tip_rig, monkeypatch):
     """B3: short leg rejected AND the rollback rejected -> journaled, alerted,
     and the naked long is adopted as an ATTENTION-flagged managed position."""
+    import zargar.techniques.tip.lifecycle as lc
     from zargar.domain import new_id
     from zargar.models import Event, Order
     from zargar.techniques.tip.lifecycle import open_spread
     eng, sim = tip_rig
+    monkeypatch.setattr(lc, "_mleg_supported", lambda *_: False)   # exercise the sequencing path
 
     async def fake_place(intent):
         oid = new_id()
@@ -1566,3 +1569,130 @@ async def test_rule_audit_skips_below_min_rules(tip_rig):
     out = await run_rule_audit(eng, client=_FakeAuditClient({"merges": [], "expires": [],
                                                              "contradictions": [], "summary": ""}))
     assert out is None
+
+
+# --- webhook HMAC auth (NEXT-GAPS W1) -----------------------------------------------
+
+async def test_ingest_email_hmac(tip_rig, monkeypatch):
+    """W1: with a secret set, only a correctly signed body gets in."""
+    import hashlib
+    import hmac as _hmac
+    import httpx
+    from zargar.api.app import create_app
+    from .conftest import make_test_config
+    eng, _sim = tip_rig
+    seen = []
+    async def stub(payload):
+        seen.append(payload)
+        return {"ok": True}
+    monkeypatch.setattr(eng.signals_service, "ingest_email", stub)
+    cfg = make_test_config(anthropic_api_key="", ingest_hmac_secret="s3cret")
+    transport = httpx.ASGITransport(app=create_app(cfg, eng))
+    body = b'{"subject": "tip", "text": "buy TEST"}'
+    sig = _hmac.new(b"s3cret", body, hashlib.sha256).hexdigest()
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        r1 = await client.post("/api/ingest/email", content=body,
+                               headers={"content-type": "application/json"})
+        assert r1.status_code == 401
+        r2 = await client.post("/api/ingest/email", content=body,
+                               headers={"content-type": "application/json",
+                                        "x-zargar-signature": "deadbeef"})
+        assert r2.status_code == 401
+        r3 = await client.post("/api/ingest/email", content=body,
+                               headers={"content-type": "application/json",
+                                        "x-zargar-signature": sig})
+        assert r3.status_code == 200 and r3.json()["ok"] is True
+    assert len(seen) == 1 and seen[0]["subject"] == "tip"
+
+
+# --- native multi-leg spreads (NEXT-GAPS M) -----------------------------------------
+
+async def _pump_quotes(eng, symbols, mid=1.0, seconds=8.0):
+    """Publish fresh contract quotes repeatedly so sim working orders can fill.
+    `symbols`: list (one mid for all) or {symbol: mid} (per-leg — the price
+    collar judges each leg against its own mid)."""
+    import time as _time
+    mids = symbols if isinstance(symbols, dict) else {s: mid for s in symbols}
+    end = _time.monotonic() + seconds
+    while _time.monotonic() < end:
+        for s, m in mids.items():
+            await _opt_quote(eng, s, m)
+        await asyncio.sleep(0.2)
+
+
+async def test_native_mleg_spread_fills_on_sim(tip_rig):
+    """M2/M4: sim venue takes the spread as ONE combined order — both legs
+    fill, orders carry the mleg tag, the pair adopts as one position."""
+    from sqlalchemy import select as _sel
+    from zargar.models import Order
+    from zargar.techniques.tip.lifecycle import open_spread
+    eng, sim = tip_rig
+    legs = [{"side": "BUY", "symbol": "TEST260911C00100000", "ask": 1.2, "strike": 100.0},
+            {"side": "SELL", "symbol": "TEST260911C00105000", "bid": 0.6, "strike": 105.0}]
+    pump = asyncio.create_task(_pump_quotes(eng, [l["symbol"] for l in legs], mid=0.9))
+    try:
+        pos = await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
+                                direction="long", legs=legs, qty=1, source="TestRoom")
+    finally:
+        pump.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pump
+    qtys = sorted(l["qty"] for l in pos["legs"])
+    assert qtys == [-1, 1]
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(Order).where(
+            Order.symbol.in_([l["symbol"] for l in legs])))).scalars().all()
+    assert rows and all("mleg" in (r.tags or []) for r in rows)
+    assert all(r.status == "FILLED" for r in rows)
+
+
+async def test_native_mleg_risk_rejects_as_one_unit(tip_rig):
+    """M3: the spread is judged on its MAX LOSS — over the premium cap, both
+    legs reject together (and the sequencing fallback rejects too)."""
+    from sqlalchemy import select as _sel
+    from zargar.models import Order
+    from zargar.techniques.tip.lifecycle import open_spread
+    eng, sim = tip_rig
+    await eng.settings.set("risk.max_option_premium_notional", 10.0, journal=False)
+    legs = [{"side": "BUY", "symbol": "TEST260911C00100000", "ask": 1.2, "strike": 100.0},
+            {"side": "SELL", "symbol": "TEST260911C00105000", "bid": 0.6, "strike": 105.0}]
+    with pytest.raises(ValueError):
+        await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
+                          direction="long", legs=legs, qty=1, source="TestRoom")
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(Order).where(
+            Order.symbol == "TEST260911C00100000"))).scalars().all()
+    assert any(r.status == "REJECTED_RISK" and "mleg" in (r.tags or []) for r in rows)
+
+
+async def test_native_mleg_failure_falls_back_to_sequencing(tip_rig, monkeypatch):
+    """M2: a venue that chokes on the combined order falls back to the verified
+    leg-sequencing path — the spread still opens, without the mleg tag."""
+    import zargar.brokers.sim as simmod
+    from sqlalchemy import select as _sel
+    from zargar.models import Order
+    from zargar.techniques.tip.lifecycle import open_spread
+    eng, sim = tip_rig
+
+    async def boom(self, orders, **kw):
+        raise RuntimeError("venue rejected the combined order")
+    monkeypatch.setattr(simmod.SimExecutor, "submit_mleg", boom)
+    # premiums big enough that the sim's fixed 5-cent half-spread stays inside
+    # the 5% price collar AND the legs can actually fill at their limits
+    legs = [{"side": "BUY", "symbol": "TEST260911C00100000", "ask": 3.0, "strike": 100.0},
+            {"side": "SELL", "symbol": "TEST260911C00105000", "bid": 1.8, "strike": 105.0}]
+    pump = asyncio.create_task(_pump_quotes(eng, {"TEST260911C00100000": 2.95,
+                                                  "TEST260911C00105000": 1.86}, seconds=25))
+    try:
+        pos = await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
+                                direction="long", legs=legs, qty=1, source="TestRoom")
+    finally:
+        pump.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await pump
+    assert sorted(l["qty"] for l in pos["legs"]) == [-1, 1]
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(Order).where(
+            Order.symbol == "TEST260911C00100000",
+            Order.status == "FILLED"))).scalars().all()
+    assert rows and all("mleg" not in (r.tags or []) for r in rows)

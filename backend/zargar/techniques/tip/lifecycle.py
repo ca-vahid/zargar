@@ -21,6 +21,7 @@ log = logging.getLogger("zargar.tip.lifecycle")
 
 FILL_WAIT_S = 4 * 3600          # a resting LMT gets the session, not forever
 POLL_S = 3.0
+NATIVE_FILL_WAIT_S = 90.0       # native mleg: both legs must fill inside this or unwind
 
 
 def build_exit_plan(signal_row, sig, analyst: dict, policy) -> dict:
@@ -140,6 +141,20 @@ async def open_spread(eng, *, portfolio_id: str, underlying: str, direction: str
     tags = [f"source:{source}", f"spread:{gid}"]
     qty = max(1, int(qty))
 
+    # ---- native multi-leg first (NEXT-GAPS M2): one combined venue order,
+    # atomic legs, one risk verdict on the structure's max loss. Any native
+    # failure falls back to the verified leg-sequencing below.
+    if _mleg_supported(eng, portfolio_id):
+        try:
+            return await _open_spread_native(
+                eng, portfolio_id=portfolio_id, underlying=underlying,
+                direction=direction, long_leg=long_leg, short_leg=short_leg,
+                qty=qty, gid=gid, tags=tags, exit_plan=exit_plan, source=source,
+                analyst_run_id=analyst_run_id, signal_id=signal_id)
+        except Exception as exc:
+            log.warning("native mleg spread %s failed (%s) — falling back to leg sequencing",
+                        gid, exc)
+
     # ---- leg 1: the LONG leg, and wait for the fill (defined risk needs it held)
     o1 = await eng.orders.place(OrderIntent(
         portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
@@ -199,9 +214,106 @@ async def open_spread(eng, *, portfolio_id: str, underlying: str, direction: str
             raise ValueError(f"{why} — long leg unwound (or adopted for attention)")
         await asyncio.sleep(0.5)
 
-    mgr = eng.position_manager
     fill1 = float(row1.get("avgFillPrice") or long_leg.get("ask") or 0)
     fill2 = float(row2.get("avgFillPrice") or short_leg.get("bid") or 0)
+    return await _adopt_spread_position(
+        eng, portfolio_id=portfolio_id, underlying=underlying, direction=direction,
+        long_leg=long_leg, short_leg=short_leg, qty=qty, fill1=fill1, fill2=fill2,
+        o1_id=o1["id"], o2_id=o2["id"], tags=tags, exit_plan=exit_plan,
+        analyst_run_id=analyst_run_id)
+
+
+def _mleg_supported(eng, portfolio_id: str) -> bool:
+    """Can this portfolio's venue take a native multi-leg order? Sim/shadow:
+    yes (the sim executor accepts them). SnapTrade: only accounts explicitly
+    verified via the impact probe (`options.mleg_accounts`; Webull CA probes
+    clean, Wealthsimple is 1156). Everything else: leg sequencing."""
+    pf = eng.positions.portfolio(portfolio_id) or {}
+    kind, venue = pf.get("kind"), pf.get("venue")
+    if kind in ("sim", "shadow"):
+        return True
+    if venue == "snaptrade":
+        sync = getattr(eng, "snaptrade_sync", None)
+        account = sync.account_for(portfolio_id) if sync is not None else None
+        allowed = [str(a) for a in (eng.settings.get("options.mleg_accounts") or [])]
+        return account is not None and str(account) in allowed
+    return False
+
+
+async def _open_spread_native(eng, *, portfolio_id: str, underlying: str, direction: str,
+                              long_leg: dict, short_leg: dict, qty: int, gid: str,
+                              tags: list[str], exit_plan: dict | None, source: str,
+                              analyst_run_id: str | None, signal_id: str | None) -> dict:
+    """NEXT-GAPS M2: ONE combined venue order for both legs — write-ahead rows,
+    one RiskGate verdict on the structure's max loss, atomic venue execution.
+    Raises on any failure (the caller falls back to leg sequencing) after
+    unwinding whatever partially filled."""
+    from ...orders import OrderIntent
+
+    long_px = round(float(long_leg.get("ask") or 0), 2)
+    short_px = round(float(short_leg.get("bid") or 0), 2)
+    net = long_px - short_px                                # +debit / -credit
+    width = abs(float(long_leg.get("strike", 0)) - float(short_leg.get("strike", 0)))
+    max_loss = (net if net > 0 else max(width - abs(net), 0.01)) * 100 * qty
+    mtags = tags + ["mleg"]
+    li = OrderIntent(portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
+                     side="BUY", qty=qty, order_type="LMT",
+                     limit_price=long_px or None, tif="DAY", source="technique",
+                     technique_id="tip", tags=mtags, signal_id=signal_id)
+    si = OrderIntent(portfolio_id=portfolio_id, symbol=short_leg["symbol"], sec_type="OPT",
+                     side="SELL", qty=qty, order_type="LMT",
+                     limit_price=short_px or None, tif="DAY", source="technique",
+                     technique_id="tip", tags=mtags, signal_id=signal_id)
+    res = await eng.orders.place_spread(li, si, net_limit=net, max_loss=max_loss, gid=gid)
+    if res.get("status") != "SUBMITTED":
+        raise ValueError(f"native mleg refused: {res.get('reason') or res.get('status')}")
+    ids = [leg["id"] for leg in res["legs"]]
+    deadline = asyncio.get_event_loop().time() + NATIVE_FILL_WAIT_S
+    rows: dict[str, dict] = {}
+    while True:
+        rows = {oid: (await _order_row(eng, oid)) or {} for oid in ids}
+        sts = [r.get("status") for r in rows.values()]
+        if all(s == "FILLED" for s in sts):
+            break
+        if any(s in ("CANCELLED", "REJECTED", "REJECTED_RISK", "EXPIRED", "ERROR") for s in sts) \
+                or asyncio.get_event_loop().time() > deadline:
+            # abort: cancel what rests, close what filled (reduce-only)
+            for oid, r in rows.items():
+                if r.get("status") not in ("FILLED", "CANCELLED", "REJECTED",
+                                           "REJECTED_RISK", "EXPIRED", "ERROR"):
+                    with contextlib_suppress():
+                        await eng.orders.cancel(oid)
+                filled = float(r.get("filledQty") or 0)
+                if filled > 0:
+                    from ...orders import OrderIntent as _OI
+                    with contextlib_suppress():
+                        await eng.orders.place(_OI(
+                            portfolio_id=portfolio_id, symbol=r.get("symbol") or "",
+                            sec_type="OPT",
+                            side=("SELL" if r.get("qty") and rows and oid == ids[0] else "BUY"),
+                            qty=filled, order_type="MKT", tif="DAY", source="technique",
+                            technique_id="tip", tags=mtags, reduce_only=True))
+            raise ValueError(f"native mleg legs ended {sts} — unwound")
+        await asyncio.sleep(0.5)
+    fill1 = float(rows[ids[0]].get("avgFillPrice") or long_px)
+    fill2 = float(rows[ids[1]].get("avgFillPrice") or short_px)
+    log.info("native mleg spread %s filled: %s/%s x%d", gid,
+             long_leg.get("strike"), short_leg.get("strike"), qty)
+    return await _adopt_spread_position(
+        eng, portfolio_id=portfolio_id, underlying=underlying, direction=direction,
+        long_leg=long_leg, short_leg=short_leg, qty=qty, fill1=fill1, fill2=fill2,
+        o1_id=ids[0], o2_id=ids[1], tags=mtags, exit_plan=exit_plan,
+        analyst_run_id=analyst_run_id)
+
+
+async def _adopt_spread_position(eng, *, portfolio_id: str, underlying: str, direction: str,
+                                 long_leg: dict, short_leg: dict, qty: int,
+                                 fill1: float, fill2: float, o1_id: str, o2_id: str,
+                                 tags: list[str], exit_plan: dict | None,
+                                 analyst_run_id: str | None) -> dict:
+    """Both legs filled (either path): the pair becomes ONE managed position
+    with the structural max-loss guard declared."""
+    mgr = eng.position_manager
     q = eng.quotes.get(underlying.upper())
     entry_ref = float(q.last) if q and q.last > 0 else float(long_leg.get("strike") or 0)
     width = abs(float(long_leg.get("strike", 0)) - float(short_leg.get("strike", 0)))
@@ -228,10 +340,10 @@ async def open_spread(eng, *, portfolio_id: str, underlying: str, direction: str
         "risk": max((net if net > 0 else width - abs(net)), 0.01),
         "legs": [
             {"symbol": long_leg["symbol"], "secType": "OPT", "qty": qty,
-             "avgFill": fill1, "multiplier": 100.0, "entryOrderId": o1["id"],
+             "avgFill": fill1, "multiplier": 100.0, "entryOrderId": o1_id,
              "origin": "adoption"},
             {"symbol": short_leg["symbol"], "secType": "OPT", "qty": -qty,
-             "avgFill": fill2, "multiplier": 100.0, "entryOrderId": o2["id"],
+             "avgFill": fill2, "multiplier": 100.0, "entryOrderId": o2_id,
              "origin": "adoption"},
         ],
         "overnight": "app_managed", "overnightAck": True,
