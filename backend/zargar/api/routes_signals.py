@@ -124,6 +124,24 @@ def build_signal_routes(app, eng, auth, config) -> None:
     async def list_signals(limit: int = 100):
         return await eng.signals_service.list_signals(limit)
 
+    class DismissBody(BaseModel):
+        ids: list[str]
+
+    @app.post("/api/signals/dismiss", dependencies=[auth])
+    async def dismiss_signals(body: DismissBody):
+        """Delete tips (bulk): soft-dismiss — the rows stay for the audit trail
+        but leave every list, any waiting armed plan disarms and any pending
+        proposal expires."""
+        n = await eng.signals_service.dismiss_signals(body.ids)
+        return {"dismissed": n}
+
+    @app.delete("/api/signals/{sid}", dependencies=[auth])
+    async def delete_signal(sid: str):
+        n = await eng.signals_service.dismiss_signals([sid])
+        if not n:
+            raise HTTPException(status_code=404, detail="signal not found (or already dismissed)")
+        return {"dismissed": n}
+
     @app.get("/api/content", dependencies=[auth])
     async def list_content(limit: int = 50):
         return await eng.signals_service.list_content(limit)

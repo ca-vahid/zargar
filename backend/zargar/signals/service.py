@@ -1564,9 +1564,54 @@ class SignalService:
     async def list_signals(self, limit: int = 100) -> list[dict]:
         async with self.engine.sf() as session:
             rows = (await session.execute(
-                select(Signal).order_by(Signal.created_at.desc()).limit(limit)
+                select(Signal).where(Signal.status != "dismissed")
+                .order_by(Signal.created_at.desc()).limit(limit)
             )).scalars().all()
         return [signal_dict(r) for r in rows]
+
+    async def dismiss_signals(self, ids: list[str]) -> int:
+        """User-deleted tips (single or bulk): SOFT delete — status becomes
+        `dismissed` (rows stay for the audit trail; the journal is append-only),
+        the tip leaves every list and the dedupe window, any live armed plan
+        for it disarms, and any pending proposal expires."""
+        from ..models import Proposal
+        eng = self.engine
+        runner = getattr(eng, "tip_runner", None)
+        n = 0
+        for sid in ids:
+            async with eng.sf() as session:
+                row = await session.get(Signal, sid)
+                if row is None or row.status == "dismissed":
+                    continue
+                prev = row.status
+                row.status = "dismissed"
+                await session.commit()
+                row_dict = signal_dict(row)
+            n += 1
+            if runner is not None:
+                with contextlib.suppress(Exception):
+                    rid = runner.live_run_for_signal(sid)
+                    if rid:
+                        await runner.disarm(rid, reason="tip deleted by the user")
+            if eng.proposals is not None:
+                with contextlib.suppress(Exception):
+                    async with eng.sf() as session:
+                        pending = (await session.execute(
+                            select(Proposal).where(Proposal.signal_id == sid,
+                                                   Proposal.status == "pending"))).scalars().all()
+                        for p in pending:
+                            p.status = "expired"
+                            p.decided_at = dt.datetime.now(dt.timezone.utc)
+                            p.context = {**(p.context or {}),
+                                         "expiredReason": "tip deleted by the user"}
+                        await session.commit()
+            await eng.journal.append(ev.SIGNAL_DISMISSED,
+                                     {"ticker": row_dict.get("ticker"),
+                                      "source": row_dict.get("sourceName"),
+                                      "was": prev},
+                                     aggregate_type="signal", aggregate_id=sid)
+            eng.bus.publish(topics.SIGNALS, row_dict)
+        return n
 
     async def content_bundle(self, content_id: str) -> dict:
         """Everything about one Extract & verify by its id — the raw content

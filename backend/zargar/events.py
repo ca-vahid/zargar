@@ -51,6 +51,7 @@ TIP_SPREAD_LEG_FAILED = "TipSpreadLegFailed"       # spread short leg died AND t
 TIP_LANE_GRADED = "TipLaneGraded"                  # now-vs-at_level counterfactual, graded once the tip resolved
 TIP_RULE_AUDITED = "TipRuleAudited"                # weekly rule audit: merges/expiries applied, contradictions flagged
 SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before the tip's horizon/expiry
+SIGNAL_DISMISSED = "SignalDismissed"                # user deleted the tip (soft: status=dismissed, plan disarmed, proposal expired)
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads
 FLOW_CONTEXT_SERVED = "FlowContextServed" # a flow read's context line was delivered to a consumer (tip/em)
 PROPOSAL_CREATED = "ProposalCreated"
