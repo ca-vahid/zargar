@@ -663,3 +663,15 @@ button.bl-card:active { background: var(--surface-2); }
 @media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
   .tab-config .tab-config-label { display: none; }
 }
+
+/* ARM-GAPS F6: the tip rows' link chips (arm / analyze / armed) must be
+   thumb-size targets on phones — the audit flagged 33px-wide link-btns */
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  .link-btn {
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
