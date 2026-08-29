@@ -77,7 +77,9 @@ with no usable put proposes nothing; sized by `budget_per_tip`; context carries
 `vehicle`/`explain`/`analystRunId`. `mode: auto` sources self-approve (analyst "take" or
 analyst off; live portfolios also need `techniques.tip.allow_live_auto`). **Tips → arm
 enrichment plan (5 phases, checkboxes): `docs/techniques/tip/ARM-PLAN.md`** — analyst-chosen
-now-vs-at-level, one exit authority, zones/scale-ins, conditions, spreads.
+now-vs-at-level, one exit authority, zones/scale-ins, conditions, spreads; **gap-closure plan
+(clusters A–F, checkboxes): `docs/techniques/tip/ARM-GAPS-PLAN.md`** — multi-day stay-armed
+plans, partial-fill adoption, never-chase, follow-up disarm, knob coherence, UI wiring.
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
 dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
 non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose
