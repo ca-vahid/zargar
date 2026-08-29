@@ -552,6 +552,34 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         await eng.ensure_symbol(sym)
         q = eng.quotes.get(sym)
         if q is None:
+            # cold symbol / closed market: nudge the feed once (same fix as
+            # verification's AMZN case), then wait briefly for the sweep
+            import contextlib as _ctx
+            poll = (getattr(eng.feed, "poll_once", None)
+                    or getattr(getattr(eng.feed, "yahoo", None), "poll_once", None))
+            if poll is not None:
+                with _ctx.suppress(Exception):
+                    await poll()
+                deadline = asyncio.get_event_loop().time() + 4.0
+                while (eng.quotes.get(sym) is None
+                       and asyncio.get_event_loop().time() < deadline):
+                    await asyncio.sleep(0.25)
+                q = eng.quotes.get(sym)
+        if q is None:
+            # still nothing (weekend, cold feed): the last session's close from
+            # history — never leave the analyst priced blind (CRM skip,
+            # run d7aedd08, 2026-08-29: SKIP purely for want of a print)
+            try:
+                from ...marketstructure.history import fetch_recent
+                bars = await fetch_recent(sym, "1h", sessions=2)
+                if bars:
+                    return {"symbol": sym, "last": round(float(bars[-1].close), 4),
+                            "stale": True,
+                            "note": "no LIVE quote (market closed / cold feed) — this is "
+                                    "the last session's close from history; fine for "
+                                    "judging the idea, do not treat as a fillable price"}
+            except Exception:
+                log.debug("get_quote history fallback failed for %s", sym, exc_info=True)
             return {"error": f"no quote for {sym}"}
         return {"symbol": sym, "last": q.last, "bid": q.bid, "ask": q.ask,
                 "spreadPct": round(q.spread_pct, 3), "prevClose": q.prev_close,
