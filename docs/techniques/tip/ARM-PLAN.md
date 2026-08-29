@@ -6,7 +6,12 @@ technique/plans.py, walkforward tracker). Five phases, checkboxes to tick off
 during implementation. Charter context: ANALYST.md; intake context:
 INTAKE-PLAN.md.*
 
-## 0. The wiring today (review summary)
+## 0. The wiring at review time (the PRE-implementation snapshot)
+
+*This §0 is the 2026-08-29 review that motivated the plan. All five phases have
+since landed (see the ticked checkboxes and the implementation notes at the
+end); F1–F10 are closed. Kept as the findings log — read it as history, not as
+the current state.*
 
 Two lanes leave a verified tip, and they are not coordinated:
 

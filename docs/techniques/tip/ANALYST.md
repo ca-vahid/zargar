@@ -138,12 +138,16 @@ The armed path (level-touch plans via `TipRunner`) keeps its own handoff
   review run is handed the source's last ~3 days automatically (the tip's
   backstory) and can `search_messages` deeper. UI: the **Mirror** panel on
   Tips > Sources (Discord-style, search + load older).
-- [ ] **A6 — armed-path unification**: the analyst's exit plan replaces the
-  fixed 50/50 ladder in `runner._handoff` when an opinion exists for the
-  signal.
-- [ ] **A7 — rule quality loop**: periodic self-audit run that reads ALL rules
+- [x] **A6 — armed-path unification** (2026-08-29, ARM-PLAN P2): real-money
+  armed fills run the analyst's exit plan via `lifecycle.policy_from_exit_plan`;
+  shadow books keep the standard 50/50 ladder for scorecard comparability.
+- [x] **A7-partial — analyst-chosen arming, scale-ins, conditions, spreads**
+  (2026-08-29, ARM-PLAN P1/P3/P4/P5): the analyst chooses now-vs-at-level,
+  authors entry ladders and guard conditions, and expresses defined-risk
+  spreads. See `ARM-PLAN.md`.
+- [ ] **A8 — rule quality loop**: periodic self-audit run that reads ALL rules
   + the last N retros and consolidates/expires stale rules (rules must cite
-  evidence; contradictions surface to the human).
+  evidence; contradictions surface to the human). *(The one still-open item.)*
 
 ## 7. Knobs
 

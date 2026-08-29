@@ -5,26 +5,62 @@ status lives in `BUILD-PLAN.md` — this file is the design record and the decis
 Runs on the technique platform (`docs/TECHNIQUE-PLATFORM-PLAN.md`); read
 `docs/BUILDING-A-TECHNIQUE.md` before touching the runner side.*
 
-## Status (as of 2026-08-28)
+## Doc map
+
+- **`PLAN.md`** (this file) — design record + decision log for the intake→books core.
+- **`BUILD-PLAN.md`** — Phase B (options expression) task list, as-built.
+- **`INTAKE-PLAN.md`** — Discord auto-intake: the ToS boundary, the gateway, the
+  source allowlist, the message MIRROR + onboarding, analyst run history + live view.
+- **`ANALYST.md`** — the Tips Analyst CHARTER: it is an independent options trader with
+  its own self-maintained rulebook, exit campaigns, memory (shared notes) and retros.
+  EM's method book never applies to it. Read this before touching the analyst.
+- **`ARM-PLAN.md`** — the tip→arm enrichment (5 phases, all built 2026-08-29):
+  analyst-chosen now-vs-at-level, one exit authority, scale-ins, conditional/timed
+  entries, defined-risk spreads. Its §0 is the current wiring map + findings log.
+- **`TRADING-RULES.md`** — the METHOD judgement log (findings, decisions, change log).
+
+## Status (as of 2026-08-29)
 
 **Built and on main:** extraction v2 (option-aware flat schema, Discord-shorthand
-grounding, screenshot→transcript intake, **source auto-detection** from the content
-itself), dedupe with seen-again, verification parking, per-source policies
-(`signals/sources.py`), dual shadow books (`Portfolio.book`: immediate vs armed, never
-blended), the tip plan builder (`techniques/tip/plan.py`), `TipRunner`
-(`techniques/tip/runner.py`: level-touch arming, expiry-bounded waiting via `horizon.py`,
-the `tip_shadow_arm` morning loop, the Phase 2b handoff to `PositionManager`), **options
-expression in both books** under the per-tip vehicle rule (`express.py`), R-based outcome
-scoring with per-source expectancy on the scorecard, and the redesigned Tips page
-(tabs, hero composer, auto-detect source). Every extract & verify surfaces a
-**click-to-copy id** (extraction = content id, tip = signal id — same `CopyChip` as EM
-runs) and `GET /api/content/{id}` dumps the full record behind it, so a run can be
-quoted by number when fine-tuning the process. Tests: `test_signals_tip.py`,
-`test_tip_express.py`, `test_tip_runner.py`.
+grounding, screenshot→transcript intake, **source auto-detection**; + entry zones,
+scale-in ladders, conditional entries and 2-leg spread grammar — ARM-PLAN P3–P5),
+dedupe with seen-again, verification parking, per-source policies (`signals/sources.py`),
+dual shadow books (`Portfolio.book`: immediate vs armed, never blended), the tip plan
+builder (`techniques/tip/plan.py`: level-touch, breakout, multi-trigger scale-ins,
+guarded/timed entries), `TipRunner` (`techniques/tip/runner.py`: level-touch arming,
+analyst-driven arming, expiry-bounded waiting via `horizon.py`, the `tip_shadow_arm`
+morning loop, the `tip_retro` nightly loop, the handoff to `PositionManager`), **options
+expression in both books** under the per-tip vehicle rule (`express.py`, `pick_spread`),
+R-based outcome scoring with per-source expectancy, and the Tips page (Tips · New tip ·
+Analyst · Inbox + a set-apart ⚙ Sources config tab).
+
+**The Tips Analyst (charter: `ANALYST.md`)** is an independent trader: per tip it
+appraises with market tools (quote/bars/chains/flow/scorecard/earnings/our-positions/
+open-tips/**view_image**/**search_messages**), reads its own rulebook + the source's
+shared notes + the source's last ~3 days of mirrored messages, then chooses take/watch/
+skip AND how to express and exit it. A `take` chooses `now` (a proposal trading the tip's
+own vehicle) or `at_level` (an armed plan waiting for its price); the exit CAMPAIGN it
+authors (scale-out ladder, stop or premium-stop guard, hold cap) is what real-money
+positions run. It can steer OPEN tip positions (`update_exit_plan`/`close_position`,
+exit-only) and open defined-risk spreads. Every run persists a **TipAnalystRun** (kinds
+appraise/intake/retro, streamed live on `tip_analyst`, parent↔child linked) reviewable at
+Tips > Analyst. Closed positions get a nightly **retro** that grades the trade and
+updates the rulebook. Knobs: `techniques.tip.analyst_*`, `retro_*`, `allow_live_auto`,
+`analyst_manage_enabled`.
+
+**Discord auto-intake (`INTAKE-PLAN.md`):** the gateway allowlist + the message MIRROR
+(`discord_messages`, image bytes downloaded locally, onboarding backfill up to 17 days),
+searchable by the analyst and browsable in the Mirror panel.
+
+Every extract & verify and every analyst run surfaces a **click-to-copy id** and a
+`GET /api/content/{id}` / `GET /api/tip/analyst/runs/{id}` record behind it. Tests:
+`test_signals_tip.py`, `test_tip_express.py`, `test_tip_runner.py`,
+`test_api_and_pipeline.py`, `test_discord_gateway.py`.
 
 **Not yet built:** the per-source policy editor UI, Telegram intake, HMAC webhook auth,
-the repeat-mention conviction decision, the official `mobile-audit` pass (needs the next
-prod restart), and the real-money gates (below).
+the repeat-mention conviction decision, native multi-leg spread orders (leg-sequencing
+ships today; Webull CA accepts native mleg — ARM-PLAN P5), the official `mobile-audit`
+pass, and the real-money gates (below).
 
 ## 0. What it is
 
@@ -90,11 +126,21 @@ stated strike/expiry/DTE hint — is an OPTION in both books; else shares in bot
   `expiry − entry_cutoff_dte`; past it the signal expires (`SignalExpiredUnfilled`) —
   itself a scorecard datum.
 
-**On fill** the trade hands off to the durable `PositionManager`: fixed stop, ladder
-50/50 on the first two targets, structure trail after +1R, time stop at the thesis
-expiry, earnings flatten (unless the catalyst IS earnings), `premium_stop` + `dte_close`
-for options (app-managed overnight with the acknowledgement), venue GTC stop for shares.
-The session runner forgets the trade — end-of-day flatten never touches it.
+**On fill** the trade hands off to the durable `PositionManager` (`runner._handoff`).
+The exit policy has ONE authority (ARM-PLAN P2): a REAL-money armed fill runs the
+**analyst's** exit campaign when the appraisal wrote one (`lifecycle.policy_from_exit_plan`
+— its ladder, stop-or-premium-guard, hold cap); the **shadow** books and any
+plan without an analyst campaign run the standard default (fixed stop, 50/50 on the first
+two targets — `lifecycle.DEFAULT_TIP_FRACTIONS`), so the per-source scorecard stays
+comparable across sources. Both add the structure trail after +1R, the thesis-expiry time
+stop, the earnings flatten (unless the catalyst IS earnings), `premium_stop` + `dte_close`
+for options (app-managed overnight with the acknowledgement) and the venue GTC stop for
+shares. The exit author is tagged on the position (`exit:analyst:<run8>` / `exit:default`).
+The session runner forgets the trade — end-of-day flatten never touches it. A scale-in
+plan's later rungs JOIN the same position (`PositionManager.append_leg`), one campaign over
+the combined size. Approved buy-now proposals adopt the same way (`lifecycle.adopt_when_filled`,
+restart-safe via `resume_pending_adoptions`); defined-risk spreads open leg-sequenced
+(`lifecycle.open_spread`).
 
 **Scoring**: tip runs snapshot their own rules into `config.thresholds` so the outcome
 scorer replays them faithfully; per-source armed-book stats (scored / fired /
