@@ -2096,3 +2096,23 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   color: var(--text-3); text-align: left; }
 .disc-cat-name:hover { color: var(--accent); }
 .disc-cat .disc-row { margin-left: 14px; }
+
+/* Discord source options: onboarding days */
+.disc-days { width: 44px; padding: 2px 4px; font-size: var(--fs-1); }
+
+/* Mirror viewer — discord-style read-only history */
+.mir-src { max-width: 200px; font-size: var(--fs-1); padding: 3px 6px; }
+.mir-search { width: 180px; font-size: var(--fs-1); padding: 3px 8px; }
+.mir-scroll { max-height: 46vh; overflow-y: auto; padding: 6px 14px 12px; }
+.mir-older { text-align: center; padding: 4px 0; }
+.mir-day { text-align: center; font-size: var(--fs-0); color: var(--text-3);
+  margin: 10px 0 6px; display: flex; align-items: center; gap: 10px; }
+.mir-day::before, .mir-day::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+.mir-msg { padding: 5px 0; }
+.mir-meta { display: flex; align-items: center; gap: 8px; font-size: var(--fs-1); }
+.mir-chan { font-size: var(--fs-0); color: var(--text-3); background: var(--surface-2);
+  border-radius: 999px; padding: 0 7px; }
+.mir-text { font-size: 13px; white-space: pre-wrap; word-break: break-word;
+  line-height: 1.45; margin-top: 1px; }
+.mir-imgs { font-size: var(--fs-1); display: flex; gap: 10px; margin-top: 2px; flex-wrap: wrap; }
+.an-note-scope--rule { border-color: var(--accent); color: var(--accent); font-weight: 700; }

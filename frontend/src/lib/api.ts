@@ -86,6 +86,15 @@ export const api = {
     request<{ ok: boolean }>("POST", "/api/tip/discord/process-last", { channelId }),
   discordProcessResult: (channelId: string) =>
     request<{ result: any }>("GET", `/api/tip/discord/process-result?channelId=${encodeURIComponent(channelId)}`),
+  discordMessages: (p: { source?: string; contains?: string; before?: string; limit?: number }) => {
+    const q = new URLSearchParams();
+    if (p.source) q.set("source", p.source);
+    if (p.contains) q.set("contains", p.contains);
+    if (p.before) q.set("before", p.before);
+    q.set("limit", String(p.limit ?? 100));
+    return request<import("../types").DiscordMirrorMessage[]>(
+      "GET", `/api/tip/discord/messages?${q.toString()}`);
+  },
   // --- tips analyst runs ---
   analystRuns: (limit = 40) =>
     request<import("../types").AnalystRunSummary[]>("GET", `/api/tip/analyst/runs?limit=${limit}`),

@@ -178,6 +178,125 @@ class SignalService:
             scopes.append(f"signal:{signal_id}")
         return await self.tip_notes(scopes, limit=limit)
 
+    # ---------------------------------------------------- discord message mirror
+    # The source's own history is context ("bought NVDA" → "sold 40%"): every
+    # message the gateway sees in a MONITORED channel is mirrored here for the
+    # analyst to search and cross-reference (ANALYST.md; user 2026-08-28).
+    @staticmethod
+    def _msg_dict(m) -> dict:
+        return {"id": m.id, "channelId": m.channel_id, "source": m.source_name,
+                "guild": m.guild_name, "author": m.author, "isBot": m.is_bot,
+                "text": m.text, "images": m.images or [],
+                "postedAt": m.posted_at.isoformat() if m.posted_at else None}
+
+    async def discord_store_messages(self, messages: list[dict]) -> int:
+        """Upsert mirrored messages (id = the discord message id); prune the
+        mirror past techniques.tip.mirror_max_messages, oldest first."""
+        from ..models import DiscordMessage
+        stored = 0
+        async with self.engine.sf() as session:
+            for m in messages[:200]:
+                mid = str(m.get("id") or "").strip()
+                if not mid:
+                    continue
+                row = await session.get(DiscordMessage, mid)
+                if row is not None:
+                    continue
+                posted = None
+                try:
+                    ts = str(m.get("postedAt") or "")
+                    posted = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
+                except ValueError:
+                    posted = None
+                session.add(DiscordMessage(
+                    id=mid, channel_id=str(m.get("channelId") or ""),
+                    source_name=(m.get("source") or None),
+                    guild_name=(m.get("guild") or None),
+                    author=str(m.get("author") or "")[:128],
+                    author_id=(str(m.get("authorId")) if m.get("authorId") else None),
+                    is_bot=bool(m.get("isBot")),
+                    text=str(m.get("text") or "")[:8000],
+                    images=[str(u) for u in (m.get("images") or [])][:6],
+                    posted_at=posted))
+                stored += 1
+            await session.commit()
+        if stored:
+            await self._prune_mirror()
+        return stored
+
+    async def _prune_mirror(self) -> None:
+        from sqlalchemy import delete, func
+        from ..models import DiscordMessage
+        cap = int(self.engine.settings.get("techniques.tip.mirror_max_messages", 20000))
+        async with self.engine.sf() as session:
+            n = (await session.execute(
+                select(func.count()).select_from(DiscordMessage))).scalar() or 0
+            if n <= cap:
+                return
+            cutoff_rows = (await session.execute(
+                select(DiscordMessage.id)
+                .order_by(DiscordMessage.posted_at.asc().nulls_first())
+                .limit(n - cap))).scalars().all()
+            if cutoff_rows:
+                await session.execute(delete(DiscordMessage)
+                                      .where(DiscordMessage.id.in_(cutoff_rows)))
+                await session.commit()
+
+    async def discord_search_messages(self, *, source: str | None = None,
+                                      channel_id: str | None = None,
+                                      contains: str | None = None,
+                                      hours: float | None = None,
+                                      before: str | None = None,
+                                      limit: int = 30) -> list[dict]:
+        """The analyst's (and the viewer's) history search: newest first,
+        filtered by source name, channel, substring (case-insensitive),
+        lookback hours, and `before` (ISO — pagination for 'load older')."""
+        from ..models import DiscordMessage
+        q = select(DiscordMessage).order_by(DiscordMessage.posted_at.desc()) \
+            .limit(max(1, min(int(limit), 200)))
+        if source:
+            q = q.where(DiscordMessage.source_name == source)
+        if channel_id:
+            q = q.where(DiscordMessage.channel_id == str(channel_id))
+        if contains:
+            q = q.where(DiscordMessage.text.ilike(f"%{contains}%"))
+        if hours:
+            cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=float(hours))
+            q = q.where(DiscordMessage.posted_at >= cutoff)
+        if before:
+            try:
+                b = dt.datetime.fromisoformat(str(before).replace("Z", "+00:00"))
+                q = q.where(DiscordMessage.posted_at < b)
+            except ValueError:
+                pass
+        async with self.engine.sf() as session:
+            rows = (await session.execute(q)).scalars().all()
+        return [self._msg_dict(r) for r in rows]
+
+    async def discord_mirror_stats(self) -> dict:
+        """Per-channel mirror coverage {channelId: {count, oldestId, oldestAt,
+        newestAt}} — the gateway reads it to decide how far an onboarding
+        backfill must reach (no re-downloads)."""
+        from sqlalchemy import func
+        from ..models import DiscordMessage
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(DiscordMessage.channel_id,
+                       func.count(DiscordMessage.id),
+                       func.min(DiscordMessage.posted_at),
+                       func.max(DiscordMessage.posted_at))
+                .group_by(DiscordMessage.channel_id))).all()
+            out: dict = {}
+            for cid, n, oldest, newest in rows:
+                oldest_id = (await session.execute(
+                    select(DiscordMessage.id)
+                    .where(DiscordMessage.channel_id == cid)
+                    .order_by(DiscordMessage.posted_at.asc()).limit(1))).scalar()
+                out[str(cid)] = {"count": int(n), "oldestId": oldest_id,
+                                 "oldestAt": oldest.isoformat() if oldest else None,
+                                 "newestAt": newest.isoformat() if newest else None}
+        return out
+
     def discord_queue_process(self, channel_id: str) -> None:
         self._discord_process_queue.add(str(channel_id))
         self._discord_process_results.pop(str(channel_id), None)
@@ -225,6 +344,8 @@ class SignalService:
                 "guildName": str(w.get("guildName") or "")[:120],
                 "botsOnly": bool(w.get("botsOnly", w.get("kind") != "dm")),
                 "enabled": bool(w.get("enabled", True)),
+                # onboarding: mirror this many days of history (gateway, <= 17)
+                "onboardDays": max(0, min(17, int(w.get("onboardDays") or 0))),
             })
         await self.engine.settings.set("techniques.tip.discord.watch", clean)
         return clean

@@ -708,7 +708,7 @@ function DiscordSourcesPanel() {
       if (next[channelId]) delete next[channelId];
       else next[channelId] = {
         channelId, kind, label, guildName, sourceName: defaultName,
-        botsOnly: kind === "channel", enabled: true,
+        botsOnly: kind === "channel", enabled: true, onboardDays: 7,
       };
       return next;
     });
@@ -748,6 +748,12 @@ function DiscordSourcesPanel() {
             <label className="muted" title="only ingest posts from a bot in this channel">
               <input type="checkbox" checked={!!sel[channelId].botsOnly}
                 onChange={(e) => setField(channelId, { botsOnly: e.target.checked })} /> bots only
+            </label>
+            <label className="muted" title="onboard: mirror this many days of the channel's history (max 17) so the analyst has the backstory — no re-downloads">
+              onboard <input className="disc-days" type="number" min={0} max={17}
+                value={sel[channelId].onboardDays ?? 0}
+                onChange={(e) => setField(channelId, {
+                  onboardDays: Math.max(0, Math.min(17, Number(e.target.value) || 0)) })} />d
             </label>
           </span>
         )}
@@ -856,6 +862,107 @@ function DiscordSourcesPanel() {
   );
 }
 
+/** Discord-style read-only viewer over the mirror — proof the history the
+    analyst reads is actually in OUR database. Newest at the bottom, "load
+    older" prepends, search filters server-side. */
+function MirrorViewer() {
+  const watchState = useAsync(() => api.discordWatch(), []);
+  const sources = [...new Set((watchState.data?.watch ?? [])
+    .map((w) => w.sourceName).filter(Boolean))];
+  const [source, setSource] = useState("");
+  const [q, setQ] = useState("");
+  const [msgs, setMsgs] = useState<import("../types").DiscordMirrorMessage[] | null>(null);
+  const [exhausted, setExhausted] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const load = async (before?: string) => {
+    const batch = await api.discordMessages({
+      source: source || undefined, contains: q.trim() || undefined,
+      before, limit: 80 });
+    const asc = [...batch].reverse();               // API is newest-first; chat reads oldest→newest
+    setExhausted(batch.length < 80);
+    if (before) {
+      const el = scrollRef.current;
+      const keep = el ? el.scrollHeight - el.scrollTop : 0;
+      setMsgs((prev) => [...asc, ...(prev ?? [])]);
+      requestAnimationFrame(() => {                 // keep the reading position
+        if (el) el.scrollTop = el.scrollHeight - keep;
+      });
+    } else {
+      setMsgs(asc);
+      requestAnimationFrame(() => {
+        const el = scrollRef.current;
+        if (el) el.scrollTop = el.scrollHeight;     // open at the newest, like Discord
+      });
+    }
+  };
+  useEffect(() => { load().catch(() => setMsgs([])); }, [source]);
+  const search = () => load().catch(() => undefined);
+  let lastDay = "";
+  return (
+    <div className="panel mb">
+      <div className="panel-head">
+        Mirror
+        <span className="sub">the messages the analyst can search — cached in our database</span>
+        <span style={{ flex: 1 }} />
+        <select className="mir-src" value={source} onChange={(e) => setSource(e.target.value)}>
+          <option value="">all sources</option>
+          {sources.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <input className="mir-search" placeholder="search text…" value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && search()} />
+        <button className="link-btn" onClick={search}>search</button>
+      </div>
+      <div className="mir-scroll" ref={scrollRef}>
+        {msgs == null ? <Spinner />
+          : msgs.length === 0 ? (
+            <div className="empty">Nothing mirrored{source ? ` for ${source}` : ""} yet — the
+              intake mirrors watched channels while it runs; “onboard Nd” on a source backfills
+              its history.</div>
+          ) : (
+            <>
+              {!exhausted && (
+                <div className="mir-older">
+                  <button className="link-btn"
+                    onClick={() => msgs[0]?.postedAt && load(msgs[0].postedAt!).catch(() => undefined)}>
+                    ↑ load older
+                  </button>
+                </div>
+              )}
+              {msgs.map((m) => {
+                const day = (m.postedAt ?? "").slice(0, 10);
+                const divider = day && day !== lastDay;
+                lastDay = day || lastDay;
+                return (
+                  <div key={m.id}>
+                    {divider && <div className="mir-day">{day}</div>}
+                    <div className="mir-msg">
+                      <div className="mir-meta">
+                        <b>{m.author}</b>
+                        {m.isBot && <span className="status-pill dim">bot</span>}
+                        {!source && m.source && <span className="mir-chan">{m.source}</span>}
+                        <span className="muted">{(m.postedAt ?? "").slice(11, 16)}</span>
+                      </div>
+                      <div className="mir-text">{m.text || <span className="muted">(no text)</span>}</div>
+                      {m.images.length > 0 && (
+                        <div className="mir-imgs">
+                          {m.images.map((u, i) => (
+                            <a key={i} href={u} target="_blank" rel="noreferrer">image {i + 1} ↗</a>
+                          ))}
+                          <span className="muted"> (Discord CDN links — may expire)</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+      </div>
+    </div>
+  );
+}
+
 function SourcesTab() {
   const signalCount = useStore((s) => s.signals.length);
   const state = useAsync(() => api.sourceScorecards(), [signalCount]);
@@ -863,6 +970,7 @@ function SourcesTab() {
   return (
     <>
     <DiscordSourcesPanel />
+    <MirrorViewer />
     <div className="panel">
       <div className="panel-head">
         Source scorecards
@@ -1156,7 +1264,7 @@ function AnalystRunDetail({ id }: { id: string }) {
   );
 }
 
-const NOTE_SCOPES = ["general", "ticker:", "source:"];
+const NOTE_SCOPES = ["general", "rule", "ticker:", "source:"];
 
 function NotesPanel() {
   const toast = useStore((s) => s.toast);
@@ -1186,7 +1294,8 @@ function NotesPanel() {
           : notes.map((n) => (
             <div key={n.id} className="an-note">
               <div className="an-note-head">
-                <span className="an-note-scope">{n.scope}</span>
+                <span className={`an-note-scope ${n.scope === "rule" ? "an-note-scope--rule" : ""}`}>
+                  {n.scope === "rule" ? "⚖ rule" : n.scope}</span>
                 <span className="muted">{n.author}{n.createdAt ? ` · ${timeAgo(n.createdAt)}` : ""}</span>
                 {n.runId && <button className="link-btn" title="open the run that saved this note"
                   onClick={() => useStore.getState().openAnalystRun(n.runId!)}>run</button>}
@@ -1327,6 +1436,7 @@ function AnalystTab() {
                   <span className="an-run-l">
                     <b>{r.ticker}</b>
                     {r.kind === "intake" && <span className="status-pill dim">intake</span>}
+                    {r.kind === "retro" && <span className="status-pill dim">retro</span>}
                     <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
                       {r.status === "running" ? "running" : r.verdict ?? r.status}
                     </span>

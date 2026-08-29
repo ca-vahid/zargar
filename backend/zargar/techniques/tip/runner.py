@@ -496,3 +496,8 @@ async def attach_tip_runner(engine) -> None:
     at = str(engine.settings.get("techniques.tip.shadow_arm_at", "09:12"))
     engine.scheduler.register("tip_shadow_arm", at,
                               lambda: engine.tip_runner.shadow_arm_open_tips())
+    # the analyst's nightly retro on closed tip positions (ANALYST.md §2.4)
+    from .retro import run_tip_retros
+    retro_at = str(engine.settings.get("techniques.tip.retro_at", "17:10"))
+    engine.scheduler.register("tip_retro", retro_at,
+                              lambda: run_tip_retros(engine))

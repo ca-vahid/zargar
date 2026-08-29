@@ -146,6 +146,13 @@ strict grammar and their own timestamps.*
   exit time, weeks later). UI: the **Knowledge** panel on Tips > Analyst
   (list/add/delete; a note links back to the run that saved it).
   API `GET/POST /api/tip/notes`, `DELETE /api/tip/notes/{id}`.
+- [x] **P4e — message mirror + onboarding** (2026-08-28): `discord_messages`
+  mirrors every watched-channel message (dedupe on message id, pruned to
+  `techniques.tip.mirror_max_messages`); watch entries carry `onboardDays`
+  (<= 17) and the gateway backfills that deep on startup/when a source is
+  added (`mirror-stats` driven, paginated, throttled, no re-downloads). The
+  analyst gets the source's last ~3 days in every run + `search_messages`;
+  the user gets the **Mirror** panel (Tips > Sources).
 - [ ] **P5 — alert lifecycle → book management**: an `Update/TRIM/CLOSE` from
   the same source+ticker should attach to the OPEN signal (dedupe-style key)
   and drive the immediate book's exit — giving a *source-managed* exit

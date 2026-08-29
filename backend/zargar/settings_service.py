@@ -91,8 +91,12 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
     "techniques.tip.analyst_model": "",      # empty = the extraction model
     "techniques.tip.analyst_notes_max": 12,  # shared-knowledge notes handed to each run
-    "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our book
+    "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our positions
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
+    "techniques.tip.retro_enabled": True,    # nightly analyst retro on closed tip positions
+    "techniques.tip.retro_at": "17:10",      # ET, engine scheduler
+    "techniques.tip.analyst_manage_enabled": True,  # analyst may adjust/trim OPEN tip positions (exit-only)
+    "techniques.tip.mirror_max_messages": 20000,    # discord message mirror cap (oldest pruned)
     "techniques.tip.dedupe_window_hours": 24,
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
     "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none

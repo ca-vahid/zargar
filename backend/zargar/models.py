@@ -597,6 +597,29 @@ class TipAnalystRun(Base):
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class DiscordMessage(Base):
+    """Mirror of every message the gateway saw in a MONITORED channel — the
+    source's own history ("bought NVDA" in the morning, "sold 40%" in the
+    afternoon are one story). The analyst queries it (search_messages tool) to
+    cross-reference follow-ups against tips and open positions. Text is the
+    flattened content+embeds; images are CDN URLs (signed, may expire — the
+    ingested copy, if any, holds the transcription). Pruned to
+    `techniques.tip.mirror_max_messages`, oldest first."""
+    __tablename__ = "discord_messages"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)   # discord message id
+    channel_id: Mapped[str] = mapped_column(String(32), index=True)
+    source_name: Mapped[str | None] = mapped_column(String(128), index=True)
+    guild_name: Mapped[str | None] = mapped_column(String(128))
+    author: Mapped[str] = mapped_column(String(128), default="")
+    author_id: Mapped[str | None] = mapped_column(String(32))
+    is_bot: Mapped[bool] = mapped_column(Boolean, default=False)
+    text: Mapped[str] = mapped_column(Text, default="")
+    images: Mapped[list] = mapped_column(JSONVariant, default=list)
+    posted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class TipNote(Base):
     """Shared tips knowledge — durable notes that outlive one run. A tip often
     carries context that matters LATER ("this SPY put is downside protection for

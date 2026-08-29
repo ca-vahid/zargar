@@ -60,11 +60,17 @@ legacy `technique.*` prefix is grandfathered — don't copy it).
 `BUILD-PLAN.md`. Never user-token Discord automation (self-bots — ToS ban risk) and never
 alert-room auto-execution; reading the OS notifications Discord delivered to the user IS allowed
 (`zargar/tools/discord_watch.py`, POC 2026-08-28) — boundary table + intake phases in
-`docs/techniques/tip/INTAKE-PLAN.md`. The **Tips Analyst** (`techniques/tip/analyst.py`, advisory
-LLM + market tools, `techniques.tip.analyst_*` knobs) appraises each tradable tip onto
-`extraction.analyst`; every appraisal persists a **TipAnalystRun** (full play-by-play,
-streamed live on the `tip_analyst` topic — UI Tips > Analyst, deep link `/inbox/analyst/<id>`)
-and reads/writes **shared knowledge notes** (`tip_notes`, save_note tool, Knowledge panel).
+`docs/techniques/tip/INTAKE-PLAN.md`. The **Tips Analyst** (`techniques/tip/analyst.py` + `lifecycle.py`; charter =
+`docs/techniques/tip/ANALYST.md`) is an INDEPENDENT trader persona — EM's method book never
+applies to it ("our book" in its tools = the desk's own positions, not the EM PDF). It
+appraises each tradable tip onto `extraction.analyst` **with its own exit plan** (scale-out
+targets/fractions, stop or premium-stop guard, hold cap); every run persists a **TipAnalystRun**
+(kinds appraise/intake/retro, full play-by-play, streamed live on the `tip_analyst` topic — UI
+Tips > Analyst, deep link `/inbox/analyst/<id>`), reads/writes **shared knowledge notes**
+(`tip_notes`, save_note tool, Knowledge panel) and maintains **its own trading rules** (scope
+`rule`, injected into every run; retros update them). Filled tip proposals are adopted into
+`engine.position_manager` with the analyst's policy (`lifecycle.adopt_when_filled`); closed tip
+positions get a nightly **retro** (`tip_retro`, `techniques.tip.retro_*`).
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries

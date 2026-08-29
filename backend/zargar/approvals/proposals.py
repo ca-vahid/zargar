@@ -46,6 +46,7 @@ class ProposalService:
     def __init__(self, engine) -> None:
         self.engine = engine
         self._task: asyncio.Task | None = None
+        self._adopt_tasks: dict[str, asyncio.Task] = {}   # proposalId -> adopt-on-fill waiter
 
     # ------------------------------------------------------------- create
     async def create_from_signal(self, signal_row: Signal, sig: TradeSignal,
@@ -95,10 +96,17 @@ class ProposalService:
         vehicle: dict = {}
         if occ:
             symbol, sec_type, side = occ, "OPT", "BUY"      # long the contract, both directions
-            await eng.ensure_symbol(occ)
+            # deliberately NOT ensure_symbol(occ): the sim feed would fabricate a
+            # quote for the contract and poison the risk gate's reference price;
+            # a real quote (Yahoo, or one already tracked) is read if present
             quote = eng.quotes.get(occ)
-            ref_price = ((quote.ask if quote and quote.ask > 0 else None)
-                         or limit_hint or sig.premium)
+            live_ask = quote.ask if quote and quote.ask > 0 else None
+            # the analyst's/tip's stated limit is the trader's price — never chase
+            # above it; a live ask may only IMPROVE the limit (found 2026-08-28:
+            # a bad option quote priced 2 contracts at $16k against a $4.60 tip)
+            ref_price = limit_hint or sig.premium or live_ask
+            if live_ask and ref_price and live_ask < float(ref_price):
+                ref_price = live_ask
             if not ref_price or ref_price <= 0:
                 log.warning("no premium reference for %s — no proposal", occ)
                 return None
@@ -114,8 +122,9 @@ class ProposalService:
             explain = (f"Approve = buy {qty} contract{'s' if qty != 1 else ''} of "
                        f"{label} (a {opt_type} — {'bullish' if opt_type == 'call' else 'bearish'}) "
                        f"at a ${limit:.2f} limit ≈ ${cost:,.0f} in “{pf.get('name', pid)}” "
-                       f"({pf.get('kind', '?')}). The order still passes the risk gate. "
-                       f"Nothing manages the exit automatically yet — it shows in Portfolios.")
+                       f"({pf.get('kind', '?')}). The order still passes the risk gate; "
+                       f"on the fill the position is handed to the durable manager under "
+                       f"the analyst's exit plan.")
         else:
             if sig.direction == "short":
                 # bearish with no usable put: share shorting is never proposed
@@ -141,6 +150,25 @@ class ProposalService:
                           if bracket else "")
                        + ". The order still passes the risk gate.")
 
+        # the exit campaign this position will run after the fill — the analyst's
+        # plan when it wrote one, else the tip's own stop/targets (ANALYST.md §5)
+        from ..techniques.tip.lifecycle import build_exit_plan
+        exit_plan = build_exit_plan(signal_row, sig, analyst, policy)
+        bits = []
+        if exit_plan.get("targets"):
+            fr = exit_plan.get("fractions") or []
+            bits.append("trims " + ", ".join(
+                (f"{int(round(fr[i] * 100))}% @ {t:g}" if i < len(fr) else f"@ {t:g}")
+                for i, t in enumerate(exit_plan["targets"])))
+        if exit_plan.get("underlyingStop"):
+            bits.append(f"stop {exit_plan['underlyingStop']:g}")
+        if exit_plan.get("premiumStopPct"):
+            bits.append(f"premium stop {exit_plan['premiumStopPct']:g}%")
+        if exit_plan.get("maxHoldSessions"):
+            bits.append(f"time box {exit_plan['maxHoldSessions']} sessions")
+        if bits:
+            explain += f" Exit campaign ({exit_plan.get('author', 'tip')}): {'; '.join(bits)}."
+
         ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
         row = Proposal(
             id=new_id(),
@@ -155,6 +183,7 @@ class ProposalService:
             bracket=bracket,
             rationale=sig.thesis_summary,
             context={
+                "techniqueId": "tip",
                 "sourceName": signal_row.source_name,
                 "confidence": sig.confidence,
                 "verification": verification,
@@ -163,6 +192,7 @@ class ProposalService:
                                  "stop": sig.stop_price},
                 "vehicle": vehicle,
                 "explain": explain,
+                "exitPlan": exit_plan,
                 "analystRunId": analyst.get("runId"),
                 "analyst": ({k: analyst.get(k) for k in
                              ("verdict", "rationale", "invalidation", "confidence")}
@@ -244,6 +274,14 @@ class ProposalService:
                     order=order, instrument=("options" if pdict.get("secType") == "OPT" else "shares"),
                     order_symbol=(pdict.get("symbol") if pdict.get("secType") == "OPT" else None),
                     multiplier=(100.0 if pdict.get("secType") == "OPT" else 1.0))
+        # A tip proposal: once the order fills, the position is handed to the
+        # durable manager under the analyst's exit plan (ANALYST.md §5).
+        elif status == "executed" and (pdict.get("context") or {}).get("techniqueId") == "tip":
+            from ..techniques.tip.lifecycle import adopt_when_filled
+            task = asyncio.create_task(adopt_when_filled(eng, pdict, order),
+                                       name=f"tip-adopt-{proposal_id[:8]}")
+            self._adopt_tasks[proposal_id] = task
+            task.add_done_callback(lambda _t, k=proposal_id: self._adopt_tasks.pop(k, None))
         return {"proposal": pdict, "order": order}
 
     async def reject(self, proposal_id: str, *, via: str = "app") -> dict:
@@ -289,6 +327,11 @@ class ProposalService:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        for t in list(self._adopt_tasks.values()):
+            t.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await t
+        self._adopt_tasks.clear()
 
     async def expire_due(self) -> int:
         eng = self.engine

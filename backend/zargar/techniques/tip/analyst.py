@@ -1,14 +1,18 @@
-"""The Tips Analyst — an LLM agent with market tools that appraises each tip.
+"""The Tips Analyst — an INDEPENDENT trader persona with market tools.
 
-Runs after verification (POC, 2026-08-28): given the extracted tip, the
-verification result and the source's policy budget, it may call read-only
-tools (quote, bars, option expiries/chain, flow read, source scorecard,
-earnings) and must answer with a JSON opinion: take / watch / skip, the
-contract it would buy, a limit premium, size within budget, invalidation and
-a short rationale. STRICTLY ADVISORY — it places no orders and gates nothing;
-the opinion rides on the signal (`extraction.analyst`), shows on the tip card
-and inside any proposal rationale. Hard rules it is told and we enforce
-downstream anyway: never 0DTE, never naked calls, shorts are puts only.
+Charter: docs/techniques/tip/ANALYST.md (2026-08-28). The analyst trades the
+tip technique with its OWN judgement and its OWN self-maintained rules — the
+EnhancedMarket method book never applies here ("our book" in its tools means
+the desk's own POSITIONS, the trading sense of the word). Per tip it appraises
+(tools: quote, bars, chains, flow, source scorecard, earnings, our positions,
+open tips, shared notes), decides take/watch/skip, and on a take authors both
+the ENTRY (contract, limit, size within budget) and the EXIT PLAN (scale-out
+targets + fractions, stop or premium-stop guard, hold cap) that the position
+manager executes mechanically after the fill. Retro runs on closed positions
+feed lessons back into the shared notes and the analyst's rules (scope `rule`).
+
+It never places orders itself — its "take" becomes a proposal; approval (human
+or earned auto mode) goes through RiskGate like every other order.
 
 Fail-open: any error, timeout or budget stop returns None and the pipeline
 continues exactly as before. Tool budget: `techniques.tip.analyst_max_tools`.
@@ -44,6 +48,23 @@ class AnalystOpinion(BaseModel):
         default=None, description="One sentence: what kills the idea (level/premium/date)")
     rationale: str = Field(description="2-3 sentences: why this verdict and this expression")
     confidence: float = Field(default=0.5, description="0..1")
+    # --- the exit campaign (required on a take; the position manager runs it) ---
+    exit_targets: list[float] = Field(
+        default_factory=list,
+        description="UNDERLYING prices to trim at, nearest first (sell in pieces)")
+    exit_fractions: list[float] = Field(
+        default_factory=list,
+        description="Fraction of the position to sell at each target; sums to <= 1 "
+                    "(a final runner may trail)")
+    underlying_stop: Optional[float] = Field(
+        default=None, description="Underlying price where the idea is wrong; null only "
+                                  "when premium_stop_pct is the declared guard")
+    premium_stop_pct: Optional[float] = Field(
+        default=None, description="Close if the option mark bleeds this % from entry (e.g. 50)")
+    max_hold_sessions: Optional[int] = Field(
+        default=None, description="Time box in TRADING sessions; re-evaluate dies with it")
+    exit_rationale: Optional[str] = Field(
+        default=None, description="One sentence: the exit campaign in words")
 
 
 TOOLS = [
@@ -88,39 +109,108 @@ TOOLS = [
                     "tip instead of opening a new one.",
      "input_schema": {"type": "object", "properties": {
          "ticker": {"type": "string"}, "source": {"type": "string"}}}},
+    {"name": "search_messages",
+     "description": "Search the desk's mirror of Discord messages from monitored channels — "
+                    "the source's own history. Messages are linked stories: a morning 'bought "
+                    "NVDA' and an afternoon 'sold 40%' belong together. Use it to find the "
+                    "original OPEN behind an update, follow-ups on a ticker, or what a source "
+                    "has been saying. Args: source (exact source name), contains (substring, "
+                    "e.g. a ticker), hours (lookback), limit.",
+     "input_schema": {"type": "object", "properties": {
+         "source": {"type": "string"}, "contains": {"type": "string"},
+         "hours": {"type": "number"}, "limit": {"type": "integer"}}}},
+    {"name": "update_exit_plan",
+     "description": "Rewrite the exit campaign of an OPEN managed tip position (get_positions "
+                    "shows ids). EXIT-ONLY: this changes when/how we sell — it can never add "
+                    "exposure, and a stop may only tighten. Use it when a source follow-up or "
+                    "the market changes the campaign ('they sold 40%' → trim and tighten). "
+                    "Args: position_id, exit_targets (underlying prices), exit_fractions, "
+                    "underlying_stop, premium_stop_pct, max_hold_sessions, reason (required).",
+     "input_schema": {"type": "object", "properties": {
+         "position_id": {"type": "string"}, "exit_targets": {"type": "array", "items": {"type": "number"}},
+         "exit_fractions": {"type": "array", "items": {"type": "number"}},
+         "underlying_stop": {"type": "number"}, "premium_stop_pct": {"type": "number"},
+         "max_hold_sessions": {"type": "integer"}, "reason": {"type": "string"}},
+         "required": ["position_id", "reason"]}},
+    {"name": "close_position",
+     "description": "Sell part or all of an OPEN managed tip position NOW (market, reduce-only "
+                    "— goes through the risk gate's safety list). fraction: 0.25 = sell a "
+                    "quarter, 1.0 = close it. Use when the source exited ('sold the rest') or "
+                    "the thesis is dead. Args: position_id, fraction, reason (required).",
+     "input_schema": {"type": "object", "properties": {
+         "position_id": {"type": "string"}, "fraction": {"type": "number"},
+         "reason": {"type": "string"}}, "required": ["position_id", "reason"]}},
     {"name": "save_note",
      "description": "Save a durable note to the shared tips knowledge base. Use it for context "
                     "that matters BEYOND this run: the tip's own framing (e.g. 'the SPY put is "
                     "downside protection for the source's Oct-Dec calls'), position lifecycle "
                     "info, or a lesson about this source. Future runs on the same ticker/source "
                     "are handed these notes. Do NOT restate the trade itself. scope: 'tip' "
-                    "(this tip only), 'ticker', 'source' or 'general'.",
+                    "(this tip only), 'ticker', 'source', 'general' — or 'rule' to add/refine "
+                    "one of YOUR TRADING RULES (a durable lesson about how you trade, with the "
+                    "why and the evidence).",
      "input_schema": {"type": "object", "properties": {
          "scope": {"type": "string"}, "text": {"type": "string"}},
          "required": ["scope", "text"]}},
 ]
 
-SYSTEM = """You are the tips-desk analyst for a personal trading app. A tip was just \
-extracted and verified; your job is to appraise it and suggest HOW to express it, using \
-the tools to look at the actual market. You are advisory: a human (or a shadow book) acts.
+SYSTEM = """You are the TIPS DESK TRADER for a personal trading app — an independent \
+options-first trader with your own judgement, your own memory and your own rules. A tip \
+from a followed source was just extracted and verified; decide what to do with it.
 
-Rules you must respect in suggestions:
-- Options only via LISTED contracts with a real market (avoid spreads > ~10% of mid, \
-zero-bid contracts, and open interest under ~100 unless the tip names the exact contract).
-- NEVER suggest 0DTE, naked call writing, or shorting shares (bearish = long puts).
-- Size within the stated budget. Suggest quantity = floor(budget / (ask x 100)) for options.
+You are NOT bound by any other technique's method (the desk's EnhancedMarket book does \
+not apply to you). You answer to exactly two things: the platform's safety floor below, \
+and YOUR TRADING RULES — rules you and your past runs wrote, handed to you every run. \
+Everything else is your call as a trader.
+
+Safety floor (platform-enforced — do not fight it):
+- never 0DTE, never naked option writing, never shorting shares (bearish = long puts)
+- size within the stated per-tip budget: quantity = floor(budget / (ask x 100)) for options
+- your verdict becomes an order only through a proposal + the risk gate; a human (or an \
+earned auto mode) pulls the trigger
+
+How to work:
+- Look at the actual market with the tools before judging: liquidity is real (spread vs \
+mid, open interest, zero bids), levels and the tape matter, the source's track record \
+matters, and what the desk already holds matters (get_positions = OUR own open positions; \
+get_open_tips = tips already on the desk — is this an update, an add, a hedge?).
 - When the tip names an exact contract, prefer it verbatim unless the market says it is \
-untradeable (say so in the rationale).
-- "watch" = right idea, wrong moment (level not reached, spread too wide pre-open). \
-"skip" = the tip is stale, incoherent, or the market contradicts it.
-- SHARED NOTES: you are handed the desk's saved notes for this ticker/source. Read them — \
-they may change your verdict (e.g. an earlier OPEN this alert updates). When THIS tip carries \
-durable context (a hedge rationale, 'trimming the runner', why the source is doing something), \
-save_note it so later runs know. One note, only when there is something worth keeping.
+untradeable — and say why when you deviate.
+- verdict "take" = trade it (contract, limit, quantity AND your exit plan). "watch" = \
+right idea, wrong moment. "skip" = stale, incoherent, or the market contradicts it.
+- EXIT PLAN — required on every take. You manage the position after the fill, so plan \
+the whole campaign now: exit_targets = UNDERLYING prices where you trim, exit_fractions \
+= how much at each (sell in pieces at opportune levels, never all-or-nothing on size), \
+underlying_stop = where the idea is simply wrong (null only when premium_stop_pct is \
+your declared guard), premium_stop_pct = max premium bleed you will sit through, \
+max_hold_sessions = the time box. The platform executes this plan mechanically on \
+closed bars — write the plan you would actually trade.
+- THE SOURCE'S HISTORY: their messages are linked stories — a morning "bought NVDA" and \
+an afternoon "sold 40%" belong together. Recent messages from this source are handed to \
+you; search_messages digs deeper (older, other tickers, the original OPEN behind an \
+update). If this tip UPDATES a position the desk already holds (get_positions), MANAGE \
+that position (update_exit_plan / close_position — exit-only) instead of opening a \
+duplicate, and say so in the rationale.
+- SHARED NOTES: read what you are handed — it may change the verdict (an earlier OPEN \
+this message updates, a hedge rationale). save_note durable context (scope tip / ticker \
+/ source / general) — a few precise notes beat many vague ones.
+- YOUR TRADING RULES: follow them. When this tip (or a retro) teaches you a durable \
+lesson about HOW YOU TRADE — not about one ticker — save_note it with scope "rule": \
+state the rule, the why, and the evidence. The rules are yours to evolve; keep them \
+few and sharp, and refine or replace a rule rather than piling on near-duplicates.
 
 Use at most a few tool calls (they are metered). Then reply with ONLY one JSON object \
 matching this schema — no prose, no markdown fences:
 """
+
+# Shown only while the analyst has not yet written any rules of its own — the
+# stored rulebook (tip_notes scope "rule") replaces this the moment it exists.
+STARTER_RULES = """- Prefer the tip's own contract when it is liquid; say why when deviating.
+- Judge liquidity before price: spread <= ~10% of mid, OI >= ~100 unless the tip names the exact contract.
+- Scale out — first trim near a level that pays the risk; let a runner trail.
+- Respect the stated framing: a hedge is sized and exited like insurance, not conviction.
+- Time is a position: if the move hasn't started by ~half the runway, re-evaluate instead of hoping.
+(starter rules — none saved yet; write your own with save_note scope "rule" as experience accrues)"""
 
 
 def _compact_bars(bars: list) -> dict:
@@ -179,9 +269,20 @@ def _our_positions(eng, symbol: str = "") -> dict:
             for p in pm.positions(status="open"):
                 if want and str(p.get("symbol") or "").upper() != want:
                     continue
-                managed.append({k: p.get(k) for k in
-                                ("symbol", "status", "technique", "sessionsHeld")
-                                if k in p})
+                pol = p.get("policy") or {}
+                managed.append({
+                    "positionId": p.get("id"), "symbol": p.get("symbol"),
+                    "direction": p.get("direction"), "technique": p.get("technique"),
+                    "status": p.get("status"), "sessionsHeld": p.get("sessionsHeld"),
+                    "entryUnderlying": p.get("entry"), "realizedPnl": p.get("realizedPnl"),
+                    "legs": [{k: l.get(k) for k in ("symbol", "secType", "qty", "avgFill")}
+                             for l in (p.get("legs") or []) if abs(float(l.get("qty") or 0)) > 1e-9],
+                    "exitPlan": {"stop": (pol.get("stop") or {}).get("price"),
+                                 "ladder": pol.get("ladder"),
+                                 "premiumStopPct": pol.get("premium_stop_pct"),
+                                 "timeStopSessions": pol.get("time_stop_sessions")},
+                    "tags": p.get("tags"),
+                })
         except Exception:                          # advisory — never fail the tool
             pass
     out: dict = {"positions": rows[:40], "managed": managed[:20]}
@@ -216,10 +317,86 @@ async def _open_tips(eng, ticker: str = "", source: str = "") -> dict:
     return {"tips": tips} if tips else {"note": "no open tips match"}
 
 
+def _manage_guard(eng, pid: str) -> tuple:
+    """(position, error) — the cage around the position-management tools:
+    only OPEN, tip-technique managed positions, only when the knob allows."""
+    if not bool(eng.settings.get("techniques.tip.analyst_manage_enabled", True)):
+        return None, {"error": "position management by the analyst is disabled "
+                               "(techniques.tip.analyst_manage_enabled)"}
+    pm = getattr(eng, "position_manager", None)
+    if pm is None:
+        return None, {"error": "position manager not attached"}
+    p = pm.get(str(pid))
+    if p is None:
+        return None, {"error": f"no open managed position {pid}"}
+    if p.technique != "tip":
+        return None, {"error": f"position {pid} belongs to technique "
+                               f"'{p.technique}' — not yours to manage"}
+    if p.status not in ("open", "attention"):
+        return None, {"error": f"position {pid} is {p.status}"}
+    return p, None
+
+
 async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
     sym = str(args.get("symbol") or "").upper()
     if name == "get_positions":
         return _our_positions(eng, sym)
+    if name == "search_messages":
+        rows = await eng.signals_service.discord_search_messages(
+            source=str(args.get("source") or "") or None,
+            contains=str(args.get("contains") or "") or None,
+            hours=float(args["hours"]) if args.get("hours") else None,
+            limit=int(args.get("limit") or 20))
+        slim = [{"at": (r.get("postedAt") or "")[:16], "source": r.get("source"),
+                 "author": r.get("author"), "text": (r.get("text") or "")[:280],
+                 "images": len(r.get("images") or [])} for r in rows]
+        return {"messages": slim} if slim else {"note": "no mirrored messages match "
+                                                        "(is the intake running with the mirror?)"}
+    if name == "update_exit_plan":
+        p, err = _manage_guard(eng, str(args.get("position_id") or ""))
+        if err:
+            return err
+        reason = str(args.get("reason") or "").strip()
+        if not reason:
+            return {"error": "a reason is required — it is journaled"}
+        from .lifecycle import policy_from_exit_plan
+        plan = {"targets": args.get("exit_targets") or [],
+                "fractions": args.get("exit_fractions") or [],
+                "underlyingStop": args.get("underlying_stop"),
+                "premiumStopPct": args.get("premium_stop_pct"),
+                "maxHoldSessions": args.get("max_hold_sessions")
+                or p.policy.get("time_stop_sessions") or 10,
+                "avoidEarnings": bool(p.policy.get("flatten_before"))}
+        policy = policy_from_exit_plan(plan, is_option=p.has_options, settings=eng.settings)
+        # keep trims already done — the evaluator's state carries them; only the doc changes
+        try:
+            out = await eng.position_manager.set_policy(p.id, policy)
+        except ValueError as exc:
+            return {"error": f"plan rejected: {exc}"}
+        from ... import events as ev
+        await eng.journal.append(ev.TIP_EXIT_PLAN_UPDATED,
+                                 {"positionId": p.id, "reason": reason, "policy": policy,
+                                  "runId": (ctx or {}).get("run_id")},
+                                 aggregate_type="position", aggregate_id=p.id,
+                                 portfolio_id=p.portfolio_id)
+        return {"updated": True, "positionId": p.id,
+                "policy": {k: policy.get(k) for k in
+                           ("stop", "ladder", "premium_stop_pct", "time_stop_sessions")},
+                "note": "stops may only tighten; trims already taken stay taken"}
+    if name == "close_position":
+        p, err = _manage_guard(eng, str(args.get("position_id") or ""))
+        if err:
+            return err
+        reason = str(args.get("reason") or "").strip()
+        if not reason:
+            return {"error": "a reason is required — it is journaled"}
+        frac = float(args.get("fraction") or 1.0)
+        frac = min(1.0, max(0.05, frac))
+        out = await eng.position_manager.close(
+            p.id, fraction=frac, reason=f"analyst: {reason}"[:200])
+        return {"closed": True, "fraction": frac, "positionId": p.id,
+                "result": ({k: out.get(k) for k in ("status", "realizedPnl")}
+                           if isinstance(out, dict) else str(out)[:200])}
     if name == "get_open_tips":
         return await _open_tips(eng, str(args.get("ticker") or ""),
                                 str(args.get("source") or ""))
@@ -229,6 +406,7 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         scope = {"ticker": f"ticker:{str(ctx.get('ticker') or '').upper()}",
                  "source": f"source:{ctx.get('source') or 'unknown'}",
                  "tip": f"signal:{ctx.get('signal_id') or ''}",
+                 "rule": "rule",                       # the analyst's own rulebook
                  }.get(kind, "general")
         note = await eng.signals_service.add_tip_note(
             scope, str(args.get("text") or ""),
@@ -281,6 +459,40 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
     return {"error": f"unknown tool {name}"}
 
 
+async def _source_history(eng, source: str | None, *, hours: float = 72,
+                          limit: int = 20) -> str:
+    """The source's recent mirrored messages, for the run header — follow-ups
+    ('sold 40%') live here, not in the tip that triggered the run."""
+    if not source:
+        return "(no source)"
+    try:
+        rows = await eng.signals_service.discord_search_messages(
+            source=source, hours=hours, limit=limit)
+    except Exception:
+        return "(mirror unavailable)"
+    if not rows:
+        return "(nothing mirrored yet — the intake mirrors watched channels while it runs)"
+    return "\n".join(f"- [{(r.get('postedAt') or '')[:16]}] {r.get('author')}: "
+                     f"{(r.get('text') or '').strip()[:220]}"
+                     + (f" [+{len(r.get('images') or [])} image(s)]"
+                        if r.get("images") else "")
+                     for r in rows)
+
+
+async def _rules_text(eng) -> tuple[str, int]:
+    """The analyst's own rulebook (tip_notes scope 'rule'), oldest first so the
+    rulebook reads in the order it was written; starter rules until one exists."""
+    try:
+        rules = await eng.signals_service.tip_notes(["rule"], limit=50)
+    except Exception:
+        rules = []
+    if not rules:
+        return STARTER_RULES, 0
+    lines = "\n".join(f"- {n['text']} ({(n['createdAt'] or '')[:10]})"
+                      for n in reversed(rules))
+    return lines, len(rules)
+
+
 def _parse_opinion(raw: str) -> AnalystOpinion:
     s = raw.strip()
     if s.startswith("```"):
@@ -326,7 +538,8 @@ async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
         row.trace = list(rec.trace)
         if opinion is not None:
             row.opinion = opinion
-            row.verdict = opinion.get("verdict")
+            v = opinion.get("verdict")
+            row.verdict = str(v)[:16] if v else None   # retro grades can be long
         if error is not None:
             row.error = error
         if status in ("done", "failed"):
@@ -430,12 +643,16 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     notes_txt = "\n".join(
         f"- [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
         for n in notes) or "(none yet)"
+    rules_txt, rules_n = await _rules_text(eng)
+    history_txt = await _source_history(eng, signal_row.source_name)
 
     rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
              f"from {signal_row.source_name or 'unknown'}. Tools available: "
              f"{', '.join(tool_names)}."
-             + (f" {len(notes)} shared note(s) handed to the run." if notes else ""),
-             tip=tip, notes=notes,
+             + (f" {len(notes)} shared note(s)" if notes else "")
+             + (f" · {rules_n} own rule(s) handed to the run." if rules_n
+                else " · starter rules (none saved yet)."),
+             tip=tip, notes=notes, rules=rules_n,
              verification={k: verification.get(k) for k in ("passed", "park", "shadow_only")})
 
     header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
@@ -444,7 +661,11 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"TIP: {json.dumps(tip)}\n"
               f"VERIFICATION: {json.dumps({k: verification.get(k) for k in ('passed', 'park', 'shadow_only')})} "
               f"failed checks: {[c['name'] for c in verification.get('checks', []) if not c['passed']]}\n"
-              f"SHARED NOTES (desk knowledge from earlier runs):\n{notes_txt}")
+              f"YOUR TRADING RULES (self-maintained — follow them):\n{rules_txt}\n"
+              f"SHARED NOTES (desk knowledge from earlier runs):\n{notes_txt}\n"
+              f"THIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "
+              f"backstory this tip arrived in: earlier OPENs, trims, exits, mood. Read it "
+              f"before judging; search_messages digs deeper/older):\n{history_txt}")
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
@@ -470,11 +691,25 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         return None
     result = {**opinion.model_dump(), "model": model, "toolsUsed": tools_used,
               "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+    exit_bits = []
+    if opinion.exit_targets:
+        fr = opinion.exit_fractions or []
+        exit_bits.append("trims " + ", ".join(
+            f"{int(round((fr[i] if i < len(fr) else 0) * 100))}% @ {t:g}"
+            for i, t in enumerate(opinion.exit_targets)))
+    if opinion.underlying_stop is not None:
+        exit_bits.append(f"stop {opinion.underlying_stop:g}")
+    if opinion.premium_stop_pct is not None:
+        exit_bits.append(f"premium stop {opinion.premium_stop_pct:g}%")
+    if opinion.max_hold_sessions is not None:
+        exit_bits.append(f"time box {opinion.max_hold_sessions} sessions")
     rec.step("final", f"Verdict: {opinion.verdict.upper()}"
              + (f" — {opinion.contract_label or opinion.contract}" if opinion.contract else "")
              + (f" @ ≤{opinion.limit_price}" if opinion.limit_price else "")
              + (f" ×{opinion.quantity}" if opinion.quantity else "")
-             + f". {opinion.rationale}", opinion=result)
+             + f". {opinion.rationale}"
+             + (f" Exit plan: {'; '.join(exit_bits)}." if exit_bits else ""),
+             opinion=result)
     await _persist_run(eng, run_id, status="done", rec=rec, opinion=result)
     return result
 
@@ -512,7 +747,11 @@ source. A few precise notes beat many vague ones.
 - If any line is actually a FRESH actionable call that verification wrongly discarded \
 (e.g. "Added Today"), say so in missed_tip with the exact ticker/contract — a human \
 will decide.
-- Never suggest orders here; this is bookkeeping and context.
+- MANAGE what we hold: when the update moves the campaign on a position the desk holds \
+("sold 40%", "stopped out", "letting it ride to 90"), act with update_exit_plan / \
+close_position (EXIT-ONLY: they can trim, tighten or close — never add exposure). \
+search_messages finds the original OPEN behind an update. Cite the message in the reason.
+- Never open NEW exposure here; entries only ever come from a verified tip's proposal.
 
 Use at most a few tool calls (metered). Then reply with ONLY one JSON object matching \
 this schema — no prose, no markdown fences:
@@ -611,11 +850,15 @@ class IntakeRun:
             pass
         self.step("note", "Nothing tradable — reviewing the update against the desk's "
                           "own book (positions, open tips, notes).")
+        rules_txt, _rules_n = await _rules_text(eng)
+        history_txt = await _source_history(eng, source)
         header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
                   f"SOURCE: {source}\n"
                   f"MESSAGE:\n{message_text[:4000]}\n\n"
                   f"PER-SIGNAL OUTCOMES: {json.dumps(outcomes, default=str)[:2500]}\n"
-                  f"SHARED NOTES (desk knowledge):\n{notes_txt}")
+                  f"YOUR TRADING RULES (self-maintained):\n{rules_txt}\n"
+                  f"SHARED NOTES (desk knowledge):\n{notes_txt}\n"
+                  f"RECENT MESSAGES FROM THIS SOURCE (mirror, newest first):\n{history_txt}")
         system = REVIEW_SYSTEM + json.dumps(ReviewOpinion.model_json_schema(),
                                             separators=(",", ":"))
         tools_used: list[dict] = []

@@ -211,11 +211,29 @@ def describe_author(msg: dict) -> str:
     return f"{name}{' [bot]' if a.get('bot') else ''}"
 
 
+def mirror_record(msg: dict, source_name: str | None,
+                  guild_name: str | None = None) -> dict:
+    """One message -> the mirror row the app stores (full text + image URLs) —
+    the source's own history the analyst can search ('bought NVDA' in the
+    morning, 'sold 40%' in the afternoon are one story)."""
+    author = msg.get("author") or {}
+    return {"id": str(msg.get("id") or ""),
+            "channelId": str(msg.get("channel_id") or ""),
+            "source": source_name, "guild": guild_name,
+            "author": describe_author(msg),
+            "authorId": str(author.get("id") or "") or None,
+            "isBot": bool(author.get("bot")),
+            "text": flatten_message(msg),
+            "images": collect_images(msg),
+            "postedAt": str(msg.get("timestamp") or "")}
+
+
 class Gateway:
     def __init__(self, token: str, api: str, session_token: str, log_path: Path,
                  *, ingest: bool, dump: bool, bots_only: bool,
                  author_id: str, channel_id: str, include_self: bool = False,
-                 status_minutes: float = 15.0, all_dms: bool = False) -> None:
+                 status_minutes: float = 15.0, all_dms: bool = False,
+                 backfill: int = 25) -> None:
         self.token = token
         self.api = api
         self.session_token = session_token
@@ -232,6 +250,8 @@ class Gateway:
         self.seen_count = 0
         self._watch: dict[str, dict] = {}   # channelId -> watch entry (the allowlist)
         self._watch_loaded = False
+        self.backfill = max(0, int(backfill))   # per-channel history mirrored on startup
+        self._backfilled_ids = ""               # watch fingerprint last backfilled
         self._http = None                   # shared client for catalog/watch calls
         self._seq: int | None = None
         self._hb_interval = 41.25
@@ -329,6 +349,99 @@ class Gateway:
         except Exception as exc:
             return {"error": str(exc)[:200]}
 
+    async def _mirror(self, http, headers, records: list[dict]) -> None:
+        """Best-effort: store messages in the app's mirror (the analyst's
+        searchable source history)."""
+        records = [r for r in records if r.get("id")]
+        if not records:
+            return
+        try:
+            await http.post(f"{self.api}/api/tip/discord/messages", headers=headers,
+                            json={"messages": records})
+        except Exception:
+            pass
+
+    async def _fetch_messages(self, http, cid: str, *, limit: int = 100,
+                              before: str | None = None) -> list[dict]:
+        url = f"https://discord.com/api/v10/channels/{cid}/messages?limit={min(100, limit)}"
+        if before:
+            url += f"&before={before}"
+        try:
+            r = await http.get(url, headers={"Authorization": self.token}, timeout=20)
+            return r.json() if r.status_code == 200 else []
+        except Exception:
+            return []
+
+    @staticmethod
+    def _msg_age_days(msg: dict) -> float:
+        try:
+            ts = dt.datetime.fromisoformat(str(msg.get("timestamp") or "").replace("Z", "+00:00"))
+            return (dt.datetime.now(dt.timezone.utc) - ts).total_seconds() / 86400
+        except ValueError:
+            return 0.0
+
+    async def _onboard_channel(self, http, headers, cid: str, entry: dict,
+                               days: int, st: dict) -> int:
+        """Backfill one channel's history back `days` days (paginated, oldest
+        continues from what the mirror already holds — never re-downloads)."""
+        oldest_at = st.get("oldestAt")
+        if oldest_at:
+            try:
+                oa = dt.datetime.fromisoformat(str(oldest_at).replace("Z", "+00:00"))
+                if (dt.datetime.now(dt.timezone.utc) - oa).days >= days:
+                    return 0                    # already covered that far back
+            except ValueError:
+                pass
+        src = entry.get("sourceName") or "auto"
+        guild = entry.get("guildName") or None
+        before = st.get("oldestId")             # extend OLDER than what we hold
+        total = 0
+        for _page in range(40):                 # hard cap ~4000 msgs per channel
+            msgs = await self._fetch_messages(http, cid, limit=100, before=before)
+            if not msgs:
+                break
+            await self._mirror(http, headers,
+                               [mirror_record(m, src, guild) for m in msgs])
+            total += len(msgs)
+            before = str(msgs[-1].get("id") or "")
+            if self._msg_age_days(msgs[-1]) >= days or len(msgs) < 100 or not before:
+                break
+            await asyncio.sleep(1.0)            # gentle on the REST API
+        return total
+
+    async def _backfill_watched(self, http, headers) -> None:
+        """Mirror history for every WATCHED channel once per run: channels with
+        `onboardDays` get a paginated backfill that many days deep (<= 17);
+        the rest get the recent --backfill messages as a baseline when the
+        mirror holds nothing for them yet."""
+        try:
+            r = await http.get(f"{self.api}/api/tip/discord/mirror-stats", headers=headers)
+            stats = r.json() if r.status_code == 200 else {}
+        except Exception:
+            stats = {}
+        total = 0
+        for cid, entry in list(self._watch.items()):
+            st = stats.get(str(cid)) or {}
+            days = min(17, max(0, int(entry.get("onboardDays") or 0)))
+            if days > 0:
+                n = await self._onboard_channel(http, headers, cid, entry, days, st)
+                if n:
+                    print(f"[gateway] onboarded {entry.get('sourceName') or cid}: "
+                          f"{n} message(s), ~{days}d deep")
+                total += n
+            elif not st.get("count") and self.backfill > 0:
+                msgs = await self._fetch_messages(http, cid, limit=self.backfill)
+                if msgs:
+                    await self._mirror(http, headers,
+                                       [mirror_record(m, entry.get("sourceName") or "auto",
+                                                      entry.get("guildName") or None)
+                                        for m in msgs])
+                    total += len(msgs)
+            await asyncio.sleep(0.7)
+        if total:
+            print(f"[gateway] mirror updated: {total} message(s) across "
+                  f"{len(self._watch)} watched channel(s)")
+
     async def _watch_loop(self, http, headers) -> None:
         """Poll the app for the watchlist (the allowlist). Empty = manual flags
         decide; non-empty = ingest only channels the user enabled in the UI."""
@@ -344,6 +457,11 @@ class Gateway:
                         print(f"[gateway] watchlist: {len(self._watch)} source(s) enabled"
                               + ("" if self._watch else " (none yet — pick them in the app, "
                                  "Tips > Sources > Discord)"))
+                    ids = ",".join(sorted(self._watch))
+                    if self._watch and ids != self._backfilled_ids:
+                        # first load AND whenever the user adds a source: onboard it
+                        self._backfilled_ids = ids
+                        asyncio.create_task(self._backfill_watched(http, headers))
             except Exception:
                 pass
             await asyncio.sleep(30)
@@ -451,6 +569,12 @@ class Gateway:
         shape = f"{len(text)} chars" + (f" + {len(images)} image(s)" if images else "")
         print(f"[{dt.datetime.now():%H:%M:%S}] DM from {rec['author']} ({shape}): "
               f"{text[:110]!r}")
+        # every matched message joins the mirror (the analyst's source history),
+        # ingested or not — follow-ups like "sold 40%" rarely extract as tips
+        entry = self._watch.get(str(msg.get("channel_id"))) or {}
+        await self._mirror(http, headers,
+                           [mirror_record(msg, source_name or entry.get("sourceName") or "auto",
+                                          entry.get("guildName") or None)])
         if not self.ingest:
             return
         await self._ingest_message(http, headers, msg, source_name or "auto")
@@ -526,6 +650,8 @@ class Gateway:
         entry = self._watch.get(str(channel_id)) or {}
         src = entry.get("sourceName") or "auto"
         print(f"[{dt.datetime.now():%H:%M:%S}] processing last message of {channel_id} as {src}")
+        await self._mirror(http, headers,
+                           [mirror_record(msgs[0], src, entry.get("guildName") or None)])
         res = await self._ingest_message(http, headers, msgs[0], src)
         await report({"author": describe_author(msgs[0]),
                       "text": flatten_message(msgs[0])[:200], **res})
@@ -547,6 +673,8 @@ def main() -> None:
     p.add_argument("--channel-id", default="", help="only this channel id (opts into a channel, not just DMs)")
     p.add_argument("--include-self", action="store_true",
                    help="also ingest DMs YOU send to yourself (end-to-end self test)")
+    p.add_argument("--backfill", type=int, default=25,
+                   help="mirror this many recent messages per WATCHED channel on startup (0 = off)")
     p.add_argument("--status-minutes", type=float, default=15.0,
                    help="proof-of-life line every N minutes (0 = off)")
     p.add_argument("--no-auto-token", action="store_true",
@@ -567,7 +695,8 @@ def main() -> None:
                  ingest=a.ingest and not a.dump, dump=a.dump,
                  bots_only=a.from_bots_only, author_id=a.author_id,
                  channel_id=a.channel_id, include_self=a.include_self,
-                 status_minutes=a.status_minutes, all_dms=a.all_dms)
+                 status_minutes=a.status_minutes, all_dms=a.all_dms,
+                 backfill=a.backfill)
     try:
         asyncio.run(gw.run())
     except KeyboardInterrupt:

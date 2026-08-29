@@ -323,7 +323,11 @@ class _FakeAnthropic:
             ' "limit_price": 4.6, "quantity": 2,'
             ' "invalidation": "close below 225",'
             ' "rationale": "Uptrend intact and the tip names a liquid strike.",'
-            ' "confidence": 0.7}'))])
+            ' "confidence": 0.7,'
+            ' "exit_targets": [245.0, 252.0], "exit_fractions": [0.5, 0.3],'
+            ' "underlying_stop": 224.0, "premium_stop_pct": 45,'
+            ' "max_hold_sessions": 8,'
+            ' "exit_rationale": "Trim half at 245, more at 252, runner trails."}'))])
 
 
 async def test_tips_analyst_opinion_attached(app_client):
@@ -420,6 +424,228 @@ async def test_auto_mode_self_approves(app_client):
     assert p is not None
     assert p["status"] == "executed", p
     assert p["decidedVia"] == "auto" and p["orderId"]
+
+
+async def test_take_fill_adopts_position_under_analyst_exits(app_client):
+    # the whole lifecycle: analyst "take" (with exit plan) → auto-approved OPT
+    # proposal → fill → durable managed position running the ANALYST'S ladder
+    import asyncio as _aio
+
+    from zargar.domain import Quote
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+    # NOTE (found here): the $1000 per-tip budget outruns the platform's 5%-of-
+    # equity option premium cap on the $10k practice book — raise it for the test
+    # the way a real config would have to
+    await eng.settings.set("risk.max_option_premium_pct", 15.0)
+    eng.signals_service._analyst_client = _FakeAnthropic()
+    occ = "AAPL261016C00240000"
+    # keep the REAL chain out of the test: order placement tracks the contract
+    # and the options service would overlay live CBOE bid/ask over our quote
+    import httpx as _hx
+    from zargar.options.chain import CboeClient
+    eng.options.use_client(CboeClient(_hx.AsyncClient(
+        transport=_hx.MockTransport(lambda _req: _hx.Response(404, json={})))))
+    # the risk gate and the sim executor both need a live option quote
+    for _ in range(2):
+        eng.quotes.on_quote(Quote(symbol=occ, bid=4.4, ask=4.6, last=4.5,
+                                  bid_size=500, ask_size=500, volume=100))
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None and p["secType"] == "OPT"
+    if p["status"] != "executed":                        # show the reject reason
+        import json as _j
+        orders = (await client.get("/api/orders")).json()
+        q_now = eng.quotes.get(occ)
+        raise AssertionError(f"occ quote now: {q_now}\n"
+                             + _j.dumps(orders, indent=1, default=str)[:1500])
+    assert p["decidedVia"] == "auto"
+    plan = p["context"]["exitPlan"]
+    assert plan["author"] == "analyst" and plan["targets"] == [245.0, 252.0]
+    assert plan["underlyingStop"] == 224.0 and plan["maxHoldSessions"] == 8
+
+    async def adopted():
+        # the sim executor fills only once it has a fresh option quote (post-latency)
+        for _ in range(2):
+            eng.quotes.on_quote(Quote(symbol=occ, bid=4.4, ask=4.6, last=4.5,
+                                      bid_size=500, ask_size=500, volume=100))
+        await _aio.sleep(0.15)
+        return any(x["technique"] == "tip" and x["status"] == "open"
+                   for x in eng.position_manager.positions())
+    await wait_for(adopted, timeout=15)
+
+    pos = next(x for x in eng.position_manager.positions()
+               if x["technique"] == "tip" and x["status"] == "open")
+    pol = pos["policy"]
+    assert pol["ladder"] == {"targets": [245.0, 252.0], "fractions": [0.5, 0.3]}
+    assert pol["stop"] == {"kind": "fixed", "price": 224.0}
+    assert pol["premium_stop_pct"] == 45.0 and pol["time_stop_sessions"] == 8
+    assert pos["direction"] == "long" and pos["symbol"] == "AAPL"
+    assert pos["runId"] == p["context"]["analystRunId"]   # links back to the reasoning
+    assert pos["overnight"] == "app_managed" and pos["overnightAck"]
+    leg = pos["legs"][0]
+    assert leg["symbol"] == occ and leg["secType"] == "OPT" and leg["qty"] == 2
+    # journaled adoption (the note lands just after the adopt itself)
+    from sqlalchemy import select as _sel
+    from zargar.models import Event
+
+    async def journaled():
+        async with eng.sf() as session:
+            kinds = (await session.execute(
+                _sel(Event.type).where(Event.aggregate_id == p["id"]))).scalars().all()
+        return "TipPositionAdopted" in kinds
+    await wait_for(journaled)
+
+
+async def test_discord_mirror_and_search(app_client):
+    # the source's history is mirrored and searchable (follow-ups are context)
+    client, eng = app_client
+    src = "🌞 | jon-and-kian"
+    msgs = [{"id": "m1", "channelId": "42", "source": src, "author": "Clanker [bot]",
+             "authorId": "99", "isBot": True, "guild": "OWLS Capital",
+             "text": "OPEN: NVDA 190C 10/17 Exp. At 4.20",
+             "postedAt": "2026-08-28T09:53:49+00:00"},
+            {"id": "m2", "channelId": "42", "source": src, "author": "Clanker [bot]",
+             "isBot": True, "text": "sold 40% of the NVDA runner, house money now",
+             "images": ["https://cdn.discordapp.com/x.png"],
+             "postedAt": "2026-08-28T14:10:00+00:00"}]
+    r = await client.post("/api/tip/discord/messages", json={"messages": msgs})
+    assert r.json() == {"stored": 2}
+    r = await client.post("/api/tip/discord/messages", json={"messages": msgs})
+    assert r.json() == {"stored": 0}                     # dedupe on message id
+    rows = (await client.get("/api/tip/discord/messages",
+                             params={"source": src, "contains": "sold"})).json()
+    assert len(rows) == 1 and rows[0]["id"] == "m2" and rows[0]["images"]
+    # newest first, and the analyst tool sees the same story
+    rows = (await client.get("/api/tip/discord/messages", params={"source": src})).json()
+    assert [x["id"] for x in rows] == ["m2", "m1"]
+    from zargar.techniques.tip.analyst import _run_tool, _source_history
+    out = await _run_tool(eng, "search_messages", {"source": src, "contains": "NVDA"})
+    assert len(out["messages"]) == 2
+    hist = await _source_history(eng, src, hours=24 * 365)
+    assert "sold 40%" in hist and "+1 image(s)" in hist
+    # coverage stats drive the gateway's onboarding (how far back to fetch)
+    stats = (await client.get("/api/tip/discord/mirror-stats")).json()
+    assert stats["42"]["count"] == 2 and stats["42"]["oldestId"] == "m1"
+    # pagination for the viewer: strictly older than m2 → only m1
+    older = (await client.get("/api/tip/discord/messages",
+                              params={"before": "2026-08-28T14:10:00+00:00"})).json()
+    assert [x["id"] for x in older] == ["m1"]
+
+
+async def test_analyst_manage_tools_exit_only(app_client):
+    # update_exit_plan / close_position: the analyst steers OPEN tip positions
+    # (exit-only), and only tip positions
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    q = eng.quotes.get("AAPL")
+    pid = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")["id"]
+    entry = round(q.last, 2)
+    spec = {"portfolioId": pid, "symbol": "AAPL", "direction": "long",
+            "techniqueId": "tip", "entry": entry, "risk": 5.0,
+            "legs": [{"symbol": "AAPL", "secType": "STK", "qty": 10,
+                      "avgFill": entry, "origin": "adoption"}],
+            "policy": {"timeframe": "15m",
+                       "stop": {"kind": "fixed", "price": round(entry * 0.95, 2)}}}
+    pos = await eng.position_manager.adopt(spec)
+    em = await eng.position_manager.adopt({**spec, "techniqueId": "enhanced_market"})
+
+    from zargar.techniques.tip.analyst import _run_tool
+    ctx = {"run_id": "testrun1", "ticker": "AAPL", "source": "TestLetter"}
+    out = await _run_tool(eng, "update_exit_plan", {
+        "position_id": pos["id"], "exit_targets": [round(entry * 1.04, 2)],
+        "exit_fractions": [0.5], "underlying_stop": round(entry * 0.97, 2),
+        "max_hold_sessions": 4, "reason": "source trimmed 40% — tighten"}, ctx=ctx)
+    assert out.get("updated"), out
+    p2 = eng.position_manager.get(pos["id"])
+    assert p2.policy["ladder"]["targets"] == [round(entry * 1.04, 2)]
+    assert p2.policy["time_stop_sessions"] == 4
+    assert p2.state.stop == round(entry * 0.97, 2)       # tightened stop applies live
+    # not yours: another technique's position is refused
+    out = await _run_tool(eng, "update_exit_plan", {
+        "position_id": em["id"], "reason": "nope"}, ctx=ctx)
+    assert "not yours" in out.get("error", "")
+    # a reason is mandatory (it is journaled)
+    out = await _run_tool(eng, "close_position", {"position_id": pos["id"]}, ctx=ctx)
+    assert "reason" in out.get("error", "")
+    out = await _run_tool(eng, "close_position", {
+        "position_id": pos["id"], "fraction": 1.0,
+        "reason": "source closed the trade"}, ctx=ctx)
+    assert out.get("closed"), out
+    # the journal carries the exit-plan change
+    from sqlalchemy import select as _sel
+    from zargar.models import Event
+    async with eng.sf() as session:
+        kinds = (await session.execute(
+            _sel(Event.type).where(Event.aggregate_id == pos["id"]))).scalars().all()
+    assert "TipExitPlanUpdated" in kinds
+    # off-switch
+    await eng.settings.set("techniques.tip.analyst_manage_enabled", False)
+    out = await _run_tool(eng, "update_exit_plan",
+                          {"position_id": em["id"], "reason": "x"}, ctx=ctx)
+    assert "disabled" in out.get("error", "")
+
+
+class _FakeAnthropicRetro:
+    """Scripted retro: saves a rule, then grades the trade."""
+
+    def __init__(self):
+        self.calls = 0
+        self.messages = self
+        self.seen_header = ""
+
+    async def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            self.seen_header = kw["messages"][0]["content"]
+            return _FakeAnthropicResp([
+                _Block(type="tool_use", id="tu1", name="save_note",
+                       input={"scope": "rule",
+                              "text": "Cut hedge positions at 40% premium bleed — "
+                                      "evidence: position pos-retro-1."})])
+        return _FakeAnthropicResp([_Block(type="text", text=(
+            '{"grade": "bad_call", "what_worked": "Sizing was small.",'
+            ' "what_didnt": "Chased premium after the alert.",'
+            ' "rule_update": "Cut hedge positions at 40% premium bleed.",'
+            ' "confidence": 0.7}'))])
+
+
+async def test_retro_sweep_teaches_rules(app_client):
+    # a closed tip position gets ONE retro: run persisted (kind=retro), a rule
+    # saved to the knowledge base, the position tagged so it never re-retros
+    client, eng = app_client
+    from zargar.models import ManagedPositionRow
+    async with eng.sf() as session:
+        session.add(ManagedPositionRow(
+            id="pos-retro-1", technique="tip", symbol="SPY", portfolio_id="pf1",
+            status="closed", tags=["source:TestLetter", "proposal"],
+            config={"direction": "short", "entry": 769.3, "risk": 5.0,
+                    "policy": {"ladder": {"targets": [760.0], "fractions": [0.5]}},
+                    "runId": None, "entryMark": 3.4},
+            legs=[{"symbol": "SPY260918P00750000", "secType": "OPT", "qty": 0,
+                   "avgFill": 3.4, "multiplier": 100.0}],
+            state={"realizedPnl": -230.0, "sessionsSeen": ["2026-08-26", "2026-08-27"],
+                   "exits": [{"kind": "premium_stop", "reason": "bled 50%"}],
+                   "events": [{"what": "closed", "text": "premium stop"}]}))
+        await session.commit()
+    from zargar.techniques.tip.retro import run_tip_retros
+    fake = _FakeAnthropicRetro()
+    out = await run_tip_retros(eng, client=fake)
+    assert out["retros"] == 1 and out["failed"] == 0
+    assert "CLOSED POSITION" in fake.seen_header and "YOUR TRADING RULES" in fake.seen_header
+    runs = (await client.get("/api/tip/analyst/runs")).json()
+    rr = next(r for r in runs if r["kind"] == "retro")
+    assert rr["ticker"] == "SPY" and rr["status"] == "done"
+    run = (await client.get(f"/api/tip/analyst/runs/{rr['id']}")).json()
+    assert run["opinion"]["grade"] == "bad_call"
+    assert run["opinion"]["positionId"] == "pos-retro-1"
+    rules = (await client.get("/api/tip/notes", params={"scope": "rule"})).json()
+    assert len(rules) == 1 and "premium bleed" in rules[0]["text"]
+    # exactly once: the tag stops a second retro
+    out2 = await run_tip_retros(eng, client=_FakeAnthropicRetro())
+    assert out2["retros"] == 0 and out2["failed"] == 0
 
 
 class _FakeAnthropicNotes:

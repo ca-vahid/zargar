@@ -76,3 +76,13 @@ live in `docs/PLATFORM-RULES.md`.*
   and saves durable context via `save_note` (e.g. "SPY put = downside protection
   for the source's Oct-Dec calls" — the reason we'd exit differently weeks
   later). Journaled `TipNoteAdded`; user-editable in Tips > Analyst > Knowledge.
+- 2026-08-28 — **The analyst is an independent trader** (user decision; charter
+  in ANALYST.md). EM's method book NEVER applies to tips — "our book" in the
+  analyst's tools means the desk's own positions. The analyst authors the EXIT
+  PLAN for every take (scale-out ladder on the underlying, stop or declared
+  premium-stop guard, premium bleed stop, hold cap); filled tip proposals are
+  adopted into the durable position manager under that plan; closed positions
+  get a retro run whose lessons update the shared notes and the analyst's OWN
+  rules (knowledge scope `rule`, injected into every run). Safety floor stays
+  platform-enforced: RiskGate on every order, never 0DTE / naked writing /
+  share shorting, budget caps, auto only on "take" + allow_live_auto for live.

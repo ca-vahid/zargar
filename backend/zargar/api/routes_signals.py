@@ -177,6 +177,30 @@ def build_signal_routes(app, eng, auth, config) -> None:
     async def discord_process_pending():
         return {"channelIds": eng.signals_service.discord_take_processes()}
 
+    # --- discord message mirror (the source's own history, analyst-searchable) --
+    class MirrorBody(BaseModel):
+        messages: list = []
+
+    @app.post("/api/tip/discord/messages", dependencies=[auth])
+    async def discord_mirror_messages(body: MirrorBody):
+        """The gateway mirrors every message it sees in a monitored channel."""
+        stored = await eng.signals_service.discord_store_messages(body.messages)
+        return {"stored": stored}
+
+    @app.get("/api/tip/discord/messages", dependencies=[auth])
+    async def discord_messages(source: str = "", channelId: str = "",
+                               contains: str = "", hours: float = 0,
+                               before: str = "", limit: int = 30):
+        return await eng.signals_service.discord_search_messages(
+            source=source or None, channel_id=channelId or None,
+            contains=contains or None, hours=hours or None,
+            before=before or None, limit=limit)
+
+    @app.get("/api/tip/discord/mirror-stats", dependencies=[auth])
+    async def discord_mirror_stats():
+        """Per-channel mirror coverage — drives the gateway's onboarding backfill."""
+        return await eng.signals_service.discord_mirror_stats()
+
     @app.get("/api/tip/discord/process-result", dependencies=[auth])
     async def discord_process_result(channelId: str = ""):
         """UI polls this after 'process last message' — what actually happened

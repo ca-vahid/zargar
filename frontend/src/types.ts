@@ -223,6 +223,14 @@ export interface DiscordWatch {
   guildName?: string;
   botsOnly?: boolean;
   enabled?: boolean;
+  /** onboarding: backfill this many days of channel history into the mirror (<= 17) */
+  onboardDays?: number;
+}
+/** One mirrored Discord message (the analyst-searchable source history). */
+export interface DiscordMirrorMessage {
+  id: string; channelId: string; source?: string | null; guild?: string | null;
+  author: string; isBot?: boolean; text: string; images: string[];
+  postedAt?: string | null;
 }
 
 export interface AnalystStep {
