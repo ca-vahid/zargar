@@ -42,6 +42,7 @@ SIGNAL_PARKED = "SignalParked"            # only price-position checks failed; t
 SIGNAL_REPLAYED = "SignalReplayed"        # content too old to trade — replayed on history instead
 SIGNAL_ANALYZED = "SignalAnalyzed"        # the tips analyst's advisory opinion (verdict + expression)
 SIGNAL_SEEN_AGAIN = "SignalSeenAgain"     # duplicate tip attached to the original
+TIP_NOTE_ADDED = "TipNoteAdded"           # shared tips knowledge: analyst or user saved a note
 SIGNAL_EXPIRED_UNFILLED = "SignalExpiredUnfilled"   # level never came before the tip's horizon/expiry
 FLOW_SCAN_COMPLETED = "FlowScanCompleted" # nightly flow scan wrote snapshots + reads
 FLOW_CONTEXT_SERVED = "FlowContextServed" # a flow read's context line was delivered to a consumer (tip/em)

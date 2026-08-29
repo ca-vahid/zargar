@@ -189,6 +189,29 @@ def build_signal_routes(app, eng, auth, config) -> None:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
 
+    # --- shared tips knowledge (notes the analyst reads before every run) -----
+    @app.get("/api/tip/notes", dependencies=[auth])
+    async def tip_notes(scope: str = "", limit: int = 100):
+        scopes = [s.strip() for s in scope.split(",") if s.strip()] or None
+        return await eng.signals_service.tip_notes(scopes, limit=limit)
+
+    class NoteBody(BaseModel):
+        scope: str = "general"
+        text: str
+
+    @app.post("/api/tip/notes", dependencies=[auth])
+    async def add_tip_note(body: NoteBody):
+        try:
+            return await eng.signals_service.add_tip_note(body.scope, body.text)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.delete("/api/tip/notes/{note_id}", dependencies=[auth])
+    async def delete_tip_note(note_id: str):
+        if not await eng.signals_service.delete_tip_note(note_id):
+            raise HTTPException(status_code=404, detail="note not found")
+        return {"ok": True}
+
     # --- proposals -----------------------------------------------------------
     @app.get("/api/proposals", dependencies=[auth])
     async def list_proposals(all: bool = False, limit: int = 100):

@@ -594,3 +594,22 @@ class TipAnalystRun(Base):
     error: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     finished_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class TipNote(Base):
+    """Shared tips knowledge — durable notes that outlive one run. A tip often
+    carries context that matters LATER ("this SPY put is downside protection for
+    my Oct-Dec calls"): the analyst saves it here (save_note tool) and every
+    later run is handed the notes matching its tip's ticker/source, plus the
+    general ones, before it starts. The user can add/delete notes in the UI.
+    Scope is a single string: "general", "source:<name>", "ticker:<SYM>" or
+    "signal:<id>" (per-tip detail)."""
+    __tablename__ = "tip_notes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(160), index=True, default="general")
+    text: Mapped[str] = mapped_column(Text)
+    author: Mapped[str] = mapped_column(String(80), default="user")  # "user" | "analyst:<run8>"
+    signal_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

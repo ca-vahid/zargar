@@ -90,6 +90,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_enabled": True,  # the tips analyst (LLM + market tools, advisory)
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
     "techniques.tip.analyst_model": "",      # empty = the extraction model
+    "techniques.tip.analyst_notes_max": 12,  # shared-knowledge notes handed to each run
+    "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
     "techniques.tip.dedupe_window_hours": 24,
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
     "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none

@@ -73,6 +73,16 @@ TOOLS = [
     {"name": "get_earnings", "description": "Days until the symbol's next earnings, if known.",
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string"}}, "required": ["symbol"]}},
+    {"name": "save_note",
+     "description": "Save a durable note to the shared tips knowledge base. Use it for context "
+                    "that matters BEYOND this run: the tip's own framing (e.g. 'the SPY put is "
+                    "downside protection for the source's Oct-Dec calls'), position lifecycle "
+                    "info, or a lesson about this source. Future runs on the same ticker/source "
+                    "are handed these notes. Do NOT restate the trade itself. scope: 'tip' "
+                    "(this tip only), 'ticker', 'source' or 'general'.",
+     "input_schema": {"type": "object", "properties": {
+         "scope": {"type": "string"}, "text": {"type": "string"}},
+         "required": ["scope", "text"]}},
 ]
 
 SYSTEM = """You are the tips-desk analyst for a personal trading app. A tip was just \
@@ -88,6 +98,10 @@ zero-bid contracts, and open interest under ~100 unless the tip names the exact 
 untradeable (say so in the rationale).
 - "watch" = right idea, wrong moment (level not reached, spread too wide pre-open). \
 "skip" = the tip is stale, incoherent, or the market contradicts it.
+- SHARED NOTES: you are handed the desk's saved notes for this ticker/source. Read them — \
+they may change your verdict (e.g. an earlier OPEN this alert updates). When THIS tip carries \
+durable context (a hedge rationale, 'trimming the runner', why the source is doing something), \
+save_note it so later runs know. One note, only when there is something worth keeping.
 
 Use at most a few tool calls (they are metered). Then reply with ONLY one JSON object \
 matching this schema — no prose, no markdown fences:
@@ -123,8 +137,20 @@ def _compact_chain(chain: dict, want: float | None = None) -> dict:
             "dte": chain.get("dte"), "spot": chain.get("spot"), "strikes": slim}
 
 
-async def _run_tool(eng, name: str, args: dict) -> dict:
+async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
     sym = str(args.get("symbol") or "").upper()
+    if name == "save_note":
+        ctx = ctx or {}
+        kind = str(args.get("scope") or "general").lower()
+        scope = {"ticker": f"ticker:{str(ctx.get('ticker') or '').upper()}",
+                 "source": f"source:{ctx.get('source') or 'unknown'}",
+                 "tip": f"signal:{ctx.get('signal_id') or ''}",
+                 }.get(kind, "general")
+        note = await eng.signals_service.add_tip_note(
+            scope, str(args.get("text") or ""),
+            author=f"analyst:{str(ctx.get('run_id') or '')[:8]}",
+            signal_id=ctx.get("signal_id"), run_id=ctx.get("run_id"))
+        return {"saved": True, "scope": note["scope"], "id": note["id"]}
     if name == "get_quote":
         await eng.ensure_symbol(sym)
         q = eng.quotes.get(sym)
@@ -267,9 +293,24 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         await session.commit()
 
     rec = _Recorder(eng, run_id)
+
+    # the desk's shared knowledge for this tip (notes earlier runs / the user saved)
+    notes: list[dict] = []
+    try:
+        notes = await eng.signals_service.notes_for_tip(
+            signal_row.ticker, signal_row.source_name, signal_id=signal_row.id,
+            limit=int(s.get("techniques.tip.analyst_notes_max", 12)))
+    except Exception:                                   # knowledge is best-effort
+        log.debug("notes lookup failed for %s", signal_row.id)
+    notes_txt = "\n".join(
+        f"- [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
+        for n in notes) or "(none yet)"
+
     rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
              f"from {signal_row.source_name or 'unknown'}. Tools available: "
-             f"{', '.join(tool_names)}.", tip=tip,
+             f"{', '.join(tool_names)}."
+             + (f" {len(notes)} shared note(s) handed to the run." if notes else ""),
+             tip=tip, notes=notes,
              verification={k: verification.get(k) for k in ("passed", "park", "shadow_only")})
 
     header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
@@ -277,10 +318,13 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"{policy.dte_min}-{policy.dte_max} (tip's own contract may override)\n"
               f"TIP: {json.dumps(tip)}\n"
               f"VERIFICATION: {json.dumps({k: verification.get(k) for k in ('passed', 'park', 'shadow_only')})} "
-              f"failed checks: {[c['name'] for c in verification.get('checks', []) if not c['passed']]}")
+              f"failed checks: {[c['name'] for c in verification.get('checks', []) if not c['passed']]}\n"
+              f"SHARED NOTES (desk knowledge from earlier runs):\n{notes_txt}")
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))
     messages: list = [{"role": "user", "content": header}]
     tools_used: list[dict] = []
+    tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
+                "signal_id": getattr(signal_row, "id", None), "run_id": run_id}
 
     async def loop() -> AnalystOpinion | None:
         for _ in range(max_tools + 2):
@@ -305,7 +349,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                     rec.step("tool_call", f"→ {c.name}({json.dumps(args, default=str)})",
                              tool=c.name, args=args)
                     try:
-                        out = await _run_tool(eng, c.name, args)
+                        out = await _run_tool(eng, c.name, args, ctx=tool_ctx)
                     except Exception as exc:
                         out = {"error": str(exc)[:300]}
                     tools_used.append({"tool": c.name, "args": args})

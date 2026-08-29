@@ -363,6 +363,122 @@ async def test_tips_analyst_opinion_attached(app_client):
     assert "SignalAnalyzed" in kinds
 
 
+async def test_option_tip_proposal_is_the_contract(app_client):
+    # the proposal trades the SAME vehicle the books do: with an analyst "take"
+    # naming a contract, the proposal is BUY that option — never shares at the
+    # underlying price (bug 2026-08-28: SPY 750P tip proposed SELL 1 SPY @ 769)
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    eng.signals_service._analyst_client = _FakeAnthropic()
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None, "verified explicit call should still propose"
+    assert p["secType"] == "OPT" and p["side"] == "BUY"
+    assert p["symbol"] == "AAPL261016C00240000"
+    assert p["qty"] == 2 and p["limitPrice"] and p["limitPrice"] > 0
+    ctx = p["context"]
+    assert ctx["analystRunId"] and ctx["analyst"]["verdict"] == "take"
+    assert ctx["vehicle"]["kind"] == "option" and ctx["vehicle"]["optionType"] == "call"
+    assert ctx["vehicle"]["pickedBy"] == "analyst"
+    assert "Approve = buy 2 contracts" in ctx["explain"]
+    assert p["bracket"] is None                        # underlying prices never bracket an option
+
+
+async def test_short_tip_without_put_never_proposes_share_short(app_client):
+    # shorts are puts only — a bearish tip with no usable contract makes NO
+    # proposal (the old builder proposed SELL shares, which is never allowed)
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    q = eng.quotes.get("AAPL")
+    entry, tgt, stop = round(q.last, 2), round(q.last * 0.85, 2), round(q.last * 1.05, 2)
+    text = (f"ALERT: We are shorting AAPL today. Entry at ${entry}, "
+            f"stop loss ${stop}, target ${tgt}.")
+    tip = canned_extraction(entry=entry)
+    tip.signals[0].direction = "short"
+    tip.signals[0].target_price = tgt
+    tip.signals[0].stop_price = stop
+    tip.signals[0].evidence_quotes = [f"Entry at ${entry}, stop loss ${stop}, target ${tgt}"]
+    out = await run_pipeline(eng, tip, source_text=text)
+    sig = out[0]["signal"]
+    assert sig["status"] == "verified", sig["verification"]
+    assert out[0]["proposal"] is None
+    expr = sig["extraction"]["shadowExpression"]
+    assert "short tip needs a put" in (expr.get("note") or "")
+
+
+async def test_auto_mode_self_approves(app_client):
+    # a source in auto mode approves its own proposal (same approve() path a
+    # human click takes — RiskGate inside), decided_via "auto"
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None
+    assert p["status"] == "executed", p
+    assert p["decidedVia"] == "auto" and p["orderId"]
+
+
+class _FakeAnthropicNotes:
+    """Scripted analyst: saves a note first, then answers 'watch'."""
+
+    def __init__(self):
+        self.calls = 0
+        self.messages = self
+        self.seen_header = ""
+
+    async def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            self.seen_header = kw["messages"][0]["content"]
+            return _FakeAnthropicResp([
+                _Block(type="tool_use", id="tu1", name="save_note",
+                       input={"scope": "ticker",
+                              "text": "Puts on this name are hedges for the source's Oct-Dec calls."})])
+        return _FakeAnthropicResp([_Block(type="text", text=(
+            '{"verdict": "watch", "instrument": "shares",'
+            ' "rationale": "Hedge context noted; not a directional call to chase.",'
+            ' "confidence": 0.6}'))])
+
+
+async def test_shared_notes_read_and_written_by_analyst(app_client):
+    # the shared knowledge loop: a saved note is handed to the next run's
+    # prompt; the analyst can save its own via the save_note tool
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    r = await client.post("/api/tip/notes", json={
+        "scope": "ticker:AAPL", "text": "Source often trims within 2 sessions."})
+    assert r.status_code == 200 and r.json()["author"] == "user"
+    fake = _FakeAnthropicNotes()
+    eng.signals_service._analyst_client = fake
+    out = await run_pipeline(eng, canned_extraction())
+    sig = out[0]["signal"]
+    assert "often trims within 2 sessions" in fake.seen_header   # injected knowledge
+    # the analyst's own note persisted, scoped to the ticker, authored by the run
+    notes = (await client.get("/api/tip/notes")).json()
+    an = next(n for n in notes if n["author"].startswith("analyst:"))
+    assert an["scope"] == "ticker:AAPL" and "Oct-Dec calls" in an["text"]
+    assert an["signalId"] == sig["id"] and an["runId"]
+    # scoped fetch + the run trace shows the save
+    scoped = (await client.get("/api/tip/notes", params={"scope": "ticker:AAPL"})).json()
+    assert len(scoped) == 2
+    run = (await client.get(f"/api/tip/analyst/runs/{an['runId']}")).json()
+    assert any(s["kind"] == "tool_call" and s.get("tool") == "save_note" for s in run["trace"])
+    # journaled + deletable
+    from sqlalchemy import select as _sel
+    from zargar.models import Event
+    async with eng.sf() as session:
+        kinds = (await session.execute(
+            _sel(Event.type).where(Event.type == "TipNoteAdded"))).scalars().all()
+    assert len(kinds) == 2
+    assert (await client.delete(f"/api/tip/notes/{an['id']}")).status_code == 200
+    assert (await client.delete(f"/api/tip/notes/{an['id']}")).status_code == 404
+
+
 async def test_analyst_failure_never_blocks(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")

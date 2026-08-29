@@ -119,6 +119,19 @@ function ArmButton({ s }: { s: Signal }) {
   );
 }
 
+/** "analysis" link on a tip row → the tip's analyst run in the Analyst tab. */
+function AnalystLink({ s }: { s: Signal }) {
+  const openAnalystRun = useStore((st) => st.openAnalystRun);
+  const runId = (s as any).extraction?.analyst?.runId;
+  if (!runId) return null;
+  return (
+    <button className="link-btn" onClick={() => openAnalystRun(runId)}
+      title="open this tip's analyst run — the full play-by-play">
+      analysis
+    </button>
+  );
+}
+
 /* ---------------------------------------------------------------- compose */
 
 function ComposeTab({ goTips }: { goTips: () => void }) {
@@ -423,24 +436,50 @@ function ProposalCard({ p }: { p: Proposal }) {
 
   const checks = p.context?.verification?.checks ?? [];
   const sizing = p.context?.sizing;
+  const vehicle = p.context?.vehicle;
+  const analyst = p.context?.analyst;
+  const openAnalystRun = useStore((s) => s.openAnalystRun);
+  const isOpt = p.secType === "OPT";
   return (
     <div className="proposal-card">
       <div className="head">
-        <span className="sym">{p.symbol}</span>
+        <span className="sym">{vehicle?.underlying ?? p.symbol}</span>
         <span className={p.side === "BUY" ? "pos" : "neg"}>
-          <b>{p.side}</b> {p.qty} @ {p.orderType} {p.limitPrice ? fmtMoney(p.limitPrice) : ""}
+          <b>{p.side}</b> {p.qty} × {isOpt ? (vehicle?.display ?? p.symbol) : "shares"} @ {p.orderType} {p.limitPrice ? fmtMoney(p.limitPrice) : ""}
         </span>
+        {isOpt && vehicle?.optionType && (
+          <span className={`status-pill ${vehicle.optionType === "call" ? "ok" : "bad"}`}>
+            {vehicle.optionType === "call" ? "call · bullish" : "put · bearish"}
+          </span>
+        )}
         <span className="ttl"><IconClock size={11} /> {timeUntil(p.expiresAt)}</span>
         {p.signalId && <CopyChip value={p.signalId}
           title={`tip ${p.signalId} — click to copy; quote this id to review the tip behind this proposal`} />}
       </div>
       <div className="muted" style={{ fontSize: 12 }}>
         {p.context?.sourceName ?? "unknown source"} · {p.context?.confidence ?? "?"}
-        {sizing && <> · sized at {sizing.pct}% of ${fmtMoney(sizing.equity, 0)}</>}
+        {sizing?.budget != null && <> · ${fmtMoney(sizing.budget, 0)} per-tip budget</>}
         {p.bracket?.take_profit && <> · target {fmtMoney(p.bracket.take_profit)}</>}
         {p.bracket?.stop_loss && <> · stop {fmtMoney(p.bracket.stop_loss)}</>}
       </div>
       {p.rationale && <div style={{ margin: "6px 0", fontStyle: "italic" }}>{p.rationale}</div>}
+      {analyst?.verdict && (
+        <div style={{ fontSize: 12, margin: "4px 0" }}>
+          <span className={`status-pill ${analyst.verdict === "take" ? "ok" : analyst.verdict === "watch" ? "wait" : "bad"}`}>
+            analyst: {analyst.verdict}
+          </span>
+          {analyst.rationale && <span className="muted"> {analyst.rationale}</span>}
+          {p.context?.analystRunId && (
+            <button className="link-btn" onClick={() => openAnalystRun(p.context.analystRunId)}
+              title="open this proposal's analyst run — the full play-by-play">
+              view the analysis
+            </button>
+          )}
+        </div>
+      )}
+      {p.context?.explain && (
+        <div className="prop-explain">{p.context.explain}</div>
+      )}
       {checks.some((c: any) => !c.passed) && (
         <ul className="check-list">
           {checks.filter((c: any) => !c.passed).map((c: any) => (
@@ -502,7 +541,7 @@ function TipsTab() {
                     {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
                     {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
                     {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
-                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <ArmButton s={s} /></span>
+                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <ArmButton s={s} /> <AnalystLink s={s} /></span>
                   </span>
                 </div>
               );
@@ -553,7 +592,7 @@ function TipsTab() {
                     </span>
                   </td>
                   <td className="muted">{s.sourceName ?? "—"}</td>
-                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /></td>
+                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /> <AnalystLink s={s} /></td>
                   <td><CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /></td>
                 </tr>
               ))}
@@ -607,12 +646,14 @@ function PeekButton({ channelId }: { channelId: string }) {
     } catch (e: any) { setRes({ error: e.message }); setState("done"); }
   };
   const toast = useStore((s) => s.toast);
+  const setPageTab = useStore((s) => s.setPageTab);
   const [processing, setProcessing] = useState(false);
   const process = async () => {
     setProcessing(true);
     try {
       await api.discordProcessLast(channelId);
-      toast("info", "Processing last message as a tip — watch the Analyst tab");
+      toast("info", "Processing the last message as a tip — the run appears in a few seconds");
+      setPageTab("analyst");                 // take the user to where it will show up
     } catch (e: any) { toast("error", e.message); }
     finally { setProcessing(false); }
   };
@@ -848,26 +889,132 @@ function SourcesTab() {
 
 /* ---------------------------------------------------------------- analyst */
 
-const STEP_META: Record<string, { icon: string; cls: string; label: string }> = {
-  start: { icon: "▶", cls: "dim", label: "start" },
-  llm: { icon: "🧠", cls: "", label: "analyst" },
-  tool_call: { icon: "→", cls: "wait", label: "tool call" },
-  tool_result: { icon: "←", cls: "ok", label: "tool result" },
-  note: { icon: "•", cls: "dim", label: "note" },
-  final: { icon: "✓", cls: "ok", label: "verdict" },
-  error: { icon: "✕", cls: "bad", label: "error" },
+/** Tiny inline markdown for the analyst's prose: **bold**, `code`, paragraphs
+    and "- " bullets. Enough to read well without a markdown dependency. */
+function RichText({ text }: { text: string }) {
+  const inline = (s: string) =>
+    s.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((p, i) =>
+      p.startsWith("**") && p.endsWith("**") ? <b key={i}>{p.slice(2, -2)}</b>
+        : p.startsWith("`") && p.endsWith("`") ? <code key={i}>{p.slice(1, -1)}</code>
+        : p);
+  return (
+    <div className="an-rich">
+      {text.split(/\n{2,}/).map((para, i) => {
+        const ls = para.split("\n").filter((l) => l.trim());
+        if (ls.length > 0 && ls.every((l) => /^\s*[-•*]\s+/.test(l))) {
+          return <ul key={i}>{ls.map((l, j) => <li key={j}>{inline(l.replace(/^\s*[-•*]\s+/, ""))}</li>)}</ul>;
+        }
+        return (
+          <p key={i}>
+            {ls.map((l, j) => <span key={j}>{inline(l)}{j < ls.length - 1 && <br />}</span>)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+const STEP_ICON: Record<string, { path: JSX.Element; cls: string; label: string }> = {
+  start: { cls: "dim", label: "start", path: <path d="M5 3l8 5-8 5z" fill="currentColor" stroke="none" /> },
+  llm: { cls: "llm", label: "analyst", path: <path d="M8 1.5l1.6 4 4.4.4-3.3 2.9 1 4.3L8 10.8l-3.7 2.3 1-4.3L2 5.9l4.4-.4z" fill="currentColor" stroke="none" /> },
+  tool_call: { cls: "call", label: "tool call", path: <path d="M2.5 8h9m0 0L8 4.5M11.5 8L8 11.5" /> },
+  tool_result: { cls: "result", label: "result", path: <path d="M13.5 8h-9m0 0L8 4.5M4.5 8L8 11.5" /> },
+  note: { cls: "dim", label: "note", path: <path d="M8 4.2v4.6m0 2.6v.1" /> },
+  final: { cls: "final", label: "verdict", path: <path d="M3 8.5l3.2 3L13 4.5" /> },
+  error: { cls: "error", label: "error", path: <path d="M4.5 4.5l7 7m0-7l-7 7" /> },
 };
 
-function StepRow({ s }: { s: AnalystStep }) {
-  const m = STEP_META[s.kind] ?? { icon: "•", cls: "dim", label: s.kind };
+function StepNode({ kind }: { kind: string }) {
+  const m = STEP_ICON[kind] ?? STEP_ICON.note;
   return (
-    <div className="an-step">
-      <span className={`an-kind status-pill ${m.cls}`}>{m.icon} {m.label}</span>
-      <div className="an-body">
-        <div className="an-text">{s.text}</div>
-        {s.kind === "tool_result" && s.result != null && (
-          <pre className="an-json">{JSON.stringify(s.result, null, 1).slice(0, 1200)}</pre>
+    <span className={`an-node an-node--${m.cls}`} title={m.label}>
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none"
+        stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        {m.path}
+      </svg>
+    </span>
+  );
+}
+
+/** One-line human summary of a tool result, so the JSON can stay folded. */
+function resultSummary(s: AnalystStep): string {
+  const r = s.result;
+  if (r == null || typeof r !== "object") return "done";
+  if (r.error) return String(r.error);
+  if (r.note) return String(r.note);
+  if (s.tool === "get_quote" && r.last != null) return `${r.symbol} last ${r.last} (bid ${r.bid} / ask ${r.ask})`;
+  if (s.tool === "get_chain" && r.expiry) return `${r.underlying} ${r.expiry} · ${r.dte} DTE · spot ${r.spot} · ${(r.strikes ?? []).length} strikes`;
+  if (s.tool === "get_expiries") return `${(r.expiries ?? []).length} expiries · spot ${r.spot ?? "?"}`;
+  if (s.tool === "get_bars") return `${r.bars ?? "?"} bars · range ${r.low ?? "?"}–${r.high ?? "?"}`;
+  if (s.tool === "get_flow") return String(r.flow ?? "no read");
+  if (s.tool === "get_earnings") return r.daysToEarnings != null ? `earnings in ~${r.daysToEarnings}d` : "no date known";
+  if (s.tool === "get_source_stats") return `${r.signals ?? 0} signals · ${r.verified ?? 0} verified`;
+  if (s.tool === "save_note") return `note saved to ${r.scope}`;
+  const keys = Object.keys(r).slice(0, 4);
+  return keys.map((k) => `${k}: ${JSON.stringify(r[k])}`).join(" · ").slice(0, 120);
+}
+
+function ArgChips({ args }: { args: any }) {
+  if (!args || typeof args !== "object") return null;
+  return (
+    <span className="an-args">
+      {Object.entries(args).map(([k, v]) => (
+        <span key={k} className="an-arg"><span className="an-arg-k">{k}</span>{String(v)}</span>
+      ))}
+    </span>
+  );
+}
+
+function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => void }) {
+  const m = STEP_ICON[s.kind] ?? STEP_ICON.note;
+  const at = s.at ? new Date(s.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "";
+  let body: JSX.Element;
+  if (s.kind === "tool_call") {
+    body = (
+      <div className="an-card an-card--call">
+        <span className="an-tool">{s.tool}</span>
+        <ArgChips args={s.args} />
+      </div>
+    );
+  } else if (s.kind === "tool_result") {
+    body = (
+      <div className="an-card an-card--result">
+        <div className="an-result-line"><span className="an-tool an-tool--dim">{s.tool}</span> {resultSummary(s)}</div>
+        {s.result != null && typeof s.result === "object" && (
+          <details className="an-fold">
+            <summary>data</summary>
+            <pre className="an-json">{JSON.stringify(s.result, null, 2).slice(0, 4000)}</pre>
+          </details>
         )}
+      </div>
+    );
+  } else if (s.kind === "final") {
+    const o = s.opinion ?? {};
+    const cls = o.verdict === "take" ? "ok" : o.verdict === "watch" ? "wait" : "bad";
+    body = (
+      <div className={`an-card an-card--final an-final--${o.verdict ?? "none"}`}>
+        <div className="an-final-head">
+          <span className={`status-pill ${cls}`}>{(o.verdict ?? "?").toUpperCase()}</span>
+          {(o.contract_label || o.contract) && <b>{o.contract_label ?? o.contract}</b>}
+          {o.limit_price != null && <span>@ ≤{o.limit_price}</span>}
+          {o.quantity != null && <span>×{o.quantity}</span>}
+          {o.confidence != null && <span className="muted">{Math.round(o.confidence * 100)}% confident</span>}
+        </div>
+        {o.rationale && <RichText text={String(o.rationale)} />}
+        {o.invalidation && <div className="an-invalid">Invalid if: {o.invalidation}</div>}
+      </div>
+    );
+  } else if (s.kind === "llm") {
+    body = <div className="an-card an-card--llm"><RichText text={s.text} /></div>;
+  } else {
+    body = <div className={`an-card an-card--plain ${s.kind === "error" ? "neg" : ""}`}>{s.text}</div>;
+  }
+  return (
+    <div className="an-ev">
+      <StepNode kind={s.kind} />
+      <div className="an-ev-body">
+        <div className="an-ev-meta">{m.label}{at && <span> · {at}</span>}</div>
+        {body}
       </div>
     </div>
   );
@@ -876,8 +1023,10 @@ function StepRow({ s }: { s: AnalystStep }) {
 function AnalystRunDetail({ id }: { id: string }) {
   const [run, setRun] = useState<AnalystRun | null>(null);
   const [live, setLive] = useState<AnalystStep[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickRef = useRef(true);          // follow the tail only while the user is at it
   useEffect(() => {
-    setRun(null); setLive([]);
+    setRun(null); setLive([]); stickRef.current = true;
     let dead = false;
     api.analystRun(id).then((r) => !dead && setRun(r)).catch(() => undefined);
     // live: append steps for THIS run as they stream in
@@ -886,86 +1035,161 @@ function AnalystRunDetail({ id }: { id: string }) {
     });
     return () => { dead = true; off(); };
   }, [id]);
-  // if the run is still running, poll once more when live stops arriving
+  // poll as a fallback while the run is live (a missed WS frame never strands the view)
   useEffect(() => {
     if (run && run.status === "running") {
       const t = setInterval(() => api.analystRun(id).then((r) => {
         setRun(r); if (r.status !== "running") clearInterval(t);
-      }).catch(() => undefined), 4000);
+      }).catch(() => undefined), 2500);
       return () => clearInterval(t);
     }
   }, [run?.status, id]);
 
-  if (!run) return <Spinner />;
   // merge persisted trace with any live steps not yet persisted
   const bySeq = new Map<number, AnalystStep>();
-  for (const s of run.trace) bySeq.set(s.seq, s);
+  for (const s of run?.trace ?? []) bySeq.set(s.seq, s);
   for (const s of live) if (!bySeq.has(s.seq)) bySeq.set(s.seq, s);
   const steps = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
-  const running = run.status === "running";
+  const running = run?.status === "running";
+
+  // auto-scroll to the newest step, but only when already reading the tail
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickRef.current) el.scrollTop = el.scrollHeight;
+  }, [steps.length, running]);
+
+  if (!run) return <div className="panel an-detail"><div className="panel-body"><Spinner /></div></div>;
   return (
     <div className="panel an-detail">
       <div className="panel-head">
-        {run.ticker} · {run.source ?? "?"}
+        <b>{run.ticker}</b> <span className="muted">· {run.source ?? "?"}</span>
         <span className={`status-pill ${running ? "wait" : run.verdict === "take" ? "ok" : run.verdict === "skip" ? "bad" : "dim"}`}>
           {running ? "running…" : run.verdict ?? run.status}
         </span>
         <CopyChip value={run.id} title={`analyst run ${run.id} — click to copy; quote it to review/tune`} />
         <span style={{ flex: 1 }} />
-        <span className="muted" style={{ fontSize: 11 }}>
-          {run.model} · {run.tools.length} tools available
+        <span className="muted" style={{ fontSize: 11 }}
+          title={`Tools available: ${run.tools.join(", ")}`}>
+          {run.model} · {run.tools.length} tools
         </span>
       </div>
-      <div className="panel-body">
-        <div className="muted" style={{ fontSize: 11, marginBottom: 8 }}>
-          Tools available: {run.tools.join(", ")}
-        </div>
-        <div className="an-steps">
+      <div className="an-flow-wrap" ref={scrollRef}
+        onScroll={() => {
+          const el = scrollRef.current;
+          if (el) stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}>
+        <div className="an-flow">
           {steps.map((s) => <StepRow key={s.seq} s={s} />)}
-          {running && <div className="an-step"><span className="an-kind status-pill wait">…</span>
-            <div className="an-body"><div className="muted">working…</div></div></div>}
+          {running && (
+            <div className="an-ev">
+              <span className="an-node an-node--pulse"><span className="an-dot" /></span>
+              <div className="an-ev-body"><div className="an-card an-card--plain muted">thinking…</div></div>
+            </div>
+          )}
         </div>
-        {run.error && <div className="neg" style={{ fontSize: 12, marginTop: 8 }}>{run.error}</div>}
+        {run.error && <div className="neg" style={{ fontSize: 12, margin: "8px 12px" }}>{run.error}</div>}
+      </div>
+    </div>
+  );
+}
+
+const NOTE_SCOPES = ["general", "ticker:", "source:"];
+
+function NotesPanel() {
+  const toast = useStore((s) => s.toast);
+  const [notes, setNotes] = useState<import("../types").TipNote[] | null>(null);
+  const [text, setText] = useState("");
+  const [scope, setScope] = useState("general");
+  const load = () => api.tipNotes().then(setNotes).catch(() => undefined);
+  useEffect(() => { load(); }, []);
+  const add = async () => {
+    if (!text.trim()) return;
+    try {
+      await api.addTipNote(scope.trim() || "general", text.trim());
+      setText(""); load();
+    } catch (e: any) { toast("error", e.message); }
+  };
+  const del = async (id: string) => {
+    try { await api.deleteTipNote(id); load(); } catch (e: any) { toast("error", e.message); }
+  };
+  return (
+    <div className="panel an-notes">
+      <div className="panel-head">Knowledge
+        <span className="sub">shared notes — every analyst run reads the ones matching its tip</span>
+      </div>
+      <div className="an-notes-body">
+        {notes == null ? <Spinner />
+          : notes.length === 0 ? <div className="empty">No notes yet — the analyst saves durable context here (hedges, source habits); you can too.</div>
+          : notes.map((n) => (
+            <div key={n.id} className="an-note">
+              <div className="an-note-head">
+                <span className="an-note-scope">{n.scope}</span>
+                <span className="muted">{n.author}{n.createdAt ? ` · ${timeAgo(n.createdAt)}` : ""}</span>
+                {n.runId && <button className="link-btn" title="open the run that saved this note"
+                  onClick={() => useStore.getState().openAnalystRun(n.runId!)}>run</button>}
+                <button className="an-note-del" title="delete this note" onClick={() => del(n.id)}>×</button>
+              </div>
+              <div className="an-note-text">{n.text}</div>
+            </div>
+          ))}
+      </div>
+      <div className="an-note-add">
+        <input className="an-note-scope-in" list="note-scopes" value={scope}
+          onChange={(e) => setScope(e.target.value)}
+          title='scope: "general", "ticker:SPY" or "source:name"' />
+        <datalist id="note-scopes">{NOTE_SCOPES.map((s) => <option key={s} value={s} />)}</datalist>
+        <input className="an-note-text-in" placeholder="Add a note the analyst should know…"
+          value={text} onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && add()} />
+        <button className="link-btn" onClick={add}>save</button>
       </div>
     </div>
   );
 }
 
 function AnalystTab() {
-  const signalCount = useStore((s) => s.signals.length);
-  const state = useAsync(() => api.analystRuns(50), [signalCount]);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [bump, setBump] = useState(0);
-  // a fresh run streaming in refreshes the list + auto-opens the newest
+  const focus = useStore((s) => s.analystFocusRunId);
+  const setFocus = useStore((s) => s.setAnalystFocus);
+  const [runs, setRuns] = useState<import("../types").AnalystRunSummary[] | null>(null);
   useEffect(() => {
+    let dead = false;
+    const load = () => api.analystRuns(50).then((r) => !dead && setRuns(r)).catch(() => undefined);
+    load();
+    const t = setInterval(load, 4000);      // a run kicked off elsewhere shows within seconds
+    // a fresh run streaming in auto-opens + refreshes the list immediately
     const off = onAnalystStep(({ runId, step }) => {
-      if (step.kind === "start") { setSelected(runId); setBump((b) => b + 1); }
+      if (step.kind === "start") setFocus(runId);
+      load();
     });
-    return off;
-  }, []);
-  useEffect(() => { if (bump) state.reload(); }, [bump]);
-  const runs = state.data ?? [];
-  const sel = selected ?? runs[0]?.id ?? null;
+    return () => { dead = true; clearInterval(t); off(); };
+  }, [setFocus]);
+  const sel = focus ?? runs?.[0]?.id ?? null;
   return (
     <div className="an-layout">
-      <div className="panel an-list">
-        <div className="panel-head">Analyst runs <span className="sub">the play-by-play of each appraisal</span></div>
-        <div className="an-list-body">
-          {state.loading && runs.length === 0 ? <Spinner />
-            : runs.length === 0 ? <div className="empty">No analyst runs yet — a tip triggers one.</div>
-            : runs.map((r) => (
-              <button key={r.id} className={`an-run ${r.id === sel ? "active" : ""}`}
-                onClick={() => setSelected(r.id)}>
-                <span className="an-run-l">
-                  <b>{r.ticker}</b>
-                  <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
-                    {r.status === "running" ? "running" : r.verdict ?? r.status}
+      <div className="an-side">
+        <div className="panel an-list">
+          <div className="panel-head">Analyst runs <span className="sub">the play-by-play of each appraisal</span></div>
+          <div className="an-list-body">
+            {runs == null ? <Spinner />
+              : runs.length === 0 ? (
+                <div className="empty">No analyst runs yet — a tip triggers one.
+                  After “▶ tip” on a Discord source, the run appears here within a few seconds.</div>
+              )
+              : runs.map((r) => (
+                <button key={r.id} className={`an-run ${r.id === sel ? "active" : ""}`}
+                  onClick={() => setFocus(r.id)}>
+                  <span className="an-run-l">
+                    <b>{r.ticker}</b>
+                    <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
+                      {r.status === "running" ? "running" : r.verdict ?? r.status}
+                    </span>
                   </span>
-                </span>
-                <span className="an-run-sub">{r.source ?? "?"} · {r.traceSteps} steps · {r.createdAt ? fmtDateTime(r.createdAt) : ""}</span>
-              </button>
-            ))}
+                  <span className="an-run-sub">{r.source ?? "?"} · {r.traceSteps} steps · {r.createdAt ? fmtDateTime(r.createdAt) : ""}</span>
+                </button>
+              ))}
+          </div>
         </div>
+        <NotesPanel />
       </div>
       <div className="an-main">
         {sel ? <AnalystRunDetail id={sel} />

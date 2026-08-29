@@ -44,6 +44,8 @@ export interface RouteState {
   pageTab?: string;
   /** flow page symbol drill-in: /flow/story/<symbol> */
   flowSymbol?: string | null;
+  /** analyst run drill-in: /inbox/analyst/<runId> */
+  analystRunId?: string | null;
 }
 
 export function parseLocation(pathname = window.location.pathname): RouteState {
@@ -69,6 +71,9 @@ export function parseLocation(pathname = window.location.pathname): RouteState {
     if (page === "flow" && parts[1] === "story" && parts[2]) {
       return { page, flowSymbol: parts[2].toUpperCase() };
     }
+    if (page === "inbox" && parts[1] === "analyst" && parts[2]) {
+      return { page, pageTab: "analyst", analystRunId: parts[2] };
+    }
     const tab = parts[1];
     return tab && PAGE_TABS[page]!.includes(tab) ? { page, pageTab: tab } : { page };
   }
@@ -93,6 +98,9 @@ export function buildPath(s: RouteState): string {
   }
   if (s.page === "armed") return s.armedRunId ? `/armed/${s.armedRunId}` : "/armed";
   if (s.page === "flow" && s.flowSymbol) return `/flow/story/${s.flowSymbol}`;
+  if (s.page === "inbox" && s.pageTab === "analyst" && s.analystRunId) {
+    return `/inbox/analyst/${s.analystRunId}`;
+  }
   if (PAGE_TABS[s.page]) {
     const def = PAGE_TABS[s.page]![0];
     return s.pageTab && s.pageTab !== def ? `/${s.page}/${s.pageTab}` : `/${s.page}`;

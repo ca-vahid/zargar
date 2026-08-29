@@ -89,6 +89,14 @@ export const api = {
     request<import("../types").AnalystRunSummary[]>("GET", `/api/tip/analyst/runs?limit=${limit}`),
   analystRun: (id: string) =>
     request<import("../types").AnalystRun>("GET", `/api/tip/analyst/runs/${id}`),
+  // --- shared tips knowledge (notes the analyst reads before every run) ---
+  tipNotes: (scope = "", limit = 100) =>
+    request<import("../types").TipNote[]>(
+      "GET", `/api/tip/notes?limit=${limit}${scope ? `&scope=${encodeURIComponent(scope)}` : ""}`),
+  addTipNote: (scope: string, text: string) =>
+    request<import("../types").TipNote>("POST", "/api/tip/notes", { scope, text }),
+  deleteTipNote: (id: string) =>
+    request<{ ok: boolean }>("DELETE", `/api/tip/notes/${id}`),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

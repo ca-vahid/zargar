@@ -112,6 +112,69 @@ class SignalService:
                 "createdAt": r.created_at.isoformat() if r.created_at else None,
                 "finishedAt": r.finished_at.isoformat() if r.finished_at else None}
 
+    # ---------------------------------------------------- shared tips knowledge
+    # Notes are the desk's memory: durable context a tip carried ("the SPY put
+    # hedges the source's Oct-Dec calls"), lessons, per-tip details. The analyst
+    # reads matching notes before every run and writes new ones (save_note).
+    @staticmethod
+    def note_dict(n) -> dict:
+        return {"id": n.id, "scope": n.scope, "text": n.text, "author": n.author,
+                "signalId": n.signal_id, "runId": n.run_id,
+                "createdAt": n.created_at.isoformat() if n.created_at else None}
+
+    async def tip_notes(self, scopes: list[str] | None = None,
+                        limit: int = 100) -> list[dict]:
+        from ..models import TipNote
+        async with self.engine.sf() as session:
+            q = select(TipNote).order_by(TipNote.created_at.desc()).limit(limit)
+            if scopes:
+                q = q.where(TipNote.scope.in_(scopes))
+            rows = (await session.execute(q)).scalars().all()
+        return [self.note_dict(r) for r in rows]
+
+    async def add_tip_note(self, scope: str, text: str, *, author: str = "user",
+                           signal_id: str | None = None,
+                           run_id: str | None = None) -> dict:
+        from ..models import TipNote
+        scope = (scope or "general").strip() or "general"
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("empty note")
+        row = TipNote(id=new_id(), scope=scope[:160], text=text[:2000],
+                      author=author[:80], signal_id=signal_id, run_id=run_id)
+        async with self.engine.sf() as session:
+            session.add(row)
+            await session.commit()
+        note = self.note_dict(row)
+        await self.engine.journal.append(ev.TIP_NOTE_ADDED, note,
+                                         aggregate_type="signal",
+                                         aggregate_id=signal_id or row.id)
+        return note
+
+    async def delete_tip_note(self, note_id: str) -> bool:
+        from ..models import TipNote
+        async with self.engine.sf() as session:
+            row = await session.get(TipNote, note_id)
+            if row is None:
+                return False
+            await session.delete(row)
+            await session.commit()
+        return True
+
+    async def notes_for_tip(self, ticker: str | None, source: str | None,
+                            signal_id: str | None = None,
+                            limit: int = 12) -> list[dict]:
+        """The notes an analyst run should see: this tip's own, its ticker's,
+        its source's, and the general ones — newest first, capped."""
+        scopes = ["general"]
+        if ticker:
+            scopes.append(f"ticker:{ticker.upper()}")
+        if source:
+            scopes.append(f"source:{source}")
+        if signal_id:
+            scopes.append(f"signal:{signal_id}")
+        return await self.tip_notes(scopes, limit=limit)
+
     def discord_queue_process(self, channel_id: str) -> None:
         self._discord_process_queue.add(str(channel_id))
 
@@ -538,6 +601,26 @@ class SignalService:
                 if (eng.proposals is not None and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
                     proposal = await eng.proposals.create_from_signal(row, sig, verification)
+                # full auto: a "take" from the analyst self-approves the proposal —
+                # same path a human click takes (RiskGate inside OrderManager.place).
+                # A live portfolio additionally needs techniques.tip.allow_live_auto.
+                if proposal is not None and policy.mode == "auto":
+                    verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
+                    pf = eng.positions.portfolio(proposal["portfolioId"]) or {}
+                    live_ok = (pf.get("kind") != "live"
+                               or bool(eng.settings.get("techniques.tip.allow_live_auto", False)))
+                    if verdict not in (None, "take"):
+                        log.info("auto mode: analyst said %r — leaving proposal %s for the human",
+                                 verdict, proposal["id"])
+                    elif not live_ok:
+                        log.warning("auto mode: live portfolio without allow_live_auto — "
+                                    "leaving proposal %s pending", proposal["id"])
+                    else:
+                        try:
+                            decided = await eng.proposals.approve(proposal["id"], via="auto")
+                            proposal = decided["proposal"]
+                        except Exception:
+                            log.exception("auto-approve failed for proposal %s", proposal["id"])
             out.append({"signal": signal_dict(row), "proposal": proposal,
                         "shadowOrder": shadow_order})
         return out

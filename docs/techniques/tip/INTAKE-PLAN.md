@@ -116,21 +116,48 @@ strict grammar and their own timestamps.*
   the Tips analyst now persists a full **TipAnalystRun** per appraisal —
   tools available, every LLM turn, every tool call + args + result, the final
   verdict — streamed live on the `tip_analyst` bus topic (WS type `tipAnalyst`).
-  UI: **Tips > Analyst** tab (`/inbox/analyst`) = a run list + chat-style
-  play-by-play with a copyable run id; it follows a running appraisal live
-  (WS) and polls as a fallback. `GET /api/tip/analyst/runs[/{id}]`. A **"▶ tip"**
-  action on each Discord source fetches its last message and runs it through
-  the pipeline on demand (`POST /api/tip/discord/process-last`, served by the
-  gateway peek loop) — the resulting analyst run appears live in the Analyst tab.
+  UI: **Tips > Analyst** tab (`/inbox/analyst`, run deep-link
+  `/inbox/analyst/<runId>`) = a run list + timeline play-by-play with a
+  copyable run id; it follows a running appraisal live (WS) and polls as a
+  fallback. `GET /api/tip/analyst/runs[/{id}]`. A **"▶ tip"** action on each
+  Discord source fetches its last message and runs it through the pipeline on
+  demand (`POST /api/tip/discord/process-last`, served by the gateway peek
+  loop) — pressing it jumps to the Analyst tab, which polls every 4 s so the
+  run appears without a refresh. Rebuilt 2026-08-28 after first live use:
+  timeline nodes + cards (SVG icons), analyst prose rendered as rich text,
+  tool results folded behind a one-line summary, auto-scroll that follows the
+  tail only while the user is at it, verdict card; tip rows and proposal cards
+  link to their run ("analysis" / "view the analysis").
 
+- [x] **P4d — shared tips knowledge (notes)** (2026-08-28): `tip_notes` table —
+  durable notes scoped `general` / `source:<name>` / `ticker:<SYM>` /
+  `signal:<id>`. Every analyst run is handed the notes matching its tip
+  (`techniques.tip.analyst_notes_max`) in the prompt and can write its own via
+  the **save_note tool** (journaled `TipNoteAdded`). Born from the SPY 750P
+  alert ("downside protection for my Oct-Dec calls" — context that matters at
+  exit time, weeks later). UI: the **Knowledge** panel on Tips > Analyst
+  (list/add/delete; a note links back to the run that saved it).
+  API `GET/POST /api/tip/notes`, `DELETE /api/tip/notes/{id}`.
 - [ ] **P5 — alert lifecycle → book management**: an `Update/TRIM/CLOSE` from
   the same source+ticker should attach to the OPEN signal (dedupe-style key)
   and drive the immediate book's exit — giving a *source-managed* exit
   counterfactual next to our policy exits on the scorecard. Design first; the
-  shadow books must never double-count.
-- [ ] **P6 — analyst → proposal handshake**: a `take` opinion on a
-  proposal-mode source pre-fills the proposal with the analyst's contract +
-  limit; human still approves. Auto mode stays scorecard-earned.
+  shadow books must never double-count. (save_note is the stopgap: the analyst
+  records lifecycle context so a later run knows.)
+- [x] **P6 — analyst → proposal handshake + real vehicles** (2026-08-28): the
+  proposal now trades the SAME vehicle the books do. Bug found live: the SPY
+  750P hedge tip proposed **SELL 1 SPY @ 769** (short shares at the underlying
+  ask) while the books correctly bought the put. `create_from_signal` rebuilt:
+  an analyst `take` naming a contract proposes THAT contract (BUY to open, its
+  limit/qty); else the book's expression contract; a bearish tip with no usable
+  put proposes NOTHING (shorts are puts only); shares keep the bracket. Sized
+  by the source's per-tip budget (was 5% of equity). Context now carries
+  `vehicle`, `explain` (plain-language "what Approve does"), `analystRunId` +
+  the analyst verdict — the card links straight to the run. **Full auto**:
+  `mode: auto` sources self-approve the proposal via the same `approve()` path
+  a human click takes (RiskGate inside, `decided_via="auto"`) — but only when
+  the analyst said `take` (or is off), and a LIVE portfolio additionally needs
+  `techniques.tip.allow_live_auto` (default off).
 - [x] **P7 — launched by start.ps1** (2026-08-28): `scripts\start.ps1` opens
   the gateway listener in ITS OWN window via `scripts\discord-intake.ps1`
   (waits for the API, mints a 30-day local session so ingest passes auth,

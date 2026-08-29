@@ -157,6 +157,9 @@ interface AppState {
     pageTab?: string; flowSymbol?: string | null }) => void;
   pageTab: string;                 // active tab on a tabbed page (inbox/flow); "" = default
   setPageTab: (t: string) => void;
+  analystFocusRunId: string | null;   // selected run on Tips > Analyst (deep-linkable)
+  setAnalystFocus: (id: string | null) => void;
+  openAnalystRun: (id: string) => void;   // navigate to Tips > Analyst with this run open
 }
 
 const posKey = (p: Position) => `${p.portfolioId}:${p.symbol}:${p.secType}`;
@@ -210,8 +213,11 @@ export const useStore = create<AppState>((set, get) => ({
   chatLive: {},
 
   pageTab: "",
-  setPageTab: (pageTab) => set({ pageTab }),
-  setPage: (page) => set({ page, pageTab: "" }),   // a fresh page starts on its default tab
+  setPageTab: (pageTab) => set({ pageTab, analystFocusRunId: null }),
+  setPage: (page) => set({ page, pageTab: "", analystFocusRunId: null }),   // a fresh page starts on its default tab
+  analystFocusRunId: null,
+  setAnalystFocus: (analystFocusRunId) => set({ analystFocusRunId }),
+  openAnalystRun: (id) => set({ page: "inbox", pageTab: "analyst", analystFocusRunId: id }),
   setFlowFocus: (flowFocusSymbol) => set({ flowFocusSymbol }),
   setMoreOpen: (moreOpen) => set({ moreOpen }),
   setActiveSymbol: (activeSymbol) => set({ activeSymbol }),
@@ -360,6 +366,7 @@ export const useStore = create<AppState>((set, get) => ({
     set((st) => ({
       page: r.page,
       pageTab: r.pageTab ?? "",
+      analystFocusRunId: (r as any).analystRunId ?? null,
       flowFocusSymbol: r.page === "flow" ? (r.flowSymbol ?? null) : st.flowFocusSymbol,
       armedFocusRunId: r.armedRunId ?? st.armedFocusRunId,
       techniqueTab: (r.techniqueTab as any) ?? st.techniqueTab,

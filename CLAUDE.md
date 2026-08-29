@@ -62,7 +62,14 @@ alert-room auto-execution; reading the OS notifications Discord delivered to the
 (`zargar/tools/discord_watch.py`, POC 2026-08-28) — boundary table + intake phases in
 `docs/techniques/tip/INTAKE-PLAN.md`. The **Tips Analyst** (`techniques/tip/analyst.py`, advisory
 LLM + market tools, `techniques.tip.analyst_*` knobs) appraises each tradable tip onto
-`extraction.analyst`.
+`extraction.analyst`; every appraisal persists a **TipAnalystRun** (full play-by-play,
+streamed live on the `tip_analyst` topic — UI Tips > Analyst, deep link `/inbox/analyst/<id>`)
+and reads/writes **shared knowledge notes** (`tip_notes`, save_note tool, Knowledge panel).
+Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
+the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
+with no usable put proposes nothing; sized by `budget_per_tip`; context carries
+`vehicle`/`explain`/`analystRunId`. `mode: auto` sources self-approve (analyst "take" or
+analyst off; live portfolios also need `techniques.tip.allow_live_auto`).
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
 dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
 non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose

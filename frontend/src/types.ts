@@ -237,6 +237,12 @@ export interface AnalystRunSummary {
 export interface AnalystRun extends AnalystRunSummary {
   tools: string[]; trace: AnalystStep[]; opinion: any; tip: any; error?: string | null;
 }
+/** Shared tips knowledge: a durable note the analyst (or the user) saved.
+    Scope: "general" | "source:<name>" | "ticker:<SYM>" | "signal:<id>". */
+export interface TipNote {
+  id: string; scope: string; text: string; author: string;
+  signalId?: string | null; runId?: string | null; createdAt?: string | null;
+}
 
 export interface SourceScorecard {
   source: string;

@@ -58,3 +58,21 @@ live in `docs/PLATFORM-RULES.md`.*
   sweep sells it; before this they were held forever).
 - 2026-08-28 — **Generous defaults** (user): budget_per_tip 500→1000,
   budget_open_max 2000→5000, horizon_sessions 10→15, max_open_tips 3→5.
+- 2026-08-28 — **Proposals trade the tip's vehicle** (found live: the SPY 750P
+  hedge alert proposed SELL 1 SPY @ 769 — short shares at the underlying ask —
+  while both books correctly bought the put). `create_from_signal` now proposes
+  the analyst's "take" contract (else the book's expression contract) BUY-to-open,
+  sized by `budget_per_tip`; a bearish tip with no usable put proposes NOTHING
+  (shorts are puts only, same as the books). Run: analyst #1968b277 / proposal
+  #71796b9b.
+- 2026-08-28 — **Auto mode defined**: `mode: auto` self-approves the proposal via
+  the normal `approve()` path (RiskGate inside, journaled `decided_via=auto`) only
+  when the analyst said `take` (or is disabled); anything else waits for the
+  human. Live portfolios additionally need `techniques.tip.allow_live_auto`
+  (default off). Auto remains scorecard-earned per source — the platform default
+  stays `proposal`.
+- 2026-08-28 — **Shared tips knowledge** (`tip_notes`): the analyst reads the
+  notes matching its tip (ticker/source/general/signal scopes) before every run
+  and saves durable context via `save_note` (e.g. "SPY put = downside protection
+  for the source's Oct-Dec calls" — the reason we'd exit differently weeks
+  later). Journaled `TipNoteAdded`; user-editable in Tips > Analyst > Knowledge.

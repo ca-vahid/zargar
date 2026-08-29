@@ -50,6 +50,14 @@ class ProposalService:
     # ------------------------------------------------------------- create
     async def create_from_signal(self, signal_row: Signal, sig: TradeSignal,
                                  verification: dict) -> dict | None:
+        """Verified tip → the order the human is asked to approve. The proposal
+        trades the SAME vehicle the shadow books do: a tip that names an option
+        proposes that contract (BUY to open — a bearish tip buys the put, share
+        shorting is never proposed); the analyst's pick, when it said "take",
+        wins over the raw expression (the P6 handshake). Sized by the source's
+        per-tip budget, like the books, so the scorecard stays comparable."""
+        from ..signals.sources import resolve_policy
+
         eng = self.engine
         pid = str(eng.settings.get("trading.default_portfolio", ""))
         if not pid or eng.positions.portfolio(pid) is None:
@@ -58,32 +66,88 @@ class ProposalService:
                 log.warning("no portfolio available for proposal")
                 return None
             pid = portfolios[0]["id"]
+        pf = eng.positions.portfolio(pid) or {}
+        policy = resolve_policy(eng.settings, signal_row.source_name)
+        budget = float(policy.budget_per_tip)
 
-        symbol = sig.ticker.upper()
-        await eng.ensure_symbol(symbol)
-        quote = eng.quotes.get(symbol)
-        ref_price = (quote.ask if quote and quote.ask > 0 else None) or sig.entry_price
-        if not ref_price or ref_price <= 0:
-            return None
+        extraction = signal_row.extraction or {}
+        analyst = extraction.get("analyst") or {}
+        expr = extraction.get("shadowExpression") or {}
 
-        equity = await eng.positions.equity(pid)
-        sizing_pct = float(eng.settings.get("signals.default_sizing_pct", 5.0))
-        budget = equity * sizing_pct / 100
-        qty = max(1, math.floor(budget / ref_price))
-        limit = round(ref_price, 2)
+        # ---- vehicle: the analyst's contract beats the book's, both beat shares
+        occ = label = None
+        limit_hint = qty_hint = None
+        if analyst.get("verdict") == "take" and analyst.get("contract") \
+                and analyst.get("instrument", "option") == "option":
+            occ = str(analyst["contract"]).upper()
+            label = analyst.get("contract_label") or occ
+            limit_hint = analyst.get("limit_price")
+            qty_hint = analyst.get("quantity")
+            picked_by = "analyst"
+        elif expr.get("vehicle") == "option" and expr.get("contract"):
+            occ = str(expr["contract"]).upper()
+            label = expr.get("display") or occ
+            limit_hint = expr.get("ask")
+            qty_hint = expr.get("contracts")
+            picked_by = "tip"
 
         bracket = None
-        if sig.target_price or sig.stop_price:
-            bracket = {"take_profit": sig.target_price, "stop_loss": sig.stop_price,
-                       "take_profit_pct": None, "stop_loss_pct": None}
+        vehicle: dict = {}
+        if occ:
+            symbol, sec_type, side = occ, "OPT", "BUY"      # long the contract, both directions
+            await eng.ensure_symbol(occ)
+            quote = eng.quotes.get(occ)
+            ref_price = ((quote.ask if quote and quote.ask > 0 else None)
+                         or limit_hint or sig.premium)
+            if not ref_price or ref_price <= 0:
+                log.warning("no premium reference for %s — no proposal", occ)
+                return None
+            limit = round(float(ref_price), 2)
+            qty = int(qty_hint or 0) or max(1, math.floor(budget / (limit * 100)))
+            from ..options import occ as occ_mod
+            parsed = occ_mod.parse(occ)
+            opt_type = parsed.option_type if parsed else ("put" if sig.direction == "short" else "call")
+            label = label or (occ_mod.display(occ) if parsed else occ)
+            vehicle = {"kind": "option", "display": label, "underlying": sig.ticker.upper(),
+                       "optionType": opt_type, "pickedBy": picked_by, "multiplier": 100}
+            cost = limit * qty * 100
+            explain = (f"Approve = buy {qty} contract{'s' if qty != 1 else ''} of "
+                       f"{label} (a {opt_type} — {'bullish' if opt_type == 'call' else 'bearish'}) "
+                       f"at a ${limit:.2f} limit ≈ ${cost:,.0f} in “{pf.get('name', pid)}” "
+                       f"({pf.get('kind', '?')}). The order still passes the risk gate. "
+                       f"Nothing manages the exit automatically yet — it shows in Portfolios.")
+        else:
+            if sig.direction == "short":
+                # bearish with no usable put: share shorting is never proposed
+                log.warning("short tip %s has no usable put — no proposal (shorts are puts only)",
+                            signal_row.id)
+                return None
+            symbol, sec_type, side = sig.ticker.upper(), "STK", "BUY"
+            await eng.ensure_symbol(symbol)
+            quote = eng.quotes.get(symbol)
+            ref_price = (quote.ask if quote and quote.ask > 0 else None) or sig.entry_price
+            if not ref_price or ref_price <= 0:
+                return None
+            limit = round(float(ref_price), 2)
+            qty = max(1, math.floor(budget / limit))
+            vehicle = {"kind": "shares"}
+            if sig.target_price or sig.stop_price:
+                bracket = {"take_profit": sig.target_price, "stop_loss": sig.stop_price,
+                           "take_profit_pct": None, "stop_loss_pct": None}
+            explain = (f"Approve = buy {qty} share{'s' if qty != 1 else ''} of {symbol} at a "
+                       f"${limit:.2f} limit ≈ ${limit * qty:,.0f} in “{pf.get('name', pid)}” "
+                       f"({pf.get('kind', '?')})"
+                       + (", with the tip's target/stop attached as a bracket"
+                          if bracket else "")
+                       + ". The order still passes the risk gate.")
 
         ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
-        side = "BUY" if sig.direction == "long" else "SELL"
         row = Proposal(
             id=new_id(),
             signal_id=signal_row.id,
             portfolio_id=pid,
             symbol=symbol,
+            sec_type=sec_type,
             side=side,
             qty=float(qty),
             order_type="LMT",
@@ -94,10 +158,15 @@ class ProposalService:
                 "sourceName": signal_row.source_name,
                 "confidence": sig.confidence,
                 "verification": verification,
-                "sizing": {"equity": round(equity, 2), "pct": sizing_pct,
-                           "budget": round(budget, 2), "refPrice": limit},
+                "sizing": {"budget": round(budget, 2), "refPrice": limit, "qty": qty},
                 "signalPrices": {"entry": sig.entry_price, "target": sig.target_price,
                                  "stop": sig.stop_price},
+                "vehicle": vehicle,
+                "explain": explain,
+                "analystRunId": analyst.get("runId"),
+                "analyst": ({k: analyst.get(k) for k in
+                             ("verdict", "rationale", "invalidation", "confidence")}
+                            if analyst else None),
             },
             expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=ttl_min),
         )
