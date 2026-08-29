@@ -128,3 +128,42 @@ def test_context_line_mentions_top_contract():
     read = build_read("NVDA", DAY, flags=flags, confirmed=[], repeats={}, agg={}, t=T)
     line = context_line(read)
     assert line and "call accumulation" in line and "NVDA260918C00105000" in line
+
+
+# --- spot_from_chain / last_weekday (the 2026-08-28 degraded-scan fixes) ---------
+
+def test_spot_from_chain_parity():
+    from zargar.techniques.flow.scan import spot_from_chain
+    rows = []
+    for k in (95.0, 100.0, 105.0):
+        # call mid ≈ max(spot-k,0)+2 · put mid ≈ max(k-spot,0)+2 around spot 101
+        c = max(101 - k, 0) + 2.0
+        p = max(k - 101, 0) + 2.0
+        rows.append(row(sym=f"C{k}", opt="call", strike=k, bid=c - 0.1, ask=c + 0.1))
+        rows.append(row(sym=f"P{k}", opt="put", strike=k, bid=p - 0.1, ask=p + 0.1))
+    assert abs(spot_from_chain(rows) - 101.0) < 0.5
+
+
+def test_spot_from_chain_needs_both_sides():
+    from zargar.techniques.flow.scan import spot_from_chain
+    calls_only = [row(strike=k) for k in (95.0, 100.0, 105.0)]
+    assert spot_from_chain(calls_only) == 0.0
+
+
+def test_spot_from_chain_prefers_nearest_expiry():
+    from zargar.techniques.flow.scan import spot_from_chain
+    near_c = row(sym="NC", strike=100.0, bid=2.9, ask=3.1, expiry="2026-09-04")
+    near_p = row(sym="NP", opt="put", strike=100.0, bid=1.9, ask=2.1, expiry="2026-09-04")
+    far_c = row(sym="FC", strike=100.0, bid=30.0, ask=32.0, expiry="2027-01-15")
+    far_p = row(sym="FP", opt="put", strike=100.0, bid=2.0, ask=2.2, expiry="2027-01-15")
+    # nearest expiry pair: spot ≈ 100 + 3.0 − 2.0 = 101 (far pair would say ~129)
+    assert abs(spot_from_chain([far_c, far_p, near_c, near_p]) - 101.0) < 0.5
+
+
+def test_last_weekday_rolls_weekends_only():
+    import datetime as dt
+    from zargar.techniques.flow.scan import last_weekday
+    sat, sun = dt.date(2026, 8, 29), dt.date(2026, 8, 30)
+    fri, wed = dt.date(2026, 8, 28), dt.date(2026, 8, 26)
+    assert last_weekday(sat) == fri and last_weekday(sun) == fri
+    assert last_weekday(wed) == wed

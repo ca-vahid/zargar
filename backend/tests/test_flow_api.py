@@ -161,6 +161,111 @@ async def test_flow_read_becomes_a_tip(flow_rig):
         await eng.flow_service.to_tip("KO")
 
 
+def snap(day, sym, occ_sym, opt, strike, *, vol=5000, oi=1000, bid=2.0, ask=2.2,
+         expiry="2026-09-18"):
+    from zargar.models import OptionChainSnapshot
+    return OptionChainSnapshot(date=day, occ=occ_sym, underlying=sym, expiry=expiry,
+                               strike=strike, option_type=opt, volume=vol,
+                               open_interest=oi, iv=0.4, bid=bid, ask=ask,
+                               mid=(bid + ask) / 2, last=(bid + ask) / 2)
+
+
+async def test_degraded_scan_never_overwrites(flow_rig):
+    """The 2026-08-28 wipe: a cold-boot re-scan with no spot must keep the
+    existing scored read, not replace it with a flag-less one. A symbol with
+    no prior read still gets its (degraded) read — better than nothing."""
+    eng = flow_rig
+    eng.options = None    # offline: no live CBOE fallback in tests
+    day = DAYS[2]
+    async with eng.sf() as session:
+        # COIN already has a good day-3 read (score 9). Calls-only snapshots:
+        # parity has no put side -> spot stays 0 -> degraded path.
+        session.add_all([
+            snap(day, "COIN", "COIN260918C00300000", "call", 300.0),
+            snap(day, "ZETA", "ZETA260918C00030000", "call", 30.0),
+        ])
+        await session.commit()
+    out = await eng.flow_service.scan(day=day, symbols=["COIN", "ZETA"])
+    assert out["noSpot"] == 2 and out["keptExisting"] == 1
+    story = await eng.flow_service.story("COIN")
+    kept = story["reads"][-1]
+    assert kept["score"] == 9 and kept["flags"], "good read was overwritten"
+    zeta = await eng.flow_service._read_row_for("ZETA", day)
+    assert zeta is not None                       # no prior read -> persisted
+
+
+async def test_scan_uses_parity_spot_when_quotes_cold(flow_rig):
+    """With no quote at all, spot comes from put-call parity on the snapshot
+    chain — the scan still flags (the 08-28 failure never recurs silently)."""
+    eng = flow_rig
+    eng.options = None    # offline: no live CBOE fallback in tests
+    day = DAYS[2]
+    async with eng.sf() as session:
+        session.add_all([
+            snap(day, "ZETA", "ZETA260918C00031000", "call", 31.0, vol=9000, oi=1500,
+                 bid=1.9, ask=2.1),
+            snap(day, "ZETA", "ZETA260918P00031000", "put", 31.0, vol=100, oi=500,
+                 bid=3.9, ask=4.1),   # parity: spot ≈ 31 + 2.0 − 4.0 = 29
+        ])
+        await session.commit()
+    assert eng.quotes.get("ZETA") is None
+    out = await eng.flow_service.scan(day=day, symbols=["ZETA"])
+    assert out["noSpot"] == 0
+    read = await eng.flow_service._read_row_for("ZETA", day)
+    assert read.read["spot"] == 29.0
+    [flag] = read.read["flags"]                   # 31C is ~6.9% OTM of 29 -> flagged
+    assert flag["contract"] == "ZETA260918C00031000"
+
+
+async def test_repair_rescans_degraded_day(flow_rig):
+    """Boot self-healing: a latest day whose reads carry the degraded signature
+    (scores from OI confirms, zero flags, no spot) is re-scanned when its
+    snapshots hold volume."""
+    from zargar.models import FlowRead
+    from zargar.domain import new_id
+    eng = flow_rig
+    eng.options = None    # offline: no live CBOE fallback in tests
+    day = "2026-09-08"                             # newer than the fixture days
+    async with eng.sf() as session:
+        session.add(FlowRead(id=new_id(), day=day, symbol="ZETA", score=4.0, lean="none",
+                             read={"flags": [], "confirmed": [{"contract": "X"}],
+                                   "repeatHits": {}, "reasons": ["confirm only"],
+                                   "aggregates": {}, "spot": None}))
+        session.add_all([
+            snap(day, "ZETA", "ZETA260918C00031000", "call", 31.0, vol=9000, oi=1500,
+                 bid=1.9, ask=2.1, expiry="2026-09-18"),
+            snap(day, "ZETA", "ZETA260918P00031000", "put", 31.0, vol=100, oi=500,
+                 bid=3.9, ask=4.1, expiry="2026-09-18"),
+        ])
+        await session.commit()
+    await eng.flow_service._repair_last_scan(delay=0)
+    read = await eng.flow_service._read_row_for("ZETA", day)
+    assert read.read["flags"], "repair did not rebuild the degraded day"
+    assert read.read["spot"] == 29.0
+
+
+async def test_scheduler_once_per_day_survives_restart(flow_rig):
+    """Job hydration: a ScheduledJobRan journaled today (by the process that
+    just exited) stops the rebooted scheduler from re-running the job."""
+    import zargar.scheduler as sch
+    eng = flow_rig
+    ran = []
+
+    async def job():
+        ran.append(1)
+
+    await eng.journal.append(sch.SCHEDULED_JOB_RAN, {
+        "job": "t_hydrate", "date": __import__("datetime").datetime.now(sch.ET).strftime("%Y-%m-%d"),
+        "seconds": 1.0})
+    eng.scheduler.register("t_hydrate", "00:00", job, weekdays_only=False)
+    await eng.scheduler._tick()
+    assert ran == []                               # journal says it already ran today
+    # a job with no history still runs
+    eng.scheduler.register("t_fresh", "00:00", job, weekdays_only=False)
+    await eng.scheduler._tick()
+    assert ran == [1]
+
+
 async def test_universe_flow_layer(flow_rig):
     """score >= 5 on 2 of the last 3 scan days joins the universe as 'flow'."""
     eng = flow_rig

@@ -9,8 +9,12 @@ alert path as the feed self-test when one fails. Registration:
 
 Semantics: a job runs once per ET calendar day, at the first loop tick at/after
 its time (a restart after the time still runs it that evening — a missed nightly
-scan is worse than a late one). Weekend runs are skipped unless
-`weekdays_only=False`. Job failures never kill the scheduler.
+scan is worse than a late one). "Once per day" survives restarts: on the first
+tick after boot each job hydrates its last-run day from the journal's
+ScheduledJobRan rows, so an evening of redeploys no longer re-runs (and
+possibly degrades) work that already ran — the 2026-08-28 flow-scan overwrite.
+Weekend runs are skipped unless `weekdays_only=False`. Job failures never kill
+the scheduler.
 """
 from __future__ import annotations
 
@@ -37,6 +41,7 @@ class _Job:
     fn: Callable[[], Awaitable[Any]]
     weekdays_only: bool = True
     last_day: str = ""                        # ET date it last ran
+    hydrated: bool = False                    # last_day recovered from the journal
     runs: int = 0
     failures: int = 0
     last_result: Any = field(default=None, repr=False)
@@ -90,6 +95,9 @@ class Scheduler:
         day = now.strftime("%Y-%m-%d")
         minutes = now.hour * 60 + now.minute
         for job in list(self._jobs.values()):
+            if not job.hydrated:
+                job.last_day = job.last_day or await self._journaled_last_day(job.name)
+                job.hydrated = True
             if job.last_day == day:
                 continue
             if job.weekdays_only and now.weekday() >= 5:
@@ -99,6 +107,24 @@ class Scheduler:
                 continue
             job.last_day = day
             await self._run(job, day)
+
+    async def _journaled_last_day(self, name: str) -> str:
+        """The ET date this job last ran, per the journal — so 'once per day'
+        survives restarts (an evening of redeploys must not re-run the scan)."""
+        try:
+            from sqlalchemy import select
+
+            from .models import Event
+            async with self.engine.sf() as session:
+                rows = (await session.execute(
+                    select(Event.payload).where(Event.type == SCHEDULED_JOB_RAN)
+                    .order_by(Event.ts.desc()).limit(200))).scalars().all()
+            for p in rows:
+                if (p or {}).get("job") == name:
+                    return str(p.get("date") or "")
+        except Exception:                       # journal unavailable -> run as before
+            log.debug("job hydration failed for %s", name, exc_info=True)
+        return ""
 
     async def _run(self, job: _Job, day: str) -> None:
         t0 = dt.datetime.now(dt.timezone.utc)
