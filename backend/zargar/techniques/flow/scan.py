@@ -72,6 +72,41 @@ def _otm_pct(row: dict, spot: float) -> float:
     return (spot - strike) / spot * 100
 
 
+def spot_from_chain(rows: list[dict]) -> float:
+    """Spot derived from the chain itself via put–call parity: at the strike
+    where the nearest expiry's call and put mids are closest, spot ≈ strike +
+    call_mid − put_mid. The offline fallback when no quote exists (cold boot,
+    late scan) — a scan must never score a chain against spot 0 (2026-08-28:
+    four boot re-scans overwrote a good day with zero flags because every
+    contract 'failed' the OTM window)."""
+    by: dict[tuple[str, float], dict[str, float]] = {}
+    for r in rows:
+        expiry, strike = str(r.get("expiry") or ""), float(r.get("strike") or 0)
+        if not expiry or strike <= 0:
+            continue
+        m = _mid(r)
+        if m <= 0:
+            continue
+        by.setdefault((expiry, strike), {})[str(r.get("option_type"))] = m
+    pairs = [(exp, k, v["call"], v["put"])
+             for (exp, k), v in by.items() if "call" in v and "put" in v]
+    if not pairs:
+        return 0.0
+    nearest = min(p[0] for p in pairs)
+    _, strike, c, p = min((p for p in pairs if p[0] == nearest),
+                          key=lambda p: abs(p[2] - p[3]))
+    spot = strike + c - p
+    return round(spot, 4) if spot > 0 else 0.0
+
+
+def last_weekday(day: "dt.date") -> "dt.date":
+    """The given date, rolled back to Friday when it lands on a weekend — a
+    Saturday 'Scan now' should re-read Friday's tape, not create a junk day."""
+    while day.weekday() >= 5:
+        day -= dt.timedelta(days=1)
+    return day
+
+
 def flag_contracts(rows: list[dict], *, spot: float, day: str, t: FlowThresholds) -> list[dict]:
     """The contracts whose day looked like opening accumulation: enough volume
     to mean something, volume >> OI, real money, near-dated, somewhat OTM."""

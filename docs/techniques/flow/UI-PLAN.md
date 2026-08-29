@@ -165,6 +165,19 @@ desk, detail, story, brief, phone cards). Note: the price panel needs a Yahoo/Hy
 feed — on a sim-feed dev server `/api/chart` falls back to local bars and the map
 degrades gracefully.
 
+**Nightly reliability (2026-08-29, after the 08-28 wipe):** the 16:45 scan ran fine at
+20:25 ET (52 flagged, real leans) but three later boot re-runs — each `scripts\start.ps1`
+redeploy re-fired the scheduler job — scored with a cold quote cache: spot 0 → every
+contract "failed" the 0–12% OTM window → zero flags, and the idempotent re-scan
+overwrote the good day with OI-confirm-only junk (the all-NONE score-4 board). Four
+fixes, all tested: scheduler jobs hydrate their last-run day from the journal (a redeploy
+never re-runs the night's job; a genuinely missed one still runs late); `_spot_for` falls
+back to **put-call parity on the snapshot chain** before any network call; a spot-less
+scan **never overwrites** an existing read (`noSpot`/`keptExisting` journaled); weekend
+"Scan now" rolls the day back to Friday. Plus boot self-healing: `_repair_last_scan`
+re-scans the latest day (its own symbols only) when it shows the degraded signature —
+so 08-28 rebuilds itself on the next restart.
+
 ## 3. Decisions taken / open
 
 - Taken: Reads default day = latest scan day; sparkline = plain SVG (Highcharts is for the
