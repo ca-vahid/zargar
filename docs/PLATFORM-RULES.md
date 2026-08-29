@@ -94,6 +94,15 @@ runtime ones to `execution.*`).
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-08-29 · **Ambitious practice posture** (user decision, active dev):
+  risk caps raised live — position notional 25k / 50% / gross 300%, option
+  premium 50% / $10k / 50 contracts, 30 orders/min, daily-loss halt 8%,
+  spread cap 20%; tip budgets 2,500 per tip / 15k open / 10 open tips / 10%
+  max risk; loss-halt fallback $500. Discord intake: `botsOnly=false` on all
+  nine monitored sources (human posters count). Code DEFAULTS unchanged
+  (conservative fresh-install); the pre-live re-tightening is
+  `docs/NEXT-GAPS-PLAN.md` §0/R3. Kill switch, never-list, reduce-only exits
+  untouched.
 - 2026-08-29 · **ARM-GAPS engine batch** (tips gap-closure, clusters A–F): MULTI-DAY
   plans on the shared runner — `plan_horizon(run, plan)` hook (base single-session),
   `ArmedPlan.horizon_sessions/sessions_used/expires_session/risk_warning`,
