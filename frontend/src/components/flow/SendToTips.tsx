@@ -16,9 +16,13 @@ export function SendToTipsButton({ symbol, lean }: { symbol: string; lean: strin
     setSending(true);
     try {
       const out = await api.flowToTip(symbol);
-      const st = out?.signal?.status ?? "created";
       setSent(true);
-      toast("success", `${symbol} sent to Tips (${String(st).replace("_", " ")}) — arm it there, or the morning sweep arms it in shadow`);
+      if (out?.queued) {
+        toast("success", `${symbol} ${out.contract ?? ""} sent — the tip desk is appraising it now; Tips → Analyst shows the live run`);
+      } else {
+        const st = out?.signal?.status ?? "created";
+        toast("success", `${symbol} sent to Tips (${String(st).replace("_", " ")}) — arm it there, or the morning sweep arms it in shadow`);
+      }
     } catch (e: any) {
       toast("error", e.message);
     } finally {

@@ -55,9 +55,11 @@ def build_flow_routes(app, eng, auth, config) -> None:
     @app.post("/api/flow/{symbol}/tip", dependencies=[auth])
     async def flow_to_tip(symbol: str):
         """The read looked worth acting on: make it a TIP (source 'flow-scan')
-        so the tip pipeline judges, books and arms it like any other tip."""
+        so the tip pipeline judges, books and arms it like any other tip.
+        Returns immediately ({queued: true}); the pipeline streams as a live
+        intake run in Tips > Analyst — refusals still 400 on the spot."""
         try:
-            return await _svc(eng).to_tip(symbol)
+            return await _svc(eng).to_tip_queued(symbol)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
         except RuntimeError as exc:

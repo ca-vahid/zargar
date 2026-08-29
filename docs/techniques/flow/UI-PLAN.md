@@ -189,7 +189,11 @@ verification and the tip card all see the full grounded case; the thesis summari
 note), served by the analyst's **`get_flow` tool** (falls back to the old context line
 when flow has never read the symbol); the tool description tells the analyst to always
 call it for source `flow-scan`. Tests: `test_flow_read_becomes_a_tip` (premium/thesis/
-body assertions) + `test_analyst_gets_the_full_flow_evidence`.
+body assertions) + `test_analyst_gets_the_full_flow_evidence`. (3) The button no longer
+hangs: `POST /api/flow/{sym}/tip` -> `to_tip_queued` validates + persists the case
+synchronously (refusals still 400 instantly) then runs the pipeline in the background
+as a live **intake run** (source flow-scan) — Tips > Analyst streams it, and the tip's
+outcome (parked/verified/seen-again) is the run's finish line (`test_to_tip_queued_returns_instantly_and_streams`).
 
 ## 3. Decisions taken / open
 
