@@ -199,6 +199,9 @@ you; search_messages digs deeper (older, other tickers, the original OPEN behind
 update). If this tip UPDATES a position the desk already holds (get_positions), MANAGE \
 that position (update_exit_plan / close_position — exit-only) instead of opening a \
 duplicate, and say so in the rationale.
+- IMAGES ARE NOT OPTIONAL: alert rooms put the trade IN the chart. Whenever the tip's \
+own message or a relevant history line is marked [images: <id>], ALWAYS view_image it \
+before judging — levels, annotations and entries live in the picture, not the caption.
 - SHARED NOTES: read what you are handed — it may change the verdict (an earlier OPEN \
 this message updates, a hedge rationale). save_note durable context (scope tip / ticker \
 / source / general) — a few precise notes beat many vague ones.
@@ -785,6 +788,9 @@ will decide.
 ("sold 40%", "stopped out", "letting it ride to 90"), act with update_exit_plan / \
 close_position (EXIT-ONLY: they can trim, tighten or close — never add exposure). \
 search_messages finds the original OPEN behind an update. Cite the message in the reason.
+- IMAGES ARE NOT OPTIONAL: whenever the message or a history line is marked \
+[images: <id>], ALWAYS view_image it — an "update" is often just a chart or a P&L \
+screenshot, and the substance lives in the picture.
 - Never open NEW exposure here; entries only ever come from a verified tip's proposal.
 
 Use at most a few tool calls (metered). Then reply with ONLY one JSON object matching \

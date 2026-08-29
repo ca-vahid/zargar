@@ -250,6 +250,40 @@ class SignalService:
             except Exception:
                 log.exception("recording local media failed for %s", mid)
 
+    async def discord_media_catchup(self, limit: int = 2000) -> dict:
+        """One-shot rescue: download images for mirrored messages that only
+        hold CDN URLs (rows from before the local store existed, or whose
+        download failed). Runs in the background at startup — links younger
+        than ~24h are still signed, so a prompt restart saves them."""
+        from ..models import DiscordMessage
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(DiscordMessage.id, DiscordMessage.images, DiscordMessage.local_images)
+                .order_by(DiscordMessage.posted_at.desc()).limit(limit))).all()
+        todo = [(mid, list(urls or [])) for mid, urls, local in rows
+                if (urls or []) and not (local or [])]
+        saved = failed = 0
+        for mid, urls in todo:
+            names = await self._download_media(mid, urls)
+            if names:
+                saved += 1
+                async with self.engine.sf() as session:
+                    row = await session.get(DiscordMessage, mid)
+                    if row is not None:
+                        row.local_images = names
+                        await session.commit()
+            else:
+                failed += 1
+            await asyncio.sleep(0.2)               # gentle on the CDN
+        if todo:
+            log.info("mirror media catch-up: %d message(s) saved, %d unavailable "
+                     "(links likely expired)", saved, failed)
+        return {"candidates": len(todo), "saved": saved, "unavailable": failed}
+
+    def start_media_catchup(self) -> None:
+        """Spawn the catch-up as a background task (called at startup)."""
+        asyncio.create_task(self.discord_media_catchup(), name="discord-media-catchup")
+
     async def discord_get_message(self, message_id: str) -> dict | None:
         from ..models import DiscordMessage
         async with self.engine.sf() as session:
@@ -1390,3 +1424,5 @@ async def attach_signal_layer(engine) -> None:
     engine.signals_service = SignalService(engine, extractor)
     engine.proposals = ProposalService(engine)
     engine.proposals.start()
+    # rescue any mirrored images that only have (expiring) CDN links
+    engine.signals_service.start_media_catchup()

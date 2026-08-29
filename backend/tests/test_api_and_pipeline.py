@@ -567,6 +567,31 @@ async def test_mirror_downloads_image_bytes(app_client, tmp_path):
     assert (await client.get("/api/tip/discord/media/nope/0")).status_code == 404
 
 
+async def test_mirror_media_catchup_rescues_url_only_rows(app_client, tmp_path):
+    # rows mirrored before the local store existed (URL-only) get their bytes
+    # downloaded by the startup catch-up sweep — while the links still live
+    client, eng = app_client
+    png = b"\x89PNG\r\n\x1a\n" + b"1" * 32
+
+    async def fake_fetch(url):
+        return png
+    eng.signals_service._media_fetch = fake_fetch
+    eng.signals_service.MEDIA_DIR = str(tmp_path / "media")
+    from zargar.models import DiscordMessage
+    async with eng.sf() as session:
+        session.add(DiscordMessage(id="old1", channel_id="42", source_name="src",
+                                   author="bot", is_bot=True, text="old chart",
+                                   images=["https://cdn.discordapp.com/a.png"],
+                                   local_images=[]))
+        await session.commit()
+    out = await eng.signals_service.discord_media_catchup()
+    assert out["saved"] == 1 and out["unavailable"] == 0
+    m = await eng.signals_service.discord_get_message("old1")
+    assert m["localImages"] == ["old1-0.png"]
+    # idempotent: nothing left to rescue
+    assert (await eng.signals_service.discord_media_catchup())["candidates"] == 0
+
+
 async def test_analyst_manage_tools_exit_only(app_client):
     # update_exit_plan / close_position: the analyst steers OPEN tip positions
     # (exit-only), and only tip positions

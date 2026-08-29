@@ -51,7 +51,9 @@ Judge process, not just outcome:
 - Compare the EXIT CAMPAIGN you planned with what actually happened: did the trims \
 land, did the stop/premium stop do its job, was the time box right?
 - Check the source: did their framing (hedge, trim call, conviction) match reality? \
-save_note source-scoped lessons.
+save_note source-scoped lessons. search_messages shows what they said around the trade; \
+when a message is marked [images: <id>], view_image it — the chart they posted is part \
+of the record.
 - When the lesson is durable and about HOW YOU TRADE (sizing, liquidity, exits, \
 patience), save_note it with scope "rule" — refine or replace an existing rule rather \
 than duplicating it. Cite this position as the evidence. Not every retro earns a rule.
