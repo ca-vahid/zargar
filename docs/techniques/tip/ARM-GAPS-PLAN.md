@@ -130,28 +130,28 @@ the tip's contract even when the analyst reasoned about a different one
 stated expiry (`express.py:61-67`), and substitutes contracts silently
 (`express.py:68, 213`).*
 
-- [ ] **C1 — never-chase cap on the armed fire.** Entry limit =
+- [x] **C1 — never-chase cap on the armed fire.** Entry limit =
   min(live ask, reference premium × (1 + `techniques.tip.max_chase_pct`, new
   knob, default ~10%)) where the reference is the analyst's `limit_price`, else
   the tip's stated premium, else absent (no cap — but then C4's substitution
   marker shows). Above the cap: skip the fire with a journaled, alerting
   `premium_chase_blocked` (the level can roll to the next session under A6's
   logic; the thesis isn't dead just because one print was bad).
-- [ ] **C2 — the analyst's contract wins on the armed path.** `arm_from_analyst`
+- [x] **C2 — the analyst's contract wins on the armed path.** `arm_from_analyst`
   stores the opinion's contract on the plan; `pick_contract` prefers it
   (existence/liquidity re-checked live at the touch as today), then the tip's
   stated contract, then the book's just-OTM pick — the same preference order the
   proposal path already has.
-- [ ] **C3 — fire-time DTE floor.** A stated/analyst expiry is accepted at the
+- [x] **C3 — fire-time DTE floor.** A stated/analyst expiry is accepted at the
   touch only if its DTE ≥ `entry_cutoff_dte`; otherwise pick the nearest valid
   expiry in the policy window and mark the substitution (C4). Kills the
   "dte_min=10 but bought 1-DTE on the last allowed day" hole.
-- [ ] **C4 — substitutions are visible.** The contract payload carries
+- [x] **C4 — substitutions are visible.** The contract payload carries
   `statedContract` + `substituted: true` + the reason whenever the bought
   contract differs from what the tip/analyst named; the Armed card and the
   proposal card render "tip said F 250C 09/05 — bought 252.5C 09/12: stated
   strike not listed". No more silent swaps.
-- [ ] **C5 — tests.** Chase-blocked fire (bad quote), analyst-contract
+- [x] **C5 — tests.** Chase-blocked fire (bad quote), analyst-contract
   preference on an armed fire, DTE-floor substitution, substitution marker on
   the wire + card (UI build).
 
@@ -385,3 +385,27 @@ green at every merge.
   blocked by handoff_pending, forced double-rejection spread → attention
   position). Note: the forced-failure paths can only be exercised on the sim
   rig — a live venue cannot be made to reject a rollback harmlessly.
+
+## Implementation notes — Cluster C (landed 2026-08-29)
+
+- **C1**: new base hook `entry_limit_cap(ap, trade, contract)` applied in
+  `_enter`'s options branch — the tip override caps at (analyst `limit_price`
+  else `sig.premium`) × (1 + `techniques.tip.max_chase_pct`, new knob, default
+  10%). Above the cap the entry RESTS at the cap (logged `entry_capped`) and
+  T4.1 cancels it unfilled — better than skipping: the discipline is the
+  price, and a multi-day plan re-offers the level at the roll.
+- **C2**: `arm_from_analyst` rides the opinion's contract as
+  `analystContract` in the run config; `pick_contract` prefers it (parsed OCC
+  → strike/expiry, re-validated live at the touch) over the tip's stated one.
+- **C3**: `choose_expiry_window` gains `stated_min_dte` — a stated expiry
+  under the cutoff at FIRE time falls to the policy window with a warning;
+  wired through `pick_tip_contract` from `techniques.tip.entry_cutoff_dte`
+  (armed fires AND the immediate-book expression).
+- **C4**: `pick_tip_contract` returns `substituted` ("stated expiry X -> Y;
+  stated strike Z not listed") whenever the bought contract differs from the
+  named one; carried on `trade.contract`, the `option_picked` log line
+  ("SUBSTITUTED — ..."), the armed card and the proposal card
+  (`vehicle.substituted` pill).
+- **C5**: three tests — chase cap rests the entry at reference×1.10;
+  analystContract beats the tip's strike on an armed fire; the DTE floor
+  substitutes (and the verbatim case stays unmarked).

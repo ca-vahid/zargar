@@ -1241,6 +1241,7 @@ class SignalService:
                     eng, symbol=sig.ticker.upper(), direction=sig.direction,
                     dte_min=policy.dte_min, dte_max=policy.dte_max,
                     strike=signal_row.strike, expiry=signal_row.expiry,
+                    stated_min_dte=int(eng.settings.get("techniques.tip.entry_cutoff_dte", 2)),
                     max_strike=cap if sig.direction == "long" else None,
                     min_strike=cap if sig.direction == "short" else None)
                 ask = float(pick.get("ask") or pick.get("mid") or 0) if pick.get("available") else 0.0

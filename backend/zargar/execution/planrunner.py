@@ -2218,6 +2218,16 @@ class PlanRunner(SessionListener):
                 trade.status = "failed"
                 trade.reason = "contract has no ask price"
                 return
+            cap = None
+            with contextlib.suppress(Exception):
+                cap = await self._hook("entry_limit_cap", self.entry_limit_cap(ap, trade, contract))
+            if cap and limit > float(cap):
+                # never chase (ARM-GAPS C1): rest at the trader's price — T4.1
+                # cancels an unfilled entry, and a multi-day plan rolls the level
+                self._log(ap, "entry_capped",
+                          f"{trade.trigger_id}: ask {limit:.2f} is above the never-chase cap "
+                          f"{float(cap):.2f} — resting the entry at the cap", trigger=trade.trigger_id)
+                limit = round(float(cap), 2)
             order_symbol, sec_type = contract["symbol"], "OPT"
         else:
             qty = await self._size(ap, trade)
@@ -2629,6 +2639,12 @@ class PlanRunner(SessionListener):
     def size_multiplier(self, contract: dict) -> tuple[float, list[str]]:
         """Policy multipliers on the risk-based contract count, with reasons."""
         return 1.0, []
+
+    async def entry_limit_cap(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> float | None:
+        """The most an auto entry may pay for the contract (ARM-GAPS C1) —
+        None = uncapped. The tip runner caps at the analyst's limit / the tip's
+        stated premium × (1 + max_chase_pct)."""
+        return None
 
     def preopen_due(self, now: dt.datetime) -> bool:
         """Is it time for the technique's pre-open judgement (EM: 09:25 ET)?"""

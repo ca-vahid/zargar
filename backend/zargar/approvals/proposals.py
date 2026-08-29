@@ -113,7 +113,9 @@ class ProposalService:
             label = contract.get("display") or occ
             vehicle = {"kind": "option", "display": label, "underlying": signal_row.ticker,
                        "optionType": contract.get("optionType"), "pickedBy": "armed_fire",
-                       "multiplier": 100}
+                       "multiplier": 100,
+                       **({"substituted": contract["substituted"]}
+                          if contract.get("substituted") else {})}
             explain = (f"The level this plan waited for touched: buy {qty} contract"
                        f"{'s' if qty != 1 else ''} of {label} at a ${limit:.2f} limit "
                        f"≈ ${limit * qty * 100:,.0f} in “{pf.get('name', portfolio_id)}” "

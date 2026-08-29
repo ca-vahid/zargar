@@ -37,6 +37,7 @@ function TradeRow({ t }: { t: ArmedTrade }) {
         <div className="tq-armed-contract">
           <b>{t.contract.display ?? t.contract.symbol}</b> · {t.contract.is0dte ? "0DTE" : `exp ${t.contract.expiry}`} · strike {fmt(t.contract.strike)} · bid/ask {fmt(t.contract.bid)}/{fmt(t.contract.ask)}
           {t.contract.delta !== undefined && t.contract.delta !== null ? ` · Δ ${t.contract.delta}` : ""}{t.contract.iv ? ` · IV ${t.contract.iv}` : ""}
+          {t.contract.substituted ? <span className="neg" title="The bought contract differs from the one the tip/analyst named"> · SUBSTITUTED: {t.contract.substituted}</span> : null}
           {t.contract.warnings?.length ? <span className="neg"> · {t.contract.warnings.join("; ")}</span> : null}
         </div>
       )}
