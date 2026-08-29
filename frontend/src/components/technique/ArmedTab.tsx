@@ -129,21 +129,33 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           </span>
         )}
         {(() => {
+          // window copy from the PLAN'S OWN rules (ARM-GAPS F1): the backend
+          // stamps per-trigger windowOpenNow from the technique's windows — a
+          // tip can fire mid-day; EM's prime-clock copy applies to EM only
           const w = a.sessionWindowNow;
-          if (w === "prime_open") return <span className="tq-badge setup" title="R6.1 — one of the book's two trading windows">● LIVE WINDOW — can fire until 10:30 AM ET</span>;
-          if (w === "prime_close") return <span className="tq-badge setup" title="R6.2 — one of the book's two trading windows">● LIVE WINDOW — can fire until 4:00 PM ET</span>;
-          if (w === "midday") return middayExp
+          if (w === "extended") return <span className="tq-badge nosetup" title="market closed; nothing fires until the next session">MARKET CLOSED — RESUMES 9:30 AM ET</span>;
+          const canFire = (a.triggers ?? []).some((t: any) => t.windowOpenNow && ["waiting", "observed"].includes(t.status));
+          if (w === "midday" && !canFire) return middayExp
             ? <span className="tq-badge setup" title="R6.3 experiment is ON (Settings → Auto-trading → Experiments): mid-day fires are allowed and tagged for analysis">● MID-DAY · EXPERIMENT — fires allowed</span>
-            : <span className="tq-badge warnbadge" title="R6.3 — mid-day chop is avoided; touches are logged, nothing fires">⏸ MID-DAY · watching only — fires again 2:45 PM ET</span>;
-          if (w === "extended") return <span className="tq-badge nosetup" title="R6.4 — market closed; nothing fires until the next session's windows">MARKET CLOSED — resumes 9:30 AM ET</span>;
+            : <span className="tq-badge warnbadge" title="this plan's windows avoid mid-day chop; touches are logged, nothing fires">⏸ MID-DAY · watching only — fires again 2:45 PM ET</span>;
+          if (canFire) return <span className="tq-badge setup" title="one of this plan's own trading windows is open">● WINDOW OPEN — can fire</span>;
           return null;
         })()}
+        {(a.technique && a.technique !== "enhanced_market") && (
+          <span className="tq-badge nosetup" title="the technique that armed this plan">{a.technique.toUpperCase()}</span>
+        )}
         <span className="sub tq-head-right">
           {a.lastPrice ? <>last <b>{fmt(a.lastPrice)}</b> · </> : null}
           bar {a.barAgeSeconds !== null && a.barAgeSeconds !== undefined ? `${a.barAgeSeconds}s ago` : "—"} · for {a.planFor}
         </span>
       </div>
       <div className="panel-body">
+        {a.riskWarning && (
+          <div className="tq-attention" title="arm-time preflight: the tip budget vs the platform risk caps">
+            <b>{"⚠"} Budget vs risk caps</b>
+            <div className="small">{a.riskWarning}</div>
+          </div>
+        )}
         {a.needsAttention && (
           <div className="tq-attention">
             <b>\u26a0 Needs attention</b>
@@ -210,7 +222,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           )}
           <button className="link-btn" onClick={() => openRun(a.runId)}>open plan</button>
           <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "hide log" : "log"}</button>
-          <span className="muted small tq-head-right">risk {a.config.riskPct}% · max {a.config.maxQty} sh · critic {a.config.useCritic ? "on" : "off"} · flatten {a.config.flattenMinutesBeforeClose}m before close</span>
+          <span className="muted small tq-head-right">risk {a.config.riskPct}% · max {a.config.maxQty} sh · critic {(a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off"} · flatten {a.config.flattenMinutesBeforeClose}m before close</span>
         </div>
         {open && (
           <div className="tq-armed-log">

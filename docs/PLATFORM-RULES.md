@@ -94,6 +94,20 @@ runtime ones to `execution.*`).
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-08-29 · **ARM-GAPS engine batch** (tips gap-closure, clusters A–F): MULTI-DAY
+  plans on the shared runner — `plan_horizon(run, plan)` hook (base single-session),
+  `ArmedPlan.horizon_sessions/sessions_used/expires_session/risk_warning`,
+  `_roll_session` at the close (revivable trigger statuses re-watch; `invalidated` and
+  consumed fires stay dead), boot-roll in `restore()` (the `plan_for` COLUMN stays
+  authoritative), `on_plan_horizon_expired`/`on_plan_expired_offline` hooks. New events:
+  `TechniquePlanRolled`, `TipSpreadLegFailed`, `TipLaneGraded`. New hooks:
+  `entry_limit_cap` (never-chase), `emit_proposal` now alerts on failure;
+  `Trade.handoff_pending` interlocks fills against the session flatten. Tip-scoped
+  knobs beat EM-named legacy keys (`techniques.tip.enforce_session_windows` /
+  `options_enabled` / `max_risk_pct`); `windowOpenNow` and the plan summary judge
+  against the TRIGGER'S OWN windows, not EM's prime clock. `dailyLossLimit` on a
+  rolled multi-day plan is a whole-life loss cap (documented, conservative).
+
 - 2026-08-27 · **Phase 3 engine batch** (techniques-research P0s): settings resolver
   `techniques.<id>.<key>` → `execution.<key>` (31 aliased runner keys, journal-continuous
   migration); event-schema contracts + `TechniqueHookStats` daily roll-up; `tags` on

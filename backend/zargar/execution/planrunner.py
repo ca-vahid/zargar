@@ -259,6 +259,7 @@ class ArmedPlan:
     horizon_sessions: int = 1           # total sessions the plan may watch
     sessions_used: int = 0              # completed (or missed-while-down) sessions
     expires_session: str = ""           # last session date the plan may still fire ("" = plan_for)
+    risk_warning: str = ""              # arm-time cap preflight (ARM-GAPS E3) — shown on the card
 
     def _attention_reasons(self) -> list[str]:
         """Human sentences for anything that needs a person: a failed exit with the
@@ -305,8 +306,11 @@ class ArmedPlan:
             if last:
                 d["distancePct"] = round((tr.entry - last) / last * 100, 3)
                 d["distance"] = round(tr.entry - last, 4)
-            # "can it fire right now" — the prime clock OR the window gate being off
-            d["windowOpenNow"] = (prime_now in PRIME_WINDOWS) or not tr.enforce_windows
+            # "can it fire right now" — the trigger's OWN windows (a tip fires in
+            # any RTH window; EM's prime clock is EM's rule — ARM-GAPS E1), or
+            # the window gate being off
+            trig_windows = getattr(tr.thresholds, "windows", None) or PRIME_WINDOWS
+            d["windowOpenNow"] = (prime_now in trig_windows) or not tr.enforce_windows
             trig.append(d)
         open_trades = [t for t in self.trades.values() if t.open]
         return {
@@ -314,6 +318,7 @@ class ArmedPlan:
             "horizonSessions": self.horizon_sessions, "sessionsUsed": self.sessions_used,
             "expiresSession": self.expires_session or self.plan_for,
             "sessionDay": min(self.sessions_used + 1, max(1, self.horizon_sessions)),
+            "riskWarning": self.risk_warning or None,
             "status": self.status,
             # best deterministic grade among the watched triggers — kept visible so
             # grade-vs-outcome calibration (TRADING-RULES 1.2) stays in front of us
@@ -356,10 +361,13 @@ class ArmedPlan:
         nearest = None
         if last:
             nearest = min(((abs(self.trackers[t].entry - last) / last * 100, t) for t in waiting), default=None)
-        # honest label: with the window gate off (e.g. EM's mid-day experiment)
-        # a "midday" summary must not claim watching-only — it CAN fire
+        # honest label: judged against the PLAN'S OWN windows (a tip can fire
+        # mid-day; EM's prime clock is EM's rule) — and with the gate off
+        # a "midday" summary must not claim watching-only either
         gate_off = any(not self.trackers[t].enforce_windows for t in waiting)
-        w = ("prime window open" if window_now in PRIME_WINDOWS
+        plan_windows = next((getattr(self.trackers[t].thresholds, "windows", None)
+                             for t in waiting), None) or PRIME_WINDOWS
+        w = ("window open — can fire" if window_now in plan_windows
              else f"{window_now}: can fire (window gate off)" if gate_off
              else f"{window_now}: watching only")
         return (f"watching {len(waiting)} trigger(s) · nearest {nearest[1]} {nearest[0]:.2f}% away · {w}"
@@ -652,6 +660,9 @@ class PlanRunner(SessionListener):
         now_ms = int(time.time() * 1000)
         day_start = _et_day_start_ms(now_ms)
         window_now = session_window(now_ms)
+        # "can anything fire now" judged against THIS technique's own windows
+        # (a tip fires any RTH window; EM's prime clock is EM's — ARM-GAPS E1)
+        my_windows = getattr(self.rules(), "windows", None) or PRIME_WINDOWS
         attention: list[dict] = []
         in_trade: list[dict] = []
         watching: list[dict] = []
@@ -671,6 +682,9 @@ class PlanRunner(SessionListener):
                 "mode": ap.config.mode, "instrument": ap.config.instrument,
                 "workspace": port.get("kind"), "account": port.get("name"),
                 "stale": ap.stale, "lastPrice": last,
+                "technique": ap.technique,
+                "sessionDay": min(ap.sessions_used + 1, max(1, ap.horizon_sessions)),
+                "horizonSessions": ap.horizon_sessions,
             }
             if ap.status == "armed":
                 counts["armed"] += 1
@@ -719,7 +733,7 @@ class PlanRunner(SessionListener):
                                     "direction": tr.direction,
                                     "targets": [tg["price"] for tg in (tr.trigger.get("targets") or [])],
                                     "distancePct": (round((tr.entry - last) / last * 100, 3) if last else None)},
-                        "window": window_now, "windowOpenNow": window_now in PRIME_WINDOWS,
+                        "window": window_now, "windowOpenNow": window_now in my_windows,
                         "summary": ap._summary(window_now, last),
                     })
             if ap.stop_reason:
@@ -738,7 +752,7 @@ class PlanRunner(SessionListener):
         _ = rank
         used = (-(realized + unrealized) / loss_limit * 100) if loss_limit > 0 else None
         return {
-            "asOf": now_ms, "window": window_now, "windowOpenNow": window_now in PRIME_WINDOWS,
+            "asOf": now_ms, "window": window_now, "windowOpenNow": window_now in my_windows,
             "haltEngaged": bool(self.engine.halt.engaged),
             "workspace": str(self.engine.settings.get("trading.mode", "practice")),
             "counts": counts,
@@ -758,8 +772,12 @@ class PlanRunner(SessionListener):
         return self._snapshot(ap) if ap else None
 
     def _snapshot(self, ap: ArmedPlan) -> dict:
-        return ap.to_dict(portfolio=self.engine.positions.portfolio(ap.config.portfolio_id),
-                          quote=self.engine.quotes.get(ap.symbol))
+        d = ap.to_dict(portfolio=self.engine.positions.portfolio(ap.config.portfolio_id),
+                       quote=self.engine.quotes.get(ap.symbol))
+        # so the card can stop claiming "critic on" for a technique with no
+        # reviewer (ARM-GAPS F1) — useCritic is then inert by construction
+        d["reviewerAvailable"] = bool(self.reviewer_available())
+        return d
 
     # ---------------------------------------------------------------- config validation
     def validate_config(self, cfg: ArmConfig, *, explicit_portfolio: bool = True) -> dict:
@@ -793,8 +811,9 @@ class PlanRunner(SessionListener):
                 raise ValueError("auto execution on a live/paper account needs the explicit acknowledgement (allowLive)")
             if str(s.get("trading.mode", "practice")) != "live":
                 raise ValueError("trading.mode is 'practice' — live accounts are blocked; switch to live first")
-        if cfg.risk_pct <= 0 or cfg.risk_pct > float(s.get("technique.max_risk_pct", 5.0)):
-            raise ValueError(f"riskPct must be in (0, {s.get('technique.max_risk_pct', 5.0)}] (R1)")
+        max_risk = float(self.rt("max_risk_pct", s.get("technique.max_risk_pct", 5.0)))
+        if cfg.risk_pct <= 0 or cfg.risk_pct > max_risk:
+            raise ValueError(f"riskPct must be in (0, {max_risk:g}] (R1)")
         if cfg.max_qty <= 0:
             raise ValueError("maxQty must be > 0")
         if cfg.instrument not in ("options", "shares"):
@@ -804,8 +823,10 @@ class PlanRunner(SessionListener):
                 raise ValueError("contracts must be >= 1 (or empty to size by risk %)")
             if cfg.max_contracts < 1:
                 raise ValueError("maxContracts must be >= 1")
-            if cfg.mode in ("auto", "proposal") and not bool(s.get("technique.options.enabled", True)):
-                raise ValueError("technique.options.enabled is off — switch the instrument to shares")
+            if cfg.mode in ("auto", "proposal") and not bool(
+                    self.rt("options_enabled", s.get("technique.options.enabled", True))):
+                raise ValueError("options are disabled for this technique "
+                                 "(options_enabled) — switch the instrument to shares")
             ok, why = self.options_capability(portfolio)
             if cfg.mode == "auto" and not ok:
                 raise ValueError(f"this account cannot trade options here: {why}")
@@ -863,7 +884,10 @@ class PlanRunner(SessionListener):
                         else bool((config or {}).get("portfolioId") or (config or {}).get("portfolio_id")))
         portfolio = self.validate_config(cfg, explicit_portfolio=explicit_pid)
         symbol = run["symbol"]
-        enforce = bool(s.get("technique.enforce_session_windows", True))
+        # tip-scoped override first (ARM-GAPS E1); the legacy EM name stays the
+        # fallback so existing EM configs keep working unchanged
+        enforce = bool(self.rt("enforce_session_windows",
+                               s.get("technique.enforce_session_windows", True)))
         t = self.rules()                               # hook: the technique's MarketRules
         profile = None
         baseline_bars: list = []
@@ -895,6 +919,8 @@ class PlanRunner(SessionListener):
                 ap.plan_for = str(prior_state["planFor"])
             if prior_state.get("expiresSession"):
                 ap.expires_session = str(prior_state["expiresSession"])
+            if prior_state.get("riskWarning"):
+                ap.risk_warning = str(prior_state["riskWarning"])
         self._armed[run_id] = ap
         with contextlib.suppress(Exception):
             await self.engine.ensure_symbol(symbol)
@@ -1206,9 +1232,9 @@ class PlanRunner(SessionListener):
         checks = []
         opt_ok, opt_why = self.options_capability(portfolio)
         checks.append({"name": "options_supported", "passed": opt_ok, "detail": "" if opt_ok else opt_why})
-        enabled = bool(s.get("technique.options.enabled", True))
+        enabled = bool(self.rt("options_enabled", s.get("technique.options.enabled", True)))
         checks.append({"name": "options_enabled", "passed": enabled,
-                       "detail": "" if enabled else "technique.options.enabled is off"})
+                       "detail": "" if enabled else "options are disabled for this technique"})
         n = int(cfg.contracts or 1)
         est_premium = round(max(0.02, entry * 0.02), 2)          # rough: ~2% of spot as a weekly ATM premium
         est_notional = round(est_premium * 100 * n, 2)
@@ -1466,7 +1492,8 @@ class PlanRunner(SessionListener):
                          # multi-day roll bookkeeping (ARM-GAPS A): the CURRENT
                          # session and horizon survive a restart via the state
                          "planFor": ap.plan_for, "horizonSessions": ap.horizon_sessions,
-                         "sessionsUsed": ap.sessions_used, "expiresSession": ap.expires_session}
+                         "sessionsUsed": ap.sessions_used, "expiresSession": ap.expires_session,
+                         "riskWarning": ap.risk_warning}
                 if row is None:
                     row = TechniqueArmed(run_id=ap.run_id, symbol=ap.symbol, plan_for=ap.plan_for,
                                          portfolio_id=ap.config.portfolio_id, mode=ap.config.mode,
@@ -2199,6 +2226,10 @@ class PlanRunner(SessionListener):
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",
                         "error": trade.errors[-1] if trade.errors else "no contract"},
                         aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
+                    # a fire that dies at the touch must be SEEN (ARM-GAPS F4)
+                    await self._alert(ap, f"{trade.trigger_id}: the trigger fired but no option "
+                                      f"contract was available and the shares fallback is off — "
+                                      f"nothing was sent", stage="entry")
                     return
                 else:
                     trade.status = "skipped"

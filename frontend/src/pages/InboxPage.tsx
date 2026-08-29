@@ -558,7 +558,7 @@ function TipsTab() {
                     {s.verification?.flowContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>{s.verification.flowContext}</span>}
                     {s.verification?.calendarContext && <span className="bl-card-sub" style={{ whiteSpace: "normal" }}>⚠ {s.verification.calendarContext}</span>}
                     {failed.length > 0 && <span className="bl-card-sub neg" style={{ whiteSpace: "normal" }}>{failed.map((c) => c.detail || c.name).join("; ")}</span>}
-                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <ArmButton s={s} /> <AnalystLink s={s} /></span>
+                    <span className="bl-card-sub">{s.sourceName ?? "—"} · {fmtDateTime(s.createdAt)} <CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <ArmButton s={s} /> <AnalystLink s={s} /> <ArmedChip s={s} /></span>
                   </span>
                 </div>
               );
@@ -609,7 +609,7 @@ function TipsTab() {
                     </span>
                   </td>
                   <td className="muted">{s.sourceName ?? "—"}</td>
-                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /> <AnalystLink s={s} /></td>
+                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /> <AnalystLink s={s} /> <ArmedChip s={s} /></td>
                   <td><CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /></td>
                 </tr>
               ))}
@@ -759,7 +759,7 @@ function DiscordSourcesPanel() {
             <input className="disc-src" value={sel[channelId].sourceName}
               title="source name (its own scorecard)"
               onChange={(e) => setField(channelId, { sourceName: e.target.value })} />
-            <label className="muted" title="only ingest posts from a bot in this channel">
+            <label className="muted" title="ON: only bot posts become tips — right for alert-bot rooms. Turn it OFF when the tips come from a HUMAN posting as themselves (e.g. a trader's own channel), or that source can never auto-intake a tip.">
               <input type="checkbox" checked={!!sel[channelId].botsOnly}
                 onChange={(e) => setField(channelId, { botsOnly: e.target.checked })} /> bots only
             </label>
@@ -1003,6 +1003,90 @@ function MirrorViewer() {
   );
 }
 
+function ArmedChip({ s }: { s: any }) {
+  // ARM-GAPS F2: the tip row says when a live armed plan is waiting for it
+  const rid = s?.extraction?.analyst?.armedRunId;
+  const armed = useStore((st) => st.techniqueArmed);
+  const openArmedPlan = useStore((st) => st.openArmedPlan);
+  const live = rid ? armed.find((a) => a.runId === rid && (a.status === "armed" || a.status === "paused")) : undefined;
+  if (!live) return null;
+  const waiting = (live.triggers ?? []).filter((t) => ["waiting", "observed"].includes(t.status)).map((t) => t.entry);
+  return (
+    <button className="link-btn" onClick={() => openArmedPlan(live.runId)}
+      title="this tip has a LIVE armed plan waiting for its level — opens the Armed page">
+      ⚡ armed{waiting.length ? ` @ ${waiting.map((x) => Number(x).toFixed(2)).join("/")}` : ""}
+      {(live.horizonSessions ?? 1) > 1 ? ` · day ${live.sessionDay}/${live.horizonSessions}` : ""}
+    </button>
+  );
+}
+
+function SourcePoliciesPanel() {
+  // ARM-GAPS E6: per-source policy editor — writes techniques.tip.sources
+  // (the same overlay resolve_policy reads); blank = the platform default
+  const toast = useStore((s) => s.toast);
+  const settings = useStore((s) => s.settings);
+  const cardsState = useAsync(() => api.sourceScorecards(), []);
+  const [overrides, setOverrides] = useState<Record<string, any>>({});
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    setOverrides({ ...((settings["techniques.tip.sources"] as any) ?? {}) });
+  }, [settings]);
+  const names = Array.from(new Set([
+    ...Object.keys(overrides),
+    ...((cardsState.data ?? []).map((c) => c.source)),
+  ])).sort();
+  const setF = (name: string, key: string, val: any) =>
+    setOverrides((prev) => ({ ...prev, [name]: { ...(prev[name] ?? {}), [key]: val } }));
+  const save = async () => {
+    setBusy(true);
+    try {
+      await api.patchSettings({ "techniques.tip.sources": overrides });
+      toast("success", "Per-source policies saved");
+    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
+  };
+  if (!names.length) return null;
+  return (
+    <div className="panel mb">
+      <div className="panel-head">Per-source policy
+        <span className="sub">mode, entry doctrine and budget per source — tip-time entry is EARNED on the scorecard below</span>
+        <button className="ghost-btn" style={{ marginLeft: "auto" }} disabled={busy} onClick={save}>Save policies</button>
+      </div>
+      <div className="scroll-x">
+        <table className="tbl">
+          <thead><tr><th>Source</th><th>Mode</th><th>Entry</th>
+            <th className="num">Budget/tip ($)</th><th className="num">Horizon (sess)</th><th>Min conviction</th></tr></thead>
+          <tbody>
+            {names.map((n) => {
+              const o = overrides[n] ?? {};
+              return (
+                <tr key={n}>
+                  <td><b>{n}</b></td>
+                  <td><select value={o.mode ?? ""} onChange={(e) => setF(n, "mode", e.target.value || undefined)}>
+                    <option value="">default (proposal)</option><option value="shadow">shadow</option>
+                    <option value="alert">alert</option><option value="proposal">proposal</option>
+                    <option value="auto">auto</option></select></td>
+                  <td><select value={o.entry ?? ""} onChange={(e) => setF(n, "entry", e.target.value || undefined)}>
+                    <option value="">default (level_touch)</option>
+                    <option value="level_touch">level_touch</option>
+                    <option value="tip_time">tip_time (earned)</option></select></td>
+                  <td className="num"><input type="number" style={{ width: 90 }} value={o.budget_per_tip ?? ""}
+                    placeholder="1000" onChange={(e) => setF(n, "budget_per_tip", e.target.value === "" ? undefined : Number(e.target.value))} /></td>
+                  <td className="num"><input type="number" style={{ width: 70 }} value={o.horizon_sessions ?? ""}
+                    placeholder="15" onChange={(e) => setF(n, "horizon_sessions", e.target.value === "" ? undefined : Number(e.target.value))} /></td>
+                  <td><select value={o.min_conviction ?? ""} onChange={(e) => setF(n, "min_conviction", e.target.value || undefined)}>
+                    <option value="">default (implied)</option>
+                    <option value="implied">implied</option>
+                    <option value="explicit_call">explicit_call</option></select></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function SourcesTab() {
   const signalCount = useStore((s) => s.signals.length);
   const state = useAsync(() => api.sourceScorecards(), [signalCount]);
@@ -1010,6 +1094,7 @@ function SourcesTab() {
   return (
     <>
     <DiscordSourcesPanel />
+    <SourcePoliciesPanel />
     <MirrorViewer />
     <div className="panel">
       <div className="panel-head">
@@ -1307,6 +1392,12 @@ function AnalystRunDetail({ id }: { id: string }) {
           <button className="link-btn" onClick={() => useStore.getState().openAnalystRun(run.parentId!)}
             title="the message-level intake run that spawned this appraisal">
             ⇡ intake #{run.parentId.slice(0, 8)}
+          </button>
+        )}
+        {(run.opinion as any)?.armedRunId && (
+          <button className="link-btn" onClick={() => useStore.getState().openArmedPlan((run.opinion as any).armedRunId)}
+            title="the armed plan this appraisal created — opens the Armed page">
+            ⚡ armed #{String((run.opinion as any).armedRunId).slice(0, 8)}
           </button>
         )}
         <span style={{ flex: 1 }} />

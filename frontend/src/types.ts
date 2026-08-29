@@ -576,6 +576,8 @@ export interface ArmedPlan {
   runId: string; symbol: string; planFor: string; status: "armed" | "paused" | "expired" | "disarmed" | string;
   // multi-day plans (ARM-GAPS A): total sessions, completed sessions, last valid session, current day (1-based)
   horizonSessions?: number; sessionsUsed?: number; expiresSession?: string; sessionDay?: number;
+  riskWarning?: string | null;   // arm-time cap preflight (ARM-GAPS E3)
+  reviewerAvailable?: boolean;   // false = this technique has no fire-time critic (ARM-GAPS F1)
   grade?: string | null;
   stopReason?: string; scorecard?: ArmScorecard | null;
   config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };

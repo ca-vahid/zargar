@@ -78,8 +78,14 @@ with no usable put proposes nothing; sized by `budget_per_tip`; context carries
 analyst off; live portfolios also need `techniques.tip.allow_live_auto`). **Tips → arm
 enrichment plan (5 phases, checkboxes): `docs/techniques/tip/ARM-PLAN.md`** — analyst-chosen
 now-vs-at-level, one exit authority, zones/scale-ins, conditions, spreads; **gap-closure plan
-(clusters A–F, checkboxes): `docs/techniques/tip/ARM-GAPS-PLAN.md`** — multi-day stay-armed
-plans, partial-fill adoption, never-chase, follow-up disarm, knob coherence, UI wiring.
+(clusters A–F, BUILT 2026-08-29): `docs/techniques/tip/ARM-GAPS-PLAN.md`** — MULTI-DAY
+STAY-ARMED plans (a plan whose horizon spans sessions ROLLS at each close — `plan_horizon`
+hook, `_roll_session`, boot-roll on restore; EM stays single-session), partial-fill adoption,
+verified spread rollback, never-chase caps, action-aware follow-ups (a "close" never opens;
+expires proposals, flags waiting plans; analyst `disarm_plan`), re-arm replaces, nightly lane
+grading + unfilled retros, tip-scoped knobs (`techniques.tip.enforce_session_windows` etc.
+beat the EM-named legacy keys for tips), Settings "Tips technique" panel + per-source policy
+editor.
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
 dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
 non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose

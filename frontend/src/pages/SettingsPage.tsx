@@ -443,7 +443,7 @@ export function SettingsPage() {
 
         <div className="panel">
           <div className="panel-head">Auto-trading (Arm)
-            <span className="sub">how armed plans place and manage orders — the default mode lives in Evening automation above</span></div>
+            <span className="sub">how armed plans place and manage orders — shared by EVERY technique (a tip-specific override in Tips below wins); the default mode lives in Evening automation above</span></div>
           <div className="panel-body">
             <ToggleRow k="technique.arm.enabled" label="Allow arming plans" hint="master switch — off means plans can't be armed at all" />
             <Group>Sizing</Group>
@@ -476,6 +476,40 @@ export function SettingsPage() {
             <Group>Experiments</Group>
             <ToggleRow k="technique.arm.midday_trading" label="Trade during mid-day (R6.3 experiment)"
               hint="normally 10:30–14:45 ET is watch-only; ON lets armed triggers fire mid-day. Fires carry window=midday so outcomes stay separable — the experiment lives in TRADING-RULES 1.7" />
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-head">Tips technique
+            <span className="sub">the tip pipeline's own knobs — the shared order/exit machinery above still applies unless a tip-specific override is set</span></div>
+          <div className="panel-body">
+            <Group>Budgets &amp; expression</Group>
+            <Cells>
+              <NumCell k="techniques.tip.budget_per_tip" label="Budget / tip ($)" step={50}
+                hint="max $ committed to one tip (option debit / share notional) — the arm card warns when this clashes with the risk caps" />
+              <NumCell k="techniques.tip.budget_open_max" label="Open budget cap ($)" step={100}
+                hint="max $ open across one source's tips at once" />
+              <NumCell k="techniques.tip.dte_min" label="Min DTE" hint="option expression window — never 0DTE" />
+              <NumCell k="techniques.tip.dte_max" label="Max DTE" />
+              <NumCell k="techniques.tip.entry_cutoff_dte" label="Entry cutoff (DTE)"
+                hint="stop entering when the tip's contract is this close to expiry — also the fire-time floor on a stated expiry" />
+              <NumCell k="techniques.tip.max_chase_pct" label="Never-chase (%)" step={1}
+                hint="an armed fire pays at most the stated premium × (1 + this %); above it the entry rests at the cap" />
+              <NumCell k="techniques.tip.horizon_sessions" label="Wait horizon (sessions)"
+                hint="how long a level-touch tip may stay armed (multi-day plans roll at each close)" />
+              <NumCell k="techniques.tip.max_tip_age_hours" label="Max tip age (h)"
+                hint="older content is replayed on history, never traded" />
+            </Cells>
+            <Group>Analyst &amp; learning</Group>
+            <ToggleRow k="techniques.tip.analyst_enabled" label="Appraise every tip" hint="the Tips Analyst runs on each tradable tip (LLM)" />
+            <ToggleRow k="techniques.tip.review_enabled" label="Review follow-ups" hint="non-tradable updates ('sold 40%', 'I'm out') are reviewed against the desk's open items" />
+            <ToggleRow k="techniques.tip.analyst_manage_enabled" label="Analyst may manage" hint="exit-only: rewrite exit campaigns, trim/close positions, disarm waiting plans" />
+            <ToggleRow k="techniques.tip.retro_enabled" label="Nightly self-review" hint="position retros + unfilled-tip batches + lane grading, 17:10 ET" />
+            <ToggleRow k="techniques.tip.seen_again_reappraise" label="Re-appraise repeats" hint="a re-posted tip with a live waiting plan gets a fresh appraisal" />
+            <ToggleRow k="techniques.tip.seen_again_extends" label="Repeats extend the wait" hint="a re-post pushes the waiting plan's horizon window forward" />
+            <Group>Safety</Group>
+            <ToggleRow k="techniques.tip.shadow_auto" label="Shadow books" hint="every open tip auto-arms in its source's shadow book each morning — the track record real money is gated on" />
+            <ToggleRow k="techniques.tip.allow_live_auto" label="Auto mode may trade REAL accounts" hint="off by default — a live portfolio needs this AND the source's earned auto mode" />
           </div>
         </div>
 
