@@ -623,6 +623,7 @@ button.bl-card:active { background: var(--surface-2); }
   .tips-head-sub { display: none; }
   .an-list-body { max-height: 45dvh; }
   .an-sheet .an-flow-wrap { max-height: none; min-height: 0; }
+  .an-result-line, .an-card { overflow-wrap: anywhere; }   /* raw JSON summaries wrap, never clip */
   .an-note-add { flex-wrap: wrap; }
   .an-note-add .an-note-text-in { flex: 1 1 100%; order: -1; }
   /* New tip: the paste zone must not eat the screen; source + actions stack.

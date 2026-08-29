@@ -99,3 +99,5 @@ Implementation + the Highcharts 12 rules behind it: `frontend/src/lib/chartTouch
 - [ ] Push: Settings → Mobile → Test arrives with the app closed; tapping it
       opens the deep link
 - [ ] Telegram alert has the "Open in Zargar" button and it lands on the plan
+- [ ] Tips → Analyst: tapping a run opens the play-by-play sheet (and a live
+      "▶ tip" run pops it on its own); data folds scroll inside the sheet
