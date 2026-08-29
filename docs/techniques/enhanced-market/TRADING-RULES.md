@@ -167,6 +167,14 @@ a number** (p. 72).
 - **The tail worth watching:** the day's three best rejected trades (PLUG r1 +2.9R,
   CVNA r1 +2.4R, GS r1 +1.9R) all had planned R:R in the 2.2–2.6 band — just under
   the 3.0 bar. One gap day proves nothing, but it frames the question.
+- **2026-08-29 · First variant pilot (12 sessions Aug 12–27, 113 symbols; baseline
+  `26f752fa5a` vs rr2.0 `9edf5248fa`):** the 2.0–3.0 band added 36 fires for +6.39R —
+  **marginal mean +0.18R/fire, below the +0.3R decision bar** (and pre-spread), n
+  still small. But split by kind: the band's extra BOUNCES were +0.32R/fire (14
+  fires) while extra rejects/breakouts were ~flat. Emerging shape: a per-kind rr
+  gate (bounce 2.0, others 3.0) rather than one global bar. Keep accumulating
+  weekly; also note baseline itself simulated +22.2R over the 12 sessions —
+  identified R is there, the capture-rate gap is what live week 1 exposed.
 - **2026-08-29 · Week-1 funnel autopsy (Aug 24–28, n=1,489 trigger-outcomes): R2 IS
   the funnel.** not_tradeable 988 (66%), 981 of them on R2; median failed R:R 0.57
   (structurally far, not near-misses), but +121 triggers pass at ≥2.0 and +206 at
@@ -308,6 +316,20 @@ a number** (p. 72).
   (scalp wins, holds lose), IWM 7-cent fakeout. Test as a NEW trigger kind in the
   shared tracker with its own rr gate and a TP1-heavy or time-boxed exit — never by
   loosening R2 for the existing kinds. Entry archetype and exit tempo are a pair.
+  **2026-08-29 first pilot (variant `5a916ced73` vs baseline `26f752fa5a`, 12
+  sessions): NO edge under our exit model.** The relaxed-confirmation overlay fired
+  280 vs 43; the 237 extra fires added only +5.8R (≈ +0.02R/fire, pre-spread —
+  negative after costs). Relaxed breakouts: 108 fires −4.7R. IMPORTANT caveat: the
+  sim held the standard all-day 30/40/15 ladder — his fast-exit tempo (bank the
+  first pop) is exactly what the sim cannot yet express, and Friday's SPY/QQQ tape
+  showed that's where his wins live. Verdict so far: do NOT loosen confirmation
+  under our exits; the remaining open question is exit tempo, which needs a
+  parameterized exit ladder in `outcome.simulate_plan` before T-6 can be fairly
+  judged. Meanwhile the pilot confirmed: REJECTS are the strongest kind at baseline
+  (+1.31R avg, 73% win, 11 fires) — the kind the long-only critic bug was killing —
+  and breakouts are the weakest in BOTH configs (negative even fully confirmed);
+  prime_open carries all the edge, prime_close was net negative in all three
+  variants (more T-1 evidence).
 - **T-7 Gap-fill targets:** an unfilled overnight gap in the trade's path is a target
   magnet in the author's practice (IWM/QQQ longs "into the gap", AMD short "gap to
   fill below"), not only a hazard. Experiment: add gap edges to the target-anchor set
