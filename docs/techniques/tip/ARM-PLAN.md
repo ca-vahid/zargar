@@ -1,5 +1,8 @@
 # Tips → Arm: wiring review and enrichment plan
 
+*Complete (all boxes ticked). The follow-up gap-closure work found by the
+2026-08-29 full-sweep audit lives in `ARM-GAPS-PLAN.md` (clusters A–F).*
+
 *2026-08-29. Full code review of the tip→arm path (plan.py, runner.py,
 express.py, arming.py/SessionListener, proposals.py, lifecycle.py, analyst.py,
 technique/plans.py, walkforward tracker). Five phases, checkboxes to tick off
