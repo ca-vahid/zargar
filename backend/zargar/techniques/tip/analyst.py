@@ -115,7 +115,12 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string"}, "expiry": {"type": "string"}},
          "required": ["symbol", "expiry"]}},
-    {"name": "get_flow", "description": "Latest options-flow read for the symbol, if any.",
+    {"name": "get_flow",
+     "description": "The options-flow desk's full evidence for the symbol: today's flagged "
+                    "contracts (both sides), overnight open-interest confirmations, repeat "
+                    "streaks (same contract flagged N of 5 sessions — the strongest pattern), "
+                    "premium aggregates and the multi-day score story. ALWAYS call this for a "
+                    "tip from source 'flow-scan' — the tip IS this evidence.",
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string"}}, "required": ["symbol"]}},
     {"name": "get_source_stats",
@@ -507,6 +512,14 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         flow = getattr(eng, "flow_service", None)
         if flow is None:
             return {"note": "flow not available"}
+        view = None
+        if hasattr(flow, "analyst_view"):
+            try:
+                view = await flow.analyst_view(sym)
+            except Exception:                       # evidence is best-effort
+                log.debug("flow analyst_view failed for %s", sym, exc_info=True)
+        if view is not None:
+            return view
         line = await flow.context_for(sym, consumer="tip_analyst", ref_id=None)
         return {"symbol": sym, "flow": line or "no read"}
     if name == "get_source_stats":

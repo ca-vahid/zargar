@@ -147,6 +147,20 @@ async def test_flow_read_becomes_a_tip(flow_rig):
     assert sig["direction"] == "long" and sig["instrument"] == "call"
     assert sig["strike"] == 300.0 and sig["expiry"] == "2026-09-12"
     assert sig["status"] in ("verified", "parked"), sig["verification"]
+    # the tape's own mid anchors the tip's stated premium (fixture flag mid 4.2)
+    assert sig["premium"] == 4.2
+    # the thesis carries the case, not just the first reason
+    assert "score 9" in sig["thesisSummary"]
+    assert "OI-confirmed overnight" in sig["thesisSummary"]
+    assert "repeat 4/5" in sig["thesisSummary"]
+    # the message body holds the full grounded evidence for the analyst
+    from zargar.models import RawContent as RC
+    from sqlalchemy import select as _sel
+    async with eng.sf() as session:
+        body = (await session.execute(_sel(RC.body_text).where(
+            RC.id == sig["rawContentId"]))).scalar_one()
+    assert "Overnight OI confirmed" in body and "Repeat streak" in body
+    assert "09/12 300C" in body                    # human-form contract in the evidence
     # the delivery is journaled into the symbol's story
     story = await eng.flow_service.story("COIN")
     assert any(d["consumer"] == "tip" and d["refId"] == sig["id"] for d in story["deliveries"])
@@ -159,6 +173,27 @@ async def test_flow_read_becomes_a_tip(flow_rig):
     # quiet symbols have nothing to send
     with pytest.raises(ValueError, match="no flagged"):
         await eng.flow_service.to_tip("KO")
+
+
+async def test_analyst_gets_the_full_flow_evidence(flow_rig):
+    """The tips analyst's get_flow tool returns the whole pack — flags, OI
+    confirmations, repeat streaks, aggregates, story — not one context line."""
+    from zargar.techniques.tip.analyst import _run_tool
+
+    eng = flow_rig
+    view = await _run_tool(eng, "get_flow", {"symbol": "COIN"})
+    assert view["score"] == 9 and view["lean"] == "bull" and view["day"] == DAYS[2]
+    [f] = view["flags"]
+    assert f["contract"] == "COIN260912C00300000" and f["premium"] == 4_200_000
+    [c] = view["confirmedOvernight"]
+    assert c["oiDelta"] == 6140 and c["volumeTraded"] == 7240
+    assert view["repeatHits"] == {"COIN260912C00300000": 4}
+    assert [s["day"] for s in view["story"]] == DAYS          # oldest -> newest
+    assert view["story"][-1]["confirmed"] == 1
+    assert "aggregates" in view and "note" in view
+    # a symbol flow never read still gets the graceful line-shaped answer
+    empty = await _run_tool(eng, "get_flow", {"symbol": "ZZZQX"})
+    assert empty.get("flow") == "no read"
 
 
 def snap(day, sym, occ_sym, opt, strike, *, vol=5000, oi=1000, bid=2.0, ask=2.2,

@@ -72,6 +72,17 @@ def _otm_pct(row: dict, spot: float) -> float:
     return (spot - strike) / spot * 100
 
 
+def fmt_occ(contract: str | None) -> str:
+    """Unpadded OCC -> human short form: 'TSM260904C00422500' -> '09/04 422.5C'."""
+    import re
+    m = re.match(r"^([A-Z.]{1,6})(\d{2})(\d{2})(\d{2})([CP])(\d{8})$", contract or "")
+    if not m:
+        return contract or "?"
+    _, _, mm, dd, cp, k8 = m.groups()
+    k = int(k8) / 1000
+    return f"{mm}/{dd} {k:g}{cp}"
+
+
 def spot_from_chain(rows: list[dict]) -> float:
     """Spot derived from the chain itself via put–call parity: at the strike
     where the nearest expiry's call and put mids are closest, spot ≈ strike +

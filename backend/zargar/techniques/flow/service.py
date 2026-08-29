@@ -34,6 +34,7 @@ from .scan import (
     confirm_oi,
     context_line,
     flag_contracts,
+    fmt_occ,
     last_weekday,
     repeat_counts,
     spot_from_chain,
@@ -376,6 +377,49 @@ class FlowService:
                 universe = {"inUniverse": prov is not None, "provenance": prov}
         return {"symbol": sym, "reads": reads, "deliveries": deliveries, "universe": universe}
 
+    async def analyst_view(self, symbol: str) -> dict | None:
+        """The full evidence pack for the tips analyst's `get_flow` tool: the
+        latest read (both sides' flags, overnight OI confirmations, repeat
+        streaks, aggregates) plus the story tail — one context line is not
+        enough to appraise a flow-sourced tip."""
+        sym = symbol.upper()
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(FlowReadRow).where(FlowReadRow.symbol == sym)
+                .order_by(FlowReadRow.day.desc()).limit(4))).scalars().all()
+        if not rows:
+            return None
+        reads = [_read_dict(r) for r in reversed(rows)]
+        latest = reads[-1]
+
+        def slim(f: dict) -> dict:
+            return {k: f.get(k) for k in ("contract", "optionType", "strike", "volume",
+                                          "openInterest", "volOi", "premium", "mid",
+                                          "otmPct", "dte", "strong")}
+
+        agg = latest.get("aggregates") or {}
+        return {
+            "symbol": sym, "day": latest["day"], "score": latest["score"],
+            "lean": latest["lean"], "spot": latest.get("spot"),
+            "reasons": latest.get("reasons") or [],
+            "flags": [slim(f) for f in (latest.get("flags") or [])[:8]],
+            "confirmedOvernight": [
+                {"contract": c.get("contract"), "oiDelta": c.get("oiDelta"),
+                 "volumeTraded": c.get("volume")}
+                for c in (latest.get("confirmed") or [])[:6]],
+            "repeatHits": latest.get("repeatHits") or {},
+            "aggregates": {k: agg.get(k) for k in
+                           ("callPremium", "putPremium", "pcVolumeRatio", "osRatio")
+                           if agg.get(k) is not None},
+            "story": [{"day": r["day"], "score": r["score"], "lean": r["lean"],
+                       "flags": len(r.get("flags") or []),
+                       "confirmed": len(r.get("confirmed") or [])} for r in reads],
+            "note": "flags = today's opening-style buying; confirmedOvernight = "
+                    "yesterday's flagged volume that became real open interest; "
+                    "repeatHits = same contract flagged N of the last 5 sessions "
+                    "(the strongest pattern here)",
+        }
+
     async def to_tip(self, symbol: str) -> dict:
         """Turn the latest read into a TIP — the user judged the flow worth
         acting on, so it enters the normal tip pipeline (grounding, dedupe,
@@ -410,22 +454,54 @@ class FlowService:
         strike = float(flag.get("strike") or 0)
         expiry = str(flag.get("expiry") or "")
         spot = read.get("spot")
-        reason = (read.get("reasons") or ["unusual options activity"])[0]
-        text = (f"Flow scan {read['day']}: {sym} {lean} — {reason}. "
-                f"Contract {want} strike {strike:g} expiry {expiry}, "
-                f"premium ${flag.get('premium', 0):,.0f} at Vol/OI {flag.get('volOi')}. "
-                f"Direction {direction}.")
+        reasons = read.get("reasons") or ["unusual options activity"]
+        reason = reasons[0]
+        mid = flag.get("mid")
+        # the tip's message carries the WHOLE case, not just the top flag — the
+        # analyst appraises from this text plus the get_flow tool (full read)
+        parts = [f"Flow scan {read['day']}: {sym} {lean}, score {read['score']:g}. "
+                 + " ".join(f"{r}." for r in reasons[:4]),
+                 f"Chosen contract: {want} strike {strike:g} expiry {expiry}, "
+                 f"premium ${flag.get('premium', 0):,.0f} traded at Vol/OI {flag.get('volOi')}"
+                 + (f", mid {mid:g}" if mid else "") + "."]
+        others = [f for f in (read.get("flags") or [])
+                  if f.get("optionType") == want and f is not flag][:3]
+        if others:
+            parts.append("Also flagged same side: " + "; ".join(
+                f"{f.get('strike'):g}{'C' if want == 'call' else 'P'} {f.get('expiry')} "
+                f"${f.get('premium', 0):,.0f}" for f in others) + ".")
+        confirms = (read.get("confirmed") or [])[:4]
+        if confirms:
+            parts.append("Overnight OI confirmed (yesterday's volume became real positions): "
+                         + "; ".join(f"{fmt_occ(c.get('contract'))} OI +{c.get('oiDelta', 0):,}"
+                                     for c in confirms) + ".")
+        repeats = read.get("repeatHits") or {}
+        if repeats:
+            top_rep = max(repeats.items(), key=lambda kv: kv[1])
+            parts.append(f"Repeat streak: {fmt_occ(top_rep[0])} flagged {top_rep[1]} "
+                         "of the last 5 sessions — accumulation pattern.")
+        if spot:
+            parts.append(f"Underlying at {spot:g} at scan time.")
+        parts.append(f"Direction {direction}.")
+        text = " ".join(parts)
         content = RawContent(id=new_id(), source_type="flow", source_name="flow-scan",
                              subject=f"{sym} flow read {read['day']}", body_text=text,
-                             meta={"flowDay": read["day"], "flowScore": read["score"]})
+                             meta={"flowDay": read["day"], "flowScore": read["score"],
+                                   "flowLean": lean})
         async with self.engine.sf() as session:
             session.add(content)
             await session.commit()
+        n_conf = len(read.get("confirmed") or [])
+        max_rep = max(repeats.values(), default=0)
+        thesis = (f"Options flow {read['day']} score {read['score']:g}: {reason}"
+                  + (f"; {n_conf} contract(s) OI-confirmed overnight" if n_conf else "")
+                  + (f"; repeat {max_rep}/5 sessions" if max_rep else ""))[:300]
         extraction = ExtractionResult(signals=[TradeSignal(
             ticker=sym, direction=direction, action="open",
             instrument=want, strike=strike, expiry=expiry or None,
+            premium=round(float(mid), 2) if mid else None,   # the tape's own price anchors the limit
             timeframe="swing",
-            thesis_summary=f"Options flow: {reason}",
+            thesis_summary=thesis,
             evidence_quotes=[f"{sym} {lean}", f"{want} strike {strike:g} expiry {expiry}",
                              f"Direction {direction}"],
             confidence="implied", is_actionable=True)], source_type="trade_alert")

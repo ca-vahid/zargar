@@ -1129,7 +1129,13 @@ function resultSummary(s: AnalystStep): string {
   if (s.tool === "get_chain" && r.expiry) return `${r.underlying} ${r.expiry} · ${r.dte} DTE · spot ${r.spot} · ${(r.strikes ?? []).length} strikes`;
   if (s.tool === "get_expiries") return `${(r.expiries ?? []).length} expiries · spot ${r.spot ?? "?"}`;
   if (s.tool === "get_bars") return `${r.bars ?? "?"} bars · range ${r.low ?? "?"}–${r.high ?? "?"}`;
-  if (s.tool === "get_flow") return String(r.flow ?? "no read");
+  if (s.tool === "get_flow") {
+    if (r.score != null) {
+      return `${r.lean ?? "?"} · score ${r.score} · ${(r.flags ?? []).length} flags · ` +
+        `${(r.confirmedOvernight ?? []).length} OI-confirmed · story ${(r.story ?? []).length}d`;
+    }
+    return String(r.flow ?? "no read");
+  }
   if (s.tool === "get_earnings") return r.daysToEarnings != null ? `earnings in ~${r.daysToEarnings}d` : "no date known";
   if (s.tool === "get_source_stats") return `${r.signals ?? 0} signals · ${r.verified ?? 0} verified`;
   if (s.tool === "save_note") return `note saved to ${r.scope}`;

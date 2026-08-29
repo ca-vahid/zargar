@@ -178,6 +178,19 @@ scan **never overwrites** an existing read (`noSpot`/`keptExisting` journaled); 
 re-scans the latest day (its own symbols only) when it shows the degraded signature —
 so 08-28 rebuilds itself on the next restart.
 
+**Send to Tips → analyst wiring (2026-08-29):** a flow-scan tip now hands the analyst
+the whole case. (1) `to_tip`'s message body carries every piece of evidence — all
+reasons, the chosen contract with its traded premium AND mid (the tape's price seeds
+`Signal.premium`, anchoring the analyst's limit), other same-side flags, overnight OI
+confirmations with deltas, the top repeat streak, scan-time spot — so extraction,
+verification and the tip card all see the full grounded case; the thesis summarises it
+(score, confirms, repeat). (2) `FlowService.analyst_view(sym)` = the evidence pack
+(both sides' flags, confirmations, repeatHits, aggregates, 4-day story, a decoder
+note), served by the analyst's **`get_flow` tool** (falls back to the old context line
+when flow has never read the symbol); the tool description tells the analyst to always
+call it for source `flow-scan`. Tests: `test_flow_read_becomes_a_tip` (premium/thesis/
+body assertions) + `test_analyst_gets_the_full_flow_evidence`.
+
 ## 3. Decisions taken / open
 
 - Taken: Reads default day = latest scan day; sparkline = plain SVG (Highcharts is for the
