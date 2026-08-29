@@ -60,21 +60,23 @@ modified rules value** side-by-side with baseline and diff the outcomes.
   rr ≥ 1.5, TP1-heavy or time-boxed exit), T-7 gap-fill target anchors,
   T-8 index-ETF lane (SPY/QQQ/IWM), §1.8 rr-band 2.0–3.0.
 
-## Phase 2 — Ingestion pipeline (recent videos & posts)
+## Phase 2 — Ingestion workflow (recent videos & posts) — NOT an app feature
 
-Package what was done by hand on 2026-08-28 into a repeatable tool:
+**User decision 2026-08-29: ingestion is for us (Claude sessions), not for
+the app.** The author posts irregularly; the user brings links/files into a
+session and the analysis happens here, after the fact. Nothing ships.
 
-- `zargar.tools.ingest <url|file>`: yt-dlp fetch (X/YouTube) → ffmpeg audio →
-  faster-whisper transcript → key frames; images + transcript saved under
-  `docs/techniques/enhanced-market/notes/` with date + source.
-- An LLM extraction pass (same client, flat schema) turns the material into
-  **structured hypothesis records**: claim, the author's stated conditions,
-  a proposed testable spec, contradictions with our current rules. Human (or
-  Claude session) reviews and appends the survivors to TRADING-RULES §3.
-- Cadence: user feeds links as they appear (no scraping); the author's free
-  posts + periodic videos are the stream. Each ingested item also gets a
-  *ground-truth check* where possible (his called setups vs actual tape —
-  cheap with our bars, and it calibrates how much weight his calls deserve).
+The proven session recipe (first run 2026-08-28, ~10 min end to end):
+1. scratch venv: `pip install yt-dlp faster-whisper` (ffmpeg already on PATH,
+   winget Gyan.FFmpeg build);
+2. `yt-dlp -x --audio-format mp3 -o <scratchpad>/clip.%(ext)s <tweet url>`;
+3. faster-whisper `small` model, `vad_filter=True`, **Windows paths** (the
+   /c/… Git-Bash form breaks PyAV);
+4. frames when needed: Browser pane → enlarge the `<video>` element via JS →
+   seek `video.currentTime` → screenshot;
+5. transcript + analysis land in `notes/YYYY-MM-DD-<source>.md`, hypotheses
+   go to TRADING-RULES §3, and each called setup gets a *ground-truth check*
+   against our own bars (calibrates how much weight his calls deserve).
 
 ## Phase 3 — LLM tool belt (analyst & critic get hands)
 
@@ -147,7 +149,7 @@ intraday variants; the swing lane then enters as one more shadow instance
 | # | What | Depends on | Size |
 |---|---|---|---|
 | 1 | Variant harness + T-6/§1.8 pilot sweeps | — | days |
-| 2 | `ingest` tool packaging | — (pipeline proven by hand) | ~1 day |
+| 2 | Ingestion: session workflow only (recipe above) | done | — |
 | 3 | LLM tool belt (start: get_outcome_stats, get_gap_map, get_bars) | — | days |
 | 4 | Shadow instance registration | 1; engine-team pause/registry items | days |
 | 5 | Capture-rate weekly report | 1 | ~1 day |

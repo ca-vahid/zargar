@@ -409,7 +409,8 @@ async def cmd_sweep(args) -> int:
             list(c.engine.settings.get("technique.walkforward.symbols", []))
         stf = [s.strip() for s in args.structure.split(",")] if args.structure else None
         d = await c.svc.start_sweep(syms, args.start, args.end, structure_tfs=stf, trigger_tf=args.trigger,
-                                    include_invalid=args.include_invalid, label=args.label or "", wait=True)
+                                    include_invalid=args.include_invalid, label=args.label or "",
+                                    overrides=_parse_sets(args.set) or None, wait=True)
     if args.json:
         print(json.dumps(d, indent=1, default=str))
     else:
@@ -484,6 +485,64 @@ async def cmd_sweep_report(args) -> int:
     else:
         _print_sweep(d, rows=args.rows)
     return 0
+
+
+async def cmd_sweep_compare(args) -> int:
+    async with Ctx() as c:
+        async def resolve(prefix: str) -> dict | None:
+            d = await c.svc.get_sweep(prefix)
+            if d:
+                return d
+            hits = [s for s in await c.svc.list_sweeps(limit=200) if s["id"].startswith(prefix)]
+            if len(hits) > 1:
+                print(f"{prefix!r} is ambiguous ({len(hits)} sweeps)", file=sys.stderr)
+                return None
+            return await c.svc.get_sweep(hits[0]["id"]) if hits else None
+        a, b = await resolve(args.sweep_a), await resolve(args.sweep_b)
+    if a is None or b is None:
+        print("sweep not found", file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps({"a": a, "b": b}, indent=1, default=str))
+        return 0
+    _print_sweep_compare(a, b)
+    return 0
+
+
+def _print_sweep_compare(a: dict, b: dict) -> None:
+    def hdr(d: dict, tag: str) -> None:
+        ov = (d.get("params") or {}).get("overrides") or {}
+        print(f"[{tag}] {d['id'][:10]} {d['start']}..{d['end']} label={d.get('label') or '-'}"
+              + (f"  overrides={json.dumps(ov)}" if ov else "  (baseline thresholds)"))
+    hdr(a, "A"); hdr(b, "B")
+    sa, sb = a.get("summary") or {}, b.get("summary") or {}
+    fa, fb = (sa.get("sample") or {}), (sb.get("sample") or {})
+    print(f"\nsessions       A={sa.get('sessions')}  B={sb.get('sessions')}")
+    print(f"fired          A={fa.get('fired')}  B={fb.get('fired')}")
+
+    def kinds(sm: dict) -> dict:
+        return ((sm.get("triggers") or {}).get("byKind")) or {}
+    ka, kb = kinds(sa), kinds(sb)
+    print(f"\n{'kind':<12} {'':>2} {'planned':>8} {'fired':>6} {'wins':>5} {'sumR':>8} {'avgR':>7} {'winRate':>8}")
+    for kind in sorted(set(ka) | set(kb)):
+        for tag, kk in (("A", ka), ("B", kb)):
+            v = kk.get(kind) or {}
+            print(f"{kind:<12} {tag:>2} {v.get('planned', '-'):>8} {v.get('fired', '-'):>6} "
+                  f"{v.get('wins', '-'):>5} {str(v.get('sumR', '-')):>8} {str(v.get('avgR', '-')):>7} "
+                  f"{str(v.get('winRate', '-')):>8}")
+    def wins(sm: dict) -> dict:
+        return ((sm.get("triggers") or {}).get("byWindow")) or {}
+    wa, wb = wins(sa), wins(sb)
+    if wa or wb:
+        print(f"\n{'window':<14} {'':>2} {'fired':>6} {'sumR':>8} {'avgR':>7} {'winRate':>8}")
+        for w in sorted(set(wa) | set(wb)):
+            for tag, ww in (("A", wa), ("B", wb)):
+                v = ww.get(w) or {}
+                print(f"{w:<14} {tag:>2} {v.get('fired', '-'):>6} {str(v.get('sumR', '-')):>8} "
+                      f"{str(v.get('avgR', '-')):>7} {str(v.get('winRate', '-')):>8}")
+    da = float(fa.get("fired") or 0) and float((sa.get("triggers") or {}).get("counterfactual", {}).get("base", {}).get("sumR") or 0)
+    db = float(fb.get("fired") or 0) and float((sb.get("triggers") or {}).get("counterfactual", {}).get("base", {}).get("sumR") or 0)
+    print(f"\nnet R (base counterfactual): A={da or 0:.2f}  B={db or 0:.2f}  delta={(db or 0) - (da or 0):+.2f}")
 
 
 async def _api_call(args, method: str, path: str, body: dict | None = None) -> int:
@@ -679,7 +738,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--trigger", help="trigger tf, default technique.trigger_tf")
     p.add_argument("--include-invalid", dest="include_invalid", action="store_true")
     p.add_argument("--label")
+    p.add_argument("--set", action="append", metavar="KEY=VALUE",
+                   help="threshold override for a VARIANT sweep (repeatable; recorded in params.overrides)")
     p.set_defaults(fn=cmd_sweep)
+
+    p = sub.add_parser("sweep-compare", help="baseline vs variant: two sweeps' aggregates side by side")
+    p.add_argument("sweep_a", help="sweep id or unique prefix (baseline)")
+    p.add_argument("sweep_b", help="sweep id or unique prefix (variant)")
+    p.set_defaults(fn=cmd_sweep_compare)
 
     p = sub.add_parser("sweeps", help="list sweeps")
     p.add_argument("--limit", type=int, default=30)
