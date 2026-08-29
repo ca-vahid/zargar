@@ -1030,6 +1030,31 @@ async def test_analyst_positions_tool(app_client):
     assert row["symbol"] == "AAPL" and row["qty"] == 10 and row["kind"] == pf["kind"]
 
 
+async def test_analyst_quote_tool_falls_back_to_history(app_client, monkeypatch):
+    # a cold symbol on a closed market must not blind the analyst (run d7aedd08:
+    # SKIP purely for want of a print) — get_quote serves the last session's
+    # close from history, marked stale
+    client, eng = app_client
+    from zargar.techniques.tip.analyst import _run_tool
+    import zargar.marketstructure.history as hist
+
+    class _B:
+        close = 123.45
+
+    async def fake_recent(sym, tf, sessions=2):
+        return [_B()]
+
+    monkeypatch.setattr(hist, "fetch_recent", fake_recent)
+
+    async def no_ensure(sym):        # the sim feed would happily invent a quote
+        return None
+
+    monkeypatch.setattr(eng, "ensure_symbol", no_ensure)
+    out = await _run_tool(eng, "get_quote", {"symbol": "ZZZQX"})
+    assert out["last"] == 123.45 and out["stale"] is True
+    assert "not" in out["note"] or "do not" in out["note"]
+
+
 async def test_analyst_failure_never_blocks(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")
