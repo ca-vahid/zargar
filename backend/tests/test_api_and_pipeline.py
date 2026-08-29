@@ -479,6 +479,132 @@ async def test_shared_notes_read_and_written_by_analyst(app_client):
     assert (await client.delete(f"/api/tip/notes/{an['id']}")).status_code == 404
 
 
+class _FakeExtractor:
+    """Canned extraction so process_content (and its intake run) can be driven
+    end-to-end without the API."""
+    available = True
+    model = "fake-extractor"
+
+    def __init__(self, result):
+        self.result = result
+
+    async def extract(self, text, **kw):
+        return self.result
+
+
+class _FakeAnthropicReview:
+    """Scripted review: looks at OUR positions and the source's open tips,
+    saves a note, then reports — flagging the line that was actually fresh."""
+
+    def __init__(self):
+        self.calls = 0
+        self.messages = self
+
+    async def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            return _FakeAnthropicResp([
+                _Block(type="tool_use", id="t1", name="get_positions", input={}),
+                _Block(type="tool_use", id="t2", name="get_open_tips",
+                       input={"source": "EvaPanda"})])
+        if self.calls == 2:
+            return _FakeAnthropicResp([
+                _Block(type="tool_use", id="t3", name="save_note",
+                       input={"scope": "source",
+                              "text": "Source's open book: AAPL 300C swing added 08-28."})])
+        return _FakeAnthropicResp([_Block(type="text", text=(
+            '{"headline": "Positions recap from EvaPanda, one fresh add.",'
+            ' "details": "Recap lines match the source\'s known book; nothing we hold overlaps.",'
+            ' "watch": ["AAPL"],'
+            ' "missed_tip": "AAPL 300C 10/16 was added today — a fresh actionable line",'
+            ' "confidence": 0.6}'))])
+
+
+async def test_intake_run_reviews_non_tradable_updates(app_client):
+    # a positions-recap message used to dead-end ("no analyst run") — now the
+    # message gets ONE streamed intake run: extraction, per-signal verdicts with
+    # reasons, then the analyst reviewing the update against OUR book
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    text = ("Update: Current Open Positions — AAPL 300C 10/16 @ 2.34 (Swing) - "
+            "Added Today. All that i have for now.")
+    recap = ExtractionResult(signals=[TradeSignal(
+        ticker="AAPL", direction="long", action="open", instrument="call",
+        thesis_summary="positions recap",
+        evidence_quotes=["AAPL 300C 10/16 @ 2.34"],
+        confidence="commentary_only", is_actionable=False)],
+        source_type="portfolio_update")
+    eng.signals_service.extractor = _FakeExtractor(recap)
+    fake = _FakeAnthropicReview()
+    eng.signals_service._analyst_client = fake
+    out = await eng.signals_service.ingest_manual(text, source_name="EvaPanda")
+    assert out["intakeRunId"]
+    assert out["signals"][0]["signal"]["status"] == "verification_failed"
+    run = (await client.get(f"/api/tip/analyst/runs/{out['intakeRunId']}")).json()
+    assert run["kind"] == "intake" and run["status"] == "done"
+    assert run["verdict"] == "review" and run["ticker"] == "AAPL"
+    kinds = [s["kind"] for s in run["trace"]]
+    for k in ("start", "extract", "signal", "tool_call", "tool_result", "final"):
+        assert k in kinds, f"missing {k} in {kinds}"
+    tools = [s.get("tool") for s in run["trace"] if s["kind"] == "tool_call"]
+    assert "get_positions" in tools and "get_open_tips" in tools
+    # the review's verdict card carries the missed-tip flag for the human
+    assert "added today" in (run["opinion"]["missedTip"] or "").lower()
+    assert run["opinion"]["watch"] == ["AAPL"]
+    # the durable note landed in the shared knowledge base
+    notes = (await client.get("/api/tip/notes")).json()
+    assert any("open book" in n["text"] for n in notes)
+    # the run shows in the list as an intake run
+    runs = (await client.get("/api/tip/analyst/runs")).json()
+    assert any(r["id"] == out["intakeRunId"] and r["kind"] == "intake" for r in runs)
+
+
+async def test_intake_run_hands_off_to_appraisal(app_client):
+    # a tradable alert's intake run records the whole path and links the
+    # appraisal run (kind stays 'appraise' for the per-tip run)
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    eng.signals_service.extractor = _FakeExtractor(canned_extraction())
+    eng.signals_service._analyst_client = _FakeAnthropic()
+    out = await eng.signals_service.ingest_manual(SOURCE_TEXT, source_name="TestLetter")
+    assert out["signals"][0]["signal"]["status"] in ("verified", "proposed")
+    run = (await client.get(f"/api/tip/analyst/runs/{out['intakeRunId']}")).json()
+    assert run["kind"] == "intake" and run["status"] == "done"
+    assert run["verdict"] == "1 tip"
+    hand = next(s for s in run["trace"] if s["kind"] == "handoff")
+    assert hand["runId"]
+    appraisal = (await client.get(f"/api/tip/analyst/runs/{hand['runId']}")).json()
+    assert appraisal["kind"] == "appraise" and appraisal["verdict"] == "take"
+
+
+async def test_missing_quote_parks_signal(app_client):
+    # "no market data" is a feed state, not a bad tip (the AMZN case): the
+    # signal parks and is re-judged when data arrives — never fatally killed
+    client, eng = app_client
+    from zargar.signals.verification import verify_signal
+    sig = canned_extraction().signals[0].model_copy(update={"ticker": "ZZZQX"})
+    v = await verify_signal(sig, eng.quotes, eng.settings, grounding={"passed": True})
+    assert not v["passed"] and v["park"] is True
+    tr = next(c for c in v["checks"] if c["name"] == "ticker_resolves")
+    assert not tr["passed"] and not tr["fatal"] and "parked" in tr["detail"]
+
+
+async def test_analyst_positions_tool(app_client):
+    # the analyst can see OUR book: real portfolio positions show up compactly;
+    # shadow-book fills are excluded (they are the source's ledger, not ours)
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    from zargar.techniques.tip.analyst import _run_tool
+    empty = await _run_tool(eng, "get_positions", {})
+    assert "no open positions" in (empty.get("note") or "")
+    pf = next(p for p in eng.positions.portfolios() if not p.get("book"))
+    await eng.positions.apply_fill(pf["id"], "AAPL", "STK", "BUY", 10, 230.0, 0.0)
+    got = await _run_tool(eng, "get_positions", {"symbol": "AAPL"})
+    [row] = got["positions"]
+    assert row["symbol"] == "AAPL" and row["qty"] == 10 and row["kind"] == pf["kind"]
+
+
 async def test_analyst_failure_never_blocks(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")

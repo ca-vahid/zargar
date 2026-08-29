@@ -959,6 +959,9 @@ const STEP_ICON: Record<string, { path: JSX.Element; cls: string; label: string 
   note: { cls: "dim", label: "note", path: <path d="M8 4.2v4.6m0 2.6v.1" /> },
   final: { cls: "final", label: "verdict", path: <path d="M3 8.5l3.2 3L13 4.5" /> },
   error: { cls: "error", label: "error", path: <path d="M4.5 4.5l7 7m0-7l-7 7" /> },
+  extract: { cls: "llm", label: "extraction", path: <path d="M3 3.5h10M3 8h10M3 12.5h6" /> },
+  signal: { cls: "call", label: "verification", path: <path d="M2.5 9.5l3-3 2.5 2.5L13.5 4" /> },
+  handoff: { cls: "final", label: "hand-off", path: <path d="M2.5 8h8m0 0L7.5 4.5M10.5 8L7.5 11.5m4-7.5v7" /> },
 };
 
 function StepNode({ kind }: { kind: string }) {
@@ -1027,7 +1030,8 @@ function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => voi
     );
   } else if (s.kind === "final") {
     const o = s.opinion ?? {};
-    const cls = o.verdict === "take" ? "ok" : o.verdict === "watch" ? "wait" : "bad";
+    const cls = o.verdict === "take" ? "ok" : o.verdict === "watch" ? "wait"
+      : o.verdict === "review" ? "dim" : "bad";
     body = (
       <div className={`an-card an-card--final an-final--${o.verdict ?? "none"}`}>
         <div className="an-final-head">
@@ -1056,7 +1060,15 @@ function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => voi
       )
       : <div className="an-card an-card--llm"><RichText text={s.text} /></div>;
   } else {
-    body = <div className={`an-card an-card--plain ${s.kind === "error" ? "neg" : ""}`}>{s.text}</div>;
+    body = (
+      <div className={`an-card an-card--plain ${s.kind === "error" ? "neg" : ""}`}>
+        {s.text}
+        {s.runId && openRun && (
+          <button className="link-btn" style={{ marginLeft: 8 }}
+            onClick={() => openRun(s.runId!)}>open the appraisal run →</button>
+        )}
+      </div>
+    );
   }
   return (
     <div className="an-ev">
@@ -1070,6 +1082,7 @@ function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => voi
 }
 
 function AnalystRunDetail({ id }: { id: string }) {
+  const setFocus = useStore((s) => s.setAnalystFocus);
   const [run, setRun] = useState<AnalystRun | null>(null);
   const [live, setLive] = useState<AnalystStep[]>([]);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1112,6 +1125,7 @@ function AnalystRunDetail({ id }: { id: string }) {
     <div className="panel an-detail">
       <div className="panel-head">
         <b>{run.ticker}</b> <span className="muted">· {run.source ?? "?"}</span>
+        {run.kind === "intake" && <span className="status-pill dim" title="the whole message's intake: extraction, verification, hand-offs, review">intake</span>}
         <span className={`status-pill ${running ? "wait" : run.verdict === "take" ? "ok" : run.verdict === "skip" ? "bad" : "dim"}`}>
           {running ? "running…" : run.verdict ?? run.status}
         </span>
@@ -1128,7 +1142,7 @@ function AnalystRunDetail({ id }: { id: string }) {
           if (el) stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
         }}>
         <div className="an-flow">
-          {steps.map((s) => <StepRow key={s.seq} s={s} />)}
+          {steps.map((s) => <StepRow key={s.seq} s={s} openRun={setFocus} />)}
           {running && (
             <div className="an-ev">
               <span className="an-node an-node--pulse"><span className="an-dot" /></span>
@@ -1233,10 +1247,22 @@ function ProcessBanner() {
           toast("success", `Tip ${withRun.ticker} (${withRun.status}) — opening its analyst run`);
           setFocus(withRun.analystRunId);
           setOutcome(null);
+        } else if (result.intakeRunId) {
+          if (sigs.length > 0) {
+            toast("success", "Nothing tradable — the analyst reviewed the update against your book");
+            setOutcome({
+              cls: "",
+              msg: `Extracted ${sigs.map((s) => `${s.ticker} [${(s.status || "").replace("_", " ")}]`).join(", ")} — nothing tradable, so the analyst reviewed the update (open run below).`,
+              detail: preview(result),
+            });
+          } else {
+            setOutcome({ cls: "", msg: result.note || "The message did not extract as a trade tip — the intake run below shows why.", detail: preview(result) });
+          }
+          setFocus(result.intakeRunId);
         } else if (sigs.length > 0) {
           setOutcome({
             cls: "",
-            msg: `Extracted ${sigs.map((s) => `${s.ticker} [${(s.status || "").replace("_", " ")}]`).join(", ")} — no analyst run (it only appraises tradable tips); see the Tips tab.`,
+            msg: `Extracted ${sigs.map((s) => `${s.ticker} [${(s.status || "").replace("_", " ")}]`).join(", ")} — see the Tips tab.`,
             detail: preview(result),
           });
         } else {
@@ -1300,6 +1326,7 @@ function AnalystTab() {
                   onClick={() => setFocus(r.id)}>
                   <span className="an-run-l">
                     <b>{r.ticker}</b>
+                    {r.kind === "intake" && <span className="status-pill dim">intake</span>}
                     <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
                       {r.status === "running" ? "running" : r.verdict ?? r.status}
                     </span>

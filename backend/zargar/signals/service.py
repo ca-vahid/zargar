@@ -94,6 +94,7 @@ class SignalService:
                 select(TipAnalystRun).order_by(TipAnalystRun.created_at.desc()).limit(limit)
             )).scalars().all()
         return [{"id": r.id, "ticker": r.ticker, "source": r.source, "status": r.status,
+                 "kind": getattr(r, "kind", "appraise") or "appraise",
                  "verdict": r.verdict, "model": r.model, "signalId": r.signal_id,
                  "traceSteps": len(r.trace or []),
                  "createdAt": r.created_at.isoformat() if r.created_at else None,
@@ -107,6 +108,7 @@ class SignalService:
         if r is None:
             raise KeyError(f"analyst run {run_id} not found")
         return {"id": r.id, "ticker": r.ticker, "source": r.source, "status": r.status,
+                "kind": getattr(r, "kind", "appraise") or "appraise",
                 "verdict": r.verdict, "model": r.model, "signalId": r.signal_id,
                 "tools": r.tools or [], "trace": r.trace or [], "opinion": r.opinion or {},
                 "tip": r.tip or {}, "error": r.error,
@@ -370,6 +372,16 @@ class SignalService:
             return {"contentId": content_id, "status": "new", "signals": [],
                     "note": "extraction unavailable: ANTHROPIC_API_KEY not configured"}
 
+        # the intake run: this message's live play-by-play, from second zero
+        from ..techniques.tip.analyst import IntakeRun
+        intake = IntakeRun(eng)
+        await intake.start(source=content.source_name or "auto",
+                           chars=len(text), has_image=image is not None,
+                           preview=text[:400])
+        intake.step("extract", f"Extracting with {self.extractor.model}…"
+                    + (" (image transcription included)" if image is not None else "")
+                    + " — one LLM read of the whole message, usually 10–30 s.")
+        await intake.checkpoint()
         try:
             result = await self.extractor.extract(
                 text,
@@ -380,7 +392,21 @@ class SignalService:
         except Exception as exc:
             log.exception("extraction failed for %s", content_id)
             await self._set_content_status(content_id, "error")
-            return {"contentId": content_id, "status": "error", "error": str(exc), "signals": []}
+            await intake.finish("failed", f"Extraction failed: {exc}", failed=True)
+            return {"contentId": content_id, "status": "error", "error": str(exc),
+                    "signals": [], "intakeRunId": intake.id}
+
+        sigs = result.signals or []
+        intake.step("extract",
+                    f"Extracted {len(sigs)} signal(s) — content type: {result.source_type}."
+                    + (" Transcribed the image into text first." if (image is not None and result.source_transcript) else "")
+                    + (" " + "; ".join(f"{s.ticker} {s.direction} {s.instrument}"
+                                       f"{' (not an explicit call)' if not s.is_actionable else ''}"
+                                       for s in sigs[:8]) if sigs else
+                       " Nothing resembling a trade in this message."))
+        await intake.checkpoint(
+            ticker=(f"{sigs[0].ticker.upper()} +{len(sigs) - 1}" if len(sigs) > 1
+                    else sigs[0].ticker.upper() if sigs else "no signals")[:32])
 
         source_text = text
         if image is not None and result.source_transcript:
@@ -392,12 +418,41 @@ class SignalService:
                     db_content.body_text = result.source_transcript
                     await session.commit()
 
-        out = await self.handle_extraction(content, result, source_text=source_text)
+        out = await self.handle_extraction(content, result, source_text=source_text,
+                                           intake=intake)
         await self._set_content_status(content_id, "extracted")
+
+        # any signal that verification discarded -> the analyst reviews the
+        # update against the desk's own book (positions, open tips, notes) in
+        # this same run, so a recap/exit note is bookkept instead of dropped
+        tradable = [o for o in out
+                    if (o.get("signal") or {}).get("status")
+                    in ("verified", "shadow", "parked", "replayed") or o.get("duplicateOf")]
+        discarded = [o for o in out
+                     if (o.get("signal") or {}).get("status") == "verification_failed"]
+        if discarded:
+            outcomes = [{"ticker": (o.get("signal") or {}).get("ticker"),
+                         "status": "seen_again" if o.get("duplicateOf")
+                         else (o.get("signal") or {}).get("status"),
+                         "failed": [c["name"] for c in
+                                    ((o.get("signal") or {}).get("verification") or {}).get("checks", [])
+                                    if not c.get("passed")]}
+                        for o in out]
+            await intake.review(source=content.source_name or "unknown",
+                                message_text=source_text, outcomes=outcomes,
+                                client=self._analyst_client)
+        else:
+            n_trade = len(tradable)
+            await intake.finish(
+                f"{n_trade} tip{'s' if n_trade != 1 else ''}" if sigs else "no signals",
+                f"Done — {n_trade} of {len(sigs)} signal(s) entered the tip pipeline."
+                if sigs else "Done — no trade signals in this message.")
+
         async with eng.sf() as session:               # source may have been auto-detected
             refreshed = await session.get(RawContent, content_id)
         return {"contentId": content_id, "status": "extracted",
                 "sourceType": result.source_type, "signals": out,
+                "intakeRunId": intake.id,
                 "source": (refreshed.source_name if refreshed else content.source_name),
                 "sourceDetected": bool((refreshed.meta or {}).get("sourceDetected")) if refreshed else False}
 
@@ -412,10 +467,16 @@ class SignalService:
             )).scalars().first()
 
     async def handle_extraction(self, content: RawContent, result: ExtractionResult,
-                                *, source_text: str) -> list[dict]:
+                                *, source_text: str, intake=None) -> list[dict]:
         """Grounding → dedupe → persistence → verification → proposal, per signal.
-        Split out so tests can drive it with a canned ExtractionResult (no API)."""
+        Split out so tests can drive it with a canned ExtractionResult (no API).
+        `intake` (optional) is the message's IntakeRun — per-signal verdicts are
+        streamed onto it so the whole pipeline is watchable live."""
         eng = self.engine
+
+        def istep(kind: str, text: str, **extra) -> None:
+            if intake is not None:
+                intake.step(kind, text, **extra)
         # auto-detect the source when the user didn't name one: the extractor
         # reads attribution out of the content itself (channel name, poster's
         # handle, newsletter masthead) and we match it to a known source
@@ -460,6 +521,8 @@ class SignalService:
                      "seenCount": dup.seen_count, "contentId": content.id},
                     aggregate_type="signal", aggregate_id=dup.id)
                 eng.bus.publish(topics.SIGNALS, signal_dict(dup))
+                istep("signal", f"{dup.ticker}: seen again (×{dup.seen_count}) — attached "
+                                "to the original tip, not a second one.")
                 out.append({"signal": signal_dict(dup), "duplicateOf": dup.id,
                             "proposal": None, "shadowOrder": None})
                 continue
@@ -512,6 +575,19 @@ class SignalService:
             deadline = _time.monotonic() + max(0.0, wait_s)
             while eng.quotes.get(row.ticker.upper()) is None and _time.monotonic() < deadline:
                 await asyncio.sleep(0.25)
+            if eng.quotes.get(row.ticker.upper()) is None:
+                # a cold symbol can lose the race against the feed's poll cycle
+                # (Yahoo backs off to ~20 s while Alpaca is connected) — force one
+                # sweep instead of failing a good tip (the AMZN case, 2026-08-28)
+                poll = (getattr(eng.feed, "poll_once", None)
+                        or getattr(getattr(eng.feed, "yahoo", None), "poll_once", None))
+                if poll is not None:
+                    with contextlib.suppress(Exception):
+                        await poll()
+                    deadline = _time.monotonic() + 4.0
+                    while (eng.quotes.get(row.ticker.upper()) is None
+                           and _time.monotonic() < deadline):
+                        await asyncio.sleep(0.25)
             verification = await verify_signal(sig, eng.quotes, eng.settings,
                                                grounding=grounding)
             # flow context rides along (informational, never a check): does the
@@ -574,6 +650,14 @@ class SignalService:
             await eng.journal.append(kind, {**verification, "status": status},
                                      aggregate_type="signal", aggregate_id=row.id)
             eng.bus.publish(topics.SIGNALS, signal_dict(row))
+            failed_checks = [f"{c['name']}: {c['detail'] or 'failed'}"
+                             for c in verification.get("checks", []) if not c["passed"]]
+            istep("signal",
+                  f"{row.ticker} → {status.replace('_', ' ').upper()}"
+                  + (f" — {'; '.join(failed_checks)}" if failed_checks else " — all checks passed"),
+                  ticker=row.ticker, status=status)
+            if intake is not None:
+                await intake.checkpoint()
 
             proposal = None
             shadow_order = None
@@ -586,6 +670,8 @@ class SignalService:
             if status in ("verified", "shadow", "parked"):
                 # the tips analyst appraises the tip with market tools —
                 # strictly advisory, fail-open (POC 2026-08-28)
+                istep("note", f"Appraising {row.ticker} with market tools — its own "
+                              "run starts now (watch it in the runs list).")
                 try:
                     from ..techniques.tip.analyst import analyze_tip
                     opinion = await analyze_tip(eng, row, verification, policy,
@@ -593,6 +679,11 @@ class SignalService:
                 except Exception:                  # never block the pipeline
                     log.exception("tip analyst crashed for %s", row.id)
                     opinion = None
+                if opinion is not None:
+                    istep("handoff",
+                          f"Appraisal done: {str(opinion.get('verdict', '?')).upper()}"
+                          + (f" — {opinion.get('contractLabel') or opinion.get('contract_label') or opinion.get('contract') or ''}"),
+                          runId=opinion.get("runId"), ticker=row.ticker)
                 if opinion is not None:
                     async with eng.sf() as session:
                         db_row = await session.get(Signal, row.id)

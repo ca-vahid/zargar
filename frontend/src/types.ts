@@ -228,9 +228,11 @@ export interface DiscordWatch {
 export interface AnalystStep {
   seq: number; kind: string; text: string; at?: string;
   tool?: string; args?: any; result?: any; opinion?: any; tip?: any; verification?: any;
+  runId?: string; ticker?: string; status?: string;   // intake hand-off extras
 }
 export interface AnalystRunSummary {
   id: string; ticker: string; source?: string | null; status: string;
+  kind?: string;                                      // "appraise" | "intake"
   verdict?: string | null; model?: string | null; signalId?: string | null;
   traceSteps: number; createdAt?: string | null; finishedAt?: string | null;
 }

@@ -488,9 +488,9 @@ class Gateway:
             if r.status_code != 200:
                 return {"ok": False, "error": f"ingest {r.status_code}: {out.get('error') or ''}"}
             if n == 0:
-                return {"ok": True, "signals": [],
+                return {"ok": True, "signals": [], "intakeRunId": out.get("intakeRunId") or "",
                         "note": out.get("note") or "the message did not extract as a trade tip"}
-            return {"ok": True, "signals": sigs}
+            return {"ok": True, "signals": sigs, "intakeRunId": out.get("intakeRunId") or ""}
         except Exception as exc:
             print(f"    -> ingest failed: {exc}")
             return {"ok": False, "error": f"ingest failed: {str(exc)[:200]}"}

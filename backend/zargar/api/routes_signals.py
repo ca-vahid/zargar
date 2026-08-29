@@ -191,12 +191,14 @@ def build_signal_routes(app, eng, auth, config) -> None:
         author: str = ""
         text: str = ""
         signals: list = []
+        intakeRunId: str = ""
 
     @app.post("/api/tip/discord/process-result", dependencies=[auth])
     async def discord_process_report(body: ProcessResultBody):
         eng.signals_service.discord_set_process_result(body.channelId, {
             "ok": body.ok, "note": body.note, "error": body.error,
-            "author": body.author, "text": body.text, "signals": body.signals})
+            "author": body.author, "text": body.text, "signals": body.signals,
+            "intakeRunId": body.intakeRunId})
         return {"ok": True}
 
     # --- tips analyst run history (the play-by-play, per run) -----------------

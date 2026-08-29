@@ -91,6 +91,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_max_tools": 8,   # tool-call budget per tip
     "techniques.tip.analyst_model": "",      # empty = the extraction model
     "techniques.tip.analyst_notes_max": 12,  # shared-knowledge notes handed to each run
+    "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our book
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
     "techniques.tip.dedupe_window_hours": 24,
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
