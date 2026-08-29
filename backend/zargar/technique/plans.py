@@ -66,6 +66,10 @@ class Trigger:
     notes: str = ""
     assessment: dict = field(default_factory=dict)   # grade/score/strengths/cautions
     risk_reward_tp3: float = 0.0     # the book's figure: to the final target
+    # human display name ("jon-and-kian tip") — ids stay stable/unique for the
+    # state machine and the journal; the UI shows the label (2026-08-29: raw
+    # "tip-71796b9b3378" ids leaked onto the Armed page)
+    label: str = ""
     # scale-in plans (tips, ARM-PLAN P3): this trigger's share of the plan's
     # total size. 1.0 = the whole size (every single-trigger plan; all of EM).
     size_fraction: float = 1.0
@@ -79,7 +83,8 @@ class Trigger:
 
     def to_dict(self) -> dict:
         return {
-            "id": self.id, "kind": self.kind, "direction": self.direction,
+            "id": self.id, "label": self.label or self.id,
+            "kind": self.kind, "direction": self.direction,
             "levelPrice": round(self.level_price, 4), "level": self.level,
             "entry": {"price": round(self.entry_price, 4), "basis": self.entry_basis},
             "stop": {"price": round(self.stop_price, 4), "reference": self.stop_reference},

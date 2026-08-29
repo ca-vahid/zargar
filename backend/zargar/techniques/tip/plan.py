@@ -164,6 +164,7 @@ def build_tip_plan(
                   else ("bounce" if long else "reject")))
     trigger = Trigger(
         id=f"tip-{(signal_id or 'manual')[:12]}",
+        label=f"{who} tip",
         kind=kind,
         direction=direction,
         level_price=entry if level is None else float(level.price),
@@ -214,6 +215,7 @@ def build_tip_plan(
                 wexit = sum(exits_i) / len(exits_i)
                 triggers.append(Trigger(
                     id=f"tip-{(signal_id or 'manual')[:12]}-{i + 1}",
+                    label=f"{who} tip {i + 1}/{len(rungs)}",
                     kind="bounce" if long else "reject", direction=direction,
                     level_price=px,
                     level={"price": round(px, 4), "kind": "tip", "touches": 0, "sources": ["TIP"]},
