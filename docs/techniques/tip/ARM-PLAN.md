@@ -237,3 +237,21 @@ to avoid teaching the scorer twice. 5 stands alone and waits for demand.
   1156-unsupported. The app ships leg-sequencing today; a native-mleg executor
   is a clean future upgrade at Webull. Found & fixed on the way: the duplicate-order key
   ignored the portfolio, so a shadow-book leg blocked the real one.
+
+## Post-landing follow-ups (found in live use)
+
+- [x] **Armed-hub visibility** (2026-08-29 evening, user report — the "phantom armed
+  item"): plans armed by the tip runner (`arm_from_analyst`, the shadow armed
+  book) were invisible to `GET /api/technique/armed` and every hub endpoint
+  (summary, detail, exit, mode, pause/resume, stop-all, the `/api/health`
+  restart-guard count) because the hub only consulted EM's armer — while the
+  shared `PlanRunner._publish` WS deltas DID carry them, so the Armed badge
+  said 1 and the page said 0, flickering on every 30s poll. Fixed with the
+  `engine.plan_runners` registry that every hub endpoint aggregates
+  (per-plan actions route by `runner_for(run_id)`); `attach_tip_runner`
+  registers the runner (and `engine.techniques["tip"]` — a runner is its own
+  `.armer`, so `/api/techniques/tip/*` resolves too). Regression test walks a
+  tip-armed plan through the whole hub; invariant recorded in
+  `PLATFORM-RULES.md` §2 and `BUILDING-A-TECHNIQUE.md` §2. Verified live:
+  the SPY jon-and-kian armed-book plan shows steadily on the Armed page,
+  badge and page agree, restart guard reports "armed plans restored: 1".
