@@ -1476,9 +1476,19 @@ function NotesPanel() {
               <div className="an-note-head">
                 <span className={`an-note-scope ${n.scope === "rule" ? "an-note-scope--rule" : ""}`}>
                   {n.scope === "rule" ? "⚖ rule" : n.scope}</span>
+                {(n as any).needsHuman && (
+                  <span className="status-pill bad"
+                    title="the weekly rule audit found rules pulling in opposite directions — keep one, delete the other, or keep both deliberately, then tick ✓">
+                    needs your call
+                  </span>
+                )}
                 <span className="muted">{n.author}{n.createdAt ? ` · ${timeAgo(n.createdAt)}` : ""}</span>
                 {n.runId && <button className="link-btn" title="open the run that saved this note"
                   onClick={() => useStore.getState().openAnalystRun(n.runId!)}>run</button>}
+                {(n as any).needsHuman && (
+                  <button className="link-btn" title="I've decided — clear the flag (journaled)"
+                    onClick={async () => { try { await api.resolveTipNote(n.id); load(); } catch (e: any) { toast("error", e.message); } }}>✓</button>
+                )}
                 <button className="an-note-del" title="delete this note" onClick={() => del(n.id)}>×</button>
               </div>
               <div className="an-note-text">{n.text}</div>

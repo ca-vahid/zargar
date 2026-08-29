@@ -110,6 +110,8 @@ export const api = {
     request<import("../types").TipNote>("POST", "/api/tip/notes", { scope, text }),
   deleteTipNote: (id: string) =>
     request<{ ok: boolean }>("DELETE", `/api/tip/notes/${id}`),
+  resolveTipNote: (id: string) =>
+    request<{ ok: boolean }>("POST", `/api/tip/notes/${id}/resolve`),
   // --- flow technique ---
   flowDays: (limit = 10) =>
     request<import("../types").FlowDaySummary[]>("GET", `/api/flow/days?limit=${limit}`),

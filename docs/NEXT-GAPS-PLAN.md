@@ -44,22 +44,22 @@ real-money gate (§4), not to a settings drift.
 *Rules only accrete (`tip_notes` scope `rule`); nothing merges, expires or
 audits them. ANALYST.md §6/§8 — the one open charter item.*
 
-- [ ] **A8.1** — a `rule_audit` run kind (weekly, scheduler; knob
+- [x] **A8.1** — a `rule_audit` run kind (weekly, scheduler; knob
   `techniques.tip.rule_audit_enabled` + `rule_audit_day`): reads ALL rules +
   the last N retros/lane grades, and returns a consolidation: merges
   (duplicates → one refined rule), expiries (no longer supported by
   evidence), contradictions (kept, surfaced to the human — never
   self-resolved).
-- [ ] **A8.2** — rule lifecycle on `tip_notes`: an audit SUPERSEDES a rule by
+- [x] **A8.2** — rule lifecycle on `tip_notes`: an audit SUPERSEDES a rule by
   writing the refined one and marking the old (`supersededBy`), never
   deleting — the journal stays the history; the "YOUR TRADING RULES" injection
   serves only live rules.
-- [ ] **A8.3** — contradictions surface on Tips → Analyst → Knowledge with a
+- [x] **A8.3** — contradictions surface on Tips → Analyst → Knowledge with a
   "needs your call" badge; resolving is a human click (keep A / keep B / keep
   both), journaled.
-- [ ] **A8.4** — every rule must cite evidence (position/run/lane-grade id);
+- [x] **A8.4** — every rule must cite evidence (position/run/lane-grade id);
   the audit flags evidence-free rules for expiry first.
-- [ ] **A8.5** — tests: audit run consolidates a seeded duplicate pair,
+- [x] **A8.5** — tests: audit run consolidates a seeded duplicate pair,
   expires an evidence-free rule, keeps + surfaces a contradiction; the run
   injection excludes superseded rules.
 
