@@ -567,6 +567,25 @@ async def test_sweep_many_symbols_run_in_parallel_thread_mode(rig):
     assert len(got["rows"]) == 16 and [r["symbol"] for r in got["rows"]] == sorted(r["symbol"] for r in got["rows"])
 
 
+async def test_variant_sweep_overrides_are_applied_recorded_and_validated(rig):
+    # EVOLUTION-PLAN phase 1: a variant sweep = threshold overlay via overrides.
+    # The overlay must reach the thresholds (snapshot + sweepVersion change) and
+    # be recorded in params; a typo'd knob must fail loudly, not run a
+    # baseline-identical "variant".
+    await rig.eng.settings.set("technique.walkforward.workers", 1, journal=False)
+    base = await rig.svc.start_sweep(["TEST"], rig.days[1].isoformat(), rig.days[2].isoformat(), wait=True)
+    var = await rig.svc.start_sweep(["TEST"], rig.days[1].isoformat(), rig.days[2].isoformat(),
+                                    overrides={"min_risk_reward": 1.5}, wait=True)
+    assert var["status"] == "done", var.get("error")
+    assert var["params"]["overrides"] == {"min_risk_reward": 1.5}
+    assert var["params"]["thresholds"]["min_risk_reward"] == 1.5
+    assert base["params"]["thresholds"]["min_risk_reward"] != 1.5
+    assert var["params"]["sweepVersion"] != base["params"]["sweepVersion"]
+    with pytest.raises(ValueError, match="unknown threshold"):
+        await rig.svc.start_sweep(["TEST"], rig.days[1].isoformat(), rig.days[2].isoformat(),
+                                  overrides={"min_risk_rewrad": 2.0})
+
+
 def test_last_completed_session_rolls_back_over_weekends_and_open_sessions():
     from zargar.technique.walkforward import last_completed_session
     # Sunday noon ET -> Friday; Thursday 10:00 ET (session open) -> Wednesday; Thursday 17:00 -> Thursday

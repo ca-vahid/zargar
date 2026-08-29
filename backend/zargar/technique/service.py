@@ -1305,16 +1305,37 @@ class TechniqueService:
     # ------------------------------------------------------------ walk-forward sweeps
     async def start_sweep(self, symbols: list[str], start: str, end: str, *, structure_tfs: list[str] | None = None,
                           trigger_tf: str | None = None, include_invalid: bool = False, label: str = "",
-                          wait: bool = False) -> dict:
+                          overrides: dict | None = None, wait: bool = False) -> dict:
         symbols = [str(s).upper().strip() for s in symbols if str(s).strip()]
         if not symbols:
             raise ValueError("at least one symbol")
         stf = list(structure_tfs or self.structure_tfs())
         ttf = trigger_tf or self.trigger_tf()
         t = self.thresholds()
+        if overrides:
+            # variant sweeps (EVOLUTION-PLAN phase 1): a named overlay on the live
+            # thresholds, validated loudly — a typo'd knob must not silently
+            # produce a baseline-identical "variant"
+            valid = {f.name: getattr(t, f.name) for f in dataclasses.fields(Thresholds)}
+            bad = sorted(set(overrides) - set(valid))
+            if bad:
+                raise ValueError(f"unknown threshold override(s): {', '.join(bad)}")
+            coerced = {}
+            for k, v in overrides.items():
+                cur = valid[k]
+                if isinstance(cur, bool):
+                    if not isinstance(v, bool):
+                        raise ValueError(f"override {k} expects true/false, got {v!r}")
+                    coerced[k] = v
+                elif isinstance(cur, (tuple, list)):
+                    coerced[k] = tuple(v) if isinstance(v, (list, tuple)) else (v,)
+                else:
+                    coerced[k] = type(cur)(v)
+            t = dataclasses.replace(t, **coerced)
         row = TechniqueSweep(id=new_id(), label=label or f"{len(symbols)} symbols {start}..{end}", symbols=symbols,
                              start=start, end=end, status="running",
                              params={"structureTfs": stf, "triggerTf": ttf, "includeInvalid": include_invalid,
+                                     **({"overrides": overrides} if overrides else {}),
                                      "sweepVersion": sweep_version(thresholds=t, structure_tfs=stf, trigger_tf=ttf),
                                      "techniqueSource": technique_source_version(),
                                      "thresholds": provenance_snapshot(thresholds=t, settings_all=self.engine.settings.all(),
