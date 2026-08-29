@@ -567,6 +567,34 @@ async def test_mirror_downloads_image_bytes(app_client, tmp_path):
     assert (await client.get("/api/tip/discord/media/nope/0")).status_code == 404
 
 
+async def test_adhoc_analysis_of_mirrored_message(app_client):
+    # any past mirrored message can be run through the pipeline on demand;
+    # the outcome lands in the same process-result store the banner polls
+    client, eng = app_client
+    from zargar.models import DiscordMessage
+    async with eng.sf() as session:
+        session.add(DiscordMessage(id="adhoc1", channel_id="42", source_name="TestLetter",
+                                   author="Clanker [bot]", is_bot=True,
+                                   text="OPEN: NVDA 190C 10/17 Exp. At 4.20"))
+        await session.commit()
+    r = await client.post("/api/tip/discord/analyze-message", json={"messageId": "adhoc1"})
+    assert r.status_code == 200 and r.json()["key"] == "msg:adhoc1"
+
+    async def landed():
+        out = (await client.get("/api/tip/discord/process-result",
+                                params={"channelId": "msg:adhoc1"})).json()
+        return out["result"] is not None
+    await wait_for(landed)
+    out = (await client.get("/api/tip/discord/process-result",
+                            params={"channelId": "msg:adhoc1"})).json()["result"]
+    # no LLM key in tests: the pipeline reports honestly instead of going silent
+    assert out["author"].startswith("Clanker")
+    assert out.get("note") or out.get("error") or out.get("signals") is not None
+    # unknown message = 404, no ghost banner
+    r = await client.post("/api/tip/discord/analyze-message", json={"messageId": "nope"})
+    assert r.status_code == 404
+
+
 async def test_mirror_media_catchup_rescues_url_only_rows(app_client, tmp_path):
     # rows mirrored before the local store existed (URL-only) get their bytes
     # downloaded by the startup catch-up sweep — while the links still live

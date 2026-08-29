@@ -284,6 +284,54 @@ class SignalService:
         """Spawn the catch-up as a background task (called at startup)."""
         asyncio.create_task(self.discord_media_catchup(), name="discord-media-catchup")
 
+    async def analyze_mirrored_message(self, message_id: str) -> None:
+        """Ad-hoc analysis of one MIRRORED message (user, 2026-08-29: trigger a
+        tips analysis on any past message to fine-tune the process). Runs the
+        normal pipeline — extraction → verification → analyst; a stale message
+        replays on history like any old tip. Progress/outcome land in the
+        process-result store under key `msg:<id>` (same banner as '▶ tip')."""
+        key = f"msg:{message_id}"
+        m = await self.discord_get_message(message_id)
+        if m is None:
+            self.discord_set_process_result(key, {"ok": False, "error": "message not in the mirror"})
+            return
+        image = media_type = None
+        if m.get("images"):
+            got = await self.discord_media_bytes(message_id, 0)
+            if got is not None:
+                image, media_type = got[0], got[1]
+        try:
+            out = await self.ingest_manual(
+                m.get("text") or "", source_name=m.get("source") or "auto",
+                subject=f"mirror: {m.get('author') or '?'} @ {(m.get('postedAt') or '')[:16]}",
+                image=image, image_media_type=media_type or "image/png")
+        except Exception as exc:
+            log.exception("ad-hoc mirror analysis failed for %s", message_id)
+            self.discord_set_process_result(key, {"ok": False, "error": str(exc)[:300]})
+            return
+        sigs = []
+        for item in (out.get("signals") or []):
+            srow = item.get("signal") or {}
+            sigs.append({"id": srow.get("id"), "ticker": srow.get("ticker"),
+                         "status": srow.get("status"),
+                         "analystRunId": ((srow.get("extraction") or {})
+                                          .get("analyst") or {}).get("runId")})
+        note = out.get("note") or ""
+        if not sigs and not note:
+            note = ("the message did not extract as a trade tip "
+                    "(or it duplicated a tip already on the desk)")
+        self.discord_set_process_result(key, {
+            "ok": True, "signals": sigs, "note": note,
+            "author": m.get("author") or "", "text": (m.get("text") or "")[:200]})
+
+    def start_mirror_analysis(self, message_id: str) -> str:
+        """Spawn the ad-hoc analysis; returns the process-result key to poll."""
+        key = f"msg:{message_id}"
+        self._discord_process_results.pop(key, None)
+        asyncio.create_task(self.analyze_mirrored_message(message_id),
+                            name=f"mirror-analyze-{message_id[:8]}")
+        return key
+
     async def discord_get_message(self, message_id: str) -> dict | None:
         from ..models import DiscordMessage
         async with self.engine.sf() as session:

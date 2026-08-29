@@ -86,6 +86,8 @@ export const api = {
     request<{ ok: boolean }>("POST", "/api/tip/discord/process-last", { channelId }),
   discordProcessResult: (channelId: string) =>
     request<{ result: any }>("GET", `/api/tip/discord/process-result?channelId=${encodeURIComponent(channelId)}`),
+  discordAnalyzeMessage: (messageId: string) =>
+    request<{ ok: boolean; key: string }>("POST", "/api/tip/discord/analyze-message", { messageId }),
   discordMessages: (p: { source?: string; contains?: string; before?: string; limit?: number }) => {
     const q = new URLSearchParams();
     if (p.source) q.set("source", p.source);

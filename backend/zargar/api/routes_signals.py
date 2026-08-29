@@ -201,6 +201,19 @@ def build_signal_routes(app, eng, auth, config) -> None:
         """Per-channel mirror coverage — drives the gateway's onboarding backfill."""
         return await eng.signals_service.discord_mirror_stats()
 
+    class AnalyzeMessageBody(BaseModel):
+        messageId: str = ""
+
+    @app.post("/api/tip/discord/analyze-message", dependencies=[auth])
+    async def discord_analyze_message(body: AnalyzeMessageBody):
+        """Ad-hoc: run the tip pipeline on one MIRRORED message (fine-tuning).
+        Returns the process-result key the UI polls (same banner as ▶ tip)."""
+        if not body.messageId:
+            raise HTTPException(status_code=400, detail="messageId required")
+        if await eng.signals_service.discord_get_message(body.messageId) is None:
+            raise HTTPException(status_code=404, detail="message not in the mirror")
+        return {"ok": True, "key": eng.signals_service.start_mirror_analysis(body.messageId)}
+
     @app.get("/api/tip/discord/media/{message_id}/{index}", dependencies=[auth])
     async def discord_media(message_id: str, index: int = 0):
         """A mirrored image, served from OUR store (CDN links expire)."""

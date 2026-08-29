@@ -869,6 +869,18 @@ function DiscordSourcesPanel() {
     analyst reads is actually in OUR database. Newest at the bottom, "load
     older" prepends, search filters server-side. */
 function MirrorViewer() {
+  const toast = useStore((s) => s.toast);
+  const setTipProcess = useStore((s) => s.setTipProcess);
+  const setPageTab = useStore((s) => s.setPageTab);
+  const analyze = async (m: import("../types").DiscordMirrorMessage) => {
+    try {
+      const { key } = await api.discordAnalyzeMessage(m.id);
+      // same progress banner as "▶ tip" — it polls the key until the outcome lands
+      setTipProcess({ channelId: key,
+        label: `${m.author} · ${(m.postedAt ?? "").slice(0, 16)}`, startedAt: Date.now() });
+      setPageTab("analyst");
+    } catch (e: any) { toast("error", e.message); }
+  };
   const watchState = useAsync(() => api.discordWatch(), []);
   const sources = [...new Set((watchState.data?.watch ?? [])
     .map((w) => w.sourceName).filter(Boolean))];
@@ -945,6 +957,10 @@ function MirrorViewer() {
                         {m.isBot && <span className="status-pill dim">bot</span>}
                         {!source && m.source && <span className="mir-chan">{m.source}</span>}
                         <span className="muted">{(m.postedAt ?? "").slice(11, 16)}</span>
+                        <button className="disc-act" onClick={() => analyze(m)}
+                          title="Analyse THIS message as a tip (ad-hoc — extraction + analyst; stale messages replay on history)">
+                          ▶
+                        </button>
                       </div>
                       <div className="mir-text">{m.text || <span className="muted">(no text)</span>}</div>
                       {m.images.length > 0 && (
