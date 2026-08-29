@@ -163,7 +163,10 @@ async def open_spread(eng, *, portfolio_id: str, underlying: str, direction: str
             raise ValueError("long leg did not fill in time — spread abandoned")
         await asyncio.sleep(0.5)
 
-    # ---- leg 2: the short leg (covered now); rollback the long if it dies
+    # ---- leg 2: the short leg (covered now); rollback the long if it dies.
+    # The rollback is VERIFIED (ARM-GAPS B3): retried, its fill awaited, and a
+    # final failure alerts + adopts the naked long as an attention position —
+    # a naked leg must never exist outside the PositionManager's view.
     o2 = await eng.orders.place(OrderIntent(
         portfolio_id=portfolio_id, symbol=short_leg["symbol"], sec_type="OPT",
         side="SELL", qty=qty, order_type="LMT",
@@ -171,12 +174,13 @@ async def open_spread(eng, *, portfolio_id: str, underlying: str, direction: str
         tif="DAY", source="technique", technique_id="tip", tags=tags,
         signal_id=signal_id))
     if o2.get("status") in ("REJECTED", "REJECTED_RISK", "ERROR"):
-        await eng.orders.place(OrderIntent(                # roll the long back
-            portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
-            side="SELL", qty=qty, order_type="MKT", tif="DAY", source="technique",
-            technique_id="tip", tags=tags, reduce_only=True))
-        raise ValueError(f"short leg rejected ({o2.get('rejectReason') or o2.get('status')}) "
-                         f"— long leg rolled back at market")
+        why = f"short leg rejected ({o2.get('rejectReason') or o2.get('status')})"
+        await _unwind_or_adopt_naked_long(
+            eng, portfolio_id=portfolio_id, underlying=underlying, direction=direction,
+            long_leg=long_leg, qty=qty, fill=float(row1.get("avgFillPrice") or 0),
+            entry_order_id=o1["id"], tags=tags, gid=gid, why=why,
+            signal_id=signal_id, analyst_run_id=analyst_run_id)
+        raise ValueError(f"{why} — long leg unwound (or adopted for attention)")
     deadline = asyncio.get_event_loop().time() + 90
     while True:
         row2 = await _order_row(eng, o2["id"])
@@ -186,11 +190,13 @@ async def open_spread(eng, *, portfolio_id: str, underlying: str, direction: str
                 or asyncio.get_event_loop().time() > deadline:
             with contextlib_suppress():
                 await eng.orders.cancel(o2["id"])
-            await eng.orders.place(OrderIntent(
-                portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
-                side="SELL", qty=qty, order_type="MKT", tif="DAY", source="technique",
-                technique_id="tip", tags=tags, reduce_only=True))
-            raise ValueError("short leg did not fill — long leg rolled back at market")
+            why = "short leg did not fill"
+            await _unwind_or_adopt_naked_long(
+                eng, portfolio_id=portfolio_id, underlying=underlying, direction=direction,
+                long_leg=long_leg, qty=qty, fill=float(row1.get("avgFillPrice") or 0),
+                entry_order_id=o1["id"], tags=tags, gid=gid, why=why,
+                signal_id=signal_id, analyst_run_id=analyst_run_id)
+            raise ValueError(f"{why} — long leg unwound (or adopted for attention)")
         await asyncio.sleep(0.5)
 
     mgr = eng.position_manager
@@ -301,6 +307,90 @@ async def resume_pending_adoptions(eng, *, days: float = 5.0) -> int:
     return n
 
 
+async def _unwind_or_adopt_naked_long(eng, *, portfolio_id: str, underlying: str,
+                                      direction: str, long_leg: dict, qty: int,
+                                      fill: float, entry_order_id: str, tags: list[str],
+                                      gid: str, why: str, signal_id: str | None,
+                                      analyst_run_id: str | None) -> bool:
+    """The spread's short leg died: sell the long back at market, VERIFYING the
+    fill and retrying (ARM-GAPS B3). If the rollback itself fails, journal a
+    dedicated event, alert every channel, and adopt the naked long as an
+    `attention` managed position with an emergency policy — never leave a filled
+    leg invisible. Returns True when the long was successfully unwound."""
+    from ... import bus as topics
+    from ... import events as ev
+    from ...orders import OrderIntent
+
+    for attempt in range(3):
+        try:
+            o = await eng.orders.place(OrderIntent(
+                portfolio_id=portfolio_id, symbol=long_leg["symbol"], sec_type="OPT",
+                side="SELL", qty=qty, order_type="MKT", tif="DAY", source="technique",
+                technique_id="tip", tags=tags, reduce_only=True))
+        except Exception as exc:
+            log.warning("spread rollback attempt %d errored: %s", attempt + 1, exc)
+            await asyncio.sleep(1.0 * (attempt + 1))
+            continue
+        if o.get("status") not in ("REJECTED", "REJECTED_RISK", "ERROR"):
+            deadline = asyncio.get_event_loop().time() + 30
+            while asyncio.get_event_loop().time() < deadline:
+                row = await _order_row(eng, o["id"])
+                if (row or {}).get("status") == "FILLED":
+                    log.info("spread %s rollback filled (%s)", gid, why)
+                    return True
+                if (row or {}).get("status") in ("CANCELLED", "REJECTED",
+                                                 "REJECTED_RISK", "EXPIRED", "ERROR"):
+                    break
+                await asyncio.sleep(0.5)
+        await asyncio.sleep(1.0 * (attempt + 1))
+
+    # ---- rollback failed: loud, and the leg goes under management
+    text = (f"{underlying} spread {gid}: {why} AND the long-leg rollback failed — "
+            f"holding {qty} x {long_leg['symbol']} naked-long; adopted for ATTENTION, "
+            f"verify at the broker")
+    with contextlib_suppress():
+        await eng.journal.append(ev.TIP_SPREAD_LEG_FAILED, {
+            "spread": gid, "underlying": underlying, "why": why,
+            "legSymbol": long_leg["symbol"], "qty": qty, "portfolioId": portfolio_id,
+            **({"signalId": signal_id} if signal_id else {})},
+            aggregate_type="signal", aggregate_id=signal_id or gid,
+            portfolio_id=portfolio_id)
+    with contextlib_suppress():
+        eng.bus.publish(topics.TECHNIQUE, {"kind": "alert", "level": "critical",
+                                           "text": text, "symbol": underlying})
+    tg = getattr(eng, "telegram", None)
+    if tg is not None:
+        with contextlib_suppress():
+            await tg.send(f"⚠ {text}")
+    mgr = getattr(eng, "position_manager", None)
+    if mgr is not None:
+        with contextlib_suppress():
+            pos = await mgr.adopt({
+                "portfolioId": portfolio_id, "symbol": underlying,
+                "direction": direction, "techniqueId": "tip",
+                "tags": tags + ["exit:default", "spread-orphan"],
+                "runId": analyst_run_id,
+                "entry": float(long_leg.get("strike") or 0) or 1.0,
+                "risk": max(fill, 0.01),
+                "legs": [{"symbol": long_leg["symbol"], "secType": "OPT", "qty": qty,
+                          "avgFill": fill, "multiplier": 100.0,
+                          "entryOrderId": entry_order_id, "origin": "adoption"}],
+                "overnight": "app_managed", "overnightAck": True,
+                "policy": {"timeframe": "15m",
+                           "stop": {"kind": "none",
+                                    "guard": "orphaned spread long — max loss is the debit; "
+                                             "premium stop + tight time box"},
+                           "premium_stop_pct": 50.0, "time_stop_sessions": 1,
+                           "dte_close": max(1, int(eng.settings.get("execution.min_dte", 1)))},
+                "guardAccepted": True,
+            })
+            p = mgr.get(pos["id"])
+            if p is not None:
+                p.status = "attention"
+                p.attention.append(text)
+    return False
+
+
 async def _order_row(eng, order_id: str) -> dict | None:
     from ...models import Order
     async with eng.sf() as session:
@@ -330,22 +420,44 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         except Exception:
             log.exception("journal failed for proposal %s", pid)
 
-    # ---- wait for the fill (sim fills in ms; a live LMT may rest a while)
+    # ---- wait for the fill (sim fills in ms; a live LMT may rest a while).
+    # A PARTIAL fill is real money (ARM-GAPS B1): when the order goes terminal —
+    # or the wait times out — with filled_qty > 0, the filled contracts are
+    # adopted and the resting remainder is CANCELLED, never abandoned unmanaged.
     deadline = asyncio.get_event_loop().time() + FILL_WAIT_S
     row = None
+    partial = False
     while True:
         row = await _order_row(eng, oid)
         st = (row or {}).get("status") or ""
+        filled = float((row or {}).get("filledQty") or 0)
         if st == "FILLED":
             break
         if st in ("CANCELLED", "REJECTED", "REJECTED_RISK", "EXPIRED", "ERROR"):
+            if filled > 0:
+                partial = True
+                log.warning("proposal %s order %s ended %s with %g filled — adopting the partial",
+                            pid, oid, st, filled)
+                break
             log.info("proposal %s order %s ended %s — nothing to manage", pid, oid, st)
             await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": f"order {st}"})
             return None
         if asyncio.get_event_loop().time() > deadline:
-            log.warning("proposal %s order %s unfilled after %.0fh — not adopted",
+            import contextlib as _ctx
+            with _ctx.suppress(Exception):
+                await eng.orders.cancel(oid)
+            await asyncio.sleep(POLL_S)                 # let the cancel settle
+            row = await _order_row(eng, oid) or row
+            filled = float((row or {}).get("filledQty") or 0)
+            if filled > 0:
+                partial = True
+                log.warning("proposal %s order %s timed out with %g filled — remainder "
+                            "cancelled, adopting the partial", pid, oid, filled)
+                break
+            log.warning("proposal %s order %s unfilled after %.0fh — cancelled, not adopted",
                         pid, oid, FILL_WAIT_S / 3600)
-            await note(ev.TIP_POSITION_NOT_ADOPTED, {"reason": "fill wait timed out"})
+            await note(ev.TIP_POSITION_NOT_ADOPTED,
+                       {"reason": "fill wait timed out", "cancelledResting": True})
             return None
         await asyncio.sleep(POLL_S)
 
@@ -420,7 +532,10 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         return pos
     await note(ev.TIP_POSITION_ADOPTED,
                {"positionId": pos["id"], "policy": policy,
-                "exitPlan": plan, "runId": spec["runId"]})
-    log.info("proposal %s adopted as managed position %s (%s, %s)",
-             pid, pos["id"], underlying, "OPT" if is_opt else "STK")
+                "exitPlan": plan, "runId": spec["runId"],
+                **({"partial": True, "filled": qty,
+                    "ordered": float(proposal.get("qty") or 0)} if partial else {})})
+    log.info("proposal %s adopted as managed position %s (%s, %s)%s",
+             pid, pos["id"], underlying, "OPT" if is_opt else "STK",
+             " [partial]" if partial else "")
     return pos

@@ -169,6 +169,9 @@ class Trade:
     multiplier: float = 1.0              # 100 for options
     single_exit: str = "tp2"             # options with < 3 contracts: exit everything at this target
     direction: str = "long"              # long (call) | short (put) — the underlying idea's side
+    # a durable-position handoff has claimed this trade's fill (ARM-GAPS B5):
+    # the session exit machinery must not touch it while the adopt is in flight
+    handoff_pending: bool = False
 
     @property
     def open(self) -> bool:
@@ -2220,6 +2223,22 @@ class PlanRunner(SessionListener):
             qty = await self._size(ap, trade)
             if frac < 1.0:
                 qty = float(max(1, int(qty * frac))) if qty >= 1 else qty
+            if cfg.premium_budget > 0 and trade.entry > 0:
+                # the plan's dollar budget survives the shares fallback
+                # (ARM-GAPS B4): a tip whose option was unbuyable must not become
+                # a risk-%-sized share position several times its budget
+                afford = int(cfg.premium_budget // max(trade.entry, 0.01))
+                if afford < 1:
+                    trade.status = "skipped"
+                    trade.reason = (f"the ${cfg.premium_budget:,.0f} plan budget cannot buy one share "
+                                    f"at {trade.entry:.2f} — not sent")
+                    self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+                    return
+                if qty > afford:
+                    self._log(ap, "sized",
+                              f"{trade.trigger_id}: shares capped {qty:g} -> {afford} by the "
+                              f"${cfg.premium_budget:,.0f} plan budget", trigger=trade.trigger_id)
+                    qty = float(afford)
             if qty < 1:
                 trade.status = "skipped"
                 trade.reason = "size rounds to 0 shares at this risk % — not sent"
@@ -2305,6 +2324,11 @@ class PlanRunner(SessionListener):
         within a couple of bars (a stale bid in a falling market) is cancelled and
         re-sent at market so a stop can never sit un-filled while the trade bleeds."""
         if not journal:
+            return
+        if tr.handoff_pending:
+            # the durable manager is claiming this fill (ARM-GAPS B5): no session
+            # exit may race the adopt — the handoff either pops the trade or
+            # clears the flag on failure, and the flatten resumes next bar
             return
         tr.single_exit = ap.config.single_contract_exit
         # 1) re-price a stuck working exit before deciding anything new

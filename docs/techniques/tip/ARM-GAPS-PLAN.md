@@ -91,32 +91,32 @@ shares fallback ignores the tip budget (`planrunner.py:1869-1876`), and the
 fill→handoff→flatten sequence has no interlock (`runner.py:462-474` vs
 `exits.py:50-53`).*
 
-- [ ] **B1 — adopt partial fills.** `adopt_when_filled` (and
+- [x] **B1 — adopt partial fills.** `adopt_when_filled` (and
   `resume_pending_adoptions`) treats `PARTIALLY_FILLED` as adoptable: when the
   order goes terminal (or the 4h timeout fires) with `filled_qty > 0`, adopt
   the filled portion with the analyst's policy and **cancel the resting
   remainder**; journal `TIP_POSITION_ADOPTED {partial: true, filled, ordered}`.
   The timeout branch cancels the resting order instead of abandoning it.
-- [ ] **B2 — armed partial fills hand off too.** `_handoff_when_filled` accepts
+- [x] **B2 — armed partial fills hand off too.** `_handoff_when_filled` accepts
   a partial: at session end, hand off the filled quantity (multi-day thesis
   keeps living) and cancel the remainder — instead of today's flatten of the
   whole position (`runner.py:469-478`).
-- [ ] **B3 — spread rollback is verified and loud.** `open_spread`'s rollback
+- [x] **B3 — spread rollback is verified and loud.** `open_spread`'s rollback
   sell: await the fill, retry (market, ×N with backoff), and on final failure
   journal a dedicated event, fire the runner-style alert (journal + WS toast +
   Telegram), and adopt the naked long as an `attention` managed position with
   an emergency exit policy — a naked leg must never exist outside the
   PositionManager's view. The shadow-book fallback path journals its downgrade
   instead of swallowing it (`service.py:1216-1220`).
-- [ ] **B4 — the shares fallback keeps the budget.** When an option tip falls
+- [x] **B4 — the shares fallback keeps the budget.** When an option tip falls
   back to shares, qty is additionally capped so notional ≤ the plan's
   `premiumBudget` (journaled when the cap binds). No tip expression may exceed
   the tip's budget by construction.
-- [ ] **B5 — fill→handoff→flatten interlock.** On entry fill, mark the trade
+- [x] **B5 — fill→handoff→flatten interlock.** On entry fill, mark the trade
   `handoff_pending` before `adopt` starts; `_manage`/`plan_exit` skip
   handoff-pending trades; `_handoff` re-checks the trade wasn't already exited
   before adopting. Kills the 15:57 double-sell/phantom-position race.
-- [ ] **B6 — tests.** Partial adopt + remainder cancel (proposal and armed
+- [x] **B6 — tests.** Partial adopt + remainder cancel (proposal and armed
   lanes); rollback retry then alert + attention-position on forced failure;
   budget-capped fallback qty; the flatten race with a fill landing on the bar
   boundary (chaos-suite style).
@@ -355,3 +355,33 @@ green at every merge.
   exhaustion expiring plan+signal, boot-roll restore, proposal-mode fire mints
   a proposal, gapped_past revival); EM restore suite unchanged and green
   (80 passed across tip/arming/signals/summary).
+
+## Implementation notes — Cluster B (landed 2026-08-29)
+
+- **B1**: `adopt_when_filled` adopts a terminal-or-timed-out order's partial
+  fill (journal `TipPositionAdopted {partial, filled, ordered}`); the timeout
+  branch cancels the resting order in BOTH cases (previously it could fill
+  later with zero adoption). `resume_pending_adoptions` needs no change — it
+  re-enters the same loop.
+- **B2**: `_handoff_when_filled` hands off a partial on a terminal status and
+  on the 10-min timeout (cancelling the remainder) — a multi-day thesis is no
+  longer flattened whole because one contract didn't fill.
+- **B3**: `_unwind_or_adopt_naked_long` — the spread rollback is placed with
+  retries (×3, backoff), its FILL is verified (30s), and a final failure
+  journals `TipSpreadLegFailed`, alerts (WS toast + Telegram) and adopts the
+  naked long as an ATTENTION managed position with an emergency policy
+  (premium stop 50%, 1-session time box). The shadow-book spread downgrade is
+  journaled (`TipLaneDecided {downgrade}`), not swallowed.
+- **B4**: the shares fallback (and any share-sized plan carrying
+  `premiumBudget`) caps qty at budget/entry; a budget that can't buy one share
+  skips with a reason.
+- **B5**: `Trade.handoff_pending` — set before the adopt, cleared on failure;
+  `_manage` skips flagged trades (no flatten/stop race); `_handoff` subtracts
+  already-exited qty and aborts adoption when the session machinery got there
+  first. Flag is process-local (a restart mid-adopt falls back to
+  session-scoped handling — the pre-existing conservative path).
+- **B6**: five tests in `test_tip_runner.py` (terminal partial adopt, timeout
+  partial + cancel spy, budget-capped fallback via a dead chain e2e, flatten
+  blocked by handoff_pending, forced double-rejection spread → attention
+  position). Note: the forced-failure paths can only be exercised on the sim
+  rig — a live venue cannot be made to reject a rollback harmlessly.
