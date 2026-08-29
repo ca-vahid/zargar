@@ -74,6 +74,14 @@ runtime ones to `execution.*`).
   measurable (the counterfactual). Post-extraction check for every runner change.
 - **2026-08-27 · The fill can never be better than the level** (fill ≥ level guard in the tracker
   for breaks; mirrored for shorts).
+- **2026-08-29 · Every PlanRunner must register in `engine.plan_runners`** (the phantom armed tip).
+  The armed HUB — `/api/technique/armed` + summary/detail/exit/mode/pause/resume/stop-all, the
+  `/api/health` restart-guard count — aggregates `engine.plan_runners`; the WS deltas already come
+  from every runner (`PlanRunner._publish`). The tip runner wasn't registered, so its armed plan
+  arrived by WS and was erased by every REST refresh: the Armed badge said 1 while the page said 0,
+  and a restart guard would not have counted it. A new technique's attach function must register
+  its runner in `engine.plan_runners` (and `engine.techniques`, where a runner is its own `.armer`)
+  or its plans are invisible to the hub and unprotected across restarts.
 
 ## 3. Open questions the shared runtime is collecting data on
 
