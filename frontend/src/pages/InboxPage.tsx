@@ -1218,6 +1218,26 @@ function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => voi
   );
 }
 
+/** "So what happened?" — one plain sentence per verdict, because a WATCH chip
+    alone doesn't say whether anything was asked of the user or ordered. */
+function outcomeLine(run: AnalystRun): string | null {
+  if (run.status === "running") return null;
+  if (run.status === "failed") return "The run failed — nothing was asked or ordered.";
+  const v = run.verdict ?? "";
+  if (run.kind === "retro") {
+    return "Retro — lessons went to Knowledge (and the rulebook if the grade earned it). No orders.";
+  }
+  if (run.kind === "intake") {
+    if (v === "review") return "Bookkeeping review — nothing tradable, so the analyst reconciled the update against our notes/positions (see the play-by-play). No new tips, no orders.";
+    if (v === "no signals") return "Nothing tradable in the message — no action anywhere.";
+    return "Each tradable tip got its own appraisal run (linked above) — the verdicts and any proposals live there.";
+  }
+  if (v === "take") return "TAKE — a proposal was created: approve/reject it in the strip at the top of this page (an auto-mode source self-approves through the risk gate). On the fill it becomes a managed position running the analyst's exit plan.";
+  if (v === "watch") return "WATCH — right idea, wrong moment: nothing was ordered and nothing needs your approval. The tip stays on the Tips tab (arm it there if you want the level watched); the shadow books still track the source's call.";
+  if (v === "skip") return "SKIP — the analyst passed: nothing was ordered, nothing needs you. The shadow books may still record it for the source's scorecard.";
+  return null;
+}
+
 function AnalystRunDetail({ id }: { id: string }) {
   const setFocus = useStore((s) => s.setAnalystFocus);
   const [run, setRun] = useState<AnalystRun | null>(null);
@@ -1267,12 +1287,30 @@ function AnalystRunDetail({ id }: { id: string }) {
           {running ? "running…" : run.verdict ?? run.status}
         </span>
         <CopyChip value={run.id} title={`analyst run ${run.id} — click to copy; quote it to review/tune`} />
+        {run.parentId && (
+          <button className="link-btn" onClick={() => useStore.getState().openAnalystRun(run.parentId!)}
+            title="the message-level intake run that spawned this appraisal">
+            ⇡ intake #{run.parentId.slice(0, 8)}
+          </button>
+        )}
         <span style={{ flex: 1 }} />
         <span className="muted" style={{ fontSize: 11 }}
           title={`Tools available: ${run.tools.join(", ")}`}>
           {run.model} · {run.tools.length} tools
         </span>
       </div>
+      {(run.children?.length ?? 0) > 0 && (
+        <div className="an-kids">
+          spawned appraisals:
+          {run.children!.map((c) => (
+            <button key={c.id} className="link-btn"
+              onClick={() => useStore.getState().openAnalystRun(c.id)}>
+              {c.ticker} → {(c.verdict ?? c.status).replace("_", " ")}
+            </button>
+          ))}
+        </div>
+      )}
+      {outcomeLine(run) && <div className="an-outcome">{outcomeLine(run)}</div>}
       <div className="an-flow-wrap" ref={scrollRef}
         onScroll={() => {
           const el = scrollRef.current;
@@ -1363,14 +1401,18 @@ function ProcessBanner() {
     let dead = false;
     const preview = (r: any) =>
       r?.author ? `Last message — ${r.author}: “${(r.text || "").slice(0, 140)}”` : undefined;
+    const isAdhoc = pending.channelId.startsWith("msg:");   // app-side, no gateway involved
     const t = setInterval(async () => {
       try {
         const { result } = await api.discordProcessResult(pending.channelId);
         if (dead) return;
+        if (result?.pending) return;                        // alive and working — keep pulsing
         if (!result) {
           if (Date.now() - pending.startedAt > 90_000) {
             setTipProcess(null);
-            setOutcome({ cls: "neg", msg: "No response from the intake — is the Discord intake window running? (scripts\\start.ps1 launches it)" });
+            setOutcome(isAdhoc
+              ? { cls: "", msg: "No progress reported — check the run list on the left; the analysis may still be streaming there." }
+              : { cls: "neg", msg: "No response from the intake — is the Discord intake window running? (scripts\\start.ps1 launches it)" });
           }
           return;
         }
@@ -1416,7 +1458,11 @@ function ProcessBanner() {
       {pending ? (
         <>
           <span className="an-dot an-dot--bar" />
-          <span>Processing the last message from <b>{pending.label}</b>… extraction + appraisal can take ~30 s.</span>
+          <span>
+            {pending.channelId.startsWith("msg:")
+              ? <>Analysing the message from <b>{pending.label}</b>… a multi-signal message spawns one appraisal run per tip and can take a few minutes — watch them appear in the list.</>
+              : <>Processing the last message from <b>{pending.label}</b>… extraction + appraisal can take ~30 s.</>}
+          </span>
         </>
       ) : (
         <>

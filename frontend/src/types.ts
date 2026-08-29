@@ -242,12 +242,15 @@ export interface AnalystStep {
 }
 export interface AnalystRunSummary {
   id: string; ticker: string; source?: string | null; status: string;
-  kind?: string;                                      // "appraise" | "intake"
+  kind?: string;                                      // "appraise" | "intake" | "retro"
   verdict?: string | null; model?: string | null; signalId?: string | null;
+  parentId?: string | null;                           // the intake run that spawned this appraisal
   traceSteps: number; createdAt?: string | null; finishedAt?: string | null;
 }
 export interface AnalystRun extends AnalystRunSummary {
   tools: string[]; trace: AnalystStep[]; opinion: any; tip: any; error?: string | null;
+  /** appraise runs this intake run spawned (one per tradable signal) */
+  children?: { id: string; ticker: string; verdict?: string | null; status: string }[];
 }
 /** Shared tips knowledge: a durable note the analyst (or the user) saved.
     Scope: "general" | "source:<name>" | "ticker:<SYM>" | "signal:<id>". */

@@ -582,6 +582,7 @@ class TipAnalystRun(Base):
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     signal_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    parent_id: Mapped[str | None] = mapped_column(String(64), index=True)  # the intake run that spawned this appraisal
     ticker: Mapped[str] = mapped_column(String(32), index=True)
     source: Mapped[str | None] = mapped_column(String(120))
     status: Mapped[str] = mapped_column(String(16), default="running", index=True)  # running|done|failed

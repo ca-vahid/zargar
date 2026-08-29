@@ -96,6 +96,7 @@ class SignalService:
         return [{"id": r.id, "ticker": r.ticker, "source": r.source, "status": r.status,
                  "kind": getattr(r, "kind", "appraise") or "appraise",
                  "verdict": r.verdict, "model": r.model, "signalId": r.signal_id,
+                 "parentId": getattr(r, "parent_id", None),
                  "traceSteps": len(r.trace or []),
                  "createdAt": r.created_at.isoformat() if r.created_at else None,
                  "finishedAt": r.finished_at.isoformat() if r.finished_at else None}
@@ -105,11 +106,18 @@ class SignalService:
         from ..models import TipAnalystRun
         async with self.engine.sf() as session:
             r = await session.get(TipAnalystRun, run_id)
+            kids = (await session.execute(
+                select(TipAnalystRun)
+                .where(TipAnalystRun.parent_id == run_id)
+                .order_by(TipAnalystRun.created_at.asc()))).scalars().all() if r else []
         if r is None:
             raise KeyError(f"analyst run {run_id} not found")
         return {"id": r.id, "ticker": r.ticker, "source": r.source, "status": r.status,
                 "kind": getattr(r, "kind", "appraise") or "appraise",
                 "verdict": r.verdict, "model": r.model, "signalId": r.signal_id,
+                "parentId": getattr(r, "parent_id", None),
+                "children": [{"id": k.id, "ticker": k.ticker, "verdict": k.verdict,
+                              "status": k.status} for k in kids],
                 "tools": r.tools or [], "trace": r.trace or [], "opinion": r.opinion or {},
                 "tip": r.tip or {}, "error": r.error,
                 "createdAt": r.created_at.isoformat() if r.created_at else None,
@@ -327,7 +335,12 @@ class SignalService:
     def start_mirror_analysis(self, message_id: str) -> str:
         """Spawn the ad-hoc analysis; returns the process-result key to poll."""
         key = f"msg:{message_id}"
-        self._discord_process_results.pop(key, None)
+        # a pending marker keeps the UI honest: the analysis is APP-side (a
+        # multi-signal message takes minutes) — never "is the intake dead?"
+        self.discord_set_process_result(key, {
+            "pending": True,
+            "note": "analysing — extraction, verification and per-signal appraisals "
+                    "can take a few minutes on a multi-signal message"})
         asyncio.create_task(self.analyze_mirrored_message(message_id),
                             name=f"mirror-analyze-{message_id[:8]}")
         return key
@@ -714,9 +727,13 @@ class SignalService:
                                        f"{' (not an explicit call)' if not s.is_actionable else ''}"
                                        for s in sigs[:8]) if sigs else
                        " Nothing resembling a trade in this message."))
-        await intake.checkpoint(
-            ticker=(f"{sigs[0].ticker.upper()} +{len(sigs) - 1}" if len(sigs) > 1
-                    else sigs[0].ticker.upper() if sigs else "no signals")[:32])
+        # the run's list title: the tickers themselves ("GOOGL · AAPL · AMZN"),
+        # not a cryptic "+2" (user, 2026-08-29)
+        names = list(dict.fromkeys(s.ticker.upper() for s in sigs))
+        label = " · ".join(names)
+        if len(label) > 30 and len(names) > 2:
+            label = " · ".join(names[:2]) + f" +{len(names) - 2}"
+        await intake.checkpoint(ticker=(label or "no signals")[:32])
 
         source_text = text
         if image is not None and result.source_transcript:
@@ -985,7 +1002,8 @@ class SignalService:
                 try:
                     from ..techniques.tip.analyst import analyze_tip
                     opinion = await analyze_tip(eng, row, verification, policy,
-                                                client=self._analyst_client)
+                                                client=self._analyst_client,
+                                                parent_run_id=(intake.id if intake else None))
                 except Exception:                  # never block the pipeline
                     log.exception("tip analyst crashed for %s", row.id)
                     opinion = None

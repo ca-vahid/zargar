@@ -628,7 +628,7 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
 
 
 async def analyze_tip(eng, signal_row, verification: dict, policy, *,
-                      client=None) -> dict | None:
+                      client=None, parent_run_id: str | None = None) -> dict | None:
     """Appraise one tip. Persists a full TipAnalystRun (trace + tools + opinion),
     streams the play-by-play live, and returns the opinion dict (stored on
     extraction.analyst) or None on failure — strictly advisory."""
@@ -663,6 +663,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     async with eng.sf() as session:            # create the run row (visible immediately)
         session.add(TipAnalystRun(
             id=run_id, signal_id=getattr(signal_row, "id", None),
+            parent_id=parent_run_id,
             ticker=signal_row.ticker, source=signal_row.source_name,
             status="running", model=model, tools=tool_names, tip=tip))
         await session.commit()

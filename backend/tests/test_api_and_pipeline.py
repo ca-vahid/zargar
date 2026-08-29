@@ -567,6 +567,25 @@ async def test_mirror_downloads_image_bytes(app_client, tmp_path):
     assert (await client.get("/api/tip/discord/media/nope/0")).status_code == 404
 
 
+async def test_analyst_run_parent_child_linkage(app_client):
+    # an intake run and the appraisals it spawned link both ways in the API
+    client, eng = app_client
+    from zargar.models import TipAnalystRun
+    async with eng.sf() as session:
+        session.add(TipAnalystRun(id="par1", ticker="GOOGL · AAPL", source="eva",
+                                  status="done", kind="intake", verdict="1 tip"))
+        session.add(TipAnalystRun(id="kid1", ticker="GOOGL", source="eva",
+                                  status="done", verdict="watch", parent_id="par1"))
+        await session.commit()
+    run = (await client.get("/api/tip/analyst/runs/par1")).json()
+    assert run["children"] == [{"id": "kid1", "ticker": "GOOGL",
+                                "verdict": "watch", "status": "done"}]
+    kid = (await client.get("/api/tip/analyst/runs/kid1")).json()
+    assert kid["parentId"] == "par1"
+    rows = (await client.get("/api/tip/analyst/runs")).json()
+    assert next(r for r in rows if r["id"] == "kid1")["parentId"] == "par1"
+
+
 async def test_adhoc_analysis_of_mirrored_message(app_client):
     # any past mirrored message can be run through the pipeline on demand;
     # the outcome lands in the same process-result store the banner polls
@@ -583,7 +602,9 @@ async def test_adhoc_analysis_of_mirrored_message(app_client):
     async def landed():
         out = (await client.get("/api/tip/discord/process-result",
                                 params={"channelId": "msg:adhoc1"})).json()
-        return out["result"] is not None
+        # the pending marker lands instantly (keeps the banner honest); wait
+        # for the FINAL result
+        return out["result"] is not None and not out["result"].get("pending")
     await wait_for(landed)
     out = (await client.get("/api/tip/discord/process-result",
                             params={"channelId": "msg:adhoc1"})).json()["result"]
