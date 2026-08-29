@@ -44,6 +44,13 @@ class MyTechnique(PlanRunner):
     async def build_replacement_plan(ap, *, reference_price)
 ```
 
+**Your attach function must register the runner** (learned 2026-08-29, the phantom armed tip):
+`engine.plan_runners["my_technique"] = runner` and `engine.techniques["my_technique"] = runner`
+(a `PlanRunner` is its own `.armer`). The armed hub — `/api/technique/armed` and friends, the
+Armed page, the `/api/health` restart-guard count — aggregates `engine.plan_runners`; an
+unregistered runner's plans flicker via WS but never appear in the REST list and are not
+protected by the restart guard.
+
 **Hooks judge; the runner journals.** No hook may call `journal.append` — the runner journals hook
 results so the event shapes stay uniform (they are contracts, §5). Two context flags always flow
 into your reviewer: `gap_unchecked` and the mid-day experiment marker.
