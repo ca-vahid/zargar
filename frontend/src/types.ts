@@ -574,6 +574,8 @@ export interface ArmedPlan {
   technique?: string;   // registry id (platform plan phase 0); absent from older servers
   needsAttention?: boolean; attentionReasons?: string[];
   runId: string; symbol: string; planFor: string; status: "armed" | "paused" | "expired" | "disarmed" | string;
+  // multi-day plans (ARM-GAPS A): total sessions, completed sessions, last valid session, current day (1-based)
+  horizonSessions?: number; sessionsUsed?: number; expiresSession?: string; sessionDay?: number;
   grade?: string | null;
   stopReason?: string; scorecard?: ArmScorecard | null;
   config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };

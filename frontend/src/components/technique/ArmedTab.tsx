@@ -121,6 +121,12 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
         )}
         {a.stale && <span className="tq-badge failed">STALE DATA</span>}
         {a.stopReason && <span className="tq-badge failed" title={a.stopReason}>STOPPED</span>}
+        {(a.horizonSessions ?? 1) > 1 && (
+          <span className="tq-badge nosetup"
+            title={`Multi-day plan: stays armed and rolls at each close until it fills or its last session (${a.expiresSession ?? a.planFor}) passes`}>
+            DAY {a.sessionDay ?? 1} of {a.horizonSessions} · until {a.expiresSession ?? a.planFor}
+          </span>
+        )}
         {(() => {
           const w = a.sessionWindowNow;
           if (w === "prime_open") return <span className="tq-badge setup" title="R6.1 — one of the book's two trading windows">● LIVE WINDOW — can fire until 10:30 AM ET</span>;

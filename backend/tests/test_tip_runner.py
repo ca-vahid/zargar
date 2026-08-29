@@ -13,7 +13,7 @@ from zargar.domain import Bar, Quote
 from zargar.engine import Engine
 from zargar.marketstructure import SESSION_WINDOWS, MarketRules, session_date
 from zargar.marketstructure.tracker import TriggerTracker
-from zargar.models import TechniqueArmed
+from zargar.models import Signal, TechniqueArmed
 from zargar.signals.schemas import ExtractionResult, TradeSignal
 from zargar.signals.service import attach_signal_layer
 from zargar.techniques.tip.runner import TipRunner
@@ -863,3 +863,129 @@ async def test_armed_hub_sees_tip_plans(tip_rig):
             assert gone.status_code == 404
     finally:
         await eng.technique.stop()
+
+
+# --- multi-day stay-armed plans (ARM-GAPS cluster A) --------------------------------
+
+def _mbar(ts, o, h, l, c, v=0):
+    return Bar(symbol="TEST", tf="1m", ts=ts, open=o, high=h, low=l, close=c, volume=v)
+
+
+async def test_multiday_plan_rolls_and_fires_next_session(tip_rig):
+    """No touch on day 1: the closing bar ROLLS the plan (stays armed, same run
+    id, sessionsUsed counts); the day-2 touch fires. ARM-GAPS A1/A2."""
+    from zargar.marketstructure.sessions import session_bounds
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    run_id = snap["runId"]
+    assert snap["horizonSessions"] > 1, snap["horizonSessions"]
+    assert snap["expiresSession"] > snap["planFor"]
+    day1 = snap["planFor"]
+    open1, close1 = session_bounds(day1)
+    ts0 = max(open1 + MIN, int(snap.get("lastBarTs") or 0) + MIN)
+    await eng.tip_runner.on_bar(run_id, _mbar(ts0, 100.0, 100.4, 99.9, 100.1))
+    s2 = await eng.tip_runner.on_bar(run_id, _mbar(close1 - MIN, 100.0, 100.2, 99.9, 100.0))
+    assert s2["status"] == "armed", s2["status"]
+    assert s2["planFor"] > day1 and s2["sessionsUsed"] == 1 and s2["sessionDay"] == 2
+    assert s2["triggers"][0]["status"] == "waiting"
+    open2, _ = session_bounds(s2["planFor"])
+    await eng.tip_runner.on_bar(run_id, _mbar(open2 + 30 * MIN, 100.0, 100.3, 99.9, 100.1))
+    s3 = await eng.tip_runner.on_bar(run_id, _mbar(open2 + 31 * MIN, 99.8, 99.9, 99.45, 99.8))
+    assert s3["triggers"][0]["status"] == "fired"
+    from sqlalchemy import select as _sel
+    from zargar.models import Event
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(Event.payload)
+                                      .where(Event.type == "TechniquePlanRolled"))).scalars().all()
+    assert any(r.get("runId") == run_id for r in rows)
+
+
+async def test_horizon_exhaustion_expires_plan_and_signal(tip_rig):
+    """horizon_sessions=1: the close EXPIRES the plan through the scored path and
+    the signal is expired unfilled. ARM-GAPS A3."""
+    from zargar.marketstructure.sessions import session_bounds
+    eng, sim = tip_rig
+    await eng.settings.set("techniques.tip.horizon_sessions", 1, journal=False)
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    run_id = snap["runId"]
+    assert snap["horizonSessions"] == 1 and snap["expiresSession"] == snap["planFor"]
+    open1, close1 = session_bounds(snap["planFor"])
+    await eng.tip_runner.on_bar(run_id, _mbar(open1 + MIN, 100.0, 100.4, 99.9, 100.1))
+    await eng.tip_runner.on_bar(run_id, _mbar(close1 - MIN, 100.0, 100.2, 99.9, 100.0))
+    assert run_id not in {a["runId"] for a in eng.tip_runner.armed()}
+    async with eng.sf() as session:
+        sig = await session.get(Signal, sid)
+    assert sig.status == "expired", sig.status
+
+
+async def test_restore_boot_rolls_midhorizon_plan(tip_rig):
+    """Armed for a PAST session with the horizon still live: restore() rolls the
+    plan forward instead of expiring it. ARM-GAPS A4."""
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    run_id = snap["runId"]
+    target_day = snap["planFor"]
+    d = dt.date.fromisoformat(target_day) - dt.timedelta(days=1)
+    while d.weekday() >= 5:
+        d -= dt.timedelta(days=1)
+    async with eng.sf() as session:
+        row = await session.get(TechniqueArmed, run_id)
+        st = dict(row.state or {})
+        st["planFor"] = d.isoformat()
+        row.plan_for = d.isoformat()
+        row.state = st
+        await session.commit()
+    await eng.tip_runner.stop()
+    r2 = TipRunner(eng)
+    try:
+        restored = await r2.restore()
+        assert restored == 1
+        s = next(a for a in r2.armed() if a["runId"] == run_id)
+        assert s["planFor"] == target_day, (s["planFor"], target_day)
+        assert s["sessionsUsed"] >= 1 and s["status"] == "armed"
+    finally:
+        await r2.stop()
+
+
+async def test_proposal_mode_fire_mints_proposal(tip_rig):
+    """An armed tip in proposal mode mints a REAL proposal at the touch
+    (TipRunner.emit_proposal). ARM-GAPS A5."""
+    from zargar.marketstructure.sessions import session_bounds
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "proposal"})
+    run_id = snap["runId"]
+    open1, _ = session_bounds(snap["planFor"])
+    ts0 = max(open1 + 30 * MIN, int(snap.get("lastBarTs") or 0) + MIN)
+    await eng.tip_runner.on_bar(run_id, _mbar(ts0, 100.0, 100.3, 99.9, 100.1))
+    s2 = await eng.tip_runner.on_bar(run_id, _mbar(ts0 + MIN, 99.8, 99.9, 99.45, 99.8))
+    tr = s2["trades"][0]
+    assert tr["status"] == "proposal", (tr["status"], tr["reason"])
+    assert tr["proposalId"]
+    from zargar.models import Proposal
+    async with eng.sf() as session:
+        p = await session.get(Proposal, tr["proposalId"])
+    assert p is not None and p.side == "BUY" and p.sec_type == "STK"
+    assert p.context.get("armedRunId") == run_id
+    assert p.context.get("vehicle", {}).get("kind") == "shares"
+
+
+async def test_gapped_past_trigger_revives_at_roll(tip_rig):
+    """Day-1 open gaps past the level: terminal for the session, loud, and the
+    trigger revives at the roll for a retest. ARM-GAPS A6."""
+    from zargar.marketstructure.sessions import session_bounds
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    run_id = snap["runId"]
+    day1 = snap["planFor"]
+    open1, close1 = session_bounds(day1)
+    s1 = await eng.tip_runner.on_bar(run_id, _mbar(open1, 99.2, 99.4, 99.0, 99.3))
+    st1 = s1["triggers"][0]["status"]
+    assert st1 in ("gapped_past", "gapped_through", "gap_void"), st1
+    s2 = await eng.tip_runner.on_bar(run_id, _mbar(close1 - MIN, 98.5, 98.7, 98.3, 98.6))
+    assert s2["status"] == "armed" and s2["planFor"] > day1
+    assert s2["triggers"][0]["status"] == "waiting"

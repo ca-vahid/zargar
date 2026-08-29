@@ -35,12 +35,12 @@ restore hard-expires `plan_for < today` (`planrunner.py:536-542`), and a
 proposal-mode fire produces nothing (`planrunner.py:1838-1848` + the base
 `emit_proposal` no-op at `:2371-2374`).*
 
-- [ ] **A1 — horizon on the ArmConfig/plan.** Compute the plan's last valid
+- [x] **A1 — horizon on the ArmConfig/plan.** Compute the plan's last valid
   session at arm time (`effective_wait_sessions` → `expiresSession`, bounded by
   contract expiry − `entry_cutoff_dte`); carry `horizonSessions`,
   `sessionsUsed`, `expiresSession` on the armed snapshot. Wire format
   camelCase; persisted in `technique_armed.state`.
-- [ ] **A2 — roll at the close instead of expiring.** `_end_session` for a
+- [x] **A2 — roll at the close instead of expiring.** `_end_session` for a
   multi-day plan: run the session housekeeping (score the day's trades, cancel
   resting entry orders), keep `status="armed"`, advance `plan_for` to the next
   trading session (calendar-aware), rebuild the trigger trackers fresh for the
@@ -49,18 +49,18 @@ proposal-mode fire produces nothing (`planrunner.py:1838-1848` + the base
   `TechniquePlanRolled` event (register the contract; note in
   PLATFORM-RULES §4). The nightly `_expire_by_clock` (16:05 path,
   `planrunner.py:2269-2279`) rolls the same way.
-- [ ] **A3 — expire properly at the horizon.** When `sessionsUsed` reaches the
+- [x] **A3 — expire properly at the horizon.** When `sessionsUsed` reaches the
   horizon, or the contract's DTE falls below `entry_cutoff_dte` at roll time:
   expire through the full `_end_session` path (scored + journaled + scorecard —
   the restore shortcut at `planrunner.py:538-541` currently skips scoring),
   emit `SIGNAL_EXPIRED_UNFILLED` on the signal exactly as the shadow loop does
   (`runner.py:433-448`).
-- [ ] **A4 — restore rolls instead of expiring.** On boot, a row with
+- [x] **A4 — restore rolls instead of expiring.** On boot, a row with
   `plan_for < today` whose horizon still has sessions left re-arms rolled
   forward to today (re-checking `entry_cutoff_dte`); sessions missed while the
   app was down count against `sessionsUsed` and are journaled. A row past its
   horizon expires through the scored path (A3), never the silent write.
-- [ ] **A5 — `TipRunner.emit_proposal`.** A proposal-mode tip fire creates a
+- [x] **A5 — `TipRunner.emit_proposal`.** A proposal-mode tip fire creates a
   real proposal at the touch: vehicle = the analyst's contract when the arm
   came from an appraisal, else the tip's stated contract, else the book's
   expression (same preference order as `create_from_signal`); limit from C1's
@@ -69,15 +69,15 @@ proposal-mode fire produces nothing (`planrunner.py:1838-1848` + the base
   approval card (`topics.PROPOSALS` already wires both). A proposal-creation
   failure escalates via `_alert` and sets `needsAttention` — never the current
   silent `proposal_failed` log line.
-- [ ] **A6 — `gapped_past` rolls, loudly.** For a plan with horizon > 1, a
+- [x] **A6 — `gapped_past` rolls, loudly.** For a plan with horizon > 1, a
   trigger terminal-ed by `gapped_past`/`gapped_through` is revived at the next
   session's roll (fresh tracker, next open re-judged); the event journals and
   alerts ("SPY opened through your 768.8 level — not chasing; watching for the
   retest"). Same-session behaviour unchanged (no chasing).
-- [ ] **A7 — UI: the card says where in the horizon it is.** "day 2 of 5 ·
+- [x] **A7 — UI: the card says where in the horizon it is.** "day 2 of 5 ·
   expires Thu 09/04" on the Armed card and the Now view; History groups a
   multi-day plan as one row with per-session sub-lines, not N ghost rows.
-- [ ] **A8 — tests.** Multi-day plan fires on day 3 (roll × 2 then touch);
+- [x] **A8 — tests.** Multi-day plan fires on day 3 (roll × 2 then touch);
   restart mid-horizon restores rolled; horizon exhaustion expires scored; DTE
   cutoff expires at roll; proposal-mode fire mints a proposal with the right
   vehicle; `gapped_past` day-1 → fires on day-2 retest; EM single-session
@@ -312,3 +312,46 @@ event registered + noted in PLATFORM-RULES §4; `technique_armed`/`events` rows
 never edited; each cluster's tests green before its box ticks; suites
 (`test_tip_runner`, `test_signals_tip`, `test_position_*`, `test_technique_arming`)
 green at every merge.
+
+---
+
+## Implementation notes — Cluster A (landed 2026-08-29)
+
+- The horizon lives on `ArmedPlan` (`horizon_sessions` / `sessions_used` /
+  `expires_session`), set at arm by the new async hook `plan_horizon(run, plan)`
+  (base = single-session; `TipRunner` reads `context.horizonSessions` and caps
+  the last session by contract expiry − `entry_cutoff_dte`, weekend-safe).
+  Persisted in `technique_armed.state` AND `plan_for` now updates the row
+  column on every persist; the column stays authoritative on restore.
+- Rolls happen in `_end_session`: `_should_roll` (multi-day + next session ≤
+  `expires_session` + at least one revivable trigger) → `_roll_session`
+  (cancel resting entries, flatten anything still session-scoped, rebuild
+  trackers fresh, reset per-day counters/critic budget, journal
+  `TechniquePlanRolled`, publish "rolled"). Revivable = waiting/observed/
+  gap-verdicts/exhausted + fired-but-never-filled; `invalidated` and consumed
+  fires stay dead. The per-plan scorecard writes once, at the final expire
+  (per-session scorecards would overwrite each other — deliberate).
+- `dailyLossLimit` on a rolled plan is effectively a WHOLE-LIFE loss cap
+  (realized P&L accumulates across its sessions) — conservative, documented.
+- restore(): a past `plan_for` with a live horizon BOOT-ROLLS to today (or the
+  next session on a weekend/evening — `next_session_date`), missed weekday
+  sessions count against `sessionsUsed`, only consumed (`fired`) tracker
+  records carry over; past the horizon it expires with a stop reason + journal
+  + the technique hook (`on_plan_expired_offline` → tip expires the signal).
+- `on_plan_horizon_expired` runs on EVERY journaled close-expire (a rolled
+  plan never reaches it); `TipRunner` expires the signal unless another plan
+  is live or the tip was played.
+- `TipRunner.emit_proposal` → `ProposalService.create_from_armed_fire`:
+  proposal at the touch with the fire's picked vehicle (never-chase: analyst
+  limit / tip premium caps the ask), `context.armedRunId`/`triggerId`/
+  `exitPlan`; rides `topics.PROPOSALS` (Telegram + push). A `None`/failed
+  proposal now alerts (`_alert`) and raises `needsAttention` (new
+  `_attention_reasons` line for zero-fill failed fires).
+- Multi-day `gapped_past`/`gapped_through`/`gap_void` alerts at the moment it
+  happens and the trigger revives at the roll.
+- UI: `DAY x of N · until <date>` badge on the Armed card; History rows say
+  "ran N session(s)"; `ArmedPlan` type gains the fields.
+- Tests: 5 new in `test_tip_runner.py` (roll+fire next session, horizon
+  exhaustion expiring plan+signal, boot-roll restore, proposal-mode fire mints
+  a proposal, gapped_past revival); EM restore suite unchanged and green
+  (80 passed across tip/arming/signals/summary).
