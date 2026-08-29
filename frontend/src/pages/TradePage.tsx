@@ -115,7 +115,7 @@ export function TradePage() {
   const entriesBlocked = isPhone && mode === "live" && exitOnly;
 
   if (isPhone) {
-    const PHONE_RANGES = RANGES.filter((r) => ["1d", "5d", "1mo", "1y"].includes(r.key));
+    const PHONE_RANGES = RANGES.filter((r) => ["1d", "2d", "5d", "tw", "1mo", "1y"].includes(r.key));
     return (
       <div className={`trade-phone ${landscape ? "trade-phone--land" : ""}`}>
         <div className="panel chart-area trade-phone-chart">

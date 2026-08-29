@@ -618,6 +618,14 @@ button.bl-card:active { background: var(--surface-2); }
   .flow-story-head > span:empty { display: none; }   /* the desktop spacer */
   .flow-story-head .primary-btn, .flow-story-head .ghost-btn { flex: 1 1 auto; min-height: 44px; }
   .flow-card-last { margin-left: auto; font-size: var(--fs-2); }
+  /* Tips desk: hide the philosophy line (it costs two lines on every tab);
+     Analyst list scrolls sanely, the sheet owns the play-by-play scroll */
+  .tips-head-sub { display: none; }
+  .an-list-body { max-height: 45dvh; }
+  .an-sheet .an-flow-wrap { max-height: none; min-height: 0; }
+  .an-result-line, .an-card { overflow-wrap: anywhere; }   /* raw JSON summaries wrap, never clip */
+  .an-note-add { flex-wrap: wrap; }
+  .an-note-add .an-note-text-in { flex: 1 1 100%; order: -1; }
   /* New tip: the paste zone must not eat the screen; source + actions stack.
      16px font on the inputs or iOS zooms the page on focus; 40px tap height. */
   .tips-drop textarea { font-size: 16px; }
@@ -638,5 +646,15 @@ button.bl-card:active { background: var(--surface-2); }
   .armed-page input { font-size: 16px; min-height: 38px; }
   /* technique desk chips (scan grid, status pills) grow to thumb size */
   .tq-scan-chip { min-height: 40px; padding: 6px 10px; }
-  .tq-status button.status-pill, .tq-scan-progress button.status-pill { min-height: 40px; }
+  /* any pill that is a BUTTON is a tap target (flow chips on tip cards, run pills…) */
+  button.status-pill { min-height: 40px; min-width: 40px; }
+  /* Tips desk: knowledge notes + Discord source picker */
+  .an-note-add input { font-size: 16px; min-height: 40px; }
+  .an-note-del { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
+  .an-note-head .link-btn, .disc-peek .link-btn { min-width: 44px; min-height: 40px; }
+  .disc-search, .disc-src { font-size: 16px; min-height: 40px; }
+  .disc-row input[type="checkbox"], .disc-controls input[type="checkbox"] { width: 22px; height: 22px; }
+  .disc-guild-name, .disc-cat-name { min-height: 40px; }
+  .disc-cols { max-height: none; }   /* one scroll context on touch — the page */
+  .trade-back { min-width: 44px; min-height: 40px; }
 }

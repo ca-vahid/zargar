@@ -9,6 +9,7 @@ import { onAnalystStep } from "../lib/ws";
 import { useStore } from "../store";
 import type { AnalystRun, AnalystStep, Proposal, RawContentItem, Signal, SourceScorecard } from "../types";
 import { useViewport } from "../lib/viewport";
+import { Sheet } from "../components/Sheet";
 
 /* The Tips page (redesigned 2026-08-28): the composer is the product — paste
    text or a screenshot, the app extracts the trade AND the source, verifies it
@@ -1416,36 +1417,58 @@ function AnalystTab() {
     });
     return () => { dead = true; clearInterval(t); off(); };
   }, [setFocus]);
+  const { isPhone } = useViewport();
   const sel = focus ?? runs?.[0]?.id ?? null;
+  const list = (
+    <div className="panel an-list">
+      <div className="panel-head">Analyst runs <span className="sub">the play-by-play of each appraisal</span></div>
+      <div className="an-list-body">
+        {runs == null ? <Spinner />
+          : runs.length === 0 ? (
+            <div className="empty">No analyst runs yet — a tip triggers one.
+              After “▶ tip” on a Discord source, the run appears here within a few seconds.</div>
+          )
+          : runs.map((r) => (
+            <button key={r.id} className={`an-run ${!isPhone && r.id === sel ? "active" : ""}`}
+              onClick={() => setFocus(r.id)}>
+              <span className="an-run-l">
+                <b>{r.ticker}</b>
+                {r.kind === "intake" && <span className="status-pill dim">intake</span>}
+                {r.kind === "retro" && <span className="status-pill dim">retro</span>}
+                <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
+                  {r.status === "running" ? "running" : r.verdict ?? r.status}
+                </span>
+              </span>
+              <span className="an-run-sub">{r.source ?? "?"} · {r.traceSteps} steps · {r.createdAt ? fmtDateTime(r.createdAt) : ""}</span>
+            </button>
+          ))}
+      </div>
+    </div>
+  );
+  // phone: the two-column desk stacks the detail below the fold, so a tap looked
+  // dead — the play-by-play opens as a full sheet instead (a live run pops it too)
+  if (isPhone) {
+    const focusRun = focus ? runs?.find((r) => r.id === focus) : null;
+    return (
+      <>
+        <ProcessBanner />
+        {list}
+        <NotesPanel />
+        {focus && (
+          <Sheet title={`${focusRun?.ticker ?? "Analyst"} — play-by-play`} full className="an-sheet"
+            onClose={() => setFocus(null)}>
+            <AnalystRunDetail id={focus} />
+          </Sheet>
+        )}
+      </>
+    );
+  }
   return (
     <>
     <ProcessBanner />
     <div className="an-layout">
       <div className="an-side">
-        <div className="panel an-list">
-          <div className="panel-head">Analyst runs <span className="sub">the play-by-play of each appraisal</span></div>
-          <div className="an-list-body">
-            {runs == null ? <Spinner />
-              : runs.length === 0 ? (
-                <div className="empty">No analyst runs yet — a tip triggers one.
-                  After “▶ tip” on a Discord source, the run appears here within a few seconds.</div>
-              )
-              : runs.map((r) => (
-                <button key={r.id} className={`an-run ${r.id === sel ? "active" : ""}`}
-                  onClick={() => setFocus(r.id)}>
-                  <span className="an-run-l">
-                    <b>{r.ticker}</b>
-                    {r.kind === "intake" && <span className="status-pill dim">intake</span>}
-                    {r.kind === "retro" && <span className="status-pill dim">retro</span>}
-                    <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
-                      {r.status === "running" ? "running" : r.verdict ?? r.status}
-                    </span>
-                  </span>
-                  <span className="an-run-sub">{r.source ?? "?"} · {r.traceSteps} steps · {r.createdAt ? fmtDateTime(r.createdAt) : ""}</span>
-                </button>
-              ))}
-          </div>
-        </div>
+        {list}
         <NotesPanel />
       </div>
       <div className="an-main">
