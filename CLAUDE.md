@@ -85,11 +85,15 @@ verified spread rollback, never-chase caps, action-aware follow-ups (a "close" n
 expires proposals, flags waiting plans; analyst `disarm_plan`), re-arm replaces, nightly lane
 grading + unfilled retros, tip-scoped knobs (`techniques.tip.enforce_session_windows` etc.
 beat the EM-named legacy keys for tips), Settings "Tips technique" panel + per-source policy
-editor. **Remaining build items live in `docs/NEXT-GAPS-PLAN.md`** (A8 rule loop, native
-mleg, flow calibration, real-money gate, real-device mobile, HMAC — Telegram intake is
-deprioritized, don't build it unasked); its §0 records the AMBITIOUS practice limits set
-2026-08-29 (raised risk caps + all Discord sources botsOnly=false) — re-tighten before
-real money (R3), never treat the practice values as the safe baseline.
+editor. **`docs/NEXT-GAPS-PLAN.md` is BUILT (2026-08-29)** — A8 weekly rule audit, native mleg
+spreads (`OrderManager.place_spread` + `evaluate_spread`, opt-in via `options.mleg_accounts`),
+flow calibration (`tools/flow_calibrate.py`; re-sweep at ≥5 day-pairs), HMAC webhook auth,
+the soak report (`tools/soak_report.py`) and `docs/PRE-LIVE-PROFILE.md`; what remains are
+OPERATIONAL gates (practice soak calendar, Alpaca-paper pass, first live tip, real-device
+mobile) — Telegram intake stays deprioritized, don't build it unasked. Its §0 records the
+AMBITIOUS practice limits set 2026-08-29 (raised risk caps + all Discord sources
+botsOnly=false) — re-tighten before real money (PRE-LIVE-PROFILE), never treat the practice
+values as the safe baseline.
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
 dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
 non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose

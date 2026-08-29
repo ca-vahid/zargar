@@ -63,6 +63,12 @@ class AppConfig(BaseSettings):
     telegram_chat_id: str = ""
     # Shared secret required on the inbound email webhook (X-Zargar-Ingest-Key header).
     ingest_key: str = ""
+    # HMAC mode for the webhook (NEXT-GAPS W1): when set, the POST body must be
+    # signed — X-Zargar-Signature = hex(HMAC-SHA256(secret, raw body)); unsigned
+    # or mis-signed requests are rejected. Stronger than the static key (the
+    # signature never travels and covers the payload). Env, not settings: it
+    # guards the pre-auth boundary.
+    ingest_hmac_secret: str = ""
 
     # --- misc --------------------------------------------------------------
     frontend_dist: str = ""  # path to built SPA; served at / when set

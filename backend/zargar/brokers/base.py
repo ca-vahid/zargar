@@ -64,6 +64,15 @@ class Executor(abc.ABC):
     @abc.abstractmethod
     async def submit(self, order: BrokerOrder) -> None: ...
 
+    # native multi-leg (NEXT-GAPS M): venues that can take a defined-risk
+    # spread as ONE combined order override this (sim, SnapTrade/Webull CA).
+    # Both legs are already risk-approved as a unit by RiskGate.evaluate_spread.
+    supports_mleg: bool = False
+
+    async def submit_mleg(self, orders: "list[BrokerOrder]", *, net_limit: float,
+                          price_effect: str, gid: str) -> None:
+        raise NotImplementedError("this venue has no native multi-leg support")
+
     @abc.abstractmethod
     async def cancel(self, order_id: str) -> None: ...
 

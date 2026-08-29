@@ -70,18 +70,18 @@ B3). Webull CA ACCEPTS a native 2-leg order in one impact call (probed live
 2026-08-29 via `snaptrade_options_check --probe income`); Wealthsimple stays
 1156-unsupported.*
 
-- [ ] **M1** — `SnapTradeExecutor.place_mleg()`: one `POST
+- [x] **M1** — `SnapTradeExecutor.place_mleg()`: one `POST
   …/trading/options` with both legs (padded OCC, string prices, net limit);
   preview via `…/impact` first; venue capability gate per account
   (`options_capability` grows a `mleg` flag).
-- [ ] **M2** — `lifecycle.open_spread` prefers native mleg when the venue
+- [x] **M2** — `lifecycle.open_spread` prefers native mleg when the venue
   supports it, falls back to leg-sequencing otherwise (same adopt shape,
   `spread:<gid>` tags either way); the sim executor gets a native-mleg fill
   path so tests cover both.
-- [ ] **M3** — RiskGate: evaluate the SPREAD as one unit (net debit/credit vs
+- [x] **M3** — RiskGate: evaluate the SPREAD as one unit (net debit/credit vs
   the premium caps; max loss = width−credit for credits) instead of two leg
   checks; the covered-short exception stays for the sequencing fallback.
-- [ ] **M4** — tests: native fill on sim, fallback on a non-mleg venue,
+- [x] **M4** — tests: native fill on sim, fallback on a non-mleg venue,
   risk-gate net-unit sizing, chaos: venue rejects the mleg → sequencing
   fallback engages.
 
@@ -109,37 +109,49 @@ analyst (the HOOD at-level arm came from flow).*
 
 *docs/BUILDING-A-TECHNIQUE.md §2b: real money holds overnight only after an
 Alpaca-paper pass + practice soak. The multi-day roll/adopt/partial paths are
-new — they soak first.*
+new — they soak first. The BUILD half (tooling + the written profile) is done;
+the soak itself is a CALENDAR gate that no session can fast-forward.*
 
-- [ ] **R1** — practice soak checklist (2+ weeks): ≥ N multi-day rolls
-  observed clean (journal `TechniquePlanRolled` vs plan horizons), ≥ N
-  adopt-on-fill handoffs (incl. at least one partial), 0 unexplained
-  `needsAttention`, retros + lane grades accumulating.
-- [ ] **R2** — Alpaca-paper overnight pass: one options position held
-  overnight app-managed on Alpaca paper, exits fire next session per policy.
-- [ ] **R3** — restore ambition→discipline: a written pre-live settings set
-  (the §0 table's left column or stricter), applied when the first source
-  earns `barCleared` on the ARMED book — the gate is the scorecard, not a
-  feeling.
-- [ ] **R4** — first live tip: smallest size, `allow_live_auto` OFF (human
-  approves), one source only, reviewed by a retro before the second.
+- [x] **R1 (build)** — the automated soak report:
+  `python -m zargar.tools.soak_report` scores the checklist from the journal
+  (≥14d span, ≥10 clean multi-day rolls — a roll past its own horizon flags as
+  a BUG, ≥5 adopt-on-fill handoffs incl. ≥1 partial, 0 unexplained critical
+  alerts, retros + lane grades accumulating) and says READY / still soaking.
+- [x] **R3 (build)** — `docs/PRE-LIVE-PROFILE.md`: the exact discipline
+  settings that come back before the first live tip, with the OBJECTIVE
+  triggers (soak_report READY + Alpaca-paper pass + a source with
+  `barCleared` on expectancyR) and the first-live rules.
+
+**Operational gates — user + calendar owned, deliberately NOT checkboxes a
+session can tick:**
+
+- **R2** — the Alpaca-paper overnight pass (needs the Alpaca subscription
+  restored; one options position held overnight app-managed, exits fire next
+  session per policy).
+- **R4** — the first live tip (smallest size, `allow_live_auto` OFF, one
+  source, retro-reviewed before the second). Placing real-money trades is the
+  user's act, never an agent's.
 
 ## 5. Real-device mobile pass
 
-*The Playwright audit is green (0 failing combos, 2026-08-29); the
-MOBILE-ACCESS.md checklist on the actual phone over Tailscale hasn't been
-re-run since the tab/chip/day-badge changes.*
+*The Playwright audit is green (0 failing combos, 2026-08-29 — including the
+thumb-size link-chip fix it caught).*
 
-- [ ] **MB1** — run the MOBILE-ACCESS.md real-device checklist (login,
-  Now view with day-N chips, tip rows + armed chips, HALT, sell-now,
-  push notification tap-through).
-- [ ] **MB2** — fix what the thumb finds; re-run `npm run mobile-audit`.
+- [x] **MB2** — fix what the audit finds; re-run `npm run mobile-audit`
+  (done: the tip-row link chips were 33px targets → 44px in mobile.css;
+  audit re-run clean).
+
+**Operational gate — needs the user's physical phone:**
+
+- **MB1** — the MOBILE-ACCESS.md real-device checklist over Tailscale (login,
+  Now view with day-N chips, tip rows + armed chips, HALT, sell-now, push
+  tap-through).
 
 ## 6. Webhook intake auth (HMAC)
 
 *Small. The email/webhook ingest endpoints predate the auth layer.*
 
-- [ ] **W1** — HMAC signature on `POST /api/ingest/email` (shared secret in
+- [x] **W1** — HMAC signature on `POST /api/ingest/email` (shared secret in
   settings, `X-Zargar-Signature`), reject unsigned when the secret is set;
   the in-app paths keep using the session auth.
 
@@ -149,3 +161,36 @@ FL (flow calibration) first — it feeds the analyst TODAY and its data ages
 well. Then A8 (the rulebook is growing now). M (native mleg) whenever a spread
 tip actually appears in practice. R runs on the calendar (soak time), MB is an
 evening with the phone, W1 is an hour whenever.
+
+## Implementation notes — A8 / FL / W1 / M (landed 2026-08-29)
+
+- **A8**: `techniques/tip/rule_audit.py` — weekly `rule_audit` run (LLM judges,
+  code applies): merges SUPERSEDE (`tip_notes.superseded_by`, never delete),
+  evidence-free rules expire first, contradictions FLAG (`needs_human` →
+  "needs your call" badge + ✓ resolve on Knowledge; POST /api/tip/notes/{id}/
+  resolve). Rides the nightly review on `rule_audit_day` (Sat). Journal
+  `TipRuleAudited`. The live injection (`_rules_text`/`tip_notes`) serves only
+  live rules.
+- **FL**: `tools/flow_calibrate.py` (offline grid sweep over the snapshot
+  history, parity spots, baseline OI-confirm comparison) — first run
+  2026-08-29 (`flow/notes/2026-08-29-calibration.md`): 0-2 DTE flags were
+  ANTI-signal; applied dte_min=3, premium_min 250k, vol_oi_min 2.0,
+  premium-WEIGHTED score (`premium_unit`). FL4's conviction upgrade is built
+  behind `techniques.flow.calibrated` (false until ≥5 day-pairs re-confirm).
+- **W1**: `X-Zargar-Signature` = HMAC-SHA256(secret, raw body) on
+  /api/ingest/email when `ZARGAR_INGEST_HMAC_SECRET` is set (env — pre-auth
+  boundary); unsigned/mis-signed → 401; the static ingest key stays the
+  fallback mode.
+- **M**: native multi-leg spreads. `Executor.submit_mleg` (sim: accepts and
+  fills per-leg; SnapTrade: ONE /trading/options order with the `legs` array
+  the Webull probe verified). `OrderManager.place_spread` — write-ahead both
+  rows (oca_group=gid, tag `mleg`), ONE `RiskGate.evaluate_spread` verdict on
+  the structure's MAX LOSS (debit, or width−credit), one venue submit; not a
+  side-door (same guarantees as `place`, unit-shaped). `open_spread` prefers
+  native when `_mleg_supported` (sim/shadow always; SnapTrade accounts listed
+  in `options.mleg_accounts` — empty by default, fill it after probing) and
+  FALLS BACK to the verified leg-sequencing on any native failure; a
+  failed/partial native fill unwinds reduce-only. Tests: native fill e2e,
+  one-unit risk rejection, forced venue failure → sequencing fallback.
+  LIVE mleg still requires adding the Webull account id to
+  `options.mleg_accounts` — deliberate, per-account opt-in.

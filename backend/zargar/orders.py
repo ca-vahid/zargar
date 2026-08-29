@@ -311,6 +311,87 @@ class OrderManager:
             return q.ask if intent.side == "BUY" else q.bid
         return intent.limit_price
 
+    # ------------------------------------------------------------- native spreads
+    async def place_spread(self, long_intent: OrderIntent, short_intent: OrderIntent, *,
+                           net_limit: float, max_loss: float, gid: str) -> dict:
+        """NATIVE defined-risk spread (NEXT-GAPS M): both legs written ahead as
+        Order rows, ONE RiskGate verdict on the structure's max loss
+        (`evaluate_spread`), ONE combined venue submit (`executor.submit_mleg`).
+        This is not a side-door: write-ahead, journaled, risk-gated, kill-switch
+        honoring — the same guarantees as `place`, applied to the pair as the
+        unit the venue actually executes."""
+        intents = [long_intent, short_intent]
+        pid = long_intent.portfolio_id
+        if short_intent.portfolio_id != pid:
+            raise ValueError("spread legs must share a portfolio")
+        portfolio = self._positions.portfolio(pid)
+        if portfolio is None:
+            raise ValueError(f"unknown portfolio: {pid}")
+        rows: list[Order] = []
+        async with self._sf() as session:
+            for it in intents:
+                o = Order(id=new_id(), portfolio_id=pid, symbol=it.symbol,
+                          sec_type="OPT", side=it.side, qty=it.qty,
+                          order_type="LMT", limit_price=it.limit_price,
+                          technique=it.technique_id, tags=list(it.tags or []),
+                          tif=it.tif, status=OrderStatus.NEW.value, source=it.source,
+                          signal_id=it.signal_id, oca_group=gid)
+                session.add(o)
+                rows.append(o)
+            await session.commit()
+        for o in rows:
+            await self._journal.append(ev.ORDER_INTENT_CREATED,
+                                       {**order_dict(o), "mlegGroup": gid,
+                                        "netLimit": net_limit, "maxLoss": max_loss},
+                                       aggregate_type="order", aggregate_id=o.id,
+                                       portfolio_id=pid)
+
+        class _P:
+            kind = portfolio["kind"]
+        verdict = await self._risk.evaluate_spread(intents, _P, max_loss=max_loss)
+        for o in rows:
+            await self._journal.append(
+                ev.RISK_CHECK_PASSED if verdict.passed else ev.RISK_CHECK_FAILED,
+                verdict.to_dict(), aggregate_type="order", aggregate_id=o.id,
+                portfolio_id=pid)
+        if not verdict.passed:
+            reason = "; ".join(c.detail or c.name for c in verdict.failures)
+            out = [await self._transition(o.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
+                                          reject_reason=reason,
+                                          extra={"risk": verdict.to_dict()}) for o in rows]
+            return {"gid": gid, "legs": out, "status": "REJECTED_RISK", "reason": reason}
+
+        mode = str(self._settings.get("trading.mode", "practice"))
+        allowed = {"practice": {"sim", "shadow"},
+                   "live": {"sim", "shadow", "paper", "live"}}.get(mode, set())
+        if portfolio["kind"] not in allowed:
+            reason = f"trading.mode={mode} blocks orders on a '{portfolio['kind']}' portfolio"
+            out = [await self._transition(o.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
+                                          reject_reason=reason) for o in rows]
+            return {"gid": gid, "legs": out, "status": "REJECTED_RISK", "reason": reason}
+        executor = self._executor_for(portfolio)
+        if executor is None or not executor.connected or not getattr(executor, "supports_mleg", False):
+            reason = "no connected venue with native multi-leg support"
+            out = [await self._transition(o.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
+                                          reject_reason=reason) for o in rows]
+            return {"gid": gid, "legs": out, "status": "REJECTED", "reason": reason}
+        self._risk.note_submission(long_intent.symbol, long_intent.side,
+                                   long_intent.qty, long_intent.order_type)
+        out = []
+        for o in rows:
+            out.append(await self._transition(o.id, OrderStatus.SUBMITTED, ev.ORDER_SUBMITTED,
+                                              extra={"mlegGroup": gid}))
+        brokers = [BrokerOrder(
+            id=o.id, symbol=o.symbol, sec_type="OPT", side=OrderSide(o.side), qty=o.qty,
+            order_type=OrderType(o.order_type), limit_price=o.limit_price,
+            tif=TimeInForce(o.tif), portfolio_id=pid,
+            option_action=("BUY_TO_OPEN" if o.side == "BUY" else "SELL_TO_OPEN"),
+        ) for o in rows]
+        net = net_limit
+        await executor.submit_mleg(brokers, net_limit=net,
+                                   price_effect=("DEBIT" if net > 0 else "CREDIT"), gid=gid)
+        return {"gid": gid, "legs": out, "status": "SUBMITTED"}
+
     # ------------------------------------------------------------------ cancel
     async def cancel(self, order_id: str) -> dict:
         async with self._sf() as session:

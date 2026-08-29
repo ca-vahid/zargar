@@ -187,6 +187,16 @@ class SimExecutor(Executor):
                 self._oca.setdefault(order.oca_group, set()).add(order.id)
         await self.emit(ExecReport(kind="accepted", order_id=order.id))
 
+    # native multi-leg (NEXT-GAPS M2): the sim "venue" accepts a spread as one
+    # combined order; each leg then fills off its own contract quote at its leg
+    # price — close enough to an atomic venue for practice/testing purposes.
+    supports_mleg = True
+
+    async def submit_mleg(self, orders: list[BrokerOrder], *, net_limit: float,
+                          price_effect: str, gid: str) -> None:
+        for o in orders:
+            await self.submit(o)
+
     async def cancel(self, order_id: str) -> None:
         async with self._lock:
             w = self._working.pop(order_id, None)

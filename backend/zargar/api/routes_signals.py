@@ -11,10 +11,27 @@ def build_signal_routes(app, eng, auth, config) -> None:
     # --- inbound email webhook (Cloudflare Email Worker posts here) ----------
     @app.post("/api/ingest/email")
     async def ingest_email(request: Request):
-        if config.ingest_key:
-            if request.headers.get("x-zargar-ingest-key", "") != config.ingest_key:
-                raise HTTPException(status_code=401, detail="bad ingest key")
-        payload = await request.json()
+        # W1: HMAC beats the static key when configured — the signature covers
+        # the exact body, so a leaked URL alone can inject nothing
+        if config.ingest_hmac_secret:
+            import hashlib
+            import hmac as _hmac
+            import json as _json
+            raw = await request.body()
+            want = _hmac.new(config.ingest_hmac_secret.encode(), raw,
+                             hashlib.sha256).hexdigest()
+            got = request.headers.get("x-zargar-signature", "")
+            if not got or not _hmac.compare_digest(got.lower(), want):
+                raise HTTPException(status_code=401, detail="bad or missing signature")
+            try:
+                payload = _json.loads(raw)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="body is not JSON")
+        else:
+            if config.ingest_key:
+                if request.headers.get("x-zargar-ingest-key", "") != config.ingest_key:
+                    raise HTTPException(status_code=401, detail="bad ingest key")
+            payload = await request.json()
         return await eng.signals_service.ingest_email(payload)
 
     class ManualIngest(BaseModel):

@@ -113,6 +113,43 @@ class RiskGate:
         for k in self._exposure_keys(intent):
             self._day_notional[k] = self._day_notional.get(k, 0.0) + max(0.0, float(notional))
 
+    async def evaluate_spread(self, intents: list, portfolio, *, max_loss: float) -> RiskVerdict:
+        """One-unit verdict for a NATIVE defined-risk spread (NEXT-GAPS M3):
+        the venue executes the legs atomically, so risk is judged on the
+        structure's MAX LOSS (debit paid, or width − credit), never on the
+        naked-looking short leg. `max_loss` is per spread × 100 × qty dollars."""
+        s = self._settings
+        checks: list[RiskCheck] = []
+        checks.append(RiskCheck(
+            "kill_switch", not self._halt.engaged,
+            "" if not self._halt.engaged else f"halted: {self._halt.reason}"))
+        allow_opts = bool(s.get("risk.allow_options", True))
+        checks.append(RiskCheck("options_allowed", allow_opts,
+                                "" if allow_opts else "risk.allow_options is off"))
+        qty = max(float(i.qty) for i in intents) if intents else 0.0
+        max_ct = int(s.get("risk.max_option_contracts", 10))
+        checks.append(RiskCheck(
+            "max_option_contracts", qty <= max_ct,
+            f"{qty:g} contracts exceeds {max_ct}" if qty > max_ct else ""))
+        cap_abs = float(s.get("risk.max_option_premium_notional", 1000.0))
+        checks.append(RiskCheck(
+            "spread_max_loss", max_loss <= cap_abs,
+            f"spread max loss ${max_loss:,.0f} exceeds risk.max_option_premium_notional "
+            f"${cap_abs:,.0f}" if max_loss > cap_abs else ""))
+        cap_pos = float(s.get("risk.max_position_notional", 1000.0))
+        checks.append(RiskCheck(
+            "max_position_notional", max_loss <= cap_pos,
+            f"spread max loss ${max_loss:,.0f} exceeds risk.max_position_notional "
+            f"${cap_pos:,.0f}" if max_loss > cap_pos else ""))
+        # both legs must be OCC options with sane sides (one long, one short)
+        sides = sorted(str(i.side) for i in intents)
+        shape_ok = len(intents) == 2 and sides == ["BUY", "SELL"] \
+            and all(i.sec_type == "OPT" for i in intents)
+        checks.append(RiskCheck(
+            "spread_shape", shape_ok,
+            "" if shape_ok else "a native spread is exactly one long and one short OPT leg"))
+        return RiskVerdict(passed=all(c.passed for c in checks), checks=checks)
+
     async def evaluate(self, intent, portfolio) -> RiskVerdict:
         """intent: OrderManager's OrderIntent; portfolio: Portfolio row."""
         s = self._settings
