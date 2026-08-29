@@ -496,7 +496,7 @@ export interface TechniqueTaxonomy { reviewVerdicts: Record<string, string>; roo
 export interface PlanCondition { rule: string; text: string; kind: string }
 export interface TriggerAssessment { grade: "A" | "B" | "C" | null; score: number; strengths: string[]; cautions: string[] }
 export interface PlanTrigger {
-  id: string; kind: "bounce" | "breakout" | "wedge_break" | "reject" | "breakdown" | string; direction: string; levelPrice: number; level: any;
+  id: string; label?: string; kind: "bounce" | "breakout" | "wedge_break" | "reject" | "breakdown" | string; direction: string; levelPrice: number; level: any;
   entry: { price: number; basis: string }; stop: { price: number; reference: string };
   targets: { price: number; trimPct: number; basis: string }[]; riskReward: number; risk: number;
   conditions: PlanCondition[]; voidIf: string[]; confluences: string[]; confidence: number; rules: string[];
@@ -583,7 +583,7 @@ export interface ArmedPlan {
   config: ArmConfig; portfolio: { id: string; name?: string; kind?: string; venue?: string; baseCurrency?: string };
   armedAt: string; barsSeen: number; lastBarTs: number | null; barAgeSeconds: number | null; stale: boolean;
   sessionWindowNow: string; lastPrice: number | null; quoteAgeSeconds: number | null;
-  triggers: { id: string; kind: string; status: string; entry: number; stop: number; targets: number[]; riskReward: number | null;
+  triggers: { id: string; label?: string; kind: string; status: string; entry: number; stop: number; targets: number[]; riskReward: number | null;
     firedTs: number | null; firedWindow: string | null; observedMidday: number; skipped: any[]; conditions: any[]; setupId?: string | null;
     grade?: string | null; gradeScore?: number | null;
     distancePct?: number; distance?: number; windowOpenNow?: boolean;

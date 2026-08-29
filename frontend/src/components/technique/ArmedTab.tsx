@@ -175,7 +175,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
         <div className="tq-armed-triggers">
           {a.triggers.map((t) => (
             <div key={t.id} className={`tq-armed-trigger ${t.status}`}>
-              <span className="tq-chip">{t.id}</span>
+              <span className="tq-chip">{t.label ?? t.id}</span>
               <b>{t.kind.replace(/_/g, " ")}</b>
               <span>@ <b>{fmt(t.entry)}</b></span>
               <span className="muted">{t.distancePct !== undefined ? `${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>

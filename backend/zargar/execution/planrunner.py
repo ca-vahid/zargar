@@ -291,7 +291,8 @@ class ArmedPlan:
             a = tr.trigger.get("assessment") or {}
             if a.get("grade"):
                 grades.append(str(a["grade"]))
-            d = {"id": tid, "kind": tr.kind, "status": tr.status, "entry": tr.entry, "stop": tr.stop,
+            d = {"id": tid, "label": tr.trigger.get("label") or tid,
+                 "kind": tr.kind, "status": tr.status, "entry": tr.entry, "stop": tr.stop,
                  "targets": [t["price"] for t in tr.trigger.get("targets") or []],
                  "riskReward": tr.trigger.get("riskReward"), "firedTs": tr.fired_ts, "firedWindow": tr.fired_window,
                  "observedMidday": len(tr.observed_midday), "skipped": tr.skipped[-3:],
@@ -350,11 +351,15 @@ class ArmedPlan:
             return self.status
         if self.stale:
             return "STALE DATA — not firing until bars resume"
+        def _label(tid: str) -> str:
+            tr = self.trackers.get(tid)
+            return (tr.trigger.get("label") if tr is not None else None) or tid
+
         opens = [t for t in self.trades.values() if t.open]
         if opens:
             t = opens[0]
-            return f"in trade {t.trigger_id}: {t.remaining:g} left, stop {t.stop:.2f}, next target " \
-                   f"{t.targets[t.trims_done]:.2f}" if t.trims_done < len(t.targets) else f"in trade {t.trigger_id}: runner {t.remaining:g}"
+            return f"in trade {_label(t.trigger_id)}: {t.remaining:g} left, stop {t.stop:.2f}, next target " \
+                   f"{t.targets[t.trims_done]:.2f}" if t.trims_done < len(t.targets) else f"in trade {_label(t.trigger_id)}: runner {t.remaining:g}"
         waiting = [tid for tid, tr in self.trackers.items() if tr.status in ("waiting", "observed")]
         if not waiting:
             return "nothing left to watch"
@@ -370,7 +375,7 @@ class ArmedPlan:
         w = ("window open — can fire" if window_now in plan_windows
              else f"{window_now}: can fire (window gate off)" if gate_off
              else f"{window_now}: watching only")
-        return (f"watching {len(waiting)} trigger(s) · nearest {nearest[1]} {nearest[0]:.2f}% away · {w}"
+        return (f"watching {len(waiting)} trigger(s) · nearest {_label(nearest[1])} {nearest[0]:.2f}% away · {w}"
                 if nearest else f"watching {len(waiting)} trigger(s) · {w}")
 
 
@@ -729,7 +734,8 @@ class PlanRunner(SessionListener):
                         # what would be bought: fixed contracts/qty, else risk-%% sizing
                         "size": {"contracts": ap.config.contracts, "riskPct": ap.config.risk_pct,
                                  "qty": ap.config.qty},
-                        "nearest": {"id": tid, "kind": tr.kind, "entry": tr.entry, "stop": tr.stop,
+                        "nearest": {"id": tid, "label": tr.trigger.get("label") or tid,
+                                    "kind": tr.kind, "entry": tr.entry, "stop": tr.stop,
                                     "direction": tr.direction,
                                     "targets": [tg["price"] for tg in (tr.trigger.get("targets") or [])],
                                     "distancePct": (round((tr.entry - last) / last * 100, 3) if last else None)},

@@ -160,7 +160,7 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
               <ul className="tq-arm-triggers">
                 {triggers.map((t) => (
                   <li key={t.id}>
-                    <span className="tq-chip">{t.id}</span>
+                    <span className="tq-chip">{t.label ?? t.id}</span>
                     {t.assessment?.grade && <span className={`tq-grade g${t.assessment.grade}`} title={`${t.assessment.score}/100`}>{t.assessment.grade}</span>}
                     <b>{t.kind === "bounce" ? "Support bounce" : t.kind === "breakout" ? "Breakout" : t.kind === "reject" ? "Rejection (short — put)" : t.kind === "breakdown" ? "Breakdown (short — put)" : "Wedge break"}</b>
                     {t.assessment?.grade && <span className="muted"> ({GRADE_WORD[t.assessment.grade]})</span>}
