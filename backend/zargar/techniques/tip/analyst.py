@@ -191,6 +191,16 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {
          "scope": {"type": "string"}, "text": {"type": "string"}},
          "required": ["scope", "text"]}},
+    {"name": "disarm_plan",
+     "description": "Disarm a WAITING armed tip plan — one still watching for its level "
+                    "(get_open_tips shows armedRunId and what it waits for). Use it when the "
+                    "source exited or reversed BEFORE our level filled: the thesis is dead, so "
+                    "the plan must stop waiting. Refuses when the plan already holds a position "
+                    "(use close_position on the managed position instead). "
+                    "Args: run_id, reason (required — it is journaled).",
+     "input_schema": {"type": "object", "properties": {
+         "run_id": {"type": "string"}, "reason": {"type": "string"}},
+         "required": ["run_id", "reason"]}},
 ]
 
 SYSTEM = """You are the TIPS DESK TRADER for a personal trading app — an independent \
@@ -323,6 +333,9 @@ def _our_positions(eng, symbol: str = "") -> dict:
             for p in pm.positions(status="open"):
                 if want and str(p.get("symbol") or "").upper() != want:
                     continue
+                pfm = eng.positions.portfolio(p.get("portfolioId")) or {}
+                if pfm.get("book"):        # shadow-book counterfactuals are NOT ours (D9)
+                    continue
                 pol = p.get("policy") or {}
                 managed.append({
                     "positionId": p.get("id"), "symbol": p.get("symbol"),
@@ -362,12 +375,33 @@ async def _open_tips(eng, ticker: str = "", source: str = "") -> dict:
         stmt = stmt.where(Signal.source_name == source)
     async with eng.sf() as session:
         rows = (await session.execute(stmt)).scalars().all()
-    tips = [{"ticker": r.ticker, "source": r.source_name, "direction": r.direction,
+        from ...models import Proposal
+        pend_rows = (await session.execute(
+            select(Proposal.id, Proposal.signal_id)
+            .where(Proposal.status == "pending"))).all()
+    pending = {p.signal_id: p.id for p in pend_rows}
+    runner = getattr(eng, "tip_runner", None)
+    tips = []
+    for r in rows:
+        t = {"ticker": r.ticker, "source": r.source_name, "direction": r.direction,
              "action": r.action, "instrument": r.instrument, "strike": r.strike,
              "expiry": r.expiry, "status": r.status, "seenCount": r.seen_count,
              "created": (r.created_at.isoformat()[:16] if r.created_at else None),
              "analystVerdict": (((r.extraction or {}).get("analyst") or {}).get("verdict"))}
-            for r in rows]
+        # the desk's WAITING commitments are part of the book (ARM-GAPS D3):
+        # a live armed plan and/or a pending proposal ride on the tip row
+        rid = runner.live_run_for_signal(r.id) if runner is not None else None
+        if rid:
+            ap = runner.get(rid)
+            if ap is not None:
+                t["armedRunId"] = rid
+                t["armedWaitingAt"] = [tr.entry for tr in ap.trackers.values()
+                                       if tr.status in ("waiting", "observed")]
+                t["armedDay"] = f"{ap.sessions_used + 1} of {ap.horizon_sessions}"
+                t["armedMode"] = ap.config.mode
+        if pending.get(r.id):
+            t["pendingProposalId"] = pending[r.id]
+        tips.append(t)
     return {"tips": tips} if tips else {"note": "no open tips match"}
 
 
@@ -388,6 +422,12 @@ def _manage_guard(eng, pid: str) -> tuple:
                                f"'{p.technique}' — not yours to manage"}
     if p.status not in ("open", "attention"):
         return None, {"error": f"position {pid} is {p.status}"}
+    pfm = eng.positions.portfolio(p.portfolio_id) or {}
+    if pfm.get("book"):
+        # ARM-GAPS D9: the shadow books are the scorecard's counterfactual —
+        # managing them would corrupt the very record trust is judged on
+        return None, {"error": f"position {pid} is a SHADOW-BOOK counterfactual "
+                              f"({pfm.get('name')}) — never managed by hand"}
     return p, None
 
 
@@ -465,6 +505,28 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         return {"closed": True, "fraction": frac, "positionId": p.id,
                 "result": ({k: out.get(k) for k in ("status", "realizedPnl")}
                            if isinstance(out, dict) else str(out)[:200])}
+    if name == "disarm_plan":
+        if not bool(eng.settings.get("techniques.tip.analyst_manage_enabled", True)):
+            return {"error": "plan management by the analyst is disabled "
+                             "(techniques.tip.analyst_manage_enabled)"}
+        runner = getattr(eng, "tip_runner", None)
+        if runner is None:
+            return {"error": "tip runner not attached"}
+        rid = str(args.get("run_id") or "")
+        reason = str(args.get("reason") or "").strip()
+        if not reason:
+            return {"error": "a reason is required — it is journaled"}
+        ap = runner.get(rid)
+        if ap is None:
+            return {"error": f"no live armed plan {rid} (already disarmed/expired?)"}
+        if getattr(ap, "technique", "") != "tip":
+            return {"error": f"plan {rid} belongs to technique "
+                             f"'{getattr(ap, 'technique', '?')}' — not yours to disarm"}
+        if any(t.remaining > 0 for t in ap.trades.values()):
+            return {"error": "the plan holds a position — manage it with close_position / "
+                             "update_exit_plan on the managed position, not a disarm"}
+        ok = await runner.disarm(rid, reason=f"analyst: {reason}"[:200])
+        return {"disarmed": bool(ok), "runId": rid, "symbol": ap.symbol}
     if name == "get_open_tips":
         return await _open_tips(eng, str(args.get("ticker") or ""),
                                 str(args.get("source") or ""))

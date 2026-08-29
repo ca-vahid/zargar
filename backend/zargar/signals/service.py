@@ -770,10 +770,19 @@ class SignalService:
                                 client=self._analyst_client)
         else:
             n_trade = len(tradable)
-            await intake.finish(
-                f"{n_trade} tip{'s' if n_trade != 1 else ''}" if sigs else "no signals",
-                f"Done — {n_trade} of {len(sigs)} signal(s) entered the tip pipeline."
-                if sigs else "Done — no trade signals in this message.")
+            if not sigs and await self._source_has_open_items(content.source_name):
+                # ARM-GAPS D1: a no-ticker message ("I'm out", "closed
+                # everything") from a source with open items on the desk is a
+                # follow-up, not noise — the analyst reviews it against what we
+                # hold and wait for
+                await intake.review(source=content.source_name or "unknown",
+                                    message_text=source_text, outcomes=[],
+                                    client=self._analyst_client)
+            else:
+                await intake.finish(
+                    f"{n_trade} tip{'s' if n_trade != 1 else ''}" if sigs else "no signals",
+                    f"Done — {n_trade} of {len(sigs)} signal(s) entered the tip pipeline."
+                    if sigs else "Done — no trade signals in this message.")
 
         async with eng.sf() as session:               # source may have been auto-detected
             refreshed = await session.get(RawContent, content_id)
@@ -782,6 +791,70 @@ class SignalService:
                 "intakeRunId": intake.id,
                 "source": (refreshed.source_name if refreshed else content.source_name),
                 "sourceDetected": bool((refreshed.meta or {}).get("sourceDetected")) if refreshed else False}
+
+    async def _source_has_open_items(self, source: str | None) -> bool:
+        """Does this source have anything OPEN on the desk (tips, waiting armed
+        plans, managed positions)? Gates the no-ticker follow-up review (D1)."""
+        eng = self.engine
+        name = source or "unknown"
+        async with eng.sf() as session:
+            n = (await session.execute(
+                select(Signal.id).where(
+                    Signal.source_name == name,
+                    Signal.status.in_(("verified", "parked", "shadow", "proposed")))
+                .limit(1))).first()
+        if n is not None:
+            return True
+        runner = getattr(eng, "tip_runner", None)
+        if runner is not None and any(
+                (ap.plan.get("context") or {}).get("source") == name
+                and ap.status in ("armed", "paused")
+                for ap in runner._armed.values()):
+            return True
+        mgr = getattr(eng, "position_manager", None)
+        if mgr is not None:
+            with contextlib.suppress(Exception):
+                for p in mgr.positions(status="open"):
+                    if p.get("technique") == "tip" and f"source:{name}" in (p.get("tags") or []):
+                        return True
+        return False
+
+    async def _reappraise_seen_again(self, signal_id: str) -> None:
+        """A re-posted tip with a live waiting plan gets a fresh appraisal
+        (ARM-GAPS D6) — the opinion updates in place (the armed link survives);
+        it re-enters no lanes on its own."""
+        eng = self.engine
+        async with eng.sf() as session:
+            row = await session.get(Signal, signal_id)
+        if row is None:
+            return
+        policy = resolve_policy(eng.settings, row.source_name)
+        try:
+            from ..techniques.tip.analyst import analyze_tip
+            opinion = await analyze_tip(eng, row, row.verification or {}, policy,
+                                        client=self._analyst_client)
+        except Exception:
+            log.exception("seen-again reappraisal failed for %s", signal_id)
+            return
+        if not opinion:
+            return
+        async with eng.sf() as session:
+            db_row = await session.get(Signal, signal_id)
+            if db_row is None:
+                return
+            old = (db_row.extraction or {}).get("analyst") or {}
+            merged = dict(opinion)
+            if old.get("armedRunId"):
+                merged["armedRunId"] = old["armedRunId"]
+            db_row.extraction = {**(db_row.extraction or {}), "analyst": merged}
+            await session.commit()
+            row = db_row
+        await eng.journal.append(
+            ev.SIGNAL_ANALYZED,
+            {"seenAgain": True,
+             **{k: opinion.get(k) for k in ("verdict", "contract", "rationale")}},
+            aggregate_type="signal", aggregate_id=signal_id)
+        eng.bus.publish(topics.SIGNALS, signal_dict(row))
 
     async def _find_duplicate(self, key: str, window_hours: float) -> Signal | None:
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=window_hours)
@@ -831,10 +904,14 @@ class SignalService:
             policy = resolve_policy(eng.settings, content.source_name)
             grounding = ground_signal(sig, source_text)
 
-            # --- dedupe: the same tip seen again attaches to the original ---
+            # --- dedupe: the same tip seen again attaches to the original.
+            # A FOLLOW-UP ("sold 40%", "close") is never a duplicate of the
+            # open it refers to (ARM-GAPS D1 — found when a close-action
+            # message deduped onto the open and vanished) ---
             key = dedupe_key_for(content.source_name, sig)
             window = float(eng.settings.get("techniques.tip.dedupe_window_hours", 24))
-            dup = await self._find_duplicate(key, window)
+            dup = (await self._find_duplicate(key, window)
+                   if sig.action in ("open", "add", "") else None)
             if dup is not None:
                 async with eng.sf() as session:
                     db_dup = await session.get(Signal, dup.id)
@@ -850,6 +927,18 @@ class SignalService:
                 eng.bus.publish(topics.SIGNALS, signal_dict(dup))
                 istep("signal", f"{dup.ticker}: seen again (×{dup.seen_count}) — attached "
                                 "to the original tip, not a second one.")
+                # ARM-GAPS D6: repeat conviction reaches the waiting plan —
+                # annotate it (and optionally extend / re-appraise)
+                runner = getattr(eng, "tip_runner", None)
+                if runner is not None:
+                    with contextlib.suppress(Exception):
+                        await runner.note_seen_again(dup.id, int(dup.seen_count or 1))
+                if (bool(eng.settings.get("techniques.tip.seen_again_reappraise", True))
+                        and runner is not None and runner.live_run_for_signal(dup.id)
+                        and (self._analyst_client is not None
+                             or getattr(eng.config, "anthropic_api_key", ""))):
+                    asyncio.create_task(self._reappraise_seen_again(dup.id),
+                                        name=f"tip-reappraise-{dup.id[:8]}")
                 out.append({"signal": signal_dict(dup), "duplicateOf": dup.id,
                             "proposal": None, "shadowOrder": None})
                 continue
@@ -917,6 +1006,27 @@ class SignalService:
                         await asyncio.sleep(0.25)
             verification = await verify_signal(sig, eng.quotes, eng.settings,
                                                grounding=grounding)
+            # ARM-GAPS D1/D4: a follow-up action ("sold 40%", "I'm out", "move
+            # the stop") deterministically reaches everything it invalidates
+            # BEFORE any human or auto mode can act on a stale card
+            if sig.action in ("trim", "close", "update_stop"):
+                if eng.proposals is not None:
+                    with contextlib.suppress(Exception):
+                        n_exp = await eng.proposals.expire_for_followup(
+                            source=content.source_name or "unknown", ticker=row.ticker,
+                            reason=f"source posted '{sig.action}' before approval")
+                        if n_exp:
+                            istep("note", f"{row.ticker}: {n_exp} pending proposal(s) expired — "
+                                          f"the source posted '{sig.action}'.")
+                runner = getattr(eng, "tip_runner", None)
+                if runner is not None:
+                    with contextlib.suppress(Exception):
+                        flagged = await runner.note_followup(
+                            source=content.source_name or "unknown", ticker=row.ticker,
+                            action=sig.action, signal_id=row.id)
+                        if flagged:
+                            istep("note", f"{row.ticker}: {len(flagged)} waiting armed plan(s) "
+                                          f"flagged for review (source follow-up).")
             # flow context rides along (informational, never a check): does the
             # options tape agree with the tip?
             flow = getattr(eng, "flow_service", None)

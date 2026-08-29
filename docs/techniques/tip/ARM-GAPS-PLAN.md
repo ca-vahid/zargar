@@ -165,50 +165,50 @@ bump a counter (`service.py:836-857`), the lane choice is never graded
 (`TIP_LANE_DECIDED` has zero consumers), and the analyst can close shadow-book
 positions (`analyst.py:328-344`).*
 
-- [ ] **D1 — verification is action-aware.** `action in ("close","trim","exit")`
+- [x] **D1 — verification is action-aware.** `action in ("close","trim","exit")`
   never verifies as an open: it routes to the review lane referencing the
   source's open items (position, waiting plan, pending proposal) instead of the
   proposal/shadow lanes. A no-ticker exit message ("I'm out") reaches the
   review run too — keyed off the source having open items, with the mirror
   context identifying what "it" is.
-- [ ] **D2 — signal → armed-run index + a `disarm_plan` tool.** Maintain the
+- [x] **D2 — signal → armed-run index + a `disarm_plan` tool.** Maintain the
   live index at arm time (today `extraction.analyst.armedRunId` is written and
   never read; `runs_for_signal` exists unexposed). Give review/appraise runs a
   `disarm_plan` tool (tip-technique plans only, waiting-only — a plan with an
   open trade goes through `close_position`/`update_exit_plan` as today);
   journaled with the analyst's reason, surfaced on the run's play-by-play.
-- [ ] **D3 — the analyst can SEE waiting plans.** `get_open_tips` (and the run
+- [x] **D3 — the analyst can SEE waiting plans.** `get_open_tips` (and the run
   preamble for the tip's source) includes each open tip's armed state: run id,
   waiting levels, day X of N, pending proposal if any. "Our book" =
   positions + waiting commitments.
-- [ ] **D4 — proposals are follow-up-aware.** Index pending proposals by
+- [x] **D4 — proposals are follow-up-aware.** Index pending proposals by
   `signal_id`; a verified source exit/reversal expires the pending proposal
   with a reason ("source exited before approval") — journaled, card shows why.
   `auto` mode must check this at approval time (no self-approve of a reversed
   idea).
-- [ ] **D5 — re-arm replaces, never doubles.** `arm_signal`/`arm_from_analyst`
+- [x] **D5 — re-arm replaces, never doubles.** `arm_signal`/`arm_from_analyst`
   check the signal's live armed run first: default is refuse with the existing
   run id (API 409-style), explicit `replace: true` disarms the old plan then
   arms the new one atomically. `_armed_today` becomes the shared check.
-- [ ] **D6 — seen-again refreshes.** A re-post of an open tip annotates the
+- [x] **D6 — seen-again refreshes.** A re-post of an open tip annotates the
   armed plan (journal on the run: "source repeated the call, seen_count=3"),
   and knobs decide the rest: `techniques.tip.seen_again_extends` (roll the
   horizon window forward, default off) and `seen_again_reappraise` (queue a
   review run, default on when the analyst is enabled).
-- [ ] **D7 — grade the lane choice.** A nightly consumer of `TIP_LANE_DECIDED`:
+- [x] **D7 — grade the lane choice.** A nightly consumer of `TIP_LANE_DECIDED`:
   when a tip resolves (filled+closed or expired), compare the chosen lane
   against the counterfactual the shadow books already hold (immediate vs armed
   row for that signal) and write the delta to the source scorecard +
   a `lane` note the analyst reads. "The analyst chose at_level 9 times; now
   would have paid better 6 of 9" becomes visible.
-- [ ] **D8 — learning from non-fills.** The retro sweep grows a second query:
+- [x] **D8 — learning from non-fills.** The retro sweep grows a second query:
   expired-unfilled plans and expired proposals get a lightweight batch retro
   (one run per source per day max) whose lessons go to notes/rules — the
   misses teach too.
-- [ ] **D9 — shadow-book quarantine.** `_manage_guard` and the `managed` list
+- [x] **D9 — shadow-book quarantine.** `_manage_guard` and the `managed` list
   handed to the analyst exclude shadow-book portfolios; the analyst can never
   see or close a counterfactual position (scorecard integrity).
-- [ ] **D10 — tests.** Exit message disarms via analyst; exit message can no
+- [x] **D10 — tests.** Exit message disarms via analyst; exit message can no
   longer open exposure; no-ticker exit reaches review; re-arm refuses/replaces;
   pending proposal expires on source exit incl. auto-mode block; seen-again
   annotates + optional reappraise; lane grader writes the scorecard delta;
@@ -409,3 +409,49 @@ green at every merge.
 - **C5**: three tests — chase cap rests the entry at reference×1.10;
   analystContract beats the tip's strike on an armed fire; the DTE floor
   substitutes (and the verbatim case stays unmarked).
+
+## Implementation notes — Cluster D (landed 2026-08-29)
+
+- **D1**: verification gained the FATAL `opens_position` check — action
+  trim/close/update_stop never verifies as an open; the existing
+  discarded→review path hands it to the analyst. A no-ticker message from a
+  source with open items (tips / waiting plans / managed positions —
+  `_source_has_open_items`) routes to the review run instead of "no signals".
+  Found & fixed on the way: DEDUPE swallowed follow-ups (a close-action
+  message matched the open's dedupe key and vanished as "seen again") — dedupe
+  now only matches open-type actions.
+- **D2**: `TipRunner.live_run_for_signal` (the signal→run index) + the
+  analyst `disarm_plan` tool — waiting plans only (a plan holding a position
+  refuses and points at close_position), tip-technique only, reason journaled,
+  gated by `techniques.tip.analyst_manage_enabled`.
+- **D3**: `get_open_tips` now carries each tip's waiting commitments:
+  `armedRunId`, `armedWaitingAt` (levels), `armedDay` ("2 of 5"), `armedMode`,
+  `pendingProposalId`.
+- **D4**: `expire_for_followup(source, ticker, reason)` — a follow-up expires
+  the pending proposals it invalidates, deterministic, reason on the card
+  (`context.expiredReason`) and in the journal; runs BEFORE any human/auto can
+  approve. `approve()` already refuses non-pending/expired proposals.
+- **D5**: `arm_signal` refuses a second live arm for the same tip
+  (ValueError names the run) unless `replace: true` (which disarms the old
+  first); `arm_from_analyst` replaces by default (re-appraisals supersede).
+- **D6**: the dedupe branch annotates the waiting plan (`note_seen_again` —
+  run log + journal), optionally extends the horizon window
+  (`techniques.tip.seen_again_extends`, default off) and queues a fresh
+  appraisal when a plan is live (`techniques.tip.seen_again_reappraise`,
+  default on; the new opinion updates in place, keeps `armedRunId`, and
+  re-enters no lanes on its own).
+- **D7**: `grade_lanes` — deterministic, nightly: once a tip resolves, the
+  chosen lane is graded against the shadow books' own ORDERS for that signal
+  ($ realized immediate vs armed; a book with no orders scored $0, an
+  unclosed book waits); journals `TipLaneGraded` and saves a source-scoped
+  LANE GRADE note the analyst reads.
+- **D8**: `run_unfilled_retros` — one batched LLM retro per source per sweep
+  over recently expired-unfilled tips ("were these levels ever realistic?"),
+  marked `unfilledRetro` per signal so each is reviewed once. Both D7 and D8
+  ride the nightly `tip_retro` job via `nightly_tip_review`.
+- **D9**: shadow-book quarantine — `_manage_guard` refuses shadow-book
+  positions and `get_positions`' managed list excludes them.
+- **D10**: seven tests (follow-up demotion + proposal expiry, waiting-plan
+  flagging, re-arm refuse/replace, seen-again annotation, the disarm tool
+  incl. the holds-a-position refusal, shadow quarantine, lane grading with
+  crafted book orders).

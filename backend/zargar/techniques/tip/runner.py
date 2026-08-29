@@ -287,8 +287,18 @@ class TipRunner(PlanRunner):
             entry_ladder = config.pop("entryLadder", None)   # analyst scale-in (P3)
             entry_guards = config.pop("entryGuards", None)   # analyst conditions (P4)
             analyst_contract = config.pop("analystContract", None)  # analyst vehicle (C2)
+            replace = bool(config.pop("replace", False))            # re-arm replaces (D5)
         else:
             entry_guards = analyst_contract = None
+            replace = False
+        # one live plan per tip (ARM-GAPS D5): a second arm REPLACES the first
+        # (explicitly) or is refused — never a silent double-exposure
+        existing = self.live_run_for_signal(signal_id)
+        if existing is not None:
+            if not replace:
+                raise ValueError(f"this tip already has a live armed plan "
+                                 f"({existing[:8]}) — disarm it first, or arm with replace")
+            await self.disarm(existing, reason="replaced by a new arm for the same tip")
         if policy.entry != "level_touch" and not allow_any_entry:
             raise ValueError("this source's policy is tip_time — tip-time tips propose "
                              "immediately; arming is for level-touch tips")
@@ -408,7 +418,7 @@ class TipRunner(PlanRunner):
                   **({"analystContract": opinion.get("contract")}
                      if opinion.get("contract")
                      and str(opinion.get("instrument") or "option") == "option" else {}),
-                  "allowAnyEntry": True}
+                  "allowAnyEntry": True, "replace": True}
         snap = await self.arm_signal(sig.id, config)
         if warns:
             snap["riskWarning"] = "; ".join(warns)
@@ -524,6 +534,65 @@ class TipRunner(PlanRunner):
             await svc._record_expression(sig.id, {**expr, "closed": True,
                                                   "closedOn": today.isoformat()})
         return closed
+
+    def live_run_for_signal(self, signal_id: str) -> str | None:
+        """The signal's live armed plan, if any (ARM-GAPS D2's index — the
+        source of truth is the runner's own map, restart-safe via restore)."""
+        for ap in self._armed.values():
+            if (ap.plan.get("context") or {}).get("signalId") == signal_id \
+                    and ap.status in ("armed", "paused"):
+                return ap.run_id
+        return None
+
+    async def note_seen_again(self, signal_id: str, count: int) -> str | None:
+        """The source repeated an open tip (ARM-GAPS D6): annotate the waiting
+        plan (journaled on its run), optionally extend the horizon window
+        (`techniques.tip.seen_again_extends`)."""
+        rid = self.live_run_for_signal(signal_id)
+        if rid is None:
+            return None
+        ap = self._armed.get(rid)
+        self._log(ap, "seen_again", f"the source repeated this call (seen ×{count})")
+        if bool(self.engine.settings.get("techniques.tip.seen_again_extends", False)):
+            try:
+                _h, exp = await self.plan_horizon({}, {**ap.plan, "planFor": ap.plan_for})
+                if exp and exp > (ap.expires_session or ap.plan_for):
+                    old = ap.expires_session
+                    ap.expires_session = exp
+                    self._log(ap, "seen_again",
+                              f"horizon window extended {old} -> {exp} (repeat conviction)")
+            except Exception:
+                log.debug("seen-again horizon extension failed", exc_info=True)
+        await self.engine.journal.append(
+            ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED,
+            {"runId": rid, "symbol": ap.symbol, "trigger": "plan", "event": "seen_again",
+             "seenCount": count, "reason": f"source repeated the call (×{count})"},
+            aggregate_type="technique_run", aggregate_id=rid)
+        await self._persist(ap)
+        self._publish(ap, "seen_again")
+        return rid
+
+    async def note_followup(self, *, source: str, ticker: str, action: str,
+                            signal_id: str | None = None) -> list[str]:
+        """A source follow-up ("sold 40%", "I'm out") landed while plans WAIT
+        (ARM-GAPS D1/D9 wiring): flag every live waiting plan of that
+        source+ticker — loudly. Disarming stays the analyst's/human's call."""
+        out: list[str] = []
+        for ap in list(self._armed.values()):
+            ctx = ap.plan.get("context") or {}
+            if ap.symbol != ticker.upper() or (ctx.get("source") or "") != source \
+                    or ap.status not in ("armed", "paused"):
+                continue
+            self._log(ap, "source_followup",
+                      f"the source posted a '{action}' on {ticker} while this plan waits "
+                      f"for its level — review it (the analyst can disarm_plan)")
+            await self._alert(ap, f"source follow-up: '{action}' on {ticker} while this plan "
+                              f"is still waiting — review or disarm it", level="warning",
+                              stage="followup")
+            await self._persist(ap)
+            self._publish(ap, "source_followup")
+            out.append(ap.run_id)
+        return out
 
     def _armed_today(self, signal_id: str) -> bool:
         today = dt.datetime.now(dt.timezone.utc).date().isoformat()
@@ -752,11 +821,12 @@ async def attach_tip_runner(engine) -> None:
     at = str(engine.settings.get("techniques.tip.shadow_arm_at", "09:12"))
     engine.scheduler.register("tip_shadow_arm", at,
                               lambda: engine.tip_runner.shadow_arm_open_tips())
-    # the analyst's nightly retro on closed tip positions (ANALYST.md §2.4)
-    from .retro import run_tip_retros
+    # the analyst's nightly self-review (ANALYST.md §2.4 + ARM-GAPS D7/D8):
+    # position retros, unfilled-tips batch retros, then lane grading
+    from .retro import nightly_tip_review
     retro_at = str(engine.settings.get("techniques.tip.retro_at", "17:10"))
     engine.scheduler.register("tip_retro", retro_at,
-                              lambda: run_tip_retros(engine))
+                              lambda: nightly_tip_review(engine))
     # restart safety: re-arm adopt-on-fill waiters for approved tip proposals
     # whose orders were still resting at shutdown (ARM-PLAN P2)
     try:
