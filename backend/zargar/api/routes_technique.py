@@ -255,7 +255,8 @@ def build_technique_routes(app, eng, auth, config) -> None:
 
     @app.post("/api/technique/armed/{run_id}/exit", dependencies=[auth])
     async def technique_armed_exit(run_id: str, body: ArmedExitBody):
-        d = await _svc(eng).armer.flatten_trade(run_id, body.trigger)
+        runner = _svc(eng).runner_for(run_id)
+        d = await runner.flatten_trade(run_id, body.trigger) if runner is not None else None
         if d is None:
             raise HTTPException(status_code=404, detail="plan is not armed")
         return d
@@ -342,8 +343,11 @@ def build_technique_routes(app, eng, auth, config) -> None:
     @app.post("/api/technique/armed/{run_id}/mode", dependencies=[auth])
     async def technique_armed_mode(run_id: str, body: ArmedModeBody):
         try:
-            return await _svc(eng).armer.set_mode(run_id, body.mode, allow_live=body.allowLive,
-                                                  entry_fallback=body.entryFallback)
+            runner = _svc(eng).runner_for(run_id)
+            if runner is None:
+                raise KeyError(run_id)
+            return await runner.set_mode(run_id, body.mode, allow_live=body.allowLive,
+                                         entry_fallback=body.entryFallback)
         except KeyError:
             raise HTTPException(status_code=404, detail="not armed")
         except (RuntimeError, ValueError) as exc:

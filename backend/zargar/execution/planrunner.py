@@ -549,6 +549,12 @@ class PlanRunner(SessionListener):
         return n
 
     # ---------------------------------------------------------------- queries
+    @property
+    def armer(self):
+        # duck-type for the per-technique service registry (`engine.techniques`):
+        # scoped routes call `svc.armer.*`, and a runner IS its own armer
+        return self
+
     def armed(self, *, slim: bool = False) -> list[dict]:
         out = [self._snapshot(a) for a in self._armed.values()]
         if slim:

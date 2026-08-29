@@ -1743,17 +1743,49 @@ class TechniqueService:
     async def arm_plan(self, run_id: str, config: dict | None = None) -> dict:
         return await self.armer.arm(run_id, config)
 
+    # --- the multi-technique armed hub -------------------------------------------
+    # Every PlanRunner on the engine (EM's armer, the tip runner, future
+    # techniques) registers in `engine.plan_runners`; the /api/technique/armed
+    # hub endpoints aggregate across ALL of them so a plan armed by any
+    # technique shows up — the WS deltas already come from every runner
+    # (PlanRunner._publish), and a REST list that disagreed with them made
+    # tip plans flicker in and out of the UI (found 2026-08-29).
+    def _runners(self) -> list:
+        rs = list((getattr(self.engine, "plan_runners", None) or {}).values())
+        if self.armer not in rs:
+            rs.insert(0, self.armer)
+        return rs
+
+    def runner_for(self, run_id: str):
+        """The PlanRunner holding this armed plan, or None."""
+        for r in self._runners():
+            if r.get(run_id) is not None:
+                return r
+        return None
+
+    def _runner_or_raise(self, run_id: str):
+        r = self.runner_for(run_id)
+        if r is None:
+            raise KeyError(run_id)
+        return r
+
     async def disarm_plan(self, run_id: str, *, flatten: bool = False, reason: str = "manual") -> bool:
-        return await self.armer.disarm(run_id, reason=reason, flatten=flatten)
+        r = self.runner_for(run_id)
+        if r is None:
+            return False
+        return await r.disarm(run_id, reason=reason, flatten=flatten)
 
     async def pause_plan(self, run_id: str) -> dict:
-        return await self.armer.pause(run_id)
+        return await self._runner_or_raise(run_id).pause(run_id)
 
     async def resume_plan(self, run_id: str) -> dict:
-        return await self.armer.resume(run_id)
+        return await self._runner_or_raise(run_id).resume(run_id)
 
     async def stop_all_armed(self, *, flatten: bool = False) -> int:
-        return await self.armer.stop_all(flatten=flatten)
+        n = 0
+        for r in self._runners():
+            n += await r.stop_all(flatten=flatten)
+        return n
 
     async def arm_today(self, symbol: str, config: dict | None = None, *, with_vision: bool | None = None) -> dict:
         return await self.armer.arm_today(symbol, config, with_vision=with_vision)
@@ -1762,14 +1794,31 @@ class TechniqueService:
         return await self.armer.preflight(run_id, config)
 
     def armed_plans(self, *, slim: bool = False) -> list[dict]:
-        return self.armer.armed(slim=slim)
+        return [d for r in self._runners() for d in r.armed(slim=slim)]
 
     async def armed_summary(self) -> dict:
         """The phone's "Now" payload: the live summary plus the plans that
         ended today (loss halt, disarm, expiry) — which the live list forgets."""
         from zoneinfo import ZoneInfo
         from ..models import TechniqueArmed
-        out = self.armer.summary()
+        runners = self._runners()
+        out = runners[0].summary()
+        for r in runners[1:]:
+            s = r.summary()
+            for k, v in (s.get("counts") or {}).items():
+                out["counts"][k] = out["counts"].get(k, 0) + v
+            for k in ("attention", "inTrade", "watching", "timeline", "stoppedToday"):
+                out[k].extend(s.get(k) or [])
+            for k in ("realized", "unrealized", "lossLimit"):
+                out["pnl"][k] = round(out["pnl"][k] + (s.get("pnl") or {}).get(k, 0.0), 2)
+        if len(runners) > 1:
+            out["timeline"].sort(key=lambda x: -(x.get("ts") or 0))
+            out["timeline"] = out["timeline"][:100]
+            out["watching"].sort(key=lambda w: (w.get("stale") or False,
+                                                abs((w.get("nearest") or {}).get("distancePct") or 999)))
+            ll = out["pnl"]["lossLimit"]
+            used = (-(out["pnl"]["realized"] + out["pnl"]["unrealized"]) / ll * 100) if ll > 0 else None
+            out["pnl"]["lossLimitUsedPct"] = round(max(0.0, used), 1) if used is not None else None
         today = dt.datetime.now(ZoneInfo("America/New_York")).date().isoformat()
         seen = {s["runId"] for s in out["stoppedToday"]}
         async with self.engine.sf() as session:
@@ -1798,10 +1847,15 @@ class TechniqueService:
         return out
 
     def armed_detail(self, run_id: str) -> dict | None:
-        return self.armer.detail(run_id)
+        for r in self._runners():
+            d = r.detail(run_id)
+            if d is not None:
+                return d
+        return None
 
     async def armed_audit(self, run_id: str, *, limit: int = 200) -> list[dict]:
-        return await self.armer.audit(run_id, limit=limit)
+        r = self.runner_for(run_id) or self.armer
+        return await r.audit(run_id, limit=limit)
 
     async def armed_history(self, *, limit: int = 50) -> list[dict]:
         from ..models import TechniqueArmed
@@ -2364,5 +2418,8 @@ async def attach_technique_layer(engine) -> None:
     if getattr(engine, "techniques", None) is None:
         engine.techniques = {}
     engine.techniques["enhanced_market"] = engine.technique   # service registry (phase 3): /api/techniques/{id}
+    if getattr(engine, "plan_runners", None) is None:
+        engine.plan_runners = {}
+    engine.plan_runners["enhanced_market"] = svc.armer        # the /api/technique/armed hub aggregates these
     engine.chat = chat
     svc.start()

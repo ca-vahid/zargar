@@ -580,6 +580,15 @@ async def attach_tip_runner(engine) -> None:
     if getattr(engine, "tip_runner", None) is not None:
         return
     engine.tip_runner = TipRunner(engine)
+    # register with the platform: the /api/technique/armed hub aggregates every
+    # runner here, and /api/techniques/tip/* resolves through engine.techniques
+    # (a PlanRunner is its own `.armer` — see PlanRunner.armer)
+    if getattr(engine, "plan_runners", None) is None:
+        engine.plan_runners = {}
+    engine.plan_runners["tip"] = engine.tip_runner
+    if getattr(engine, "techniques", None) is None:
+        engine.techniques = {}
+    engine.techniques.setdefault("tip", engine.tip_runner)
     try:
         restored = await engine.tip_runner.restore()
         if restored:
