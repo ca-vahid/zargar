@@ -576,9 +576,38 @@ class ProposalService:
                 expired.append(proposal_dict(row))
             await session.commit()
         for pdict in expired:
-            await eng.journal.append(ev.PROPOSAL_EXPIRED, {},
+            await eng.journal.append(ev.PROPOSAL_EXPIRED, {"reason": "ttl"},
                                      aggregate_type="proposal", aggregate_id=pdict["id"])
             eng.bus.publish(topics.PROPOSALS, pdict)
+        return len(expired)
+
+    async def expire_for_followup(self, *, source: str, ticker: str, reason: str) -> int:
+        """A verified source follow-up ("sold", "I'm out") kills the still-pending
+        proposals it invalidates (ARM-GAPS D4) — with the reason on the card,
+        before a human (or auto mode) can approve a reversed idea."""
+        eng = self.engine
+        now = dt.datetime.now(dt.timezone.utc)
+        expired: list[dict] = []
+        async with eng.sf() as session:
+            rows = (await session.execute(
+                select(Proposal).join(Signal, Proposal.signal_id == Signal.id)
+                .where(Proposal.status == "pending",
+                       Signal.source_name == source,
+                       Signal.ticker == ticker.upper()))).scalars().all()
+            for row in rows:
+                row.status = "expired"
+                row.decided_at = now
+                row.context = {**(row.context or {}), "expiredReason": reason}
+                expired.append(proposal_dict(row))
+            await session.commit()
+        for pdict in expired:
+            await eng.journal.append(ev.PROPOSAL_EXPIRED,
+                                     {"reason": reason, "source": source, "ticker": ticker},
+                                     aggregate_type="proposal", aggregate_id=pdict["id"])
+            eng.bus.publish(topics.PROPOSALS, pdict)
+        if expired:
+            log.info("expired %d pending proposal(s) on %s follow-up (%s)",
+                     len(expired), ticker, reason)
         return len(expired)
 
     async def _expiry_loop(self) -> None:

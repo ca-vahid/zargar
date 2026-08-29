@@ -48,6 +48,15 @@ async def verify_signal(
         add("quote_grounding", bool(grounding.get("passed")),
             "" if grounding.get("passed") else "evidence quotes not found in source text")
 
+    # 0b. a follow-up is NEVER a new position (ARM-GAPS D1): "sold 40%" /
+    # "I'm out" / "move the stop" must not verify as an open and buy MORE of
+    # what the source just exited. Fatal — the discarded→review path hands the
+    # message to the analyst against the desk's open items instead.
+    add("opens_position", signal.action in ("open", "add", ""),
+        "" if signal.action in ("open", "add", "")
+        else f'"{signal.action}" is a follow-up on an existing idea — routed to the analyst '
+             f'review (positions / waiting plans / pending proposals), never a new position')
+
     # 1. actionability — SHADOW-gating, not fatal: an implied directional lean
     # still trades in the shadow books; it just never becomes a proposal
     require_actionable = bool(settings.get("verification.require_actionable", True))

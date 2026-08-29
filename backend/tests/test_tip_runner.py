@@ -1267,3 +1267,180 @@ async def test_stated_expiry_below_cutoff_substitutes(tip_rig):
                                     expiry=exp14, spot=100.0, stated_min_dte=2)
     assert pick2["available"] and pick2["expiry"] == exp14
     assert not pick2.get("substituted") and pick2.get("statedContract") is True
+
+
+# --- follow-ups close the loop (ARM-GAPS cluster D) ---------------------------------
+
+def canned_close_followup():
+    return ExtractionResult(
+        signals=[TradeSignal(
+            ticker="TEST", direction="long", action="close",
+            entry_price=None, target_price=None, stop_price=None,
+            entry_type="market", timeframe="swing", thesis_summary="source exited",
+            evidence_quotes=["sold all my TEST here"],
+            confidence="explicit_call", is_actionable=True)],
+        source_type="trade_alert")
+
+
+async def _ingest_followup(eng, source="TestRoom"):
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    txt = "sold all my TEST here"
+    row = RawContent(id=new_id(), source_type="manual", source_name=source,
+                     subject="update", body_text=txt)
+    async with eng.sf() as session:
+        session.add(row)
+        await session.commit()
+    return await eng.signals_service.handle_extraction(row, canned_close_followup(),
+                                                       source_text=txt)
+
+
+async def test_followup_never_opens_and_expires_pending_proposal(tip_rig):
+    """D1/D4: a 'close' message fails verification as an open AND expires the
+    pending proposal it invalidates, with the reason on the card."""
+    from zargar.models import Proposal
+    from sqlalchemy import select as _sel
+    eng, sim = tip_rig
+    out1 = await _ingest_tip(eng)          # default proposal-mode source: mints a pending proposal
+    async with eng.sf() as session:
+        pending = (await session.execute(_sel(Proposal)
+                                         .where(Proposal.status == "pending"))).scalars().all()
+    assert pending, "expected a pending proposal from the tip"
+    out2 = await _ingest_followup(eng)
+    sig2 = out2[0]["signal"]
+    assert sig2["status"] == "verification_failed"
+    checks = {c["name"]: c for c in sig2["verification"]["checks"]}
+    assert checks["opens_position"]["passed"] is False
+    async with eng.sf() as session:
+        p = await session.get(Proposal, pending[0].id)
+    assert p.status == "expired" and "source posted" in (p.context or {}).get("expiredReason", "")
+
+
+async def test_followup_flags_waiting_armed_plan(tip_rig):
+    """D1: a source follow-up lands on the WAITING armed plan — loudly."""
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng, )
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    run_id = snap["runId"]
+    await _ingest_followup(eng)
+    s = next(a for a in eng.tip_runner.armed() if a["runId"] == run_id)
+    assert any(e.get("event") == "source_followup" for e in s["events"]), \
+        [e.get("event") for e in s["events"]][-8:]
+
+
+async def test_rearm_refuses_then_replaces(tip_rig):
+    """D5: a second arm on the same tip is refused; replace disarms the old."""
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap1 = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    with pytest.raises(ValueError, match="already has a live armed plan"):
+        await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    snap2 = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert",
+                                                  "replace": True})
+    assert snap2["runId"] != snap1["runId"]
+    live = {a["runId"] for a in eng.tip_runner.armed()}
+    assert snap2["runId"] in live and snap1["runId"] not in live
+
+
+async def test_seen_again_annotates_armed_plan(tip_rig):
+    """D6: a re-posted tip annotates the waiting plan instead of vanishing
+    into a counter."""
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    out = await _ingest_tip_again(eng)
+    assert out[0].get("duplicateOf") == sid
+    s = next(a for a in eng.tip_runner.armed() if a["runId"] == snap["runId"])
+    assert any(e.get("event") == "seen_again" for e in s["events"])
+
+
+async def _ingest_tip_again(eng):
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    row = RawContent(id=new_id(), source_type="manual", source_name="TestRoom",
+                     subject="tip", body_text=SOURCE_TEXT)
+    async with eng.sf() as session:
+        session.add(row)
+        await session.commit()
+    return await eng.signals_service.handle_extraction(row, canned_tip(),
+                                                       source_text=SOURCE_TEXT)
+
+
+async def test_analyst_disarm_tool(tip_rig):
+    """D2: the analyst can disarm a WAITING plan; a plan holding a position is
+    refused (close_position is the path)."""
+    from zargar.execution.planrunner import Trade
+    from zargar.techniques.tip.analyst import _run_tool
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    run_id = snap["runId"]
+    out = await _run_tool(eng, "disarm_plan", {"run_id": run_id, "reason": "source exited"})
+    assert out.get("disarmed") is True
+    assert run_id not in {a["runId"] for a in eng.tip_runner.armed()}
+    # holding a position -> refused
+    sid2 = await _ingest_followup(eng)     # noqa: F841  (just ensures pipeline quiet)
+    sid3 = await _ingest_tip_again(eng)    # dedupe -> same signal, now unarmed; re-arm it
+    snap2 = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert",
+                                                  "replace": True})
+    ap = eng.tip_runner._armed[snap2["runId"]]
+    ap.trades["t"] = Trade(trigger_id="t", kind="bounce", fired_ts=0, window="w",
+                           entry=99.5, stop=98.0, targets=[103.0], status="open",
+                           qty=1.0, filled_qty=1.0, remaining=1.0)
+    out2 = await _run_tool(eng, "disarm_plan", {"run_id": snap2["runId"], "reason": "x"})
+    assert "holds a position" in str(out2.get("error"))
+
+
+async def test_shadow_positions_quarantined_from_analyst(tip_rig):
+    """D9: shadow-book managed positions are invisible to get_positions and
+    untouchable by the manage tools."""
+    from zargar.techniques.tip.analyst import _manage_guard, _our_positions
+    eng, sim = tip_rig
+    shadow = await eng.signals_service.shadow_portfolio("TestRoom", "immediate")
+    pos = await eng.position_manager.adopt({
+        "portfolioId": shadow["id"], "symbol": "TEST", "direction": "long",
+        "techniqueId": "tip", "tags": ["source:TestRoom"],
+        "entry": 100.0, "risk": 2.0,
+        "legs": [{"symbol": "TEST", "secType": "STK", "qty": 5, "avgFill": 100.0,
+                  "origin": "adoption"}],
+        "overnight": "venue_stop",
+        "policy": {"timeframe": "15m", "stop": {"kind": "fixed", "price": 98.0},
+                   "time_stop_sessions": 5}})
+    p, err = _manage_guard(eng, pos["id"])
+    assert p is None and "SHADOW" in str(err.get("error"))
+    listing = _our_positions(eng, "TEST")
+    assert all(m.get("positionId") != pos["id"] for m in listing.get("managed", []))
+
+
+async def test_grade_lanes_writes_verdict(tip_rig):
+    """D7: once a tip resolves, the lane choice is graded against the books'
+    own orders and journaled."""
+    from sqlalchemy import select as _sel
+    from zargar import events as ev
+    from zargar.domain import new_id
+    from zargar.models import Event, Order, Signal as SignalRow
+    from zargar.techniques.tip.retro import grade_lanes
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    imm = await eng.signals_service.shadow_portfolio("TestRoom", "immediate")
+    armed_pf = await eng.signals_service.shadow_portfolio("TestRoom", "armed")  # noqa: F841
+    async with eng.sf() as session:
+        srow = await session.get(SignalRow, sid)
+        srow.status = "expired"
+        session.add(Order(id=new_id(), portfolio_id=imm["id"], symbol="TEST", sec_type="STK",
+                          side="BUY", qty=10.0, order_type="MKT", status="FILLED",
+                          filled_qty=10.0, avg_fill_price=100.0, signal_id=sid))
+        session.add(Order(id=new_id(), portfolio_id=imm["id"], symbol="TEST", sec_type="STK",
+                          side="SELL", qty=10.0, order_type="MKT", status="FILLED",
+                          filled_qty=10.0, avg_fill_price=105.0, signal_id=sid))
+        await session.commit()
+    await eng.journal.append(ev.TIP_LANE_DECIDED, {"signalId": sid, "lane": "arm"},
+                             aggregate_type="signal", aggregate_id=sid)
+    out = await grade_lanes(eng)
+    assert out["graded"] >= 1, out
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(Event.payload)
+                                      .where(Event.type == "TipLaneGraded"))).scalars().all()
+    mine = [r for r in rows if r.get("signalId") == sid]
+    assert mine and mine[0]["verdict"] == "now_better", mine
+    assert mine[0]["immediatePnl"] == 50.0 and mine[0]["armedPnl"] == 0.0
