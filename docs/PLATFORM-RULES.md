@@ -187,3 +187,12 @@ runtime ones to `execution.*`).
 - 2026-08-27 · Platform phases 0–2: `marketstructure` library, technique registry + `technique`
   identity column, `OrderIntent.technique_id`, `execution/planrunner.py` (generic runner) with EM as
   `PlanArmer(PlanRunner)` hooks · `docs/TECHNIQUE-PLATFORM-PLAN.md`; parity suites green.
+- 2026-08-29 · **Scheduler "once per ET day" survives restarts** (flow team): each job hydrates
+  `last_day` from the journal's `ScheduledJobRan` rows on its first tick after boot — an evening
+  of redeploys no longer re-runs nightly jobs. Evidence: 08-28 flow scan ran 4× (20:25→21:28 ET);
+  the cold-boot re-runs had no quotes → spot 0 → zero flags, and overwrote the good 20:25 scan.
+  A genuinely missed job (engine down at its time, no journal row for the day) still runs late.
+  Flow also armored itself: put-call-parity spot from the chain when quotes are cold
+  (`scan.spot_from_chain`), a spot-less re-scan never overwrites an existing read
+  (`noSpot`/`keptExisting` in the scan journal), weekend "Scan now" rolls back to Friday, and a
+  boot task re-scans the latest day if it carries the degraded signature (scores w/o flags/spot).

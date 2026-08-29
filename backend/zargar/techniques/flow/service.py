@@ -15,11 +15,12 @@ no positions: Flow v1 is context.
 """
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import datetime as dt
 import logging
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from ... import events as ev
 from ...domain import new_id
@@ -33,7 +34,9 @@ from .scan import (
     confirm_oi,
     context_line,
     flag_contracts,
+    last_weekday,
     repeat_counts,
+    spot_from_chain,
 )
 
 log = logging.getLogger("zargar.flow")
@@ -64,9 +67,15 @@ class FlowService:
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
         """Register the daily scan on the engine scheduler (runs after the
-        chain-snapshots research feed so the day's rows are already stored)."""
+        chain-snapshots research feed so the day's rows are already stored),
+        and check the last scan for the degraded spot-less signature."""
         at = str(self.engine.settings.get("techniques.flow.scan_at", "16:45"))
         self.engine.scheduler.register("flow_scan", at, lambda: self.scan())
+        try:
+            asyncio.get_running_loop().create_task(
+                self._repair_last_scan(), name="flow-scan-repair")
+        except RuntimeError:                     # no loop (unit rigs) — skip
+            pass
 
     async def stop(self) -> None:
         self.engine.scheduler.unregister("flow_scan")
@@ -105,6 +114,11 @@ class FlowService:
         quote = self.engine.quotes.get(sym)
         if quote is not None and quote.last > 0:
             return float(quote.last)
+        # no live quote (cold boot, late scan): the chain itself knows the spot
+        # via put-call parity — never score a chain against spot 0 (2026-08-28)
+        parity = spot_from_chain(rows)
+        if parity > 0:
+            return parity
         opts = getattr(self.engine, "options", None)
         if opts is not None:
             try:
@@ -118,11 +132,13 @@ class FlowService:
         (day, symbol): a re-run replaces that day's read."""
         eng = self.engine
         t = FlowThresholds.from_settings(eng.settings)
-        day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
+        # weekend default rolls back to Friday: a Saturday "Scan now" re-reads
+        # Friday's tape instead of minting a junk day
+        day = day or last_weekday(dt.datetime.now(ET).date()).strftime("%Y-%m-%d")
         cap = int(eng.settings.get("techniques.flow.scan_top", 60))
         syms = [s.upper() for s in (symbols or self._universe(cap))]
 
-        scanned, flagged, errors, live_fallbacks = 0, 0, 0, 0
+        scanned, flagged, errors, live_fallbacks, no_spot, kept = 0, 0, 0, 0, 0, 0
         reads: list[dict] = []
         for sym in syms:
             try:
@@ -136,12 +152,19 @@ class FlowService:
                 live_fallbacks += 1
             scanned += 1
             read = await self._score_symbol(sym, day, rows, spot, t)
+            if spot <= 0:
+                # a spot-less score is DEGRADED (every flag filter needs spot):
+                # never overwrite a real read with it (the 2026-08-28 wipe)
+                no_spot += 1
+                if await self._read_row_for(sym, day) is not None:
+                    kept += 1
+                    continue
             await self._persist_read(read)
             if read["score"] > 0:
                 flagged += 1
                 reads.append({"symbol": sym, "score": read["score"], "lean": read["lean"]})
         summary = {"day": day, "scanned": scanned, "flagged": flagged, "errors": errors,
-                   "liveFallbacks": live_fallbacks,
+                   "liveFallbacks": live_fallbacks, "noSpot": no_spot, "keptExisting": kept,
                    "top": sorted(reads, key=lambda r: -r["score"])[:10]}
         self.last_scan = summary
         await eng.journal.append(ev.FLOW_SCAN_COMPLETED, {**summary, "technique": "flow"},
@@ -165,7 +188,52 @@ class FlowService:
         return build_read(sym, day, flags=flags, confirmed=confirmed, repeats=repeats,
                           agg=agg, t=t, spot=spot or None)
 
+    async def _repair_last_scan(self, *, delay: float = 15.0) -> None:
+        """Self-healing for the 2026-08-28 failure: if the latest scanned day
+        carries the degraded signature — scores from OI confirmations but ZERO
+        flags anywhere, spot never persisted — while its chain snapshots hold
+        real volume, re-scan that day (the guard above keeps the result from
+        ever regressing again)."""
+        try:
+            await asyncio.sleep(delay)          # let the feed warm; parity works anyway
+            async with self.engine.sf() as session:
+                latest = (await session.execute(
+                    select(FlowReadRow.day).order_by(FlowReadRow.day.desc()).limit(1)
+                )).scalars().first()
+                if not latest:
+                    return
+                rows = (await session.execute(
+                    select(FlowReadRow).where(FlowReadRow.day == latest))).scalars().all()
+                degraded = (any(r.score > 0 for r in rows)
+                            and all(not ((r.read or {}).get("flags")) for r in rows)
+                            and all((r.read or {}).get("spot") in (None, 0) for r in rows))
+                if not degraded:
+                    return
+                vol = (await session.execute(
+                    select(func.coalesce(func.sum(OptionChainSnapshot.volume), 0))
+                    .where(OptionChainSnapshot.date == latest))).scalar_one()
+            if not vol:
+                return                           # nothing better to score from
+            log.warning("flow: %s reads look degraded (no flags, no spot) but "
+                        "snapshots hold volume — re-scanning", latest)
+            # only the symbols that day actually read — never a fresh full sweep
+            summary = await self.scan(day=latest,
+                                      symbols=sorted({r.symbol for r in rows}))
+            await self.engine.journal.append(
+                ev.FLOW_SCAN_COMPLETED,
+                {**summary, "technique": "flow", "repair": True},
+                aggregate_type="flow", aggregate_id=latest)
+        except Exception:                        # self-healing never breaks boot
+            log.exception("flow scan repair failed")
+
     # ------------------------------------------------------------------ persistence
+    async def _read_row_for(self, sym: str, day: str) -> FlowReadRow | None:
+        async with self.engine.sf() as session:
+            return (await session.execute(
+                select(FlowReadRow).where(FlowReadRow.day == day,
+                                          FlowReadRow.symbol == sym).limit(1)
+            )).scalars().first()
+
     async def _persist_read(self, read: dict) -> None:
         async with self.engine.sf() as session:
             await session.execute(delete(FlowReadRow).where(
