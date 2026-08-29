@@ -280,7 +280,9 @@ class TechniqueService:
             "enforceSessionWindows": bool(self.engine.settings.get("technique.enforce_session_windows", True)),
             "structureTfs": list(self.engine.settings.get("technique.structure_tfs", ["1h", "30m"])),
             "triggerTf": str(self.engine.settings.get("technique.trigger_tf", "1m")),
-            "armed": self.armer.armed(),
+            # every technique's runner — the restart guard (scripts/start.ps1 via
+            # /api/health) counts these to protect armed plans across restarts
+            "armed": self.armed_plans(),
             "sweepsRunning": [sid for sid, t in self._sweeps.items() if not t.done()],
             "sweepVersion": sweep_version(thresholds=self.thresholds(), structure_tfs=list(self.structure_tfs()),
                                           trigger_tf=self.trigger_tf()),
