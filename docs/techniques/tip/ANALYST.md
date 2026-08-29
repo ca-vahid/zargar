@@ -195,12 +195,13 @@ conviction floor) is edited on **Tips → Sources → Per-source policy** (E6).
   tool that returns the picture as an actual image block — chart-only alerts
   can be LOOKED at during appraisals, reviews and retros. Source-history
   lines carry `[images: <messageId> — view_image to look]` markers.
-- ~~Risk-config clash~~ **RESOLVED in practice 2026-08-29**: the runtime raised
-  `risk.max_option_premium_pct` to 25% and `risk.max_position_notional` to
-  $5,000 (Settings), and the arm preflight (ARM-GAPS E3) now warns on EVERY
-  arm path — journaled, persisted on the plan (`riskWarning`) and rendered on
-  the Armed card — so a fresh install is loudly warned instead of silently
-  risk-rejected at fill time. Stock DEFAULTS stay conservative deliberately.
+- ~~Risk-config clash~~ **RESOLVED 2026-08-29**: the practice runtime now runs
+  the AMBITIOUS active-dev posture (`docs/NEXT-GAPS-PLAN.md` §0: premium 50% /
+  $10k, notional $25k, budget_per_tip $2,500, max_open_tips 10 …), and the arm
+  preflight (ARM-GAPS E3) warns on EVERY arm path — journaled, persisted on
+  the plan (`riskWarning`) and rendered on the Armed card. Stock DEFAULTS stay
+  conservative deliberately; the pre-live tightening is gap R3 in
+  NEXT-GAPS-PLAN.
 - **Rule consolidation (A8)**: rules only accrete; nothing yet merges or
   expires them. The prompt asks the analyst to refine-not-duplicate, but a
   periodic self-audit is the real fix. *(The one still-open item.)*

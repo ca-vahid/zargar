@@ -101,7 +101,10 @@ strict grammar and their own timestamps.*
     the READY payload — names, grouped by server) to `POST /api/tip/discord/catalog`.
   - The user picks sources in the app (**Tips > Sources > Discord**): a toggle per
     DM/channel, each mapped to its own source name (so jon-and-kian and muggzone
-    build separate scorecards); `botsOnly` per entry. Stored in
+    build separate scorecards); `botsOnly` per entry — **as of 2026-08-29 all
+    monitored sources run `botsOnly=false`** (active-dev posture: human
+    posters like MuggZone count; the flag stays per-entry on Tips → Sources).
+    Stored in
     `techniques.tip.discord.watch`; `GET/PUT /api/tip/discord/watch`.
   - The gateway polls the watchlist every 30s and ingests ONLY enabled channels
     (empty watchlist ⇒ nothing — personal DMs never become tips). Manual flags

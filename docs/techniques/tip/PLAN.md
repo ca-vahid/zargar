@@ -63,10 +63,12 @@ Every extract & verify and every analyst run surfaces a **click-to-copy id** and
 `test_signals_tip.py`, `test_tip_express.py`, `test_tip_runner.py`,
 `test_api_and_pipeline.py`, `test_discord_gateway.py`.
 
-**Not yet built:** Telegram intake, HMAC webhook auth, native multi-leg spread orders
-(leg-sequencing ships today; Webull CA accepts native mleg — ARM-PLAN P5), the A8 rule
-quality loop, and the real-money gates (below). *(The per-source policy editor and the
-repeat-mention decision shipped with ARM-GAPS E6/D6, 2026-08-29.)*
+**Not yet built** — planned with checkboxes in **`docs/NEXT-GAPS-PLAN.md`**: the A8
+rule quality loop, the native multi-leg executor, flow calibration, the real-money
+gate path, the real-device mobile pass, HMAC webhook auth. Telegram intake is
+DEPRIORITIZED (user, 2026-08-29) — don't build it unasked. *(The per-source policy
+editor and the repeat-mention decision shipped with ARM-GAPS E6/D6; the practice
+runtime runs the ambitious active-dev limits, NEXT-GAPS-PLAN §0.)*
 
 ## 0. What it is
 
