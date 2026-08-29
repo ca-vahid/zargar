@@ -21,12 +21,15 @@ class FlowThresholds:
     premium_min: float = 100_000.0       # mid * volume * 100
     min_contract_volume: int = 500
     min_open_interest: int = 100
+    dte_min: int = 3                     # FL2: expiry-board noise floor — a 0-2 DTE
+    #                                      print is gamma churn, not accumulation
     dte_max: int = 45
     otm_min_pct: float = 0.0
     otm_max_pct: float = 12.0
     repeat_days: int = 3
     repeat_window: int = 5
     os_ratio_flag: float = 0.5           # options volume / stock volume
+    premium_unit: float = 1_000_000.0    # FL2: $ of flagged premium per score point
 
     @classmethod
     def from_settings(cls, settings) -> "FlowThresholds":
@@ -39,12 +42,14 @@ class FlowThresholds:
             premium_min=float(g("premium_min", 100_000.0)),
             min_contract_volume=int(g("min_contract_volume", 500)),
             min_open_interest=int(g("min_open_interest", 100)),
+            dte_min=int(g("dte_min", 3)),
             dte_max=int(g("dte_max", 45)),
             otm_min_pct=float(g("otm_min_pct", 0.0)),
             otm_max_pct=float(g("otm_max_pct", 12.0)),
             repeat_days=int(g("repeat_days", 3)),
             repeat_window=int(g("repeat_window", 5)),
             os_ratio_flag=float(g("os_ratio_flag", 0.5)),
+            premium_unit=float(g("premium_unit", 1_000_000.0)),
         )
 
 
@@ -128,7 +133,7 @@ def flag_contracts(rows: list[dict], *, spot: float, day: str, t: FlowThresholds
         if vol < t.min_contract_volume or oi < t.min_open_interest:
             continue
         dte = _dte(r.get("expiry") or "", day)
-        if dte < 0 or dte > t.dte_max:
+        if dte < max(0, t.dte_min) or dte > t.dte_max:
             continue
         otm = _otm_pct(r, spot)
         if otm < t.otm_min_pct or otm > t.otm_max_pct:
@@ -209,9 +214,13 @@ def build_read(symbol: str, day: str, *, flags: list[dict], confirmed: list[dict
     call_prem = sum(f["premium"] for f in flags if f["optionType"] == "call")
     put_prem = sum(f["premium"] for f in flags if f["optionType"] == "put")
     if flags:
-        score += min(len(flags), 3)
-        reasons.append(f"{len(flags)} contract(s) with opening-style volume "
-                       f"(Vol/OI >= {t.vol_oi_min:g}, premium >= ${t.premium_min:,.0f})")
+        # FL2: premium-WEIGHTED, not count-weighted — one $3M whale outranks
+        # five $120k minnows; 1..3 points scaled by $ per t.premium_unit
+        prem_total = call_prem + put_prem
+        score += min(3.0, max(1.0, prem_total / max(t.premium_unit, 1.0)))
+        reasons.append(f"${prem_total:,.0f} of opening-style premium across {len(flags)} "
+                       f"contract(s) (Vol/OI >= {t.vol_oi_min:g}, >= ${t.premium_min:,.0f} "
+                       f"each, {t.dte_min}-{t.dte_max} DTE)")
     strong = [f for f in flags if f["strong"]]
     if strong:
         score += 1

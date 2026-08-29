@@ -167,3 +167,28 @@ def test_last_weekday_rolls_weekends_only():
     fri, wed = dt.date(2026, 8, 28), dt.date(2026, 8, 26)
     assert last_weekday(sat) == fri and last_weekday(sun) == fri
     assert last_weekday(wed) == wed
+
+
+# --- calibration changes (NEXT-GAPS FL2) -------------------------------------------
+
+def test_dte_floor_kills_expiry_board_noise():
+    """0-2 DTE prints are gamma churn, never flagged (dte_min default 3)."""
+    one_dte = row(expiry="2026-08-28")           # 1 DTE from DAY
+    ok = row()                                    # 22 DTE
+    flags = flag_contracts([one_dte, ok], spot=SPOT, day=DAY, t=T)
+    assert len(flags) == 1 and flags[0]["dte"] == 22
+    # explicit opt-out still works
+    t0 = FlowThresholds(dte_min=0)
+    assert len(flag_contracts([one_dte, ok], spot=SPOT, day=DAY, t=t0)) == 2
+
+
+def test_score_is_premium_weighted_not_count_weighted():
+    """One $3M whale must outrank five $110k minnows (FL2)."""
+    whale = flag_contracts([row(vol=15000, oi=1000)], spot=SPOT, day=DAY, t=T)   # ~$3.1M
+    minnows = flag_contracts(
+        [row(sym=f"M{i}", vol=1000, oi=200, bid=1.0, ask=1.2) for i in range(5)],
+        spot=SPOT, day=DAY, t=T)                                                  # 5 x $110k
+    r_whale = build_read("NVDA", DAY, flags=whale, confirmed=[], repeats={}, agg={}, t=T)
+    r_minn = build_read("NVDA", DAY, flags=minnows, confirmed=[], repeats={}, agg={}, t=T)
+    assert r_whale["score"] > r_minn["score"], (r_whale["score"], r_minn["score"])
+    assert "premium" in r_whale["reasons"][0]

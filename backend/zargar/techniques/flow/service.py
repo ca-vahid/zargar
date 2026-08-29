@@ -525,6 +525,15 @@ class FlowService:
         thesis = (f"Options flow {read['day']} score {read['score']:g}: {reason}"
                   + (f"; {n_conf} contract(s) OI-confirmed overnight" if n_conf else "")
                   + (f"; repeat {max_rep}/5 sessions" if max_rep else ""))[:300]
+        # FL4: conviction stays "implied" until the thresholds are CALIBRATED
+        # (techniques.flow.calibrated) — then a high-score, OI-confirmed read
+        # earns explicit_call (which lets the source policy propose)
+        conviction = "implied"
+        if (bool(self.engine.settings.get("techniques.flow.calibrated", False))
+                and float(read.get("score") or 0)
+                >= float(self.engine.settings.get("techniques.flow.universe_score_min", 5))
+                and n_conf > 0):
+            conviction = "explicit_call"
         extraction = ExtractionResult(signals=[TradeSignal(
             ticker=sym, direction=direction, action="open",
             instrument=want, strike=strike, expiry=expiry or None,
@@ -533,7 +542,7 @@ class FlowService:
             thesis_summary=thesis,
             evidence_quotes=[f"{sym} {lean}", f"{want} strike {strike:g} expiry {expiry}",
                              f"Direction {direction}"],
-            confidence="implied", is_actionable=True)], source_type="trade_alert")
+            confidence=conviction, is_actionable=True)], source_type="trade_alert")
         return {"sym": sym, "read": read, "flag": flag, "want": want, "spot": spot,
                 "content": content, "extraction": extraction, "text": text}
 

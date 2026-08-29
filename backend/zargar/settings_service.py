@@ -134,7 +134,12 @@ DEFAULTS: dict[str, Any] = {
     "techniques.flow.premium_min": 100_000.0,  # $ mid*volume*100 to flag a contract
     "techniques.flow.min_contract_volume": 500,
     "techniques.flow.min_open_interest": 100,
+    "techniques.flow.dte_min": 3,        # FL2: 0-2 DTE prints are expiry-board noise, never flagged
     "techniques.flow.dte_max": 45,
+    "techniques.flow.premium_unit": 1_000_000.0,  # FL2: $ of flagged premium per score point (cap 3)
+    # FL4: OFF until the thresholds earn it — when True, a confirmed high-score
+    # read sent to Tips carries explicit_call conviction instead of implied
+    "techniques.flow.calibrated": False,
     "techniques.flow.otm_min_pct": 0.0,      # flagged footprint: 0–12% OTM
     "techniques.flow.otm_max_pct": 12.0,
     "techniques.flow.repeat_days": 3,        # same zone flagged N days in the window

@@ -109,8 +109,10 @@ overnight OI confirmation, repeat streaks). Context lines are journaled per deli
 (`FlowContextServed`) into tip verification and EM analyze (`config.flowContext` — a note, never a
 rule); symbols scoring ≥ `techniques.flow.universe_score_min` on 2 of 3 days join the universe as
 provenance "flow". UI: `pages/FlowPage.tsx` (Reads desk · Symbol Story drill-in · Brief tab).
-Default flag thresholds are UNCALIBRATED on real chains (42/56 flagged, mostly 1-DTE noise —
-UI-PLAN §3a) — don't trust raw scores until tuned.
+Thresholds got their FIRST calibration 2026-08-29 (`tools/flow_calibrate.py`, flow PLAN §7:
+dte_min=3, premium_min 250k, vol_oi_min 2.0, premium-weighted score) — PRELIMINARY on one
+day-pair; re-run the sweep at ≥5 day-pairs before flipping `techniques.flow.calibrated`
+(which upgrades confirmed high-score flow tips to explicit_call).
 **Parallel Claude sessions:** the shared test DB (`zargar_test`) is dropped/recreated per test —
 concurrent sessions corrupt each other's runs (phantom FK errors, DROP deadlocks). When another
 session may be testing, create your own DB on :5433 and set

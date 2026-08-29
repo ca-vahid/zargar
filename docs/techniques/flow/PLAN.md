@@ -104,3 +104,15 @@ context injection into a canned tip verification.
 - Whether the flow score should ever *veto* (not just inform) a Tip — proposal: never in
   v1; revisit with scorecard evidence.
 - Snapshot retention (raw rows are small; keep everything until proven otherwise).
+
+## 7. Judgement log
+
+- **2026-08-29 · First calibration (PRELIMINARY, one day-pair)** — see
+  `notes/2026-08-29-calibration.md` + the `flow_calibrate` CLI. Headline: 0-2
+  DTE flags were ANTI-signal (confirmation below the 28.1% baseline); a DTE
+  floor doubles confirmation. Applied live: `dte_min=3` (new), `premium_min`
+  100k→250k, `vol_oi_min` 1.25→2.0; the score is now PREMIUM-WEIGHTED
+  (`premium_unit` $1M/point) so a whale outranks five minnows.
+  `techniques.flow.calibrated` stays **false** — the FL4 conviction upgrade
+  (explicit_call on confirmed high scores) is built but gated until the
+  re-run over ≥ 5 day-pairs (~Sept 5) confirms the separation holds.

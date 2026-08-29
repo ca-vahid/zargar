@@ -204,3 +204,9 @@ outcome (parked/verified/seen-again) is the run's finish line (`test_to_tip_queu
 - Open: does "Analyze in EM" pre-fill the EM analyze form or fire it immediately (proposal:
   pre-fill only); should the Brief also go out via Telegram at 09:00 with the feed self-test
   (cheap once `/brief` exists — separate decision, default no).
+
+**2026-08-29 update to §3a:** the "42/56 flagged, mostly 1-DTE noise" finding is
+now ADDRESSED — first calibration ran (`tools/flow_calibrate.py`, PLAN.md §7 +
+`notes/2026-08-29-calibration.md`): 0-2 DTE flags proved ANTI-signal and are
+floored out (`dte_min=3`), premium/Vol-OI thresholds raised, and the score is
+premium-weighted. Preliminary (one day-pair); re-run at ≥5 pairs.
