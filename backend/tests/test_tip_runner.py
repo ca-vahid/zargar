@@ -812,3 +812,54 @@ async def test_guarded_trigger_stays_dormant_until_condition_opens(tip_rig):
         rows = (await session.execute(
             _sel(Event.payload).where(Event.type == "TechniquePlanTriggerSkipped"))).scalars().all()
     assert any(r.get("event") == "guarded" and r.get("runId") == run_id for r in rows)
+
+
+# --- the multi-technique armed hub ---------------------------------------------------
+
+async def test_armed_hub_sees_tip_plans(tip_rig):
+    """A tip-armed plan must be visible through the SAME hub the UI polls
+    (GET /api/technique/armed + summary + detail + pause/resume/disarm) —
+    the WS delta already came from the shared PlanRunner, and a REST list
+    that only knew EM's armer made the plan flicker in and out of the UI
+    (the 'phantom armed item', found 2026-08-29)."""
+    import httpx
+    from zargar.api.app import create_app
+    from zargar.technique.service import attach_technique_layer
+
+    eng, sim = tip_rig
+    await attach_technique_layer(eng)
+    # production registers these in attach_tip_runner; the rig built TipRunner by hand
+    eng.plan_runners["tip"] = eng.tip_runner
+    eng.techniques["tip"] = eng.tip_runner
+    try:
+        sid = await _ingest_tip(eng)
+        snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+        run_id = snap["runId"]
+
+        transport = httpx.ASGITransport(app=create_app(eng.config, eng))
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            r = await client.get("/api/technique/armed")
+            assert r.status_code == 200
+            mine = [a for a in r.json() if a["runId"] == run_id]
+            assert mine and mine[0]["technique"] == "tip"
+
+            s = await client.get("/api/technique/armed/summary")
+            assert s.status_code == 200 and s.json()["counts"]["armed"] >= 1
+
+            d = await client.get(f"/api/technique/armed/{run_id}")
+            assert d.status_code == 200 and d.json()["technique"] == "tip"
+
+            scoped = await client.get("/api/techniques/tip/armed")
+            assert run_id in [a["runId"] for a in scoped.json()]
+
+            p = await client.post(f"/api/technique/armed/{run_id}/pause")
+            assert p.status_code == 200 and p.json()["status"] == "paused"
+            rr = await client.post(f"/api/technique/armed/{run_id}/resume")
+            assert rr.status_code == 200 and rr.json()["status"] == "armed"
+
+            dd = await client.delete(f"/api/technique/runs/{run_id}/arm")
+            assert dd.status_code == 200 and dd.json()["disarmed"] is True
+            gone = await client.get(f"/api/technique/armed/{run_id}")
+            assert gone.status_code == 404
+    finally:
+        await eng.technique.stop()
