@@ -1980,6 +1980,7 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .disc-act:hover { color: var(--accent); }
 .disc-opts { display: flex; align-items: center; gap: 12px; font-size: var(--fs-1);
   margin: 2px 0 4px 24px; flex-wrap: wrap; }
+.disc-opts label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
 .disc-src { width: 130px; padding: 2px 6px; font-size: var(--fs-1); }
 
 /* Discord intake: search + collapsible servers + peek */
@@ -2102,7 +2103,9 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .disc-cat .disc-row { margin-left: 14px; }
 
 /* Discord source options: onboarding days */
-.disc-days { width: 44px; padding: 2px 4px; font-size: var(--fs-1); }
+/* beat the global input[type="number"] { width: 100% } rule */
+input[type="number"].disc-days { width: 48px; padding: 2px 4px;
+  font-size: var(--fs-1); }
 
 /* Mirror viewer — discord-style read-only history */
 .mir-src { max-width: 200px; font-size: var(--fs-1); padding: 3px 6px; }
