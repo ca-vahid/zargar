@@ -1150,6 +1150,14 @@ class SignalService:
                         db_row = await session.get(Signal, row.id)
                         db_row.extraction = {**(db_row.extraction or {}),
                                              "analyst": {**op, "armedRunId": armed.get("runId")}}
+                        # ...and onto the analyst RUN itself, so its header can
+                        # link the plan it created (ARM-GAPS F3)
+                        if op.get("runId"):
+                            from ..models import TipAnalystRun
+                            arun = await session.get(TipAnalystRun, op["runId"])
+                            if arun is not None:
+                                arun.opinion = {**(arun.opinion or {}),
+                                                "armedRunId": armed.get("runId")}
                         await session.commit()
                         row = db_row
                     armed_mode = (armed.get("config") or {}).get("mode") or armed.get("mode")

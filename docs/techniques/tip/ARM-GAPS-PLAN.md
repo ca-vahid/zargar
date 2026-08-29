@@ -271,27 +271,27 @@ list shows no armed state, the analyst run says "see the Armed page" without a
 link, fire-time failures don't raise `needsAttention`, and a tip fill notifies
 by push only.*
 
-- [ ] **F1 — the Armed card knows what it is.** Render the technique chip and
+- [x] **F1 — the Armed card knows what it is.** Render the technique chip and
   the `source:<name>` tag; window copy comes from the plan's own rules (a tip
   shows "fires any time in RTH", not EM's "mid-day watching only"); hide/grey
   `useCritic` when the runner has no reviewer.
-- [ ] **F2 — Tips list shows the armed state.** Each tip row: "armed — waiting
+- [x] **F2 — Tips list shows the armed state.** Each tip row: "armed — waiting
   at 768.8 · day 2/5" (or "proposal pending", "position open — managed") with a
   click-through to `/armed/<runId>`; expose `runs_for_signal` as
   `GET /api/signals/{sid}/runs`.
-- [ ] **F3 — the analyst run links its plan.** The at_level outcome line and the
+- [x] **F3 — the analyst run links its plan.** The at_level outcome line and the
   handoff step render `armedRunId` as a chip navigating to the Armed page
   (`store.armedFocusRunId` already exists for the hand-off).
-- [ ] **F4 — fire-time failures raise attention.** "no proposal could be
+- [x] **F4 — fire-time failures raise attention.** "no proposal could be
   created", "no option contract available — nothing sent" and
   `premium_chase_blocked` all route through `_alert` + `needsAttention`, not
   bare journal lines (extends `_attention_reasons`).
-- [ ] **F5 — Telegram on fills.** `techniques.tip.telegram_fills` (default on):
+- [x] **F5 — Telegram on fills.** `techniques.tip.telegram_fills` (default on):
   an auto-mode tip entry fill / handoff sends the Telegram message with the
   deep link, matching what proposals already get.
-- [ ] **F6 — phone pass.** The Now view shows tip plans with technique + day-N
+- [x] **F6 — phone pass.** The Now view shows tip plans with technique + day-N
   context; `npm run mobile-audit` green.
-- [ ] **F7 — visual inspection.** Live end-to-end: arm a multi-day tip, roll it
+- [x] **F7 — visual inspection.** Live end-to-end: arm a multi-day tip, roll it
   across a (simulated) close, fire a proposal at the touch, inspect
   Armed/Tips/Analyst/phone views for artifacts — same bar as ARM-PLAN's
   acceptance.
@@ -488,3 +488,29 @@ green at every merge.
 - **E8**: three tests (tip override beats the EM legacy key; preflight warning
   rides every snapshot; config-less arm gets the vehicle defaults); the
   mobile-audit pass rides with Cluster F's UI verification.
+
+## Implementation notes — Cluster F (landed 2026-08-29)
+
+- **F1**: technique chip on the Armed card (non-EM plans), window copy judged
+  from each plan's OWN triggers (`windowOpenNow`), and the critic label reads
+  "n/a (no reviewer)" when the runner has none (`reviewerAvailable` on the
+  snapshot).
+- **F2**: tip rows carry a live ⚡ armed chip ("armed @ 768.50/766 · day 1/10",
+  click-through via `openArmedPlan`); `GET /api/signals/{sid}/runs` returns the
+  tip's runs + live armed detail.
+- **F3**: the analyst run header links its armed plan (⚡ armed #id chip).
+- **F4**: fire-time failures alert + raise `needsAttention` — "no proposal
+  could be created" (A5) and "no option contract available" both escalate.
+- **F5**: `techniques.tip.telegram_fills` (default on) — an auto-mode tip fill
+  sends the Telegram message with the /armed deep link.
+- **F6**: phone Now shows "day N/M" on multi-day watch cards; the next-session
+  note is technique-honest; link chips are thumb-size (mobile.css);
+  `npm run mobile-audit` — **0 failing route/device combos**.
+- **F7**: live end-to-end on the deployed build (2026-08-29): a real SPY
+  scale-in tip → analyst appraisal → human arm → **multi-day plan day 1/10
+  until 2026-09-11 with both rungs** → a live "sold all my SPY" follow-up →
+  `opens_position` demotion → waiting plan flagged + alerted → **the review
+  analyst DISARMED the plan itself** ("...killing the long-SPY thesis...
+  which I disarmed"). Visual pass over Armed (DAY/TIP chips, honest window
+  copy), Tips (statuses/chips), Settings (Tips panel), Sources (policy editor,
+  Mirror) — no artifacts.
