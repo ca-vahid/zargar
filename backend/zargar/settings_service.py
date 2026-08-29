@@ -106,6 +106,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.touch_tolerance_pct": 0.002,   # level-touch band for tip triggers
     # options tips die at their contract's expiry — never wait for a level past it:
     "techniques.tip.entry_cutoff_dte": 2,    # stop trying to enter when < N calendar days to the tip's expiry
+    # never-chase (ARM-GAPS C1): an armed fire pays at most the analyst's limit /
+    # the tip's stated premium × (1 + this %) — above it the entry rests at the cap
+    "techniques.tip.max_chase_pct": 10.0,
     "techniques.tip.shadow_auto": True,      # the armed-book loop: auto-arm every open tip in shadow each morning
     "techniques.tip.shadow_arm_at": "09:12", # ET, on engine.scheduler (after the 09:05 reconciliation)
     "techniques.tip.trailing_after_r": 1.0,  # managed-position trail activates after +N R

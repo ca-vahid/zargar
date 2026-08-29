@@ -562,7 +562,7 @@ export interface ArmOptions {
 }
 export interface ArmedTrade {
   triggerId: string; kind: string; firedTs: number; window: string; entry: number; stop: number; targets: number[]; status: string;
-  instrument?: string; contract?: { symbol: string; display?: string; strike?: number; expiry?: string; bid?: number; ask?: number; delta?: number; iv?: number; is0dte?: boolean; warnings?: string[] } | null;
+  instrument?: string; contract?: { symbol: string; display?: string; strike?: number; expiry?: string; bid?: number; ask?: number; delta?: number; iv?: number; is0dte?: boolean; warnings?: string[]; substituted?: string | null } | null;
   orderSymbol?: string | null; multiplier?: number; premiumPaid?: number | null;
   reason: string; setupId: string | null; proposalId: string | null; entryOrderId: string | null; limitPrice: number | null;
   qty: number; filledQty: number; avgFill: number | null; remaining: number; trimsDone: number;

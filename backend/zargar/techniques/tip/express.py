@@ -43,10 +43,14 @@ def tip_is_option(sig) -> bool:
 
 def choose_expiry_window(expirations: list[str], today: dt.date, *,
                          dte_min: int, dte_max: int,
-                         stated: str | None = None) -> tuple[str | None, list[str]]:
-    """The tip's expiry: the stated one when listed and not yet past; else the
-    FIRST listed expiry inside [dte_min, dte_max] (enough runway, least theta
-    bought); else the nearest beyond dte_max (warned); never below dte_min."""
+                         stated: str | None = None,
+                         stated_min_dte: int = 0) -> tuple[str | None, list[str]]:
+    """The tip's expiry: the stated one when listed, not yet past AND at least
+    `stated_min_dte` days out (ARM-GAPS C3 — a plan firing days after the tip
+    must not buy a nearly-expired contract just because the tip named it); else
+    the FIRST listed expiry inside [dte_min, dte_max] (enough runway, least
+    theta bought); else the nearest beyond dte_max (warned); never below
+    dte_min."""
     warnings: list[str] = []
     dates: list[dt.date] = []
     for s in expirations:
@@ -63,9 +67,13 @@ def choose_expiry_window(expirations: list[str], today: dt.date, *,
         if sd is not None:
             if sd < today:
                 return None, [f"stated expiry {stated} has passed"]
-            if sd in dates:
+            if sd in dates and (sd - today).days >= max(0, int(stated_min_dte)):
                 return sd.isoformat(), []
-            warnings.append(f"stated expiry {stated} is not listed — using the policy window")
+            if sd in dates:
+                warnings.append(f"stated expiry {stated} is only {(sd - today).days} DTE "
+                                f"(entry cutoff {stated_min_dte}) — using the policy window")
+            else:
+                warnings.append(f"stated expiry {stated} is not listed — using the policy window")
     if not dates:
         return None, warnings + ["no expirations listed"]
     in_window = [d for d in dates if dte_min <= (d - today).days <= dte_max]
@@ -178,9 +186,12 @@ async def pick_tip_contract(engine, *, symbol: str, direction: str,
                             spot: float | None = None,
                             min_strike: float | None = None,
                             max_strike: float | None = None,
+                            stated_min_dte: int = 0,
                             today: dt.date | None = None) -> dict:
     """The tip's contract, or {'available': False, 'error': ...}. Never raises
-    for 'no contract' — callers decide the fallback (shares)."""
+    for 'no contract' — callers decide the fallback (shares). When the bought
+    contract differs from what the tip/analyst NAMED, the pick carries a
+    `substituted` string saying exactly how (ARM-GAPS C4)."""
     today = today or dt.date.today()
     want = "call" if direction == "long" else "put"
     opts = getattr(engine, "options", None)
@@ -197,10 +208,14 @@ async def pick_tip_contract(engine, *, symbol: str, direction: str,
             return {"available": False, "error": "no spot price"}
         exps = await client.expirations(symbol)
         chosen, warnings = choose_expiry_window(exps, today, dte_min=dte_min,
-                                                dte_max=dte_max, stated=expiry)
+                                                dte_max=dte_max, stated=expiry,
+                                                stated_min_dte=stated_min_dte)
         if not chosen:
             return {"available": False, "error": "; ".join(warnings) or "no usable expiry"}
         chain = await client.chain(symbol, chosen)
+        subst: list[str] = []
+        if expiry and chosen != expiry:
+            subst.append(f"stated expiry {expiry} -> {chosen}")
         if strike is not None:
             # the tip named its strike: use it verbatim when listed
             rows = [c for c in chain
@@ -209,8 +224,12 @@ async def pick_tip_contract(engine, *, symbol: str, direction: str,
             if rows:
                 pick = _row_pick(rows[0], chosen, today, want)
                 pick["warnings"] = warnings + pick["warnings"]
+                if subst:
+                    pick["substituted"] = "; ".join(subst)
+                    pick["statedContract"] = False
                 return pick
             warnings.append(f"stated strike {strike:g} not listed at {chosen} — using just-OTM")
+            subst.append(f"stated strike {strike:g} not listed")
         pick = select_contract(chain, float(spot), direction, expiry=chosen, today=today,
                                is_0dte=False, max_strike=max_strike, min_strike=min_strike)
         if pick is None:
@@ -219,6 +238,8 @@ async def pick_tip_contract(engine, *, symbol: str, direction: str,
         d = pick.to_dict()
         d["available"] = True
         d["warnings"] = warnings + d["warnings"]
+        if subst:
+            d["substituted"] = "; ".join(subst)
         return d
     except OptionsError as exc:
         return {"available": False, "error": str(exc)}

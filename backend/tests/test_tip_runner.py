@@ -1159,3 +1159,111 @@ async def test_spread_rollback_failure_adopts_attention_position(tip_rig, monkey
                if "spread-orphan" in (p.get("tags") or [])]
     assert orphans and orphans[0]["status"] == "attention"
     assert sum(l["qty"] for l in orphans[0]["legs"]) == 1.0
+
+
+# --- the fire honors the thesis (ARM-GAPS cluster C) --------------------------------
+
+def canned_priced_option_tip(expiry: str, premium: float):
+    return ExtractionResult(
+        signals=[TradeSignal(
+            ticker="TEST", direction="long", action="open",
+            instrument="call", strike=101.0, expiry=expiry, premium=premium,
+            entry_price=99.5, target_price=103.0, stop_price=98.0,
+            entry_type="limit", timeframe="swing", thesis_summary="dip buy calls",
+            evidence_quotes=["TEST 101c @ " + str(premium),
+                             "buy the dip at 99.5, stop 98, target 103"],
+            confidence="explicit_call", is_actionable=True)],
+        source_type="trade_alert")
+
+
+async def test_never_chase_cap_rests_entry_at_reference(tip_rig):
+    """C1: the armed fire's limit is capped at the tip's stated premium
+    x (1 + max_chase_pct) — a doubled ask days later is not paid."""
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    from zargar.marketstructure.sessions import session_bounds
+    from .test_tip_express import FakeChain, row as chain_row
+    eng, sim = tip_rig
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    eng.options.use_client(FakeChain(spot=100.0, expiries=(exp14,),
+                                     rows=[chain_row(101.0, expiry=exp14)]))
+    priced_src = "TEST 101c @ 0.5 — buy the dip at 99.5, stop 98, target 103."
+    content = RawContent(id=new_id(), source_type="manual", source_name="ChaseRoom",
+                         subject="tip", body_text=priced_src)
+    async with eng.sf() as session:
+        session.add(content)
+        await session.commit()
+    out = await eng.signals_service.handle_extraction(
+        content, canned_priced_option_tip(exp14, 0.5), source_text=priced_src)
+    sid = out[0]["signal"]["id"]
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "auto",
+                                                 "dailyLossLimit": 200.0})
+    run_id = snap["runId"]
+    open1, _ = session_bounds(snap["planFor"])
+    ts0 = max(open1 + 30 * MIN, int(snap.get("lastBarTs") or 0) + MIN)
+    await _quote(eng, 99.6)
+    await eng.tip_runner.on_bar(run_id, _mbar(ts0, 100.0, 100.3, 99.9, 100.1))
+    s2 = await eng.tip_runner.on_bar(run_id, _mbar(ts0 + MIN, 99.8, 99.9, 99.45, 99.8))
+    tr = s2["trades"][0]
+    # chain ask (~1.15-1.2) > 0.5 x 1.10 -> the entry rests at the cap
+    assert tr["limitPrice"] == round(0.5 * 1.10, 2), tr["limitPrice"]
+    assert any(e.get("event") == "entry_capped" for e in s2["events"])
+
+
+async def test_analyst_contract_beats_tip_on_armed_fire(tip_rig):
+    """C2: an arm carrying the analyst's contract fires on THAT contract, not
+    the tip's stated strike."""
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    from zargar.marketstructure.sessions import session_bounds
+    from zargar.options import occ as occ_mod
+    from .test_tip_express import FakeChain, row as chain_row
+    eng, sim = tip_rig
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    eng.options.use_client(FakeChain(spot=100.0, expiries=(exp14,),
+                                     rows=[chain_row(101.0, expiry=exp14),
+                                           chain_row(103.0, expiry=exp14)]))
+    content = RawContent(id=new_id(), source_type="manual", source_name="AnalystRoom",
+                         subject="tip", body_text=OPT_SOURCE)
+    async with eng.sf() as session:
+        session.add(content)
+        await session.commit()
+    out = await eng.signals_service.handle_extraction(
+        content, canned_option_tip(exp14), source_text=OPT_SOURCE)
+    sid = out[0]["signal"]["id"]
+    a_occ = occ_mod.make("TEST", exp14, "C", 103.0).symbol
+    snap = await eng.tip_runner.arm_signal(sid, {
+        "portfolioId": sim["id"], "mode": "auto", "dailyLossLimit": 200.0,
+        "analystContract": a_occ, "allowAnyEntry": True})
+    run_id = snap["runId"]
+    open1, _ = session_bounds(snap["planFor"])
+    ts0 = max(open1 + 30 * MIN, int(snap.get("lastBarTs") or 0) + MIN)
+    await _quote(eng, 99.6)
+    await eng.tip_runner.on_bar(run_id, _mbar(ts0, 100.0, 100.3, 99.9, 100.1))
+    s2 = await eng.tip_runner.on_bar(run_id, _mbar(ts0 + MIN, 99.8, 99.9, 99.45, 99.8))
+    tr = s2["trades"][0]
+    assert tr["contract"] and tr["contract"]["strike"] == 103.0, tr["contract"]
+
+
+async def test_stated_expiry_below_cutoff_substitutes(tip_rig):
+    """C3/C4: a stated expiry under the entry cutoff at FIRE time is not bought —
+    the pick moves to the policy window and says so via `substituted`."""
+    from zargar.techniques.tip.express import pick_tip_contract
+    from .test_tip_express import FakeChain, row as chain_row
+    eng, _sim = tip_rig
+    exp1 = (dt.date.today() + dt.timedelta(days=1)).isoformat()
+    exp14 = (dt.date.today() + dt.timedelta(days=14)).isoformat()
+    eng.options.use_client(FakeChain(spot=100.0, expiries=(exp1, exp14),
+                                     rows=[chain_row(101.0, expiry=exp1),
+                                           chain_row(101.0, expiry=exp14)]))
+    pick = await pick_tip_contract(eng, symbol="TEST", direction="long",
+                                   dte_min=10, dte_max=30, strike=101.0,
+                                   expiry=exp1, spot=100.0, stated_min_dte=2)
+    assert pick["available"] and pick["expiry"] == exp14
+    assert "stated expiry" in str(pick.get("substituted")), pick.get("substituted")
+    # verbatim when the stated expiry has enough runway: no substitution
+    pick2 = await pick_tip_contract(eng, symbol="TEST", direction="long",
+                                    dte_min=10, dte_max=30, strike=101.0,
+                                    expiry=exp14, spot=100.0, stated_min_dte=2)
+    assert pick2["available"] and pick2["expiry"] == exp14
+    assert not pick2.get("substituted") and pick2.get("statedContract") is True

@@ -458,6 +458,11 @@ function ProposalCard({ p }: { p: Proposal }) {
             {vehicle.optionType === "call" ? "call · bullish" : "put · bearish"}
           </span>
         )}
+        {vehicle?.substituted && (
+          <span className="status-pill bad" title="The proposed contract differs from the one the tip/analyst named">
+            substituted: {vehicle.substituted}
+          </span>
+        )}
         <span className="ttl"><IconClock size={11} /> {timeUntil(p.expiresAt)}</span>
         {p.signalId && <CopyChip value={p.signalId}
           title={`tip ${p.signalId} — click to copy; quote this id to review the tip behind this proposal`} />}

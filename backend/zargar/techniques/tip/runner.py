@@ -97,6 +97,25 @@ class TipRunner(PlanRunner):
         conf = float((tr.trigger.get("confidence") or 0.5))
         return FireJudgement(verdict="setup", confidence=conf)
 
+    async def entry_limit_cap(self, ap, trade, contract) -> float | None:
+        """Never chase (ARM-GAPS C1): an armed fire pays at most the analyst's
+        stated limit — else the tip's stated premium — × (1 + max_chase_pct%).
+        The entry rests at the cap; unfilled, T4.1 cancels it and a multi-day
+        plan gives the level a fresh chance at the roll."""
+        ctx = ap.plan.get("context") or {}
+        if not ctx.get("signalId"):
+            return None
+        async with self.engine.sf() as session:
+            sig = await session.get(Signal, ctx["signalId"])
+        if sig is None:
+            return None
+        analyst = (sig.extraction or {}).get("analyst") or {}
+        ref = analyst.get("limit_price") or sig.premium
+        if not ref or float(ref) <= 0:
+            return None
+        chase = float(self.engine.settings.get("techniques.tip.max_chase_pct", 10.0) or 0)
+        return float(ref) * (1 + max(0.0, chase) / 100.0)
+
     async def plan_horizon(self, run: dict, plan: dict) -> tuple[int, str | None]:
         """A tip plan may wait its whole horizon (ARM-GAPS A1): sessions from the
         plan context, last session additionally capped by the contract's expiry
@@ -194,11 +213,26 @@ class TipRunner(PlanRunner):
                 sig = await session.get(Signal, ctx["signalId"])
         policy = resolve_policy(self.engine.settings, ctx.get("source"))
         cap = float(trade.targets[-1]) if trade.targets else None
+        # the analyst's chosen contract beats the tip's stated one (ARM-GAPS C2)
+        # — the appraisal reasoned about and priced THAT contract; both are
+        # re-validated live at the touch
+        want_strike = sig.strike if sig else None
+        want_expiry = sig.expiry if sig else None
+        run_cfg = (await self.load_plan(ap.run_id) or {}).get("config") or {}
+        a_occ = run_cfg.get("analystContract")
+        if a_occ:
+            from ...options import occ as occ_mod
+            parsed = occ_mod.parse(str(a_occ).upper())
+            if parsed is not None:
+                want_strike = float(parsed.strike)
+                exp = parsed.expiry
+                want_expiry = exp.isoformat() if hasattr(exp, "isoformat") else str(exp)
         pick = await pick_tip_contract(
             self.engine, symbol=ap.symbol, direction=trade.direction,
             dte_min=policy.dte_min, dte_max=policy.dte_max,
-            strike=(sig.strike if sig else None), expiry=(sig.expiry if sig else None),
+            strike=want_strike, expiry=want_expiry,
             spot=float(trade.last_price or trade.entry),
+            stated_min_dte=int(self.engine.settings.get("techniques.tip.entry_cutoff_dte", 2)),
             max_strike=cap if trade.direction == "long" else None,
             min_strike=cap if trade.direction == "short" else None)
         if not pick.get("available") or not pick.get("symbol"):
@@ -210,12 +244,14 @@ class TipRunner(PlanRunner):
         trade.contract = {k: pick.get(k) for k in (
             "symbol", "display", "underlying", "expiry", "strike", "optionType",
             "bid", "ask", "mid", "spreadPct", "delta", "theta", "iv", "dte",
-            "is0dte", "openInterest", "volume", "warnings", "provider", "statedContract")}
+            "is0dte", "openInterest", "volume", "warnings", "provider",
+            "statedContract", "substituted")}
         trade.order_symbol = pick["symbol"]
         self._log(ap, "option_picked",
                   f"{trade.trigger_id}: {pick.get('display') or pick['symbol']} "
                   f"bid/ask {pick.get('bid')}/{pick.get('ask')}"
                   + ("; stated by the tip" if pick.get("statedContract") else "")
+                  + (f"; SUBSTITUTED — {pick['substituted']}" if pick.get("substituted") else "")
                   + (f"; warnings: {'; '.join(pick.get('warnings') or [])}"
                      if pick.get("warnings") else ""),
                   trigger=trade.trigger_id, contract=trade.contract)
@@ -250,8 +286,9 @@ class TipRunner(PlanRunner):
             exit_plan = config.pop("exitPlan", None)
             entry_ladder = config.pop("entryLadder", None)   # analyst scale-in (P3)
             entry_guards = config.pop("entryGuards", None)   # analyst conditions (P4)
+            analyst_contract = config.pop("analystContract", None)  # analyst vehicle (C2)
         else:
-            entry_guards = None
+            entry_guards = analyst_contract = None
         if policy.entry != "level_touch" and not allow_any_entry:
             raise ValueError("this source's policy is tip_time — tip-time tips propose "
                              "immediately; arming is for level-touch tips")
@@ -307,6 +344,7 @@ class TipRunner(PlanRunner):
                     # analyst provenance (ARM-PLAN P1): the appraisal that chose
                     # this level, and its exit campaign (the handoff runs it)
                     **({"analystRunId": analyst_run_id} if analyst_run_id else {}),
+                    **({"analystContract": analyst_contract} if analyst_contract else {}),
                     **({"exitPlan": exit_plan} if exit_plan else {})},
         )
         async with self.engine.sf() as session:
@@ -366,6 +404,10 @@ class TipRunner(PlanRunner):
                   "entryOverride": opinion.get("entry_level"),
                   "entryLadder": ladder,
                   "entryGuards": opinion.get("entry_conditions") or None,
+                  # the appraisal's chosen contract rides to the fire (C2)
+                  **({"analystContract": opinion.get("contract")}
+                     if opinion.get("contract")
+                     and str(opinion.get("instrument") or "option") == "option" else {}),
                   "allowAnyEntry": True}
         snap = await self.arm_signal(sig.id, config)
         if warns:
