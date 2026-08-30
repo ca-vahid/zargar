@@ -135,6 +135,54 @@ multi-day state, chaos suite. Sequence *after* phases 1–5 prove the loop on
 intraday variants; the swing lane then enters as one more shadow instance
 (`em_swing_shadow`) rather than a rewrite.
 
+## Runbook — how to run one experiment (phase 1, operational)
+
+Everything below is deterministic and free (no LLM calls). First run:
+2026-08-29 pilot, sweeps `26f752fa5a` / `5a916ced73` / `9edf5248fa`.
+
+1. **State the hypothesis** in TRADING-RULES §3 (or take an existing T-n):
+   what changes, why, and the decision threshold that would promote or kill it.
+2. **Express it as a threshold overlay.** Prefer expressing new behavior with
+   existing knobs (T-6 needed zero code: rr gate + volume/decisive/follow-through
+   knobs). Only add code when no knob combination can express the idea — and
+   then add a *knob*, parameterized in the shared library, never a fork.
+3. **Run baseline + variant over the same window** (Yahoo 1m depth bounds the
+   window to ~3 trailing weeks; longer once archived bars accumulate):
+
+   ```
+   python -m zargar.tools.technique_review sweep --start A --end B --label "evo-baseline"
+   python -m zargar.tools.technique_review sweep --start A --end B --label "evo-<name>" \
+       --set key=value [--set key=value ...]
+   ```
+
+   Overrides are validated against `Thresholds` (typos fail loudly), recorded
+   in `params.overrides`, and change `sweepVersion` — the variant is fully
+   citable.
+4. **Compare:** `technique_review sweep-compare <baseline> <variant>` — read
+   the MARGINAL value of the extra (or removed) fires, per kind and per
+   window, not the headline totals. Estimate spread cost (~0.1–0.2R/fire on
+   single-name options; less on index 0DTE) before believing a thin mean.
+5. **Log the verdict** in TRADING-RULES: evidence under the §1.x experiment or
+   the §3 theory, citing sweep ids. A promoted change gets a §5 entry; a live
+   parameter changes ONLY at that step, by hand, journaled via Settings.
+6. Bigger deltas (new exit ladders, new archetypes with code) graduate through
+   a **shadow instance** (phase 4), not straight to live.
+
+### Where the LLM fits (and where it does not)
+
+- **Sweeps are LLM-free.** The whole experiment loop above never calls a
+  model — that is what makes it cheap enough to run weekly.
+- **Ingestion extraction is the session's job** (this Claude, in-chat), not an
+  app prompt: transcript → hypotheses → §3 entries.
+- **The analyst/critic prompts stay method prompts.** They change only when
+  the METHOD changes (e.g. the 2026-08-28 short-mirror fix), each change
+  hashed into promptVersion.
+- **A graduated variant that needs different judgement gets its prompt overlay
+  at the shadow-instance stage** — the instance's own prompts/policies are part
+  of its technique registration (platform supports per-technique prompts), so
+  "EM-continuation" judging with different emphasis never edits live EM's
+  prompt. No specialized evolution-prompt is needed before phase 4.
+
 ## Governance — what never auto-changes
 
 - RiskGate, kill switch, loss halts, reduce-only exits: untouchable by any
