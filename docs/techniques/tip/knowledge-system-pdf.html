@@ -192,8 +192,8 @@
     python -m zargar.tools.tip_experiment review --batch b1
   </div></div>
   <div class="row" style="margin-top:8px">
-    <div class="card"><h3>Batch 1 → findings</h3><div class="small" id="batch1">Seed 7 · logged in KNOWLEDGE-BUILD-PLAN.md Phase 5 with per-item run links.</div></div>
-    <div class="card"><h3>Batch 2 → recurrence check</h3><div class="small">After the fixes: a fresh seed, same rubric — did the same failure classes come back? Resolved classes get ticked, recurring ones escalate.</div></div>
+    <div class="card"><h3>Batch 1 — ran 2026-08-30</h3><div class="small" id="batch1">20 messages → 22 signals, all replayed · <b>0 orders, 0 proposals</b> (verified live) · 19 appraised, all skip · <b>12 findings</b> (3 silent drops, freshness/ticker checks acting as constants, premium-vs-underlying confusion, post-tip leakage…) — the harness found more bugs in one afternoon than weeks of live trickle. Full list: KNOWLEDGE-BUILD-PLAN.md Phase 5.</div></div>
+    <div class="card"><h3>Batch 2 → recurrence check</h3><div class="small">After the F1-F12 fixes: a fresh seed, same rubric — did the same failure classes come back? Resolved classes get ticked, recurring ones escalate.</div></div>
     <div class="card"><h3>Then monthly</h3><div class="small">A batch a month keeps the pipeline honest as sources, prompts and rules evolve.</div></div>
   </div>
 </div>
@@ -230,7 +230,8 @@
     <div class="ev"><div class="when">2026-08-28 · The analyst is born</div><div class="small">Tips deserve judgement, not just parsing: an independent trader persona with market tools, its own exit plans, its own rulebook — explicitly NOT bound by EM's method book.</div></div>
     <div class="ev"><div class="when">2026-08-29 · Staying armed, closing gaps</div><div class="small">Multi-day stay-armed plans, follow-up handling ("a close never opens"), never-chase caps, nightly retros + the first weekly rule audit. The desk starts maintaining its own judgement.</div></div>
     <div class="ev"><div class="when">2026-08-30 · Knowledge grows a lifecycle</div><div class="small">Deep research (Zep, FinMem, FinCon + 20 more sources, adversarially verified) settles the design: typed scoped stores, temporal expiry over deletion, citation-refresh, LLM-judged audits, per-agent isolation. Context channels + digests bring trading-floor in without polluting intake. The experiment harness closes the loop: history in, findings out, fixes in, repeat.</div></div>
-    <div class="ev"><div class="when">Next</div><div class="small">Batch 2 after batch-1 fixes · nightly digests once tuned · monthly experiment cadence · knowledge volume grows → revisit retrieval (the temporal-graph option stays on the shelf until scale demands it).</div></div>
+    <div class="ev"><div class="when">2026-08-30 · Batch 1 proves the loop</div><div class="small">First historical batch (20 messages, seed 7): the money guarantees held perfectly (0 orders, 0 books), the judgment layer graded well ("that is real process"), and the rubric review surfaced 12 concrete findings — silent drops, checks acting as constants, unit confusion, post-tip leakage. Exactly what the experiment was built to catch, caught on day one.</div></div>
+    <div class="ev"><div class="when">Next</div><div class="small">F1-F12 fixes → batch 2 with a fresh seed · nightly digests once tuned · monthly experiment cadence · knowledge volume grows → revisit retrieval (the temporal-graph option stays on the shelf until scale demands it).</div></div>
   </div>
   <h3 style="margin-top:10px">Design principles (the short version)</h3>
   <div class="row">

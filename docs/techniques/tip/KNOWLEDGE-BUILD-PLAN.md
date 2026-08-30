@@ -120,15 +120,72 @@ new knobs in `settings_service.DEFAULTS`.
 
 ## Phase 5 — run the experiment (cluster D)
 
-- [ ] Batch 1: `--sample 20 --seed 7 --since 2026-06-01 --batch b1`. Review with the
-      rubric below (batch review run + human pass in the UI). Log findings in a
-      findings section appended to THIS file; date every claim, cite run ids.
+- [x] **Batch 1 RUN 2026-08-30**: `run --batch b1 --sample 20 --seed 7 --since
+      2026-06-01` → 20 messages → **22 signals, all `replayed`, 0 orders,
+      0 proposals** (verified in the live DB during and after the batch).
+      19 appraised (all skip — defensible as-of-tip-time), 3 silently dropped
+      (F1), replay outcomes on most items (tp1/tp2/stopped/not_filled/horizon).
+      Review run **`64f40988`** applied the rubric; findings below. Harness bugs
+      found *by running it* and fixed same day: an oversized record set produced
+      a done-but-empty review (retry + 10k budget + compact records), and
+      digest/review verdict cards rendered "?" in the UI.
 - [ ] Fix the top findings (each fix = its own commit; method findings go to the tip
-      docs, engine findings to PLATFORM-RULES).
+      docs, engine findings to PLATFORM-RULES). → see F1-F12 below.
 - [ ] Batch 2: new seed after fixes; compare failure classes against batch 1 —
       recurring classes get escalated, resolved ones ticked.
 - [ ] Decide: enable nightly digests (C2)? monthly experiment cadence? Update
       KNOWLEDGE-PLAN accordingly.
+
+### Batch 1 findings (review run 64f40988, 2026-08-30 — grades the PROCESS)
+
+**What worked:** extraction fidelity (strike fan-out, evidence quotes, premium/
+expiry survived); the judgment layer — "position commentary is never an entry",
+one-message-many-strikes appraised once, positions checked before concluding
+nothing to manage. The review's words: *"that is real process."* And the
+out-of-band guarantee held live: zero orders, zero proposals, zero book entries.
+
+**Fix list for batch 2** (signal ids in the review run):
+
+- [ ] **F1 · Silent drops (14%)** — 3/22 signals ended with no verdict, no tools,
+      no reason (`f603e968` NVDA — the cleanest signal in the batch —, `4ffb7309`,
+      `6872a89f`); probably variant-suppression firing without a record. *No
+      signal may terminate without a status string.*
+- [ ] **F2 · `fresh` fails 22/22 by design** — a constant, not a discriminator;
+      every rationale gets a free hard kill. Experiment mode should pin the clock
+      to `statedAt` and make freshness an annotation, not a fatal check.
+- [ ] **F3 · `ticker_resolves` flaky + conflated** — failed non-deterministically
+      on liquid names (GLW/META/NFLX/MU/COIN/INTC) while the replay held full
+      OHLC for the same symbols; rationales said "no quote" then priced the
+      ticker. Split resolution / entitlement (SPX!) / staleness; soft in
+      experiment mode.
+- [ ] **F4 · Premium-vs-underlying confusion** — `af8d5a2c` (MU 850P) loaded the
+      premium ladder as UNDERLYING targets → fabricated `+99.63%` immediate
+      print; same class `2f5fa44e`, `2d22ac22`. Add a `price_basis` notion;
+      replay must refuse mixed-basis plans.
+- [ ] **F5 · Post-tip leakage** — three rationales cited the source's LATER
+      commentary (mirror history/tools reach past tip time). As-of isolation must
+      be harness-enforced (time-capped search/history in experiment mode).
+- [ ] **F6 · Replay invents plans** — "no structural level — ATR pullback" arms a
+      trade the tip never proposed, and its ±R is then read as tip evidence;
+      `resolved: false` rows are indistinguishable. Label constructed plans.
+- [ ] **F7 · Fan-out inflates counts** — one eva message → up to 11 signals from
+      mutually exclusive alternates; no `sourceMessageId` on records; a stale
+      scorecard line quoted as fact. Group alternates; stamp the message id.
+- [ ] **F8 · Staleness leaked into `is_actionable`** — `25ab69fb` (INTC explicit
+      open) marked not-actionable because the expiry had passed *by processing
+      time*. Staleness is verification's job, not extraction's.
+- [ ] **F9 · Action taxonomy lacks status/hold** — "STILL IN META calls" and a
+      P/L brag both became `update_stop`; a half-size disclosure became `open`.
+- [ ] **F10 · Inferred fields asserted as fact** — a 0DTE ban invoked on a null
+      `dte_hint_days`. Mark inferred values as inferred.
+- [ ] **F11 · Live `get_quote` on historical tips** — the prompt warning alone
+      does not prevent tool-time confusion; stub or time-pin quotes in
+      experiment mode.
+- [ ] **F12 (own observation) · Knowledge-pollution risk** — historical runs
+      saved date-bound notes into `general` and one rule into `rule` scope
+      despite the prompt (the rule — "conditional index-level color is not an
+      order" — is actually worth keeping). Decide: hard-redirect non-rule saves
+      to `experiment:<batch>` during historical runs, or prompt-only + audit.
 
 ### Review rubric (per experiment run)
 
