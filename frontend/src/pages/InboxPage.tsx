@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CopyChip } from "../components/CopyChip";
 import { IconCheck, IconClock, IconHalf, IconX } from "../components/icons";
 import { ErrorState, Spinner } from "../components/ui";
@@ -443,6 +443,10 @@ function ApprovalsTab() {
   const rows: any[] = show === "pending" ? pending
     : show === "decided" ? hist : [...pending, ...hist];
   const shown = rows.filter(hit);
+  // an approval must never just VANISH: with nothing pending, the freshest
+  // decided cards stay in view so "where did it go?" answers itself
+  const recent = show === "pending" && pending.length === 0 && !needle
+    ? hist.slice(0, 5) : [];
   return (
     <div className="panel mb">
       <div className="panel-head">Approvals
@@ -466,21 +470,54 @@ function ApprovalsTab() {
         )}
         {shown.map((p: any) => p.status === "pending"
           ? <ProposalCard key={p.id} p={p} />
-          : (
-            <div key={p.id} className="bl-card bl-card--static appr-hist-row">
-              <span className="bl-card-l">
-                <span className="bl-card-sym"><b>{p.symbol}</b>{" "}
-                  <span className={`status-pill ${p.status === "executed" || p.status === "approved" ? "ok" : "dim"}`}>{p.status}</span>
-                  <span className="muted"> {p.side} {p.qty} × {p.context?.vehicle?.display ?? p.symbol}
-                    {p.limitPrice ? ` @ ${p.limitPrice}` : ""}</span>
-                </span>
-                <span className="bl-card-sub">{p.context?.sourceName ?? "?"} · {fmtDateTime(p.createdAt)}
-                  {p.decidedVia ? ` · via ${p.decidedVia}` : ""}
-                  {p.context?.expiredReason ? ` · ${p.context.expiredReason}` : ""}</span>
-              </span>
-            </div>
-          ))}
+          : <DecidedRow key={p.id} p={p} />)}
+        {recent.length > 0 && (
+          <>
+            <div className="muted" style={{ fontSize: 12, margin: "10px 0 6px" }}>Recently decided</div>
+            {recent.map((p: any) => <DecidedRow key={p.id} p={p} />)}
+          </>
+        )}
       </div>
+    </div>
+  );
+}
+
+/** One decided proposal: what it was, and WHERE the approval went — the order's
+    fill and, when adopted, the managed position it became. */
+function DecidedRow({ p }: { p: any }) {
+  const setPage = useStore((s) => s.setPage);
+  const oc = p.outcome;
+  const good = p.status === "executed" || p.status === "approved";
+  const outcomeBits: ReactNode[] = [];
+  if (oc?.orderStatus === "FILLED") {
+    outcomeBits.push(<span key="fill" className="pos">
+      filled {oc.filledQty ?? p.qty}{oc.avgFillPrice ? ` @ ${fmtMoney(oc.avgFillPrice)}` : ""}</span>);
+  } else if (oc?.orderStatus && ["REJECTED", "REJECTED_RISK", "CANCELLED"].includes(oc.orderStatus)) {
+    outcomeBits.push(<span key="rej" className="neg">
+      order {oc.orderStatus.toLowerCase()}{oc.rejectReason ? ` — ${oc.rejectReason}` : ""}</span>);
+  } else if (oc?.orderStatus) {
+    outcomeBits.push(<span key="wk" className="muted">order {oc.orderStatus.toLowerCase()} — waiting for a fill</span>);
+  }
+  if (oc?.positionId) {
+    outcomeBits.push(
+      <button key="pos" className="link-btn" onClick={() => setPage("portfolios")}
+        title="The fill was adopted by the durable manager — the analyst's exit plan runs it. Opens Portfolios.">
+        → {oc.positionStatus === "closed" ? "position closed" : `managed position (${oc.positionStatus ?? "open"})`}
+      </button>);
+  }
+  return (
+    <div className="bl-card bl-card--static appr-hist-row">
+      <span className="bl-card-l">
+        <span className="bl-card-sym"><b>{p.context?.vehicle?.underlying ?? p.symbol}</b>{" "}
+          <span className={`status-pill ${good ? "ok" : p.status === "failed" ? "bad" : "dim"}`}>{p.status}</span>
+          <span className="muted"> {p.side} {p.qty} × {p.context?.vehicle?.display ?? p.symbol}
+            {p.limitPrice ? ` @ ${p.limitPrice}` : ""}</span>
+          {outcomeBits.length > 0 && <span className="appr-outcome"> {outcomeBits}</span>}
+        </span>
+        <span className="bl-card-sub">{p.context?.sourceName ?? "?"} · {fmtDateTime(p.createdAt)}
+          {p.decidedVia ? ` · via ${p.decidedVia}` : ""}
+          {p.context?.expiredReason ? ` · ${p.context.expiredReason}` : ""}</span>
+      </span>
     </div>
   );
 }
@@ -510,18 +547,32 @@ function ProposalCard({ p }: { p: Proposal }) {
   const sizing = p.context?.sizing;
   const vehicle = p.context?.vehicle;
   const analyst = p.context?.analyst;
+  const exitPlan = p.context?.exitPlan;
   const openAnalystRun = useStore((s) => s.openAnalystRun);
   const isOpt = p.secType === "OPT";
+  const mult = isOpt || p.secType === "SPREAD" ? 100 : 1;
+  const cost = p.limitPrice ? p.limitPrice * p.qty * mult : null;
+  const what = p.secType === "STK" ? `${p.symbol} shares` : (vehicle?.display ?? p.symbol);
+  const trims = exitPlan?.targets?.length
+    ? exitPlan.targets.map((t: number, i: number) => {
+        const fr = exitPlan.fractions?.[i];
+        return fr != null ? `${Math.round(fr * 100)}% @ ${t}` : `@ ${t}`;
+      }).join(", ")
+    : null;
   return (
     <div className="proposal-card">
       <div className="head">
         <span className="sym">{vehicle?.underlying ?? p.symbol}</span>
-        <span className={p.side === "BUY" ? "pos" : "neg"}>
-          <b>{p.side}</b> {p.qty} × {isOpt ? (vehicle?.display ?? p.symbol) : "shares"} @ {p.orderType} {p.limitPrice ? fmtMoney(p.limitPrice) : ""}
-        </span>
         {isOpt && vehicle?.optionType && (
           <span className={`status-pill ${vehicle.optionType === "call" ? "ok" : "bad"}`}>
             {vehicle.optionType === "call" ? "call · bullish" : "put · bearish"}
+          </span>
+        )}
+        {p.secType === "SPREAD" && <span className="status-pill dim">defined-risk spread</span>}
+        {analyst?.verdict && (
+          <span className={`status-pill ${analyst.verdict === "take" ? "ok" : analyst.verdict === "watch" ? "wait" : "bad"}`}
+            title={analyst.rationale ?? undefined}>
+            analyst: {analyst.verdict}
           </span>
         )}
         {vehicle?.substituted && (
@@ -533,29 +584,43 @@ function ProposalCard({ p }: { p: Proposal }) {
         {p.signalId && <CopyChip value={p.signalId}
           title={`tip ${p.signalId} — click to copy; quote this id to review the tip behind this proposal`} />}
       </div>
-      <div className="muted" style={{ fontSize: 12 }}>
-        {p.context?.sourceName ?? "unknown source"} · {p.context?.confidence ?? "?"}
-        {sizing?.budget != null && <> · ${fmtMoney(sizing.budget, 0)} per-tip budget</>}
-        {p.bracket?.take_profit && <> · target {fmtMoney(p.bracket.take_profit)}</>}
-        {p.bracket?.stop_loss && <> · stop {fmtMoney(p.bracket.stop_loss)}</>}
+      <div className="prop-suggest">
+        <span className={p.side === "BUY" ? "pos" : "neg"}><b>{p.side} {p.qty} × {what}</b></span>
+        {p.limitPrice != null && <span>@ {fmtMoney(p.limitPrice)} {p.orderType}</span>}
+        {cost != null && <span className="cost">≈ <b>{fmtMoney(cost, 0)}</b></span>}
       </div>
-      {p.rationale && <div style={{ margin: "6px 0", fontStyle: "italic" }}>{p.rationale}</div>}
-      {analyst?.verdict && (
-        <div style={{ fontSize: 12, margin: "4px 0" }}>
-          <span className={`status-pill ${analyst.verdict === "take" ? "ok" : analyst.verdict === "watch" ? "wait" : "bad"}`}>
-            analyst: {analyst.verdict}
-          </span>
-          {analyst.rationale && <span className="muted"> {analyst.rationale}</span>}
+      <div className="prop-facts">
+        <span className="prop-fact"><b>{p.context?.sourceName ?? "unknown source"}</b> · {p.context?.confidence ?? "?"}</span>
+        {sizing?.budget != null && <span className="prop-fact">budget <b>${fmtMoney(sizing.budget, 0)}</b></span>}
+        {trims && <span className="prop-fact">trims <b>{trims}</b></span>}
+        {exitPlan?.underlyingStop != null && <span className="prop-fact">stop <b>{exitPlan.underlyingStop}</b></span>}
+        {exitPlan?.premiumStopPct != null && <span className="prop-fact">premium stop <b>{exitPlan.premiumStopPct}%</b></span>}
+        {exitPlan?.maxHoldSessions != null && <span className="prop-fact">time box <b>{exitPlan.maxHoldSessions}s</b></span>}
+        {!exitPlan && p.bracket?.take_profit && <span className="prop-fact">target <b>{fmtMoney(p.bracket.take_profit)}</b></span>}
+        {!exitPlan && p.bracket?.stop_loss && <span className="prop-fact">stop <b>{fmtMoney(p.bracket.stop_loss)}</b></span>}
+      </div>
+      {analyst?.rationale && (
+        <div className="muted" style={{ fontSize: 12, margin: "4px 0" }}>
+          {analyst.rationale}
           {p.context?.analystRunId && (
-            <button className="link-btn" onClick={() => openAnalystRun(p.context.analystRunId)}
-              title="open this proposal's analyst run — the full play-by-play">
-              view the analysis
-            </button>
+            <>{" "}
+              <button className="link-btn" onClick={() => openAnalystRun(p.context.analystRunId)}
+                title="open this proposal's analyst run — the full play-by-play">
+                view the analysis
+              </button>
+            </>
           )}
         </div>
       )}
-      {p.context?.explain && (
-        <div className="prop-explain">{p.context.explain}</div>
+      {(p.rationale || p.context?.explain || analyst?.invalidation) && (
+        <details className="prop-details">
+          <summary>the full story</summary>
+          {p.rationale && <div style={{ margin: "4px 0", fontStyle: "italic" }}>{p.rationale}</div>}
+          {analyst?.invalidation && (
+            <div className="muted" style={{ fontSize: 12 }}>Invalid if: {analyst.invalidation}</div>
+          )}
+          {p.context?.explain && <div className="prop-explain">{p.context.explain}</div>}
+        </details>
       )}
       {p.context?.riskWarning && (
         <div className="neg" style={{ fontSize: 12, margin: "4px 0" }}

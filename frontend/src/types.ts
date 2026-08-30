@@ -161,6 +161,15 @@ export interface Proposal {
   decidedVia?: string | null;
   orderId?: string | null;
   createdAt: string;
+  /** decided history only: where the approval went (order fill → managed position) */
+  outcome?: {
+    orderStatus?: string;
+    filledQty?: number;
+    avgFillPrice?: number | null;
+    rejectReason?: string | null;
+    positionId?: string;
+    positionStatus?: string;
+  } | null;
 }
 
 export interface Signal {

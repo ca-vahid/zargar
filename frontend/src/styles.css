@@ -2100,6 +2100,28 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
   padding: 6px 10px; margin: 6px 0; line-height: 1.45; }
 
+/* the ONE highlighted line that says what approving does (the suggestion) */
+.prop-suggest {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  font-size: var(--fs-2); line-height: 1.4; margin: 8px 0 6px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  border-radius: var(--radius-sm); padding: 8px 12px;
+}
+.prop-suggest .cost { font-family: var(--mono); }
+/* compact key facts under the suggestion — chips, not prose */
+.prop-facts { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.prop-fact { font-size: var(--fs-0); background: var(--surface-2); border-radius: 4px;
+  padding: 2px 8px; color: var(--text-2); }
+.prop-fact b { color: var(--text-1); font-weight: 600; }
+/* the long-form why lives folded away */
+.prop-details { margin: 4px 0; }
+.prop-details summary { cursor: pointer; font-size: var(--fs-1); color: var(--accent);
+  user-select: none; }
+.prop-details[open] summary { margin-bottom: 4px; }
+/* decided history: what the approval became */
+.appr-outcome { font-size: var(--fs-0); display: inline-flex; align-items: center; gap: 6px; }
+
 /* "process last message" progress + outcome bar (Analyst tab) */
 .an-procbar { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
   background: var(--surface-1); border: 1px solid var(--border); border-radius: var(--radius);
