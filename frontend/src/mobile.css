@@ -46,6 +46,8 @@ html { -webkit-text-size-adjust: 100%; }
     min-height: 44px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
   .link-btn { padding: 8px 6px; display: inline-flex; align-items: center; }
+  .flow-lnk { min-width: 40px; min-height: 40px; display: inline-flex;
+    align-items: center; justify-content: center; }
   /* decided approvals + closed managed rows: the grid collapses to wrapped lines */
   .appr-row, .mgd-closed { display: flex; flex-wrap: wrap; row-gap: 2px; }
   .appr-order, .appr-src, .appr-outcome { white-space: normal; }
