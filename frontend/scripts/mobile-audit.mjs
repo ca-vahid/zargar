@@ -66,8 +66,11 @@ for (const m of MATRIX) {
   for (const route of m.routes ?? ROUTES) {
     const key = `${m.name} ${route}`;
     try {
-      await page.goto(BASE + route, { waitUntil: "networkidle", timeout: 30000 });
-      await page.waitForTimeout(2500);
+      // domcontentloaded + a fixed settle, NOT networkidle: pages like
+      // /technique poll continuously while the engine runs checks, so the
+      // network never goes idle and the audit would flake on live systems
+      await page.goto(BASE + route, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await page.waitForTimeout(3500);
       const shot = path.join(OUT, `${m.name}${route === "/" ? "-dashboard" : route.replace(/\//g, "-")}.png`);
       await page.screenshot({ path: shot, fullPage: false });
       const r = await page.evaluate(AUDIT);
