@@ -737,7 +737,8 @@ function TipsTab() {
           <table className="tbl">
             <thead>
               <tr>
-                <th style={{ width: 26 }}><input type="checkbox" title="select all shown"
+                <th style={{ width: 26 }}><input type="checkbox" className="tip-sel"
+                  title="select all shown" aria-label="select all shown"
                   checked={visible.length > 0 && selIds.length === Math.min(visible.length, 50)}
                   onChange={(e) => setSel(e.target.checked
                     ? Object.fromEntries(visible.slice(0, 50).map((s) => [s.id, true])) : {})} /></th>
@@ -751,7 +752,8 @@ function TipsTab() {
                 <tr key={s.id}
                   title={[s.thesisSummary, s.verification?.flowContext,
                     s.verification?.calendarContext].filter(Boolean).join("\n")}>
-                  <td><input type="checkbox" checked={!!sel[s.id]} onChange={() => toggleSel(s.id)} /></td>
+                  <td><input type="checkbox" className="tip-sel" checked={!!sel[s.id]}
+                    aria-label={`select ${s.ticker}`} onChange={() => toggleSel(s.id)} /></td>
                   <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>} <FlowChip sym={s.ticker} /></td>
                   <td className="muted">{s.direction === "short" ? <span className="neg">short ↓</span> : "long"}</td>
                   <td className="muted">{contractLabel(s) ?? "—"}</td>
