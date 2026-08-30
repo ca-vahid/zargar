@@ -2173,6 +2173,35 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   font-family: var(--mono); font-size: var(--fs-1); color: var(--text-2); }
 .flow-lnk:hover { color: var(--accent); }
 
+/* ── knowledge base tab ────────────────────────────────────────────────── */
+.kb-compose { display: grid; grid-template-columns: 150px 1fr auto; gap: 8px;
+  align-items: start; margin-bottom: 12px; }
+.kb-compose textarea { resize: vertical; min-height: 44px; font: inherit;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text-1); }
+.kb-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.kb-hist { font-size: var(--fs-0); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.kb-sec { margin-bottom: 16px; }
+.kb-sec-t { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+  font-size: var(--fs-2); }
+.kb-sec-t .muted { font-weight: 500; font-size: var(--fs-0); }
+.kb-note { border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-1); padding: 8px 12px; margin-bottom: 6px; }
+.kb-note--rule { border-left: 3px solid var(--accent); }
+.kb-note--attn { border-color: color-mix(in srgb, var(--down) 45%, var(--border)); }
+.kb-note--old { opacity: 0.55; }
+.kb-note-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: var(--fs-0); margin-bottom: 3px; }
+.kb-note-idx { font-family: var(--mono); font-weight: 800; color: var(--accent); }
+.kb-note-scope { font-family: var(--mono); background: var(--surface-2);
+  border-radius: 4px; padding: 1px 6px; }
+.kb-note-acts { margin-left: auto; display: inline-flex; gap: 10px; align-items: center; }
+.kb-note-text { white-space: pre-wrap; line-height: 1.5; font-size: var(--fs-2); }
+.kb-edit { display: flex; flex-direction: column; gap: 6px; }
+.kb-edit textarea { width: 100%; font: inherit; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-2); color: var(--text-1); }
+
 /* analyst run: the verdict's paper trail (proposal → decision → fill → position) */
 .an-aftermath { margin: 10px 14px 14px 46px; border: 1px solid var(--border);
   border-left: 3px solid var(--accent); border-radius: var(--radius-sm);

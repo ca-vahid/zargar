@@ -195,6 +195,28 @@ class SignalService:
                                          aggregate_id=signal_id or row.id)
         return note
 
+    async def update_tip_note(self, note_id: str, *, text: str | None = None,
+                              scope: str | None = None) -> dict | None:
+        """Edit a knowledge note in place (Knowledge tab). Journaled; None =
+        unknown id. An empty text is a ValueError, not a silent wipe."""
+        from ..models import TipNote
+        if text is not None and not text.strip():
+            raise ValueError("empty note")
+        async with self.engine.sf() as session:
+            row = await session.get(TipNote, note_id)
+            if row is None:
+                return None
+            if text is not None:
+                row.text = text.strip()[:2000]
+            if scope is not None and scope.strip():
+                row.scope = scope.strip()[:160]
+            await session.commit()
+            note = self.note_dict(row)
+        await self.engine.journal.append(ev.TIP_NOTE_EDITED, note,
+                                         aggregate_type="signal",
+                                         aggregate_id=note_id)
+        return note
+
     async def delete_tip_note(self, note_id: str) -> bool:
         from ..models import TipNote
         async with self.engine.sf() as session:
