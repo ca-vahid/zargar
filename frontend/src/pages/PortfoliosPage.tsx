@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Highcharts from "highcharts/esm/highstock.js";
 import { memo } from "react";
 import { api } from "../lib/api";
 import { fmtCcy, fmtDateTime, fmtMoney, fmtPct, fmtQty, fmtSigned } from "../lib/format";
 import { baseChartOptions, seriesPalette } from "../lib/highchartsTheme";
+import { symbolLabel } from "../lib/occ";
 import { useAsync } from "../lib/useAsync";
 import { groupPositions, useQuote, useStore } from "../store";
 import { useViewport } from "../lib/viewport";
-import type { BrokeragePosition, BrokerageProvider, Portfolio } from "../types";
+import type {
+  BrokeragePosition, BrokerageProvider, ManagedPosition, Portfolio, Position,
+} from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { LivePrice, ValuePill } from "../components/quotekit";
@@ -21,12 +24,12 @@ const REAL_KINDS = new Set(["live", "paper"]);
 
 function PortfolioCard({
   portfolio,
-  positionCount,
+  positions,
   visible,
   onToggle,
 }: {
   portfolio: Portfolio;
-  positionCount: number;
+  positions: Position[];
   visible: boolean;
   onToggle: (v: boolean) => void;
 }) {
@@ -34,6 +37,7 @@ function PortfolioCard({
   const ccy = p.baseCurrency ?? "USD";
   const equity = p.equity ?? p.cash;
   const pnl = equity - p.startingCash;
+  const positionCount = positions.length;
   return (
     <div className="panel">
       <div className="panel-head">
@@ -65,8 +69,294 @@ function PortfolioCard({
           </div>
         )}
         <div className="metric-sub" style={{ marginTop: 6 }}>
-          cash {fmtCcy(p.cash, ccy)} · {positionCount} position{positionCount === 1 ? "" : "s"}
+          cash {fmtCcy(p.cash, ccy)} · invested {fmtCcy(Math.max(equity - p.cash, 0), ccy)}
+          · {positionCount} position{positionCount === 1 ? "" : "s"}
           {p.sourceName && p.sourceName !== "snaptrade" && <> · tracks "{p.sourceName}"</>}
+        </div>
+        {positionCount > 0 && (
+          <div className="scroll-x" style={{ marginTop: 8 }}>
+            <EnginePosTable positions={positions} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── engine positions (practice/shadow books): live-priced breakdown ──── */
+
+const EnginePosRow = memo(function EnginePosRow({ pos }: { pos: Position }) {
+  const quote = useQuote(pos.symbol);
+  const openTrade = useStore((s) => s.openTrade);
+  const mult = pos.option?.multiplier ?? (pos.secType === "OPT" ? 100 : 1);
+  const live = quote?.last && quote.last > 0 ? quote.last : pos.last ?? 0;
+  const pnl = live > 0 ? (live - pos.avgCost) * pos.qty * mult : null;
+  const pnlPct = live > 0 && pos.avgCost > 0 ? (live / pos.avgCost - 1) * 100 : null;
+  const underlying = pos.option?.underlying ?? pos.symbol;
+  return (
+    <tr onClick={() => openTrade(underlying)} style={{ cursor: "pointer" }}
+      title={`Open ${underlying} in Trade`}>
+      <td className="sym-cell">{pos.option?.display ?? symbolLabel(pos.symbol)}</td>
+      <td className="num">{fmtQty(pos.qty)}</td>
+      <td className="num">{fmtMoney(pos.avgCost)}</td>
+      <td className="num">{live > 0 ? fmtMoney(live) : "—"}</td>
+      <td className="num">
+        {pnlPct !== null && pnl !== null
+          ? <ValuePill value={pnlPct} text={`${fmtSigned(pnl)} (${fmtPct(pnlPct)})`} />
+          : "—"}
+      </td>
+      <td className="num">{live > 0 ? fmtMoney(pos.qty * live * mult) : "—"}</td>
+    </tr>
+  );
+});
+
+function EnginePosTable({ positions }: { positions: Position[] }) {
+  return (
+    <table className="tbl">
+      <thead>
+        <tr>
+          <th>Position</th><th className="num">Qty</th><th className="num">Avg cost</th>
+          <th className="num">Live</th><th className="num">P&L</th><th className="num">Value</th>
+        </tr>
+      </thead>
+      <tbody>
+        {positions.map((p) => <EnginePosRow key={`${p.symbol}:${p.secType}`} pos={p} />)}
+      </tbody>
+    </table>
+  );
+}
+
+/* ── managed positions: the durable positions the engine runs ─────────── */
+
+const LegLive = memo(function LegLive({ symbol, avgFill, qty, mult }: {
+  symbol: string; avgFill: number | null; qty: number; mult: number;
+}) {
+  const q = useQuote(symbol);
+  const live = q?.last && q.last > 0 ? q.last : null;
+  if (live == null) return null;
+  const pnl = avgFill != null ? (live - avgFill) * qty * mult : null;
+  return (
+    <span style={{ fontFamily: "var(--mono)" }}>
+      {" "}· now {fmtMoney(live)}
+      {pnl != null && <> (<span className={pnl >= 0 ? "pos" : "neg"}>{fmtSigned(pnl)}</span>)</>}
+    </span>
+  );
+});
+
+const attnText = (a: any): string =>
+  typeof a === "string" ? a : a?.text ?? a?.reason ?? a?.event ?? "needs attention";
+
+function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }) {
+  const toast = useStore((s) => s.toast);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const lad = m.policy?.ladder ?? {};
+  const targets: number[] = lad.targets ?? [];
+  const fractions: number[] = lad.fractions ?? [];
+  const trimsDone = m.state?.trimsDone ?? 0;
+  const nextTarget = trimsDone < targets.length ? targets[trimsDone] : null;
+  const stop = m.state?.stop ?? m.policy?.stop?.price ?? null;
+  const noStop = m.policy?.stop?.kind === "none";
+  const timeBox = m.policy?.time_stop_sessions;
+  const events = (m.events ?? []).slice(-3).reverse();
+  const close = async () => {
+    setBusy(true);
+    try {
+      await api.closeManagedPosition(m.id);
+      toast("success", `Closing ${m.symbol} (reduce-only, at market)`);
+      onChanged();
+    } catch (e: any) {
+      toast("error", e.message);
+    } finally {
+      setBusy(false);
+      setConfirming(false);
+    }
+  };
+  return (
+    <div className={`mgd-card ${m.status === "attention" ? "mgd-attn" : ""}`}>
+      <div className="mgd-head">
+        <span className="mgd-sym">{m.symbol}</span>
+        <span className={`status-pill ${m.status === "open" ? "ok" : m.status === "attention" ? "bad" : "dim"}`}>
+          {m.status}
+        </span>
+        <span className="status-pill dim">{m.technique}</span>
+        <span className="muted">{m.direction}</span>
+        <span className="mgd-pnl">
+          realized <span className={m.realizedPnl >= 0 ? "pos" : "neg"}>{fmtSigned(m.realizedPnl)}</span>
+        </span>
+      </div>
+      <div className="mgd-legs">
+        {m.legs.map((l) => (
+          <span key={l.symbol}>
+            <b>{l.qty > 0 ? "+" : ""}{fmtQty(l.qty)}</b> × {symbolLabel(l.symbol)}
+            {l.avgFill != null && <span className="muted"> @ {fmtMoney(l.avgFill)}</span>}
+            <LegLive symbol={l.symbol} avgFill={l.avgFill} qty={l.qty} mult={l.multiplier} />
+          </span>
+        ))}
+      </div>
+      <div className="prop-facts">
+        <span className="prop-fact">opened <b>{m.openedMs ? fmtDateTime(new Date(m.openedMs).toISOString()) : "—"}</b></span>
+        <span className="prop-fact">held <b>{m.sessionsHeld}</b> session{m.sessionsHeld === 1 ? "" : "s"}{timeBox ? <> / {timeBox}</> : null}</span>
+        {targets.length > 0 && (
+          <span className="prop-fact"
+            title={targets.map((t, i) => `TP${i + 1} ${t}${fractions[i] != null ? ` (${Math.round(fractions[i] * 100)}%)` : ""}${i < trimsDone ? " ✓" : ""}`).join(" · ")}>
+            trims <b>{trimsDone}/{targets.length}</b>{nextTarget != null && <> · next @ <b>{nextTarget}</b></>}
+          </span>
+        )}
+        {stop != null && <span className="prop-fact">stop <b>{stop}</b>{m.state?.breakevenDone ? " (breakeven)" : ""}</span>}
+        {noStop && (
+          <span className="prop-fact" title={m.policy?.stop?.guard ?? "no price stop — guarded by sizing + premium/time stops"}>
+            <b>no price stop</b> (guarded)
+          </span>
+        )}
+        {m.policy?.premium_stop_pct && <span className="prop-fact">premium stop <b>{m.policy.premium_stop_pct}%</b></span>}
+        {m.policy?.dte_close != null && <span className="prop-fact">close at <b>{m.policy.dte_close} DTE</b></span>}
+        {m.venueStopAt != null && <span className="prop-fact">venue stop <b>{m.venueStopAt}</b></span>}
+      </div>
+      {(m.attention ?? []).length > 0 && (
+        <div className="neg" style={{ fontSize: 12, margin: "4px 0" }}>
+          ⚠ {attnText(m.attention[m.attention.length - 1])}
+        </div>
+      )}
+      {events.length > 0 && (
+        <div className="mgd-events">
+          {events.map((e) => (
+            <span key={e.ts}>{fmtDateTime(new Date(e.ts).toISOString())} · {e.event}{e.text ? ` — ${e.text}` : ""}</span>
+          ))}
+        </div>
+      )}
+      {m.status !== "closed" && (
+        <div className="mgd-actions">
+          {confirming ? (
+            <>
+              <span className="muted" style={{ fontSize: 12 }}>Close the whole position at market?</span>
+              <button className="danger-btn" disabled={busy} onClick={close}>yes, close it</button>
+              <button className="link-btn" onClick={() => setConfirming(false)}>keep it</button>
+            </>
+          ) : (
+            <button className="link-btn danger" onClick={() => setConfirming(true)}
+              title="Reduce-only market exit through the risk gate — never blocked by entry caps">
+              close position…
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MgdClosedRow({ m }: { m: ManagedPosition }) {
+  const lastExit = (m.exits ?? [])[Math.max(0, (m.exits ?? []).length - 1)] as any;
+  const reason = lastExit?.reason ?? lastExit?.kind ?? "";
+  return (
+    <div className="mgd-closed">
+      <span style={{ fontFamily: "var(--mono)" }}>
+        {m.closedMs ? fmtDateTime(new Date(m.closedMs).toISOString()) : "—"}
+      </span>
+      <span><b>{m.symbol}</b> <span className="muted">{m.legs.map((l) => symbolLabel(l.symbol)).join(", ")}{reason ? ` · ${reason}` : ""}</span></span>
+      <span className="muted">{m.technique} · {m.sessionsHeld}s held</span>
+      <span className={`num ${m.realizedPnl >= 0 ? "pos" : "neg"}`} style={{ fontFamily: "var(--mono)", textAlign: "right" }}>
+        {fmtSigned(m.realizedPnl)}
+      </span>
+    </div>
+  );
+}
+
+function ManagedPanel() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 20000);
+    return () => clearInterval(t);
+  }, []);
+  const st = useAsync(() => api.listManagedPositions(), [tick]);
+  const rows = st.data ?? [];
+  const active = rows.filter((m) => m.status !== "closed");
+  const recent = rows.filter((m) => m.status === "closed")
+    .sort((a, b) => (b.closedMs ?? 0) - (a.closedMs ?? 0)).slice(0, 6);
+  if (rows.length === 0) return null;
+  return (
+    <div className="panel mb">
+      <div className="panel-head">
+        Managed positions
+        <span className="sub">
+          durable positions the engine runs — each follows its own exit plan (trims · stops · time box)
+        </span>
+      </div>
+      <div className="panel-body">
+        {active.length === 0 && <div className="empty">Nothing under management right now.</div>}
+        {active.map((m) => <MgdCard key={m.id} m={m} onChanged={() => setTick((x) => x + 1)} />)}
+        {recent.length > 0 && (
+          <>
+            <div className="muted" style={{ fontSize: 12, margin: "10px 0 6px" }}>Recently closed</div>
+            {recent.map((m) => <MgdClosedRow key={m.id} m={m} />)}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── shadow research books: per-source scorecards, not accounts ───────── */
+
+function ShadowBooksPanel({ books, byPortfolio, hidden, onToggle }: {
+  books: Portfolio[];
+  byPortfolio: Record<string, Position[]>;
+  hidden: Record<string, boolean>;
+  onToggle: (pid: string, v: boolean) => void;
+}) {
+  const [open, setOpen] = useState<Record<string, boolean>>({});
+  if (books.length === 0) return null;
+  return (
+    <div className="panel mb">
+      <div className="panel-head">
+        Shadow research books
+        <span className="sub">
+          one simulated book per tip source, so each tipper is graded on its own record
+          (the "(armed)" twin waits for the stated level) — research instruments, not accounts you fund
+        </span>
+      </div>
+      <div className="panel-body">
+        <div className="scroll-x">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Book</th><th className="num">Equity</th><th className="num">Since start</th>
+                <th className="num">Positions</th><th className="num">Chart</th>
+              </tr>
+            </thead>
+            <tbody>
+              {books.map((p) => {
+                const pos = byPortfolio[p.id] ?? [];
+                const equity = p.equity ?? p.cash;
+                const pnl = equity - p.startingCash;
+                const isOpen = !!open[p.id];
+                return (
+                  <Fragment key={p.id}>
+                    <tr onClick={() => pos.length && setOpen((o) => ({ ...o, [p.id]: !isOpen }))}
+                      style={{ cursor: pos.length ? "pointer" : "default" }}
+                      title={pos.length ? "Show this book's positions" : undefined}>
+                      <td>{p.name.replace(/^Shadow:\s*/, "")}</td>
+                      <td className="num" style={{ fontFamily: "var(--mono)" }}>{fmtCcy(equity, p.baseCurrency ?? "USD")}</td>
+                      <td className={`num ${pnl >= 0 ? "pos" : "neg"}`} style={{ fontFamily: "var(--mono)" }}>{fmtSigned(pnl)}</td>
+                      <td className="num">{pos.length}{pos.length > 0 && <span className="muted"> {isOpen ? "▾" : "▸"}</span>}</td>
+                      <td className="num">
+                        <label className="switch" title="Show on equity chart" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={!hidden[p.id]}
+                            onChange={(e) => onToggle(p.id, e.target.checked)} />
+                          <span className="track" />
+                        </label>
+                      </td>
+                    </tr>
+                    {isOpen && pos.length > 0 && (
+                      <tr className="shadow-detail">
+                        <td colSpan={5}><EnginePosTable positions={pos} /></td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -245,6 +535,12 @@ export function PortfoliosPage() {
   const practiceCards = useMemo(
     () => portfolios.filter((p) => !REAL_KINDS.has(p.kind)),
     [portfolios]);
+  // trading books (Practice sim) get full cards; per-source shadow scorecard
+  // books are research instruments and live in their own compact panel
+  const practiceMain = useMemo(
+    () => practiceCards.filter((p) => p.kind !== "shadow"), [practiceCards]);
+  const shadowBooks = useMemo(
+    () => practiceCards.filter((p) => p.kind === "shadow"), [practiceCards]);
   const showPractice = mode !== "live"; // live board = real money only
   const [chartScope, setChartScope] = useState<"all" | "real" | "practice">(
     mode === "live" ? "real" : "all");
@@ -351,7 +647,7 @@ export function PortfoliosPage() {
         <div className="settings-grid mb">
           {realCards.map((p) => (
             <PortfolioCard key={p.id} portfolio={p}
-              positionCount={(byPortfolio[p.id] ?? []).length}
+              positions={byPortfolio[p.id] ?? []}
               visible={!hidden[p.id]}
               onToggle={(v) => toggleVisible(p.id, v)} />
           ))}
@@ -372,19 +668,22 @@ export function PortfoliosPage() {
             Practice environment <span className="status-pill dim">simulated fills</span>
           </div>
           <div className="settings-grid mb">
-            {practiceCards.map((p) => (
+            {practiceMain.map((p) => (
               <PortfolioCard key={p.id} portfolio={p}
-                positionCount={(byPortfolio[p.id] ?? []).length}
+                positions={byPortfolio[p.id] ?? []}
                 visible={!hidden[p.id]}
                 onToggle={(v) => toggleVisible(p.id, v)} />
             ))}
-            {practiceCards.length === 0 && (
+            {practiceMain.length === 0 && (
               <div className="panel"><div className="panel-body">
                 <EmptyState title="No practice portfolios"
                   hint="The engine seeds one on first start." />
               </div></div>
             )}
           </div>
+          <ManagedPanel />
+          <ShadowBooksPanel books={shadowBooks} byPortfolio={byPortfolio}
+            hidden={hidden} onToggle={toggleVisible} />
         </>
       )}
 

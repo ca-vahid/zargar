@@ -482,8 +482,8 @@ function ApprovalsTab() {
   );
 }
 
-/** One decided proposal: what it was, and WHERE the approval went — the order's
-    fill and, when adopted, the managed position it became. */
+/** One decided proposal, one line: when · what · how it ended · where it went
+    (order fill → managed position). Columns line up across rows. */
 function DecidedRow({ p }: { p: any }) {
   const setPage = useStore((s) => s.setPage);
   const oc = p.outcome;
@@ -493,30 +493,32 @@ function DecidedRow({ p }: { p: any }) {
     outcomeBits.push(<span key="fill" className="pos">
       filled {oc.filledQty ?? p.qty}{oc.avgFillPrice ? ` @ ${fmtMoney(oc.avgFillPrice)}` : ""}</span>);
   } else if (oc?.orderStatus && ["REJECTED", "REJECTED_RISK", "CANCELLED"].includes(oc.orderStatus)) {
-    outcomeBits.push(<span key="rej" className="neg">
-      order {oc.orderStatus.toLowerCase()}{oc.rejectReason ? ` — ${oc.rejectReason}` : ""}</span>);
+    outcomeBits.push(<span key="rej" className="neg" title={oc.rejectReason ?? undefined}>
+      {oc.orderStatus.toLowerCase().replace("_", " ")}{oc.rejectReason ? ` — ${oc.rejectReason}` : ""}</span>);
   } else if (oc?.orderStatus) {
     outcomeBits.push(<span key="wk" className="muted">order {oc.orderStatus.toLowerCase()} — waiting for a fill</span>);
+  } else if (p.context?.expiredReason) {
+    outcomeBits.push(<span key="ex" className="muted" title={p.context.expiredReason}>{p.context.expiredReason}</span>);
   }
   if (oc?.positionId) {
     outcomeBits.push(
       <button key="pos" className="link-btn" onClick={() => setPage("portfolios")}
-        title="The fill was adopted by the durable manager — the analyst's exit plan runs it. Opens Portfolios.">
+        title="The fill was adopted by the durable manager — its exit plan runs it. Opens Portfolios.">
         → {oc.positionStatus === "closed" ? "position closed" : `managed position (${oc.positionStatus ?? "open"})`}
       </button>);
   }
+  const orderText = `${p.side} ${p.qty} × ${p.context?.vehicle?.display ?? p.symbol}`
+    + (p.limitPrice ? ` @ ${p.limitPrice}` : "");
   return (
-    <div className="bl-card bl-card--static appr-hist-row">
-      <span className="bl-card-l">
-        <span className="bl-card-sym"><b>{p.context?.vehicle?.underlying ?? p.symbol}</b>{" "}
-          <span className={`status-pill ${good ? "ok" : p.status === "failed" ? "bad" : "dim"}`}>{p.status}</span>
-          <span className="muted"> {p.side} {p.qty} × {p.context?.vehicle?.display ?? p.symbol}
-            {p.limitPrice ? ` @ ${p.limitPrice}` : ""}</span>
-          {outcomeBits.length > 0 && <span className="appr-outcome"> {outcomeBits}</span>}
-        </span>
-        <span className="bl-card-sub">{p.context?.sourceName ?? "?"} · {fmtDateTime(p.createdAt)}
-          {p.decidedVia ? ` · via ${p.decidedVia}` : ""}
-          {p.context?.expiredReason ? ` · ${p.context.expiredReason}` : ""}</span>
+    <div className="appr-row">
+      <span className="appr-date" title={fmtDateTime(p.createdAt)}>{fmtDateTime(p.createdAt)}</span>
+      <span className="appr-sym">{p.context?.vehicle?.underlying ?? p.symbol}</span>
+      <span><span className={`status-pill ${good ? "ok" : p.status === "failed" ? "bad" : "dim"}`}>{p.status}</span></span>
+      <span className="appr-order" title={orderText}>{orderText}</span>
+      <span className="appr-outcome">{outcomeBits.length > 0 ? outcomeBits : <span className="muted">—</span>}</span>
+      <span className="appr-src muted"
+        title={`${p.context?.sourceName ?? "?"}${p.decidedVia ? ` · via ${p.decidedVia}` : ""}`}>
+        {p.context?.sourceName ?? "?"}{p.decidedVia ? ` · ${p.decidedVia}` : ""}
       </span>
     </div>
   );

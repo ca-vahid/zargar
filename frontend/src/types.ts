@@ -102,6 +102,50 @@ export interface Position {
   unrealizedPnlPct?: number;
 }
 
+export interface ManagedLeg {
+  symbol: string;
+  secType: string;
+  qty: number;
+  avgFill: number | null;
+  multiplier: number;
+  entryOrderId?: string | null;
+  origin?: string;
+}
+
+/** A durable position run by the engine's position manager (exit plan as data). */
+export interface ManagedPosition {
+  id: string;
+  portfolioId: string;
+  symbol: string; // the underlying
+  direction: string;
+  technique: string;
+  status: string; // opening | open | closing | closed | attention
+  policy: any;
+  legs: ManagedLeg[];
+  entry: number;
+  risk: number;
+  entryMark?: number | null;
+  overnight: string;
+  overnightAck: boolean;
+  appManagedOnly?: boolean;
+  tags: string[];
+  runId?: string | null;
+  state: {
+    trimsDone: number; stop: number | null; trailingActive: boolean;
+    peakFavorable: number | null; breakevenDone: boolean;
+  };
+  realizedPnl: number;
+  exits: any[];
+  events: { ts: number; event: string; text?: string }[];
+  sessionsSeen: string[];
+  sessionsHeld: number;
+  openedMs: number;
+  closedMs: number | null;
+  venueStopAt?: number | null;
+  attention: any[];
+  haltEntries?: boolean;
+}
+
 export interface Order {
   id: string;
   portfolioId: string;
