@@ -240,12 +240,18 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
     const total = passed.length;
     const fails: string[] = [];
     setBulkArm({ done: 0, total });
+    let done = 0;
     try {
-      for (const [i, id] of passed.entries()) {
-        const err = await armOne(id, full[id]?.symbol ?? id.slice(0, 6), true);
-        if (err) fails.push(err);
-        setBulkArm({ done: i + 1, total });
-      }
+      // 5 at a time — arming one by one made a 30-plan bulk arm crawl
+      const queue = [...passed];
+      const worker = async () => {
+        for (let id = queue.shift(); id; id = queue.shift()) {
+          const err = await armOne(id, full[id]?.symbol ?? id.slice(0, 6), true);
+          if (err) fails.push(err);
+          done += 1; setBulkArm({ done, total });
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(5, queue.length) }, worker));
     } finally { setBulkArm(null); }
     const ok = total - fails.length;
     if (fails.length) toast(ok ? "info" : "error",
