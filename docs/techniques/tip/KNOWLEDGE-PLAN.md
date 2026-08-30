@@ -180,16 +180,18 @@ What the 2025-26 literature converges on, applied to us:
 - The experiment tag (`experiment:<batch>`) keeps experimental runs/notes out of the
   real retro/audit inputs unless explicitly included.
 
-## §4 Decisions for the user
+## §4 Decisions — DECIDED by the user, 2026-08-30
 
-1. **Backfill depth** for tip channels: 60 days? 90? (deeper = more sample, more replay
-   on coarser evidence; 1h bars reach ~2 years so outcomes stay computable).
-2. **Sample size** per batch (suggest 20 — reviewable in one sitting).
-3. **`trading-floor`**: context-mode mirror from day 1 (C1), digest on demand (C3) first
-   or straight to nightly (C2)?
-4. **TTL defaults** (B1): 14/90/∞ as proposed, or different numbers?
-5. Anything from the batches that should feed the SOURCE scorecards, or keep the
-   experiment fully out-of-band (recommended: out-of-band, `experiment:` tagged)?
+1. **Backfill depth**: **90 days** (tip channels; `trading-floor` baseline only).
+2. **Sample size**: **20 per batch**, seeded.
+3. **`trading-floor`**: context-mode mirror from day 1 (C1) + **digest on demand (C3)
+   first**, nightly (C2) after the digest prompt is tuned.
+4. **TTL defaults**: **14d daily / 90d ticker+source / no expiry for rule+general**
+   (audit-gated instead).
+5. **Experiment fully out-of-band**: yes — `experiment:<batch>` tagged, excluded from
+   scorecards, retros and the rule audit.
+
+Build plan: `docs/techniques/tip/KNOWLEDGE-BUILD-PLAN.md`.
 
 ## Sources (external)
 
