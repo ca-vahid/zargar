@@ -71,29 +71,33 @@ new knobs in `settings_service.DEFAULTS`.
       scorecard exclusion, age wording, seeded sampler determinism + exclusions +
       processed-marking.
 
-## Phase 3 — knowledge lifecycle (cluster B1/B2/B4/B5)
+## Phase 3 — knowledge lifecycle (cluster B1/B2/B4/B5) — DONE 2026-08-30
 
-- [ ] `TipNote.valid_until` (nullable) + `last_cited_at`/`cited_count` columns
-      (additive migration via `db.create_all`).
-- [ ] TTL defaults on create, by scope kind: `daily:*` 14d · `ticker:*`/`source:*`
-      90d · `rule`/`general`/`signal:*` none. Knobs:
-      `techniques.tip.note_ttl_daily_days`, `note_ttl_scoped_days` in DEFAULTS.
-- [ ] Injection: expired notes are NOT injected (kept as history, like superseded);
-      every injected note is rendered WITH its date + scope (B2) so the model sees
-      temporal validity.
-- [ ] Nightly sweep expires due notes (journaled `TipNoteExpired`; folded into the
-      existing nightly tip review job).
-- [ ] Knowledge tab: "expires in Xd" chip; pin action (clears `valid_until`,
-      journaled); expired notes under the history toggle.
-- [ ] B4: weekly audit widened beyond `rule` — stale candidates (past TTL grace,
-      never cited, or contradicted) flagged `needs_human` with the same one-click
-      resolve.
-- [ ] B5 outcome refresh: when a retro/appraisal cites a note (`save_note` refers or
-      the run's injected-note ids are credited), bump `cited_count`, set
-      `last_cited_at`, and extend `valid_until` by its scope's TTL. Injection order:
-      rules first (age order), then cited-recently, then newest.
-- [ ] Tests: TTL assignment per scope; injection filter + date rendering; sweep;
-      pin; refresh-on-cite; audit widening.
+- [x] `TipNote.valid_until` + `last_cited_at` + `cited_count` (additive, via
+      `db.create_all`).
+- [x] TTL on create by scope: `daily:*` 14d · `ticker:*`/`source:*` 90d ·
+      `rule`/`general`/`signal:*`/`experiment:*` none. Knobs
+      `techniques.tip.note_ttl_daily_days` / `note_ttl_scoped_days`.
+- [x] Injection: expired notes filtered at QUERY TIME (deterministic, restart-
+      proof, append-only — **no mutation sweep needed**, so the planned journaled
+      nightly sweep was dropped deliberately; expiry is visible in the UI chip and
+      the history toggle instead). Dates were ALREADY rendered with every injected
+      note (`(created, author)` in notes_txt) — B2 verified, not rebuilt.
+- [x] Knowledge tab: "expires in Xd" chip (amber ≤ 7d) with the TTL story in its
+      tooltip, 📌 pin (clears expiry, journaled TipNoteEdited), history toggle now
+      "superseded + expired" (API `superseded=true` returns both).
+- [x] B4: `run_knowledge_audit` — the weekly judge→apply pass widened to every
+      `ticker:*`/`source:*`/`general` group with ≥3 active notes (merge dupes,
+      expire unsupported, flag contradictions needs-your-call); `daily:*` expire on
+      TTL; `experiment:*`/`signal:*` never audited. Runs beside the rule audit in
+      the nightly job on audit day.
+- [x] B5 refresh: notes injected into a COMPLETED live appraisal get
+      `cited_count`++/`last_cited_at` and their TTL extended (experiment runs
+      deliberately never refresh). Injection order kept simple (newest-first) —
+      revisit if volume ever makes ordering matter.
+- [x] Tests (`tests/test_tip_knowledge.py`, 5): TTL per scope, query-time expiry +
+      history, citation refresh, pin, scoped-audit flagging (+ experiment scopes
+      never served to the judge).
 
 ## Phase 4 — digests (cluster C3, then C2)
 

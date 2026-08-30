@@ -311,9 +311,11 @@ def build_signal_routes(app, eng, auth, config) -> None:
     # --- shared tips knowledge (notes the analyst reads before every run) -----
     @app.get("/api/tip/notes", dependencies=[auth])
     async def tip_notes(scope: str = "", limit: int = 100, superseded: bool = False):
+        # `superseded=true` = "show history": superseded AND expired notes
         scopes = [s.strip() for s in scope.split(",") if s.strip()] or None
         return await eng.signals_service.tip_notes(scopes, limit=limit,
-                                                   include_superseded=superseded)
+                                                   include_superseded=superseded,
+                                                   include_expired=superseded)
 
     class NoteBody(BaseModel):
         scope: str = "general"
@@ -346,6 +348,14 @@ def build_signal_routes(app, eng, auth, config) -> None:
         if not await eng.signals_service.delete_tip_note(note_id):
             raise HTTPException(status_code=404, detail="note not found")
         return {"ok": True}
+
+    @app.post("/api/tip/notes/{note_id}/pin", dependencies=[auth])
+    async def pin_tip_note(note_id: str):
+        """Clear a note's expiry — the user says it is durable (KNOWLEDGE B1)."""
+        out = await eng.signals_service.pin_tip_note(note_id)
+        if out is None:
+            raise HTTPException(status_code=404, detail="note not found")
+        return out
 
     @app.post("/api/tip/notes/{note_id}/resolve", dependencies=[auth])
     async def resolve_tip_note(note_id: str):

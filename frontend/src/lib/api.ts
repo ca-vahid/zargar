@@ -122,6 +122,8 @@ export const api = {
     request<{ ok: boolean }>("DELETE", `/api/tip/notes/${id}`),
   resolveTipNote: (id: string) =>
     request<{ ok: boolean }>("POST", `/api/tip/notes/${id}/resolve`),
+  pinTipNote: (id: string) =>
+    request<import("../types").TipNote>("POST", `/api/tip/notes/${id}/pin`),
   dismissSignals: (ids: string[]) =>
     request<{ dismissed: number }>("POST", "/api/signals/dismiss", { ids }),
   // --- flow technique ---

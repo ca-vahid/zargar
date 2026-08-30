@@ -97,6 +97,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.retro_at": "17:10",      # ET, engine scheduler
     "techniques.tip.analyst_manage_enabled": True,  # analyst may adjust/trim OPEN tip positions (exit-only)
     "techniques.tip.mirror_max_messages": 50000,    # discord message mirror cap (oldest pruned; raised for 90d onboarding + context channels, 2026-08-30)
+    "techniques.tip.note_ttl_daily_days": 14,       # daily:* digest notes expire after this (query-time)
+    "techniques.tip.note_ttl_scoped_days": 90,      # ticker:*/source:* notes; citation in a live run refreshes
     "techniques.tip.dedupe_window_hours": 24,
     "techniques.tip.scorecard_min_n": 20,    # verified tips before a source can leave shadow
     "techniques.tip.stop_atr_mult": 1.0,     # ATR stop when the tip states none

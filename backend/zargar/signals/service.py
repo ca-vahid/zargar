@@ -138,19 +138,43 @@ class SignalService:
     # reads matching notes before every run and writes new ones (save_note).
     @staticmethod
     def note_dict(n) -> dict:
+        vu = getattr(n, "valid_until", None)
+        lc = getattr(n, "last_cited_at", None)
         return {"id": n.id, "scope": n.scope, "text": n.text, "author": n.author,
                 "signalId": n.signal_id, "runId": n.run_id,
                 "supersededBy": getattr(n, "superseded_by", None),
                 "needsHuman": bool(getattr(n, "needs_human", False)),
+                "validUntil": vu.isoformat() if vu else None,
+                "lastCitedAt": lc.isoformat() if lc else None,
+                "citedCount": int(getattr(n, "cited_count", 0) or 0),
                 "createdAt": n.created_at.isoformat() if n.created_at else None}
 
+    def _note_ttl_days(self, scope: str) -> float | None:
+        """Per-scope retention (KNOWLEDGE B1, FinMem-layered): daily digests are
+        short-lived noise, ticker/source knowledge is medium (refreshable on
+        citation), rules/general never expire mechanically (the audit gates
+        them). experiment:* notes never expire — they are review artifacts,
+        never injected anyway."""
+        s = self.engine.settings
+        if scope.startswith("daily:"):
+            return float(s.get("techniques.tip.note_ttl_daily_days", 14))
+        if scope.startswith(("ticker:", "source:")):
+            return float(s.get("techniques.tip.note_ttl_scoped_days", 90))
+        return None
+
     async def tip_notes(self, scopes: list[str] | None = None,
-                        limit: int = 100, *, include_superseded: bool = False) -> list[dict]:
+                        limit: int = 100, *, include_superseded: bool = False,
+                        include_expired: bool = False) -> list[dict]:
         from ..models import TipNote
         async with self.engine.sf() as session:
             q = select(TipNote).order_by(TipNote.created_at.desc()).limit(limit)
             if scopes:
                 q = q.where(TipNote.scope.in_(scopes))
+            if not include_expired:
+                # QUERY-TIME expiry (B1): an expired note stops being served —
+                # no sweep, no mutation, deterministic and restart-proof
+                now = dt.datetime.now(dt.timezone.utc)
+                q = q.where((TipNote.valid_until.is_(None)) | (TipNote.valid_until > now))
             if not include_superseded:
                 # superseded rules are history, not live knowledge (A8.2)
                 q = q.where(TipNote.superseded_by.is_(None))
@@ -193,8 +217,12 @@ class SignalService:
         text = (text or "").strip()
         if not text:
             raise ValueError("empty note")
+        ttl = self._note_ttl_days(scope)
+        valid_until = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=ttl)
+                       if ttl else None)
         row = TipNote(id=new_id(), scope=scope[:160], text=text[:2000],
-                      author=author[:80], signal_id=signal_id, run_id=run_id)
+                      author=author[:80], signal_id=signal_id, run_id=run_id,
+                      valid_until=valid_until)
         async with self.engine.sf() as session:
             session.add(row)
             await session.commit()
@@ -224,6 +252,42 @@ class SignalService:
         await self.engine.journal.append(ev.TIP_NOTE_EDITED, note,
                                          aggregate_type="signal",
                                          aggregate_id=note_id)
+        return note
+
+    async def refresh_notes_cited(self, note_ids: list[str]) -> int:
+        """KNOWLEDGE B5 (FinMem's promotion pattern): a note that participated in
+        a completed LIVE appraisal stays alive — cited_count++, last_cited_at,
+        and a TTL'd note's valid_until extends by its scope's TTL. Experiment
+        runs never call this (historical batches must not keep notes alive)."""
+        from ..models import TipNote
+        n = 0
+        now = dt.datetime.now(dt.timezone.utc)
+        async with self.engine.sf() as session:
+            for nid in note_ids:
+                row = await session.get(TipNote, nid)
+                if row is None:
+                    continue
+                row.cited_count = int(row.cited_count or 0) + 1
+                row.last_cited_at = now
+                ttl = self._note_ttl_days(row.scope)
+                if ttl and row.valid_until is not None:
+                    row.valid_until = now + dt.timedelta(days=ttl)
+                n += 1
+            await session.commit()
+        return n
+
+    async def pin_tip_note(self, note_id: str) -> dict | None:
+        """User pin: clear the expiry — this note is durable now (journaled)."""
+        from ..models import TipNote
+        async with self.engine.sf() as session:
+            row = await session.get(TipNote, note_id)
+            if row is None:
+                return None
+            row.valid_until = None
+            await session.commit()
+            note = self.note_dict(row)
+        await self.engine.journal.append(ev.TIP_NOTE_EDITED, {**note, "pinned": True},
+                                         aggregate_type="signal", aggregate_id=note_id)
         return note
 
     async def delete_tip_note(self, note_id: str) -> bool:

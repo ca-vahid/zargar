@@ -187,6 +187,111 @@ async def run_rule_audit(eng, *, client=None) -> dict | None:
     return payload
 
 
+AUDITABLE_PREFIXES = ("ticker:", "source:")
+
+
+async def run_knowledge_audit(eng, *, client=None) -> dict | None:
+    """KNOWLEDGE plan B4: the weekly audit widened beyond rules. Every
+    `ticker:*` / `source:*` / `general` group holding >= MIN_RULES ACTIVE notes
+    gets the same judge -> deterministic-apply pass (merge near-duplicates,
+    expire the unsupported, flag contradictions for the human). `daily:*` notes
+    expire on their own TTL and `experiment:*`/`signal:*` are never audited.
+    Same contract as run_rule_audit: fail-open, one run row, journaled."""
+    from ...domain import new_id
+    from ...models import TipAnalystRun
+
+    s = eng.settings
+    if not bool(s.get("techniques.tip.rule_audit_enabled", True)):
+        return None
+    api_key = getattr(eng.config, "anthropic_api_key", "")
+    if client is None and not api_key:
+        return None
+    if client is None:
+        import anthropic
+        client = anthropic.AsyncAnthropic(api_key=api_key)
+    model = str(s.get("techniques.tip.analyst_model") or "") or eng.config.extraction_model
+
+    svc = eng.signals_service
+    all_notes = await svc.tip_notes(limit=300)     # active only (expired/superseded filtered)
+    groups: dict[str, list[dict]] = {}
+    for n in all_notes:
+        sc = n["scope"]
+        if sc == "general" or sc.startswith(AUDITABLE_PREFIXES):
+            groups.setdefault(sc, []).append(n)
+    groups = {k: v for k, v in groups.items() if len(v) >= MIN_RULES}
+    if not groups:
+        return None
+
+    run_id = new_id()
+    async with eng.sf() as session:
+        session.add(TipAnalystRun(
+            id=run_id, signal_id=None, ticker="NOTES", source="rule-audit",
+            status="running", kind="rule_audit", model=model, tools=[],
+            tip={"groups": sorted(groups), "notes": sum(len(v) for v in groups.values())}))
+        await session.commit()
+
+    import asyncio
+    applied = {"groups": 0, "merged": 0, "expired": 0, "contradictions": 0,
+               "newNotes": [], "flagged": []}
+    for scope, notes in sorted(groups.items()):
+        notes_txt = "\n".join(
+            f"- [{n['id']}] {n['text']} (by {n['author']}, {(n['createdAt'] or '')[:10]}, "
+            f"cited {n.get('citedCount', 0)}x)"
+            for n in notes)
+        header = (f"These are the desk's ACTIVE knowledge notes in scope '{scope}' "
+                  f"(not trading rules — market/source knowledge):\n{notes_txt}")
+        try:
+            resp = await asyncio.wait_for(
+                client.messages.create(model=model, max_tokens=1500,
+                                       system=AUDIT_SYSTEM + json.dumps(
+                                           RuleAuditOpinion.model_json_schema(),
+                                           separators=(",", ":")),
+                                       messages=[{"role": "user", "content": header}]),
+                timeout=AUDIT_TIMEOUT_S)
+            text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+            i, j = text.find("{"), text.rfind("}")
+            op = RuleAuditOpinion.model_validate_json(text[i:j + 1])
+        except Exception as exc:
+            log.warning("knowledge audit failed for %s: %s", scope, exc)
+            continue
+        live_ids = {n["id"] for n in notes}
+        for m in op.merges:
+            ids = [i for i in m.supersedes if i in live_ids]
+            if not ids or not m.new_rule.strip():
+                continue
+            new = await svc.add_tip_note(scope, m.new_rule.strip(),
+                                         author=f"knowledge-audit:{run_id[:8]}",
+                                         run_id=run_id)
+            await svc.supersede_tip_notes(ids, by=new["id"])
+            live_ids -= set(ids)
+            applied["merged"] += len(ids)
+            applied["newNotes"].append(new["id"])
+        for e in op.expires:
+            if e.id in live_ids:
+                await svc.supersede_tip_notes([e.id], by=f"expired:{run_id[:8]}")
+                live_ids.discard(e.id)
+                applied["expired"] += 1
+        for c in op.contradictions:
+            ids = [i for i in c.ids if i in live_ids]
+            if len(ids) >= 2:
+                await svc.flag_tip_notes(ids, needs_human=True)
+                applied["flagged"] += ids
+        applied["groups"] += 1
+    applied["contradictions"] = len(applied["flagged"])
+
+    from ... import events as ev
+    payload = {"runId": run_id, "kind": "knowledge", **applied}
+    await eng.journal.append(ev.TIP_RULE_AUDITED, payload,
+                             aggregate_type="technique_run", aggregate_id=run_id)
+    await _finish(eng, run_id, status="done",
+                  opinion={"verdict": "audit", **payload,
+                           "rationale": f"knowledge audit over {applied['groups']} scope group(s)"})
+    log.info("knowledge audit %s: %d group(s), merged %d, expired %d, flagged %d",
+             run_id[:8], applied["groups"], applied["merged"], applied["expired"],
+             applied["contradictions"])
+    return payload
+
+
 async def _finish(eng, run_id: str, *, status: str, opinion: dict) -> None:
     from ...models import TipAnalystRun
     import contextlib

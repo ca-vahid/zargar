@@ -644,4 +644,12 @@ class TipNote(Base):
     superseded_by: Mapped[str | None] = mapped_column(String(80))
     # a contradiction the audit surfaced — resolving it is a HUMAN click
     needs_human: Mapped[bool] = mapped_column(Boolean, default=False)
+    # knowledge lifecycle (KNOWLEDGE plan B1/B5, FinMem-style layered retention):
+    # NULL = never expires (rules/general, audit-gated); expiry is QUERY-TIME —
+    # an expired note simply stops being injected/listed (kept as history, like
+    # superseded). Citation refresh: participating in a completed live appraisal
+    # extends valid_until by the scope's TTL.
+    valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    last_cited_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    cited_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

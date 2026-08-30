@@ -904,6 +904,12 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
              + (f" Exit plan: {'; '.join(exit_bits)}." if exit_bits else ""),
              opinion=result)
     await _persist_run(eng, run_id, status="done", rec=rec, opinion=result)
+    if notes and experiment is None:
+        # KNOWLEDGE B5: knowledge that participates in a completed LIVE
+        # appraisal stays alive (historical batches must not refresh TTLs)
+        import contextlib as _ctx
+        with _ctx.suppress(Exception):
+            await eng.signals_service.refresh_notes_cited([n["id"] for n in notes])
     return result
 
 

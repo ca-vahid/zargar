@@ -405,9 +405,13 @@ async def nightly_tip_review(eng, *, client=None) -> dict:
     except Exception:
         log.exception("lane grading failed")
     try:
-        from .rule_audit import audit_due_today, run_rule_audit
+        from .rule_audit import audit_due_today, run_knowledge_audit, run_rule_audit
         if audit_due_today(eng.settings):
             out["ruleAudit"] = await run_rule_audit(eng, client=client)
+            # KNOWLEDGE B4: the same weekly pass over ticker:/source:/general
+            # knowledge groups (merge dupes, expire unsupported, flag
+            # contradictions) — daily:* expire on TTL, experiment:* never audited
+            out["knowledgeAudit"] = await run_knowledge_audit(eng, client=client)
     except Exception:
         log.exception("rule audit failed")
     return out

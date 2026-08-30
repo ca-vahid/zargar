@@ -316,6 +316,9 @@ export interface TipNote {
   // rule lifecycle (NEXT-GAPS A8): superseded rules are hidden history; a
   // contradiction the audit surfaced awaits the human's ✓
   supersededBy?: string | null; needsHuman?: boolean;
+  // knowledge lifecycle (KNOWLEDGE B1/B5): null = never expires; citation in a
+  // live run refreshes the TTL; pin clears it
+  validUntil?: string | null; lastCitedAt?: string | null; citedCount?: number;
 }
 
 export interface SourceScorecard {

@@ -1763,6 +1763,16 @@ function NoteCard({ n, onChanged, index }: {
             superseded
           </span>
         )}
+        {(() => {
+          if (!n.validUntil) return null;
+          const days = Math.ceil((new Date(n.validUntil).getTime() - Date.now()) / 86_400_000);
+          return (
+            <span className={`status-pill ${days <= 0 ? "dim" : days <= 7 ? "wait" : "dim"}`}
+              title={`Knowledge TTL: daily digests 14d, ticker/source notes 90d — being cited in a live run refreshes it (cited ${n.citedCount ?? 0}×). Pin to keep forever.`}>
+              {days <= 0 ? "expired" : `expires in ${days}d`}
+            </span>
+          );
+        })()}
         <span className="muted">{n.author}{n.createdAt ? ` · ${timeAgo(n.createdAt)}` : ""}</span>
         {n.runId && <button className="link-btn" title="open the analyst run that saved this note"
           onClick={() => openAnalystRun(n.runId!)}>run</button>}
@@ -1770,6 +1780,11 @@ function NoteCard({ n, onChanged, index }: {
           {n.needsHuman && (
             <button className="link-btn" disabled={busy} title="I've decided — clear the flag (journaled)"
               onClick={() => act(() => api.resolveTipNote(n.id))}>✓ resolved</button>
+          )}
+          {n.validUntil && !n.supersededBy && (
+            <button className="link-btn" disabled={busy}
+              title="pin: clear the expiry — this note is durable"
+              onClick={() => act(() => api.pinTipNote(n.id))}>📌 pin</button>
           )}
           {!editing && (
             <button className="link-btn" title="edit this note in place"
@@ -1867,9 +1882,9 @@ function KnowledgeTab() {
               </button>
             ))}
           </div>
-          <label className="muted kb-hist" title="superseded rules are kept as history — no run reads them">
+          <label className="muted kb-hist" title="superseded and TTL-expired notes are kept as history — no run reads them">
             <input type="checkbox" className="tip-sel" checked={withHistory}
-              onChange={(e) => setWithHistory(e.target.checked)} /> show superseded history
+              onChange={(e) => setWithHistory(e.target.checked)} /> show history (superseded + expired)
           </label>
         </div>
         {flagged.length > 0 && view !== "flagged" && (
