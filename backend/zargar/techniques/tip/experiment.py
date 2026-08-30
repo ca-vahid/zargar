@@ -210,7 +210,13 @@ async def review_batch(eng, batch: str, *, client=None) -> dict | None:
                 "failedChecks": [c.get("name") for c in
                                  (r.verification or {}).get("checks", [])
                                  if not c.get("passed")],
-                "replay": x.get("replay"),
+                # compact: full replay dicts blew the record set past the
+                # model's budget on batch b1 (2026-08-30)
+                "replay": ({"ok": (x.get("replay") or {}).get("ok"),
+                            "armed": (x.get("replay") or {}).get("armed"),
+                            "immediate": (x.get("replay") or {}).get("immediate"),
+                            "note": (x.get("replay") or {}).get("note")}
+                           if x.get("replay") else None),
                 "appraisal": ({k: (x.get("analyst") or {}).get(k) for k in
                                ("verdict", "rationale", "contract", "limit_price",
                                 "quantity", "confidence")}
@@ -236,7 +242,7 @@ async def review_batch(eng, batch: str, *, client=None) -> dict | None:
 
     async def _ask(recs_json: str) -> tuple[str, str | None]:
         resp = await client.messages.create(
-            model=model, max_tokens=6000, system=system,
+            model=model, max_tokens=10000, system=system,
             messages=[{"role": "user", "content":
                        RUBRIC.format(n=len(records)) + "\n\nBATCH RECORDS:\n" + recs_json}])
         return ("".join(b.text for b in resp.content
