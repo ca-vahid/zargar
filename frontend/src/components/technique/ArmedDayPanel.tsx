@@ -19,6 +19,12 @@ function etMinutes(ts: number): number {
   return h * 60 + m - 570;
 }
 const isShort = (t: any) => t?.direction === "short" || t?.kind === "reject" || t?.kind === "breakdown";
+/** Human chart label for a trigger — its kind ("reject", "bounce"), never the
+    raw run-internal id (user 2026-08-30: "weird tip number on the charts"). */
+const trigWord = (t: any) => {
+  const k = String(t?.kind ?? "").replace(/_/g, " ").trim();
+  return k || (isShort(t) ? "short entry" : "entry");
+};
 
 /** UTC ms for h:m ET on the given YYYY-MM-DD, DST-safe (tries both offsets). */
 function etToUtcMs(dateStr: string, h: number, m: number): number {
@@ -135,7 +141,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
         // the method thinks in zones: risk and first-reward become bands
         priceBands.push({ from: Math.min(t.entry, t.stop), to: Math.max(t.entry, t.stop),
           color: rgbaVar("--down", 0.09),
-          label: { text: `${t.label ?? t.id} risk ${fmt(t.stop)} to ${fmt(t.entry)}`, align: "left",
+          label: { text: `risk ${fmt(t.stop)} to ${fmt(t.entry)}`, align: "left",
             style: { color: down, fontSize: "9px" } } });
         if (t.targets?.length) {
           priceBands.push({ from: t.entry, to: t.targets[0], color: rgbaVar("--up", 0.08),
@@ -143,7 +149,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
               style: { color: up, fontSize: "9px" } } });
         }
         plotLines.push({ value: t.entry, color: accent, width: 1.2, zIndex: 4,
-          label: { text: `${t.label ?? t.id} fires ${fmt(t.entry)}`, align: "right", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
+          label: { text: `${t.label ?? trigWord(t)} fires ${fmt(t.entry)}`, align: "right", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
         for (const [i, tp] of (t.targets ?? []).entries())
           plotLines.push({ value: tp, color: up, width: 0, zIndex: 3,
             label: { text: `TP${i + 1} ${fmt(tp)}`, align: "right", style: { color: up, fontSize: "9px" } } });
@@ -151,7 +157,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
         // edge labels, not full-width dashed lines: the old lines were the
         // "weird zoomed-out smear"
         plotLines.push({ value: t.entry, color: rgbaVar("--accent", 0.5), width: 1.2, zIndex: 4,
-          label: { text: `${t.label ?? t.id} fires ${fmt(t.entry)}`, align: "right", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
+          label: { text: `${t.label ?? trigWord(t)} fires ${fmt(t.entry)}`, align: "right", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
         plotLines.push({ value: t.stop, color: rgbaVar("--down", 0.0), width: 0, zIndex: 4,
           label: { text: `stop ${fmt(t.stop)}`, align: "right", style: { color: down, fontSize: "9px", fontWeight: "600" } } });
         for (const [i, tp] of (t.targets ?? []).entries())
@@ -159,7 +165,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
             label: { text: `TP${i + 1} ${fmt(tp)}`, align: "right", style: { color: up, fontSize: "9px" } } });
       } else {
         plotLines.push({ value: t.entry, color: accent, width: 1.2, zIndex: 4,
-          label: { text: `${t.label ?? t.id} fires ${fmt(t.entry)}`, align: "left", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
+          label: { text: `${t.label ?? trigWord(t)} fires ${fmt(t.entry)}`, align: "left", style: { color: accent, fontSize: "10px", fontWeight: "600" } } });
         plotLines.push({ value: t.stop, color: down, width: 1, dashStyle: "Dash", zIndex: 4,
           label: { text: `stop ${fmt(t.stop)}`, align: "left", style: { color: down, fontSize: "9px" } } });
         for (const [i, tp] of (t.targets ?? []).entries())
@@ -210,11 +216,24 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
         // past touches of each waiting level: the level's credibility, on the chart
         for (const t of waiting) {
           const tol = t.entry * 0.0015, short = isShort(t);
+          // one dot per touch EPISODE (a new episode after 30 quiet minutes),
+          // capped at the last 12 — a well-tested level otherwise buries the
+          // candles under a bead chain of markers (user 2026-08-30)
+          const episodes: any[] = [];
+          let lastHitTs = -Infinity;
           for (const b of inDay) {
             const hit = short ? (b[2] >= t.entry - tol && b[4] <= t.entry + tol) : (b[3] <= t.entry + tol && b[4] >= t.entry - tol);
-            if (hit) touchPts.push({ x: b[0], y: short ? b[2] : b[3], custom: { what: `touched ${t.label ?? t.id} ${fmt(t.entry)} — close ${fmt(b[4])}` } });
+            if (!hit) continue;
+            if (b[0] - lastHitTs > 30 * 60_000) {
+              episodes.push({ x: b[0], y: short ? b[2] : b[3],
+                custom: { what: `touched the ${fmt(t.entry)} level — close ${fmt(b[4])}` } });
+            }
+            lastHitTs = b[0];
           }
-          const prov = t.levelTouches ? `level touched ${t.levelTouches}× · last ${t.levelAge ?? "?"} sessions ago` : null;
+          touchPts.push(...episodes.slice(-12));
+          const prov = t.levelTouches
+            ? `level touched ${t.levelTouches}×${t.levelAge != null ? ` · last ${t.levelAge} sessions ago` : ""}`
+            : null;
           if (prov) extraYLines.push({ value: t.entry, width: 0, zIndex: 4,
             label: { text: prov, align: "left", x: 4, y: -4, style: { color: accent, fontSize: "9px" } } });
         }
@@ -227,7 +246,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
           extraYLines.push({ value: lastClose, color: text3, width: 1, dashStyle: "Dot", zIndex: 3,
             label: { text: `last ${fmt(lastClose)}`, align: "right", x: -6, style: { color: cssVar("--text-1"), fontSize: "10px", fontWeight: "700" } } });
           xPlotLines.push({ value: lastTs, color: rgbaVar("--accent", 0.6), width: 1, dashStyle: "Dash", zIndex: 3,
-            label: { text: `${d > 0 ? "+" : ""}${d.toFixed(2)}% to ${near.id}`, rotation: 0, align: "right", x: -6, y: 16,
+            label: { text: `${d > 0 ? "+" : ""}${d.toFixed(2)}% to the ${fmt(near.entry)} level`, rotation: 0, align: "right", x: -6, y: 16,
               style: { color: accent, fontSize: "10px", fontWeight: "700" } } });
         }
       } else {
@@ -358,7 +377,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
       <div className="tq-armed-day-now">
         <b>Now:</b>{" "}
         {waiting.length
-          ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip">{t.label ?? t.id}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct !== undefined ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
+          ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip" title={t.id}>{t.label ?? `${trigWord(t)} @ ${fmt(t.entry)}`}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct !== undefined ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
           : <span>{a.summary}</span>}
       </div>
       {!sessionStarted && (

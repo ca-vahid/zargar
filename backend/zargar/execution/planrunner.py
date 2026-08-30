@@ -352,8 +352,11 @@ class ArmedPlan:
         if self.stale:
             return "STALE DATA — not firing until bars resume"
         def _label(tid: str) -> str:
+            # the plan's own label, else the PRICE names the level — run-internal
+            # trigger ids look like noise on screen (user 2026-08-30)
             tr = self.trackers.get(tid)
-            return (tr.trigger.get("label") if tr is not None else None) or tid
+            lbl = tr.trigger.get("label") if tr is not None else None
+            return lbl or (f"the {tr.entry:.2f} level" if tr is not None else tid)
 
         opens = [t for t in self.trades.values() if t.open]
         if opens:
