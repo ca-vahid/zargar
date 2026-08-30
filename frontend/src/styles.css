@@ -587,23 +587,23 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* one tab language everywhere (Tips · Flow · EM · blotter): boxed buttons,
-   the active one filled and accent-edged — unmistakably a tab (user, 2026-08-30) */
-.tabs { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+/* one tab language everywhere (Tips · Flow · EM · blotter): a modern underline
+   — quiet text, the active tab bolder with an accent bar (user, 2026-08-30:
+   boxy tabs out, subtle underline in) */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .tabs button {
-  background: var(--surface-1); border: 1px solid var(--border); color: var(--text-2);
+  background: none; border: none; color: var(--text-2);
   font-size: var(--fs-2); font-weight: 600; line-height: 1.2;
-  padding: 8px 16px; cursor: pointer; border-radius: var(--radius-sm);
+  padding: 9px 14px 7px; cursor: pointer;
+  border-bottom: 2.5px solid transparent; border-radius: 6px 6px 0 0;
 }
 .tabs button:hover { color: var(--text-1); background: var(--surface-2); }
 .tabs button.active {
-  color: var(--accent); font-weight: 800;
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-1));
-  box-shadow: inset 0 -2px 0 var(--accent);
+  color: var(--text-1); font-weight: 800;
+  border-bottom-color: var(--accent);
 }
-/* inside a panel head the boxed tabs shrink a step so the head stays slim */
-.panel-head--tabs .tabs button { padding: 5px 12px; font-size: var(--fs-1); }
+/* inside a panel head the tabs shrink a step so the head stays slim */
+.panel-head--tabs .tabs button { padding: 6px 10px 5px; font-size: var(--fs-1); }
 .tabs .tab-attn { color: var(--warn); font-weight: 800; }
 
 /* the one-line pointer to pending approvals (the pile lives in its own tab) */
@@ -2172,6 +2172,14 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .flow-lnk { background: none; border: none; cursor: pointer; padding: 0;
   font-family: var(--mono); font-size: var(--fs-1); color: var(--text-2); }
 .flow-lnk:hover { color: var(--accent); }
+
+/* analyst run: the verdict's paper trail (proposal → decision → fill → position) */
+.an-aftermath { margin: 10px 14px 14px 46px; border: 1px solid var(--border);
+  border-left: 3px solid var(--accent); border-radius: var(--radius-sm);
+  background: var(--surface-2); padding: 8px 12px; font-size: var(--fs-1); }
+.an-aftermath-t { font-weight: 700; margin-bottom: 4px; }
+.an-aftermath ul { margin: 0; padding-left: 18px; display: flex;
+  flex-direction: column; gap: 2px; }
 
 /* ── portfolios: managed positions + shadow research books ─────────────── */
 .mgd-card { border: 1px solid var(--border); border-radius: var(--radius);
