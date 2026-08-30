@@ -2166,6 +2166,9 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   background: var(--surface-1); font-size: var(--fs-1); }
 .shadow-detail > td { background: var(--surface-2); padding: 8px 12px; }
 
+/* tips-table selection checkboxes: 16px font (no iOS zoom-on-focus) + a real box */
+.tip-sel { font-size: 16px; width: 18px; height: 18px; accent-color: var(--accent); }
+
 /* Discord folder structure inside a server (category = Discord's "folder") */
 .disc-cat { margin: 2px 0 2px 8px; }
 .disc-cat-name { display: flex; justify-content: space-between; width: 100%; align-items: center;
