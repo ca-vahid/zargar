@@ -2124,8 +2124,22 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .prop-details summary { cursor: pointer; font-size: var(--fs-1); color: var(--accent);
   user-select: none; }
 .prop-details[open] summary { margin-bottom: 4px; }
-/* decided history: what the approval became */
-.appr-outcome { font-size: var(--fs-0); display: inline-flex; align-items: center; gap: 6px; }
+/* decided history: one aligned line per proposal — when · what · outcome · source */
+.appr-row {
+  display: grid;
+  grid-template-columns: 132px 64px 92px minmax(230px, 1.25fr) minmax(190px, 1fr) minmax(130px, 0.7fr);
+  gap: 10px; align-items: center; padding: 8px 12px; margin-bottom: 6px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-1); font-size: var(--fs-1);
+}
+.appr-row:hover { background: var(--surface-2); }
+.appr-date { font-family: var(--mono); color: var(--text-1); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.appr-sym { font-weight: 700; font-size: var(--fs-2); }
+.appr-order, .appr-src { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appr-outcome { display: flex; align-items: center; gap: 6px; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appr-outcome > * { overflow: hidden; text-overflow: ellipsis; }
 
 /* "process last message" progress + outcome bar (Analyst tab) */
 .an-procbar { display: flex; align-items: center; gap: 8px; font-size: 12.5px;
@@ -2137,6 +2151,25 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 
 /* the Sources tab is configuration, not desk work — the gear is the only cue */
 .tabs .tab-config { margin-left: 14px; }
+
+/* ── portfolios: managed positions + shadow research books ─────────────── */
+.mgd-card { border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--surface-1); padding: 12px 14px; margin-bottom: var(--sp-2); }
+.mgd-card.mgd-attn { border-color: color-mix(in srgb, var(--down) 45%, var(--border)); }
+.mgd-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mgd-sym { font-size: var(--fs-3); font-weight: 700; }
+.mgd-pnl { margin-left: auto; font-family: var(--mono); font-size: var(--fs-1); }
+.mgd-legs { margin: 6px 0 2px; display: flex; flex-direction: column; gap: 2px;
+  font-size: var(--fs-1); }
+.mgd-events { font-size: var(--fs-0); color: var(--text-2); margin-top: 4px;
+  display: flex; flex-direction: column; gap: 1px; }
+.mgd-actions { margin-top: 6px; display: flex; gap: 12px; align-items: center; }
+.mgd-closed { display: grid;
+  grid-template-columns: 132px 1fr minmax(120px, auto) minmax(90px, auto);
+  gap: 10px; align-items: center; padding: 6px 12px; margin-bottom: 4px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface-1); font-size: var(--fs-1); }
+.shadow-detail > td { background: var(--surface-2); padding: 8px 12px; }
 
 /* Discord folder structure inside a server (category = Discord's "folder") */
 .disc-cat { margin: 2px 0 2px 8px; }

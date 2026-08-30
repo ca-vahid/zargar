@@ -67,6 +67,10 @@ export const api = {
   rejectProposal: (id: string) => request<any>("POST", `/api/proposals/${id}/reject`),
   listProposals: (all = false, limit = 100) =>
     request<any[]>("GET", `/api/proposals?limit=${limit}${all ? "&all=true" : ""}`),
+  listManagedPositions: () =>
+    request<import("../types").ManagedPosition[]>("GET", "/api/positions/managed"),
+  closeManagedPosition: (id: string, fraction = 1.0) =>
+    request<any>("POST", `/api/positions/managed/${id}/close?fraction=${fraction}`),
   ingestManual: (text: string, source_name: string, subject: string, imageDataUrl?: string) =>
     request<any>("POST", "/api/ingest/manual",
       imageDataUrl ? { text, source_name, subject, imageDataUrl } : { text, source_name, subject }),
