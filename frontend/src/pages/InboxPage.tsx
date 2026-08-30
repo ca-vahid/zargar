@@ -30,23 +30,23 @@ export function InboxPage() {
   return (
     <div className="tips-page">
       <div className="tips-head">
-        <h2 className="page-title">Tips</h2>
-        <div className="tabs" role="tablist">
+        <div className="tabs" role="tablist" style={{ flex: 1 }}>
           <button role="tab" aria-selected={tab === "tips"} className={tab === "tips" ? "active" : ""}
             onClick={() => setTab("tips")}>Tips{signals.length ? ` · ${signals.length}` : ""}</button>
+          <button role="tab" aria-selected={tab === "analyst"} className={tab === "analyst" ? "active" : ""}
+            onClick={() => setTab("analyst")}>Analyst</button>
           <button role="tab" aria-selected={tab === "approvals"}
             className={tab === "approvals" ? "active" : ""}
             onClick={() => setTab("approvals")}
             title="Proposals awaiting your decision, plus the decided history — with search and filters">
             Approvals{proposals.length ? <span className="tab-attn"> · {proposals.length}</span> : ""}
           </button>
-          <button role="tab" aria-selected={tab === "compose"} className={tab === "compose" ? "active" : ""}
-            onClick={() => setTab("compose")}>New tip</button>
-          <button role="tab" aria-selected={tab === "analyst"} className={tab === "analyst" ? "active" : ""}
-            onClick={() => setTab("analyst")}>Analyst</button>
           <button role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""}
             onClick={() => setTab("inbox")}>Inbox</button>
-          {/* configuration, not desk work — the gear is the only differentiator */}
+          <button role="tab" aria-selected={tab === "compose"} className={tab === "compose" ? "active" : ""}
+            onClick={() => setTab("compose")}
+            title="Paste text or a screenshot and process it as a tip by hand">Manual tip</button>
+          {/* configuration, not desk work — parked on the far right */}
           <button role="tab" aria-selected={tab === "sources"}
             className={`tab-config ${tab === "sources" ? "active" : ""}`}
             onClick={() => setTab("sources")}
@@ -54,7 +54,6 @@ export function InboxPage() {
             ⚙<span className="tab-config-label"> Sources</span>
           </button>
         </div>
-        <span className="muted tips-head-sub">every source runs two shadow books: buy at tip time vs wait for the level</span>
       </div>
 
       {/* pending approvals live in their OWN tab (user, 2026-08-29) — elsewhere
@@ -112,7 +111,7 @@ function vehicleChip(s: Signal) {
   return null;
 }
 
-function ArmButton({ s }: { s: Signal }) {
+function ArmButton({ s, icon = false }: { s: Signal; icon?: boolean }) {
   const toast = useStore((st) => st.toast);
   const [busy, setBusy] = useState(false);
   if (s.status !== "verified" && s.status !== "parked" && s.status !== "shadow") return null;
@@ -128,9 +127,10 @@ function ArmButton({ s }: { s: Signal }) {
     }
   };
   return (
-    <button className="link-btn" disabled={busy} onClick={arm}
+    <button className={`link-btn${icon ? " tip-arm-ico" : ""}`} disabled={busy} onClick={arm}
+      aria-label={`arm ${s.ticker}`}
       title="Arm this tip as a level-touch plan (alert mode — watches the level, no orders). Switch modes on the Armed page.">
-      {busy ? "arming…" : "arm"}
+      {busy ? "…" : icon ? "⌖" : "arm"}
     </button>
   );
 }
@@ -662,6 +662,7 @@ function ProposalCard({ p }: { p: Proposal }) {
 function TipsTab() {
   const live = useStore((s) => s.signals);
   const toast = useStore((s) => s.toast);
+  const openAnalystRun = useStore((s) => s.openAnalystRun);
   const loadedState = useAsync(
     () => api.get<Signal[]>("/api/signals?limit=50"), [live.length]);
   const merged = [...live];
@@ -742,7 +743,9 @@ function TipsTab() {
                   checked={visible.length > 0 && selIds.length === Math.min(visible.length, 50)}
                   onChange={(e) => setSel(e.target.checked
                     ? Object.fromEntries(visible.slice(0, 50).map((s) => [s.id, true])) : {})} /></th>
-                <th>Ticker</th><th>Dir</th><th>Contract</th><th>Book vehicle</th><th>Conf</th><th className="num">Entry</th>
+                <th>Ticker</th>
+                <th title="options-flow read for the symbol — click a value to open its story">Flow</th>
+                <th>Dir</th><th>Contract</th><th>Book vehicle</th><th>Conf</th><th className="num">Entry</th>
                 <th className="num">Tgt/Stop</th><th>Status</th><th>Source</th><th>When</th>
                 <th title="Quote a tip's id to review its extract & verify">Id</th>
               </tr>
@@ -754,7 +757,18 @@ function TipsTab() {
                     s.verification?.calendarContext].filter(Boolean).join("\n")}>
                   <td><input type="checkbox" className="tip-sel" checked={!!sel[s.id]}
                     aria-label={`select ${s.ticker}`} onChange={() => toggleSel(s.id)} /></td>
-                  <td><b>{s.ticker}</b>{(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>} <FlowChip sym={s.ticker} /></td>
+                  <td>
+                    {(s as any).extraction?.analyst?.runId ? (
+                      <button className="link-btn tip-tick"
+                        onClick={() => openAnalystRun((s as any).extraction.analyst.runId)}
+                        title="open this tip's analyst run — the full play-by-play">
+                        <b>{s.ticker}</b>
+                      </button>
+                    ) : <b>{s.ticker}</b>}
+                    {(s.seenCount ?? 1) > 1 && <span className="muted"> ×{s.seenCount}</span>}
+                    {" "}<ArmButton s={s} icon />
+                  </td>
+                  <td><FlowChip sym={s.ticker} /></td>
                   <td className="muted">{s.direction === "short" ? <span className="neg">short ↓</span> : "long"}</td>
                   <td className="muted">{contractLabel(s) ?? "—"}</td>
                   <td>{vehicleChip(s) ?? <span className="muted">—</span>}</td>
@@ -771,7 +785,7 @@ function TipsTab() {
                     </span>
                   </td>
                   <td className="muted">{s.sourceName ?? "—"}</td>
-                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmButton s={s} /> <AnalystLink s={s} /> <ArmedChip s={s} /></td>
+                  <td className="muted">{fmtDateTime(s.createdAt)} <ArmedChip s={s} /></td>
                   <td><CopyChip value={s.id} title={`tip ${s.id} — click to copy`} /> <DeleteTipButton s={s} onDone={loadedState.reload} /></td>
                 </tr>
               ))}
@@ -1879,13 +1893,13 @@ export function FlowChip({ sym }: { sym: string }) {
   const flow = useFlowMap();
   const f = flow[sym];
   if (!f) return null;
-  // quiet by design (less is more): the lean shows as a tiny glyph, not a color block
+  // quiet by design (less is more): a plain mono link, not a boxy chip
   const glyph = f.lean === "bull" ? "↑" : f.lean === "bear" ? "↓" : "·";
   return (
-    <button className="status-pill dim" style={{ cursor: "pointer", border: "none" }}
+    <button className="flow-lnk"
       title={`options flow: ${f.lean}, score ${f.score} — open the story`}
       onClick={(e) => { e.stopPropagation(); setFlowFocus(sym); setPage("flow"); }}>
-      flow {f.score}{glyph}
+      {f.score}{glyph}
     </button>
   );
 }
