@@ -291,7 +291,7 @@ class ArmedPlan:
             a = tr.trigger.get("assessment") or {}
             if a.get("grade"):
                 grades.append(str(a["grade"]))
-            d = {"id": tid, "label": tr.trigger.get("label") or tid,
+            d = {"id": tid, "label": tr.trigger.get("label") or None,   # None → the UI words it (kind @ price), never the raw id
                  "kind": tr.kind, "status": tr.status, "entry": tr.entry, "stop": tr.stop,
                  "targets": [t["price"] for t in tr.trigger.get("targets") or []],
                  "riskReward": tr.trigger.get("riskReward"), "firedTs": tr.fired_ts, "firedWindow": tr.fired_window,
@@ -737,7 +737,7 @@ class PlanRunner(SessionListener):
                         # what would be bought: fixed contracts/qty, else risk-%% sizing
                         "size": {"contracts": ap.config.contracts, "riskPct": ap.config.risk_pct,
                                  "qty": ap.config.qty},
-                        "nearest": {"id": tid, "label": tr.trigger.get("label") or tid,
+                        "nearest": {"id": tid, "label": tr.trigger.get("label") or None,
                                     "kind": tr.kind, "entry": tr.entry, "stop": tr.stop,
                                     "direction": tr.direction,
                                     "targets": [tg["price"] for tg in (tr.trigger.get("targets") or [])],
