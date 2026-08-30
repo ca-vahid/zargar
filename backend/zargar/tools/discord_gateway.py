@@ -411,9 +411,10 @@ class Gateway:
 
     async def _backfill_watched(self, http, headers) -> None:
         """Mirror history for every WATCHED channel once per run: channels with
-        `onboardDays` get a paginated backfill that many days deep (<= 17);
-        the rest get the recent --backfill messages as a baseline when the
-        mirror holds nothing for them yet."""
+        `onboardDays` get a paginated backfill that many days deep (<= 90,
+        raised from 17 for the historical-tips experiment, KNOWLEDGE plan
+        Phase 1); the rest get the recent --backfill messages as a baseline
+        when the mirror holds nothing for them yet."""
         try:
             r = await http.get(f"{self.api}/api/tip/discord/mirror-stats", headers=headers)
             stats = r.json() if r.status_code == 200 else {}
@@ -422,7 +423,7 @@ class Gateway:
         total = 0
         for cid, entry in list(self._watch.items()):
             st = stats.get(str(cid)) or {}
-            days = min(17, max(0, int(entry.get("onboardDays") or 0)))
+            days = min(90, max(0, int(entry.get("onboardDays") or 0)))
             if days > 0:
                 n = await self._onboard_channel(http, headers, cid, entry, days, st)
                 if n:
@@ -575,6 +576,12 @@ class Gateway:
         await self._mirror(http, headers,
                            [mirror_record(msg, source_name or entry.get("sourceName") or "auto",
                                           entry.get("guildName") or None)])
+        # context channels (KNOWLEDGE plan C1): general-conversation rooms like
+        # trading-floor are mirrored for search + digests but NEVER auto-intake —
+        # chatter is not a tip
+        if (entry.get("mode") or "tips") == "context":
+            print("    -> context channel: mirrored only (no tip intake)")
+            return
         if not self.ingest:
             return
         await self._ingest_message(http, headers, msg, source_name or "auto")

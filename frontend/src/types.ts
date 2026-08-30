@@ -276,8 +276,11 @@ export interface DiscordWatch {
   guildName?: string;
   botsOnly?: boolean;
   enabled?: boolean;
-  /** onboarding: backfill this many days of channel history into the mirror (<= 17) */
+  /** onboarding: backfill this many days of channel history into the mirror (<= 90) */
   onboardDays?: number;
+  /** "tips" (default) auto-processes matching posts; "context" = mirror + digest
+      only, never auto-tips (general rooms like trading-floor) */
+  mode?: "tips" | "context";
 }
 /** One mirrored Discord message (the analyst-searchable source history). */
 export interface DiscordMirrorMessage {

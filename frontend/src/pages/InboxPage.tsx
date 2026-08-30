@@ -944,11 +944,15 @@ function DiscordSourcesPanel() {
               <input type="checkbox" checked={!!sel[channelId].botsOnly}
                 onChange={(e) => setField(channelId, { botsOnly: e.target.checked })} /> bots only
             </label>
-            <label className="muted" title="onboard: mirror this many days of the channel's history (max 17) so the analyst has the backstory — no re-downloads">
-              onboard <input className="disc-days" type="number" min={0} max={17}
+            <label className="muted" title="Context channel (e.g. trading-floor): general conversation — mirrored for the analyst to search and for daily digests, but NEVER auto-processed as tips.">
+              <input type="checkbox" checked={(sel[channelId].mode ?? "tips") === "context"}
+                onChange={(e) => setField(channelId, { mode: e.target.checked ? "context" : "tips" })} /> context only
+            </label>
+            <label className="muted" title="onboard: mirror this many days of the channel's history (max 90) so the analyst has the backstory — no re-downloads">
+              onboard <input className="disc-days" type="number" min={0} max={90}
                 value={sel[channelId].onboardDays ?? 0}
                 onChange={(e) => setField(channelId, {
-                  onboardDays: Math.max(0, Math.min(17, Number(e.target.value) || 0)) })} />d
+                  onboardDays: Math.max(0, Math.min(90, Number(e.target.value) || 0)) })} />d
             </label>
           </div>
         )}
