@@ -12,7 +12,7 @@ from sqlalchemy import select
 from .. import bus as topics
 from .. import events as ev
 from ..domain import new_id
-from ..models import Proposal, Signal
+from ..models import ManagedPositionRow, Order, Proposal, Signal
 from ..orders import BracketSpec, OrderIntent
 from ..signals.schemas import TradeSignal
 
@@ -540,11 +540,51 @@ class ProposalService:
         return [proposal_dict(r) for r in rows]
 
     async def list_all(self, limit: int = 100) -> list[dict]:
+        """Decided proposals are hydrated with WHERE THEY WENT (`outcome`): the
+        order's fill state and, when the fill was adopted, the managed position —
+        so the history answers "I approved it; what happened?" on the card."""
         async with self.engine.sf() as session:
             rows = (await session.execute(
                 select(Proposal).order_by(Proposal.created_at.desc()).limit(limit)
             )).scalars().all()
-        return [proposal_dict(r) for r in rows]
+            dicts = [proposal_dict(r) for r in rows]
+            order_ids = {d["orderId"] for d in dicts if d.get("orderId")}
+            if order_ids:
+                orders = {o.id: o for o in (await session.execute(
+                    select(Order).where(Order.id.in_(order_ids)))).scalars()}
+                pos_rows = (await session.execute(
+                    select(ManagedPositionRow)
+                    .order_by(ManagedPositionRow.created_at.desc())
+                    .limit(300))).scalars().all()
+                pos_by_id = {p.id: p for p in pos_rows}
+                by_entry_order: dict[str, ManagedPositionRow] = {}
+                for p in pos_rows:
+                    for leg in (p.legs or []):
+                        oid = (leg or {}).get("entryOrderId")
+                        if oid:
+                            by_entry_order.setdefault(str(oid), p)
+                for d in dicts:
+                    oid = d.get("orderId")
+                    if not oid:
+                        continue
+                    out: dict = {}
+                    if d["secType"] == "SPREAD":
+                        pos = pos_by_id.get(oid)      # spread approve stores the position id
+                        if pos is not None:
+                            out = {"positionId": pos.id, "positionStatus": pos.status}
+                    else:
+                        o = orders.get(oid)
+                        if o is not None:
+                            out = {"orderStatus": o.status, "filledQty": o.filled_qty,
+                                   "avgFillPrice": o.avg_fill_price,
+                                   **({"rejectReason": o.reject_reason}
+                                      if o.reject_reason else {})}
+                        pos = by_entry_order.get(oid)
+                        if pos is not None:
+                            out.update({"positionId": pos.id, "positionStatus": pos.status})
+                    if out:
+                        d["outcome"] = out
+        return dicts
 
     # ------------------------------------------------------------- expiry
     def start(self) -> None:
