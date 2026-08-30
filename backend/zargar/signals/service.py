@@ -74,6 +74,15 @@ def dedupe_key_for(source: str | None, sig: TradeSignal) -> str:
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:40]
 
 
+def experiment_tag(extraction: dict | None) -> str | None:
+    """The out-of-band experiment batch a signal belongs to, or None
+    (KNOWLEDGE plan §E). Experiment rows are evidence for review — they never
+    reach scorecards, shadow books, dedupe, proposals, arming, retros or the
+    rule audit."""
+    tag = (extraction or {}).get("experiment")
+    return str(tag) if tag else None
+
+
 class SignalService:
     def __init__(self, engine, extractor: Extractor) -> None:
         self.engine = engine
@@ -914,19 +923,30 @@ class SignalService:
     async def _find_duplicate(self, key: str, window_hours: float) -> Signal | None:
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=window_hours)
         async with self.engine.sf() as session:
-            return (await session.execute(
+            rows = (await session.execute(
                 select(Signal).where(Signal.dedupe_key == key,
                                      Signal.created_at >= cutoff,
                                      Signal.status != "dismissed")
-                .order_by(Signal.created_at.desc()).limit(1)
-            )).scalars().first()
+                .order_by(Signal.created_at.desc()).limit(6)
+            )).scalars().all()
+        # experiment rows are out-of-band (KNOWLEDGE plan §E): a REAL tip must
+        # never dedupe onto a replayed historical sample
+        for r in rows:
+            if experiment_tag(r.extraction) is None:
+                return r
+        return None
 
     async def handle_extraction(self, content: RawContent, result: ExtractionResult,
-                                *, source_text: str, intake=None) -> list[dict]:
+                                *, source_text: str, intake=None,
+                                experiment: str | None = None) -> list[dict]:
         """Grounding → dedupe → persistence → verification → proposal, per signal.
         Split out so tests can drive it with a canned ExtractionResult (no API).
         `intake` (optional) is the message's IntakeRun — per-signal verdicts are
-        streamed onto it so the whole pipeline is watchable live."""
+        streamed onto it so the whole pipeline is watchable live.
+        `experiment` (KNOWLEDGE plan §E) marks an out-of-band historical batch:
+        the signal is FORCED onto the replayed path regardless of age (no books,
+        no proposals, no arming), skips dedupe in both directions and is excluded
+        from scorecards — evidence for review, never a trade."""
         eng = self.engine
 
         def istep(kind: str, text: str, **extra) -> None:
@@ -966,7 +986,7 @@ class SignalService:
             key = dedupe_key_for(content.source_name, sig)
             window = float(eng.settings.get("techniques.tip.dedupe_window_hours", 24))
             dup = (await self._find_duplicate(key, window)
-                   if sig.action in ("open", "add", "") else None)
+                   if sig.action in ("open", "add", "") and experiment is None else None)
             if dup is not None:
                 async with eng.sf() as session:
                     db_dup = await session.get(Signal, dup.id)
@@ -1024,7 +1044,8 @@ class SignalService:
                 is_actionable=sig.is_actionable,
                 extraction={"signal": sig.model_dump(), "grounding": grounding,
                             "sourceType": result.source_type,
-                            "policy": policy.to_dict()},
+                            "policy": policy.to_dict(),
+                            **({"experiment": experiment} if experiment else {})},
             )
             async with eng.sf() as session:
                 session.add(row)
@@ -1106,18 +1127,25 @@ class SignalService:
                 except Exception:  # pragma: no cover - context is best-effort
                     log.debug("calendar lookup failed for %s", row.ticker)
             replay = None
-            if stale:
-                # too old to trade — replay it on history so the paste still
-                # teaches something (both books' counterfactuals, no orders)
+            if stale or experiment is not None:
+                # too old to trade (or an out-of-band experiment sample, which is
+                # NEVER traded regardless of age) — replay it on history so the
+                # content still teaches something (both books' counterfactuals,
+                # no orders)
                 verification["checks"].append({
                     "name": "fresh", "passed": False, "fatal": True,
-                    "detail": f"content is ~{age_hours:.0f}h old "
-                              f"(max {max_age:.0f}h) — replayed on history, not traded"})
+                    "detail": (f"experiment batch {experiment} — replayed on history, "
+                               "never traded"
+                               if experiment is not None and not stale else
+                               f"content is ~{age_hours:.0f}h old "
+                               f"(max {max_age:.0f}h) — replayed on history, not traded")})
                 verification["passed"] = False
                 verification["park"] = False
                 verification["shadow_only"] = False
                 status = "replayed"
-                replay = await self._replay_signal(row, sig, stated_ms)
+                replay = (await self._replay_signal(row, sig, stated_ms)
+                          if stated_ms is not None
+                          else {"ok": False, "note": "no stated time for a replay"})
             elif verification["passed"]:
                 status = "verified"
             elif verification.get("park"):
@@ -1688,6 +1716,8 @@ class SignalService:
                 "books": {"immediate": {}, "armed": {}}})
 
         for r in rows:
+            if experiment_tag(r.extraction) is not None:
+                continue                # out-of-band experiment rows never score a source
             card = card_for(r.source_name or "unknown")
             card["signals"] += 1
             card["seenAgain"] += max(0, int(r.seen_count or 1) - 1)

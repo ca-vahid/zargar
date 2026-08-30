@@ -37,6 +37,16 @@ runtime ones to `execution.*`).
 10. **Auto mode never runs without a loss halt** (`_ensure_loss_halt`; fallback
     `technique.arm.daily_loss_fallback`, alerted loudly).
 11. **Every method change is logged** under the technique's own heading; every shared change here.
+12. **Technique knowledge stores are per-technique** (2026-08-30, user requirement): `tip_notes`
+    belongs to the tips desk only; EM's rulebook/prompts/chart-read knowledge belongs to EM only.
+    No cross-injection, no cross-reads, ever — changing one analyst's knowledge must never affect
+    the other. Enforced by `tests/test_platform_separation.py` (static source scan, both
+    directions). Shared *mechanics* (LLM client, plan dataclasses, option picking, market data)
+    stay shared; *knowledge* never does.
+13. **Out-of-band experiments never touch money or scores** (2026-08-30): a signal tagged
+    `extraction.experiment` is FORCED onto the replayed path (no books, no proposals, no arming),
+    skips dedupe in both directions and is excluded from source scorecards — evidence for review
+    only (`signals.service.experiment_tag`, KNOWLEDGE plan §E).
 
 ## 2. Findings (settled, with evidence)
 

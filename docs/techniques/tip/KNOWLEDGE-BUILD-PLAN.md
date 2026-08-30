@@ -8,22 +8,24 @@ Rules of the house apply: RiskGate on every order path (the experiment places NO
 orders — enforce it, don't assume it), journal every decision, camelCase wire format,
 new knobs in `settings_service.DEFAULTS`.
 
-## Phase 0 — separation guards + experiment tagging (cluster E)
+## Phase 0 — separation guards + experiment tagging (cluster E) — DONE 2026-08-30
 
-- [ ] `docs/PLATFORM-RULES.md` invariant: *technique knowledge stores are
-      per-technique — `tip_notes` belongs to the tips desk only; EM's rulebook to EM
-      only; no cross-injection, ever.*
-- [ ] Guard test (`tests/test_platform_separation.py`): static scan — no module under
-      `zargar/technique/` imports/queries `TipNote`/`tip_notes`; no module under
-      `zargar/techniques/tip/` reads EM's rulebook/prompt assets. Fails the suite on a
-      cross-read.
-- [ ] `experiment:<batch>` tag convention: experiment signals carry it in
-      `extraction.experiment`, their TipAnalystRuns in `opinion.experiment`; helper
-      `is_experiment(...)` in one place.
-- [ ] Exclusion filters: source scorecards, shadow-book stats, nightly retros,
-      unfilled retros, lane grading and the weekly rule audit all skip
-      experiment-tagged rows (with an explicit `include_experiments=True` escape
-      hatch for the batch review itself). Tests for each exclusion.
+- [x] `docs/PLATFORM-RULES.md` invariants 12+13: per-technique knowledge stores;
+      out-of-band experiments never touch money or scores.
+- [x] Guard test (`tests/test_platform_separation.py`): static source scan both
+      directions (EM never touches `tip_notes`; tips never read EM's
+      rulebook/vision/analysis/review/setups/chat/… knowledge modules) + the
+      charter disclaimer line is asserted present in the analyst prompt.
+- [x] Tag convention: `handle_extraction(..., experiment="<batch>")` stamps
+      `extraction.experiment`; helper `signals.service.experiment_tag()`.
+      *(Stronger than planned: an experiment signal is FORCED onto the replayed
+      path even when fresh — no books/proposals/arming possible by construction.)*
+- [x] Exclusions: dedupe skipped in BOTH directions (experiment rows invisible to
+      `_find_duplicate`, experiment runs never dedupe), source scorecards skip
+      tagged rows. Retros/lane-grading/arming need no filter — `replayed` status
+      is outside all of them by existing design (verified). Rule-audit exclusion
+      of `experiment:*` note scopes lands with B4 (Phase 3).
+      Tests: `tests/test_tip_experiment.py` (3) — zero orders/proposals proven.
 
 ## Phase 1 — context channels + 90-day backfill (cluster C1 + config)
 
