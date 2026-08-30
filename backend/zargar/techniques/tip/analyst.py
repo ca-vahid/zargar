@@ -774,10 +774,15 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
 
 
 async def analyze_tip(eng, signal_row, verification: dict, policy, *,
-                      client=None, parent_run_id: str | None = None) -> dict | None:
+                      client=None, parent_run_id: str | None = None,
+                      experiment: str | None = None,
+                      historical_note: str | None = None) -> dict | None:
     """Appraise one tip. Persists a full TipAnalystRun (trace + tools + opinion),
     streams the play-by-play live, and returns the opinion dict (stored on
-    extraction.analyst) or None on failure — strictly advisory."""
+    extraction.analyst) or None on failure — strictly advisory.
+    `experiment`/`historical_note` (KNOWLEDGE plan Phase 2): an out-of-band
+    historical appraisal — tagged on the run + opinion, with a prompt block
+    warning that the live tools show TODAY's market, not the tip's."""
     from ...domain import new_id
     from ...models import TipAnalystRun
 
@@ -803,6 +808,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         "catalyst": signal_row.catalyst, "thesis": signal_row.thesis_summary,
         "confidence": signal_row.confidence, "source": signal_row.source_name,
         "status": signal_row.status,
+        **({"experiment": experiment} if experiment else {}),
     }
     tool_names = [t["name"] for t in TOOLS]
     run_id = new_id()
@@ -850,6 +856,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"THIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "
               f"backstory this tip arrived in: earlier OPENs, trims, exits, mood. Read it "
               f"before judging; search_messages digs deeper/older):\n{history_txt}")
+    if historical_note:
+        header = historical_note + "\n\n" + header
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
@@ -874,7 +882,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         await _persist_run(eng, run_id, status="failed", rec=rec, error="no opinion")
         return None
     result = {**opinion.model_dump(), "model": model, "toolsUsed": tools_used,
-              "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+              "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat(),
+              **({"experiment": experiment} if experiment else {})}
     exit_bits = []
     if opinion.exit_targets:
         fr = opinion.exit_fractions or []

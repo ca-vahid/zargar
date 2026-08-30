@@ -27,49 +27,49 @@ new knobs in `settings_service.DEFAULTS`.
       of `experiment:*` note scopes lands with B4 (Phase 3).
       Tests: `tests/test_tip_experiment.py` (3) — zero orders/proposals proven.
 
-## Phase 1 — context channels + 90-day backfill (cluster C1 + config)
+## Phase 1 — context channels + 90-day backfill (cluster C1 + config) — DONE 2026-08-30
 
-- [ ] Watch entry gains `mode: "tips" | "context"` (default `tips`). Gateway: a
-      `context` channel is mirrored (live + backfill) but NEVER matched into tip
-      intake/extraction. Tips-mode behavior unchanged.
-- [ ] Sources UI (Discord picker): mode toggle per channel — label context mode
-      "mirror + digest only (never auto-tips)".
-- [ ] Raise the `onboardDays` backfill cap 17 → 90 (constant + validation; per-channel
-      value still set on the watch entry).
-- [ ] Mirror capacity check: estimate 90d × 10 channels vs
-      `techniques.tip.mirror_max_messages` (20k); raise the default if the estimate
-      crowds it (keep pruning oldest-first).
-- [ ] Operator steps (doc + do): set `onboardDays: 90` on the 9 tip channels; add
-      `trading-floor` as a `context` channel (baseline backfill). Verify mirror
-      counts/date ranges per channel afterwards and record them here.
-- [ ] Tests: context-mode messages never reach extraction; backfill honors 90;
-      tips-mode unchanged.
+- [x] Watch entry `mode: "tips" | "context"`: gateway mirrors context channels but
+      never ingests them (`_on_message` guard); `discord_set_watch` sanitizer keeps
+      the field (found: it silently stripped unknown fields + clamped onboardDays).
+- [x] Sources UI: "context only" toggle per channel; onboard field max 17 → 90.
+- [x] Backfill cap 17 → 90 (gateway `_backfill_watched` + sanitizer clamp).
+- [x] Mirror cap default 20k → 50k (`techniques.tip.mirror_max_messages`).
+- [x] Operator run (2026-08-30): 9 tip channels `onboardDays: 90`; OWLS
+      `💬｜trading-floor` + PeloSwing `trading-floor🪙` added as `context`.
+      Result: **5,853 mirrored messages** — muggzone 2125 (back to 05-29), ab 927,
+      tt/eva 625, giul/jon-and-kian 525, neal 425 (all ≥ ~90d deep);
+      florida-man/common-stock stayed at baseline 25 (low-traffic channels);
+      trading-floor mirroring live (26 in first minutes). Ample pool for batch 1.
+- [x] Tests: `tests/test_discord_gateway_modes.py` (3) — context never ingests,
+      tips unchanged, unwatched ignored.
 
-## Phase 2 — historical experiment harness (cluster A1)
+## Phase 2 — historical experiment harness (cluster A1) — DONE 2026-08-30
 
-- [ ] Process-mirrored-message path: build a RawContent from a `DiscordMessage`
-      (text + local image transcription path), with `stated_at`/posted-at taken from
-      the mirror row — NOT "now" — so the stale-tip gate routes it to replay
-      naturally. No proposals, no book entries, no scheduler arms for experiment
-      signals (assert, don't assume).
-- [ ] `tools/tip_experiment.py` CLI:
-      `--sample 20 --seed 7 --since 2026-06-01 --channels ... --batch <name>` —
-      random sample of mirrored messages from tips-mode channels, skipping
-      already-processed message ids; runs each through the real intake
-      (extraction → verification → replay) + analyst appraisal; writes a batch
-      manifest (message ids → signal ids → run ids) to the journal
-      (`TipExperimentBatch` event) and prints a review URL list.
-- [ ] Analyst historical mode: appraise context carries
-      `historical: {statedAt, note}` — "this tip is from <date>; live quotes/chains
-      are NOT its market — appraise the decision as of tip time; the replay block
-      holds the outcome evidence." Verdicts still recorded, never traded.
-- [ ] Batch review: `tip_experiment review --batch <name>` runs ONE analyst run
-      (kind `retro`, experiment-tagged) over the batch's runs with the §5 rubric,
-      producing a findings summary note (scope `general`, experiment-tagged) and a
-      printed report.
-- [ ] Tests: seeded sampler determinism; mirror→RawContent conversion (incl. image
-      path); stale routing with old posted_at; zero-order/zero-proposal guarantee;
-      batch manifest journaling; exclusion filters still hold end-to-end.
+- [x] `SignalService.ingest_experiment(msg, batch)`: mirror row → RawContent
+      (`source_type=experiment`, meta carries batch + discordMessageId + postedAt) →
+      `process_content(experiment=, stated_at=)` — the mirror's posted_at OVERRIDES
+      any model-inferred date, so the stale gate + replay run on the true tip time.
+      *(v1 is text-only: image-only messages are excluded by the sampler and counted
+      — an explicit finding candidate, not a silent drop.)*
+- [x] `techniques/tip/experiment.py`: seeded sampler (tips-mode channels only,
+      text-bearing, never-processed), sequential `run_batch` with journaled manifest
+      (`TipExperimentBatch` started/finished), restart-surviving `batch_status`.
+      API: `POST /api/tip/experiment/run`, `GET /api/tip/experiment/{batch}`,
+      `POST /api/tip/experiment/{batch}/review`. CLI `tools/tip_experiment.py`
+      (run --watch / status / review) drives the RUNNING app.
+- [x] Analyst historical mode: `analyze_tip(experiment=, historical_note=)` — the
+      prompt leads with the HISTORICAL block (tools show today, appraise as of tip
+      time, save_note only timeless lessons, date-bound → scope experiment:<batch>);
+      run + opinion tagged. Replayed experiment signals ARE appraised (live replayed
+      tips still are not — unchanged).
+- [x] Batch review: one `kind=retro` run applying the rubric to every item's full
+      record (tip, checks, replay, appraisal, tool calls); summary saved as a note
+      under scope `experiment:<batch>` (never injected into live runs).
+- [x] Tests (`test_tip_experiment.py`, 4 + gateway 3 + separation 3): forced
+      out-of-band (zero orders/proposals asserted), two-way dedupe isolation,
+      scorecard exclusion, age wording, seeded sampler determinism + exclusions +
+      processed-marking.
 
 ## Phase 3 — knowledge lifecycle (cluster B1/B2/B4/B5)
 

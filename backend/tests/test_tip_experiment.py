@@ -120,6 +120,54 @@ async def test_experiment_never_dedupes_with_real_tips(app_client):
     assert card["signals"] == 1
 
 
+async def test_sampler_is_seeded_and_excludes(app_client):
+    """Phase 2 sampler: deterministic under a seed; context channels, empty-text
+    and already-processed messages never enter the pool."""
+    client, eng = app_client
+    from zargar.models import DiscordMessage
+    from zargar.techniques.tip import experiment as exp
+
+    await eng.signals_service.discord_set_watch([
+        {"channelId": "c1", "kind": "channel", "sourceName": "srcA", "enabled": True,
+         "botsOnly": False},
+        {"channelId": "c2", "kind": "channel", "sourceName": "floor", "enabled": True,
+         "botsOnly": False, "mode": "context"},
+    ])
+    now = dt.datetime.now(dt.timezone.utc)
+    async with eng.sf() as session:
+        for i in range(30):
+            session.add(DiscordMessage(id=f"m{i}", channel_id="c1", source_name="srcA",
+                                       author="alice", text=f"NVDA tip {i}",
+                                       posted_at=now - dt.timedelta(days=i)))
+        session.add(DiscordMessage(id="ctx1", channel_id="c2", source_name="floor",
+                                   author="bob", text="general chatter", posted_at=now))
+        session.add(DiscordMessage(id="empty1", channel_id="c1", source_name="srcA",
+                                   author="alice", text="", posted_at=now))
+        await session.commit()
+
+    since = (now - dt.timedelta(days=40)).strftime("%Y-%m-%d")
+    s1 = await exp.sample_messages(eng, sample=5, seed=7, since=since)
+    s2 = await exp.sample_messages(eng, sample=5, seed=7, since=since)
+    assert [m.id for m in s1] == [m.id for m in s2] and len(s1) == 5
+    ids = {m.id for m in s1}
+    assert "ctx1" not in ids and "empty1" not in ids     # context + empty excluded
+    s3 = await exp.sample_messages(eng, sample=5, seed=8, since=since)
+    assert [m.id for m in s3] != [m.id for m in s1]      # seed changes the draw
+
+    # processing one marks it processed — it leaves every later pool
+    target = s1[0]
+    out = await eng.signals_service.ingest_experiment(target, "bx")
+    assert out["status"] == "new"                        # extractor unavailable in tests
+    async with eng.sf() as session:
+        rc = await session.get(RawContent, out["contentId"])
+    assert rc.source_type == "experiment"
+    assert rc.meta["experiment"] == "bx"
+    assert rc.meta["discordMessageId"] == target.id
+    assert rc.meta["postedAt"] == target.posted_at.isoformat()
+    s4 = await exp.sample_messages(eng, sample=30, seed=7, since=since)
+    assert target.id not in {m.id for m in s4}
+
+
 async def test_stale_experiment_content_keeps_age_wording(app_client):
     # experiment + genuinely old stated_at keeps the age-based wording (the
     # stale gate fired on its own) and still tags the row

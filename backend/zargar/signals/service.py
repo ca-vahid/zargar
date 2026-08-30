@@ -742,8 +742,36 @@ class SignalService:
                     return name, True
         return clean, False
 
+    async def ingest_experiment(self, msg_row, batch: str) -> dict:
+        """KNOWLEDGE Phase 2: one mirrored Discord message → the REAL pipeline,
+        out-of-band. The mirror's posted_at is the authoritative stated time (a
+        chat message rarely carries a dateline the extractor could find), so the
+        stale gate routes it to replay naturally; the experiment tag forces it
+        even for recent samples."""
+        eng = self.engine
+        posted = getattr(msg_row, "posted_at", None)
+        posted_iso = posted.isoformat() if posted else None
+        row = RawContent(
+            id=new_id(), source_type="experiment",
+            source_name=msg_row.source_name or "unknown",
+            subject=f"experiment {batch}: {msg_row.author or 'unknown author'}",
+            body_text=msg_row.text or "",
+            meta={"experiment": batch, "discordMessageId": msg_row.id,
+                  "postedAt": posted_iso})
+        async with eng.sf() as session:
+            session.add(row)
+            await session.commit()
+        await eng.journal.append(
+            ev.CONTENT_RECEIVED,
+            {"id": row.id, "source": row.source_name, "sourceType": "experiment",
+             "experiment": batch, "discordMessageId": msg_row.id},
+            aggregate_type="content", aggregate_id=row.id)
+        return await self.process_content(row.id, experiment=batch,
+                                          stated_at=posted_iso)
+
     # ------------------------------------------------------------- pipeline
-    async def process_content(self, content_id: str) -> dict:
+    async def process_content(self, content_id: str, *, experiment: str | None = None,
+                              stated_at: str | None = None) -> dict:
         eng = self.engine
         async with eng.sf() as session:
             content = await session.get(RawContent, content_id)
@@ -787,6 +815,10 @@ class SignalService:
             return {"contentId": content_id, "status": "error", "error": str(exc),
                     "signals": [], "intakeRunId": intake.id}
 
+        if stated_at:
+            # the caller KNOWS when the content was posted (the mirror's
+            # posted_at) — that beats anything the model inferred from the text
+            result.stated_at = stated_at
         sigs = result.signals or []
         intake.step("extract",
                     f"Extracted {len(sigs)} signal(s) — content type: {result.source_type}."
@@ -814,7 +846,7 @@ class SignalService:
                     await session.commit()
 
         out = await self.handle_extraction(content, result, source_text=source_text,
-                                           intake=intake)
+                                           intake=intake, experiment=experiment)
         await self._set_content_status(content_id, "extracted")
 
         # any signal that verification discarded -> the analyst reviews the
@@ -825,7 +857,15 @@ class SignalService:
                     in ("verified", "shadow", "parked", "replayed") or o.get("duplicateOf")]
         discarded = [o for o in out
                      if (o.get("signal") or {}).get("status") == "verification_failed"]
-        if discarded:
+        if experiment is not None:
+            # out-of-band: a historical message must not trigger the against-the-
+            # desk bookkeeping review — the batch review grades it instead
+            n_trade = len(tradable)
+            await intake.finish(
+                f"experiment · {n_trade} tip{'s' if n_trade != 1 else ''}",
+                f"Experiment batch {experiment}: {n_trade} of {len(sigs)} signal(s) "
+                "replayed + appraised out-of-band — nothing traded, nothing booked.")
+        elif discarded:
             outcomes = [{"ticker": (o.get("signal") or {}).get("ticker"),
                          "status": "seen_again" if o.get("duplicateOf")
                          else (o.get("signal") or {}).get("status"),
@@ -1191,16 +1231,36 @@ class SignalService:
                 shadow_order = await self._shadow_execute(row, sig)
                 async with eng.sf() as session:   # pick up the recorded expression
                     row = await session.get(Signal, row.id) or row
-            if status in ("verified", "shadow", "parked"):
+            appraise = status in ("verified", "shadow", "parked") or (
+                # KNOWLEDGE Phase 2: a historical experiment sample is appraised
+                # even though it is replayed — the appraisal itself is the
+                # evidence the batch review grades
+                experiment is not None and status == "replayed")
+            if appraise:
                 # the tips analyst appraises the tip with market tools —
                 # strictly advisory, fail-open (POC 2026-08-28)
                 istep("note", f"Appraising {row.ticker} with market tools — its own "
                               "run starts now (watch it in the runs list).")
+                historical_note = None
+                if experiment is not None:
+                    when = ((row.extraction or {}).get("statedAt")
+                            or result.stated_at or "an earlier date")
+                    historical_note = (
+                        f"⚠ HISTORICAL APPRAISAL — experiment batch {experiment}. "
+                        f"This tip was posted {when}; your live tools (quotes, chains, "
+                        "positions) show TODAY's market, NOT the tip's market. Appraise "
+                        "the DECISION as of the tip's own time — the tip's replay block "
+                        "holds the outcome evidence; do not treat today's prices as its "
+                        "context and do not let hindsight grade the call. save_note ONLY "
+                        "for timeless lessons (source habits, structural reads) — "
+                        f"anything date-bound goes to scope experiment:{experiment}.")
                 try:
                     from ..techniques.tip.analyst import analyze_tip
                     opinion = await analyze_tip(eng, row, verification, policy,
                                                 client=self._analyst_client,
-                                                parent_run_id=(intake.id if intake else None))
+                                                parent_run_id=(intake.id if intake else None),
+                                                experiment=experiment,
+                                                historical_note=historical_note)
                 except Exception:                  # never block the pipeline
                     log.exception("tip analyst crashed for %s", row.id)
                     opinion = None

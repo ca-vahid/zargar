@@ -359,6 +359,58 @@ def build_signal_routes(app, eng, auth, config) -> None:
                                  aggregate_type="signal", aggregate_id=note_id)
         return {"ok": True}
 
+    # --- historical experiment harness (KNOWLEDGE plan Phase 2) --------------
+    class ExperimentBody(BaseModel):
+        batch: str
+        sample: int = 20
+        seed: int = 7
+        since: str = ""
+        channels: list = []
+
+    @app.post("/api/tip/experiment/run", dependencies=[auth])
+    async def tip_experiment_run(body: ExperimentBody):
+        """Start one out-of-band historical batch in the background. Progress +
+        results via GET /api/tip/experiment/{batch}."""
+        import asyncio as _asyncio
+
+        from ..techniques.tip import experiment as exp
+        batch = body.batch.strip()
+        if not batch:
+            raise HTTPException(status_code=400, detail="batch name required")
+        state = getattr(eng.signals_service, "_experiments", {})
+        if state.get(batch, {}).get("running"):
+            raise HTTPException(status_code=409, detail=f"batch {batch} is already running")
+        msgs = await exp.sample_messages(eng, sample=body.sample, seed=body.seed,
+                                         since=body.since,
+                                         channels=[str(c) for c in body.channels] or None)
+        if not msgs:
+            raise HTTPException(status_code=400,
+                                detail="no unprocessed mirrored messages match the filters")
+        _asyncio.create_task(
+            exp.run_batch(eng, batch=batch, sample=body.sample, seed=body.seed,
+                          since=body.since,
+                          channels=[str(c) for c in body.channels] or None),
+            name=f"tip-exp-{batch}")
+        return {"ok": True, "batch": batch, "sampled": len(msgs)}
+
+    @app.get("/api/tip/experiment/{batch}", dependencies=[auth])
+    async def tip_experiment_status(batch: str):
+        from ..techniques.tip import experiment as exp
+        return await exp.batch_status(eng, batch)
+
+    @app.post("/api/tip/experiment/{batch}/review", dependencies=[auth])
+    async def tip_experiment_review(batch: str):
+        """The batch review run: the rubric over every item; summary saved as an
+        experiment-scoped note. Synchronous (one LLM call, ~1 min)."""
+        from ..techniques.tip import experiment as exp
+        try:
+            out = await exp.review_batch(eng, batch)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if out is None:
+            raise HTTPException(status_code=503, detail="no analyst client configured")
+        return out
+
     # --- proposals -----------------------------------------------------------
     @app.get("/api/proposals", dependencies=[auth])
     async def list_proposals(all: bool = False, limit: int = 100):
