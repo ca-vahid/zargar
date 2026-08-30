@@ -128,37 +128,77 @@ function EnginePosTable({ positions }: { positions: Position[] }) {
 
 /* ── managed positions: the durable positions the engine runs ─────────── */
 
-const LegLive = memo(function LegLive({ symbol, avgFill, qty, mult }: {
-  symbol: string; avgFill: number | null; qty: number; mult: number;
-}) {
-  const q = useQuote(symbol);
-  const live = q?.last && q.last > 0 ? q.last : null;
-  if (live == null) return null;
-  const pnl = avgFill != null ? (live - avgFill) * qty * mult : null;
-  return (
-    <span style={{ fontFamily: "var(--mono)" }}>
-      {" "}· now {fmtMoney(live)}
-      {pnl != null && <> (<span className={pnl >= 0 ? "pos" : "neg"}>{fmtSigned(pnl)}</span>)</>}
-    </span>
-  );
-});
-
 const attnText = (a: any): string =>
   typeof a === "string" ? a : a?.text ?? a?.reason ?? a?.event ?? "needs attention";
 
-function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }) {
-  const toast = useStore((s) => s.toast);
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
+/** The exit plan as a price ladder (broker "bracket" view): stop → entry →
+    targets on one rail, with the live underlying marked. Color is reserved
+    for the live marker and the P&L — the rail itself stays quiet. */
+function ExitLadder({ m, now }: { m: ManagedPosition; now: number | null }) {
   const lad = m.policy?.ladder ?? {};
   const targets: number[] = lad.targets ?? [];
   const fractions: number[] = lad.fractions ?? [];
   const trimsDone = m.state?.trimsDone ?? 0;
-  const nextTarget = trimsDone < targets.length ? targets[trimsDone] : null;
   const stop = m.state?.stop ?? m.policy?.stop?.price ?? null;
-  const noStop = m.policy?.stop?.kind === "none";
+  type Pt = { v: number; lbl: string; kind: string; title: string };
+  const pts: Pt[] = [];
+  if (stop != null) pts.push({ v: stop, lbl: `stop ${stop}`, kind: "stop",
+    title: m.state?.breakevenDone ? "stop (moved to breakeven)" : "protective stop — exits on the bar close through it" });
+  if (m.entry) pts.push({ v: m.entry, lbl: `entry ${m.entry}`, kind: "entry", title: "underlying reference entry" });
+  targets.forEach((t, i) => pts.push({
+    v: t, lbl: `TP${i + 1} ${t}`, kind: i < trimsDone ? "done" : "tp",
+    title: `take-profit ${i + 1}${fractions[i] != null ? ` — trims ${Math.round(fractions[i] * 100)}%` : ""}${i < trimsDone ? " (done)" : ""}`,
+  }));
+  if (pts.length < 2) return null;
+  const vals = pts.map((p) => p.v).concat(now != null ? [now] : []);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  const pad = (max - min || 1) * 0.07;
+  min -= pad; max += pad;
+  const x = (v: number) => ((v - min) / (max - min)) * 100;
+  return (
+    <div className="mgd-ladder" aria-hidden>
+      <div className="mgd-ladder-track" />
+      {pts.map((p) => (
+        <div key={p.lbl} className={`mgd-tick mgd-tick--${p.kind}`}
+          style={{ left: `${x(p.v)}%` }} title={p.title}>
+          <div className="mgd-tick-line" />
+          <div className="mgd-tick-lbl">{p.lbl}{p.kind === "done" ? " ✓" : ""}</div>
+        </div>
+      ))}
+      {now != null && (
+        <div className="mgd-now" style={{ left: `${x(now)}%` }} title={`underlying now ${fmtMoney(now)}`}>
+          <div className="mgd-now-dot" />
+          <div className="mgd-now-lbl">{fmtMoney(now)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }) {
+  const toast = useStore((s) => s.toast);
+  const openTrade = useStore((s) => s.openTrade);
+  const quotes = useStore((s) => s.quotes);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const uq = useQuote(m.symbol);
+  const now = uq?.last && uq.last > 0 ? uq.last : null;
+  // header P&L: sum over legs against live premiums (null until quotes exist)
+  const totals = useMemo(() => {
+    let cost = 0, val = 0, complete = m.legs.length > 0;
+    for (const l of m.legs) {
+      if (l.avgFill == null) { complete = false; continue; }
+      cost += l.avgFill * l.qty * l.multiplier;
+      const q = quotes[l.symbol]?.last;
+      if (q && q > 0) val += q * l.qty * l.multiplier;
+      else complete = false;
+    }
+    return complete && Math.abs(cost) > 1e-9
+      ? { unreal: val - cost, pct: ((val - cost) / Math.abs(cost)) * 100 }
+      : null;
+  }, [quotes, m.legs]);
   const timeBox = m.policy?.time_stop_sessions;
-  const events = (m.events ?? []).slice(-3).reverse();
+  const events = (m.events ?? []).slice(-2).reverse();
   const close = async () => {
     setBusy(true);
     try {
@@ -173,48 +213,59 @@ function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }
     }
   };
   return (
-    <div className={`mgd-card ${m.status === "attention" ? "mgd-attn" : ""}`}>
+    <div className={`mgd-card mgd-card--click ${m.status === "attention" ? "mgd-attn" : ""}`}
+      role="button" tabIndex={0} onClick={() => openTrade(m.symbol)}
+      onKeyDown={(e) => { if (e.key === "Enter") openTrade(m.symbol); }}
+      title={`Open ${m.symbol} in Trade`}>
       <div className="mgd-head">
-        <span className="mgd-sym">{m.symbol}</span>
+        <span className="sym-avatar" aria-hidden>{m.symbol.slice(0, 4)}</span>
+        <span>
+          <span className="mgd-sym">{m.symbol}</span>
+          <span className="mgd-contract">
+            {m.legs.map((l) => `${l.qty > 0 ? "+" : ""}${fmtQty(l.qty)} × ${symbolLabel(l.symbol)}`).join("  ·  ")}
+          </span>
+        </span>
         <span className={`status-pill ${m.status === "open" ? "ok" : m.status === "attention" ? "bad" : "dim"}`}>
           {m.status}
         </span>
-        <span className="status-pill dim">{m.technique}</span>
-        <span className="muted">{m.direction}</span>
-        <span className="mgd-pnl">
-          realized <span className={m.realizedPnl >= 0 ? "pos" : "neg"}>{fmtSigned(m.realizedPnl)}</span>
+        <span className="mgd-headr">
+          {totals ? (
+            <ValuePill value={totals.unreal} text={`${fmtSigned(totals.unreal)} (${fmtPct(totals.pct)})`} />
+          ) : (
+            <span className="muted" style={{ fontSize: 12 }}>no live premium yet</span>
+          )}
         </span>
       </div>
-      <div className="mgd-legs">
-        {m.legs.map((l) => (
-          <span key={l.symbol}>
-            <b>{l.qty > 0 ? "+" : ""}{fmtQty(l.qty)}</b> × {symbolLabel(l.symbol)}
-            {l.avgFill != null && <span className="muted"> @ {fmtMoney(l.avgFill)}</span>}
-            <LegLive symbol={l.symbol} avgFill={l.avgFill} qty={l.qty} mult={l.multiplier} />
-          </span>
-        ))}
-      </div>
-      <div className="prop-facts">
-        <span className="prop-fact">opened <b>{m.openedMs ? fmtDateTime(new Date(m.openedMs).toISOString()) : "—"}</b></span>
-        <span className="prop-fact">held <b>{m.sessionsHeld}</b> session{m.sessionsHeld === 1 ? "" : "s"}{timeBox ? <> / {timeBox}</> : null}</span>
-        {targets.length > 0 && (
-          <span className="prop-fact"
-            title={targets.map((t, i) => `TP${i + 1} ${t}${fractions[i] != null ? ` (${Math.round(fractions[i] * 100)}%)` : ""}${i < trimsDone ? " ✓" : ""}`).join(" · ")}>
-            trims <b>{trimsDone}/{targets.length}</b>{nextTarget != null && <> · next @ <b>{nextTarget}</b></>}
+      <ExitLadder m={m} now={now} />
+      <div className="mgd-meta">
+        <span className="muted">
+          {m.technique} · {m.direction} · opened {m.openedMs ? fmtDateTime(new Date(m.openedMs).toISOString()) : "—"}
+          {" · "}held {m.sessionsHeld}{timeBox ? `/${timeBox}` : ""} session{m.sessionsHeld === 1 && !timeBox ? "" : "s"}
+          {m.legs.map((l) => l.avgFill != null ? ` · in @ ${fmtMoney(l.avgFill)}` : "").join("")}
+          {m.policy?.premium_stop_pct ? ` · premium stop ${m.policy.premium_stop_pct}%` : ""}
+          {m.policy?.dte_close != null ? ` · closes by ${m.policy.dte_close} DTE` : ""}
+          {m.policy?.stop?.kind === "none" ? " · no price stop (guarded)" : ""}
+          {m.realizedPnl !== 0 ? <> · realized <span className={m.realizedPnl >= 0 ? "pos" : "neg"}>{fmtSigned(m.realizedPnl)}</span></> : ""}
+        </span>
+        {m.status !== "closed" && (
+          <span className="mgd-actions" onClick={(e) => e.stopPropagation()}>
+            {confirming ? (
+              <>
+                <span className="muted" style={{ fontSize: 12 }}>Close at market?</span>
+                <button className="danger-btn" disabled={busy} onClick={close}>yes, close it</button>
+                <button className="link-btn" onClick={() => setConfirming(false)}>keep it</button>
+              </>
+            ) : (
+              <button className="link-btn danger" onClick={() => setConfirming(true)}
+                title="Reduce-only market exit through the risk gate — never blocked by entry caps">
+                close…
+              </button>
+            )}
           </span>
         )}
-        {stop != null && <span className="prop-fact">stop <b>{stop}</b>{m.state?.breakevenDone ? " (breakeven)" : ""}</span>}
-        {noStop && (
-          <span className="prop-fact" title={m.policy?.stop?.guard ?? "no price stop — guarded by sizing + premium/time stops"}>
-            <b>no price stop</b> (guarded)
-          </span>
-        )}
-        {m.policy?.premium_stop_pct && <span className="prop-fact">premium stop <b>{m.policy.premium_stop_pct}%</b></span>}
-        {m.policy?.dte_close != null && <span className="prop-fact">close at <b>{m.policy.dte_close} DTE</b></span>}
-        {m.venueStopAt != null && <span className="prop-fact">venue stop <b>{m.venueStopAt}</b></span>}
       </div>
       {(m.attention ?? []).length > 0 && (
-        <div className="neg" style={{ fontSize: 12, margin: "4px 0" }}>
+        <div className="neg" style={{ fontSize: 12, marginTop: 4 }}>
           ⚠ {attnText(m.attention[m.attention.length - 1])}
         </div>
       )}
@@ -223,22 +274,6 @@ function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }
           {events.map((e) => (
             <span key={e.ts}>{fmtDateTime(new Date(e.ts).toISOString())} · {e.event}{e.text ? ` — ${e.text}` : ""}</span>
           ))}
-        </div>
-      )}
-      {m.status !== "closed" && (
-        <div className="mgd-actions">
-          {confirming ? (
-            <>
-              <span className="muted" style={{ fontSize: 12 }}>Close the whole position at market?</span>
-              <button className="danger-btn" disabled={busy} onClick={close}>yes, close it</button>
-              <button className="link-btn" onClick={() => setConfirming(false)}>keep it</button>
-            </>
-          ) : (
-            <button className="link-btn danger" onClick={() => setConfirming(true)}
-              title="Reduce-only market exit through the risk gate — never blocked by entry caps">
-              close position…
-            </button>
-          )}
         </div>
       )}
     </div>
