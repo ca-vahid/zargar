@@ -63,8 +63,36 @@ function portfolioName(portfolios: { id: string; name: string }[], id: string) {
   return portfolios.find((p) => p.id === id)?.name ?? id.slice(0, 6);
 }
 
+/** Where a position came from: the tip/source behind its entry order, and
+    whether the durable manager runs it. Hover carries the thesis + the buy. */
+function OriginCell({ c }: { c?: any }) {
+  const setPage = useStore((s) => s.setPage);
+  const tip = [
+    c?.thesis,
+    c?.orderAt
+      ? `bought ${fmtDateTime(c.orderAt)}${c.fillPrice ? ` @ ${fmtMoney(c.fillPrice)}` : ""}`
+      : null,
+  ].filter(Boolean).join("\n");
+  return (
+    <td className="muted bl-origin" onClick={(e) => e.stopPropagation()}
+      title={tip || undefined}>
+      {c?.managedId && (
+        <button className="link-btn" onClick={() => setPage("portfolios")}
+          title="Run by the durable manager — its exit plan is on Portfolios">
+          managed
+        </button>
+      )}
+      {c?.sourceName
+        ? <>{c.managedId ? " · " : ""}tip · {c.sourceName}</>
+        : c?.origin && c.origin !== "manual"
+          ? <>{c.managedId ? " · " : ""}{c.technique ?? c.origin}</>
+          : c && !c.managedId ? "manual" : !c ? "—" : null}
+    </td>
+  );
+}
+
 /** One row subscribes to its own quote — 10 Hz updates re-render rows, not the table. */
-const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
+const PositionRow = memo(function PositionRow({ p, c }: { p: Position; c?: any }) {
   const quote = useQuote(p.symbol);
   const portfolios = useStore((s) => s.portfolios);
   const openTrade = useStore((s) => s.openTrade);
@@ -94,6 +122,7 @@ const PositionRow = memo(function PositionRow({ p }: { p: Position }) {
         )}
       </td>
       <td className="muted">{portfolioName(portfolios, p.portfolioId)}</td>
+      <OriginCell c={c} />
       <td className="num">{fmtQty(p.qty)}</td>
       <td className="num">{fmtMoney(p.avgCost)}</td>
       <td className="num"><LivePrice symbol={p.symbol} fallback={last} /></td>
@@ -178,6 +207,13 @@ function PositionsTable({ scope }: { scope: Scope }) {
     () => Object.values(positionsMap)
       .filter((p) => Math.abs(p.qty) > 1e-9 && inScope(p.portfolioId)),
     [positionsMap, inScope]);
+  // provenance (tip/source/managed) per (portfolio, symbol) — a cheap join
+  const ctxState = useAsync(() => api.positionsContext(), [positions.length]);
+  const ctxMap = useMemo(() => {
+    const m: Record<string, any> = {};
+    for (const c of ctxState.data ?? []) m[`${c.portfolioId}:${c.symbol}`] = c;
+    return m;
+  }, [ctxState.data]);
   if (!positions.length) {
     return <EmptyState title={scope === "all" ? "No positions yet" : `No ${scope} positions`}
       hint="Fill an order from the ticket and it appears here." />;
@@ -193,7 +229,7 @@ function PositionsTable({ scope }: { scope: Scope }) {
     <table className="tbl">
       <thead>
         <tr>
-          <th>Symbol</th><th>Portfolio</th><th className="num">Qty</th>
+          <th>Symbol</th><th>Portfolio</th><th>Origin</th><th className="num">Qty</th>
           <th className="num">Avg cost</th><th className="num">Last</th>
           <th className="num">Mkt value</th><th className="num">Unrealized</th>
           <th className="num">Realized</th>
@@ -201,7 +237,8 @@ function PositionsTable({ scope }: { scope: Scope }) {
       </thead>
       <tbody>
         {positions.map((p) => (
-          <PositionRow key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p} />
+          <PositionRow key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p}
+            c={ctxMap[`${p.portfolioId}:${p.symbol}`]} />
         ))}
       </tbody>
     </table>

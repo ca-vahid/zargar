@@ -69,6 +69,7 @@ export const api = {
     request<any[]>("GET", `/api/proposals?limit=${limit}${all ? "&all=true" : ""}`),
   listManagedPositions: () =>
     request<import("../types").ManagedPosition[]>("GET", "/api/positions/managed"),
+  positionsContext: () => request<any[]>("GET", "/api/positions/context"),
   closeManagedPosition: (id: string, fraction = 1.0) =>
     request<any>("POST", `/api/positions/managed/${id}/close?fraction=${fraction}`),
   ingestManual: (text: string, source_name: string, subject: string, imageDataUrl?: string) =>

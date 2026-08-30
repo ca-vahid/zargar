@@ -44,6 +44,48 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def managed_positions(status: str | None = None):
         return eng.position_manager.positions(status=status)
 
+    @app.get("/api/positions/context", dependencies=[auth])
+    async def positions_context(limit: int = 400):
+        """Provenance for open positions: the entry order behind each
+        (portfolio, symbol), the tip it came from, and whether the durable
+        manager runs it — so the blotter can say WHERE a position came from."""
+        from sqlalchemy import select
+        from ..models import Order, Signal
+        out: dict[str, dict] = {}
+        async with eng.sf() as session:
+            rows = (await session.execute(
+                select(Order, Signal)
+                .outerjoin(Signal, Order.signal_id == Signal.id)
+                .where(Order.side == "BUY")
+                .order_by(Order.created_at.desc()).limit(limit))).all()
+        for o, sig in rows:
+            key = f"{o.portfolio_id}:{o.symbol}"
+            if key in out:                       # newest entry order wins
+                continue
+            out[key] = {
+                "portfolioId": o.portfolio_id, "symbol": o.symbol,
+                "origin": "tip" if o.signal_id else (o.source or "manual"),
+                "orderId": o.id,
+                "orderAt": o.created_at.isoformat() if o.created_at else None,
+                "fillPrice": o.avg_fill_price,
+                "source": o.source, "technique": o.technique,
+                "proposalId": o.proposal_id, "signalId": o.signal_id,
+                "sourceName": sig.source_name if sig is not None else None,
+                "ticker": sig.ticker if sig is not None else None,
+                "thesis": sig.thesis_summary if sig is not None else None,
+            }
+        for m in eng.position_manager.positions():
+            if m.get("status") == "closed":
+                continue
+            for leg in m.get("legs") or []:
+                key = f"{m['portfolioId']}:{leg.get('symbol')}"
+                ctx = out.setdefault(key, {"portfolioId": m["portfolioId"],
+                                           "symbol": leg.get("symbol")})
+                ctx["managedId"] = m["id"]
+                ctx["managedStatus"] = m["status"]
+                ctx["managedTechnique"] = m.get("technique")
+        return list(out.values())
+
     @app.post("/api/positions/managed/{pid}/close", dependencies=[auth])
     async def managed_close(pid: str, fraction: float = 1.0):
         out = await eng.position_manager.close(pid, fraction=fraction, reason="manual close (API)")
