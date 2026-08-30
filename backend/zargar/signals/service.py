@@ -610,8 +610,12 @@ class SignalService:
                 "guildName": str(w.get("guildName") or "")[:120],
                 "botsOnly": bool(w.get("botsOnly", w.get("kind") != "dm")),
                 "enabled": bool(w.get("enabled", True)),
-                # onboarding: mirror this many days of history (gateway, <= 17)
-                "onboardDays": max(0, min(17, int(w.get("onboardDays") or 0))),
+                # onboarding: mirror this many days of history (gateway, <= 90 —
+                # raised from 17 for the historical-tips experiment)
+                "onboardDays": max(0, min(90, int(w.get("onboardDays") or 0))),
+                # "tips" auto-processes matching posts; "context" = mirror +
+                # digest only, never auto-tips (KNOWLEDGE plan C1)
+                "mode": "context" if w.get("mode") == "context" else "tips",
             })
         await self.engine.settings.set("techniques.tip.discord.watch", clean)
         return clean
