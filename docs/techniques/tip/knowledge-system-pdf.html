@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Tips Knowledge System</title>
+<style>
+  @page { size: Letter; margin: 14mm 13mm; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: "Segoe UI", system-ui, sans-serif; color: #1c2733; font-size: 10.5pt; line-height: 1.45; }
+  .page { page-break-after: always; padding-top: 2mm; }
+  .page:last-child { page-break-after: auto; }
+  h1 { font-size: 26pt; letter-spacing: -0.5px; }
+  h2 { font-size: 15pt; margin: 0 0 10px; display: flex; align-items: center; gap: 8px;
+       border-bottom: 2.5px solid #4470d8; padding-bottom: 5px; }
+  h3 { font-size: 11pt; margin-bottom: 4px; }
+  .muted { color: #5c6b7c; }
+  .small { font-size: 9pt; }
+  .tiny { font-size: 8pt; }
+  .mono { font-family: Consolas, monospace; }
+  .accent { color: #4470d8; }
+  .pos { color: #12813f; } .warn { color: #b07514; } .neg { color: #bb3434; }
+
+  /* title page */
+  .cover { display: flex; flex-direction: column; justify-content: center; min-height: 235mm; }
+  .cover .kicker { font-size: 11pt; letter-spacing: 3px; text-transform: uppercase; color: #4470d8; font-weight: 700; }
+  .cover h1 { margin: 8px 0 14px; }
+  .cover .sub { font-size: 12.5pt; color: #45566a; max-width: 150mm; }
+  .cover .meta { margin-top: 26px; font-size: 9.5pt; color: #5c6b7c; }
+  .cover .bigicons { font-size: 34pt; margin: 26px 0 6px; letter-spacing: 12px; }
+
+  /* generic cards */
+  .row { display: flex; gap: 8px; }
+  .card { border: 1px solid #d7dee8; border-radius: 8px; padding: 8px 11px; background: #fbfcfe; flex: 1; }
+  .card h3 { display: flex; gap: 6px; align-items: center; }
+  .card.hl { border-left: 4px solid #4470d8; }
+  .card.ok { border-left: 4px solid #12813f; }
+  .card.wa { border-left: 4px solid #b07514; }
+  .badge { display: inline-block; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.5px;
+           border-radius: 4px; padding: 1px 7px; text-transform: uppercase; }
+  .badge.b { background: #e3ebfb; color: #2f56b5; }
+  .badge.g { background: #ddf2e4; color: #12813f; }
+  .badge.y { background: #f8ecd3; color: #96660d; }
+  .badge.r { background: #f8dddd; color: #a52f2f; }
+  .badge.gr { background: #e8ecf1; color: #5c6b7c; }
+
+  /* flow diagram */
+  .flow { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; }
+  .lane { display: flex; align-items: stretch; gap: 6px; }
+  .node { border: 1.5px solid #b9c6d8; border-radius: 8px; padding: 6px 9px; background: #fff;
+          flex: 1; text-align: center; }
+  .node b { display: block; font-size: 9.5pt; }
+  .node .small { display: block; }
+  .node.src { background: #eef2fa; border-color: #8aa3d4; }
+  .node.kb  { background: #e9f6ee; border-color: #57a877; }
+  .node.stop{ background: #fdf1f1; border-color: #d89090; }
+  .arrow { align-self: center; font-size: 13pt; color: #4470d8; padding: 0 2px; }
+  .down { text-align: center; color: #4470d8; font-size: 13pt; line-height: 1; }
+
+  ul.tight { padding-left: 16px; } ul.tight li { margin-bottom: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 9.5pt; }
+  th, td { border: 1px solid #d7dee8; padding: 4px 8px; text-align: left; }
+  th { background: #eef2fa; }
+  .foot { margin-top: 10px; font-size: 8pt; color: #7b8794; border-top: 1px solid #e2e8f0; padding-top: 4px; }
+
+  /* timeline */
+  .tl { border-left: 3px solid #4470d8; margin-left: 8px; padding-left: 16px; }
+  .tl .ev { margin-bottom: 10px; position: relative; }
+  .tl .ev::before { content: "●"; color: #4470d8; position: absolute; left: -22.5px; }
+  .tl .when { font-weight: 700; color: #2f56b5; font-size: 9.5pt; }
+</style>
+</head>
+<body>
+
+<!-- ============================== COVER ============================== -->
+<div class="page cover">
+  <div class="kicker">Zargar · Tips Technique</div>
+  <h1>The Tips Knowledge System</h1>
+  <div class="sub">How the desk reads its Discord rooms, remembers what matters,
+    forgets what doesn't — and how we test the whole loop against history
+    before trusting it with money.</div>
+  <div class="bigicons">📡 🧠 ⏳ 🧪</div>
+  <div class="meta">
+    Built 2026-08-30 · docs/techniques/tip/KNOWLEDGE-PLAN.md (research &amp; decisions)
+    · KNOWLEDGE-BUILD-PLAN.md (build &amp; findings)<br>
+    Research foundation: Zep temporal knowledge graphs · FinMem layered memory ·
+    FinCon per-agent isolation (deep-research run, 23/25 claims verified)
+  </div>
+</div>
+
+<!-- ============================== PAGE 2: BIG PICTURE ============================== -->
+<div class="page">
+  <h2>1 · The big picture — from chatter to knowledge</h2>
+  <div class="flow">
+    <div class="lane">
+      <div class="node src"><b>📡 Tip channels ×9</b><span class="small muted">OWLS 🌟 rooms — mode: <span class="mono">tips</span><br>mirrored <i>and</i> auto-processed</span></div>
+      <div class="node src"><b>💬 Context channels</b><span class="small muted">trading-floor ×2 — mode: <span class="mono">context</span><br>mirrored only, <b>never</b> auto-tips</span></div>
+    </div>
+    <div class="down">▼</div>
+    <div class="lane">
+      <div class="node"><b>🪞 Message mirror</b><span class="small muted">~5,900 messages, 90 days deep · the analyst's searchable source history</span></div>
+    </div>
+    <div class="down">▼</div>
+    <div class="lane">
+      <div class="node"><b>🔍 Extraction + verification</b><span class="small muted">one LLM read → grounded signals → price/freshness checks</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>🎭 Shadow books</b><span class="small muted">immediate vs armed, per source — the scorecards</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>🧑‍💼 Analyst appraisal</b><span class="small muted">its OWN rulebook + matching notes injected before every run</span></div>
+    </div>
+    <div class="down">▼</div>
+    <div class="lane">
+      <div class="node kb"><b>🧠 Knowledge base (tip_notes)</b><span class="small muted">rules · ticker:* · source:* · general · daily:* · experiment:* — every note scoped, dated, provenanced (run link)</span></div>
+    </div>
+    <div class="down">▼</div>
+    <div class="lane">
+      <div class="node"><b>🌙 Nightly review</b><span class="small muted">retros · unfilled retros · lane grades · digests (gated)</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>⚖ Weekly audits</b><span class="small muted">rulebook + every knowledge group: merge · expire · flag</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>🧪 Experiments</b><span class="small muted">historical batches grade the PROCESS</span></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <div class="card ok"><h3>✅ What flows forward</h3><div class="small">Verified tips trade the shadow books; the analyst's take can arm a plan or mint a proposal; every decision is journaled and reviewable.</div></div>
+    <div class="card wa"><h3>⛔ What never crosses</h3><div class="small">Context chatter never becomes a tip on its own. Experiment samples never touch orders, books, proposals, dedupe or scorecards — forced onto the replay path by construction.</div></div>
+  </div>
+  <div class="foot">Two analysts, two brains: the Tips Analyst's knowledge lives in tip_notes; EM's lives in its own rulebook/prompts. A static guard test fails the suite on any cross-read (PLATFORM-RULES invariant 12).</div>
+</div>
+
+<!-- ============================== PAGE 3: KNOWLEDGE LIFECYCLE ============================== -->
+<div class="page">
+  <h2>2 · Knowledge that ages honestly</h2>
+  <p class="small muted" style="margin-bottom:8px">The research is blunt: stale memory misleads models, and similarity search can't
+  tell a contradiction from a rephrase. So knowledge here has a <b>lifecycle</b> — layered
+  retention (FinMem), temporal invalidation instead of deletion (Zep), LLM-judged audits.</p>
+  <table>
+    <tr><th>Scope</th><th>What lives there</th><th>Retention</th><th>How it dies</th></tr>
+    <tr><td class="mono">rule</td><td>the analyst's own trading rules (numbered, injected into <b>every</b> run)</td><td><span class="badge g">no expiry</span></td><td>weekly audit merges/expires; contradictions need <b>your</b> click</td></tr>
+    <tr><td class="mono">ticker:SYM</td><td>structural reads on one name</td><td><span class="badge b">90 days</span></td><td>expires unless <b>cited</b> in a live run (refresh) or 📌 pinned</td></tr>
+    <tr><td class="mono">source:name</td><td>a tipper's habits &amp; tells</td><td><span class="badge b">90 days</span></td><td>same — citation refreshes, audit consolidates</td></tr>
+    <tr><td class="mono">general</td><td>desk-wide context</td><td><span class="badge g">no expiry</span></td><td>audit-gated</td></tr>
+    <tr><td class="mono">daily:date</td><td>digest of a context channel's day</td><td><span class="badge y">14 days</span></td><td>just expires — chatter is short-lived by design</td></tr>
+    <tr><td class="mono">experiment:b</td><td>batch findings</td><td><span class="badge gr">never injected</span></td><td>review artifacts, out-of-band forever</td></tr>
+  </table>
+  <div class="row" style="margin-top:10px">
+    <div class="card hl"><h3>🔁 Citation refresh</h3><div class="small">A note injected into a <b>completed live appraisal</b> gets <span class="mono">cited_count</span>++ and its TTL extended. Knowledge that keeps participating in decisions stays alive; knowledge nobody uses ages out. Historical experiments deliberately never refresh.</div></div>
+    <div class="card hl"><h3>🕰 Query-time expiry</h3><div class="small">Nothing is deleted or swept. An expired note simply stops being served — deterministic, restart-proof, and fully visible under the Knowledge tab's history toggle (superseded + expired).</div></div>
+    <div class="card hl"><h3>⚖ Widened audit</h3><div class="small">Weekly, the same judge→apply pass runs over the rulebook <i>and</i> every ticker/source/general group with ≥3 notes: merge near-duplicates, expire the unsupported, flag real contradictions <b>needs-your-call</b>.</div></div>
+  </div>
+  <h3 style="margin-top:12px">📅 Digests: the trading-floor pipeline</h3>
+  <div class="flow"><div class="lane">
+    <div class="node src"><b>💬 One channel-day</b><span class="small muted">mirrored messages</span></div>
+    <div class="arrow">→</div>
+    <div class="node"><b>📝 Digest run</b><span class="small muted">summary + lean + themes</span></div>
+    <div class="arrow">→</div>
+    <div class="node kb"><b>daily:&lt;date&gt; note</b><span class="small muted">expires in 14d</span></div>
+    <div class="arrow">→</div>
+    <div class="node kb"><b>≤5 promoted nuggets</b><span class="small muted">ticker:/source: only, with provenance — the part that survives</span></div>
+  </div></div>
+  <div class="foot">Digest-now button per context channel (Tips → Sources) tunes the prompt first; the nightly pass turns on only when <span class="mono">techniques.tip.digest_enabled</span> flips.</div>
+</div>
+
+<!-- ============================== PAGE 4: THE EXPERIMENT ============================== -->
+<div class="page">
+  <h2>3 · The historical experiment — testing the desk against the past</h2>
+  <p class="small muted" style="margin-bottom:8px">The published field has no rigorous answer for replay-testing an LLM tips desk —
+  so this loop <i>is</i> the evidence. It grades the <b>process</b> (extraction, verification,
+  knowledge, tools, reasoning), never the P&amp;L: hindsight is cheap, process is fixable.</p>
+  <div class="flow">
+    <div class="lane">
+      <div class="node"><b>🎲 Seeded sample</b><span class="small muted">20 random mirrored messages<br>tips channels · since Jun 1 · never re-drawn</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>⚙️ Real pipeline</b><span class="small muted">the same extraction + verification the live desk runs</span></div>
+      <div class="arrow">→</div>
+      <div class="node stop"><b>⛔ Forced replay</b><span class="small muted">tagged experiment → NEVER traded: outcomes computed on 1h history instead</span></div>
+      <div class="arrow">→</div>
+      <div class="node"><b>🧑‍💼 Historical appraisal</b><span class="small muted">prompt leads with: “your tools show TODAY — judge the call as of tip time”</span></div>
+    </div>
+    <div class="down">▼</div>
+    <div class="lane">
+      <div class="node kb"><b>📋 Rubric batch review</b><span class="small muted">one run grades all 20: extraction · verification · knowledge injected · tool use · verdict-at-tip-time · gaps → findings note + fixes</span></div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <div class="card ok"><h3>🔒 Out-of-band, proven</h3><div class="small">Zero orders, zero proposals, zero book entries, zero dedupe/scorecard contamination — asserted by tests, not assumed (PLATFORM-RULES invariant 13). The experiment can never move money.</div></div>
+    <div class="card wa"><h3>👓 Look-ahead honesty</h3><div class="small">Two traps the design dodges: live tools seeing today's market (the prompt names it, the review checks for confusion) and the model's own training knowing 2024-25 outcomes (batches sample ≥ Feb 2026 where possible; P&amp;L is never the grade).</div></div>
+  </div>
+  <h3 style="margin-top:12px">Running a batch</h3>
+  <div class="card"><div class="small mono">
+    python -m zargar.tools.tip_experiment run &nbsp;--batch b1 --sample 20 --seed 7 --since 2026-06-01<br>
+    python -m zargar.tools.tip_experiment status --batch b1<br>
+    python -m zargar.tools.tip_experiment review --batch b1
+  </div></div>
+  <div class="row" style="margin-top:8px">
+    <div class="card"><h3>Batch 1 → findings</h3><div class="small" id="batch1">Seed 7 · logged in KNOWLEDGE-BUILD-PLAN.md Phase 5 with per-item run links.</div></div>
+    <div class="card"><h3>Batch 2 → recurrence check</h3><div class="small">After the fixes: a fresh seed, same rubric — did the same failure classes come back? Resolved classes get ticked, recurring ones escalate.</div></div>
+    <div class="card"><h3>Then monthly</h3><div class="small">A batch a month keeps the pipeline honest as sources, prompts and rules evolve.</div></div>
+  </div>
+</div>
+
+<!-- ============================== PAGE 5: NIGHTLY ROUTINE ============================== -->
+<div class="page">
+  <h2>4 · The nightly routine — what to check each evening</h2>
+  <table>
+    <tr><th style="width:22mm">When (ET)</th><th>What runs</th><th>What you look at</th></tr>
+    <tr><td class="mono">16:45</td><td>Flow scan (chain snapshots → reads)</td><td>Flow page: new reads, universe joins</td></tr>
+    <tr><td class="mono">evening</td><td>Nightly tip review: retros on closed positions, unfilled retros, lane grades, <b>digests</b> (when enabled)</td><td>Tips → Analyst: retro runs; Knowledge → 📅 Today: is the digest a fair read of the room?</td></tr>
+    <tr><td class="mono">audit day</td><td>Rule audit + knowledge audit (weekly)</td><td>Knowledge → ⚠ Needs you: resolve contradictions — keep one, delete one, or keep both deliberately</td></tr>
+    <tr><td class="mono">any</td><td>—</td><td>Approvals: nothing pending unseen · Armed: plans healthy, no needsAttention</td></tr>
+  </table>
+  <h3 style="margin-top:12px">Your 5-minute knowledge pass</h3>
+  <ul class="tight small">
+    <li>📅 <b>Read today's digest(s).</b> Wrong lean or missed theme → tune with digest-now before enabling nightly.</li>
+    <li>⚠ <b>Clear needs-your-call flags.</b> They only appear when two notes genuinely pull opposite ways.</li>
+    <li>⏳ <b>Glance at expiring notes.</b> Amber chip (≤7d): still true? 📌 pin it. Stale? let it die — that's the system working.</li>
+    <li>🧪 <b>Experiment cadence.</b> After fixes land, queue the next batch with a new seed; findings go to the build plan.</li>
+    <li>📌 <b>Teach one thing.</b> Anything you learned watching the rooms today belongs in the composer — scoped, so only the runs that need it see it.</li>
+  </ul>
+  <div class="row" style="margin-top:10px">
+    <div class="card ok"><h3>Healthy signs</h3><div class="small">Rules stay few and sharp · digests promote 0-2 nuggets a day, not 5 · expiring notes mostly deserve to expire · batch reviews find <i>new</i> classes, not repeats.</div></div>
+    <div class="card wa"><h3>Smells</h3><div class="small">Rulebook growing weekly · every note pinned · promotions restating the daily summary · the same extraction bug in two batches — stop and fix before more volume.</div></div>
+  </div>
+</div>
+
+<!-- ============================== PAGE 6: EVOLUTION ============================== -->
+<div class="page">
+  <h2>5 · How we got here — the thought process</h2>
+  <div class="tl">
+    <div class="ev"><div class="when">2026-08-27 · The platform bet</div><div class="small">Many techniques, one engine. The Tip technique becomes the second resident: extraction → verification → dual shadow books per source, so every tipper earns (or loses) trust on their own record.</div></div>
+    <div class="ev"><div class="when">2026-08-28 · The analyst is born</div><div class="small">Tips deserve judgement, not just parsing: an independent trader persona with market tools, its own exit plans, its own rulebook — explicitly NOT bound by EM's method book.</div></div>
+    <div class="ev"><div class="when">2026-08-29 · Staying armed, closing gaps</div><div class="small">Multi-day stay-armed plans, follow-up handling ("a close never opens"), never-chase caps, nightly retros + the first weekly rule audit. The desk starts maintaining its own judgement.</div></div>
+    <div class="ev"><div class="when">2026-08-30 · Knowledge grows a lifecycle</div><div class="small">Deep research (Zep, FinMem, FinCon + 20 more sources, adversarially verified) settles the design: typed scoped stores, temporal expiry over deletion, citation-refresh, LLM-judged audits, per-agent isolation. Context channels + digests bring trading-floor in without polluting intake. The experiment harness closes the loop: history in, findings out, fixes in, repeat.</div></div>
+    <div class="ev"><div class="when">Next</div><div class="small">Batch 2 after batch-1 fixes · nightly digests once tuned · monthly experiment cadence · knowledge volume grows → revisit retrieval (the temporal-graph option stays on the shelf until scale demands it).</div></div>
+  </div>
+  <h3 style="margin-top:10px">Design principles (the short version)</h3>
+  <div class="row">
+    <div class="card hl"><h3>🧭 Process over hindsight</h3><div class="small">Grade what the desk could have known, never what the chart did later.</div></div>
+    <div class="card hl"><h3>🗂 Scope everything</h3><div class="small">Knowledge reaches only the runs it belongs to; two analysts never share a brain.</div></div>
+    <div class="card hl"><h3>⏳ Forget on purpose</h3><div class="small">Expiry + audits keep the context honest; only cited or pinned knowledge earns permanence.</div></div>
+    <div class="card hl"><h3>🔒 Experiments can't spend</h3><div class="small">Out-of-band by construction, proven by tests — curiosity never risks a dollar.</div></div>
+  </div>
+  <div class="foot">Zargar · generated 2026-08-30 · sources &amp; verified claims: KNOWLEDGE-PLAN.md §2 · build detail: KNOWLEDGE-BUILD-PLAN.md</div>
+</div>
+
+</body>
+</html>
