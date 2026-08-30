@@ -65,6 +65,8 @@ export const api = {
   approveProposal: (id: string, half = false) =>
     request<any>("POST", `/api/proposals/${id}/approve`, { half }),
   rejectProposal: (id: string) => request<any>("POST", `/api/proposals/${id}/reject`),
+  listProposals: (all = false, limit = 100) =>
+    request<any[]>("GET", `/api/proposals?limit=${limit}${all ? "&all=true" : ""}`),
   ingestManual: (text: string, source_name: string, subject: string, imageDataUrl?: string) =>
     request<any>("POST", "/api/ingest/manual",
       imageDataUrl ? { text, source_name, subject, imageDataUrl } : { text, source_name, subject }),
