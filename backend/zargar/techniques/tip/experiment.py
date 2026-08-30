@@ -230,17 +230,29 @@ async def review_batch(eng, batch: str, *, client=None) -> dict | None:
     rec = _Recorder(eng, run_id)
     rec.step("start", f"Batch review of experiment {batch}: {len(records)} historical "
                       "tip(s) — grading the PROCESS with the rubric.")
-    header = (RUBRIC.format(n=len(records)) + "\n\nBATCH RECORDS:\n"
-              + json.dumps(records, default=str)[:60000])
-    try:
+    system = ("You are the tips desk trader reviewing your own pipeline's "
+              "handling of historical tips. Be specific, cite signal ids, "
+              "and never let hindsight grade a decision.")
+
+    async def _ask(recs_json: str) -> tuple[str, str | None]:
         resp = await client.messages.create(
-            model=model, max_tokens=3000,
-            system="You are the tips desk trader reviewing your own pipeline's "
-                   "handling of historical tips. Be specific, cite signal ids, "
-                   "and never let hindsight grade a decision.",
-            messages=[{"role": "user", "content": header}])
-        text = "".join(b.text for b in resp.content
-                       if getattr(b, "type", "") == "text").strip()
+            model=model, max_tokens=6000, system=system,
+            messages=[{"role": "user", "content":
+                       RUBRIC.format(n=len(records)) + "\n\nBATCH RECORDS:\n" + recs_json}])
+        return ("".join(b.text for b in resp.content
+                        if getattr(b, "type", "") == "text").strip(),
+                getattr(resp, "stop_reason", None))
+
+    try:
+        text, stop = await _ask(json.dumps(records, default=str)[:60000])
+        if not text:
+            # a huge record set can exhaust the budget on thinking alone —
+            # retry once with a trimmed set (found on batch b1, 2026-08-30)
+            rec.step("note", f"empty response (stop_reason={stop}) — retrying with "
+                             "a trimmed record set")
+            text, stop = await _ask(json.dumps(records, default=str)[:25000])
+        if not text:
+            raise RuntimeError(f"review produced no text twice (stop_reason={stop})")
     except Exception as exc:
         rec.step("error", f"Review failed: {exc}")
         await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500])
