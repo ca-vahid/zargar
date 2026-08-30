@@ -17,8 +17,8 @@ import { Sheet } from "../components/Sheet";
    Tabs: New tip · Tips · Sources · Inbox; pending proposals ride above the
    tabs as an attention strip (they expire in minutes). */
 
-type Tab = "compose" | "tips" | "sources" | "analyst" | "inbox";
-const TABS: Tab[] = ["tips", "compose", "analyst", "inbox", "sources"];
+type Tab = "compose" | "tips" | "approvals" | "sources" | "analyst" | "inbox";
+const TABS: Tab[] = ["tips", "approvals", "compose", "analyst", "inbox", "sources"];
 
 export function InboxPage() {
   const pageTab = useStore((s) => s.pageTab);
@@ -34,6 +34,12 @@ export function InboxPage() {
         <div className="tabs" role="tablist">
           <button role="tab" aria-selected={tab === "tips"} className={tab === "tips" ? "active" : ""}
             onClick={() => setTab("tips")}>Tips{signals.length ? ` · ${signals.length}` : ""}</button>
+          <button role="tab" aria-selected={tab === "approvals"}
+            className={tab === "approvals" ? "active" : ""}
+            onClick={() => setTab("approvals")}
+            title="Proposals awaiting your decision, plus the decided history — with search and filters">
+            Approvals{proposals.length ? <span className="tab-attn"> · {proposals.length}</span> : ""}
+          </button>
           <button role="tab" aria-selected={tab === "compose"} className={tab === "compose" ? "active" : ""}
             onClick={() => setTab("compose")}>New tip</button>
           <button role="tab" aria-selected={tab === "analyst"} className={tab === "analyst" ? "active" : ""}
@@ -51,20 +57,18 @@ export function InboxPage() {
         <span className="muted tips-head-sub">every source runs two shadow books: buy at tip time vs wait for the level</span>
       </div>
 
-      {proposals.length > 0 && (
-        <div className="panel mb">
-          <div className="panel-head">
-            Awaiting your decision
-            <span className="sub">{proposals.length} proposal{proposals.length === 1 ? "" : "s"} — they expire</span>
-          </div>
-          <div className="panel-body">
-            {proposals.map((p) => <ProposalCard key={p.id} p={p} />)}
-          </div>
-        </div>
+      {/* pending approvals live in their OWN tab (user, 2026-08-29) — elsewhere
+          only a one-line pointer, never the full pile */}
+      {proposals.length > 0 && tab !== "approvals" && (
+        <button type="button" className="approvals-note mb" onClick={() => setTab("approvals")}>
+          ⏳ {proposals.length} proposal{proposals.length === 1 ? "" : "s"} awaiting your decision
+          — open <b>Approvals</b> (they expire on their TTL)
+        </button>
       )}
 
       {tab === "compose" && <ComposeTab goTips={() => setTab("tips")} />}
       {tab === "tips" && <TipsTab />}
+      {tab === "approvals" && <ApprovalsTab />}
       {tab === "sources" && <SourcesTab />}
       {tab === "analyst" && <AnalystTab />}
       {tab === "inbox" && <InboxTab />}
@@ -424,6 +428,62 @@ function AnalystBlock({ s }: { s: Signal }) {
 }
 
 /* ---------------------------------------------------------------- proposals */
+
+function ApprovalsTab() {
+  // pending = live via WS; the decided history is fetched (search/filter both)
+  const pending = useStore((s) => s.proposals);
+  const histState = useAsync(() => api.listProposals(true, 100), [pending.length]);
+  const [q, setQ] = useState("");
+  const [show, setShow] = useState<"pending" | "decided" | "all">("pending");
+  const needle = q.trim().toUpperCase();
+  const hit = (p: any) => !needle
+    || [p.symbol, p.context?.sourceName, p.context?.vehicle?.display, p.rationale, p.status]
+      .some((x) => String(x ?? "").toUpperCase().includes(needle));
+  const hist = ((histState.data ?? []) as any[]).filter((p) => p.status !== "pending");
+  const rows: any[] = show === "pending" ? pending
+    : show === "decided" ? hist : [...pending, ...hist];
+  const shown = rows.filter(hit);
+  return (
+    <div className="panel mb">
+      <div className="panel-head">Approvals
+        <span className="sub">nothing piles up — pending proposals expire on their TTL; the decided ones are history below</span>
+        <div className="seg sm" role="group" aria-label="Show" style={{ marginLeft: "auto" }}>
+          {(["pending", "decided", "all"] as const).map((k) => (
+            <button key={k} className={show === k ? "on" : ""} onClick={() => setShow(k)}>
+              {k}{k === "pending" && pending.length ? ` · ${pending.length}` : ""}
+            </button>
+          ))}
+        </div>
+        <input className="armed-filter" placeholder="search ticker / source / status…" value={q}
+          onChange={(e) => setQ(e.target.value)} spellCheck={false}
+          aria-label="Search proposals" style={{ marginLeft: 8, maxWidth: 220 }} />
+      </div>
+      <div className="panel-body">
+        {shown.length === 0 && (
+          <div className="empty">{show === "pending"
+            ? "Nothing awaiting your decision."
+            : needle ? `No proposals match “${q.trim()}”.` : "No decided proposals yet."}</div>
+        )}
+        {shown.map((p: any) => p.status === "pending"
+          ? <ProposalCard key={p.id} p={p} />
+          : (
+            <div key={p.id} className="bl-card bl-card--static appr-hist-row">
+              <span className="bl-card-l">
+                <span className="bl-card-sym"><b>{p.symbol}</b>{" "}
+                  <span className={`status-pill ${p.status === "executed" || p.status === "approved" ? "ok" : "dim"}`}>{p.status}</span>
+                  <span className="muted"> {p.side} {p.qty} × {p.context?.vehicle?.display ?? p.symbol}
+                    {p.limitPrice ? ` @ ${p.limitPrice}` : ""}</span>
+                </span>
+                <span className="bl-card-sub">{p.context?.sourceName ?? "?"} · {fmtDateTime(p.createdAt)}
+                  {p.decidedVia ? ` · via ${p.decidedVia}` : ""}
+                  {p.context?.expiredReason ? ` · ${p.context.expiredReason}` : ""}</span>
+              </span>
+            </div>
+          ))}
+      </div>
+    </div>
+  );
+}
 
 function ProposalCard({ p }: { p: Proposal }) {
   const toast = useStore((s) => s.toast);

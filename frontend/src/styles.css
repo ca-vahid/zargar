@@ -577,8 +577,26 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--accent); ou
 .tabs button {
   background: none; border: none; color: var(--text-3); font-size: var(--fs-1); font-weight: 600;
   padding: var(--row-y) 12px; cursor: pointer; border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
 }
-.tabs button.active { color: var(--text-1); border-bottom-color: var(--accent); }
+.tabs button:hover { color: var(--text-1); background: var(--surface-2); }
+.tabs button.active {
+  color: var(--text-1); font-weight: 800;
+  border-bottom: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.tabs .tab-attn { color: var(--warn); font-weight: 800; }
+
+/* the one-line pointer to pending approvals (the pile lives in its own tab) */
+.approvals-note {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: color-mix(in srgb, var(--warn) 10%, var(--surface-1));
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--border));
+  border-radius: var(--radius); padding: 8px 14px; color: var(--text-1);
+  font-size: var(--fs-1);
+}
+.approvals-note:hover { background: color-mix(in srgb, var(--warn) 16%, var(--surface-1)); }
+.appr-hist-row { padding: 6px 10px; }
 
 .status-pill {
   display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-0); font-weight: 700;
