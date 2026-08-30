@@ -92,7 +92,9 @@ function OriginCell({ c }: { c?: any }) {
 }
 
 /** One row subscribes to its own quote — 10 Hz updates re-render rows, not the table. */
-const PositionRow = memo(function PositionRow({ p, c }: { p: Position; c?: any }) {
+const PositionRow = memo(function PositionRow({ p, c, linkHue }: {
+  p: Position; c?: any; linkHue?: number;
+}) {
   const quote = useQuote(p.symbol);
   const portfolios = useStore((s) => s.portfolios);
   const openTrade = useStore((s) => s.openTrade);
@@ -110,6 +112,10 @@ const PositionRow = memo(function PositionRow({ p, c }: { p: Position; c?: any }
     <tr onClick={open} style={{ cursor: "pointer" }}
       title={occ ? `${occ.symbol} — open the option ticket to close this position` : "Open in Trade with this account preselected"}>
       <td className="sym-cell">
+        {linkHue != null && (
+          <span className="pos-link" style={{ background: `hsl(${linkHue} 65% 48%)` }}
+            title={`Same tip${c?.sourceName ? ` (${c.sourceName})` : ""} — rows with this dot are the shadow book's take and the actual purchase of one tip`} />
+        )}
         {occ ? (
           <>
             {occ.display}
@@ -214,6 +220,21 @@ function PositionsTable({ scope }: { scope: Scope }) {
     for (const c of ctxState.data ?? []) m[`${c.portfolioId}:${c.symbol}`] = c;
     return m;
   }, [ctxState.data]);
+  // rows tracing to the SAME tip (shadow take + actual purchase) share a hue
+  const linkHues = useMemo(() => {
+    const count: Record<string, number> = {};
+    for (const p of positions) {
+      const sid = ctxMap[`${p.portfolioId}:${p.symbol}`]?.signalId;
+      if (sid) count[sid] = (count[sid] ?? 0) + 1;
+    }
+    const hues: Record<string, number> = {};
+    const PALETTE = [212, 288, 152, 32, 336, 190];
+    let i = 0;
+    for (const sid of Object.keys(count)) {
+      if (count[sid] > 1) hues[sid] = PALETTE[i++ % PALETTE.length];
+    }
+    return hues;
+  }, [positions, ctxMap]);
   if (!positions.length) {
     return <EmptyState title={scope === "all" ? "No positions yet" : `No ${scope} positions`}
       hint="Fill an order from the ticket and it appears here." />;
@@ -236,10 +257,13 @@ function PositionsTable({ scope }: { scope: Scope }) {
         </tr>
       </thead>
       <tbody>
-        {positions.map((p) => (
-          <PositionRow key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p}
-            c={ctxMap[`${p.portfolioId}:${p.symbol}`]} />
-        ))}
+        {positions.map((p) => {
+          const c = ctxMap[`${p.portfolioId}:${p.symbol}`];
+          return (
+            <PositionRow key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p} c={c}
+              linkHue={c?.signalId != null ? linkHues[c.signalId] : undefined} />
+          );
+        })}
       </tbody>
     </table>
   );

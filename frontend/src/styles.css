@@ -412,7 +412,17 @@ button.brand { background: none; border: 0; padding: 0 4px 0 0; min-height: 40px
 }
 .chart-area { grid-area: chart; display: flex; flex-direction: column; min-width: 0; }
 .ticket-area { grid-area: ticket; }
-.blotter-area { grid-area: blotter; min-width: 0; }
+/* the blotter row must NEVER grow the page: a long History/Fills list scrolls
+   INSIDE the panel (min-height:0 lets the grid track stay at its fr size —
+   otherwise the row expands to the table's min-content and the chart, holding
+   1.2fr of the now-huge grid, balloons with it) */
+.blotter-area { grid-area: blotter; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column; overflow: hidden; }
+.blotter-area > .scroll-x { flex: 1; min-height: 0; overflow-y: auto; }
+.blotter-area .tbl thead th { position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
+/* two rows driven by the same tip carry matching link dots */
+.pos-link { display: inline-block; width: 8px; height: 8px; border-radius: 2px;
+  margin-right: 7px; vertical-align: 1px; }
 
 /* ── dashboard ─────────────────────────────────────────────────────────── */
 .dash-grid {
