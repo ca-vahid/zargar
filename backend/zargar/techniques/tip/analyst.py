@@ -543,8 +543,17 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                  "tip": f"signal:{ctx.get('signal_id') or ''}",
                  "rule": "rule",                       # the analyst's own rulebook
                  }.get(kind, "general")
+        text = str(args.get("text") or "")
+        if ctx.get("experiment"):
+            # F12 hard-guard (batch b1, 2026-08-30): a HISTORICAL run must never
+            # mutate live knowledge unsupervised — the prompt-only rule leaked 11
+            # per-item recaps into `general`. Every save is quarantined under the
+            # batch's scope; the batch review (or the human) promotes keepers.
+            wanted = scope
+            scope = f"experiment:{ctx['experiment']}"
+            text = f"[wanted scope: {wanted}] {text}"
         note = await eng.signals_service.add_tip_note(
-            scope, str(args.get("text") or ""),
+            scope, text,
             author=f"analyst:{str(ctx.get('run_id') or '')[:8]}",
             signal_id=ctx.get("signal_id"), run_id=ctx.get("run_id"))
         return {"saved": True, "scope": note["scope"], "id": note["id"]}
@@ -861,7 +870,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
-                "signal_id": getattr(signal_row, "id", None), "run_id": run_id}
+                "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
+                "experiment": experiment}
 
     async def loop() -> AnalystOpinion | None:
         text = await run_agent_loop(

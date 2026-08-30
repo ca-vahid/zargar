@@ -233,9 +233,12 @@ built per KNOWLEDGE-BUILD-PLAN.md):
   `ticker:`/`source:` scopes with provenance (digest-now button; nightly pass
   gated by `techniques.tip.digest_enabled`).
 - **Historical mode**: an experiment batch (`tools/tip_experiment.py`) replays
-  old mirrored messages through the real pipeline. The appraisal prompt then
-  leads with the HISTORICAL block: live tools show TODAY's market, appraise
-  the decision as of tip time, `save_note` only timeless lessons (date-bound →
-  `experiment:<batch>` scope). Experiment runs never refresh note TTLs, never
-  touch books/orders/proposals/dedupe/scorecards (PLATFORM-RULES invariants
-  12–13), and get graded by a rubric batch-review run.
+  old mirrored messages through the real pipeline. The appraisal prompt leads
+  with the HISTORICAL block (live tools show TODAY's market; appraise as of tip
+  time), and — after batch b1 proved prompt-only discipline leaks (F12) —
+  **every `save_note` from an experiment run is hard-quarantined** under
+  `experiment:<batch>` with the wanted scope recorded; promotion into live
+  scopes (rules included) is always a human/review act. Experiment runs never
+  refresh note TTLs, never touch books/orders/proposals/dedupe/scorecards
+  (PLATFORM-RULES invariants 12–13), and get graded by a rubric batch-review
+  run.

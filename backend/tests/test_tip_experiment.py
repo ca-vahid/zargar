@@ -120,6 +120,38 @@ async def test_experiment_never_dedupes_with_real_tips(app_client):
     assert card["signals"] == 1
 
 
+async def test_experiment_save_note_is_quarantined(app_client):
+    """F12 hard-guard: a historical run's save_note NEVER lands in live scopes —
+    everything is quarantined under experiment:<batch> with the wanted scope
+    recorded, so the review/human can promote keepers deliberately."""
+    client, eng = app_client
+    from zargar.techniques.tip.analyst import _run_tool
+
+    out = await _run_tool(eng, "save_note",
+                          {"scope": "general", "text": "batch recap of a skip"},
+                          ctx={"experiment": "bx", "run_id": "r1",
+                               "ticker": "NVDA", "source": "eva", "signal_id": None})
+    assert out["scope"] == "experiment:bx"
+    live = await eng.signals_service.tip_notes(["general", "rule", "ticker:NVDA"])
+    assert not any("batch recap" in n["text"] for n in live)
+    q = await eng.signals_service.tip_notes(["experiment:bx"])
+    assert any(n["text"].startswith("[wanted scope: general]") for n in q)
+
+    # even a rule save is quarantined during an experiment
+    out2 = await _run_tool(eng, "save_note",
+                           {"scope": "rule", "text": "RULE: from history"},
+                           ctx={"experiment": "bx", "run_id": "r1",
+                                "ticker": "NVDA", "source": "eva", "signal_id": None})
+    assert out2["scope"] == "experiment:bx"
+    assert (await eng.signals_service.tip_notes(["rule"])) == []
+
+    # live runs (no experiment in ctx) are unchanged
+    out3 = await _run_tool(eng, "save_note", {"scope": "rule", "text": "RULE: live"},
+                           ctx={"run_id": "r2", "ticker": "NVDA", "source": "eva",
+                                "signal_id": None})
+    assert out3["scope"] == "rule"
+
+
 async def test_sampler_is_seeded_and_excludes(app_client):
     """Phase 2 sampler: deterministic under a seed; context channels, empty-text
     and already-processed messages never enter the pool."""

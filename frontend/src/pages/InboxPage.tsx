@@ -1891,7 +1891,11 @@ function KnowledgeTab() {
   const bySource = grouped("source:");
   const other = all.filter((n) => n.scope !== "rule" && n.scope !== "general"
     && !n.scope.startsWith("ticker:") && !n.scope.startsWith("source:")
-    && !n.scope.startsWith("daily:"));
+    && !n.scope.startsWith("daily:") && !n.scope.startsWith("experiment:"));
+  // experiment artifacts (batch reviews + quarantined historical saves) are
+  // never injected into live runs — shown only with the history toggle
+  const experiments = withHistory
+    ? all.filter((n) => n.scope.startsWith("experiment:")) : [];
   const counts: Record<KbView, number> = {
     all: all.length, rule: rules.length,
     ticker: Object.values(byTicker).reduce((a, v) => a + v.length, 0),
@@ -1963,6 +1967,8 @@ function KnowledgeTab() {
             {(view === "all" || view === "general") &&
               sec("general", "General desk knowledge", "read on every run", general)}
             {view === "all" && sec("other", "Other scopes", "tip-specific and misc notes", other)}
+            {view === "all" && sec("exp", "🧪 Experiment artifacts",
+              "batch reviews + quarantined historical saves — never injected into live runs", experiments)}
           </>
         )}
       </div>

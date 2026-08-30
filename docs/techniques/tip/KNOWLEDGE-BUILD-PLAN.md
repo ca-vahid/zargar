@@ -181,11 +181,19 @@ out-of-band guarantee held live: zero orders, zero proposals, zero book entries.
 - [ ] **F11 · Live `get_quote` on historical tips** — the prompt warning alone
       does not prevent tool-time confusion; stub or time-pin quotes in
       experiment mode.
-- [ ] **F12 (own observation) · Knowledge-pollution risk** — historical runs
-      saved date-bound notes into `general` and one rule into `rule` scope
-      despite the prompt (the rule — "conditional index-level color is not an
-      order" — is actually worth keeping). Decide: hard-redirect non-rule saves
-      to `experiment:<batch>` during historical runs, or prompt-only + audit.
+- [x] **F12 · Knowledge pollution — FIXED 2026-08-30** (user hit it in the UI:
+      "a lot of general items… not sure if they're useful"). Historical runs had
+      saved 11 per-item recaps into `general` and 5 rules into `rule` despite
+      the prompt — confirming F5's thesis that isolation must be harness-
+      enforced. Fix: `save_note` during an experiment run now HARD-QUARANTINES
+      every save under `experiment:<batch>` with `[wanted scope: X]` recorded
+      (test: `test_experiment_save_note_is_quarantined`); the 16 leaked live
+      notes were moved to `experiment:b1` in the runtime DB; ONE rule (the
+      consolidated "position commentary is never an entry" — explicitly endorsed
+      by the batch review) was deliberately promoted back by the reviewer.
+      Knowledge tab hides `experiment:*` behind the history toggle
+      ("🧪 Experiment artifacts" section). Promotion is now always a human/
+      review act, never a side effect of running history.
 
 ### Review rubric (per experiment run)
 
