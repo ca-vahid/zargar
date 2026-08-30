@@ -370,7 +370,10 @@ class ArmedPlan:
         w = ("window open — can fire" if window_now in plan_windows
              else f"{window_now}: can fire (window gate off)" if gate_off
              else f"{window_now}: watching only")
-        return (f"watching {len(waiting)} trigger(s) · nearest {nearest[1]} {nearest[0]:.2f}% away · {w}"
+        # the PRICE names the level for humans — run-internal trigger ids look
+        # like noise on screen (user 2026-08-30)
+        return (f"watching {len(waiting)} trigger(s) · nearest level "
+                f"{self.trackers[nearest[1]].entry:.2f} is {nearest[0]:.2f}% away · {w}"
                 if nearest else f"watching {len(waiting)} trigger(s) · {w}")
 
 
