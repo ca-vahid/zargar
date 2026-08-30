@@ -58,37 +58,47 @@ flow is context-only by design). **Guardrails to add** (cheap, cluster E):
 5. Notes have supersede/delete but **no expiry/validity window** — a "today's chatter"
    note would sit in every future run forever.
 
-## §2 External research (deep-research run, 22 sources, 14 claims verified 3-0/2-1)
+## §2 External research (deep-research run: 23 sources, 25 claims adversarially
+verified → 23 confirmed / 2 refuted, synthesized 2026-08-30)
 
-The patterns that matter for us, with sources:
+What the 2025-26 literature converges on, applied to us:
 
-1. **Supersede by temporal invalidation, never delete** — Zep/Graphiti stamps every fact
-   with validity windows (`t_valid`/`t_invalid` + created/expired) and an LLM compares
-   new facts against related existing ones, closing the old fact's validity instead of
-   overwriting ([Zep paper](https://arxiv.org/pdf/2501.13956), 3-0). Our `superseded_by`
-   is the right instinct; what's missing is the **validity window** and serving facts
-   *with* their dates so the model sees temporal validity explicitly (also 3-0).
-2. **Layered retention by knowledge type** — FinMem gives an LLM trading agent 3 memory
-   layers with decay constants ~14d (daily news) / ~90d (quarterly insights) / ~365d
-   (durable reflections), and retrieval scores recency·relevance·importance
-   ([FinMem](https://arxiv.org/abs/2311.13743), 3-0). Maps exactly onto: daily digests
-   (short TTL) < ticker/source notes (medium) < rules (long, audit-gated).
-3. **Cutting off future data at test time** is the core replay hygiene (FinMem regime
-   switch, 3-0). Additionally (unverified — verifier agents hit a usage cap, treat as
-   caution not fact): "parametric look-ahead" — the model's own weights know how 2024-25
-   stocks moved — inflates historical LLM backtests, and small window extensions flipped
-   FinMem's results. **Consequence:** grade the *process*, not the P&L, and prefer
-   history from after the model's knowledge cutoff (≥ Feb 2026) when P&L-ish replay
-   numbers are quoted at all.
-4. **Financial agents specifically need recency-weighted memory** and the field's lineage
-   (FinMem → TradingGPT → FinCon) all keep **per-role scoped memories** with selective,
-   not broadcast, knowledge updates ([survey](https://arxiv.org/pdf/2602.05665), 3-0).
-   Shared-state contamination numbers (57-71% cross-task misuse; 36.9% of multi-agent
-   failures from inconsistent shared state — unverified) all point the same way: the
-   user's separation requirement is the published best practice.
-5. Practitioner Discord summarizers (SimplySummary, discord-summarizer) do scheduled
-   digests with ticker extraction — our "daily digest into knowledge" idea is a known,
-   workable pattern.
+1. **Typed, separated stores beat one memory pool** (high confidence — Zep 3-tier
+   graph, SYNAPSE dual-layer, MemGuard). Mixing episodic events, semantic facts and
+   behavioral rules in one retrieval space causes a *measured* failure mode
+   ("heterogeneous memory contamination": events retrieved as general truths; fixing it
+   improved reliability up to 28% with 5.8× fewer tokens). Our scope system
+   (rule / ticker: / source: / signal: / general) is already the right shape — keep the
+   raw mirror (episodic) and notes (semantic/procedural) distinct, and never blend.
+2. **Two complementary staleness mechanisms, use both** (high confidence):
+   - **Hard supersession** for facts that are *wrong* once contradicted — Zep/Graphiti's
+     bi-temporal invalidation: close the old fact's validity window, keep the history.
+     Contradictions must be found by **LLM comparison, not embedding similarity**
+     (cosine AUROC 0.59 ≈ chance at telling a contradiction from a rephrase) — which is
+     exactly what our weekly rule audit already does; extend it beyond `rule` scope.
+   - **Soft decay** for facts that merely *go stale* — ranking-time recency decay.
+     SYNAPSE's ablation: disabling decay collapsed temporal-reasoning F1 from 50.1→14.2.
+   And **serve each fact with its dates** so the model sees temporal validity.
+3. **FinMem is the finance reference for retention** (high confidence, code published):
+   layer knowledge by persistence horizon (daily news ~14d, quarterly ~90d, durable
+   ~365d, exponential decay), purge below thresholds, retrieve by
+   recency+relevance+importance — and **promote against decay on outcomes**: a memory
+   pivotal to a winning trade gets an importance boost and moves to a slower-decaying
+   layer. Direct analog for us: retros/outcomes should *refresh* the notes they cite.
+4. **FinCon (NeurIPS 2024) is the isolation template** (high confidence): each specialist
+   agent owns its own memory with its own decay rates; episodic trade/P&L memory is
+   exclusive to one role; distilled beliefs are *selectively* propagated, never
+   broadcast — built explicitly because similarity-only retrieval "can lead to decisions
+   based on outdated information". The user's Tips-vs-EM separation requirement is the
+   published best practice, verbatim.
+5. **Honest gaps** (the synthesis's own caveat): *no surviving external evidence* covered
+   chat-stream distillation (angle 3) or look-ahead-safe replay of LLM trading decisions
+   (angle 4) — practitioner Discord digest bots exist (SimplySummary, discord-summarizer)
+   but nothing rigorous. Both refuted claims came from one preprint overselling
+   deterministic supersession. **Consequence:** our experiment IS the evidence source for
+   those two angles — grade the process (not P&L), snapshot every input per run (we
+   already snapshot bars), and prefer post-model-cutoff history (≥ Feb 2026) whenever a
+   replay number is quoted. Full report + citations: workflow run `wf_099d95fd-8b9`.
 
 ## §3 Design options
 
@@ -131,7 +141,11 @@ The patterns that matter for us, with sources:
   19-notes scale; revisit if the store passes ~500 notes and retrieval (not curation)
   becomes the bottleneck.
 - **B4: extend the weekly audit** beyond `rule` scope: stale-note candidates (old,
-  never-injected-into-a-take, contradicted) get flagged needs-your-call the same way.
+  never-injected-into-a-take, contradicted) get flagged needs-your-call the same way
+  (LLM comparison, per §2.2 — never a similarity threshold).
+- **B5 (with B1): outcome-driven refresh** (FinMem's promotion pattern) — when a retro
+  credits a note as pivotal to a good call, reset/extend its `valid_until` and bump it
+  in injection order; notes that never get cited age out on schedule.
 
 ### Cluster C — general/context channels (`trading-floor`)
 
