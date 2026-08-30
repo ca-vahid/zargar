@@ -198,8 +198,16 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   const allDoneNow = ids.length > 0 && ids.every((id) => rows[id] && rows[id].status !== "running");
   if (allDoneNow) finished.current = true;          // sticky: a finished batch never flips back to "checking"
   const allDone = finished.current || allDoneNow;
+  // "working" time counts from when a run actually took a slot (ref lives up
+  // here because the buckets below need to know who has EVER held a slot)
+  const firstActive = useRef<Record<string, number>>({});
+  for (const id of Object.keys(active)) if (!firstActive.current[id]) firstActive.current[id] = now;
   const workingIds = ids.filter((id) => active[id] && (!rows[id] || rows[id].status === "running"));
-  const queuedIds = ids.filter((id) => !active[id] && rows[id]?.status === "running");
+  // held a slot, model passes done, still status=running: outcome scoring /
+  // persistence. Lumping these into "queued" made a finishing batch read
+  // "0 working · 11 queued" — i.e. stuck — while it was actually wrapping up.
+  const finishingIds = ids.filter((id) => !active[id] && rows[id]?.status === "running" && firstActive.current[id]);
+  const queuedIds = ids.filter((id) => !active[id] && rows[id]?.status === "running" && !firstActive.current[id]);
   const loadingIds = ids.filter((id) => !rows[id]);
   void loadingIds;
   const pct = ids.length ? Math.round((doneIds.length / ids.length) * 100) : 0;
@@ -220,10 +228,6 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
     entry: "pass 3/4 · entry plan", critic: "pass 4/4 · critic",
   };
   const stageLabel = (s?: string) => !s ? "" : STAGE[s] ?? (s.startsWith("entry_retry") ? "entry re-check" : s.replace(/_/g, " "));
-  // "working" time counts from when a run actually took a slot, not from when the
-  // whole batch was queued (88 runs created at once all read "7m" while starting)
-  const firstActive = useRef<Record<string, number>>({});
-  for (const id of Object.keys(active)) if (!firstActive.current[id]) firstActive.current[id] = now;
   const elapsedMin = (id: string) => {
     const t = firstActive.current[id] ?? (rows[id]?.createdAt ? new Date(rows[id].createdAt!).getTime() : null);
     return t ? Math.max(1, Math.round((now - t) / 60000)) : null;
@@ -265,14 +269,14 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
       <b className="nowrap">{doneIds.length}/{ids.length} · {pct}%</b>
       {!allDone && (
         <span className="muted nowrap">
-          {workingIds.length} working · {queuedIds.length} queued{eta ? ` · ${eta}` : ""}
+          {workingIds.length} working{finishingIds.length ? ` · ${finishingIds.length} finishing` : ""} · {queuedIds.length} queued{eta ? ` · ${eta}` : ""}
         </span>
       )}
       {failedIds.length > 0 && <span className="neg nowrap">{failedIds.length} failed</span>}
     </div>
   );
 
-  const chipGroups = !allDone && (workingIds.length > 0 || queuedIds.length > 0) && (
+  const chipGroups = !allDone && (workingIds.length > 0 || finishingIds.length > 0 || queuedIds.length > 0) && (
     <div className="tq-scan-groups">
       {workingIds.length > 0 && (
         <div className="tq-scan-group">
@@ -282,6 +286,18 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
               <span key={id} className="tq-scan-chip working">
                 <Spinner /> <b>{rows[id]?.symbol ?? active[id]?.symbol ?? id.slice(0, 6)}</b>
                 <span className="muted">{stageLabel(active[id]?.stage)}{elapsedMin(id) ? ` · ${elapsedMin(id)}m` : ""}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {finishingIds.length > 0 && (
+        <div className="tq-scan-group">
+          <div className="tq-scan-group-title">Finishing — scoring &amp; saving</div>
+          <div className="tq-scan-chips">
+            {finishingIds.map((id) => (
+              <span key={id} className="tq-scan-chip working">
+                <Spinner /> <b>{rows[id]?.symbol ?? id.slice(0, 6)}</b>
               </span>
             ))}
           </div>
