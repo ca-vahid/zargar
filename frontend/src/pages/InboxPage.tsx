@@ -1493,6 +1493,21 @@ function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => voi
         )}
       </div>
     );
+  } else if (s.kind === "final" && (!(s.opinion ?? {}).verdict
+      || ["digest", "review", "audit"].includes((s.opinion ?? {}).verdict))) {
+    // non-appraisal finals (digests, batch reviews, audits) carry prose, not a
+    // trade opinion — render the step's own text/summary instead of "?"
+    const o = s.opinion ?? {};
+    body = (
+      <div className="an-card an-card--final an-final--none">
+        {o.verdict && (
+          <div className="an-final-head">
+            <span className="status-pill dim">{String(o.verdict).toUpperCase()}</span>
+          </div>
+        )}
+        <RichText text={String(o.summary ?? s.text ?? "")} />
+      </div>
+    );
   } else if (s.kind === "final") {
     const o = s.opinion ?? {};
     const cls = o.verdict === "take" ? "ok" : o.verdict === "watch" ? "wait"
