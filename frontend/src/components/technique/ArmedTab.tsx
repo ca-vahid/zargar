@@ -7,6 +7,7 @@ import type { ArmedPlan, ArmedTrade, ArmScorecard } from "../../types";
 import { Spinner } from "../ui";
 import { InfoTip } from "../InfoTip";
 import { ArmedDayPanel } from "./ArmedDayPanel";
+import { SymIcon } from "../SymIcon";
 
 export function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
 export function pnlCls(v: number | null | undefined) { return (v ?? 0) > 0 ? "pos" : (v ?? 0) < 0 ? "neg" : ""; }
@@ -103,7 +104,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
       <div className="panel-head tq-armed-head">
         <button type="button" className="tq-armed-sym tq-armed-sym-btn" onClick={() => setDay((v) => !v)}
           title={day ? "Hide the day view" : "Show today's chart + timeline: what happened, what was refused and why, what we're waiting for"}>
-          {a.symbol} <span className="tq-armed-sym-caret">{day ? "▾" : "▸"}</span>
+          <SymIcon sym={a.symbol} size={20} /> {a.symbol} <span className="tq-armed-sym-caret">{day ? "▾" : "▸"}</span>
         </button>
         {a.grade && <span className={`tq-grade g${a.grade}`}
           title="Deterministic plan grade — outcomes are scored against it for calibration (TRADING-RULES 1.2)">{a.grade}</span>}

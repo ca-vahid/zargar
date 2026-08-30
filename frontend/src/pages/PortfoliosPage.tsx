@@ -5,6 +5,7 @@ import { api } from "../lib/api";
 import { fmtCcy, fmtDateTime, fmtMoney, fmtPct, fmtQty, fmtSigned } from "../lib/format";
 import { baseChartOptions, seriesPalette } from "../lib/highchartsTheme";
 import { symbolLabel } from "../lib/occ";
+import { SymIcon } from "../components/SymIcon";
 import { useAsync } from "../lib/useAsync";
 import { groupPositions, useQuote, useStore } from "../store";
 import { useViewport } from "../lib/viewport";
@@ -96,7 +97,7 @@ const EnginePosRow = memo(function EnginePosRow({ pos }: { pos: Position }) {
   return (
     <tr onClick={() => openTrade(underlying)} style={{ cursor: "pointer" }}
       title={`Open ${underlying} in Trade`}>
-      <td className="sym-cell">{pos.option?.display ?? symbolLabel(pos.symbol)}</td>
+      <td className="sym-cell"><SymIcon sym={underlying} size={18} />{pos.option?.display ?? symbolLabel(pos.symbol)}</td>
       <td className="num">{fmtQty(pos.qty)}</td>
       <td className="num">{fmtMoney(pos.avgCost)}</td>
       <td className="num">{live > 0 ? fmtMoney(live) : "—"}</td>
@@ -218,7 +219,7 @@ function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }
       onKeyDown={(e) => { if (e.key === "Enter") openTrade(m.symbol); }}
       title={`Open ${m.symbol} in Trade`}>
       <div className="mgd-head">
-        <span className="sym-avatar" aria-hidden>{m.symbol.slice(0, 4)}</span>
+        <SymIcon sym={m.symbol} size={30} />
         <span>
           <span className="mgd-sym">{m.symbol}</span>
           <span className="mgd-contract">

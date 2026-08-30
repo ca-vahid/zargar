@@ -11,6 +11,7 @@ import {
 } from "../components/technique/ArmedTab";
 import { useViewport } from "../lib/viewport";
 import { NowView } from "../components/armed/NowView";
+import { SymIcon } from "../components/SymIcon";
 
 /* The Armed hub: every armed plan from every technique, its own page.
    Layout toggle: split (table left, detail pinned right) / strip (chip bar,
@@ -98,10 +99,9 @@ export function ArmedPage() {
     return (
       <div className="armed-page armed-page--phone">
         <div className="armed-head">
-          <h2 className="page-title">Now</h2>
           <div className="tabs armed-subtabs" role="tablist">
             <button role="tab" aria-selected={sub === "live"} className={sub === "live" ? "active" : ""}
-              onClick={() => setSub("live")}>Live{armed.length ? ` · ${armed.length}` : ""}</button>
+              onClick={() => setSub("live")}>Live{armed.length ? <span className="tab-count">{armed.length}</span> : null}</button>
             <button role="tab" aria-selected={sub === "history"} className={sub === "history" ? "active" : ""}
               onClick={() => setSub("history")}>History</button>
           </div>
@@ -115,10 +115,9 @@ export function ArmedPage() {
   return (
     <div className="armed-page">
       <div className="armed-head">
-        <h2 className="page-title">Armed</h2>
         <div className="tabs armed-subtabs" role="tablist">
           <button role="tab" aria-selected={sub === "live"} className={sub === "live" ? "active" : ""}
-            onClick={() => setSub("live")}>Live{armed.length ? ` · ${armed.length}` : ""}</button>
+            onClick={() => setSub("live")}>Live{armed.length ? <span className="tab-count">{armed.length}</span> : null}</button>
           <button role="tab" aria-selected={sub === "history"} className={sub === "history" ? "active" : ""}
             onClick={() => setSub("history")}>History</button>
         </div>
@@ -218,7 +217,7 @@ function FleetStrip({ armed, selId, onSel }: { armed: ArmedPlan[]; selId: string
             className={`armed-chip st-${chipState(a)} ${a.runId === selId ? "sel" : ""}`}
             title={`${a.symbol} · ${a.grade ?? "?"} · ${a.summary ?? a.status}`}
             onClick={() => onSel(a.runId)}>
-            <b>{a.symbol}</b>{a.grade ? <span className="g">{a.grade}</span> : null}
+            <SymIcon sym={a.symbol} size={16} /> <b>{a.symbol}</b>{a.grade ? <span className="g">{a.grade}</span> : null}
           </button>
         ))}
       </div>
@@ -343,7 +342,7 @@ function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: b
   const d = near?.distancePct;
   return (
     <tr className={`clickable ${sel ? "tq-fleet-sel" : ""}`} onClick={onSel}>
-      <td className="nowrap"><b>{a.symbol}</b></td>
+      <td className="nowrap"><SymIcon sym={a.symbol} size={18} /><b>{a.symbol}</b></td>
       <td>{a.grade ? <span className={`tq-grade g${a.grade}`}>{a.grade}</span> : <span className="muted small">—</span>}</td>
       <td className="nowrap"><SetupBadge t={near} /></td>
       <td className="nowrap"><span className={`tq-badge ${wCls}`}>{wTxt}</span></td>

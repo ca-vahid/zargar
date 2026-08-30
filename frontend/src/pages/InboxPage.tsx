@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { CopyChip } from "../components/CopyChip";
+import { SymIcon } from "../components/SymIcon";
 import { IconCheck, IconClock, IconHalf, IconX } from "../components/icons";
 import { ErrorState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
@@ -32,14 +33,14 @@ export function InboxPage() {
       <div className="tips-head">
         <div className="tabs" role="tablist" style={{ flex: 1 }}>
           <button role="tab" aria-selected={tab === "tips"} className={tab === "tips" ? "active" : ""}
-            onClick={() => setTab("tips")}>Tips{signals.length ? ` · ${signals.length}` : ""}</button>
+            onClick={() => setTab("tips")}>Tips{signals.length ? <span className="tab-count">{signals.length}</span> : null}</button>
           <button role="tab" aria-selected={tab === "analyst"} className={tab === "analyst" ? "active" : ""}
             onClick={() => setTab("analyst")}>Analyst</button>
           <button role="tab" aria-selected={tab === "approvals"}
             className={tab === "approvals" ? "active" : ""}
             onClick={() => setTab("approvals")}
             title="Proposals awaiting your decision, plus the decided history — with search and filters">
-            Approvals{proposals.length ? <span className="tab-attn"> · {proposals.length}</span> : ""}
+            Approvals{proposals.length ? <span className="tab-count">{proposals.length}</span> : null}
           </button>
           <button role="tab" aria-selected={tab === "knowledge"} className={tab === "knowledge" ? "active" : ""}
             onClick={() => setTab("knowledge")}
@@ -517,7 +518,10 @@ function DecidedRow({ p }: { p: any }) {
   return (
     <div className="appr-row">
       <span className="appr-date" title={fmtDateTime(p.createdAt)}>{fmtDateTime(p.createdAt)}</span>
-      <span className="appr-sym">{p.context?.vehicle?.underlying ?? p.symbol}</span>
+      <span className="appr-sym">
+        <SymIcon sym={p.context?.vehicle?.underlying ?? p.symbol} size={16} />
+        {p.context?.vehicle?.underlying ?? p.symbol}
+      </span>
       <span><span className={`status-pill ${good ? "ok" : p.status === "failed" ? "bad" : "dim"}`}>{p.status}</span></span>
       <span className="appr-order" title={orderText}>{orderText}</span>
       <span className="appr-outcome">{outcomeBits.length > 0 ? outcomeBits : <span className="muted">—</span>}</span>
@@ -569,6 +573,7 @@ function ProposalCard({ p }: { p: Proposal }) {
   return (
     <div className="proposal-card">
       <div className="head">
+        <SymIcon sym={vehicle?.underlying ?? p.symbol} size={26} />
         <span className="sym">{vehicle?.underlying ?? p.symbol}</span>
         {isOpt && vehicle?.optionType && (
           <span className={`status-pill ${vehicle.optionType === "call" ? "ok" : "bad"}`}>
@@ -763,6 +768,7 @@ function TipsTab() {
                   <td><input type="checkbox" className="tip-sel" checked={!!sel[s.id]}
                     aria-label={`select ${s.ticker}`} onChange={() => toggleSel(s.id)} /></td>
                   <td>
+                    <SymIcon sym={s.ticker} size={18} />
                     {(s as any).extraction?.analyst?.runId ? (
                       <button className="link-btn tip-tick"
                         onClick={() => openAnalystRun((s as any).extraction.analyst.runId)}
@@ -1982,7 +1988,7 @@ function KnowledgeTab() {
               sec("rules", "⚖ Trading rules", "injected into every run, in this order", rules, true)}
             {(view === "all" || view === "ticker") &&
               Object.keys(byTicker).sort().map((t) =>
-                sec(`t:${t}`, <><span className="sym-avatar">{t.slice(0, 4)}</span> {t}</>,
+                sec(`t:${t}`, <><SymIcon sym={t} size={24} /> {t}</>,
                   "read on every run for this ticker", byTicker[t]))}
             {(view === "all" || view === "source") &&
               Object.keys(bySource).sort().map((s) =>

@@ -10,6 +10,7 @@ import { useWorkspace } from "../lib/workspace";
 import { AsyncSection, EmptyState, StatusPill } from "./ui";
 import { useViewport } from "../lib/viewport";
 import { ConfirmDialog } from "./Modal";
+import { SymIcon } from "./SymIcon";
 
 type Tab = "positions" | "orders" | "history" | "fills";
 type Scope = "real" | "practice" | "all";
@@ -116,6 +117,7 @@ const PositionRow = memo(function PositionRow({ p, c, linkHue }: {
           <span className="pos-link" style={{ background: `hsl(${linkHue} 65% 48%)` }}
             title={`Same tip${c?.sourceName ? ` (${c.sourceName})` : ""} — rows with this dot are the shadow book's take and the actual purchase of one tip`} />
         )}
+        <SymIcon sym={occ ? occ.underlying : p.symbol} size={18} />
         {occ ? (
           <>
             {occ.display}
