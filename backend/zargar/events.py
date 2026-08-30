@@ -43,6 +43,7 @@ SIGNAL_REPLAYED = "SignalReplayed"        # content too old to trade — replaye
 SIGNAL_ANALYZED = "SignalAnalyzed"        # the tips analyst's advisory opinion (verdict + expression)
 SIGNAL_SEEN_AGAIN = "SignalSeenAgain"     # duplicate tip attached to the original
 TIP_NOTE_ADDED = "TipNoteAdded"           # shared tips knowledge: analyst or user saved a note
+TIP_NOTE_EDITED = "TipNoteEdited"         # the user refined a knowledge note in place
 TIP_POSITION_ADOPTED = "TipPositionAdopted"        # filled tip proposal → managed position (analyst exit plan)
 TIP_POSITION_NOT_ADOPTED = "TipPositionNotAdopted" # ...or why it wasn't (unfilled, invalid plan, no manager)
 TIP_EXIT_PLAN_UPDATED = "TipExitPlanUpdated"       # analyst rewrote an open position's exit campaign (exit-only)

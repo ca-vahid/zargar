@@ -17,8 +17,8 @@ import { Sheet } from "../components/Sheet";
    Tabs: New tip · Tips · Sources · Inbox; pending proposals ride above the
    tabs as an attention strip (they expire in minutes). */
 
-type Tab = "compose" | "tips" | "approvals" | "sources" | "analyst" | "inbox";
-const TABS: Tab[] = ["tips", "approvals", "compose", "analyst", "inbox", "sources"];
+type Tab = "compose" | "tips" | "approvals" | "knowledge" | "sources" | "analyst" | "inbox";
+const TABS: Tab[] = ["tips", "approvals", "knowledge", "compose", "analyst", "inbox", "sources"];
 
 export function InboxPage() {
   const pageTab = useStore((s) => s.pageTab);
@@ -41,6 +41,10 @@ export function InboxPage() {
             title="Proposals awaiting your decision, plus the decided history — with search and filters">
             Approvals{proposals.length ? <span className="tab-attn"> · {proposals.length}</span> : ""}
           </button>
+          <button role="tab" aria-selected={tab === "knowledge"} className={tab === "knowledge" ? "active" : ""}
+            onClick={() => setTab("knowledge")}
+            title="The desk's shared knowledge — rules, per-ticker and per-source notes the analyst reads before every run">
+            Knowledge</button>
           <button role="tab" aria-selected={tab === "inbox"} className={tab === "inbox" ? "active" : ""}
             onClick={() => setTab("inbox")}>Inbox</button>
           <button role="tab" aria-selected={tab === "compose"} className={tab === "compose" ? "active" : ""}
@@ -68,6 +72,7 @@ export function InboxPage() {
       {tab === "compose" && <ComposeTab goTips={() => setTab("tips")} />}
       {tab === "tips" && <TipsTab />}
       {tab === "approvals" && <ApprovalsTab />}
+      {tab === "knowledge" && <KnowledgeTab />}
       {tab === "sources" && <SourcesTab />}
       {tab === "analyst" && <AnalystTab />}
       {tab === "inbox" && <InboxTab />}
@@ -1692,64 +1697,206 @@ function AnalystRunDetail({ id }: { id: string }) {
 
 const NOTE_SCOPES = ["general", "rule", "ticker:", "source:"];
 
-function NotesPanel() {
+/* ------------------------------------------------------------ knowledge base */
+
+function KnowledgeComposer({ onSaved }: { onSaved: () => void }) {
   const toast = useStore((s) => s.toast);
-  const [notes, setNotes] = useState<import("../types").TipNote[] | null>(null);
-  const [text, setText] = useState("");
   const [scope, setScope] = useState("general");
-  const load = () => api.tipNotes().then(setNotes).catch(() => undefined);
-  useEffect(() => { load(); }, []);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
   const add = async () => {
     if (!text.trim()) return;
+    setBusy(true);
     try {
       await api.addTipNote(scope.trim() || "general", text.trim());
-      setText(""); load();
-    } catch (e: any) { toast("error", e.message); }
-  };
-  const del = async (id: string) => {
-    try { await api.deleteTipNote(id); load(); } catch (e: any) { toast("error", e.message); }
+      setText("");
+      toast("success", "Saved — the analyst reads it on every matching run");
+      onSaved();
+    } catch (e: any) { toast("error", e.message); } finally { setBusy(false); }
   };
   return (
-    <div className="panel an-notes">
-      <div className="panel-head">Knowledge
-        <span className="sub">shared notes — every analyst run reads the ones matching its tip</span>
+    <div className="kb-compose">
+      <input className="an-note-scope-in" list="note-scopes" value={scope}
+        onChange={(e) => setScope(e.target.value)} aria-label="note scope"
+        title='scope: "general", "rule" (rides on EVERY run), "ticker:SPY" or "source:name"' />
+      <datalist id="note-scopes">{NOTE_SCOPES.map((s) => <option key={s} value={s} />)}</datalist>
+      <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)}
+        placeholder="Teach the desk something durable — matching notes reach the analyst before every run (Ctrl+Enter saves)…"
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) add(); }} />
+      <button className="primary-btn" disabled={busy || !text.trim()} onClick={add}>Save note</button>
+    </div>
+  );
+}
+
+function NoteCard({ n, onChanged, index }: {
+  n: import("../types").TipNote; onChanged: () => void; index?: number;
+}) {
+  const toast = useStore((s) => s.toast);
+  const openAnalystRun = useStore((s) => s.openAnalystRun);
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState(n.text);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const act = async (fn: () => Promise<any>) => {
+    setBusy(true);
+    try { await fn(); onChanged(); } catch (e: any) { toast("error", e.message); }
+    finally { setBusy(false); }
+  };
+  return (
+    <div className={`kb-note${n.scope === "rule" ? " kb-note--rule" : ""}`
+      + `${n.supersededBy ? " kb-note--old" : ""}${n.needsHuman ? " kb-note--attn" : ""}`}>
+      <div className="kb-note-head">
+        {index != null && <span className="kb-note-idx">{index}</span>}
+        <span className="kb-note-scope">{n.scope === "rule" ? "⚖ rule" : n.scope}</span>
+        {n.needsHuman && (
+          <span className="status-pill bad"
+            title="the weekly rule audit found rules pulling in opposite directions — keep one, delete the other, or keep both deliberately, then resolve">
+            needs your call
+          </span>
+        )}
+        {n.supersededBy && (
+          <span className="status-pill dim" title={`superseded by ${n.supersededBy} — kept as history, no run reads it`}>
+            superseded
+          </span>
+        )}
+        <span className="muted">{n.author}{n.createdAt ? ` · ${timeAgo(n.createdAt)}` : ""}</span>
+        {n.runId && <button className="link-btn" title="open the analyst run that saved this note"
+          onClick={() => openAnalystRun(n.runId!)}>run</button>}
+        <span className="kb-note-acts">
+          {n.needsHuman && (
+            <button className="link-btn" disabled={busy} title="I've decided — clear the flag (journaled)"
+              onClick={() => act(() => api.resolveTipNote(n.id))}>✓ resolved</button>
+          )}
+          {!editing && (
+            <button className="link-btn" title="edit this note in place"
+              onClick={() => { setText(n.text); setEditing(true); }}>edit</button>
+          )}
+          {confirmDel ? (
+            <>
+              <button className="link-btn danger" disabled={busy}
+                onClick={() => act(() => api.deleteTipNote(n.id))}>delete?</button>
+              <button className="link-btn" onClick={() => setConfirmDel(false)}>keep</button>
+            </>
+          ) : (
+            <button className="link-btn danger" title="delete this note"
+              onClick={() => setConfirmDel(true)}>delete</button>
+          )}
+        </span>
       </div>
-      <div className="an-notes-body">
-        {notes == null ? <Spinner />
-          : notes.length === 0 ? <div className="empty">No notes yet — the analyst saves durable context here (hedges, source habits); you can too.</div>
-          : notes.map((n) => (
-            <div key={n.id} className="an-note">
-              <div className="an-note-head">
-                <span className={`an-note-scope ${n.scope === "rule" ? "an-note-scope--rule" : ""}`}>
-                  {n.scope === "rule" ? "⚖ rule" : n.scope}</span>
-                {(n as any).needsHuman && (
-                  <span className="status-pill bad"
-                    title="the weekly rule audit found rules pulling in opposite directions — keep one, delete the other, or keep both deliberately, then tick ✓">
-                    needs your call
-                  </span>
-                )}
-                <span className="muted">{n.author}{n.createdAt ? ` · ${timeAgo(n.createdAt)}` : ""}</span>
-                {n.runId && <button className="link-btn" title="open the run that saved this note"
-                  onClick={() => useStore.getState().openAnalystRun(n.runId!)}>run</button>}
-                {(n as any).needsHuman && (
-                  <button className="link-btn" title="I've decided — clear the flag (journaled)"
-                    onClick={async () => { try { await api.resolveTipNote(n.id); load(); } catch (e: any) { toast("error", e.message); } }}>✓</button>
-                )}
-                <button className="an-note-del" title="delete this note" onClick={() => del(n.id)}>×</button>
-              </div>
-              <div className="an-note-text">{n.text}</div>
-            </div>
-          ))}
+      {editing ? (
+        <div className="kb-edit">
+          <textarea rows={3} value={text} onChange={(e) => setText(e.target.value)} />
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <button className="primary-btn" disabled={busy || !text.trim()}
+              onClick={() => act(async () => { await api.updateTipNote(n.id, text.trim()); setEditing(false); })}>
+              save
+            </button>
+            <button className="link-btn" onClick={() => setEditing(false)}>cancel</button>
+          </div>
+        </div>
+      ) : (
+        <div className="kb-note-text">{n.text}</div>
+      )}
+    </div>
+  );
+}
+
+type KbView = "all" | "rule" | "ticker" | "source" | "general" | "flagged";
+
+function KnowledgeTab() {
+  const [notes, setNotes] = useState<import("../types").TipNote[] | null>(null);
+  const [q, setQ] = useState("");
+  const [view, setView] = useState<KbView>("all");
+  const [withHistory, setWithHistory] = useState(false);
+  const load = () => api.tipNotes("", 300, withHistory).then(setNotes).catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [withHistory]);
+  const needle = q.trim().toUpperCase();
+  const all = (notes ?? []).filter((n) =>
+    !needle || [n.text, n.scope, n.author].some((x) => String(x ?? "").toUpperCase().includes(needle)));
+  const rules = all.filter((n) => n.scope === "rule");
+  const general = all.filter((n) => n.scope === "general");
+  const flagged = all.filter((n) => n.needsHuman);
+  const grouped = (prefix: string): Record<string, typeof all> => {
+    const out: Record<string, typeof all> = {};
+    for (const n of all) if (n.scope.startsWith(prefix)) (out[n.scope.slice(prefix.length)] ??= []).push(n);
+    return out;
+  };
+  const byTicker = grouped("ticker:");
+  const bySource = grouped("source:");
+  const other = all.filter((n) => n.scope !== "rule" && n.scope !== "general"
+    && !n.scope.startsWith("ticker:") && !n.scope.startsWith("source:"));
+  const counts: Record<KbView, number> = {
+    all: all.length, rule: rules.length,
+    ticker: Object.values(byTicker).reduce((a, v) => a + v.length, 0),
+    source: Object.values(bySource).reduce((a, v) => a + v.length, 0),
+    general: general.length, flagged: flagged.length,
+  };
+  const VIEWS: [KbView, string][] = [
+    ["all", "All"], ["rule", "⚖ Rules"], ["ticker", "Tickers"],
+    ["source", "Sources"], ["general", "General"], ["flagged", "⚠ Needs you"],
+  ];
+  const sec = (key: string, title: ReactNode, hint: string, items: typeof all, numbered = false) =>
+    items.length === 0 ? null : (
+      <div className="kb-sec" key={key}>
+        <div className="kb-sec-t">{title} <span className="muted">· {items.length} — {hint}</span></div>
+        {items.map((n, i) => (
+          <NoteCard key={n.id} n={n} onChanged={load} index={numbered ? i + 1 : undefined} />
+        ))}
       </div>
-      <div className="an-note-add">
-        <input className="an-note-scope-in" list="note-scopes" value={scope}
-          onChange={(e) => setScope(e.target.value)}
-          title='scope: "general", "ticker:SPY" or "source:name"' />
-        <datalist id="note-scopes">{NOTE_SCOPES.map((s) => <option key={s} value={s} />)}</datalist>
-        <input className="an-note-text-in" placeholder="Add a note the analyst should know…"
-          value={text} onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && add()} />
-        <button className="link-btn" onClick={add}>save</button>
+    );
+  return (
+    <div className="panel mb">
+      <div className="panel-head">Knowledge base
+        <span className="sub">what the desk knows — matching notes reach the analyst before every run; ⚖ rules ride on EVERY run and retros refine them</span>
+        <input className="armed-filter" placeholder="search notes…" value={q}
+          onChange={(e) => setQ(e.target.value)} spellCheck={false}
+          aria-label="Search knowledge" style={{ marginLeft: "auto", maxWidth: 220 }} />
+      </div>
+      <div className="panel-body">
+        <KnowledgeComposer onSaved={load} />
+        <div className="kb-bar">
+          <div className="seg sm" role="group" aria-label="Knowledge view">
+            {VIEWS.map(([k, label]) => (
+              <button key={k} className={view === k ? "on" : ""} onClick={() => setView(k)}>
+                {label}{counts[k] ? ` · ${counts[k]}` : ""}
+              </button>
+            ))}
+          </div>
+          <label className="muted kb-hist" title="superseded rules are kept as history — no run reads them">
+            <input type="checkbox" className="tip-sel" checked={withHistory}
+              onChange={(e) => setWithHistory(e.target.checked)} /> show superseded history
+          </label>
+        </div>
+        {flagged.length > 0 && view !== "flagged" && (
+          <button type="button" className="approvals-note mb" onClick={() => setView("flagged")}>
+            ⚠ {flagged.length} note{flagged.length === 1 ? "" : "s"} need your call — the weekly rule
+            audit found rules pulling against each other
+          </button>
+        )}
+        {notes == null ? <Spinner /> : all.length === 0 ? (
+          <div className="empty">
+            {needle ? `Nothing matches “${q.trim()}”.`
+              : "Empty so far — the analyst saves durable context here after runs and retros; teach it something above."}
+          </div>
+        ) : (
+          <>
+            {view === "flagged" && sec("flagged", "⚠ Needs your call",
+              "contradictions the rule audit surfaced — resolve, edit or delete", flagged)}
+            {(view === "all" || view === "rule") &&
+              sec("rules", "⚖ Trading rules", "injected into every run, in this order", rules, true)}
+            {(view === "all" || view === "ticker") &&
+              Object.keys(byTicker).sort().map((t) =>
+                sec(`t:${t}`, <><span className="sym-avatar">{t.slice(0, 4)}</span> {t}</>,
+                  "read on every run for this ticker", byTicker[t]))}
+            {(view === "all" || view === "source") &&
+              Object.keys(bySource).sort().map((s) =>
+                sec(`s:${s}`, <>📡 {s}</>, "read on every tip from this source", bySource[s]))}
+            {(view === "all" || view === "general") &&
+              sec("general", "General desk knowledge", "read on every run", general)}
+            {view === "all" && sec("other", "Other scopes", "tip-specific and misc notes", other)}
+          </>
+        )}
       </div>
     </div>
   );
@@ -1896,7 +2043,11 @@ function AnalystTab() {
       <>
         <ProcessBanner />
         {list}
-        <NotesPanel />
+        <button type="button" className="approvals-note" style={{ marginTop: 8 }}
+          onClick={() => useStore.getState().setPageTab("knowledge")}
+          title="the desk's shared notes — rules, tickers, sources">
+          📚 Knowledge base →
+        </button>
         {focus && (
           <Sheet title={`${focusRun?.ticker ?? "Analyst"} — play-by-play`} full className="an-sheet"
             onClose={() => setFocus(null)}>
@@ -1912,7 +2063,11 @@ function AnalystTab() {
     <div className="an-layout">
       <div className="an-side">
         {list}
-        <NotesPanel />
+        <button type="button" className="approvals-note"
+          onClick={() => useStore.getState().setPageTab("knowledge")}
+          title="the desk's shared notes — rules, tickers, sources — moved to their own tab">
+          📚 Knowledge base →
+        </button>
       </div>
       <div className="an-main">
         {sel ? <AnalystRunDetail id={sel} />

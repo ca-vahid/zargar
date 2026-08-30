@@ -110,9 +110,12 @@ export const api = {
   analystRun: (id: string) =>
     request<import("../types").AnalystRun>("GET", `/api/tip/analyst/runs/${id}`),
   // --- shared tips knowledge (notes the analyst reads before every run) ---
-  tipNotes: (scope = "", limit = 100) =>
+  updateTipNote: (id: string, text: string, scope?: string) =>
+    request<import("../types").TipNote>("PATCH", `/api/tip/notes/${id}`,
+      scope ? { text, scope } : { text }),
+  tipNotes: (scope = "", limit = 100, includeSuperseded = false) =>
     request<import("../types").TipNote[]>(
-      "GET", `/api/tip/notes?limit=${limit}${scope ? `&scope=${encodeURIComponent(scope)}` : ""}`),
+      "GET", `/api/tip/notes?limit=${limit}${scope ? `&scope=${encodeURIComponent(scope)}` : ""}${includeSuperseded ? "&superseded=true" : ""}`),
   addTipNote: (scope: string, text: string) =>
     request<import("../types").TipNote>("POST", "/api/tip/notes", { scope, text }),
   deleteTipNote: (id: string) =>

@@ -310,9 +310,10 @@ def build_signal_routes(app, eng, auth, config) -> None:
 
     # --- shared tips knowledge (notes the analyst reads before every run) -----
     @app.get("/api/tip/notes", dependencies=[auth])
-    async def tip_notes(scope: str = "", limit: int = 100):
+    async def tip_notes(scope: str = "", limit: int = 100, superseded: bool = False):
         scopes = [s.strip() for s in scope.split(",") if s.strip()] or None
-        return await eng.signals_service.tip_notes(scopes, limit=limit)
+        return await eng.signals_service.tip_notes(scopes, limit=limit,
+                                                   include_superseded=superseded)
 
     class NoteBody(BaseModel):
         scope: str = "general"
@@ -324,6 +325,21 @@ def build_signal_routes(app, eng, auth, config) -> None:
             return await eng.signals_service.add_tip_note(body.scope, body.text)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc))
+
+    class NotePatch(BaseModel):
+        text: str | None = None
+        scope: str | None = None
+
+    @app.patch("/api/tip/notes/{note_id}", dependencies=[auth])
+    async def update_tip_note(note_id: str, body: NotePatch):
+        try:
+            out = await eng.signals_service.update_tip_note(
+                note_id, text=body.text, scope=body.scope)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if out is None:
+            raise HTTPException(status_code=404, detail="note not found")
+        return out
 
     @app.delete("/api/tip/notes/{note_id}", dependencies=[auth])
     async def delete_tip_note(note_id: str):
