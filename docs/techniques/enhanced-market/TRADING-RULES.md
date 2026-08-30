@@ -192,6 +192,18 @@ a number** (p. 72).
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-08-29 · First capture-rate join (baseline sweep `26f752fa5a` × live arming
+  events): the "identified +22R vs captured 0" headline was mostly regime, not leak.**
+  +23.5R of the identified R sits on Aug 13–25, BEFORE live arming existed. On the
+  three overlapping sessions (Aug 26–28) the whole universe identified only 6 fires,
+  net −1.3R — and our pipeline covered the two losers (DELL r2, INTU r2 — both
+  correctly critic-killed) while missing the two winners at the ARMING-COVERAGE
+  layer (CVNA r2 +2.5R — the same CVNA reject missed twice now — and HYG b1 +0.2R).
+  Revised diagnosis: no capture crisis; one specific leak = coverage/selection of
+  REJECT setups on symbols that don't make the armed list. Fix is operational
+  (arm wider, weight rejects — the strongest kind at +1.31R avg), not a threshold.
+  Automate this join as the weekly capture report (backlog #1).
+
 - **2026-08-27 · Day 3 (first clean day: fixed tracker, hooks, both directions): 0 live
   fires, and the replay says that was nearly right.** Whole-universe replay (sweep
   `830ecaa4`, 141 symbols): 3 valid fires, net +1.71R — CVNA r2 (a put) +2.5R to TP2,
