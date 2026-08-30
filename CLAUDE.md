@@ -94,6 +94,19 @@ mobile) — Telegram intake stays deprioritized, don't build it unasked. Its §0
 AMBITIOUS practice limits set 2026-08-29 (raised risk caps + all Discord sources
 botsOnly=false) — re-tighten before real money (PRE-LIVE-PROFILE), never treat the practice
 values as the safe baseline.
+**Knowledge system + historical experiments (BUILT 2026-08-30):** `docs/techniques/tip/KNOWLEDGE-PLAN.md`
+(research + decided options) + `KNOWLEDGE-BUILD-PLAN.md` (phases, findings). Tip notes have per-scope
+TTLs (`daily:*` 14d, `ticker:`/`source:` 90d — citation in a live run refreshes; `rule`/`general`
+audit-gated; expiry is QUERY-TIME, no sweep; 📌 pin clears it) and the weekly audit also judges
+ticker/source/general groups (`run_knowledge_audit`). Discord watch entries carry `mode: tips|context`:
+context channels (trading-floor) mirror + digest but NEVER auto-intake; `onboardDays` backfill cap is
+90 (mirror cap 50k). Digests: `techniques/tip/digest.py` — one `daily:<date>` note per channel-day +
+≤5 promoted nuggets (ticker:/source: only), digest-now button, nightly gated by
+`techniques.tip.digest_enabled`. Historical experiments: `tools/tip_experiment.py` (+
+`techniques/tip/experiment.py`, API `/api/tip/experiment/*`): signals tagged `extraction.experiment`
+are FORCED onto the replayed path — zero orders/books/proposals/dedupe/scorecards (PLATFORM-RULES
+invariants 12–13, guard tests in `tests/test_platform_separation.py`) — appraised in historical mode
+and graded by a rubric batch-review run. UI: Tips → **Knowledge** tab (`/inbox/knowledge`).
 Intake stays in `zargar/signals/` (extraction v2 with Discord shorthand + screenshot transcription,
 dedupe→`seen_count`, verification where price-position failures **park** the signal, an implied
 non-actionable call demotes to **shadow** — books + scorecard, never a proposal — and content whose

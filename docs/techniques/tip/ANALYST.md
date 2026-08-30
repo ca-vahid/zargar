@@ -210,3 +210,32 @@ conviction floor) is edited on **Tips → Sources → Per-source policy** (E6).
   NEXT-GAPS-PLAN.
 - ~~Rule consolidation (A8)~~ **BUILT 2026-08-29** — the weekly rule audit
   (see §6 A8). The charter has no open items.
+
+## 9. Knowledge lifecycle + historical mode (KNOWLEDGE plan, 2026-08-30)
+
+The analyst's memory now has a LIFECYCLE (docs/techniques/tip/KNOWLEDGE-PLAN.md;
+built per KNOWLEDGE-BUILD-PLAN.md):
+
+- **Per-scope TTLs** (FinMem-style layering): `daily:*` digest notes expire in
+  14 days, `ticker:*`/`source:*` in 90; `rule`/`general` never expire
+  mechanically — the weekly audit gates them. Expiry is **query-time** (an
+  expired note simply stops being injected; kept as history). Being cited in a
+  completed LIVE appraisal refreshes a note's TTL (`cited_count`,
+  `last_cited_at`); the user can 📌 pin a note (clears expiry). Knobs:
+  `techniques.tip.note_ttl_daily_days` / `note_ttl_scoped_days`.
+- **Widened weekly audit**: `run_knowledge_audit` applies the same judge→apply
+  pass (merge / expire / flag contradictions needs-your-call) to every
+  `ticker:`/`source:`/`general` group with ≥3 active notes. `experiment:*` and
+  `signal:*` scopes are never audited; `daily:*` just expire.
+- **Context channels + digests**: watch entries with `mode: "context"`
+  (trading-floor) are mirrored but NEVER auto-intake; `digest.py` distills one
+  channel-day into a `daily:<date>` note + ≤5 durable nuggets promoted to
+  `ticker:`/`source:` scopes with provenance (digest-now button; nightly pass
+  gated by `techniques.tip.digest_enabled`).
+- **Historical mode**: an experiment batch (`tools/tip_experiment.py`) replays
+  old mirrored messages through the real pipeline. The appraisal prompt then
+  leads with the HISTORICAL block: live tools show TODAY's market, appraise
+  the decision as of tip time, `save_note` only timeless lessons (date-bound →
+  `experiment:<batch>` scope). Experiment runs never refresh note TTLs, never
+  touch books/orders/proposals/dedupe/scorecards (PLATFORM-RULES invariants
+  12–13), and get graded by a rubric batch-review run.

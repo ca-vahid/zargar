@@ -221,3 +221,13 @@ strict grammar and their own timestamps.*
 - Toast truncation length (~2 lines visible; listener may expose more).
 - The laptop lid: intake dies when the machine sleeps — phone relay (option
   3) is the eventual answer, or the eventual VPS.
+
+## Update 2026-08-30 — context channels (KNOWLEDGE plan C1)
+
+Watch entries now carry `mode: "tips" | "context"`. A **context** channel
+(e.g. OWLS `trading-floor`, PeloSwing `trading-floor`) is mirrored (searchable
+by the analyst, digestible into the knowledge base) but **never auto-intakes**
+— chatter is not a tip. The boundary table is unchanged: reading OS-delivered
+content stays allowed, user-token automation beyond reading stays banned.
+`onboardDays` history backfill is capped at 90 days (was 17) for the
+historical-tips experiment; the mirror cap is 50k messages.
