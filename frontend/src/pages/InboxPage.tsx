@@ -1876,7 +1876,10 @@ function KnowledgeTab() {
   useEffect(() => { load(); }, [withHistory]);
   const needle = q.trim().toUpperCase();
   const all = (notes ?? []).filter((n) =>
-    !needle || [n.text, n.scope, n.author].some((x) => String(x ?? "").toUpperCase().includes(needle)));
+    (!needle || [n.text, n.scope, n.author].some((x) => String(x ?? "").toUpperCase().includes(needle)))
+    // experiment artifacts are never injected into live runs — they only count
+    // and show when the history toggle is on (or when searched for explicitly)
+    && (withHistory || !!needle || !n.scope.startsWith("experiment:")));
   const rules = all.filter((n) => n.scope === "rule");
   const general = all.filter((n) => n.scope === "general");
   const daily = all.filter((n) => n.scope.startsWith("daily:"))
@@ -1892,10 +1895,7 @@ function KnowledgeTab() {
   const other = all.filter((n) => n.scope !== "rule" && n.scope !== "general"
     && !n.scope.startsWith("ticker:") && !n.scope.startsWith("source:")
     && !n.scope.startsWith("daily:") && !n.scope.startsWith("experiment:"));
-  // experiment artifacts (batch reviews + quarantined historical saves) are
-  // never injected into live runs — shown only with the history toggle
-  const experiments = withHistory
-    ? all.filter((n) => n.scope.startsWith("experiment:")) : [];
+  const experiments = all.filter((n) => n.scope.startsWith("experiment:"));
   const counts: Record<KbView, number> = {
     all: all.length, rule: rules.length,
     ticker: Object.values(byTicker).reduce((a, v) => a + v.length, 0),
