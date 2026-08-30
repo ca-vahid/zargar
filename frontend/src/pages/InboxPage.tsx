@@ -828,6 +828,32 @@ function timeAgo(iso?: string): string {
   return `${Math.round(h / 24)}d ago`;
 }
 
+/** Digest now (KNOWLEDGE C3): distill today's chatter in a context channel into
+    the knowledge base — opens the streaming digest run. */
+function DigestNowButton({ channelId }: { channelId: string }) {
+  const toast = useStore((s) => s.toast);
+  const openAnalystRun = useStore((s) => s.openAnalystRun);
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const out = await api.digestChannel(channelId);
+      toast("success", `Digesting ${out.messages} message(s) — opening the run`);
+      openAnalystRun(out.runId);
+    } catch (e: any) {
+      toast("error", e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className="link-btn" disabled={busy} onClick={go}
+      title="Distill today's conversation into the knowledge base: one daily note (expires in 14d) + durable nuggets promoted to ticker/source scopes">
+      {busy ? "digesting…" : "📝 digest now"}
+    </button>
+  );
+}
+
 function PeekButton({ channelId, label }: { channelId: string; label?: string }) {
   const [state, setState] = useState<"idle" | "loading" | "done">("idle");
   const [res, setRes] = useState<any>(null);
@@ -948,6 +974,9 @@ function DiscordSourcesPanel() {
               <input type="checkbox" checked={(sel[channelId].mode ?? "tips") === "context"}
                 onChange={(e) => setField(channelId, { mode: e.target.checked ? "context" : "tips" })} /> context only
             </label>
+            {(sel[channelId].mode ?? "tips") === "context" && (
+              <DigestNowButton channelId={channelId} />
+            )}
             <label className="muted" title="onboard: mirror this many days of the channel's history (max 90) so the analyst has the backstory — no re-downloads">
               onboard <input className="disc-days" type="number" min={0} max={90}
                 value={sel[channelId].onboardDays ?? 0}
@@ -1835,6 +1864,8 @@ function KnowledgeTab() {
     !needle || [n.text, n.scope, n.author].some((x) => String(x ?? "").toUpperCase().includes(needle)));
   const rules = all.filter((n) => n.scope === "rule");
   const general = all.filter((n) => n.scope === "general");
+  const daily = all.filter((n) => n.scope.startsWith("daily:"))
+    .sort((a, b) => b.scope.localeCompare(a.scope));
   const flagged = all.filter((n) => n.needsHuman);
   const grouped = (prefix: string): Record<string, typeof all> => {
     const out: Record<string, typeof all> = {};
@@ -1844,7 +1875,8 @@ function KnowledgeTab() {
   const byTicker = grouped("ticker:");
   const bySource = grouped("source:");
   const other = all.filter((n) => n.scope !== "rule" && n.scope !== "general"
-    && !n.scope.startsWith("ticker:") && !n.scope.startsWith("source:"));
+    && !n.scope.startsWith("ticker:") && !n.scope.startsWith("source:")
+    && !n.scope.startsWith("daily:"));
   const counts: Record<KbView, number> = {
     all: all.length, rule: rules.length,
     ticker: Object.values(byTicker).reduce((a, v) => a + v.length, 0),
@@ -1902,6 +1934,8 @@ function KnowledgeTab() {
           <>
             {view === "flagged" && sec("flagged", "⚠ Needs your call",
               "contradictions the rule audit surfaced — resolve, edit or delete", flagged)}
+            {view === "all" && sec("daily", "📅 Today & recent digests",
+              "context-channel digests (trading-floor …) — they expire after 14d; durable nuggets get promoted", daily)}
             {(view === "all" || view === "rule") &&
               sec("rules", "⚖ Trading rules", "injected into every run, in this order", rules, true)}
             {(view === "all" || view === "ticker") &&

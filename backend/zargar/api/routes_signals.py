@@ -369,6 +369,26 @@ def build_signal_routes(app, eng, auth, config) -> None:
                                  aggregate_type="signal", aggregate_id=note_id)
         return {"ok": True}
 
+    # --- context-channel digests (KNOWLEDGE plan Phase 4) --------------------
+    class DigestBody(BaseModel):
+        channelId: str
+        date: str = ""
+
+    @app.post("/api/tip/digest", dependencies=[auth])
+    async def tip_digest(body: DigestBody):
+        """Digest one context channel's day: validates + creates the streaming
+        run, finishes in the background — the UI opens the run immediately."""
+        from ..techniques.tip.digest import start_digest
+        if not body.channelId.strip():
+            raise HTTPException(status_code=400, detail="channelId required")
+        try:
+            out = await start_digest(eng, body.channelId.strip(),
+                                     date=body.date.strip() or None,
+                                     client=eng.signals_service._analyst_client)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, **out}
+
     # --- historical experiment harness (KNOWLEDGE plan Phase 2) --------------
     class ExperimentBody(BaseModel):
         batch: str

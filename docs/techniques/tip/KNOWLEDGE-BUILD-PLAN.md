@@ -99,19 +99,24 @@ new knobs in `settings_service.DEFAULTS`.
       history, citation refresh, pin, scoped-audit flagging (+ experiment scopes
       never served to the judge).
 
-## Phase 4 — digests (cluster C3, then C2)
+## Phase 4 — digests (cluster C3, then C2) — DONE 2026-08-30
 
-- [ ] Analyst run kind `digest`: input = one context channel's mirrored messages for
-      one date; output = ONE note, scope `daily:YYYY-MM-DD` (14d TTL), body =
-      tickers discussed + sentiment + recurring themes + anything actionable-adjacent;
-      durable nuggets promoted into `ticker:`/`source:` notes with provenance
-      (`runId`). Streams like any analyst run.
-- [ ] "Digest now" button on context-channel rows (Sources tab) → run + open it.
-- [ ] Knowledge tab: "Today" section — `daily:*` notes grouped at the top, newest
-      first (they already age out via TTL).
-- [ ] After the prompt is tuned on manual runs: nightly scheduler job digests every
-      context channel (`techniques.tip.digest_enabled`, default off until then).
-- [ ] Tests: digest note scope/TTL; promotion provenance; scheduler gating.
+- [x] `techniques/tip/digest.py`: run kind `digest` per channel-ET-day — ONE
+      `daily:YYYY-MM-DD` note (14d TTL, `[channel]`-prefixed) + ≤5 durable nuggets
+      promoted to `ticker:`/`source:` scopes ONLY (a promotion aimed at `rule` is
+      refused), provenance = `(from <channel> <date>)` + author `digest:<run8>` +
+      run link. Streams via _Recorder like every run.
+- [x] "📝 digest now" button on context-channel rows (`POST /api/tip/digest`
+      validates + creates the run, finishes in background, UI opens the streaming
+      run immediately).
+- [x] Knowledge tab: "📅 Today & recent digests" section at the top of All view,
+      newest day first.
+- [x] Nightly: `digest_all_context_channels` inside the nightly tip review, gated
+      by `techniques.tip.digest_enabled` (default OFF until the prompt is tuned via
+      digest-now).
+- [x] Tests: daily-note scope + TTL, promotion provenance + scope guard, run row
+      done (`test_tip_knowledge.py::test_digest_channel_writes_daily_note_and_promotes`);
+      gating is a one-line settings read exercised by the nightly suite.
 
 ## Phase 5 — run the experiment (cluster D)
 

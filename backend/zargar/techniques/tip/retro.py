@@ -405,6 +405,14 @@ async def nightly_tip_review(eng, *, client=None) -> dict:
     except Exception:
         log.exception("lane grading failed")
     try:
+        # KNOWLEDGE C2: nightly context-channel digests, once the prompt is
+        # trusted (default off; digest-now button is the tuning path)
+        if bool(eng.settings.get("techniques.tip.digest_enabled", False)):
+            from .digest import digest_all_context_channels
+            out["digests"] = await digest_all_context_channels(eng, client=client)
+    except Exception:
+        log.exception("nightly digests failed")
+    try:
         from .rule_audit import audit_due_today, run_knowledge_audit, run_rule_audit
         if audit_due_today(eng.settings):
             out["ruleAudit"] = await run_rule_audit(eng, client=client)

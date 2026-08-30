@@ -90,6 +90,53 @@ async def test_pin_clears_expiry(app_client):
         assert row.valid_until is None
 
 
+class _FakeDigestClient:
+    """Scripted digest judge: one summary + one durable promotion."""
+
+    def __init__(self):
+        async def create(**kw):
+            return _FakeResp(
+                '{"summary": "Room leaned bullish NVDA all day; several exits on SPY.",'
+                ' "tickers": ["NVDA", "SPY"],'
+                ' "promotions": [{"scope": "ticker:NVDA",'
+                ' "text": "room treats 180 as a magnet"},'
+                ' {"scope": "rule", "text": "must never land here"}]}')
+        self.messages = type("M", (), {"create": staticmethod(create)})()
+
+
+async def test_digest_channel_writes_daily_note_and_promotes(app_client):
+    client, eng = app_client
+    from zargar.models import DiscordMessage, TipAnalystRun
+    from zargar.techniques.tip.digest import digest_channel
+
+    await eng.signals_service.discord_set_watch([
+        {"channelId": "cf", "kind": "channel", "sourceName": "trading-floor",
+         "enabled": True, "botsOnly": False, "mode": "context"},
+    ])
+    now = dt.datetime.now(dt.timezone.utc)
+    async with eng.sf() as session:
+        for i in range(4):
+            session.add(DiscordMessage(id=f"tf{i}", channel_id="cf",
+                                       source_name="trading-floor", author=f"user{i}",
+                                       text=f"NVDA looking strong {i}", posted_at=now))
+        await session.commit()
+
+    out = await digest_channel(eng, "cf", client=_FakeDigestClient())
+    assert out is not None and out["verdict"] == "digest"
+    svc = eng.signals_service
+    daily = await svc.tip_notes([f"daily:{out['date']}"])
+    assert len(daily) == 1 and daily[0]["text"].startswith("[trading-floor]")
+    assert daily[0]["validUntil"] is not None            # 14d TTL applied
+    nvda = await svc.tip_notes(["ticker:NVDA"])
+    assert any("magnet" in n["text"] and "trading-floor" in n["text"] for n in nvda)
+    # the "rule" promotion was refused — only ticker:/source: scopes allowed
+    rules = await svc.tip_notes(["rule"])
+    assert not any("must never land here" in n["text"] for n in rules)
+    async with eng.sf() as session:
+        run = await session.get(TipAnalystRun, out["runId"])
+        assert run.kind == "digest" and run.status == "done"
+
+
 class _FakeResp:
     def __init__(self, text):
         class B:  # noqa: N801 - tiny stub
