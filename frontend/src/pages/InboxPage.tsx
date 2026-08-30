@@ -1533,6 +1533,63 @@ function outcomeLine(run: AnalystRun): string | null {
   return null;
 }
 
+/** "What happened next" — the verdict's paper trail: the proposal this run
+    minted, your decision on it, the fill, and the position it became. */
+function RunAftermath({ runId }: { runId: string }) {
+  const setPage = useStore((s) => s.setPage);
+  const setPageTab = useStore((s) => s.setPageTab);
+  const st = useAsync(() => api.listProposals(true, 100), [runId]);
+  const p = (st.data ?? []).find((x: any) => x.context?.analystRunId === runId);
+  if (!p) return null;
+  const oc = p.outcome;
+  const what = p.context?.vehicle?.display ?? p.symbol;
+  const cost = p.limitPrice != null
+    ? p.limitPrice * p.qty * (p.secType === "OPT" || p.secType === "SPREAD" ? 100 : 1) : null;
+  return (
+    <div className="an-aftermath">
+      <div className="an-aftermath-t">What happened next</div>
+      <ul>
+        <li>
+          Proposal created {fmtDateTime(p.createdAt)} — {p.side} {p.qty} × {what}
+          {p.limitPrice != null && <> @ {fmtMoney(p.limitPrice)} LMT</>}
+          {cost != null && <> ≈ {fmtMoney(cost, 0)}</>}
+        </li>
+        {p.status === "pending" && (
+          <li>
+            Awaiting your decision —{" "}
+            <button className="link-btn" onClick={() => setPageTab("approvals")}>open Approvals</button>
+          </li>
+        )}
+        {(p.status === "executed" || p.status === "approved" || p.status === "failed") && p.decidedAt && (
+          <li>Approved {fmtDateTime(p.decidedAt)}{p.decidedVia ? ` via ${p.decidedVia}` : ""} → order sent through the risk gate</li>
+        )}
+        {p.status === "rejected" && (
+          <li>Rejected {p.decidedAt ? fmtDateTime(p.decidedAt) : ""}{p.decidedVia ? ` via ${p.decidedVia}` : ""} — nothing was ordered</li>
+        )}
+        {p.status === "expired" && (
+          <li>Expired undecided{p.context?.expiredReason ? ` — ${p.context.expiredReason}` : " (TTL)"} — nothing was ordered</li>
+        )}
+        {oc?.orderStatus === "FILLED" && (
+          <li className="pos">Filled {oc.filledQty ?? p.qty} @ {oc.avgFillPrice != null ? fmtMoney(oc.avgFillPrice) : "?"}</li>
+        )}
+        {oc?.orderStatus && oc.orderStatus !== "FILLED" && (
+          <li className={["REJECTED", "REJECTED_RISK", "CANCELLED"].includes(oc.orderStatus) ? "neg" : undefined}>
+            Order {oc.orderStatus.toLowerCase().replace("_", " ")}{oc.rejectReason ? ` — ${oc.rejectReason}` : " — waiting for a fill"}
+          </li>
+        )}
+        {oc?.positionId && (
+          <li>
+            <button className="link-btn" onClick={() => setPage("portfolios")}
+              title="The fill was adopted by the durable manager — its exit plan runs it. Opens Portfolios.">
+              → managed position ({oc.positionStatus === "closed" ? "closed" : oc.positionStatus ?? "open"}) — open Portfolios
+            </button>
+          </li>
+        )}
+      </ul>
+    </div>
+  );
+}
+
 function AnalystRunDetail({ id }: { id: string }) {
   const setFocus = useStore((s) => s.setAnalystFocus);
   const [run, setRun] = useState<AnalystRun | null>(null);
@@ -1626,6 +1683,7 @@ function AnalystRunDetail({ id }: { id: string }) {
             </div>
           )}
         </div>
+        {!running && <RunAftermath runId={run.id} />}
         {run.error && <div className="neg" style={{ fontSize: 12, margin: "8px 12px" }}>{run.error}</div>}
       </div>
     </div>
