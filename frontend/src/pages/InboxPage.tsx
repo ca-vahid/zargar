@@ -1387,27 +1387,50 @@ function SourcesTab() {
 
 /** Tiny inline markdown for the analyst's prose: **bold**, `code`, paragraphs
     and "- " bullets. Enough to read well without a markdown dependency. */
+/** Markdown-lite renderer for model/analyst prose: #/##/### headings, ---,
+    bullet + numbered lists, **bold**, *italic*, `code`. No dependency, no HTML
+    injection (everything stays text nodes). */
 function RichText({ text }: { text: string }) {
-  const inline = (s: string) =>
-    s.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).map((p, i) =>
+  const inline = (s: string): ReactNode[] =>
+    s.split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*\s][^*\n]*\*)/g).map((p, i) =>
       p.startsWith("**") && p.endsWith("**") ? <b key={i}>{p.slice(2, -2)}</b>
         : p.startsWith("`") && p.endsWith("`") ? <code key={i}>{p.slice(1, -1)}</code>
+        : p.startsWith("*") && p.endsWith("*") && p.length > 2 ? <i key={i}>{p.slice(1, -1)}</i>
         : p);
-  return (
-    <div className="an-rich">
-      {text.split(/\n{2,}/).map((para, i) => {
-        const ls = para.split("\n").filter((l) => l.trim());
-        if (ls.length > 0 && ls.every((l) => /^\s*[-•*]\s+/.test(l))) {
-          return <ul key={i}>{ls.map((l, j) => <li key={j}>{inline(l.replace(/^\s*[-•*]\s+/, ""))}</li>)}</ul>;
-        }
-        return (
-          <p key={i}>
-            {ls.map((l, j) => <span key={j}>{inline(l)}{j < ls.length - 1 && <br />}</span>)}
-          </p>
-        );
-      })}
-    </div>
-  );
+  const blocks: ReactNode[] = [];
+  let key = 0;
+  for (const para of text.split(/\n{2,}/)) {
+    const ls = para.split("\n").filter((l) => l.trim());
+    while (ls.length) {                    // headings / rules can lead a block
+      const l = ls[0].trim();
+      const h = /^(#{1,4})\s+(.*)$/.exec(l);
+      if (h) {
+        blocks.push(<div key={key++} className={`rt-h rt-h${h[1].length}`}>{inline(h[2])}</div>);
+        ls.shift();
+        continue;
+      }
+      if (/^[-—–_]{3,}$/.test(l)) {
+        blocks.push(<hr key={key++} className="rt-hr" />);
+        ls.shift();
+        continue;
+      }
+      break;
+    }
+    if (!ls.length) continue;
+    if (ls.every((l) => /^\s*[-•*]\s+/.test(l))) {
+      blocks.push(<ul key={key++}>{ls.map((l, j) =>
+        <li key={j}>{inline(l.replace(/^\s*[-•*]\s+/, ""))}</li>)}</ul>);
+    } else if (ls.length > 1 && ls.every((l) => /^\s*\d+[.)]\s+/.test(l))) {
+      blocks.push(<ol key={key++}>{ls.map((l, j) =>
+        <li key={j}>{inline(l.replace(/^\s*\d+[.)]\s+/, ""))}</li>)}</ol>);
+    } else {
+      blocks.push(
+        <p key={key++}>
+          {ls.map((l, j) => <span key={j}>{inline(l)}{j < ls.length - 1 && <br />}</span>)}
+        </p>);
+    }
+  }
+  return <div className="an-rich">{blocks}</div>;
 }
 
 const STEP_ICON: Record<string, { path: JSX.Element; cls: string; label: string }> = {
@@ -1858,7 +1881,7 @@ function NoteCard({ n, onChanged, index }: {
           </div>
         </div>
       ) : (
-        <div className="kb-note-text">{n.text}</div>
+        <div className="kb-note-text"><RichText text={n.text} /></div>
       )}
     </div>
   );

@@ -2102,6 +2102,19 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .an-rich li { margin: 2px 0; line-height: 1.45; }
 .an-rich code { background: var(--surface-2); border-radius: 3px; padding: 0 4px;
   font-family: var(--mono); font-size: 12px; }
+.an-rich ol { margin: 0 0 6px; padding-left: 20px; }
+.an-rich b { color: var(--text-1); }
+/* markdown-lite headings + rules in model prose */
+.rt-h { font-weight: 800; color: var(--text-1); margin: 10px 0 4px;
+  letter-spacing: 0.2px; }
+.rt-h:first-child { margin-top: 0; }
+.rt-h1, .rt-h2 { font-size: 13.5px; text-transform: uppercase;
+  border-bottom: 1px solid var(--border); padding-bottom: 3px;
+  color: var(--accent); }
+.rt-h3, .rt-h4 { font-size: 12.5px; }
+.rt-hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+/* knowledge notes share the rich renderer — keep them compact */
+.kb-note-text .an-rich p { margin-bottom: 4px; }
 
 /* shared knowledge notes */
 .an-notes-body { max-height: 30vh; overflow-y: auto; }
