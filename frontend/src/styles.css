@@ -418,7 +418,11 @@ button.brand { background: none; border: 0; padding: 0 4px 0 0; min-height: 40px
    1.2fr of the now-huge grid, balloons with it) */
 .blotter-area { grid-area: blotter; min-width: 0; min-height: 0;
   display: flex; flex-direction: column; overflow: hidden; }
-.blotter-area > .scroll-x { flex: 1; min-height: 0; overflow-y: auto; }
+/* the hard cap: the trade grid's height is content-driven, so fr tracks size
+   to their content — without this, a 100-row History grows the blotter track
+   and the chart row (1.2fr of the same grid) balloons with it */
+.blotter-area > .scroll-x { flex: 1; min-height: 0; overflow-y: auto;
+  max-height: min(46vh, 560px); }
 .blotter-area .tbl thead th { position: sticky; top: 0; background: var(--surface-1); z-index: 1; }
 /* two rows driven by the same tip carry matching link dots */
 .pos-link { display: inline-block; width: 8px; height: 8px; border-radius: 2px;
