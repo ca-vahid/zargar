@@ -89,6 +89,13 @@ interface Finding {
   row: WalkforwardRow; fired: number; wins: number; sumR: number; planned: number;
   verdict: "win" | "loss" | "mixed" | "none" | "nodata"; text: string; levels: string; gap: string;
 }
+/** Variant sweeps (EVOLUTION-PLAN experiments) carry threshold overrides
+ * and/or an "evo-" label — real validations never do. */
+function isExperiment(s: { label?: string | null; params?: Record<string, unknown> }): boolean {
+  const ov = (s.params as any)?.overrides;
+  return (!!ov && Object.keys(ov).length > 0) || (s.label ?? "").startsWith("evo-");
+}
+
 function readRow(r: WalkforwardRow): Finding {
   const res = r.result ?? {};
   const s = r.summary ?? {};
@@ -445,7 +452,13 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
     refetchSel(sel.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bump, sel?.id]);
-  useEffect(() => { if (!sel && sweeps.length) api.techniqueSweep(sweeps[0].id).then(setSel).catch(() => undefined); }, [sweeps, sel]);
+  // default to the newest REGULAR validation — experiment sweeps (threshold
+  // overlays, "evo-…" labels) stay in the rail but never hijack the featured card
+  useEffect(() => {
+    if (sel || !sweeps.length) return;
+    const first = sweeps.find((s) => !isExperiment(s)) ?? sweeps[0];
+    api.techniqueSweep(first.id).then(setSel).catch(() => undefined);
+  }, [sweeps, sel]);
   // a running sweep: poll its detail every few seconds until it finishes
   const pollN = useRef(0);
   useEffect(() => {
@@ -572,10 +585,16 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
     if (!rows.length) { toast("error", "Select findings first (tick the rows)"); return; }
     setLlmBusy(true);
     let ok = 0;
-    for (const r of rows) {
-      try { await api.techniquePromote(sel.id, { symbol: r.symbol, session: r.session, withVision: true, wait: false }); ok++; }
-      catch (e: any) { toast("error", `${r.symbol} ${r.session}: ${e.message}`); }
-    }
+    // submit in parallel (6 at a time) — 90+ sequential promotes each cost ~1s
+    // of run creation, which read as "0 working" for the first minute+
+    const queue = [...rows];
+    const worker = async () => {
+      for (let r = queue.shift(); r; r = queue.shift()) {
+        try { await api.techniquePromote(sel.id, { symbol: r.symbol, session: r.session, withVision: true, wait: false }); ok++; }
+        catch (e: any) { toast("error", `${r.symbol} ${r.session}: ${e.message}`); }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(6, queue.length) }, worker));
     toast("success", `${ok} LLM read${ok === 1 ? "" : "s"} started — they appear in History as they finish`);
     setChecked({}); setLlmBusy(false);
     refetchSel(sel.id);
@@ -909,7 +928,9 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
             {sweeps.length === 0 && <div className="empty">none yet</div>}
             {sweeps.map((s) => (
               <button key={s.id} className={`tq-setup-row ${sel?.id === s.id ? "valid" : ""}`} onClick={() => api.techniqueSweep(s.id).then(setSel)}>
-                <b>{s.label || `${s.start}..${s.end}`}</b> <span className="muted">{s.status}{s.summary?.sample?.fired !== undefined ? ` · ${s.summary.sample.fired} fired` : ""}</span>
+                <b>{s.label || `${s.start}..${s.end}`}</b>
+                {isExperiment(s) && <span className="status-pill dim" title="A variant sweep with threshold overrides — not a regular validation">experiment</span>}
+                {" "}<span className="muted">{s.status}{s.summary?.sample?.fired !== undefined ? ` · ${s.summary.sample.fired} fired` : ""}</span>
                 <span className="muted">{s.symbols.slice(0, 6).join(", ")}{s.symbols.length > 6 ? ` +${s.symbols.length - 6}` : ""} · {s.createdAt ? fmtDateTime(s.createdAt) : ""}</span>
               </button>
             ))}

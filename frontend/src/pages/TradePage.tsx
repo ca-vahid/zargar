@@ -46,6 +46,9 @@ export function TradePage() {
   const [range, setRange] = useState<string>(
     () => localStorage.getItem("zargar_chart_range") ?? "1d");
   const rangeDef = RANGES.find((r) => r.key === range) ?? RANGES[0];
+  // render with a tf the range can serve even before the corrective effect
+  // lands — the one-frame mismatch fired a doomed 400 chart request (1m + 1mo)
+  const chartTf = rangeDef.tfs.includes(tf) ? tf : rangeDef.def;
   const pickRange = (key: string) => {
     localStorage.setItem("zargar_chart_range", key);
     setRange(key);
@@ -163,7 +166,7 @@ export function TradePage() {
               <span className="go">open →</span>
             </button>
           )}
-          <StockChart symbol={symbol} tf={tf} range={rangeDef.fetch} clip={rangeDef.clip} chartType={chartType}
+          <StockChart symbol={symbol} tf={chartTf} range={rangeDef.fetch} clip={rangeDef.clip} chartType={chartType}
             indicators={indicators.slice(0, 1)} showVolume={false}
             view={view} session={chSession} armed={armedPlan} avgCost={position} phone />
         </div>
@@ -281,7 +284,7 @@ export function TradePage() {
             <span className="go">open card →</span>
           </button>
         )}
-        <StockChart symbol={symbol} tf={tf} range={rangeDef.fetch} clip={rangeDef.clip} chartType={chartType}
+        <StockChart symbol={symbol} tf={chartTf} range={rangeDef.fetch} clip={rangeDef.clip} chartType={chartType}
           indicators={indicators} showVolume={showVolume}
           view={view} session={chSession} armed={armedPlan} avgCost={position} />
       </div>
