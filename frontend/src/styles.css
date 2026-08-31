@@ -2333,3 +2333,39 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
   padding: 7px 12px; margin: 0 14px; border-radius: var(--radius-sm); }
 .an-kids { display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   font-size: var(--fs-1); color: var(--text-3); padding: 6px 16px 0; }
+
+/* ── Version chip + What's-new changelog (v0.5.0) ─────────────────────────── */
+.ver-chip { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2);
+  border-radius: 999px; padding: 2px 10px; font-size: var(--fs-0); font-family: var(--mono);
+  font-weight: 600; cursor: pointer; align-self: center; }
+.ver-chip:hover { border-color: var(--accent); color: var(--accent); }
+/* tablets: the chip must not push the topbar past the viewport — the search yields */
+@media (max-width: 1100px) { .topbar > .sym-search { width: clamp(120px, 18vw, 240px); } }
+/* tablet portrait: the bar's live chips (equity, cross-workspace armed) can outgrow
+   768px — wrap instead of forcing a horizontal page scroll (HALT stays visible) */
+@media (max-width: 1023px) { .topbar { flex-wrap: wrap; row-gap: 4px; } }
+.chlog { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.chlog-sub { color: var(--text-3); font-size: var(--fs-1); margin-top: -4px; }
+.chlog-search { width: 100%; padding: 8px 12px; font-size: var(--fs-2); }
+.chlog-tags { display: flex; gap: 8px; flex-wrap: wrap; }
+.chlog-tag { border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2);
+  border-radius: 999px; padding: 4px 12px; font-size: var(--fs-1); cursor: pointer; }
+.chlog-tag.on { border-color: var(--accent); color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2)); }
+.chlog-list { overflow-y: auto; max-height: min(58vh, 560px); display: flex; flex-direction: column;
+  gap: 18px; padding-right: 4px; }
+.chlog-rel-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.chlog-ver { font-family: var(--mono); font-weight: 700; font-size: var(--fs-2); color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border)); border-radius: 6px; padding: 1px 8px; }
+.chlog-latest { font-size: var(--fs-0); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  color: var(--up); border: 1px solid color-mix(in srgb, var(--up) 45%, var(--border)); border-radius: 999px; padding: 1px 8px; }
+.chlog-title { font-size: var(--fs-3); }
+.chlog-date { margin-left: auto; color: var(--text-3); font-size: var(--fs-1); }
+.chlog-item { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; }
+.chlog-pill { flex-shrink: 0; font-size: var(--fs-0); font-weight: 700; border-radius: 6px; padding: 2px 8px;
+  border: 1px solid var(--border); color: var(--text-2); background: var(--surface-2); white-space: nowrap; }
+.chlog-pill.chlog-tag--major { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.chlog-pill.chlog-tag--new { color: var(--up); border-color: color-mix(in srgb, var(--up) 40%, var(--border)); }
+.chlog-pill.chlog-tag--fixed { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
+.chlog-pill.chlog-tag--security { color: var(--series-4); border-color: color-mix(in srgb, var(--series-4) 40%, var(--border)); }
+.chlog-text { color: var(--text-2); font-size: var(--fs-2); line-height: 1.55; }

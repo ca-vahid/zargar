@@ -921,7 +921,8 @@ class SnapTradeSync:
             portfolio_id, cash=cash,
             positions=[{"symbol": p["symbol"], "secType": p.get("secType", "STK"),
                         "qty": p["qty"], "avgCost": p["avgCost"],
-                        "currency": p.get("currency")} for p in positions])
+                        "currency": p.get("currency"),
+                        "price": p.get("price")} for p in positions])
 
         now = dt.datetime.now(dt.timezone.utc)
         async with self._sf() as session:

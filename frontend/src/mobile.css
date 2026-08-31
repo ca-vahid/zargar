@@ -626,6 +626,8 @@ button.bl-card:active { background: var(--surface-2); }
   /* Tips desk: hide the philosophy line (it costs two lines on every tab);
      Analyst list scrolls sanely, the sheet owns the play-by-play scroll */
   .tips-head-sub { display: none; }
+  .ver-chip { min-height: 40px; }
+  .chlog-list { max-height: none; }   /* the sheet scrolls */
   .an-list-body { max-height: 45dvh; }
   .an-sheet .an-flow-wrap { max-height: none; min-height: 0; }
   .an-result-line, .an-card { overflow-wrap: anywhere; }   /* raw JSON summaries wrap, never clip */
@@ -654,6 +656,7 @@ button.bl-card:active { background: var(--surface-2); }
   /* any pill that is a BUTTON is a tap target (flow chips on tip cards, run pills…) */
   button.status-pill { min-height: 40px; min-width: 40px; }
   /* Tips desk: knowledge notes + Discord source picker */
+  .ver-chip { min-height: 40px; }
   .an-note-add input { font-size: 16px; min-height: 40px; }
   .an-note-del { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
   .an-note-head .link-btn, .disc-peek .link-btn { min-width: 44px; min-height: 40px; }

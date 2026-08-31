@@ -174,6 +174,14 @@ Tests default to `postgresql+asyncpg://zargar@127.0.0.1:5433/zargar_test`
 (override: `ZARGAR_TEST_DATABASE_URL`). Runtime default is port 5432 per
 docker-compose.
 
+## Versioning
+
+App version = `frontend/src/changelog.ts` (`APP_VERSION` + the curated CHANGELOG the
+top-bar `v…` chip shows), mirrored in `frontend/package.json`, `backend/zargar/__init__.py`
+and `backend/pyproject.toml` — bump all four together. Every user-visible change adds a
+CONCISE entry (tag: major/new/improved/fixed/security) to the current release's block;
+start a new block when the user calls a release. `/api/health` reports the version.
+
 ## Hard rules
 
 - **Every order goes through `RiskGate.evaluate()`** — no code path may submit

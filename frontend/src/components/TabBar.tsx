@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { signOut } from "../lib/auth";
+import { APP_VERSION } from "../changelog";
+import { ChangelogDialog } from "./ChangelogDialog";
 import { api } from "../lib/api";
 import { useStore, type Page } from "../store";
 import { useTechniques } from "../lib/techniques";
@@ -82,6 +84,7 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
   const toggleChgMode = useStore((s) => s.toggleChgMode);
   const authUser = useStore((s) => s.auth.user);
   const [confirmLive, setConfirmLive] = useState(false);
+  const [changelog, setChangelog] = useState(false);
   const go = (p: Page) => { setPage(p); onClose(); };
   const setMode = async (value: string) => {
     try { await api.patchSettings({ "trading.mode": value }); toast("info", `Workspace: ${value}`); }
@@ -147,7 +150,12 @@ function MoreSheet({ onClose }: { onClose: () => void }) {
           <span>Connection</span>
           <span className={`status-pill ${connected ? "ok" : "bad"}`}>{connected ? "live" : "offline"}</span>
         </div>
+        <div className="more-row">
+          <span>Version</span>
+          <button type="button" className="ghost-btn" onClick={() => setChangelog(true)}>v{APP_VERSION} · what's new</button>
+        </div>
       </div>
+      {changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
       {confirmLive && (
         <ConfirmDialog
           title="Switch to LIVE?"

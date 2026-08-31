@@ -9,6 +9,8 @@ import { useViewport } from "../lib/viewport";
 import { Sheet } from "./Sheet";
 import { IconSearch } from "./icons";
 import { signOut } from "../lib/auth";
+import { APP_VERSION } from "../changelog";
+import { ChangelogDialog } from "./ChangelogDialog";
 
 const MODES = [
   { value: "practice", label: "Practice" },
@@ -41,6 +43,7 @@ export function TopBar() {
   const authRequired = useStore((s) => s.auth.required);
   const [accountOpen, setAccountOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [changelog, setChangelog] = useState(false);
 
   // real money is the headline; practice is its own clearly-labeled chip
   const realTotals = useMemo(
@@ -188,6 +191,8 @@ export function TopBar() {
           <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
           Zargar
         </button>
+        <button type="button" className="ver-chip" onClick={() => setChangelog(true)}
+          aria-label={`Version ${APP_VERSION} — what's new`}>v{APP_VERSION}</button>
         <button type="button" className={`topbar-phone-ws ${mode === "live" ? "live" : ""}`}
           aria-label={`Workspace: ${mode === "live" ? "LIVE — real accounts" : "Practice — simulator"} — switch in the More sheet`}
           onClick={() => setMoreOpen(true)}>
@@ -208,6 +213,7 @@ export function TopBar() {
           aria-label={halt.engaged ? "Resume trading" : "Halt trading"}>
           {halt.engaged ? "RESUME" : "HALT"}
         </button>
+        {changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
         {searchOpen && (
           <Sheet title="Search stocks" onClose={() => setSearchOpen(false)} full>
             <SymbolSearch compact autoFocus placeholder="Ticker or company name"
@@ -226,6 +232,9 @@ export function TopBar() {
         <img className="brand-logo" src="/art/logo-mark.png" alt="" aria-hidden="true" />
         Zargar
       </button>
+      <button type="button" className="ver-chip" onClick={() => setChangelog(true)}
+        title="What's new — release history" aria-label={`Version ${APP_VERSION} — what's new`}>v{APP_VERSION}</button>
+      {changelog && <ChangelogDialog onClose={() => setChangelog(false)} />}
       {quoteSource === "alpaca" && (broker as any)?.alpacaConnected === false && (
         <span className="status-pill warn"
           title="The Alpaca data stream is down — quotes and bars are running on the slower Yahoo fallback. Check backend/.env keys or status.alpaca.markets.">

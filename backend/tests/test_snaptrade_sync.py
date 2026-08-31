@@ -221,3 +221,45 @@ async def _count_broker_syncs(sf) -> int:
     async with sf() as session:
         return (await session.execute(
             select(func.count(Event.id)).where(Event.type == "BrokerSync"))).scalar_one()
+
+
+async def test_broker_mark_prices_positions_without_quotes(sf):
+    """A held symbol with no live quote is valued at the BROKER's mark from the
+    sync, never at avg cost (TQQQ read −0.00% all weekend, 2026-08-30)."""
+    bus = Bus()
+    journal = Journal(sf, bus)
+    cache = QuoteCache(bus)
+    keeper = PositionKeeper(sf, bus, journal, cache)
+    async with sf() as session:
+        session.add(Portfolio(id="wealth", name="Wealthsimple", kind="live",
+                              cash=9.71, starting_cash=0.0, base_currency="USD"))
+        await session.commit()
+    await keeper.load()
+    await keeper.sync_portfolio_state("wealth", cash=9.71, positions=[
+        {"symbol": "TQQQ", "secType": "STK", "qty": 41.99, "avgCost": 32.17,
+         "currency": "USD", "price": 71.69}])
+    row = [p for p in keeper.positions_list("wealth") if p["symbol"] == "TQQQ"][0]
+    assert row["last"] == 71.69                            # broker mark, not 32.17
+    assert row["unrealizedPnl"] == round((71.69 - 32.17) * 41.99, 2)
+    # a live quote, once it exists, beats the sync-vintage mark
+    cache.on_quote(Quote(symbol="TQQQ", bid=72.0, ask=72.2, last=72.1,
+                         bid_size=1, ask_size=1, volume=10, halted=False))
+    row = [p for p in keeper.positions_list("wealth") if p["symbol"] == "TQQQ"][0]
+    assert row["last"] == 72.1
+
+
+def test_alpaca_streaming_is_per_symbol():
+    """`streaming()` demands a RECENT print from that symbol — an authed socket
+    alone (weekend / halted / never-traded) must not demote the Yahoo poll."""
+    from zargar.brokers.alpaca import AlpacaQuoteFeed
+    from zargar.domain import now_ms
+    feed = AlpacaQuoteFeed(on_quote=lambda q: None, key_id="k", secret="s")
+    feed._authed = True
+    feed._ws = object()          # socket "open"
+    feed._last_msg = now_ms()
+    assert not feed.streaming("TQQQ")            # subscribed or not: no prints yet
+    st = feed._st("TQQQ")
+    st["emit_ms"] = now_ms()
+    assert feed.streaming("TQQQ")                # printed just now
+    st["emit_ms"] = now_ms() - 10 * 60 * 1000
+    assert not feed.streaming("TQQQ")            # went quiet — Yahoo takes over

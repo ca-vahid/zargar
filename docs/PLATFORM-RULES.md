@@ -50,6 +50,17 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-08-30 · A quote source must be judged per SYMBOL, never per connection.**
+  The hybrid feed demoted Yahoo to context whenever the Alpaca socket was up and the
+  symbol was subscribed — but a subscribed name that never PRINTS (weekend, halted,
+  never traded since boot) then has no quote at all, and every consumer (blotter,
+  equity, drift check) silently falls back to avg cost: TQQQ showed −0.00% unrealized
+  all of 2026-08-30 while the broker said +122%. Fix: `AlpacaQuoteFeed.streaming(sym)`
+  (a print within 120s) gates the demotion, and `sync_portfolio_state` now carries the
+  broker's own mark as the no-quote fallback (`pos["mark"]`, quote → mark → avg cost).
+  Tests: `test_snaptrade_sync.py::test_broker_mark_prices_positions_without_quotes`,
+  `::test_alpaca_streaming_is_per_symbol`.
+
 - **2026-08-25 · Data quality reaches into every layer** (EM ZS phantom touch, GOLD). Yahoo 429
   throttling caused 180 s bar stalls, a phantom touch, volume reading 0.0× at fire time and late
   fires. Fixed by Alpaca full-SIP streaming + Alpaca-first history; Yahoo is the visible fallback

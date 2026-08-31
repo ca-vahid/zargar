@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { APP_VERSION } from "../changelog";
 import { api, setAuthToken } from "../lib/api";
 import { reconnectWS } from "../lib/ws";
 import { useStore } from "../store";
@@ -96,7 +97,7 @@ export function LoginPage() {
         {busy && <div className="login-hint">checking with the server…</div>}
         {error && <div className="login-err" role="alert">{error}</div>}
         <div className="login-foot">
-          Signed-in sessions last {auth.sessionDays ?? 30} days on this device. Scripts can still use the API token.
+          Signed-in sessions last {auth.sessionDays ?? 30} days on this device. Scripts can still use the API token. · v{APP_VERSION}
         </div>
       </div>
     </div>

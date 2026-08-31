@@ -141,13 +141,15 @@ class PositionKeeper:
     def _pos_value(self, pos: dict, target_ccy: str) -> float:
         """Position market value converted into target_ccy (signed)."""
         q = self._quotes.get(pos["symbol"])
-        last = q.last if q and q.last > 0 else pos["avgCost"]
+        last = q.last if q and q.last > 0 else (pos.get("mark") or pos["avgCost"])
         native = pos["qty"] * last * _mult(pos["secType"])
         return self.fx.convert(native, self._pos_currency(pos), target_ccy)
 
     def _enrich(self, pos: dict) -> dict:
         q = self._quotes.get(pos["symbol"])
-        last = q.last if q and q.last > 0 else pos["avgCost"]
+        # no live quote yet → the broker's own mark from the last sync; only
+        # with neither does avg cost remain (which reads as a dead-flat P&L)
+        last = q.last if q and q.last > 0 else (pos.get("mark") or pos["avgCost"])
         mult = _mult(pos["secType"])
         unreal = (last - pos["avgCost"]) * pos["qty"] * mult
         option = None
@@ -328,12 +330,15 @@ class PositionKeeper:
                 pos["qty"], pos["avgCost"] = new_qty, new_avg  # realizedPnl preserved
             if new and new.get("currency"):
                 pos["currency"] = str(new["currency"]).upper()
+            if new and new.get("price"):
+                pos["mark"] = float(new["price"])   # broker's own mark — the no-quote fallback
         for (sym, st), new in incoming.items():
             self._positions[(pid, sym, st)] = {
                 "portfolioId": pid, "symbol": sym, "secType": st,
                 "qty": float(new["qty"]), "avgCost": float(new["avgCost"]),
                 "realizedPnl": 0.0,
                 "currency": str(new.get("currency") or currency_for_symbol(sym)).upper(),
+                **({"mark": float(new["price"])} if new.get("price") else {}),
             }
             changes.append({"symbol": sym, "secType": st,
                             "qtyBefore": 0.0, "qtyAfter": float(new["qty"])})

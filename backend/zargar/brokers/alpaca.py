@@ -130,6 +130,15 @@ class AlpacaQuoteFeed(QuoteFeed):
             with contextlib.suppress(Exception):
                 await self._ws.send(json.dumps(self._sub_msg([s])))
 
+    def streaming(self, symbol: str) -> bool:
+        """True only when this SYMBOL has emitted on the stream recently. The
+        connection being up is not enough: a subscribed name that never prints
+        (weekend, halted, illiquid) would otherwise have NO quote at all —
+        TQQQ sat at its avg cost all of 2026-08-30 because the Yahoo poll was
+        demoted to context on connection state alone."""
+        st = self._state.get(symbol.upper())
+        return bool(self.connected and st and st["emit_ms"] and now_ms() - st["emit_ms"] < 120_000)
+
     def absorb_context(self, q: Quote) -> None:
         """Session context from the slow Yahoo poll (prev_close, session phase,
         regular-session price) — merged into every fast Alpaca emission so the

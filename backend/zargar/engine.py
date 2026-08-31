@@ -139,12 +139,15 @@ class Engine:
                         on_bars=self._ingest_exchange_bars)
 
                     def _yahoo_quote(q):
-                        # While Alpaca streams a symbol, Yahoo's slow poll only
-                        # refreshes session context (prev_close, session phase);
-                        # if Alpaca drops, Yahoo quotes flow again as fallback.
-                        if alpaca.connected and q.symbol.upper() in alpaca.symbols:
-                            alpaca.absorb_context(q)
-                        else:
+                        # While Alpaca is actually PRINTING a symbol, Yahoo's slow
+                        # poll only refreshes session context (prev_close, session
+                        # phase). The moment that symbol goes quiet — stream down,
+                        # weekend, halted, never traded since boot — Yahoo quotes
+                        # flow again. Judged per symbol: connection state alone
+                        # left never-printed names with no quote at all (TQQQ
+                        # marked at avg cost across a whole weekend, 2026-08-30).
+                        alpaca.absorb_context(q)
+                        if not alpaca.streaming(q.symbol):
                             self.quotes.on_quote(q)
 
                     yahoo = YahooQuoteFeed(
