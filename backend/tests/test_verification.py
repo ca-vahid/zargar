@@ -153,3 +153,28 @@ async def test_grounding_failure_fails():
     result = await verify_signal(sig(), quotes, FakeSettings(),
                                  grounding={"passed": False})
     assert not named(result, "quote_grounding")["passed"]
+
+
+async def test_ticker_only_grounding_gap_shadow_gates():
+    """CRWV 2026-08-31: the ticker lived in the chart screenshot / channel name,
+    every price grounded — killing it blinded the books to three real explicit
+    contracts. Ticker-only gap → shadow books, no proposal, not a kill."""
+    quotes = FakeQuotes()
+    quotes.set("CRWV", 85.0)
+    g = {"passed": False, "checks": {
+        "has_quotes": True, "quotes_found": True, "ticker_evidenced": False,
+        "entry_evidenced": True, "target_evidenced": True,
+        "stop_evidenced": True, "strike_evidenced": True}}
+    result = await verify_signal(sig(ticker="CRWV", entry_price=85.0, target_price=95.0,
+                                     stop_price=80.0), quotes, FakeSettings(), grounding=g)
+    assert not result["passed"] and result["shadow_only"], result
+    assert not named(result, "ticker_grounded")["passed"]
+    # ...but ungrounded QUOTES still kill, ticker aside
+    g2 = {"passed": False, "checks": {
+        "has_quotes": True, "quotes_found": False, "ticker_evidenced": False,
+        "entry_evidenced": True, "target_evidenced": True,
+        "stop_evidenced": True, "strike_evidenced": True}}
+    r2 = await verify_signal(sig(ticker="CRWV", entry_price=85.0, target_price=95.0,
+                                 stop_price=80.0), quotes, FakeSettings(), grounding=g2)
+    assert not r2["shadow_only"]
+    assert not named(r2, "quote_grounding")["passed"]
