@@ -464,6 +464,33 @@ class _FakeAnthropicFlakyReply:
             ' "rationale": "Retry delivered.", "confidence": 0.5}'))])
 
 
+class _FakeAnthropicOverloadedOnce(_FakeAnthropic):
+    """529 on the first call, then the normal scripted appraisal."""
+
+    def __init__(self):
+        super().__init__()
+        self.overloaded = False
+
+    async def create(self, **kw):
+        if not self.overloaded:
+            self.overloaded = True
+            raise RuntimeError("Error code: 529 - overloaded_error: Overloaded")
+        return await super().create(**kw)
+
+
+async def test_analyst_api_overload_retries_and_recovers(app_client, monkeypatch):
+    # 529 killed the APPL appraisal on its FIRST call (2026-08-31) — the agent
+    # loop now retries transient API errors instead of failing the run
+    from zargar.techniques.tip import analyst as analyst_mod
+    client, eng = app_client
+    monkeypatch.setattr(analyst_mod, "_API_RETRY_DELAYS", (0.0, 0.0))
+    fake = _FakeAnthropicOverloadedOnce()
+    eng.signals_service._analyst_client = fake
+    out = await run_pipeline(eng, canned_extraction())
+    sig = out[0]["signal"]
+    assert (sig["extraction"].get("analyst") or {}).get("verdict") == "take"
+
+
 async def test_unparseable_reply_retries_once_and_recovers(app_client):
     # the retry turns a would-be failed run into a real verdict (tick-5 fix)
     client, eng = app_client
