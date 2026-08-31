@@ -78,6 +78,14 @@ class ProposalService:
         self._task: asyncio.Task | None = None
         self._adopt_tasks: dict[str, asyncio.Task] = {}   # proposalId -> adopt-on-fill waiter
 
+    def _cap_contracts(self, qty: int) -> int:
+        """Safety net on option quantity: budget sizing on lotto premium is
+        nonsense (277 × a $0.09 call, 2026-08-31) — a cheap contract is cheap
+        because it is unlikely, not an invitation to buy hundreds. Caps stated
+        analyst/tip counts too."""
+        cap = int(self.engine.settings.get("techniques.tip.max_contracts_per_tip", 25) or 0)
+        return min(qty, cap) if cap > 0 else qty
+
     # ------------------------------------------------------------- create
     async def create_from_armed_fire(self, signal_row: Signal, *, run_id: str, trigger_id: str,
                                      portfolio_id: str, direction: str, entry: float, stop: float,
@@ -108,7 +116,7 @@ class ProposalService:
                 log.warning("armed fire %s: no premium reference for %s — no proposal", run_id, occ)
                 return None
             limit = round(float(ref), 2)
-            qty = int(contracts or 0) or max(1, math.floor(budget / (limit * 100)))
+            qty = self._cap_contracts(int(contracts or 0) or max(1, math.floor(budget / (limit * 100))))
             symbol, sec_type = occ, "OPT"
             label = contract.get("display") or occ
             vehicle = {"kind": "option", "display": label, "underlying": signal_row.ticker,
@@ -205,7 +213,7 @@ class ProposalService:
             if pick.get("available"):
                 net, width = float(pick["net"]), float(pick["width"])
                 max_loss = net if net > 0 else max(width - abs(net), 0.01)
-                qty = max(1, math.floor(budget / (max_loss * 100)))
+                qty = self._cap_contracts(max(1, math.floor(budget / (max_loss * 100))))
                 disp = (f"{sig.ticker.upper()} "
                         f"{pick['legs'][0]['strike']:g}/{pick['legs'][1]['strike']:g} "
                         f"{pick['legs'][0]['optionType']} spread {pick['expiry']}")
@@ -289,7 +297,7 @@ class ProposalService:
                 log.warning("no premium reference for %s — no proposal", occ)
                 return None
             limit = round(float(ref_price), 2)
-            qty = int(qty_hint or 0) or max(1, math.floor(budget / (limit * 100)))
+            qty = self._cap_contracts(int(qty_hint or 0) or max(1, math.floor(budget / (limit * 100))))
             from ..options import occ as occ_mod
             parsed = occ_mod.parse(occ)
             opt_type = parsed.option_type if parsed else ("put" if sig.direction == "short" else "call")
