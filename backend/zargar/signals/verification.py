@@ -66,14 +66,19 @@ async def verify_signal(
     add("explicit_or_implied", signal.confidence != "commentary_only",
         "commentary-only content is never traded" if signal.confidence == "commentary_only" else "")
 
-    # 2. ticker resolves / quote available
+    # 2. ticker resolves / quote available. A quote whose last is 0 is a COLD
+    # placeholder (just subscribed, no tick yet) — the same feed state as no
+    # quote at all (MRVL 2026-08-31: last 0.00 tripped the fatal penny-stock
+    # filter and the 999% spread sentinel killed a real tip). Park, re-judge
+    # when the feed warms — the 2026-08-28 AMZN decision, applied fully.
     symbol = signal.ticker.upper()
     quote = quotes.get(symbol)
-    add("ticker_resolves", quote is not None,
+    warm = quote is not None and float(quote.last or 0) > 0
+    add("ticker_resolves", warm,
         f"no market data for {symbol} yet — parked until the feed warms"
-        if quote is None else "")
+        if not warm else "")
 
-    if quote is not None:
+    if warm:
         # 3. halt
         add("not_halted", not quote.halted, "instrument is halted" if quote.halted else "")
 
@@ -83,11 +88,15 @@ async def verify_signal(
             f"price {quote.last:.2f} below minimum {min_price:.2f} (penny-stock filter)"
             if quote.last < min_price else "")
 
-        # 5. spread (liquidity proxy)
-        max_spread = float(settings.get("verification.max_spread_pct", 1.5))
-        add("spread", quote.spread_pct <= max_spread,
-            f"spread {quote.spread_pct:.2f}% exceeds {max_spread:.2f}%"
-            if quote.spread_pct > max_spread else "")
+        # 5. spread (liquidity proxy) — judged only on a REAL book: bid/ask 0
+        # means the book hasn't warmed (Yahoo polls often carry no quotes at
+        # all), and the 999% sentinel is a feed state, not a liquidity verdict.
+        # The expression layer re-checks the tradeable spread at trade time.
+        if quote.bid and quote.ask and quote.bid > 0 and quote.ask > 0:
+            max_spread = float(settings.get("verification.max_spread_pct", 1.5))
+            add("spread", quote.spread_pct <= max_spread,
+                f"spread {quote.spread_pct:.2f}% exceeds {max_spread:.2f}%"
+                if quote.spread_pct > max_spread else "")
 
         # 6. price deviation vs claimed entry — PARKING, not fatal: the tip
         # technique waits for the level instead of chasing or dying
