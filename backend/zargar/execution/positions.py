@@ -213,6 +213,7 @@ class PositionManager:
         self._order_index: dict[str, str] = {}
         self._breaches: dict[tuple[str, str], int] = {}
         self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
+        self._last_decide: dict[str, int] = {}   # position id -> raw-bar ts last decided on
         self._entry_halted: set[str] = set()           # symbols where reconciliation found drift
         self._now = time.time                          # injectable clock (chaos tests)
 
@@ -547,14 +548,43 @@ class PositionManager:
         await self._persist(p)
 
     # ---------------------------------------------------------------- exits
+    _EXIT_DEAD = ("REJECTED", "REJECTED_RISK", "CANCELLED", "EXPIRED", "ERROR")
+
     def _register_exit_order(self, p: Managed, order_id: str | None) -> None:
         if order_id:
             self._order_index[order_id] = p.id
 
+    def _inflight_exit_qty(self, p: Managed, leg_symbol: str) -> float:
+        """Qty this position is already trying to exit on `leg_symbol` — submitted
+        but not yet filled or dead. New exits may only cover what's left beyond it.
+        A record with zero fills past the TTL stops counting: a zombie order
+        (crashed venue, lost ack) must never block getting flat."""
+        ttl_ms = int(float(self._setting("execution.exit_inflight_ttl_seconds", 900) or 900) * 1000)
+        now = self.now_ms()
+        out = 0.0
+        for rec in p.exits:
+            if rec.get("leg") != leg_symbol or rec.get("status") in self._EXIT_DEAD:
+                continue
+            if (float(rec.get("filledQty") or 0) <= 0
+                    and rec.get("ts") and now - rec["ts"] > ttl_ms):
+                continue
+            out += max(0.0, float(rec.get("qty") or 0) - float(rec.get("filledQty") or 0))
+        return out
+
     async def _close_leg(self, p: Managed, leg: Leg, qty: float, *, force_market: bool,
                          kind: str, reason: str) -> dict | None:
         qty = float(int(min(qty, abs(leg.qty)))) if leg.sec_type == "OPT" else float(min(qty, abs(leg.qty)))
+        # total outstanding exits must never exceed the leg: a policy decision,
+        # the quote watch and a manual close can race a slow fill, and the
+        # overshoot flips the position past flat. A further ladder rung while an
+        # earlier one is still filling stays legal — only the overlap is cut.
+        avail = abs(leg.qty) - self._inflight_exit_qty(p, leg.symbol)
+        qty = min(qty, avail)
+        if leg.sec_type == "OPT":
+            qty = float(int(qty))
         if qty <= 0:
+            self._log(p, "exit_skip",
+                      f"{kind} {leg.symbol}: exits already in flight cover this qty")
             return None
         closing_short = leg.qty < 0
         if closing_short:
@@ -615,6 +645,15 @@ class PositionManager:
                 await self.engine.orders.cancel(p.venue_stop_order_id)
             p.venue_stop_order_id = None
             p.venue_stop_at = None
+        # a forced (stop) close supersedes any resting limit exit: cancel it so
+        # the in-flight guard doesn't suppress the stop, and mark it dead
+        # optimistically — a zombie order must never block getting flat
+        if force_market:
+            for rec in p.exits:
+                if rec.get("orderId") and rec.get("status") not in self._EXIT_DEAD + ("FILLED",):
+                    with contextlib.suppress(Exception):
+                        await self.engine.orders.cancel(rec["orderId"])
+                    rec["status"] = "CANCELLED"
         self._log(p, "close", f"closing {fraction:.0%} — {reason}")
         for leg in list(p.open_legs):
             want = abs(leg.qty) * fraction
@@ -759,6 +798,13 @@ class PositionManager:
         if p.last_tf_bar_ts is not None and tfbar.ts <= p.last_tf_bar_ts:
             tfbar = bar                                  # fall back to the raw bar (tests feed those directly)
         p.last_tf_bar_ts = max(p.last_tf_bar_ts or 0, tfbar.ts)
+        # a re-delivered closing minute (the ~5s exchange-corrected bar, or any
+        # duplicate on the bus) must not re-run the policy: the first decision's
+        # exit order can still be unfilled, and a second full-size exit turns a
+        # long into a naked short (AAPL +4 → -4, 2026-08-31)
+        if self._last_decide.get(p.id, -1) >= bar.ts:
+            return
+        self._last_decide[p.id] = bar.ts
         await self._decide(p, tfbar, tf_bars or [bar])
 
     async def _decide(self, p: Managed, bar: Bar, bars: list[Bar]) -> None:

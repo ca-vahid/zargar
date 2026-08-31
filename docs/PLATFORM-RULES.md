@@ -92,6 +92,18 @@ runtime ones to `execution.*`).
   and a restart guard would not have counted it. A new technique's attach function must register
   its runner in `engine.plan_runners` (and `engine.techniques`, where a runner is its own `.armer`)
   or its plans are invisible to the hub and unprotected across restarts.
+- **2026-08-31 · Exits must be idempotent under re-delivered bars and slow fills** (AAPL +4 → −4
+  naked short, Practice sim, first live-market Monday). The ~5 s exchange-corrected 1m bar re-closed
+  a 5m window while the time-stop's SELL was still unfilled (sim fill ~68 s); `on_minute_bar`'s
+  stale-tf fallback re-ran the policy and a second full-size reduce-only SELL flipped the position
+  past flat — reduce-only checks the *current* qty, and both orders were submitted before either
+  filled. Fix in `PositionManager`: (a) a raw-bar-ts decide dedupe per position (a re-delivered
+  minute never re-runs the policy); (b) leg-level in-flight exit accounting — total outstanding
+  exits never exceed the leg, later ladder rungs stay legal, an unfilled record past
+  `execution.exit_inflight_ttl_seconds` (900) stops suppressing so a zombie order can't block
+  getting flat; (c) a `force_market` stop cancels resting exits first and supersedes them. Chaos
+  test `test_redelivered_bar_and_slow_fill_never_double_exit`. Any future exit path MUST go through
+  `_close_leg` to inherit the accounting.
 
 ## 3. Open questions the shared runtime is collecting data on
 
