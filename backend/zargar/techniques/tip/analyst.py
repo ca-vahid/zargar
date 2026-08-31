@@ -878,7 +878,23 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             eng, client, model=model, system=system, header=header, rec=rec,
             run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
             tools_used=tools_used)
-        return _parse_opinion(text) if text is not None else None
+        if text is None:
+            return None
+        try:
+            return _parse_opinion(text)
+        except ValueError as exc:
+            # one cheap retry: an unparseable reply cost a whole appraisal (TSLA
+            # 2026-08-31 — the run failed and auto-approve had to fail closed).
+            # The overall TIMEOUT_S still bounds both attempts.
+            rec.step("note", f"Reply had no parseable opinion ({exc}) — one retry, "
+                             "JSON only.")
+            text = await run_agent_loop(
+                eng, client, model=model, system=system,
+                header=header + "\n\nYour previous reply contained no JSON opinion "
+                                "object. Reply with ONLY the JSON opinion object now.",
+                rec=rec, run_id=run_id, max_tools=2, tool_ctx=tool_ctx,
+                tools_used=tools_used)
+            return _parse_opinion(text) if text is not None else None
 
     try:
         opinion = await asyncio.wait_for(loop(), timeout=TIMEOUT_S)
