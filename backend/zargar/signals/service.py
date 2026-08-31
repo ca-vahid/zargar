@@ -1303,6 +1303,12 @@ class SignalService:
                 # even though it is replayed — the appraisal itself is the
                 # evidence the batch review grades
                 experiment is not None and status == "replayed")
+            # was an appraisal actually possible? (enabled + client/key). Needed
+            # below: an ATTEMPTED appraisal with no verdict fails auto-approve
+            # CLOSED, while "analyst not configured" legitimately means auto.
+            analyst_available = (bool(eng.settings.get("techniques.tip.analyst_enabled", True))
+                                 and (self._analyst_client is not None
+                                      or bool(getattr(eng.config, "anthropic_api_key", ""))))
             if appraise:
                 # the tips analyst appraises the tip with market tools —
                 # strictly advisory, fail-open (POC 2026-08-28)
@@ -1413,7 +1419,17 @@ class SignalService:
                     pf = eng.positions.portfolio(proposal["portfolioId"]) or {}
                     live_ok = (pf.get("kind") != "live"
                                or bool(eng.settings.get("techniques.tip.allow_live_auto", False)))
-                    if verdict not in (None, "take"):
+                    if verdict is None and appraise and analyst_available:
+                        # the analyst was supposed to gate this and DIDN'T deliver a
+                        # verdict (crashed / unparseable reply). Fail CLOSED: a missing
+                        # gatekeeper is not permission (TSLA 2026-08-31 — a failed
+                        # appraisal auto-bought 15 two-DTE puts). Human decides.
+                        log.warning("auto mode: analyst enabled but no verdict for %s "
+                                    "(run failed?) — leaving proposal %s pending",
+                                    row.id, proposal["id"])
+                        istep("note", f"{row.ticker}: analyst produced no verdict — auto-approve "
+                                      "FAILS CLOSED; the proposal waits for you.")
+                    elif verdict not in (None, "take"):
                         log.info("auto mode: analyst said %r — leaving proposal %s for the human",
                                  verdict, proposal["id"])
                     elif not live_ok:
