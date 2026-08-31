@@ -863,7 +863,7 @@ class SignalService:
         intake = IntakeRun(eng)
         await intake.start(source=content.source_name or "auto",
                            chars=len(text), has_image=image is not None,
-                           preview=text[:400])
+                           preview=text[:400], experiment=experiment)
         intake.step("extract", f"Extracting with {self.extractor.model}…"
                     + (" (image transcription included)" if image is not None else "")
                     + " — one LLM read of the whole message, usually 10–30 s.")

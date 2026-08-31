@@ -980,7 +980,7 @@ class IntakeRun:
         self.rec: _Recorder | None = None
 
     async def start(self, *, source: str, chars: int, has_image: bool,
-                    preview: str = "") -> None:
+                    preview: str = "", experiment: str | None = None) -> None:
         from ...domain import new_id
         from ...models import TipAnalystRun
         try:
@@ -991,7 +991,9 @@ class IntakeRun:
                     status="running", kind="intake", model=None,
                     tools=[t["name"] for t in TOOLS],
                     tip={"chars": chars, "hasImage": has_image,
-                         "preview": preview[:400]}))
+                         "preview": preview[:400],
+                         # batch tag → the runs list can hide out-of-band runs
+                         **({"experiment": experiment} if experiment else {})}))
                 await session.commit()
             self.rec = _Recorder(self.eng, self.id)
             self.rec.step("start", f"Message from {source or 'unknown'} — {chars} chars"
