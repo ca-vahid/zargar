@@ -483,6 +483,12 @@ export function SettingsPage() {
           <div className="panel-head">Tips technique
             <span className="sub">the tip pipeline's own knobs — the shared order/exit machinery above still applies unless a tip-specific override is set</span></div>
           <div className="panel-body">
+            <SelectRow k="techniques.tip.mode" label="Default source mode"
+              hint="the trust ladder every source starts on — auto self-approves only when the analyst says 'take' (practice-safe; real money also needs the gate below). A per-source override in Tips → Sources beats this"
+              options={[{ value: "shadow", label: "shadow — books only, never proposes" },
+                        { value: "alert", label: "alert only" },
+                        { value: "proposal", label: "propose — I approve each trade" },
+                        { value: "auto", label: "auto — analyst 'take' self-approves" }]} />
             <Group>Budgets &amp; expression</Group>
             <Cells>
               <NumCell k="techniques.tip.budget_per_tip" label="Budget / tip ($)" step={50}
