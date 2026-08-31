@@ -84,6 +84,8 @@ def experiment_tag(extraction: dict | None) -> str | None:
 
 
 class SignalService:
+    _extract_retry_delays = (5.0, 10.0)   # transient-API backoff; tests set (0, 0)
+
     def __init__(self, engine, extractor: Extractor) -> None:
         self.engine = engine
         self.extractor = extractor
@@ -868,19 +870,33 @@ class SignalService:
                     + (" (image transcription included)" if image is not None else "")
                     + " — one LLM read of the whole message, usually 10–30 s.")
         await intake.checkpoint()
-        try:
-            result = await self.extractor.extract(
-                text,
-                subject=content.subject or "",
-                source_name=content.source_name or "",
-                received_at=content.received_at.isoformat() if content.received_at else "",
-                image=image)
-        except Exception as exc:
-            log.exception("extraction failed for %s", content_id)
-            await self._set_content_status(content_id, "error")
-            await intake.finish("failed", f"Extraction failed: {exc}", failed=True)
-            return {"contentId": content_id, "status": "error", "error": str(exc),
-                    "signals": [], "intakeRunId": intake.id}
+        result = None
+        for attempt in (1, 2, 3):
+            try:
+                result = await self.extractor.extract(
+                    text,
+                    subject=content.subject or "",
+                    source_name=content.source_name or "",
+                    received_at=content.received_at.isoformat() if content.received_at else "",
+                    image=image)
+                break
+            except Exception as exc:
+                # a transient API failure must not eat the tip (529 Overloaded
+                # dropped a real message, 2026-08-31): retry twice with backoff
+                transient = ("overloaded" in str(exc).lower()
+                             or getattr(exc, "status_code", 0) in (429, 500, 502, 503, 529))
+                if transient and attempt < 3:
+                    delay = self._extract_retry_delays[min(attempt - 1,
+                                                          len(self._extract_retry_delays) - 1)]
+                    intake.step("extract", f"Transient API error ({type(exc).__name__}) — "
+                                           f"retry {attempt}/2 in {delay:g}s.")
+                    await asyncio.sleep(delay)
+                    continue
+                log.exception("extraction failed for %s", content_id)
+                await self._set_content_status(content_id, "error")
+                await intake.finish("failed", f"Extraction failed: {exc}", failed=True)
+                return {"contentId": content_id, "status": "error", "error": str(exc),
+                        "signals": [], "intakeRunId": intake.id}
 
         if stated_at:
             # the caller KNOWS when the content was posted (the mirror's

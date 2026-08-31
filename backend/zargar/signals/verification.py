@@ -27,7 +27,11 @@ PARKING_CHECKS = {"price_deviation", "not_past_target", "ticker_resolves"}
 # case): implied-but-directional chart tips are the commonest real-world tip
 # shape, and killing them left the books blind to exactly the sources we are
 # trying to measure. Shadow costs nothing; explicit calls still gate proposals.
-SHADOW_CHECKS = {"actionable"}
+# `ticker_grounded` (CRWV 2026-08-31): the ticker is the one field the model
+# legitimately reads from context the checker can't see — a chart screenshot,
+# the channel name — while every price grounds. Proposal-grade it is not;
+# killing it blinded the books to three real explicit contracts.
+SHADOW_CHECKS = {"actionable", "ticker_grounded"}
 
 
 async def verify_signal(
@@ -43,10 +47,23 @@ async def verify_signal(
         checks.append({"name": name, "passed": passed, "detail": detail,
                        "fatal": name not in PARKING_CHECKS and name not in SHADOW_CHECKS})
 
-    # 0. grounding (from the extraction stage)
+    # 0. grounding (from the extraction stage). When the ONLY gap is the ticker
+    # itself — quotes found, every price evidenced — the model inferred the
+    # ticker from context the checker can't see (chart screenshot, channel
+    # name): shadow-gate instead of killing (CRWV 2026-08-31).
     if grounding is not None:
-        add("quote_grounding", bool(grounding.get("passed")),
-            "" if grounding.get("passed") else "evidence quotes not found in source text")
+        g_checks = grounding.get("checks") or {}
+        ticker_only_gap = (not grounding.get("passed")
+                           and g_checks.get("ticker_evidenced") is False
+                           and all(bool(v) for k, v in g_checks.items()
+                                   if k != "ticker_evidenced"))
+        if ticker_only_gap:
+            add("ticker_grounded", False,
+                "ticker inferred from context (screenshot/channel), not stated in "
+                "the text — shadow books only, no proposal")
+        else:
+            add("quote_grounding", bool(grounding.get("passed")),
+                "" if grounding.get("passed") else "evidence quotes not found in source text")
 
     # 0b. a follow-up is NEVER a new position (ARM-GAPS D1): "sold 40%" /
     # "I'm out" / "move the stop" must not verify as an open and buy MORE of

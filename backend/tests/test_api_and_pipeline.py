@@ -956,6 +956,38 @@ class _FakeExtractor:
         return self.result
 
 
+class _FlakyExtractor(_FakeExtractor):
+    """Fails with a transient 529-style error N times, then extracts."""
+
+    def __init__(self, result, fail_times=2):
+        super().__init__(result)
+        self.fail_times = fail_times
+        self.calls = 0
+
+    async def extract(self, text, **kw):
+        self.calls += 1
+        if self.calls <= self.fail_times:
+            raise RuntimeError("Error code: 529 - overloaded_error: Overloaded")
+        return self.result
+
+
+async def test_transient_extraction_error_retries(app_client, monkeypatch):
+    # a 529 Overloaded dropped a real tip outright (2026-08-31) — process_content
+    # now retries transient API errors twice before giving up
+    client, eng = app_client
+    monkeypatch.setattr(type(eng.signals_service), "_extract_retry_delays", (0.0, 0.0))
+    flaky = _FlakyExtractor(canned_extraction(), fail_times=2)
+    eng.signals_service.extractor = flaky
+    row = RawContent(id=new_id(), source_type="manual", source_name="TestLetter",
+                     subject="alert", body_text=SOURCE_TEXT)
+    async with eng.sf() as session:
+        session.add(row)
+        await session.commit()
+    out = await eng.signals_service.process_content(row.id)
+    assert flaky.calls == 3
+    assert out.get("status") != "error", out
+
+
 class _FakeAnthropicReview:
     """Scripted review: looks at OUR positions and the source's open tips,
     saves a note, then reports — flagging the line that was actually fresh."""
