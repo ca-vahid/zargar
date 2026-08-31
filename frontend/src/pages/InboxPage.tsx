@@ -1257,6 +1257,7 @@ function SourcePoliciesPanel() {
   // (the same overlay resolve_policy reads); blank = the platform default
   const toast = useStore((s) => s.toast);
   const settings = useStore((s) => s.settings);
+  const defMode = String(settings["techniques.tip.mode"] ?? "proposal");
   const cardsState = useAsync(() => api.sourceScorecards(), []);
   const [overrides, setOverrides] = useState<Record<string, any>>({});
   const [busy, setBusy] = useState(false);
@@ -1294,7 +1295,7 @@ function SourcePoliciesPanel() {
                 <tr key={n}>
                   <td><b>{n}</b></td>
                   <td><select value={o.mode ?? ""} onChange={(e) => setF(n, "mode", e.target.value || undefined)}>
-                    <option value="">default (proposal)</option><option value="shadow">shadow</option>
+                    <option value="">default ({defMode})</option><option value="shadow">shadow</option>
                     <option value="alert">alert</option><option value="proposal">proposal</option>
                     <option value="auto">auto</option></select></td>
                   <td><select value={o.entry ?? ""} onChange={(e) => setF(n, "entry", e.target.value || undefined)}>
