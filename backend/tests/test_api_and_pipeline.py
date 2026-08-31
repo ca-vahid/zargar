@@ -389,6 +389,17 @@ async def test_option_tip_proposal_is_the_contract(app_client):
     assert p["bracket"] is None                        # underlying prices never bracket an option
 
 
+async def test_lotto_premium_contract_qty_is_capped(app_client):
+    # budget sizing on lotto premium proposed 277 × a $0.09 call (2026-08-31);
+    # techniques.tip.max_contracts_per_tip caps every option sizing site, the
+    # analyst's stated count included. 0 disables the cap.
+    client, eng = app_client
+    assert eng.proposals._cap_contracts(277) == 25
+    assert eng.proposals._cap_contracts(3) == 3
+    await eng.settings.set("techniques.tip.max_contracts_per_tip", 0)
+    assert eng.proposals._cap_contracts(277) == 277
+
+
 async def test_short_tip_without_put_never_proposes_share_short(app_client):
     # shorts are puts only — a bearish tip with no usable contract makes NO
     # proposal (the old builder proposed SELL shares, which is never allowed)

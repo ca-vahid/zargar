@@ -94,6 +94,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.analyst_notes_max": 12,  # shared-knowledge notes handed to each run
     "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our positions
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
+    "techniques.tip.max_contracts_per_tip": 25,  # hard cap on option qty per proposal — budget sizing on lotto premium is nonsense (277 × $0.09, 2026-08-31)
     "techniques.tip.retro_enabled": True,    # nightly analyst retro on closed tip positions
     "techniques.tip.retro_at": "17:10",      # ET, engine scheduler
     "techniques.tip.analyst_manage_enabled": True,  # analyst may adjust/trim OPEN tip positions (exit-only)
