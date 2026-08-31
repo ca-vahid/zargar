@@ -229,6 +229,37 @@ async def test_time_stop_counts_trading_sessions_across_days(engine):
     assert any(x["kind"] == "time" for x in p.exits), (p.sessions_seen, p.exits)
 
 
+async def test_redelivered_bar_and_slow_fill_never_double_exit(engine):
+    """2026-08-31 live finding: the ~5s exchange-corrected 1m bar re-closed the
+    5m window while the time-stop's exit order was still unfilled — a second
+    full-size SELL flipped +4 calls into a naked -4 short. Same-minute
+    re-decides are dropped, and in-flight exits suppress overlapping qty."""
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    spec = spread_spec(pf, qty=4)
+    spec["policy"] = {"timeframe": "5m", "stop": {"kind": "none", "guard": "defined risk"},
+                      "time_stop_sessions": 1}
+    d = await pm.adopt(spec)
+    p = pm.get(d["id"])
+    engine.quotes.get = lambda s: None
+    fo.script = {i: {"status": "SUBMITTED"} for i in range(20)}   # venue is slow: nothing fills
+    for day in ("2026-08-24", "2026-08-25"):
+        await pm.on_minute_bar(p, rth_bar(day, 34, 100.5))
+    first = len(fo.placed)
+    assert first >= 1 and any(x["kind"] == "time" for x in p.exits)
+    # the exchange-corrected duplicate of the same closing minute arrives seconds later
+    await pm.on_minute_bar(p, rth_bar("2026-08-25", 34, 100.6))
+    assert len(fo.placed) == first, "a re-delivered minute must not re-run the policy"
+    # …and even a direct racing close submits nothing while those exits are in flight
+    await pm.close(p.id, fraction=1.0, reason="racing path", kind="time")
+    assert len(fo.placed) == first, "in-flight exits suppress overlapping exit qty"
+    assert any(e["event"] == "exit_skip" for e in p.events)
+    # a forced stop still supersedes: the resting exits are cancelled, not stacked
+    await pm.close(p.id, fraction=1.0, reason="crash brake", kind="stop", force_market=True)
+    assert fo.cancelled, "force_market cancels the resting exits first"
+    assert len(fo.placed) > first, "the stop itself still goes out"
+
+
 # ------------------------------------------------------------------ watchdog + stale quotes
 async def test_failed_exit_watchdog_retries_then_alerts(engine):
     pm, fo = await make_manager(engine, fake_orders=True)
