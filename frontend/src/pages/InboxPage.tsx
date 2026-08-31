@@ -2175,7 +2175,9 @@ function AnalystTab() {
                 {(() => {   // verdict pill — skipped when it would just repeat the kind
                   let v = r.status === "running" ? "running" : (r.verdict ?? r.status);
                   // the 🧪 pill already says "experiment" — keep only the tally
-                  if (r.experiment) v = (v ?? "").replace(/^experiment\s*·\s*/i, "");
+                  // (the verdict column truncates at 16 chars: "experiment · 1 t")
+                  if (r.experiment) v = (v ?? "").replace(/^experiment\s*·\s*/i, "")
+                    .replace(/^(\d+) t(ips?)?$/i, (_, n) => `${n} tip${n === "1" ? "" : "s"}`);
                   if (!v || v.toLowerCase() === (r.kind ?? "")) return null;
                   return (
                     <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
