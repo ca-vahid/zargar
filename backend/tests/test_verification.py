@@ -97,6 +97,35 @@ async def test_min_price_filter():
     assert not named(result, "min_price")["passed"]
 
 
+async def test_cold_quote_parks_instead_of_failing():
+    """MRVL 2026-08-31: a just-subscribed symbol served a placeholder quote
+    (last 0.00, empty book) and the fatal penny-stock + 999% spread-sentinel
+    checks killed a real tip. A cold quote is a FEED state — park it."""
+    quotes = FakeQuotes()
+    quotes.quotes["MRVL"] = Quote(symbol="MRVL", last=0.0, bid=0.0, ask=0.0,
+                                  bid_size=0, ask_size=0, halted=False,
+                                  ts=int(time.time() * 1000))
+    result = await verify_signal(sig(ticker="MRVL", entry_price=90.0, target_price=99.0,
+                                     stop_price=85.0), quotes, FakeSettings())
+    assert not named(result, "ticker_resolves")["passed"]
+    assert result["park"], result             # parked, not verification_failed
+    names = {c["name"] for c in result["checks"]}
+    assert "min_price" not in names and "spread" not in names
+
+
+async def test_warm_last_with_empty_book_skips_spread_verdict():
+    """Yahoo-poll quotes often carry a live last with no bid/ask — the spread
+    sentinel (999%) is unknowable liquidity, not bad liquidity. The expression
+    layer re-checks the tradeable spread at trade time (T5.4)."""
+    quotes = FakeQuotes()
+    quotes.quotes["NVDA"] = Quote(symbol="NVDA", last=128.5, bid=0.0, ask=0.0,
+                                  bid_size=0, ask_size=0, halted=False,
+                                  ts=int(time.time() * 1000))
+    result = await verify_signal(sig(), quotes, FakeSettings())
+    assert result["passed"], result
+    assert "spread" not in {c["name"] for c in result["checks"]}
+
+
 async def test_halted_fails():
     quotes = FakeQuotes()
     quotes.set("NVDA", 128.5, halted=True)
