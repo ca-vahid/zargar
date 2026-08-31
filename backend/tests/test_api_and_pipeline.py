@@ -447,6 +447,36 @@ class _FakeAnthropicBroken:
         return _FakeAnthropicResp([_Block(type="text", text="I am unable to comply.")])
 
 
+class _FakeAnthropicFlakyReply:
+    """First reply has no JSON; the retry delivers the opinion."""
+
+    def __init__(self):
+        self.calls = 0
+        self.messages = self
+
+    async def create(self, **kw):
+        self.calls += 1
+        if self.calls == 1:
+            return _FakeAnthropicResp([_Block(type="text",
+                                              text="Thinking out loud, no JSON here.")])
+        return _FakeAnthropicResp([_Block(type="text", text=(
+            '{"verdict": "watch", "instrument": "shares",'
+            ' "rationale": "Retry delivered.", "confidence": 0.5}'))])
+
+
+async def test_unparseable_reply_retries_once_and_recovers(app_client):
+    # the retry turns a would-be failed run into a real verdict (tick-5 fix)
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    fake = _FakeAnthropicFlakyReply()
+    eng.signals_service._analyst_client = fake
+    out = await run_pipeline(eng, canned_extraction())
+    sig = out[0]["signal"]
+    assert fake.calls == 2
+    assert (sig["extraction"].get("analyst") or {}).get("verdict") == "watch"
+
+
 async def test_failed_appraisal_fails_auto_approve_closed(app_client):
     # TSLA 2026-08-31: an appraisal that crashed left no verdict, and auto mode
     # read "no verdict" as "analyst off" — buying 15 two-DTE puts with zero
