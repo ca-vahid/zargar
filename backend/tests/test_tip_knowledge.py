@@ -90,6 +90,25 @@ async def test_pin_clears_expiry(app_client):
         assert row.valid_until is None
 
 
+async def test_remove_shadow_book_only(app_client):
+    """Demo/test shadow books are deletable (user 2026-08-30); sim/paper/live
+    portfolios are NOT — the guard refuses them."""
+    client, eng = app_client
+    from zargar.models import Portfolio as PortfolioRow
+    shadow = await eng.signals_service.shadow_portfolio("DemoSrc", "immediate")
+    pid = shadow["id"]
+    r = await client.delete(f"/api/portfolios/{pid}")
+    assert r.status_code == 200 and r.json()["ok"]
+    assert eng.positions.portfolio(pid) is None
+    async with eng.sf() as session:
+        assert await session.get(PortfolioRow, pid) is None
+
+    sim = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")
+    r2 = await client.delete(f"/api/portfolios/{sim['id']}")
+    assert r2.status_code == 400
+    assert eng.positions.portfolio(sim["id"]) is not None
+
+
 class _FakeDigestClient:
     """Scripted digest judge: one summary + one durable promotion."""
 

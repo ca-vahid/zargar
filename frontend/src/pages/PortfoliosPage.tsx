@@ -334,13 +334,31 @@ function ManagedPanel() {
 
 /* ── shadow research books: per-source scorecards, not accounts ───────── */
 
-function ShadowBooksPanel({ books, byPortfolio, hidden, onToggle }: {
+function ShadowBooksPanel({ books: allBooks, byPortfolio, hidden, onToggle }: {
   books: Portfolio[];
   byPortfolio: Record<string, Position[]>;
   hidden: Record<string, boolean>;
   onToggle: (pid: string, v: boolean) => void;
 }) {
+  const toast = useStore((s) => s.toast);
   const [open, setOpen] = useState<Record<string, boolean>>({});
+  const [removed, setRemoved] = useState<Record<string, boolean>>({});
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const books = allBooks.filter((p) => !removed[p.id]);
+  const remove = async (p: Portfolio) => {
+    setBusy(true);
+    try {
+      await api.removeShadowBook(p.id);
+      setRemoved((r) => ({ ...r, [p.id]: true }));
+      toast("info", `Removed the "${p.name}" research book`);
+    } catch (e: any) {
+      toast("error", e.message);
+    } finally {
+      setBusy(false);
+      setConfirmId(null);
+    }
+  };
   if (books.length === 0) return null;
   return (
     <div className="panel mb">
@@ -357,7 +375,7 @@ function ShadowBooksPanel({ books, byPortfolio, hidden, onToggle }: {
             <thead>
               <tr>
                 <th>Book</th><th className="num">Equity</th><th className="num">Since start</th>
-                <th className="num">Positions</th><th className="num">Chart</th>
+                <th className="num">Positions</th><th className="num">Chart</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -382,10 +400,23 @@ function ShadowBooksPanel({ books, byPortfolio, hidden, onToggle }: {
                           <span className="track" />
                         </label>
                       </td>
+                      <td className="num" onClick={(e) => e.stopPropagation()}>
+                        {confirmId === p.id ? (
+                          <>
+                            <button className="link-btn danger" disabled={busy}
+                              onClick={() => remove(p)}>delete?</button>
+                            <button className="link-btn" onClick={() => setConfirmId(null)}>keep</button>
+                          </>
+                        ) : (
+                          <button className="link-btn danger"
+                            title={`Remove this research book${pos.length ? ` (${pos.length} simulated position(s) go with it)` : ""} — the journal keeps the audit trail; a future tip from the source re-creates a fresh book`}
+                            onClick={() => setConfirmId(p.id)}>✕</button>
+                        )}
+                      </td>
                     </tr>
                     {isOpen && pos.length > 0 && (
                       <tr className="shadow-detail">
-                        <td colSpan={5}><EnginePosTable positions={pos} /></td>
+                        <td colSpan={6}><EnginePosTable positions={pos} /></td>
                       </tr>
                     )}
                   </Fragment>

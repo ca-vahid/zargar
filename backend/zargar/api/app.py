@@ -228,6 +228,16 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         return {"id": row.id, "name": row.name, "kind": row.kind,
                 "cash": row.cash, "startingCash": row.starting_cash}
 
+    @app.delete("/api/portfolios/{pid}", dependencies=[auth])
+    async def remove_portfolio(pid: str):
+        """Shadow research books ONLY (demo/test cleanup) — sim/paper/live are
+        never deletable; the journal keeps the audit trail."""
+        try:
+            info = await eng.positions.remove_shadow(pid)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        return {"ok": True, "removed": info.get("name")}
+
     @app.get("/api/portfolios/{pid}/equity", dependencies=[auth])
     async def equity_series(pid: str, limit: int = 2000):
         return await eng.positions.equity_series(pid, limit)
