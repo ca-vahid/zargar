@@ -104,6 +104,9 @@ class SignalService:
             )).scalars().all()
         return [{"id": r.id, "ticker": r.ticker, "source": r.source, "status": r.status,
                  "kind": getattr(r, "kind", "appraise") or "appraise",
+                 # out-of-band historical batch tag (KNOWLEDGE plan) — lets the UI
+                 # hide experiment runs behind a toggle
+                 "experiment": (r.tip or {}).get("experiment") if isinstance(r.tip, dict) else None,
                  "verdict": r.verdict, "model": r.model, "signalId": r.signal_id,
                  "parentId": getattr(r, "parent_id", None),
                  "traceSteps": len(r.trace or []),

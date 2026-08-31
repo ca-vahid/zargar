@@ -2039,6 +2039,16 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 @media (max-width: 800px) { .an-layout { grid-template-columns: 1fr; } }
 .an-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 .an-list-body { max-height: 40vh; overflow-y: auto; }
+/* desktop: the runs pane extends to the viewport bottom (sticky, own scroll) */
+@media (min-width: 801px) {
+  .an-side { position: sticky; top: 0; height: calc(100vh - 170px); }
+  .an-list { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .an-list-body { flex: 1; min-height: 0; max-height: none; }
+}
+.an-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.an-filters .armed-filter { flex: 1 1 100%; min-width: 0; }
+.an-exp { font-size: 11px; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .an-run { display: flex; flex-direction: column; gap: 3px; width: 100%; text-align: left;
   background: none; border: none; border-bottom: 1px solid var(--border); padding: 8px 12px; cursor: pointer; }
 .an-run:hover { background: var(--surface-2); }
