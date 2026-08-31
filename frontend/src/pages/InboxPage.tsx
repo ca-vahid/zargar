@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CopyChip } from "../components/CopyChip";
 import { SymIcon } from "../components/SymIcon";
 import { IconCheck, IconClock, IconHalf, IconX } from "../components/icons";
@@ -2094,13 +2094,20 @@ function ProcessBanner() {
   );
 }
 
+type AnKind = "all" | "appraise" | "intake" | "retro" | "digest";
+type AnVerdict = "any" | "take" | "watch" | "skip";
+
 function AnalystTab() {
   const focus = useStore((s) => s.analystFocusRunId);
   const setFocus = useStore((s) => s.setAnalystFocus);
   const [runs, setRuns] = useState<import("../types").AnalystRunSummary[] | null>(null);
+  const [q, setQ] = useState("");
+  const [kind, setKind] = useState<AnKind>("all");
+  const [verdict, setVerdict] = useState<AnVerdict>("any");
+  const [withExp, setWithExp] = useState(false);
   useEffect(() => {
     let dead = false;
-    const load = () => api.analystRuns(50).then((r) => !dead && setRuns(r)).catch(() => undefined);
+    const load = () => api.analystRuns(200).then((r) => !dead && setRuns(r)).catch(() => undefined);
     load();
     const t = setInterval(load, 4000);      // a run kicked off elsewhere shows within seconds
     // a fresh run streaming in auto-opens + refreshes the list immediately
@@ -2111,23 +2118,61 @@ function AnalystTab() {
     return () => { dead = true; clearInterval(t); off(); };
   }, [setFocus]);
   const { isPhone } = useViewport();
-  const sel = focus ?? runs?.[0]?.id ?? null;
+  const needle = q.trim().toUpperCase();
+  const shown = useMemo(() => (runs ?? []).filter((r) =>
+    // experiment (historical-batch) runs hide behind the toggle — searching shows them too
+    (withExp || !!needle || !r.experiment)
+    && (kind === "all" || (r.kind ?? "appraise") === kind)
+    && (verdict === "any" || r.verdict === verdict)
+    && (!needle || [r.ticker, r.source, r.id, r.verdict, r.kind, r.experiment]
+      .some((x) => String(x ?? "").toUpperCase().includes(needle)))),
+  [runs, needle, kind, verdict, withExp]);
+  const sel = focus ?? shown[0]?.id ?? null;
+  const KINDS: [AnKind, string][] = [
+    ["all", "All"], ["appraise", "Appraisals"], ["intake", "Intake"],
+    ["retro", "Retros"], ["digest", "Digests"],
+  ];
+  const VERDICTS: [AnVerdict, string][] = [["any", "Any"], ["take", "Take"], ["watch", "Watch"], ["skip", "Skip"]];
+  const filtered = runs != null && shown.length !== runs.length;
   const list = (
     <div className="panel an-list">
-      <div className="panel-head">Analyst runs <span className="sub">the play-by-play of each appraisal</span></div>
+      <div className="panel-head">Analyst runs
+        <span className="sub">{filtered ? `${shown.length} of ${runs!.length}` : "the play-by-play of each run"}</span>
+      </div>
+      <div className="an-filters">
+        <input className="armed-filter" placeholder="search ticker · source · run id…" value={q}
+          onChange={(e) => setQ(e.target.value)} spellCheck={false} aria-label="Search analyst runs" />
+        <div className="seg sm" role="group" aria-label="Run kind">
+          {KINDS.map(([k, label]) => (
+            <button key={k} className={kind === k ? "on" : ""} onClick={() => setKind(k)}>{label}</button>
+          ))}
+        </div>
+        <div className="seg sm" role="group" aria-label="Verdict">
+          {VERDICTS.map(([v, label]) => (
+            <button key={v} className={verdict === v ? "on" : ""} onClick={() => setVerdict(v)}>{label}</button>
+          ))}
+        </div>
+        <label className="muted an-exp" title="out-of-band historical experiment batches — never traded, hidden by default">
+          <input type="checkbox" className="tip-sel" checked={withExp}
+            onChange={(e) => setWithExp(e.target.checked)} /> experiments
+        </label>
+      </div>
       <div className="an-list-body">
         {runs == null ? <Spinner />
-          : runs.length === 0 ? (
-            <div className="empty">No analyst runs yet — a tip triggers one.
-              After “▶ tip” on a Discord source, the run appears here within a few seconds.</div>
+          : shown.length === 0 ? (
+            <div className="empty">{filtered ? "Nothing matches these filters."
+              : "No analyst runs yet — a tip triggers one. After “▶ tip” on a Discord source, the run appears here within a few seconds."}</div>
           )
-          : runs.map((r) => (
+          : shown.map((r) => (
             <button key={r.id} className={`an-run ${!isPhone && r.id === sel ? "active" : ""}`}
               onClick={() => setFocus(r.id)}>
               <span className="an-run-l">
+                <SymIcon sym={r.ticker} size={16} />
                 <b>{r.ticker}</b>
                 {r.kind === "intake" && <span className="status-pill dim">intake</span>}
                 {r.kind === "retro" && <span className="status-pill dim">retro</span>}
+                {r.kind === "digest" && <span className="status-pill dim">digest</span>}
+                {r.experiment && <span className="status-pill dim" title="historical experiment batch — out-of-band, never traded">🧪 {r.experiment}</span>}
                 <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
                   {r.status === "running" ? "running" : r.verdict ?? r.status}
                 </span>
@@ -2146,11 +2191,6 @@ function AnalystTab() {
       <>
         <ProcessBanner />
         {list}
-        <button type="button" className="approvals-note" style={{ marginTop: 8 }}
-          onClick={() => useStore.getState().setPageTab("knowledge")}
-          title="the desk's shared notes — rules, tickers, sources">
-          📚 Knowledge base →
-        </button>
         {focus && (
           <Sheet title={`${focusRun?.ticker ?? "Analyst"} — play-by-play`} full className="an-sheet"
             onClose={() => setFocus(null)}>
@@ -2166,11 +2206,6 @@ function AnalystTab() {
     <div className="an-layout">
       <div className="an-side">
         {list}
-        <button type="button" className="approvals-note"
-          onClick={() => useStore.getState().setPageTab("knowledge")}
-          title="the desk's shared notes — rules, tickers, sources — moved to their own tab">
-          📚 Knowledge base →
-        </button>
       </div>
       <div className="an-main">
         {sel ? <AnalystRunDetail id={sel} />

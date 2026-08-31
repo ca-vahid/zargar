@@ -298,7 +298,8 @@ export interface AnalystStep {
 }
 export interface AnalystRunSummary {
   id: string; ticker: string; source?: string | null; status: string;
-  kind?: string;                                      // "appraise" | "intake" | "retro"
+  kind?: string;                                      // "appraise" | "intake" | "retro" | "digest"
+  experiment?: string | null;                         // historical batch tag — out-of-band runs
   verdict?: string | null; model?: string | null; signalId?: string | null;
   parentId?: string | null;                           // the intake run that spawned this appraisal
   traceSteps: number; createdAt?: string | null; finishedAt?: string | null;

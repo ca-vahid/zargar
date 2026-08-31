@@ -33,6 +33,10 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
   const page = useStore((s) => s.page);
   const setPage = useStore((s) => s.setPage);
   const pending = useStore((s) => s.proposals.length);
+  // the "Techniques" parent stays lit on ANY technique page (EM/Tips/Flow),
+  // matching how EM (whose page IS "technique") always lit it
+  const techniquePages = new Set<Page>(["technique", ...techniques.map((t) => t.page as Page)]);
+  const isActive = (key: Page) => (key === "technique" ? techniquePages.has(page) : page === key);
   const armedCount = useStore((s) => s.techniqueArmed.filter(
     (a) => a.status === "armed" || a.status === "paused").length);
 
@@ -47,7 +51,7 @@ export function Sidebar({ collapsed: navCollapsed = false, onToggleCollapse }: {
         {PAGES.map((p) => (
           <button
             key={p.key}
-            className={page === p.key ? "active" : ""}
+            className={isActive(p.key) ? "active" : ""}
             title={navCollapsed ? p.label : undefined}
             aria-current={page === p.key ? "page" : undefined}
             onClick={() => setPage(p.key)}
