@@ -2167,15 +2167,20 @@ function AnalystTab() {
             <button key={r.id} className={`an-run ${!isPhone && r.id === sel ? "active" : ""}`}
               onClick={() => setFocus(r.id)}>
               <span className="an-run-l">
-                <SymIcon sym={r.ticker} size={16} />
-                <b>{r.ticker}</b>
+                {(r.kind ?? "appraise") === "appraise" && <SymIcon sym={r.ticker} size={16} />}
+                <b>{r.kind === "digest" ? "Digest" : r.ticker}</b>
                 {r.kind === "intake" && <span className="status-pill dim">intake</span>}
                 {r.kind === "retro" && <span className="status-pill dim">retro</span>}
-                {r.kind === "digest" && <span className="status-pill dim">digest</span>}
                 {r.experiment && <span className="status-pill dim" title="historical experiment batch — out-of-band, never traded">🧪 {r.experiment}</span>}
-                <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
-                  {r.status === "running" ? "running" : r.verdict ?? r.status}
-                </span>
+                {(() => {   // verdict pill — skipped when it would just repeat the kind
+                  const v = r.status === "running" ? "running" : (r.verdict ?? r.status);
+                  if (!v || v.toLowerCase() === (r.kind ?? "")) return null;
+                  return (
+                    <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
+                      {v}
+                    </span>
+                  );
+                })()}
               </span>
               <span className="an-run-sub">{r.source ?? "?"} · {r.traceSteps} steps · {r.createdAt ? fmtDateTime(r.createdAt) : ""}</span>
             </button>
