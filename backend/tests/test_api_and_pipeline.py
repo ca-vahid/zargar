@@ -437,6 +437,34 @@ async def test_auto_mode_self_approves(app_client):
     assert p["decidedVia"] == "auto" and p["orderId"]
 
 
+class _FakeAnthropicBroken:
+    """Analyst that produces an unparseable reply — the run FAILS."""
+
+    def __init__(self):
+        self.messages = self
+
+    async def create(self, **kw):
+        return _FakeAnthropicResp([_Block(type="text", text="I am unable to comply.")])
+
+
+async def test_failed_appraisal_fails_auto_approve_closed(app_client):
+    # TSLA 2026-08-31: an appraisal that crashed left no verdict, and auto mode
+    # read "no verdict" as "analyst off" — buying 15 two-DTE puts with zero
+    # judgment. An ATTEMPTED appraisal with no verdict leaves the proposal
+    # PENDING for the human; only a real "take" (or analyst not configured)
+    # self-approves.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+    eng.signals_service._analyst_client = _FakeAnthropicBroken()
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None, "the proposal is still minted — only the approval is gated"
+    assert p["status"] == "pending", p
+    assert not p.get("decidedVia")
+
+
 async def test_take_fill_adopts_position_under_analyst_exits(app_client):
     # the whole lifecycle: analyst "take" (with exit plan) → auto-approved OPT
     # proposal → fill → durable managed position running the ANALYST'S ladder
