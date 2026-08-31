@@ -2173,7 +2173,9 @@ function AnalystTab() {
                 {r.kind === "retro" && <span className="status-pill dim">retro</span>}
                 {r.experiment && <span className="status-pill dim" title="historical experiment batch — out-of-band, never traded">🧪 {r.experiment}</span>}
                 {(() => {   // verdict pill — skipped when it would just repeat the kind
-                  const v = r.status === "running" ? "running" : (r.verdict ?? r.status);
+                  let v = r.status === "running" ? "running" : (r.verdict ?? r.status);
+                  // the 🧪 pill already says "experiment" — keep only the tally
+                  if (r.experiment) v = (v ?? "").replace(/^experiment\s*·\s*/i, "");
                   if (!v || v.toLowerCase() === (r.kind ?? "")) return null;
                   return (
                     <span className={`status-pill ${r.status === "running" ? "wait" : r.verdict === "take" ? "ok" : r.verdict === "skip" ? "bad" : "dim"}`}>
