@@ -729,7 +729,8 @@ async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
         await session.commit()
 
 
-_API_RETRY_DELAYS = (5.0, 10.0)   # transient-API backoff; tests patch to (0, 0)
+_API_RETRY_DELAYS = (5.0, 20.0)   # transient-API backoff; tests patch to (0, 0)
+                                  # (18:31 UTC 529 burst outlasted 5+10s — stretch the tail)
 
 
 async def run_agent_loop(eng, client, *, model: str, system: str, header: str,

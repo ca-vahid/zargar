@@ -1902,7 +1902,11 @@ class PlanRunner(SessionListener):
         ap.critic_kills = {}
         ap.refire_at = {}
         self._guard_closes.pop(ap.run_id, None)
-        enforce = bool(self.engine.settings.get("technique.enforce_session_windows", True))
+        # per-technique resolution, same as the arm path (tip-scoped knob beats
+        # the EM-named legacy key) — a rolled tip plan must not wake up with
+        # EM's window policy (test_tip_scoped_settings_beat_em_legacy)
+        enforce = bool(self.rt("enforce_session_windows",
+                               self.engine.settings.get("technique.enforce_session_windows", True)))
         rules = self.rules()
         profile = None
         with contextlib.suppress(Exception):
@@ -2636,8 +2640,11 @@ class PlanRunner(SessionListener):
         return []
 
     def entry_windows_enforced(self) -> bool:
-        """Whether the trackers enforce their `rules().windows` for entries right now."""
-        return bool(self.engine.settings.get("technique.enforce_session_windows", True))
+        """Whether the trackers enforce their `rules().windows` for entries right now.
+        Resolved per technique (`techniques.<id>.enforce_session_windows` beats the
+        EM-named legacy key); EM's armer overrides this hook with its R6.3 logic."""
+        return bool(self.rt("enforce_session_windows",
+                            self.engine.settings.get("technique.enforce_session_windows", True)))
 
     async def analyze_fire(self, ap: "ArmedPlan", tid: str, tr: TriggerTracker, trade: "Trade") -> "FireJudgement":
         """The technique's deterministic read of the fire — no I/O, no model.

@@ -84,7 +84,7 @@ def experiment_tag(extraction: dict | None) -> str | None:
 
 
 class SignalService:
-    _extract_retry_delays = (5.0, 10.0)   # transient-API backoff; tests set (0, 0)
+    _extract_retry_delays = (5.0, 20.0)   # transient-API backoff; tests set (0, 0)
 
     def __init__(self, engine, extractor: Extractor) -> None:
         self.engine = engine
