@@ -77,6 +77,43 @@ class PositionKeeper:
             "venue": venue,
         }
 
+    async def remove_shadow(self, pid: str) -> dict:
+        """Delete a SHADOW research book (demo/test cleanup, user 2026-08-30).
+        Shadow-kind ONLY — sim/paper/live portfolios are never deletable. The
+        book's simulated orders/executions/positions/equity points go with it;
+        the JOURNAL (append-only) keeps the audit trail. A future tip from the
+        same source simply re-creates a fresh book."""
+        from sqlalchemy import delete as _delete
+
+        from .models import Execution, Order
+        info = self._portfolios.get(pid)
+        if info is None:
+            raise ValueError("unknown portfolio")
+        if info.get("kind") != "shadow":
+            raise ValueError("only shadow research books can be removed")
+        async with self._sf() as session:
+            order_ids = list((await session.execute(
+                select(Order.id).where(Order.portfolio_id == pid))).scalars())
+            if order_ids:
+                await session.execute(
+                    _delete(Execution).where(Execution.order_id.in_(order_ids)))
+                await session.execute(_delete(Order).where(Order.id.in_(order_ids)))
+            await session.execute(_delete(Position).where(Position.portfolio_id == pid))
+            await session.execute(_delete(EquityPoint).where(EquityPoint.portfolio_id == pid))
+            row = await session.get(Portfolio, pid)
+            if row is not None:
+                await session.delete(row)
+            await session.commit()
+        self._portfolios.pop(pid, None)
+        for key in [k for k in self._positions if k[0] == pid]:
+            self._positions.pop(key, None)
+        await self._journal.append(
+            ev.PORTFOLIO_REMOVED,
+            {"id": pid, "name": info.get("name"), "kind": "shadow",
+             "source": info.get("sourceName"), "orders": len(order_ids)},
+            aggregate_type="portfolio", aggregate_id=pid)
+        return info
+
     # --- queries ------------------------------------------------------------
     def portfolios(self) -> list[dict]:
         return list(self._portfolios.values())

@@ -70,6 +70,8 @@ export const api = {
   listManagedPositions: () =>
     request<import("../types").ManagedPosition[]>("GET", "/api/positions/managed"),
   positionsContext: () => request<any[]>("GET", "/api/positions/context"),
+  removeShadowBook: (pid: string) =>
+    request<{ ok: boolean; removed: string }>("DELETE", `/api/portfolios/${pid}`),
   closeManagedPosition: (id: string, fraction = 1.0) =>
     request<any>("POST", `/api/positions/managed/${id}/close?fraction=${fraction}`),
   ingestManual: (text: string, source_name: string, subject: string, imageDataUrl?: string) =>
