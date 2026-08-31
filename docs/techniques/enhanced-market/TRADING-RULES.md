@@ -167,6 +167,13 @@ a number** (p. 72).
 - **The tail worth watching:** the day's three best rejected trades (PLUG r1 +2.9R,
   CVNA r1 +2.4R, GS r1 +1.9R) all had planned R:R in the 2.2–2.6 band — just under
   the 3.0 bar. One gap day proves nothing, but it frames the question.
+- **2026-08-31 · Live specimen: the author's TOP pick (SPCX, "break 143 → 149")
+  produced ZERO valid triggers in our pipeline** (run `017e771dcf`): best trigger
+  b2 bounce died at R2 with rr **2.50** — inside the 2.0–3.0 band — and his
+  continuation shape is exactly T-6. Meanwhile our system independently AGREED
+  with his SNDK breakdown / MRNA puts / CMG wedge-break / PATH break (all armed,
+  MRNA grade A) and read META opposite (he leans long through resistance, ours
+  plans d1 breakdown). Source: 08-31 setup video, transcript in notes/.
 - **2026-08-29 · First variant pilot (12 sessions Aug 12–27, 113 symbols; baseline
   `26f752fa5a` vs rr2.0 `9edf5248fa`):** the 2.0–3.0 band added 36 fires for +6.39R —
   **marginal mean +0.18R/fire, below the +0.3R decision bar** (and pre-spread), n
