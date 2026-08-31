@@ -729,6 +729,9 @@ async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
         await session.commit()
 
 
+_API_RETRY_DELAYS = (5.0, 10.0)   # transient-API backoff; tests patch to (0, 0)
+
+
 async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                          rec: _Recorder, run_id: str, max_tools: int,
                          tool_ctx: dict, tools_used: list[dict]) -> str | None:
@@ -736,9 +739,25 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     streamed + persisted. Returns the final text (the JSON answer) or None."""
     messages: list = [{"role": "user", "content": header}]
     for _ in range(max_tools + 2):
-        resp = await client.messages.create(
-            model=model, max_tokens=2000, system=system,
-            messages=messages, tools=TOOLS)
+        resp = None
+        for attempt in (1, 2, 3):
+            try:
+                resp = await client.messages.create(
+                    model=model, max_tokens=2000, system=system,
+                    messages=messages, tools=TOOLS)
+                break
+            except Exception as exc:
+                # a transient API error must not cost the whole appraisal (529
+                # killed the APPL run on its FIRST call, 2026-08-31): retry
+                # twice with backoff, then let the run fail as before
+                transient = ("overloaded" in str(exc).lower()
+                             or getattr(exc, "status_code", 0) in (429, 500, 502, 503, 529))
+                if not transient or attempt >= 3:
+                    raise
+                delay = _API_RETRY_DELAYS[min(attempt - 1, len(_API_RETRY_DELAYS) - 1)]
+                rec.step("note", f"Transient API error ({type(exc).__name__}) — "
+                                 f"retry {attempt}/2 in {delay:g}s.")
+                await asyncio.sleep(delay)
         calls = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
         think = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         if think.strip():
