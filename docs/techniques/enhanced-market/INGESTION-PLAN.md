@@ -11,20 +11,22 @@ other technique. The Tip separation-guard tests stay authoritative.*
 Guild **TradeProElite** (`836435995854897193`, 197 channels visible). The
 EM-relevant channels:
 
-| Channel | id | Value | Proposed role |
+| Channel | id | Value | Role (user-reviewed 2026-09-01) |
 |---|---|---|---|
-| VIP Members / ⚡em-alerts | `1126325195301462117` | the author's own alert stream | **watch** (live) |
-| VIP Members / 🎯watchlists | `1126364741779062974` | the morning board + video links | **watch** (live) |
-| VIP live trading / 📅stream-schedule | `1271705986654273580` | the ~09:00 ET broadcast link | **watch** (live) |
-| VIP live trading / 🚀live-trading | `1127779034835718228` | live-session chatter | watch (low priority) |
-| EMS Mentorship / 🔗recordings | `1293670143020499016` | stream recordings | **backfill + watch** |
-| education / ☁ems-clouds, 🤑ems-guide, ✏educational, 📚resources | various | the CURRENT method corpus (the "book v2") | **one-time backfill** |
-| VIP Members / 🏦stats | `1257419079237632091` | his performance claims | backfill (calibration) |
-| Trade Alerts / 🚨evapanda, princeton, marko, oobie | various | analyst alert feeds | **stay TIP-owned** — already tip lanes; EM does not ingest them |
+| VIP Members / ⚡em-alerts | `1126325195301462117` | **the pre-trading setups video link lands here** + his alerts | **watch (primary)** |
+| VIP Members / 🎯watchlists | `1126364741779062974` | morning board posts | **watch** |
+| EMS Mentorship / 🔗recordings | `1293670143062710916` | stream recordings | optional backfill only |
+| education / 🤑ems-guide | — | slightly newer than the book, barely active | one-time backfill, low priority |
+| education / ☁ems-clouds | — | **STALE — last message 2024** (user checked) | skip |
+| VIP live trading / 📅stream-schedule, 🚀live-trading | — | the 9:30+ live session — not the pre-open material | skip |
+| VIP Members / 🏦stats | `1257419079237632091` | his performance claims | backfill (calibration), low priority |
+| Trade Alerts / 🚨evapanda, princeton, marko, oobie | various | analyst alert feeds | **stay TIP-owned** — EM does not ingest them |
 
-Key insight from the education category: `ems-clouds` — the EMA-cloud overlay
-on all his charts has its own doc channel. The method's current form is
-documented in-server; the book is the stale version.
+User's ground-truth pass (2026-09-01): the education channels looked like a
+living corpus from the catalog but are mostly stale — the method's current
+form is carried by the **daily pre-trading video linked in em-alerts**, not
+by any doc channel. The pipeline optimizes for that: two watched channels,
+video capture keyed on em-alerts.
 
 ## Architecture (platform-rules compliant)
 
