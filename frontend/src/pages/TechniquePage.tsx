@@ -176,6 +176,14 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   };
   const analystOk = (fr?: TechniqueRun) => fr?.result?.analysis?.verdict === "setup";
   const isArmed = (id: string) => armed.some((a) => a.runId === id);
+  // a DIFFERENT run may already be watching this symbol (fresh mid-day re-plan,
+  // yesterday's arm) — arming this one too would double-fire. Same-technique
+  // only: a Tip plan on the symbol must not block an EM arm.
+  const armedElsewhere = (id: string) => {
+    const sym = full[id]?.symbol;
+    return !!sym && !isArmed(id) && armed.some((a) =>
+      a.symbol === sym && ((a as any).technique ?? "enhanced_market") === "enhanced_market");
+  };
   // quiet=true is the bulk path: no per-plan toasts (21 chips once buried the
   // screen) — the caller shows ONE summary instead
   const armOne = async (id: string, sym: string, quiet = false): Promise<string | null> => {
@@ -233,7 +241,7 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
     return t ? Math.max(1, Math.round((now - t) / 60000)) : null;
   };
 
-  const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id));
+  const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id) && !armedElsewhere(id));
   const setups = armable ? ids.filter((id) => analystOk(full[id]))
     : doneIds.filter((id) => rows[id]?.verdict === "setup");
   const armAll = async () => {
@@ -377,6 +385,8 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
                         <td className="nowrap tq-arm-cell" onClick={(e) => e.stopPropagation()}>
                           {best && (isArmed(id)
                             ? <span className="tq-badge setup">ARMED</span>
+                            : armedElsewhere(id)
+                            ? <span className="tq-badge plan" title="This symbol is already watched by another armed EM plan — arming this run too would double-fire. Disarm the other plan first if you prefer this one.">armed·other</span>
                             : <button className="tq-act next" disabled={!!armBusy[id]}
                                 onClick={() => void armOne(id, r!.symbol)}
                                 title="Arm this plan with your default account/mode (nothing fires until its conditions are met)">
