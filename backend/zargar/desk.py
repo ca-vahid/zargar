@@ -215,8 +215,12 @@ class DeskService:
         from .models import Event, Execution, Order
         eng = self.engine
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+        # follow the workspace, like the Dashboard headline: practice = sim
+        # books; live = the real accounts (research/shadow books never)
+        live_ws = str(eng.settings.get("trading.mode", "practice")) == "live"
+        kinds = ("live", "paper") if live_ws else ("sim",)
         real = {p["id"]: p for p in eng.positions.portfolios()
-                if p["kind"] in ("sim", "live", "paper")}
+                if p["kind"] in kinds}
         async with eng.sf() as session:
             rows = (await session.execute(
                 select(Execution, Order.technique, Order.source, Order.tags)
