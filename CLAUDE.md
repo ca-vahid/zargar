@@ -94,6 +94,12 @@ mobile) — Telegram intake stays deprioritized, don't build it unasked. Its §0
 AMBITIOUS practice limits set 2026-08-29 (raised risk caps + all Discord sources
 botsOnly=false) — re-tighten before real money (PRE-LIVE-PROFILE), never treat the practice
 values as the safe baseline.
+**Post-soak plan (2026-08-31, ACTIVE):** `docs/POST-SOAK-PLAN.md` (queue + first-soak
+findings) + `docs/POST-SOAK-BUILD-PLAN.md` (phases/checkboxes) — mornings surface, earned
+auto, shadow-book de-noise, intake recovery, pinned-clock rig, real-money gates.
+**Team split: EM evolution + other-technique enhancement = ANOTHER TEAM; this desk works
+tips + technique-agnostic platform only** — keep shared-engine diffs small, per-technique
+resolved (`rt()`), PLATFORM-RULES-logged; check `git log` for their merges each session.
 **Knowledge system + historical experiments (BUILT 2026-08-30):** `docs/techniques/tip/KNOWLEDGE-PLAN.md`
 (research + decided options) + `KNOWLEDGE-BUILD-PLAN.md` (phases, findings). Tip notes have per-scope
 TTLs (`daily:*` 14d, `ticker:`/`source:` 90d — citation in a live run refreshes; `rule`/`general`
