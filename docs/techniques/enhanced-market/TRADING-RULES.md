@@ -122,6 +122,25 @@ a number** (p. 72).
   the correct call end to end. Bonus: first **[pass]** on a book claim — prior-day
   HOD/LOD levels respected 27.1% vs 23.0% for other levels (tested n=554, T1.3a).
 
+### 1.4b Critic vs T4.2: a systematic bias against at-level rejects? ⚠ new, watching
+- **2026-08-31 (day 5): the critic's first two WRONG kills since the fixes, both the
+  same shape.** MUU r3 (killed ×2 → TP2, **+1.77R foregone**) and SOLS r1 (killed →
+  TP3, **+2.44R foregone**, MFE 6.7R): in both, the critic argued "price already
+  traded through the level on real volume = true breakout; shorting it is a
+  knife-catch" (T2.5/T3.3 cited). Tape-based, coherent — and wrong both times:
+  the pokes failed and the rejections paid. The structural problem: T4.2 rejects
+  enter AT the level with NO confirmation; at fire time a reject will almost
+  always look like momentum through the level, so demanding rejection evidence at
+  that instant is a bias against the archetype — the same frame that was right
+  about QCOM (a genuine thrust that ran) and INTU/T. Same-day saves for balance:
+  PANW r1 (−1.25R avoided), UBER b2 ×2 (−1.05R avoided).
+- **Candidate fix (prompt, not threshold):** teach the fire critic that for
+  at-level kinds a trade *through* the level within tolerance is not by itself
+  breakout confirmation (that requires close-through + T3.3a-c), and that its job
+  is judging whether the break would CONFIRM — not whether price touched beyond.
+  Hold until ≥5 reject kills are scored: running reject-kill counterfactual is
+  the decision input (today −4.21R foregone vs +2.30R saved overall).
+
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
   the grade caps at B for this reason. Open question: should TP1 for blue-sky breakouts
