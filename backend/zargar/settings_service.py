@@ -38,6 +38,11 @@ DEFAULTS: dict[str, Any] = {
     "execution.min_dte": 1,                     # NEVER hold an option to expiry: platform floor for dte_close (techniques may only raise it)
     "execution.reconcile_at": "09:05",          # daily pre-open reconciliation pass (positions vs the broker)
     "execution.exit_inflight_ttl_seconds": 900, # an unfilled exit order older than this stops suppressing new exits (zombie guard)
+    # --- the morning desk surface (POST-SOAK Phase 1) ---
+    "desk.morning_at": "08:25",             # ET; the one-glance morning report (push + Telegram + Dashboard)
+    "desk.morning_push": True,              # off = compose on demand only (GET /api/desk/morning)
+    "desk.roll_watchdog_at": "09:00",       # ET; rolls any plan the close missed (restart inside the close window)
+    "desk.soak_at": "17:30",                # ET; nightly practice-soak scorecard (journaled, feeds the morning report)
     "execution.paused": False,                  # per-technique pause: set techniques.<id>.paused (kill switch stays global; exits are never blocked)
     "research.chain_snapshots.enabled": True,   # nightly per-contract OI/IV/volume rows (history is NOT backfillable)
     "research.chain_snapshots.at": "16:30",     # ET

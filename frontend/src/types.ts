@@ -291,6 +291,25 @@ export interface DiscordMirrorMessage {
   postedAt?: string | null;
 }
 
+/** The morning desk report (POST-SOAK Phase 1) — GET /api/desk/morning. */
+export interface MorningReport {
+  date: string; generatedAt: string;
+  needsYou: {
+    pendingProposals: { id: string; symbol: string; source?: string | null; qty?: number;
+      limitPrice?: number | null; expiresAt?: string | null; verdict?: string | null;
+      failClosed: boolean; why: string }[];
+    failClosedCount: number;
+    attention: { runId: string; symbol: string; technique: string; reasons: string[] }[];
+    followUps: { symbol?: string | null; note: string; runId?: string | null }[];
+  };
+  overnight: { tips: { ticker: string; source?: string | null; status: string; action: string;
+    at?: string | null; id: string }[]; counts: Record<string, number> };
+  today: { armedByTechnique: Record<string, { armed: number; paused: number; inTrade: number }>;
+    rolled: { symbol?: string; to?: string; runId?: string }[]; rollWatchdog?: unknown };
+  soak?: { ready: boolean; [k: string]: unknown } | null;
+  intake: { errorContent: number };
+}
+
 export interface AnalystStep {
   seq: number; kind: string; text: string; at?: string;
   tool?: string; args?: any; result?: any; opinion?: any; tip?: any; verification?: any;

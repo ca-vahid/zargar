@@ -47,6 +47,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         attach_flow_layer(eng)
         from ..techniques.tip.runner import attach_tip_runner
         await attach_tip_runner(eng)
+        from ..desk import attach_desk
+        attach_desk(eng)                      # morning report + roll watchdog + nightly soak
         await hub.start()
         yield
         await hub.stop()
@@ -437,6 +439,21 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
             raise HTTPException(status_code=502, detail=f"sync failed: {exc}")
 
     # --- settings ------------------------------------------------------------
+    # --- the morning desk surface (POST-SOAK Phase 1) -------------------------
+    @app.get("/api/desk/morning", dependencies=[auth])
+    async def desk_morning():
+        if getattr(eng, "desk", None) is None:
+            raise HTTPException(status_code=503, detail="desk not attached")
+        return await eng.desk.morning_report()
+
+    @app.post("/api/desk/morning/send", dependencies=[auth])
+    async def desk_morning_send():
+        """Manual trigger: compose + push + Telegram now (the scheduler does the
+        same at desk.morning_at)."""
+        if getattr(eng, "desk", None) is None:
+            raise HTTPException(status_code=503, detail="desk not attached")
+        return await eng.desk.morning_send()
+
     @app.get("/api/settings", dependencies=[auth])
     async def get_settings():
         return eng.settings.all()

@@ -2045,6 +2045,15 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   .an-list { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   .an-list-body { flex: 1; min-height: 0; max-height: none; }
 }
+/* ── the morning desk card (POST-SOAK Phase 1) ─────────────────────────── */
+.morning-rows { display: flex; flex-direction: column; }
+.morning-row { display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
+  background: none; border: none; border-bottom: 1px solid var(--border);
+  padding: 8px 4px; cursor: pointer; font-size: 13px; }
+.morning-row:last-child { border-bottom: none; }
+.morning-row:hover { background: var(--surface-2); }
+.morning-row .muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .an-filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
   padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .an-filters .armed-filter { flex: 1 1 100%; min-width: 0; }
