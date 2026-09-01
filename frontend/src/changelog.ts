@@ -29,6 +29,10 @@ export const CHANGELOG: Release[] = [
       { tag: "new", text: "Knowledge notes with lifetimes, nightly channel digests, weekly rule audits, and a historical tip-experiment harness that never touches real books." },
       { tag: "fixed", text: "Positions with no live quote (weekend, halted, never traded since start) showed a dead-flat P&L at average cost — TQQQ sat at −0.00% all weekend. Quotes now fall back per symbol to the slow feed, and every sync also carries the broker's own mark." },
       { tag: "new", text: "This dialog: version chip in the top bar, filterable changelog." },
+      { tag: "new", text: "The morning report: at 08:25 ET a push + Dashboard card answers \"what needs me\" — waiting proposals (with why), flagged plans, overnight tips, today's armed plans and rolls." },
+      { tag: "new", text: "Auto-approve is earned per source: a tipper's takes self-approve only after enough of their tips have closed well; until then every take waits for you with a graduation note." },
+      { tag: "improved", text: "Research (shadow) books read as research: hidden or dimmed in the Blotter and Journal, never toast, one row per source pairing the immediate and armed lanes with the hit record instead of fake cash." },
+      { tag: "fixed", text: "First live-soak hardening: a slow fill can no longer double-exit a position past flat; a crashed analyst leaves the proposal for you instead of approving it; cold quotes park a tip instead of killing it; API overloads retry; a lotto-priced option can't be sized into hundreds of contracts." },
     ],
   },
   {

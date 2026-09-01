@@ -453,7 +453,11 @@ export const useStore = create<AppState>((set, get) => ({
           ? st.techniqueArmed.filter((a) => a.runId !== ap.runId)
           : [ap, ...st.techniqueArmed.filter((a) => a.runId !== ap.runId)].sort((a, b) => a.symbol.localeCompare(b.symbol)),
       }));
-      if (msg.event === "fired") get().toast("success", `${ap.symbol}: planned trigger fired (${ap.config.mode})`);
+      // research (shadow) books never toast (POST-SOAK 3.2) — the morning
+      // shadow-arm sweep alone was a toast storm; errors still surface
+      const research = ap.portfolio?.kind === "shadow";
+      if (research && msg.event !== "entry_rejected" && msg.event !== "entry_error" && msg.event !== "exit_failed") { /* quiet */ }
+      else if (msg.event === "fired") get().toast("success", `${ap.symbol}: planned trigger fired (${ap.config.mode})`);
       else if (msg.event === "armed") get().toast("info", `${ap.symbol} plan armed for ${ap.planFor} — ${ap.config.mode} on ${ap.portfolio.name ?? ap.portfolio.id}`);
       else if (msg.event === "position_open") get().toast("success", `${ap.symbol}: position open`);
       else if (msg.event === "exit_fill" || msg.event === "exit_submit") { /* quiet */ }

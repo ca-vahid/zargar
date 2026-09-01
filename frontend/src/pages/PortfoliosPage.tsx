@@ -17,6 +17,7 @@ import { IconRefresh } from "../components/icons";
 import { LivePrice, ValuePill } from "../components/quotekit";
 import { cashText, providerTotal } from "../lib/brokerage";
 import { AsyncSection, EmptyState } from "../components/ui";
+import { ResearchBadge } from "../components/ResearchBadge";
 
 const KIND_LABEL: Record<string, string> = {
   live: "Live", paper: "Paper", sim: "Practice", shadow: "Shadow",
@@ -359,14 +360,43 @@ function ShadowBooksPanel({ books: allBooks, byPortfolio, hidden, onToggle }: {
       setConfirmId(null);
     }
   };
+  // one row per SOURCE (POST-SOAK 3.3): the immediate/armed pair is two lanes
+  // of one question, not two accounts. Cash is bookkeeping — show the record.
+  const trustState = useAsync(() => api.sourceScorecards(), [books.length]);
+  const trustBySource = useMemo(() => {
+    const m: Record<string, { graded: number; hits: number }> = {};
+    for (const c of (trustState.data ?? []) as any[]) if (c.trust) m[c.source] = c.trust;
+    return m;
+  }, [trustState.data]);
+  const sources = useMemo(() => {
+    const m: Record<string, { immediate?: Portfolio; armed?: Portfolio }> = {};
+    for (const p of books) {
+      const src = p.sourceName || p.name.replace(/^Shadow:\s*/, "").replace(/\s*\(armed\)$/, "");
+      const lane = (p.book === "armed" || / \(armed\)$/.test(p.name)) ? "armed" : "immediate";
+      (m[src] ??= {})[lane] = p;
+    }
+    return m;
+  }, [books]);
+  const laneCell = (p?: Portfolio) => {
+    if (!p) return <td className="num muted">—</td>;
+    const pnl = (p.equity ?? p.cash) - p.startingCash;
+    const pos = byPortfolio[p.id] ?? [];
+    const committed = pos.reduce((a, x) => a + Math.abs(x.qty * x.avgCost * (x.secType === "OPT" ? 100 : 1)), 0);
+    return (
+      <td className={`num ${pnl >= 0 ? "pos" : "neg"}`} style={{ fontFamily: "var(--mono)" }}
+        title={`${pos.length} open · committed ${fmtCcy(committed, p.baseCurrency ?? "USD")}`}>
+        {fmtSigned(pnl)}{pos.length > 0 && <span className="muted"> ·{pos.length}</span>}
+      </td>
+    );
+  };
   if (books.length === 0) return null;
   return (
     <div className="panel mb">
       <div className="panel-head">
-        Shadow research books
+        <ResearchBadge /> Research books
         <span className="sub">
-          one simulated book per tip source, so each tipper is graded on its own record
-          (the "(armed)" twin waits for the stated level) — research instruments, not accounts you fund
+          per tip source: the immediate lane buys at tip time, the armed lane waits for
+          the level — the comparison IS the experiment; simulated, never funded
         </span>
       </div>
       <div className="panel-body">
@@ -374,49 +404,57 @@ function ShadowBooksPanel({ books: allBooks, byPortfolio, hidden, onToggle }: {
           <table className="tbl">
             <thead>
               <tr>
-                <th>Book</th><th className="num">Equity</th><th className="num">Since start</th>
-                <th className="num">Positions</th><th className="num">Chart</th><th></th>
+                <th>Source</th><th className="num">Record</th>
+                <th className="num" title="P&L of the buy-at-tip-time lane">Immediate</th>
+                <th className="num" title="P&L of the wait-for-the-level lane (the judged one)">Armed</th>
+                <th className="num">Open</th><th className="num">Chart</th><th></th>
               </tr>
             </thead>
             <tbody>
-              {books.map((p) => {
-                const pos = byPortfolio[p.id] ?? [];
-                const equity = p.equity ?? p.cash;
-                const pnl = equity - p.startingCash;
-                const isOpen = !!open[p.id];
+              {Object.entries(sources).map(([src, lanes]) => {
+                const pair = [lanes.immediate, lanes.armed].filter(Boolean) as Portfolio[];
+                const pos = pair.flatMap((p) => byPortfolio[p.id] ?? []);
+                const isOpen = !!open[src];
+                const t = trustBySource[src];
+                const anyShown = pair.some((p) => !hidden[p.id]);
                 return (
-                  <Fragment key={p.id}>
-                    <tr onClick={() => pos.length && setOpen((o) => ({ ...o, [p.id]: !isOpen }))}
+                  <Fragment key={src}>
+                    <tr onClick={() => pos.length && setOpen((o) => ({ ...o, [src]: !isOpen }))}
                       style={{ cursor: pos.length ? "pointer" : "default" }}
-                      title={pos.length ? "Show this book's positions" : undefined}>
-                      <td>{p.name.replace(/^Shadow:\s*/, "")}</td>
-                      <td className="num" style={{ fontFamily: "var(--mono)" }}>{fmtCcy(equity, p.baseCurrency ?? "USD")}</td>
-                      <td className={`num ${pnl >= 0 ? "pos" : "neg"}`} style={{ fontFamily: "var(--mono)" }}>{fmtSigned(pnl)}</td>
+                      title={pos.length ? "Show this source's open research positions" : undefined}>
+                      <td>{src}</td>
+                      <td className="num muted"
+                        title="closed tip positions for this source: hits / graded — the earned-auto bar reads this">
+                        {t ? `${t.hits}/${t.graded} hit` : "—"}
+                      </td>
+                      {laneCell(lanes.immediate)}
+                      {laneCell(lanes.armed)}
                       <td className="num">{pos.length}{pos.length > 0 && <span className="muted"> {isOpen ? "▾" : "▸"}</span>}</td>
                       <td className="num">
-                        <label className="switch" title="Show on equity chart" onClick={(e) => e.stopPropagation()}>
-                          <input type="checkbox" checked={!hidden[p.id]}
-                            onChange={(e) => onToggle(p.id, e.target.checked)} />
+                        <label className="switch" title="Show this source's lanes on the equity chart" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={anyShown}
+                            onChange={(e) => pair.forEach((p) => onToggle(p.id, e.target.checked))} />
                           <span className="track" />
                         </label>
                       </td>
                       <td className="num" onClick={(e) => e.stopPropagation()}>
-                        {confirmId === p.id ? (
+                        {confirmId === src ? (
                           <>
                             <button className="link-btn danger" disabled={busy}
-                              onClick={() => remove(p)}>delete?</button>
+                              onClick={async () => { for (const p of pair) await remove(p); }}>
+                              delete both?</button>
                             <button className="link-btn" onClick={() => setConfirmId(null)}>keep</button>
                           </>
                         ) : (
                           <button className="link-btn danger"
-                            title={`Remove this research book${pos.length ? ` (${pos.length} simulated position(s) go with it)` : ""} — the journal keeps the audit trail; a future tip from the source re-creates a fresh book`}
-                            onClick={() => setConfirmId(p.id)}>✕</button>
+                            title={`Remove BOTH of this source's research lanes${pos.length ? ` (${pos.length} simulated position(s) go with them)` : ""} — the journal keeps the audit trail; a future tip re-creates fresh books`}
+                            onClick={() => setConfirmId(src)}>✕</button>
                         )}
                       </td>
                     </tr>
                     {isOpen && pos.length > 0 && (
                       <tr className="shadow-detail">
-                        <td colSpan={6}><EnginePosTable positions={pos} /></td>
+                        <td colSpan={7}><EnginePosTable positions={pos} /></td>
                       </tr>
                     )}
                   </Fragment>

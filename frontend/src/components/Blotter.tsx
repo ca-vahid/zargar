@@ -11,9 +11,11 @@ import { AsyncSection, EmptyState, StatusPill } from "./ui";
 import { useViewport } from "../lib/viewport";
 import { ConfirmDialog } from "./Modal";
 import { SymIcon } from "./SymIcon";
+import { ResearchBadge } from "./ResearchBadge";
 
 type Tab = "positions" | "orders" | "history" | "fills";
 type Scope = "real" | "practice" | "all";
+type ResearchMode = "hide" | "dim" | "show";
 
 const REAL_KINDS = new Set(["live", "paper"]);
 
@@ -30,9 +32,37 @@ function useScopeFilter(scope: Scope): (portfolioId: string) => boolean {
   }, [portfolios, scope]);
 }
 
+/** The research (shadow) books' visibility (POST-SOAK 3.1): they are the tip
+    track record, not trades — phones hide them by default, desktops dim them.
+    Per-viewer convenience, remembered in localStorage. */
+const RESEARCH_KEY = "zargar.researchRows";
+
+function useResearch(): { shadowPids: Set<string>; mode: ResearchMode; setMode: (m: ResearchMode) => void } {
+  const portfolios = useStore((s) => s.portfolios);
+  const { isPhone } = useViewport();
+  const [mode, setModeState] = useState<ResearchMode>(() => {
+    try {
+      const v = localStorage.getItem(RESEARCH_KEY);
+      if (v === "hide" || v === "dim" || v === "show") return v;
+    } catch { /* storage unavailable */ }
+    return isPhone ? "hide" : "dim";
+  });
+  const setMode = (m: ResearchMode) => {
+    setModeState(m);
+    try { localStorage.setItem(RESEARCH_KEY, m); } catch { /* fine */ }
+  };
+  const shadowPids = useMemo(
+    () => new Set(portfolios.filter((p) => p.kind === "shadow").map((p) => p.id)),
+    [portfolios]);
+  return { shadowPids, mode, setMode };
+}
+
+type Research = ReturnType<typeof useResearch>;
+
 export function Blotter() {
   const [tab, setTab] = useState<Tab>("positions");
   const ws = useWorkspace();
+  const research = useResearch();
   const scope: Scope = ws === "live" ? "real" : "practice";   // the workspace IS the scope
   return (
     <div className="panel blotter-area">
@@ -45,16 +75,25 @@ export function Blotter() {
             </button>
           ))}
         </div>
+        {ws !== "live" && (
+          <div className="seg sm research-seg" role="group" aria-label="Research books"
+            title="🔬 the shadow research books — the per-source track record, not your trades">
+            {(["hide", "dim", "show"] as ResearchMode[]).map((m) => (
+              <button key={m} className={research.mode === m ? "on" : ""}
+                onClick={() => research.setMode(m)}>{m === "hide" ? "hide 🔬" : m}</button>
+            ))}
+          </div>
+        )}
         <span className="muted small" style={{ marginLeft: "auto" }}
           title="The blotter shows the active workspace only — switch Practice/LIVE in the top bar">
           {ws === "live" ? "live accounts" : "practice"}
         </span>
       </div>
       <div className="scroll-x">
-        {tab === "positions" && <PositionsTable scope={scope} />}
-        {tab === "orders" && <OpenOrdersTable scope={scope} />}
-        {tab === "history" && <OrderHistoryTable scope={scope} />}
-        {tab === "fills" && <FillsTable scope={scope} />}
+        {tab === "positions" && <PositionsTable scope={scope} research={research} />}
+        {tab === "orders" && <OpenOrdersTable scope={scope} research={research} />}
+        {tab === "history" && <OrderHistoryTable scope={scope} research={research} />}
+        {tab === "fills" && <FillsTable scope={scope} research={research} />}
       </div>
     </div>
   );
@@ -93,8 +132,8 @@ function OriginCell({ c }: { c?: any }) {
 }
 
 /** One row subscribes to its own quote — 10 Hz updates re-render rows, not the table. */
-const PositionRow = memo(function PositionRow({ p, c, linkHue }: {
-  p: Position; c?: any; linkHue?: number;
+const PositionRow = memo(function PositionRow({ p, c, linkHue, research }: {
+  p: Position; c?: any; linkHue?: number; research?: boolean;
 }) {
   const quote = useQuote(p.symbol);
   const portfolios = useStore((s) => s.portfolios);
@@ -111,6 +150,7 @@ const PositionRow = memo(function PositionRow({ p, c, linkHue }: {
     : openTrade(p.symbol, p.portfolioId);
   return (
     <tr onClick={open} style={{ cursor: "pointer" }}
+      className={research ? "research-row" : undefined}
       title={occ ? `${occ.symbol} — open the option ticket to close this position` : "Open in Trade with this account preselected"}>
       <td className="sym-cell">
         {linkHue != null && (
@@ -129,7 +169,8 @@ const PositionRow = memo(function PositionRow({ p, c, linkHue }: {
           <>{p.symbol}{p.secType !== "STK" && <span className="muted"> {p.secType}</span>}</>
         )}
       </td>
-      <td className="muted">{portfolioName(portfolios, p.portfolioId)}</td>
+      <td className="muted">{portfolioName(portfolios, p.portfolioId)}
+        {portfolios.find((x) => x.id === p.portfolioId)?.kind === "shadow" && <> <ResearchBadge compact /></>}</td>
       <OriginCell c={c} />
       <td className="num">{fmtQty(p.qty)}</td>
       <td className="num">{fmtMoney(p.avgCost)}</td>
@@ -144,7 +185,7 @@ const PositionRow = memo(function PositionRow({ p, c, linkHue }: {
 });
 
 /** Phone: one card per position — symbol + value, qty@avg, live P&L pill. */
-const PositionCard = memo(function PositionCard({ p }: { p: Position }) {
+const PositionCard = memo(function PositionCard({ p, research }: { p: Position; research?: boolean }) {
   const quote = useQuote(p.symbol);
   const portfolios = useStore((s) => s.portfolios);
   const openTrade = useStore((s) => s.openTrade);
@@ -159,7 +200,7 @@ const PositionCard = memo(function PositionCard({ p }: { p: Position }) {
     ? openOptions({ contract: occ.symbol, side: p.qty > 0 ? "SELL" : "BUY", qty: Math.abs(p.qty), portfolioId: p.portfolioId })
     : openTrade(p.symbol, p.portfolioId);
   return (
-    <button type="button" className="bl-card" onClick={open}>
+    <button type="button" className={`bl-card${research ? " research-row" : ""}`} onClick={open}>
       <span className="bl-card-l">
         <span className="bl-card-sym">{occ ? occ.display : p.symbol}
           {occ && <span className={`opt-dte ${occ.dte < 0 ? "bad" : occ.dte <= 1 ? "warn" : ""}`}>{occ.dte < 0 ? "expired" : occ.dte === 0 ? "0DTE" : `${occ.dte}d`}</span>}
@@ -175,13 +216,13 @@ const PositionCard = memo(function PositionCard({ p }: { p: Position }) {
   );
 });
 
-function OrderCard({ o, cancellable }: { o: Order; cancellable: boolean }) {
+function OrderCard({ o, cancellable, research }: { o: Order; cancellable: boolean; research?: boolean }) {
   const portfolios = useStore((s) => s.portfolios);
   const toast = useStore((s) => s.toast);
   const [confirm, setConfirm] = useState(false);
   const occ = o.secType === "OPT" ? parseOcc(o.symbol) : null;
   return (
-    <div className="bl-card bl-card--static">
+    <div className={`bl-card bl-card--static${research ? " research-row" : ""}`}>
       <span className="bl-card-l">
         <span className="bl-card-sym"><span className={o.side === "BUY" ? "pos" : "neg"}>{o.side}</span> {fmtQty(o.qty)} {occ ? occ.display : o.symbol}</span>
         <span className="bl-card-sub">
@@ -207,14 +248,15 @@ function OrderCard({ o, cancellable }: { o: Order; cancellable: boolean }) {
   );
 }
 
-function PositionsTable({ scope }: { scope: Scope }) {
+function PositionsTable({ scope, research }: { scope: Scope; research: Research }) {
   const positionsMap = useStore((s) => s.positions);
   const inScope = useScopeFilter(scope);
   const { isPhone } = useViewport();
   const positions = useMemo(
     () => Object.values(positionsMap)
-      .filter((p) => Math.abs(p.qty) > 1e-9 && inScope(p.portfolioId)),
-    [positionsMap, inScope]);
+      .filter((p) => Math.abs(p.qty) > 1e-9 && inScope(p.portfolioId)
+        && (research.mode !== "hide" || !research.shadowPids.has(p.portfolioId))),
+    [positionsMap, inScope, research.mode, research.shadowPids]);
   // provenance (tip/source/managed) per (portfolio, symbol) — a cheap join
   const ctxState = useAsync(() => api.positionsContext(), [positions.length]);
   const ctxMap = useMemo(() => {
@@ -241,10 +283,12 @@ function PositionsTable({ scope }: { scope: Scope }) {
     return <EmptyState title={scope === "all" ? "No positions yet" : `No ${scope} positions`}
       hint="Fill an order from the ticket and it appears here." />;
   }
+  const dim = (pid: string) => research.mode === "dim" && research.shadowPids.has(pid);
   if (isPhone) {
     return (
       <div className="bl-cards">
-        {positions.map((p) => <PositionCard key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p} />)}
+        {positions.map((p) => <PositionCard key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p}
+          research={dim(p.portfolioId)} />)}
       </div>
     );
   }
@@ -263,7 +307,8 @@ function PositionsTable({ scope }: { scope: Scope }) {
           const c = ctxMap[`${p.portfolioId}:${p.symbol}`];
           return (
             <PositionRow key={`${p.portfolioId}:${p.symbol}:${p.secType}`} p={p} c={c}
-              linkHue={c?.signalId != null ? linkHues[c.signalId] : undefined} />
+              linkHue={c?.signalId != null ? linkHues[c.signalId] : undefined}
+              research={dim(p.portfolioId)} />
           );
         })}
       </tbody>
@@ -271,12 +316,13 @@ function PositionsTable({ scope }: { scope: Scope }) {
   );
 }
 
-function OrderRow({ o, cancellable }: { o: Order; cancellable: boolean }) {
+function OrderRow({ o, cancellable, research }: { o: Order; cancellable: boolean; research?: boolean }) {
   const portfolios = useStore((s) => s.portfolios);
   const toast = useStore((s) => s.toast);
   const occ = o.secType === "OPT" ? parseOcc(o.symbol) : null;
   return (
-    <tr title={o.rejectReason ?? (occ ? o.symbol : undefined)}>
+    <tr className={research ? "research-row" : undefined}
+      title={o.rejectReason ?? (occ ? o.symbol : undefined)}>
       <td><b>{occ ? occ.display : o.symbol}</b>{occ && <span className="muted"> opt</span>}</td>
       <td className={o.side === "BUY" ? "pos" : "neg"}>{o.side}</td>
       <td className="num">{fmtQty(o.filledQty)}/{fmtQty(o.qty)}</td>
@@ -286,7 +332,8 @@ function OrderRow({ o, cancellable }: { o: Order; cancellable: boolean }) {
       </td>
       <td className="num">{o.avgFillPrice ? fmtMoney(o.avgFillPrice) : "—"}</td>
       <td><StatusPill status={o.status} /></td>
-      <td className="muted">{portfolioName(portfolios, o.portfolioId)}</td>
+      <td className="muted">{portfolioName(portfolios, o.portfolioId)}
+        {portfolios.find((x) => x.id === o.portfolioId)?.kind === "shadow" && <> <ResearchBadge compact /></>}</td>
       <td className="muted">{fmtDateTime(o.createdAt)}</td>
       <td>
         {cancellable && (
@@ -308,34 +355,38 @@ const HEAD = (
   </tr>
 );
 
-function OpenOrdersTable({ scope }: { scope: Scope }) {
+function OpenOrdersTable({ scope, research }: { scope: Scope; research: Research }) {
   const openMap = useStore((s) => s.openOrders);
   const inScope = useScopeFilter(scope);
   const { isPhone } = useViewport();
   const open = useMemo(
-    () => Object.values(openMap).filter((o) => inScope(o.portfolioId)),
-    [openMap, inScope]);
+    () => Object.values(openMap).filter((o) => inScope(o.portfolioId)
+      && (research.mode !== "hide" || !research.shadowPids.has(o.portfolioId))),
+    [openMap, inScope, research.mode, research.shadowPids]);
+  const dim = (pid: string) => research.mode === "dim" && research.shadowPids.has(pid);
   if (!open.length) return <EmptyState title="No working orders" />;
-  if (isPhone) return <div className="bl-cards">{open.map((o) => <OrderCard key={o.id} o={o} cancellable />)}</div>;
+  if (isPhone) return <div className="bl-cards">{open.map((o) => <OrderCard key={o.id} o={o} cancellable research={dim(o.portfolioId)} />)}</div>;
   return (
     <table className="tbl">
       <thead>{HEAD}</thead>
       <tbody>
-        {open.map((o) => <OrderRow key={o.id} o={o} cancellable />)}
+        {open.map((o) => <OrderRow key={o.id} o={o} cancellable research={dim(o.portfolioId)} />)}
       </tbody>
     </table>
   );
 }
 
-function OrderHistoryTable({ scope }: { scope: Scope }) {
+function OrderHistoryTable({ scope, research }: { scope: Scope; research: Research }) {
   const recent = useStore((s) => s.recentOrders);
   const inScope = useScopeFilter(scope);
   const loaded = useAsync(() => api.get<Order[]>("/api/orders?limit=100"), []);
   const merged = useMemo(() => {
     const out = [...recent];
     for (const o of loaded.data ?? []) if (!out.some((r) => r.id === o.id)) out.push(o);
-    return out.filter((o) => inScope(o.portfolioId)).slice(0, 100);
-  }, [recent, loaded.data, inScope]);
+    return out.filter((o) => inScope(o.portfolioId)
+      && (research.mode !== "hide" || !research.shadowPids.has(o.portfolioId))).slice(0, 100);
+  }, [recent, loaded.data, inScope, research.mode, research.shadowPids]);
+  const dim = (pid: string) => research.mode === "dim" && research.shadowPids.has(pid);
   const { isPhone } = useViewport();
   return (
     <AsyncSection state={loaded}
@@ -344,7 +395,8 @@ function OrderHistoryTable({ scope }: { scope: Scope }) {
       {() => isPhone ? (
         <div className="bl-cards">
           {merged.slice(0, 40).map((o) => (
-            <OrderCard key={o.id} o={o} cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)} />
+            <OrderCard key={o.id} o={o} cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)}
+              research={dim(o.portfolioId)} />
           ))}
         </div>
       ) : (
@@ -353,7 +405,8 @@ function OrderHistoryTable({ scope }: { scope: Scope }) {
           <tbody>
             {merged.map((o) => (
               <OrderRow key={o.id} o={o}
-                cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)} />
+                cancellable={["SUBMITTED", "ACCEPTED", "PARTIALLY_FILLED"].includes(o.status)}
+                research={dim(o.portfolioId)} />
             ))}
           </tbody>
         </table>
@@ -362,7 +415,7 @@ function OrderHistoryTable({ scope }: { scope: Scope }) {
   );
 }
 
-function FillsTable({ scope }: { scope: Scope }) {
+function FillsTable({ scope, research }: { scope: Scope; research: Research }) {
   const live = useStore((s) => s.executions);
   const portfolios = useStore((s) => s.portfolios);
   const inScope = useScopeFilter(scope);
@@ -370,8 +423,10 @@ function FillsTable({ scope }: { scope: Scope }) {
   const merged = useMemo(() => {
     const out = [...live];
     for (const e of loaded.data ?? []) if (!out.some((r) => r.id === e.id)) out.push(e);
-    return out.filter((e) => inScope(e.portfolioId)).slice(0, 100);
-  }, [live, loaded.data, inScope]);
+    return out.filter((e) => inScope(e.portfolioId)
+      && (research.mode !== "hide" || !research.shadowPids.has(e.portfolioId))).slice(0, 100);
+  }, [live, loaded.data, inScope, research.mode, research.shadowPids]);
+  const dim = (pid: string) => research.mode === "dim" && research.shadowPids.has(pid);
   const { isPhone } = useViewport();
   return (
     <AsyncSection state={loaded}
@@ -380,7 +435,7 @@ function FillsTable({ scope }: { scope: Scope }) {
       {() => isPhone ? (
         <div className="bl-cards">
           {merged.slice(0, 40).map((e) => (
-            <div key={e.id} className="bl-card bl-card--static">
+            <div key={e.id} className={`bl-card bl-card--static${dim(e.portfolioId) ? " research-row" : ""}`}>
               <span className="bl-card-l">
                 <span className="bl-card-sym"><span className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</span> {fmtQty(e.qty)} {parseOcc(e.symbol)?.display ?? e.symbol}</span>
                 <span className="bl-card-sub">@ {fmtMoney(e.price)} · fee {fmtMoney(e.commission)} · {portfolioName(portfolios, e.portfolioId)}</span>
@@ -400,7 +455,7 @@ function FillsTable({ scope }: { scope: Scope }) {
           </thead>
           <tbody>
             {merged.map((e) => (
-              <tr key={e.id}>
+              <tr key={e.id} className={dim(e.portfolioId) ? "research-row" : undefined}>
                 <td><b>{parseOcc(e.symbol)?.display ?? e.symbol}</b></td>
                 <td className={e.side === "BUY" ? "pos" : "neg"}>{e.side}</td>
                 <td className="num">{fmtQty(e.qty)}</td>

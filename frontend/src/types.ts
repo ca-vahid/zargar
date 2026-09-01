@@ -24,6 +24,7 @@ export interface Portfolio {
   equity?: number;
   startingCash: number;
   sourceName?: string | null;
+  book?: string | null;      // shadow research books: "immediate" | "armed"
   isDefault?: boolean;
   baseCurrency?: string;
   venue?: string; // "ibkr" | "snaptrade" for live/paper portfolios

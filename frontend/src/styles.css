@@ -2045,6 +2045,12 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
   .an-list { display: flex; flex-direction: column; flex: 1; min-height: 0; }
   .an-list-body { flex: 1; min-height: 0; max-height: none; }
 }
+/* ── research (shadow) book de-noise (POST-SOAK Phase 3) ───────────────── */
+.research-row { opacity: .5; }
+.research-row:hover { opacity: 1; }
+.research-seg { margin-left: 10px; }
+.research-badge { white-space: nowrap; }
+
 /* ── the morning desk card (POST-SOAK Phase 1) ─────────────────────────── */
 .morning-rows { display: flex; flex-direction: column; }
 .morning-row { display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;

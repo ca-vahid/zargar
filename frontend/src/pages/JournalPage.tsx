@@ -61,18 +61,33 @@ export function JournalPage() {
 
   const { isPhone } = useViewport();
   const [shown, setShown] = useState(50);
+  // research (shadow) book de-noise (POST-SOAK 3.1): their events are the tip
+  // track record, not decisions the user made — hidden unless asked for
+  const portfolios = useStore((s) => s.portfolios);
+  const shadowPids = useMemo(
+    () => new Set(portfolios.filter((p) => p.kind === "shadow").map((p) => p.id)),
+    [portfolios]);
+  const [withResearch, setWithResearch] = useState(() => {
+    try { return localStorage.getItem("zargar.journalResearch") === "1"; } catch { return false; }
+  });
+  const toggleResearch = (v: boolean) => {
+    setWithResearch(v);
+    try { localStorage.setItem("zargar.journalResearch", v ? "1" : "0"); } catch { /* fine */ }
+  };
   const merged = useMemo(() => {
     const all = [...liveEvents];
     for (const e of loaded) if (!all.some((x) => x.id === e.id)) all.push(e);
     all.sort((a, b) => b.id - a.id);
     let out = all;
+    if (!withResearch) out = out.filter(
+      (e) => !e.portfolioId || !shadowPids.has(e.portfolioId));
     if (group !== "all") out = out.filter((e) => GROUPS[group].includes(e.type));
     if (typeFilter) out = out.filter((e) =>
       e.type.toLowerCase().includes(typeFilter.toLowerCase()) ||
       (e.aggregateId ?? "").toLowerCase().startsWith(typeFilter.toLowerCase()) ||
       summarize(e).toLowerCase().includes(typeFilter.toLowerCase()));
     return out.slice(0, 300);
-  }, [liveEvents, loaded, group, typeFilter]);
+  }, [liveEvents, loaded, group, typeFilter, withResearch, shadowPids]);
 
   return (
     <div>
@@ -86,9 +101,14 @@ export function JournalPage() {
               </button>
             ))}
           </div>
+          <label className="muted small" style={{ marginLeft: "auto", display: "inline-flex", gap: 5, alignItems: "center", whiteSpace: "nowrap" }}
+            title="the research (shadow) books' events — the tip track record, hidden by default">
+            <input type="checkbox" className="tip-sel" checked={withResearch}
+              onChange={(e) => toggleResearch(e.target.checked)} /> 🔬 research
+          </label>
           <input type="text" placeholder="filter…" value={typeFilter} className="journal-filter"
             onChange={(e) => setTypeFilter(e.target.value)}
-            style={{ marginLeft: "auto", width: 180 }} />
+            style={{ width: 180 }} />
         </div>
         <div className="scroll-x">
           {loadedState.loading && merged.length === 0 ? (

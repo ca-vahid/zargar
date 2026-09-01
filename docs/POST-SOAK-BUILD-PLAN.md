@@ -102,27 +102,25 @@ Nine books (immediate+armed pair per source, flow-scan) currently look like
 accounts. DONE 2026-08-31: exempt from the daily-loss halt (`risk.py`) so the
 record never stops recording.
 
-- [ ] **3.1 Research filter.** Blotter + Journal: a "research" toggle — phone
-  default hides shadow rows, desktop default dims them (`opacity` on the row,
-  not removal, so the tip-hue dot pairing shadow take ↔ real purchase stays
-  meaningful). Persist the choice in `localStorage` (per-viewer convenience).
-  Phone rules in `mobile.css` only.
-- [ ] **3.2 Silence.** Shadow-book fills never toast and never push. They still
-  journal and still stream on WS (the pages that want them read them).
-- [ ] **3.3 One row per source.** `ShadowBooksPanel`: pair `immediate` + `armed`
-  lanes on a single row per source — verdict chip first (the scorecard's call),
-  then per-lane micro-columns. Keep the two-lane numbers visible (the comparison
-  IS the experiment) but stop rendering them as two unrelated accounts.
-- [ ] **3.4 Kill the cash column.** Book "cash" is meaningless research
-  bookkeeping (eva: −$8,001.70). Display per-tip avg R, hit rate, open tips,
-  committed $. Display-level fix now; book-accounting redesign ONLY if the
-  scorecard needs it later (decide then, not now).
-- [ ] **3.5 Research badge.** One `ResearchBadge` chip component ("🔬 research")
-  wherever a shadow book leaks into a shared surface: order rows, engine
-  position rows, armed-plan rows, proposal context. Grep for `kind === "shadow"`
-  renders and unify.
-- [ ] **3.6 Gate.** `npm run mobile-audit` + a desktop screenshot pass of
-  Blotter, Journal, Portfolios, Armed.
+- [x] **3.1 Research filter.** DONE 2026-08-31 — Blotter: a hide·dim·show seg
+  (phone default hide, desktop default dim, remembered in localStorage; hover
+  restores a dimmed row; the tip-hue pairing dot stays). Journal: a "🔬
+  research" checkbox (default off) filtering shadow-book events by portfolioId.
+- [x] **3.2 Silence.** DONE — shadow-book armed/fired/position_open toasts are
+  quiet (errors still surface); the morning shadow-arm sweep no longer storms.
+- [x] **3.3 One row per source.** DONE — ShadowBooksPanel groups the
+  immediate/armed pair per source: Record (hits/graded — the same stats the
+  earned-auto bar reads), per-lane P&L with open counts, one chart toggle and
+  one delete for the pair, expandable combined positions.
+- [x] **3.4 Kill the cash column.** DONE — equity/cash columns replaced by
+  per-lane P&L + open counts + committed-$ tooltips; display-level only, book
+  accounting untouched (redesign deferred until the scorecard needs it).
+- [x] **3.5 Research badge.** DONE — `components/ResearchBadge.tsx` ("🔬
+  research"), used on the panel header and Blotter position/order portfolio
+  cells. (Armed-page rows deferred: shadow plans there already carry the book
+  name; add the badge when that page next changes.)
+- [ ] **3.6 Gate.** mobile-audit + desktop screenshots of Blotter, Journal,
+  Portfolios — after deploy.
 
 Acceptance: with the filter on defaults, a phone Blotter shows only real trades;
 nothing shadow ever toasts; the Portfolios panel answers "which sources are
