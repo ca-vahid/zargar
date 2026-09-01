@@ -16,7 +16,7 @@ import type { Page } from "../store";
 
 export const PAGES: Page[] = [
   "dashboard", "trade", "options", "inbox", "technique", "flow", "armed", "watchlists",
-  "portfolios", "journal", "settings",
+  "portfolios", "ledger", "journal", "settings",
 ];
 const OCC_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
 export const TQ_TABS = ["analyse", "chat", "history", "backtest", "validation", "armed"] as const;

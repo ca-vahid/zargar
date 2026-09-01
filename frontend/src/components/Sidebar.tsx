@@ -6,6 +6,7 @@ import {
   IconChevron,
   IconDashboard,
   IconJournal,
+  IconLedger,
   IconOptions,
   IconPortfolios,
   IconSettings,
@@ -24,6 +25,7 @@ const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
   { key: "armed", label: "Armed", icon: <IconArmed /> },
   { key: "watchlists", label: "Watchlists", icon: <IconWatchlist /> },
   { key: "portfolios", label: "Portfolios", icon: <IconPortfolios /> },
+  { key: "ledger", label: "Ledger", icon: <IconLedger /> },
   { key: "journal", label: "Journal", icon: <IconJournal /> },
   { key: "settings", label: "Settings", icon: <IconSettings /> },
 ];

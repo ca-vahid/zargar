@@ -311,6 +311,22 @@ export interface MorningReport {
   intake: { errorContent: number };
 }
 
+/** The plain-language money view — GET /api/desk/ledger. */
+export interface LedgerTrip {
+  symbol: string; secType: string; qty: number; portfolio: string;
+  inPrice: number; outPrice: number; inAt: string; outAt: string;
+  cost: number; gain: number; short: boolean; label: string; day: string;
+}
+export interface Ledger {
+  asOf: string; windowDays: number; total: number; startingCash: number;
+  realized: number; openValue: number;
+  days: { date: string; realized: number; trips: LedgerTrip[];
+    adjustments: { day: string; at: string; amount: number; reason: string }[] }[];
+  open: { symbol: string; qty: number; portfolio: string; inPrice: number;
+    inAt: string; cost: number; mark: number | null; unrealized: number | null;
+    label: string }[];
+}
+
 export interface AnalystStep {
   seq: number; kind: string; text: string; at?: string;
   tool?: string; args?: any; result?: any; opinion?: any; tip?: any; verification?: any;

@@ -29,7 +29,7 @@ const OUT = path.join(ROOT, "frontend", ".mobile-shots");
 fs.mkdirSync(OUT, { recursive: true });
 
 const ROUTES = ["/armed", "/trade", "/inbox", "/portfolios", "/", "/options",
-  "/watchlists", "/journal", "/settings", "/technique"];
+  "/watchlists", "/ledger", "/journal", "/settings", "/technique"];
 const MATRIX = [
   { name: "iphone-se", device: devices["iPhone SE"], phone: true },
   { name: "iphone-14", device: devices["iPhone 14"], phone: true },

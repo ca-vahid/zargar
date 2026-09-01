@@ -452,6 +452,14 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
             raise HTTPException(status_code=503, detail="desk not attached")
         return await eng.desk.morning_report()
 
+    @app.get("/api/desk/ledger", dependencies=[auth])
+    async def desk_ledger(days: int = 30):
+        """The plain-language money view: round trips, gains, corrections,
+        open positions — real books only."""
+        if getattr(eng, "desk", None) is None:
+            raise HTTPException(status_code=503, detail="desk not attached")
+        return await eng.desk.ledger(days=max(1, min(days, 365)))
+
     @app.post("/api/desk/morning/send", dependencies=[auth])
     async def desk_morning_send():
         """Manual trigger: compose + push + Telegram now (the scheduler does the

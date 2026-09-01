@@ -30,6 +30,11 @@ export const IconDashboard = make("IconDashboard", <>
   <rect x="9" y="9" width="5.5" height="5.5" rx="1" />
 </>);
 
+export const IconLedger = make("IconLedger", <>
+  <circle cx="8" cy="8" r="6.5" />
+  <path d="M8 4.5v7M6 6.2c0-.9.9-1.4 2-1.4s2 .5 2 1.3c0 2-4 1.4-4 3.4 0 .8.9 1.3 2 1.3s2-.5 2-1.3" />
+</>);
+
 export const IconTrade = make("IconTrade", <>
   <path d="M1.5 12.5 5.5 8l3 3 6-7" />
   <path d="M10.5 4h4v4" />
