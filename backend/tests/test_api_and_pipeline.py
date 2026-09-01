@@ -423,6 +423,39 @@ async def test_short_tip_without_put_never_proposes_share_short(app_client):
     assert "short tip needs a put" in (expr.get("note") or "")
 
 
+async def test_aged_limit_improves_to_live_ask_on_approval(app_client, monkeypatch):
+    # 2026-09-01: a 2h-old $23.80 limit vs a live $11.82 mid tripped the price
+    # collar and FAILED the user's own approval click. The never-chase rule
+    # re-applies at approval: the live ask may only improve the limit.
+    # (quotes.get is pinned — the sim feed fabricates its own option price)
+    from zargar.domain import Quote
+    from zargar.models import Proposal
+    client, eng = app_client
+    occ = "AAPL261016C00240000"
+    q = Quote(symbol=occ, bid=11.7, ask=11.9, last=11.8, bid_size=500, ask_size=500)
+    real_get = eng.quotes.get
+    monkeypatch.setattr(eng.quotes, "get",
+                        lambda s: q if s == occ else real_get(s))
+    for k, v in {"risk.max_option_premium_pct": 50.0, "risk.max_option_premium_notional": 10_000.0,
+                 "risk.max_position_notional": 50_000.0, "risk.max_position_pct": 100.0,
+                 "risk.max_gross_exposure_pct": 300.0}.items():
+        await eng.settings.set(k, v)
+    pid = new_id()
+    sim = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")
+    async with eng.sf() as session:
+        session.add(Proposal(
+            id=pid, signal_id=None, portfolio_id=sim["id"], symbol=occ,
+            sec_type="OPT", side="BUY", qty=2.0, order_type="LMT",
+            limit_price=23.8, rationale="aged", context={},
+            expires_at=dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=2)))
+        await session.commit()
+    out = await eng.proposals.approve(pid, via="app")
+    assert out["order"] is not None
+    assert out["order"]["status"] not in ("REJECTED", "REJECTED_RISK"), \
+        out["order"].get("rejectReason")
+    assert abs(float(out["order"]["limitPrice"]) - 11.9) < 1e-6
+
+
 async def test_auto_mode_self_approves(app_client):
     # a source in auto mode approves its own proposal (same approve() path a
     # human click takes — RiskGate inside), decided_via "auto"

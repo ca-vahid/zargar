@@ -484,10 +484,22 @@ class ProposalService:
                 "take_profit_pct": pdict["bracket"].get("take_profit_pct"),
                 "stop_loss_pct": pdict["bracket"].get("stop_loss_pct"),
             }.items() if v is not None})
+        # re-price an aged limit at approval time (2026-09-01: a 2h-old $23.80
+        # limit vs a live $11.82 mid tripped the price collar and failed the
+        # user's own click). The never-chase rule from creation applies again:
+        # the live ask may only IMPROVE the limit, never raise it.
+        limit = pdict["limitPrice"]
+        if (pdict["side"] == "BUY" and pdict["orderType"] == "LMT" and limit):
+            q = eng.quotes.get(pdict["symbol"])
+            ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
+            if ask and ask < float(limit):
+                log.info("proposal %s: limit improved %s -> %s (live ask)",
+                         proposal_id, limit, round(ask, 2))
+                limit = round(ask, 2)
         intent = OrderIntent(
             portfolio_id=pdict["portfolioId"], symbol=pdict["symbol"],
             sec_type=pdict["secType"], side=pdict["side"], qty=qty,
-            order_type=pdict["orderType"], limit_price=pdict["limitPrice"],
+            order_type=pdict["orderType"], limit_price=limit,
             bracket=bracket, source="signal",
             signal_id=pdict["signalId"], proposal_id=proposal_id)
         order = await eng.orders.place(intent)
