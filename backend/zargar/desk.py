@@ -226,6 +226,25 @@ class DeskService:
         return {"sent": sent, "title": title, "body": body,
                 "needsYou": len(ny["pendingProposals"]) + len(ny["attention"]) + len(ny["followUps"])}
 
+    async def morning_send_scheduled(self) -> dict:
+        """The scheduler's entry: 'runs late rather than never' is right for the
+        watchdog and the soak, but an EVENING deploy must not fire a 'morning'
+        push (found live 2026-08-31: registering after 08:25 pushed at night).
+        Past the cutoff we compose only — the Dashboard card stays fresh."""
+        now_et = dt.datetime.now(ET)
+        cutoff = str(self.engine.settings.get("desk.morning_push_until", "10:30"))
+        try:
+            hh, mm = (int(x) for x in cutoff.split(":"))
+        except ValueError:
+            hh, mm = 10, 30
+        if now_et.hour * 60 + now_et.minute > hh * 60 + mm:
+            r = await self.morning_report()
+            ny = r["needsYou"]
+            return {"sent": {"push": False, "telegram": False}, "skippedLate": True,
+                    "needsYou": (len(ny["pendingProposals"]) + len(ny["attention"])
+                                 + len(ny["followUps"]))}
+        return await self.morning_send()
+
 
 def _count_by(rows: list[dict], key: str) -> dict:
     out: dict[str, int] = {}
@@ -245,5 +264,5 @@ def attach_desk(engine) -> DeskService:
                               desk.soak_nightly)
     if bool(s.get("desk.morning_push", True)):
         engine.scheduler.register("morning_report", str(s.get("desk.morning_at", "08:25")),
-                                  desk.morning_send)
+                                  desk.morning_send_scheduled)
     return desk

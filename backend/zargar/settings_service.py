@@ -41,6 +41,7 @@ DEFAULTS: dict[str, Any] = {
     # --- the morning desk surface (POST-SOAK Phase 1) ---
     "desk.morning_at": "08:25",             # ET; the one-glance morning report (push + Telegram + Dashboard)
     "desk.morning_push": True,              # off = compose on demand only (GET /api/desk/morning)
+    "desk.morning_push_until": "10:30",     # ET; past this a late (re)deploy composes without pushing
     "desk.roll_watchdog_at": "09:00",       # ET; rolls any plan the close missed (restart inside the close window)
     "desk.soak_at": "17:30",                # ET; nightly practice-soak scorecard (journaled, feeds the morning report)
     "execution.paused": False,                  # per-technique pause: set techniques.<id>.paused (kill switch stays global; exits are never blocked)
