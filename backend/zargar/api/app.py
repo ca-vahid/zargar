@@ -212,8 +212,13 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         for p in eng.positions.portfolios():
             eq = await eng.positions.equity(p["id"])
             today = await eng.positions.daily_loss_pct(p["id"])
+            # open positions ride along, marked to the live quote — equity above
+            # cash with an empty positions list read as an accounting error
+            # (Practice's BBAI LEAP, 2026-08-31)
+            pos = [x for x in eng.positions.positions_list(p["id"]) if abs(x.get("qty", 0)) > 1e-9]
             out.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2),
-                        "todayPct": round(today, 2) if today is not None else None})
+                        "todayPct": round(today, 2) if today is not None else None,
+                        "positions": pos})
         return out
 
     @app.post("/api/portfolios", dependencies=[auth])
