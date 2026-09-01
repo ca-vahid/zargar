@@ -94,9 +94,15 @@ mobile) — Telegram intake stays deprioritized, don't build it unasked. Its §0
 AMBITIOUS practice limits set 2026-08-29 (raised risk caps + all Discord sources
 botsOnly=false) — re-tighten before real money (PRE-LIVE-PROFILE), never treat the practice
 values as the safe baseline.
-**Post-soak plan (2026-08-31, ACTIVE):** `docs/POST-SOAK-PLAN.md` (queue + first-soak
-findings) + `docs/POST-SOAK-BUILD-PLAN.md` (phases/checkboxes) — mornings surface, earned
-auto, shadow-book de-noise, intake recovery, pinned-clock rig, real-money gates.
+**Post-soak plan (2026-08-31; phases 1–5 BUILT 2026-09-01):** `docs/POST-SOAK-PLAN.md`
+(queue + first-soak findings) + `docs/POST-SOAK-BUILD-PLAN.md` (checkboxes + findings) —
+morning desk surface (`zargar/desk.py`: 08:25 report/push, 09:00 roll watchdog, nightly
+soak), EARNED auto per source (`auto_min_graded`/`auto_min_hit`; explicit per-source auto
+bypasses), shadow-book de-noise (Blotter hide/dim/show, no research toasts, one row per
+source, `ResearchBadge`), intake recovery sweep (cold parks re-verify — promotions never
+self-approve; error content retries once), pinned test clock (`zargar/clock.py`,
+ZARGAR_TEST_NOW), batch-1 F-fixes harness-enforced. Phase 6 (real-device/Alpaca/first
+live tip) = manual calendar gates with run-books in the build plan.
 **Team split: EM evolution + other-technique enhancement = ANOTHER TEAM; this desk works
 tips + technique-agnostic platform only** — keep shared-engine diffs small, per-technique
 resolved (`rt()`), PLATFORM-RULES-logged; check `git log` for their merges each session.

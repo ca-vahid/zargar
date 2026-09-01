@@ -194,17 +194,31 @@ the batch-1 failure modes measurably reduced (or teaches us why not).
 
 Operational, calendar-bound; code only where the checklists find gaps.
 
-- [ ] **6.1 Real-device mobile pass** (`docs/MOBILE-ACCESS.md` checklist):
-  Tailscale/HTTPS/token handoff on the actual phone, Now view, exit-only
-  enforcement, push arriving. The morning report (Phase 1) rides on this.
-- [ ] **6.2 Alpaca-paper overnight pass:** run app-managed option + venue-stop
-  share positions on Alpaca paper across ≥3 nights incl. a weekend; reconcile
-  daily; chaos-suite invariants hold against a real venue's latencies.
-- [ ] **6.3 First-live-tip checklist:** diff current (AMBITIOUS practice)
-  settings against `docs/PRE-LIVE-PROFILE.md` and re-tighten; one MANUAL live
-  approval with minimum size on a Webull-supported option; write up what the
-  desk does differently before any live-auto conversation. `allow_live_auto`
-  stays off through this entire plan.
+*(PREP DONE 2026-09-01 — run-books below; the calendar gates themselves stay
+manual, by design. Code prerequisites all shipped in Phases 1–5.)*
+
+- [ ] **6.1 Real-device mobile pass** — run-book: `docs/MOBILE-ACCESS.md`
+  checklist on the actual phone via https://zargar-desk.tail97d481.ts.net
+  (Funnel). Verify IN ORDER: sign-in → Now view → the "This morning" card on
+  the Dashboard → a push arriving (fire `POST /api/desk/morning/send` from the
+  desk while holding the phone) → exit-only blocking a phone entry
+  (`phone_entry_blocked`) → Blotter hides research rows by default. New since
+  the checklist was written: the morning push (desk.morning_at) is the
+  wake-up-to-one-glance flow this pass exists to prove.
+- [ ] **6.2 Alpaca-paper overnight pass** — run-book: open one app-managed
+  option position + one venue-stop share position on Alpaca paper before a
+  normal close AND before a weekend (≥3 nights total); each morning check
+  `position_reconcile` (09:05) reported clean, the venue GTC stop still
+  standing, and the morning report's attention list empty. Chaos-suite
+  invariants (test_position_chaos) are the spec; the pass is about REAL venue
+  latencies — watch the exit in-flight guard's `exit_skip` log lines.
+- [ ] **6.3 First-live-tip checklist** — run-book: (1) diff live settings
+  against `docs/PRE-LIVE-PROFILE.md` and re-tighten (the practice values are
+  the AMBITIOUS posture, never the baseline); (2) one MANUAL approval at
+  minimum size on a Webull-CA-supported option from a source that has EARNED
+  auto (Sources tab shows "auto earned"); (3) write the go/no-go note HERE,
+  dated, before any conversation about `allow_live_auto`. Both live-auto keys
+  stay off through this entire plan.
 
 Acceptance: each gate produces a dated log entry in this file; 6.3 ends with a
 go/no-go note, not a flipped switch.

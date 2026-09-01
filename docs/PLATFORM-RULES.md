@@ -116,6 +116,27 @@ runtime ones to `execution.*`).
   test `test_redelivered_bar_and_slow_fill_never_double_exit`. Any future exit path MUST go through
   `_close_leg` to inherit the accounting.
 
+- **2026-09-01 · The duplicate-order guard was DEAD for three days** (found by its own
+  test while building POST-SOAK). The 2026-08-29 per-portfolio keying changed the check's
+  key but not `note_submission`'s — the two never matched, so nothing was ever a
+  duplicate. Un-breaking it exposed two follow-on truths, now code: **a terminally
+  REJECTED order is not exposure** — it frees its duplicate-window slot
+  (`RiskGate.forget_submission`, wired into the REJECTED transitions) so deliberate
+  resubmits (spread-fallback legs, watchdog retries) pass; and **a failed native-mleg
+  submit must REJECT its leg rows**, not strand them SUBMITTED (they blocked the
+  sequencing fallback's identical long leg). Lesson: when a guard's key changes, grep
+  BOTH sides of the key — and a safety check whose test is failing is a siren, not noise.
+- **2026-09-01 · The close is bar-driven with a 16:05 clock fallback — and it works**
+  (POST-SOAK 1.1 forensics): 08-31 processed 45 expiries + 2 multi-day rolls at
+  16:00:00 ET exactly. Residual gap: a restart inside the close window skips both
+  triggers — covered by `PlanRunner.roll_stale()` + the 09:00 `roll_watchdog` job
+  (loops across weekend gaps; alerts what it rescues). Boot-roll still covers restores.
+- **2026-09-01 · Intake recovery: every drop is either correct or retried**
+  (`signals.recovery_sweep`, POST-SOAK Phase 4): cold-quote parks re-verify when the
+  feed warms (promotions NEVER self-approve from the sweep — the fail-closed and
+  earned-auto gates live in intake); error content retries exactly once, meta-marked
+  BEFORE the attempt so it can never loop.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
