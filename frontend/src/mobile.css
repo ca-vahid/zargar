@@ -692,8 +692,8 @@ button.bl-card:active { background: var(--surface-2); }
     padding: 0 8px;
   }
   .journal-research input.tip-sel {
-    width: 24px;
-    height: 24px;
+    width: 40px;
+    height: 40px;
   }
   .research-seg button {
     min-width: 44px;
