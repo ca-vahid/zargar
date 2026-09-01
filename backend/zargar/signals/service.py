@@ -1452,11 +1452,40 @@ class SignalService:
                         log.warning("auto mode: live portfolio without allow_live_auto — "
                                     "leaving proposal %s pending", proposal["id"])
                     else:
-                        try:
-                            decided = await eng.proposals.approve(proposal["id"], via="auto")
-                            proposal = decided["proposal"]
-                        except Exception:
-                            log.exception("auto-approve failed for proposal %s", proposal["id"])
+                        # earned auto (POST-SOAK Phase 2): the platform-default
+                        # `auto` graduates per source on its closed tip positions;
+                        # an EXPLICIT per-source `mode: auto` bypasses (human said so)
+                        gate = None
+                        explicit_auto = (((eng.settings.get("techniques.tip.sources") or {})
+                                          .get(row.source_name or "", {}) or {}).get("mode") == "auto")
+                        if not explicit_auto:
+                            trust = await self.source_trust(row.source_name or "unknown")
+                            need_n = int(eng.settings.get("techniques.tip.auto_min_graded", 5))
+                            need_hit = float(eng.settings.get("techniques.tip.auto_min_hit", 0.4))
+                            if trust["graded"] < need_n:
+                                gate = f"auto not yet earned: {trust['graded']}/{need_n} graded tips"
+                            elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
+                                gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
+                                        f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
+                        if gate:
+                            log.info("auto mode: %s (%s) — leaving proposal %s pending",
+                                     gate, row.source_name, proposal["id"])
+                            istep("note", f"{row.ticker}: {gate} — the proposal waits for you.")
+                            with contextlib.suppress(Exception):
+                                from ..models import Proposal as ProposalRow
+                                from ..approvals.proposals import proposal_dict as _pdict
+                                async with eng.sf() as session:
+                                    prow = await session.get(ProposalRow, proposal["id"])
+                                    if prow is not None:
+                                        prow.context = {**(prow.context or {}), "autoGate": gate}
+                                        await session.commit()
+                                        proposal = _pdict(prow)
+                        else:
+                            try:
+                                decided = await eng.proposals.approve(proposal["id"], via="auto")
+                                proposal = decided["proposal"]
+                            except Exception:
+                                log.exception("auto-approve failed for proposal %s", proposal["id"])
             out.append({"signal": signal_dict(row), "proposal": proposal,
                         "armed": armed, "shadowOrder": shadow_order})
         return out
@@ -1860,6 +1889,25 @@ class SignalService:
             "hasImage": bool((r.meta or {}).get("imageAssetId")),
         } for r in rows]
 
+    async def source_trust(self, source: str) -> dict:
+        """Graduation stats for the earned-auto gate (POST-SOAK Phase 2): the
+        source's CLOSED tip positions (tag `source:<name>` — the armed lineage,
+        per the standing 'judge the ARMED book' rule); realized P&L > 0 = hit."""
+        from ..models import ManagedPositionRow
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(ManagedPositionRow).where(
+                ManagedPositionRow.technique == "tip",
+                ManagedPositionRow.status == "closed"))).scalars().all()
+        graded = hits = 0
+        for r in rows:
+            if f"source:{source}" not in (r.tags or []):
+                continue
+            graded += 1
+            if float((r.state or {}).get("realizedPnl") or 0) > 0:
+                hits += 1
+        return {"graded": graded, "hits": hits,
+                "hitRate": (hits / graded) if graded else None}
+
     async def source_scorecards(self) -> list[dict]:
         """Per-source track record, TWO books side by side (user decision
         2026-08-27): 'immediate' = buy the moment the tip verified (the
@@ -1913,6 +1961,21 @@ class SignalService:
                 "pnl": (equity - start) if equity is not None else None,
                 "pnlPct": ((equity - start) / start * 100) if equity is not None and start else None,
             }
+
+        # earned-auto graduation (POST-SOAK Phase 2): closed tip positions per
+        # source tag — the same stats source_trust() serves the gate
+        from ..models import ManagedPositionRow
+        async with eng.sf() as session:
+            closed = (await session.execute(select(ManagedPositionRow).where(
+                ManagedPositionRow.technique == "tip",
+                ManagedPositionRow.status == "closed"))).scalars().all()
+        for r in closed:
+            src = next((t.split(":", 1)[1] for t in (r.tags or []) if t.startswith("source:")), None)
+            if not src:
+                continue
+            tr = card_for(src).setdefault("trust", {"graded": 0, "hits": 0})
+            tr["graded"] += 1
+            tr["hits"] += 1 if float((r.state or {}).get("realizedPnl") or 0) > 0 else 0
 
         # armed-book activity: managed positions opened by the tip runner, per source tag
         mgr = getattr(eng, "position_manager", None)

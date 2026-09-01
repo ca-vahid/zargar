@@ -522,6 +522,38 @@ async def test_failed_appraisal_fails_auto_approve_closed(app_client):
     assert not p.get("decidedVia")
 
 
+async def test_platform_auto_graduates_per_source(app_client):
+    # POST-SOAK Phase 2: the PLATFORM-default auto is earned per source — a
+    # fresh source's take lands pending with the graduation note; five winning
+    # closed tip positions graduate it; an explicit per-source auto (covered by
+    # test_auto_mode_self_approves) bypasses the bar entirely.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.mode", "auto")      # platform default, NO override
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None and p["status"] == "pending", p
+    assert "not yet earned" in (p["context"].get("autoGate") or ""), p["context"]
+    trust = await eng.signals_service.source_trust("TestLetter")
+    assert trust == {"graded": 0, "hits": 0, "hitRate": None}
+    # graduate: five winning closed tip positions carrying the source tag
+    from zargar.models import ManagedPositionRow
+    async with eng.sf() as session:
+        for _ in range(5):
+            session.add(ManagedPositionRow(
+                id=new_id(), technique="tip", symbol="AAPL", portfolio_id="p1",
+                status="closed", tags=["source:TestLetter"], config={}, legs=[],
+                state={"realizedPnl": 25.0}))
+        await session.commit()
+    # dismiss the first tip so the re-run is not swallowed as a duplicate
+    sig_id = out[0]["signal"]["id"]
+    await eng.signals_service.dismiss_signals([sig_id])
+    out2 = await run_pipeline(eng, canned_extraction())
+    p2 = out2[0]["proposal"]
+    assert p2 is not None and p2["status"] == "executed" and p2["decidedVia"] == "auto", p2
+
+
 async def test_take_fill_adopts_position_under_analyst_exits(app_client):
     # the whole lifecycle: analyst "take" (with exit plan) → auto-approved OPT
     # proposal → fill → durable managed position running the ANALYST'S ladder

@@ -101,6 +101,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our positions
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
     "techniques.tip.max_contracts_per_tip": 25,  # hard cap on option qty per proposal — budget sizing on lotto premium is nonsense (277 × $0.09, 2026-08-31)
+    "techniques.tip.auto_min_graded": 5,     # earned auto: closed tip positions a source needs before the platform-default auto self-approves
+    "techniques.tip.auto_min_hit": 0.4,      # earned auto: minimum hit rate on those closed positions (explicit per-source auto bypasses both)
     "techniques.tip.retro_enabled": True,    # nightly analyst retro on closed tip positions
     "techniques.tip.retro_at": "17:10",      # ET, engine scheduler
     "techniques.tip.analyst_manage_enabled": True,  # analyst may adjust/trim OPEN tip positions (exit-only)
