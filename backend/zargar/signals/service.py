@@ -1664,6 +1664,12 @@ class SignalService:
                     from ..execution.sizing import size_by_budget
                     contracts = size_by_budget(policy.budget_per_tip, ask,
                                                max_units=1_000, multiplier=100.0)
+                    # the record mirrors what the desk WOULD buy: the same
+                    # per-tip contract cap as proposals (54 lotto contracts on
+                    # 2026-09-01 tripped the per-order 50 cap — a record gap)
+                    hard_cap = int(eng.settings.get("techniques.tip.max_contracts_per_tip", 25) or 0)
+                    if hard_cap > 0:
+                        contracts = min(contracts, hard_cap)
                     if contracts < 1:
                         contracts = 1     # one contract slightly over budget beats skipping the tip
                         expression["note"] = (f"premium ${ask * 100:,.0f} exceeds the "

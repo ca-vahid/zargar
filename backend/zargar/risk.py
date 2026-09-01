@@ -270,7 +270,11 @@ class RiskGate:
         if is_option:
             checks.append(RiskCheck("options_allowed", bool(s.get("risk.allow_options", True)),
                                     "options trading disabled in settings"))
-            if side == OrderSide.BUY and ref_price and equity > 0:
+            # %-of-equity caps don't apply to SHADOW research books (2026-09-01,
+            # same precedent as their daily-loss exemption): a beaten-down $7k
+            # fake book blocking a $4.8k record entry is a gap in the evidence,
+            # not protection. Absolute caps (contracts, notional) still apply.
+            if side == OrderSide.BUY and ref_price and equity > 0 and portfolio.kind != "shadow":
                 premium = qty * ref_price * mult
                 cap_pct = float(s.get("risk.max_option_premium_pct", 5.0))
                 ok = premium <= equity * cap_pct / 100
@@ -329,7 +333,7 @@ class RiskGate:
                 "max_position_notional", new_notional <= max_notional,
                 f"resulting position ${new_notional:,.0f} exceeds cap ${max_notional:,.0f}"
                 if new_notional > max_notional else ""))
-            if equity > 0:
+            if equity > 0 and portfolio.kind != "shadow":   # research books: see 5. above
                 max_pct = float(s.get("risk.max_position_pct", 10.0))
                 pct = new_notional / equity * 100
                 checks.append(RiskCheck(
