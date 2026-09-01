@@ -101,7 +101,7 @@ export function JournalPage() {
               </button>
             ))}
           </div>
-          <label className="muted small" style={{ marginLeft: "auto", display: "inline-flex", gap: 5, alignItems: "center", whiteSpace: "nowrap" }}
+          <label className="muted small journal-research" style={{ marginLeft: "auto", display: "inline-flex", gap: 5, alignItems: "center", whiteSpace: "nowrap" }}
             title="the research (shadow) books' events — the tip track record, hidden by default">
             <input type="checkbox" className="tip-sel" checked={withResearch}
               onChange={(e) => toggleResearch(e.target.checked)} /> 🔬 research

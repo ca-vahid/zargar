@@ -176,7 +176,12 @@ class DeskService:
                 "rollWatchdog": await self._latest_job_result("roll_watchdog"),
             },
             "soak": await self._latest_job_result("soak_nightly"),
-            "intake": {"errorContent": err_content},
+            "intake": {
+                "errorContent": err_content,
+                # since-boot resilience tally (POST-SOAK 4.4)
+                **(getattr(getattr(eng, "signals_service", None), "counters", None) or {}),
+                "analystApiRetries": _analyst_retries(),
+            },
         }
         self.last_report = report
         return report
@@ -244,6 +249,14 @@ class DeskService:
                     "needsYou": (len(ny["pendingProposals"]) + len(ny["attention"])
                                  + len(ny["followUps"]))}
         return await self.morning_send()
+
+
+def _analyst_retries() -> int:
+    try:
+        from .techniques.tip.analyst import API_RETRIES
+        return int(API_RETRIES["n"])
+    except Exception:  # pragma: no cover - counter is best-effort telemetry
+        return 0
 
 
 def _count_by(rows: list[dict], key: str) -> dict:

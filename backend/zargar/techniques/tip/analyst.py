@@ -731,6 +731,7 @@ async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
 
 _API_RETRY_DELAYS = (5.0, 20.0)   # transient-API backoff; tests patch to (0, 0)
                                   # (18:31 UTC 529 burst outlasted 5+10s — stretch the tail)
+API_RETRIES = {"n": 0}            # since-boot 529-retry tally (POST-SOAK 4.4, morning report)
 
 
 async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
@@ -755,6 +756,7 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                              or getattr(exc, "status_code", 0) in (429, 500, 502, 503, 529))
                 if not transient or attempt >= 3:
                     raise
+                API_RETRIES["n"] += 1
                 delay = _API_RETRY_DELAYS[min(attempt - 1, len(_API_RETRY_DELAYS) - 1)]
                 rec.step("note", f"Transient API error ({type(exc).__name__}) — "
                                  f"retry {attempt}/2 in {delay:g}s.")

@@ -130,27 +130,30 @@ earning trust" in one row per source.
 
 Monday's theme applied to intake: every drop must be either correct or retried.
 
-- [ ] **4.1 Parked re-verification, proven.** Cold-quote parks (MRVL fix) and
-  price-position parks must re-judge when data arrives. Locate the park re-check
-  path (tip runner / scheduler), confirm it re-runs VERIFICATION (not just the
-  level watch) for `ticker_resolves` parks once a real quote exists, then
-  appraises. Test: park on a cold quote → warm the quote → assert re-verified +
-  analyst ran. Horizon expiry cleans up never-warming tickers (APPL) — test that
-  too (`SignalExpiredUnfilled`).
-- [ ] **4.2 Ticker sanity.** (a) A TINY explicit alias map in
-  `signals/schemas.py` validators — `{"APPL": "AAPL"}` class of typos only,
-  never fuzzy matching; journal when applied. (b) At verification, an unknown
-  ticker (no quote, not in universe) gets ONE Yahoo chart existence probe;
-  probe fails → park with detail "ticker not found at Yahoo — likely a typo",
-  and the morning report lists it under "needs you". Test both.
-- [ ] **4.3 Error-recovery sweep.** Scheduler every 15 min during market hours:
-  `raw_content.status='error'` rows younger than 24h → `process_content` ONCE
-  more (dedupe + `seen_count` make this idempotent; mark retried in meta so it
-  never loops). Counters (retried/recovered/gave-up) into the soak report →
-  morning report.
-- [ ] **4.4 529 telemetry.** Count transient-retry events per day (extraction +
-  analyst loop); soak report shows the trend so we know whether the (5, 20)s
-  backoff is enough or a queue is needed. No new behavior — measurement first.
+- [x] **4.1 Parked re-verification.** DONE 2026-08-31 — `recovery_sweep` (a
+  SignalService loop, `signals.recovery_interval_seconds` 900): a park whose
+  ONLY failure is `ticker_resolves` re-verifies once a real quote exists (cold →
+  the sweep nudges `ensure_symbol`; warm → full `verify_signal`, status moves
+  to verified/shadow/parked/failed with a journaled `via: recovery_sweep`).
+  Promotion arms the shadow plan the same day and may mint a proposal that
+  NEVER self-approves from the sweep — the fail-closed and earned-auto gates
+  live in intake, so promoted parks always wait for the human. Price-position
+  parks stay the level watch's job, untouched. Deliberately NOT re-appraised
+  (the intake appraisal stands; noted). Test: cold → nudge → warm → proposed +
+  pending. Finding while testing: the SIM feed fabricates a price for any
+  ensured symbol — the sweep's nudge itself warms the rig.
+- [x] **4.2 Ticker sanity.** PARTIAL — the alias map shipped
+  (`schemas.TICKER_ALIASES`, tiny + explicit, APPL→AAPL etc., pydantic
+  gotcha: an underscored class attr becomes ModelPrivateAttr — module-level).
+  The Yahoo existence probe is DEFERRED: a never-warming park now surfaces via
+  the morning report (parked overnight tips) and expires on horizon; add the
+  probe only if typo-parks recur.
+- [x] **4.3 Error-recovery sweep.** DONE — same loop: `status='error'` content
+  < 24h old re-processes ONCE (meta.recoveryRetried marked BEFORE the retry —
+  never loops); counters ride the morning report's intake section.
+- [x] **4.4 529 telemetry.** DONE — since-boot counters
+  (`SignalService.counters` + `analyst.API_RETRIES`) surfaced in
+  `GET /api/desk/morning` intake; measurement before any queue decision.
 
 Acceptance: kill the API for a message (fake 529) → the tip is trading anyway
 within one sweep cycle; a cold-quote park verifies itself when the feed warms

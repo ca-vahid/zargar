@@ -15,6 +15,12 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+# Known typo tickers seen in the wild (POST-SOAK 4.2) — TINY and explicit,
+# never fuzzy: "APPL" parked a whole day on 2026-08-31. Applied before
+# anything else reads the ticker; the intake log shows the original text.
+TICKER_ALIASES = {"APPL": "AAPL", "AMZM": "AMZN", "NVIDIA": "NVDA",
+                  "TESLA": "TSLA", "BRK.B": "BRK-B"}
+
 
 def _norm(value: object, allowed: set[str], default: str) -> str:
     v = str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
@@ -188,6 +194,12 @@ class TradeSignal(BaseModel):
                 clean["et"] = str(g["et"])[:5]
             out.append(clean)
         return out
+
+    @field_validator("ticker", mode="before")
+    @classmethod
+    def _v_ticker(cls, v: object) -> str:
+        raw = str(v or "").strip().upper()
+        return TICKER_ALIASES.get(raw, raw)
 
     @field_validator("direction", mode="before")
     @classmethod

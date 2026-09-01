@@ -683,3 +683,20 @@ button.bl-card:active { background: var(--surface-2); }
     justify-content: center;
   }
 }
+
+/* POST-SOAK 3.1: the research controls must be thumb-size on phones — the
+   audit flagged the 18px journal checkbox and 37px-wide seg buttons */
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  .journal-research {
+    min-height: 44px;
+    padding: 0 8px;
+  }
+  .journal-research input.tip-sel {
+    width: 24px;
+    height: 24px;
+  }
+  .research-seg button {
+    min-width: 44px;
+    min-height: 40px;
+  }
+}

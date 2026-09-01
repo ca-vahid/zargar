@@ -91,6 +91,12 @@ class SignalService:
         self.extractor = extractor
         self._replay_fetch = None      # tests inject a bars fetcher for replays
         self._analyst_client = None    # tests inject a fake Anthropic client
+        self._recovery_task: asyncio.Task | None = None
+        # 529-day telemetry (POST-SOAK 4.4): since-boot counters the morning
+        # report surfaces — measure before deciding the backoff needs a queue
+        self.counters = {"extractionRetries": 0, "recoverySweeps": 0,
+                         "contentRetried": 0, "contentRecovered": 0,
+                         "parksReverified": 0, "parksPromoted": 0}
         self._discord_catalog: dict | None = None   # last catalog the gateway reported
         self._discord_peek_queue: set[str] = set()  # channelIds the UI asked to peek
         self._discord_peek_results: dict[str, dict] = {}  # channelId -> last-message preview
@@ -886,6 +892,7 @@ class SignalService:
                 transient = ("overloaded" in str(exc).lower()
                              or getattr(exc, "status_code", 0) in (429, 500, 502, 503, 529))
                 if transient and attempt < 3:
+                    self.counters["extractionRetries"] += 1
                     delay = self._extract_retry_delays[min(attempt - 1,
                                                           len(self._extract_retry_delays) - 1)]
                     intake.step("extract", f"Transient API error ({type(exc).__name__}) — "
@@ -1889,6 +1896,123 @@ class SignalService:
             "hasImage": bool((r.meta or {}).get("imageAssetId")),
         } for r in rows]
 
+    # ---------------------------------------------------------- recovery sweep
+    def start_recovery(self) -> None:
+        if self._recovery_task is None:
+            self._recovery_task = asyncio.create_task(self._recovery_loop(),
+                                                      name="signals-recovery")
+
+    async def _recovery_loop(self) -> None:
+        await asyncio.sleep(30)
+        while True:
+            try:
+                await self.recovery_sweep()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                log.exception("recovery sweep failed")
+            await asyncio.sleep(max(60, int(self.engine.settings.get(
+                "signals.recovery_interval_seconds", 900))))
+
+    async def recovery_sweep(self) -> dict:
+        """POST-SOAK 4.1 + 4.3: every drop is either correct or retried.
+        (a) A tip parked on a COLD QUOTE (`ticker_resolves`) re-verifies once
+        the feed warms — same session, not tomorrow's shadow arm. Promotion
+        arms the shadow plan now and may mint a proposal that NEVER
+        self-approves here (the fail-closed and earned-auto gates live in
+        intake — a human decides promoted parks).
+        (b) `raw_content` stuck in status=error (transient API death) is
+        re-processed ONCE (dedupe + seen_count make it idempotent)."""
+        eng = self.engine
+        out = {"reverified": 0, "promoted": 0, "retried": 0, "recovered": 0}
+        self.counters["recoverySweeps"] += 1
+
+        # -- (a) cold-quote parks ---------------------------------------------
+        async with eng.sf() as session:
+            parked = (await session.execute(select(Signal).where(
+                Signal.status == "parked"))).scalars().all()
+        for row in parked:
+            checks = (row.verification or {}).get("checks") or []
+            failed = [c for c in checks if not c.get("passed")]
+            if not failed or any(c.get("name") != "ticker_resolves" for c in failed):
+                continue        # price-position parks are the level watch's job
+            sym = row.ticker.upper()
+            q = eng.quotes.get(sym)
+            if q is None or not (q.last and q.last > 0):
+                with contextlib.suppress(Exception):
+                    await eng.ensure_symbol(sym)     # nudge; a later sweep judges
+                continue
+            try:
+                sig = TradeSignal(**((row.extraction or {}).get("signal") or {}))
+            except Exception:
+                continue
+            # grounding already passed at intake or this would not be a park
+            verification = await verify_signal(sig, eng.quotes, eng.settings)
+            self.counters["parksReverified"] += 1
+            out["reverified"] += 1
+            new_status = ("verified" if verification["passed"]
+                          else "parked" if verification["park"]
+                          else "shadow" if verification["shadow_only"]
+                          else "verification_failed")
+            async with eng.sf() as session:
+                db = await session.get(Signal, row.id)
+                if db is None or db.status != "parked":
+                    continue                          # raced something — leave it
+                db.verification = verification
+                db.status = new_status
+                await session.commit()
+                row = db
+            await eng.journal.append(
+                ev.SIGNAL_VERIFIED if new_status == "verified" else ev.SIGNAL_PARKED
+                if new_status == "parked" else ev.SIGNAL_VERIFICATION_FAILED,
+                {"signalId": row.id, "ticker": row.ticker, "via": "recovery_sweep",
+                 "from": "parked", "to": new_status},
+                aggregate_type="signal", aggregate_id=row.id)
+            eng.bus.publish(topics.SIGNALS, signal_dict(row))
+            if new_status in ("verified", "shadow"):
+                out["promoted"] += 1
+                self.counters["parksPromoted"] += 1
+                if getattr(eng, "tip_runner", None) is not None:
+                    with contextlib.suppress(Exception):
+                        await eng.tip_runner.arm_shadow(row.id)   # books lane, today
+                policy = resolve_policy(eng.settings, row.source_name)
+                if (new_status == "verified" and eng.proposals is not None
+                        and policy.mode in ("proposal", "auto")
+                        and policy.meets_conviction(sig.confidence)):
+                    with contextlib.suppress(Exception):
+                        await eng.proposals.create_from_signal(row, sig, verification)
+                        # deliberately NOT auto-approved from here
+
+        # -- (b) error content, one retry -------------------------------------
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+        async with eng.sf() as session:
+            errs = (await session.execute(select(RawContent).where(
+                RawContent.status == "error"))).scalars().all()
+        for r in errs:
+            if r.received_at and r.received_at < cutoff:
+                continue
+            if (r.meta or {}).get("recoveryRetried"):
+                continue
+            async with eng.sf() as session:      # mark BEFORE retrying: never loop
+                db = await session.get(RawContent, r.id)
+                if db is None or (db.meta or {}).get("recoveryRetried"):
+                    continue
+                db.meta = {**(db.meta or {}),
+                           "recoveryRetried": dt.datetime.now(dt.timezone.utc).isoformat()}
+                await session.commit()
+            out["retried"] += 1
+            self.counters["contentRetried"] += 1
+            try:
+                res = await self.process_content(r.id)
+                if res.get("status") != "error":
+                    out["recovered"] += 1
+                    self.counters["contentRecovered"] += 1
+            except Exception:
+                log.exception("recovery retry failed for %s", r.id)
+        if any(out.values()):
+            log.info("recovery sweep: %s", out)
+        return out
+
     async def source_trust(self, source: str) -> dict:
         """Graduation stats for the earned-auto gate (POST-SOAK Phase 2): the
         source's CLOSED tip positions (tag `source:<name>` — the armed lineage,
@@ -2074,3 +2198,5 @@ async def attach_signal_layer(engine) -> None:
     engine.proposals.start()
     # rescue any mirrored images that only have (expiring) CDN links
     engine.signals_service.start_media_catchup()
+    # POST-SOAK 4.1/4.3: cold parks re-verify, error content retries once
+    engine.signals_service.start_recovery()

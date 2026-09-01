@@ -44,6 +44,7 @@ DEFAULTS: dict[str, Any] = {
     "desk.morning_push_until": "10:30",     # ET; past this a late (re)deploy composes without pushing
     "desk.roll_watchdog_at": "09:00",       # ET; rolls any plan the close missed (restart inside the close window)
     "desk.soak_at": "17:30",                # ET; nightly practice-soak scorecard (journaled, feeds the morning report)
+    "signals.recovery_interval_seconds": 900,  # cold-park re-verify + error-content retry sweep cadence
     "execution.paused": False,                  # per-technique pause: set techniques.<id>.paused (kill switch stays global; exits are never blocked)
     "research.chain_snapshots.enabled": True,   # nightly per-contract OI/IV/volume rows (history is NOT backfillable)
     "research.chain_snapshots.at": "16:30",     # ET
