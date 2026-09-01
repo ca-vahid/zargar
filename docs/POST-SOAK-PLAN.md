@@ -1,5 +1,10 @@
 # Post-soak plan — after the first live-market Monday (2026-08-31)
 
+> **Scope decision (user, 2026-08-31):** everything below is being built EXCEPT
+> T13 — **EM evolution and other-technique enhancement belong to another team**;
+> this desk works tips + technique-agnostic platform/ops/UI only. The working
+> plan (phases, checkboxes, tests, acceptance) is **`docs/POST-SOAK-BUILD-PLAN.md`**.
+
 The first full soak (practice money, auto-approve on) produced 12 shipped fixes in
 one day. The pattern behind almost every one: **the happy paths were right, the
 failure paths defaulted open** (a crashed analyst approved a trade; a cold quote
@@ -27,7 +32,7 @@ tick reports, `docs/techniques/tip/KNOWLEDGE-BUILD-PLAN.md` Phase 5 (F1–F11),
 | T10 | Soak report, scheduled + surfaced | `tools/soak_report.py` exists but runs by hand; it belongs in T1's morning report | S | P2 |
 | T11 | Alpaca-paper overnight pass | NEXT-GAPS operational gate, unchanged — required before real-money overnight holds | M | P2 |
 | T12 | First-live-tip checklist | PRE-LIVE-PROFILE re-tighten + one manual live approval before ANY live auto discussion | S | P2 |
-| T13 | EM evolution pilot (T-6 continuation) | EVOLUTION-PLAN.md; unchanged by today — EM found 0 trades again (critic vetoes were correct, but the funnel question stands) | L | P2 |
+| T13 | EM evolution pilot (T-6 continuation) | **→ OTHER TEAM** (user decision 2026-08-31); EVOLUTION-PLAN.md — not in our build plan | L | — |
 | T14 | Real-device mobile pass | MOBILE-ACCESS checklist; the phone is how Vancouver mornings will actually be handled | S | P2 |
 
 ## P0 details
