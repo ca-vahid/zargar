@@ -97,6 +97,17 @@ class RiskGate:
         self._recent.append((time.time(),
                              f"{portfolio_id}|{symbol}|{side}|{float(qty):g}|{order_type}"))
 
+    def forget_submission(self, symbol: str, side: str, qty: float, order_type: str,
+                          portfolio_id: str = "") -> None:
+        """A terminally REJECTED order is not exposure: drop its duplicate-window
+        entry so a deliberate resubmit (a spread-fallback leg, a watchdog retry)
+        is not blocked by the ghost of an order that never worked."""
+        key = f"{portfolio_id}|{symbol}|{side}|{float(qty):g}|{order_type}"
+        for i in range(len(self._recent) - 1, -1, -1):
+            if self._recent[i][1] == key:
+                del self._recent[i]
+                break
+
     def _exposure_keys(self, intent) -> list[str]:
         keys = []
         tid = getattr(intent, "technique_id", None)

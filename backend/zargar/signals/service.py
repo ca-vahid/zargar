@@ -1763,7 +1763,8 @@ class SignalService:
             raise ValueError(
                 f"too late — the tip's contract expires {expiry} and the entry cutoff "
                 f"({eng.settings.get('techniques.tip.entry_cutoff_dte', 2)}d before expiry) has passed")
-        now_ms = int(_time.time() * 1000)
+        from ..clock import now_ms as _clock_now
+        now_ms = _clock_now()      # test-pinnable: decides which session the plan targets
         bars = await fetch_window(row.ticker, "5m", now_ms - 10 * 86_400_000, now_ms)
         quote = eng.quotes.get(row.ticker)
         ref = (quote.last if quote and quote.last > 0 else None) or (bars[-1].close if bars else None)

@@ -63,8 +63,16 @@ def canned_tip():
 
 @pytest.fixture
 async def tip_rig(fresh_db, monkeypatch):
+    import os
+
     import zargar.brokers.sim as simmod
     monkeypatch.setitem(simmod.KNOWN_PRICES, "TEST", 100.0)
+    # POST-SOAK 5.1: pin plan-building to a fixed past pre-open moment so the
+    # armer's seed replay never consumes real (wall-clock) sim bars — the gap
+    # trio judged the synthetic opening bar differently by time of day.
+    # An outer ZARGAR_TEST_NOW wins (the three-frozen-times proof run).
+    if not os.environ.get("ZARGAR_TEST_NOW"):
+        monkeypatch.setenv("ZARGAR_TEST_NOW", "2026-08-24T08:30:00-04:00")
     config = make_test_config(anthropic_api_key="")
     eng = Engine(config)
     await eng.start()
@@ -921,15 +929,27 @@ async def test_horizon_exhaustion_expires_plan_and_signal(tip_rig):
     assert sig.status == "expired", sig.status
 
 
-async def test_restore_boot_rolls_midhorizon_plan(tip_rig):
+async def test_restore_boot_rolls_midhorizon_plan(tip_rig, monkeypatch):
     """Armed for a PAST session with the horizon still live: restore() rolls the
-    plan forward instead of expiring it. ARM-GAPS A4."""
+    plan forward instead of expiring it. ARM-GAPS A4.
+    The plan builds on a pin ONE session in the past (tracking the real clock,
+    so the horizon always spans); boot-roll then targets the REAL clock's
+    session — the test computes the same target production does."""
+    import time as _t
+    from zoneinfo import ZoneInfo
+
+    from zargar.marketstructure.sessions import next_session_date, session_bounds
+    et_now = dt.datetime.now(ZoneInfo("America/New_York"))
+    prev = et_now.date() - dt.timedelta(days=1)
+    while prev.weekday() >= 5:
+        prev -= dt.timedelta(days=1)
+    monkeypatch.setenv("ZARGAR_TEST_NOW", f"{prev.isoformat()}T08:30:00-04:00")
     eng, sim = tip_rig
     sid = await _ingest_tip(eng)
     snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
     run_id = snap["runId"]
-    target_day = snap["planFor"]
-    d = dt.date.fromisoformat(target_day) - dt.timedelta(days=1)
+    assert snap["planFor"] == prev.isoformat()
+    d = prev - dt.timedelta(days=1)
     while d.weekday() >= 5:
         d -= dt.timedelta(days=1)
     async with eng.sf() as session:
@@ -944,8 +964,14 @@ async def test_restore_boot_rolls_midhorizon_plan(tip_rig):
     try:
         restored = await r2.restore()
         assert restored == 1
+        # production's boot-roll target: today while today's session can still
+        # trade, else the next session
+        now_ms = int(_t.time() * 1000)
+        today = et_now.strftime("%Y-%m-%d")
+        expected = today if (et_now.weekday() < 5 and now_ms < session_bounds(today)[1]) \
+            else next_session_date(now_ms)
         s = next(a for a in r2.armed() if a["runId"] == run_id)
-        assert s["planFor"] == target_day, (s["planFor"], target_day)
+        assert s["planFor"] == expected, (s["planFor"], expected)
         assert s["sessionsUsed"] >= 1 and s["status"] == "armed"
     finally:
         await r2.stop()

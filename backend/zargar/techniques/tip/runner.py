@@ -611,12 +611,10 @@ class TipRunner(PlanRunner):
         return out
 
     def _armed_today(self, signal_id: str) -> bool:
-        today = dt.datetime.now(dt.timezone.utc).date().isoformat()
-        for ap in self._armed.values():
-            if (ap.plan.get("context") or {}).get("signalId") == signal_id \
-                    and ap.plan_for >= today and ap.status in ("armed", "paused"):
-                return True
-        return False
+        """ANY live plan blocks the morning re-arm (the D5 one-plan-per-tip rule
+        would refuse it anyway — skip, don't error). A plan stuck on a PAST
+        session still counts: it is the roll watchdog's job, not a re-arm's."""
+        return self.live_run_for_signal(signal_id) is not None
 
     async def _signal_played(self, signal_id: str) -> bool:
         """A tip is played once any of its armed plans produced a fill — a

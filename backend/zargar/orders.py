@@ -390,8 +390,23 @@ class OrderManager:
             option_action=("BUY_TO_OPEN" if o.side == "BUY" else "SELL_TO_OPEN"),
         ) for o in rows]
         net = net_limit
-        await executor.submit_mleg(brokers, net_limit=net,
-                                   price_effect=("DEBIT" if net > 0 else "CREDIT"), gid=gid)
+        try:
+            await executor.submit_mleg(brokers, net_limit=net,
+                                       price_effect=("DEBIT" if net > 0 else "CREDIT"), gid=gid)
+        except Exception as exc:
+            # the venue choked on the COMBINED order: the legs never reached it.
+            # Mark them REJECTED (which also frees the duplicate-window slot) so
+            # the verified leg-sequencing fallback can place the same legs —
+            # they used to linger SUBMITTED and the fallback's long leg was
+            # blocked as an "identical order" (found 2026-09-01, un-breaking
+            # the duplicate guard).
+            for o in rows:
+                try:
+                    await self._transition(o.id, OrderStatus.REJECTED, ev.ORDER_REJECTED,
+                                           reject_reason=f"mleg submit failed: {exc}")
+                except Exception:
+                    log.exception("mleg leg cleanup failed for %s", o.id)
+            raise
         return {"gid": gid, "legs": out, "status": "SUBMITTED"}
 
     # ------------------------------------------------------------------ cancel
@@ -559,6 +574,15 @@ class OrderManager:
                 order.reject_reason = reject_reason
             await session.commit()
             odict = order_dict(order)
+        if status in (OrderStatus.REJECTED, OrderStatus.REJECTED_RISK):
+            # a rejected order never became exposure — free its duplicate-window
+            # slot so a deliberate resubmit (spread fallback, retry) can pass
+            try:
+                self._risk.forget_submission(odict["symbol"], odict["side"], odict["qty"],
+                                             odict["orderType"],
+                                             portfolio_id=odict.get("portfolioId", ""))
+            except Exception:   # never let bookkeeping break a transition
+                log.debug("forget_submission failed", exc_info=True)
         payload = {"status": status.value}
         if reject_reason:
             payload["reason"] = reject_reason

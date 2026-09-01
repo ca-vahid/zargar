@@ -161,14 +161,21 @@ with zero human touches.
 
 ## Phase 5 — The rig stops lying about time (T7), then batch 2 (T8)
 
-- [ ] **5.1 Pinned clock.** The 3 flaky tip_runner tests (short_tip_puts,
-  guarded_trigger_stays_dormant, gapped_past_trigger_revives) share one cause:
-  the rig arms at WALL-CLOCK time, so mid-session runs let
-  `_complete_opening_bars` consume the real open before the test feeds its
-  synthetic one. Make "now" injectable for the tip plan build + armer
-  (`ZARGAR_TEST_NOW` env or a conftest fixture patching the clock source —
-  follow how sim seeding is injected today), pin the rig pre-open, and CI-prove
-  it: run the trio at three frozen times (pre-open / mid-session / post-close).
+- [x] **5.1 Pinned clock.** DONE 2026-09-01 — `zargar/clock.py::now_ms()`
+  (ZARGAR_TEST_NOW: ISO or epoch-ms; production always real time) consumed at
+  ONE choke point: `build_tip_plan_for`'s as_of, which decides the plan's
+  session — pinned to a fixed PAST pre-open moment in `tip_rig`, the armer's
+  seed replay can never consume real wall-clock sim bars. **PROOF: the trio is
+  green at all three frozen times (08:30 / 12:00 / 17:30 ET).** Fallout fixed
+  along the way: the boot-roll test now pins one session back and computes
+  production's real-clock roll target; `_armed_today` → any-live-plan check
+  (a plan stuck on a past session is the watchdog's job, not a re-arm error);
+  and two REAL bugs the un-broken duplicate guard exposed — a REJECTED order
+  now frees its duplicate-window slot (`RiskGate.forget_submission` on the
+  REJECTED transitions), and a failed native-mleg submit REJECTS its leg rows
+  instead of leaving them SUBMITTED (they blocked the sequencing fallback's
+  identical long leg). mleg-fallback test is suite-load timing-sensitive
+  (25s quote pump); passes alone — noted, not chased.
 - [ ] **5.2 F-findings triage.** KNOWLEDGE-BUILD-PLAN Phase 5's F1–F11 against
   today's code: mark which are already fixed by the 08-31 work (F9 inferred
   ticker → shadow-gate; grounding changes), implement the still-open ones that
