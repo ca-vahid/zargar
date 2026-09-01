@@ -992,6 +992,36 @@ async def test_gapped_past_trigger_revives_at_roll(tip_rig):
     assert s2["triggers"][0]["status"] == "waiting"
 
 
+async def test_roll_watchdog_rescues_stale_plan(tip_rig):
+    """POST-SOAK Phase 1.2: a restart inside the close window can miss both the
+    bar-driven close and the 16:05 clock — the 09:00 watchdog closes/rolls any
+    plan left on a past session, looping across a weekend gap."""
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import select as _sel
+
+    from zargar.models import Event
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    snap = await eng.tip_runner.arm_signal(sid, {"portfolioId": sim["id"], "mode": "alert"})
+    ap = eng.tip_runner._armed[snap["runId"]]
+    et_today = _dt.datetime.now(ZoneInfo("America/New_York")).date()
+    past = et_today - _dt.timedelta(days=4)
+    while past.weekday() >= 5:
+        past -= _dt.timedelta(days=1)
+    ap.plan_for = past.isoformat()                       # the close "missed" it
+    ap.expires_session = (et_today + _dt.timedelta(days=20)).isoformat()
+    out = await eng.tip_runner.roll_stale()
+    assert out and out[0]["runId"] == snap["runId"] and out[0]["rolled"], out
+    assert ap.status in ("armed", "paused") and ap.plan_for >= et_today.isoformat()
+    async with eng.sf() as session:
+        rolls = (await session.execute(_sel(Event.payload).where(
+            Event.type == "TechniquePlanRolled"))).scalars().all()
+    assert any((p or {}).get("runId") == snap["runId"] for p in rolls)
+    assert await eng.tip_runner.roll_stale() == []       # idempotent
+
+
 # --- no orphaned money (ARM-GAPS cluster B) -----------------------------------------
 
 async def test_partial_fill_adopts_and_journals(tip_rig):

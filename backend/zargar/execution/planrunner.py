@@ -1832,6 +1832,36 @@ class PlanRunner(SessionListener):
             with contextlib.suppress(Exception):
                 await self._hook("on_plan_horizon_expired", self.on_plan_horizon_expired(ap))
 
+    async def roll_stale(self) -> list[dict]:
+        """Watchdog sweep (POST-SOAK Phase 1.2): a restart inside the close
+        window can miss BOTH the bar-driven close and the 16:05 clock; boot-roll
+        only helps at boot. Close/roll any plan still on a past session — each
+        `_end_session` either rolls one session forward (horizon left) or
+        expires + scores, exactly as the close would have. Loops because a
+        weekend gap can need more than one roll to reach today."""
+        today = dt.datetime.now(ET).strftime("%Y-%m-%d")
+        out: list[dict] = []
+        for ap in list(self._armed.values()):
+            if ap.status not in ("armed", "paused") or ap.plan_for >= today:
+                continue
+            stale_from = ap.plan_for
+            self._log(ap, "roll_watchdog",
+                      f"plan still on {stale_from} — the close missed it; closing/rolling now")
+            for _ in range(8):
+                if ap.status not in ("armed", "paused") or ap.plan_for >= today:
+                    break
+                await self._end_session(ap, journal=True,
+                                        reason="close missed — watchdog roll")
+            rolled = ap.status in ("armed", "paused") and ap.plan_for >= today
+            out.append({"runId": ap.run_id, "symbol": ap.symbol, "technique": self.TECHNIQUE_ID,
+                        "from": stale_from, "rolled": rolled,
+                        "planFor": ap.plan_for, "status": ap.status})
+            if rolled:
+                await self._alert(ap, f"the close missed this plan (stuck on {stale_from}) — "
+                                      "the morning watchdog rolled it", level="warning",
+                                  stage="roll_watchdog")
+        return out
+
     # ---------------------------------------------------------------- multi-day roll
     # Tracker statuses that get a fresh chance next session. Terminal-for-good:
     # `invalidated` (price closed through the stop before entry — the thesis is

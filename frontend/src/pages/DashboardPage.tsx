@@ -14,6 +14,64 @@ import { cashText, providerTotal } from "../lib/brokerage";
 import { AsyncSection, EmptyState, StatusPill } from "../components/ui";
 import { WatchRow } from "../components/WatchRow";
 
+/* ── the morning desk card (POST-SOAK Phase 1): one glance = what needs me ── */
+function MorningCard() {
+  const setPage = useStore((s) => s.setPage);
+  const [rep, setRep] = useState<import("../types").MorningReport | null>(null);
+  useEffect(() => { api.deskMorning().then(setRep).catch(() => undefined); }, []);
+  if (!rep) return null;
+  const ny = rep.needsYou;
+  const needs = ny.pendingProposals.length + ny.attention.length + ny.followUps.length;
+  const armed = Object.values(rep.today.armedByTechnique)
+    .reduce((a, c) => a + (c.armed ?? 0), 0);
+  const goApprovals = () => { setPage("inbox"); useStore.getState().setPageTab("approvals"); };
+  return (
+    <div className="panel mb morning-card">
+      <div className="panel-head">This morning
+        <span className="sub">{rep.date} · {rep.overnight.tips.length} tip{rep.overnight.tips.length === 1 ? "" : "s"} overnight
+          · {armed} plan{armed === 1 ? "" : "s"} armed
+          {rep.today.rolled.length ? ` · ${rep.today.rolled.length} rolled` : ""}</span>
+        {rep.soak && (
+          <span className={`status-pill ${rep.soak.ready ? "ok" : "dim"}`} style={{ marginLeft: "auto" }}
+            title="the nightly practice-soak scorecard — READY means the real-money bar is met">
+            soak {rep.soak.ready ? "ready" : "in progress"}
+          </span>
+        )}
+      </div>
+      <div className="panel-body">
+        {needs === 0 ? (
+          <div className="muted" style={{ fontSize: 13 }}>Nothing needs you — the desk handled the night.</div>
+        ) : (
+          <div className="morning-rows">
+            {ny.pendingProposals.map((p) => (
+              <button key={p.id} className="morning-row" onClick={goApprovals}>
+                <span className={`status-pill ${p.failClosed ? "bad" : "wait"}`}>
+                  {p.failClosed ? "fail-closed" : "pending"}</span>
+                <b>{p.symbol}</b>
+                <span className="muted">{p.source ?? ""} — {p.why}</span>
+              </button>
+            ))}
+            {ny.followUps.map((f, i) => (
+              <button key={`f${i}`} className="morning-row" onClick={() => setPage("armed")}>
+                <span className="status-pill wait">follow-up</span>
+                <b>{f.symbol}</b>
+                <span className="muted">{f.note}</span>
+              </button>
+            ))}
+            {ny.attention.map((a) => (
+              <button key={a.runId} className="morning-row" onClick={() => setPage("armed")}>
+                <span className="status-pill bad">attention</span>
+                <b>{a.symbol}</b>
+                <span className="muted">{a.reasons.join("; ")}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ProviderCard({ provider }: { provider: BrokerageProvider }) {
   const openPortfolios = useStore((s) => s.openPortfolios);
   const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
@@ -332,6 +390,7 @@ export function DashboardPage() {
   return (
     <div>
       <h2 className="page-title">Dashboard</h2>
+      <MorningCard />
       <ArmedFleetWidget />
       <div className="dash-grid">
         <HoldingsWidget />

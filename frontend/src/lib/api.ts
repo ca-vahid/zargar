@@ -107,6 +107,11 @@ export const api = {
       "GET", `/api/tip/discord/messages?${q.toString()}`);
   },
   // --- tips analyst runs ---
+  deskMorning: () =>
+    request<import("../types").MorningReport>("GET", "/api/desk/morning"),
+  deskMorningSend: () =>
+    request<{ sent: { push: boolean; telegram: boolean }; title: string; body: string;
+      needsYou: number }>("POST", "/api/desk/morning/send"),
   analystRuns: (limit = 40) =>
     request<import("../types").AnalystRunSummary[]>("GET", `/api/tip/analyst/runs?limit=${limit}`),
   analystRun: (id: string) =>

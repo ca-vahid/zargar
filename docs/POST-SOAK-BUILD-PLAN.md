@@ -31,34 +31,38 @@ The user is in Vancouver: the open is 06:30 local. The morning surface must make
 "what needs me" a one-glance answer, and the close must never silently strand a
 multi-day plan.
 
-- [ ] **1.1 Roll forensics.** Find out why 2026-08-31's close produced zero
-  `TechniquePlanRolled` events with 52 plans armed. Read `_roll_session` callers:
-  is the roll bar-driven (next bar after close — none until tomorrow's pre-market?),
-  scheduler-driven, or boot-only? Decide + document the intended trigger in
-  PLATFORM-RULES. Fix if broken; a roll at close must not depend on a restart.
-- [ ] **1.2 Roll watchdog.** Engine scheduler job 09:00 ET: any armed/paused plan
-  whose `planFor < today's session` and whose horizon still has sessions left →
-  roll it now (`_roll_session`), badge `needsAttention`, journal
-  (`TechniquePlanRolled` with `via: watchdog`), and count it for the morning
-  report. Test: freeze a plan at Friday's planFor, run the job, assert rolled +
-  badged without a restart.
-- [ ] **1.3 Soak report nightly.** Schedule `tools/soak_report.py` after the
-  close (17:30 ET), persist the JSON (settings blob or a small table), keep the
-  last 14. It becomes a data source for 1.4, not a separate surface.
-- [ ] **1.4 Morning composer.** `GET /api/desk/morning` assembling, from existing
-  sources (no new state): pending proposals — EVERY fail-closed one with the
-  analyst failure reason (`intake` note text) — plans flagged by follow-ups,
-  `needsAttention` anything, overnight tips + their intake outcomes
-  (verified/parked/shadow/replayed/failed + why), today's armed counts by
-  technique, rolls (incl. watchdog rescues), yesterday's soak deltas, error-sweep
-  counters (Phase 4). CamelCase wire, deep-linkable ids.
-- [ ] **1.5 Delivery.** Scheduler 08:25 ET → `push.py` (web push) + Telegram: a
-  SHORT text (counts + the "needs you" lines) linking to the page. Dashboard gets
-  a "This morning" card rendering the same endpooint. Phone: the card is the top
-  of Now view — check with mobile-audit.
-- [ ] **1.6 Tests.** Composer unit tests on canned state (one fail-closed
-  proposal, one flagged plan, one overnight parked tip) asserting every item
-  surfaces; scheduler wiring test (job registered at the right times).
+- [x] **1.1 Roll forensics.** DONE 2026-09-01 — **no bug**. The close is
+  bar-driven (`_on_bar` → `_end_session` on the 15:59 bar) with a 16:05 ET
+  clock fallback in `on_heartbeat`; on 08-31 it ran at 16:00:00 ET exactly:
+  45 EM plans scored+disarmed, 2 multi-day tips ROLLED (AMZN→09-01 exp 09-18,
+  GOOGL→09-01 exp 09-15; event ids 10210+ prove real-time insertion). The
+  "missing rolls" was observation error: the review tick fired 15:27 ET,
+  pre-close. Residual risk the watchdog (1.2) covers: a restart in the
+  16:00–16:06 window can miss BOTH triggers (boot-roll covers plans restored
+  later, but only at boot).
+- [x] **1.2 Roll watchdog.** DONE 2026-09-01 — `PlanRunner.roll_stale()` (small
+  shared-engine addition; loops `_end_session` so a weekend gap rolls through)
+  + `desk.roll_watchdog` at `desk.roll_watchdog_at` (09:00 ET) sweeping every
+  registered runner; rolled plans alert (`roll_watchdog` stage → needsAttention).
+  Test `test_roll_watchdog_rescues_stale_plan` drives the REAL TipRunner:
+  a plan stuck 4 days back rolls to today, journals, idempotent second sweep.
+- [x] **1.3 Soak report nightly.** DONE 2026-09-01 — `desk.soak_nightly`
+  (17:30 ET) calls `soak_report.collect` in-process; persistence is the
+  scheduler's own `ScheduledJobRan` journal row (result payload) — no new state.
+- [x] **1.4 Morning composer.** DONE 2026-09-01 — `zargar/desk.py`
+  `DeskService.morning_report` + `GET /api/desk/morning`: pending proposals
+  with `failClosed` + a prose `why`, plan attention reasons, source follow-up
+  flags, overnight tips + status counts, armed counts per technique, rolls +
+  watchdog result, latest soak, error-content count (Phase 4 wires the sweep).
+- [x] **1.5 Delivery.** DONE 2026-09-01 — `desk.morning_send` at
+  `desk.morning_at` (08:25 ET): web push + Telegram short form (counts + the
+  needs-you lines), `POST /api/desk/morning/send` for the manual trigger;
+  Dashboard "This morning" card (`MorningCard`) with fail-closed/follow-up/
+  attention rows deep-linking to Approvals/Armed. (Now-view placement deferred
+  to the Phase 3 mobile pass — the Dashboard card is phone-usable meanwhile.)
+- [x] **1.6 Tests.** DONE 2026-09-01 — `tests/test_desk.py`: job registration,
+  fail-closed surfacing (with + without a verdict), send composes the short
+  form; plus the watchdog test in `test_tip_runner.py`. 5/5 green.
 
 Acceptance: the report fires on schedule; a fail-closed proposal CANNOT miss it;
 a stale plan is rolled + reported by 09:05 with no restart.
