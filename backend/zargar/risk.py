@@ -89,8 +89,13 @@ class RiskGate:
         self._day_notional: dict[str, float] = {}
         self._day_key = ""
 
-    def note_submission(self, symbol: str, side: str, qty: float, order_type: str) -> None:
-        self._recent.append((time.time(), f"{symbol}|{side}|{float(qty):g}|{order_type}"))
+    def note_submission(self, symbol: str, side: str, qty: float, order_type: str,
+                        portfolio_id: str = "") -> None:
+        # the key MUST mirror the duplicate check's key exactly — when the check
+        # went per-portfolio (2026-08-29) this side wasn't updated and the
+        # duplicate guard silently matched nothing until 2026-08-31
+        self._recent.append((time.time(),
+                             f"{portfolio_id}|{symbol}|{side}|{float(qty):g}|{order_type}"))
 
     def _exposure_keys(self, intent) -> list[str]:
         keys = []
@@ -347,13 +352,17 @@ class RiskGate:
             "duplicate_order", not dup,
             f"identical order submitted within the last {window:.0f}s" if dup else ""))
 
-        # 10. daily loss halt ---------------------------------------------------
-        loss_pct = await self._positions.daily_loss_pct(intent.portfolio_id)
-        halt_pct = float(s.get("risk.daily_loss_halt_pct", 3.0))
-        breached = loss_pct is not None and loss_pct <= -abs(halt_pct)
-        checks.append(RiskCheck(
-            "daily_loss_limit", not breached,
-            f"daily P&L {loss_pct:.2f}% breaches -{halt_pct:.1f}% halt" if breached else ""))
+        # 10. daily loss halt. SHADOW books are exempt (user decision 2026-08-31):
+        # they are the research record — eva's immediate book self-halted at -8%
+        # and stopped RECORDING tips, which is the opposite of their job. A
+        # shadow "loss" costs nothing; a gap in the record costs learning.
+        if portfolio.kind != "shadow":
+            loss_pct = await self._positions.daily_loss_pct(intent.portfolio_id)
+            halt_pct = float(s.get("risk.daily_loss_halt_pct", 3.0))
+            breached = loss_pct is not None and loss_pct <= -abs(halt_pct)
+            checks.append(RiskCheck(
+                "daily_loss_limit", not breached,
+                f"daily P&L {loss_pct:.2f}% breaches -{halt_pct:.1f}% halt" if breached else ""))
 
         # 11. market hours (live/paper only, if configured; options have no
         #     extended session, so for them it is always enforced) ---------------

@@ -266,7 +266,8 @@ class OrderManager:
         # Reduce-only exits are also exempt: a stop/flatten must never be
         # throttled by the very budget that protects entries.
         if not intent.reduce_only:
-            self._risk.note_submission(intent.symbol, intent.side, intent.qty, intent.order_type)
+            self._risk.note_submission(intent.symbol, intent.side, intent.qty,
+                                       intent.order_type, portfolio_id=intent.portfolio_id)
             if intent.side == "BUY" and not intent.reduce_only:
                 px = intent.limit_price or intent.stop_price or 0.0
                 mult = 100.0 if intent.sec_type == "OPT" else 1.0
@@ -376,7 +377,8 @@ class OrderManager:
                                           reject_reason=reason) for o in rows]
             return {"gid": gid, "legs": out, "status": "REJECTED", "reason": reason}
         self._risk.note_submission(long_intent.symbol, long_intent.side,
-                                   long_intent.qty, long_intent.order_type)
+                                   long_intent.qty, long_intent.order_type,
+                                   portfolio_id=long_intent.portfolio_id)
         out = []
         for o in rows:
             out.append(await self._transition(o.id, OrderStatus.SUBMITTED, ev.ORDER_SUBMITTED,
