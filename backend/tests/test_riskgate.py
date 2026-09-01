@@ -200,6 +200,25 @@ async def test_daily_loss_halt():
     assert not check(verdict, "daily_loss_limit").passed
 
 
+async def test_shadow_books_exempt_from_equity_pct_caps():
+    """2026-09-01: $5k-sized record entries bounced off %-of-equity caps on
+    small fake books (TSLA $4.8k premium vs a $7.6k shadow book; 337% gross).
+    Same precedent as the daily-loss exemption — absolute caps still apply."""
+    quotes = FakeQuotes()
+    quotes.set("AAPL", 100.0)
+    positions = FakePositions(equity=5_000.0, gross=14_000.0)
+
+    class Shadow:
+        kind = "shadow"
+
+    verdict = await make_gate(quotes=quotes, positions=positions).evaluate(
+        intent(qty=40), Shadow)      # $4k notional = 80% of the fake equity
+    names = {c.name for c in verdict.checks}
+    assert "max_position_pct" not in names and "max_gross_exposure" not in names
+    assert "option_premium_cap" not in names
+    assert "max_position_notional" in names          # absolute caps still run
+
+
 async def test_shadow_books_exempt_from_daily_loss_halt():
     """User decision 2026-08-31: shadow books are the research record — eva's
     immediate book self-halted at -8% and stopped RECORDING tips. A shadow
