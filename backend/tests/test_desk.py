@@ -80,6 +80,16 @@ async def test_morning_report_verdict_is_not_fail_closed(desk_rig):
     assert props[0]["verdict"] == "watch"
 
 
+async def test_scheduled_morning_send_skips_late(desk_rig):
+    """A late (evening) deploy must not fire a 'morning' push — found live
+    2026-08-31 when registering after 08:25 pushed at night."""
+    client, eng, desk = desk_rig
+    await eng.settings.set("desk.morning_push_until", "00:00", journal=False)
+    out = await desk.morning_send_scheduled()
+    assert out.get("skippedLate") is True
+    assert out["sent"] == {"push": False, "telegram": False}
+
+
 async def test_morning_send_composes_short_form(desk_rig):
     client, eng, desk = desk_rig
     await eng.settings.set("techniques.tip.mode", "auto", journal=False)

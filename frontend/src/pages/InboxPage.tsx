@@ -592,6 +592,12 @@ function ProposalCard({ p }: { p: Proposal }) {
             substituted: {vehicle.substituted}
           </span>
         )}
+        {p.context?.autoGate && (
+          <span className="status-pill wait"
+            title={`${p.context.autoGate} — the platform-default auto is earned per source on closed tips; this one waits for you`}>
+            {String(p.context.autoGate).includes("hit rate") ? "auto: hit rate below bar" : "auto: not yet earned"}
+          </span>
+        )}
         <span className="ttl"><IconClock size={11} /> {timeUntil(p.expiresAt)}</span>
         {p.signalId && <CopyChip value={p.signalId}
           title={`tip ${p.signalId} — click to copy; quote this id to review the tip behind this proposal`} />}
@@ -1297,7 +1303,27 @@ function SourcePoliciesPanel() {
                   <td><select value={o.mode ?? ""} onChange={(e) => setF(n, "mode", e.target.value || undefined)}>
                     <option value="">default ({defMode})</option><option value="shadow">shadow</option>
                     <option value="alert">alert</option><option value="proposal">proposal</option>
-                    <option value="auto">auto</option></select></td>
+                    <option value="auto">auto</option></select>
+                    {(() => {   // earned-auto graduation state (POST-SOAK Phase 2)
+                      const effMode = o.mode || defMode;
+                      if (effMode !== "auto") return null;
+                      if (o.mode === "auto") return (
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}
+                          title="an explicit per-source auto bypasses the graduation bar — you said so">
+                          explicit — bypasses the bar</div>);
+                      const c = (cardsState.data ?? []).find((x) => x.source === n) as any;
+                      const g = c?.trust?.graded ?? 0;
+                      const hits = c?.trust?.hits ?? 0;
+                      const needN = Number(settings["techniques.tip.auto_min_graded"] ?? 5);
+                      const needHit = Number(settings["techniques.tip.auto_min_hit"] ?? 0.4);
+                      const earned = g >= needN && (g === 0 || hits / g >= needHit);
+                      return (
+                        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}
+                          title="the platform-default auto is EARNED on closed tip positions; until then takes land as pending proposals">
+                          {earned ? `auto earned — ${g} graded, ${hits} hit`
+                            : `auto pending — ${g}/${needN} graded${g >= needN ? `, hit ${(hits / Math.max(g, 1)).toFixed(2)} < ${needHit}` : ""}`}
+                        </div>);
+                    })()}</td>
                   <td><select value={o.entry ?? ""} onChange={(e) => setF(n, "entry", e.target.value || undefined)}>
                     <option value="">default (level_touch)</option>
                     <option value="level_touch">level_touch</option>

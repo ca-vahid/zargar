@@ -514,6 +514,12 @@ export function SettingsPage() {
             <ToggleRow k="techniques.tip.seen_again_reappraise" label="Re-appraise repeats" hint="a re-posted tip with a live waiting plan gets a fresh appraisal" />
             <ToggleRow k="techniques.tip.seen_again_extends" label="Repeats extend the wait" hint="a re-post pushes the waiting plan's horizon window forward" />
             <Group>Safety</Group>
+            <Cells>
+              <NumCell k="techniques.tip.auto_min_graded" label="Auto: graded tips needed"
+                hint="earned auto — closed tip positions a source needs before the default auto self-approves; an explicit per-source auto (Tips → Sources) bypasses" />
+              <NumCell k="techniques.tip.auto_min_hit" label="Auto: min hit rate" step={0.05}
+                hint="earned auto — minimum winning fraction of those closed positions" />
+            </Cells>
             <ToggleRow k="techniques.tip.shadow_auto" label="Shadow books" hint="every open tip auto-arms in its source's shadow book each morning — the track record real money is gated on" />
             <ToggleRow k="techniques.tip.allow_live_auto" label="Auto mode may trade REAL accounts" hint="off by default — a live portfolio needs this AND the source's earned auto mode" />
           </div>

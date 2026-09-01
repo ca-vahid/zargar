@@ -73,23 +73,25 @@ Auto is the platform default since 2026-08-31, but the analyst itself graded eva
 "0/6 verified" while auto covered her. The trust ladder (shadow → alert →
 proposal → auto) already exists as words; wire the top rung to the scorecard.
 
-- [ ] **2.1 Knobs.** `techniques.tip.auto_min_graded` (default 5) and
-  `techniques.tip.auto_min_hit` (default 0.4 — fraction of graded ARMED-book
-  tips that hit; the ARMED book is the judged book, per the standing rule).
-  Both in DEFAULTS, both surfaced in the Tips technique settings panel.
-- [ ] **2.2 The gate.** In the self-approve branch (`signals/service.py`,
-  beside the fail-closed gate): resolve the source's ARMED-book scorecard;
-  below either bar → degrade auto → proposal, intake note "auto not yet earned:
-  N/5 graded (hit 0.33)" + journal. An explicit per-source `mode: auto` override
-  in `techniques.tip.sources` BYPASSES the bar (the human said so) — the platform
-  default `auto` is what graduates.
-- [ ] **2.3 Visibility.** Per-source policy editor row shows graduation state:
-  "auto (earned — 7 graded, 0.57)" vs "auto pending (2/5 graded)". Approvals
-  card for a degraded proposal carries the same line.
-- [ ] **2.4 Tests.** Fresh source + take → pending with note; graduated source
-  (seed scorecard rows) → self-approved; explicit override → self-approved
-  regardless; live book still additionally needs `allow_live_auto` (existing
-  test extended).
+- [x] **2.1 Knobs.** DONE 2026-08-31 — `techniques.tip.auto_min_graded` (5) +
+  `auto_min_hit` (0.4) in DEFAULTS and the Tips technique Settings panel.
+- [x] **2.2 The gate.** DONE — after the fail-closed / verdict / live checks:
+  `source_trust()` counts the source's CLOSED tip positions (tag
+  `source:<name>`, realizedPnl>0 = hit); below either bar the proposal stays
+  pending with `context.autoGate` + an intake note. Explicit per-source
+  `mode: auto` bypasses (the human said so).
+- [x] **2.3 Visibility.** DONE — policy editor shows "auto earned — N graded,
+  H hit" / "auto pending — N/5" / "explicit — bypasses the bar" under the mode
+  select (trust rides on `source_scorecards`); a gated Approvals card carries
+  an "auto: not yet earned" pill with the reason in the tooltip.
+- [x] **2.4 Tests.** DONE — `test_platform_auto_graduates_per_source` (fresh
+  source pends; 5 winning closes graduate); explicit-override + live-gate
+  tests unchanged. 79 green across pipeline/desk/tip suites.
+
+  NOTE (behavior change on deploy): every current source starts
+  "auto pending 0/5" — takes land as pending proposals until five of that
+  source's tip positions have closed. That is the trust ladder working; flip a
+  source to explicit auto in Tips → Sources to bypass while it accrues.
 
 Acceptance: a brand-new Discord source can be set to the platform default and
 its first five takes all land as pending proposals with the graduation note.
