@@ -5,14 +5,24 @@
 | Task | macOS/Linux | Windows |
 |---|---|---|
 | First-time setup | `./scripts/setup.sh` | `powershell -ExecutionPolicy Bypass -File scripts\setup.ps1` |
-| Start the app | `./scripts/start.sh` → http://127.0.0.1:8420 | `powershell -ExecutionPolicy Bypass -File scripts\start.ps1` |
-| Stop | Ctrl-C (Postgres keeps running in Docker) | Ctrl-C |
+| Start / safe restart | `./scripts/start.sh` → http://127.0.0.1:8420 | `powershell -ExecutionPolicy Bypass -File scripts\start.ps1 -Detach` |
+| ...without the frontend rebuild | — | add `-NoBuild` (use when the tree doesn't build — a red build must never leave the desk dark) |
+| Tail the server log | — | `scripts\logs.ps1` (Ctrl-C detaches, server unaffected) |
+| Stop | Ctrl-C (Postgres keeps running in Docker) | close via start.ps1's restart guard — NEVER Stop-Process the :8420 server blind |
 | Backend tests | `cd backend && .venv/bin/python -m pytest` | `cd backend; .venv\Scripts\python -m pytest` |
+| ...parallel Claude sessions | set `ZARGAR_TEST_DATABASE_URL` to your OWN db on :5433 | same — the shared `zargar_test` is dropped per test |
 | Frontend dev (hot reload) | `cd frontend && npm run dev` → :5173 | same |
 | Frontend type-check/build | `cd frontend && npm run build` | same |
+| Phone-UI gate (every UI change) | — | `$env:ZARGAR_SESSION=(python -m zargar.tools.mint_session).Trim()` from `backend/`, then `cd frontend; npm run mobile-audit` |
+| Fire the morning report now | — | `POST /api/desk/morning/send` (scheduler does it at `desk.morning_at`, 08:25 ET) |
+| SnapTrade status / re-auth | `python -m zargar.tools.snaptrade_check [--upgrade]` | same |
 | IBKR self-test | `cd backend && .venv/bin/python -m zargar.tools.ibkr_check` | `.venv\Scripts\python -m zargar.tools.ibkr_check` |
+| Soak report (real-money bar) | `python -m zargar.tools.soak_report` (also nightly at 17:30 ET) | same |
 | DB shell | `docker compose exec db psql -U zargar` | same |
 | DB backup | `docker compose exec db pg_dump -U zargar zargar > backup.sql` | same |
+
+`start.ps1` refuses to restart while technique runs / armed plans are in flight
+(`-Force` asks first); never restart while a knowledge-experiment batch runs.
 
 ## Configuration model — two layers
 
@@ -28,16 +38,22 @@
 
 ## Trading modes (top-bar selector = `trading.mode`)
 
-| Mode | sim/shadow portfolios | paper portfolio | live portfolio |
-|---|---|---|---|
-| `dry_run` | validate only | validate only | validate only |
-| `sim` | local fill engine | blocked | blocked |
-| `paper` | local fill engine | IBKR | blocked |
-| `live` | local fill engine | IBKR | IBKR |
+Two modes since v0.3: **Practice | Live**.
+
+| Mode | sim + shadow (research) books | live/paper accounts |
+|---|---|---|
+| `practice` | local fill engine | blocked (an implicitly-picked live account re-routes to sim) |
+| `live` | local fill engine | real venues (SnapTrade today; IBKR when activated) |
+
+Auto execution on a real account additionally needs the per-area allow-live
+key (`techniques.tip.allow_live_auto` / `technique.arm.allow_live_auto`) AND,
+for armed plans, the per-arm acknowledgement — three independent gates.
 
 The kill switch (HALT button, `/halt` on Telegram, or automatic on the daily
 loss limit) blocks **all** submission in every mode, survives restarts, and
-must be released explicitly.
+must be released explicitly — exits still work (`risk.halt_allows_exits`).
+Shadow research books are exempt from the daily-loss halt only (they are the
+record; every other check applies).
 
 ## Integrations checklist
 
@@ -47,7 +63,7 @@ must be released explicitly.
 | IBKR paper/live | Gateway running + logged in, `ZARGAR_BROKER=ibkr`, port `4002` | `.env`, restart — full guide: [IBKR_SETUP.md](./IBKR_SETUP.md) |
 | Email ingestion | Deploy [infra/cloudflare-email-worker.js](../infra/cloudflare-email-worker.js); set `ZARGAR_INGEST_KEY` both sides; backend must be reachable from Cloudflare (Tailscale Funnel / cloudflared tunnel) | Cloudflare dashboard + `.env` |
 | Telegram approvals | Bot token from @BotFather, your chat id from @userinfobot → `ZARGAR_TELEGRAM_BOT_TOKEN`, `ZARGAR_TELEGRAM_CHAT_ID`; then enable the toggle in Settings | `.env` + Settings |
-| Remote access / auth | Set `ZARGAR_AUTH_TOKEN`; enter the same token in Settings → API token on each browser; reach the box via Tailscale | `.env` |
+| Remote access / auth | Google sign-in (`ZARGAR_GOOGLE_ALLOWED_EMAILS`; see [AUTH.md](./AUTH.md)) over Tailscale Serve/Funnel — [MOBILE-ACCESS.md](./MOBILE-ACCESS.md) has the phone handoff; `ZARGAR_AUTH_TOKEN` remains the static-token fallback for scripts (`zargar.tools.mint_session` mints a session for tooling) | `.env` + AUTH.md |
 
 ## Troubleshooting
 
