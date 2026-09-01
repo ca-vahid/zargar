@@ -60,11 +60,18 @@ modified rules value** side-by-side with baseline and diff the outcomes.
   rr ≥ 1.5, TP1-heavy or time-boxed exit), T-7 gap-fill target anchors,
   T-8 index-ETF lane (SPY/QQQ/IWM), §1.8 rr-band 2.0–3.0.
 
-## Phase 2 — Ingestion workflow (recent videos & posts) — NOT an app feature
+## Phase 2 — Ingestion (recent videos & posts)
 
-**User decision 2026-08-29: ingestion is for us (Claude sessions), not for
-the app.** The author posts irregularly; the user brings links/files into a
-session and the analysis happens here, after the fact. Nothing ships.
+**Decision history:** 2026-08-29 the user scoped ingestion to Claude sessions
+only; **2026-09-01 the user reversed this** after a week of daily manual
+ingestion proved the value — the app now gets a dedicated, EM-only pipeline
+watching the author's Discord server (morning video auto-capture, watch-list
+posts, method-corpus channels). Full design: **`INGESTION-PLAN.md`** in this
+folder. Governance is unchanged: the pipeline produces notes and candidate
+theories; nothing auto-changes live parameters.
+
+The manual session recipe below remains valid for ad-hoc material (links from
+other sources, one-off videos):
 
 The proven session recipe (first run 2026-08-28, ~10 min end to end):
 1. scratch venv: `pip install yt-dlp faster-whisper` (ffmpeg already on PATH,
