@@ -80,6 +80,45 @@ async def test_morning_report_verdict_is_not_fail_closed(desk_rig):
     assert props[0]["verdict"] == "watch"
 
 
+async def test_morning_report_filters_noise(desk_rig):
+    """2026-09-01 live finds: the card said '71 tips overnight' (41 were the b2
+    research batch) and listed 6 duplicate/stale follow-up flags (4 of 5 plans
+    already disarmed). Experiment rows are not tips; a flag is homework only
+    while its plan still waits; one row per plan."""
+    client, eng, desk = desk_rig
+    now = dt.datetime.now(dt.timezone.utc)
+    async with eng.sf() as session:
+        session.add(Signal(id=new_id(), source_name="S", ticker="REAL", direction="long",
+                           action="open", status="shadow", extraction={},
+                           created_at=now, seen_count=1))
+        session.add(Signal(id=new_id(), source_name="S", ticker="EXPT", direction="long",
+                           action="open", status="replayed",
+                           extraction={"experiment": "b9"}, created_at=now, seen_count=1))
+        await session.commit()
+    for rid in ("live1", "live1", "dead1"):      # live twice (dedupe), dead once
+        await eng.journal.append("TechniquePlanError",
+                                 {"runId": rid, "symbol": "AMZN",
+                                  "error": "source follow-up: 'update_stop' on AMZN"})
+
+    class _AP:
+        status = "armed"
+        run_id = "live1"
+        trades: dict = {}
+
+        def _attention_reasons(self):
+            return []
+
+    class _FakeRunner:
+        _armed = {"live1": _AP()}
+
+    eng.plan_runners = {"tip": _FakeRunner()}
+    rep = await desk.morning_report()
+    tickers = [t["ticker"] for t in rep["overnight"]["tips"]]
+    assert "REAL" in tickers and "EXPT" not in tickers
+    fu = rep["needsYou"]["followUps"]
+    assert len(fu) == 1 and fu[0]["runId"] == "live1"
+
+
 async def test_scheduled_morning_send_skips_late(desk_rig):
     """A late (evening) deploy must not fire a 'morning' push — found live
     2026-08-31 when registering after 08:25 pushed at night."""

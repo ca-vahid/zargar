@@ -132,26 +132,42 @@ class DeskService:
 
         # -- follow-up flags journaled overnight (a "close"/"update_stop" from
         #    the source against a still-waiting plan) --------------------------
+        # a run is "still waiting" only if some runner holds it armed/paused —
+        # follow-up flags for plans since disarmed are history, not homework
+        live_runs: set[str] = set()
+        for runner in (getattr(eng, "plan_runners", None) or {}).values():
+            for ap in getattr(runner, "_armed", {}).values():
+                if ap.status in ("armed", "paused"):
+                    live_runs.add(ap.run_id)
         async with eng.sf() as session:
             follow = (await session.execute(
                 select(Event.payload).where(
                     Event.type == "TechniquePlanError", Event.ts >= since))).scalars().all()
-            follow_ups = [{"symbol": (p or {}).get("symbol"),
-                           "note": str((p or {}).get("error"))[:160],
-                           "runId": (p or {}).get("runId")}
-                          for p in follow
-                          if str((p or {}).get("error", "")).startswith("source follow-up")]
+            seen_runs: dict[str, dict] = {}
+            for p in follow:
+                if not str((p or {}).get("error", "")).startswith("source follow-up"):
+                    continue
+                rid = str((p or {}).get("runId") or "")
+                if rid and rid not in live_runs:
+                    continue                     # already disarmed — not homework
+                # one row per plan, latest note wins (eva reposts stop updates)
+                seen_runs[rid or f"?{len(seen_runs)}"] = {
+                    "symbol": (p or {}).get("symbol"),
+                    "note": str((p or {}).get("error"))[:160], "runId": rid or None}
+            follow_ups = list(seen_runs.values())
             rolls = (await session.execute(
                 select(Event.payload).where(
                     Event.type == "TechniquePlanRolled", Event.ts >= since))).scalars().all()
             overnight_rows = (await session.execute(
                 select(Signal).where(Signal.created_at >= since)
                 .order_by(Signal.created_at.asc()))).scalars().all()
+            from .signals.service import experiment_tag
             overnight = [{"ticker": r.ticker, "source": r.source_name,
                           "status": r.status, "action": r.action,
                           "at": r.created_at.isoformat() if r.created_at else None,
                           "id": r.id}
-                         for r in overnight_rows]
+                         for r in overnight_rows
+                         if experiment_tag(r.extraction) is None]   # research batches are not tips
             from sqlalchemy import func
             err_content = int((await session.execute(
                 select(func.count()).select_from(RawContent)
