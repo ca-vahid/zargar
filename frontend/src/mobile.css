@@ -714,3 +714,14 @@ button.bl-card:active { background: var(--surface-2); }
     min-height: 40px;
   }
 }
+
+/* Ledger on phones: rows wrap into two lines, numbers stay legible */
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  .led-headline { gap: 14px; padding: 12px; }
+  .led-num { font-size: 18px; }
+  .led-range { width: 100%; margin-left: 0; }
+  .led-range button { min-width: 44px; min-height: 40px; }
+  .led-row { flex-wrap: wrap; row-gap: 2px; }
+  .led-what { min-width: 0; flex: 1 1 60%; }
+  .led-math { flex-basis: 100%; order: 3; white-space: normal; font-size: 12px; }
+}

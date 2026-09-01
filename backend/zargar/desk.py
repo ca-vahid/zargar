@@ -16,6 +16,7 @@ rows. Times are settings (`desk.*`) so they stay UI-editable and journaled.
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import logging
 from zoneinfo import ZoneInfo
@@ -201,6 +202,121 @@ class DeskService:
         }
         self.last_report = report
         return report
+
+    # ------------------------------------------------------------- ledger
+    async def ledger(self, days: int = 30) -> dict:
+        """The plain-language money view (user 2026-09-01: 'what was bought,
+        what was sold, how much gain each time'). REAL books only (sim/live/
+        paper) — research books never. Round trips are FIFO-paired per
+        (book, symbol) from executions; book corrections (PortfolioAdjusted)
+        appear as their own rows so the ledger reconciles to the dollar."""
+        from sqlalchemy import select
+
+        from .models import Event, Execution, Order
+        eng = self.engine
+        cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=days)
+        real = {p["id"]: p for p in eng.positions.portfolios()
+                if p["kind"] in ("sim", "live", "paper")}
+        async with eng.sf() as session:
+            rows = (await session.execute(
+                select(Execution, Order.technique, Order.source, Order.tags)
+                .join(Order, Order.id == Execution.order_id)
+                .where(Execution.portfolio_id.in_(list(real)))
+                .order_by(Execution.ts.asc()))).all()
+            adj_rows = (await session.execute(
+                select(Event).where(Event.type == "PortfolioAdjusted",
+                                    Event.ts >= cutoff))).scalars().all()
+
+        def label(tech, src, tags):
+            tip_src = next((str(t).split(":", 1)[1] for t in (tags or [])
+                            if str(t).startswith("source:")), None)
+            if tech == "tip" or tip_src:
+                return f"tip · {tip_src}" if tip_src else "tip"
+            if tech:
+                return tech.replace("enhanced_market", "EM Options")
+            return {"signal": "approved tip", "auto": "auto", "technique": "technique"}.get(src, src)
+
+        trips: list[dict] = []
+        open_lots: dict[tuple, list[dict]] = {}
+        for e, tech, src, tags in rows:
+            mult = 100.0 if len(e.symbol) > 10 else 1.0
+            lots = open_lots.setdefault((e.portfolio_id, e.symbol), [])
+            qty, px = float(e.qty), float(e.price)
+            sgn = 1.0 if e.side == "BUY" else -1.0
+            while qty > 1e-9 and lots and lots[0]["sgn"] != sgn:
+                lot = lots[0]
+                take = min(qty, lot["qty"])
+                gain = (px - lot["px"]) * take * mult * lot["sgn"]
+                trips.append({
+                    "symbol": e.symbol, "secType": ("OPT" if mult > 1 else "STK"),
+                    "qty": take, "portfolio": real[e.portfolio_id]["name"],
+                    "inPrice": lot["px"], "outPrice": px,
+                    "inAt": lot["ts"].isoformat(), "outAt": e.ts.isoformat(),
+                    "cost": round(lot["px"] * take * mult, 2),
+                    "gain": round(gain, 2),
+                    "short": lot["sgn"] < 0,
+                    "label": lot["label"],
+                    "day": e.ts.astimezone(ET).strftime("%Y-%m-%d"),
+                })
+                lot["qty"] -= take
+                qty -= take
+                if lot["qty"] <= 1e-9:
+                    lots.pop(0)
+            if qty > 1e-9:
+                lots.append({"sgn": sgn, "qty": qty, "px": px, "ts": e.ts,
+                             "label": label(tech, src, tags)})
+
+        open_positions = []
+        for (pid, sym), lots in open_lots.items():
+            for lot in lots:
+                mult = 100.0 if len(sym) > 10 else 1.0
+                q = eng.quotes.get(sym)
+                mark = float(q.last) if q is not None and q.last and q.last > 0 else None
+                open_positions.append({
+                    "symbol": sym, "qty": lot["qty"] * lot["sgn"],
+                    "portfolio": real[pid]["name"],
+                    "inPrice": lot["px"], "inAt": lot["ts"].isoformat(),
+                    "cost": round(lot["px"] * lot["qty"] * mult, 2),
+                    "mark": mark,
+                    "unrealized": (round((mark - lot["px"]) * lot["qty"] * mult * lot["sgn"], 2)
+                                   if mark else None),
+                    "label": lot["label"],
+                })
+
+        adjustments = [{
+            "day": a.ts.astimezone(ET).strftime("%Y-%m-%d"), "at": a.ts.isoformat(),
+            "amount": round(float((a.payload or {}).get("cashDelta") or 0), 2),
+            "reason": str((a.payload or {}).get("reason") or "book correction")[:200],
+        } for a in adj_rows]
+
+        window_trips = [t for t in trips
+                        if dt.datetime.fromisoformat(t["outAt"]) >= cutoff]
+        day_keys = sorted({t["day"] for t in window_trips}
+                          | {a["day"] for a in adjustments}, reverse=True)
+        days_out = [{
+            "date": d,
+            "realized": round(sum(t["gain"] for t in window_trips if t["day"] == d)
+                              + sum(a["amount"] for a in adjustments if a["day"] == d), 2),
+            "trips": [t for t in window_trips if t["day"] == d],
+            "adjustments": [a for a in adjustments if a["day"] == d],
+        } for d in day_keys]
+
+        equity = 0.0
+        for pid in real:
+            with contextlib.suppress(Exception):
+                equity += float(await eng.positions.equity(pid) or 0)
+        return {
+            "asOf": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "windowDays": days,
+            "total": round(equity, 2),
+            "startingCash": round(sum(float(p.get("startingCash") or 0)
+                                      for p in real.values()), 2),
+            "realized": round(sum(t["gain"] for t in window_trips)
+                              + sum(a["amount"] for a in adjustments), 2),
+            "openValue": round(sum(x["cost"] for x in open_positions), 2),
+            "days": days_out,
+            "open": open_positions,
+        }
 
     # ------------------------------------------------------------- delivery
     async def morning_send(self) -> dict:

@@ -22,7 +22,7 @@ import type {
   ArmedPlan,
 } from "./types";
 
-export type Page = "dashboard" | "trade" | "options" | "inbox" | "portfolios" | "journal" | "settings" | "technique" | "flow" | "armed" | "watchlists";
+export type Page = "dashboard" | "trade" | "options" | "inbox" | "portfolios" | "ledger" | "journal" | "settings" | "technique" | "flow" | "armed" | "watchlists";
 
 export interface OptionsPrefill { side?: "BUY" | "SELL"; qty?: number; portfolioId?: string }
 

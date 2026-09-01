@@ -107,6 +107,8 @@ export const api = {
       "GET", `/api/tip/discord/messages?${q.toString()}`);
   },
   // --- tips analyst runs ---
+  deskLedger: (days = 30) =>
+    request<import("../types").Ledger>("GET", `/api/desk/ledger?days=${days}`),
   deskMorning: () =>
     request<import("../types").MorningReport>("GET", "/api/desk/morning"),
   deskMorningSend: () =>

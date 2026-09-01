@@ -8,6 +8,7 @@ import { TradePage } from "./pages/TradePage";
 import { InboxPage } from "./pages/InboxPage";
 import { PortfoliosPage } from "./pages/PortfoliosPage";
 import { JournalPage } from "./pages/JournalPage";
+import { LedgerPage } from "./pages/LedgerPage";
 import { ArmedPage } from "./pages/ArmedPage";
 import { WatchlistsPage } from "./pages/WatchlistsPage";
 import { api } from "./lib/api";
@@ -143,6 +144,7 @@ export default function App() {
           {page === "options" && <Suspense fallback={<div className="state-note">loading…</div>}><OptionsPage /></Suspense>}
           {page === "inbox" && <InboxPage />}
           {page === "portfolios" && <PortfoliosPage />}
+          {page === "ledger" && <LedgerPage />}
           {page === "journal" && <JournalPage />}
           {page === "settings" && <SettingsPage />}
           {page === "technique" && <Suspense fallback={<div className="state-note">loading…</div>}><TechniquePage /></Suspense>}

@@ -8,7 +8,7 @@ import { useTechniques } from "../lib/techniques";
 import { Sheet } from "./Sheet";
 import { ConfirmDialog } from "./Modal";
 import {
-  IconArmed, IconDashboard, IconJournal, IconOptions, IconPortfolios,
+  IconArmed, IconDashboard, IconJournal, IconLedger, IconOptions, IconPortfolios,
   IconSettings, IconSignals, IconTechnique, IconTrade, IconWatchlist,
 } from "./icons";
 
@@ -22,6 +22,7 @@ const TABS: { key: Page; label: string; icon: React.ReactNode }[] = [
 
 const MORE: { key: Page; label: string; icon: React.ReactNode; sub?: string }[] = [
   { key: "dashboard", label: "Dashboard", icon: <IconDashboard /> },
+  { key: "ledger", label: "Ledger", icon: <IconLedger /> },
   { key: "options", label: "Options", icon: <IconOptions /> },
   { key: "watchlists", label: "Watchlists", icon: <IconWatchlist /> },
   { key: "journal", label: "Journal", icon: <IconJournal /> },

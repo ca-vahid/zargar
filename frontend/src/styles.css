@@ -2051,6 +2051,30 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .research-seg { margin-left: 10px; }
 .research-badge { white-space: nowrap; }
 
+/* ── the ledger: plain-language money view ─────────────────────────────── */
+.led-headline { display: flex; gap: 22px; align-items: center; flex-wrap: wrap;
+  padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-1); margin-bottom: 14px; }
+.led-stat { display: flex; flex-direction: column; gap: 2px; }
+.led-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.led-lbl { font-size: 11px; color: var(--muted); line-height: 1.25; }
+.led-range { margin-left: auto; }
+.led-rows { display: flex; flex-direction: column; }
+.led-row { display: flex; gap: 10px; align-items: center; padding: 9px 14px;
+  border-top: 1px solid var(--border); font-size: 13.5px; }
+.led-row:first-child { border-top: none; }
+.led-what { display: flex; flex-direction: column; min-width: 190px; }
+.led-what .muted { font-size: 11.5px; }
+.led-math { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.led-times { opacity: .75; }
+.led-gain { font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
+.led-dayhead { display: flex; align-items: center; gap: 12px; }
+.led-daybar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.led-bar { display: block; height: 100%; border-radius: 3px; }
+.pos-bg { background: var(--pos, #1a9c62); }
+.neg-bg { background: var(--neg, #d64545); }
+.led-row--adj { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+
 /* ── the morning desk card (POST-SOAK Phase 1) ─────────────────────────── */
 .morning-rows { display: flex; flex-direction: column; }
 .morning-row { display: flex; gap: 10px; align-items: baseline; width: 100%; text-align: left;
