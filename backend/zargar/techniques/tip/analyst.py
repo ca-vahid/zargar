@@ -438,6 +438,8 @@ def _manage_guard(eng, pid: str) -> tuple:
 
 async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
     sym = str(args.get("symbol") or "").upper()
+    exp = bool((ctx or {}).get("experiment"))
+    as_of_ms = (ctx or {}).get("asOfMs")
     if name == "get_positions":
         return _our_positions(eng, sym)
     if name == "search_messages":
@@ -446,6 +448,12 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             contains=str(args.get("contains") or "") or None,
             hours=float(args["hours"]) if args.get("hours") else None,
             limit=int(args.get("limit") or 20))
+        if exp and as_of_ms:
+            # F5 (batch-1): as-of isolation is HARNESS-enforced — a historical
+            # appraisal must never read the source's LATER messages
+            cap = dt.datetime.fromtimestamp(as_of_ms / 1000,
+                                            dt.timezone.utc).isoformat()
+            rows = [r for r in rows if str(r.get("postedAt") or "") <= cap]
         slim = [{"at": (r.get("postedAt") or "")[:16], "source": r.get("source"),
                  "author": r.get("author"), "text": (r.get("text") or "")[:280],
                  **({"images": len(r.get("images") or []), "messageId": r.get("id")}
@@ -558,6 +566,11 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             signal_id=ctx.get("signal_id"), run_id=ctx.get("run_id"))
         return {"saved": True, "scope": note["scope"], "id": note["id"]}
     if name == "get_quote":
+        if exp:
+            # F11 (batch-1): the prompt warning alone did not stop tool-time
+            # confusion — live quotes are WITHHELD in historical mode
+            return {"error": "historical mode — live quotes are withheld; judge "
+                             "from the tip's own numbers and its replay block"}
         await eng.ensure_symbol(sym)
         q = eng.quotes.get(sym)
         if q is None:
@@ -865,7 +878,21 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         f"- [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
         for n in notes) or "(none yet)"
     rules_txt, rules_n = await _rules_text(eng)
-    history_txt = await _source_history(eng, signal_row.source_name)
+    if experiment:
+        # F5 (batch-1): the live mirror reaches PAST the tip's time — withheld;
+        # search_messages remains available, capped to the tip's own moment
+        history_txt = ("(withheld in historical mode — search_messages is capped "
+                       "to the tip's own time)")
+    else:
+        history_txt = await _source_history(eng, signal_row.source_name)
+    as_of_ms = None
+    if experiment:
+        stated = (getattr(signal_row, "extraction", None) or {}).get("statedAt")
+        if stated:
+            try:
+                as_of_ms = int(dt.datetime.fromisoformat(str(stated)).timestamp() * 1000)
+            except ValueError:
+                as_of_ms = None
 
     rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
              f"from {signal_row.source_name or 'unknown'}. Tools available: "
@@ -893,7 +920,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
-                "experiment": experiment}
+                "experiment": experiment, "asOfMs": as_of_ms}
 
     async def loop() -> AnalystOpinion | None:
         text = await run_agent_loop(

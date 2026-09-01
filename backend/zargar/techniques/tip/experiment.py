@@ -210,6 +210,8 @@ async def review_batch(eng, batch: str, *, client=None) -> dict | None:
                 "failedChecks": [c.get("name") for c in
                                  (r.verification or {}).get("checks", [])
                                  if not c.get("passed")],
+                # F1: a failed appraisal leaves its mark — nothing is silent
+                **({"analystError": x["analystError"]} if x.get("analystError") else {}),
                 # compact: full replay dicts blew the record set past the
                 # model's budget on batch b1 (2026-08-30)
                 "replay": ({"ok": (x.get("replay") or {}).get("ok"),

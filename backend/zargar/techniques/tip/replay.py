@@ -39,6 +39,7 @@ async def replay_tip(
     horizon_sessions: int = 15,
     source: str | None = None,
     thesis: str = "",
+    stated_premium: float | None = None,
     fetch=fetch_window,
 ) -> dict:
     """Both books' counterfactuals for a tip stated at `stated_at_ms`."""
@@ -55,6 +56,19 @@ async def replay_tip(
     ref = float(bars[start].close)
     long = direction == "long"
     sgn = 1.0 if long else -1.0
+
+    # F4 (batch-1): an option tip's stated numbers are often the PREMIUM ladder,
+    # not underlying levels — loading them as underlying targets fabricated
+    # +99% prints (MU 850P). When a premium is stated and EVERY stated number
+    # sits far below the reference and near the premium, they are premium-basis:
+    # the underlying plan builds from structure alone, and the record says so.
+    premium_basis = False
+    if stated_premium:
+        nums = [x for x in (tip_entry, tip_stop, *tuple(tip_targets or ())) if x]
+        if nums and all(x < ref * 0.3 and x <= stated_premium * 8 for x in nums):
+            premium_basis = True
+            tip_entry = tip_stop = None
+            tip_targets = ()
 
     # --- armed book: the exact machinery the live path uses -----------------
     plan = build_tip_plan(
@@ -118,6 +132,11 @@ async def replay_tip(
             "filled": sim["filled"], "outcome": sim["outcome"],
             "rMultiple": sim["rMultiple"], "mfeR": sim["mfeR"],
             "resolved": sim["resolved"], "notes": trg.notes,
+            # F6: a plan the replay CONSTRUCTED (no structural level — ATR
+            # pullback) is not the tip's own plan; its ±R is not tip evidence
+            "constructed": any("no structural level" in str(n)
+                               for n in (trg.notes or [])),
+            "premiumBasis": premium_basis,
         },
         "immediate": immediate,
     }

@@ -1266,11 +1266,15 @@ class SignalService:
                 # NEVER traded regardless of age) — replay it on history so the
                 # content still teaches something (both books' counterfactuals,
                 # no orders)
+                # F2 (batch-1): in an EXPERIMENT the age is the point, not a
+                # failure — an annotation, never a fatal check the rubric
+                # double-counts against every rationale
+                exp_mode = experiment is not None
                 verification["checks"].append({
-                    "name": "fresh", "passed": False, "fatal": True,
-                    "detail": (f"experiment batch {experiment} — replayed on history, "
-                               "never traded"
-                               if experiment is not None and not stale else
+                    "name": "fresh", "passed": exp_mode, "fatal": not exp_mode,
+                    "detail": (f"experiment batch {experiment} — historical by design, "
+                               "replayed on history, never traded"
+                               if exp_mode else
                                f"content is ~{age_hours:.0f}h old "
                                f"(max {max_age:.0f}h) — replayed on history, not traded")})
                 verification["passed"] = False
@@ -1360,6 +1364,16 @@ class SignalService:
                 except Exception:                  # never block the pipeline
                     log.exception("tip analyst crashed for %s", row.id)
                     opinion = None
+                if opinion is None and experiment is not None:
+                    # F1 (batch-1): no signal may end SILENT — a failed
+                    # appraisal leaves its mark for the batch review
+                    async with eng.sf() as session:
+                        db_row = await session.get(Signal, row.id)
+                        db_row.extraction = {**(db_row.extraction or {}),
+                                             "analystError": "appraisal produced no "
+                                             "opinion (run failed — see failed runs)"}
+                        await session.commit()
+                        row = db_row
                 if opinion is not None:
                     istep("handoff",
                           f"Appraisal done: {str(opinion.get('verdict', '?')).upper()}"
@@ -1538,7 +1552,8 @@ class SignalService:
                 tip_targets=tuple(sig.target_prices or
                                   ([sig.target_price] if sig.target_price else [])),
                 horizon_sessions=sig.horizon_sessions or policy.horizon_sessions,
-                source=row.source_name, thesis=sig.thesis_summary, **kwargs)
+                source=row.source_name, thesis=sig.thesis_summary,
+                stated_premium=sig.premium, **kwargs)
         except Exception as exc:                          # replay is best-effort
             log.exception("replay failed for signal %s", row.id)
             return {"ok": False, "note": f"replay failed: {exc}"}

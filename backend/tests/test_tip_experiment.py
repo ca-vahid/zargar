@@ -79,7 +79,10 @@ async def test_experiment_signal_is_forced_out_of_band(app_client):
     assert out[0]["proposal"] is None
     assert out[0]["shadowOrder"] is None
     fresh = next(c for c in sig["verification"]["checks"] if c["name"] == "fresh")
-    assert "experiment batch b-test" in fresh["detail"] and fresh["fatal"]
+    # F2 (batch-1): in an experiment the age is the POINT — an annotation the
+    # rubric must not double-count, never a fatal check
+    assert "experiment batch b-test" in fresh["detail"]
+    assert fresh["passed"] and not fresh["fatal"]
 
     # tagged on the row, readable via the helper
     async with eng.sf() as session:
