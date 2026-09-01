@@ -173,9 +173,13 @@ async def test_duplicate_order_blocked():
     quotes = FakeQuotes()
     quotes.set("AAPL", 100.0)
     gate = make_gate(quotes=quotes)
-    gate.note_submission("AAPL", "BUY", 2, "LMT")
+    gate.note_submission("AAPL", "BUY", 2, "LMT", portfolio_id="p1")
     verdict = await gate.evaluate(intent(), P)
     assert not check(verdict, "duplicate_order").passed
+    # a DIFFERENT book's identical order is NOT a duplicate (2026-08-29 rule:
+    # the shadow book expressing the same tip must not block the real order)
+    verdict2 = await gate.evaluate(intent(portfolio_id="p2"), P)
+    assert check(verdict2, "duplicate_order").passed
 
 
 async def test_order_rate_limit():
@@ -194,6 +198,22 @@ async def test_daily_loss_halt():
     positions = FakePositions(daily_loss=-4.0)
     verdict = await make_gate(quotes=quotes, positions=positions).evaluate(intent(), P)
     assert not check(verdict, "daily_loss_limit").passed
+
+
+async def test_shadow_books_exempt_from_daily_loss_halt():
+    """User decision 2026-08-31: shadow books are the research record — eva's
+    immediate book self-halted at -8% and stopped RECORDING tips. A shadow
+    loss costs nothing; a gap in the record costs learning."""
+    quotes = FakeQuotes()
+    quotes.set("AAPL", 100.0)
+    positions = FakePositions(daily_loss=-21.0)
+
+    class Shadow:
+        kind = "shadow"
+
+    verdict = await make_gate(quotes=quotes, positions=positions).evaluate(intent(), Shadow)
+    assert verdict.passed, verdict.failures
+    assert not any(c.name == "daily_loss_limit" for c in verdict.checks)
 
 
 async def test_option_premium_cap():
