@@ -218,6 +218,27 @@ a number** (p. 72).
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-01 · EM's FIRST LIVE TRADE — a winner, and the whole pipeline held.**
+  GLD r1 reject (short gold at 400.83 after the tanker-strike rally spiked into a
+  planned resistance): the critic killed the first five fires as "still momentum,"
+  approved the sixth at 10:30 on real rejection evidence, bought the Sep-4 400P at
+  3.80, managed it all day (max adverse 0.21R), flattened before close at 5.55 —
+  **+$175 (+46% on premium); the underlying short scored +2.0R**. The five kills
+  produced a near-perfect entry (§1.4b counter-evidence: at-level patience
+  PERFECTED this one, vs costing MUU/SOLS yesterday — tally continues). Same day:
+  RDDT r1 approved by the critic but refused by T5.4 (22% option spread) — the
+  author's "contracts are terrible" veto, automated. The trade also survived a
+  mid-morning server restart (state re-attached). Fires 16, kills 14, approvals 2,
+  trades 1, P&L **+$175**.
+- **2026-09-01 · Author-levels A/B, day 1: strictness won.** His NVDA "puts below
+  216.21": the break reached only 215.10 and reversed to close 217.54 — the
+  deterministic replay scores his trade `not_triggered`/scratch and a held put
+  lost; our NVDA plan (b2 212.60 / r3 229.40) correctly never engaged. His NFLX
+  wedge levels (80.65/81.73) whipsawed both directions (79.60 → 82.13 → 80.80);
+  the one sim-fire near his upper line made +0.23R — noise. Meanwhile our one
+  approved trade (GLD) made +2R. One day proves little (sweep `0894b5d7`,
+  include-invalid), but day 1 of the live A/B goes to the R2 gate.
+
 - **2026-08-29 · First capture-rate join (baseline sweep `26f752fa5a` × live arming
   events): the "identified +22R vs captured 0" headline was mostly regime, not leak.**
   +23.5R of the identified R sits on Aug 13–25, BEFORE live arming existed. On the
