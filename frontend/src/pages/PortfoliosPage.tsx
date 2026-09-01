@@ -7,7 +7,7 @@ import { baseChartOptions, seriesPalette } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { groupPositions, useQuote, useStore } from "../store";
 import { useViewport } from "../lib/viewport";
-import type { BrokeragePosition, BrokerageProvider, Portfolio } from "../types";
+import type { BrokeragePosition, BrokerageProvider, Portfolio, Position } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { LivePrice, ValuePill } from "../components/quotekit";
@@ -22,11 +22,13 @@ const REAL_KINDS = new Set(["live", "paper"]);
 function PortfolioCard({
   portfolio,
   positionCount,
+  positions = [],
   visible,
   onToggle,
 }: {
   portfolio: Portfolio;
   positionCount: number;
+  positions?: Position[];
   visible: boolean;
   onToggle: (v: boolean) => void;
 }) {
@@ -68,6 +70,18 @@ function PortfolioCard({
           cash {fmtCcy(p.cash, ccy)} · {positionCount} position{positionCount === 1 ? "" : "s"}
           {p.sourceName && p.sourceName !== "snaptrade" && <> · tracks "{p.sourceName}"</>}
         </div>
+        {positions.filter((x) => Math.abs(x.qty) > 1e-9).map((pos) => (
+          <div key={`${pos.symbol}-${pos.secType}`} className="metric-sub pf-pos-row">
+            <span className="mono">{pos.option?.display ?? pos.symbol}</span>
+            {" "}{pos.qty > 0 ? "" : "−"}{Math.abs(pos.qty)} @ {pos.avgCost.toFixed(2)}
+            {pos.last !== undefined && <> · last {pos.last.toFixed(2)}</>}
+            {pos.unrealizedPnl !== undefined && (
+              <span className={pos.unrealizedPnl >= 0 ? "pos" : "neg"}>
+                {" "}{fmtSigned(pos.unrealizedPnl)}
+              </span>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -352,6 +366,7 @@ export function PortfoliosPage() {
           {realCards.map((p) => (
             <PortfolioCard key={p.id} portfolio={p}
               positionCount={(byPortfolio[p.id] ?? []).length}
+              positions={byPortfolio[p.id] ?? []}
               visible={!hidden[p.id]}
               onToggle={(v) => toggleVisible(p.id, v)} />
           ))}
@@ -375,6 +390,7 @@ export function PortfoliosPage() {
             {practiceCards.map((p) => (
               <PortfolioCard key={p.id} portfolio={p}
                 positionCount={(byPortfolio[p.id] ?? []).length}
+              positions={byPortfolio[p.id] ?? []}
                 visible={!hidden[p.id]}
                 onToggle={(v) => toggleVisible(p.id, v)} />
             ))}
