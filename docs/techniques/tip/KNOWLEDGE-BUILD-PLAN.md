@@ -195,6 +195,48 @@ out-of-band guarantee held live: zero orders, zero proposals, zero book entries.
       ("🧪 Experiment artifacts" section). Promotion is now always a human/
       review act, never a side effect of running history.
 
+### Batch 2 (2026-09-01, POST-SOAK 5.3) — 40 msgs · seed 11 · since 06-01
+
+Run AFTER the F1/F2/F4/F5/F6/F11 harness fixes. **41 signals, all replayed;
+isolation perfect (0 proposals, 0 orders, 0 book entries, 0 failed runs,
+0 silent drops — F1's guarantee held with nothing to catch).** Review run
+`38c4130201`; full report note `experiment:b2` (`1d7d118a…`) + two promoted
+source-habit notes (quarantined, per F12's rule).
+
+**Measured against batch 1:** silent drops 14% → **0%** (F1 ✓); the fatal
+`fresh` free-kill gone (F2 ✓ — annotation now); no post-tip leakage cited
+(F5 ✓); live-quote confusion gone by construction (F11 ✓ — quotes withheld);
+`constructed`/`premiumBasis` flags wired but untriggered in this sample
+(F4/F6 present, unexercised); fan-out 40→41 signals vs b1's 20→22 (sample-
+dependent — the F7 grouping fix is still open).
+
+**New findings (b2):**
+
+- [ ] **F13 · Isolation over-corrected: 41/41 verdicts = skip.** With quotes
+      withheld and history capped, the appraiser has almost nothing to judge
+      with — skip-everything is rational but grades nothing. The historical
+      header needs the tip's OWN evidence attached: pre-tip bars summary + the
+      replay block. (Review fixes #1/#2 point the same way: point-in-time
+      `get_source_stats`/`get_positions`, and cite only what was retrieved.)
+- [ ] **F14 · Replay arms plans that ignore the tip's stated entry condition**
+      (review #9): "above 422" armed at 416.49; "under 940" armed at 1000.
+      The armed leg snaps to nearest structure instead of honouring
+      `entry_conditions` — its −1.25R prints are harness artifacts, not tip
+      evidence. Replay must respect the stated trigger side or mark the plan
+      `constructed`.
+- [ ] **F15 · Fan-in at the message level** (review #2 fix, was F7): one
+      parent signal per message, branches as children; research sweep once
+      per parent; render two-sided maps as one object.
+- [ ] **F16 · "Trim/TP without a matching open" flag** (review #11): three
+      position-management messages had no captured opening message — an
+      ingestion-coverage alarm worth emitting on the live path too.
+- [ ] **F17 · Source-profile notes must record FORMATS** (review #12): eva has
+      two formats (maps AND clean BTO/STC fills) — the working MuggZone
+      tier-note is the template; SPX→SPY venue mapping should be a table, not
+      three hand-derivations (review #14).
+- [ ] **F18 · An `ok:false` replay must say "no replay evidence"** in the
+      record instead of being graded as if informative (review #14).
+
 ### Review rubric (per experiment run)
 
 1. Extraction fidelity — did the tip's ticker/direction/prices/expiry survive intact?

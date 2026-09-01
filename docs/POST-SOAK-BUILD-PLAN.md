@@ -182,13 +182,18 @@ with zero human touches.
   matter for batch validity (silent drops F1, fresh/ticker_resolves constants
   F2, premium-vs-underlying F3, post-tip leakage F4, invented replay plans F5,
   live get_quote in historical mode F10), defer the taxonomy ones with a note.
-- [ ] **5.3 Batch 2.** `tip_experiment` run: sample 30–50, NEW seed, since
-  2026-06-01, after 5.1 + 5.2 land. Rubric batch review; findings logged in
-  KNOWLEDGE-BUILD-PLAN Phase 5 as F12+; compare drop/park/replay rates against
-  batch 1 to measure the fixes.
+- [x] **5.3 Batch 2.** DONE 2026-09-01 — `--batch b2 --sample 40 --seed 11
+  --since 2026-06-01` on the live app: 41 signals, all replayed, isolation
+  PERFECT (0 proposals/orders/books/failed-runs/silent-drops). Rubric review
+  run `38c4130201`; findings F13–F18 logged in KNOWLEDGE-BUILD-PLAN Phase 5
+  with the b1 comparison: silent drops 14%→0, the `fresh` free-kill gone, no
+  post-tip leakage cited, live-quote confusion gone by construction. Headline
+  lesson: isolation OVER-corrected (41/41 skip — the historical header needs
+  the tip's own evidence attached, F13) and the replay can arm against the
+  tip's stated trigger side (F14) — the next batch's fix list.
 
-Acceptance: the tip_runner suite is green at any hour; batch 2's review shows
-the batch-1 failure modes measurably reduced (or teaches us why not).
+Acceptance MET: the tip_runner suite is green at any hour; batch 2 measurably
+reduced the batch-1 failure modes and taught two new ones.
 
 ## Phase 6 — Toward real money (T14 → T11 → T12, in that order)
 
