@@ -80,9 +80,15 @@ html { -webkit-text-size-adjust: 100%; }
   }
   .splash { display: none; }
 
-  /* top bar: brand · workspace · HALT · search — nothing that can push HALT away */
-  .topbar { height: 48px; gap: 8px; padding: 0 10px; }
-  .topbar .brand { font-size: var(--fs-3); gap: 6px; }
+  /* top bar: brand · workspace · HALT · search — nothing that can push HALT away.
+     NEVER wrap: the row is a fixed 48px, so a wrapped item would hang over the page
+     (the v0.5.0 chip did exactly that, 2026-09-01). Everything shrinks instead. */
+  .topbar { height: 48px; gap: 8px; padding: 0 10px; flex-wrap: nowrap; }
+  .topbar .brand { font-size: var(--fs-3); gap: 6px; flex: 0 1 auto; min-width: 40px; }
+  /* the version chip is the first thing to give up room */
+  .topbar .ver-chip { flex: 0 0 auto; padding: 0 7px; font-size: 10px; line-height: 1; }
+  .topbar-phone-ws { flex: 0 1 auto; min-width: 0; overflow: hidden; }
+  .topbar .halt-btn, .topbar-search-btn, .topbar-attn { flex: 0 0 auto; }
   .topbar-phone-ws {
     display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 10px;
     border-radius: 999px; font-weight: 800; font-size: var(--fs-1); letter-spacing: 0.4px;
@@ -576,13 +582,19 @@ button.bl-card:active { background: var(--surface-2); }
   .sidebar.collapsed .nav button { min-width: 44px; }
   .side-collapse { width: 40px; height: 40px; top: 6px; right: 6px; }
 }
-/* the 320px iPhone SE: the brand text goes, the logo stays — HALT must fit */
-@media (max-width: 360px) {
+/* narrow phones: the brand text goes, the logo stays (still the home button) — HALT
+   and the workspace chip must fit on the one row alongside the version chip */
+@media (max-width: 420px) {
   .topbar--phone .brand { font-size: 0; gap: 0; }
   .topbar--phone .brand-logo { width: 26px; height: 26px; }
   .topbar--phone { gap: 6px; padding: 0 8px; }
   .topbar-phone-ws { padding: 0 8px; font-size: 11px; }
   .topbar .halt-btn { padding: 0 10px; }
+}
+/* 320px-class phones: HALT + the workspace pill own the row; the version chip
+   drops out here (More → Version still opens the changelog) */
+@media (max-width: 360px) {
+  .topbar--phone .ver-chip { display: none; }
 }
 /* narrow phones: the Now strip's summary takes its own row instead of wrapping word by word */
 @media (max-width: 380px) {
@@ -657,6 +669,8 @@ button.bl-card:active { background: var(--surface-2); }
   button.status-pill { min-height: 40px; min-width: 40px; }
   /* Tips desk: knowledge notes + Discord source picker */
   .ver-chip { min-height: 40px; }
+  .morning-row { min-height: 40px; }   /* the morning card's rows are buttons */
+  .trade-armed-chip { min-height: 40px; }   /* the ARMED banner on Trade opens the plan */
   .an-note-add input { font-size: 16px; min-height: 40px; }
   .an-note-del { min-width: 40px; min-height: 40px; display: inline-flex; align-items: center; justify-content: center; }
   .an-note-head .link-btn, .disc-peek .link-btn { min-width: 44px; min-height: 40px; }

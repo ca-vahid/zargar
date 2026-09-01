@@ -2356,9 +2356,19 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .ver-chip:hover { border-color: var(--accent); color: var(--accent); }
 /* tablets: the chip must not push the topbar past the viewport — the search yields */
 @media (max-width: 1100px) { .topbar > .sym-search { width: clamp(120px, 18vw, 240px); } }
-/* tablet portrait: the bar's live chips (equity, cross-workspace armed) can outgrow
-   768px — wrap instead of forcing a horizontal page scroll (HALT stays visible) */
-@media (max-width: 1023px) { .topbar { flex-wrap: wrap; row-gap: 4px; } }
+/* Tablet portrait (NOT phones — they have their own single-row bar below): the live
+   chips (equity, cross-workspace armed) can outgrow 768px. Wrapping alone was a bug:
+   `.app` pins the top row at 48px, so a wrapped HALT button hung over the content
+   (2026-09-01). The row must grow with the bar. */
+@media (min-width: 640px) and (max-width: 1023px) {
+  /* tighten first so it usually still fits one row… */
+  .topbar { gap: 8px; padding-inline: 8px; }
+  .topbar > .sym-search { width: clamp(110px, 14vw, 200px); }
+  .topbar .equity-chip, .topbar .status-pill { font-size: var(--fs-0); }
+  /* …and wrap as the safety net when the live chips appear, with the row growing */
+  .topbar { flex-wrap: wrap; row-gap: 4px; padding-block: 4px; }
+  .app { grid-template-rows: auto auto 1fr; }
+}
 .chlog { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .chlog-sub { color: var(--text-3); font-size: var(--fs-1); margin-top: -4px; }
 .chlog-search { width: 100%; padding: 8px 12px; font-size: var(--fs-2); }

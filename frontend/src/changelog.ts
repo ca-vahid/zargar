@@ -32,6 +32,7 @@ export const CHANGELOG: Release[] = [
       { tag: "new", text: "The morning report: at 08:25 ET a push + Dashboard card answers \"what needs me\" — waiting proposals (with why), flagged plans, overnight tips, today's armed plans and rolls." },
       { tag: "new", text: "Auto-approve is earned per source: a tipper's takes self-approve only after enough of their tips have closed well; until then every take waits for you with a graduation note." },
       { tag: "improved", text: "Research (shadow) books read as research: hidden or dimmed in the Blotter and Journal, never toast, one row per source pairing the immediate and armed lanes with the hit record instead of fake cash." },
+      { tag: "fixed", text: "On phones the version chip pushed HALT onto a second row, where it covered the page — the phone top bar is now a single row that shrinks (logo, version, workspace, alerts, search, HALT all fit on a 320px screen); tablet portrait tightens instead of overlapping." },
       { tag: "fixed", text: "First live-soak hardening: a slow fill can no longer double-exit a position past flat; a crashed analyst leaves the proposal for you instead of approving it; cold quotes park a tip instead of killing it; API overloads retry; a lotto-priced option can't be sized into hundreds of contracts." },
     ],
   },
