@@ -75,6 +75,10 @@ EXTRACT_SYSTEM = (
     "- claims: statements about HOW he decides - level selection, what counts as confirmation, "
     "targets, exits, sizing, what he avoids - phrased as testable rules, one per item.\n"
     "- vetoes: what he refuses today and why (earnings, bad option contracts, gaps, chop).\n"
+    "Transcripts are speech-to-text: fix obvious mis-hearings of tickers from context "
+    "('SpaceX' is SPCX, 'Chipotle' CMG, 'the video'/'Nvidia' NVDA, 'Q-Com' QCOM, "
+    "'Affirm' AFRM, 'Crowd' CRWD, 'Fig' FIG); when a name is ambiguous, prefer the ticker "
+    "of the company he describes.\n"
     "Dismissed names and small talk are not board items. Be terse."
 )
 

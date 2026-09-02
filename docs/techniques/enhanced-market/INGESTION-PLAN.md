@@ -102,6 +102,15 @@ What exists (all EM-namespaced, nothing else touched):
 - **Run it**: `scripts\start.ps1` launches the Discord intake AND the EM ingest worker
   windows (`-NoIngest` skips the worker); by hand: `scripts\em-ingest.ps1` (or `-Once`).
 
+**First end-to-end run (2026-09-01 ~19:50 ET, verification instance on :8421 against
+the test DB - the live server was elevated and could not be restarted from the
+session):** the 09-01 broadcast link posted to the inbox -> worker transcribed
+6.7 min in 93 s (4,799 chars) -> extraction (stance, board, 7 symbols, claims,
+vetoes) in ~20 s -> board check 2 new / 5 rejected / 0 errors in ~15 s -> the
+Author's board card rendered with Arm buttons. Fidelity note: speech-to-text
+heard "SpaceX" and the model wrote SPCE - the prompt now carries a mis-hearing
+hint (SPCX, CMG, NVDA, QCOM...).
+
 ## Build phases
 
 | # | What | Size |
