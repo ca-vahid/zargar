@@ -137,6 +137,18 @@ runtime ones to `execution.*`).
   earned-auto gates live in intake); error content retries exactly once, meta-marked
   BEFORE the attempt so it can never loop.
 
+- **2026-09-01 · Arming a plan whose last session has closed is now REFUSED at the runner.**
+  A finished analyst batch stayed on screen after the close; "Arm 22 confirmed" armed 22
+  runs built for the session that had just ended. The runner did expire them within
+  seconds (no exposure), but that cost 44 journal events, a restore wave, and an Armed
+  page reading "Live 26" against a badge of 4. `PlanRunner.arm()` now rejects a plan
+  whose `expiresSession` is before the next tradeable session (same arithmetic as
+  `restore()`, "now" from the test-pinnable clock) with a ValueError the API surfaces
+  as 400; `restore()` is never gated. Escape hatch `execution.arm_expired_plans`
+  (replays/tests; the EM rigs set it because their synthetic market ends days ago).
+  UI: the batch panel marks such runs `expired`; the Armed page's Live list counts
+  armed/paused only.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
@@ -147,6 +159,10 @@ runtime ones to `execution.*`).
   app-managed holding is ever acceptable is undecided.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
+
+- 2026-09-01 · **`execution.arm_expired_plans` (new, default off)** — the runner refuses to arm
+  a plan whose last session already closed; replays/tests set it on. Why: 22 stale runs armed
+  after the close and expired on arrival (finding above). Evidence: journal 2026-09-01 23:5x ET.
 
 - 2026-08-29 · **Ambitious practice posture** (user decision, active dev):
   risk caps raised live — position notional 25k / 50% / gross 300%, option

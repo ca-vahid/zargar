@@ -930,6 +930,23 @@ class PlanRunner(SessionListener):
                 ap.expires_session = str(prior_state["expiresSession"])
             if prior_state.get("riskWarning"):
                 ap.risk_warning = str(prior_state["riskWarning"])
+        if not restored and not bool(self.rt("arm_expired_plans", False)):
+            # a plan whose LAST session has already closed can never fire: refuse it
+            # here instead of arming-then-expiring it (22 stale runs from a finished
+            # analyst batch were armed after the close on 2026-09-01 — 44 journal
+            # events and a "Live 26" page for plans that were dead on arrival). Same
+            # session arithmetic as restore(); the test-pinnable clock decides "now"
+            # so replay rigs can pin the day, or set execution.arm_expired_plans.
+            from ..clock import now_ms as _clock_now
+            _now = _clock_now()
+            _today = session_date(_now)
+            _target = _today if (dt.date.fromisoformat(_today).weekday() < 5
+                                 and _now < session_bounds(_today)[1]) else next_session_date(_now)
+            _last = ap.expires_session or ap.plan_for
+            if _last and _last < _target:
+                self._armed.pop(run_id, None)
+                raise ValueError(f"this plan was built for {ap.plan_for} and its last session "
+                                 f"({_last}) is over — build a fresh plan for {_target} and arm that")
         self._armed[run_id] = ap
         with contextlib.suppress(Exception):
             await self.engine.ensure_symbol(symbol)

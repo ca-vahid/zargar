@@ -39,6 +39,7 @@ CONTRACTS: dict[str, dict] = {
     # --- the armed runner (shapes produced ONLY by execution/planrunner.py) -
     "TechniquePlanArmed":     {"version": 1, "required": ("runId", "symbol", "planFor", "config", "portfolio")},
     "TechniquePlanDisarmed":  {"version": 1, "required": ("runId", "symbol", "reason")},
+    "TechniquePlanRolled":    {"version": 1, "required": ("runId", "symbol", "from", "to")},   # multi-day plan advanced to its next session (ARM-GAPS A2/A4); was journaled without a contract
     "TechniquePlanPaused":    {"version": 1, "required": ("runId", "symbol")},
     "TechniquePlanResumed":   {"version": 1, "required": ("runId", "symbol")},
     "TechniquePlanModeChanged": {"version": 1, "required": ("runId", "symbol", "from", "to")},
