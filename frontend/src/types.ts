@@ -620,7 +620,7 @@ export interface MethodNote {
   status: "new" | "pending_transcript" | "transcribed" | "extracted" | "checked" | "failed" | string;
   text: string; images: string[]; mediaUrl?: string | null;
   transcript?: string | null; transcriptChars?: number;
-  extraction: { summary?: string; stance?: string; symbols?: string[]; board?: string[]; claims?: string[]; vetoes?: string[]; model?: string; extractedAt?: string };
+  extraction: { material?: string; summary?: string; stance?: string; symbols?: string[]; board?: string[]; claims?: string[]; vetoes?: string[]; model?: string; extractedAt?: string };
   boardCheck: { checkedAt?: string; rows?: any[]; counts?: Record<string, number>; skipped?: string[] };
   meta: Record<string, any>; error?: string | null;
   postedAt?: string | null; createdAt?: string | null; updatedAt?: string | null;

@@ -111,6 +111,30 @@ Author's board card rendered with Arm buttons. Fidelity note: speech-to-text
 heard "SpaceX" and the model wrote SPCE - the prompt now carries a mis-hearing
 hint (SPCX, CMG, NVDA, QCOM...).
 
+## The morning, unattended - as built (2026-09-01 evening, user Q&A)
+
+1. **Recognition is deterministic, not AI.** Every message in the two EM channels
+   becomes a note. A message carrying a media link (X broadcast / tweet / YouTube /
+   mp4 - in the text, an embed card, or a video attachment: the forwarder surfaces
+   all of them) is a *video* note; a text post >= 60 chars is extracted; an image-only
+   post is kept as a *chart* note. The LLM only ever reads content - it never decides
+   what to ingest.
+2. **Live timing.** The link drops when he goes live. The worker first *probes* the
+   link (`is_live`); while the broadcast runs it reports a DEFERRAL - no retry
+   attempt spent, re-probe every `ingest.live_recheck_seconds` (60). When it ends,
+   the full replay is downloaded and transcribed. After `ingest.live_max_wait_minutes`
+   (45) the worker takes whatever replay exists and the note is marked *partial*.
+   Typical: link 09:00, he ends 09:10-09:15, transcript + board by ~09:18.
+3. **What is this item?** The extraction classifies `material`: setups_brief / alert /
+   recap / other. Only setups_brief and alert earn plan runs; a recap or promo is
+   stored (still searchable, still evidence) but never plan-checked.
+4. **Supplementary messages.** Each later post is its own note and extraction; the
+   day's view (`/api/technique/ingest/board`) keeps the video brief as the primary
+   card and lists the rest under "also today" - a follow-up never replaces the brief.
+   The same link re-posted within a day (pinned, echoed by a bot) is ONE video
+   (`duplicate`, never transcribed twice).
+5. **Nothing arms itself.** The card proposes; you click Arm; `ingest.auto_arm` stays off.
+
 ## Build phases
 
 | # | What | Size |

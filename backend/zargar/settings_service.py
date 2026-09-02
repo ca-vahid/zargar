@@ -283,6 +283,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.enhanced_market.ingest.auto_arm": False,         # proposes only; a human arms
     "techniques.enhanced_market.ingest.board_max_symbols": 12,
     "techniques.enhanced_market.ingest.transcribe_max_attempts": 5,
+    "techniques.enhanced_market.ingest.live_recheck_seconds": 60,   # a still-live broadcast is re-probed this often (no attempt spent)
+    "techniques.enhanced_market.ingest.live_max_wait_minutes": 45,  # then take whatever replay exists (partial) rather than wait forever
                                                # (fires carry window="midday" so outcomes are separable)
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire

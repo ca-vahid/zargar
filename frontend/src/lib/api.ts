@@ -211,7 +211,7 @@ export const api = {
   techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean; wait?: boolean }) =>
     request<import("../types").TechniqueRun>("POST", `/api/technique/walkforward/${id}/promote`, body),
   // EM method ingestion (INGESTION-PLAN.md)
-  techniqueIngestBoard: () => request<{ note: import("../types").MethodNote | null }>("GET", "/api/technique/ingest/board"),
+  techniqueIngestBoard: () => request<{ note: import("../types").MethodNote | null; others: import("../types").MethodNote[]; today: boolean }>("GET", "/api/technique/ingest/board"),
   techniqueIngestNotes: (limit = 20) => request<import("../types").MethodNote[]>("GET", `/api/technique/ingest/notes?limit=${limit}`),
   techniqueIngestNote: (id: string) => request<import("../types").MethodNote>("GET", `/api/technique/ingest/notes/${id}`),
   techniqueIngestExtract: (id: string) => request<import("../types").MethodNote>("POST", `/api/technique/ingest/notes/${id}/extract`),

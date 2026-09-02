@@ -225,6 +225,8 @@ def build_technique_routes(app, eng, auth, config) -> None:
         noteId: str
         transcript: str | None = None
         error: str | None = None
+        deferred: bool = False           # broadcast still live - check again later, no attempt spent
+        partial: bool = False            # transcript taken before the broadcast ended (max wait hit)
         durationSeconds: float | None = None
         model: str | None = None
         seconds: float | None = None
@@ -233,8 +235,9 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def ingest_transcript(body: IngestTranscriptBody):
         try:
             return await _ingest(eng).store_transcript(
-                body.noteId, transcript=body.transcript, error=body.error,
-                meta={"durationSeconds": body.durationSeconds, "model": body.model, "seconds": body.seconds})
+                body.noteId, transcript=body.transcript, error=body.error, deferred=body.deferred,
+                meta={"durationSeconds": body.durationSeconds, "model": body.model, "seconds": body.seconds,
+                      "partial": True if body.partial else None})
         except KeyError:
             raise HTTPException(status_code=404, detail="note not found")
 
@@ -244,8 +247,9 @@ def build_technique_routes(app, eng, auth, config) -> None:
 
     @app.get("/api/technique/ingest/board", dependencies=[auth])
     async def ingest_board():
-        """The newest note with an extraction - the author's board for the day."""
-        return {"note": await _ingest(eng).latest_board()}
+        """Today's material: the primary item (morning video brief) + the day's
+        supplementary notes, so a follow-up post never hides the brief."""
+        return await _ingest(eng).today_board()
 
     @app.get("/api/technique/ingest/notes/{note_id}", dependencies=[auth])
     async def ingest_note(note_id: str):

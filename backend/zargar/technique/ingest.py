@@ -54,6 +54,7 @@ NOT_TICKERS = {"A", "I", "AM", "PM", "ET", "THE", "AND", "OR", "TO", "AT", "ON",
 
 class MethodExtraction(BaseModel):
     """FLAT schema (nested models blow the grammar budget - see CLAUDE.md)."""
+    material: str               # setups_brief | alert | recap | other  (what this item IS)
     summary: str
     stance: str                 # aggressive | neutral | cautious | sit_on_hands
     symbols: list[str]          # tickers named as actionable today (upper-case)
@@ -66,6 +67,9 @@ EXTRACT_SYSTEM = (
     "You read a day-trading educator's pre-market material (a transcript of his morning setups "
     "video, or a watch-list post) for a research pipeline that studies HIS current method. "
     "Extract, faithfully and without inventing:\n"
+    "- material: setups_brief (the pre-market rundown of today's setups), alert (a live trade "
+    "alert / entry / exit), recap (a review of past trades), or other (anything else - promo, "
+    "chatter, schedule notes).\n"
     "- summary: 2-3 sentences, what he thinks today is.\n"
     "- stance: aggressive | neutral | cautious | sit_on_hands (his own words decide).\n"
     "- symbols: every ticker he calls ACTIONABLE today (watch/trade), upper-case, no $ sign; "
@@ -123,6 +127,11 @@ class MethodIngestService:
     def _get(self, key: str, default=None):
         return self.engine.settings.get(PREFIX + key, default)
 
+    def _num(self, key: str, default):
+        """A numeric knob where 0 is a legitimate value (`or default` would swallow it)."""
+        v = self._get(key, None)
+        return default if v is None or v == "" else v
+
     def enabled(self) -> bool:
         return bool(self._get("ingest.enabled", True))
 
@@ -165,44 +174,87 @@ class MethodIngestService:
                 if existing is not None:
                     return {**note_dict(existing, full=False), "duplicate": True}
             status = "pending_transcript" if (kind == "video" and self._get("ingest.auto_transcribe", True)) else "new"
+            dup_of = None
+            if media_url:
+                # the same link re-posted (pinned, edited, echoed by a bot) within a day is
+                # ONE video: keep the note for the channel's history, never transcribe twice
+                since = _now() - dt.timedelta(hours=20)
+                prior = (await session.execute(
+                    select(TechniqueMethodNote)
+                    .where(TechniqueMethodNote.media_url == media_url, TechniqueMethodNote.created_at >= since)
+                    .order_by(TechniqueMethodNote.created_at.asc()))).scalars().first()
+                if prior is not None:
+                    dup_of, status = prior.id, "duplicate"
             n = TechniqueMethodNote(
                 id=new_id(), technique=TECHNIQUE, message_id=mid,
                 channel_id=str(payload.get("channelId") or ""),
                 channel_name=str(payload.get("channelName") or payload.get("label") or "")[:128],
                 author=str(payload.get("author") or "")[:128],
                 kind=kind, status=status, text=text[:20000], images=images, media_url=media_url,
-                posted_at=_parse_ts(payload.get("postedAt")), meta={"attempts": 0})
+                posted_at=_parse_ts(payload.get("postedAt")),
+                meta={"attempts": 0, **({"duplicateOf": dup_of} if dup_of else {})})
             session.add(n)
             await session.commit()
             d = note_dict(n)
         log.info("ingest: %s note %s from #%s (%s)", kind, d["id"][:8], d["channelName"] or d["channelId"], status)
         self._publish(d)
         # a text-only post with substance goes straight to extraction
-        if kind != "video" and self._get("ingest.auto_extract", True) and len(text.strip()) >= 60:
+        if status != "duplicate" and kind != "video" and self._get("ingest.auto_extract", True) and len(text.strip()) >= 60:
             self._spawn(self._extract_and_check(d["id"]), f"em-ingest-extract-{d['id'][:8]}")
         return {**d, "duplicate": False}
 
     async def pending(self) -> list[dict]:
-        """Video notes waiting for the worker (oldest first)."""
+        """Video notes waiting for the worker (oldest first). A note deferred
+        because its broadcast was still LIVE is hidden until `nextCheckAt`;
+        past `ingest.live_max_wait_minutes` the worker is told to take whatever
+        replay exists (`forcePartial`) rather than wait forever."""
+        max_wait = float(self._num("ingest.live_max_wait_minutes", 45))
+        now = _now()
         async with self.engine.sf() as session:
             rows = (await session.execute(
                 select(TechniqueMethodNote)
                 .where(TechniqueMethodNote.status == "pending_transcript")
                 .order_by(TechniqueMethodNote.created_at.asc()).limit(10))).scalars().all()
-            return [{"id": r.id, "mediaUrl": r.media_url, "attempts": int((r.meta or {}).get("attempts") or 0),
-                     "postedAt": r.posted_at.isoformat() if r.posted_at else None} for r in rows]
+            out = []
+            for r in rows:
+                m = r.meta or {}
+                nxt = _parse_ts(m.get("nextCheckAt"))
+                if nxt and nxt > now:
+                    continue
+                first_live = _parse_ts(m.get("firstSeenLiveAt"))
+                force = bool(first_live and (now - first_live).total_seconds() / 60 >= max_wait)
+                out.append({"id": r.id, "mediaUrl": r.media_url, "attempts": int(m.get("attempts") or 0),
+                            "deferrals": int(m.get("deferrals") or 0), "forcePartial": force,
+                            "postedAt": r.posted_at.isoformat() if r.posted_at else None})
+            return out
 
     async def store_transcript(self, note_id: str, *, transcript: str | None = None,
-                               error: str | None = None, meta: dict | None = None) -> dict:
-        """The worker's result: a transcript (-> extraction) or a failure (retry
-        up to transcribe_max_attempts, then `failed` - never silent)."""
-        max_attempts = int(self._get("ingest.transcribe_max_attempts", 5) or 5)
+                               error: str | None = None, meta: dict | None = None,
+                               deferred: bool = False) -> dict:
+        """The worker's result: a transcript (-> extraction), a DEFERRAL (the
+        broadcast is still live - check again in `ingest.live_recheck_seconds`,
+        no attempt spent), or a failure (retry up to transcribe_max_attempts,
+        then `failed` - never silent)."""
+        max_attempts = int(self._num("ingest.transcribe_max_attempts", 5))
+        recheck = int(self._num("ingest.live_recheck_seconds", 60))
         async with self.engine.sf() as session:
             n = await session.get(TechniqueMethodNote, note_id)
             if n is None:
                 raise KeyError(note_id)
             m = dict(n.meta or {})
             m.update({k: v for k, v in (meta or {}).items() if v is not None})
+            if deferred and not (transcript and transcript.strip()):
+                m["deferrals"] = int(m.get("deferrals") or 0) + 1
+                m.setdefault("firstSeenLiveAt", _now().isoformat())
+                m["nextCheckAt"] = (_now() + dt.timedelta(seconds=recheck)).isoformat()
+                m["lastDeferReason"] = (error or "broadcast still live")[:200]
+                n.status = "pending_transcript"
+                n.meta = m
+                n.updated_at = _now()
+                await session.commit()
+                d = note_dict(n)
+                self._publish(d)
+                return d
             if transcript and transcript.strip():
                 n.transcript = transcript.strip()
                 n.status = "transcribed"
@@ -224,8 +276,10 @@ class MethodIngestService:
     # ------------------------------------------------------------ extraction
     async def _extract_and_check(self, note_id: str) -> None:
         try:
-            await self.extract(note_id)
-            if self._get("ingest.auto_plan_board", True):
+            d = await self.extract(note_id)
+            material = (d.get("extraction") or {}).get("material") or "other"
+            # only setup material earns plan runs; a recap or promo is stored, not traded on
+            if self._get("ingest.auto_plan_board", True) and material in ("setups_brief", "alert"):
                 await self.board_check(note_id)
         except Exception as exc:                       # noqa: BLE001 - surfaced on the note, never swallowed
             log.exception("ingest: extract/check failed for %s", note_id[:8])
@@ -316,7 +370,7 @@ class MethodIngestService:
             if n is None:
                 raise KeyError(note_id)
             symbols = list((n.extraction or {}).get("symbols") or [])
-        max_syms = int(self._get("ingest.board_max_symbols", 12) or 12)
+        max_syms = int(self._num("ingest.board_max_symbols", 12))
         armed = self._armed_em_symbols()
         rows: list[dict] = []
         for sym in symbols[:max_syms]:
@@ -395,3 +449,25 @@ class MethodIngestService:
                 if r.extraction:
                     return note_dict(r)
             return note_dict(rows[0]) if rows else None
+
+    async def today_board(self) -> dict:
+        """The day's material as one view: `note` = the primary item (the newest
+        VIDEO setups brief of the day, else the newest extracted note), `others` =
+        the rest of the day's notes newest first (supplementary posts, charts,
+        pending/duplicate videos) so a follow-up never hides the morning brief."""
+        et = dt.timezone(dt.timedelta(hours=-4))          # the day boundary is an ET calendar day
+        start = dt.datetime.now(et).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(dt.timezone.utc)
+        async with self.engine.sf() as session:
+            rows = (await session.execute(
+                select(TechniqueMethodNote)
+                .where(TechniqueMethodNote.technique == TECHNIQUE, TechniqueMethodNote.created_at >= start)
+                .order_by(TechniqueMethodNote.created_at.desc()).limit(40))).scalars().all()
+            if not rows:
+                return {"note": await self.latest_board(), "others": [], "today": False}
+            primary = (next((r for r in rows if r.kind == "video" and r.extraction
+                             and r.extraction.get("material") in (None, "setups_brief")), None)
+                       or next((r for r in rows if r.extraction), None)
+                       or next((r for r in rows if r.kind == "video" and r.status != "duplicate"), None)
+                       or rows[0])
+            others = [note_dict(r, full=False) for r in rows if r.id != primary.id and r.status != "duplicate"]
+            return {"note": note_dict(primary), "others": others, "today": True}

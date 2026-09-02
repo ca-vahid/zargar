@@ -11,12 +11,13 @@ import { Spinner } from "../ui";
  * every 60 s; arming is a human click. EM-only surface. */
 export function AuthorBoardCard() {
   const [note, setNote] = useState<MethodNote | null | undefined>(undefined);
+  const [others, setOthers] = useState<MethodNote[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [showText, setShowText] = useState(false);
   const toast = useStore((s) => s.toast);
   const armed = useStore((s) => s.techniqueArmed);
   const load = useCallback(() => {
-    api.techniqueIngestBoard().then((r) => setNote(r.note)).catch(() => setNote(null));
+    api.techniqueIngestBoard().then((r) => { setNote(r.note); setOthers(r.others ?? []); }).catch(() => setNote(null));
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 60_000); return () => clearInterval(t); }, [load]);
 
@@ -55,6 +56,8 @@ export function AuthorBoardCard() {
       <div className="panel-head">
         Author's board
         <span className="status-pill dim">{note.kind}</span>
+        {ex.material && ex.material !== "setups_brief" && <span className="status-pill wait" title="What the model says this item is">{String(ex.material).replace(/_/g, " ")}</span>}
+        {note.meta?.partial && <span className="status-pill wait" title="Transcribed before the broadcast ended (max wait reached)">partial</span>}
         {ex.stance && <span className={`status-pill ${ex.stance === "sit_on_hands" || ex.stance === "cautious" ? "wait" : "ok"}`}>{String(ex.stance).replace(/_/g, " ")}</span>}
         <span className="sub">#{note.channelName || note.channelId} · {note.author} · {when ? fmtDateTime(when) : ""}{note.meta?.durationSeconds ? ` · ${Math.round(note.meta.durationSeconds / 60)} min video` : ""}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
@@ -66,7 +69,7 @@ export function AuthorBoardCard() {
         </span>
       </div>
       <div className="panel-body">
-        {pending && <div className="metric-sub"><Spinner /> video captured — waiting for the transcription worker (scripts\em-ingest.ps1)</div>}
+        {pending && <div className="metric-sub"><Spinner /> {note.meta?.deferrals ? `broadcast still live — checked ${note.meta.deferrals}×, next look in a minute` : "video captured — waiting for the transcription worker (scripts\em-ingest.ps1)"}</div>}
         {failed && <div className="neg">failed: {note.error}</div>}
         {ex.summary && <p style={{ marginTop: 0 }}>{ex.summary}</p>}
         {rows.length > 0 && (
@@ -109,6 +112,20 @@ export function AuthorBoardCard() {
         )}
         {showText && (
           <pre className="small" style={{ whiteSpace: "pre-wrap", maxHeight: 320, overflow: "auto", marginTop: 8 }}>{note.transcript || note.text}</pre>
+        )}
+        {others.length > 0 && (
+          <details style={{ marginTop: 8 }}>
+            <summary className="small muted">also today from these channels ({others.length}) — supplementary posts never replace the brief</summary>
+            <ul className="small" style={{ margin: "6px 0 0 16px" }}>
+              {others.map((o) => (
+                <li key={o.id}>
+                  <span className="muted">{o.postedAt ? fmtDateTime(o.postedAt) : ""} · #{o.channelName} · {o.kind}{o.extraction?.material ? ` · ${String(o.extraction.material).replace(/_/g, " ")}` : ""}{o.status === "pending_transcript" ? " · transcribing" : o.status === "failed" ? " · failed" : ""}</span>
+                  {" "}{o.extraction?.summary ?? (o.text ? o.text.slice(0, 140) : "")}
+                  {(o.extraction?.board?.length ?? 0) > 0 && <ul style={{ margin: "2px 0 0 14px" }}>{(o.extraction?.board ?? []).map((b: string, i: number) => <li key={i}>{b}</li>)}</ul>}
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </div>
     </div>

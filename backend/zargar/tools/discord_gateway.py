@@ -611,6 +611,19 @@ class Gateway:
         toward Discord; never touches the tip mirror/intake. Failures print."""
         rec = mirror_record(msg, None, entry.get("guildName") or None)
         rec["channelName"] = entry.get("label") or ""
+        # the video link often lives in an embed card or a video attachment, not the
+        # text - surface every URL so EM's link detection sees it
+        extra: list[str] = []
+        for e in msg.get("embeds") or []:
+            for u in (e.get("url"), (e.get("video") or {}).get("url"), (e.get("provider") or {}).get("url")):
+                if u and u not in rec["text"] and u not in extra:
+                    extra.append(str(u))
+        for a in msg.get("attachments") or []:
+            u = a.get("url") or ""
+            if u and str(a.get("content_type") or "").startswith(("video/", "audio/")) and u not in extra:
+                extra.append(str(u))
+        if extra:
+            rec["text"] = (rec["text"] + "\n" + "\n".join(extra)).strip()
         try:
             r = await http.post(f"{self.api}/api/technique/ingest/message", headers=headers,
                                 json=rec, timeout=60)

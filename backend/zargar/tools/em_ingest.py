@@ -26,6 +26,10 @@ from pathlib import Path
 API_DEFAULT = "http://127.0.0.1:8420"
 
 
+class _Deferred(Exception):
+    """Control flow: the broadcast is still live - report a deferral, not a failure."""
+
+
 def download_audio(url: str, out_dir: Path, note_id: str) -> Path:
     """yt-dlp -> mp3 next to the note id. Raises on failure (message is the reason)."""
     import yt_dlp  # type: ignore
@@ -47,6 +51,19 @@ def download_audio(url: str, out_dir: Path, note_id: str) -> Path:
             raise RuntimeError("download produced no file")
         target = cands[0]
     return target
+
+
+def probe_live(url: str) -> tuple[bool, str]:
+    """(is_live, title) without downloading. A broadcast that is still running
+    would only yield the DVR-so-far; the worker defers until it has ended."""
+    import yt_dlp  # type: ignore
+    with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "noplaylist": True, "socket_timeout": 30}) as ydl:
+        info = ydl.extract_info(url, download=False) or {}
+    if info.get("_type") == "playlist" and info.get("entries"):
+        info = next((e for e in info["entries"] if e), info)
+    status = str(info.get("live_status") or "")
+    live = bool(info.get("is_live")) or status == "is_live"
+    return live, str(info.get("title") or "")
 
 
 def transcribe(path: Path, model_name: str = "small") -> tuple[str, float]:
@@ -81,19 +98,28 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
             # the SPA fallback answers unknown routes with index.html: the app is up
             # but older than this worker (restart it with scripts\start.ps1)
             print("[em-ingest] pending: the app did not answer JSON - is it running the ingestion build? "
-                  "(restart with scripts\start.ps1)")
+                  "(restart with scripts/start.ps1)")
             return 0
         for n in notes:
             nid, url = str(n.get("id")), str(n.get("mediaUrl") or "")
-            print(f"[{time.strftime('%H:%M:%S')}] note {nid[:8]}: {url}")
+            force = bool(n.get("forcePartial"))
+            print(f"[{time.strftime('%H:%M:%S')}] note {nid[:8]}: {url}{' (taking the partial replay)' if force else ''}")
             body: dict = {"noteId": nid}
             try:
                 t0 = time.time()
+                if not force:
+                    live, title = await asyncio.to_thread(probe_live, url)
+                    if live:
+                        body.update({"deferred": True, "error": f"broadcast still live: {title[:80]}"})
+                        print(f"    -> still live ({title[:60]!r}); will check again")
+                        raise _Deferred()
                 audio = await asyncio.to_thread(download_audio, url, media_dir, nid)
                 text, dur = await asyncio.to_thread(transcribe, audio, model_name)
                 body.update({"transcript": text, "durationSeconds": round(dur, 1), "model": model_name,
-                             "seconds": round(time.time() - t0, 1)})
+                             "seconds": round(time.time() - t0, 1), "partial": force})
                 print(f"    -> {len(text)} chars, {dur / 60:.1f} min of audio, {time.time() - t0:.0f}s")
+            except _Deferred:
+                pass
             except Exception as exc:  # noqa: BLE001 - reported to the app, which retries/fails it
                 body["error"] = f"{type(exc).__name__}: {str(exc)[:300]}"
                 print(f"    -> failed: {body['error']}")
