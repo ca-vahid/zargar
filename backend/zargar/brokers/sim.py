@@ -163,8 +163,10 @@ class SimExecutor(Executor):
         latency_ms: int = 120,
         slippage_bps: float = 2.0,
         size_impact_bps: float = 5.0,   # extra slippage when qty exceeds displayed size
+        settings=None,                  # engine settings (fee schedule); None = Webull CA defaults
     ) -> None:
         super().__init__()
+        self._settings = settings
         self._working: dict[str, _Working] = {}
         self._oca: dict[str, set[str]] = {}
         self._latency_ms = latency_ms
@@ -271,6 +273,14 @@ class SimExecutor(Executor):
         return touch + slip if buy else max(0.01, touch - slip)
 
     def _commission(self, o: BrokerOrder) -> float:
+        """Webull Canada's schedule (audited 2026-09-01, webull.ca/pricing):
+        stocks/ETFs $0 commission; options $0.99 USD/contract + regulatory
+        fees (~$0.05). All three are settings so the practice book can mirror
+        whichever venue the user is heading to."""
+        s = self._settings
         if o.sec_type == "OPT":
-            return round(0.99 * o.qty + 0.05 * o.qty, 2)  # Webull CA-like: per contract + reg fees
-        return round(min(max(1.0, 0.005 * o.qty), 0.01 * o.qty * 200), 2)
+            per = float(s.get("options.fee_per_contract", 0.99)) if s else 0.99
+            reg = float(s.get("sim.reg_fee_per_contract", 0.05)) if s else 0.05
+            return round((per + reg) * o.qty, 2)
+        flat = float(s.get("sim.stock_commission", 0.0)) if s else 0.0
+        return round(flat, 2)

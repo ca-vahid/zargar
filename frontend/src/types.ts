@@ -315,7 +315,10 @@ export interface MorningReport {
 export interface LedgerTrip {
   symbol: string; secType: string; qty: number; portfolio: string;
   inPrice: number; outPrice: number; inAt: string; outAt: string;
-  cost: number; fees: number; gain: number; short: boolean; label: string; day: string;
+  cost: number; proceeds: number; gross: number; feeIn: number; feeOut: number;
+  fees: number; gain: number; short: boolean; label: string; day: string;
+  inOrderId?: string | null; outOrderId?: string | null;
+  inReason?: string | null; outReason?: string | null;
 }
 export interface Ledger {
   asOf: string; windowDays: number; total: number; startingCash: number;
@@ -327,7 +330,7 @@ export interface Ledger {
     adjustments: { day: string; at: string; amount: number; reason: string }[] }[];
   open: { symbol: string; qty: number; portfolio: string; inPrice: number;
     inAt: string; cost: number; fees: number; mark: number | null; unrealized: number | null;
-    label: string }[];
+    label: string; inOrderId?: string | null; inReason?: string | null }[];
 }
 
 export interface AnalystStep {

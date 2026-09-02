@@ -251,6 +251,48 @@ class DeskService:
         rows = [r for r in rows
                 if int(r[0].ts.timestamp() * 1000) >= baseline_ms.get(r[0].portfolio_id, 0)]
 
+        # the WHY behind each order, for the row detail: the exit decision that
+        # sent it (position manager / armed plan) or the proposal/analyst that
+        # opened it — pulled from the journal, never guessed
+        order_ids = {r[0].order_id for r in rows}
+        reasons: dict[str, str] = {}
+        exits: list[tuple[str, dt.datetime, str]] = []      # (leg symbol, ts, text)
+        if order_ids:
+            async with eng.sf() as session:
+                evs = (await session.execute(
+                    select(Event.type, Event.aggregate_id, Event.payload, Event.ts).where(
+                        Event.type.in_(("ManagedPositionExit", "TechniquePlanExit",
+                                        "OrderIntentCreated"))))).all()
+            for etype, agg, payload, ts in evs:
+                p = payload or {}
+                if etype == "OrderIntentCreated" and agg in order_ids:
+                    src = p.get("source")
+                    reasons[agg] = ("opened from an approved proposal" if src == "signal" else
+                                    "opened automatically (auto mode)" if src == "auto" else
+                                    "opened by an armed plan" if src == "technique" else
+                                    "placed by hand" if src == "manual" else f"opened · {src}")
+                elif etype == "ManagedPositionExit":
+                    exits.append((str(p.get("leg") or p.get("symbol") or "").upper(), ts,
+                                  f"exit · {p.get('kind')}: {p.get('reason')}"))
+                elif etype == "TechniquePlanExit":
+                    exits.append((str(p.get("optionSymbol") or p.get("symbol") or "").upper(), ts,
+                                  f"exit · {p.get('kind')}: {p.get('reason')}"))
+            # exit decisions don't carry order ids: the SELL fill on the same leg
+            # within 10 minutes AFTER the decision is that decision's order
+            for e, *_ in rows:
+                if e.side != "SELL":
+                    continue
+                best = None
+                for leg, ts, txt in exits:
+                    if leg == e.symbol.upper() and 0 <= (e.ts - ts).total_seconds() <= 600:
+                        if best is None or ts > best[0]:
+                            best = (ts, txt)
+                if best:
+                    reasons[e.order_id] = best[1]
+
+        def reason_of(oid: str | None) -> str | None:
+            return reasons.get(oid or "")
+
         def label(tech, src, tags):
             tip_src = next((str(t).split(":", 1)[1] for t in (tags or [])
                             if str(t).startswith("source:")), None)
@@ -274,18 +316,25 @@ class DeskService:
             while qty > 1e-9 and lots and lots[0]["sgn"] != sgn:
                 lot = lots[0]
                 take = min(qty, lot["qty"])
-                fees = (lot["fee_unit"] + fee_unit) * take
-                gain = (px - lot["px"]) * take * mult * lot["sgn"] - fees
+                fee_in, fee_out = lot["fee_unit"] * take, fee_unit * take
+                fees = fee_in + fee_out
+                gross = (px - lot["px"]) * take * mult * lot["sgn"]
+                gain = gross - fees
                 trips.append({
                     "symbol": e.symbol, "secType": ("OPT" if mult > 1 else "STK"),
                     "qty": take, "portfolio": real[e.portfolio_id]["name"],
                     "inPrice": lot["px"], "outPrice": px,
                     "inAt": lot["ts"].isoformat(), "outAt": e.ts.isoformat(),
                     "cost": round(lot["px"] * take * mult, 2),
+                    "proceeds": round(px * take * mult, 2),
+                    "gross": round(gross, 2),
+                    "feeIn": round(fee_in, 2), "feeOut": round(fee_out, 2),
                     "fees": round(fees, 2),
                     "gain": round(gain, 2),
                     "short": lot["sgn"] < 0,
                     "label": lot["label"],
+                    "inOrderId": lot["order_id"], "outOrderId": e.order_id,
+                    "inReason": lot["reason"], "outReason": reason_of(e.order_id),
                     "day": e.ts.astimezone(ET).strftime("%Y-%m-%d"),
                 })
                 lot["qty"] -= take
@@ -294,7 +343,8 @@ class DeskService:
                     lots.pop(0)
             if qty > 1e-9:
                 lots.append({"sgn": sgn, "qty": qty, "px": px, "ts": e.ts,
-                             "fee_unit": fee_unit, "label": label(tech, src, tags)})
+                             "fee_unit": fee_unit, "label": label(tech, src, tags),
+                             "order_id": e.order_id, "reason": reason_of(e.order_id)})
 
         open_positions = []
         for (pid, sym), lots in open_lots.items():
@@ -309,6 +359,7 @@ class DeskService:
                     "inPrice": lot["px"], "inAt": lot["ts"].isoformat(),
                     "cost": round(lot["px"] * lot["qty"] * mult, 2),
                     "fees": fee_in,
+                    "inOrderId": lot["order_id"], "inReason": lot["reason"],
                     "mark": mark,
                     # what selling here would bank: mark move minus the entry fee
                     "unrealized": (round((mark - lot["px"]) * lot["qty"] * mult * lot["sgn"]

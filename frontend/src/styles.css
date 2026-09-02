@@ -2075,6 +2075,12 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .pos-bg { background: var(--pos, #1a9c62); }
 .neg-bg { background: var(--neg, #d64545); }
 .led-row--adj { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.led-row[role="button"] { cursor: pointer; flex-wrap: wrap; }
+.led-row[role="button"]:hover { background: var(--surface-2); }
+.led-row.open { background: var(--surface-2); }
+.led-detail { flex-basis: 100%; padding: 8px 0 4px 30px; font-size: 13px; cursor: default; }
+.led-detail-grid { display: grid; grid-template-columns: 70px 1fr; gap: 4px 12px; max-width: 720px; }
+.led-detail-grid .mono { font-family: var(--mono); font-size: 12px; }
 
 /* ── the morning desk card (POST-SOAK Phase 1) ─────────────────────────── */
 .morning-rows { display: flex; flex-direction: column; }
