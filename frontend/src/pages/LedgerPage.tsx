@@ -23,8 +23,6 @@ export function LedgerPage() {
   const [days, setDays] = useState(30);
   const state = useAsync(() => api.deskLedger(days), [days]);
   const led = state.data;
-  const unreal = useMemo(
-    () => (led?.open ?? []).reduce((a, o) => a + (o.unrealized ?? 0), 0), [led]);
   const maxDay = useMemo(
     () => Math.max(1, ...(led?.days ?? []).map((d) => Math.abs(d.realized))), [led]);
   return (
@@ -37,18 +35,30 @@ export function LedgerPage() {
           <>
             <div className="led-headline">
               <div className="led-stat">
+                <span className="led-num">{fmtMoney(led.startingCash, 0)}</span>
+                <span className="led-lbl">started with{led.startedAt ? <><br />{led.startedAt}</> : null}</span>
+              </div>
+              <span className="led-op">+</span>
+              <div className="led-stat">
+                <span className={`led-num ${led.banked >= 0 ? "pos" : "neg"}`}>{fmtSigned(led.banked)}</span>
+                <span className="led-lbl">banked<br />(sold − bought − fees)</span>
+              </div>
+              <span className="led-op">+</span>
+              <div className="led-stat">
+                <span className={`led-num ${led.riding >= 0 ? "pos" : "neg"}`}>{fmtSigned(led.riding)}</span>
+                <span className="led-lbl">riding on open<br />positions, after fees</span>
+              </div>
+              <span className="led-op">=</span>
+              <div className="led-stat">
                 <span className="led-num">{fmtMoney(led.total, 0)}</span>
                 <span className="led-lbl">total right now<br />(cash + positions)</span>
               </div>
-              <div className="led-stat">
-                <span className={`led-num ${led.realized >= 0 ? "pos" : "neg"}`}>{fmtSigned(led.realized)}</span>
-                <span className="led-lbl">banked, last {led.windowDays}d<br />(sold − bought)</span>
-              </div>
-              <div className="led-stat">
-                <span className={`led-num ${unreal >= 0 ? "pos" : "neg"}`}>{fmtSigned(unreal)}</span>
-                <span className="led-lbl">riding on open<br />positions (unsold)</span>
-              </div>
-              <div className="seg sm led-range" role="group" aria-label="Range">
+              {Math.abs(led.unexplained) >= 1 && (
+                <span className="status-pill bad" title="start + banked + riding should equal the total; this gap needs an audit">
+                  {fmtSigned(led.unexplained)} unexplained
+                </span>
+              )}
+              <div className="seg sm led-range" role="group" aria-label="Day list range">
                 {[7, 30, 90].map((d) => (
                   <button key={d} className={days === d ? "on" : ""}
                     onClick={() => setDays(d)}>{d}d</button>
@@ -70,7 +80,7 @@ export function LedgerPage() {
                         <span className="muted">{o.label} · {o.portfolio}</span>
                       </span>
                       <span className="led-math muted">
-                        bought @ {fmtMoney(o.inPrice)} = {fmtMoney(o.cost, 0)}
+                        bought @ {fmtMoney(o.inPrice)} = {fmtMoney(o.cost, 0)} (+{fmtMoney(o.fees)} fee)
                         {o.mark != null && <> · now @ {fmtMoney(o.mark)}</>}
                       </span>
                       {o.unrealized != null && (
@@ -107,6 +117,7 @@ export function LedgerPage() {
                       </span>
                       <span className="led-math muted">
                         {t.short ? "sold" : "bought"} @ {fmtMoney(t.inPrice)} → {t.short ? "bought back" : "sold"} @ {fmtMoney(t.outPrice)}
+                        {t.fees > 0 && <> · fees {fmtMoney(t.fees)}</>}
                         <span className="led-times"> · {fmtTime(t.inAt)}–{fmtTime(t.outAt)}</span>
                       </span>
                       <span className={`led-gain ${t.gain >= 0 ? "pos" : "neg"}`}>{fmtSigned(t.gain)}</span>

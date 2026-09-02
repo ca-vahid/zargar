@@ -315,15 +315,18 @@ export interface MorningReport {
 export interface LedgerTrip {
   symbol: string; secType: string; qty: number; portfolio: string;
   inPrice: number; outPrice: number; inAt: string; outAt: string;
-  cost: number; gain: number; short: boolean; label: string; day: string;
+  cost: number; fees: number; gain: number; short: boolean; label: string; day: string;
 }
 export interface Ledger {
   asOf: string; windowDays: number; total: number; startingCash: number;
+  startedAt: string | null;
+  /** the identity: startingCash + banked + riding == total (unexplained ≈ 0) */
+  sinceStart: number; banked: number; riding: number; unexplained: number;
   realized: number; openValue: number;
   days: { date: string; realized: number; trips: LedgerTrip[];
     adjustments: { day: string; at: string; amount: number; reason: string }[] }[];
   open: { symbol: string; qty: number; portfolio: string; inPrice: number;
-    inAt: string; cost: number; mark: number | null; unrealized: number | null;
+    inAt: string; cost: number; fees: number; mark: number | null; unrealized: number | null;
     label: string }[];
 }
 
