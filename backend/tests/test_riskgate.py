@@ -180,6 +180,13 @@ async def test_duplicate_order_blocked():
     # the shadow book expressing the same tip must not block the real order)
     verdict2 = await gate.evaluate(intent(portfolio_id="p2"), P)
     assert check(verdict2, "duplicate_order").passed
+    # a RESEARCH book never dedupes: distinct tips firing the same level in
+    # the same second are separate records (tt MU x3, 2026-09-02)
+
+    class Shadow:
+        kind = "shadow"
+    verdict3 = await gate.evaluate(intent(), Shadow)
+    assert check(verdict3, "duplicate_order").passed
 
 
 async def test_order_rate_limit():
@@ -217,6 +224,28 @@ async def test_shadow_books_exempt_from_equity_pct_caps():
     assert "max_position_pct" not in names and "max_gross_exposure" not in names
     assert "option_premium_cap" not in names
     assert "max_position_notional" in names          # absolute caps still run
+
+
+async def test_tip_lotto_lane_allows_0dte_before_flatten_time(monkeypatch):
+    """Found 2026-09-02 open: a 4th 0DTE gate (the RiskGate never-list) rejected
+    the lotto lane's first fills. Tips get their own gated path; every other
+    technique stays hard-rejected."""
+    import zargar.risk as riskmod
+    from zargar.options import occ as occmod
+    quotes = FakeQuotes()
+    today = __import__("datetime").date.today()
+    sym = f"AAPL{today:%y%m%d}C00100000"
+    quotes.set(sym, 1.0)
+    settings = FakeSettings(**{"techniques.tip.lotto_enabled": True,
+                               "techniques.tip.lotto_flatten_et": "23:59"})
+    gate = make_gate(settings=settings, quotes=quotes)
+    v = await gate.evaluate(intent(symbol=sym, sec_type="OPT", qty=1, technique_id="tip"), P)
+    assert check(v, "option_not_expired").passed
+    v2 = await gate.evaluate(intent(symbol=sym, sec_type="OPT", qty=1, technique_id="flow"), P)
+    assert not check(v2, "option_not_expired").passed
+    settings.values["techniques.tip.lotto_flatten_et"] = "00:00"
+    v3 = await gate.evaluate(intent(symbol=sym, sec_type="OPT", qty=1, technique_id="tip"), P)
+    assert not check(v3, "option_not_expired").passed
 
 
 async def test_shadow_books_exempt_from_daily_loss_halt():

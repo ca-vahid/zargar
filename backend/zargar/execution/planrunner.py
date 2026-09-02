@@ -1753,8 +1753,10 @@ class PlanRunner(SessionListener):
             if trig_dict.get("kind") == "timed":
                 # timed entry (ARM-PLAN P4): no level to track — the guards
                 # (time_at et al.) opening IS the signal; enter at this close
-                tr.entry = float(bar.close)
-                trig_dict.setdefault("entry", {})["price"] = float(bar.close)
+                # `entry` is a read-only property over the trigger dict the
+                # tracker holds — write the price there (same dict object as
+                # `trig_dict`) and the property follows.
+                tr.trigger.setdefault("entry", {})["price"] = float(bar.close)
                 tr.fired_index, tr.fired_ts, tr.fill_price = idx, bar.ts, float(bar.close)
                 st = tr.status = "fired"
             else:

@@ -1808,8 +1808,11 @@ class SignalService:
             row = await session.get(Signal, signal_id)
         if row is None:
             raise ValueError("unknown signal")
-        if row.status not in ("verified", "parked", "proposed"):
-            raise ValueError(f"signal is {row.status} — only verified/parked tips plan")
+        # shadow-only tips plan too — the ARMED research book waits for their
+        # level (the morning sweep errored on every one: status-list mismatch
+        # with runner.ARMABLE_STATUSES, found 2026-09-02)
+        if row.status not in ("verified", "parked", "proposed", "shadow"):
+            raise ValueError(f"signal is {row.status} — only verified/parked/shadow tips plan")
         policy = resolve_policy(eng.settings, row.source_name)
         # an options tip dies at its contract's expiry: the wait window is capped
         # by (expiry - entry_cutoff_dte), never just the policy horizon
