@@ -703,7 +703,7 @@ class PlanRunner(SessionListener):
                 counts["paused"] += 1
             realized += sum(t.realized_pnl for t in ap.trades.values())
             loss_limit += float(ap.config.daily_loss_limit or 0)
-            reasons = ap._attention_reasons()
+            reasons = ap._attention_reasons(port)
             if reasons:
                 attention.append({**base, "reasons": reasons,
                                   "hasPosition": any(t.remaining > 0 for t in ap.trades.values())})

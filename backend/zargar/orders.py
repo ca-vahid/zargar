@@ -602,6 +602,43 @@ class OrderManager:
         return {**odict, **(extra or {})}
 
     # ------------------------------------------------------------------ queries
+    async def restore_sim_book(self, *, stale_market_seconds: int = 60) -> dict:
+        """After a restart, put the open orders of sim-executed books back in the
+        sim executor's in-memory book (resting stops/limits/brackets), and
+        cancel market orders that never filled - a market order that is still
+        open a minute later had no quote to fill against, and filling it at
+        whatever prints after the restart would be a chase (T4.1). Real venues
+        keep their own books; this is only for executors that expose restore()."""
+        import time as _time
+        restored: list[str] = []
+        cancelled: list[str] = []
+        async with self._sf() as session:
+            rows = (await session.execute(select(Order).where(Order.status.in_(OPEN_STATUSES)))).scalars().all()
+        for order in rows:
+            portfolio = self._positions.portfolio(order.portfolio_id) or {}
+            executor = self._executor_for(portfolio)
+            restore = getattr(executor, "restore", None)
+            if executor is None or restore is None:
+                continue
+            age = _time.time() - order.created_at.timestamp() if order.created_at else 0.0
+            if order.order_type == OrderType.MKT.value and age > stale_market_seconds:
+                await self._transition(order.id, OrderStatus.CANCELLED, ev.ORDER_CANCELLED,
+                                       reject_reason=f"market order still open {int(age)}s after submit - lost in a restart, not chased")
+                cancelled.append(order.id)
+                continue
+            await restore(BrokerOrder(
+                id=order.id, symbol=order.symbol, sec_type=order.sec_type,
+                side=OrderSide(order.side), qty=max(order.qty - (order.filled_qty or 0.0), 0.0) or order.qty,
+                order_type=OrderType(order.order_type),
+                limit_price=order.limit_price, stop_price=order.stop_price,
+                tif=TimeInForce(order.tif), portfolio_id=order.portfolio_id,
+            ))
+            restored.append(order.id)
+        if restored or cancelled:
+            await self._journal.append("SimBookRestored", {"restored": len(restored), "cancelled": len(cancelled),
+                                                           "restoredIds": restored[:50], "cancelledIds": cancelled[:50]})
+        return {"restored": restored, "cancelled": cancelled}
+
     async def list_orders(
         self, portfolio_id: str | None = None, open_only: bool = False, limit: int = 200
     ) -> list[dict]:

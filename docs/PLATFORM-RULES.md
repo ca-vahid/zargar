@@ -168,6 +168,12 @@ runtime ones to `execution.*`).
   the fire; restore re-watches each working/open trade's order symbol; `SimExecutor.cancel`
   returns whether it held the order and the manager transitions unheld open orders to
   CANCELLED with a reason. Ops workaround until deployed: disarm + re-arm the plan.
+  Fourth gap, found the same afternoon: the sim executor's book is in-memory, so a restart
+  silently dropped EVERY resting sim order - protective stops on tip shadow shares (GOOGL, MU),
+  bracket exits, and three market buys that had never filled. `OrderManager.restore_sim_book()`
+  now runs at engine start: resting stops/limits/brackets go back into the book without a new
+  'accepted' event; market orders still open after 60 s are cancelled ("lost in a restart, not
+  chased") rather than filled at whatever prints next. Journaled as `SimBookRestored`.
 
 - **2026-09-02 · Counterfactual ledger for bug-missed trades (user decision).** When a
   bug costs a trade, the fired order is replayed AFTER the fix through the runner's own

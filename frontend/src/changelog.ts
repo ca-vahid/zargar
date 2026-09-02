@@ -25,6 +25,7 @@ export const CHANGELOG: Release[] = [
       { tag: "fixed", text: "A restart no longer strands a working entry: the entry window now times out by the clock, the contract is watched again after a restart, and an order the sim book lost is cancelled instead of sitting 'accepted' forever." },
       { tag: "new", text: "Counterfactual ledger (Armed > History): when a bug costs a trade, the fired order is replayed through the desk's own exit rules on the real bars after the fix - fill, exits, gain, R - and kept beside the real results. Practice stays what actually happened." },
       { tag: "improved", text: "The EM ingestion window says what it captured today on start instead of sitting blank." },
+      { tag: "fixed", text: "A restart no longer empties the practice/shadow order book: resting stops, limits and bracket exits come back; a market order that never filled is cancelled rather than filled late." },
     ],
   },
   {
