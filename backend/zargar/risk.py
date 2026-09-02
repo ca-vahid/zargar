@@ -362,7 +362,11 @@ class RiskGate:
         # tip milliseconds earlier is not a duplicate of the real order
         window = float(s.get("risk.duplicate_window_seconds", 10))
         key = f"{intent.portfolio_id}|{symbol}|{side.value}|{qty:g}|{intent.order_type}"
-        dup = any(k == key and now - ts <= window for ts, k in self._recent)
+        # research (shadow) books are exempt: three distinct tips from one
+        # source can arm the same level and fire in the same second — each is
+        # its own record, not a double-submit (tt MU ×3, 2026-09-02)
+        dup = (portfolio.kind != "shadow"
+               and any(k == key and now - ts <= window for ts, k in self._recent))
         checks.append(RiskCheck(
             "duplicate_order", not dup,
             f"identical order submitted within the last {window:.0f}s" if dup else ""))

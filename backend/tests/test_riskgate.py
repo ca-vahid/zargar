@@ -180,6 +180,13 @@ async def test_duplicate_order_blocked():
     # the shadow book expressing the same tip must not block the real order)
     verdict2 = await gate.evaluate(intent(portfolio_id="p2"), P)
     assert check(verdict2, "duplicate_order").passed
+    # a RESEARCH book never dedupes: distinct tips firing the same level in
+    # the same second are separate records (tt MU x3, 2026-09-02)
+
+    class Shadow:
+        kind = "shadow"
+    verdict3 = await gate.evaluate(intent(), Shadow)
+    assert check(verdict3, "duplicate_order").passed
 
 
 async def test_order_rate_limit():
