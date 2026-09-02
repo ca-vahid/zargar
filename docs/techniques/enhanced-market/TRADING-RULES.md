@@ -265,6 +265,21 @@ the 09:33 close; the option's 09:34 print turned a stopped plan into a winner by
   LITE, TXN fires (outcomes pending); the author's 09:01 video ingested unattended (7 symbols,
   board 2 armed / 5 new) plus a 09:19 post (4 more) - see INGESTION-PLAN 2026-09-02 ops note.
   Method question raised: §1.9 (entry filled after a stop-close bar).
+- **2026-09-02 · Author-levels A/B, day 2: strictness won again.** His seven video names built
+  plans (AAPL/AMZN/MRNA/META/WMT/MSTR/GOOGL, arming left to the human, none armed). On the
+  real bars, the VALID triggers on his levels that were touched: MRNA k1 breakout 154.7
+  (-1.97R, stopped in 9 min), WMT k1 breakout 106.64 (-0.43R), GOOGL d1 breakdown 333.05
+  (-1.03R) = **-3.4R over 3, 0 wins**; his AMZN/META/MSTR/GOOGL-upside levels were never
+  reached. The R2-REJECTED triggers on the same names were mostly small quick winners (GOOGL
+  b1 +0.65R in 3 min, AMZN b1 +0.24R, WMT r1 +0.27R, MRNA b1 +1.15R) - exactly the "he banks
+  25% in five minutes" tempo his own transcript describes. Two days in: our gate is right to
+  refuse his levels under OUR exits; the open question is exit tempo, not level quality (T-6
+  / exit-tempo parameterisation, §3). Day 1 + day 2 tally on his levels: 0 wins under R2.
+- **2026-09-02 · Did-we-miss replay: run it the NEXT morning.** A same-day universe sweep
+  (`sweep --start D --end D --include-invalid`) returned sessions=0 both at 16:15 and 17:37 ET
+  (the session calendar/daily bars are not final until the next day); the 09-01 sweep of 08-31
+  worked. Today's coverage check is deferred to the 09-03 morning; the critic scorecard above
+  already covers every fire that did happen (8 kills, 2 wrong, +9.2R tally).
 - **2026-09-01 · Day 5 "did we miss anything": nothing — and the pre-open re-planner
   earned its keep, measurably.** Whole-universe replay of the 08-31-close plans on the
   09-01 tape (sweep `0894b5d7`): only **3 valid fires, net −1.44R** (ANET b2 +0.12,
