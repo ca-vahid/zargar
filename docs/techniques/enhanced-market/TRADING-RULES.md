@@ -222,8 +222,30 @@ a number** (p. 72).
 
 ---
 
+### 1.9 An entry that fills AFTER a bar already closed through the stop (NOW 2026-09-02) - new
+
+NOW r1 (reject 141.69, stop 142.40) fired on the 09:30 close; the put's BUY LMT 2.03 did not
+print until 09:34 (1.93), but the 09:33 bar had already CLOSED at 142.57 - through the stop.
+The runner has no rule for this: a working entry keeps working through a stop-close bar, and
+the position opens with its thesis already "wrong" by our own stop definition. Today it paid
+(+4.20R to TP2 on the counterfactual) because the level held on the next bar. Question:
+should a stop-close bar CANCEL the working entry (the reject failed) or is the fill window
+the only test? Decision threshold: 10 such cases scored by the counterfactual/outcome path;
+cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, +4.20R).
+
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-02 · Day 6: a bug cost the day's only fill, and the desk now keeps a counterfactual
+  ledger.** NOW r1 fired 09:31 (reject 141.69, put 140P Sep-4 BUY LMT 2.03). The 10:04 restart
+  stranded the working entry (three shared-runtime gaps, fixed the same day, PLATFORM-RULES
+  2026-09-02). Replayed after the fix through the runner's own exit rules on the real bars:
+  fill 1.93 at 09:34, TP2 138.71 at 10:17 with the put at 3.44 -> **+$148.92 net, +4.20R**
+  (`technique_counterfactuals` 99ea88e4; Armed > History "Missed by a bug"). User decision:
+  bug-missed trades are always replayed and ledgered AFTER the fix, NEVER booked into Practice
+  - the real book stays what actually happened. Same morning: critic killed CRCL, HOOD, IONQ,
+  LITE, TXN fires (outcomes pending); the author's 09:01 video ingested unattended (7 symbols,
+  board 2 armed / 5 new) plus a 09:19 post (4 more) - see INGESTION-PLAN 2026-09-02 ops note.
+  Method question raised: §1.9 (entry filled after a stop-close bar).
 - **2026-09-01 · Day 5 "did we miss anything": nothing — and the pre-open re-planner
   earned its keep, measurably.** Whole-universe replay of the 08-31-close plans on the
   09-01 tape (sweep `0894b5d7`): only **3 valid fires, net −1.44R** (ANET b2 +0.12,
