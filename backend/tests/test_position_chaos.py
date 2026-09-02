@@ -229,6 +229,25 @@ async def test_time_stop_counts_trading_sessions_across_days(engine):
     assert any(x["kind"] == "time" for x in p.exits), (p.sessions_seen, p.exits)
 
 
+async def test_restore_and_adopt_resubscribe_the_underlying(engine, monkeypatch):
+    """2026-09-02: after a mid-session restart, RKLB's managed position was
+    restored but its UNDERLYING went unwatched (last bar 10:59) — the stop
+    was blind. Both adopt() and restore() must ensure the underlying + legs."""
+    ensured: list[str] = []
+
+    async def fake_ensure(sym):
+        ensured.append(sym.upper())
+    monkeypatch.setattr(engine, "ensure_symbol", fake_ensure)
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    await pm.adopt(spread_spec(pf, qty=1))
+    assert "AAPL" in ensured and any(s.startswith("AAPL2610") for s in ensured)
+    ensured.clear()
+    pm2 = PositionManager(engine)
+    assert await pm2.restore() == 1
+    assert "AAPL" in ensured and any(s.startswith("AAPL2610") for s in ensured)
+
+
 async def test_redelivered_bar_and_slow_fill_never_double_exit(engine):
     """2026-08-31 live finding: the ~5s exchange-corrected 1m bar re-closed the
     5m window while the time-stop's exit order was still unfilled — a second

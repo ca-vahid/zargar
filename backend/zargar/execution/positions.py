@@ -280,6 +280,13 @@ class PositionManager:
                 for x in p.exits:
                     if x.get("orderId") and x.get("status") in (None, "SUBMITTED", "WORKING", "PARTIALLY_FILLED"):
                         self._register_exit_order(p, x["orderId"])
+                # the feeds must follow the position across a restart: the stop
+                # is judged on the UNDERLYING's bars/quotes and the premium stop
+                # on each leg's — RKLB's underlying went unwatched after an
+                # 11:1x restart on 2026-09-02 (last bar 10:59, stop blind)
+                for sym in [p.symbol, *[l.symbol for l in p.legs]]:
+                    with contextlib.suppress(Exception):
+                        await self.engine.ensure_symbol(sym)
                 n += 1
             except Exception:
                 log.exception("restoring managed position %s failed", row.id)
@@ -474,6 +481,11 @@ class PositionManager:
         p.entry_mark = spec.get("entryMark", self._entry_mark(p))
         p.sessions_seen = [session_date(self.now_ms())]
         self._pos[p.id] = p
+        # the underlying's bars/quotes drive the stop; the legs' quotes drive
+        # the premium stop — both must be flowing from the moment we manage
+        for sym in [p.symbol, *[l.symbol for l in p.legs]]:
+            with contextlib.suppress(Exception):
+                await self.engine.ensure_symbol(sym)
         await self._persist(p)
         await self._journal(POSITION_ADOPTED, p, {"legs": [l.to_dict() for l in p.legs], "policy": p.policy})
         await self._ensure_venue_stop(p)

@@ -179,6 +179,17 @@ runtime ones to `execution.*`).
   scorecard, the daily-loss halt and practice-to-live graduation are never contaminated.
   The Armed page shows the ledger apart from the real results ("Missed by a bug").
 
+- **2026-09-02 · A restart also left a MANAGED position's stop blind.** The RKLB tip position
+  (stop 59.80 on the underlying, premium stop 55 %) was restored at 11:1x but nothing
+  re-subscribed `RKLB` — `quotes.get("RKLB")` was None and its last 15m bar was 10:59, so the
+  bar-close stop and the 0.25R quote crash-brake could not fire (only the premium stop, fed by
+  the contract's own Yahoo poll, still worked). The same hole existed on `adopt()`: a
+  position adopted from a fill relied on whoever placed the order having watched the
+  underlying. Fix: `PositionManager.adopt()` and `restore()` call `engine.ensure_symbol` for
+  the underlying AND every leg (chaos test `test_restore_and_adopt_resubscribe_the_underlying`).
+  Rule: any component that judges an exit on a symbol's bars/quotes owns that symbol's
+  subscription — never assume the entry path left it watched.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
