@@ -133,6 +133,36 @@ async def test_contract_quote_is_published_and_overlaid(opt_engine):
     assert r.status_code == 400
 
 
+async def test_quiet_feed_republishes_the_chain_quote(opt_engine, monkeypatch):
+    """2026-09-02: on the live feed a thin contract (Monday expiry, no Yahoo
+    prints) got ONE published quote at track() time and nothing after — the
+    sim executor never saw a post-latency print and the research book's market
+    orders sat 2 h. When the feed has gone quiet the refresh must publish the
+    chain quote; while the feed is printing, only the overlay is applied."""
+    from zargar.options import service as svc
+    eng, client = opt_engine
+    sym = _occ("XYZ", EXP1, "C", 100)
+    await eng.options.track(sym)
+    eng.options._owns_quotes = False                    # behave like the live feed
+    seen: list[Quote] = []
+    orig = eng.quotes.on_quote
+
+    def spy(q):
+        seen.append(q)
+        orig(q)
+    monkeypatch.setattr(eng.quotes, "on_quote", spy)
+    # the feed printed a moment ago: refresh applies the overlay only
+    orig(Quote(symbol=sym, bid=1.0, ask=9.0, last=2.05))
+    seen.clear()
+    await eng.options.refresh_tracked()
+    assert not seen and eng.quotes.get(sym).ask == 2.1
+    # the feed has gone quiet: the chain quote is published as a fresh print
+    monkeypatch.setattr(svc, "FEED_QUIET_SECONDS", -1.0)
+    await eng.options.refresh_tracked()
+    assert len(seen) == 1 and seen[0].symbol == sym and seen[0].ask == 2.1
+    assert eng.quotes.age_seconds(sym) < 5
+
+
 # --- trading in practice --------------------------------------------------------------
 
 async def test_derive_option_action_table():

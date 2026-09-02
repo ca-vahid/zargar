@@ -1035,6 +1035,19 @@ async def test_resume_pending_adoptions_after_restart(app_client):
     assert pos["policy"]["stop"] == {"kind": "fixed", "price": 224.0}
     # idempotent: the adopted order is not re-armed
     assert await resume_pending_adoptions(eng) == 0
+    # an order that ended unfilled is not re-armed either (2026-09-02: one
+    # cancelled TSLA put journaled TipPositionNotAdopted on every restart)
+    async with eng.sf() as session:
+        session.add(Order(id="ord-r2", portfolio_id=pid, symbol=occ, sec_type="OPT",
+                          side="BUY", qty=2, order_type="MKT", status="CANCELLED",
+                          filled_qty=0, source="signal"))
+        session.add(Proposal(id="prop-r2", portfolio_id=pid, symbol=occ, sec_type="OPT",
+                             side="BUY", qty=2, order_type="MKT", status="executed",
+                             order_id="ord-r2", context={"techniqueId": "tip"},
+                             expires_at=dt.datetime.now(dt.timezone.utc)
+                             + dt.timedelta(hours=1)))
+        await session.commit()
+    assert await resume_pending_adoptions(eng) == 0
 
 
 class _FakeAnthropicNotes:

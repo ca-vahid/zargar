@@ -401,7 +401,7 @@ async def resume_pending_adoptions(eng, *, days: float = 5.0) -> int:
 
     from sqlalchemy import select
 
-    from ...models import ManagedPositionRow, Proposal
+    from ...models import ManagedPositionRow, Order, Proposal
 
     cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=days)
     async with eng.sf() as session:
@@ -410,6 +410,17 @@ async def resume_pending_adoptions(eng, *, days: float = 5.0) -> int:
                                    Proposal.created_at >= cutoff))).scalars().all()
         props = [p for p in props
                  if (p.context or {}).get("techniqueId") == "tip" and p.order_id]
+        # an order that already ended UNFILLED was judged (and journaled) when it
+        # ended — re-arming its waiter only re-emits TipPositionNotAdopted on
+        # every boot (three times on 2026-09-02 for one 08-31 TSLA put)
+        done: set[str] = set()
+        if props:
+            for o in (await session.execute(
+                    select(Order).where(Order.id.in_([str(p.order_id) for p in props])))).scalars():
+                if o.status in ("CANCELLED", "REJECTED", "REJECTED_RISK", "EXPIRED", "ERROR") \
+                        and not (o.filled_qty or 0):
+                    done.add(str(o.id))
+        props = [p for p in props if str(p.order_id) not in done]
         rows = (await session.execute(
             select(ManagedPositionRow).where(ManagedPositionRow.technique == "tip",
                                              ManagedPositionRow.created_at >= cutoff)

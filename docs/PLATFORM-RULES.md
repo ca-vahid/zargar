@@ -196,6 +196,16 @@ runtime ones to `execution.*`).
   Rule: any component that judges an exit on a symbol's bars/quotes owns that symbol's
   subscription — never assume the entry path left it watched.
 
+- **2026-09-02 · A contract the live feed never prints is unfillable in practice.** eva's
+  MU/AAPL/TSLA 14-Sep calls (a real Monday expiry, OI 39) were bought by the research
+  book at 09:21 as MKT orders; Yahoo served no prints for them, and `OptionsService._apply`
+  published the chain quote exactly once (at `track()`, before the order existed) then only
+  refreshed the overlay — the sim's post-latency fill never saw a print and the orders sat
+  2 h until the sim-book restore cancelled them. Fix: when the feed has been quiet on a
+  tracked contract for `FEED_QUIET_SECONDS` (60), each refresh publishes the chain quote as
+  a fresh print (fills, premium stop and the risk gate's freshness clock all run on it).
+  Test: `test_options_service.py::test_quiet_feed_republishes_the_chain_quote`.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

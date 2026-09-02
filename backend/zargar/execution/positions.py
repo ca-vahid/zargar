@@ -481,13 +481,14 @@ class PositionManager:
         p.entry_mark = spec.get("entryMark", self._entry_mark(p))
         p.sessions_seen = [session_date(self.now_ms())]
         self._pos[p.id] = p
+        await self._persist(p)
+        await self._journal(POSITION_ADOPTED, p, {"legs": [l.to_dict() for l in p.legs], "policy": p.policy})
         # the underlying's bars/quotes drive the stop; the legs' quotes drive
         # the premium stop — both must be flowing from the moment we manage
+        # (after the write-ahead persist: ensure_symbol can take a while)
         for sym in [p.symbol, *[l.symbol for l in p.legs]]:
             with contextlib.suppress(Exception):
                 await self.engine.ensure_symbol(sym)
-        await self._persist(p)
-        await self._journal(POSITION_ADOPTED, p, {"legs": [l.to_dict() for l in p.legs], "policy": p.policy})
         await self._ensure_venue_stop(p)
         self.start()
         return p.to_dict()

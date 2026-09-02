@@ -26,6 +26,7 @@ from .chain import CboeClient, OptionsError, TradierClient
 log = logging.getLogger("zargar.options")
 
 ENRICH_FLOOR_SECONDS = 2.0
+FEED_QUIET_SECONDS = 60.0       # no live print for this long -> the chain quote is published
 IMPACT_UNSUPPORTED_CODES = {"1156"}
 
 
@@ -208,9 +209,18 @@ class OptionsService:
     def _apply(self, o: occ.Occ, snap: dict) -> None:
         bid, ask = float(snap.get("bid") or 0), float(snap.get("ask") or 0)
         quotes = self.engine.quotes
-        quotes.set_overlay(o.symbol, bid=bid, ask=ask, bid_size=0, ask_size=0)
         existing = quotes.get(o.symbol)
-        if self._owns_quotes or existing is None:
+        # a contract the live feed never prints (thin Monday expiries: eva's
+        # MU/AAPL/TSLA 14-Sep calls, 2026-09-02) got exactly ONE published quote
+        # — at track() time, before any order existed — so the sim executor's
+        # post-latency fill never saw a print and the research book's market
+        # orders sat 2 h until a restart cancelled them. When the feed has gone
+        # quiet, the chain's (delayed) quote IS the best print we have: publish
+        # it so fills, the premium stop and the risk gate's freshness clock run.
+        # (measured BEFORE the overlay — set_overlay re-stamps ts on a new bid/ask)
+        quiet = existing is not None and quotes.age_seconds(o.symbol) > FEED_QUIET_SECONDS
+        quotes.set_overlay(o.symbol, bid=bid, ask=ask, bid_size=0, ask_size=0)
+        if self._owns_quotes or existing is None or quiet:
             last = float(snap.get("last") or 0) or ((bid + ask) / 2 if (bid or ask) else 0.0)
             if last <= 0 and ask <= 0:
                 return
