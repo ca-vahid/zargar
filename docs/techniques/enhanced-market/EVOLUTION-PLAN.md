@@ -203,8 +203,8 @@ Everything below is deterministic and free (no LLM calls). First run:
 
 | # | What | Depends on | Size |
 |---|---|---|---|
-| 1 | Variant harness + T-6/§1.8 pilot sweeps | — | days |
-| 2 | Ingestion: session workflow only (recipe above) | done | — |
+| 1 | Variant harness + T-6/§1.8 pilot sweeps | **built 2026-08-29** (`sweep --set`, `sweep-compare`; pilot + weekly audits running) | — |
+| 2 | Ingestion pipeline (INGESTION-PLAN.md) | **built + live 2026-09-01** | — |
 | 3 | LLM tool belt (start: get_outcome_stats, get_gap_map, get_bars) | — | days |
 | 4 | Shadow instance registration | 1; engine-team pause/registry items | days |
 | 5 | Capture-rate weekly report | 1 | ~1 day |

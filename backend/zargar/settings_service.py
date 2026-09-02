@@ -46,6 +46,7 @@ DEFAULTS: dict[str, Any] = {
     "desk.soak_at": "17:30",                # ET; nightly practice-soak scorecard (journaled, feeds the morning report)
     "signals.recovery_interval_seconds": 900,  # cold-park re-verify + error-content retry sweep cadence
     "execution.paused": False,                  # per-technique pause: set techniques.<id>.paused (kill switch stays global; exits are never blocked)
+    "execution.arm_expired_plans": False,       # refuse arming a plan whose last session already closed (replays/tests set True; techniques.<id>.arm_expired_plans overrides)
     "research.chain_snapshots.enabled": True,   # nightly per-contract OI/IV/volume rows (history is NOT backfillable)
     "research.chain_snapshots.at": "16:30",     # ET
     "research.chain_snapshots.keep_days": 400,  # prune beyond this window (0 = keep forever)

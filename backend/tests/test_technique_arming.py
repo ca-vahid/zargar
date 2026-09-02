@@ -42,6 +42,7 @@ async def rig(fresh_db, monkeypatch):
     # contract) and is covered by its own unit tests
     await eng.settings.set("technique.rr_gate_target", "tp3", journal=False)
     await eng.settings.set("technique.long_only", True, journal=False)   # these fixtures encode the long-side plan; the short mirror has its own test
+    await eng.settings.set("execution.arm_expired_plans", True, journal=False)   # the synthetic market ends days ago; the runner refuses past plans by default
     await eng.settings.set("risk.max_position_notional", 1_000_000.0, journal=False)
     await eng.settings.set("risk.max_position_pct", 100.0, journal=False)
     await eng.settings.set("risk.stale_quote_seconds", 600, journal=False)

@@ -152,12 +152,12 @@ convenient so future restarts work from any shell.
 
 ## Build phases
 
-| # | What | Size |
+| # | What | Status |
 |---|---|---|
-| 1 | Gateway: EM channel set + `/api/technique/ingest/message` inbox + notes table | ~1 day |
-| 2 | `em_ingest` worker: video download → transcript → API (deps in its own venv) | ~1 day |
-| 3 | Extraction pass + board coverage check + Validation-tab card | ~1 day |
-| 4 | Education-channel backfill → method corpus; `get_method_notes` LLM tool | later (with EVOLUTION phase 3) |
+| 1 | Gateway: EM channel set + `/api/technique/ingest/message` inbox + notes table | **built 2026-09-01** |
+| 2 | `em_ingest` worker: video download → transcript → API (deps in its own venv) | **built 2026-09-01** (+ live-broadcast deferral) |
+| 3 | Extraction pass + board coverage check + Validation-tab card | **built 2026-09-01** (+ material classification, today's view) |
+| 4 | Education-channel backfill → method corpus; `get_method_notes` LLM tool | later (with EVOLUTION phase 3) — the education channels proved mostly stale, so this is low priority |
 
 ## Boundaries (write them once, keep them forever)
 
