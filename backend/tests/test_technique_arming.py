@@ -807,3 +807,26 @@ async def test_experiment_field_contracts(rig):
     for tid, tr in st["trackers"].items():
         for key in ("gapUnchecked", "failedBreaks", "status"):
             assert key in tr, f"persisted tracker lost '{key}' ({tid})"
+
+
+async def test_timed_trigger_enters_at_the_bar_close(rig):
+    """A `timed` trigger (ARM-PLAN P4: the guard opening IS the signal) enters at
+    the close of the first bar it sees. Regression: the runner used to assign
+    `tracker.entry`, a read-only property over the trigger dict, so every bar of
+    every plan holding a timed trigger died with AttributeError before any
+    trigger on that symbol was evaluated (live 2026-08-29 → 2026-09-02)."""
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "alert", "instrument": "shares",
+                                         "portfolioId": rig.sim["id"]})).json()
+    assert armed["status"] == "armed"
+    ap = rig.svc.armer._armed[run["id"]]
+    tid, tr = next(iter(ap.trackers.items()))
+    # the trigger dict the tracker holds IS the plan's — turn it into a timed one
+    tr.trigger["kind"] = "timed"
+    bar = rig.sessions[armed["planFor"]][0]
+    snap = await rig.svc.armer.on_bar(run["id"], bar)
+    assert snap is not None
+    assert tr.status == "fired" and tr.fired_ts == bar.ts
+    assert tr.entry == float(bar.close) and tr.fill_price == float(bar.close)
+    assert not any("AttributeError" in str(e.get("text", "")) for e in snap["events"])
