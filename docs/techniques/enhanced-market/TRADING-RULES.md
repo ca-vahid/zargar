@@ -201,6 +201,12 @@ a number** (p. 72).
   gate (bounce 2.0, others 3.0) rather than one global bar. Keep accumulating
   weekly; also note baseline itself simulated +22.2R over the 12 sessions —
   identified R is there, the capture-rate gap is what live week 1 exposed.
+- **2026-09-01 · Weekly include-invalid audit #2 (sweep `0894b5d7`, plans built 08-31,
+  traded 09-01):** 54 gate-rejected fires, +5.51R total but **mean +0.10R** — the
+  micro-scalp profile again (41 "winners" hitting sub-1R ladders that spreads erase).
+  By planned R:R band: **2.0–3.0: n=2, −0.23R, 0 wins**; 1–2: n=8, −1.19R; <1: n=44,
+  +6.95R (targets a few ticks away). The band that would justify lowering R2 was
+  empty-to-negative today. Running band tally since 08-26: still below the +0.3R bar.
 - **2026-08-29 · Week-1 funnel autopsy (Aug 24–28, n=1,489 trigger-outcomes): R2 IS
   the funnel.** not_tradeable 988 (66%), 981 of them on R2; median failed R:R 0.57
   (structurally far, not near-misses), but +121 triggers pass at ≥2.0 and +206 at
@@ -217,6 +223,20 @@ a number** (p. 72).
 ---
 
 ## 2. Findings (settled, with evidence)
+
+- **2026-09-01 · Day 5 "did we miss anything": nothing — and the pre-open re-planner
+  earned its keep, measurably.** Whole-universe replay of the 08-31-close plans on the
+  09-01 tape (sweep `0894b5d7`): only **3 valid fires, net −1.44R** (ANET b2 +0.12,
+  VZ k1 −0.31, CRWD b2 −1.25) — and all three symbols WERE in the 43-symbol armed
+  fleet (coverage 3/3; the reject-coverage leak of 08-27 is closed by arming wider).
+  Yet none of the three fired live: the tanker-strike gap-down made the 09:25
+  pre-open check **re-plan** ANET, CRWD and VZ (their stale close-built levels never
+  became live triggers), and it re-planned GLD onto the 400.83 resistance that
+  produced the day's only trade, **+$175 / +2.0R**. Separation attributable to the
+  re-planner today ≈ **+3.4R** (−1.44R of stale fires avoided, +2.0R enabled). Caveat
+  the static sweep cannot see re-plans by construction — a "sweep vs live" gap on a
+  gap day is the re-planner working, not a bug. Capture-rate join: identified valid
+  R −1.44 vs captured +2.0R — the first day live beat the replay.
 
 - **2026-09-01 · EM's FIRST LIVE TRADE — a winner, and the whole pipeline held.**
   GLD r1 reject (short gold at 400.83 after the tanker-strike rally spiked into a
