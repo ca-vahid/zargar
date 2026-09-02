@@ -40,7 +40,11 @@ export function ArmedPage() {
   const ws = useWorkspace();
   const portfolios = useStore((s) => s.portfolios);
   const pmap = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p])), [portfolios]);
-  const armed = useMemo(() => allArmed.filter((a) => workspaceOf(a.portfolio?.kind) === ws), [allArmed, ws]);
+  // Live = plans that can still act (armed/paused). The runner keeps expired and
+  // disarmed plans in its list for the day (summary/History) - 22 stale plans
+  // that expired on arming showed as "Live 26" against a badge of 4 (2026-09-01).
+  const armed = useMemo(() => allArmed.filter((a) => workspaceOf(a.portfolio?.kind) === ws
+    && (a.status === "armed" || a.status === "paused")), [allArmed, ws]);
   const otherArmed = allArmed.length - armed.length;
 
   const [sub, setSub] = useState<SubTab>("live");
