@@ -35,7 +35,7 @@ def download_audio(url: str, out_dir: Path, note_id: str) -> Path:
         return target
     opts = {
         "format": "bestaudio/best", "outtmpl": str(out_dir / f"{note_id}.%(ext)s"),
-        "quiet": True, "no_warnings": True, "noplaylist": True,
+        "quiet": True, "no_warnings": True, "noplaylist": True, "noprogress": True,
         "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "5"}],
         "socket_timeout": 30,
     }
@@ -75,7 +75,14 @@ async def run_once(api: str, headers: dict, media_dir: Path, model_name: str) ->
         if r.status_code != 200:
             print(f"[em-ingest] pending: HTTP {r.status_code} {r.text[:120]}")
             return 0
-        notes = (r.json() or {}).get("notes") or []
+        try:
+            notes = (r.json() or {}).get("notes") or []
+        except ValueError:
+            # the SPA fallback answers unknown routes with index.html: the app is up
+            # but older than this worker (restart it with scripts\start.ps1)
+            print("[em-ingest] pending: the app did not answer JSON - is it running the ingestion build? "
+                  "(restart with scripts\start.ps1)")
+            return 0
         for n in notes:
             nid, url = str(n.get("id")), str(n.get("mediaUrl") or "")
             print(f"[{time.strftime('%H:%M:%S')}] note {nid[:8]}: {url}")
