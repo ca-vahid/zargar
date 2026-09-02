@@ -189,6 +189,18 @@ class SimExecutor(Executor):
                 self._oca.setdefault(order.oca_group, set()).add(order.id)
         await self.emit(ExecReport(kind="accepted", order_id=order.id))
 
+    async def restore(self, order: BrokerOrder) -> None:
+        """Put an order that was ACCEPTED by a previous process back in the book
+        WITHOUT a new 'accepted' report (the manager already has it). A restart
+        used to empty the book silently: resting stops stopped protecting and
+        entries could never fill or cancel (PLATFORM-RULES 2026-09-02)."""
+        async with self._lock:
+            if order.id in self._working:
+                return
+            self._working[order.id] = _Working(order=order, eligible_at=now_ms())
+            if order.oca_group:
+                self._oca.setdefault(order.oca_group, set()).add(order.id)
+
     # native multi-leg (NEXT-GAPS M2): the sim "venue" accepts a spread as one
     # combined order; each leg then fills off its own contract quote at its leg
     # price — close enough to an atomic venue for practice/testing purposes.

@@ -178,6 +178,8 @@ class Engine:
             self.sf, self.bus, self.journal, self.risk, self.settings,
             self.positions, self.quotes, self.executor_for, self.ensure_symbol)
         self.sim_executor.on_report = self.orders.on_report
+        # a restart must not empty the sim book: resting stops/limits come back, stale market orders are cancelled
+        await self.orders.restore_sim_book()
         if self.ibkr is not None:
             self.ibkr.on_report = self.orders.on_report
         if self.snaptrade is not None:

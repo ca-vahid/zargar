@@ -74,3 +74,26 @@ async def test_restored_working_entry_times_out_on_wall_clock(rig):
     assert tr.status == "cancelled", (tr.status, tr.reason, snap and snap.get("status"))
     assert await _status(rig.eng, pid, oid) == "CANCELLED"
     await rig.svc.armer.disarm(run["id"], reason="test")
+
+
+async def test_restart_puts_resting_sim_orders_back_in_the_book(engine):
+    """The sim book is in-memory: after a restart the resting stops/limits of sim
+    books must come back (silently - no second 'accepted'), so a stop still
+    protects and a cancel still reaches the executor."""
+    pid = sim_portfolio(engine)["id"]
+    oid = await _accepted_far_limit(engine, pid, qty=3)
+    executor = engine.orders._executor_for(engine.positions.portfolio(pid))
+    executor._working.clear()                     # restart
+    out = await engine.orders.restore_sim_book()
+    assert oid in out["restored"] and out["cancelled"] == []
+    assert executor.working_count == 1
+    assert await _status(engine, pid, oid) == "ACCEPTED"     # unchanged, no duplicate event
+    # idempotent (a second call does not double-book)
+    await engine.orders.restore_sim_book()
+    assert executor.working_count == 1
+    # and a cancel now goes through the executor's normal path
+    await engine.orders.cancel(oid)
+    async def gone():
+        return await _status(engine, pid, oid) == "CANCELLED"
+    await wait_for(gone)
+    assert executor.working_count == 0
