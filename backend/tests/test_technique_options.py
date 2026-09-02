@@ -206,3 +206,20 @@ async def test_pick_for_setup_reports_provider_errors():
     out = await pick_for_setup(c, "SPY", 765.3, "long")
     assert out["available"] is False and "CBOE HTTP 500" in out["error"]
     await c.aclose()
+
+
+def test_rejudge_spread_uses_the_nbbo_after_reprice():
+    from zargar.technique.options import rejudge_spread
+    # chain said wide (delayed row); the NBBO is tight -> the T5.4 warning goes away
+    c = {"symbol": "X", "warnings": ["T5.4 wide spread 16.5% (bid 1.0 / ask 1.18)", "T5.2 0DTE: use reduced size"],
+         "bid": 1.10, "ask": 1.12, "spreadPct": 1.8, "priced": "opra"}
+    rejudge_spread(c)
+    assert c["spreadJudgedOn"] == "opra" and c["warnings"] == ["T5.2 0DTE: use reduced size"]
+    # chain said fine; the NBBO is wide -> the warning is added on the live numbers
+    c = {"symbol": "X", "warnings": [], "bid": 0.10, "ask": 0.20, "spreadPct": 66.7, "priced": "opra"}
+    rejudge_spread(c)
+    assert any("T5.4 wide spread" in w and "NBBO" in w for w in c["warnings"])
+    # no real-time print: the chain's verdict stands, flagged as such
+    c = {"symbol": "X", "warnings": ["T5.4 wide spread 16.5% (bid 1.0 / ask 1.18)"], "spreadPct": 16.5, "priced": "chain"}
+    rejudge_spread(c)
+    assert c["spreadJudgedOn"] == "chain" and len(c["warnings"]) == 1

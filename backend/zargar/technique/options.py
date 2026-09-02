@@ -98,6 +98,29 @@ def choose_expiry(expirations: list[str], today: dt.date, *, avoid_0dte: bool = 
     return pick.isoformat(), pick == today
 
 
+def rejudge_spread(contract: dict | None) -> dict | None:
+    """T5.4 on the REAL-TIME NBBO (2026-09-02): `select_contract` judged the spread
+    on the chain row, which was the ~15-min delayed CBOE quote — real setups were
+    skipped as wide 15 minutes after the fact and vice versa. After
+    `OptionsService.reprice()` the dict carries the OPRA bid/ask/spreadPct
+    (`priced == "opra"`); this drops the chain's wide-spread warning and re-adds
+    it only if the live spread is wide. IV (T5.3) stays chain-sourced until a
+    real-time chain provider lands, so its warning is left alone."""
+    if not contract:
+        return contract
+    warnings = [str(w) for w in (contract.get("warnings") or [])]
+    if contract.get("priced") != "opra" or contract.get("spreadPct") is None:
+        contract["spreadJudgedOn"] = "chain"
+        return contract
+    warnings = [w for w in warnings if "T5.4 wide spread" not in w]
+    spread = float(contract["spreadPct"])
+    if spread > MAX_SPREAD_PCT:
+        warnings.append(f"T5.4 wide spread {spread:.1f}% on the NBBO (bid {contract.get('bid')} / ask {contract.get('ask')})")
+    contract["warnings"] = warnings
+    contract["spreadJudgedOn"] = "opra"
+    return contract
+
+
 def select_contract(chain: list[dict], spot: float, direction: str, *, expiry: str,
                     today: dt.date, is_0dte: bool, max_strike: float | None = None,
                     min_strike: float | None = None) -> ContractPick | None:

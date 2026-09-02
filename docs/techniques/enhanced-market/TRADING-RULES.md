@@ -147,6 +147,11 @@ a number** (p. 72).
   be ATR-derived instead of 2%? Needs fired-breakout outcome data (none yet).
 
 ### 1.6 Wide-spread skips vs shares fallback ⏳ new
+- **Evidence caveat (2026-09-02):** until 13:42 ET on 2026-09-02 every option quote in the
+  app was the CBOE chain, ~15 min DELAYED and re-stamped as fresh (PLATFORM-RULES 2026-09-02,
+  invariant 14). T5.4/T5.3 skips before that judged a stale spread/IV; count "wide-spread
+  skip" events from 2026-09-03 on only. Picks are now re-priced on the Alpaca OPRA NBBO
+  before sizing and the entry limit; the spread gate is re-judged on that NBBO (see §5).
 - SNOW 2026-08-25: T5.4 spread guard (16.5%) blocked a +1.89R (stock) trade. Fallback
   `entry_fallback=shares` now exists (per-arm, changeable after arming).
 - **Decision threshold:** compare shares-fallback trades vs option trades on R and $ over
@@ -260,6 +265,12 @@ cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, 
   gap day is the re-planner working, not a bug. Capture-rate join: identified valid
   R −1.44 vs captured +2.0R — the first day live beat the replay.
 
+- **2026-09-02 · Practice option FILLS before 2026-09-02 13:42 ET are suspect (delayed chain).**
+  The tips desk found every option quote was the ~15-min-delayed CBOE chain re-stamped as
+  fresh; practice fills (incl. GLD 2026-09-01) were booked at the delayed ask. What stands:
+  the plan-level R (underlying bars), bar-based sweeps (`simulate_plan`) and the counterfactual
+  ledger (contract 1m prints). What does not: $ P&L of practice option fills 08-22 → 09-02 13:42.
+  Any evolution sweep or graduation stat that scores on practice fills must start 2026-09-03.
 - **2026-09-01 · EM's FIRST LIVE TRADE — a winner, and the whole pipeline held.**
   GLD r1 reject (short gold at 400.83 after the tanker-strike rally spiked into a
   planned resistance): the critic killed the first five fires as "still momentum,"
@@ -470,6 +481,13 @@ cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, 
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
+- 2026-09-02 · **T5.4 wide-spread gate judged on the real-time NBBO after the pick**
+  (`technique/options.py::rejudge_spread`, called in `arming.py::_pick_contract` right after
+  `OptionsService.reprice`). Why: until 13:42 ET every option quote was the ~15-min delayed
+  CBOE chain (tips-desk audit, PLATFORM-RULES invariant 14) - the spread skip was judging a
+  stale row. Threshold unchanged (10% of mid); only the price source changed. T5.3 (IV)
+  stays chain-sourced until a real-time chain provider exists. Evidence: SNOW 08-25 skip
+  (§1.6) and the 09-02 GOOGL 0.13-vs-0.60 fill; §1.6 evidence restarts 2026-09-03.
 - 2026-08-28 · **SYSTEM_PROMPT taught the short mirrors; stale "Long-only." clause
   removed** (`schemas.py`), and `review_fire` adds a DIRECTION clause on
   reject/breakdown fires (`arming.py`). Why: the prompt still predated the
