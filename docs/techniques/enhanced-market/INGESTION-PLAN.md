@@ -111,6 +111,13 @@ Author's board card rendered with Arm buttons. Fidelity note: speech-to-text
 heard "SpaceX" and the model wrote SPCE - the prompt now carries a mis-hearing
 hint (SPCX, CMG, NVDA, QCOM...).
 
+**v2 end-to-end (2026-09-01 ~21:15 ET, :8421 test-DB instance, merged code):** fresh
+note -> probe (`live=False`, title "TOP SETUPS") -> download -> transcript in 81 s ->
+extraction `material=setups_brief`, stance cautious, symbols NVDA NFLX **SPCX** MU
+AMZN GPRO V (the mis-hearing hint fixed SPCE -> SPCX) -> board check 2 new / 5
+rejected in ~10 s; a re-post of the same link came back `duplicate`; the day view
+kept the brief primary with the follow-up listed under "also today".
+
 ## The morning, unattended - as built (2026-09-01 evening, user Q&A)
 
 1. **Recognition is deterministic, not AI.** Every message in the two EM channels
