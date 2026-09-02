@@ -118,6 +118,14 @@ AMZN GPRO V (the mis-hearing hint fixed SPCE -> SPCX) -> board check 2 new / 5
 rejected in ~10 s; a re-post of the same link came back `duplicate`; the day view
 kept the brief primary with the follow-up listed under "also today".
 
+**LIVE on the production server since 2026-09-01 23:43 ET** (user's admin restart via
+`start.ps1 -Detach`, which also opened the Discord intake and the EM ingest worker
+windows). First live end-to-end at 23:50 ET: the 09-01 broadcast posted to the real
+inbox -> the worker window transcribed it within ~2 min -> `setups_brief`, SPCX
+correct -> board check 5 new / 2 rejected -> Arm buttons on the Validation tab.
+Note for operators: the server is elevated again; restart it non-elevated when
+convenient so future restarts work from any shell.
+
 ## The morning, unattended - as built (2026-09-01 evening, user Q&A)
 
 1. **Recognition is deterministic, not AI.** Every message in the two EM channels
