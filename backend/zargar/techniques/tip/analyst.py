@@ -218,7 +218,12 @@ and YOUR TRADING RULES — rules you and your past runs wrote, handed to you eve
 Everything else is your call as a trader.
 
 Safety floor (platform-enforced — do not fight it):
-- never 0DTE, never naked option writing, never shorting shares (bearish = long puts)
+- never naked option writing, never shorting shares (bearish = long puts)
+- LOTTO LANE (0–3 DTE contracts): allowed, but as its own small lane — the stated \
+contract verbatim, sized from the lotto budget in the header (smaller than the per-tip \
+budget), entry_mode "now" ONLY (a lotto never waits at a level), and the platform \
+flattens it on expiry day before the close. Judge a lotto on the source's lotto record \
+and the tape, not on "it's short-dated" — that is the lane's nature, not a flaw.
 - size within the stated per-tip budget: quantity = floor(budget / (ask x 100)) for options
 - your verdict becomes an order only through a proposal + the risk gate; a human (or an \
 earned auto mode) pulls the trigger
@@ -262,7 +267,11 @@ own message or a relevant history line is marked [images: <id>], ALWAYS view_ima
 before judging — levels, annotations and entries live in the picture, not the caption.
 - SHARED NOTES: read what you are handed — it may change the verdict (an earlier OPEN \
 this message updates, a hedge rationale). save_note durable context (scope tip / ticker \
-/ source / general) — a few precise notes beat many vague ones.
+/ source / general) — a few precise notes beat many vague ones. Budget: at most 2 saves \
+per run, usually 0. A note must change how a FUTURE tip is read (a source's format, its \
+lifecycle vocabulary, its reliability on a setup). NEVER catalogue chatter: a source's \
+exclamations, emojis, P&L brags and "message types" are not knowledge — do not number \
+them, do not save them. A source's formats live in ONE profile note; refine it, don't add.
 - YOUR TRADING RULES: follow them. When this tip (or a retro) teaches you a durable \
 lesson about HOW YOU TRADE — not about one ticker — save_note it with scope "rule": \
 state the rule, the why, and the evidence. The rules are yours to evolve; keep them \
@@ -552,6 +561,26 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                  "rule": "rule",                       # the analyst's own rulebook
                  }.get(kind, "general")
         text = str(args.get("text") or "")
+        # Knowledge hygiene (daily review 2026-09-01: 100 notes in one day, 18 of
+        # them numbering a source's "message families" — every "wow" and emoji
+        # got a note). Harness-enforced, not prompt-hoped:
+        #  - a ticker-scoped note needs a ticker (5 blank "ticker:" scopes today)
+        #  - at most 2 saves per run — the run picks what's durable
+        #  - chatter taxonomy ("SEVENTEENTH family", "message type #9") is not
+        #    knowledge; a source's FORMATS belong in its ONE profile note
+        if scope == "ticker:" or scope.endswith("ticker:"):
+            return {"saved": False, "error": "a ticker note needs a ticker — this tip has none; "
+                                             "use scope 'source' or 'general' if it is durable"}
+        saves = ctx.setdefault("_saves", 0)
+        if saves >= 2:
+            return {"saved": False, "error": "note budget for this run is spent (2) — keep "
+                                             "only what a future run must know"}
+        if _TAXONOMY_RE.search(text):
+            return {"saved": False, "error": "not knowledge: cataloguing a source's chatter "
+                                             "types (\"Nth message family\") is noise. Save "
+                                             "only a durable habit that changes how a tip is "
+                                             "READ (format, lifecycle vocabulary, reliability)"}
+        ctx["_saves"] = saves + 1
         if ctx.get("experiment"):
             # F12 hard-guard (batch b1, 2026-08-30): a HISTORICAL run must never
             # mutate live knowledge unsupervised — the prompt-only rule leaked 11
@@ -615,7 +644,8 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
         return {"symbol": sym, "tf": tf, **_compact_bars(bars)}
     if name == "get_expiries":
         out = await eng.options.expiries(sym)
-        exps = [e for e in out.get("expiries", []) if not e.get("is0dte")][:12]
+        # 0DTE listed too since the lotto lane (2026-09-01); flagged is0dte
+        exps = list(out.get("expiries", []))[:12]
         return {"symbol": sym, "spot": out.get("spot"), "expiries": exps}
     if name == "get_chain":
         chain = await eng.options.chain(sym, str(args.get("expiry")))
@@ -742,6 +772,16 @@ async def _persist_run(eng, run_id: str, *, status: str, rec: _Recorder,
         await session.commit()
 
 
+import re as _re
+# "SEVENTEENTH message family", "message type #9", "tenth MuggZone message family",
+# "new message TYPE", "Nth family:" — the chatter-taxonomy tell
+_TAXONOMY_RE = _re.compile(
+    r"(\b(first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|"
+    r"thirteenth|fourteenth|fifteenth|sixteenth|seventeenth|eighteenth|nineteenth|twentieth|"
+    r"twenty-\w+|\d+(st|nd|rd|th))\s+(\w+\s+)?(message\s+)?(family|families|type)\b"
+    r"|\bmessage[- ]type\s*#?\d|\bmessage[- ]type catalog|\bnew message (type|family)\b)",
+    _re.IGNORECASE)
+
 _API_RETRY_DELAYS = (5.0, 20.0)   # transient-API backoff; tests patch to (0, 0)
                                   # (18:31 UTC 529 burst outlasted 5+10s — stretch the tail)
 API_RETRIES = {"n": 0}            # since-boot 529-retry tally (POST-SOAK 4.4, morning report)
@@ -820,7 +860,8 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
 async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                       client=None, parent_run_id: str | None = None,
                       experiment: str | None = None,
-                      historical_note: str | None = None) -> dict | None:
+                      historical_note: str | None = None,
+                      siblings: list[str] | None = None) -> dict | None:
     """Appraise one tip. Persists a full TipAnalystRun (trace + tools + opinion),
     streams the play-by-play live, and returns the opinion dict (stored on
     extraction.analyst) or None on failure — strictly advisory.
@@ -903,9 +944,17 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
              tip=tip, notes=notes, rules=rules_n,
              verification={k: verification.get(k) for k in ("passed", "park", "shadow_only")})
 
+    from .lotto import is_lotto as _is_lotto, lotto_budget as _lotto_budget
+    lotto_line = ""
+    if _is_lotto(signal_row, s):
+        lotto_line = (f"THIS TIP IS A LOTTO (stated contract expires within "
+                      f"{s.get('techniques.tip.lotto_max_dte', 3)} days): lotto budget "
+                      f"${_lotto_budget(s, policy.budget_per_tip):,.0f}, entry now only, "
+                      f"flattened on expiry day at {s.get('techniques.tip.lotto_flatten_et', '15:45')} ET.\n")
     header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
               f"Per-tip budget: ${policy.budget_per_tip:,.0f} · option DTE window "
               f"{policy.dte_min}-{policy.dte_max} (tip's own contract may override)\n"
+              + lotto_line +
               f"TIP: {json.dumps(tip)}\n"
               f"VERIFICATION: {json.dumps({k: verification.get(k) for k in ('passed', 'park', 'shadow_only')})} "
               f"failed checks: {[c['name'] for c in verification.get('checks', []) if not c['passed']]}\n"
@@ -914,6 +963,12 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
               f"THIS SOURCE'S LAST ~3 DAYS (their channel, mirrored, newest first — the "
               f"backstory this tip arrived in: earlier OPENs, trims, exits, mood. Read it "
               f"before judging; search_messages digs deeper/older):\n{history_txt}")
+    if siblings:
+        header = ("THIS MESSAGE HAS SEVERAL BRANCHES and is appraised ONCE, on this one: "
+                  + "; ".join(siblings) + ". Judge the MESSAGE (is it a map, a digest, a "
+                  "real open?) — your verdict is inherited by every branch; a 'take' applies "
+                  "to THIS branch only. Save at most one note about the message as a whole.\n\n"
+                  + header)
     if historical_note:
         header = historical_note + "\n\n" + header
     system = SYSTEM + json.dumps(AnalystOpinion.model_json_schema(), separators=(",", ":"))

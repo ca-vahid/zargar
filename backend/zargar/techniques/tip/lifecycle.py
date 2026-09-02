@@ -51,6 +51,8 @@ def build_exit_plan(signal_row, sig, analyst: dict, policy) -> dict:
                             fallback=int(policy.horizon_sessions or 10))
     hold = int(analyst.get("max_hold_sessions") or 0) or cap
     catalyst = (signal_row.catalyst or "").lower()
+    lotto = bool(expiry is not None and 0 <= (expiry - today).days <= 3
+                 and str(getattr(signal_row, "instrument", "")) in ("call", "put"))
     return {
         "author": author,
         "targets": targets,
@@ -59,6 +61,8 @@ def build_exit_plan(signal_row, sig, analyst: dict, policy) -> dict:
         "premiumStopPct": (float(analyst["premium_stop_pct"])
                            if analyst.get("premium_stop_pct") else None),
         "maxHoldSessions": min(hold, cap),      # never outlive the contract
+        # the lotto lane: held INTO expiry day, flattened before its close
+        "lotto": lotto,
         "avoidEarnings": "earnings" not in catalyst,
         "note": analyst.get("exit_rationale") or None,
     }
@@ -94,7 +98,13 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
         fallback_ps = settings.get("techniques.tip.premium_stop_pct",
                                    settings.get("execution.premium_stop_pct", 50.0))
         policy["premium_stop_pct"] = float(plan.get("premiumStopPct") or fallback_ps or 50.0)
-        policy["dte_close"] = max(1, int(settings.get("execution.min_dte", 1)))
+        if plan.get("lotto"):
+            # the lotto lane: held into expiry day, flattened at the lotto time
+            # (never THROUGH the close — the platform invariant, restated)
+            policy["dte_close"] = 0
+            policy["expiry_day_flatten_et"] = str(settings.get("techniques.tip.lotto_flatten_et", "15:45"))
+        else:
+            policy["dte_close"] = max(1, int(settings.get("execution.min_dte", 1)))
     if plan.get("avoidEarnings", True):
         policy["flatten_before"] = {"event": "earnings", "days": 1}
     return policy

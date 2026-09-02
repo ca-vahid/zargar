@@ -33,6 +33,8 @@ export const CHANGELOG: Release[] = [
       { tag: "new", text: "Auto-approve is earned per source: a tipper's takes self-approve only after enough of their tips have closed well; until then every take waits for you with a graduation note." },
       { tag: "improved", text: "Research (shadow) books read as research: hidden or dimmed in the Blotter and Journal, never toast, one row per source pairing the immediate and armed lanes with the hit record instead of fake cash." },
       { tag: "fixed", text: "First live-soak hardening: a slow fill can no longer double-exit a position past flat; a crashed analyst leaves the proposal for you instead of approving it; cold quotes park a tip instead of killing it; API overloads retry; a lotto-priced option can't be sized into hundreds of contracts." },
+      { tag: "new", text: "Lotto lane: 0–3 DTE tips are no longer killed — they trade the stated contract at tip time from their own smaller budget and are flattened on expiry day before the close." },
+      { tag: "improved", text: "The analyst appraises a multi-branch message (a daily level map) once; branches inherit the verdict. Knowledge notes are capped at two per run and chatter cataloguing is refused." },
       { tag: "new", text: "Ledger page: your money in plain terms — every buy and sell as a round trip with its gain, day by day, plus what's still riding. Real books only; the research books never appear." },
       { tag: "improved", text: "Approving an older proposal re-prices it at the live ask (the price can only improve, never chase), and a source posting a trim/close cancels only that source's pending cards." },
     ],

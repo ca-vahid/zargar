@@ -187,6 +187,7 @@ async def pick_tip_contract(engine, *, symbol: str, direction: str,
                             min_strike: float | None = None,
                             max_strike: float | None = None,
                             stated_min_dte: int = 0,
+                            allow_0dte: bool = False,
                             today: dt.date | None = None) -> dict:
     """The tip's contract, or {'available': False, 'error': ...}. Never raises
     for 'no contract' — callers decide the fallback (shares). When the bought
@@ -231,7 +232,7 @@ async def pick_tip_contract(engine, *, symbol: str, direction: str,
             warnings.append(f"stated strike {strike:g} not listed at {chosen} — using just-OTM")
             subst.append(f"stated strike {strike:g} not listed")
         pick = select_contract(chain, float(spot), direction, expiry=chosen, today=today,
-                               is_0dte=False, max_strike=max_strike, min_strike=min_strike)
+                               is_0dte=allow_0dte, max_strike=max_strike, min_strike=min_strike)
         if pick is None:
             return {"available": False, "expiry": chosen,
                     "error": f"no {want} just OTM at {chosen}"}

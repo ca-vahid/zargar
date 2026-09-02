@@ -874,6 +874,23 @@ class PositionManager:
                                       "(close it at the broker)", stage="exit_watchdog")
                     self._exit_retries[key] = (1e18, attempts)   # alert exactly once
                     continue
+            # expiry-day flatten by the CLOCK (a policy that holds into expiry
+            # day — the tips lotto lane): the bar-driven decision is primary,
+            # this is the net under it if the closing bars never arrive
+            flat_et = p.policy.get("expiry_day_flatten_et")
+            if flat_et:
+                today = dt.datetime.fromtimestamp(now / 1000, ET).date()
+                d = p.dte_min(today)
+                if d is not None and d <= 0:
+                    now_et = dt.datetime.fromtimestamp(now / 1000, ET)
+                    hh, mm = (int(x) for x in str(flat_et).split(":"))
+                    if now_et.hour * 60 + now_et.minute >= hh * 60 + mm \
+                            and not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
+                                        for x in p.exits if x.get("orderId")):
+                        self._log(p, "dte", f"expiry day — clock flatten at {flat_et} ET")
+                        await self.close(p.id, fraction=1.0, kind="dte", force_market=True,
+                                         reason=f"expiry day — flattened at {flat_et} ET (clock)")
+                        continue
             # crash brake on the underlying
             stop = stop_price(p.policy, p.state)
             q = self.engine.quotes.get(p.symbol)
