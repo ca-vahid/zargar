@@ -429,7 +429,22 @@ class RiskGate:
             # morning cutoff + sizing rules). Any OTHER technique is hard-rejected;
             # manual orders keep the risk.allow_0dte switch.
             tid = getattr(intent, "technique_id", None)
-            if tid and tid != "enhanced_market":
+            if tid == "tip" and bool(s.get("techniques.tip.lotto_enabled", False)):
+                # the tips LOTTO LANE (user decision 2026-09-01) has its own
+                # gated path: lotto budget, entry-now only, expiry-day flatten
+                # at techniques.tip.lotto_flatten_et. Entries after that time
+                # are refused here as the last line (the proposal builder
+                # refuses them first).
+                from zoneinfo import ZoneInfo
+                now_et = dt.datetime.now(ZoneInfo("America/New_York"))
+                try:
+                    hh, mm = (int(x) for x in str(s.get("techniques.tip.lotto_flatten_et", "15:45")).split(":"))
+                except ValueError:
+                    hh, mm = 15, 45
+                late = now_et.hour * 60 + now_et.minute >= hh * 60 + mm
+                out.append(RiskCheck("option_not_expired", not late,
+                                     f"0DTE lotto after the {hh:02d}:{mm:02d} ET flatten time" if late else ""))
+            elif tid and tid != "enhanced_market":
                 out.append(RiskCheck("option_not_expired", False,
                                      f"0DTE is never allowed for technique '{tid}' (never-list; EM's gated path only)"))
             else:
