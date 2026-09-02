@@ -70,7 +70,7 @@ def simulate_position(policy: dict, bars: list[Bar], *, direction: str = "long",
             days_to_event=(days_to_event(day) if days_to_event else None), min_dte_floor=min_dte_floor,
         )
         decs, moves = evaluate(policy, state, view)
-        state = apply_moves(state, view, decs, moves)
+        state = apply_moves(state, view, decs, moves, policy)
         for d in decs:
             if d.kind == "trim":
                 # fills at the target price the bar reached

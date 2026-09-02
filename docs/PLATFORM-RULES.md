@@ -206,6 +206,24 @@ runtime ones to `execution.*`).
   a fresh print (fills, premium stop and the risk gate's freshness clock all run on it).
   Test: `test_options_service.py::test_quiet_feed_republishes_the_chain_quote`.
 
+- **2026-09-02 · A delayed chain band must never price a practice fill when the tape has moved.**
+  GOOGL 0DTE 340C: the live tape printed 0.47–0.76 at 12:00–12:05 while the ~15-min-delayed
+  CBOE overlay still said 0.12/0.13; the practice book "bought" 20 at 0.13 (`quote_fresh` passed —
+  the overlay re-stamps `ts`), the position showed +230 % on a fantasy basis and the 50 %
+  premium stop, measured from 0.13, could never fire while the contract fell from a REAL 0.55
+  to 0.22. Fix: `QuoteCache` keeps the chain's own last trade as the overlay's anchor; a live
+  print outside the band that differs from that anchor re-centres the band on the print with
+  the chain's spread width (`_apply_overlay`). Rule: bid/ask from a delayed source are a
+  *width*, not a *level*, once the tape has printed past them. Test:
+  `test_options_service.py::test_contract_quote_is_published_and_overlaid`.
+
+- **2026-09-02 · Premium-based exits need the quote loop, not the bar loop** (policy keys
+  `premium_ladder`, `premium_floor_after_trim`, `premium_watch`; `policies.evaluate_premium` is
+  the single evaluator for both paths). A 0DTE contract triples and gives it all back inside one
+  15m bar; an underlying-price ladder never sees it. The tips lotto lane sets all three; other
+  techniques opt in per policy. Chaos test
+  `test_premium_watch_takes_lotto_profit_on_the_quote_loop`.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

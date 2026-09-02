@@ -68,6 +68,22 @@ def build_exit_plan(signal_row, sig, analyst: dict, policy) -> dict:
     }
 
 
+def _csv_floats(raw) -> list[float]:
+    if isinstance(raw, (list, tuple)):
+        parts = raw
+    else:
+        parts = str(raw or "").replace(";", ",").split(",")
+    out: list[float] = []
+    for x in parts:
+        try:
+            v = float(x)
+        except (TypeError, ValueError):
+            continue
+        if v > 0:
+            out.append(v)
+    return out
+
+
 def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
     """Exit plan → the shared policy document. Ladder fractions normalise to
     <= 1.0 (a remainder rides the structure trail); a stop-less plan becomes an
@@ -103,6 +119,15 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
             # (never THROUGH the close — the platform invariant, restated)
             policy["dte_close"] = 0
             policy["expiry_day_flatten_et"] = str(settings.get("techniques.tip.lotto_flatten_et", "15:45"))
+            # profit is taken on the CONTRACT, every quote tick: a 0DTE moves 3x on
+            # a 0.3% underlying move, so the analyst's underlying ladder never
+            # fires (GOOGL 340C 2026-09-02: +230% and back inside one 15m bar)
+            gains = _csv_floats(settings.get("techniques.tip.lotto_premium_targets", "100,200"))
+            fracs = _csv_floats(settings.get("techniques.tip.lotto_premium_fractions", "0.5,0.5"))
+            if gains:
+                policy["premium_ladder"] = {"gains_pct": gains, "fractions": fracs[:len(gains)]}
+                policy["premium_floor_after_trim"] = True
+            policy["premium_watch"] = True
         else:
             policy["dte_close"] = max(1, int(settings.get("execution.min_dte", 1)))
     if plan.get("avoidEarnings", True):

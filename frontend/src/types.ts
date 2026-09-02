@@ -134,6 +134,7 @@ export interface ManagedPosition {
   state: {
     trimsDone: number; stop: number | null; trailingActive: boolean;
     peakFavorable: number | null; breakevenDone: boolean;
+    premiumTrimsDone?: number; premiumFloor?: number | null;
   };
   realizedPnl: number;
   exits: any[];

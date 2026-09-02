@@ -40,25 +40,51 @@ class QuoteCache:
         # per-symbol field overrides applied to every incoming quote — option
         # contracts get bid/ask from the (delayed) chain while `last` streams live
         self._overlays: dict[str, dict] = {}
+        # the last trade the overlay's source (the delayed chain) had seen —
+        # when the live tape has printed PAST the chain's band since, the band
+        # is re-centred on the live print (see _apply_overlay)
+        self._anchors: dict[str, float] = {}
 
     def on_quote(self, q: Quote) -> None:
         ov = self._overlays.get(q.symbol)
         if ov:
-            for k, v in ov.items():
-                setattr(q, k, v)
+            self._apply_overlay(q, ov)
         self._quotes[q.symbol] = q
         self._bus.publish(topics.QUOTES, q)
 
-    def set_overlay(self, symbol: str, **fields) -> None:
-        """Override quote fields for a symbol (bid/ask/sizes) until cleared."""
+    def _apply_overlay(self, q: Quote, ov: dict) -> None:
+        for k, v in ov.items():
+            setattr(q, k, v)
+        bid, ask = float(ov.get("bid") or 0), float(ov.get("ask") or 0)
+        anchor = self._anchors.get(q.symbol)
+        if bid <= 0 or ask <= 0 or anchor is None or q.last <= 0:
+            return
+        # 2026-09-02 GOOGL 0DTE 340C: the live tape printed 0.47-0.76 while the
+        # ~15-min-delayed chain still said 0.12/0.13 — the practice book "bought"
+        # 20 at 0.13, the premium stop measured against a fantasy basis and the
+        # risk gate called the quote fresh. A live print outside the delayed
+        # band, DIFFERENT from the trade the chain had seen, means the market
+        # moved after the chain's snapshot: keep the chain's spread width, but
+        # centre it on what is actually trading.
+        if abs(q.last - anchor) > 1e-9 and (q.last > ask or q.last < bid):
+            half = max((ask - bid) / 2, 0.005)
+            q.bid = max(round(q.last - half, 4), 0.01)
+            q.ask = round(q.last + half, 4)
+
+    def set_overlay(self, symbol: str, *, anchor_last: float | None = None, **fields) -> None:
+        """Override quote fields for a symbol (bid/ask/sizes) until cleared.
+        `anchor_last` = the last trade the overlay's source saw (delayed chain),
+        so a live print past the band can re-centre it."""
         if not fields:
             self._overlays.pop(symbol, None)
+            self._anchors.pop(symbol, None)
             return
         self._overlays[symbol] = dict(fields)
+        if anchor_last is not None and anchor_last > 0:
+            self._anchors[symbol] = float(anchor_last)
         q = self._quotes.get(symbol)
         if q is not None:
-            for k, v in fields.items():
-                setattr(q, k, v)
+            self._apply_overlay(q, self._overlays[symbol])
             if "bid" in fields or "ask" in fields:
                 # a refreshed bid/ask IS fresh information: the premium stop and the
                 # risk gate judge freshness by `ts`, which the overlay never moved
@@ -67,6 +93,7 @@ class QuoteCache:
 
     def clear_overlay(self, symbol: str) -> None:
         self._overlays.pop(symbol, None)
+        self._anchors.pop(symbol, None)
 
     def get(self, symbol: str) -> Quote | None:
         return self._quotes.get(symbol)

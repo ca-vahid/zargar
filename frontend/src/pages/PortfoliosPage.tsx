@@ -245,6 +245,11 @@ function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }
           {" · "}held {m.sessionsHeld}{timeBox ? `/${timeBox}` : ""} session{m.sessionsHeld === 1 && !timeBox ? "" : "s"}
           {m.legs.map((l) => l.avgFill != null ? ` · in @ ${fmtMoney(l.avgFill)}` : "").join("")}
           {m.policy?.premium_stop_pct ? ` · premium stop ${m.policy.premium_stop_pct}%` : ""}
+          {m.policy?.premium_ladder?.gains_pct?.length
+            ? ` · take ${m.policy.premium_ladder.gains_pct.map((g: number, i: number) =>
+                `${Math.round((m.policy.premium_ladder.fractions?.[i] ?? 0) * 100)}% at +${g}%`).join(", ")}`
+              + (m.state?.premiumTrimsDone ? ` (${m.state.premiumTrimsDone} taken)` : "")
+            : ""}
           {m.policy?.dte_close != null ? ` · closes by ${m.policy.dte_close} DTE` : ""}
           {m.policy?.stop?.kind === "none" ? " · no price stop (guarded)" : ""}
           {m.realizedPnl !== 0 ? <> · realized <span className={m.realizedPnl >= 0 ? "pos" : "neg"}>{fmtSigned(m.realizedPnl)}</span></> : ""}

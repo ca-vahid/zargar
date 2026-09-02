@@ -128,6 +128,19 @@ async def test_contract_quote_is_published_and_overlaid(opt_engine):
     eng.quotes.on_quote(Quote(symbol=sym, bid=1.0, ask=9.0, last=2.07))
     q2 = eng.quotes.get(sym)
     assert (q2.bid, q2.ask, q2.last) == (2.0, 2.1, 2.07)
+    # 2026-09-02 GOOGL 0DTE: the live tape printed far past the delayed chain's
+    # band (chain last 2.05) -> the band re-centres on the print, same width
+    eng.quotes.on_quote(Quote(symbol=sym, bid=1.0, ask=9.0, last=3.0))
+    q3 = eng.quotes.get(sym)
+    assert (q3.bid, q3.ask, q3.last) == (2.95, 3.05, 3.0)
+    # a refreshed chain band (still delayed) re-applies to the stored quote the same way
+    eng.quotes.set_overlay(sym, bid=2.2, ask=2.3, bid_size=0, ask_size=0, anchor_last=2.25)
+    q4 = eng.quotes.get(sym)
+    assert (q4.bid, q4.ask) == (2.95, 3.05)
+    # the chain catches up (its last == the live print): the chain band stands
+    eng.quotes.set_overlay(sym, bid=2.9, ask=3.1, bid_size=0, ask_size=0, anchor_last=3.0)
+    q5 = eng.quotes.get(sym)
+    assert (q5.bid, q5.ask) == (2.9, 3.1)
 
     r = await client.get("/api/options/quote/AAPL")
     assert r.status_code == 400

@@ -35,6 +35,22 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-02 — **Lotto exits are judged on the CONTRACT, every quote tick.** GOOGL
+  340C 0DTE (ab, auto-filled 12:02 ET): the contract tripled and gave it all back inside
+  one 15m bar while the analyst's underlying ladder (341.5 / 343.5 / 346) never printed
+  (GOOGL peaked 339.18). Lotto policies now carry `premium_ladder`
+  (`techniques.tip.lotto_premium_targets` "100,200" × `lotto_premium_fractions` "0.5,0.5"),
+  `premium_floor_after_trim` (after the first rung the rest can't close below the
+  entry premium) and `premium_watch` (premium ladder + premium stop on the ~2 s quote
+  loop). The analyst's underlying ladder stays — whichever prints first. Rungs are a
+  first guess (one observation); revisit after ≥10 lotto fills.
+- 2026-09-02 — **That GOOGL fill was not real.** The practice book bought at 0.13 (the
+  15-min-delayed chain ask) when the tape was ~0.55 — the "+230 %" the position showed
+  was fantasy and the premium stop was blind to a real −60 %. Platform fix in
+  PLATFORM-RULES (delayed band re-centres on the live print). Treat every practice
+  option P&L before this fix as suspect where the contract moved fast; the lotto
+  scorecard starts counting from here.
+
 - 2026-08-28 — **Breakout tips honoured as breakouts**: a stated level on the
   far side of price ("watch $22 for a breakout", price 20.4) now mints a
   breakout/breakdown trigger at the tip's own level (`entry_basis=on_break`,

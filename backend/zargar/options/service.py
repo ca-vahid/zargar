@@ -219,7 +219,10 @@ class OptionsService:
         # it so fills, the premium stop and the risk gate's freshness clock run.
         # (measured BEFORE the overlay — set_overlay re-stamps ts on a new bid/ask)
         quiet = existing is not None and quotes.age_seconds(o.symbol) > FEED_QUIET_SECONDS
-        quotes.set_overlay(o.symbol, bid=bid, ask=ask, bid_size=0, ask_size=0)
+        # anchor = the (delayed) last trade the chain saw: a live print past the
+        # band that differs from it re-centres the band (QuoteCache._apply_overlay)
+        quotes.set_overlay(o.symbol, bid=bid, ask=ask, bid_size=0, ask_size=0,
+                           anchor_last=float(snap.get("last") or 0) or None)
         if self._owns_quotes or existing is None or quiet:
             last = float(snap.get("last") or 0) or ((bid + ask) / 2 if (bid or ask) else 0.0)
             if last <= 0 and ask <= 0:

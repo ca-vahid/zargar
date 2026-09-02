@@ -64,7 +64,9 @@ from .policies import (
     PolicyState,
     PositionView,
     apply_moves,
+    apply_premium_decision,
     evaluate,
+    evaluate_premium,
     has_no_stop,
     stop_price,
     validate_policy,
@@ -838,7 +840,7 @@ class PositionManager:
         )
         decisions, moves = evaluate(p.policy, p.state, view)
         old_stop = p.state.stop
-        p.state = apply_moves(p.state, view, decisions, moves)
+        p.state = apply_moves(p.state, view, decisions, moves, p.policy)
         if p.state.stop != old_stop and p.state.stop is not None:
             self._log(p, "stop_moved", f"stop -> {p.state.stop:.4f}")
             await self._ensure_venue_stop(p)
@@ -904,6 +906,23 @@ class PositionManager:
                         await self.close(p.id, fraction=1.0, kind="dte", force_market=True,
                                          reason=f"expiry day — flattened at {flat_et} ET (clock)")
                         continue
+            # premium watch (the tips lotto lane): the contract's own mark judged
+            # every tick — a 0DTE tripled and gave it all back inside one 15m bar
+            # on 2026-09-02 (GOOGL 340C) while the underlying ladder never hit
+            if p.policy.get("premium_watch") and p.entry_mark and \
+                    not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
+                            for x in p.exits if x.get("orderId")):
+                mark = p.net_mark(self.engine.quotes.get)
+                legs_fresh = all(
+                    (lq := self.engine.quotes.get(l.symbol)) is not None and (now - lq.ts) <= stale_ms
+                    for l in p.open_legs)
+                d = evaluate_premium(p.policy, p.state, mark, p.entry_mark) if legs_fresh else None
+                if d is not None:
+                    p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
+                    self._log(p, d.kind, f"{d.reason} (quote watch)")
+                    await self.close(p.id, fraction=d.fraction, reason=d.reason, kind=d.kind,
+                                     force_market=d.kind == "premium_stop")
+                    continue
             # crash brake on the underlying
             stop = stop_price(p.policy, p.state)
             q = self.engine.quotes.get(p.symbol)

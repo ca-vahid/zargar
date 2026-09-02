@@ -320,6 +320,46 @@ async def test_stale_monday_quote_makes_no_crash_brake_decision(engine):
     assert len(fo.placed) == n, "a stale quote must never fire the crash brake"
 
 
+async def test_premium_watch_takes_lotto_profit_on_the_quote_loop(engine):
+    """2026-09-02 GOOGL 0DTE 340C: the contract went +230% and back inside one
+    15m bar while the analyst's UNDERLYING ladder (341.5) never printed. A
+    `premium_watch` policy judges the premium ladder / stop every quote tick:
+    +100% -> sell half, then the rest floors at the entry premium; a second
+    tick at the same level does not double-sell while the exit is in flight."""
+    from zargar.domain import Quote, now_ms
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    occ = "GOOGL260902C00340000"
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": "GOOGL", "direction": "long", "techniqueId": "tip",
+        "entry": 338.7, "risk": 16.9, "entryMark": 0.13,
+        "overnight": "app_managed", "overnightAck": True, "guardAccepted": True,
+        "policy": {"timeframe": "15m", "stop": {"kind": "none", "guard": "premium stop"},
+                   "ladder": {"targets": [341.5], "fractions": [1.0]},
+                   "premium_stop_pct": 50, "premium_watch": True,
+                   "premium_ladder": {"gains_pct": [100, 200], "fractions": [0.5, 0.5]}},
+        "legs": [{"symbol": occ, "secType": "OPT", "qty": 20, "avgFill": 0.13, "multiplier": 100}],
+    })
+    p = pm.get(d["id"])
+    quotes = {"GOOGL": Quote(symbol="GOOGL", bid=338.0, ask=338.1, last=338.05, ts=now_ms()),
+              occ: Quote(symbol=occ, bid=0.2, ask=0.22, last=0.21, ts=now_ms())}
+    engine.quotes.get = lambda s: quotes.get(s)
+    await pm._watch_once()
+    assert not fo.placed, "+60% is under the first rung"
+    quotes[occ] = Quote(symbol=occ, bid=0.27, ask=0.29, last=0.28, ts=now_ms())   # +108%
+    await pm._watch_once()
+    assert len(fo.placed) == 1 and fo.placed[0].qty == 10 and fo.placed[0].side == "SELL"
+    assert p.state.premium_trims_done == 1 and p.state.premium_floor == 0.13
+    # exit is filled by the fake layer synchronously; the same level again = no second rung
+    await pm._watch_once()
+    assert len(fo.placed) == 1
+    # the remainder is floored at entry: a give-back to 0.13 closes it, not -50%
+    quotes[occ] = Quote(symbol=occ, bid=0.12, ask=0.14, last=0.13, ts=now_ms())
+    await pm._watch_once()
+    assert len(fo.placed) == 2 and fo.placed[1].qty == 10
+    assert any("floor" in str(e) for e in p.events)
+
+
 async def test_halt_does_not_trap_the_exit(engine):
     """Kill switch on -> a reduce-only close still routes (the REAL gate)."""
     pm, _ = await make_manager(engine, fake_orders=False)

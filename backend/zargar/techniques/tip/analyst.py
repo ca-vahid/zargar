@@ -400,7 +400,7 @@ async def _open_tips(eng, ticker: str = "", source: str = "") -> dict:
         t = {"ticker": r.ticker, "source": r.source_name, "direction": r.direction,
              "action": r.action, "instrument": r.instrument, "strike": r.strike,
              "expiry": r.expiry, "status": r.status, "seenCount": r.seen_count,
-             "created": (r.created_at.isoformat()[:16] if r.created_at else None),
+             "created": _et_label(r.created_at),
              "analystVerdict": (((r.extraction or {}).get("analyst") or {}).get("verdict"))}
         # the desk's WAITING commitments are part of the book (ARM-GAPS D3):
         # a live armed plan and/or a pending proposal ride on the tip row
@@ -445,6 +445,22 @@ def _manage_guard(eng, pid: str) -> tuple:
     return p, None
 
 
+def _et_label(when) -> str | None:
+    """A message/tip time as the analyst should read it: '2026-09-02 12:48 ET'.
+    Mirrored Discord times are UTC ISO strings; a zone-stripped '[:16]' made the
+    analyst call a 12:48 ET message '16:48 ET' (GOOGL 340C, 2026-09-02)."""
+    if not when:
+        return None
+    try:
+        t = when if isinstance(when, dt.datetime) else dt.datetime.fromisoformat(str(when).replace("Z", "+00:00"))
+    except ValueError:
+        return str(when)[:16]
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=dt.timezone.utc)
+    from ...marketstructure.sessions import ET
+    return t.astimezone(ET).strftime("%Y-%m-%d %H:%M ET")
+
+
 async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict:
     sym = str(args.get("symbol") or "").upper()
     exp = bool((ctx or {}).get("experiment"))
@@ -463,7 +479,7 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             cap = dt.datetime.fromtimestamp(as_of_ms / 1000,
                                             dt.timezone.utc).isoformat()
             rows = [r for r in rows if str(r.get("postedAt") or "") <= cap]
-        slim = [{"at": (r.get("postedAt") or "")[:16], "source": r.get("source"),
+        slim = [{"at": _et_label(r.get("postedAt")), "source": r.get("source"),
                  "author": r.get("author"), "text": (r.get("text") or "")[:280],
                  **({"images": len(r.get("images") or []), "messageId": r.get("id")}
                     if r.get("images") else {})} for r in rows]
@@ -496,7 +512,11 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                 "premiumStopPct": args.get("premium_stop_pct"),
                 "maxHoldSessions": args.get("max_hold_sessions")
                 or p.policy.get("time_stop_sessions") or 10,
-                "avoidEarnings": bool(p.policy.get("flatten_before"))}
+                "avoidEarnings": bool(p.policy.get("flatten_before")),
+                # a lotto stays a lotto: the analyst's rewrite of GOOGL 340C on
+                # 2026-09-02 dropped the expiry-day flatten and the premium
+                # ladder, leaving dte_close=1 to dump a 0DTE on the next bar
+                "lotto": bool(p.policy.get("expiry_day_flatten_et") or p.policy.get("premium_watch"))}
         policy = policy_from_exit_plan(plan, is_option=p.has_options, settings=eng.settings)
         # keep trims already done — the evaluator's state carries them; only the doc changes
         try:

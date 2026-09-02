@@ -109,6 +109,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.lotto_max_dte": 3,          # a stated contract expiring within N days is a lotto
     "techniques.tip.lotto_budget": 1500.0,      # $ per lotto tip (separate from budget_per_tip)
     "techniques.tip.lotto_flatten_et": "15:45", # expiry-day mandatory flatten (never hold through the close)
+    "techniques.tip.lotto_premium_targets": "100,200",   # lotto profit-taking on the CONTRACT: +N% rungs (quote-tick judged)
+    "techniques.tip.lotto_premium_fractions": "0.5,0.5", # fraction of the original size sold at each rung; rest floors at entry
     "techniques.tip.auto_min_graded": 5,     # earned auto: closed tip positions a source needs before the platform-default auto self-approves
     "techniques.tip.auto_min_hit": 0.4,      # earned auto: minimum hit rate on those closed positions (explicit per-source auto bypasses both)
     "techniques.tip.retro_enabled": True,    # nightly analyst retro on closed tip positions
