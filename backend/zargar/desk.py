@@ -279,12 +279,16 @@ class DeskService:
                                   f"exit · {p.get('kind')}: {p.get('reason')}"))
             # exit decisions don't carry order ids: the SELL fill on the same leg
             # within 10 minutes AFTER the decision is that decision's order
+            import re as _re
             for e, *_ in rows:
                 if e.side != "SELL":
                     continue
+                sym = e.symbol.upper()
+                und = (_re.match(r"^[A-Z]{1,6}", sym) or [sym])[0] if len(sym) > 10 else sym
                 best = None
                 for leg, ts, txt in exits:
-                    if leg == e.symbol.upper() and 0 <= (e.ts - ts).total_seconds() <= 600:
+                    # armed-plan exits log the underlying; the manager logs the leg
+                    if leg in (sym, und) and 0 <= (e.ts - ts).total_seconds() <= 600:
                         if best is None or ts > best[0]:
                             best = (ts, txt)
                 if best:
