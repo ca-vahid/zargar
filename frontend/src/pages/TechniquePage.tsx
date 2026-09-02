@@ -241,7 +241,20 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
     return t ? Math.max(1, Math.round((now - t) / 60000)) : null;
   };
 
-  const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id) && !armedElsewhere(id));
+  // a finished batch stays on screen; after its session has closed its plans are
+  // STALE (built for a day that is over) and must not be armable — the user pressed
+  // "Arm 22 confirmed" on last night's batch after today's close (2026-09-01)
+  const nextSessionDate = (() => {
+    const et = new Date(new Date().toLocaleString("en-US", { timeZone: "America/New_York" }));
+    if (et.getHours() >= 16) et.setDate(et.getDate() + 1);          // after the close: tomorrow at the earliest
+    const y = et.getFullYear(), m = String(et.getMonth() + 1).padStart(2, "0"), d = String(et.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  })();
+  const planExpired = (id: string) => {
+    const pf = full[id]?.result?.plan?.planFor as string | undefined;
+    return !!pf && pf < nextSessionDate;
+  };
+  const passed = ids.filter((id) => analystOk(full[id]) && bestTrigger(full[id]) && !isArmed(id) && !armedElsewhere(id) && !planExpired(id));
   const setups = armable ? ids.filter((id) => analystOk(full[id]))
     : doneIds.filter((id) => rows[id]?.verdict === "setup");
   const armAll = async () => {
@@ -385,6 +398,8 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
                         <td className="nowrap tq-arm-cell" onClick={(e) => e.stopPropagation()}>
                           {best && (isArmed(id)
                             ? <span className="tq-badge setup">ARMED</span>
+                            : planExpired(id)
+                            ? <span className="tq-badge" title={`This plan was built for ${full[id]?.result?.plan?.planFor} — that session is over. Run a fresh Check & arm for the next session.`}>expired</span>
                             : armedElsewhere(id)
                             ? <span className="tq-badge plan" title="This symbol is already watched by another armed EM plan — arming this run too would double-fire. Disarm the other plan first if you prefer this one.">armed·other</span>
                             : <button className="tq-act next" disabled={!!armBusy[id]}
