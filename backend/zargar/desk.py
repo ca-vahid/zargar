@@ -230,10 +230,13 @@ class DeskService:
             # book corrections with a cash effect on THESE books only (a cleanup
             # note with cashDelta 0 never renders); after the 09-01 projection
             # cleanup none remain — kept for the general case
-            adj_rows = [a for a in (await session.execute(
-                select(Event).where(Event.type == "PortfolioAdjusted",
-                                    Event.ts >= cutoff))).scalars().all()
-                        if a.portfolio_id in real
+            all_adj = (await session.execute(
+                select(Event).where(Event.type == "PortfolioAdjusted"))).scalars().all()
+            # the journal is append-only: a correction is retired by a LATER
+            # event carrying `supersedes: <event id>`, never by editing it
+            superseded = {int((a.payload or {}).get("supersedes") or 0) for a in all_adj}
+            adj_rows = [a for a in all_adj
+                        if a.portfolio_id in real and a.ts >= cutoff and a.id not in superseded
                         and abs(float((a.payload or {}).get("cashDelta") or 0)) >= 0.01]
             # the book's BASELINE: a sim book can be reset to a flat starting
             # cash (the Practice book was, 2026-08-25) — trades before the last
