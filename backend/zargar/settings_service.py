@@ -179,6 +179,8 @@ DEFAULTS: dict[str, Any] = {
     "options.enrich_seconds": 5,            # contract bid/ask refresh cadence from the chain
     "feed.exchange_bars": True,             # correct sampled 1m bars with real exchange OHLC/volume from the 1m history
     "options.fee_per_contract": 0.99,       # Webull CA: USD per contract (+ regulatory fees)
+    "sim.reg_fee_per_contract": 0.05,       # practice fills: regulatory/exchange fees per contract on top (OCC/ORF/FINRA ≈ $0.05)
+    "sim.stock_commission": 0.0,            # practice fills: flat commission per share trade — Webull CA charges $0 (audited 2026-09-01)
     "quotes.yahoo_poll_seconds": 1.0,   # 1=frantic … 10=calm (see ui tick-speed select)
     # --- broker fee schedule (editable estimates; verify via order impact) ----
     "fees.webull_fx_pct": 1.5,          # Webull CA: rate + 1.5% markup on CAD<->USD

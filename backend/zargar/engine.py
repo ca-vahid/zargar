@@ -91,7 +91,7 @@ class Engine:
         if isinstance(halt_state, dict) and halt_state.get("engaged"):
             self.halt.engage(halt_state.get("reason", "restored after restart"))
 
-        self.sim_executor = SimExecutor()
+        self.sim_executor = SimExecutor(settings=self.settings)
         if self.config.broker == "ibkr":
             try:
                 from .brokers.ibkr import IBKRBroker

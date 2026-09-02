@@ -711,3 +711,11 @@ button.bl-card:active { background: var(--surface-2); }
   .led-what { min-width: 0; flex: 1 1 60%; }
   .led-math { flex-basis: 100%; order: 3; white-space: normal; font-size: 12px; }
 }
+
+/* Ledger detail on phones: the breakdown stacks label-over-value */
+@media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
+  .led-detail { padding-left: 0; }
+  .led-detail-grid { grid-template-columns: 1fr; gap: 2px; }
+  .led-detail-grid .muted:nth-child(odd) { margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+  .led-row[role="button"] { min-height: 56px; }
+}
