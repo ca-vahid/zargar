@@ -140,6 +140,18 @@ a number** (p. 72).
   is judging whether the break would CONFIRM — not whether price touched beyond.
   Hold until ≥5 reject kills are scored: running reject-kill counterfactual is
   the decision input (today −4.21R foregone vs +2.30R saved overall).
+- **Day 6 (2026-09-02) scorecard:** 8 critic kills. WRONG: CRCL b1 bounce (+2.35R, all three
+  targets inside 10 min) and HOOD b1 bounce (+2.60R) - both killed as "bounce into an active
+  liquidation / falling knife / single-touch level". RIGHT: NOW b1 (-1.02R), VST r2 (~0).
+  MOOT (never filled inside the entry window): IONQ, LITE, TXN, ARM. Running tally of scored
+  wrong kills: MUU +1.77, SOLS +2.44 (day 5), CRCL +2.35, HOOD +2.60 = **4 kills, +9.2R foregone**
+  vs 2 right kills avoiding -2.3R. The pattern is the same on both sides: the critic reads
+  1-minute momentum INTO the level as a reason not to trade AT the level, which is the method's
+  entry by definition. Prompt-fix candidate (mirror of the 08-28 direction clause): "a bounce
+  fires into a decline and a reject fires into a rally - momentum into the level is the setup,
+  not a kill reason; kill only when the level is already lost on a CLOSED bar or the volume
+  read contradicts the plan". Decision threshold was >= 5 scored kills - at 4 now; one more
+  scored day decides.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -236,7 +248,9 @@ the position opens with its thesis already "wrong" by our own stop definition. T
 (+4.20R to TP2 on the counterfactual) because the level held on the next bar. Question:
 should a stop-close bar CANCEL the working entry (the reject failed) or is the fill window
 the only test? Decision threshold: 10 such cases scored by the counterfactual/outcome path;
-cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, +4.20R).
+cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW: +4.20R on the
+put's late fill, but **-1.24R on the plan itself** - a shares-style fill at the level was stopped on
+the 09:33 close; the option's 09:34 print turned a stopped plan into a winner by luck).
 
 ## 2. Findings (settled, with evidence)
 
