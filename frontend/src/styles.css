@@ -2070,7 +2070,7 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .led-times { opacity: .75; }
 .led-gain { font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
 .led-dayhead { display: flex; align-items: center; gap: 12px; }
-.led-daybar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+.led-daybar { width: 140px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-left: auto; margin-right: 12px; }
 .led-bar { display: block; height: 100%; border-radius: 3px; }
 .pos-bg { background: var(--pos, #1a9c62); }
 .neg-bg { background: var(--neg, #d64545); }

@@ -321,10 +321,10 @@ export interface LedgerTrip {
   inReason?: string | null; outReason?: string | null;
 }
 export interface Ledger {
-  asOf: string; windowDays: number; total: number; startingCash: number;
-  startedAt: string | null;
-  /** the identity: startingCash + banked + riding == total (unexplained ≈ 0) */
-  sinceStart: number; banked: number; riding: number; unexplained: number;
+  asOf: string; windowDays: number; workspace: "practice" | "live";
+  total: number; startingCash: number | null; startedAt: string | null;
+  /** practice: startingCash + banked + riding == total (unexplained ≈ 0); live: null */
+  sinceStart: number | null; banked: number; riding: number; unexplained: number | null;
   realized: number; openValue: number;
   days: { date: string; realized: number; trips: LedgerTrip[];
     adjustments: { day: string; at: string; amount: number; reason: string }[] }[];

@@ -5,6 +5,7 @@ import { parseOcc } from "../lib/occ";
 import { useAsync } from "../lib/useAsync";
 import { SymIcon } from "../components/SymIcon";
 import { AsyncSection, EmptyState } from "../components/ui";
+import { useStore } from "../store";
 import type { Ledger, LedgerTrip } from "../types";
 
 /** The plain-language money view (user 2026-09-01): what was bought, what was
@@ -66,8 +67,11 @@ function TripRow({ t }: { t: LedgerTrip }) {
 
 export function LedgerPage() {
   const [days, setDays] = useState(30);
-  const state = useAsync(() => api.deskLedger(days), [days]);
+  // the ledger follows the workspace: switching Practice/LIVE re-fetches
+  const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const state = useAsync(() => api.deskLedger(days), [days, mode]);
   const led: Ledger | undefined = state.data;
+  const live = led?.workspace === "live";
   const maxDay = useMemo(
     () => Math.max(1, ...(led?.days ?? []).map((d) => Math.abs(d.realized))), [led]);
   return (
@@ -79,26 +83,30 @@ export function LedgerPage() {
         {() => led && (
           <>
             <div className="led-headline">
-              <div className="led-stat">
-                <span className="led-num">{fmtMoney(led.startingCash, 0)}</span>
-                <span className="led-lbl">started with{led.startedAt ? <><br />{led.startedAt}</> : null}</span>
-              </div>
-              <span className="led-op">+</span>
+              {!live && (
+                <>
+                  <div className="led-stat">
+                    <span className="led-num">{fmtMoney(led.startingCash ?? 0, 0)}</span>
+                    <span className="led-lbl">started with{led.startedAt ? <><br />{led.startedAt}</> : null}</span>
+                  </div>
+                  <span className="led-op">+</span>
+                </>
+              )}
               <div className="led-stat">
                 <span className={`led-num ${led.banked >= 0 ? "pos" : "neg"}`}>{fmtSigned(led.banked)}</span>
-                <span className="led-lbl">banked<br />(sold − bought − fees)</span>
+                <span className="led-lbl">banked{live ? " via Zargar" : ""}<br />(sold − bought − fees)</span>
               </div>
               <span className="led-op">+</span>
               <div className="led-stat">
                 <span className={`led-num ${led.riding >= 0 ? "pos" : "neg"}`}>{fmtSigned(led.riding)}</span>
                 <span className="led-lbl">riding on open<br />positions, after fees</span>
               </div>
-              <span className="led-op">=</span>
+              <span className="led-op">{live ? "·" : "="}</span>
               <div className="led-stat">
                 <span className="led-num">{fmtMoney(led.total, 0)}</span>
-                <span className="led-lbl">total right now<br />(cash + positions)</span>
+                <span className="led-lbl">{live ? <>brokerage total<br />(all accounts, not only Zargar's trades)</> : <>total right now<br />(cash + positions)</>}</span>
               </div>
-              {Math.abs(led.unexplained) >= 1 && (
+              {led.unexplained != null && Math.abs(led.unexplained) >= 1 && (
                 <span className="status-pill bad"
                   title="start + banked + riding should equal the total; this gap needs an audit">
                   {fmtSigned(led.unexplained)} unexplained
@@ -141,7 +149,10 @@ export function LedgerPage() {
             )}
 
             {led.days.length === 0 ? (
-              <EmptyState title={`No completed trades in the last ${led.windowDays} days`} />
+              <EmptyState title={live && led.open.length === 0
+                ? "No trades through Zargar on your live accounts yet"
+                : `No completed trades in the last ${led.windowDays} days`}
+                hint={live ? "The brokerage total above includes everything the accounts hold; this page only ever shows what Zargar bought and sold." : undefined} />
             ) : led.days.map((d) => (
               <div className="panel mb" key={d.date}>
                 <div className="panel-head led-dayhead">
