@@ -210,7 +210,7 @@ class DeskService:
         paper) — research books never. Round trips are FIFO-paired per
         (book, symbol) from executions; book corrections (PortfolioAdjusted)
         appear as their own rows so the ledger reconciles to the dollar."""
-        from sqlalchemy import select
+        from sqlalchemy import Numeric, select
 
         from .models import Event, Execution, Order
         eng = self.engine
@@ -230,6 +230,26 @@ class DeskService:
             adj_rows = (await session.execute(
                 select(Event).where(Event.type == "PortfolioAdjusted",
                                     Event.ts >= cutoff))).scalars().all()
+            # the book's BASELINE: a sim book can be reset to a flat starting
+            # cash (the Practice book was, 2026-08-25) — trades before the last
+            # flat point were wiped with the reset and must not count, or
+            # start + banked + riding never equals the total (audit 2026-09-01)
+            from sqlalchemy import func
+            from .models import EquityPoint
+            baseline_ms: dict[str, int] = {}
+            for pid, p in real.items():
+                start = round(float(p.get("startingCash") or 0), 2)
+                if start <= 0:
+                    continue
+                ts = (await session.execute(
+                    select(func.max(EquityPoint.ts)).where(
+                        EquityPoint.portfolio_id == pid,
+                        func.round(EquityPoint.cash.cast(Numeric), 2) == start,
+                        func.round(EquityPoint.equity.cast(Numeric), 2) == start))).scalar()
+                if ts:
+                    baseline_ms[pid] = int(ts)
+        rows = [r for r in rows
+                if int(r[0].ts.timestamp() * 1000) >= baseline_ms.get(r[0].portfolio_id, 0)]
 
         def label(tech, src, tags):
             tip_src = next((str(t).split(":", 1)[1] for t in (tags or [])
@@ -242,21 +262,27 @@ class DeskService:
 
         trips: list[dict] = []
         open_lots: dict[tuple, list[dict]] = {}
+        # gains are AFTER commissions on both legs (fee per unit carried on the
+        # lot, so partial closes share it fairly) — price-only gains left a $63
+        # hole against the book (audit 2026-09-01)
         for e, tech, src, tags in rows:
             mult = 100.0 if len(e.symbol) > 10 else 1.0
             lots = open_lots.setdefault((e.portfolio_id, e.symbol), [])
             qty, px = float(e.qty), float(e.price)
+            fee_unit = float(e.commission or 0) / qty if qty else 0.0
             sgn = 1.0 if e.side == "BUY" else -1.0
             while qty > 1e-9 and lots and lots[0]["sgn"] != sgn:
                 lot = lots[0]
                 take = min(qty, lot["qty"])
-                gain = (px - lot["px"]) * take * mult * lot["sgn"]
+                fees = (lot["fee_unit"] + fee_unit) * take
+                gain = (px - lot["px"]) * take * mult * lot["sgn"] - fees
                 trips.append({
                     "symbol": e.symbol, "secType": ("OPT" if mult > 1 else "STK"),
                     "qty": take, "portfolio": real[e.portfolio_id]["name"],
                     "inPrice": lot["px"], "outPrice": px,
                     "inAt": lot["ts"].isoformat(), "outAt": e.ts.isoformat(),
                     "cost": round(lot["px"] * take * mult, 2),
+                    "fees": round(fees, 2),
                     "gain": round(gain, 2),
                     "short": lot["sgn"] < 0,
                     "label": lot["label"],
@@ -268,7 +294,7 @@ class DeskService:
                     lots.pop(0)
             if qty > 1e-9:
                 lots.append({"sgn": sgn, "qty": qty, "px": px, "ts": e.ts,
-                             "label": label(tech, src, tags)})
+                             "fee_unit": fee_unit, "label": label(tech, src, tags)})
 
         open_positions = []
         for (pid, sym), lots in open_lots.items():
@@ -276,14 +302,17 @@ class DeskService:
                 mult = 100.0 if len(sym) > 10 else 1.0
                 q = eng.quotes.get(sym)
                 mark = float(q.last) if q is not None and q.last and q.last > 0 else None
+                fee_in = round(lot["fee_unit"] * lot["qty"], 2)
                 open_positions.append({
                     "symbol": sym, "qty": lot["qty"] * lot["sgn"],
                     "portfolio": real[pid]["name"],
                     "inPrice": lot["px"], "inAt": lot["ts"].isoformat(),
                     "cost": round(lot["px"] * lot["qty"] * mult, 2),
+                    "fees": fee_in,
                     "mark": mark,
-                    "unrealized": (round((mark - lot["px"]) * lot["qty"] * mult * lot["sgn"], 2)
-                                   if mark else None),
+                    # what selling here would bank: mark move minus the entry fee
+                    "unrealized": (round((mark - lot["px"]) * lot["qty"] * mult * lot["sgn"]
+                                         - fee_in, 2) if mark else None),
                     "label": lot["label"],
                 })
 
@@ -309,12 +338,24 @@ class DeskService:
         for pid in real:
             with contextlib.suppress(Exception):
                 equity += float(await eng.positions.equity(pid) or 0)
+        starting = round(sum(float(p.get("startingCash") or 0) for p in real.values()), 2)
+        # since the baseline: EVERY trip + adjustment (the window only scopes the
+        # day list) — so start + banked + riding == total, by construction
+        banked_all = round(sum(t["gain"] for t in trips)
+                           + sum(a["amount"] for a in adjustments), 2)
+        riding = round(sum(x["unrealized"] or 0 for x in open_positions), 2)
+        baseline = min(baseline_ms.values()) if baseline_ms else None
         return {
             "asOf": dt.datetime.now(dt.timezone.utc).isoformat(),
             "windowDays": days,
             "total": round(equity, 2),
-            "startingCash": round(sum(float(p.get("startingCash") or 0)
-                                      for p in real.values()), 2),
+            "startingCash": starting,
+            "startedAt": (dt.datetime.fromtimestamp(baseline / 1000, dt.timezone.utc)
+                          .astimezone(ET).strftime("%Y-%m-%d") if baseline else None),
+            "sinceStart": round(equity - starting, 2),
+            "banked": banked_all,                     # after fees, since the baseline
+            "riding": riding,                         # after entry fees, at the live mark
+            "unexplained": round(equity - starting - banked_all - riding, 2),
             "realized": round(sum(t["gain"] for t in window_trips)
                               + sum(a["amount"] for a in adjustments), 2),
             "openValue": round(sum(x["cost"] for x in open_positions), 2),
