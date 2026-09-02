@@ -227,9 +227,14 @@ class DeskService:
                 .join(Order, Order.id == Execution.order_id)
                 .where(Execution.portfolio_id.in_(list(real)))
                 .order_by(Execution.ts.asc()))).all()
-            adj_rows = (await session.execute(
+            # book corrections with a cash effect on THESE books only (a cleanup
+            # note with cashDelta 0 never renders); after the 09-01 projection
+            # cleanup none remain — kept for the general case
+            adj_rows = [a for a in (await session.execute(
                 select(Event).where(Event.type == "PortfolioAdjusted",
                                     Event.ts >= cutoff))).scalars().all()
+                        if a.portfolio_id in real
+                        and abs(float((a.payload or {}).get("cashDelta") or 0)) >= 0.01]
             # the book's BASELINE: a sim book can be reset to a flat starting
             # cash (the Practice book was, 2026-08-25) — trades before the last
             # flat point were wiped with the reset and must not count, or
@@ -400,17 +405,23 @@ class DeskService:
                            + sum(a["amount"] for a in adjustments), 2)
         riding = round(sum(x["unrealized"] or 0 for x in open_positions), 2)
         baseline = min(baseline_ms.values()) if baseline_ms else None
+        # a REAL account holds money that predates the app (deposits, other
+        # brokers' trades): the start+banked+riding identity is a practice-book
+        # concept. Live shows what Zargar itself did — banked and riding — and
+        # the brokerage total, with no "unexplained" (it is explained: not ours)
+        practice = not live_ws
         return {
             "asOf": dt.datetime.now(dt.timezone.utc).isoformat(),
             "windowDays": days,
+            "workspace": "live" if live_ws else "practice",
             "total": round(equity, 2),
-            "startingCash": starting,
+            "startingCash": starting if practice else None,
             "startedAt": (dt.datetime.fromtimestamp(baseline / 1000, dt.timezone.utc)
-                          .astimezone(ET).strftime("%Y-%m-%d") if baseline else None),
-            "sinceStart": round(equity - starting, 2),
+                          .astimezone(ET).strftime("%Y-%m-%d") if (baseline and practice) else None),
+            "sinceStart": round(equity - starting, 2) if practice else None,
             "banked": banked_all,                     # after fees, since the baseline
             "riding": riding,                         # after entry fees, at the live mark
-            "unexplained": round(equity - starting - banked_all - riding, 2),
+            "unexplained": (round(equity - starting - banked_all - riding, 2) if practice else None),
             "realized": round(sum(t["gain"] for t in window_trips)
                               + sum(a["amount"] for a in adjustments), 2),
             "openValue": round(sum(x["cost"] for x in open_positions), 2),
