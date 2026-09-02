@@ -159,7 +159,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
         )}
         {a.needsAttention && (
           <div className="tq-attention">
-            <b>\u26a0 Needs attention</b>
+            <b>{"\u26a0"} Needs attention</b>
             <ul>{(a.attentionReasons ?? []).map((r, i) => <li key={i}>{r}</li>)}</ul>
             <div className="tq-attention-actions">
               <button className="danger-btn" disabled={busy}

@@ -269,7 +269,7 @@ export function TopBar() {
         <button className="status-pill attention"
           title={`${attention.length} armed plan(s) need attention (failed exit / unmanaged position) — click for the Armed page. This shows regardless of workspace.`}
           onClick={() => setPage("armed")}>
-          \u26a0 {attention.length} needs attention
+          {"\u26a0"} {attention.length} needs attention
         </button>
       )}
       {otherArmed > 0 && (

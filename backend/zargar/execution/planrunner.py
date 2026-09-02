@@ -261,10 +261,13 @@ class ArmedPlan:
     expires_session: str = ""           # last session date the plan may still fire ("" = plan_for)
     risk_warning: str = ""              # arm-time cap preflight (ARM-GAPS E3) — shown on the card
 
-    def _attention_reasons(self) -> list[str]:
+    def _attention_reasons(self, portfolio: dict | None = None) -> list[str]:
         """Human sentences for anything that needs a person: a failed exit with the
         position still open, an entry that half-filled then errored, stale data
-        while holding. Empty list = all clear."""
+        while holding. Empty list = all clear. A RESEARCH (shadow) book's entry
+        that produced nothing is a missed record, not a person's problem — it
+        stays in the plan log, never in the top-bar nag (2026-09-02)."""
+        research = bool(portfolio and portfolio.get("kind") == "shadow")
         probs: list[str] = []
         for t in self.trades.values():
             last_exit = t.exits[-1] if t.exits else None
@@ -272,7 +275,7 @@ class ArmedPlan:
                 probs.append(f"{t.trigger_id}: exit {last_exit.get('kind')} failed — {t.remaining:g} still held")
             if t.status == "failed" and t.filled_qty > 0 and t.remaining > 0:
                 probs.append(f"{t.trigger_id}: entry errored after a partial fill — {t.remaining:g} held unmanaged")
-            if t.status == "failed" and t.filled_qty <= 0:
+            if t.status == "failed" and t.filled_qty <= 0 and not research:
                 probs.append(f"{t.trigger_id}: fire produced nothing — {t.reason or 'failed'}")
         if self.stale and any(t.remaining > 0 for t in self.trades.values()):
             probs.append("bar data is stale while a position is open")
@@ -337,8 +340,8 @@ class ArmedPlan:
             "trades": [t.to_dict() for t in self.trades.values()],
             "openPositions": len(open_trades),
             "realizedPnl": round(sum(t.realized_pnl for t in self.trades.values()), 2),
-            "needsAttention": (lambda probs: bool(probs))(self._attention_reasons()),
-            "attentionReasons": self._attention_reasons(),
+            "needsAttention": bool(self._attention_reasons(portfolio)),
+            "attentionReasons": self._attention_reasons(portfolio),
             "fired": [t.to_dict() for t in self.trades.values()],   # back-compat for the rail
             "events": self.events[-200:],   # a full session of touches/skips fits in the day panel
             "summary": self._summary(prime_now, last),
