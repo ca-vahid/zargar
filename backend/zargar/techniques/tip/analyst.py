@@ -715,7 +715,7 @@ async def _source_history(eng, source: str | None, *, hours: float = 72,
         return "(mirror unavailable)"
     if not rows:
         return "(nothing mirrored yet — the intake mirrors watched channels while it runs)"
-    return "\n".join(f"- [{(r.get('postedAt') or '')[:16]}] {r.get('author')}: "
+    return "\n".join(f"- [{_et_label(r.get('postedAt'))}] {r.get('author')}: "
                      f"{(r.get('text') or '').strip()[:220]}"
                      + (f" [images: {r.get('id')} — view_image to look]"
                         if r.get("images") else "")
@@ -913,6 +913,10 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         "catalyst": signal_row.catalyst, "thesis": signal_row.thesis_summary,
         "confidence": signal_row.confidence, "source": signal_row.source_name,
         "status": signal_row.status,
+        # the tip's own time, in ET, labelled — an ISO-UTC statedAt read as ET
+        # put "16:01" on a 12:01 message in the analyst's reasoning (2026-09-02)
+        "statedAt": _et_label((getattr(signal_row, "extraction", None) or {}).get("statedAt")
+                              or getattr(signal_row, "created_at", None)),
         **({"experiment": experiment} if experiment else {}),
     }
     tool_names = [t["name"] for t in TOOLS]

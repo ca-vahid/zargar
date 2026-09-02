@@ -239,6 +239,36 @@ async def test_implied_tip_trades_shadow_books_only(app_client):
     assert card["verified"] == 1                      # shadow counts as verified-for-books
 
 
+async def test_analyst_take_on_implied_tip_is_promoted_but_never_self_approves(app_client):
+    # 2026-09-02 15:22 (neal "GME ape now, got starter" + a position screenshot):
+    # the extractor called it implied -> shadow, the analyst said TAKE, and nothing
+    # reached Practice. A take on a shadow tip whose fatal checks all passed is
+    # PROMOTED to a proposal that waits for the human — even with the source on
+    # explicit auto (promotions never self-approve).
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+    eng.signals_service._analyst_client = _FakeAnthropic()
+    tip = ExtractionResult(
+        signals=[TradeSignal(
+            ticker="AAPL", direction="long", action="open",
+            timeframe="swing", catalyst="buyback",
+            thesis_summary="Turning off trendline support; buyback at the lows.",
+            evidence_quotes=["We are buying AAPL today"],
+            confidence="implied", is_actionable=False)],
+        source_type="other")
+    out = await run_pipeline(eng, tip)
+    sig = out[0]["signal"]
+    assert sig["status"] == "shadow", sig["verification"]
+    assert sig["extraction"]["analyst"]["verdict"] == "take"
+    assert out[0]["shadowOrder"] is not None
+    p = out[0]["proposal"]
+    assert p is not None and p["status"] == "pending", p
+    assert p["context"].get("promoted") and "human" in (p["context"].get("autoGate") or "")
+    assert not p.get("decidedVia")
+
+
 async def test_stale_tip_replayed_not_traded(app_client):
     # content whose own visible date is older than max_tip_age_hours is
     # replayed on history (both books' counterfactuals) instead of traded
