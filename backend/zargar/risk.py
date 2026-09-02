@@ -88,6 +88,10 @@ class RiskGate:
         # replaces it with the durable position manager (plan phase 2b).
         self._day_notional: dict[str, float] = {}
         self._day_key = ""
+        # engine-set: "a real-time option quote source is configured" — then a
+        # chain-sourced (delayed) option quote fails quote_fresh for ENTRIES
+        # (2026-09-02: a 15-min-old ask was judged "4.8 s old" and filled)
+        self.live_option_quotes_expected = lambda: False
 
     def note_submission(self, symbol: str, side: str, qty: float, order_type: str,
                         portfolio_id: str = "") -> None:
@@ -197,9 +201,19 @@ class RiskGate:
         stale_after = float(s.get("risk.stale_quote_seconds", 10))
         age = self._quotes.age_seconds(symbol)
         fresh = quote is not None and age <= stale_after
-        checks.append(RiskCheck(
-            "quote_fresh", fresh,
-            f"no quote for {symbol}" if quote is None else f"quote age {age:.1f}s (max {stale_after:.0f}s)"))
+        detail = f"no quote for {symbol}" if quote is None else f"quote age {age:.1f}s (max {stale_after:.0f}s)"
+        if fresh and is_option and getattr(quote, "delayed", False):
+            # `ts` is when WE last copied the price; a chain row is ~15 min old
+            # however often it is copied. With a real-time source configured
+            # this quote is a fallback nobody should spend money on.
+            src_age = self._quotes.source_age_seconds(symbol) if hasattr(self._quotes, "source_age_seconds") else age
+            if self.live_option_quotes_expected():
+                fresh = False
+                detail = (f"option quote is from the delayed chain (~{src_age / 60:.0f} min old) — "
+                          f"real-time source configured but not serving {symbol}")
+            else:
+                detail += f" · delayed chain source (~{src_age / 60:.0f} min)"
+        checks.append(RiskCheck("quote_fresh", fresh, detail))
         if quote is not None:
             checks.append(RiskCheck("not_halted", not quote.halted,
                                     "instrument is halted" if quote.halted else ""))

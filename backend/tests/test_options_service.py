@@ -146,6 +146,111 @@ async def test_contract_quote_is_published_and_overlaid(opt_engine):
     assert r.status_code == 400
 
 
+def make_alpaca_opra(quotes: dict, trades: dict | None = None, *, status: int = 200):
+    """A stubbed OPRA latest-quotes/trades pair (`AlpacaOptionsData` over MockTransport)."""
+    from zargar.options.chain import AlpacaOptionsData
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if status != 200:
+            return httpx.Response(status, json={"message": "forbidden"})
+        if request.url.path.endswith("/quotes/latest"):
+            return httpx.Response(200, json={"quotes": quotes})
+        if request.url.path.endswith("/trades/latest"):
+            return httpx.Response(200, json={"trades": trades or {}})
+        return httpx.Response(404, json={})
+    return AlpacaOptionsData("k", "s", httpx.AsyncClient(
+        transport=httpx.MockTransport(handler), base_url="https://data.alpaca.markets"))
+
+
+async def test_tracked_contract_quotes_come_from_opra_not_the_delayed_chain(opt_engine):
+    """2026-09-02: every practice fill / premium stop / risk check ran on CBOE's
+    ~15-min-delayed row (GOOGL 340C 'bought' at 0.13 in a 0.60 market). With
+    the Alpaca keys present the tracked contract's bid/ask/last come from OPRA
+    each refresh, badged live; a refusal backs off to the chain row."""
+    eng, client = opt_engine
+    sym = _occ("XYZ", EXP1, "C", 100)
+    eng.options.use_quote_source(make_alpaca_opra(
+        {sym: {"bp": 2.5, "ap": 2.6, "bs": 12, "as": 7, "t": "2026-09-02T17:10:34.713648101Z"}},
+        {sym: {"p": 2.55, "s": 3, "t": "2026-09-02T17:10:33.1Z"}}))
+    await eng.options.track(sym)
+    q = eng.quotes.get(sym)
+    assert (q.bid, q.ask, q.last, q.bid_size, q.ask_size) == (2.5, 2.6, 2.55, 12, 7)   # not CBOE's 2.0/2.1
+    assert eng.options.served_live(sym)
+    r = await client.get(f"/api/options/quote/{sym}")
+    body = r.json()
+    assert body["provider"] == "alpaca" and body["delayed"] is False
+    assert body["bid"] == 2.5 and body["ask"] == 2.6
+    # a Yahoo `last`-only print between passes keeps the OPRA band (overlay)
+    eng.quotes.on_quote(Quote(symbol=sym, bid=0.0, ask=0.0, last=2.56))
+    q2 = eng.quotes.get(sym)
+    assert (q2.bid, q2.ask, q2.last) == (2.5, 2.6, 2.56)
+    # OPRA refused (subscription lapsed): the chain row serves, badged delayed
+    eng.options.use_quote_source(make_alpaca_opra({}, status=403))
+    await eng.options.refresh_tracked()
+    assert not eng.options.served_live(sym)
+    q3 = eng.quotes.get(sym)
+    # on the sim feed the service OWNS the quote, so the chain row is published
+    # whole (2.0/2.1, last 2.05); on a live feed the band would re-centre on the
+    # last real print instead (covered by the overlay test above)
+    assert (q3.bid, q3.ask, q3.last) == (2.0, 2.1, 2.05)
+    assert (await client.get(f"/api/options/quote/{sym}")).json()["delayed"] is True
+
+
+async def test_gate_fails_closed_on_a_delayed_quote_when_a_live_source_is_configured(opt_engine):
+    """The audit's #1: `ts` is re-stamped on every chain refresh, so quote_fresh
+    called a 15-min-old ask '4.8 s old'. Quotes now carry their source; with
+    OPRA configured, a chain-sourced option quote fails quote_fresh for entries
+    (exits are reduce-only and never read it). Sim/tests without a live source
+    keep the old behaviour, labelled."""
+    eng, client = opt_engine
+    pid = sim_pid(eng)
+    sym = _occ("XYZ", EXP1, "C", 100)
+    # no live source configured (test default): chain quote accepted, labelled delayed
+    await eng.options.track(sym)
+    q = eng.quotes.get(sym)
+    assert q.source == "chain" and q.delayed and eng.quotes.source_age_seconds(sym) > 800
+    r = await client.post("/api/orders", json={"portfolio_id": pid, "symbol": sym, "sec_type": "OPT",
+                                               "side": "BUY", "qty": 1, "order_type": "MKT", "dry_run": True})
+    fresh = next(c for c in r.json()["risk"]["checks"] if c["name"] == "quote_fresh")
+    assert fresh["passed"] and "delayed chain" in fresh["detail"]
+    # a live source is configured but refuses (outage / lapsed subscription): fail CLOSED
+    eng.options.use_quote_source(make_alpaca_opra({}, status=403))
+    eng.risk.live_option_quotes_expected = lambda: True
+    await eng.options.refresh_tracked()
+    r = await client.post("/api/orders", json={"portfolio_id": pid, "symbol": sym, "sec_type": "OPT",
+                                               "side": "BUY", "qty": 1, "order_type": "MKT", "dry_run": True})
+    fresh = next(c for c in r.json()["risk"]["checks"] if c["name"] == "quote_fresh")
+    assert not fresh["passed"] and "real-time source configured" in fresh["detail"]
+    # OPRA serving again: the quote is live and the gate passes on it
+    eng.options._alpaca_down_until = 0.0
+    eng.options.use_quote_source(make_alpaca_opra(
+        {sym: {"bp": 2.5, "ap": 2.6, "bs": 1, "as": 1, "t": "2026-09-02T17:10:34.7Z"}}))
+    await eng.options.refresh_tracked()
+    q = eng.quotes.get(sym)
+    assert q.source == "opra" and not q.delayed
+    r = await client.post("/api/orders", json={"portfolio_id": pid, "symbol": sym, "sec_type": "OPT",
+                                               "side": "BUY", "qty": 1, "order_type": "MKT", "dry_run": True})
+    fresh = next(c for c in r.json()["risk"]["checks"] if c["name"] == "quote_fresh")
+    assert fresh["passed"] and "delayed" not in fresh["detail"]
+
+
+async def test_reprice_moves_a_picked_contract_onto_the_live_nbbo(opt_engine):
+    """Sizing / entry limit / never-chase read the PICK's bid/ask — the chain's
+    delayed row ($1,500 / 0.13 = 115 contracts on 2026-09-02). reprice() after
+    track() puts the real-time NBBO on the dict; without a live source the dict
+    is left as picked and labelled."""
+    eng, client = opt_engine
+    sym = _occ("XYZ", EXP1, "C", 100)
+    pick = {"symbol": sym, "bid": 2.0, "ask": 2.1, "mid": 2.05, "spreadPct": 4.88}
+    out = await eng.options.reprice(dict(pick))
+    assert out["priced"] == "chain" and out["ask"] == 2.1
+    eng.options.use_quote_source(make_alpaca_opra(
+        {sym: {"bp": 2.5, "ap": 2.6, "bs": 1, "as": 1, "t": "2026-09-02T17:10:34.7Z"}}))
+    out = await eng.options.reprice(dict(pick))
+    assert out["priced"] == "opra" and (out["bid"], out["ask"], out["mid"]) == (2.5, 2.6, 2.55)
+    assert abs(out["spreadPct"] - 3.92) < 0.01
+
+
 async def test_quiet_feed_republishes_the_chain_quote(opt_engine, monkeypatch):
     """2026-09-02: on the live feed a thin contract (Monday expiry, no Yahoo
     prints) got ONE published quote at track() time and nothing after — the

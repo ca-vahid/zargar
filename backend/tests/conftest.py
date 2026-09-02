@@ -27,6 +27,8 @@ def make_test_config(**overrides) -> AppConfig:
         session_secret="",
         anthropic_api_key="",
         telegram_bot_token="",
+        alpaca_key_id="",          # never let a test reach OPRA/SIP with the real .env keys
+        alpaca_secret="",
     )
     defaults.update(overrides)
     return AppConfig(**defaults)

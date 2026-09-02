@@ -514,9 +514,12 @@ class PlanRunner(SessionListener):
                 # 2) premium stop (options): the contract's own price bled too far
                 if tr.instrument == "options" and prem_pct > 0 and tr.order_symbol:
                     oq = self.engine.quotes.get(tr.order_symbol)
-                    fresh_o = oq is not None and (now_ms - oq.ts) <= max_age * 1000
-                    # a fresh quote with no bid means nobody is paying anything — that
-                    # IS the worst bleed, not a data gap; only a missing/stale quote is
+                    fresh_o = oq is not None and (now_ms - oq.ts) <= max_age * 1000 \
+                        and not getattr(oq, "delayed", False)
+                    # a fresh REAL-TIME quote with no bid means nobody is paying
+                    # anything — that IS the worst bleed, not a data gap. A delayed
+                    # chain row with bid 0 (thin contract, audit 2026-09-02) is a
+                    # data gap: never market-sell a live position on it.
                     obid = (float(oq.bid) if oq is not None and oq.bid and oq.bid > 0
                             else (0.0 if fresh_o else None))
                     nkey = (ap.run_id, tr.trigger_id + "~noq")
@@ -565,6 +568,10 @@ class PlanRunner(SessionListener):
         today OR a coming session is re-armed — arming Sunday evening for Monday
         must survive a restart; only plans whose session has passed expire."""
         today = session_date(int(time.time() * 1000))
+        # the stale-bar judgement gets a fresh clock from boot: a restored plan's
+        # last bar is minutes old by the time the feed resumes, and 31 plans
+        # journaled "stale bars" 95 s after a 13:00 restart on 2026-09-02
+        self._restored_ms = int(time.time() * 1000)
         async with self.engine.sf() as session:
             # each runner restores ONLY its own technique's rows — with two
             # runners live, an unfiltered restore would re-arm the other
@@ -2639,9 +2646,11 @@ class PlanRunner(SessionListener):
                                                 reason="session closed (clock — no closing bar seen)")
                     except Exception:
                         log.exception("clock-driven close failed for %s", ap.symbol)
+        boot_ms = int(getattr(self, "_restored_ms", 0) or 0)
         for ap in list(self._armed.values()):
+            # stale only when neither the last bar NOR the boot is recent
             if in_session and ap.plan_for == now.strftime("%Y-%m-%d") and ap.last_bar_ts \
-                    and now_ms - ap.last_bar_ts > stale_s * 1000 and not ap.stale:
+                    and now_ms - max(ap.last_bar_ts, boot_ms) > stale_s * 1000 and not ap.stale:
                 ap.stale = True
                 self._log(ap, "stale", f"no closed bar for {stale_s}s — triggers idle until bars resume; "
                                        "exits keep working on quotes")

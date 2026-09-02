@@ -1698,6 +1698,11 @@ class SignalService:
                     allow_0dte=lotto,
                     max_strike=cap if sig.direction == "long" else None,
                     min_strike=cap if sig.direction == "short" else None)
+                if pick.get("available") and pick.get("symbol") and getattr(eng, "options", None) is not None:
+                    # size on the real-time NBBO, not the chain's delayed ask: the
+                    # record must mirror what the desk would actually pay
+                    with contextlib.suppress(Exception):
+                        await eng.options.reprice(pick)
                 ask = float(pick.get("ask") or pick.get("mid") or 0) if pick.get("available") else 0.0
                 if pick.get("available") and pick.get("symbol") and ask > 0:
                     from ..execution.sizing import size_by_budget

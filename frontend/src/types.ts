@@ -14,6 +14,10 @@ export interface Quote {
   dayHigh?: number;
   dayLow?: number;
   session?: "pre" | "regular" | "post" | "closed" | "";
+  // where an option's bid/ask came from: "" feed · "opra" real-time NBBO ·
+  // "chain" the ~15-min-delayed chain row (badged "delayed" on money screens)
+  source?: "" | "opra" | "chain" | "provider" | string;
+  sourceTs?: number;
 }
 
 export interface Portfolio {

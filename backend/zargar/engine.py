@@ -189,6 +189,9 @@ class Engine:
         from .options.service import OptionsService
         self.options = OptionsService(self)
         self.orders.option_gate = self.options.allows_options
+        # the gate fails CLOSED on a delayed option quote whenever a real-time
+        # source is configured — an OPRA outage must never re-open the 0.13 hole
+        self.risk.live_option_quotes_expected = lambda: self.options.quote_source(ignore_backoff=True) is not None
         await self.options.start()
 
         for symbol in await self._startup_symbols():

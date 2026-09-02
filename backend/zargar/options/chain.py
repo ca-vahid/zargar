@@ -236,3 +236,86 @@ class TradierClient:
 
     async def aclose(self) -> None:
         await self._http.aclose()
+
+
+# --- Alpaca OPRA (real-time contract quotes) -------------------------------------
+
+ALPACA_DATA_BASE = "https://data.alpaca.markets"
+
+
+class AlpacaOptionsData:
+    """Real-time OPRA quotes/trades for KNOWN contracts — the Algo Trader Plus
+    subscription includes them (probed 2026-09-02: NBBO ~1 s old, sizes +
+    exchanges; snapshots carry greeks/IV). This is the QUOTE source for tracked
+    contracts; the chain browser still comes from the chain provider. It is not
+    a chain provider itself (no expirations()/chain()) — phase 2 adds that from
+    ``/v1beta1/options/snapshots/{underlying}`` + ``/v2/options/contracts`` (OI)."""
+
+    name = "alpaca"
+    delayed = False
+    BATCH = 100
+
+    def __init__(self, key_id: str, secret: str, client: httpx.AsyncClient | None = None,
+                 *, feed: str = "opra") -> None:
+        self._http = client or httpx.AsyncClient(
+            timeout=10, base_url=ALPACA_DATA_BASE,
+            headers={"APCA-API-KEY-ID": key_id, "APCA-API-SECRET-KEY": secret})
+        self._feed = feed
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @staticmethod
+    def _ts_ms(t: str | None) -> int:
+        if not t:
+            return 0
+        try:
+            import datetime as _dt
+            s = t.replace("Z", "+00:00")
+            if "." in s:                                 # trim nanoseconds to microseconds
+                head, tail = s.split(".", 1)
+                frac = tail.split("+", 1)[0][:6]
+                s = f"{head}.{frac}+00:00"
+            return int(_dt.datetime.fromisoformat(s).timestamp() * 1000)
+        except ValueError:
+            return 0
+
+    async def latest(self, symbols: list[str]) -> dict[str, dict]:
+        """``{occ: {bid, ask, bid_size, ask_size, last, last_size, quote_ts, trade_ts}}``
+        for every contract Alpaca knows; a symbol it does not know is simply
+        absent (the caller falls back to the chain provider for it)."""
+        out: dict[str, dict] = {}
+        syms: list[str] = []
+        for x in symbols:
+            o = occ.parse(x)
+            if o is not None:
+                syms.append(o.symbol)
+        for i in range(0, len(syms), self.BATCH):
+            chunk = syms[i:i + self.BATCH]
+            params = {"symbols": ",".join(chunk), "feed": self._feed}
+            rq = await self._http.get("/v1beta1/options/quotes/latest", params=params)
+            if rq.status_code in (401, 403):
+                raise OptionsError(f"Alpaca options data refused ({rq.status_code}) — subscription?")
+            if rq.status_code >= 400:
+                raise OptionsError(f"Alpaca options quotes HTTP {rq.status_code}")
+            quotes = (rq.json() or {}).get("quotes") or {}
+            trades: dict = {}
+            try:
+                rt = await self._http.get("/v1beta1/options/trades/latest", params=params)
+                if rt.status_code < 400:
+                    trades = (rt.json() or {}).get("trades") or {}
+            except httpx.HTTPError:                      # last is optional — the NBBO is the point
+                trades = {}
+            for sym, q in quotes.items():
+                t = trades.get(sym) or {}
+                out[sym] = {
+                    "bid": _f(q.get("bp")), "ask": _f(q.get("ap")),
+                    "bid_size": int(_f(q.get("bs"))), "ask_size": int(_f(q.get("as"))),
+                    "last": _f(t.get("p")), "last_size": int(_f(t.get("s"))),
+                    "quote_ts": self._ts_ms(q.get("t")), "trade_ts": self._ts_ms(t.get("t")),
+                }
+        return out
+
+    async def aclose(self) -> None:
+        await self._http.aclose()

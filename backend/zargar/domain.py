@@ -95,6 +95,17 @@ class Quote:
     day_high: float = 0.0
     day_low: float = 0.0
     session: str = ""         # "pre" | "regular" | "post" | "closed"
+    # where the bid/ask came from and how old THAT source's print is — `ts` is
+    # "when we last confirmed this price", which a delayed chain re-stamps every
+    # refresh (2026-09-02: the risk gate called a 15-min-old option ask "4.8 s
+    # old"). "" = the feed itself; "opra" = real-time options NBBO; "chain" =
+    # the ~15-min-delayed chain row. Money gates read this, not `ts`, for options.
+    source: str = ""
+    source_ts: int = 0
+
+    @property
+    def delayed(self) -> bool:
+        return self.source == "chain"
 
     @property
     def mid(self) -> float:
@@ -125,6 +136,8 @@ class Quote:
             "dayHigh": round(self.day_high, 4),
             "dayLow": round(self.day_low, 4),
             "session": self.session,
+            "source": self.source,
+            "sourceTs": self.source_ts,
         }
 
 

@@ -47,6 +47,14 @@ runtime ones to `execution.*`).
     `extraction.experiment` is FORCED onto the replayed path (no books, no proposals, no arming),
     skips dedupe in both directions and is excluded from source scorecards — evidence for review
     only (`signals.service.experiment_tag`, KNOWLEDGE plan §E).
+14. **Money is never priced on a delayed quote** (2026-09-02, the GOOGL 340C audit). Every
+    `Quote` carries `source`/`source_ts`; a chain-sourced (~15-min-delayed) option quote is a
+    *width and a fallback*, never a level: with a real-time source configured (`options.
+    quotes_source=alpaca` + keys) `RiskGate.quote_fresh` fails CLOSED on it for entries, the
+    premium tick-watch ignores it, an armed plan never market-sells on its `bid=0`, and picks
+    are re-priced on the NBBO (`OptionsService.reprice`) before sizing, limits or the
+    never-chase rule read them. Exits stay reduce-only and never wait on a quote. The UI
+    badges any contract priced off the chain as `delayed` on every money screen.
 
 ## 2. Findings (settled, with evidence)
 
@@ -216,6 +224,36 @@ runtime ones to `execution.*`).
   the chain's spread width (`_apply_overlay`). Rule: bid/ask from a delayed source are a
   *width*, not a *level*, once the tape has printed past them. Test:
   `test_options_service.py::test_contract_quote_is_published_and_overlaid`.
+
+- **2026-09-02 · The delayed chain was the root of a CLASS of gaps, not one bad fill** (user
+  question "why CBOE when we pay for Alpaca?"; probe: Algo Trader Plus serves OPRA — NBBO
+  ~1 s old, snapshots with greeks/IV). The options layer was built 2026-08-21 on CBOE; Alpaca
+  arrived 08-25 for stocks and options were never rewired. Audit of every consumer (ranked):
+  (1) `quote_fresh` blind — `set_overlay` re-stamped `ts` on every delayed refresh, so the
+  gate, the premium tick-watch, the armed-plan premium stop and the "premium stop is blind"
+  alert could never see a 15-min-old quote; (2) every dollar cap (per-order premium, %-equity,
+  notional, gross, day) computed on the delayed mid — under-counting by the delay ratio (4.6×
+  on GOOGL); (3) sim fills on the delayed ask, corrupting the books that EARN live auto;
+  (4) armed plans market-sold on a stale `bid=0` (thin contract, delayed row = "nobody's
+  paying"); (5) sizing + entry limit read the PICK's delayed ask (a $1,500 budget / 0.13 =
+  115 contracts); (6) premium stop/trim on a delayed mark; (7) `skip_wide_spread` /
+  `skip_elevated_iv` hard gates on 15-min-old spread/IV; (8) proposals skip `ensure_symbol`
+  and "improve" the limit from a stale ask → approved orders that cannot fill; (9) shadow books
+  sized on the delayed ask, filled on real quotes (biased trust bar); (10–15) exit limits at a
+  delayed bid, plan loss-halt on delayed marks, equity/ledger `riding`/`unexplained` absorbing
+  the delay, no `delayed` badge outside the chain screens, expiry settlement at a delayed spot.
+  Clean: counterfactual ledger, tip replay, outcome scoring (contract 1m bars), Flow + nightly
+  OI snapshots (post-close). **Built the same day:** `AlpacaOptionsData` (OPRA quotes/trades,
+  `options.quotes_source`), `OptionsService._refresh_live` (2 s batch, overlay + whole quote,
+  `served_live`, 60 s back-off on refusal), `Quote.source/source_ts` + `QuoteCache.
+  source_age_seconds`, `quote_fresh` fail-closed (invariant 14), `reprice()` after every pick
+  (EM armer, tip runner, shadow books), `_live_ask` for proposals/approvals, the `bid=0`
+  hardening, premium tick-watch requires a real-time print, `LivePrice` badge. **Still open
+  (chain path):** (7) the T5.3/T5.4 skip gates still judge the chain's spread/IV at pick time
+  (re-evaluate on the NBBO after `reprice`); chain browser/greeks/OI stay CBOE until the Alpaca
+  snapshots provider (phase 2: `/v1beta1/options/snapshots/{underlying}` + `/v2/options/
+  contracts` for OI); expiry settlement spot; brokerage-synced option positions that nothing
+  tracks mark off the broker's own mark (correct) or the chain (badged).
 
 - **2026-09-02 · Premium-based exits need the quote loop, not the bar loop** (policy keys
   `premium_ladder`, `premium_floor_after_trim`, `premium_watch`; `policies.evaluate_premium` is

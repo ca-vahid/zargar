@@ -21,12 +21,14 @@ from .. import bus as topics
 from .. import events as ev
 from ..domain import Quote, now_ms
 from . import occ
-from .chain import CboeClient, OptionsError, TradierClient
+from .chain import AlpacaOptionsData, CboeClient, OptionsError, TradierClient
 
 log = logging.getLogger("zargar.options")
 
 ENRICH_FLOOR_SECONDS = 2.0
 FEED_QUIET_SECONDS = 60.0       # no live print for this long -> the chain quote is published
+CHAIN_DELAY_SECONDS = 15 * 60   # CBOE's published delay — a chain row's price is at least this old
+GREEKS_EVERY = 30               # enrich passes between chain refreshes of a live-served contract's greeks/OI
 IMPACT_UNSUPPORTED_CODES = {"1156"}
 
 
@@ -41,6 +43,9 @@ class OptionsService:
         self._task: asyncio.Task | None = None
         self._expiry_task: asyncio.Task | None = None
         self._owns_quotes = False                   # True on the sim feed (no live last)
+        self._alpaca: AlpacaOptionsData | None = None   # real-time OPRA quotes for tracked contracts
+        self._alpaca_down_until = 0.0
+        self._served_live: set[str] = set()         # contracts whose last refresh came from OPRA
 
     # ------------------------------------------------------------ providers
     def provider(self):
@@ -62,6 +67,52 @@ class OptionsService:
         """Test seam: inject a provider (e.g. CBOE over a MockTransport)."""
         self._cboe = client
 
+    def quote_source(self, *, ignore_backoff: bool = False):
+        """The real-time contract-quote source (Alpaca OPRA) when the keys exist
+        and `options.quotes_source` allows it; None -> the chain provider's
+        (delayed) row is all we have. `ignore_backoff` answers "is one
+        CONFIGURED" (the risk gate's question) rather than "is it up right now"."""
+        pref = str(self.engine.settings.get("options.quotes_source", "alpaca"))
+        if pref != "alpaca" or (not ignore_backoff and time.time() < self._alpaca_down_until):
+            return None
+        if self._alpaca is None:
+            cfg = self.engine.config
+            key, sec = getattr(cfg, "alpaca_key_id", "") or "", getattr(cfg, "alpaca_secret", "") or ""
+            if not (key and sec):
+                return None
+            self._alpaca = AlpacaOptionsData(key, sec)
+        return self._alpaca
+
+    def use_quote_source(self, client) -> None:
+        """Test seam: inject the real-time quote source."""
+        self._alpaca = client
+
+    def served_live(self, symbol: str) -> bool:
+        return symbol.upper() in self._served_live
+
+    async def reprice(self, contract: dict | None) -> dict | None:
+        """A picked contract (chain row: bid/ask/mid/spreadPct from the ~15-min
+        delayed chain) re-priced on the real-time NBBO after track(). Sizing,
+        the entry limit, the never-chase rule and the risk gate's caps all read
+        THESE fields — on 2026-09-02 every one of them ran on the delayed ask
+        (a $1,500 lotto budget divided by 0.13 instead of 0.60). Mutates and
+        returns the dict; adds `priced: opra|chain`."""
+        if not contract or not contract.get("symbol"):
+            return contract
+        sym = str(contract["symbol"]).upper()
+        await self.track(sym)
+        if sym not in self._served_live:
+            await self._refresh_live()
+        q = self.engine.quotes.get(sym)
+        if q is None or sym not in self._served_live or q.bid <= 0 or q.ask <= 0:
+            contract["priced"] = "chain"
+            return contract
+        mid = (q.bid + q.ask) / 2
+        contract.update({"bid": q.bid, "ask": q.ask, "mid": round(mid, 4),
+                         "spreadPct": round((q.ask - q.bid) / mid * 100, 2) if mid > 0 else None,
+                         "last": q.last or contract.get("last"), "priced": "opra"})
+        return contract
+
     # ------------------------------------------------------------ lifecycle
     async def start(self) -> None:
         from ..brokers.sim import SimQuoteFeed
@@ -82,6 +133,8 @@ class OptionsService:
             await self._cboe.aclose()
         if self._tradier is not None:
             await self._tradier.aclose()
+        if self._alpaca is not None:
+            await self._alpaca.aclose()
 
     # ------------------------------------------------------------ chain API
     async def expiries(self, underlying: str) -> dict:
@@ -115,8 +168,8 @@ class OptionsService:
         for r in rows:
             cell = by_strike.setdefault(float(r["strike"]), {"strike": float(r["strike"]),
                                                             "call": None, "put": None})
-            cell["call" if r["option_type"] == "call" else "put"] = self._cell(r, spot)
-            self._snapshots[r["symbol"]] = {**r, "asOf": now_ms()}
+            self._snapshots[r["symbol"]] = self._merge_row(r, now_ms())
+            cell["call" if r["option_type"] == "call" else "put"] = self._cell(self._snapshots[r["symbol"]], spot)
         ladder = [by_strike[k] for k in sorted(by_strike)]
         try:
             exp_d = dt.date.fromisoformat(expiry)
@@ -156,8 +209,9 @@ class OptionsService:
             out.update(self._cell(snap, spot or 0.0))
             out["asOf"] = snap.get("asOf")
         out["quote"] = live.to_dict() if live else None
-        out["provider"] = self.provider().name
-        out["delayed"] = bool(getattr(self.provider(), "delayed", True))
+        served = self.served_live(o.symbol)
+        out["provider"] = "alpaca" if served else self.provider().name
+        out["delayed"] = False if served else bool(getattr(self.provider(), "delayed", True))
         return out
 
     async def _spot(self, underlying: str) -> float | None:
@@ -182,8 +236,17 @@ class OptionsService:
             return self._snapshots.get(o.symbol)
         now = now_ms()
         for r in rows:
-            self._snapshots[r["symbol"]] = {**r, "asOf": now}
+            self._snapshots[r["symbol"]] = self._merge_row(r, now)
         return self._snapshots.get(o.symbol)
+
+    def _merge_row(self, r: dict, now: int) -> dict:
+        """A fresh chain row for a contract — greeks/OI/volume are welcome, but
+        the QUOTE fields of a contract OPRA is serving stay live."""
+        prev = self._snapshots.get(r["symbol"])
+        if prev and prev.get("live") and r["symbol"] in self._served_live:
+            return {**r, "bid": prev["bid"], "ask": prev["ask"], "last": prev.get("last") or r.get("last"),
+                    "asOf": prev.get("asOf", now), "live": True}
+        return {**r, "asOf": now}
 
     # ------------------------------------------------------------ quotes
     async def track(self, symbol: str) -> None:
@@ -194,7 +257,13 @@ class OptionsService:
         if o.symbol in self._tracked:
             return
         self._tracked.add(o.symbol)
-        await self._refresh_one(o)
+        # real-time first: the order that follows track() is priced and risk-
+        # checked on THIS quote (the delayed row filled GOOGL 340C at 0.13)
+        served: set[str] = set()
+        with contextlib.suppress(Exception):
+            served = await self._refresh_live()
+        if o.symbol not in served:
+            await self._refresh_one(o)
 
     @property
     def tracked(self) -> set[str]:
@@ -221,7 +290,14 @@ class OptionsService:
         quiet = existing is not None and quotes.age_seconds(o.symbol) > FEED_QUIET_SECONDS
         # anchor = the (delayed) last trade the chain saw: a live print past the
         # band that differs from it re-centres the band (QuoteCache._apply_overlay)
+        # provenance: a chain row is at best `delay` old at fetch time — money
+        # gates judge THIS age (Quote.source/source_ts), never our re-stamped ts
+        delay_ms = int(float(getattr(self.provider(), "delay_seconds", CHAIN_DELAY_SECONDS)) * 1000) \
+            if getattr(self.provider(), "delayed", True) else 0
+        src_ts = int(snap.get("asOf") or now_ms()) - delay_ms
+        src = "chain" if delay_ms else "provider"
         quotes.set_overlay(o.symbol, bid=bid, ask=ask, bid_size=0, ask_size=0,
+                           source=src, source_ts=src_ts,
                            anchor_last=float(snap.get("last") or 0) or None)
         if self._owns_quotes or existing is None or quiet:
             last = float(snap.get("last") or 0) or ((bid + ask) / 2 if (bid or ask) else 0.0)
@@ -229,7 +305,8 @@ class OptionsService:
                 return
             quotes.on_quote(Quote(
                 symbol=o.symbol, bid=bid, ask=ask, last=last or ask,
-                volume=int(snap.get("volume") or 0), ts=now_ms(), session="regular"))
+                volume=int(snap.get("volume") or 0), ts=now_ms(), session="regular",
+                source=src, source_ts=src_ts))
 
     async def _enrich_loop(self) -> None:
         while True:
@@ -245,14 +322,76 @@ class OptionsService:
             except Exception:  # pragma: no cover - defensive
                 log.exception("options enrich failed")
 
+    async def _refresh_live(self) -> set[str]:
+        """Real-time NBBO (+ last trade) for every tracked contract from OPRA.
+        Published as a WHOLE quote (`ts` = now: we just confirmed the NBBO
+        stands) and kept as the overlay so a Yahoo `last` in between carries the
+        real bid/ask. Returns the symbols served; a refusal/outage backs off 60 s
+        and hands those contracts to the delayed chain row (badged as such)."""
+        src = self.quote_source()
+        if src is None or not self._tracked:
+            self._served_live.clear()
+            return set()
+        try:
+            rows = await src.latest(sorted(self._tracked))
+        except OptionsError as exc:
+            log.warning("OPRA quotes unavailable (%s) — delayed chain rows for 60 s", exc)
+            self._alpaca_down_until = time.time() + 60.0
+            self._served_live.clear()
+            return set()
+        except Exception as exc:  # pragma: no cover - network
+            log.warning("OPRA quotes failed: %s", exc)
+            self._served_live.clear()
+            return set()
+        quotes = self.engine.quotes
+        now = now_ms()
+        served: set[str] = set()
+        for sym, r in rows.items():
+            bid, ask = float(r.get("bid") or 0), float(r.get("ask") or 0)
+            last = float(r.get("last") or 0)
+            if bid <= 0 and ask <= 0 and last <= 0:
+                continue
+            served.add(sym)
+            snap = self._snapshots.get(sym) or {"symbol": sym}
+            self._snapshots[sym] = {**snap, "bid": bid, "ask": ask, "last": last or snap.get("last") or 0.0,
+                                    "asOf": now, "live": True}
+            # the overlay keeps a Yahoo `last`-only quote honest between passes;
+            # anchor = OPRA's own last trade so the re-centre never fights it
+            # a real-time NBBO that stands IS current even when it last changed a
+            # while ago (quiet contract): the source's age is our confirmation
+            # time; the quote/trade times ride on the snapshot for display
+            src_ts = now
+            self._snapshots[sym].update({"quoteTs": int(r.get("quote_ts") or 0),
+                                         "tradeTs": int(r.get("trade_ts") or 0)})
+            quotes.set_overlay(sym, bid=bid, ask=ask, bid_size=int(r.get("bid_size") or 0),
+                               ask_size=int(r.get("ask_size") or 0), source="opra", source_ts=src_ts,
+                               anchor_last=last or None)
+            quotes.on_quote(Quote(symbol=sym, bid=bid, ask=ask, last=last or ((bid + ask) / 2 if bid and ask else ask or bid),
+                                  bid_size=int(r.get("bid_size") or 0), ask_size=int(r.get("ask_size") or 0),
+                                  volume=0, ts=now, session="regular", source="opra", source_ts=src_ts))
+        self._served_live = served
+        return served
+
     async def refresh_tracked(self) -> None:
-        """One enrichment pass over every tracked contract (grouped per underlying)."""
+        """One enrichment pass over every tracked contract: real-time OPRA
+        quotes first (one batched call), the chain provider's delayed row for
+        whatever OPRA did not serve (and, less often, for greeks/OI)."""
+        live = await self._refresh_live()
+        # greeks/IV/OI/volume still come from the chain row: refresh them for
+        # live-served contracts too, every GREEKS_EVERY passes (the quote fields
+        # of a live contract are kept — _merge_row)
+        self._cycle = getattr(self, "_cycle", 0) + 1
+        greeks_pass = self._cycle % GREEKS_EVERY == 1
         by_underlying: dict[str, list[occ.Occ]] = {}
         for sym in list(self._tracked):
             o = occ.parse(sym)
             if o is not None:
                 by_underlying.setdefault(o.underlying, []).append(o)
         for underlying, contracts in by_underlying.items():
+            if not greeks_pass:
+                contracts = [o for o in contracts if o.symbol not in live]
+            if not contracts:
+                continue
             try:
                 rows = await self.provider().all_rows(underlying)
             except OptionsError as exc:
@@ -267,9 +406,10 @@ class OptionsService:
                 r = index.get(o.symbol)
                 if r is None:
                     continue
-                snap = {**r, "asOf": now}
+                snap = self._merge_row(r, now)
                 self._snapshots[o.symbol] = snap
-                self._apply(o, snap)
+                if o.symbol not in live:
+                    self._apply(o, snap)
 
     # ------------------------------------------------------------ venue capability
     def capability(self, account_id: str) -> dict | None:

@@ -913,8 +913,13 @@ class PositionManager:
                     not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
                             for x in p.exits if x.get("orderId")):
                 mark = p.net_mark(self.engine.quotes.get)
+                # a ~15-min-delayed chain quote is not a tick: a stuck-high bid
+                # would trim on a gain that already evaporated and floor the rest
+                # (audit 2026-09-02) — the bar path keeps judging the premium
+                # stop on closes; the tick path needs a real-time print
                 legs_fresh = all(
                     (lq := self.engine.quotes.get(l.symbol)) is not None and (now - lq.ts) <= stale_ms
+                    and not getattr(lq, "delayed", False)
                     for l in p.open_legs)
                 d = evaluate_premium(p.policy, p.state, mark, p.entry_mark) if legs_fresh else None
                 if d is not None:

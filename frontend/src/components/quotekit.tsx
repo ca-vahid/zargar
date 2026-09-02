@@ -179,10 +179,14 @@ export const TickArrow = memo(function TickArrow({ symbol }: { symbol: string })
 export function LivePrice({ symbol, fallback }: { symbol: string; fallback?: number }) {
   const quote = useQuote(symbol);
   const last = quote?.last && quote.last > 0 ? quote.last : fallback;
+  // an option contract priced off the ~15-min-delayed chain (no real-time
+  // source serving it) must never look live on a money screen
+  const delayed = quote?.source === "chain";
   return (
     <span className="price-live">
       <TickArrow symbol={symbol} />
       <span>{last ? fmtMoney(last) : "…"}</span>
+      {delayed && <span className="status-pill dim" title="bid/ask from the ~15-min-delayed chain — no real-time quote for this contract">delayed</span>}
     </span>
   );
 }

@@ -49,6 +49,25 @@ def build_exit_plan_spread(signal_row, sig, analyst: dict, policy) -> dict:
     return build_exit_plan(signal_row, sig, analyst or {}, policy)
 
 
+async def _live_ask(eng, occ: str) -> float | None:
+    """The contract's ask from the real-time source when one is configured
+    (options.track -> OPRA); a delayed chain quote is NOT a price to size or
+    limit against, so with a live source configured but not serving this
+    contract the answer is None (the stated premium stands). Without any live
+    source (sim/tests) the cached quote is used as before."""
+    opts = getattr(eng, "options", None)
+    if opts is not None and opts.quote_source(ignore_backoff=True) is not None:
+        import contextlib
+        with contextlib.suppress(Exception):
+            await opts.track(occ)
+            if not opts.served_live(occ):
+                await opts._refresh_live()
+        if not opts.served_live(occ):
+            return None
+    q = eng.quotes.get(occ)
+    return float(q.ask) if q is not None and q.ask and q.ask > 0 else None
+
+
 def _ttl_expiry(ttl_min: int, now: dt.datetime | None = None) -> dt.datetime:
     """Proposal expiry that respects the clock (ARM-PLAN P1/F9): during regular
     hours it is now+TTL; off-hours (evening, weekend, pre-open) the countdown
@@ -295,10 +314,11 @@ class ProposalService:
         if occ:
             symbol, sec_type, side = occ, "OPT", "BUY"      # long the contract, both directions
             # deliberately NOT ensure_symbol(occ): the sim feed would fabricate a
-            # quote for the contract and poison the risk gate's reference price;
-            # a real quote (Yahoo, or one already tracked) is read if present
-            quote = eng.quotes.get(occ)
-            live_ask = quote.ask if quote and quote.ask > 0 else None
+            # quote for the contract and poison the risk gate's reference price.
+            # The real-time source (OPRA via options.track) is asked instead —
+            # a delayed chain ask "improving" the limit produced approved orders
+            # that could never fill (audit 2026-09-02)
+            live_ask = await _live_ask(eng, occ)
             # the analyst's/tip's stated limit is the trader's price — never chase
             # above it; a live ask may only IMPROVE the limit (found 2026-08-28:
             # a bad option quote priced 2 contracts at $16k against a $4.60 tip)
@@ -503,8 +523,11 @@ class ProposalService:
         # the live ask may only IMPROVE the limit, never raise it.
         limit = pdict["limitPrice"]
         if (pdict["side"] == "BUY" and pdict["orderType"] == "LMT" and limit):
-            q = eng.quotes.get(pdict["symbol"])
-            ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
+            if pdict["secType"] == "OPT":
+                ask = await _live_ask(eng, pdict["symbol"])
+            else:
+                q = eng.quotes.get(pdict["symbol"])
+                ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
             if ask and ask < float(limit):
                 log.info("proposal %s: limit improved %s -> %s (live ask)",
                          proposal_id, limit, round(ask, 2))

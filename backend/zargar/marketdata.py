@@ -107,6 +107,16 @@ class QuoteCache:
             return float("inf")
         return max(0.0, time.time() - q.ts / 1000)
 
+    def source_age_seconds(self, symbol: str) -> float:
+        """Age of the PRICE, not of our copy of it: the source's own print time
+        when the quote carries one (OPRA quote time; a chain row's fetch time
+        less its published delay), else `ts`."""
+        q = self._quotes.get(symbol)
+        if q is None:
+            return float("inf")
+        ref = q.source_ts if q.source_ts and q.source_ts > 0 else q.ts
+        return max(0.0, time.time() - ref / 1000)
+
 
 class BarAggregator:
     """Builds 1m bars from the quote stream; higher timeframes are resampled on read.

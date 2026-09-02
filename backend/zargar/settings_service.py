@@ -184,8 +184,9 @@ DEFAULTS: dict[str, Any] = {
     "snaptrade.allow_brackets": False,
     "snaptrade.options_brokers": ["Webull Canada"],   # verified via options impact 2026-08-21
     # --- options (chain data + ticket) ---------------------------------------
-    "options.provider": "cboe",             # cboe (free, ~15-min delayed) | tradier (token)
-    "options.enrich_seconds": 5,            # contract bid/ask refresh cadence from the chain
+    "options.provider": "cboe",             # chain browser/greeks/OI: cboe (free, ~15-min delayed) | tradier (token)
+    "options.quotes_source": "alpaca",      # tracked-contract bid/ask/last: alpaca (real-time OPRA, Algo Trader Plus) | chain (delayed row)
+    "options.enrich_seconds": 2,            # contract quote refresh cadence (OPRA batch call; was 5 on the delayed chain)
     "feed.exchange_bars": True,             # correct sampled 1m bars with real exchange OHLC/volume from the 1m history
     "options.fee_per_contract": 0.99,       # Webull CA: USD per contract (+ regulatory fees)
     "sim.reg_fee_per_contract": 0.05,       # practice fills: regulatory/exchange fees per contract on top (OCC/ORF/FINRA ≈ $0.05)

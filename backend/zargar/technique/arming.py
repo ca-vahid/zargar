@@ -268,13 +268,16 @@ class PlanArmer(PlanRunner):
                                                     "bid", "ask", "mid", "spreadPct", "delta", "theta", "iv", "dte",
                                                     "is0dte", "openInterest", "volume", "warnings", "provider")}
         trade.order_symbol = pick["symbol"]
-        self._log(ap, "option_picked", f"{trade.trigger_id}: {pick.get('display') or pick['symbol']} "
-                  f"bid/ask {pick.get('bid')}/{pick.get('ask')}" + (f"; warnings: {'; '.join(pick.get('warnings') or [])}"
-                                                                    if pick.get("warnings") else ""),
-                  trigger=trade.trigger_id, contract=trade.contract)
+        # the chain's bid/ask picked the strike; the real-time NBBO prices the
+        # trade (sizing, entry limit, caps) — never the delayed row
         with contextlib.suppress(Exception):
             if getattr(self.engine, "options", None) is not None:
-                await self.engine.options.track(pick["symbol"])
+                await self.engine.options.reprice(trade.contract)
+        self._log(ap, "option_picked", f"{trade.trigger_id}: {pick.get('display') or pick['symbol']} "
+                  f"bid/ask {trade.contract.get('bid')}/{trade.contract.get('ask')}"
+                  f" ({trade.contract.get('priced') or 'chain'})"
+                  + (f"; warnings: {'; '.join(pick.get('warnings') or [])}" if pick.get("warnings") else ""),
+                  trigger=trade.trigger_id, contract=trade.contract)
         return trade.contract
 
     def _preopen_window(self, now: dt.datetime) -> bool:

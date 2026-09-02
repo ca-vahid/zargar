@@ -247,17 +247,19 @@ class TipRunner(PlanRunner):
             "is0dte", "openInterest", "volume", "warnings", "provider",
             "statedContract", "substituted")}
         trade.order_symbol = pick["symbol"]
+        # real-time NBBO prices the trade (sizing/limit/caps), the chain only picked it
+        with _ctx.suppress(Exception):
+            if getattr(self.engine, "options", None) is not None:
+                await self.engine.options.reprice(trade.contract)
         self._log(ap, "option_picked",
                   f"{trade.trigger_id}: {pick.get('display') or pick['symbol']} "
-                  f"bid/ask {pick.get('bid')}/{pick.get('ask')}"
+                  f"bid/ask {trade.contract.get('bid')}/{trade.contract.get('ask')}"
+                  f" ({trade.contract.get('priced') or 'chain'})"
                   + ("; stated by the tip" if pick.get("statedContract") else "")
                   + (f"; SUBSTITUTED — {pick['substituted']}" if pick.get("substituted") else "")
                   + (f"; warnings: {'; '.join(pick.get('warnings') or [])}"
                      if pick.get("warnings") else ""),
                   trigger=trade.trigger_id, contract=trade.contract)
-        with _ctx.suppress(Exception):
-            if getattr(self.engine, "options", None) is not None:
-                await self.engine.options.track(pick["symbol"])
         return trade.contract
 
     # ------------------------------------------------------------- tip-specific
