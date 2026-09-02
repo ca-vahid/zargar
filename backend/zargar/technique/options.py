@@ -10,6 +10,8 @@ working; ``parse_occ`` wraps ``zargar.options.occ``.
 from __future__ import annotations
 
 import datetime as dt
+import math
+import zoneinfo
 import logging
 from dataclasses import dataclass, field
 
@@ -96,6 +98,80 @@ def choose_expiry(expirations: list[str], today: dt.date, *, avoid_0dte: bool = 
     this_week = [d for d in later if d <= friday]
     pick = this_week[-1] if this_week else later[0]
     return pick.isoformat(), pick == today
+
+
+ET = zoneinfo.ZoneInfo("America/New_York")
+RISK_FREE = 0.04            # flat annual rate for the implied-vol solve (a few bp of IV either way)
+
+
+def _norm_cdf(x: float) -> float:
+    return 0.5 * math.erfc(-x / math.sqrt(2.0))
+
+
+def bs_price(spot: float, strike: float, t_years: float, sigma: float, *, call: bool, rate: float = RISK_FREE) -> float:
+    if t_years <= 0 or sigma <= 0 or spot <= 0 or strike <= 0:
+        intrinsic = (spot - strike) if call else (strike - spot)
+        return max(intrinsic, 0.0)
+    d1 = (math.log(spot / strike) + (rate + 0.5 * sigma * sigma) * t_years) / (sigma * math.sqrt(t_years))
+    d2 = d1 - sigma * math.sqrt(t_years)
+    if call:
+        return spot * _norm_cdf(d1) - strike * math.exp(-rate * t_years) * _norm_cdf(d2)
+    return strike * math.exp(-rate * t_years) * _norm_cdf(-d2) - spot * _norm_cdf(-d1)
+
+
+def implied_vol(price: float, spot: float, strike: float, t_years: float, *, call: bool,
+                rate: float = RISK_FREE) -> float | None:
+    """Black-Scholes implied vol by bisection on the mid; None when the price is
+    below intrinsic / the solve does not bracket (deep ITM, expired, junk)."""
+    if price <= 0 or t_years <= 0 or spot <= 0 or strike <= 0:
+        return None
+    lo, hi = 0.01, 5.0
+    if bs_price(spot, strike, t_years, lo, call=call, rate=rate) > price or             bs_price(spot, strike, t_years, hi, call=call, rate=rate) < price:
+        return None
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if bs_price(spot, strike, t_years, mid, call=call, rate=rate) > price:
+            hi = mid
+        else:
+            lo = mid
+    return round((lo + hi) / 2, 4)
+
+
+def rejudge_iv(contract: dict | None, *, spot: float | None, now: dt.datetime | None = None) -> dict | None:
+    """T5.3 on the REAL-TIME mid (2026-09-02, tips-desk open item): the chain's
+    `mid_iv` is 15 min stale, and no real-time chain provider exists yet - but IV
+    is just the NBBO mid solved through Black-Scholes. When the contract is
+    priced on OPRA and we know the spot, replace the chain IV with the live one
+    (`ivChain` keeps the chain figure) and re-judge the elevated-IV warning."""
+    if not contract or contract.get("priced") != "opra" or not spot or spot <= 0:
+        if contract is not None:
+            contract["ivJudgedOn"] = "chain"
+        return contract
+    try:
+        strike = float(contract.get("strike") or 0)
+        mid = float(contract.get("mid") or 0)
+        expiry = dt.date.fromisoformat(str(contract.get("expiry")))
+    except (TypeError, ValueError):
+        contract["ivJudgedOn"] = "chain"
+        return contract
+    now = now or dt.datetime.now(ET)
+    # time to the 16:00 ET expiry print, in years (0DTE at 10:00 ~ 6 h)
+    exp_dt = dt.datetime(expiry.year, expiry.month, expiry.day, 16, 0, tzinfo=ET)
+    t_years = max((exp_dt - now.astimezone(ET)).total_seconds(), 0.0) / (365.0 * 24 * 3600)
+    call = str(contract.get("optionType") or "call").lower().startswith("c")
+    iv = implied_vol(mid, float(spot), strike, t_years, call=call)
+    if iv is None:
+        contract["ivJudgedOn"] = "chain"
+        return contract
+    if contract.get("iv") is not None:
+        contract["ivChain"] = contract.get("iv")
+    contract["iv"] = iv
+    warnings = [str(w) for w in (contract.get("warnings") or []) if "T5.3 elevated IV" not in w]
+    if iv >= ELEVATED_IV:
+        warnings.append(f"T5.3 elevated IV {iv:.2f} on the NBBO mid — IV-crush risk")
+    contract["warnings"] = warnings
+    contract["ivJudgedOn"] = "opra"
+    return contract
 
 
 def rejudge_spread(contract: dict | None) -> dict | None:

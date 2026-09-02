@@ -486,8 +486,15 @@ cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, 
   `OptionsService.reprice`). Why: until 13:42 ET every option quote was the ~15-min delayed
   CBOE chain (tips-desk audit, PLATFORM-RULES invariant 14) - the spread skip was judging a
   stale row. Threshold unchanged (10% of mid); only the price source changed. T5.3 (IV)
-  stays chain-sourced until a real-time chain provider exists. Evidence: SNOW 08-25 skip
-  (§1.6) and the 09-02 GOOGL 0.13-vs-0.60 fill; §1.6 evidence restarts 2026-09-03.
+  Evidence: SNOW 08-25 skip (§1.6) and the 09-02 GOOGL 0.13-vs-0.60 fill; §1.6 evidence
+  restarts 2026-09-03.
+- 2026-09-02 (later) · **T5.3 elevated-IV gate judged on the live NBBO mid** - IV is the mid
+  solved through Black-Scholes (`options.py::implied_vol`, flat 4% rate, expiry at 16:00 ET;
+  `rejudge_iv` keeps the chain figure as `ivChain`). Why: the tips desk's open item - the
+  chain's `mid_iv` was 15 min stale and no real-time chain provider exists. Threshold
+  unchanged (0.60 absolute); the gate itself stays OFF by default
+  (`technique.arm.skip_elevated_iv=false`), so this changes what the trace and the critic
+  see, not what fires. Chain IV still picks the strike inside `select_contract`.
 - 2026-08-28 · **SYSTEM_PROMPT taught the short mirrors; stale "Long-only." clause
   removed** (`schemas.py`), and `review_fire` adds a DIRECTION clause on
   reject/breakdown fires (`arming.py`). Why: the prompt still predated the

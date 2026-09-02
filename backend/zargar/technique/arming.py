@@ -15,7 +15,7 @@ import datetime as dt
 import logging
 import time
 
-from .options import rejudge_spread
+from .options import rejudge_iv, rejudge_spread
 from .. import bus as topics
 from .. import events as ev
 from ..domain import Bar
@@ -277,10 +277,11 @@ class PlanArmer(PlanRunner):
         # T5.4 is re-judged on the NBBO the trade will actually pay (the chain's
         # spread was 15 min stale); the runner's skip_wide_spread reads these warnings
         rejudge_spread(trade.contract)
+        rejudge_iv(trade.contract, spot=float(trade.last_price or trade.entry or 0))
         warns = trade.contract.get("warnings") or []
         self._log(ap, "option_picked", f"{trade.trigger_id}: {pick.get('display') or pick['symbol']} "
                   f"bid/ask {trade.contract.get('bid')}/{trade.contract.get('ask')}"
-                  f" ({trade.contract.get('priced') or 'chain'}; spread judged on {trade.contract.get('spreadJudgedOn') or 'chain'})"
+                  f" ({trade.contract.get('priced') or 'chain'}; spread judged on {trade.contract.get('spreadJudgedOn') or 'chain'}, IV on {trade.contract.get('ivJudgedOn') or 'chain'})"
                   + (f"; warnings: {'; '.join(warns)}" if warns else ""),
                   trigger=trade.trigger_id, contract=trade.contract)
         return trade.contract

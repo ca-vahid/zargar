@@ -223,3 +223,31 @@ def test_rejudge_spread_uses_the_nbbo_after_reprice():
     c = {"symbol": "X", "warnings": ["T5.4 wide spread 16.5% (bid 1.0 / ask 1.18)"], "spreadPct": 16.5, "priced": "chain"}
     rejudge_spread(c)
     assert c["spreadJudgedOn"] == "chain" and len(c["warnings"]) == 1
+
+
+def test_implied_vol_round_trips_and_rejudge_iv_uses_the_live_mid():
+    import datetime as dt
+    from zargar.technique.options import ET, bs_price, implied_vol, rejudge_iv
+    px = bs_price(100.0, 100.0, 0.25, 0.20, call=True)
+    assert abs(implied_vol(px, 100.0, 100.0, 0.25, call=True) - 0.20) < 1e-3
+    px = bs_price(100.0, 95.0, 0.1, 0.45, call=False)
+    assert abs(implied_vol(px, 100.0, 95.0, 0.1, call=False) - 0.45) < 1e-3
+    assert implied_vol(0.0, 100.0, 100.0, 0.25, call=True) is None
+    now = dt.datetime(2026, 9, 2, 10, 0, tzinfo=ET)
+    t_years = (dt.datetime(2026, 9, 11, 16, 0, tzinfo=ET) - now).total_seconds() / (365 * 24 * 3600)
+    # chain said elevated (stale); the live mid implies 25% -> warning dropped, chain IV kept aside
+    c = {"symbol": "X", "strike": 100.0, "expiry": "2026-09-11", "optionType": "call", "iv": 0.75,
+         "warnings": ["T5.3 elevated IV 0.75 — IV-crush risk"], "priced": "opra",
+         "mid": round(bs_price(100.0, 100.0, t_years, 0.25, call=True), 4)}
+    rejudge_iv(c, spot=100.0, now=now)
+    assert c["ivJudgedOn"] == "opra" and c["ivChain"] == 0.75 and abs(c["iv"] - 0.25) < 0.01
+    assert not any("T5.3" in w for w in c["warnings"])
+    # chain said calm; the live mid implies 90% -> warning added on the live figure
+    c = {"symbol": "X", "strike": 100.0, "expiry": "2026-09-11", "optionType": "put", "iv": 0.30, "warnings": [],
+         "priced": "opra", "mid": round(bs_price(100.0, 100.0, t_years, 0.90, call=False), 4)}
+    rejudge_iv(c, spot=100.0, now=now)
+    assert any("T5.3 elevated IV" in w and "NBBO" in w for w in c["warnings"]) and abs(c["iv"] - 0.90) < 0.01
+    # not priced live: chain verdict stands
+    c = {"symbol": "X", "iv": 0.75, "warnings": ["T5.3 elevated IV 0.75 — IV-crush risk"], "priced": "chain"}
+    rejudge_iv(c, spot=100.0, now=now)
+    assert c["ivJudgedOn"] == "chain" and c["iv"] == 0.75
