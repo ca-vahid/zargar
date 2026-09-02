@@ -1315,6 +1315,13 @@ class PlanRunner(SessionListener):
             # re-index working entry/exit orders so their updates route back here
             if tr.entry_order_id and tr.status in ("working", "submitting", "open"):
                 self.register_order(tr.entry_order_id, (ap.run_id, tid))
+                # the contract's quote stream died with the old process: re-watch it
+                # (Yahoo poll + OptionsService.track) or a working option entry can
+                # never fill and an open one can never be marked (NOW 2026-09-02)
+                if tr.order_symbol:
+                    with contextlib.suppress(Exception):
+                        asyncio.create_task(self.engine.ensure_symbol(tr.order_symbol),
+                                            name=f"rewatch-{tr.order_symbol}")
             for oid in tr.exit_order_ids:
                 self.register_order(oid, (ap.run_id, tid))
             if tid in ap.trackers and tr.status not in ("cancelled", "failed", "skipped"):
@@ -1674,9 +1681,16 @@ class PlanRunner(SessionListener):
             if tr.status == "open" and tr.remaining > 0:
                 tr.last_price = bar.close
                 await self._manage(ap, tr, bar, close_ms, journal=journal)
-            elif tr.status == "working" and tr.fire_bar_index is not None and tr.entry_order_id:
-                # entry not filled within the entry window -> cancel (T4.1: do not chase)
-                if idx - tr.fire_bar_index > self.rules().plan_entry_window_bars:
+            elif tr.status == "working" and tr.entry_order_id:
+                # entry not filled within the entry window -> cancel (T4.1: do not chase).
+                # A trade re-attached after a restart has no bar index; fall back to
+                # wall-clock minutes since the fire (NOW 2026-09-02: an entry sat
+                # `working` for 75 minutes because the index-only check went silent
+                # after the 10:04 restart, blocking the plan's other trigger all day).
+                window_bars = self.rules().plan_entry_window_bars
+                elapsed = (idx - tr.fire_bar_index) if tr.fire_bar_index is not None \
+                    else ((bar.ts - tr.fired_ts) // 60_000 if tr.fired_ts else 0)
+                if elapsed > window_bars:
                     with contextlib.suppress(Exception):
                         await self.engine.orders.cancel(tr.entry_order_id)
                     tr.status = "cancelled"

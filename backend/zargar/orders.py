@@ -419,8 +419,13 @@ class OrderManager:
             portfolio = self._positions.portfolio(order.portfolio_id) or {}
             executor = self._executor_for(portfolio)
             if executor is not None:
-                await executor.cancel(order_id)
-                return order_dict(order)  # final state arrives via report
+                held = await executor.cancel(order_id)
+                if held is not False:
+                    return order_dict(order)  # final state arrives via report
+                # the executor no longer holds it (a restart emptied the sim book):
+                # an open order nobody can fill or cancel must not stay open forever
+                return await self._transition(order_id, OrderStatus.CANCELLED, ev.ORDER_CANCELLED,
+                                              reject_reason="not held by the executor (restart) - cancelled")
         if order.status == OrderStatus.NEW.value:
             return await self._transition(order_id, OrderStatus.CANCELLED, ev.ORDER_CANCELLED)
         return order_dict(order)

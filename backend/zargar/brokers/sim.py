@@ -199,13 +199,18 @@ class SimExecutor(Executor):
         for o in orders:
             await self.submit(o)
 
-    async def cancel(self, order_id: str) -> None:
+    async def cancel(self, order_id: str) -> bool:
+        """True when the order was in the book (a 'cancelled' report follows);
+        False when this executor never held it - e.g. it was accepted by a
+        previous process and lost in a restart - so the manager can close it."""
         async with self._lock:
             w = self._working.pop(order_id, None)
             if w and w.order.oca_group:
                 self._oca.get(w.order.oca_group, set()).discard(order_id)
         if w is not None:
             await self.emit(ExecReport(kind="cancelled", order_id=order_id, reason="user_cancelled"))
+            return True
+        return False
 
     async def on_quote(self, q: Quote) -> None:
         """Check working orders against a fresh quote."""

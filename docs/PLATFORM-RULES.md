@@ -157,6 +157,18 @@ runtime ones to `execution.*`).
   UI: the batch panel marks such runs `expired`; the Armed page's Live list counts
   armed/paused only.
 
+- **2026-09-02 · A restart orphaned a working entry: three recovery gaps, closed.** NOW r1
+  fired 09:31, the sim BUY LMT was ACCEPTED; the server restarted at 10:04. After
+  restore the trade was `working` with (1) `fire_bar_index=None`, so the "entry window
+  elapsed - do not chase" cancel never ran; (2) the contract's quote stream gone (Yahoo
+  had polled it once, nothing re-watched it), so nothing could fill it; (3) the sim
+  executor's book empty, so `OrderManager.cancel` found nothing to cancel and returned
+  the order unchanged - ACCEPTED forever, plan "in trade" on a phantom, its other
+  trigger blocked. Fixes: the entry-window check falls back to wall-clock minutes since
+  the fire; restore re-watches each working/open trade's order symbol; `SimExecutor.cancel`
+  returns whether it held the order and the manager transitions unheld open orders to
+  CANCELLED with a reason. Ops workaround until deployed: disarm + re-arm the plan.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
