@@ -210,6 +210,12 @@ export const api = {
     request<import("../types").TechniqueSweep>("POST", "/api/technique/walkforward", body),
   techniquePromote: (id: string, body: { symbol: string; session: string; withVision?: boolean; wait?: boolean }) =>
     request<import("../types").TechniqueRun>("POST", `/api/technique/walkforward/${id}/promote`, body),
+  // EM method ingestion (INGESTION-PLAN.md)
+  techniqueIngestBoard: () => request<{ note: import("../types").MethodNote | null }>("GET", "/api/technique/ingest/board"),
+  techniqueIngestNotes: (limit = 20) => request<import("../types").MethodNote[]>("GET", `/api/technique/ingest/notes?limit=${limit}`),
+  techniqueIngestNote: (id: string) => request<import("../types").MethodNote>("GET", `/api/technique/ingest/notes/${id}`),
+  techniqueIngestExtract: (id: string) => request<import("../types").MethodNote>("POST", `/api/technique/ingest/notes/${id}/extract`),
+  techniqueIngestBoardCheck: (id: string) => request<import("../types").MethodNote>("POST", `/api/technique/ingest/notes/${id}/board-check`),
   techniqueArmed: (slim = false) => request<import("../types").ArmedPlan[]>("GET", `/api/technique/armed${slim ? "?slim=1" : ""}`),
   techniqueArmedSummary: () => request<import("../types").ArmedSummary>("GET", "/api/technique/armed/summary"),
   techniqueArmedDetail: (runId: string) => request<import("../types").ArmedPlan>("GET", `/api/technique/armed/${runId}`),

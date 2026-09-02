@@ -5,6 +5,7 @@
 #   scripts\start.ps1 -Force     restart even if analyst runs are in flight
 #   scripts\start.ps1 -NoBuild   skip the frontend rebuild check
 #   scripts\start.ps1 -NoDiscord skip the experimental Discord intake window
+#   scripts\start.ps1 -NoIngest  skip the EM ingestion worker window (video transcription)
 #
 # The Discord intake (a DM listener that feeds tips into the pipeline) launches
 # by default in ITS OWN window (scripts\discord-intake.ps1). It is experimental
@@ -27,7 +28,8 @@ param(
   [switch]$Force,
   [switch]$Detach,
   [switch]$NoBuild,
-  [switch]$NoDiscord
+  [switch]$NoDiscord,
+  [switch]$NoIngest
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -58,6 +60,27 @@ function Start-DiscordIntake {
   Step "Launching Discord intake in its own window (experimental; -NoDiscord to skip)"
   Start-Process -FilePath $psHost `
     -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $intake `
+    -WorkingDirectory $Root | Out-Null
+}
+
+# EM method ingestion worker (docs	echniques\enhanced-market\INGESTION-PLAN.md):
+# transcribes the author's pre-trading videos for the EnhancedMarket pipeline.
+# Own window, own venv (backend\.venv-ingest). EM-only; -NoIngest skips it.
+function Stop-EmIngest {
+  try {
+    Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+      Where-Object { $_.CommandLine -and ($_.CommandLine -match "em_ingest|em-ingest\.ps1") } |
+      ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue }
+  } catch { }
+}
+function Start-EmIngest {
+  $worker = Join-Path $Root "scripts\em-ingest.ps1"
+  if (-not (Test-Path $worker)) { Warn "em-ingest.ps1 missing - skipping EM ingestion"; return }
+  $psHost = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+  if (-not $psHost) { $psHost = "powershell.exe" }
+  Step "Launching EM ingestion worker in its own window (-NoIngest to skip)"
+  Start-Process -FilePath $psHost `
+    -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", $worker `
     -WorkingDirectory $Root | Out-Null
 }
 
@@ -104,6 +127,7 @@ if ($procIds.Count -gt 0) {
 }
 # also stop any prior Discord intake so it re-launches fresh against the new server
 Stop-DiscordIntake
+Stop-EmIngest
 
 # --- 3. postgres -------------------------------------------------------------
 docker info *> $null
@@ -181,10 +205,12 @@ if ($Detach) {
   Step "Zargar is up -> http://127.0.0.1:8420 (armed plans restored: $restored)"
   Write-Host "  Watch the log anytime: scripts\logs.ps1 (Ctrl+C detaches, server unaffected)" -ForegroundColor DarkGray
   if (-not $NoDiscord) { Start-DiscordIntake }
+  if (-not $NoIngest) { Start-EmIngest }
 } else {
   # launch the intake window first (it waits for the API), then run the app in
   # the foreground - the intake keeps its own window regardless of Ctrl+C here
   if (-not $NoDiscord) { Start-DiscordIntake }
+  if (-not $NoIngest) { Start-EmIngest }
   Step "Zargar -> http://127.0.0.1:8420 (Ctrl+C stops it)"
   Set-Location (Join-Path $Root "backend")
   & $py -m zargar.main

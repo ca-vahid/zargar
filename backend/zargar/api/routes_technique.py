@@ -187,6 +187,89 @@ def build_technique_routes(app, eng, auth, config) -> None:
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc))
 
+    # --- EM method ingestion (INGESTION-PLAN.md) - EM-only inbox for the author's channels ----
+    def _ingest(eng_):
+        svc = _svc(eng_)
+        ing = getattr(svc, "ingest", None)
+        if ing is None:
+            raise HTTPException(status_code=503, detail="ingestion not attached")
+        return ing
+
+    @app.get("/api/technique/ingest/channels", dependencies=[auth])
+    async def ingest_channels():
+        """The gateway polls this: which Discord channels to forward to EM."""
+        ing = _ingest(eng)
+        return {"enabled": ing.enabled(), "channels": ing.channels()}
+
+    class IngestMessageBody(BaseModel):
+        id: str = ""
+        channelId: str = ""
+        channelName: str = ""
+        guild: str | None = None
+        author: str = ""
+        authorId: str | None = None
+        text: str = ""
+        images: list[str] = []
+        postedAt: str | None = None
+
+    @app.post("/api/technique/ingest/message", dependencies=[auth])
+    async def ingest_message(body: IngestMessageBody):
+        return await _ingest(eng).store_message(body.model_dump())
+
+    @app.get("/api/technique/ingest/pending", dependencies=[auth])
+    async def ingest_pending():
+        """The em_ingest worker polls this: video notes waiting for a transcript."""
+        return {"notes": await _ingest(eng).pending()}
+
+    class IngestTranscriptBody(BaseModel):
+        noteId: str
+        transcript: str | None = None
+        error: str | None = None
+        durationSeconds: float | None = None
+        model: str | None = None
+        seconds: float | None = None
+
+    @app.post("/api/technique/ingest/transcript", dependencies=[auth])
+    async def ingest_transcript(body: IngestTranscriptBody):
+        try:
+            return await _ingest(eng).store_transcript(
+                body.noteId, transcript=body.transcript, error=body.error,
+                meta={"durationSeconds": body.durationSeconds, "model": body.model, "seconds": body.seconds})
+        except KeyError:
+            raise HTTPException(status_code=404, detail="note not found")
+
+    @app.get("/api/technique/ingest/notes", dependencies=[auth])
+    async def ingest_notes(limit: int = 20):
+        return await _ingest(eng).list_notes(limit)
+
+    @app.get("/api/technique/ingest/board", dependencies=[auth])
+    async def ingest_board():
+        """The newest note with an extraction - the author's board for the day."""
+        return {"note": await _ingest(eng).latest_board()}
+
+    @app.get("/api/technique/ingest/notes/{note_id}", dependencies=[auth])
+    async def ingest_note(note_id: str):
+        d = await _ingest(eng).get_note(note_id)
+        if d is None:
+            raise HTTPException(status_code=404, detail="note not found")
+        return d
+
+    @app.post("/api/technique/ingest/notes/{note_id}/extract", dependencies=[auth])
+    async def ingest_extract(note_id: str):
+        try:
+            return await _ingest(eng).extract(note_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="note not found")
+        except RuntimeError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.post("/api/technique/ingest/notes/{note_id}/board-check", dependencies=[auth])
+    async def ingest_board_check(note_id: str):
+        try:
+            return await _ingest(eng).board_check(note_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="note not found")
+
     # --- session plans / walk-forward / arming --------------------------------------------
     @app.get("/api/technique/universe", dependencies=[auth])
     async def technique_universe():

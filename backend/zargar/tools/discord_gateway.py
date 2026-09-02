@@ -249,6 +249,11 @@ class Gateway:
         self.user_id = ""
         self.seen_count = 0
         self._watch: dict[str, dict] = {}   # channelId -> watch entry (the allowlist)
+        # EM method ingestion (docs/techniques/enhanced-market/INGESTION-PLAN.md): a
+        # SEPARATE channel set forwarded to EM's inbox. Independent of the tip
+        # allowlist above - a channel may be in both, and EM never changes tip behavior.
+        self._em: dict[str, dict] = {}
+        self._em_loaded = False
         self._watch_loaded = False
         self.backfill = max(0, int(backfill))   # per-channel history mirrored on startup
         self._backfilled_ids = ""               # watch fingerprint last backfilled
@@ -465,6 +470,18 @@ class Gateway:
                         asyncio.create_task(self._backfill_watched(http, headers))
             except Exception:
                 pass
+            # EM ingestion channel set (best-effort; the app owns the list)
+            try:
+                r = await http.get(f"{self.api}/api/technique/ingest/channels", headers=headers)
+                if r.status_code == 200:
+                    d = r.json() or {}
+                    chans = d.get("channels") or [] if d.get("enabled", True) else []
+                    self._em = {str(c["channelId"]): c for c in chans if c.get("channelId")}
+                    if not self._em_loaded:
+                        self._em_loaded = True
+                        print(f"[gateway] EM ingestion: {len(self._em)} channel(s) forwarded to the method inbox")
+            except Exception:
+                pass
             await asyncio.sleep(30)
 
     async def _report_catalog(self, ready_d, http, headers) -> None:
@@ -555,6 +572,9 @@ class Gateway:
         is_dm = msg.get("guild_id") is None          # DMs carry no guild
         author = msg.get("author") or {}
         is_self = bool(self.user_id and str(author.get("id")) == self.user_id)
+        cid_em = str(msg.get("channel_id") or "")
+        if cid_em in self._em:                    # EM method inbox (independent of tips)
+            await self._em_forward(http, headers, msg, self._em[cid_em])
         matched, source_name = self._match(msg, is_dm, author, is_self)
         if not matched:
             return
@@ -585,6 +605,22 @@ class Gateway:
         if not self.ingest:
             return
         await self._ingest_message(http, headers, msg, source_name or "auto")
+
+    async def _em_forward(self, http, headers, msg: dict, entry: dict) -> None:
+        """EM method ingestion: post the message to EM's own inbox. Read-only
+        toward Discord; never touches the tip mirror/intake. Failures print."""
+        rec = mirror_record(msg, None, entry.get("guildName") or None)
+        rec["channelName"] = entry.get("label") or ""
+        try:
+            r = await http.post(f"{self.api}/api/technique/ingest/message", headers=headers,
+                                json=rec, timeout=60)
+            out = r.json() if r.status_code == 200 else {}
+            tag = "dup" if out.get("duplicate") else f"{out.get('kind')}->{out.get('status')}"
+            print(f"[{dt.datetime.now():%H:%M:%S}] EM #{rec['channelName'] or rec['channelId']}: "
+                  f"{tag if r.status_code == 200 else 'HTTP ' + str(r.status_code)} "
+                  f"{flatten_message(msg)[:80]!r}")
+        except Exception as exc:
+            print(f"    ! EM forward failed: {exc}")
 
     async def _ingest_message(self, http, headers, msg: dict, source_name: str) -> dict:
         """Post one message (text + first image, if any) to /api/ingest/manual —

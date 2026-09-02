@@ -611,6 +611,21 @@ export interface SessionPlan {
   lastClose: number; levels: PlanLevel[]; context: any; triggers: PlanTrigger[]; invalidations: { rule: string; text: string; kind: string }[];
   gapPolicy: any; notes: string[]; validTriggers: number; bottomLine?: string;
 }
+/** EM method ingestion note (INGESTION-PLAN.md): a captured post / chart / video from
+ * the author's channels, its LLM extraction and our deterministic board check. */
+export interface MethodNote {
+  id: string; technique: string; messageId?: string | null;
+  channelId: string; channelName: string; author: string;
+  kind: "post" | "chart" | "video" | string;
+  status: "new" | "pending_transcript" | "transcribed" | "extracted" | "checked" | "failed" | string;
+  text: string; images: string[]; mediaUrl?: string | null;
+  transcript?: string | null; transcriptChars?: number;
+  extraction: { summary?: string; stance?: string; symbols?: string[]; board?: string[]; claims?: string[]; vetoes?: string[]; model?: string; extractedAt?: string };
+  boardCheck: { checkedAt?: string; rows?: any[]; counts?: Record<string, number>; skipped?: string[] };
+  meta: Record<string, any>; error?: string | null;
+  postedAt?: string | null; createdAt?: string | null; updatedAt?: string | null;
+}
+
 export interface TechniqueSweep {
   technique?: string;   // registry id (platform plan phase 0); absent from older servers
   id: string; label: string; symbols: string[]; start: string; end: string; params: any; status: string; progress: any;

@@ -2444,5 +2444,7 @@ async def attach_technique_layer(engine) -> None:
     if getattr(engine, "plan_runners", None) is None:
         engine.plan_runners = {}
     engine.plan_runners["enhanced_market"] = svc.armer        # the /api/technique/armed hub aggregates these
+    from .ingest import MethodIngestService
+    svc.ingest = MethodIngestService(engine, svc)   # EM method ingestion (INGESTION-PLAN.md)
     engine.chat = chat
     svc.start()

@@ -268,6 +268,21 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.use_critic": True,          # run the vision critic on a live trigger (needs key)
     "technique.arm.critic_effort": "low",      # fire-time critic thinking depth — latency is cost here
     "technique.arm.midday_trading": False,     # R6.3 EXPERIMENT: let armed triggers fire 10:30-14:45 ET
+    # --- EM method ingestion (docs/techniques/enhanced-market/INGESTION-PLAN.md) - EM-ONLY.
+    # The shared read-only Discord gateway forwards these channels to EM's inbox; the
+    # em_ingest worker transcribes videos; extraction + board check are automatic;
+    # ARMING IS HUMAN unless auto_arm is turned on. Never read by any other technique.
+    "techniques.enhanced_market.discord.channels": [
+        {"channelId": "1126325195301462117", "label": "em-alerts"},     # the pre-trading setups video + his alerts
+        {"channelId": "1126364741779062974", "label": "watchlists"},    # morning board posts
+    ],
+    "techniques.enhanced_market.ingest.enabled": True,
+    "techniques.enhanced_market.ingest.auto_transcribe": True,
+    "techniques.enhanced_market.ingest.auto_extract": True,
+    "techniques.enhanced_market.ingest.auto_plan_board": True,   # deterministic plan runs on the board's symbols (no LLM)
+    "techniques.enhanced_market.ingest.auto_arm": False,         # proposes only; a human arms
+    "techniques.enhanced_market.ingest.board_max_symbols": 12,
+    "techniques.enhanced_market.ingest.transcribe_max_attempts": 5,
                                                # (fires carry window="midday" so outcomes are separable)
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire

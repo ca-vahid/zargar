@@ -77,6 +77,31 @@ discord_gateway (existing tool process, read-only, shared transport)
 4. Every note is kept; TRADING-RULES stays the judgement log; the notes table
    is the raw archive.
 
+## Status: BUILT 2026-09-01 (phases 1-3), first end-to-end run same evening
+
+What exists (all EM-namespaced, nothing else touched):
+
+- **Gateway** (`zargar/tools/discord_gateway.py`): a second channel set loaded from
+  `GET /api/technique/ingest/channels` (settings `techniques.enhanced_market.discord.channels`,
+  default em-alerts + watchlists) and forwarded to EM's inbox BEFORE the tip match runs.
+  The tip allowlist/mirror/intake are untouched (tests: a channel in both sets feeds both;
+  an EM-only channel never mirrors or tips).
+- **Inbox + notes** (`zargar/technique/ingest.py`, table `technique_method_notes`):
+  dedupe on message id; video link -> `pending_transcript`; text posts -> extraction.
+- **Worker** (`zargar/tools/em_ingest.py`, launcher `scripts/em-ingest.ps1`, its own
+  venv `backend/.venv-ingest`): polls `/api/technique/ingest/pending`, yt-dlp -> mp3 ->
+  faster-whisper (`small`) -> `POST /api/technique/ingest/transcript`; failures retry up
+  to `ingest.transcribe_max_attempts` then mark the note `failed` (never silent).
+- **Extraction**: one flat-schema read (`MethodExtraction`: summary, stance, symbols,
+  board, claims, vetoes), effort low.
+- **Board check**: deterministic plan runs (`analyze(plan=True, with_vision=False)`) on
+  the named symbols -> armed / new (grade, run id) / rejected (closest trigger + reason).
+  `ingest.auto_arm` default OFF - the Validation tab's **Author's board** card carries
+  the Arm buttons.
+- **API**: `/api/technique/ingest/{channels,message,pending,transcript,notes,board,notes/{id}[/extract|/board-check]}`.
+- **Run it**: `scripts\start.ps1` launches the Discord intake AND the EM ingest worker
+  windows (`-NoIngest` skips the worker); by hand: `scripts\em-ingest.ps1` (or `-Once`).
+
 ## Build phases
 
 | # | What | Size |

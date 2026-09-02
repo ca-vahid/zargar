@@ -653,3 +653,34 @@ class TipNote(Base):
     last_cited_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     cited_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class TechniqueMethodNote(Base):
+    """EM method ingestion (docs/techniques/enhanced-market/INGESTION-PLAN.md):
+    one note per captured item from the author's channels — a watch-list post,
+    a chart, or the pre-trading video (link -> transcript). `extraction` holds
+    the LLM read (summary, board, claims, vetoes) and `board_check` what OUR
+    pipeline made of the named symbols (armed / new plan / rejected + reason).
+    This table is the durable memory of the method's evolution; TRADING-RULES
+    stays the judgement log. EM-only: `technique` is always enhanced_market."""
+    __tablename__ = "technique_method_notes"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
+    message_id: Mapped[str | None] = mapped_column(String(32), unique=True, index=True)   # discord message id (dedupe)
+    channel_id: Mapped[str] = mapped_column(String(32), default="", index=True)
+    channel_name: Mapped[str] = mapped_column(String(128), default="")
+    author: Mapped[str] = mapped_column(String(128), default="")
+    kind: Mapped[str] = mapped_column(String(16), default="post", index=True)      # post | chart | video
+    status: Mapped[str] = mapped_column(String(24), default="new", index=True)     # new | pending_transcript | transcribed | extracted | checked | failed
+    text: Mapped[str] = mapped_column(Text, default="")
+    images: Mapped[list] = mapped_column(JSONVariant, default=list)
+    media_url: Mapped[str | None] = mapped_column(Text)
+    transcript: Mapped[str | None] = mapped_column(Text)
+    extraction: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    board_check: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    meta: Mapped[dict] = mapped_column(JSONVariant, default=dict)                  # attempts, lastError, model, durationSeconds
+    error: Mapped[str | None] = mapped_column(Text)
+    posted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

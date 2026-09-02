@@ -27,6 +27,8 @@ cd backend && .venv/bin/python -m pytest tests/test_position_*.py tests/test_pla
 cd backend && .venv/bin/python -m pytest tests/test_options_*.py tests/test_snaptrade_options.py  # options (stubbed CBOE/SnapTrade)
 cd backend && .venv/bin/python -m zargar.tools.technique_review list --unreviewed   # review loop CLI (dump/score/review/diff/replay)
 cd backend && .venv/bin/python -m zargar.tools.technique_review sweep --start 2026-07-01 --end 2026-08-20   # walk-forward sweep (deterministic)
+scripts\em-ingest.ps1 [-Once]                             # EM method ingestion worker (video -> transcript; own venv backend/.venv-ingest)
+cd backend && .venv/bin/python -m zargar.tools.technique_review sweep --start A --end B --set min_risk_reward=2.0   # VARIANT sweep (threshold overlay); sweep-compare a b
 ```
 
 Options trading: research + build plan + status in `docs/OPTIONS-PLAN.md`.
@@ -42,6 +44,12 @@ Review loop (trace, provenance, outcomes, reviews, replay, bundle):
 `docs/techniques/enhanced-market/REVIEW-PLAN.md`; the `/technique-review` skill
 (`.claude/skills/technique-review/`) audits one run end-to-end and plans the fix.
 Session plans + walk-forward + live arming: `docs/techniques/enhanced-market/WALKFORWARD-PLAN.md`
+**EM method ingestion (built 2026-09-01, EM-ONLY):** `docs/techniques/enhanced-market/INGESTION-PLAN.md` -
+the shared read-only Discord gateway forwards `techniques.enhanced_market.discord.channels` to
+`technique/ingest.py` (`technique_method_notes`); `tools/em_ingest.py` transcribes videos; extraction +
+deterministic board check feed the Validation tab's Author's board card. Never routes through Tip's
+intake/mirror; arming stays human (`ingest.auto_arm` off). Method evolution loop + variant sweeps:
+`docs/techniques/enhanced-market/EVOLUTION-PLAN.md`.
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
 **Multi-technique platform (BUILT through phase 5, 2026-08-27):** `docs/TECHNIQUE-PLATFORM-PLAN.md`;
 **start any new technique at `docs/BUILDING-A-TECHNIQUE.md`**. The registry
