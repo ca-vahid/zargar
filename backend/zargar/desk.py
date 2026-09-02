@@ -123,7 +123,8 @@ class DeskService:
                 if any(t.remaining > 0 for t in ap.trades.values()):
                     counts["inTrade"] += 1
                 try:
-                    reasons = ap._attention_reasons()
+                    port = eng.positions.portfolio(ap.config.portfolio_id) or {}
+                    reasons = ap._attention_reasons(port)
                 except Exception:
                     reasons = []
                 if reasons:
