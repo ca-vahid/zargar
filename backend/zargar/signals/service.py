@@ -1468,16 +1468,45 @@ class SignalService:
                     istep("note", f"{row.ticker}: at-level arm failed ({exc}) — "
                                   "falling back to the proposal lane.")
                     armed = None
+            # an analyst TAKE on an implied ("shadow") tip whose only failed check
+            # was the extraction's actionability call is PROMOTED to a proposal
+            # that waits for the human — never self-approves (the promotion rule
+            # from the recovery sweep). 2026-09-02 15:22: neal "GME ape now, got
+            # starter" + a position screenshot — extraction said not actionable,
+            # the analyst said take 264 sh, and nothing at all reached Practice.
+            promoted = False
+            if (status == "shadow" and armed is None and op.get("verdict") == "take"
+                    and eng.proposals is not None and policy.mode in ("proposal", "auto")
+                    and all(c.get("passed") or not c.get("fatal")
+                            for c in (verification.get("checks") or []))):
+                status = "verified"
+                promoted = True
+                istep("note", f"{row.ticker}: the analyst says TAKE on a tip the extractor "
+                              "called implied — promoted to a proposal that waits for you.")
             if status == "verified" and armed is None:
-                # proposals need an explicit call (status "shadow" never proposes)
+                # proposals need an explicit call (status "shadow" never proposes
+                # on its own — see the promotion above)
                 if (eng.proposals is not None and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
                     proposal = await eng.proposals.create_from_signal(row, sig, verification)
+                    if proposal is not None and promoted:
+                        with contextlib.suppress(Exception):
+                            from ..models import Proposal as ProposalRow
+                            from ..approvals.proposals import proposal_dict as _pdict
+                            async with eng.sf() as session:
+                                prow = await session.get(ProposalRow, proposal["id"])
+                                if prow is not None:
+                                    prow.context = {**(prow.context or {}),
+                                                    "promoted": "analyst take on an implied tip",
+                                                    "autoGate": "promoted from shadow — a human approves"}
+                                    await session.commit()
+                                    proposal = _pdict(prow)
                     if proposal is not None and op:
                         await eng.journal.append(
                             ev.TIP_LANE_DECIDED,
                             {"signalId": row.id, "lane": "proposal",
-                             "entryMode": op.get("entry_mode") or "now"},
+                             "entryMode": op.get("entry_mode") or "now",
+                             **({"promoted": True} if promoted else {})},
                             aggregate_type="signal", aggregate_id=row.id)
                 # full auto: a "take" from the analyst self-approves the proposal —
                 # same path a human click takes (RiskGate inside OrderManager.place).
@@ -1487,7 +1516,10 @@ class SignalService:
                     pf = eng.positions.portfolio(proposal["portfolioId"]) or {}
                     live_ok = (pf.get("kind") != "live"
                                or bool(eng.settings.get("techniques.tip.allow_live_auto", False)))
-                    if verdict is None and appraise and analyst_available:
+                    if promoted:
+                        log.info("auto mode: proposal %s was promoted from an implied tip — "
+                                 "a human approves", proposal["id"])
+                    elif verdict is None and appraise and analyst_available:
                         # the analyst was supposed to gate this and DIDN'T deliver a
                         # verdict (crashed / unparseable reply). Fail CLOSED: a missing
                         # gatekeeper is not permission (TSLA 2026-08-31 — a failed
