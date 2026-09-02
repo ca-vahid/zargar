@@ -194,6 +194,18 @@ class ProposalService:
         pf = eng.positions.portfolio(pid) or {}
         policy = resolve_policy(eng.settings, signal_row.source_name)
         budget = float(policy.budget_per_tip)
+        # the lotto lane (0-3 DTE, user 2026-09-01): its own budget, tip-time
+        # only, and no 0-DTE entries once the expiry-day flatten time has passed
+        from ..techniques.tip.lotto import is_lotto, lotto_budget, past_flatten_time
+        lotto = is_lotto(signal_row, eng.settings)
+        if lotto:
+            budget = lotto_budget(eng.settings, budget)
+            from zoneinfo import ZoneInfo
+            now_et = dt.datetime.now(ZoneInfo("America/New_York"))
+            exp = str(signal_row.expiry or "")
+            if exp == now_et.strftime("%Y-%m-%d") and past_flatten_time(eng.settings, now_et):
+                log.info("lotto %s: 0DTE past the flatten time — no proposal", signal_row.id)
+                return None
 
         extraction = signal_row.extraction or {}
         analyst = extraction.get("analyst") or {}
@@ -303,7 +315,8 @@ class ProposalService:
             opt_type = parsed.option_type if parsed else ("put" if sig.direction == "short" else "call")
             label = label or (occ_mod.display(occ) if parsed else occ)
             vehicle = {"kind": "option", "display": label, "underlying": sig.ticker.upper(),
-                       "optionType": opt_type, "pickedBy": picked_by, "multiplier": 100}
+                       "optionType": opt_type, "pickedBy": picked_by, "multiplier": 100,
+                       **({"lotto": True} if lotto else {})}
             cost = limit * qty * 100
             explain = (f"Approve = buy {qty} contract{'s' if qty != 1 else ''} of "
                        f"{label} (a {opt_type} — {'bullish' if opt_type == 'call' else 'bearish'}) "

@@ -137,6 +137,15 @@ runtime ones to `execution.*`).
   earned-auto gates live in intake); error content retries exactly once, meta-marked
   BEFORE the attempt so it can never loop.
 
+- **2026-09-01 · "Never hold to expiry" means never THROUGH the close of expiry day** (the
+  tips lotto lane, user decision). The DTE floor (`execution.min_dte`, close at DTE ≤ N) stays
+  the platform default for every policy. A policy that declares `expiry_day_flatten_et`
+  (tips: `techniques.tip.lotto_flatten_et`, 15:45) may hold INTO expiry day and is flattened
+  at that time by the bar-driven decision AND a clock-driven net in the manager's quote
+  watch (`kind: dte`). Per-position, opt-in, journaled — EM's behaviour is unchanged.
+  Evidence: on the first live day the policy killed every 1–3 DTE tip from two sources
+  whose whole style is short-dated, while their own boards printed +18/+26/+31 %.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

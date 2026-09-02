@@ -224,9 +224,16 @@ dependent — the F7 grouping fix is still open).
       `entry_conditions` — its −1.25R prints are harness artifacts, not tip
       evidence. Replay must respect the stated trigger side or mark the plan
       `constructed`.
-- [ ] **F15 · Fan-in at the message level** (review #2 fix, was F7): one
-      parent signal per message, branches as children; research sweep once
-      per parent; render two-sided maps as one object.
+- [x] **F15 · Fan-in at the message level** — DONE 2026-09-01 (daily review:
+      eva's map → 11 appraisals → 11 notes). A message with ≥
+      `techniques.tip.fan_in_min` (3) signals is appraised ONCE with every
+      branch in the header; siblings inherit the verdict (a take never fans
+      out — siblings become watch, `fanIn: true`). Verification/dedupe/shadow
+      books still run per branch. Test `test_multi_branch_message_is_appraised_once`.
+- [x] **Note hygiene (daily review 2026-09-01)** — 100 notes in a day, 18
+      numbering "message families". Harness-enforced in `save_note`: ≤2 saves
+      per run, blank `ticker:` scope refused, chatter-taxonomy text refused
+      (`_TAXONOMY_RE`); prompt says formats live in ONE profile note.
 - [ ] **F16 · "Trim/TP without a matching open" flag** (review #11): three
       position-management messages had no captured opening message — an
       ingestion-coverage alarm worth emitting on the live path too.

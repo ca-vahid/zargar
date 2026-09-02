@@ -178,10 +178,28 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
 
     # ---- 2. mandatory closes ---------------------------------------------------
     if view.dte_min is not None:
-        min_dte = max(int(policy.get("dte_close") or 0), int(view.min_dte_floor))
-        if view.dte_min <= min_dte:
-            return [Decision("dte", 1.0, f"min leg DTE {view.dte_min} <= dte_close floor {min_dte} — "
-                                         "never hold to expiry")], moves
+        flatten_et = policy.get("expiry_day_flatten_et")
+        if flatten_et:
+            # a policy that may hold INTO expiry day (the tips lotto lane): the
+            # "never hold to expiry" invariant is kept as "never through the
+            # close of expiry day" — flatten at the stated ET time
+            if view.dte_min <= 0:
+                from ..marketstructure.sessions import ET as _ET
+                import datetime as _dt
+                bar_et = _dt.datetime.fromtimestamp(view.bar.ts / 1000, _ET)
+                hh, mm = (int(x) for x in str(flatten_et).split(":"))
+                # the decision runs on the bar CLOSE: a bar ending at/after the
+                # flatten time is the flatten bar
+                if (bar_et.hour * 60 + bar_et.minute + 1) >= hh * 60 + mm:
+                    return [Decision("dte", 1.0, f"expiry day — flattening at {flatten_et} ET "
+                                                 "(never hold through the close)")], moves
+            elif view.dte_min < 0:
+                return [Decision("dte", 1.0, "contract expired — closing")], moves
+        else:
+            min_dte = max(int(policy.get("dte_close") or 0), int(view.min_dte_floor))
+            if view.dte_min <= min_dte:
+                return [Decision("dte", 1.0, f"min leg DTE {view.dte_min} <= dte_close floor {min_dte} — "
+                                             "never hold to expiry")], moves
     ts = policy.get("time_stop_sessions")
     if ts and view.sessions_held >= int(ts):
         return [Decision("time", 1.0, f"held {view.sessions_held} trading sessions (time stop {ts})")], moves

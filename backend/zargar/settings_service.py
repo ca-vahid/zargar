@@ -102,6 +102,12 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.review_enabled": True,   # analyst reviews non-tradable updates vs our positions
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
     "techniques.tip.max_contracts_per_tip": 25,  # hard cap on option qty per proposal — budget sizing on lotto premium is nonsense (277 × $0.09, 2026-08-31)
+    # --- the lotto lane (0–3 DTE tips; user decision 2026-09-01) ---
+    "techniques.tip.fan_in_min": 3,             # a message with >= N signals is appraised ONCE (siblings inherit the verdict)
+    "techniques.tip.lotto_enabled": True,
+    "techniques.tip.lotto_max_dte": 3,          # a stated contract expiring within N days is a lotto
+    "techniques.tip.lotto_budget": 1500.0,      # $ per lotto tip (separate from budget_per_tip)
+    "techniques.tip.lotto_flatten_et": "15:45", # expiry-day mandatory flatten (never hold through the close)
     "techniques.tip.auto_min_graded": 5,     # earned auto: closed tip positions a source needs before the platform-default auto self-approves
     "techniques.tip.auto_min_hit": 0.4,      # earned auto: minimum hit rate on those closed positions (explicit per-source auto bypasses both)
     "techniques.tip.retro_enabled": True,    # nightly analyst retro on closed tip positions

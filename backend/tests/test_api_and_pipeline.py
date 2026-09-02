@@ -587,6 +587,35 @@ async def test_platform_auto_graduates_per_source(app_client):
     assert p2 is not None and p2["status"] == "executed" and p2["decidedVia"] == "auto", p2
 
 
+async def test_multi_branch_message_is_appraised_once(app_client):
+    # FAN-IN (F15, daily review 2026-09-01): eva's daily level map became 11
+    # signals -> 11 appraisals -> 11 notes. One message = ONE analyst run; the
+    # siblings inherit the verdict; a "take" never fans out (siblings -> watch).
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    fake = _FakeAnthropic()
+    eng.signals_service._analyst_client = fake
+    base = canned_extraction().signals[0]
+    text = ("We are buying AAPL today. Entry at $231.50, stop loss $220, target $260. "
+            "Same map for MSFT and NVDA.")
+    branches = [base.model_copy(update={"ticker": t, "evidence_quotes": [
+        "Entry at $231.50, stop loss $220, target $260", f"{t}"]})
+                for t in ("AAPL", "MSFT", "NVDA")]
+    # siblings park on price deviation (they are not at AAPL's price) — parked
+    # branches are appraised too, which is exactly the fan-out that hurt
+    ext = ExtractionResult(signals=branches, source_type="trade_alert")
+    out = await run_pipeline(eng, ext, source_text=text)
+    runs = (await client.get("/api/tip/analyst/runs?limit=50")).json()
+    appraisals = [r for r in runs if r["kind"] == "appraise"]
+    assert len(appraisals) == 1, ([r["ticker"] for r in appraisals], [(o["signal"]["ticker"], o["signal"]["status"], [c["name"] for c in (o["signal"].get("verification") or {}).get("checks", []) if not c["passed"]]) for o in out])
+    verdicts = [(o["signal"]["ticker"], (o["signal"]["extraction"].get("analyst") or {}).get("verdict"))
+                for o in out]
+    assert verdicts[0] == ("AAPL", "take")                # the appraised branch
+    assert all(v == "watch" for _, v in verdicts[1:])      # siblings never fan a take out
+    assert all((o["signal"]["extraction"].get("analyst") or {}).get("fanIn") for o in out[1:])
+
+
 async def test_take_fill_adopts_position_under_analyst_exits(app_client):
     # the whole lifecycle: analyst "take" (with exit plan) → auto-approved OPT
     # proposal → fill → durable managed position running the ANALYST'S ladder
@@ -1501,3 +1530,4 @@ async def test_lone_short_option_leg_is_still_naked(app_client):
         tags=["spread:deadbeef"]))
     assert out["status"] == "REJECTED_RISK"
     assert "naked short options" in (out.get("rejectReason") or "")
+

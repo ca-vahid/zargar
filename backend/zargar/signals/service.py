@@ -1109,6 +1109,20 @@ class SignalService:
         stale = age_hours is not None and age_hours > max_age
 
         out: list[dict] = []
+        # FAN-IN (batch-2 F15 / daily review 2026-09-01): a multi-branch message
+        # (eva's daily level map -> 11 signals) is ONE story. It is appraised
+        # ONCE — the first tradable branch carries every sibling in its header —
+        # and the siblings inherit the verdict (a "take" never fans out: the
+        # appraised branch is the trade, the rest are "watch"). Verification,
+        # dedupe and the shadow books still run per branch (the record is per
+        # contract); only the LLM judgement is shared.
+        fan_in = len(result.signals) >= int(eng.settings.get("techniques.tip.fan_in_min", 3))
+        branch_lines = [f"{s.ticker} {s.direction} {s.instrument}"
+                        + (f" {s.strike:g}" if s.strike else "")
+                        + (f" exp {s.expiry}" if s.expiry else "")
+                        + (f" @ {s.premium:g}" if s.premium else "")
+                        for s in result.signals]
+        shared_opinion: dict | None = None
         for sig in result.signals:
             policy = resolve_policy(eng.settings, content.source_name)
             grounding = ground_signal(sig, source_text)
@@ -1354,16 +1368,33 @@ class SignalService:
                         "context and do not let hindsight grade the call. save_note ONLY "
                         "for timeless lessons (source habits, structural reads) — "
                         f"anything date-bound goes to scope experiment:{experiment}.")
-                try:
-                    from ..techniques.tip.analyst import analyze_tip
-                    opinion = await analyze_tip(eng, row, verification, policy,
-                                                client=self._analyst_client,
-                                                parent_run_id=(intake.id if intake else None),
-                                                experiment=experiment,
-                                                historical_note=historical_note)
-                except Exception:                  # never block the pipeline
-                    log.exception("tip analyst crashed for %s", row.id)
-                    opinion = None
+                if fan_in and shared_opinion is not None:
+                    # sibling branch of an already-appraised message
+                    opinion = dict(shared_opinion)
+                    if opinion.get("verdict") == "take":
+                        opinion["verdict"] = "watch"
+                        for k in ("contract", "contract_label", "limit_price", "quantity",
+                                  "entry_mode", "entry_level", "exit_targets", "exit_fractions"):
+                            opinion.pop(k, None)
+                    opinion["rationale"] = ("[sibling branch — this message was appraised once; "
+                                            "verdict inherited] " + str(opinion.get("rationale") or ""))
+                    opinion["fanIn"] = True
+                    istep("note", f"{row.ticker}: sibling branch of the same message — "
+                                  f"inherits the appraisal ({opinion['verdict']}), no new run.")
+                else:
+                    try:
+                        from ..techniques.tip.analyst import analyze_tip
+                        opinion = await analyze_tip(eng, row, verification, policy,
+                                                    client=self._analyst_client,
+                                                    parent_run_id=(intake.id if intake else None),
+                                                    experiment=experiment,
+                                                    historical_note=historical_note,
+                                                    siblings=(branch_lines if fan_in else None))
+                    except Exception:                  # never block the pipeline
+                        log.exception("tip analyst crashed for %s", row.id)
+                        opinion = None
+                    if fan_in and opinion is not None:
+                        shared_opinion = opinion
                 if opinion is None and experiment is not None:
                     # F1 (batch-1): no signal may end SILENT — a failed
                     # appraisal leaves its mark for the batch review
@@ -1649,20 +1680,30 @@ class SignalService:
                 else:
                     expression["fallback"] = f"spread: {pick.get('error')}"
             if tip_is_option(signal_row):
+                from ..techniques.tip.lotto import is_lotto, lotto_budget
+                lotto = is_lotto(signal_row, eng.settings)
+                budget = lotto_budget(eng.settings, policy.budget_per_tip) if lotto \
+                    else policy.budget_per_tip
                 targets = ((signal_row.extraction or {}).get("signal") or {}).get("target_prices") \
                     or ([sig.target_price] if sig.target_price else [])
                 cap = float(targets[-1]) if targets else None
                 pick = await pick_tip_contract(
                     eng, symbol=sig.ticker.upper(), direction=sig.direction,
-                    dte_min=policy.dte_min, dte_max=policy.dte_max,
+                    dte_min=(0 if lotto else policy.dte_min), dte_max=policy.dte_max,
                     strike=signal_row.strike, expiry=signal_row.expiry,
-                    stated_min_dte=int(eng.settings.get("techniques.tip.entry_cutoff_dte", 2)),
+                    # a lotto is the STATED contract verbatim — the entry cutoff
+                    # used to substitute a 9/4 call into a 9/11 put (MRVL 09-01)
+                    stated_min_dte=(0 if lotto else
+                                    int(eng.settings.get("techniques.tip.entry_cutoff_dte", 2))),
+                    allow_0dte=lotto,
                     max_strike=cap if sig.direction == "long" else None,
                     min_strike=cap if sig.direction == "short" else None)
                 ask = float(pick.get("ask") or pick.get("mid") or 0) if pick.get("available") else 0.0
                 if pick.get("available") and pick.get("symbol") and ask > 0:
                     from ..execution.sizing import size_by_budget
-                    contracts = size_by_budget(policy.budget_per_tip, ask,
+                    if lotto:
+                        expression["lotto"] = True
+                    contracts = size_by_budget(budget, ask,
                                                max_units=1_000, multiplier=100.0)
                     # the record mirrors what the desk WOULD buy: the same
                     # per-tip contract cap as proposals (54 lotto contracts on
@@ -1673,7 +1714,7 @@ class SignalService:
                     if contracts < 1:
                         contracts = 1     # one contract slightly over budget beats skipping the tip
                         expression["note"] = (f"premium ${ask * 100:,.0f} exceeds the "
-                                              f"${policy.budget_per_tip:,.0f} budget — 1 contract anyway")
+                                              f"${budget:,.0f} budget — 1 contract anyway")
                     occ_sym = str(pick["symbol"])
                     await eng.ensure_symbol(occ_sym)      # track + quotes so sim can fill
                     expression.update({"vehicle": "option", "contract": occ_sym,
