@@ -112,6 +112,7 @@ export function ArmedPage() {
         </div>
         {sub === "live" && <NowView />}
         {sub === "history" && <PhoneHistory history={history} pmap={pmap} />}
+        {sub === "history" && <MissedByBugPanel />}
       </div>
     );
   }
@@ -194,7 +195,7 @@ export function ArmedPage() {
       )}
 
       {sub === "history" && (
-        <HistoryTable history={history} pmap={pmap} ws={ws} />
+        <><HistoryTable history={history} pmap={pmap} ws={ws} /><MissedByBugPanel /></>
       )}
     </div>
   );
@@ -485,6 +486,46 @@ function PhoneHistory({ history, pmap }: { history: any[]; pmap: Record<string, 
           </div>
         );
       })}
+    </div>
+  );
+}
+
+
+/** Counterfactual ledger: trades the app missed through a bug, replayed after the
+ *  fix through the desk's own exit rules on the real bars. Kept apart from the
+ *  real results on purpose - Practice stays what actually happened. */
+function MissedByBugPanel() {
+  const [rows, setRows] = useState<import("../types").Counterfactual[]>([]);
+  useEffect(() => {
+    api.techniqueCounterfactuals(50).then(setRows).catch(() => setRows([]));
+  }, []);
+  if (!rows.length) return null;
+  const total = rows.reduce((n, r) => n + (r.result?.pnl ?? 0), 0);
+  const when = (ts?: number | null) => ts ? new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "America/New_York" }) : "-";
+  return (
+    <div className="panel mb">
+      <div className="panel-head">Missed by a bug (counterfactual)
+        <span className="sub">{rows.length} trade(s) · <span className={pnlCls(total)}>{fmt(total)}</span> the method would have earned · never booked to a portfolio</span></div>
+      <div className="panel-body" style={{ padding: 0 }}>
+        <table className="tq-table tq-wf">
+          <thead><tr><th>Session</th><th>Symbol</th><th>Trigger</th><th>Contract</th><th>Fill</th><th>Exits</th><th>Result</th><th>R</th><th>Why it was missed</th></tr></thead>
+          <tbody>{rows.map((r) => {
+            const res = r.result || {};
+            return (
+              <tr key={r.id} className="clickable" onClick={() => useStore.getState().openTechniqueRun(r.runId)}>
+                <td className="muted">{r.session}</td>
+                <td><b>{r.symbol}</b></td>
+                <td>{r.triggerId} <span className="muted small">{res.direction}</span></td>
+                <td className="muted small">{res.orderSymbol && res.orderSymbol !== r.symbol ? res.orderSymbol : "shares"} x {res.qty ?? "-"}</td>
+                <td>{res.fillPrice != null ? `${res.fillPrice} @ ${when(res.fillTs)}` : <span className="muted">{r.status.replace("_", " ")}</span>}</td>
+                <td className="small">{(res.exits ?? []).map((e) => `${e.kind} ${e.qty}@${e.price} ${when(e.ts)}`).join(" · ") || "-"}</td>
+                <td className={pnlCls(res.pnl)}>{fmt(res.pnl)} <span className="muted small">{r.status}</span></td>
+                <td>{res.rUnderlying != null ? `${res.rUnderlying > 0 ? "+" : ""}${res.rUnderlying}R` : "-"}</td>
+                <td className="muted small">{r.reason}</td>
+              </tr>);
+          })}</tbody>
+        </table>
+      </div>
     </div>
   );
 }

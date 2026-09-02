@@ -777,3 +777,23 @@ export interface ChatLive {
   grounding?: { passed: boolean; checks: GroundingCheck[]; attempt: number } | null;
   facts?: any; error?: string | null;
 }
+
+/** A trade the app missed through a bug, replayed after the fix (execution/counterfactual.py). */
+export interface Counterfactual {
+  id: string;
+  technique: string;
+  runId: string;
+  triggerId: string;
+  symbol: string;
+  session: string;
+  reason: string;
+  status: "win" | "loss" | "scratch" | "not_filled" | "open" | "error" | string;
+  result: {
+    direction?: string; instrument?: string; orderSymbol?: string; qty?: number; multiplier?: number;
+    limitPrice?: number; firedTs?: number; fillTs?: number | null; fillPrice?: number | null;
+    exits?: { kind: string; ts: number; qty: number; price: number; underlying: number }[];
+    pnl?: number; grossPnl?: number; fees?: number; rUnderlying?: number; remaining?: number; mark?: number | null;
+    notes?: string[];
+  };
+  createdAt: string | null;
+}

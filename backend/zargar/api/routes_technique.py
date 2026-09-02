@@ -402,6 +402,33 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def technique_arm_options():
         return _svc(eng).arm_options()
 
+    class CounterfactualBody(BaseModel):
+        triggerId: str
+        reason: str
+        orderSymbol: str | None = None
+        limitPrice: float | None = None
+        qty: float | None = None
+        firedTs: int | None = None
+
+    @app.post("/api/technique/runs/{run_id}/counterfactual", dependencies=[auth])
+    async def technique_counterfactual(run_id: str, body: CounterfactualBody):
+        """What a trade the app MISSED through a bug would have done: replay the
+        fired order through the runner's exit rules on the real bars and record
+        it in the counterfactual ledger (never a portfolio fill)."""
+        from ..execution import counterfactual as cf
+        try:
+            return await cf.reconstruct(eng, run_id, body.triggerId, reason=body.reason, order_symbol=body.orderSymbol,
+                                        limit_price=body.limitPrice, qty=body.qty, fired_ts=body.firedTs)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @app.get("/api/technique/counterfactuals", dependencies=[auth])
+    async def technique_counterfactuals(limit: int = 100, technique: str | None = None):
+        from ..execution import counterfactual as cf
+        return await cf.list_rows(eng, limit=min(limit, 500), technique=technique)
+
     @app.get("/api/technique/armed/history", dependencies=[auth])
     async def technique_armed_history(limit: int = 50):
         return await _svc(eng).armed_history(limit=min(limit, 200))

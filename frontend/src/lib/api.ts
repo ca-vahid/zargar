@@ -221,6 +221,7 @@ export const api = {
   techniqueArmedDetail: (runId: string) => request<import("../types").ArmedPlan>("GET", `/api/technique/armed/${runId}`),
   techniqueArmedAudit: (runId: string) => request<any[]>("GET", `/api/technique/armed/${runId}/audit`),
   techniqueArmedHistory: () => request<any[]>("GET", "/api/technique/armed/history"),
+  techniqueCounterfactuals: (limit = 100) => request<import("../types").Counterfactual[]>("GET", `/api/technique/counterfactuals?limit=${limit}`),
   techniqueArmOptions: () => request<import("../types").ArmOptions>("GET", "/api/technique/armed/options"),
   techniqueArmPreflight: (runId: string, body?: import("../types").ArmRequest) =>
     request<import("../types").ArmPreflight>("POST", `/api/technique/runs/${runId}/arm/preflight`, body),

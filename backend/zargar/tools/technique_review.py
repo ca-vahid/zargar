@@ -582,6 +582,52 @@ async def cmd_arm_today(args) -> int:
     return await _api_call(args, "POST", "/api/technique/arm-today", {"symbol": args.symbol.upper()})
 
 
+async def cmd_counterfactual(args) -> int:
+    """What a trade the app MISSED through a bug would have done: replay the fired
+    order through the runner's exit rules on the real bars (direct DB + Yahoo; the
+    app need not be running) and record it in the counterfactual ledger."""
+    from ..execution import counterfactual as cf
+    async with Ctx() as c:
+        try:
+            row = await cf.reconstruct(c.engine, args.run_id, args.trigger, reason=args.reason,
+                                       order_symbol=args.order_symbol, limit_price=args.limit,
+                                       qty=args.qty, fired_ts=args.fired_ts)
+        except (KeyError, ValueError) as exc:
+            print(exc, file=sys.stderr)
+            return 1
+    if args.json:
+        print(json.dumps(row, indent=1, default=str))
+        return 0
+    r = row["result"]
+    print(f"counterfactual {row['id'][:8]} {row['symbol']} {row['triggerId']} ({r.get('direction')}, "
+          f"{r.get('orderSymbol')} x {r.get('qty'):g}) on {row['session']}: {row['status'].upper()} "
+          f"pnl {r.get('pnl'):+.2f} ({r.get('rUnderlying'):+.2f}R on the plan)")
+    print(f"  fired {_ts(r.get('firedTs'))} · fill {r.get('fillPrice')} at {_ts(r.get('fillTs'))} (limit {r.get('limitPrice')})")
+    for e in r.get("exits") or []:
+        print(f"  {e['kind']:8} {e['qty']:g} @ {e['price']} at {_ts(e['ts'])} (underlying {e['underlying']})")
+    for n in r.get("notes") or []:
+        print(f"  note: {n}")
+    print(f"  reason: {row['reason']}")
+    return 0
+
+
+async def cmd_counterfactuals(args) -> int:
+    from ..execution import counterfactual as cf
+    async with Ctx() as c:
+        rows = await cf.list_rows(c.engine, limit=args.limit)
+    if args.json:
+        print(json.dumps(rows, indent=1, default=str))
+        return 0
+    total = 0.0
+    for row in rows:
+        r = row["result"]
+        total += float(r.get("pnl") or 0)
+        print(f"{row['session']} {row['symbol']:6} {row['triggerId']:6} {row['status']:10} {float(r.get('pnl') or 0):+9.2f} "
+              f"{float(r.get('rUnderlying') or 0):+5.2f}R  {row['reason'][:70]}")
+    print(f"{len(rows)} counterfactual(s), {total:+.2f} the method would have earned (never booked)")
+    return 0
+
+
 async def cmd_armed(args) -> int:
     return await _api_call(args, "GET", "/api/technique/armed")
 
@@ -776,6 +822,18 @@ def build_parser() -> argparse.ArgumentParser:
             p.add_argument("--allow-live", dest="allow_live", action="store_true",
                            help="acknowledge auto execution on a live/paper account")
         p.set_defaults(fn=fn)
+    p = sub.add_parser("counterfactual", help="ledger a trade the app missed through a bug (replayed after the fix; direct DB)")
+    p.add_argument("run_id")
+    p.add_argument("--trigger", required=True, help="trigger id that fired, e.g. r1")
+    p.add_argument("--reason", required=True, help="the bug, in one sentence")
+    p.add_argument("--order-symbol", dest="order_symbol", help="contract (unpadded OCC) when the armed record lost it")
+    p.add_argument("--limit", type=float, help="the order's limit price when the record lost it")
+    p.add_argument("--qty", type=float)
+    p.add_argument("--fired-ts", dest="fired_ts", type=int, help="epoch ms of the fire (hypotheticals only)")
+    p.set_defaults(fn=cmd_counterfactual)
+    p = sub.add_parser("counterfactuals", help="list the counterfactual ledger")
+    p.add_argument("--limit", type=int, default=50)
+    p.set_defaults(fn=cmd_counterfactuals)
     p = sub.add_parser("armed", help="list armed plans (API)")
     p.add_argument("--api")
     p.set_defaults(fn=cmd_armed)

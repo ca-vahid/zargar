@@ -180,6 +180,7 @@ in settings), SW at `frontend/public/sw.js` (shell only, never `/api`). Gate eve
 gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tools.mint_session)` from
 `backend/` or every route screenshots the login page); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
 parallel with it.
+**Bug-missed trades (2026-09-02):** replay them AFTER the fix into the counterfactual ledger (`execution/counterfactual.py`, `technique_review counterfactual <run> --trigger r1 --reason ...`, Armed > History "Missed by a bug") - NEVER book a synthetic fill into a portfolio (PLATFORM-RULES invariant).
 **New technique? Start at `docs/BUILDING-A-TECHNIQUE.md`** — the engine's capabilities (marketstructure,
 PlanRunner hooks, settings resolver `techniques.<id>.<key>` → `execution.<key>`, scheduler, calendar,
 chain snapshots, tags/caps, never-list) and the testing bar. **`docs/PLATFORM-RULES.md` is the shared judgement log** (invariants, engine-level findings, shared-knob

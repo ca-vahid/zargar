@@ -147,7 +147,34 @@ def main() -> None:
     print(f"[em-ingest] api={a.api} model={a.model} media={media_dir.resolve()} "
           f"{'(once)' if a.once else f'(every {a.interval:.0f}s)'}")
 
+    async def status_line() -> None:
+        """What the pipeline has captured today, so a fresh window is never blank
+        (2026-09-02: the morning brief had been processed before a restart and
+        the new window showed nothing, which read as 'it did nothing')."""
+        import httpx
+        try:
+            async with httpx.AsyncClient(timeout=20) as http:
+                r = await http.get(f"{a.api}/api/technique/ingest/board", headers=headers)
+                r.raise_for_status()
+                d = r.json()
+        except Exception as exc:  # noqa: BLE001
+            print(f"[em-ingest] status unavailable: {exc}")
+            return
+        n = d.get("note") or {}
+        if not d.get("today") or not n:
+            print("[em-ingest] nothing captured today yet - watching the author's channels (idle polls stay silent)")
+            return
+        ex = n.get("extraction") or {}
+        counts = (n.get("boardCheck") or {}).get("counts") or {}
+        posted = str(n.get("postedAt") or "")[11:16]
+        print(f"[em-ingest] today's brief: {n.get('kind')} in #{n.get('channelName') or '?'} at {posted}Z "
+              f"status={n.get('status')} material={ex.get('material')} "
+              f"symbols={','.join(ex.get('symbols') or []) or '-'} board={counts or '-'} "
+              f"(+{len(d.get('others') or [])} other note(s) today); see Validation > Author's board")
+
     async def loop() -> None:
+        await status_line()
+        polls = 0
         while True:
             try:
                 await run_once(a.api, headers, media_dir, a.model)
@@ -155,6 +182,9 @@ def main() -> None:
                 print(f"[em-ingest] poll failed: {exc}")
             if a.once:
                 return
+            polls += 1
+            if polls % max(1, int(1800 / max(a.interval, 1))) == 0:      # ~every 30 min
+                print(f"[em-ingest] alive - {polls} polls, nothing pending")
             await asyncio.sleep(a.interval)
 
     try:

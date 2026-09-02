@@ -40,6 +40,7 @@ CONTRACTS: dict[str, dict] = {
     "TechniquePlanArmed":     {"version": 1, "required": ("runId", "symbol", "planFor", "config", "portfolio")},
     "TechniquePlanDisarmed":  {"version": 1, "required": ("runId", "symbol", "reason")},
     "TechniquePlanRolled":    {"version": 1, "required": ("runId", "symbol", "from", "to")},   # multi-day plan advanced to its next session (ARM-GAPS A2/A4); was journaled without a contract
+    "TechniqueCounterfactual": {"version": 1, "required": ("runId", "symbol", "trigger", "reason", "status", "pnl")},   # a trade the app missed through a bug, reconstructed after the fix (execution/counterfactual.py) - never a portfolio fill
     "TechniquePlanPaused":    {"version": 1, "required": ("runId", "symbol")},
     "TechniquePlanResumed":   {"version": 1, "required": ("runId", "symbol")},
     "TechniquePlanModeChanged": {"version": 1, "required": ("runId", "symbol", "from", "to")},

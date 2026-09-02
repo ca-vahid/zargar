@@ -169,6 +169,16 @@ runtime ones to `execution.*`).
   returns whether it held the order and the manager transitions unheld open orders to
   CANCELLED with a reason. Ops workaround until deployed: disarm + re-arm the plan.
 
+- **2026-09-02 · Counterfactual ledger for bug-missed trades (user decision).** When a
+  bug costs a trade, the fired order is replayed AFTER the fix through the runner's own
+  exit rules on the real 1m bars (underlying for stop/targets, the contract's prints for
+  fill/exit prices) and recorded in `technique_counterfactuals` + a `TechniqueCounterfactual`
+  event (`execution/counterfactual.py`; `POST /api/technique/runs/{id}/counterfactual`;
+  CLI `technique_review counterfactual`). INVARIANT: a counterfactual is never a fill in
+  any portfolio - Practice/live books stay what actually happened, so the execution
+  scorecard, the daily-loss halt and practice-to-live graduation are never contaminated.
+  The Armed page shows the ledger apart from the real results ("Missed by a bug").
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

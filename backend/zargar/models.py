@@ -684,3 +684,24 @@ class TechniqueMethodNote(Base):
     posted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TechniqueCounterfactual(Base):
+    """A trade the app MISSED through a bug (a restart stranded the entry, a
+    crashed loop, a dead quote stream), reconstructed after the fix by replaying
+    the fired order through the runner's own exit rules on the real bars
+    (`execution/counterfactual.py`). It is a ledger of what the METHOD would
+    have earned - never a fill in any portfolio: Practice stays what actually
+    happened (PLATFORM-RULES 2026-09-02). Technique-agnostic."""
+    __tablename__ = "technique_counterfactuals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    technique: Mapped[str] = mapped_column(String(32), default="enhanced_market", server_default="enhanced_market", index=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    trigger_id: Mapped[str] = mapped_column(String(64), default="")
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    session: Mapped[str] = mapped_column(String(10), index=True)                  # ET date the trade belonged to
+    reason: Mapped[str] = mapped_column(Text, default="")                          # the bug, in one sentence
+    status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # win | loss | scratch | not_filled | open | error
+    result: Mapped[dict] = mapped_column(JSONVariant, default=dict)                # fill, exits, pnl, r, price sources
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)

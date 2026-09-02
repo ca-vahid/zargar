@@ -168,3 +168,14 @@ convenient so future restarts work from any shell.
   user accepted that risk knowingly for their own account.
 - Auto-arm is OFF by default; the pipeline proposes, the human disposes.
 - Method changes still flow: note → §3 theory → variant sweep → §5 change log.
+
+### 2026-09-02 ops note: the worker window after a restart
+
+The morning ran unattended and correctly (video posted 09:01 ET in #watchlists, 9 live
+deferrals, transcript 6,055 chars, `setups_brief`, 7 symbols, board 2 armed / 5 new;
+a supplementary post at 09:19 added 4 more). After the user's midday restart the fresh
+worker window showed only its banner - the brief had been processed before the restart
+and idle polls are silent - which read as "it did nothing". `em_ingest` now prints
+today's captured brief (kind, channel, time, status, material, symbols, board counts)
+on start and an "alive" line every ~30 minutes. Where to look: Validation tab, the
+Author's board card (`GET /api/technique/ingest/board`).
