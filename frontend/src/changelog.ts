@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.5.0";
+export const APP_VERSION = "0.6.0";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,23 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.6.0",
+    date: "2026-09-01",
+    title: "The Ledger, and the method reads itself in",
+    items: [
+      { tag: "major", text: "Ledger: the money in plain terms — day by day, what was bought, what was sold and the gain each time, after real fees. The headline is an identity (start + banked + riding = total), so the page can never quietly fail to add up; tap any trip for the full breakdown. Real books in LIVE, sim books in Practice, like the Dashboard." },
+      { tag: "major", text: "EM method ingestion: the author's Discord channels are watched, his morning video is transcribed on its own, and one read turns it into a summary, his board, his method claims and his vetoes — then OUR pipeline plans every symbol he named and tells you which are already armed, which produce a valid fresh plan (with an Arm button), and which our gates rejected and why. Arming stays your click." },
+      { tag: "new", text: "Author's board card on the EM page: today's material with supplementary notes, live-broadcast deferral (a stream still running is re-probed instead of half-captured), same-day media dedupe, and a speech-to-text ticker hint so \"SpaceX\" stops becoming the wrong symbol." },
+      { tag: "new", text: "Lotto lane for 0–3 DTE tips: two of the desk's most active sources trade almost nothing else, and the old policy killed every one before the analyst judged it. Short-dated tips now get their own budget, the stated contract verbatim, tip-time entry — and a mandatory flatten on expiry day (never hold through the close)." },
+      { tag: "improved", text: "A message that carries many calls (a daily level map) is appraised ONCE and the siblings inherit the verdict — one story, one judgement, instead of eleven analyst runs." },
+      { tag: "improved", text: "Practice fills now mirror Webull Canada's real fee schedule (per-contract commission plus regulatory fees), so the practice book and the Ledger tell the same story as real money." },
+      { tag: "fixed", text: "Approving an aged proposal re-prices the limit at the live ask before it goes out — a two-hour-old limit against a moved market tripped the price collar and failed your own click. The never-chase rule still applies: the limit may only improve." },
+      { tag: "fixed", text: "Research (shadow) books no longer hit %-of-equity risk caps — a beaten-down fake book was blocking record entries, which is a gap in the evidence, not protection. Absolute caps still apply." },
+      { tag: "fixed", text: "The scan panel marks plans built for a session that is already over as expired and leaves them out of \"Arm N confirmed\", so a stale batch can't be armed after the close." },
+      { tag: "fixed", text: "A ledger correction can be retired by a later one instead of both being counted." },
+    ],
+  },
   {
     version: "0.5.0",
     date: "2026-08-30",
