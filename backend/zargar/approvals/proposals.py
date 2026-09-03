@@ -438,6 +438,29 @@ class ProposalService:
             log.debug("proposal preflight cap check failed", exc_info=True)
 
         ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
+        # a newer tip for the SAME contract replaces the one still waiting —
+        # the re-arm rule, applied to proposals (2026-09-03: muggzone re-posted
+        # his MU 995C re-entry and TWO cards sat pending; approving both would
+        # have doubled the position). The superseded card expires now, journaled.
+        superseded: list[str] = []
+        async with eng.sf() as session:
+            from sqlalchemy import select as _select
+            old = (await session.execute(_select(Proposal).where(
+                Proposal.status == "pending", Proposal.portfolio_id == pid,
+                Proposal.symbol == symbol, Proposal.side == side))).scalars().all()
+            for o in old:
+                o.status = "expired"
+                o.decided_at = dt.datetime.now(dt.timezone.utc)
+                o.decided_via = "superseded"
+                o.context = {**(o.context or {}), "supersededBy": "a newer tip for the same contract"}
+                superseded.append(o.id)
+            if old:
+                await session.commit()
+        for oid in superseded:
+            await eng.journal.append(ev.PROPOSAL_EXPIRED,
+                                     {"proposalId": oid, "reason": "superseded by a newer tip "
+                                      "for the same contract"},
+                                     aggregate_type="proposal", aggregate_id=oid, portfolio_id=pid)
         row = Proposal(
             id=new_id(),
             signal_id=signal_row.id,
