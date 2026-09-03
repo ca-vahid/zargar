@@ -262,6 +262,16 @@ runtime ones to `execution.*`).
   techniques opt in per policy. Chaos test
   `test_premium_watch_takes_lotto_profit_on_the_quote_loop`.
 
+- **2026-09-03 · The entry limit was a beat stale: re-priced on the live NBBO right before the
+  order.** PLTR r2 fired 09:33; the critic pass took ~60 s; the order went out at 09:34 with the
+  pick's ask (2.14) as its limit while the live mid was 1.97 - the RiskGate price collar (5% of
+  mid) refused it and the plan reported "fire produced nothing": a silent missed entry, third of
+  its class this week. `PlanRunner` now calls `OptionsService.reprice()` immediately before
+  computing the option entry limit, so the limit is the market's ask at submit time; the
+  never-chase cap (ARM-GAPS C1) still guards an ask that ran away upward. Rule of thumb for
+  every money path: the price you send must be read AFTER the last slow step (critic, sizing,
+  hooks), never carried from the fire.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

@@ -280,6 +280,11 @@ the 09:33 close; the option's 09:34 print turned a stopped plan into a winner by
   (the session calendar/daily bars are not final until the next day); the 09-01 sweep of 08-31
   worked. Today's coverage check is deferred to the 09-03 morning; the critic scorecard above
   already covers every fire that did happen (8 kills, 2 wrong, +9.2R tally).
+  **Run 2026-09-03 09:50:** confirmed - the next-day replay of 09-02 works (universe, include-
+  invalid): 4 valid fires, 1 win, **-1.30R**; nothing our arming missed. Without the gap rules the
+  same day would have fired 14 times for **-8.13R** - the gap rules saved ~6.8R on a gap day.
+  Claim check flagged T1.3a (prior-day HOD/LOD strongest) as FAIL on this session (respect 27.9%
+  vs 30.5% other, n=86/243) - one session, noted for the weekly audit, not acted on.
 - **2026-09-01 · Day 5 "did we miss anything": nothing — and the pre-open re-planner
   earned its keep, measurably.** Whole-universe replay of the 08-31-close plans on the
   09-01 tape (sweep `0894b5d7`): only **3 valid fires, net −1.44R** (ANET b2 +0.12,
