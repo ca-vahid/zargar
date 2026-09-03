@@ -307,6 +307,66 @@ async def test_stale_tip_replayed_not_traded(app_client):
     assert not fresh["passed"] and "replayed" in fresh["detail"]
 
 
+async def test_newer_tip_for_the_same_contract_supersedes_the_pending_proposal(app_client):
+    # 2026-09-03: muggzone re-posted his MU 995C re-entry and TWO cards sat
+    # pending for the same contract — approving both doubles the position.
+    # The newer proposal expires the waiting one (decided_via "superseded").
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    out1 = await run_pipeline(eng, canned_extraction())
+    p1 = out1[0]["proposal"]
+    assert p1 is not None and p1["status"] == "pending"
+    # the re-post: same idea, new numbers (dedupe sees a NEW signal; the first
+    # proposal is still pending — exactly the muggzone double-card shape)
+    text2 = "Re-entry alert: buying AAPL again. Entry at $232.10, stop loss $221, target $261"
+    tip2 = ExtractionResult(
+        signals=[TradeSignal(
+            ticker="AAPL", direction="long", action="open", instrument="shares",
+            entry_price=232.10, target_price=261.0, stop_price=221.0,
+            entry_type="limit", timeframe="swing", thesis_summary="Re-entry.",
+            evidence_quotes=["buying AAPL again", "Entry at $232.10, stop loss $221, target $261"],
+            confidence="explicit_call", is_actionable=True)],
+        source_type="trade_alert")
+    out2 = await run_pipeline(eng, tip2, source_text=text2)
+    p2 = out2[0]["proposal"]
+    assert p2 is not None and p2["status"] == "pending" and p2["id"] != p1["id"], \
+        (out2[0]["signal"]["status"], out2[0]["signal"].get("seenCount"),
+         out2[0]["signal"]["verification"])
+    from zargar.models import Proposal as ProposalRow
+    async with eng.sf() as session:
+        old = await session.get(ProposalRow, p1["id"])
+        assert old.status == "expired" and old.decided_via == "superseded", (old.status, old.decided_via)
+    pending = [p for p in (await client.get("/api/proposals?status=pending")).json()
+               if p["symbol"] == "AAPL"]
+    assert len(pending) == 1 and pending[0]["id"] == p2["id"]
+
+
+async def test_share_proposal_is_sized_to_fit_the_position_cap(app_client):
+    # 2026-09-03 FSLR: the $5k/tip budget sized 24 sh = 54.7% of a $9.1k book,
+    # the card said "passes the risk gate", and the USER'S OWN CLICK was
+    # risk-rejected. A share proposal now sizes down to fit max_position_pct
+    # (with 3% headroom) and says so on the card.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.budget_per_tip", 8_000.0)
+    await eng.settings.set("risk.max_position_pct", 50.0)
+    await eng.settings.set("risk.max_position_notional", 1_000_000.0)
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None, out[0]["signal"]["verification"]
+    pid = p["portfolioId"]
+    equity = await eng.positions.equity(pid)
+    notional = p["qty"] * p["limitPrice"]
+    assert notional <= equity * 0.50 + 1e-6, (notional, equity)
+    assert "Sized down" in (p["context"].get("explain") or ""), p["context"].get("explain")
+    # and the approval actually goes through the gate it was sized for
+    r = await client.post(f"/api/proposals/{p['id']}/approve")
+    assert r.status_code == 200, r.text
+    assert r.json()["proposal"]["status"] == "executed"
+
+
 async def test_immediate_book_sized_by_budget(app_client):
     # shares use the SAME per-tip budget as options (was 5% of equity) so the
     # scorecard's dollar comparisons are apples-to-apples across vehicles

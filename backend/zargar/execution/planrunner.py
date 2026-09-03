@@ -2407,6 +2407,44 @@ class PlanRunner(SessionListener):
             trade.status = "failed"
             trade.reason = result.get("rejectReason") or status
             trade.errors.append(trade.reason)
+            # PLTR 2026-09-03 09:34: the pick priced the put at 2.14, seconds
+            # later the live mid was 1.97 and the collar refused — the market
+            # had moved TOWARD the buyer. One retry at the live ask, only when
+            # that ask is BELOW the refused limit (cheaper is never a chase;
+            # dearer is, and stays refused). Never loops: one retry per fire.
+            collar = "from mid" in trade.reason or "from last" in trade.reason  # price_collar's two detail shapes
+            if collar and not getattr(trade, "_collar_retried", False):
+                trade._collar_retried = True
+                q = self.engine.quotes.get(order_symbol)
+                new_limit = round(float(q.ask), 2) if q is not None and q.ask and q.ask > 0 else None
+                if new_limit and new_limit < limit:
+                    self._log(ap, "entry_reprice",
+                              f"{trade.trigger_id}: collar refused {limit:.2f} but the market came to us "
+                              f"— retrying once at the live ask {new_limit:.2f}", trigger=trade.trigger_id)
+                    trade.status = "submitting"
+                    trade.limit_price = new_limit
+                    intent2 = OrderIntent(
+                        portfolio_id=cfg.portfolio_id, symbol=order_symbol, sec_type=sec_type,
+                        side="BUY", qty=qty, order_type="LMT", limit_price=new_limit, tif="DAY",
+                        source="technique", technique_id=self.TECHNIQUE_ID)
+                    result2 = await self._place_with_retry(ap, trade, intent2, stage="entry")
+                    if result2 is not None:
+                        trade.entry_order_id = result2.get("id") or trade.entry_order_id
+                        if result2.get("id"):
+                            self.register_order(result2["id"], (ap.run_id, trade.trigger_id))
+                        status2 = result2.get("status")
+                        if status2 in ("FILLED", "PARTIALLY_FILLED"):
+                            await self.on_order_update(result2)
+                            return
+                        if status2 not in ("REJECTED_RISK", "REJECTED"):
+                            trade.status = "working"
+                            self._log(ap, "entry_working",
+                                      f"{trade.trigger_id}: order {trade.entry_order_id[:8]} {status2} "
+                                      f"(collar reprice)", trigger=trade.trigger_id, orderId=trade.entry_order_id)
+                            return
+                        trade.status = "failed"
+                        trade.reason = result2.get("rejectReason") or status2
+                        trade.errors.append(trade.reason)
             self._log(ap, "entry_rejected", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
             await self.engine.journal.append(ev.TECHNIQUE_PLAN_ERROR, {
                 "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": "entry",

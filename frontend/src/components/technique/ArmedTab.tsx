@@ -161,12 +161,17 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           <div className="tq-attention">
             <b>{"\u26a0"} Needs attention</b>
             <ul>{(a.attentionReasons ?? []).map((r, i) => <li key={i}>{r}</li>)}</ul>
-            <div className="tq-attention-actions">
-              <button className="danger-btn" disabled={busy}
-                title="Sell everything this plan still holds, at market, right now (reduce-only)"
-                onClick={() => act(() => api.techniqueArmedExit(a.runId), "Sell-now sent")}>Sell now (market)</button>
-              <span className="muted small">the watchdog also retries failed exits automatically every 30s</span>
-            </div>
+            {a.trades.some((t) => t.remaining > 0) ? (
+              <div className="tq-attention-actions">
+                <button className="danger-btn" disabled={busy}
+                  title="Sell everything this plan still holds, at market, right now (reduce-only)"
+                  onClick={() => act(() => api.techniqueArmedExit(a.runId), "Sell-now sent")}>Sell now (market)</button>
+                <span className="muted small">the watchdog also retries failed exits automatically every 30s</span>
+              </div>
+            ) : (
+              <span className="muted small">nothing is held \u2014 the entry was refused before any money moved;
+                this is a heads-up that a planned trade was missed, not something to act on</span>
+            )}
           </div>
         )}
         <div className="tq-armed-summary">{a.summary}</div>

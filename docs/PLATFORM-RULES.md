@@ -262,6 +262,15 @@ runtime ones to `execution.*`).
   techniques opt in per policy. Chaos test
   `test_premium_watch_takes_lotto_profit_on_the_quote_loop`.
 
+- **2026-09-03 · A collar rejection when the market moved TOWARD us is a missed trade, not
+  protection.** PLTR 9/4 175P: the fire priced its entry at the 09:34 pick (2.14); seconds later
+  the live mid was 1.97, `price_collar` refused, and the plan wore "r2: fire produced nothing"
+  all day — for a put that had become CHEAPER. The runner now retries the entry ONCE at the
+  live ask when that ask is below the refused limit (cheaper is never a chase; dearer stays
+  refused, T4.1). One retry per fire, journaled `entry_reprice`. The Armed card's attention
+  panel also stops offering "Sell now (market)" when nothing is held — an entry refusal is a
+  heads-up, not an action. Test: `test_collar_rejection_retries_once_when_the_market_came_cheaper`.
+
 - **2026-09-03 · The entry limit was a beat stale: re-priced on the live NBBO right before the
   order.** PLTR r2 fired 09:33; the critic pass took ~60 s; the order went out at 09:34 with the
   pick's ask (2.14) as its limit while the live mid was 1.97 - the RiskGate price collar (5% of

@@ -144,6 +144,32 @@ async def test_arm_options_and_config_validation(rig):
 
 # --- auto lifecycle --------------------------------------------------------------------------------------
 
+async def test_collar_rejection_retries_once_when_the_market_came_cheaper(rig):
+    """PLTR 2026-09-03 09:34: the fire priced its entry off the trigger, seconds
+    later the live price was 8% lower and the collar refused — 'fire produced
+    nothing' all day for a market that moved TOWARD the buyer. The runner now
+    retries ONCE at the live ask when it is below the refused limit."""
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "auto", "instrument": "shares", "portfolioId": rig.sim["id"],
+                                         "riskPct": 1.0, "maxQty": 50, "slippagePct": 1.0})).json()
+    assert armed["status"] == "armed"
+    bars = rig.sessions[armed["planFor"]]
+    b1 = next(t for t in armed["triggers"] if t["kind"] == "bounce")
+    low = round(b1["entry"] * 0.92, 2)                    # live market 8% under the trigger price
+
+    async def q(_bar):
+        await _quote(rig, low)                            # collar: limit ≈ entry+1% vs last = -8%
+    snap, _ = await _feed_until(rig, run["id"], bars,
+                                lambda s: any(t["kind"] == "bounce" for t in s["trades"]), quote_fn=q)
+    tr = next(t for t in snap["trades"] if t["kind"] == "bounce")
+    assert tr["status"] in ("working", "open"), (tr["status"], tr["reason"], tr["errors"])
+    assert tr["limitPrice"] <= low + 0.02, tr["limitPrice"]   # re-priced to the live ask, not the stale limit
+    assert any(e["event"] == "entry_reprice" for e in snap["events"]), [e["event"] for e in snap["events"][-8:]]
+    d = rig.svc.armer.detail(run["id"])
+    assert not d.get("needsAttention"), d.get("attentionReasons")
+
+
 async def test_auto_mode_full_lifecycle_entry_trims_stop(rig):
     run = await _plan_run(rig)
     armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
