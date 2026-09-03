@@ -358,6 +358,29 @@ class ProposalService:
                 return None
             limit = round(float(ref_price), 2)
             qty = max(1, math.floor(budget / limit))
+            # a proposal must FIT the caps it will be judged by (2026-09-03: the
+            # $5,000/tip budget sized FSLR to 54.7% of a $9.1k practice book, the
+            # card said "passes the risk gate", and the user's own click was
+            # risk-rejected). Cap the shares to max_position_pct with 3% headroom
+            # for equity drift between the card and the click.
+            sized_note = ""
+            try:
+                equity = await eng.positions.equity(pid)
+                cap_pct = float(eng.settings.get("risk.max_position_pct", 50.0))
+                held = abs(eng.positions.position_qty(pid, sig.ticker.upper(), "STK")) * limit
+                room = max(0.0, equity * cap_pct / 100.0 * 0.97 - held)
+                if equity > 0 and limit * qty > room:
+                    fit = int(room // limit)
+                    if fit < 1:
+                        log.warning("tip %s: no room under risk.max_position_pct "
+                                    "(%.0f%% of $%.0f equity) — no proposal",
+                                    signal_row.id, cap_pct, equity)
+                        return None
+                    sized_note = (f" Sized down {qty} → {fit} sh to fit the {cap_pct:g}% "
+                                  f"position cap on ${equity:,.0f} equity.")
+                    qty = fit
+            except Exception:                            # sizing guard is advisory
+                log.debug("share-fit sizing failed", exc_info=True)
             vehicle = {"kind": "shares"}
             if sig.target_price or sig.stop_price:
                 bracket = {"take_profit": sig.target_price, "stop_loss": sig.stop_price,
@@ -367,7 +390,7 @@ class ProposalService:
                        f"({pf.get('kind', '?')})"
                        + (", with the tip's target/stop attached as a bracket"
                           if bracket else "")
-                       + ". The order still passes the risk gate.")
+                       + "." + sized_note)
 
         # the exit campaign this position will run after the fill — the analyst's
         # plan when it wrote one, else the tip's own stop/targets (ANALYST.md §5)
@@ -400,6 +423,10 @@ class ProposalService:
             if notional > cap_notional:
                 warns.append(f"${notional:,.0f} exceeds risk.max_position_notional "
                              f"(${cap_notional:,.0f}) — the fill will be risk-rejected")
+            cap_pct = float(eng.settings.get("risk.max_position_pct", 50.0))
+            if equity > 0 and notional > equity * cap_pct / 100.0:
+                warns.append(f"${notional:,.0f} is {notional / equity * 100:.0f}% of the book's "
+                             f"${equity:,.0f} equity (cap {cap_pct:g}%) — approval would be risk-rejected")
             if sec_type == "OPT":
                 prem_pct = float(eng.settings.get("risk.max_option_premium_pct", 5.0))
                 prem_abs = float(eng.settings.get("risk.max_option_premium_notional", 1000.0))

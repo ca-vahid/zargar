@@ -307,6 +307,31 @@ async def test_stale_tip_replayed_not_traded(app_client):
     assert not fresh["passed"] and "replayed" in fresh["detail"]
 
 
+async def test_share_proposal_is_sized_to_fit_the_position_cap(app_client):
+    # 2026-09-03 FSLR: the $5k/tip budget sized 24 sh = 54.7% of a $9.1k book,
+    # the card said "passes the risk gate", and the USER'S OWN CLICK was
+    # risk-rejected. A share proposal now sizes down to fit max_position_pct
+    # (with 3% headroom) and says so on the card.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.budget_per_tip", 8_000.0)
+    await eng.settings.set("risk.max_position_pct", 50.0)
+    await eng.settings.set("risk.max_position_notional", 1_000_000.0)
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None, out[0]["signal"]["verification"]
+    pid = p["portfolioId"]
+    equity = await eng.positions.equity(pid)
+    notional = p["qty"] * p["limitPrice"]
+    assert notional <= equity * 0.50 + 1e-6, (notional, equity)
+    assert "Sized down" in (p["context"].get("explain") or ""), p["context"].get("explain")
+    # and the approval actually goes through the gate it was sized for
+    r = await client.post(f"/api/proposals/{p['id']}/approve")
+    assert r.status_code == 200, r.text
+    assert r.json()["proposal"]["status"] == "executed"
+
+
 async def test_immediate_book_sized_by_budget(app_client):
     # shares use the SAME per-tip budget as options (was 5% of equity) so the
     # scorecard's dollar comparisons are apples-to-apples across vehicles
