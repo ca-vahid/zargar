@@ -152,6 +152,16 @@ a number** (p. 72).
   not a kill reason; kill only when the level is already lost on a CLOSED bar or the volume
   read contradicts the plan". Decision threshold was >= 5 scored kills - at 4 now; one more
   scored day decides.
+- **Day 7 (2026-09-03) scorecard - the blunt fix is withdrawn.** 3 scored kills: SOXS r1
+  (-5.58R avoided, RIGHT), SOXS r2 (-2.61R avoided, RIGHT), SLB r2 (+2.50R forgone, WRONG).
+  Nine scored kills over three days: wrong kills forfeited **+11.7R**, right kills avoided
+  **-10.5R** - the critic is break-even, and "momentum into the level" cut both ways (right on
+  SOXS where the level was gone within two closed bars, wrong on SLB/CRCL/HOOD where it held).
+  REVISED candidate: the critic may kill on structure ("the level is already lost on a closed
+  bar", "the stop is inside the bar range") and on volume contradiction, never on momentum
+  alone; and it must state which of the two it used. Threshold reset: >= 10 scored kills under
+  the current prompt with a net R of the kills below -3R before the prompt changes. Tally: 9,
+  net -1.2R.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -251,9 +261,25 @@ the only test? Decision threshold: 10 such cases scored by the counterfactual/ou
 cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW: +4.20R on the
 put's late fill, but **-1.24R on the plan itself** - a shares-style fill at the level was stopped on
 the 09:33 close; the option's 09:34 print turned a stopped plan into a winner by luck).
+Day 7 adds the mirror case: MSTR r2 fired 09:43, the put's ask moved 2.80 -> 3.30 within
+minutes and the resting order never filled - a right call missed on tempo, not chased (T4.1).
+Fire-to-order latency (critic ~60 s + pick + sizing) is now a measured cost: 2 of 6 fires this
+day were priced a beat late (PLTR stale limit - bug, fixed; MSTR ran away - rule). Candidate
+for T-6/exit-tempo work: submit the entry BEFORE the critic on A-grade plans and let the critic
+cancel it (a resting order costs nothing) - to be sized against the critic's save rate above.
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-03 · Day 7: zero fills, and flat was the right outcome (-7.0R avoided).** 36 plans,
+  6 fires, 0 trades. On the real bars: SOXS r1/r2 shorts into a vertical breakout would have lost
+  -5.58R and -2.61R (critic killed both - RIGHT); PLTR r2 was missed by the stale-limit bug
+  (fixed same day, PLATFORM-RULES 2026-09-03) and would have lost -1.33R / -$53.08 (ledgered as a
+  counterfactual anyway); MSTR r2's put ran 2.80 -> 3.30 before the resting order could fill and
+  the underlying never re-touched the entry (T4.1, not a bug - tempo); SLB r2 was killed and made
+  **+2.50R** (all three targets by 11:03 - WRONG kill); CVX b1 fired at 15:59, moot. Author
+  board day 3: his valid levels ~0 (AAPL breakout -0.04R, AMZN never touched, his four armed
+  names never fired); R2-rejected on his names net -0.9R (TSLA k1 +0.84R quick, NVDA r1 -1.13R).
+  Practice +0.51% on the day is the two tip positions parked in the book, not EM.
 - **2026-09-02 · Day 6: a bug cost the day's only fill, and the desk now keeps a counterfactual
   ledger.** NOW r1 fired 09:31 (reject 141.69, put 140P Sep-4 BUY LMT 2.03). The 10:04 restart
   stranded the working entry (three shared-runtime gaps, fixed the same day, PLATFORM-RULES

@@ -2052,14 +2052,6 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .research-badge { white-space: nowrap; }
 
 /* ── the ledger: plain-language money view ─────────────────────────────── */
-.led-headline { display: flex; gap: 22px; align-items: center; flex-wrap: wrap;
-  padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px;
-  background: var(--surface-1); margin-bottom: 14px; }
-.led-stat { display: flex; flex-direction: column; gap: 2px; }
-.led-num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.led-lbl { font-size: 11px; color: var(--muted); line-height: 1.25; }
-.led-range { margin-left: auto; }
-.led-op { font-size: 22px; color: var(--muted); font-weight: 300; }
 .led-rows { display: flex; flex-direction: column; }
 .led-row { display: flex; gap: 10px; align-items: center; padding: 9px 14px;
   border-top: 1px solid var(--border); font-size: 13.5px; }
@@ -2069,9 +2061,6 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .led-math { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .led-times { opacity: .75; }
 .led-gain { font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; white-space: nowrap; }
-.led-dayhead { display: flex; align-items: center; gap: 12px; }
-.led-daybar { width: 140px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; margin-left: auto; margin-right: 12px; }
-.led-bar { display: block; height: 100%; border-radius: 3px; }
 .pos-bg { background: var(--pos, #1a9c62); }
 .neg-bg { background: var(--neg, #d64545); }
 .led-row--adj { background: color-mix(in srgb, var(--accent) 5%, transparent); }
@@ -2425,3 +2414,142 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .chlog-pill.chlog-tag--fixed { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, var(--border)); }
 .chlog-pill.chlog-tag--security { color: var(--series-4); border-color: color-mix(in srgb, var(--series-4) 40%, var(--border)); }
 .chlog-text { color: var(--text-2); font-size: var(--fs-2); line-height: 1.55; }
+
+
+/* -- Ledger, three views (user pick 2026-09-03: Timeline / Sheet / Chart) --
+   Shared: the headline is a BALANCE with context, never an equation, and a
+   day's total never wears the same type as a trade's P&L. */
+.led-head2 { display: flex; align-items: flex-start; gap: 26px; flex-wrap: wrap; padding: 14px 16px; }
+.led-balance { min-width: 190px; }
+.led-bal-lbl { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-3); }
+.led-bal-num { font-family: var(--mono); font-size: 30px; font-weight: 700; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; line-height: 1.15; }
+.led-bal-sub { font-size: var(--fs-1); color: var(--text-2); margin-top: 2px; }
+.led-stats { display: flex; gap: 22px; flex-wrap: wrap; }
+.led-stat2 { display: flex; flex-direction: column; min-width: 84px; }
+.led-stat2 .k { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
+.led-stat2 .v { font-family: var(--mono); font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.led-stat2 .s { font-size: var(--fs-0); color: var(--text-3); }
+.led-controls { margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.led-foot { font-size: 12px; max-width: 640px; }
+
+/* -- B. Timeline -- */
+.led-tl-panel { padding: 16px 18px; }
+.led-tl { position: relative; }
+.led-tl::before { content: ""; position: absolute; left: 91px; top: 10px; bottom: 10px;
+  width: 2px; background: var(--border); }
+.led-node { position: relative; display: grid; grid-template-columns: 78px 26px minmax(0, 1fr);
+  gap: 0 12px; padding-bottom: 20px; }
+.led-when { text-align: right; padding-top: 1px; }
+.led-when b { display: block; font-size: var(--fs-2); font-weight: 600; }
+.led-when span { font-family: var(--mono); font-size: var(--fs-0); color: var(--text-3); }
+.led-dot { position: relative; z-index: 1; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--surface-1); border: 2px solid var(--border); display: grid; place-items: center;
+  font-size: 10px; color: var(--text-3); }
+.led-dot.up { border-color: var(--up); color: var(--up); }
+.led-dot.dn { border-color: var(--down); color: var(--down); }
+.led-dot.now { border-color: var(--accent); color: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent); }
+.led-daytot { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.led-daytot .n { font-family: var(--mono); font-size: 21px; font-weight: 700; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; }
+.led-daytot .l { font-size: var(--fs-1); color: var(--text-3); }
+.led-ev { display: flex; align-items: center; gap: 10px; padding: 7px 10px; margin-top: 8px;
+  background: var(--surface-1); border: 1px solid var(--border); border-radius: 7px; flex-wrap: wrap; }
+.led-ev.clickable { cursor: pointer; }
+.led-ev.clickable:hover, .led-ev.open { background: var(--surface-2); }
+.led-ev-name { font-size: var(--fs-2); font-weight: 500; min-width: 150px; }
+.led-ev-name span { display: block; font-size: var(--fs-0); color: var(--text-3); font-weight: 400; }
+.led-ev-flow { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-2);
+  flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.led-ev-net { font-family: var(--mono); font-size: var(--fs-2); font-weight: 700;
+  margin-left: auto; font-variant-numeric: tabular-nums; }
+.led-ev.live { border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-1)); }
+.led-ev--adj { border-style: dashed; }
+.led-tick { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); margin-right: 6px; animation: led-pulse 2.2s ease-in-out infinite; }
+@keyframes led-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+
+/* -- D. Sheet -- */
+.led-filters { padding: 12px 14px; }
+.led-frow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.led-frow--sets { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+.led-search { flex: 1 1 220px; min-width: 160px; padding: 6px 10px; font-size: var(--fs-2); }
+.led-set { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.led-set-lbl { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-3); }
+.led-chip { font-size: var(--fs-1); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface-1); color: var(--text-2); cursor: pointer; }
+.led-chip:hover { border-color: var(--text-3); color: var(--text-1); }
+.led-chip.on { background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); color: var(--text-1); }
+.led-clear { color: var(--down); }
+.led-fsum { margin-top: 8px; font-size: var(--fs-1); color: var(--text-2); }
+.led-sheet th { white-space: nowrap; }
+.led-sort { background: none; border: none; padding: 0; font: inherit; color: inherit;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.led-sort:hover { color: var(--text-1); }
+.led-sort-i { font-size: 10px; color: var(--accent); width: 8px; }
+.led-sheet td { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.led-td-when { font-family: var(--mono); font-size: var(--fs-1); color: var(--text-3); }
+.led-td-what { display: flex; align-items: center; gap: 7px; white-space: normal; min-width: 190px; }
+.led-tiny { font-size: var(--fs-0); color: var(--text-3); }
+.led-tr { cursor: pointer; }
+.led-tr:hover, .led-tr.open { background: var(--surface-2); }
+.led-tr--open td { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.led-tr-detail td { padding: 0 12px 10px; }
+.led-sub td { background: var(--surface-2); font-weight: 700; border-top: 1px solid var(--border); }
+.led-sub-date { font-size: var(--fs-3); letter-spacing: -0.01em; }
+.led-sub-what { font-weight: 400; color: var(--text-2); font-size: var(--fs-1); }
+.led-box { display: inline-block; font-family: var(--mono); padding: 2px 9px; border-radius: 5px;
+  font-variant-numeric: tabular-nums; }
+.led-box.up { background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }
+.led-box.dn { background: color-mix(in srgb, var(--down) 14%, transparent); color: var(--down); }
+.led-box.flat { background: var(--surface-3); color: var(--text-3); font-weight: 500; }
+
+/* -- E. Waterfall -- */
+.led-chart-panel { padding: 18px; }
+.led-chart { display: grid; grid-template-columns: 60px minmax(0, 1fr); gap: 0 10px; }
+.led-yaxis { position: relative; }
+.led-ylab { position: absolute; right: 0; transform: translateY(-50%); font-family: var(--mono);
+  font-size: var(--fs-0); color: var(--text-3); }
+.led-plot { position: relative; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.led-gridline { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--border); }
+.led-startline { position: absolute; left: 0; right: 0;
+  border-top: 1.5px dashed color-mix(in srgb, var(--accent) 60%, transparent); }
+.led-startlab { position: absolute; right: 4px; top: -16px; font-family: var(--mono);
+  font-size: var(--fs-0); color: var(--accent); }
+.led-cols { position: absolute; inset: 0; display: flex; }
+.led-col { flex: 1 1 0; min-width: 42px; position: relative; background: none; border: none;
+  padding: 0; cursor: pointer; }
+.led-col:hover, .led-col.on { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.led-bar { position: absolute; left: 26%; right: 26%; border-radius: 3px; }
+.led-bar.up { background: var(--up); }
+.led-bar.dn { background: var(--down); }
+.led-bar.flat { background: var(--text-3); opacity: 0.5; }
+.led-bar.ride { border: 1px solid var(--up); background: repeating-linear-gradient(45deg,
+  var(--up), var(--up) 3px, transparent 3px, transparent 6px); }
+.led-conn { position: absolute; left: 74%; right: -26%; border-top: 1px dashed var(--text-3);
+  opacity: 0.5; }
+.led-bval { position: absolute; left: 0; right: 0; text-align: center; font-family: var(--mono);
+  font-size: var(--fs-0); font-weight: 600; pointer-events: none; }
+.led-xaxis { grid-column: 2; display: flex; margin-top: 6px; }
+.led-xlab { flex: 1 1 0; min-width: 42px; text-align: center; font-size: var(--fs-1); color: var(--text-2); }
+.led-xlab span { display: block; font-family: var(--mono); font-size: var(--fs-0); color: var(--text-3); }
+.led-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: var(--fs-1); color: var(--text-2); }
+.led-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.led-sw.up { background: var(--up); }
+.led-sw.dn { background: var(--down); }
+.led-sw.ride { border: 1px solid var(--up); background: repeating-linear-gradient(45deg,
+  var(--up), var(--up) 3px, transparent 3px, transparent 6px); }
+.led-drow { display: flex; align-items: center; gap: 12px; padding: 9px 12px; width: 100%;
+  background: none; border: none; border-top: 1px solid var(--border); cursor: pointer;
+  text-align: left; color: inherit; font: inherit; }
+.led-drow:first-child { border-top: none; }
+.led-drow:hover, .led-drow.on { background: var(--surface-2); }
+.led-drow-date { font-size: var(--fs-2); font-weight: 600; min-width: 118px; }
+.led-drow-what { font-size: var(--fs-1); color: var(--text-2); flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.led-drow-net { font-family: var(--mono); font-size: var(--fs-4); font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.led-drow-body { padding: 4px 12px 12px; background: var(--surface-2); }
