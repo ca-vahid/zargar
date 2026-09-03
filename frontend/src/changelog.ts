@@ -22,6 +22,8 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-02",
     title: "Nothing stranded, nothing lost to a bug",
     items: [
+      { tag: "improved", text: "Ledger, three ways — a view switch between Timeline (the week as a story, today at the head), Sheet (every trade with filters by source, book, win/loss, options/shares, hold time, plus sortable columns and a running balance) and Chart (a real waterfall from your starting cash to now). Day totals no longer look like a trade's P&L, the headline is a balance instead of an equation, and the decorative day bars are gone." },
+      { tag: "fixed", text: "Today is always on the Ledger now, even when nothing closed — a quiet day used to be indistinguishable from a broken page, and the positions you were carrying showed no date at all." },
       { tag: "fixed", text: "A restart no longer strands a working entry: the entry window now times out by the clock, the contract is watched again after a restart, and an order the sim book lost is cancelled instead of sitting 'accepted' forever." },
       { tag: "new", text: "Counterfactual ledger (Armed > History): when a bug costs a trade, the fired order is replayed through the desk's own exit rules on the real bars after the fix - fill, exits, gain, R - and kept beside the real results. Practice stays what actually happened." },
       { tag: "improved", text: "The EM ingestion window says what it captured today on start instead of sitting blank." },
