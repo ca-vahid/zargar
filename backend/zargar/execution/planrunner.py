@@ -2330,6 +2330,15 @@ class PlanRunner(SessionListener):
             qty = float(await self._size_contracts(ap, trade, contract))
             if frac < 1.0:
                 qty = float(max(1, int(qty * frac)))
+            # the pick's ask is already a beat old (the critic pass sits between
+            # the fire and the order): re-price on the live NBBO so the limit is
+            # the market's ask NOW. PLTR 2026-09-03: a limit of 2.14 from the
+            # 09:33 pick met a 09:34 mid of 1.97 and the risk gate's price collar
+            # refused it - a silent missed entry. The never-chase cap below still
+            # guards the other direction (an ask that ran away).
+            if getattr(self.engine, "options", None) is not None:
+                with contextlib.suppress(Exception):
+                    await self.engine.options.reprice(contract)
             limit = round(float(contract.get("ask") or contract.get("mid") or 0), 2)
             if limit <= 0:
                 trade.status = "failed"

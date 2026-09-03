@@ -140,6 +140,18 @@ a number** (p. 72).
   is judging whether the break would CONFIRM — not whether price touched beyond.
   Hold until ≥5 reject kills are scored: running reject-kill counterfactual is
   the decision input (today −4.21R foregone vs +2.30R saved overall).
+- **Day 6 (2026-09-02) scorecard:** 8 critic kills. WRONG: CRCL b1 bounce (+2.35R, all three
+  targets inside 10 min) and HOOD b1 bounce (+2.60R) - both killed as "bounce into an active
+  liquidation / falling knife / single-touch level". RIGHT: NOW b1 (-1.02R), VST r2 (~0).
+  MOOT (never filled inside the entry window): IONQ, LITE, TXN, ARM. Running tally of scored
+  wrong kills: MUU +1.77, SOLS +2.44 (day 5), CRCL +2.35, HOOD +2.60 = **4 kills, +9.2R foregone**
+  vs 2 right kills avoiding -2.3R. The pattern is the same on both sides: the critic reads
+  1-minute momentum INTO the level as a reason not to trade AT the level, which is the method's
+  entry by definition. Prompt-fix candidate (mirror of the 08-28 direction clause): "a bounce
+  fires into a decline and a reject fires into a rally - momentum into the level is the setup,
+  not a kill reason; kill only when the level is already lost on a CLOSED bar or the volume
+  read contradicts the plan". Decision threshold was >= 5 scored kills - at 4 now; one more
+  scored day decides.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -236,7 +248,9 @@ the position opens with its thesis already "wrong" by our own stop definition. T
 (+4.20R to TP2 on the counterfactual) because the level held on the next bar. Question:
 should a stop-close bar CANCEL the working entry (the reject failed) or is the fill window
 the only test? Decision threshold: 10 such cases scored by the counterfactual/outcome path;
-cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, +4.20R).
+cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW: +4.20R on the
+put's late fill, but **-1.24R on the plan itself** - a shares-style fill at the level was stopped on
+the 09:33 close; the option's 09:34 print turned a stopped plan into a winner by luck).
 
 ## 2. Findings (settled, with evidence)
 
@@ -251,6 +265,26 @@ cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, 
   LITE, TXN fires (outcomes pending); the author's 09:01 video ingested unattended (7 symbols,
   board 2 armed / 5 new) plus a 09:19 post (4 more) - see INGESTION-PLAN 2026-09-02 ops note.
   Method question raised: §1.9 (entry filled after a stop-close bar).
+- **2026-09-02 · Author-levels A/B, day 2: strictness won again.** His seven video names built
+  plans (AAPL/AMZN/MRNA/META/WMT/MSTR/GOOGL, arming left to the human, none armed). On the
+  real bars, the VALID triggers on his levels that were touched: MRNA k1 breakout 154.7
+  (-1.97R, stopped in 9 min), WMT k1 breakout 106.64 (-0.43R), GOOGL d1 breakdown 333.05
+  (-1.03R) = **-3.4R over 3, 0 wins**; his AMZN/META/MSTR/GOOGL-upside levels were never
+  reached. The R2-REJECTED triggers on the same names were mostly small quick winners (GOOGL
+  b1 +0.65R in 3 min, AMZN b1 +0.24R, WMT r1 +0.27R, MRNA b1 +1.15R) - exactly the "he banks
+  25% in five minutes" tempo his own transcript describes. Two days in: our gate is right to
+  refuse his levels under OUR exits; the open question is exit tempo, not level quality (T-6
+  / exit-tempo parameterisation, §3). Day 1 + day 2 tally on his levels: 0 wins under R2.
+- **2026-09-02 · Did-we-miss replay: run it the NEXT morning.** A same-day universe sweep
+  (`sweep --start D --end D --include-invalid`) returned sessions=0 both at 16:15 and 17:37 ET
+  (the session calendar/daily bars are not final until the next day); the 09-01 sweep of 08-31
+  worked. Today's coverage check is deferred to the 09-03 morning; the critic scorecard above
+  already covers every fire that did happen (8 kills, 2 wrong, +9.2R tally).
+  **Run 2026-09-03 09:50:** confirmed - the next-day replay of 09-02 works (universe, include-
+  invalid): 4 valid fires, 1 win, **-1.30R**; nothing our arming missed. Without the gap rules the
+  same day would have fired 14 times for **-8.13R** - the gap rules saved ~6.8R on a gap day.
+  Claim check flagged T1.3a (prior-day HOD/LOD strongest) as FAIL on this session (respect 27.9%
+  vs 30.5% other, n=86/243) - one session, noted for the weekly audit, not acted on.
 - **2026-09-01 · Day 5 "did we miss anything": nothing — and the pre-open re-planner
   earned its keep, measurably.** Whole-universe replay of the 08-31-close plans on the
   09-01 tape (sweep `0894b5d7`): only **3 valid fires, net −1.44R** (ANET b2 +0.12,
@@ -486,8 +520,15 @@ cancel if the mean R after a pre-fill stop-close is < 0. Counts so far: 1 (NOW, 
   `OptionsService.reprice`). Why: until 13:42 ET every option quote was the ~15-min delayed
   CBOE chain (tips-desk audit, PLATFORM-RULES invariant 14) - the spread skip was judging a
   stale row. Threshold unchanged (10% of mid); only the price source changed. T5.3 (IV)
-  stays chain-sourced until a real-time chain provider exists. Evidence: SNOW 08-25 skip
-  (§1.6) and the 09-02 GOOGL 0.13-vs-0.60 fill; §1.6 evidence restarts 2026-09-03.
+  Evidence: SNOW 08-25 skip (§1.6) and the 09-02 GOOGL 0.13-vs-0.60 fill; §1.6 evidence
+  restarts 2026-09-03.
+- 2026-09-02 (later) · **T5.3 elevated-IV gate judged on the live NBBO mid** - IV is the mid
+  solved through Black-Scholes (`options.py::implied_vol`, flat 4% rate, expiry at 16:00 ET;
+  `rejudge_iv` keeps the chain figure as `ivChain`). Why: the tips desk's open item - the
+  chain's `mid_iv` was 15 min stale and no real-time chain provider exists. Threshold
+  unchanged (0.60 absolute); the gate itself stays OFF by default
+  (`technique.arm.skip_elevated_iv=false`), so this changes what the trace and the critic
+  see, not what fires. Chain IV still picks the strike inside `select_contract`.
 - 2026-08-28 · **SYSTEM_PROMPT taught the short mirrors; stale "Long-only." clause
   removed** (`schemas.py`), and `review_fire` adds a DIRECTION clause on
   reject/breakdown fires (`arming.py`). Why: the prompt still predated the

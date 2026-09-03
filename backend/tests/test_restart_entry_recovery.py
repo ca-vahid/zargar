@@ -97,3 +97,28 @@ async def test_restart_puts_resting_sim_orders_back_in_the_book(engine):
         return await _status(engine, pid, oid) == "CANCELLED"
     await wait_for(gone)
     assert executor.working_count == 0
+
+
+async def test_entry_limit_is_repriced_on_the_live_nbbo_before_the_order(rig, monkeypatch):
+    """The critic pass sits between the fire and the order, so the pick's ask is
+    stale by a beat. PLTR 2026-09-03: a 2.14 limit from the pick met a 1.97 mid
+    and the risk gate's price collar refused the entry (a silent missed entry).
+    The runner must re-price the contract right before computing the limit."""
+    calls: list[str] = []
+
+    class FakeOptions:
+        async def stop(self):            # the engine fixture tears options down
+            return None
+
+        async def reprice(self, contract):
+            calls.append(str(contract.get("symbol")))
+            contract.update({"bid": 1.95, "ask": 2.01, "mid": 1.98, "priced": "opra"})
+            return contract
+
+    runner = rig.svc.armer
+    monkeypatch.setattr(runner.engine, "options", FakeOptions(), raising=False)
+    contract = {"symbol": "TEST260904C00100000", "ask": 2.14, "mid": 2.10, "priced": "chain"}
+    assert await runner.engine.options.reprice(contract) is contract
+    assert contract["ask"] == 2.01 and calls == ["TEST260904C00100000"]
+    # the never-chase cap still wins when the ask ran away from the trader's price
+    assert await runner.entry_limit_cap(None, None, contract) is None    # EM is uncapped by default
