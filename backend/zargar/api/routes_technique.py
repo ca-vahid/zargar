@@ -86,6 +86,19 @@ def build_technique_routes(app, eng, auth, config) -> None:
                 ctx["managedTechnique"] = m.get("technique")
         return list(out.values())
 
+    @app.post("/api/positions/managed/{pid}/policy", dependencies=[auth])
+    async def managed_policy(pid: str, body: dict):
+        """Replace the position's exit policy (validated; stops may only come
+        from the new doc — same seam the analyst's update_exit_plan uses).
+        Journaled ManagedPositionPolicyChanged."""
+        try:
+            out = await eng.position_manager.set_policy(pid, dict(body or {}))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        if out is None:
+            raise HTTPException(status_code=404, detail="unknown position")
+        return out
+
     @app.post("/api/positions/managed/{pid}/close", dependencies=[auth])
     async def managed_close(pid: str, fraction: float = 1.0):
         out = await eng.position_manager.close(pid, fraction=fraction, reason="manual close (API)")

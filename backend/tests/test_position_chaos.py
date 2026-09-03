@@ -503,6 +503,29 @@ async def test_rollup_failed_buy_leaves_us_flat_and_paid(engine):
     assert p.realized_pnl > 3.00 * 2 * 100          # flat AND paid
 
 
+async def test_policy_endpoint_upgrades_a_live_position(engine):
+    """POST /api/positions/managed/{pid}/policy — the seam that let the two
+    pre-0.6.2 Practice positions adopt the monetize campaign without a re-fill."""
+    import httpx
+    from zargar.api.app import create_app
+    from tests.conftest import make_test_config
+    pm, fo = await make_manager(engine, fake_orders=True)
+    engine.position_manager = pm
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt(spread_spec(pf, qty=1))
+    app = create_app(make_test_config(), engine)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        new_pol = {**pm.get(d["id"]).policy, "monetize": {"take_at_pct": 100, "take_fraction": 0.5},
+                   "premium_watch": True}
+        r = await client.post(f"/api/positions/managed/{d['id']}/policy", json=new_pol)
+        assert r.status_code == 200, r.text
+        assert pm.get(d["id"]).policy.get("monetize")
+        r = await client.post(f"/api/positions/managed/{d['id']}/policy",
+                              json={"stop": {"kind": "none"}})
+        assert r.status_code == 400            # invalid policies are refused
+
+
 async def test_halt_does_not_trap_the_exit(engine):
     """Kill switch on -> a reduce-only close still routes (the REAL gate)."""
     pm, _ = await make_manager(engine, fake_orders=False)
