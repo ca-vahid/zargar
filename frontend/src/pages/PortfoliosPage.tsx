@@ -250,6 +250,12 @@ function MgdCard({ m, onChanged }: { m: ManagedPosition; onChanged: () => void }
                 `${Math.round((m.policy.premium_ladder.fractions?.[i] ?? 0) * 100)}% at +${g}%`).join(", ")}`
               + (m.state?.premiumTrimsDone ? ` (${m.state.premiumTrimsDone} taken)` : "")
             : ""}
+          {m.policy?.monetize
+            ? ` · half off at +${m.policy.monetize.take_at_pct ?? 100}%`
+              + (m.state?.premiumTakeDone ? " ✓" : "")
+              + (m.state?.premiumFloorGain != null ? ` · floor locked +${Math.round(m.state.premiumFloorGain)}%` : "")
+            : ""}
+          {m.policy?.rollup?.enabled && m.state?.rollsDone ? ` · rolled ×${m.state.rollsDone}` : ""}
           {m.policy?.dte_close != null ? ` · closes by ${m.policy.dte_close} DTE` : ""}
           {m.policy?.stop?.kind === "none" ? " · no price stop (guarded)" : ""}
           {m.realizedPnl !== 0 ? <> · realized <span className={m.realizedPnl >= 0 ? "pos" : "neg"}>{fmtSigned(m.realizedPnl)}</span></> : ""}

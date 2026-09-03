@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.6.1";
+export const APP_VERSION = "0.6.2";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,18 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.6.2",
+    date: "2026-09-04",
+    title: "Winners get banked",
+    items: [
+      { tag: "major", text: "Monetize campaign for swing options (researched against practitioner + academic literature): at +100% on the contract, half is sold — the trade has paid for itself and can no longer lose; ratchet floors lock in +15%/+50%/+120% as the premium climbs, tightening near expiry and when the gain is IV-driven. Judged every ~2 seconds. The analyst's stock-level ladder still runs; whichever prints first." },
+      { tag: "major", text: "Deep-in-the-money winners roll up: when a call is mostly intrinsic (delta ≥ 0.75), the desk sells it and buys the ~0.35-delta strike — only when the cash banked exceeds what the trade originally cost. Upside stays on, the trade becomes unlosable. Max 2 rolls, both legs must quote tight and real-time." },
+      { tag: "improved", text: "Every option position now records its best premium mark (MFE) — the raw material for tuning the exit thresholds on our own fills once enough history exists." },
+      { tag: "improved", text: "Extraction understands entry slang: 'ape now', 'got starter', 'loading up', 'back in' are fresh entries, not commentary (neal's GME call was missed for this)." },
+      { tag: "fixed", text: "The Ledger always shows a row for today — a quiet day reads 0.00 instead of repeating yesterday's number." },
+    ],
+  },
   {
     version: "0.6.1",
     date: "2026-09-02",

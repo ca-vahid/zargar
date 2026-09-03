@@ -107,3 +107,95 @@ def test_one_exit_decision_per_bar():
     pol = {"stop": {"kind": "fixed", "price": 99.0}, "ladder": {"targets": [101.0], "fractions": [1.0]}}
     d, _ = evaluate(pol, PolicyState(), view(bar(1, 100, 101.5, 98.5, 98.8)))
     assert len(d) == 1 and d[0].kind == "stop"                       # protection outranks profit
+
+
+# --- monetize campaign (research 2026-09-04: take+trail, ratchet floors, tightenings)
+
+def _mon_pol(**over):
+    pol = {"stop": {"kind": "none", "guard": "premium campaign"},
+           "monetize": {"take_at_pct": 100, "take_fraction": 0.5,
+                        "floors": [[50, 15], [100, 50], [200, 120]]},
+           "premium_watch": True}
+    pol["monetize"].update(over)
+    return pol
+
+
+def _mon_step(pol, st, mark, *, entry=1.0, dte=30, iv_ratio=None):
+    """One evaluate+advance cycle on the CONTRACT mark, the way both the bar
+    path and the quote loop run it."""
+    from zargar.execution.policies import advance_premium_state, apply_premium_decision, evaluate_premium
+    d = evaluate_premium(pol, st, mark, entry, dte=dte, iv_ratio=iv_ratio)
+    st = apply_premium_decision(pol, st, d, entry)
+    st = advance_premium_state(pol, st, mark, entry, dte=dte, iv_ratio=iv_ratio)
+    return d, st
+
+
+def test_monetize_house_money_take_then_ratchet_floor_banks_the_round_trip():
+    # the GOOGL/RKLB shape: run up, give it all back — the campaign banks it
+    pol = _mon_pol()
+    st = PolicyState()
+    d, st = _mon_step(pol, st, 1.20)                     # +20%: nothing
+    assert d is None and st.premium_floor_gain is None
+    d, st = _mon_step(pol, st, 1.60)                     # +60%: first rung arms
+    assert d is None and st.premium_floor_gain == 15.0
+    d, st = _mon_step(pol, st, 2.10)                     # +110%: the take fires
+    assert d is not None and d.kind == "premium_take" and d.fraction == 0.5
+    assert st.premium_take_done and st.premium_floor == 1.0   # rest can never go red
+    d, st = _mon_step(pol, st, 2.10)                     # same mark again: no double take
+    assert d is None and st.premium_floor_gain == 50.0   # +100 rung locked +50
+    d, st = _mon_step(pol, st, 1.45)                     # gives back through the floor
+    assert d is not None and d.kind == "premium_stop" and "ratchet floor" in d.reason
+
+
+def test_monetize_fresh_high_never_stops_out_on_its_own_mark():
+    pol = _mon_pol()
+    st = PolicyState()
+    d, st = _mon_step(pol, st, 3.10, entry=1.0)          # straight to +210%
+    assert d is not None and d.kind == "premium_take"    # the take fires on the spike itself
+    # the floor from THIS peak (120) is armed for the NEXT mark, not this one
+    assert st.premium_floor_gain == 120.0
+    d, st = _mon_step(pol, st, 3.05)                     # +205% still above the floor
+    assert d is None
+    d, st = _mon_step(pol, st, 2.15)                     # +115% < floor +120
+    assert d is not None and d.kind == "premium_stop"
+
+
+def test_monetize_floor_extends_beyond_the_top_rung():
+    pol = _mon_pol()
+    st = PolicyState(premium_take_done=True)
+    for mark in (1.6, 2.2, 3.2, 4.2, 5.2):               # peak +420%
+        _, st = _mon_step(pol, st, mark)
+    assert st.premium_floor_gain == 320.0                # (200 + 2x100) - 80
+
+
+def test_monetize_dte_and_iv_tightening():
+    from zargar.execution.policies import advance_premium_state
+    pol = _mon_pol()
+    st = PolicyState(premium_take_done=True)
+    _, st = _mon_step(pol, st, 1.60, dte=30)
+    assert st.premium_floor_gain == 15.0
+    st2 = advance_premium_state(pol, st, 1.60, 1.0, dte=5)          # inside 7 DTE: +17pp
+    assert st2.premium_floor_gain == 32.0
+    st3 = advance_premium_state(pol, st, 1.60, 1.0, dte=30, iv_ratio=1.5)   # vega-driven: +17pp
+    assert st3.premium_floor_gain == 32.0
+    st4 = advance_premium_state(pol, st, 1.60, 1.0, dte=1)          # stall zone: chase peak-25pp
+    assert abs(st4.premium_floor_gain - 35.0) < 1e-6                 # max(15+17, 60-25)
+    # the floor can never exceed the peak gain itself
+    st5 = advance_premium_state(pol, PolicyState(premium_take_done=True), 1.10, 1.0, dte=1)
+    assert st5.premium_floor_gain is None or st5.premium_floor_gain <= 10.0
+
+
+def test_monetize_floor_never_ratchets_down():
+    pol = _mon_pol()
+    st = PolicyState(premium_take_done=True)
+    _, st = _mon_step(pol, st, 1.60, dte=5)              # tightened floor 32
+    assert st.premium_floor_gain == 32.0
+    from zargar.execution.policies import advance_premium_state
+    st2 = advance_premium_state(pol, st, 1.60, 1.0, dte=30)   # tightening condition gone
+    assert st2.premium_floor_gain == 32.0                # stays — floors only climb
+
+
+def test_monetize_validates():
+    assert validate_policy(_mon_pol()) == []
+    bad = _mon_pol(floors=[[50, 60]])                    # floor above its arming gain
+    assert any("below its arming gain" in w for w in validate_policy(bad))

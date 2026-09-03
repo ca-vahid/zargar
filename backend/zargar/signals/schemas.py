@@ -295,6 +295,12 @@ source_transcript when reading a screenshot.
 hedge); "BTO"/"STC" = buy to open / sell to close; a bare month/day date is this year unless \
 that is already past, then next year. A put tip means direction="short" (bearish on the stock) \
 with instrument="put" — never direction="long".
+- Trader slang for a FRESH ENTRY the author is taking NOW is an explicit call, not commentary: \
+"ape now", "aping", "got starter"/"starter position", "loading"/"loading up", "adding here", \
+"back in", "sending it", "full port" (all = action open, is_actionable=true when a ticker is \
+stated). A broker position-row screenshot with all-zero P/L columns alongside such a message is \
+the fill that just happened — the same single open, not a second signal. ("Still holding", \
+"up X% on my calls" remain recaps.)
 - If ticker or direction is ambiguous, set is_actionable=false rather than guessing.
 - confidence is "explicit_call" only when the author explicitly says to buy/sell now, ideally \
 with entry/stop/target; "implied" when clearly bullish/bearish without a call; otherwise \

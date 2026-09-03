@@ -146,7 +146,8 @@ async def test_contract_quote_is_published_and_overlaid(opt_engine):
     assert r.status_code == 400
 
 
-def make_alpaca_opra(quotes: dict, trades: dict | None = None, *, status: int = 200):
+def make_alpaca_opra(quotes: dict, trades: dict | None = None, *, status: int = 200,
+                     snapshots: dict | None = None):
     """A stubbed OPRA latest-quotes/trades pair (`AlpacaOptionsData` over MockTransport)."""
     from zargar.options.chain import AlpacaOptionsData
 
@@ -157,6 +158,8 @@ def make_alpaca_opra(quotes: dict, trades: dict | None = None, *, status: int = 
             return httpx.Response(200, json={"quotes": quotes})
         if request.url.path.endswith("/trades/latest"):
             return httpx.Response(200, json={"trades": trades or {}})
+        if request.url.path.endswith("/options/snapshots"):
+            return httpx.Response(200, json={"snapshots": snapshots or {}})
         return httpx.Response(404, json={})
     return AlpacaOptionsData("k", "s", httpx.AsyncClient(
         transport=httpx.MockTransport(handler), base_url="https://data.alpaca.markets"))
@@ -249,6 +252,26 @@ async def test_reprice_moves_a_picked_contract_onto_the_live_nbbo(opt_engine):
     out = await eng.options.reprice(dict(pick))
     assert out["priced"] == "opra" and (out["bid"], out["ask"], out["mid"]) == (2.5, 2.6, 2.55)
     assert abs(out["spreadPct"] - 3.92) < 0.01
+
+
+async def test_live_greeks_merge_onto_the_tracked_snapshot(opt_engine):
+    """Phase 2: delta/IV for tracked contracts come from Alpaca's real-time
+    snapshots (the roll-up trigger + monetize IV-tighten read them); the chain
+    row keeps supplying what Alpaca omits (open interest)."""
+    eng, client = opt_engine
+    sym = _occ("XYZ", EXP1, "C", 100)
+    await eng.options.track(sym)
+    before = eng.options.snapshot_cached(sym)
+    assert before and before["greeks"]["delta"] == 0.5 and int(before["open_interest"]) == 2000
+    eng.options.use_quote_source(make_alpaca_opra(
+        {sym: {"bp": 2.5, "ap": 2.6, "bs": 1, "as": 1, "t": "2026-09-02T17:10:34.7Z"}},
+        snapshots={sym: {"greeks": {"delta": 0.61, "gamma": 0.03, "theta": -0.05, "vega": 0.08},
+                         "impliedVolatility": 0.44}}))
+    await eng.options.refresh_tracked()                  # greeks fetch fires on pass 1
+    snap = eng.options.snapshot_cached(sym)
+    assert snap["greeks"]["delta"] == 0.61 and snap["greeks"]["mid_iv"] == 0.44
+    assert snap.get("greeksLive") is True
+    assert int(snap["open_interest"]) == 2000            # OI still the chain's
 
 
 async def test_quiet_feed_republishes_the_chain_quote(opt_engine, monkeypatch):

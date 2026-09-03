@@ -111,6 +111,15 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.lotto_flatten_et": "15:45", # expiry-day mandatory flatten (never hold through the close)
     "techniques.tip.lotto_premium_targets": "100,200",   # lotto profit-taking on the CONTRACT: +N% rungs (quote-tick judged)
     "techniques.tip.lotto_premium_fractions": "0.5,0.5", # fraction of the original size sold at each rung; rest floors at entry
+    "techniques.tip.monetize_enabled": True,     # swing options: house-money take + ratchet floors on the CONTRACT (research 2026-09-04)
+    "techniques.tip.monetize_take_at": 100.0,    # sell monetize_take_fraction when the premium is up N% (recoups the debit at 100/0.5)
+    "techniques.tip.monetize_take_fraction": 0.5,
+    "techniques.tip.monetize_floors": "50:15,100:50,200:120",  # peak-gain%:locked-floor% rungs; +100/+100 beyond; theta/IV tighten in code
+    "techniques.tip.rollup_enabled": True,       # deep-ITM winner rolls to ~0.35 delta for a credit >= the debit (max 2)
+    "techniques.tip.rollup_delta": 0.75,         # roll trigger: |delta| at/above this (or extrinsic <= 10% of premium)
+    "techniques.tip.rollup_target_delta": 0.35,  # the strike the roll buys
+    "techniques.tip.rollup_max": 2,              # rolls per position
+    "techniques.tip.rollup_max_spread_pct": 10.0,  # skip illiquid legs (bid/ask spread % of mid, either leg)
     "techniques.tip.auto_min_graded": 5,     # earned auto: closed tip positions a source needs before the platform-default auto self-approves
     "techniques.tip.auto_min_hit": 0.4,      # earned auto: minimum hit rate on those closed positions (explicit per-source auto bypasses both)
     "techniques.tip.retro_enabled": True,    # nightly analyst retro on closed tip positions

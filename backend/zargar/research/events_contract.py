@@ -69,6 +69,8 @@ CONTRACTS: dict[str, dict] = {
     "ManagedPositionPolicyChanged": {"version": 1, "required": ("positionId", "symbol", "policy")},
     "ManagedPositionReconciled": {"version": 1, "required": ("positions",)},
     "ManagedPositionAttention": {"version": 1, "required": ("positionId", "symbol", "error")},
+    "ManagedPositionScaledIn": {"version": 1, "required": ("positionId", "symbol")},
+    "ManagedPositionRolledUp": {"version": 1, "required": ("positionId", "symbol", "from", "to", "qty", "creditPerContract")},
 }
 
 

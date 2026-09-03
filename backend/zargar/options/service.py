@@ -90,6 +90,10 @@ class OptionsService:
     def served_live(self, symbol: str) -> bool:
         return symbol.upper() in self._served_live
 
+    def snapshot_cached(self, symbol: str) -> dict | None:
+        """The last chain row seen for a contract (greeks/IV/OI), no fetch."""
+        return self._snapshots.get(symbol.upper())
+
     async def reprice(self, contract: dict | None) -> dict | None:
         """A picked contract (chain row: bid/ask/mid/spreadPct from the ~15-min
         delayed chain) re-priced on the real-time NBBO after track(). Sizing,
@@ -243,10 +247,17 @@ class OptionsService:
         """A fresh chain row for a contract — greeks/OI/volume are welcome, but
         the QUOTE fields of a contract OPRA is serving stay live."""
         prev = self._snapshots.get(r["symbol"])
+        out = {**r, "asOf": now}
+        if prev and prev.get("greeksLive"):
+            # real-time greeks (phase 2) beat the ~15-min chain row's
+            out["greeks"] = {**(r.get("greeks") or {}),
+                             **{k: v for k, v in (prev.get("greeks") or {}).items() if v is not None}}
+            out["greeksLive"] = True
         if prev and prev.get("live") and r["symbol"] in self._served_live:
-            return {**r, "bid": prev["bid"], "ask": prev["ask"], "last": prev.get("last") or r.get("last"),
-                    "asOf": prev.get("asOf", now), "live": True}
-        return {**r, "asOf": now}
+            out.update({"bid": prev["bid"], "ask": prev["ask"],
+                        "last": prev.get("last") or r.get("last"),
+                        "asOf": prev.get("asOf", now), "live": True})
+        return out
 
     # ------------------------------------------------------------ quotes
     async def track(self, symbol: str) -> None:
@@ -370,6 +381,17 @@ class OptionsService:
                                   bid_size=int(r.get("bid_size") or 0), ask_size=int(r.get("ask_size") or 0),
                                   volume=0, ts=now, session="regular", source="opra", source_ts=src_ts))
         self._served_live = served
+        # phase 2: real-time greeks/IV every ~15th pass (~30 s at the 2 s cadence)
+        # — the roll-up's delta trigger and the monetize IV-tighten read these;
+        # the delayed chain row remains the fallback for what Alpaca omits (OI)
+        self._greeks_cycle = getattr(self, "_greeks_cycle", 0) + 1
+        if served and self._greeks_cycle % 15 == 1:
+            with contextlib.suppress(Exception):
+                live_g = await src.greeks(sorted(served))
+                for sym, g in live_g.items():
+                    snap = self._snapshots.get(sym) or {"symbol": sym}
+                    merged = {**(snap.get("greeks") or {}), **{k: v for k, v in g.items() if v is not None}}
+                    self._snapshots[sym] = {**snap, "greeks": merged, "greeksLive": True}
         return served
 
     async def refresh_tracked(self) -> None:

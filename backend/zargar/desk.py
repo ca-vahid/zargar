@@ -388,8 +388,11 @@ class DeskService:
 
         window_trips = [t for t in trips
                         if dt.datetime.fromisoformat(t["outAt"]) >= cutoff]
+        # today's row always exists — a quiet day shows 0.00, not yesterday's
+        # number at the top (2026-09-03: "today" read Wednesday's −812)
+        today_key = dt.datetime.now(dt.timezone.utc).astimezone(ET).strftime("%Y-%m-%d")
         day_keys = sorted({t["day"] for t in window_trips}
-                          | {a["day"] for a in adjustments}, reverse=True)
+                          | {a["day"] for a in adjustments} | {today_key}, reverse=True)
         days_out = [{
             "date": d,
             "realized": round(sum(t["gain"] for t in window_trips if t["day"] == d)

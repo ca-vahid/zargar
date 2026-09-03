@@ -49,7 +49,7 @@ import contextlib
 import datetime as dt
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from sqlalchemy import select
 
@@ -63,6 +63,7 @@ from .policies import (
     DEFAULT_TIMEFRAME,
     PolicyState,
     PositionView,
+    advance_premium_state,
     apply_moves,
     apply_premium_decision,
     evaluate,
@@ -83,6 +84,7 @@ POSITION_POLICY = "ManagedPositionPolicyChanged"
 POSITION_RECONCILED = "ManagedPositionReconciled"
 POSITION_ATTENTION = "ManagedPositionAttention"
 POSITION_SCALED = "ManagedPositionScaledIn"
+POSITION_ROLLED = "ManagedPositionRolledUp"
 
 TF_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "1h": 60, "1d": 390}
 
@@ -135,6 +137,7 @@ class Managed:
     run_id: str | None = None
     state: PolicyState = field(default_factory=PolicyState)
     entry_mark: float | None = None      # net premium per unit (+debit / -credit) at open
+    entry_iv: float | None = None        # contract IV at open (vega-driven-gain marker for monetize)
     realized_pnl: float = 0.0
     exits: list[dict] = field(default_factory=list)
     events: list[dict] = field(default_factory=list)
@@ -189,6 +192,7 @@ class Managed:
             "direction": self.direction, "technique": self.technique, "status": self.status,
             "policy": self.policy, "legs": [l.to_dict() for l in self.legs],
             "entry": self.entry, "risk": self.risk, "entryMark": self.entry_mark,
+            "entryIv": self.entry_iv,
             "overnight": self.overnight, "overnightAck": self.overnight_ack,
             "appManagedOnly": self.overnight == "app_managed" and self.has_options,
             "tags": list(self.tags), "runId": self.run_id,
@@ -214,6 +218,7 @@ class PositionManager:
         self._orders_task: asyncio.Task | None = None
         self._order_index: dict[str, str] = {}
         self._breaches: dict[tuple[str, str], int] = {}
+        self._roll_ticks: dict[str, int] = {}
         self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
         self._last_decide: dict[str, int] = {}   # position id -> raw-bar ts last decided on
         self._entry_halted: set[str] = set()           # symbols where reconciliation found drift
@@ -307,7 +312,8 @@ class PositionManager:
             status=row.status, overnight=str(cfg.get("overnight") or "venue_stop"),
             overnight_ack=bool(cfg.get("overnightAck")), tags=list(row.tags or []),
             run_id=cfg.get("runId"), state=PolicyState.from_dict(st.get("policyState")),
-            entry_mark=cfg.get("entryMark"), realized_pnl=float(st.get("realizedPnl") or 0),
+            entry_mark=cfg.get("entryMark"), entry_iv=cfg.get("entryIv"),
+            realized_pnl=float(st.get("realizedPnl") or 0),
             exits=list(st.get("exits") or []), events=list(st.get("events") or []),
             sessions_seen=list(st.get("sessionsSeen") or []),
             opened_ms=int(st.get("openedMs") or 0), closed_ms=st.get("closedMs"),
@@ -323,7 +329,7 @@ class PositionManager:
                 row = await session.get(ManagedPositionRow, p.id)
                 cfg = {"direction": p.direction, "policy": p.policy, "entry": p.entry, "risk": p.risk,
                        "overnight": p.overnight, "overnightAck": p.overnight_ack, "runId": p.run_id,
-                       "entryMark": p.entry_mark}
+                       "entryMark": p.entry_mark, "entryIv": p.entry_iv}
                 st = {"policyState": p.state.to_dict(), "realizedPnl": round(p.realized_pnl, 2),
                       "exits": p.exits[-100:], "events": p.events[-200:], "sessionsSeen": p.sessions_seen,
                       "openedMs": p.opened_ms, "closedMs": p.closed_ms, "lastTfBarTs": p.last_tf_bar_ts,
@@ -491,6 +497,15 @@ class PositionManager:
         for sym in [p.symbol, *[l.symbol for l in p.legs]]:
             with contextlib.suppress(Exception):
                 await self.engine.ensure_symbol(sym)
+        # entry IV: the vega-driven-gain marker the monetize floors tighten on
+        opt_legs = [l for l in p.open_legs if l.sec_type == "OPT"]
+        if p.entry_iv is None and len(opt_legs) == 1 and getattr(self.engine, "options", None) is not None:
+            with contextlib.suppress(Exception):
+                snap = self.engine.options.snapshot_cached(opt_legs[0].symbol)
+                iv = ((snap or {}).get("greeks") or {}).get("mid_iv")
+                if iv:
+                    p.entry_iv = float(iv)
+                    await self._persist(p)
         await self._ensure_venue_stop(p)
         self.start()
         return p.to_dict()
@@ -851,6 +866,207 @@ class PositionManager:
         if not decisions:
             await self._persist(p)
 
+    # ---------------------------------------------------------------- roll-up
+    async def _maybe_rollup(self, p: Managed) -> bool:
+        """McMillan/Bhansali (research 2026-09-04): a deep-ITM winner — delta at
+        or past `rollup.delta` (0.75), or extrinsic ≤ 10% of the premium — is
+        mostly intrinsic: the convexity we paid for is spent. If a strike near
+        `rollup.target_delta` (0.35) exists whose ask leaves a net CREDIT ≥ the
+        original debit, sell the winner and buy it: more cash is banked than the
+        trade ever cost (it can no longer lose), and the upside stays on. Max
+        `rollup.max` rolls per position; both legs must quote real-time and
+        tight. Returns True when a roll executed (the caller re-loops)."""
+        cfg = p.policy.get("rollup") or {}
+        if not cfg.get("enabled"):
+            return False
+        if p.status != "open" or p.state.rolls_done >= int(cfg.get("max", 2)):
+            return False
+        legs = [l for l in p.open_legs if l.sec_type == "OPT"]
+        if len(legs) != 1 or len(p.open_legs) != 1 or legs[0].qty <= 0:
+            return False                              # single-leg LONG options only
+        if any(x.get("orderId") and x.get("status") not in self._EXIT_DEAD + ("FILLED",)
+               for x in p.exits):
+            return False                              # never roll around an in-flight exit
+        leg = legs[0]
+        opts = getattr(self.engine, "options", None)
+        q = self.engine.quotes.get(leg.symbol)
+        uq = self.engine.quotes.get(p.symbol)
+        if opts is None or q is None or uq is None or getattr(q, "delayed", False) \
+                or not (q.bid and q.bid > 0) or not (uq.last and uq.last > 0):
+            return False
+        o = occ_mod.parse(leg.symbol)
+        if o is None:
+            return False
+        snap = opts.snapshot_cached(leg.symbol) or {}
+        delta = ((snap.get("greeks") or {}).get("delta"))
+        try:
+            delta = abs(float(delta)) if delta is not None else None
+        except (TypeError, ValueError):
+            delta = None
+        intrinsic = max(0.0, float(uq.last) - o.strike) if o.right == "C" \
+            else max(0.0, o.strike - float(uq.last))
+        extrinsic = max(0.0, float(q.bid) - intrinsic)
+        deep = (delta is not None and delta >= float(cfg.get("delta", 0.75))) or \
+               (intrinsic > 0 and extrinsic <= 0.10 * float(q.bid))
+        if not deep:
+            return False
+        cand = await self._rollup_candidate(p, leg, o, cfg)
+        if cand is None:
+            return False
+        new_sym, new_ask = cand
+        credit = float(q.bid) - new_ask
+        if not p.entry_mark or credit < p.entry_mark:
+            return False                              # McMillan's test: credit must beat the original debit
+        max_spread = float(cfg.get("max_spread_pct", 10.0))
+        if q.ask and q.bid and (q.ask - q.bid) / max((q.ask + q.bid) / 2, 0.01) * 100 > max_spread:
+            return False
+        return await self._execute_rollup(p, leg, new_sym, new_ask, credit)
+
+    async def _rollup_candidate(self, p: Managed, leg: Leg, o, cfg: dict) -> tuple[str, float] | None:
+        """The strike nearest `target_delta` on the SAME expiry, out-of-the-money
+        side (calls roll UP, puts roll DOWN), with a tight real-time quote."""
+        opts = self.engine.options
+        try:
+            rows = await opts.provider().all_rows(o.underlying)
+        except Exception:
+            return None
+        want = float(cfg.get("target_delta", 0.35))
+        max_spread = float(cfg.get("max_spread_pct", 10.0))
+        best: tuple[float, str] | None = None
+        for r in rows:
+            if r.get("expiry") != o.expiry.isoformat() or r.get("option_type") != o.option_type:
+                continue
+            strike = float(r.get("strike") or 0)
+            if (o.right == "C" and strike <= o.strike) or (o.right == "P" and strike >= o.strike):
+                continue
+            d = (r.get("greeks") or {}).get("delta")
+            try:
+                d = abs(float(d)) if d is not None else None
+            except (TypeError, ValueError):
+                d = None
+            if d is None or d < 0.15 or d > 0.55:
+                continue
+            score = abs(d - want)
+            if best is None or score < best[0]:
+                best = (score, r["symbol"])
+        if best is None:
+            return None
+        sym = best[1]
+        # price the candidate on the REAL-TIME quote, never the chain row
+        with contextlib.suppress(Exception):
+            await opts.track(sym)
+        nq = self.engine.quotes.get(sym)
+        if nq is None or getattr(nq, "delayed", False) or not (nq.ask and nq.ask > 0):
+            return None
+        if nq.bid and (nq.ask - nq.bid) / max((nq.ask + nq.bid) / 2, 0.01) * 100 > max_spread:
+            return None
+        return sym, float(nq.ask)
+
+    async def _execute_rollup(self, p: Managed, leg: Leg, new_sym: str, new_ask: float,
+                              credit: float) -> bool:
+        """SELL the winner (reduce-only), then BUY the new strike. If the buy
+        fails we are flat with more cash banked than the trade cost — the
+        position closes as a winner, never limbo."""
+        from ..orders import OrderIntent
+        qty = abs(leg.qty)
+        eng = self.engine
+        q = eng.quotes.get(leg.symbol)
+        self._log(p, "rollup", f"rolling {leg.symbol} -> {new_sym}: bid {q.bid:.2f} - ask {new_ask:.2f} "
+                               f"= credit {credit:.2f}/contract ≥ debit {p.entry_mark:.2f} — the trade "
+                               f"can no longer lose")
+        sell = await eng.orders.place(reduce_only_exit_intent(
+            portfolio_id=p.portfolio_id, symbol=leg.symbol, sec_type="OPT", qty=qty,
+            bid=float(q.bid), technique_id=p.technique))
+        ok, fill = await self._await_terminal(sell)
+        if not ok:
+            self._log(p, "rollup_abort", f"sell leg {sell.get('status')} — roll abandoned, position unchanged")
+            with contextlib.suppress(Exception):
+                await eng.orders.cancel(sell.get("id"))
+            return False
+        p.realized_pnl += (fill - (leg.avg_fill or fill)) * qty * leg.multiplier
+        buy = await eng.orders.place(OrderIntent(
+            portfolio_id=p.portfolio_id, symbol=new_sym, sec_type="OPT", side="BUY",
+            qty=qty, order_type="LMT", limit_price=round(new_ask, 2), tif="DAY",
+            source="rollup", technique_id=p.technique))
+        ok2, fill2 = await self._await_terminal(buy)
+        if not ok2:
+            leg.qty = 0.0
+            p.status = "closed"
+            p.closed_ms = self.now_ms()
+            await self._persist(p)
+            await self._journal(POSITION_CLOSED, p, {"reason": "roll-up sell filled, replacement buy "
+                                                     f"{buy.get('status')} — banked flat as a winner"})
+            self._log(p, "rollup_flat", "replacement buy failed — flat, gain banked")
+            return True
+        old_sym, old_debit = leg.symbol, p.entry_mark
+        leg.symbol, leg.avg_fill, leg.entry_order_id, leg.origin = new_sym, fill2, buy.get("id"), "rollup"
+        p.entry_mark = fill2
+        p.entry_iv = None                       # re-captured from the new contract's snapshot
+        p.state = replace(p.state, premium_peak=None, premium_floor=None, premium_floor_gain=None,
+                          premium_take_done=False, premium_trims_done=0,
+                          rolls_done=p.state.rolls_done + 1)
+        with contextlib.suppress(Exception):
+            await eng.ensure_symbol(new_sym)
+            snap = eng.options.snapshot_cached(new_sym)
+            iv = ((snap or {}).get("greeks") or {}).get("mid_iv")
+            if iv:
+                p.entry_iv = float(iv)
+        await self._persist(p)
+        await self._journal(POSITION_ROLLED, p, {
+            "from": old_sym, "to": new_sym, "qty": qty, "soldAt": fill, "boughtAt": fill2,
+            "creditPerContract": round(fill - fill2, 4), "originalDebit": old_debit,
+            "rollsDone": p.state.rolls_done})
+        self._log(p, "rolled", f"{old_sym} -> {new_sym} @ {fill2:.2f}; credit {fill - fill2:.2f}/contract "
+                               f"banked (roll {p.state.rolls_done})")
+        return True
+
+    async def _await_terminal(self, order: dict, *, timeout_s: float = 20.0) -> tuple[bool, float]:
+        """(filled?, avg fill) — polls the order layer briefly; test fakes fill
+        synchronously, the sim within a second or two."""
+        oid = str(order.get("id") or "")
+        st = order.get("status")
+        fill = order.get("avgFillPrice")
+        deadline = self._now() + timeout_s
+        while st not in ("FILLED",) + self._EXIT_DEAD and self._now() < deadline:
+            await asyncio.sleep(0.25)
+            got = None
+            with contextlib.suppress(Exception):
+                lister = getattr(self.engine.orders, "list_orders", None)
+                if lister is not None:
+                    for o in await lister(open_only=False, limit=50):
+                        if o.get("id") == oid:
+                            got = o
+                            break
+            if got is None:
+                break
+            st, fill = got.get("status"), got.get("avgFillPrice") or fill
+        return st == "FILLED" and fill is not None, float(fill or 0)
+
+    def _iv_ratio(self, p: Managed) -> float | None:
+        """Contract IV now / IV at entry — marks a vega-driven gain (which
+        mean-reverts, so the monetize floors tighten). None when either side
+        is unknown; single-leg long options only."""
+        entry_iv = p.entry_iv
+        if not entry_iv or entry_iv <= 0:
+            return None
+        opt = [l for l in p.open_legs if l.sec_type == "OPT"]
+        if len(opt) != 1:
+            return None
+        snap = getattr(self.engine, "options", None)
+        snap = snap.snapshot_cached(opt[0].symbol) if snap is not None else None
+        iv = (snap or {}).get("greeks", {}).get("mid_iv")
+        try:
+            iv = float(iv) if iv else None
+        except (TypeError, ValueError):
+            iv = None
+        return (iv / entry_iv) if iv and iv > 0 else None
+
+    @staticmethod
+    def _take_units(p: Managed, fraction: float) -> int:
+        """How many whole contracts a fractional take would actually sell."""
+        total = sum(abs(l.qty) for l in p.open_legs)
+        return int(total * min(1.0, max(0.0, fraction)))
+
     # ---------------------------------------------------------------- quote watch + watchdog
     async def _watch_loop(self) -> None:
         await asyncio.sleep(1.0)
@@ -906,6 +1122,13 @@ class PositionManager:
                         await self.close(p.id, fraction=1.0, kind="dte", force_market=True,
                                          reason=f"expiry day — flattened at {flat_et} ET (clock)")
                         continue
+            # roll-up check at a slow cadence (~every 30th watch pass ≈ 60 s, RTH only)
+            if p.policy.get("rollup", {}).get("enabled"):
+                self._roll_ticks[p.id] = self._roll_ticks.get(p.id, 0) + 1
+                if self._roll_ticks[p.id] % 30 == 1 and session_window(now) == "regular":
+                    with contextlib.suppress(Exception):
+                        if await self._maybe_rollup(p):
+                            continue
             # premium watch (the tips lotto lane): the contract's own mark judged
             # every tick — a 0DTE tripled and gave it all back inside one 15m bar
             # on 2026-09-02 (GOOGL 340C) while the underlying ladder never hit
@@ -921,13 +1144,38 @@ class PositionManager:
                     (lq := self.engine.quotes.get(l.symbol)) is not None and (now - lq.ts) <= stale_ms
                     and not getattr(lq, "delayed", False)
                     for l in p.open_legs)
-                d = evaluate_premium(p.policy, p.state, mark, p.entry_mark) if legs_fresh else None
-                if d is not None:
-                    p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
-                    self._log(p, d.kind, f"{d.reason} (quote watch)")
-                    await self.close(p.id, fraction=d.fraction, reason=d.reason, kind=d.kind,
-                                     force_market=d.kind == "premium_stop")
-                    continue
+                if legs_fresh:
+                    today = dt.datetime.fromtimestamp(now / 1000, ET).date()
+                    d = evaluate_premium(p.policy, p.state, mark, p.entry_mark,
+                                         dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
+                    if d is not None and d.kind == "premium_take" \
+                            and self._take_units(p, d.fraction) < 1:
+                        # a 1-lot cannot sell half: skip the take, the ratchet
+                        # floors and (for deep-ITM winners) the roll-up govern
+                        p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
+                        self._log(p, "premium_take_skipped",
+                                  f"{d.reason} — but selling {d.fraction:.0%} of "
+                                  f"{sum(abs(l.qty) for l in p.open_legs):g} contract(s) rounds to 0; "
+                                  "floors govern instead")
+                        d = None
+                    if d is not None:
+                        p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
+                        p.state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
+                                                        dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
+                        self._log(p, d.kind, f"{d.reason} (quote watch)")
+                        await self.close(p.id, fraction=d.fraction, reason=d.reason, kind=d.kind,
+                                         force_market=d.kind == "premium_stop")
+                        continue
+                    new_state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
+                                                      dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
+                    if new_state is not p.state:
+                        floor_moved = new_state.premium_floor_gain != p.state.premium_floor_gain
+                        p.state = new_state
+                        if floor_moved:                     # write-ahead only for the money-relevant change;
+                            await self._persist(p)          # the peak persists with the next bar close
+                            self._log(p, "premium_floor",
+                                      f"ratchet floor -> +{new_state.premium_floor_gain:.0f}% "
+                                      f"(peak {((new_state.premium_peak or 0) / p.entry_mark - 1) * 100:+.0f}%)")
             # crash brake on the underlying
             stop = stop_price(p.policy, p.state)
             q = self.engine.quotes.get(p.symbol)

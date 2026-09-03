@@ -281,6 +281,27 @@ runtime ones to `execution.*`).
   every money path: the price you send must be read AFTER the last slow step (critic, sizing,
   hooks), never carried from the fire.
 
+- **2026-09-04 · Winners are banked by design (the monetize campaign + roll-up).** Research
+  decision (two independent tracks converged — Leung & Zhang's optimal-stopping proof that
+  take-profit AND trail together dominate either alone; Bhansali/LongTail's monetize-half-at-a-
+  multiple with its regime findings; practitioner house-money and ratchet rules; Boyer & Vorkink
+  on the negative drift of held long options). Shared policy keys: `monetize` (sell
+  `take_fraction` at `take_at_pct`, ratchet floors `[[50,15],[100,50],[200,120]]` extending
+  +100/+100 beyond, DTE ≤ 7 tightens half a rung, IV-ratio ≥ 1.3 tightens half a rung, ≤ 2 DTE
+  chases peak−25pp) and `rollup` (delta ≥ 0.75 or extrinsic ≤ 10% → roll to ~0.35Δ same expiry
+  ONLY when the credit ≥ the original debit — the position becomes unlosable; failed replacement
+  buy = flat and paid, never limbo; max 2). Floors are judged against the PERSISTED peak (a
+  fresh high can never stop out on its own mark), evaluated on the 2 s quote loop, real-time
+  quotes required. `PolicyState.premium_peak` records per-position contract MFE — calibrate the
+  thresholds from our own fills at ≥50 closed positions, coarse grids only (Bailey/López de
+  Prado overfitting warning). Tests: `test_position_policies.py` monetize block,
+  `test_position_chaos.py::test_monetize_take_and_ratchet_floor_on_the_quote_loop`,
+  `::test_rollup_banks_a_credit_and_keeps_convexity`, `::test_rollup_failed_buy_leaves_us_flat_and_paid`.
+
+- **2026-09-04 · Real-time greeks for tracked contracts** (Alpaca snapshots, phase 2): delta/IV
+  merge onto the tracked snapshot every ~30 s (`greeksLive`), beating the ~15-min chain row —
+  the roll-up trigger and the monetize IV-tighten read them; OI stays the chain's (T+1 anyway).
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

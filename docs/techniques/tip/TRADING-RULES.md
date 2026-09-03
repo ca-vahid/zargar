@@ -35,6 +35,16 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-04 — **Swing options run the monetize campaign; deep-ITM winners roll up** (user
+  decision after the 09-03 review + literature research; ambitious defaults). Half off at
+  +100% premium (the debit is recouped — the trade can no longer lose), ratchet floors
+  15/50/120 under the rest, theta/IV tightening, and the McMillan roll-up (credit ≥ debit,
+  max 2) for winners that go mostly intrinsic. Knobs: `techniques.tip.monetize_*`,
+  `techniques.tip.rollup_*`. The analyst's underlying ladder still runs — whichever prints
+  first. Watch: whether the +100% arm ever fires on our tip flow (shadow MFE data will say);
+  revisit thresholds at 50 closed option positions, coarse grid only.
+
+
 - 2026-09-02 — **Lotto exits are judged on the CONTRACT, every quote tick.** GOOGL
   340C 0DTE (ab, auto-filled 12:02 ET): the contract tripled and gave it all back inside
   one 15m bar while the analyst's underlying ladder (341.5 / 343.5 / 346) never printed
