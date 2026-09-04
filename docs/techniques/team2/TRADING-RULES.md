@@ -180,6 +180,36 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   a writing error in the log, not a runtime timezone slip. Stamp future sections from the app
   (`regime.ts`) or from `TZ=America/New_York date`, not by hand.
 
+- **F22 (2026-09-04, market watch — FIXED, commit pending)** **The desk's first real order was refused
+  by a bug that reads *cash* where it says *equity*.** SPY's `pm_break_down` setup fired at 11:08 ET
+  (touch #1, EMA13 769.81 held, close 769.70, bear stack), the contract picker did its job — real OPRA
+  quote, `SPY260904P00768000`, bid 0.38 / ask 0.39, spread 2.6%, vol 63,663, delta −0.244, size `small`
+  ×0.5 → 26 contracts ≈ $1,014 premium — and the trade was then dropped with
+  `contract skipped (premium ≈$1,014 is over 50% of the account's $-267 equity)`. The Practice book's
+  equity is **$8,618.40**; **−$266.58 is its cash**, which is negative only because other techniques'
+  RKLB calls and ZURA shares are holding the book fully invested. Root cause is one line in the shared
+  `execution/planrunner.py` premium pre-check (l.2305): `pf = positions.portfolio(pid)` returns the
+  *cached portfolio row* — name / kind / cash / baseCurrency, and **no `equity` key at all** (equity is
+  the async `positions.equity(pid)`) — so `float(pf.get("equity") or pf.get("cash") or 0.0)` always
+  fell through to cash. The check exists only to *mirror* the RiskGate so the shares fallback can kick
+  in before an order is rejected; the authoritative gate (`risk.py` l.263/304) uses
+  `await positions.equity(...)` and would have **passed** this order ($1,014 < 50% of $8,618). So the
+  pre-check was strictly stricter than the gate it mirrors, and silently so. **Fixed** by awaiting the
+  real equity. The model trade would have lost (−12.23%, stopped 11:14 on the 2m close back through the
+  EMA13) — the finding is the mechanism, not the P&L. Shared-engine change, logged in `PLATFORM-RULES.md`.
+  Two related mismatches are **left alone and proposed only**: (a) the same pre-check has no shadow-book
+  exemption, while the RiskGate skips %-of-equity caps for `kind == "shadow"` (2026-09-01 precedent) —
+  a shadow book with negative cash is currently blocked from every option entry on this path; (b) nothing
+  on this path checks buying power, so a book with real equity but no cash can now be sized into an
+  order it could not fund at a real broker. Neither bites Team2 on a sim book.
+
+- **F20 reinforced (2026-09-04 12:00–12:14 ET)** IWM reproduced F20 within the same session: the 11:45–12:00
+  15m candle closed above the PM high 295.92 → `pm_break` up, calls to the PDH zone; the 12:14 retest at
+  **exactly 295.92** was refused `skip_no_trade_zone`. That is three PM-break setups today (SPY 10:44,
+  IWM 12:14, and SPY's own EMA13 touch only entered once the EMA had drifted *below* the range) against
+  zero entries taken at the anchor. F20 is not a rare edge — on a range day it is the whole setup class.
+  Still **not built**; sizing is a money rule.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

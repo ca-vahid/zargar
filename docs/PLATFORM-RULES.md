@@ -327,6 +327,22 @@ runtime ones to `execution.*`).
   Reduce-only exits were and remain unblockable either way. Test:
   `test_riskgate.py::test_auto_halt_spares_the_shadow_record_manual_blocks_all`.
 
+- **2026-09-04 · The premium pre-check in `planrunner` compared premium against CASH, not equity.**
+  `PlanRunner._enter`'s options pre-check (the one that exists so a plan can fall back to shares
+  *before* the RiskGate rejects an order) read
+  `pf = positions.portfolio(pid); eq = pf.get("equity") or pf.get("cash")`. `positions.portfolio()`
+  returns the cached portfolio row — id / name / kind / cash / baseCurrency — which carries **no
+  `equity` key**; equity is the async `positions.equity(pid)`. So the pre-check always fell through
+  to cash and refused every option entry in a book that is merely fully invested. It was therefore
+  strictly stricter than the RiskGate it mirrors (`risk.py` l.263 uses `await positions.equity(...)`),
+  and silently: the message even says "equity". Cost Team2 its first auto order (2026-09-04 11:08 ET,
+  SPY 768P, premium $1,014 vs a Practice book with $8,618 equity and −$267 cash; the gate would have
+  passed it at 50%). Fixed to await the real equity — one line, no behaviour added, the RiskGate is
+  still the authority. Team2 F22. Two deliberate non-changes, flagged for decision: the pre-check has
+  no `kind == "shadow"` exemption (the RiskGate has had one since 2026-09-01, so shadow books with
+  negative cash are blocked from options on this path), and nothing on this path checks buying power,
+  so a fully-invested book can now be sized into an order it could not fund at a real broker.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

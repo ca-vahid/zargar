@@ -2302,8 +2302,13 @@ class PlanRunner(SessionListener):
                 est = float(contract.get("ask") or contract.get("mid") or 0.0) * 100.0 * max(1, n_est)
                 cap = float(s.get("risk.max_option_premium_notional", 0.0) or 0.0)
                 pct_cap = float(s.get("risk.max_option_premium_pct", 0.0) or 0.0)
-                pf = self.engine.positions.portfolio(cfg.portfolio_id) or {}
-                eq = float(pf.get("equity") or pf.get("cash") or 0.0)
+                # equity, not cash: `positions.portfolio()` returns the cached row
+                # (name/kind/cash/…) which carries NO "equity" key, so this silently
+                # fell back to CASH and refused every option entry in a book that is
+                # simply fully invested. That made this pre-check stricter than the
+                # RiskGate it exists to mirror (risk.py uses `positions.equity()`)
+                # and cost Team2 its first live order on 2026-09-04 (F22).
+                eq = float(await self.engine.positions.equity(cfg.portfolio_id) or 0.0)
                 if est > 0 and cap and est > cap:
                     blocked = f"premium ≈${est:,.0f} exceeds the ${cap:,.0f} per-order cap (risk.max_option_premium_notional)"
                 elif est > 0 and pct_cap and eq and est > eq * pct_cap / 100.0:
