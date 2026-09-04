@@ -104,13 +104,28 @@ class PremiumModel:
 
     def pick_strike(self, spot: float, ts_ms: int, direction: str, *, target_premium: float,
                     premium_floor: float, step: float = 1.0, expiry: dt.date | None = None,
-                    max_steps: int = 40) -> tuple[float, float] | None:
-        """V1/F5: walk OTM from the first strike beyond spot until the model ask <= target;
-        stop before dropping under the floor. Returns (strike, mark) or None."""
+                    max_steps: int = 40, mode: str = "closest") -> tuple[float, float] | None:
+        """V1/F5: the "~$0.50 contract". `mode="closest"` (F36, default): of the OTM strikes whose
+        mark lies in [floor, 1.5 x target], the one CLOSEST to the target — the same rule the live
+        picker applies to real asks, so a contract priced within a cent of the target no longer
+        sends the model one strike further out than the book (QQQ 2026-09-04 14:14: 716 @ 0.26 vs
+        717 @ 0.59). `mode="first_under"` is the legacy walk. Returns (strike, mark) or None."""
         call = direction == "long"
         k = math.ceil(spot / step) * step if call else math.floor(spot / step) * step
         if (call and k <= spot) or (not call and k >= spot):
             k = k + step if call else k - step
+        if mode == "closest":
+            cands: list[tuple[float, float]] = []
+            for _ in range(max_steps):
+                m = self.mark(spot, k, ts_ms, call=call, expiry=expiry)
+                if premium_floor <= m <= target_premium * 1.5:
+                    cands.append((k, m))
+                if m < premium_floor:
+                    break
+                k = k + step if call else k - step
+            if not cands:
+                return None
+            return min(cands, key=lambda km: (abs(km[1] - target_premium), km[1]))
         best = None
         for _ in range(max_steps):
             m = self.mark(spot, k, ts_ms, call=call, expiry=expiry)

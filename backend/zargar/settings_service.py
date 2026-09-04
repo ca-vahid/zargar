@@ -119,6 +119,12 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.base_tol_atr": 1.0,
     "techniques.team2.trim_cue": "premium",          # premium | new_extreme (X1 "new high/low of day")
     "techniques.team2.chase_cap_mult": 1.5,          # F14: entry limit <= target_premium x this (the premium band)
+    "techniques.team2.premium_pick": "closest",      # F36: model and live pick the strike CLOSEST to the target
+    "techniques.team2.zone_tol_atr": 0.0,            # F27: scenario needs a close beyond the zone by this x ATR (off)
+    "techniques.team2.flip_body_ratio": 0.0,         # F27: body/range a scenario candle must have (off)
+    "techniques.team2.premium_stop_basis": "mid",    # F30: the live premium stop measures mid vs paid (EM keeps bid)
+    "techniques.team2.premium_stop_min_ticks": 3,    # F30: never a stop tighter than 3 ticks on a cheap contract
+    "techniques.team2.losses_desk_wide": True,       # F29: max_losses_per_day counts the whole desk (SPY+QQQ+IWM)
     "techniques.team2.hod_target": "reentry",        # off | reentry | always (X3b running HOD/LOD as the target)
     "techniques.team2.hod_target_min_atr": 1.0,
     "techniques.team2.add_on_retest": True,          # X5 trim-and-add

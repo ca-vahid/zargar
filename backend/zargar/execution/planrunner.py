@@ -539,7 +539,14 @@ class PlanRunner(SessionListener):
                                               stage="option_quote_gap")
                     else:
                         self._quote_breaches.pop(nkey, None)
-                    preason = premium_stop_breach(tr, obid, stop_pct=prem_pct)
+                    # F30: the basis is per technique — EM keeps the real bid; Team2 measures the mid so a
+                    # one-cent spread on a $0.34 contract is not an eighth of the stop budget — and a
+                    # tick floor keeps cheap contracts from being stopped by their own spread
+                    basis = str(self.rt("premium_stop_basis", "bid") or "bid")
+                    oask = float(oq.ask) if oq is not None and oq.ask and oq.ask > 0 else None
+                    pprice = ((obid + oask) / 2.0) if (basis == "mid" and obid and oask) else obid
+                    preason = premium_stop_breach(tr, pprice, stop_pct=prem_pct, basis=basis,
+                                                  min_ticks=int(self.rt("premium_stop_min_ticks", 0) or 0))
                     pkey = (ap.run_id, tr.trigger_id + "~prem")
                     if preason is None:
                         self._quote_breaches.pop(pkey, None)
@@ -1447,6 +1454,21 @@ class PlanRunner(SessionListener):
         would roughly realize. 0 when no quote is available (never guessed)."""
         return sum(self._trade_unrealized(ap, t) for t in ap.trades.values())
 
+    def _fees_paid(self, tr: Trade) -> float:
+        """F32: commissions + regulatory fees the book actually paid on this trade (options: per
+        contract, entry + every exit fill). The loss halts count them — QQQ 2026-09-04 paid $99.84 on
+        two round trips while the halt read the gross −$354."""
+        if tr.instrument != "options" or tr.filled_qty <= 0:
+            return 0.0
+        s = self.engine.settings
+        per = float(self.rt("fee_per_contract", 0.0) or 0.0) or (
+            float(s.get("options.fee_per_contract", 0.0) or 0.0) + float(s.get("sim.reg_fee_per_contract", 0.0) or 0.0))
+        exited = sum(float(x.get("filledQty") or 0.0) for x in tr.exits)
+        return per * (float(tr.filled_qty) + exited)
+
+    def _net_realized(self, ap: ArmedPlan) -> float:
+        return sum(t.realized_pnl - self._fees_paid(t) for t in ap.trades.values())
+
     async def _maybe_technique_loss_halt(self, ap: ArmedPlan) -> bool:
         """Per-TECHNIQUE, per-book day loss (`techniques.<id>.daily_loss_halt_pct` → `execution.…`,
         0 = off): once this technique's realised loss plus its open positions marked at the bid, across
@@ -1460,7 +1482,7 @@ class PlanRunner(SessionListener):
         mine = [o for o in self._armed.values() if o.config.portfolio_id == pid]
         total = 0.0
         for o in mine:
-            total += sum(t.realized_pnl for t in o.trades.values()) + min(0.0, self._unrealized(o))
+            total += self._net_realized(o) + min(0.0, self._unrealized(o))
         if total >= 0:
             return False
         eq = 0.0
@@ -1491,7 +1513,7 @@ class PlanRunner(SessionListener):
         limit = float(ap.config.daily_loss_limit or 0)
         if limit <= 0 or ap.status not in ("armed", "paused"):
             return False
-        realized = sum(t.realized_pnl for t in ap.trades.values())
+        realized = self._net_realized(ap)       # F32: net of commissions
         unreal = self._unrealized(ap)
         total = realized + min(0.0, unreal)     # open gains do not license bigger losses
         if total > -limit:
@@ -2353,6 +2375,20 @@ class PlanRunner(SessionListener):
                 # RiskGate it exists to mirror (risk.py uses `positions.equity()`)
                 # and cost Team2 its first live order on 2026-09-04 (F22).
                 eq = float(await self.engine.positions.equity(cfg.portfolio_id) or 0.0)
+                # F33 (2026-09-04): the loss halt used to be judged only AFTER the entry — QQQ opened
+                # $1,062 of premium with $41 of budget left and was flattened a minute later. Refuse an
+                # entry whose own stop-loss (premium x premium_stop_pct) is bigger than what remains.
+                limit = float(cfg.daily_loss_limit or 0.0)
+                if limit > 0 and est > 0 and blocked is None:
+                    used = -(self._net_realized(ap) + min(0.0, self._unrealized(ap)))
+                    left = limit - max(0.0, used)
+                    prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
+                    at_risk = est * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
+                    if at_risk > left:
+                        blocked = (f"loss budget: this entry risks ≈${at_risk:,.0f} at its premium stop but only "
+                                   f"${left:,.0f} of the ${limit:,.0f} daily loss limit is left (F33)")
+                        self._log(ap, "skip_loss_budget", f"{trade.trigger_id}: {blocked}", trigger=trade.trigger_id,
+                                  atRisk=round(at_risk, 2), left=round(left, 2), limit=limit)
                 if est > 0 and cap and est > cap:
                     blocked = f"premium ≈${est:,.0f} exceeds the ${cap:,.0f} per-order cap (risk.max_option_premium_notional)"
                 elif est > 0 and pct_cap and eq and est > eq * pct_cap / 100.0:

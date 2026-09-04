@@ -275,7 +275,8 @@ def test_trend_day_scenario_1_fires_on_the_pullback_and_pays():
     kinds = [e["event"] for e in res.events]
     assert "scenario" in kinds, res.events[:5]
     sc = next(e for e in res.events if e["event"] == "scenario")
-    assert sc["scenario"] == 1 and sc["time"] == "09:30"    # the 09:30 15m bar closed above the zone (event ts = bar open)
+    assert sc["scenario"] == 1 and sc["time"] == "09:45"    # the 09:30 15m bar closed above the zone (F25: event ts = bar CLOSE)
+    assert sc["scenario"] == 1 and "@09:30" in sc.get("setup", res.setups[0]["id"])  # the setup keeps the candle's open in its name
     fires = [e for e in res.events if e["event"] == "fire"]
     assert fires, [e for e in res.events][:12]
     f = fires[0]
@@ -432,7 +433,7 @@ def test_entry_cutoff_and_loss_cap_say_why_the_read_went_quiet():
     # a normal day says it once too, at the real 15:30 cutoff — one row per session, not per bar
     _, wide = run(prev, today)
     normal = [e for e in wide.events if e["event"] == "skip_last_entry"]
-    assert len(normal) == 1 and normal[0]["time"] == "15:30"
+    assert len(normal) == 1 and normal[0]["time"] == "15:32"        # F25: the first 2m CLOSE past the 15:30 cutoff
 
     # loss cap: zero losses allowed → the first loss closes the symbol for the day, out loud
     _, capped = run(prev, today, max_losses_per_day=0)

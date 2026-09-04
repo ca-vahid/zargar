@@ -240,7 +240,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   in the bias direction, falling back to the old max when none matches). Display only — no gate, count or
   entry changes. Verified against today's three live reads: SPY 1 → 0, QQQ and IWM unchanged.
 
-- **F25 (2026-09-04 13:00 ET, NOT fixed — read labelling)** Read events are stamped with the OPEN time of
+- **F25 (2026-09-04 13:00 ET, FIXED 15:00 ET — one clock, see change log)** Read events are stamped with the OPEN time of
   the 2m bar that produced them, while trades and exits are stamped with that bar's CLOSE (`end_ts`).
   Within one read the same entry therefore carries two clocks: IWM's fire event says **12:14** while its
   own trade record says `entryTs` **12:16**, and the fill price (295.96) is the close of the 12:14–12:15
@@ -274,7 +274,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `skip_loss_cap` names the count and the cap. Purely additive to the read; it changes no entry, exit or
   size. Both are journaled (`TechniquePlanTriggerSkipped`) and iconed in the Armed timeline. Every full
   session now carries exactly one `skip_last_entry` at 15:30 — that row IS the discipline record.
-- **F27 (2026-09-04 13:40 ET, NOT fixed — `zone_tol_atr` is a dead knob)** `rules.py:37` declares
+- **F27 (2026-09-04 13:40 ET, FIXED 15:00 ET — wired, shipped at 0)** `rules.py:37` declares
   `zone_tol_atr: float = 0.0` ("PDH/PDL zones are their own tolerance, L1.2") and it is published in
   `GET /api/team2/status.thresholds`, but **nothing in the codebase reads it** — the only hits are the
   dataclass line and its own `.pyc`. `ScenarioTracker.on_close` flips the desk's bias on a bare
@@ -289,7 +289,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   have been buying calls into a rejection. Proposal: wire `zone_tol_atr` for real (`close > top + tol·ATR`)
   and/or require `decisive_body_ratio` on a flip, shipped at **0.0 / off** so behaviour is unchanged until
   the walk-forward picks the value. Threshold change — user's call, not the watch's.
-- **F28 (2026-09-04 13:40 ET, NOT fixed — the journal calls structure "skipped")** `runner.py` journals
+- **F28 (2026-09-04 13:40 ET, FIXED 15:00 ET — `TechniquePlanRead`)** `runner.py` journals
   the informational read events `scenario`, `pm_break` and `late_touch` under
   `ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED`, alongside the genuine `skip_*` rows. The bias flip and the PM break
   are the two **structural** events of the method — the ones that arm the L2.6/L2.7 setups — and the
@@ -299,7 +299,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   event constant (`TechniquePlanRead` or similar) in `zargar/events.py`. Not built here: `events.py` is
   shared vocabulary, the journal is append-only so the fix splits today's history, and EM's review CLI
   would want a look. Proposed.
-- **F29 (2026-09-04 13:40 ET, NOT fixed — open method question)** `max_losses_per_day` is counted
+- **F29 (2026-09-04 13:40 ET, DECIDED + BUILT 15:00 ET — desk-wide, `losses_desk_wide`)** `max_losses_per_day` is counted
   **per symbol** (`session.py` runs one symbol, `losses_today` is local to it) while
   `max_concurrent_positions` is deliberately counted **across all three plans** (A12,
   `open_positions_across_plans`). So the code already treats SPY/QQQ/IWM as one desk for risk *taken* but
@@ -309,7 +309,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   not one per ticker. Question for the user: should `max_losses_per_day` be desk-wide like A12? Cheap to
   build (the runner already has `open_positions_across_plans`), but it is a money rule.
 
-- **F30 (2026-09-04 14:15 ET, NOT fixed — the live premium stop pays the spread out of the stop budget)**
+- **F30 (2026-09-04 14:15 ET, FIXED 15:00 ET — mid basis + 3-tick floor for Team2)**
   The desk's **first real Team2 order** (BUY 30 QQQ260904P00716000 @ **$0.34**, 13:48 ET, Practice sim)
   was closed 10 minutes later by the live premium stop: *"bid 0.24 is 29% below the 0.34 paid (limit
   25%)"* — filled 0.24, realized **−$300** plus $62.40 commission = **−$362.40**. Two things about that:
@@ -339,7 +339,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   (stop)"** when a filled trade for that setup is closed, so alert mode (which mints trades but never
   fills) stays silent. Same class of divergence at the 15:45 flatten and after a failed-exit retry.
 
-- **F32 (2026-09-04 14:45 ET, NOT fixed — the loss halt does not count commissions)** The per-plan
+- **F32 (2026-09-04 14:45 ET, FIXED 15:00 ET — halts net of fees)** The per-plan
   halt (`planrunner._maybe_loss_halt`) sums `trade.realized_pnl`, which is `(fill − avg_fill) × qty ×
   100` — **gross**. QQQ's two round trips today cost **$99.84** in commissions (executions table:
   30 contracts 31.20 + 31.20, 18 contracts 18.72 + 18.72) against a gross −$354.18, so the book lost
@@ -350,7 +350,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   Proposal: mark the halt (and the per-technique `daily_loss_halt_pct`) off the book's own realised
   P&L, or subtract `fee_per_contract × qty × legs`. **Shared engine + money rule — the user's call.**
 
-- **F33 (2026-09-04 14:45 ET, NOT fixed — the halt is checked after the entry, never before it)**
+- **F33 (2026-09-04 14:45 ET, FIXED 15:00 ET — `skip_loss_budget` before routing)**
   `Team2Runner._on_bar` runs `_act` (which can fire, size and route an order) and only then calls
   `_maybe_loss_halt`. Live case: at **14:16** the QQQ plan had **$41** of gross loss budget left
   (−$300 realised against −$341.38) and opened **18 × QQQ260904P00717000 @ $0.59 = $1,062**. One
@@ -377,7 +377,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `stopReason`. `Team2Service.runs()` now joins that row and returns `status`/`stopReason`; the page
   shows *"disarmed — loss halt: realised −300.00 + open −54.00 marked at bid crossed −341.38"*.
 
-- **F36 (2026-09-04 14:50 ET, NOT fixed — the read and the book bought different contracts)** On
+- **F36 (2026-09-04 14:50 ET, FIXED 15:00 ET — closest-to-target in both paths)** On
   QQQ's 14:14 fire the read says *"buy put **716** ≈ **$0.26**"* while the live order was **717 P at
   $0.59** — a different strike at **2.3× the premium**, so that trade's model P&L (−19% on 0.26) and
   book P&L (−$91.62 on 0.59) are not comparable at all. Cause: both aim at `target_premium` 0.60 but
@@ -421,6 +421,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   annotated the high at 774.03 and his pre-market plan said "room up to 775.29" (notes/x/images INDEX,
   `2095599035113693522-1.jpg`). Zone construction (L1.2) and target discovery (L3.1) reproduce his sheet to the cent.
 | 2026-09-04 | **F17 fixed**: the kill switch no longer suppresses Team2's alert-mode read. `_fire_from_event`'s halt gate now applies to proposal/auto only (alert places nothing); an alert fire during a halt carries `haltedAtFire: true`. Restores live-vs-replay parity while the shared Practice portfolio is halted | market watch 10:00 ET; QQQ 10:02 fire lost to `halt_skip`; `tests/test_team2_runner.py::test_alert_mode_still_reads_the_tape_while_halted` fails without the fix | Team2 desk |
+| 2026-09-04 | **F25–F36 closed (user 2026-09-04 14:50 ET: "implement all the fixes")** — F25 one clock: every read event stamped at its bar's CLOSE (setup ids keep the open in their name); F27 `zone_tol_atr` wired + `flip_body_ratio`, both shipped at 0 (unchanged until the walk-forward); F28 structural reads journal as `TechniquePlanRead`, not skips; F29 `losses_desk_wide=True` — `max_losses_per_day` counts SPY+QQQ+IWM together (`skip_loss_cap_desk`); F30 `premium_stop_basis=mid` + `premium_stop_min_ticks=3` for Team2 (EM keeps bid, 0); F32 both loss halts net of commissions; F33 an entry whose premium-stop risk exceeds the remaining daily budget is refused before routing (`skip_loss_budget`); F36 `premium_pick=closest` — model and live pick the strike CLOSEST to the target in [floor, 1.5x]. F34/F35 (watch job) deployed with them | this session's QQQ trades | Team2 desk |
 | 2026-09-04 | Halt scopes (platform, built by the desk): the daily-loss breaker now halts only the losing BOOK (`risk.daily_loss_halt_scope=portfolio`), and Team2 has its own `techniques.team2.daily_loss_halt_pct` = 10 — after losing 10% of the book in a day (≈ two full-size stops) its plans PAUSE for the day while the other techniques carry on. `risk.daily_loss_halt_pct` stays at the 12 set this morning for practice; re-tighten before real money | PLATFORM-RULES 2026-09-04 | Team2 desk |
 | 2026-09-04 | **F15 + F20 built** (user 2026-09-04 13:20 ET: "can we fix these all?"). F15: `sizing_bucket` judges the PM no-trade zone BEFORE "beyond yesterday's zone" (a gap-day PM range beyond the PDH/PDL zone is still chop), and on gap days a 15m close beyond the PM level arms `pm_break_*` even outside yesterday's range (L2.4). F20: a `pm_break_*` setup's touch within the tolerance of its own anchor, close on the trade's side, is sized SMALL (the V6 rung) instead of refused — the L2.6/L2.7 retest entry; deeper inside the range V6 stands. `pm_retest` event names it. Watch the sweep: both change which trades are taken | TRADING-RULES F15/F20 evidence (SPY 10:44 → 769.05, IWM 12:14–12:34, QQQ 10:02) | Team2 desk |
 | 2026-09-04 | F18: dips skipped because the range day had not cleared its PM level (B3/A4) or because they sat in the pre-market no-trade zone (V6/B5) no longer consume the two-pullback allowance (D9). Live case: IWM scenario 3 showed "touches 5, entries 0" by 11:20 ET — every dip was in the no-trade band, and the setup was spent before it ever became tradeable. Engulfing bars still count (they were pullbacks, just bad bars) | live 2026-09-04 IWM | Team2 desk |

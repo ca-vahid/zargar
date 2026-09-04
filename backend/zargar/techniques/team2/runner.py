@@ -178,7 +178,7 @@ class Team2Runner(PlanRunner):
                 spot = float(q.last)
             pick = select_by_premium(chain, spot, trade.direction, target_premium=rules.target_premium,
                                      premium_floor=rules.premium_floor, expiry=expiry, today=today,
-                                     is_0dte=(expiry == today.isoformat()))
+                                     is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick)
             if pick is None:
                 trade.errors.append(f"no {'call' if trade.direction == 'long' else 'put'} between "
                                     f"${rules.premium_floor:.2f} and ${rules.target_premium:.2f} at {expiry}")
@@ -342,10 +342,13 @@ class Team2Runner(PlanRunner):
             else:
                 self._log(ap, what, e.get("why", what), **{k: v for k, v in e.items()
                                                           if k not in ("event", "why", "regime")})
-                if journal and what in ("scenario", "pm_break", "late_touch", "skip_engulfing",
+                if journal and what in ("scenario", "pm_break", "late_touch", "pm_retest", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
                                         "skip_reentries", "skip_last_entry", "skip_loss_cap"):
-                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
+                    # they get their own journal kind so skip counts mean skips
+                    kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
+                    await self.engine.journal.append(kind, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": str(e.get("setup") or e.get("scenario") or what),
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},
                         aggregate_type="technique_run", aggregate_id=ap.run_id)
@@ -369,6 +372,19 @@ class Team2Runner(PlanRunner):
         open_or_working = sum(1 for t in ap.trades.values() if t.status in ("fired", "submitting", "working", "open"))
         if ap.config.mode == "auto" and open_or_working >= max(1, ap.config.max_open_trades):
             self._log(ap, "max_open_skip", f"{tid}: fired but already holding {open_or_working}", trigger=tid)
+            return
+        # F29: the author trades ONE book — max_losses_per_day counts the whole desk (model losses across
+        # every plan, plus real closed losers in money modes), not one budget per symbol
+        rules_now = self.rules()
+        if getattr(rules_now, "losses_desk_wide", True) and self.losses_across_plans() >= int(rules_now.max_losses_per_day):
+            self._log(ap, "skip_loss_cap_desk",
+                      f"{tid}: {self.losses_across_plans()} losing trades across the desk today (max {rules_now.max_losses_per_day}) — "
+                      "done for the day (F29, desk-wide)", trigger=tid)
+            if journal:
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_loss_cap_desk",
+                    "losses": self.losses_across_plans(), "max": int(rules_now.max_losses_per_day), "ts": e.get("ts")},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id)
             return
         # A12: SPY/QQQ/IWM fire together on index moves — one Team2 position across ALL its plans
         # (money modes only; alert/proposal keep recording every read)
@@ -572,6 +588,17 @@ class Team2Runner(PlanRunner):
                                    name=f"add-{ap.symbol}-{tid}")
         ap.fire_tasks[tid] = task
         task.add_done_callback(lambda t, tid=tid, ap=ap: ap.fire_tasks.pop(tid, None))
+
+    def losses_across_plans(self) -> int:
+        """F29: losing trades today across every armed Team2 plan — the model's closed losers per plan,
+        or the book's real closed losers where a plan traded for real (the larger of the two per plan)."""
+        n = 0
+        for ap in self._armed.values():
+            sim = self._last_sim.get(ap.run_id) or {}
+            model = sum(1 for t in (sim.get("trades") or []) if not t.get("win"))
+            real = sum(1 for t in ap.trades.values() if t.status == "closed" and t.filled_qty > 0 and t.realized_pnl < 0)
+            n += max(model, real)
+        return n
 
     def open_positions_across_plans(self) -> int:
         """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap)."""

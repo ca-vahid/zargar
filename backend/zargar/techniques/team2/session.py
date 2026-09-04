@@ -157,6 +157,10 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     events: list[dict] = []
 
     def note(ts: int, what: str, why: str, **detail) -> None:
+        # F25 (2026-09-04): ONE clock — every read event is stamped at the CLOSE of the bar that
+        # produced it (2m end_ts, 15m bar.ts + 15m), the same instant the trades already use;
+        # setup ids keep the bar OPEN in their name ("scenario_1@09:30") because that is how the
+        # method names a candle. Nothing is known before the close (no look-ahead either way).
         events.append({"ts": ts, "time": _hhmm(ts), "event": what, "why": why, **detail})
 
     def note_once(s: "Setup", ts: int, what: str, why: str, **detail) -> None:
@@ -241,7 +245,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             f15 = pending_15.pop(0)
             fifteen_seen.append(f15)
             before = scen.bias.scenario
-            bias = scen.on_close(f15)
+            bias = scen.on_close(f15, tol=rules.zone_tol_atr * float(r.atr or 0.0), min_body_ratio=rules.flip_body_ratio)
             if bias.scenario != before and bias.scenario is not None:
                 n = bias.scenario
                 tgt = targets.get("above") if n == 1 else targets.get("below") if n == 4 else (
@@ -250,7 +254,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                     if not s.dead and s.kind.startswith("scenario_"):
                         s.dead, s.dead_reason = True, f"bias flipped to {SCENARIO_LABEL[n]} (D10)"
                 setup_for(f"scenario_{n}", bias.direction, bias.level, tgt, f15.ts, n not in TREND_SCENARIOS)
-                note(f15.ts, "scenario", f"15m body close {'above' if bias.direction == 'long' else 'below'} "
+                note(f15.ts + rules.confirm_tf_min * 60_000, "scenario", f"15m body close {'above' if bias.direction == 'long' else 'below'} "
                      f"{bias.level:.2f}: scenario {n} ({SCENARIO_LABEL[n]}) → focus on "
                      f"{'calls' if bias.direction == 'long' else 'puts'} (B1/C1)",
                      scenario=n, close=round(f15.close, 4), level=round(bias.level, 4),
@@ -262,13 +266,13 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                 pm_up_done = True
                 tgt = zones["pdh"].bottom if pmh < zones["pdh"].bottom else targets.get("above")
                 setup_for("pm_break_up", "long", float(pmh), tgt, f15.ts, range_day=False)
-                note(f15.ts, "pm_break", f"15m close above the pre-market high {pmh:.2f} → calls up to the PDH zone (L2.5/V7)",
+                note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break", f"15m close above the pre-market high {pmh:.2f} → calls up to the PDH zone (L2.5/V7)",
                      level=round(float(pmh), 4), close=round(f15.close, 4))
             if pml is not None and not pm_dn_done and body_closed_beyond(f15, pml, "short") and (gap_day or f15.close >= zones["pdl"].bottom):
                 pm_dn_done = True
                 tgt = zones["pdl"].top if pml > zones["pdl"].top else targets.get("below")
                 setup_for("pm_break_down", "short", float(pml), tgt, f15.ts, range_day=False)
-                note(f15.ts, "pm_break", f"15m close below the pre-market low {pml:.2f} → puts down to the PDL zone (L2.5/V7)",
+                note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break", f"15m close below the pre-market low {pml:.2f} → puts down to the PDL zone (L2.5/V7)",
                      level=round(float(pml), 4), close=round(f15.close, 4))
 
         # ---- manage an open position on this 2m close (S/X)
@@ -344,7 +348,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                     p.adds += 1
                     p.added.append({"ts": end_ts, "time": _hhmm(end_ts), "fraction": add_f, "premium": add_fill.premium,
                                     "spot": round(b2.close, 4), "avgPremium": round(new_avg, 4)})
-                    note(b2.ts, "add", f"{p.setup.id}: EMA13 {r.ema_fast:.2f} held again after the trim — re-up "
+                    note(end_ts, "add", f"{p.setup.id}: EMA13 {r.ema_fast:.2f} held again after the trim — re-up "
                          f"{add_f:.2f} of the position at ≈ ${add_fill.premium:.2f} (average now ${new_avg:.2f}; X5 trim-and-add)",
                          setup=p.setup.id, fraction=add_f, premium=add_fill.premium, avgPremium=round(new_avg, 4),
                          spot=round(b2.close, 4), adds=p.adds, prevAvgPremium=round(prev_avg, 4))
@@ -358,7 +362,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             # (the pre-09:45 side is just "the session has not confirmed a 15m bar yet").
             if m >= rules.last_entry_min and not last_entry_noted:
                 last_entry_noted = True
-                note(b2.ts, "skip_last_entry",
+                note(end_ts, "skip_last_entry",
                      f"past {rules.last_entry_min // 60:02d}:{rules.last_entry_min % 60:02d} — no new entries, "
                      f"managing what is open until the {rules.flatten_min // 60:02d}:{rules.flatten_min % 60:02d} "
                      "flatten (D6/C3)")
@@ -366,7 +370,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         if rules.avoid_event_days and plan.get("eventDay"):
             if not event_day_noted:
                 event_day_noted = True
-                note(b2.ts, "skip_event_day", f"macro event day ({plan.get('eventDayName') or 'scheduled release'}) — "
+                note(end_ts, "skip_event_day", f"macro event day ({plan.get('eventDayName') or 'scheduled release'}) — "
                      "no new entries (D-4; techniques.team2.avoid_event_days)")
             continue
         if losses_today >= rules.max_losses_per_day:
@@ -374,7 +378,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             # read has to show, not an absence of rows.
             if not loss_cap_noted:
                 loss_cap_noted = True
-                note(b2.ts, "skip_loss_cap",
+                note(end_ts, "skip_loss_cap",
                      f"{losses_today} losing trades today (max {rules.max_losses_per_day}) — done taking "
                      "entries in this symbol for the session (D-3)")
             continue
@@ -434,7 +438,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                             if ((x.close < ema) if long else (x.close > ema))]
             if rules.pullback_max_bars > 0 and len(recent_wrong) > rules.pullback_max_bars and not s._stalled:
                 s._stalled = True
-                note(b2.ts, "pullback_stalled", f"{s.id}: price has closed on the wrong side of the EMA13 for more than "
+                note(end_ts, "pullback_stalled", f"{s.id}: price has closed on the wrong side of the EMA13 for more than "
                      f"{rules.pullback_max_bars} bars — that is a consolidation, not a dip (A6)", setup=s.id)
             continue
         s._stalled = False
@@ -458,7 +462,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         if s.range_day and rules.range_day_confirmation:
             pm_level = pml if long else pmh
             if pm_level is not None and ((b2.close < pm_level) if long else (b2.close > pm_level)):
-                note_once(s, b2.ts, "skip_range_confirmation", f"range day: price has not cleared the PM level {pm_level:.2f} (B3/A4) — not counted as a pullback",
+                note_once(s, end_ts, "skip_range_confirmation", f"range day: price has not cleared the PM level {pm_level:.2f} (B3/A4) — not counted as a pullback",
                           setup=s.id, touch=idx)
                 continue
         bucket = sizing_bucket(entry_spot, zones, pmh, pml)
@@ -470,32 +474,32 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         if (bucket == "none" and s.kind.startswith("pm_break") and abs(entry_spot - s.anchor) <= max(tol, rules.tick)
                 and ((b2.close > s.anchor) if long else (b2.close < s.anchor))):
             bucket = "small"
-            note(b2.ts, "pm_retest", f"{s.id}: retest of the pre-market level {s.anchor:.2f} itself — the L2.6/L2.7 entry, "
+            note(end_ts, "pm_retest", f"{s.id}: retest of the pre-market level {s.anchor:.2f} itself — the L2.6/L2.7 entry, "
                  "small size (F20)", setup=s.id, touch=idx, spot=round(entry_spot, 4))
         mult = {"full": rules.size_full, "small": rules.size_small, "none": rules.size_none}[bucket]
         if mult <= 0:
-            note_once(s, b2.ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5) — not counted as a pullback",
+            note_once(s, end_ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5) — not counted as a pullback",
                       setup=s.id, touch=idx, bucket=bucket)
             continue
         s._skipped = None
         s.touches += 1
         if idx > rules.pullback_max_touches:
-            note(b2.ts, "late_touch", f"touch #{idx} of {s.id} — beyond the first {rules.pullback_max_touches}, watch-only (D9/P6)",
+            note(end_ts, "late_touch", f"touch #{idx} of {s.id} — beyond the first {rules.pullback_max_touches}, watch-only (D9/P6)",
                  setup=s.id, touch=idx, spot=round(entry_spot, 4))
             continue
         if avg > 0 and body > rules.pullback_body_mult * avg:
-            note(b2.ts, "skip_engulfing", f"touch #{idx}: body {body:.2f} > {rules.pullback_body_mult:.1f}× avg {avg:.2f} — an engulfing lunge, not a drift (A6/F4)",
+            note(end_ts, "skip_engulfing", f"touch #{idx}: body {body:.2f} > {rules.pullback_body_mult:.1f}× avg {avg:.2f} — an engulfing lunge, not a drift (A6/F4)",
                  setup=s.id, touch=idx)
             continue
         if s.entries >= 1 + rules.max_reentries:
-            note(b2.ts, "skip_reentries", f"{s.id} already entered {s.entries}× (max {1 + rules.max_reentries}, A8)", setup=s.id)
+            note(end_ts, "skip_reentries", f"{s.id} already entered {s.entries}× (max {1 + rules.max_reentries}, A8)", setup=s.id)
             continue
         if rules.shrink_after_win and day_pnl_pct > 0:
             mult = round(mult * 0.5, 4)                # P7/D14: protect the day after a win
         pick = model.pick_strike(entry_spot, end_ts, s.direction, target_premium=rules.target_premium,
-                                 premium_floor=rules.premium_floor, step=rules.strike_step)
+                                 premium_floor=rules.premium_floor, step=rules.strike_step, mode=rules.premium_pick)
         if pick is None:
-            note(b2.ts, "skip_no_contract", f"no strike prices between ${rules.premium_floor:.2f} and ${rules.target_premium:.2f} (V1)", setup=s.id)
+            note(end_ts, "skip_no_contract", f"no strike prices between ${rules.premium_floor:.2f} and ${rules.target_premium:.2f} (V1)", setup=s.id)
             continue
         strike, mark = pick
         fill = model.buy(mark)
@@ -518,7 +522,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                        extreme=b2.high if long else b2.low, target=target, target_kind=target_kind, avg_fill=fill)
         kind_word = {"ema": "EMA13", "ema48": "EMA48", "level": "level", "base": "base beyond the level",
                      "ema200": "200 EMA flush"}[entry_kind]
-        note(b2.ts, "fire", f"{s.id}: touch #{idx} — {kind_word} at {entry_spot:.2f} "
+        note(end_ts, "fire", f"{s.id}: touch #{idx} — {kind_word} at {entry_spot:.2f} "
              f"held (close {b2.close:.2f}) in a {r.stack} stack — buy {'call' if long else 'put'} {strike:g} "
              f"≈ ${fill.premium:.2f} (T1/T2/V1); size {bucket} ×{mult:g}"
              + (f" — target the {'high' if long else 'low'} of day {target:.2f} (X3b)" if target_kind == "hod" else "")

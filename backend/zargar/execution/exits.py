@@ -92,11 +92,16 @@ def quote_stop_breach(trade, last: float, *, excess_r: float = 0.25, direction: 
     return None
 
 
-def premium_stop_breach(trade, bid: float | None, *, stop_pct: float) -> str | None:
+def premium_stop_breach(trade, bid: float | None, *, stop_pct: float, min_ticks: int = 0, tick: float = 0.01,
+                        basis: str = "bid") -> str | None:
     """Options only: the position's own premium has bled past `stop_pct`% of what
     was paid — theta/IV can do this while the underlying never touches its stop
     (the gap the underlying-based ladder cannot see). Exit-only, like the quote
-    stop. Returns the reason, or None."""
+    stop. Returns the reason, or None.
+
+    F30 (2026-09-04): `bid` is whatever price the caller chose as the basis (the real bid, or the
+    mid under `premium_stop_basis=mid`), and `min_ticks` floors the stop distance so a $0.34
+    contract is never stopped by its own one-cent spread (3 ticks ≈ 9% of that contract)."""
     if stop_pct <= 0 or getattr(trade, "sec_type", "STK") != "OPT":
         return None
     if bid is None or bid < 0 or trade.remaining <= 0:   # bid == 0 IS a (total) bleed
@@ -106,11 +111,11 @@ def premium_stop_breach(trade, bid: float | None, *, stop_pct: float) -> str | N
     paid = float(getattr(trade, "avg_fill", 0) or 0)
     if paid <= 0:
         return None
-    floor = paid * (1.0 - stop_pct / 100.0)
+    floor = min(paid * (1.0 - stop_pct / 100.0), paid - max(0, int(min_ticks)) * float(tick))
     if bid <= floor:
         lost = (paid - bid) / paid * 100.0
-        return (f"premium stop: bid {bid:.2f} is {lost:.0f}% below the {paid:.2f} paid "
-                f"(limit {stop_pct:g}%) — theta/IV bleed the underlying stop cannot see")
+        return (f"premium stop: {basis} {bid:.2f} is {lost:.0f}% below the {paid:.2f} paid "
+                f"(limit {stop_pct:g}%{f', floor {min_ticks} ticks' if min_ticks else ''}) — theta/IV bleed the underlying stop cannot see")
     return None
 
 

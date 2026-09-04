@@ -96,12 +96,19 @@ class ScenarioTracker:
         self.bias.range_day = n not in TREND_SCENARIOS
         return self.bias
 
-    def on_close(self, bar: Bar) -> Bias:
+    def on_close(self, bar: Bar, *, tol: float = 0.0, min_body_ratio: float = 0.0) -> Bias:
+        """F27 (2026-09-04): a scenario is set/flipped on a 15m body close beyond the zone edge by more
+        than `tol` (zone_tol_atr x ATR) on a candle whose body is at least `min_body_ratio` of its range
+        (flip_body_ratio). Both ship at 0 = the bare close, unchanged; the walk-forward picks the values
+        (QQQ 2026-09-04 12:30 flipped on a 0.025 margin, 0.55 body, and flipped back 30 min later)."""
         pdh, pdl = self.pdh, self.pdl
+        rng = max(bar.high - bar.low, 1e-9)
+        if min_body_ratio > 0 and abs(bar.close - bar.open) / rng < min_body_ratio:
+            return self.bias                            # an indecisive candle changes no mind
         if self.bias.scenario is None:
-            if bar.close > pdh.top:
+            if bar.close > pdh.top + tol:
                 return self._set(1, pdh.top, bar)
-            if bar.close < pdl.bottom:
+            if bar.close < pdl.bottom - tol:
                 return self._set(4, pdl.bottom, bar)
             if bar.high >= pdh.bottom and bar.close < pdh.bottom:
                 return self._set(2, pdh.bottom, bar)
@@ -114,9 +121,9 @@ class ScenarioTracker:
             return self._set(2, pdh.bottom, bar)        # failed breakout = rejection
         if s == 4 and bar.close > pdl.top:
             return self._set(3, pdl.top, bar)           # failed breakdown = bounce
-        if s in (2, 3) and bar.close > pdh.top:
+        if s in (2, 3) and bar.close > pdh.top + tol:
             return self._set(1, pdh.top, bar)
-        if s in (2, 3) and bar.close < pdl.bottom:
+        if s in (2, 3) and bar.close < pdl.bottom - tol:
             return self._set(4, pdl.bottom, bar)
         return self.bias
 

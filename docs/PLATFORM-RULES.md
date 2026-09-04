@@ -541,6 +541,14 @@ runtime ones to `execution.*`).
 - 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
   `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
   read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.
+- 2026-09-04 · Shared-engine changes from the Team2 watch findings (all default-neutral for EM/tips):
+  `events.TECHNIQUE_PLAN_READ` (a structural read is not a skip — F28); `exits.premium_stop_breach` takes a
+  `basis` price and a `min_ticks` floor, and PlanRunner resolves `premium_stop_basis` (bid | mid, default bid)
+  and `premium_stop_min_ticks` (default 0) per technique via `rt()` (F30 — Team2 uses mid + 3 ticks); both
+  loss halts read realised P&L NET of commissions (`_fees_paid`, F32); an auto entry whose premium-stop risk
+  exceeds what is left of `daily_loss_limit` is refused before routing (`skip_loss_budget`, F33); the
+  premium-targeted picker `options/pick.select_by_premium` gained `mode="closest"` (F36; the legacy walk is
+  `first_under`). `techniques.<id>.premium_stop_basis` / `premium_stop_min_ticks` are the knobs.
 - 2026-09-04 · **Halts now come in three scopes** (built the same afternoon; was: one global switch that a
   Practice-book loss from one technique engaged for every technique on every book, re-engaging on release):
   1. **Global kill switch** — the HALT button, Telegram `/halt`, or the daily-loss breaker when
