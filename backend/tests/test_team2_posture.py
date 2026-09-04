@@ -159,6 +159,21 @@ async def test_live_premium_trims_beat_the_model(rig, monkeypatch):
     assert snap["team2"]["live"] is None or isinstance(snap["team2"]["live"], list)
 
 
+async def test_never_chase_cap_is_the_premium_band(rig):
+    """F14: the cap must bind when the live ask ran past the method's band, and stay at ask + tick inside it."""
+    eng, sim = rig
+    runner = eng.team2_runner
+    rules = runner.rules()
+    band = round(rules.target_premium * rules.chase_cap_mult, 2)
+    ap = None
+    trade = Trade(trigger_id="t", kind="scenario_1", fired_ts=1, window="team2", entry=1.0, stop=0.9, targets=[])
+    inside = await runner.entry_limit_cap(ap, trade, {"ask": 0.55})
+    assert inside == pytest.approx(0.55 + rules.tick)
+    ran = await runner.entry_limit_cap(ap, trade, {"ask": 1.20})
+    assert ran == pytest.approx(band) and ran < 1.20
+    assert await runner.entry_limit_cap(ap, trade, {"ask": 0}) == pytest.approx(band)
+
+
 async def test_small_positions_do_not_trim_and_adds_are_alerts_outside_auto(rig, monkeypatch):
     eng, sim = rig
     prev = prev_day_bars()

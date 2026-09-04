@@ -116,6 +116,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.base_bars": 3,                 # T7 break & base
     "techniques.team2.base_tol_atr": 1.0,
     "techniques.team2.trim_cue": "premium",          # premium | new_extreme (X1 "new high/low of day")
+    "techniques.team2.chase_cap_mult": 1.5,          # F14: entry limit <= target_premium x this (the premium band)
     "techniques.team2.hod_target": "reentry",        # off | reentry | always (X3b running HOD/LOD as the target)
     "techniques.team2.hod_target_min_atr": 1.0,
     "techniques.team2.add_on_retest": True,          # X5 trim-and-add

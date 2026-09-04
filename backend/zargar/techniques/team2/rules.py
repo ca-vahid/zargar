@@ -74,6 +74,7 @@ class Team2Rules(MarketRules):
     dte_policy: str = "0dte"                # "0dte" | "1dte" (sweep variant)
     target_premium: float = 0.60            # V1/F5: first OTM strike whose ask <= this
     premium_floor: float = 0.20             # never buy below this (the $0.05 lottery)
+    chase_cap_mult: float = 1.5             # F14: never pay more than target_premium x this for the contract (live ask)
     strike_step: float = 1.0                # SPY/QQQ/IWM $1 strikes
 
     # --- Z: sizing (V6/D4) and daily discipline (D14/D-3)
@@ -124,7 +125,8 @@ SETTINGS_MAP: dict[str, str] = {
     "target_exit": "target_exit", "hod_target": "hod_target", "hod_target_min_atr": "hod_target_min_atr",
     "add_on_retest": "add_on_retest", "max_adds": "max_adds",
     "dte_policy": "dte_policy", "target_premium": "target_premium",
-    "premium_floor": "premium_floor", "size_full": "size_full", "size_small": "size_small",
+    "premium_floor": "premium_floor", "chase_cap_mult": "chase_cap_mult",
+    "size_full": "size_full", "size_small": "size_small",
     "max_reentries": "max_reentries", "max_losses_per_day": "max_losses_per_day",
     "max_concurrent_positions": "max_concurrent_positions", "shrink_after_win": "shrink_after_win",
     "avoid_event_days": "avoid_event_days", "fee_per_contract": "fee_per_contract",

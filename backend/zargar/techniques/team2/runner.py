@@ -134,8 +134,17 @@ class Team2Runner(PlanRunner):
         return m, why
 
     async def entry_limit_cap(self, ap: ArmedPlan, trade: Trade, contract: dict) -> float | None:
+        """T6/C2 never chase, anchored to the METHOD's premium band (F14, 2026-09-04): the fire chain
+        re-prices the pick on the live NBBO before asking for the cap, so "ask + a tick" could never
+        bind — a $0.55 pick from the delayed chain was buyable at $1.20 on OPRA. The cap is
+        min(ask + tick, target_premium x chase_cap_mult); PlanRunner rests the entry at the cap and
+        cancels it unfilled (`entry_capped`), which is the method's "if it ran, it ran" (V1/F5)."""
+        rules = self.rules()
+        band = round(float(rules.target_premium) * float(rules.chase_cap_mult), 2)
         ask = float(contract.get("ask") or 0.0)
-        return round(ask + self.rules().tick, 2) if ask > 0 else None   # T6/C2: at the level, never chase
+        if ask <= 0:
+            return band
+        return round(min(ask + rules.tick, band), 2)
 
     async def pick_contract(self, ap: ArmedPlan, trade: Trade) -> dict | None:
         """The premium-targeted 0DTE contract (V1/F5) from the live chain."""

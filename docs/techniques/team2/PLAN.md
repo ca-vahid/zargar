@@ -308,6 +308,9 @@ and are now part of the plan; each carries the phase it belongs to.
 - [x] A2b running HOD/LOD as the target — **built 2026-09-04** as X3b (`hod_target` off | reentry | always;
       `hod_target_min_atr`): a re-entry sells at the running high/low of day when it is nearer than the planned
       level; first entries keep the planned level unless `always`. `tests/test_team2_posture.py`.
+- [x] F14 never-chase cap — **built 2026-09-04** (`chase_cap_mult`, default 1.5): the entry limit is
+      min(live ask + tick, target_premium x 1.5); an ask that ran past the band rests at the cap and is
+      cancelled unfilled. Required before the first auto session (the watch job found it at the open).
 - [x] Trims on the LIVE premium — **built 2026-09-04**: `Team2Runner._manage_live_trims` runs every RTH minute in
       money modes and takes +50/+100% on the contract's own fresh real-time bid (fee-adjusted); a model trim whose
       live premium is not there yet is DEFERRED (`trim_deferred_live`), one already taken live is a no-op
