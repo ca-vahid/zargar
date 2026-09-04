@@ -653,7 +653,12 @@ class Team2Runner(PlanRunner):
                             f"stop is a 2m close through the {guard}{live_s}")
         elif bias.get("scenario"):
             live = [s for s in setups if not s.get("dead")]
-            touches = max((s.get("touches", 0) for s in live), default=0)
+            # F24: report the allowance of the setup the session would actually enter — `session.py` takes the
+            # NEWEST live setup in the bias direction, so a spent setup pointing the other way (SPY's
+            # pm_break_down on 2026-09-04) must not be read as touches already used on this one.
+            cands = [s for s in live if not bias.get("direction") or s.get("direction") == bias.get("direction")]
+            picked = sorted(cands, key=lambda s: s.get("confirmedTs") or 0)[-1] if cands else None
+            touches = picked.get("touches", 0) if picked else max((s.get("touches", 0) for s in live), default=0)
             d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "
                             f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches}) · EMA stack {regime.get('stack', '?')}, "
                             f"{regime.get('fan', '?')}")

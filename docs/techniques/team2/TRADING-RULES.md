@@ -223,6 +223,17 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_no_trade_zone_skip_is_said_once_per_setup` (5 rows → 1 on the fixture).
 
 
+- **F24 (2026-09-04 12:40 ET, FIXED)** The Armed/Team2 "Now" line reported the D9 touch allowance of the
+  WRONG setup. `runner.py` took `max(touches)` over every live setup, while `session.py` enters only the
+  **newest live setup in the current bias direction**. SPY at 12:22 ET therefore read "scenario 3 (bounce
+  PDL) → calls · touches 1" when scenario_3@11:00 had used none of its two — the 1 belonged to
+  pm_break_down@10:30, a spent SHORT setup the bias had already left behind. The touch count is the one
+  number a person watching the desk uses to judge whether a setup can still be traded, so reading it high
+  makes a live setup look half-spent. **Fixed** by mirroring `session.py`'s selection (newest live setup
+  in the bias direction, falling back to the old max when none matches). Display only — no gate, count or
+  entry changes. Verified against today's three live reads: SPY 1 → 0, QQQ and IWM unchanged.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
