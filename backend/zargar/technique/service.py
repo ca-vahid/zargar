@@ -1834,6 +1834,10 @@ class TechniqueService:
                 out[k].extend(s.get(k) or [])
             for k in ("realized", "unrealized", "lossLimit"):
                 out["pnl"][k] = round(out["pnl"][k] + (s.get("pnl") or {}).get(k, 0.0), 2)
+            # a fleet with Team2 in it can fire mid-day even when EM cannot (UI audit 2026-09-04, item 21)
+            out["windowOpenNow"] = bool(out.get("windowOpenNow")) or bool(s.get("windowOpenNow"))
+            out["windowOpenBy"] = {**(out.get("windowOpenBy") or {runners[0].TECHNIQUE_ID: bool(runners[0].summary().get("windowOpenNow"))}),
+                                   r.TECHNIQUE_ID: bool(s.get("windowOpenNow"))}
         if len(runners) > 1:
             out["timeline"].sort(key=lambda x: -(x.get("ts") or 0))
             out["timeline"] = out["timeline"][:100]

@@ -217,6 +217,7 @@ class Trade:
                 "entryOrderId": self.entry_order_id, "limitPrice": self.limit_price, "qty": self.qty,
                 "filledQty": self.filled_qty, "avgFill": self.avg_fill, "remaining": self.remaining,
                 "trimsDone": self.trims_done, "exits": list(self.exits), "realizedPnl": round(self.realized_pnl, 2),
+                "isAdd": bool(self.is_add), "livePct": self.live_pct, "targetKind": self.target_kind,
                 "unrealizedPnl": round(unreal, 2),
                 "realizedR": (round(self.realized_pnl / (risk * self.filled_qty), 3)
                               if self.filled_qty and self.instrument != "options" else None),
@@ -427,6 +428,10 @@ class PlanRunner(SessionListener):
         # order has settled, so the fill still reaches its Trade record and the persisted row
         # (QQQ 14:17: FILLED 18 @ 0.5599 in the book, "open, remaining 18" in the plan forever)
         self._closing: dict[str, ArmedPlan] = {}
+        # R3 (audit 2026-09-04): the per-technique day-loss halt summed only ARMED plans — a plan that
+        # disarmed on its own loss halt stopped counting. Retired plans park their net P&L here per
+        # (ET day, portfolio); a technique may seed it from persisted rows at boot.
+        self._retired_pnl: dict[tuple[str, str], float] = {}
         # (run_id, trigger_id[, "~prem"]) -> consecutive quote polls seen in breach
         self._quote_breaches: dict[tuple[str, str], int] = {}
         # (run_id, trigger_id) -> (last retry ts, attempts) for the failed-exit watchdog
@@ -530,7 +535,9 @@ class PlanRunner(SessionListener):
                     # anything — that IS the worst bleed, not a data gap. A delayed
                     # chain row with bid 0 (thin contract, audit 2026-09-02) is a
                     # data gap: never market-sell a live position on it.
-                    obid = (float(oq.bid) if oq is not None and oq.bid and oq.bid > 0
+                    # R4 (audit 2026-09-04): a stale or delayed row with a positive bid used to drive the stop —
+                    # a 15-minute-old chain print could market-sell a live position. Fresh real-time only.
+                    obid = (float(oq.bid) if (fresh_o and oq is not None and oq.bid and oq.bid > 0)
                             else (0.0 if fresh_o else None))
                     nkey = (ap.run_id, tr.trigger_id + "~noq")
                     if obid is None:
@@ -547,7 +554,7 @@ class PlanRunner(SessionListener):
                     # one-cent spread on a $0.34 contract is not an eighth of the stop budget — and a
                     # tick floor keeps cheap contracts from being stopped by their own spread
                     basis = str(self.rt("premium_stop_basis", "bid") or "bid")
-                    oask = float(oq.ask) if oq is not None and oq.ask and oq.ask > 0 else None
+                    oask = float(oq.ask) if (fresh_o and oq is not None and oq.ask and oq.ask > 0) else None
                     pprice = ((obid + oask) / 2.0) if (basis == "mid" and obid and oask) else obid
                     preason = premium_stop_breach(tr, pprice, stop_pct=prem_pct, basis=basis,
                                                   min_ticks=int(self.rt("premium_stop_min_ticks", 0) or 0))
@@ -688,6 +695,7 @@ class PlanRunner(SessionListener):
         "exit_failed", "exit_retry", "manual_exit", "loss_halt", "paused", "resumed", "disarmed",
         "skipped", "premium_stop", "quote_stop", "proposal", "contract_skipped", "kill_cap",
         "cooldown_skip", "halt_skip", "max_open_skip", "stale", "preopen_check", "entry_fallback",
+        "technique_loss_halt", "skip_loss_budget", "entry_capped", "skip_loss_cap_desk", "clock_flatten",
         "entry_cancelled", "fire_cancelled", "rearmed_after_kill", "option_pick_failed",
     })
 
@@ -791,6 +799,7 @@ class PlanRunner(SessionListener):
             "asOf": now_ms, "window": window_now, "windowOpenNow": window_now in my_windows,
             "haltEngaged": bool(self.engine.halt.engaged),
             "bookHalts": {pid: b.get("reason") for pid, b in getattr(self.engine.halt, "books", {}).items()},
+            "techniqueLossHaltPct": float(self.rt("daily_loss_halt_pct", 0.0) or 0.0),
             "workspace": str(self.engine.settings.get("trading.mode", "practice")),
             "counts": counts,
             "attention": attention, "inTrade": in_trade, "timeline": timeline[:100],
@@ -1160,7 +1169,7 @@ class PlanRunner(SessionListener):
                                                      else ap.config.premium_budget),
                                    "riskPct": float(risk_pct) if risk_pct is not None else ap.config.risk_pct})
         self.validate_config(cfg)                      # gates (mode, live-auto, options capability)
-        if risk_pct is not None and cfg.risk_pct != old_risk and cfg.mode == "auto":
+        if ((risk_pct is not None and cfg.risk_pct != old_risk) or (premium_budget is not None and cfg.premium_budget != old_budget)) and cfg.mode == "auto":
             # the plan's dollar loss halt was derived from the OLD risk % at arm time (2 x the per-trade
             # risk); a bigger size with the old limit halts the plan after one stop (QQQ 2026-09-04 14:17:
             # $341 limit under a $2,000 budget) — derive it again from equity at the new risk %
@@ -1241,6 +1250,8 @@ class PlanRunner(SessionListener):
                 await self._exit(ap, tr, "disarm", tr.remaining, journal=True, force_market=True)
         ap.status = "disarmed"
         self._armed.pop(run_id, None)
+        rk = (dt.datetime.now(ET).strftime("%Y-%m-%d"), ap.config.portfolio_id)
+        self._retired_pnl[rk] = self._retired_pnl.get(rk, 0.0) + self._net_realized(ap)
         if any(t.pending_exit_qty > 1e-9 for t in ap.trades.values()):
             self._closing[run_id] = ap                     # F40: keep listening for the flatten's fill
         await self._persist(ap)
@@ -1349,6 +1360,7 @@ class PlanRunner(SessionListener):
                 window=td.get("window") or "", entry=float(td.get("entry") or 0), stop=float(td.get("stop") or 0),
                 targets=[float(x) for x in (td.get("targets") or [])], status=td.get("status") or "open",
                 reason=td.get("reason") or "", setup_id=td.get("setupId"), proposal_id=td.get("proposalId"),
+                is_add=bool(td.get("isAdd", False)), target_kind=str(td.get("targetKind") or "plan"),
                 entry_order_id=td.get("entryOrderId"), limit_price=td.get("limitPrice"),
                 qty=float(td.get("qty") or 0), filled_qty=float(td.get("filledQty") or 0),
                 avg_fill=td.get("avgFill"), remaining=float(td.get("remaining") or 0),
@@ -1447,7 +1459,10 @@ class PlanRunner(SessionListener):
             return 0.0
         if t.instrument == "options" and t.order_symbol:
             q = self.engine.quotes.get(t.order_symbol)
-            px = float(q.bid) if q is not None and q.bid and q.bid > 0 else None
+            max_age = int(self.rt("stale_seconds", 180))
+            fresh = (q is not None and (int(time.time() * 1000) - int(q.ts)) <= max_age * 1000
+                     and not getattr(q, "delayed", False))
+            px = float(q.bid) if (fresh and q.bid and q.bid > 0) else None      # R4: no stale marks in the halts
         else:
             q = self.engine.quotes.get(ap.symbol)
             px = float(q.last) if q is not None and q.last and q.last > 0 else None
@@ -1489,6 +1504,7 @@ class PlanRunner(SessionListener):
         total = 0.0
         for o in mine:
             total += self._net_realized(o) + min(0.0, self._unrealized(o))
+        total += self._retired_pnl.get((dt.datetime.now(ET).strftime("%Y-%m-%d"), pid), 0.0)   # R3
         if total >= 0:
             return False
         eq = 0.0

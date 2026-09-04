@@ -115,11 +115,13 @@ class ScenarioTracker:
             if bar.low <= pdl.top and bar.close > pdl.top:
                 return self._set(3, pdl.top, bar)
             return self.bias
-        # flips: a 15m close through the other side
+        # flips: a 15m close through the other side (D10; `flip_on_close=False` keeps the first read all day)
+        if not self.flip_on_close:
+            return self.bias
         s = self.bias.scenario
-        if s == 1 and bar.close < pdh.bottom:
-            return self._set(2, pdh.bottom, bar)        # failed breakout = rejection
-        if s == 4 and bar.close > pdl.top:
+        if s == 1 and bar.close < pdh.bottom - tol:
+            return self._set(2, pdh.bottom, bar)        # failed breakout = rejection (R20: same tolerance both ways)
+        if s == 4 and bar.close > pdl.top + tol:
             return self._set(3, pdl.top, bar)           # failed breakdown = bounce
         if s in (2, 3) and bar.close > pdh.top + tol:
             return self._set(1, pdh.top, bar)

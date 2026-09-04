@@ -512,6 +512,25 @@ export function SettingsPage() {
             <ToggleRow k="techniques.team2.add_on_retest" label="Trim, then add" hint="after a trim freed room, a fresh EMA13 hold re-ups the position on the same contract (his 're-upped a full position'); one add per position" />
             <ToggleRow k="techniques.team2.shrink_after_win" label="Shrink after a win" hint="the next trade's size halves once the day is green — one loss can never erase the day" />
             <ToggleRow k="techniques.team2.avoid_event_days" label="Skip macro event days" hint="FOMC/CPI/NFP days from the manual macro list (research.macro_events) take no new entries" />
+            <Group>Risk &amp; clock</Group>
+            <Cells>
+              <NumCell k="techniques.team2.budget_per_trade" label="Premium per trade ($)" step={100} hint="what one full-size entry may spend on premium; the risk % below caps it too" />
+              <NumCell k="techniques.team2.risk_pct" label="Risk per trade (% of book)" step={0.5} hint="the premium stop x this many contracts = this % of the book; must be ≤ the cap on the right" />
+              <NumCell k="techniques.team2.max_risk_pct" label="Risk cap (%)" step={0.5} hint="Team2's own R1 ceiling — arming fails above it" />
+              <NumCell k="techniques.team2.daily_loss_halt_pct" label="Day loss pause (% of book)" step={1} hint="once Team2's realised + open loss on a book crosses this, all its plans on that book pause for the day (0 = off)" />
+              <NumCell k="techniques.team2.max_concurrent_positions" label="Positions at once (desk)" hint="SPY/QQQ/IWM fire together on index moves — one position across all three by default" />
+              <NumCell k="techniques.team2.chase_cap_mult" label="Never chase (× target premium)" step={0.1} hint="the entry limit never exceeds target premium × this; an ask that ran rests at the cap and cancels" />
+              <TextCell k="techniques.team2.first_entry_min" label="First entry (ET)" hint="the first 15m close is 09:45" />
+              <TextCell k="techniques.team2.last_entry_min" label="Last entry (ET)" hint="0DTE: no new entries after this" />
+              <TextCell k="techniques.team2.flatten_min" label="Flat by (ET)" hint="everything sold on the clock at this time, whatever the read says" />
+            </Cells>
+            <ToggleRow k="techniques.team2.losses_desk_wide" label="Loss cap counts the whole desk" hint="max losses / day is counted across SPY+QQQ+IWM together (one book), not per symbol; a plan that traded for real is judged by the book, an alert plan by the model" />
+            <SelectRow k="techniques.team2.premium_stop_basis" label="Premium stop measures" hint="mid: the spread does not eat the stop budget on a cheap contract (Team2); bid: the conservative EM basis"
+              options={[{ value: "mid", label: "the mid" }, { value: "bid", label: "the bid" }]} />
+            <Cells>
+              <NumCell k="techniques.team2.premium_stop_min_ticks" label="Premium stop floor (ticks)" hint="never a stop tighter than this many cents on a cheap contract" />
+            </Cells>
+            <ToggleRow k="techniques.team2.allow_live_auto" label="Allow auto on REAL accounts" hint="off = auto trades only the practice book; on = a live account may be armed in auto (also needs trading.mode=live and the per-plan acknowledgement)" />
             <Group>Expression &amp; exits (0DTE)</Group>
             <Cells>
               <NumCell k="techniques.team2.target_premium" label="Target premium ($)" step={0.05}

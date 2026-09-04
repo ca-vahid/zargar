@@ -155,6 +155,9 @@ class AlpacaQuoteFeed(QuoteFeed):
         self._context[sym] = q
         if q.session not in ("regular", "post"):
             return
+        t = self._et(int(q.ts or now_ms()))
+        if q.session == "regular" and (t.hour * 60 + t.minute) < 9 * 60 + 31:
+            return                                   # R25: Yahoo's meta still carries yesterday's range at 09:30
         st = self._st(sym)
         self._roll_day(st, int(q.ts or now_ms()))
         if q.day_high and q.day_high > 0:

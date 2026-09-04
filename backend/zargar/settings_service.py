@@ -71,6 +71,9 @@ DEFAULTS: dict[str, Any] = {
     "risk.daily_loss_halt_pct": 3.0,
     "risk.daily_loss_halt_scope": "portfolio",   # portfolio (halt only the losing book) | global (the old switch)
     "execution.daily_loss_halt_pct": 0.0,        # per-TECHNIQUE day loss (% of the book) that pauses its plans; techniques.<id>.* overrides; 0 = off
+    "execution.premium_stop_basis": "bid",       # bid | mid — what the live premium stop measures (techniques.<id>.* overrides)
+    "execution.premium_stop_min_ticks": 0,       # floor on the premium-stop distance in ticks (0 = pure %)
+    "execution.fee_per_contract": 0.0,           # per-technique override of options.fee_per_contract + sim.reg_fee_per_contract (0 = use those)
     "risk.allow_short": False,
     "risk.allow_options": True,
     "risk.max_option_premium_pct": 5.0,     # of equity, per trade
@@ -102,7 +105,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.plan_at": "17:00",             # ET nightly skeleton (PDH/PDL zones, targets)
     "techniques.team2.preopen_at": "09:25",          # ET completion (PMH/PML, day type, sizing bucket)
     "techniques.team2.zero_dte": {                   # D3/E6: the per-technique 0DTE policy RiskGate enforces
-        "enabled": True, "last_entry_et": "15:30", "flatten_et": "15:45", "max_contracts": 10, "premium_cap": 1000.0},
+        "enabled": True, "last_entry_et": "15:30", "flatten_et": "15:45", "max_contracts": 40, "premium_cap": 2000.0},
     "techniques.team2.dte_policy": "0dte",           # 0dte | 1dte (sweep variant)
     "techniques.team2.target_premium": 0.60,         # V1/F5: first OTM strike whose ask <= this
     "techniques.team2.premium_floor": 0.20,

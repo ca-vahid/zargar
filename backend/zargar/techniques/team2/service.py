@@ -126,6 +126,16 @@ class Team2Service:
         # override behind `plan-now`.
         already = {ap.symbol for ap in list(getattr(self.runner, "_armed", {}).values())
                    if ap.plan_for == for_date}
+        # R10 (audit 2026-09-04): a plan that disarmed on its own loss halt is no longer in memory — the
+        # persisted rows are the record of "this symbol already had a plan for this session"
+        try:
+            from ...models import TechniqueArmed
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(TechniqueArmed).where(
+                    TechniqueArmed.technique == "team2", TechniqueArmed.plan_for == for_date))).scalars().all()
+            already |= {r.symbol for r in rows}
+        except Exception:  # noqa: BLE001
+            log.exception("team2 nightly: could not read the day's armed rows")
         for sym in symbols:
             if sym in already and not force:
                 out["skipped"].append(f"{sym}: already armed for {for_date}")
@@ -143,9 +153,11 @@ class Team2Service:
             if arm and self.runner is not None:
                 try:
                     await self.runner.arm(r["runId"], {"mode": mode, "instrument": "options", "contracts": None,
-                                                        "maxContracts": int(s.get("risk.max_option_contracts", 10)),
+                                                        "maxContracts": max(int(s.get("risk.max_option_contracts", 10)),
+                                                                            int((s.get("techniques.team2.zero_dte") or {}).get("max_contracts", 10) or 10)),
                                                         "premiumBudget": float(s.get("techniques.team2.budget_per_trade", 2000.0)),
                                                         "riskPct": float(s.get("techniques.team2.risk_pct", 6.0)),
+                                                        "flattenMinutesBeforeClose": 15,     # 15:45 (C3) — what the card prints
                                                         "useCritic": False, "maxOpenTrades": 1})
                     out["armed"].append(r["runId"])
                 except Exception as exc:  # noqa: BLE001
@@ -254,7 +266,8 @@ class Team2Service:
                         "createdAt": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
                         "armed": live,
                         "status": ("armed" if live else (arm.status if arm is not None else None)),
-                        "stopReason": (None if live else ((arm.state or {}).get("stopReason") or None)
+                        "stopReason": ((getattr(self.runner.get(row.run_id), "stop_reason", None) if (live and self.runner is not None) else None)
+                                       if live else ((arm.state or {}).get("stopReason") or None)
                                        if arm is not None else None)})
         return out
 
@@ -270,7 +283,7 @@ class Team2Service:
             rules = Team2Rules.from_dict({**rules.to_dict(), **overrides})
         if not plan.get("complete"):
             plan = complete_plan(plan, today)
-        sigma = await self.runner._sigma(run["symbol"]) if hasattr(self.runner, "_sigma") else 0.2
+        sigma = await self._sigma_for(str(run.get("planFor") or run.get("date") or dt.datetime.now(ET).strftime("%Y-%m-%d")))   # R11: that day's IV, not today's
         res = simulate_session({**plan, "date": date}, today, rules, sigma=sigma, warmup_1m=prior)
         return {"runId": run_id, "plan": plan, "result": res.to_dict(), "overrides": overrides or {}}
 

@@ -79,6 +79,7 @@ class Position:
     avg_fill: Fill | None = None    # average premium after adds (X5); None = entry_fill
     adds: int = 0
     added: list[dict] = field(default_factory=list)      # X5 adds
+    pnl_per_unit_pct: float = 0.0   # R23
     realised: list[dict] = field(default_factory=list)   # partial exits
 
     def to_dict(self) -> dict:
@@ -89,7 +90,8 @@ class Position:
                 "early": self.early, "bucket": self.bucket, "sizeMult": self.size_mult, "entryKind": self.entry_kind,
                 "peakPct": round(self.peak_pct, 2),
                 "target": None if self.target is None else round(self.target, 4), "targetKind": self.target_kind,
-                "avgPremium": (self.avg_fill or self.entry_fill).premium, "adds": self.adds, "added": list(self.added)}
+                "avgPremium": (self.avg_fill or self.entry_fill).premium, "adds": self.adds, "added": list(self.added),
+                "pnlPctPerUnit": round(self.pnl_per_unit_pct, 2)}
 
 
 @dataclass
@@ -186,7 +188,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     pending_15 = sorted(today_15, key=lambda b: b.ts)     # consumed as their buckets close
 
     regime = RegimeReader(rules)
-    scen = ScenarioTracker(zones, flip_on_close=rules.bias_flip_on_15m_close)
+    scen = ScenarioTracker(zones, flip_on_close=rules.bias_flip_on_15m_close)   # R19: wired below (a False knob = no flips)
     setups: dict[str, Setup] = {}
     pos: Position | None = None
     trades: list[Trade] = []
@@ -215,10 +217,12 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         p.realised.append({"ts": ts, "time": _hhmm(ts), "fraction": round(frac, 4), "spot": round(spot, 4),
                            "mark": round(mark, 4), "premium": f.premium, "pnlPct": round(pct, 2), "reason": reason})
         p.remaining = round(p.remaining - frac, 6)
-        note(ts, "exit" if p.remaining <= 1e-9 else "trim", reason, fraction=round(frac, 4), pnlPct=round(pct, 2),
+        note(ts, "exit" if p.remaining <= 1e-9 else "trim", reason, setup=p.setup.id, fraction=round(frac, 4), pnlPct=round(pct, 2),
              premium=f.premium, spot=round(spot, 4))
         if p.remaining <= 1e-9:
             weighted = sum(x["fraction"] * x["pnlPct"] for x in p.realised)
+            frac_total = sum(x["fraction"] for x in p.realised) or 1.0
+            p.pnl_per_unit_pct = weighted / frac_total          # R23: comparable across added and un-added positions
             first_ts = p.entry_ts
             held = sum(1 for b in session_bars_2m if first_ts <= b.ts <= ts)
             trades.append(Trade(position=p.to_dict(), exits=list(p.realised), pnl_pct_weighted=weighted,
@@ -356,7 +360,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             continue                                   # holding; no new entry while in a position (A12)
 
         # ---- entries (T): only inside the entry window, with the regime aligned
-        if m < rules.first_entry_min or m >= rules.last_entry_min:
+        if m + rules.entry_tf_min < rules.first_entry_min or m >= rules.last_entry_min:   # R22: the CLOSE must be past first_entry
             # F26: the cutoff used to stop entries in silence, so a read that goes quiet after
             # 15:30 looked identical to a read with no setup. Say it once, on the late side only
             # (the pre-09:45 side is just "the session has not confirmed a 15m bar yet").

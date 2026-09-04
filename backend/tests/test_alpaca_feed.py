@@ -48,7 +48,7 @@ def test_trade_and_quote_messages_emit_with_context_merged():
     ctx = Quote(symbol="SNOW", last=310.0, prev_close=309.5, session="regular",
                 reg_price=310.0, day_high=312.0, day_low=308.0)
     f.absorb_context(ctx)
-    f.handle({"T": "t", "S": "SNOW", "p": 314.47, "s": 200})
+    f.handle({"T": "t", "S": "SNOW", "p": 314.47, "s": 200, "t": "2026-08-25T14:00:00Z"})   # a regular-session print (F19 counts only those)
     assert quotes, "trade should emit a quote"
     q: Quote = quotes[-1]
     assert q.last == 314.47 and q.volume == 200

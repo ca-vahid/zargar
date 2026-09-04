@@ -63,3 +63,38 @@ async def test_team2_scorecard_compares_the_read_with_the_book(rig):
     assert sc["rows"][0]["trigger"] == "pm_break_down@10:30#1" and sc["rows"][1]["status"] == "not taken"
     assert sc["realizedPnl"] < sc["realizedPnlGross"] == 250.0                      # fees counted
     assert sc["skips"] == {"skip_no_trade_zone": 2} and sc["bias"] == "bounce PDL"
+
+
+async def test_clock_flatten_sells_the_book_at_flatten_time_whatever_the_read_says(rig, monkeypatch):
+    """Post-close audit 2026-09-04: the read's position can be gone while the book still holds a 0DTE
+    contract; the shared clock close is 16:05, after expiry. Team2 flattens the BOOK at flatten_min."""
+    eng, sim = rig
+    runner, ap = await _armed_plan(eng)
+    await runner.set_mode(ap.run_id, "auto")
+    rules = runner.rules()
+    tr = Trade(trigger_id="pm_break_down@13:30#1", kind="pm_break_down", fired_ts=1, window="team2", entry=717.0, stop=717.4,
+               targets=[], status="open", setup_id="pm_break_down@13:30", entry_order_id="e1", filled_qty=18, remaining=18,
+               avg_fill=0.59, instrument="options", order_symbol="QQQ260904P00717000", multiplier=100.0)
+    working = Trade(trigger_id="pm_break_down@13:30#2", kind="pm_break_down", fired_ts=2, window="team2", entry=717.0, stop=717.4,
+                    targets=[], status="working", setup_id="pm_break_down@13:30", entry_order_id="e2", instrument="options")
+    ap.trades[tr.trigger_id] = tr
+    ap.trades[working.trigger_id] = working
+    calls: list[tuple] = []
+
+    async def fake_exit(ap_, t, kind, qty, *, journal, force_market=False, reason=""):
+        calls.append((t.trigger_id, kind, qty, force_market))
+        t.exits.append({"kind": kind, "qty": qty, "orderId": "f", "status": "SUBMITTED", "filledQty": 0.0})
+
+    async def fake_cancel(oid):
+        calls.append(("cancel", oid))
+
+    monkeypatch.setattr(runner, "_exit", fake_exit)
+    monkeypatch.setattr(eng.orders, "cancel", fake_cancel)
+    await runner._clock_flatten(ap, rules)
+    assert ("cancel", "e2") in calls and working.status == "cancelled"
+    assert any(c[0] == tr.trigger_id and c[1] == "flatten" and c[2] == 18 and c[3] for c in calls)
+    assert any(e["event"] == "clock_flatten" for e in ap.events)
+    # a second pass does not double-sell: the flatten is already pending
+    n = len(calls)
+    await runner._clock_flatten(ap, rules)
+    assert len(calls) == n

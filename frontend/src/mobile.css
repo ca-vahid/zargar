@@ -614,6 +614,11 @@ button.bl-card:active { background: var(--surface-2); }
 @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
   .flow-head { gap: var(--sp-2); }
   .flow-head-sub { display: none; }
+  /* Team2's status line carries the mode, the 0DTE clock and the next macro event — keep it, wrapped */
+  .team2-head-sub { font-size: 12px; line-height: 1.35; white-space: normal; }
+  /* History / Validation split panes stack on a phone */
+  .flow-split { display: block; }
+  .flow-split > * + * { margin-top: 12px; }
   .flow-strip { gap: var(--sp-2); padding: 8px 10px; }
   .flow-strip-sep { display: none; }
   .flow-detail { width: auto; border: none; }

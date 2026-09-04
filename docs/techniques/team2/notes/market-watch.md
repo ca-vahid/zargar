@@ -998,3 +998,12 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   **that morning** and that nothing blanked them on Labor Day (F42's live proof); that the desk loss
   tally reset for the new day; and the usual real-time data checks. Still open for the user: **F40**,
   **F43**, **F44**, **F45**, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-04 18:30 ET (desk session) — post-close sweep
+
+- Two fresh-eyes reviews (backend 26 items, UI 26 items) + the desk's own audit. Built and deployed: F40/F43/F44/F45 and the
+  F46 batch (TRADING-RULES change log has the full list). Key money items: clock flatten at 15:45 independent of the read,
+  stale-exit re-price for Team2, live-ask sizing, fresh-only option quotes for the stop, retired plans still count toward the
+  technique halt, adds judged with their base, entry window on the bar close, replay with that day's IV.
+- Watch job: new events `clock_flatten`, `exit_reprice` (Team2), `closing_settled`; scorecards now carry `basis:
+  session-read vs book`; `skip_loss_cap_desk` counts positions (base + adds), not trades.

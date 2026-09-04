@@ -28,7 +28,7 @@ class Team2Rules(MarketRules):
     ema_slow: int = 200
     entry_tf_min: int = 2                   # T1: entries on the 2-minute chart
     confirm_tf_min: int = 15                # C1: level breaks confirmed on the 15-minute close
-    flag_tf_min: int = 5                    # C5: flags read on the 5-minute chart
+    flag_tf_min: int = 5                    # C5: flags read on the 5-minute chart — NOT WIRED (no flag detector yet; PLAN §3c)
     fan_trend_min_atr: float = 0.60         # E4: EMA spread (max−min of the three) in 2m ATRs below which = chop
     atr_period: int = 14
 
@@ -56,13 +56,13 @@ class Team2Rules(MarketRules):
     early_flag_before_min: int = 10 * 60    # P2: fires before 10:00 tagged `early` (riskier, still taken)
 
     # --- S/X: stop and exits (premium terms per §7b; price cues per X1-X3)
-    stop_candles: int = 1                   # S2: one 2m candle close through the EMA/level
+    stop_candles: int = 1                   # S2: one 2m candle close through the EMA/level — informational (always one)
     premium_stop_pct: float = 25.0          # D13/P1: hard cap on the premium loss (author ~20%)
     trim_1_pct: float = 50.0                # X1/V2: first trim at +50% premium
     trim_1_frac: float = 1.0 / 3.0
     trim_2_pct: float = 100.0               # V2: second trim at +100%
     trim_2_frac: float = 1.0 / 3.0
-    runner_exit: str = "ema_close"          # X2: runner exits on a 2m close through the EMA13
+    runner_exit: str = "ema_close"          # X2: runner exits on a 2m close through the EMA13 — the only exit built; knob is informational
     target_exit: bool = True                # X3/V11: outright exit when the pre-planned target is touched
     hod_target: str = "reentry"             # X3b: "off" | "reentry" | "always" — the running HOD/LOD is the target
                                             #   when it is nearer than the planned level ("HOD resistance is the main

@@ -94,7 +94,7 @@ export function Team2Page() {
     setBusy(false);
   };
 
-  const armedRows = useMemo(() => (status?.armed ?? []).filter((a: any) => a.technique === "team2" || true), [status]);
+  const armedRows = useMemo(() => (status?.armed ?? []).filter((a: any) => !a.technique || a.technique === "team2"), [status]);
   const todaysPlans = useMemo(() => {
     const latest = runs.length ? runs[0].planFor : null;
     return runs.filter((r) => r.planFor === latest);
@@ -107,7 +107,7 @@ export function Team2Page() {
       <div className="flow-head">
         <div>
           <div className="page-title">Team2</div>
-          <div className="muted flow-head-sub">
+          <div className="muted team2-head-sub">
             {status ? <>
               {status.symbols?.join(" · ")} · {status.mode} mode · plans {status.planAt} ET, pre-open {status.preopenAt}
               {status.zeroDte?.enabled ? ` · 0DTE: entries until ${status.zeroDte.last_entry_et}, flat by ${status.zeroDte.flatten_et}` : " · 0DTE policy off"}
@@ -147,17 +147,30 @@ export function Team2Page() {
         </table>
       )}
 
+      {tab === "plans" && status?.thresholds && (
+        <details className="muted small" style={{ marginTop: 12 }}>
+          <summary>Every number the read runs on tonight (read-only — change them in Settings → Team2 technique)</summary>
+          <div className="mono-num" style={{ columns: 3, columnGap: 24, marginTop: 6 }}>
+            {Object.entries(status.thresholds as Record<string, any>).filter(([k]) => !["windows", "round_number_steps"].includes(k)).map(([k, v]) => (
+              <div key={k} style={{ breakInside: "avoid" }}>{k} = {typeof v === "number" ? +v.toFixed(4) : String(v)}</div>
+            ))}
+          </div>
+        </details>
+      )}
+
       {tab === "armed" && (
         armedRows.length === 0 ? <EmptyState title="Nothing armed" hint="Armed Team2 plans appear here and on the Armed page." /> :
         <table className="table">
-          <thead><tr><th>Symbol</th><th>For</th><th>Status</th><th>Mode</th><th>The read right now</th><th>Trades</th><th></th></tr></thead>
+          <thead><tr><th>Symbol</th><th>For</th><th>Status</th><th>Mode · account</th><th>The read right now</th><th>Filled</th><th>P&L</th><th></th></tr></thead>
           <tbody>
             {armedRows.map((a: any) => (
               <tr key={a.runId}>
                 <td className="mono-num">{a.symbol}</td><td className="mono-num">{a.planFor}</td>
-                <td>{a.status}{a.needsAttention ? " · needs attention" : ""}</td><td>{a.config?.mode ?? a.mode}</td>
-                <td className="small">{a.summary ?? "—"}{a.team2?.live?.length ? ` · contract ${a.team2.live[0].livePct > 0 ? "+" : ""}${a.team2.live[0].livePct}% live` : ""}</td>
-                <td className="mono-num">{(a.trades ?? []).length}</td>
+                <td title={a.stopReason ?? undefined}>{a.status}{a.needsAttention ? " · needs attention" : ""}{a.stale ? " · STALE" : ""}{a.stopReason ? ` — ${a.stopReason}` : ""}</td>
+                <td>{a.config?.mode ?? a.mode}{a.portfolio?.name ? ` · ${a.portfolio.name}` : ""}{a.portfolio?.kind === "live" ? <b className="neg"> LIVE</b> : ""}{a.config?.premiumBudget ? ` · $${Number(a.config.premiumBudget).toLocaleString()}/trade` : ""}{a.config?.dailyLossLimit ? ` · halt $${Number(a.config.dailyLossLimit).toFixed(0)}` : ""}</td>
+                <td className="small">{a.summary ?? "—"}{a.team2?.live?.length ? ` · contract ${a.team2.live[0].livePct > 0 ? "+" : ""}${a.team2.live[0].livePct}% live` : ""}{typeof a.barAgeSeconds === "number" ? <span className="muted"> · bar {Math.round(a.barAgeSeconds)}s old</span> : null}</td>
+                <td className="mono-num">{(a.trades ?? []).filter((t: any) => (t.filledQty ?? 0) > 0).length}<span className="muted">/{(a.trades ?? []).length}</span></td>
+                <td className={`mono-num ${(a.realizedPnl ?? 0) > 0 ? "pos" : (a.realizedPnl ?? 0) < 0 ? "neg" : ""}`}>{typeof a.realizedPnl === "number" ? `${a.realizedPnl > 0 ? "+" : ""}${a.realizedPnl.toFixed(0)}` : "—"}</td>
                 <td><button className="ghost-btn" onClick={() => openArmedPlan(a.runId)}>open →</button></td>
               </tr>
             ))}

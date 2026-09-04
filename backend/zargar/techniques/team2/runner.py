@@ -37,7 +37,7 @@ from sqlalchemy import select
 from ... import events as ev
 from ...domain import Bar
 from ...execution.planrunner import ArmedPlan, FireJudgement, PlanRunner, Trade
-from ...marketstructure.aggregate import bar_session, bucket_start_ms
+from ...marketstructure.aggregate import bar_session, bucket_start_ms, minute_of_day
 from ...marketstructure.sessions import ET, session_bounds, session_date
 from ...models import TechniqueRun
 from .rules import Team2Rules, rules_from_settings
@@ -185,6 +185,8 @@ class Team2Runner(PlanRunner):
                                     f"${rules.premium_floor:.2f} and ${rules.target_premium:.2f} at {expiry}")
                 return None
             c = pick.to_dict()
+            with contextlib.suppress(Exception):
+                await opts.reprice(c)          # R2: size, pre-checks and the cap read the live NBBO, not the delayed chain
             c["_sizeMult"] = float(getattr(trade, "_size_mult", 1.0) or 1.0)
             c["_bucket"] = getattr(trade, "_bucket", "?")
             trade.contract = c
@@ -299,6 +301,16 @@ class Team2Runner(PlanRunner):
         rules = self.rules()
         step = rules.entry_tf_min * 60_000
         end_ts = bar.ts + 60_000
+        # C3/D-1 hard clock: whatever the model thinks, the BOOK is flat by flatten_min. The model's
+        # position can already be gone (its stop fired, a restore-seeded read, an add the read never saw)
+        # while the book still holds a 0DTE contract — and the shared clock-driven close is 16:05,
+        # after expiry. Post-close audit 2026-09-04.
+        if journal and minute_of_day(bar.ts) + 1 >= rules.flatten_min and bar_session(bar.ts) == "rth":
+            await self._clock_flatten(ap, rules)
+        # R1 (audit 2026-09-04): Team2 never ran the shared `_manage`, so a trim resting as a limit was
+        # never re-priced — and the flatten was clamped by that pending quantity. Re-price stuck exits here.
+        if journal and bar_session(bar.ts) == "rth":
+            await self._reprice_stuck_exits(ap)
         # the contract's own price first: premium-% trims on the live bid (every minute, money modes)
         if journal and bar_session(bar.ts) == "rth":
             try:
@@ -330,9 +342,9 @@ class Team2Runner(PlanRunner):
         self._last_sim[ap.run_id] = res.to_dict()
         seen = self._seen.get(ap.run_id, 0)
         new = res.events[seen:]
-        self._seen[ap.run_id] = len(res.events)
         halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
-        for e in new:
+        for i, e in enumerate(new):
+            self._seen[ap.run_id] = seen + i + 1        # R16: advance per event — an exception keeps the rest for the next bar
             what = e["event"]
             if what == "fire":
                 await self._fire_from_event(ap, e, bar, res, halted=halted, journal=journal)
@@ -408,7 +420,20 @@ class Team2Runner(PlanRunner):
         direction = setup.get("direction") or direction
         spot = float(e.get("spot") or bar.close)
         atr = float((e.get("regime") or {}).get("atr") or 0.0) or max(spot * 0.001, 0.05)
-        stop = spot - atr if direction == "long" else spot + atr
+        # R13 (audit 2026-09-04): the ~2 s quote-stop watch reads `trade.stop`; a synthetic 1xATR stop let an
+        # intra-minute spike market-sell a position the method (S1: a 2m CLOSE through the line) would keep.
+        # Use the line the entry leaned on, one ATR further out than the model's close-based stop so the
+        # quote watch is the crash brake, not the rule.
+        rg = e.get("regime") or {}
+        guard = {"ema": rg.get("ema13"), "ema48": rg.get("ema48"), "ema200": rg.get("ema200")}.get(str(e.get("entryKind")), setup.get("anchor"))
+        try:
+            guard_f = float(guard) if guard is not None else None
+        except (TypeError, ValueError):
+            guard_f = None
+        if guard_f is None or (direction == "long" and guard_f >= spot) or (direction == "short" and guard_f <= spot):
+            stop = spot - atr if direction == "long" else spot + atr
+        else:
+            stop = guard_f - atr if direction == "long" else guard_f + atr
         target = e.get("target") if e.get("target") is not None else setup.get("target")
         trade = Trade(trigger_id=tid, kind=str(setup.get("kind") or "team2"), direction=direction, fired_ts=e["ts"],
                       window="team2", entry=spot, stop=stop, targets=[float(target)] if target else [],
@@ -439,7 +464,7 @@ class Team2Runner(PlanRunner):
         # open one or the last trade
         sim = self._last_sim.get(ap.run_id) or {}
         pos = sim.get("openPosition") or (sim.get("trades") or [{}])[-1]
-        setup_id = pos.get("setup")
+        setup_id = e.get("setup") or pos.get("setup")           # R7: the event names its setup since 2026-09-04
         cands = [t for t in ap.trades.values() if t.setup_id == setup_id and t.status in ("open", "working", "alert", "proposal")]
         if not cands:
             return
@@ -479,6 +504,43 @@ class Team2Runner(PlanRunner):
             qty = max(1.0, min(qty, trade.remaining)) if trade.remaining >= 1 else trade.remaining
             await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")),
                              force_market=kind in ("stop", "flatten"))
+
+    async def _reprice_stuck_exits(self, ap: ArmedPlan) -> None:
+        from ...execution.exits import EXIT_REPRICE_BARS, stale_working_exit
+        for tr in list(ap.trades.values()):
+            if tr.status != "open" or tr.remaining <= 0:
+                continue
+            stale = stale_working_exit(tr, ap.bar_index - 1, reprice_bars=EXIT_REPRICE_BARS)
+            if stale is None:
+                continue
+            with contextlib.suppress(Exception):
+                await self.engine.orders.cancel(stale["orderId"])
+            stale["status"] = "CANCELLED"
+            self._log(ap, "exit_reprice", f"{tr.trigger_id}: {stale['kind']} not filled in {EXIT_REPRICE_BARS} bars — re-sending at market",
+                      trigger=tr.trigger_id, kind=stale["kind"])
+            await self._exit(ap, tr, stale["kind"], float(stale.get("qty") or tr.remaining), journal=True, force_market=True)
+
+    async def _end_session(self, ap: ArmedPlan, *, journal: bool, reason: str = "session closed") -> None:
+        """Nothing of a 0DTE book survives the close: flatten on the way out, then the shared close."""
+        if journal and ap.status in ("armed", "paused"):
+            with contextlib.suppress(Exception):
+                await self._clock_flatten(ap, self.rules())
+        await super()._end_session(ap, journal=journal, reason=reason)
+
+    async def _clock_flatten(self, ap: ArmedPlan, rules: Team2Rules) -> None:
+        """Flatten every open Team2 trade and cancel every working entry at flatten_min, once."""
+        for tr in list(ap.trades.values()):
+            if tr.status == "working" and tr.entry_order_id:
+                with contextlib.suppress(Exception):
+                    await self.engine.orders.cancel(tr.entry_order_id)
+                tr.status = "cancelled"
+                tr.reason = "flatten time — working entry cancelled (C3)"
+                self._log(ap, "clock_flatten", f"{tr.trigger_id}: working entry cancelled at the flatten time", trigger=tr.trigger_id)
+            elif tr.status == "open" and tr.remaining > 0 and tr.pending_exit_qty <= 1e-9:
+                self._log(ap, "clock_flatten", f"{tr.trigger_id}: flatten time {rules.flatten_min // 60:02d}:{rules.flatten_min % 60:02d} ET — "
+                          f"selling {tr.remaining:g} at market whatever the read says (C3/D-1)", trigger=tr.trigger_id)
+                await self._exit(ap, tr, "flatten", tr.remaining, journal=True, force_market=True,
+                                 reason="flatten: 0DTE flatten time reached on the clock (C3/D-1)")
 
     # ------------------------------------------------------------- live premium (money modes)
     def _live_pct(self, tr: Trade) -> float | None:
@@ -599,7 +661,13 @@ class Team2Runner(PlanRunner):
         "lose" trades the desk declined at the time (SPY/IWM 2026-09-04 15:10)."""
         routed = [t for t in trades if getattr(t, "entry_order_id", None) or float(getattr(t, "filled_qty", 0) or 0) > 0]
         if mode in ("auto", "proposal") and routed:
-            return sum(1 for t in trades if t.status == "closed" and float(t.filled_qty or 0) > 0 and t.realized_pnl < 0), "book"
+            # R5: an X5 add rides the same position as its base trade — judge the POSITION
+            groups: dict[str, list] = {}
+            for t in trades:
+                if float(t.filled_qty or 0) > 0:
+                    groups.setdefault(str(t.trigger_id).split("+add")[0], []).append(t)
+            losers = sum(1 for ts in groups.values() if all(t.status == "closed" for t in ts) and sum(t.realized_pnl for t in ts) < 0)
+            return losers, "book"
         return sum(1 for t in ((sim or {}).get("trades") or []) if not t.get("win")), "model"
 
     def losses_across_plans(self, day: str | None = None) -> int:
@@ -655,6 +723,18 @@ class Team2Runner(PlanRunner):
             if n:
                 tally[row.run_id] = (n, "book")
                 seeded += n
+            # R3: the retired plan's net P&L keeps counting toward the technique day-loss halt
+            net = 0.0
+            for t in trades:
+                fq = float(t.get("filledQty") or 0)
+                if fq <= 0:
+                    continue
+                exited = sum(float(x.get("filledQty") or 0) for x in (t.get("exits") or []))
+                fee = float(self.rules().fee_per_contract) * (fq + exited)
+                net += float(t.get("realizedPnl") or 0) - fee
+            if net:
+                rk = (day, row.portfolio_id)
+                self._retired_pnl[rk] = self._retired_pnl.get(rk, 0.0) + net
         return seeded
 
     def open_positions_across_plans(self) -> int:
@@ -732,6 +812,7 @@ class Team2Runner(PlanRunner):
         Armed page already renders (id/label/kind/status/entry/targets/direction/distancePct),
         so no UI special-casing (user 2026-09-04: 'tell me how it works' inside the Armed section)."""
         d = super()._snapshot(ap)
+        rules_now = self.rules()
         plan = ap.plan or {}
         read = self._last_sim.get(ap.run_id) or {}
         q = self.engine.quotes.get(ap.symbol)
@@ -742,11 +823,13 @@ class Team2Runner(PlanRunner):
 
         def pseudo(tid: str, label: str, kind: str, status: str, entry: float | None, direction: str,
                    targets: list[float] | None = None, stop: float | None = None) -> dict:
+            now_m = dt.datetime.now(ET).hour * 60 + dt.datetime.now(ET).minute
             row = {"id": tid, "label": label, "kind": kind, "status": status, "entry": entry, "stop": stop,
                    "targets": targets or [], "riskReward": None, "firedTs": None, "firedWindow": None,
                    "observedMidday": 0, "skipped": [], "gapUnchecked": False, "failedBreaks": 0, "grade": None,
                    "gradeScore": None, "conditions": None, "setupId": None, "direction": direction,
-                   "levelTouches": None, "levelAge": None, "windowOpenNow": True}
+                   "levelTouches": None, "levelAge": None,
+                   "windowOpenNow": rules_now.first_entry_min <= now_m < rules_now.last_entry_min}
             if last and entry:
                 row["distancePct"] = round((entry - last) / last * 100, 3)
                 row["distance"] = round(entry - last, 4)

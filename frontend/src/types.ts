@@ -657,6 +657,8 @@ export interface ArmConfig {
   useCritic: boolean; allowLive: boolean; flattenMinutesBeforeClose: number; slippagePct: number; maxRetries: number;
   maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean;
   entryFallback?: string;
+  /** options: $ of premium one entry may spend (tips budget, Team2 budget_per_trade) */
+  premiumBudget?: number;
 }
 export interface ArmPreflight {
   ok: boolean; blocked?: string; note?: string; instrument?: string; trigger?: string;
@@ -698,6 +700,9 @@ export interface ArmedTrade {
   exits: { kind: string; qty: number; orderId: string | null; status: string | null; filledQty: number; price: number | null; error?: string }[];
   realizedPnl: number; unrealizedPnl: number; realizedR: number | null; lastPrice: number | null; errors: string[]; retries: number;
   openedTs: number | null; closedTs: number | null; critic: { kill?: boolean; summary?: string; violations?: string[] } | null;
+  direction?: "long" | "short" | string;
+  /** Team2 (2026-09-04): an X5 add on the same contract; the contract's live premium %; planned level vs running HOD/LOD */
+  isAdd?: boolean; livePct?: number | null; targetKind?: "plan" | "hod" | string;
 }
 export interface ArmedPlan {
   technique?: string;   // registry id (platform plan phase 0); absent from older servers
@@ -727,6 +732,8 @@ export interface ArmedSummaryBase {
 }
 export interface ArmedSummary {
   asOf: number; window: string; windowOpenNow: boolean; haltEngaged: boolean; workspace: string;
+  /** per-book daily-loss halts (portfolioId -> reason); which techniques can fire right now; a technique's own day-loss pause % */
+  bookHalts?: Record<string, string>; windowOpenBy?: Record<string, boolean>; techniqueLossHaltPct?: number;
   counts: { armed: number; paused: number; inTrade: number; attention: number; watching: number; stoppedToday?: number };
   attention: (ArmedSummaryBase & { reasons: string[]; hasPosition: boolean })[];
   inTrade: (ArmedSummaryBase & {

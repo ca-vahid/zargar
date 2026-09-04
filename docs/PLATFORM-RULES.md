@@ -541,6 +541,18 @@ runtime ones to `execution.*`).
 - 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
   `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
   read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.
+- 2026-09-04 · Post-close audit, shared-engine changes (default-neutral for EM/tips unless noted): the ~2 s premium
+  stop and `_trade_unrealized` use an option quote only when it is FRESH real-time (`stale_seconds`, not
+  `delayed`) — a stale positive bid could market-sell a live position; `disarm()` parks a retired plan's net
+  P&L in `_retired_pnl[(day, portfolio)]` so `_maybe_technique_loss_halt` cannot loosen after a disarm;
+  `Trade.to_dict`/`_restore_trades` carry `isAdd`/`targetKind`/`livePct`; `set_mode` re-derives the loss halt
+  on a budget change too; `execution.premium_stop_basis`, `execution.premium_stop_min_ticks` and
+  `execution.fee_per_contract` have DEFAULTS so any technique may set its own; `armed_summary` ORs
+  `windowOpenNow` across runners and reports `windowOpenBy`; `Trade.stop` for Team2 is the entry's line
+  minus one ATR (the quote watch is a crash brake, not the rule); Alpaca skips Yahoo's 09:30 context poll
+  for the day range. Team2-only: `_reprice_stuck_exits` every RTH minute and a clock flatten at
+  `flatten_min` + on `_end_session` — techniques that override `_on_bar` MUST re-provide the stale-exit
+  re-price and a flatten of their own; `_manage` is not inherited by an override (invariant).
 - 2026-09-04 · **`PlanRunner.disarm` no longer orphans an in-flight flatten** (F40): a disarmed plan whose exits
   are still working moves to `_closing`; `on_order_update` consults it, and `_persist` drops it once every
   exit has settled (`closing_settled`). Before, the fill arrived ~2 s after `_armed.pop` and was lost —
