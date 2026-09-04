@@ -139,7 +139,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
       <div className="panel-head">
         <span className="tq-badge plan">PLAN · {plan.validTriggers} trigger{plan.validTriggers === 1 ? "" : "s"}</span>
         <span className="tq-sym">{plan.symbol}</span>
-        <span className="sub">for <b>{plan.planFor}</b> · built from the {plan.builtFromSession} close {fmt(plan.lastClose)} · structure {plan.structureTfs.join("/")} · triggers on {plan.triggerTf}</span>
+        <span className="sub">for <b>{plan.planFor}</b> · built from the {plan.builtFromSession} close {fmt(plan.lastClose)} · structure {(plan.structureTfs ?? []).join("/") || "—"} · triggers on {plan.triggerTf}</span>
         {isArmed && <span className="tq-badge setup">ARMED</span>}
         <span className="sub tq-head-right">
           <CopyChip value={run.id} link={absoluteUrl({ page: "technique", techniqueTab: "analyse", runId: run.id })} />
@@ -202,7 +202,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
               The market was closed at the as-of instant (R6.4), so this is the book's pre-session routine (pp. 116–117, 120):
               the levels that matter and <i>conditional</i> triggers — WATCH a level, IF price reaches it inside a prime window on
               adequate volume, THEN the plan, VOID IF the open gaps past it. Levels are redrawn every session; prior-day HOD/LOD carry.
-              {!!plan.notes?.length && <div className="tq-nosetup-cand">{plan.notes.join(" ")}</div>}
+              {!!plan.notes?.length && <div className="tq-nosetup-cand">{(plan.notes ?? []).join(" ")}</div>}
             </div>
           </div>
           <div className="tq-section">
@@ -210,7 +210,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
             <table className="tq-table tq-plan-levels">
               <thead><tr><th>Price</th><th>Kind</th><th>Touches</th><th>Source</th><th>TFs</th><th>Dist</th><th>Age</th>{levelsRow && <th>Session</th>}</tr></thead>
               <tbody>
-                {plan.levels.map((l, i) => {
+                {(plan.levels ?? []).map((l, i) => {
                   const r = respectBy[String(l.price)];
                   return (
                     <tr key={i} className={l.priorDayExtreme ? "pd" : ""}>
@@ -230,8 +230,8 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
           </div>
           <div className="tq-section">
             <div className="tq-label">Triggers <span className="muted">— conditional, never a fill (T4.1); click to expand</span></div>
-            {plan.triggers.length === 0 && <div className="muted">No level within reach — a plan with nothing to do (p. 117).</div>}
-            {plan.triggers.map((t) => <TriggerRow key={t.id} t={t} outcome={byTrigger[t.id]} />)}
+            {(plan.triggers ?? []).length === 0 && <div className="muted">No level within reach — a plan with nothing to do (p. 117).</div>}
+            {(plan.triggers ?? []).map((t) => <TriggerRow key={t.id} t={t} outcome={byTrigger[t.id]} />)}
           </div>
           <div className="tq-section">
             <div className="tq-label">Void if</div>
@@ -309,8 +309,8 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
             {isArmed && <button className="ghost-btn" onClick={() => useStore.getState().setPage("armed")}>Open the Armed page</button>}
             {armOpen && (
               <ArmDialog symbol={plan.symbol} planFor={plan.planFor} onClose={() => setArmOpen(false)}
-                triggers={plan.triggers.filter((t) => t.valid)}
-                bestTrigger={(() => { const v = plan.triggers.filter((t) => t.valid); if (!v.length) return null; const b = v.reduce((a, t) => ((t.assessment?.score ?? 0) > (a.assessment?.score ?? 0) ? t : a)); return { id: b.id, entry: b.entry.price, stop: b.stop.price, riskReward: b.riskReward }; })()}
+                triggers={(plan.triggers ?? []).filter((t) => t.valid)}
+                bestTrigger={(() => { const v = (plan.triggers ?? []).filter((t) => t.valid); if (!v.length) return null; const b = v.reduce((a, t) => ((t.assessment?.score ?? 0) > (a.assessment?.score ?? 0) ? t : a)); return { id: b.id, entry: b.entry.price, stop: b.stop.price, riskReward: b.riskReward }; })()}
                 onArm={async (req) => { const a = await api.techniqueArm(run.id, req); toast("success", `Armed ${a.symbol} — ${a.config.mode} on ${a.portfolio.name ?? a.portfolio.id}`); onRefresh?.(); }} />
             )}
             {run.threadId && <button className="ghost-btn" onClick={() => openChat(run.threadId!)}>Discuss in chat</button>}
