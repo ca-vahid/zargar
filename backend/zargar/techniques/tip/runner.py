@@ -854,6 +854,11 @@ async def attach_tip_runner(engine) -> None:
     retro_at = str(engine.settings.get("techniques.tip.retro_at", "17:10"))
     engine.scheduler.register("tip_retro", retro_at,
                               lambda: nightly_tip_review(engine))
+    # the pending-approvals queue is decided at the open, not by a human
+    # (unattended practice, 2026-09-04): fresh appraisal -> approve/decline
+    triage_at = str(engine.settings.get("techniques.tip.triage_at", "09:33"))
+    engine.scheduler.register("tip_morning_triage", triage_at,
+                              lambda: engine.signals_service.morning_triage())
     # restart safety: re-arm adopt-on-fill waiters for approved tip proposals
     # whose orders were still resting at shutdown (ARM-PLAN P2)
     try:

@@ -43,7 +43,12 @@ class Team2Rules(MarketRules):
     pullback_max_touches: int = 2           # D9/P6: first two EMA13 touches after confirmation, third is watch-only
     pullback_max_bars: int = 8              # A6: a pullback longer than this is a new consolidation, not a dip
     pullback_body_mult: float = 2.0         # A6/F4: a bar with body > k×avg body INTO the EMA is an engulfing entry — skip
-    entry_at: str = "ema"                   # "ema" (T1) | "level" (T2 retest) — the plan may arm both kinds
+    entry_at: str = "both"                  # "ema" (T1) | "level" (T2 retest / T7 base) | "both"
+    allow_ema48_entries: bool = True        # E5: the 48 EMA is the second line of defense — a deeper dip that holds
+    allow_ema200_flush: bool = True         # T8: range-day trigger = a 2m close through the 200 EMA in the bias direction
+    base_bars: int = 3                      # T7: N consecutive 2m bars holding just beyond the level = a "break & base"
+    base_tol_atr: float = 1.0               # T7: how far beyond the level a base may sit (2m ATRs)
+    trim_cue: str = "premium"               # X1: "premium" (+trim_1_pct) | "new_extreme" (first new HOD/LOD after entry)
     first_entry_min: int = 9 * 60 + 45      # D6: the first 15m close is 09:45
     last_entry_min: int = 15 * 60 + 30      # D6
     flatten_min: int = 15 * 60 + 45         # C3/D-1: everything closed by 15:45 (0DTE)
@@ -105,6 +110,8 @@ SETTINGS_MAP: dict[str, str] = {
     "range_day_confirmation": "range_day_confirmation",
     "pullback_max_touches": "pullback_max_touches", "pullback_max_bars": "pullback_max_bars",
     "pullback_body_mult": "pullback_body_mult", "entry_at": "entry_at",
+    "allow_ema48_entries": "allow_ema48_entries", "allow_ema200_flush": "allow_ema200_flush",
+    "base_bars": "base_bars", "base_tol_atr": "base_tol_atr", "trim_cue": "trim_cue",
     "first_entry_min": "first_entry_min", "last_entry_min": "last_entry_min", "flatten_min": "flatten_min",
     "premium_stop_pct": "premium_stop_pct", "trim_1_pct": "trim_1_pct", "trim_1_frac": "trim_1_frac",
     "trim_2_pct": "trim_2_pct", "trim_2_frac": "trim_2_frac", "runner_exit": "runner_exit",

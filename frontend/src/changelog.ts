@@ -22,6 +22,8 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
+      { tag: "major", text: "Unattended practice: nobody has to watch the Approvals queue. An analyst skip/watch declines the card immediately with the reasoning attached (history, not a to-do); a take trades; anything still pending at the open gets a fresh analyst re-appraisal at 9:33 ET against live prices and is decided then. Live money always keeps the human." },
+      { tag: "improved", text: "Approval cards now say when they were suggested (and that it was after the close, held for the open), how far the market has moved since, and that approving always re-prices at the live ask — plus 'time box 15 sessions', not '15s'." },
       { tag: "major", text: "A fourth technique, Team2 — Casey/@Team2Trading's SPY·QQQ·IWM day-trading method, codified from 49 public posts, two videos and his own trade screenshots: prior-day high/low zones and the pre-market range, a 13/48/200 EMA regime on the 2-minute chart, a 15-minute-close confirmation, EMA13 pullback entries with a one-candle stop, 0DTE contracts picked by premium (~$0.50), +50/+100% trims and a 15:45 flatten. Nightly plans per symbol, 09:25 completion, alert mode first. Its own page: Plans · Armed · History · Validation." },
       { tag: "new", text: "Extended-hours bars are banked nightly (04:00–20:00 ET, 1-minute) with the VIX indices — the walk-forward for any intraday technique can finally run on more than Yahoo's 20 days." },
       { tag: "new", text: "A market calendar: NYSE holidays and 13:00 early closes. Every clock-driven session close now honours them." },

@@ -110,7 +110,12 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.pullback_max_touches": 2,      # D9
     "techniques.team2.pullback_max_bars": 8,         # A6
     "techniques.team2.pullback_body_mult": 2.0,      # A6/F4 engulfing filter
-    "techniques.team2.entry_at": "ema",              # ema | level
+    "techniques.team2.entry_at": "both",             # ema | level | both (T1 pullbacks, T2 retests + T7 bases)
+    "techniques.team2.allow_ema48_entries": True,    # E5 second line of defense
+    "techniques.team2.allow_ema200_flush": True,     # T8 range-day trigger: 2m close through the 200 EMA
+    "techniques.team2.base_bars": 3,                 # T7 break & base
+    "techniques.team2.base_tol_atr": 1.0,
+    "techniques.team2.trim_cue": "premium",          # premium | new_extreme (X1 "new high/low of day")
     "techniques.team2.first_entry_min": "09:45",     # D6 (first 15m close)
     "techniques.team2.last_entry_min": "15:30",
     "techniques.team2.flatten_min": "15:45",         # C3
@@ -167,6 +172,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.rollup_target_delta": 0.35,  # the strike the roll buys
     "techniques.tip.rollup_max": 2,              # rolls per position
     "techniques.tip.rollup_max_spread_pct": 10.0,  # skip illiquid legs (bid/ask spread % of mid, either leg)
+    "techniques.tip.unattended": True,           # practice decides itself: analyst skip/watch DECLINES the card (recorded), promoted takes trade; live always waits for the human
+    "techniques.tip.triage_at": "09:33",         # morning triage: re-appraise anything still pending against the live open
     "techniques.tip.auto_min_graded": 5,     # earned auto: closed tip positions a source needs before the platform-default auto self-approves
     "techniques.tip.auto_min_hit": 0.4,      # earned auto: minimum hit rate on those closed positions (explicit per-source auto bypasses both)
     "techniques.tip.retro_enabled": True,    # nightly analyst retro on closed tip positions

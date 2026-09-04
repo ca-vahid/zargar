@@ -344,6 +344,21 @@ class Team2Runner(PlanRunner):
         if ap.config.mode == "auto" and open_or_working >= max(1, ap.config.max_open_trades):
             self._log(ap, "max_open_skip", f"{tid}: fired but already holding {open_or_working}", trigger=tid)
             return
+        # A12: SPY/QQQ/IWM fire together on index moves — one Team2 position across ALL its plans
+        # (money modes only; alert/proposal keep recording every read)
+        if ap.config.mode == "auto":
+            cap = max(1, int(self.rules().max_concurrent_positions))
+            across = self.open_positions_across_plans()
+            if across >= cap:
+                self._log(ap, "max_concurrent_skip",
+                          f"{tid}: fired but Team2 already holds {across} position(s) across its plans (cap {cap}, A12)",
+                          trigger=tid)
+                if journal:
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "max_concurrent_positions",
+                        "open": across, "max": cap, "ts": e.get("ts")},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id)
+                return
         direction = "long" if e.get("regime", {}).get("stack") == "bull" else "short"
         setup = next((s for s in res.setups if s["id"] == e.get("setup")), {})
         direction = setup.get("direction") or direction
@@ -399,6 +414,11 @@ class Team2Runner(PlanRunner):
             trade.trims_done += 1
         await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")),
                          force_market=kind in ("stop", "flatten"))
+
+    def open_positions_across_plans(self) -> int:
+        """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap)."""
+        return sum(1 for ap in self._armed.values() for t in ap.trades.values()
+                   if t.status in ("fired", "submitting", "working", "open"))
 
     # ------------------------------------------------------------- read-only views
     def last_read(self, run_id: str) -> dict | None:

@@ -46,6 +46,16 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   (large engulfing candle into the EMA) is explicitly the bad entry; the good one is an even,
   flag-like drift into the EMA. Candidate gate: pullback slope / body-size filter on the 2m bars.
 
+- **F10 (2026-09-04, second image pass)** Three entry mechanics the text never spelled out: (a) **break & base** —
+  the entry is the tight base just beyond the level, no EMA dip needed (T7); (b) the **200 EMA flush** as the
+  range-day trigger, with the pre-market level as the final target (T8); (c) the **48 EMA** as a valid second dip
+  (E5 was already in the text; the IWM 3-entry image shows entry 2 on the 48 after entry 1 on the 13 failed).
+  All three are in `session.py` now (`entry_kind` ema/ema48/level/base/ema200) with the stop on the line each
+  leaned on. **Trim-and-add** (X5) and averaging into a base (X6) are recorded, not built (A10).
+- **F11 (2026-09-04)** The "new high/low of day" trim cue (X1) is now selectable (`trim_cue=new_extreme`) next to the
+  premium-% cue so the sweep can compare the two; and `pullback_max_bars` finally does something: a dip that sits on
+  the wrong side of the EMA13 for longer than N bars is called a consolidation (`pullback_stalled`).
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -74,3 +84,4 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   2026-09-03) put the PDH zone at 773.76–774.03 with "room up to 775.30". The author's own 2026-09-03 recap
   annotated the high at 774.03 and his pre-market plan said "room up to 775.29" (notes/x/images INDEX,
   `2095599035113693522-1.jpg`). Zone construction (L1.2) and target discovery (L3.1) reproduce his sheet to the cent.
+| 2026-09-04 | Second review: T7 base, T8 200-EMA flush, EMA48 entries, new-extreme trim cue, stalled-pullback rule, cross-plan concurrency cap (A12) in the runner; 8 more images read (INDEX) | images 1979379272990277934, 1961977219590574391-2/3, 1908549478438887528, 2081050843768660321, 1964745974393557113/76528400559, 2013059662812463256 | Team2 desk |

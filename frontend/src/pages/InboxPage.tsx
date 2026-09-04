@@ -7,7 +7,7 @@ import { api } from "../lib/api";
 import { fmtDateTime, fmtMoney, timeUntil } from "../lib/format";
 import { useAsync } from "../lib/useAsync";
 import { onAnalystStep } from "../lib/ws";
-import { useStore } from "../store";
+import { useQuote, useStore } from "../store";
 import type { AnalystRun, AnalystStep, Proposal, RawContentItem, Signal, SourceScorecard } from "../types";
 import { useViewport } from "../lib/viewport";
 import { Sheet } from "../components/Sheet";
@@ -564,6 +564,16 @@ function ProposalCard({ p }: { p: Proposal }) {
   const mult = isOpt || p.secType === "SPREAD" ? 100 : 1;
   const cost = p.limitPrice ? p.limitPrice * p.qty * mult : null;
   const what = p.secType === "STK" ? `${p.symbol} shares` : (vehicle?.display ?? p.symbol);
+  // "when was this suggested, and is it still the same market?" — the two
+  // questions an old card must answer (LULU sat 9.5h with only a countdown)
+  const liveQ = useQuote(p.symbol);
+  const live = liveQ?.last && liveQ.last > 0 ? liveQ.last : null;
+  const afterHours = (() => {
+    const d = new Date(p.createdAt);
+    const et = new Date(d.toLocaleString("en-US", { timeZone: "America/New_York" }));
+    const m = et.getHours() * 60 + et.getMinutes();
+    return et.getDay() === 0 || et.getDay() === 6 || m < 9 * 60 + 30 || m >= 16 * 60;
+  })();
   const trims = exitPlan?.targets?.length
     ? exitPlan.targets.map((t: number, i: number) => {
         const fr = exitPlan.fractions?.[i];
@@ -598,7 +608,10 @@ function ProposalCard({ p }: { p: Proposal }) {
             {String(p.context.autoGate).includes("hit rate") ? "auto: hit rate below bar" : "auto: not yet earned"}
           </span>
         )}
-        <span className="ttl"><IconClock size={11} /> {timeUntil(p.expiresAt)}</span>
+        <span className="ttl"
+          title={`Suggested ${fmtDateTime(p.createdAt)}${afterHours ? " — after the close, held so you can decide at the open" : ""}. Expires ${fmtDateTime(p.expiresAt)}. Approving is always safe on an old card: the click re-prices at the live ask (never up) and re-runs every risk check at that moment.`}>
+          <IconClock size={11} /> suggested {fmtDateTime(p.createdAt)}{afterHours ? " (after close)" : ""} · expires in {timeUntil(p.expiresAt)}
+        </span>
         {p.signalId && <CopyChip value={p.signalId}
           title={`tip ${p.signalId} — click to copy; quote this id to review the tip behind this proposal`} />}
       </div>
@@ -606,6 +619,12 @@ function ProposalCard({ p }: { p: Proposal }) {
         <span className={p.side === "BUY" ? "pos" : "neg"}><b>{p.side} {p.qty} × {what}</b></span>
         {p.limitPrice != null && <span>@ {fmtMoney(p.limitPrice)} {p.orderType}</span>}
         {cost != null && <span className="cost">≈ <b>{fmtMoney(cost, 0)}</b></span>}
+        {p.limitPrice != null && live != null && (
+          <span className={`muted ${Math.abs(live / p.limitPrice - 1) > 0.02 ? (live > p.limitPrice ? "neg" : "pos") : ""}`}
+            title="the market since this card was suggested — approval re-prices at the live ask, so an old card never fills at an old price">
+            now {fmtMoney(live)} ({live >= p.limitPrice ? "+" : ""}{((live / p.limitPrice - 1) * 100).toFixed(1)}% since)
+          </span>
+        )}
       </div>
       <div className="prop-facts">
         <span className="prop-fact"><b>{p.context?.sourceName ?? "unknown source"}</b> · {p.context?.confidence ?? "?"}</span>
@@ -613,7 +632,7 @@ function ProposalCard({ p }: { p: Proposal }) {
         {trims && <span className="prop-fact">trims <b>{trims}</b></span>}
         {exitPlan?.underlyingStop != null && <span className="prop-fact">stop <b>{exitPlan.underlyingStop}</b></span>}
         {exitPlan?.premiumStopPct != null && <span className="prop-fact">premium stop <b>{exitPlan.premiumStopPct}%</b></span>}
-        {exitPlan?.maxHoldSessions != null && <span className="prop-fact">time box <b>{exitPlan.maxHoldSessions}s</b></span>}
+        {exitPlan?.maxHoldSessions != null && <span className="prop-fact">time box <b>{exitPlan.maxHoldSessions} sessions</b></span>}
         {!exitPlan && p.bracket?.take_profit && <span className="prop-fact">target <b>{fmtMoney(p.bracket.take_profit)}</b></span>}
         {!exitPlan && p.bracket?.stop_loss && <span className="prop-fact">stop <b>{fmtMoney(p.bracket.stop_loss)}</b></span>}
       </div>

@@ -1516,22 +1516,39 @@ class SignalService:
                     pf = eng.positions.portfolio(proposal["portfolioId"]) or {}
                     live_ok = (pf.get("kind") != "live"
                                or bool(eng.settings.get("techniques.tip.allow_live_auto", False)))
-                    if promoted:
+                    # UNATTENDED practice (user 2026-09-04: "I won't be monitoring —
+                    # approvals aren't useful"): the analyst's verdict IS the
+                    # decision. Skips/watches are declined on the record instead of
+                    # waiting for a click that never comes; promoted implied takes
+                    # trade like any take. Live portfolios always keep the human.
+                    unattended = (bool(eng.settings.get("techniques.tip.unattended", True))
+                                  and pf.get("kind") != "live")
+                    if promoted and not unattended:
                         log.info("auto mode: proposal %s was promoted from an implied tip — "
                                  "a human approves", proposal["id"])
                     elif verdict is None and appraise and analyst_available:
                         # the analyst was supposed to gate this and DIDN'T deliver a
                         # verdict (crashed / unparseable reply). Fail CLOSED: a missing
                         # gatekeeper is not permission (TSLA 2026-08-31 — a failed
-                        # appraisal auto-bought 15 two-DTE puts). Human decides.
+                        # appraisal auto-bought 15 two-DTE puts). The morning triage
+                        # re-appraises it; a second failure expires on the TTL.
                         log.warning("auto mode: analyst enabled but no verdict for %s "
                                     "(run failed?) — leaving proposal %s pending",
                                     row.id, proposal["id"])
                         istep("note", f"{row.ticker}: analyst produced no verdict — auto-approve "
-                                      "FAILS CLOSED; the proposal waits for you.")
+                                      "FAILS CLOSED; the morning triage re-appraises it.")
                     elif verdict not in (None, "take"):
-                        log.info("auto mode: analyst said %r — leaving proposal %s for the human",
-                                 verdict, proposal["id"])
+                        if unattended:
+                            why = (f"analyst said {verdict}: "
+                                   f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
+                            with contextlib.suppress(Exception):
+                                proposal = await eng.proposals.reject(proposal["id"], via="analyst",
+                                                                      reason=why)
+                            istep("note", f"{row.ticker}: analyst said {verdict} — declined on the "
+                                          "record (unattended practice; no card waits for you).")
+                        else:
+                            log.info("auto mode: analyst said %r — leaving proposal %s for the human",
+                                     verdict, proposal["id"])
                     elif not live_ok:
                         log.warning("auto mode: live portfolio without allow_live_auto — "
                                     "leaving proposal %s pending", proposal["id"])
@@ -2000,6 +2017,76 @@ class SignalService:
         } for r in rows]
 
     # ---------------------------------------------------------- recovery sweep
+    async def morning_triage(self) -> dict:
+        """09:33 ET (user 2026-09-04: "I won't be monitoring — assess by LLM at
+        market open"): every proposal still pending gets a FRESH analyst
+        appraisal against the live open, then the same auto gates every take
+        runs through — approve / decline-with-reason / (rare) leave to the TTL.
+        Overnight cards (LULU 16:13 ET) are decided here, not by a human. Live
+        portfolios are never triaged — those stay yours."""
+        eng = self.engine
+        from ..approvals.proposals import proposal_dict
+        from ..models import Proposal
+        from ..signals.sources import resolve_policy
+        from ..techniques.tip.analyst import analyze_tip
+        out = {"looked": 0, "approved": [], "declined": [], "left": []}
+        async with eng.sf() as session:
+            rows = (await session.execute(
+                select(Proposal).where(Proposal.status == "pending"))).scalars().all()
+        for prow in rows:
+            if (prow.context or {}).get("techniqueId") != "tip":
+                continue
+            pf = eng.positions.portfolio(prow.portfolio_id) or {}
+            if pf.get("kind") == "live":
+                continue
+            out["looked"] += 1
+            async with eng.sf() as session:
+                sig = await session.get(Signal, prow.signal_id) if prow.signal_id else None
+            if sig is None:
+                out["left"].append(prow.id)
+                continue
+            policy = resolve_policy(eng.settings, sig.source_name)
+            verdict, rationale = None, ""
+            try:
+                opinion = await analyze_tip(eng, sig, sig.verification or {}, policy)
+                if opinion:
+                    verdict = opinion.get("verdict")
+                    rationale = str(opinion.get("rationale") or "")[:300]
+            except Exception:
+                log.exception("morning triage appraisal failed for %s", prow.id)
+            if verdict == "take":
+                explicit_auto = (((eng.settings.get("techniques.tip.sources") or {})
+                                  .get(sig.source_name or "", {}) or {}).get("mode") == "auto")
+                gate = None
+                if not explicit_auto:
+                    trust = await self.source_trust(sig.source_name or "unknown")
+                    need_n = int(eng.settings.get("techniques.tip.auto_min_graded", 5))
+                    need_hit = float(eng.settings.get("techniques.tip.auto_min_hit", 0.4))
+                    if trust["graded"] < need_n:
+                        gate = f"auto not yet earned ({trust['graded']}/{need_n} graded)"
+                    elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
+                        gate = f"hit rate {trust['hitRate']:.2f} below {need_hit:.2f}"
+                if gate:
+                    out["left"].append(prow.id)
+                    continue
+                try:
+                    await eng.proposals.approve(prow.id, via="auto")
+                    out["approved"].append(prow.id)
+                except Exception as exc:
+                    log.warning("triage approve failed for %s: %s", prow.id, exc)
+                    out["left"].append(prow.id)
+            elif verdict in ("skip", "watch"):
+                with contextlib.suppress(Exception):
+                    await eng.proposals.reject(prow.id, via="analyst",
+                                               reason=f"morning triage — analyst said {verdict}: {rationale}")
+                    out["declined"].append(prow.id)
+            else:
+                out["left"].append(prow.id)               # second failed appraisal: the TTL decides
+        if out["looked"]:
+            await eng.journal.append("TipMorningTriage",
+                                     {k: (v if isinstance(v, int) else v[:20]) for k, v in out.items()})
+        return out
+
     def start_recovery(self) -> None:
         if self._recovery_task is None:
             self._recovery_task = asyncio.create_task(self._recovery_loop(),

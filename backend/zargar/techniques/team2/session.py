@@ -45,6 +45,7 @@ class Setup:
     losses: int = 0
     dead: bool = False
     dead_reason: str | None = None
+    _stalled: bool = False
 
     def to_dict(self) -> dict:
         return {"id": self.id, "kind": self.kind, "direction": self.direction, "anchor": round(self.anchor, 4),
@@ -71,6 +72,7 @@ class Position:
     size_mult: float = 1.0
     entry_kind: str = "ema"
     peak_pct: float = 0.0
+    extreme: float = 0.0            # highest high (long) / lowest low (short) since entry (X1 new-extreme cue)
     realised: list[dict] = field(default_factory=list)   # partial exits
 
     def to_dict(self) -> dict:
@@ -270,14 +272,25 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             if cur_pct <= -rules.premium_stop_pct:
                 close_fraction(p, p.remaining, b2.close, end_ts, f"premium stop: {cur_pct:.0f}% ≤ −{rules.premium_stop_pct:.0f}% (P1/D13)")
                 continue
-            # candle stop (S1): a 2m close through the EMA13 (or the anchor for a level entry)
-            guard = r.ema_fast if p.entry_kind == "ema" else p.setup.anchor
-            through = (b2.close < guard) if long else (b2.close > guard)
-            if through and guard is not None:
-                why = f"2m close {b2.close:.2f} through the {'EMA13' if p.entry_kind == 'ema' else 'level'} {guard:.2f} (S1 one-candle stop)"
+            # candle stop (S1): a 2m close through the line the entry leaned on — EMA13, EMA48, the 200 EMA
+            # (a range-day flush) or the level itself (retest / base)
+            guard_name, guard = {"ema": ("EMA13", r.ema_fast), "ema48": ("EMA48", r.ema_mid),
+                                 "ema200": ("200 EMA", r.ema_slow)}.get(p.entry_kind, ("level", p.setup.anchor))
+            through = guard is not None and ((b2.close < guard) if long else (b2.close > guard))
+            if through:
+                why = f"2m close {b2.close:.2f} through the {guard_name} {guard:.2f} (S1 one-candle stop)"
                 if p.trims:
                     why = "runner: " + why + " (X2)"
                 close_fraction(p, p.remaining, b2.close, end_ts, why)
+                continue
+            # X1 "new high/low of day" cue: the first trim fires on the first new extreme after entry
+            prev_extreme = p.extreme
+            p.extreme = max(p.extreme, b2.high) if long else min(p.extreme, b2.low)
+            if (rules.trim_cue == "new_extreme" and "trim1" not in p.trims and cur_pct > 0 and prev_extreme
+                    and ((b2.high > prev_extreme) if long else (b2.low < prev_extreme))):
+                p.trims.append("trim1")
+                close_fraction(p, rules.trim_1_frac, b2.close, end_ts,
+                               f"new {'high' if long else 'low'} of the move at +{cur_pct:.0f}% — first trim (X1 new-extreme cue)")
                 continue
             # trims (V2/X1)
             if "trim2" not in p.trims and cur_pct >= rules.trim_2_pct and p.remaining > 0:
@@ -315,22 +328,65 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             continue
         s = sorted(cands, key=lambda x: x.confirmed_ts)[-1]
         long = s.direction == "long"
-        if r.stack != ("bull" if long else "bear"):
+        # T8 first: on a range day the trigger may be the 200 EMA flush itself — the 13/48 have crossed the
+        # bias way but the full stack is not yet in order (his SPY 671p: bearish cross, then the close under
+        # the 200). Every other entry needs the full stack (E3/B9) and a fanned trend (E4).
+        flushed = (s.range_day and rules.allow_ema200_flush and r.ema_slow is not None and r.ema_fast is not None
+                   and r.ema_mid is not None and len(session_bars_2m) >= 2
+                   and ((r.ema_fast < r.ema_mid and b2.close < r.ema_slow <= session_bars_2m[-2].close) if not long
+                        else (r.ema_fast > r.ema_mid and b2.close > r.ema_slow >= session_bars_2m[-2].close)))
+        if not flushed and r.stack != ("bull" if long else "bear"):
             continue                                   # E3/B9: stack must agree (silent — happens every bar)
-        if r.fan == "chop":
+        if not flushed and r.fan == "chop":
             continue                                   # E4: braided EMAs = no trade
         ema = r.ema_fast
         if ema is None:
             continue
         atr = r.atr or 0.0
         tol = rules.pm_tol_atr * atr
-        # a touch: the bar reached INTO the EMA13 band (or the anchor level) and closed back on the trade's side
-        touched_ema = (b2.low <= ema + tol and b2.close > ema) if long else (b2.high >= ema - tol and b2.close < ema)
-        touched_lvl = (b2.low <= s.anchor + tol and b2.close > s.anchor) if long else (b2.high >= s.anchor - tol and b2.close < s.anchor)
-        if not (touched_ema or touched_lvl):
+        want_ema = rules.entry_at in ("ema", "both")
+        want_lvl = rules.entry_at in ("level", "both")
+        # T1: a touch — the bar reached INTO the EMA13 band and closed back on the trade's side
+        touched_ema = want_ema and ((b2.low <= ema + tol and b2.close > ema) if long else (b2.high >= ema - tol and b2.close < ema))
+        # E5: the 48 EMA is the second line of defense — a deeper dip that holds is an entry too
+        ema48 = r.ema_mid
+        touched_48 = (want_ema and rules.allow_ema48_entries and ema48 is not None and not touched_ema
+                      and ((b2.low <= ema48 + tol and b2.close > ema48) if long else (b2.high >= ema48 - tol and b2.close < ema48)))
+        # T2: the retest of the broken level itself
+        touched_lvl = want_lvl and ((b2.low <= s.anchor + tol and b2.close > s.anchor) if long else (b2.high >= s.anchor - tol and b2.close < s.anchor))
+        # T7: "break & base" — the last N 2m bars all held just beyond the level (within base_tol_atr) without
+        # printing a touch: the base itself is the entry ("that break & base over pre market high is so nice")
+        based = False
+        if want_lvl and not touched_lvl and rules.base_bars > 0 and len(session_bars_2m) >= rules.base_bars and atr > 0:
+            recent = session_bars_2m[-rules.base_bars:]
+            band = rules.base_tol_atr * atr
+            if long:
+                based = all(x.close > s.anchor and x.low >= s.anchor - tol and x.high <= s.anchor + band for x in recent)
+            else:
+                based = all(x.close < s.anchor and x.high <= s.anchor + tol and x.low >= s.anchor - band for x in recent)
+            based = based and all(x.ts > s.confirmed_ts for x in recent)
+        # T8: `flushed` was judged above, before the stack gate
+        if not (touched_ema or touched_48 or touched_lvl or based or flushed):
+            # A6: a dip that has sat on the wrong side of the EMA13 for longer than pullback_max_bars is a
+            # consolidation, not a pullback — say so once per setup
+            recent_wrong = [x for x in session_bars_2m[-(rules.pullback_max_bars + 1):]
+                            if ((x.close < ema) if long else (x.close > ema))]
+            if rules.pullback_max_bars > 0 and len(recent_wrong) > rules.pullback_max_bars and not s._stalled:
+                s._stalled = True
+                note(b2.ts, "pullback_stalled", f"{s.id}: price has closed on the wrong side of the EMA13 for more than "
+                     f"{rules.pullback_max_bars} bars — that is a consolidation, not a dip (A6)", setup=s.id)
             continue
-        entry_kind = "ema" if touched_ema else "level"
-        entry_spot = (ema if touched_ema else s.anchor)
+        s._stalled = False
+        if touched_ema:
+            entry_kind, entry_spot = "ema", ema
+        elif touched_48:
+            entry_kind, entry_spot = "ema48", ema48
+        elif touched_lvl:
+            entry_kind, entry_spot = "level", s.anchor
+        elif based:
+            entry_kind, entry_spot = "base", b2.close
+        else:
+            entry_kind, entry_spot = "ema200", b2.close
         # the bar must not be an engulfing lunge into the EMA (A6/F4)
         body = abs(b2.close - b2.open)
         avg = _avg_body(session_bars_2m[:-1])
@@ -372,8 +428,11 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         s.entries += 1
         pos = Position(setup=s, direction=s.direction, entry_ts=end_ts, entry_spot=entry_spot, strike=strike,
                        call=long, entry_mark=mark, entry_fill=fill, touch_index=idx,
-                       early=m < rules.early_flag_before_min, bucket=bucket, size_mult=mult, entry_kind=entry_kind)
-        note(b2.ts, "fire", f"{s.id}: touch #{idx} of the {'EMA13' if entry_kind == 'ema' else 'level'} at {entry_spot:.2f} "
+                       early=m < rules.early_flag_before_min, bucket=bucket, size_mult=mult, entry_kind=entry_kind,
+                       extreme=b2.high if long else b2.low)
+        kind_word = {"ema": "EMA13", "ema48": "EMA48", "level": "level", "base": "base beyond the level",
+                     "ema200": "200 EMA flush"}[entry_kind]
+        note(b2.ts, "fire", f"{s.id}: touch #{idx} — {kind_word} at {entry_spot:.2f} "
              f"held (close {b2.close:.2f}) in a {r.stack} stack — buy {'call' if long else 'put'} {strike:g} "
              f"≈ ${fill.premium:.2f} (T1/T2/V1); size {bucket} ×{mult:g}"
              + (" — early (before 10:00, P2)" if m < rules.early_flag_before_min else ""),

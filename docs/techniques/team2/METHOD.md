@@ -187,6 +187,14 @@ exit when a 2-minute candle closes through it, or at the next zone. One or two t
   break & retest, taking your entry as close to that as possible keeps losses small"
   [2025-09-07]. For the engine: the entry limit sits at the EMA/level, never at market after
   the bounce is visible.
+- **T7 Break & base** (images 2025-08-26/27 QQQ, 2026-09-03 SPY "BREAK & BASE"): after the 15m close beyond the
+  level, price may not dip to the EMA at all — it BASES just beyond the level for a few 2m bars ("that break &
+  base over pre market high is so nice… I've been loading up these cheap 574c"). The base itself is the entry;
+  the stop is the level.
+- **T8 The 200 EMA flush** (image 2025-10-17 SPY scenario 2): on a range day (PDH rejected after a 15m sweep) his
+  trigger for puts was "the break of 200 EMA support" — the entry alert came on the 2m candle close below the 200
+  EMA after a bearish 13/48 cross, and the PRE-MARKET LOW was "my final target on the rest of these puts". So a
+  range-day scenario fires on the 200-EMA flush, not on a pullback; targets = the PM level, then the PDL zone.
 - **T5** Re-entry is part of the method: the author stops out and re-enters the same idea
   ("stopped out of both these entries … before hitting the trade that ran 10x")
   [2026-09-03]; "multiple opportunities to enter a trend" [2025-05-03].
@@ -209,6 +217,13 @@ exit when a 2-minute candle closes through it, or at the next zone. One or two t
   [2023-02-18, 2025-05-03]. Scale out along the way [2023-02-18].
 - **X3** Zone targets: next zone / most recent pivot (L3); a range trade targets the opposite
   side of yesterday's range (L3.2). Be "cautious of a rejection/reversal" at the target zone.
+- **X5 Trim heavy, then add on the retest** (image 2025-10-17): "I like to get a bunch trimmed on that first push
+  so I can free up some room for possible adds if I like the retest later… re-upped a full position and these
+  671p are ITM and up 100%". The first push is trimmed HEAVILY; the freed size is re-added on the next 13 EMA
+  retest in the same direction — a scale-out/scale-back-in rhythm, not one static ladder.
+- **X6 Stop for a level entry = the level** (image 2025-08-26 QQQ): ".31 average now — testing that pre market
+  high again; if that breaks I'm out. For now those are the dips I'm looking to buy" — for a retest/base entry the
+  invalidation is the level, and he averages in (.31 average) across the dips while it holds.
 - **X4** Recap arithmetic seen: "first trim at 90%, then fully out at 130%" (premium % gain,
   one recap); "100% play … called it a day by 11am" [2025-10-18]. No systematic trim ladder
   is public (Q3).
@@ -255,6 +270,9 @@ example found so far is the same shape:
   **entry premium is: ≈ $0.50–0.60 on SPY/QQQ, $0.20 on IWM** (5 of 6 priced examples). The
   working rule is therefore **"0DTE, the OTM strike whose ask is ≈ $0.50"** — a premium-targeted
   strike, cheap enough that a one-candle stop costs 20–40% and a level-to-level move pays 100–500%.
+- **V12 Far-OTM in high-IV regimes** (image 2025-04-04, the tariff crash): "SPY 505p" with SPY ≈ 522 — $17 (3.3%)
+  out of the money, +424%. With IV that high the ~$0.50 contract simply sits far away; the premium-targeted rule
+  (V1) reproduces this automatically, a fixed-distance rule would not.
 - **V10 Position size evidence**: ≈ $2.6k premium / ~48 contracts on a "full size" QQQ trade
   (2025-03-10); "$5k–$10k weeks" claimed. A full-size loss at −30% ≈ $800.
 - **V11 "Sell at target"**: the pre-planned next level (603.19) is an outright exit for the rest

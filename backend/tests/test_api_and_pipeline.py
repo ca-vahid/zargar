@@ -249,6 +249,7 @@ async def test_analyst_take_on_implied_tip_is_promoted_but_never_self_approves(a
     await wait_quote(eng, "AAPL")
     await eng.settings.set("verification.max_price_deviation_pct", 10.0)
     await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+    await eng.settings.set("techniques.tip.unattended", False)   # the ATTENDED contract
     eng.signals_service._analyst_client = _FakeAnthropic()
     tip = ExtractionResult(
         signals=[TradeSignal(
@@ -267,6 +268,30 @@ async def test_analyst_take_on_implied_tip_is_promoted_but_never_self_approves(a
     assert p is not None and p["status"] == "pending", p
     assert p["context"].get("promoted") and "human" in (p["context"].get("autoGate") or "")
     assert not p.get("decidedVia")
+    # UNATTENDED practice (the default; user 2026-09-04): the same promoted
+    # take trades — nobody is watching the queue, the analyst's take decides
+    await eng.settings.set("techniques.tip.unattended", True)
+    await eng.signals_service.dismiss_signals([sig["id"]])
+    tip2 = ExtractionResult(
+        signals=[TradeSignal(
+            ticker="AAPL", direction="long", action="open", instrument="shares",
+            timeframe="swing", catalyst="buyback",
+            thesis_summary="Adding again.", evidence_quotes=["We are buying AAPL today"],
+            confidence="implied", is_actionable=False)],
+        source_type="other")
+    # a SHARES take keeps the test on its actual subject (the unattended
+    # approval flow) instead of the rig's synthetic option quotes
+    class _TakeShares(_FakeAnthropic):
+        async def create(self, **kw):
+            return _FakeAnthropicResp([_Block(type="text", text=(
+                '{"verdict": "take", "instrument": "shares", "quantity": 5,'
+                ' "rationale": "adding with the trend", "confidence": 0.7,'
+                ' "exit_targets": [245.0], "exit_fractions": [1.0],'
+                ' "underlying_stop": 224.0, "max_hold_sessions": 8}'))])
+    eng.signals_service._analyst_client = _TakeShares()
+    out2 = await run_pipeline(eng, tip2)
+    p2 = out2[0]["proposal"]
+    assert p2 is not None and p2["status"] == "executed" and p2["decidedVia"] == "auto", p2
 
 
 async def test_stale_tip_replayed_not_traded(app_client):
@@ -340,6 +365,27 @@ async def test_newer_tip_for_the_same_contract_supersedes_the_pending_proposal(a
     pending = [p for p in (await client.get("/api/proposals?status=pending")).json()
                if p["symbol"] == "AAPL"]
     assert len(pending) == 1 and pending[0]["id"] == p2["id"]
+
+
+async def test_unattended_skip_is_declined_on_the_record(app_client):
+    # user 2026-09-04: "I won't be monitoring — approvals aren't useful." In
+    # unattended practice an analyst SKIP declines the card immediately with
+    # the reasoning attached — history, not a queue item.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+
+    class _Skip(_FakeAnthropic):
+        async def create(self, **kw):
+            return _FakeAnthropicResp([_Block(type="text", text=(
+                '{"verdict": "skip", "rationale": "chart premise broken", "confidence": 0.8}'))])
+    eng.signals_service._analyst_client = _Skip()
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None and p["status"] == "rejected" and p["decidedVia"] == "analyst", p
+    assert "skip" in (p["context"].get("declineReason") or "")
+    assert (await client.get("/api/proposals?status=pending")).json() == []
 
 
 async def test_share_proposal_is_sized_to_fit_the_position_cap(app_client):
