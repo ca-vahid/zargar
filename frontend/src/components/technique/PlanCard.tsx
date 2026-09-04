@@ -235,7 +235,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
           </div>
           <div className="tq-section">
             <div className="tq-label">Void if</div>
-            <ul className="tq-reasons">{plan.invalidations.map((i, k) => <li key={k}><span className="tq-chip">{i.rule}</span> {i.text}</li>)}</ul>
+            <ul className="tq-reasons">{(plan.invalidations ?? []).map((i, k) => <li key={k}><span className="tq-chip">{i.rule}</span> {i.text}</li>)}</ul>
             <div className="muted small">Gap handling is our extrapolation — the book is silent on overnight gaps (spec Q11–Q13); the walk-forward reports it with and without.</div>
           </div>
           {levelsRow && (
