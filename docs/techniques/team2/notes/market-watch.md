@@ -764,7 +764,7 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   counts drop accordingly. Both plans carry a $997 loss halt at 6% risk.
 
 
-## 2026-09-04 15:30 ET (run 13 — the F25–F36 build is live and healthy; the desk is now loss-capped out for the day)
+## 2026-09-04 15:10 ET (run 13 — the F25–F36 build is live and healthy; the desk is now loss-capped out for the day)
 
 - **Alive, real-time, two plans.** `/api/health` ok v0.7.0, 62 armed. SPY and IWM `armed` + **auto** on
   Practice (`ff3c29d4`), `needsAttention: false`, no `readError`, nothing open or working. Quotes **0–1 s**
@@ -814,8 +814,8 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   equity. With F22 live the same book reads **$8,401** and the 13:48 QQQ ticket passed. Still worth an
   explicit `eq <= 0` refusal. **`zargar/execution/planrunner.py` — proposal, not built here.**
 - **Nothing built or deployed this run.** All three findings are money rules or shared-engine changes,
-  and it is 15:30 — the last-entry cutoff — with the desk in auto. No restart.
-- **Next run (16:05, post-close) should check:** whether the **15:32 `skip_last_entry`** row appeared on
+  and every fix queued by earlier runs already shipped at 14:57. The desk is in auto with SPY 0.11 % from a level, so no restart and no deploy this run.
+- **Next run should check:** whether the **15:32 `skip_last_entry`** row appeared on
   SPY and IWM (F26's first live exercise — expect it at the first 2m close past 15:30, per F25's clock)
   and the **15:45 flatten**; that no entry was taken after 15:30; the nightly `team2_plan_nightly` at
   17:00; the day's final read/replay parity and the scorecard; and whether the user has ruled on
