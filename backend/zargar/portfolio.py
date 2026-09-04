@@ -415,11 +415,22 @@ class PositionKeeper:
             await session.commit()
         return out
 
-    async def equity_series(self, pid: str, limit: int = 2000) -> list[list]:
+    async def equity_series(self, pid: str, limit: int = 2000, *,
+                            since: int | None = None, points: int = 0) -> list[list]:
+        """Equity samples, newest last. `since` (epoch ms) bounds the window and
+        `points` caps how many come back — a month of 30-second samples is 86k
+        rows, so the caller asks for a budget and gets one value per bucket
+        (the LAST in each, so the final point is always the live one)."""
         async with self._sf() as session:
+            q = select(EquityPoint).where(EquityPoint.portfolio_id == pid)
+            if since is not None:
+                q = q.where(EquityPoint.ts >= since)
             rows = (await session.execute(
-                select(EquityPoint)
-                .where(EquityPoint.portfolio_id == pid)
-                .order_by(EquityPoint.ts.desc())
-                .limit(limit))).scalars().all()
-        return [[r.ts, round(r.equity, 2)] for r in reversed(rows)]
+                q.order_by(EquityPoint.ts.desc()).limit(limit))).scalars().all()
+        out = [[r.ts, round(r.equity, 2)] for r in reversed(rows)]
+        if points and len(out) > points:
+            step = len(out) / points
+            keep = {min(len(out) - 1, int((i + 1) * step) - 1) for i in range(points)}
+            keep.add(len(out) - 1)                      # never drop the live point
+            out = [p for i, p in enumerate(out) if i in keep]
+        return out

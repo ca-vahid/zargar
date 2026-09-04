@@ -6,13 +6,19 @@ import { baseChartOptions, cssVar } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { netWorthByCurrency, useStore } from "../store";
 import { useViewport } from "../lib/viewport";
-import { useWorkspaceFilter } from "../lib/workspace";
+import { useWorkspace, useWorkspaceFilter } from "../lib/workspace";
+import { parseOcc } from "../lib/occ";
+import { rgbaVar } from "../lib/highchartsTheme";
+import { SymIcon } from "../components/SymIcon";
 import type { BrokerageProvider } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { cashText, providerTotal } from "../lib/brokerage";
 import { AsyncSection, EmptyState, StatusPill } from "../components/ui";
 import { WatchRow } from "../components/WatchRow";
+
+const lsGet = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
+const lsSet = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
 
 /* ── the morning desk card (POST-SOAK Phase 1): one glance = what needs me ── */
 function MorningCard() {
@@ -160,11 +166,39 @@ function PracticeCard() {
   );
 }
 
+/** Equity over time. Two fixes the old panel needed (user 2026-09-04):
+    it only ever fetched the last ~2000 samples (≈16 h at one every 30 s), so
+    the chart opened on "6 PM yesterday" with a dead flat overnight leg — and
+    it drew the closed market at full width. Now the window is a real choice,
+    and the axis is ORDINAL over extended-session samples only: 8 PM joins
+    4 AM with no desert in between, while pre- and post-market moves (which
+    the feed does carry) stay visible. */
+const CURVE_RANGES = [
+  { key: "1d", label: "1D", hours: 24, points: 320 },
+  { key: "3d", label: "3D", hours: 72, points: 420 },
+  { key: "1w", label: "1W", hours: 24 * 7, points: 520 },
+  { key: "1m", label: "1M", hours: 24 * 30, points: 620 },
+  { key: "all", label: "All", hours: 0, points: 720 },
+] as const;
+const ET_HM = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" });
+/** Keep only samples inside the extended session (04:00–20:00 ET, Mon–Fri). */
+function inSession(ms: number): boolean {
+  const parts = ET_HM.formatToParts(ms);
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  const wd = get("weekday");
+  if (wd === "Sat" || wd === "Sun") return false;
+  const mins = Number(get("hour")) * 60 + Number(get("minute"));
+  return mins >= 240 && mins < 1200;
+}
+
 function EquityCurvePanel() {
   const portfolios = useStore((s) => s.portfolios);
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
   const theme = useStore((s) => s.settings["ui.theme"] ?? "light");
   const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
+  const [range, setRange] = useState<string>(() => lsGet("zargar_dash_curve", "1d"));
+  const spec = CURVE_RANGES.find((r) => r.key === range) ?? CURVE_RANGES[0];
   // live mode charts your biggest real account; practice charts the sandbox
   const target = useMemo(() => {
     if (mode === "live") {
@@ -174,38 +208,92 @@ function EquityCurvePanel() {
           (p.equity ?? p.cash) > (best.equity ?? best.cash) ? p : best);
       }
     }
-    return portfolios.find((p) => p.id === defaultPid) ?? portfolios[0];
+    return portfolios.find((p) => p.id === defaultPid && p.kind === "sim")
+      ?? portfolios.find((p) => p.kind === "sim") ?? portfolios[0];
   }, [mode, portfolios, defaultPid]);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
 
-  const series = useAsync<[number, number][]>(
-    () => (target ? api.get(`/api/portfolios/${target.id}/equity?limit=2000`) : Promise.resolve([])),
-    [target?.id],
-  );
+  const since = spec.hours ? Date.now() - spec.hours * 3600_000 : 0;
+  const series = useAsync<[number, number][]>(() => {
+    if (!target) return Promise.resolve([]);
+    // samples land every ~30 s; ask for the window plus headroom. `since` and
+    // `points` are honoured by newer servers — an older one drops them silently,
+    // which is why the window and the thinning are applied again below.
+    const limit = spec.hours ? Math.ceil(spec.hours * 140) : 200000;
+    return api.get(`/api/portfolios/${target.id}/equity?limit=${limit}&points=${spec.points}`
+      + (since ? `&since=${Math.round(since)}` : ""));
+  }, [target?.id, spec.key]);
+
+  const pts = useMemo(() => {
+    let raw = series.data ?? [];
+    if (since) raw = raw.filter((p) => p[0] >= since);
+    const open = raw.filter((p) => inSession(p[0]));
+    // a book that only ever moved outside the session still deserves a line
+    let out = open.length >= 2 ? open : raw;
+    // Collapse dead stretches. Pre/post-market samples are kept (they DO move
+    // when the tape prints) but a book that sat at the same cent for four hours
+    // gets one step, not four hours of width — the axis is ordinal, so dropping
+    // the interior of a flat run is what actually removes the desert.
+    out = out.filter((p, i) => {
+      if (i === 0 || i === out.length - 1) return true;
+      return !(p[1] === out[i - 1][1] && p[1] === out[i + 1][1]);
+    });
+    if (out.length > spec.points) {           // thin evenly, always keep the last
+      const step = out.length / spec.points;
+      const keep = new Set<number>([out.length - 1]);
+      for (let i = 0; i < spec.points; i++) keep.add(Math.min(out.length - 1, Math.round(i * step)));
+      out = out.filter((_, i) => keep.has(i));
+    }
+    return out;
+  }, [series.data, since, spec.points]);
+  const first = pts.length ? pts[0][1] : 0;
+  const last = pts.length ? pts[pts.length - 1][1] : 0;
+  const delta = last - first;
 
   useEffect(() => {
-    if (!containerRef.current || !series.data || series.data.length === 0) return;
+    if (!containerRef.current || pts.length === 0) return;
+    const base = baseChartOptions();
+    const up = delta >= 0;
+    const col = up ? cssVar("--up") : cssVar("--down");
     chartRef.current?.destroy();
     chartRef.current = Highcharts.stockChart(containerRef.current, {
-      ...baseChartOptions(),
-      chart: { ...baseChartOptions().chart, height: 240 },
+      ...base,
+      chart: { ...base.chart, height: 250 },
       navigator: { enabled: false },
+      time: { timezone: "America/New_York" },
+      // ordinal: the closed market takes no width at all
+      xAxis: { ...(base.xAxis as any), ordinal: true },
+      yAxis: { ...(base.yAxis as any), opposite: true, startOnTick: false, endOnTick: false },
+      tooltip: { ...(base.tooltip as any), valueDecimals: 2, xDateFormat: "%a %b %e, %H:%M ET" },
       series: [{
-        type: "line",
-        name: target?.name ?? "equity",
-        color: cssVar("--accent"),
-        lineWidth: 2,
-        data: series.data,
-      }],
+        type: "area", name: target?.name ?? "equity", color: col, lineWidth: 2,
+        fillColor: { linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
+          stops: [[0, rgbaVar(up ? "--up" : "--down", 0.22)], [1, rgbaVar(up ? "--up" : "--down", 0)]] },
+        // an area series anchors its axis at 0 by default, which squashed a
+        // 8.8k equity line into a hairline at the top of the panel
+        threshold: null, data: pts, marker: { enabled: false },
+      } as any],
     });
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
-  }, [series.data, theme, target?.name]);
+  }, [pts, theme, target?.name, delta]);
 
   return (
     <div className="panel dash-curve">
-      <div className="panel-head">
-        Equity <span className="sub">{target?.name ?? ""}</span>
+      <div className="panel-head dash-curve-head">
+        <span>Equity</span>
+        {pts.length > 1 && (
+          <span className={`dash-curve-delta ${delta >= 0 ? "pos" : "neg"}`}>
+            {delta >= 0 ? "+" : "−"}{fmtCcy(Math.abs(delta), target?.baseCurrency ?? "USD")}
+            <span className="muted"> over {spec.label === "All" ? "all time" : `the last ${spec.label}`}</span>
+          </span>
+        )}
+        <div className="seg sm dash-curve-range" role="group" aria-label="Equity range">
+          {CURVE_RANGES.map((r) => (
+            <button key={r.key} className={range === r.key ? "on" : ""}
+              onClick={() => { setRange(r.key); lsSet("zargar_dash_curve", r.key); }}>{r.label}</button>
+          ))}
+        </div>
       </div>
       <AsyncSection
         state={series}
@@ -214,6 +302,7 @@ function EquityCurvePanel() {
       >
         {() => <div ref={containerRef} />}
       </AsyncSection>
+      <div className="dash-curve-foot muted">market hours only — nights and weekends are skipped</div>
     </div>
   );
 }
@@ -338,171 +427,151 @@ function RecentActivity() {
   );
 }
 
-export function DashboardPage() {
-  const { isPhone } = useViewport();
+/** The number the page exists for, at the top of the page (user 2026-09-04:
+    "the equity should be the top thing"). The per-account breakdown folds in
+    underneath instead of repeating itself in a second card, and the
+    connection chips (snaptrade / ibkr / alpaca quotes) only appear when
+    something is actually wrong — plumbing that always reads "fine" is just
+    width. */
+function EquityHero() {
   const portfolios = useStore((s) => s.portfolios);
   const brokerages = useStore((s) => s.brokerages);
   const halt = useStore((s) => s.halt);
   const broker = useStore((s) => s.broker);
-  const watchlists = useStore((s) => s.watchlists);
   const applyBrokerages = useStore((s) => s.applyBrokerages);
   const toast = useStore((s) => s.toast);
   const setPage = useStore((s) => s.setPage);
   const [refreshing, setRefreshing] = useState(false);
-
   const mode = useStore((s) => s.settings["trading.mode"] ?? "practice");
-  const totals = useMemo(
-    () => netWorthByCurrency(portfolios, brokerages), [portfolios, brokerages]);
-  const practiceTotal = useMemo(() => portfolios
-    .filter((p) => p.kind === "sim")
-    .reduce((sum, p) => sum + (p.equity ?? p.cash), 0), [portfolios]);
-  const practiceCcy = portfolios.find((p) => p.kind === "sim")?.baseCurrency ?? "USD";
+  const live = mode === "live";
   const usdCad = useStore((s) => s.quotes["USDCAD=X"]?.last);
-  // In LIVE mode the headline is REAL money only — practice never mixes in.
+  const totals = useMemo(() => netWorthByCurrency(portfolios, brokerages), [portfolios, brokerages]);
   const liveTotals = useMemo(
-    () => totals.filter((t) => t.brokerage > 0)
-      .map((t) => ({ currency: t.currency, total: t.brokerage })),
+    () => totals.filter((t) => t.brokerage > 0).map((t) => ({ currency: t.currency, total: t.brokerage })),
     [totals]);
+  const sims = useMemo(() => portfolios.filter((p) => p.kind === "sim"), [portfolios]);
+  const practiceTotal = sims.reduce((sum, p) => sum + (p.equity ?? p.cash), 0);
+  const practiceCcy = sims[0]?.baseCurrency ?? "USD";
   const blended = useMemo(() => {
     if (!usdCad || usdCad <= 0 || liveTotals.length < 2) return null;
     let cad = 0;
     for (const t of liveTotals) {
       if (t.currency === "CAD") cad += t.total;
       else if (t.currency === "USD") cad += t.total * usdCad;
-      else return null; // unknown currency — no blended figure
+      else return null;
     }
     return cad;
   }, [liveTotals, usdCad]);
-  const watchSymbols = watchlists[0]?.symbols ?? [];
 
   const refresh = async () => {
     setRefreshing(true);
     try {
       applyBrokerages(await api.refreshBrokerages());
       toast("success", "Brokerage data refreshed");
-    } catch (e: any) {
-      toast("error", e.message);
-    } finally {
-      setRefreshing(false);
-    }
+    } catch (e: any) { toast("error", e.message); }
+    finally { setRefreshing(false); }
   };
 
-  return (
-    <div>
-      <h2 className="page-title">Dashboard</h2>
-      <MorningCard />
-      <ArmedFleetWidget />
-      <div className="dash-grid">
-        <HoldingsWidget />
-        <div className="panel dash-networth">
-          <div className="panel-body">
-            <div className="networth-row">
-              {mode === "practice" ? (
-                <>
-                  {/* practice mode: the sandbox number leads, real money steps back */}
-                  <div>
-                    <div className="metric-lg">
-                      {fmtCcy(practiceTotal, practiceCcy)}
-                      <span className="status-pill dim" style={{ marginLeft: 8, verticalAlign: "middle" }}>
-                        practice
-                      </span>
-                    </div>
-                    <div className="metric-sub">simulated equity — no real money moves in this mode</div>
-                  </div>
-                  <div>
-                    <div className="metric-sub" style={{ marginTop: 6 }}>
-                      real accounts live in the <b>LIVE</b> workspace (switch next to HALT)
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* LIVE: real money only — practice lives on the Portfolios page */}
-                  {liveTotals.length === 0 && <span className="metric-lg">—</span>}
-                  {liveTotals.map((t) => (
-                    <div key={t.currency}>
-                      <div className="metric-lg">{fmtCcy(t.total, t.currency)}</div>
-                      <div className="metric-sub">real {t.currency} across brokerages</div>
-                    </div>
-                  ))}
-                  {blended !== null && (
-                    <div title={`Blended at live USD/CAD ${usdCad?.toFixed(4)} — approximate`}>
-                      <div className="metric-lg muted">≈ {fmtCcy(blended, "CAD")}</div>
-                      <div className="metric-sub">real total, live FX</div>
-                    </div>
-                  )}
-                </>
-              )}
-              <div className="networth-badges">
-                <span className={`status-pill ${halt.engaged ? "bad" : "ok"}`}>
-                  {halt.engaged ? "HALTED" : "trading"}
-                </span>
-                {broker?.snaptradeConnected && (
-                  <span className="status-pill ok">snaptrade</span>
-                )}
-                {broker?.ibkrConnected && <span className="status-pill ok">ibkr</span>}
-                {broker?.quoteSource && (
-                  <span className="status-pill dim">{broker.quoteSource} quotes</span>
-                )}
-                {brokerages?.enabled && (
-                  <button className="icon-btn" onClick={refresh} disabled={refreshing}
-                    aria-label="Refresh brokerage data"
-                    title="Refresh brokerage data now"
-                    style={{ gap: 6, fontSize: "var(--fs-1)" }}>
-                    {refreshing ? <span className="spinner" /> : <IconRefresh />}
-                    {brokerages?.lastSyncAt && (
-                      <span>synced {fmtDateTime(brokerages.lastSyncAt)}</span>
-                    )}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+  // accounts, as compact rows under the headline — one place, not two cards
+  const accounts: { name: string; ccy: string; value: number; sub?: string }[] = live
+    ? (brokerages?.providers ?? []).flatMap((p) => (p.accounts ?? []).map((a) => ({
+        name: a.name, ccy: a.currency, value: a.equity, sub: p.broker })))
+    : sims.map((p) => ({ name: p.name, ccy: p.baseCurrency ?? "USD", value: p.equity ?? p.cash }));
 
-        <div className="dash-providers">
-          {mode === "live" && (brokerages?.providers ?? []).map((p) => (
-            <ProviderCard key={p.connectionId || p.broker} provider={p} />
-          ))}
-          <PracticeCard />
-          {mode === "live" && (!brokerages || brokerages.providers.length === 0) && (
-            <div className="panel">
-              <div className="panel-body">
-                <EmptyState
-                  title="No brokerages connected"
-                  hint="Add SnapTrade credentials to backend/.env, enable SnapTrade, restart."
-                  action={<button className="link-btn" onClick={() => setPage("settings")}>
-                    open Settings → Brokerages</button>}
-                />
-              </div>
+  return (
+    <div className="panel dash-hero">
+      <div className="dash-hero-top">
+        <div className="dash-hero-main">
+          <div className="dash-hero-lbl">
+            {live ? "Real money · all accounts" : "Practice book · simulated money"}
+          </div>
+          <div className="dash-hero-num">
+            {live
+              ? (liveTotals.length ? liveTotals.map((t) => fmtCcy(t.total, t.currency)).join("  ·  ") : "—")
+              : fmtCcy(practiceTotal, practiceCcy)}
+          </div>
+          {live && blended !== null && (
+            <div className="dash-hero-sub" title={`Blended at live USD/CAD ${usdCad?.toFixed(4)}`}>
+              ≈ {fmtCcy(blended, "CAD")} combined at today's FX
+            </div>
+          )}
+          {!live && (
+            <div className="dash-hero-sub">
+              nothing here is real money — your accounts live in the <b>LIVE</b> workspace
             </div>
           )}
         </div>
-
-        <EquityCurvePanel />
-
-        <div className="panel dash-watch">
-          <div className="panel-head">
-            Watchlist <span className="sub">{watchlists[0]?.name ?? ""}</span>
-          </div>
-          <div style={isPhone ? undefined : { overflowY: "auto", maxHeight: 260 }}>
-            {watchSymbols.map((sym) => <WatchRow key={sym} symbol={sym} />)}
-            {watchSymbols.length === 0 && (
-              <EmptyState title="Watchlist is empty"
-                action={<button className="link-btn" onClick={() => setPage("settings")}>
-                  add symbols in Settings</button>} />
-            )}
-          </div>
+        <div className="dash-hero-side">
+          {halt.engaged && <span className="status-pill bad">HALTED — nothing can trade</span>}
+          {broker && broker.feedConnected === false && (
+            <span className="status-pill bad">price feed down</span>
+          )}
+          {live && broker && !broker.snaptradeConnected && (
+            <span className="status-pill warn">brokerage link down</span>
+          )}
+          {brokerages?.enabled && live && (
+            <button className="link-btn dash-hero-sync" onClick={refresh} disabled={refreshing}
+              title="Refresh brokerage balances now">
+              {refreshing ? <span className="spinner" /> : <IconRefresh />}
+              {brokerages?.lastSyncAt ? `synced ${fmtTime(brokerages.lastSyncAt)}` : "refresh"}
+            </button>
+          )}
         </div>
+      </div>
+      {/* one account restates the headline verbatim — only a real split is worth the row */}
+      {accounts.length > 1 && (
+        <div className="dash-hero-accts">
+          {accounts.map((a, i) => (
+            <button key={i} className="dash-acct" onClick={() => setPage("portfolios")}
+              title="Open Portfolios">
+              <span className="dash-acct-name">{a.name}{a.sub ? <span className="muted"> · {a.sub}</span> : null}</span>
+              <span className="dash-acct-val">{fmtCcy(a.value, a.ccy)}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {live && (!brokerages || brokerages.providers.length === 0) && (
+        <div className="dash-hero-accts">
+          <EmptyState title="No brokerages connected"
+            hint="Add SnapTrade credentials to backend/.env, enable SnapTrade, restart."
+            action={<button className="link-btn" onClick={() => setPage("settings")}>
+              open Settings → Brokerages</button>} />
+        </div>
+      )}
+    </div>
+  );
+}
 
+export function DashboardPage() {
+  const setPage = useStore((s) => s.setPage);
+  return (
+    <div>
+      <h2 className="page-title">Dashboard</h2>
+      {/* order (user 2026-09-04): the money, then what the desk is doing about
+          it, then the detail. The morning digest moved to the bottom — it is a
+          once-a-day read, not the headline. */}
+      <EquityHero />
+      <ArmedFleetWidget />
+      <div className="dash-grid">
+        <EquityCurvePanel />
+        <HoldingsWidget />
         <RecentActivity />
+      </div>
+      <MorningCard />
+      <div className="dash-foot muted">
+        <button className="link-btn" onClick={() => setPage("portfolios")}>accounts</button>
+        <button className="link-btn" onClick={() => setPage("ledger")}>ledger</button>
+        <button className="link-btn" onClick={() => setPage("watchlists")}>watchlists</button>
+        <button className="link-btn" onClick={() => setPage("settings")}>settings</button>
       </div>
     </div>
   );
 }
 
 
-/* ---- Armed fleet on the dashboard (A5): the day's plans greet you ---- */
+/** The day's plans, in one line you can act on. "Armed fleet · 63 plans" told
+    you nothing (user 2026-09-04) — this says what they are, what they are
+    doing, and which ones are about to happen. */
 function ArmedFleetWidget() {
   const armed = useStore((s) => s.techniqueArmed);
   const setPage = useStore((s) => s.setPage);
@@ -511,58 +580,113 @@ function ArmedFleetWidget() {
   const inTrade = active.filter((a) => a.openPositions > 0).length;
   const fired = active.reduce((n, a) => n + (a.trades ?? []).length, 0);
   const pnl = active.reduce((n, a) => n + (a.realizedPnl ?? 0), 0);
-  const top = active.slice().sort((x, y) =>
-    (y.openPositions - x.openPositions) || ((y.trades?.length ?? 0) - (x.trades?.length ?? 0))
-    || Math.abs(x.triggers?.[0]?.distancePct ?? 99) - Math.abs(y.triggers?.[0]?.distancePct ?? 99)).slice(0, 6);
+  const distOf = (a: typeof active[number]) =>
+    Math.min(...((a.triggers ?? []).map((t) => Math.abs(t.distancePct ?? 99)).concat(99)));
+  const waiting = active.filter((a) => a.openPositions === 0 && !(a.trades ?? []).length);
+  const closest = waiting.slice().sort((x, y) => distOf(x) - distOf(y)).slice(0, 5);
+  const busy = active.filter((a) => a.openPositions > 0 || (a.trades ?? []).length).slice(0, 3);
   return (
     <div className="panel dash-armed clickable" role="button" tabIndex={0}
       onClick={() => setPage("armed")}
       onKeyDown={(e) => e.key === "Enter" && setPage("armed")}
       title="Open the Armed page">
-      <div className="panel-head">Armed fleet
-        <span className="sub">{active.length} plan(s) · {inTrade} in trade · {fired} fired</span>
-        <span className={"tq-head-right " + (pnl > 0 ? "pos" : pnl < 0 ? "neg" : "muted")}>
-          {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}</span>
+      <div className="panel-head">Plans watching the market
+        <span className="sub">
+          {active.length} armed · {waiting.length} still waiting
+          {inTrade ? ` · ${inTrade} in a trade` : ""}{fired ? ` · ${fired} fired today` : ""}
+        </span>
+        {Math.abs(pnl) >= 0.005 && (
+          <span className={"tq-head-right " + (pnl > 0 ? "pos" : "neg")}>
+            {pnl >= 0 ? "+" : ""}{pnl.toFixed(2)}</span>
+        )}
       </div>
       <div className="panel-body dash-armed-rows">
-        {top.map((a) => (
-          <span key={a.runId} className="dash-armed-chip">
+        {busy.map((a) => (
+          <span key={a.runId} className="dash-armed-chip busy">
             <b>{a.symbol}</b>
-            {a.grade ? <span className={"tq-grade g" + a.grade}>{a.grade}</span> : null}
-            <span className="muted small">
-              {a.openPositions > 0 ? "in trade" : (a.trades?.length ?? 0) > 0 ? "fired" : "watching"}
-            </span>
+            <span className="muted small">{a.openPositions > 0 ? "in a trade" : "fired"}</span>
           </span>
         ))}
-        {active.length > top.length && <span className="muted small">+{active.length - top.length} more</span>}
+        {closest.length > 0 && <span className="dash-armed-lbl">closest to firing</span>}
+        {closest.map((a) => {
+          const d = distOf(a);
+          return (
+            <span key={a.runId} className={`dash-armed-chip${d <= 0.5 ? " near" : ""}`}>
+              <b>{a.symbol}</b>
+              <span className="muted small">{d < 99 ? `${d.toFixed(2)}% away` : "watching"}</span>
+            </span>
+          );
+        })}
+        {waiting.length > closest.length && (
+          <span className="muted small">+{waiting.length - closest.length} more</span>
+        )}
       </div>
     </div>
   );
 }
 
-/* ---- Holdings, moved off the sidebar and into the dashboard ---- */
+/** What you actually hold — in THIS workspace. It used to hard-filter to
+    live/paper accounts, so Practice showed real-account holdings that the
+    workspace says you cannot even trade (user 2026-09-04). Replaces the
+    watchlist on the board; the watchlist has its own page. */
 function HoldingsWidget() {
   const positionsMap = useStore((s) => s.positions);
   const portfolios = useStore((s) => s.portfolios);
   const setPage = useStore((s) => s.setPage);
-  const holdings = useMemo(() => {
-    const real = new Set(portfolios
-      .filter((p) => p.kind === "live" || p.kind === "paper").map((p) => p.id));
-    const syms = new Set<string>();
+  const openTrade = useStore((s) => s.openTrade);
+  const wsOk = useWorkspaceFilter();
+  const kindOf = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p.kind])), [portfolios]);
+  const rows = useMemo(() => {
+    const by = new Map<string, { qty: number; value: number; pnl: number }>();
     for (const p of Object.values(positionsMap)) {
-      if (real.has(p.portfolioId) && Math.abs(p.qty) > 1e-9) syms.add(p.symbol);
+      if (!wsOk(kindOf[p.portfolioId]) || Math.abs(p.qty) < 1e-9) continue;
+      const cur = by.get(p.symbol) ?? { qty: 0, value: 0, pnl: 0 };
+      cur.qty += p.qty;
+      cur.value += p.marketValue ?? 0;
+      cur.pnl += p.unrealizedPnl ?? 0;
+      by.set(p.symbol, cur);
     }
-    return [...syms].sort();
-  }, [positionsMap, portfolios]);
-  if (!holdings.length) return null;
+    return [...by.entries()].map(([symbol, v]) => ({ symbol, ...v }))
+      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+  }, [positionsMap, kindOf, wsOk]);
+  const ws = useWorkspace();
+  const [all, setAll] = useState(false);
+  const CAP = 8;
+  const shown = all ? rows : rows.slice(0, CAP);
+  const value = rows.reduce((t, r) => t + r.value, 0);
   return (
     <div className="panel dash-holdings">
       <div className="panel-head">My holdings
-        <span className="holdings-dot" title="Live positions in your real accounts" />
-        <button className="link-btn tq-head-right" onClick={() => setPage("watchlists")}>watchlists →</button>
+        <span className="sub">{rows.length} in the {ws === "live" ? "real accounts" : "practice book"}
+          {rows.length > 0 ? ` · ${fmtCcy(value, "USD")}` : ""}</span>
+        <button className="link-btn tq-head-right" onClick={() => setPage("portfolios")}>portfolios →</button>
       </div>
       <div className="panel-body dash-holdings-rows">
-        {holdings.map((sym) => <WatchRow key={sym} symbol={sym} />)}
+        {rows.length === 0 && (
+          <div className="muted small" style={{ padding: "10px 2px" }}>
+            Nothing held in the {ws === "live" ? "real accounts" : "practice book"} right now.
+          </div>
+        )}
+        {shown.map((h) => {
+          const occ = parseOcc(h.symbol);
+          const short = h.qty < 0;
+          return (
+            <button key={h.symbol} className="dash-hold" onClick={() => openTrade(occ?.underlying ?? h.symbol)}
+              title={`Open ${occ?.underlying ?? h.symbol} on the Trade page`}>
+              <SymIcon sym={occ?.underlying ?? h.symbol} size={20} />
+              <span className="dash-hold-sym">{occ?.display ?? h.symbol}
+                <span className="muted">{short ? "short " : ""}{Math.abs(h.qty)}{occ ? "×" : " sh"}</span></span>
+              <span className="dash-hold-val">{fmtCcy(Math.abs(h.value), "USD")}</span>
+              <span className={`dash-hold-pnl ${h.pnl >= 0 ? "pos" : "neg"}`}>
+                {h.pnl >= 0 ? "+" : "−"}{fmtCcy(Math.abs(h.pnl), "USD")}</span>
+            </button>
+          );
+        })}
+        {rows.length > CAP && (
+          <button className="link-btn dash-hold-more" onClick={() => setAll(!all)}>
+            {all ? "show the biggest 8" : `show all ${rows.length}`}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -22,6 +22,10 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
+      { tag: "improved", text: "Dashboard rebuilt around the number that matters: equity leads the page at full size, the accounts fold in underneath instead of repeating in a second card, and the always-green plumbing chips (snaptrade / ibkr / quotes) only appear when something is actually wrong." },
+      { tag: "improved", text: "The equity chart skips dead time — nights, weekends and any stretch where the book did not move are collapsed, so a day reads as a day instead of a flat line from 6 PM. Pre- and post-market moves still show, and 1D / 3D / 1W / 1M / All are one click." },
+      { tag: "fixed", text: "\"My holdings\" follows the workspace: in Practice it shows the practice book, not the real accounts you cannot trade there. It replaces the watchlist on the board, carries value and P&L per position, and links to the Trade page." },
+      { tag: "improved", text: "The armed card says what it is — \"Plans watching the market · 63 armed · 57 still waiting\" — and ranks the ones closest to firing with how far away they are. The top bar's balance is a labelled readout instead of a small grey chip." },
       { tag: "fixed", text: "Armed page: a Team2 plan no longer wears EM's clothes — its Now line is the method's own read, the chart bands say 'entries all session · no new entries 15:30 · flat 15:45' instead of prime/mid-day windows, and its read events have icons. The Team2 page's Armed tab shows the read per symbol." },
       { tag: "fixed", text: "Quote day high, day low and volume are the session's, not 'since the app started': seeded from the exchange session values, widened by regular-session prints only, reset each session (they used to shrink to nothing after every restart)." },
       { tag: "improved", text: "Team2 trades the way his recaps do: trim heavily on the first push, then re-up the same contract on the next 13 EMA hold; a re-entry sells at the running high/low of day; and in money modes the +50/+100% trims are judged on the contract's live bid, not the model — the Armed row shows 'contract +X% live'." },
