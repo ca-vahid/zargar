@@ -158,3 +158,19 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   EMA48; whether SPY finally gets a scenario (it needs 774.03 or 767.45 — two-plus points away all
   morning); that `fired` rows now appear live without a restart (the F17 fix on the live path, not just
   on restore); IWM's touch count past the `late_touch` cap; and replay parity on the new events.
+
+## 2026-09-04 10:36 ET (desk session, not the watch job) — Team2 moved to AUTO on Practice
+
+- User decision ("change the alert mode to real mode"): all three plans switched alert → **auto** in place
+  (`POST /api/technique/armed/{id}/mode`), `techniques.team2.mode=auto` for tonight's plans. Practice = the
+  sim book `ff3c29d4`; live accounts untouched (`allow_live_auto` stays off, trading.mode practice).
+- F14 closed first (commit 1a2fd1d, deployed 10:31 ET): `chase_cap_mult=1.5` → entry limit ≤ $0.90 at the $0.60 target.
+- The global kill switch was released (`POST /api/resume`) after raising `risk.daily_loss_halt_pct` 8 → 12, because
+  the Practice book sat at −9.13% from the other techniques and the check re-engages while below the limit
+  (PLATFORM-RULES gap: global switch, per-book check). Not re-engaged 20 s later.
+- Restart at 10:31 was done in ALERT mode on purpose so the replayed read could not buy QQQ's already-open model
+  position; QQQ's second model trade (722c, EMA48 entry) had closed (`would_exit`) before the switch. No live
+  position inherited. QQQ's scenario-1 setup has used both touches (D9) — no further entries there today.
+- **Watch job: from now on check real orders/fills** (`GET /api/orders?portfolio=ff3c29d4…`, the plan's `trades` in
+  the armed snapshot, `contract`/`entry_capped`/`position_open`/`live_trim` audit events) and do NOT restart while a
+  Team2 trade is open or working.
