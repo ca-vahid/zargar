@@ -519,7 +519,9 @@ runtime ones to `execution.*`).
   once Yahoo's session is `regular`/`post` (its pre-market meta still shows the prior session); live prints
   widen the range and add volume only during 09:30–16:00 ET on weekdays; a new ET session resets
   everything. Pre/post moves stay separate via `session`. No decision path reads these fields (verified:
-  only the UI types), so no technique behaviour changed. `tests/test_alpaca_feed.py`.
+  only the UI types), so no technique behaviour changed. `tests/test_alpaca_feed.py`. Second half, same day:
+  the Yahoo quote's `volume` was the LAST 1m bar's volume, not the session total, so the seed was wrong —
+  `yahoo._parse_chart` now reports meta `regularMarketVolume` (fallback: the sum of the chart's bars).
 - 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
   `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
   read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.

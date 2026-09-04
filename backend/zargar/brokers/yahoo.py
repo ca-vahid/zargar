@@ -259,13 +259,14 @@ class YahooQuoteFeed(QuoteFeed):
         closes = block.get("close") or []
         volumes = block.get("volume") or []
         last = 0.0
-        volume = 0
         for i in range(len(closes) - 1, -1, -1):
             if closes[i] is not None:
                 last = float(closes[i])
-                if i < len(volumes) and volumes[i] is not None:
-                    volume = int(volumes[i])
                 break
+        # F19 (2026-09-04): `volume` is the SESSION total (what brokers show and what seeds the
+        # Alpaca day range), not the last minute's bar — Yahoo's meta carries it; the sum of the
+        # chart's bars is the fallback
+        volume = int(_num(meta.get("regularMarketVolume")) or 0) or int(sum(int(v) for v in volumes if v))
         reg_price = _num(meta.get("regularMarketPrice"))
         if last <= 0:  # off-session fallback: meta close (may be stale)
             last = reg_price
