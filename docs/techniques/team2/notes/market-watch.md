@@ -301,3 +301,68 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   an OPRA ask, `entry_capped` if the 1.5x cap bites, then `position_open`/`live_trim`); whether IWM
   closes above 295.92 and finally has a sizable dip; whether SPY confirms a full scenario (774.03 /
   767.45) now that the PM-break path is a dead end; and the 15:30 last-entry / 15:45 flatten discipline.
+
+## 2026-09-04 12:20 ET (run 6 — the desk's first real order, and the bug that ate it)
+
+- **Alive, real-time, plans healthy.** `/api/health` ok v0.7.0, 64 armed. All three plans `armed` +
+  **auto** on the Practice sim book (`ff3c29d4`), `needsAttention: false`, `complete: true` with
+  pmh/pml/dayType/sizingAtOpen stamped (QQQ 717.13–722.06 gap_up/full, SPY 770.50–774.24 normal/none,
+  IWM 293.24–295.92 normal/none). SPY/QQQ/IWM quotes 0 s old, session `regular`; 1m bars banking
+  (`barAgeSeconds` 87–114, `stale: false`, 683 bars seen on SPY); OPRA quote/trade/snapshot polls
+  HTTP 200 every ~2 s; **no `Traceback`, no `ERROR`, no `read_error`** anywhere in `zargar-8420.log`.
+  F19 confirmed working live — SPY `dayHigh` 772.87 / QQQ 721.86 now match the bar series exactly.
+
+- **F22 — the headline. The desk's FIRST real order fired correctly and was then refused by a bug.**
+  SPY's `pm_break_down` setup fired at **11:08 ET** (touch #1, EMA13 769.81 held, close 769.70, bear
+  stack) and the contract picker did everything right: real OPRA quote `SPY260904P00768000`, bid 0.38 /
+  ask 0.39, spread 2.6%, volume 63,663, OI 7,342, delta −0.244, IV 14.6%, size `small` ×0.5 → 26
+  contracts ≈ **$1,014** premium. The trade was then dropped with
+  `contract skipped (premium ≈$1,014 is over 50% of the account's $-267 equity)`. **The Practice book's
+  equity is $8,618.40; −$266.58 is its CASH** — negative only because other techniques' RKLB calls and
+  ZURA shares have it fully invested. One line in the shared `execution/planrunner.py` premium
+  pre-check read the cached portfolio row (`positions.portfolio()`), which has **no `equity` key at
+  all**, so `pf.get("equity") or pf.get("cash")` always fell through to cash. That made the pre-check
+  strictly stricter than the RiskGate it exists to mirror — `risk.py` awaits `positions.equity()` and
+  would have **passed** this order. Every remaining fire today would have been refused the same way.
+- **Fixed and deployed: commit `c9021d3`, restart 12:18 ET.** Await the real equity; no behaviour added,
+  the RiskGate stays the authority. Tests green on the job's own DB (`zargar_test_team2_watch`): 47
+  Team2 + primitives, plus 50 shared `test_technique_arming.py` + `test_riskgate.py`. Logged in
+  `PLATFORM-RULES.md` (shared engine) and `TRADING-RULES.md` (F22). All three plans restored `armed` +
+  auto, `needsAttention: false`. No Team2 position was open and no order working at restart time.
+- **Two related mismatches deliberately NOT built** (in F22, for the user): (a) this pre-check has no
+  `kind == "shadow"` exemption although the RiskGate has had one since 2026-09-01 — shadow books with
+  negative cash are blocked from every option entry on this path; (b) nothing on this path checks
+  **buying power**, so a fully-invested book can now be sized into an order it could not fund at a real
+  broker. Neither bites Team2 on a sim book, but (b) is the one to decide before real money.
+
+- **What the read saw since run 5.** SPY: `pm_break` down 10:30 (15m close 770.30 below PM low 770.50) →
+  the 10:44 retest at exactly 770.50 refused (F20), then the 11:08 fire above and the 11:14 model exit
+  (2m close 769.87 back through the EMA13 769.79, **−12.23%**); 11:00 15m close above 769.26 flipped it
+  to scenario 3 (bounce PDL) → calls; SPY is back at 770.91. QQQ: nothing — scenario 2 (reject PDH) →
+  puts still waiting, touches 0, 718.48 vs the 718.60 anchor, stack gone `mixed`. IWM: **`pm_break` up
+  at 12:00** (15m close above PM high 295.92 → calls to the PDH zone), touches 0, now 296.05.
+- **Day so far: 3 model trades, 3 losses (−12.23%, −14.35%, −10.33%), 0 real orders placed.** The only
+  SPY/QQQ/IWM row in `/api/orders` is `SPY260914C00775000` (Sep-14 expiry, `source: auto`) — another
+  technique's, not Team2's.
+
+- **F20 reinforced — it is now three refusals in one session.** IWM's 12:14 retest of its own PM high
+  **at exactly 295.92** was refused `skip_no_trade_zone`, the same shape as SPY's 10:44. `sizing_bucket`
+  tests `pml <= price <= pmh` inclusively, so a `pm_break_*` setup can never enter at the level it is
+  built on — and L2.6/L2.7 say to enter precisely there. On a range day that is the whole setup class,
+  not an edge case. Still **not built** (sizing is a money rule); decide it together with F15.
+
+- **Replay parity exact on all three.** SPY 5/5 events + 1/1 trade (−12.23%), QQQ 6/6 + 2/2 (same entries
+  720.8368 / 720.1343, same strikes 723 / 722, same −14.35% / −10.33%), IWM 0 trades. The apparent
+  "replay ran to 12:14 while live stopped at 11:32" was only the ~40 minutes that elapsed between the two
+  fetches — no drift, no future bars. Six restarts today and the stamped plans still hold (F12/F13).
+
+- **Unchanged.** F14 closed. F15 open. F16 resolved operationally. F21 respected — this section is
+  stamped from the app clock. The `skip_no_trade_zone` spam is now 20+ identical IWM events (dedupe it
+  the way `pullback_stalled` does — cosmetic, still not worth its own restart). The QQQ restore artifact
+  (today's two fires live in `last_read` and the event log but not in the Armed page's `trades` list) is
+  unchanged and still cosmetic.
+- **Next run should check:** whether a fire now actually reaches the book — `contract` → `entry_capped`
+  (if the 1.5× chase cap bites) → `position_open` → `live_trim` in the audit, and a real row in
+  `/api/orders` with `source: team2`; whether IWM's pm_break-up gets an EMA13 touch outside the PM range
+  (the only way it can enter while F20 stands); QQQ's scenario-2 put touch below 718.60; and the 15:30
+  last-entry / 15:45 flatten discipline on anything open.
