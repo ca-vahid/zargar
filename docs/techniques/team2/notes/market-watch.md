@@ -884,3 +884,69 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   entry was taken after 15:30; the day's final read/replay parity and the scorecard; the nightly
   `team2_plan_nightly` at 17:00; and whether the user has ruled on the open money rules — F27/F28
   residue, **F40**, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-04 16:05 ET (run 15, post-close — the day closed clean; a Labor-Day double-arm caught and fixed)
+
+- **The session closed correctly on all three.** SPY and IWM took the `session closed` disarm at
+  **16:00:00 ET** (`flatten: false`, `openLeft: 0`, `statuses: {}`) — nothing was open, so the 15:45
+  flatten had nothing to do and, correctly, logged nothing. **No entry was taken after 15:30**: the
+  only post-cutoff rows on either plan are F26's `skip_last_entry` at 15:32. QQQ stayed disarmed from
+  its 14:17 loss halt. `/api/health` ok v0.7.0; **zero `Traceback` / `ERROR` / `read_error`** in the
+  27,589 log lines covering 14:56–16:06 ET (178 warnings, all the benign `dropped N
+  non-bucket-aligned stub bar(s)`).
+- **Data real-time to the close and past it.** Quotes 0–7 s old, session correctly `post`, `regPrice`
+  holding the regular close (SPY 770.24 / QQQ 718.96 / IWM 295.97); OPRA quote+trade polls 200 every
+  ~2.4 s through 16:06; 1m bars banking for all three (SPY 1,428 / QQQ 1,043 / IWM 977 rows in 24 h,
+  last bar 16:04 ET) — F34 still holding for disarmed QQQ.
+- **Day's final read (model): 4 trades, 1 win / 3 losses.** SPY `pm_break_down@10:30` +49.6 % trim then
+  the 11:04 target at 769.26 (+61.4 %), then −12.2 % on the 11:14 EMA13 stop → **+45.22 % summed**;
+  IWM `pm_break_up@12:00` −19.17 %; QQQ `pm_break_down@13:30` −19.69 %. SPY's bias sat on scenario 3
+  (bounce PDL) from the 11:15 close with `scenario_3@11:00` **waiting** at 769.26 all afternoon;
+  IWM's `scenario_3@09:30` never left the PM range (F15). **Real book: −$454.02, all QQQ**
+  (30 lots 0.34→0.24, then 18 lots 0.59→0.5599) — no SPY or IWM order was ever routed today.
+- **Replay parity exact on all three**, post-close: SPY 9/9 events + 2/2 trades (45.22 both sides),
+  IWM 8/8 + 1/1 (−19.17), QQQ 13/13 + 1/1 (−19.69). UI checked in the browser: the Plans tab shows the
+  three rows with QQQ's stop reason spelled out (F35).
+- **F41 (new, FIXED + deployed `d8bd403`) — the desk would have opened Tuesday double-armed.**
+  Both Team2 jobs are registered `weekdays_only`, which checks `weekday() >= 5` and nothing else, so
+  they also fire on a **weekday market holiday**. On **Monday 2026-09-07 (Labor Day) 17:00 ET**
+  `nightly_plans()` would see a non-trading day, target `next_trading_day` = **2026-09-08** — the same
+  session tonight's 17:00 run plans — and mint + arm a second plan per symbol: `mint_plan_run()` always
+  inserts a new run and `arm()` dedupes on `run_id` only. Two armed SPY/QQQ/IWM plans in **AUTO**, each
+  with its own `max_open_trades`, both counting into the desk-wide cap, with no watch run between the
+  17:00 mint and the Tuesday open. Fixed: the nightly skips a symbol that already has an armed plan for
+  that date (reported under `skipped`, printed in the plan-now toast); `force=true` on
+  `POST /api/team2/plan-now` is the manual rebuild. Nothing is disarmed, no sizing rule changed.
+- **F42 (new, FIXED + deployed `d8bd403`) — same root, the other job.** `preopen_complete()` walked
+  **every** armed plan whatever its date; `complete_plan()` over a date with no bars writes
+  `pmh: None`, `pml: None`, `complete: false` back onto the plan and `stamp_run()` persists it. The
+  09:25 job on Labor Day would therefore have blanked the plans built for 09-08 before the desk ever
+  saw them. Fixed: a plan whose `plan_for` is later than today is left alone; past-dated plans still
+  complete (tests, replay, catch-up).
+- **Deployed at 16:15 ET** — market closed, nothing open, no Team2 plan armed. 57 tests green
+  (`tests/test_team2_*.py` + `test_marketstructure_extended.py` + `test_book_halt.py`, own DB
+  `zargar_test_team2_watch`), `npm run build` clean, restart clean (17 EM plans restored, both Team2
+  jobs re-registered at 17:00 / 09:25 ET, zero errors). Tonight's nightly is unaffected: the scheduler
+  hydrates `last_day` from the journal, so the restart does not consume it.
+- **F43 (new, NOT fixed — proposal: the Team2 day is never scored).** `_end_session()` writes the
+  scorecard from `PlanRunner._score_execution()`, which iterates `ap.trackers` — EM's declared
+  triggers. Team2 has none (entries come out of the session walk), so both surviving plans journalled
+  `TechniquePlanScored {rows: [], matched: 0, actualFires: 0, theoreticalFires: 0, realizedPnl: 0}` at
+  16:00 on a day with 4 model trades and a −$454 book. QQQ — the only symbol that traded real money —
+  disarmed before `_end_session()` and has **no scorecard at all**. A Team2-local override should
+  compare `_last_sim`'s model trades against the real fills plus the skips that blocked them, and run
+  on the loss-halt path too; it needs the F30/F36 answer (which premium series is authoritative) first.
+- **F44 (new, NOT fixed — shared engine).** `OptionsService._tracked` only ever grows: the 2 s OPRA
+  batch still carried contracts that expired on 2026-09-02 (`MU260902P…`, `GOOGL260902C…`,
+  `META260902C…`, `TSLA260902P…`) plus, after this close, both `QQQ260904` puts — 55 symbols in one
+  URL. A 0DTE desk adds several dead symbols a session and only a restart clears them (visible in the
+  smaller batch after 16:15). Prune on expiry in `zargar/options/service.py` — proposal, not built here.
+- **F40 re-confirmed on the persisted record**: QQQ's second trade still reads
+  `status: "open", remaining: 18, realizedPnl: 0.0` while its flatten `c4f557e6…` is FILLED 18 @ 0.5599
+  in `orders`/`executions`. Unchanged since run 14 — shared engine, still the user's call.
+- **Next run (16:30 ET, last of the day) should check:** that the 16:15 deploy is still healthy and no
+  new errors; nothing further to trade today. **Tonight's 17:00 `team2_plan_nightly` targets
+  2026-09-08 (Tuesday — Monday is Labor Day)** and is after the last watch run, so **Tuesday's first
+  run must verify exactly ONE armed plan per symbol for 2026-09-08** (F41's live proof) and that the
+  09:25 completion filled pmh/pml/dayType/sizing that morning and not before (F42). Still open for the
+  user: F40, F43, F44 and the F30-family question of which premium series is authoritative.
