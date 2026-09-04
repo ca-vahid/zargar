@@ -102,7 +102,8 @@ class Team2Service:
             await session.commit()
         return {"runId": run.id, "symbol": run.symbol, "planFor": date, "plan": plan}
 
-    async def nightly_plans(self, for_date: str | None = None, *, arm: bool = True) -> dict:
+    async def nightly_plans(self, for_date: str | None = None, *, arm: bool = True,
+                            force: bool = False) -> dict:
         s = self.engine.settings
         if not bool(s.get("techniques.team2.enabled", True)):
             return {"skipped": "disabled"}
@@ -116,9 +117,19 @@ class Team2Service:
                 for_date = today.isoformat()
         symbols = [str(x).upper() for x in (s.get("techniques.team2.symbols", []) or [])]
         rules = rules_from_settings(self.engine.settings)
-        out = {"planFor": for_date, "runs": [], "failed": [], "armed": []}
+        out = {"planFor": for_date, "runs": [], "failed": [], "armed": [], "skipped": []}
         mode = str(s.get("techniques.team2.mode", "alert"))
+        # F41: one armed plan per symbol per session. The job is weekday-gated, not
+        # trading-day-gated, so a weekday HOLIDAY runs it again for the same next session
+        # (Fri 17:00 and Labor Day 17:00 both plan the Tuesday) — and each run minted AND
+        # armed a second plan, which would trade the day twice. `force` is the manual
+        # override behind `plan-now`.
+        already = {ap.symbol for ap in list(getattr(self.runner, "_armed", {}).values())
+                   if ap.plan_for == for_date}
         for sym in symbols:
+            if sym in already and not force:
+                out["skipped"].append(f"{sym}: already armed for {for_date}")
+                continue
             try:
                 r = await self.mint_plan_run(sym, for_date, rules=rules)
             except Exception as exc:  # noqa: BLE001
@@ -161,7 +172,13 @@ class Team2Service:
 
     async def preopen_complete(self) -> dict:
         done = []
+        today = dt.datetime.now(ET).date().isoformat()
         for ap in list(getattr(self.runner, "_armed", {}).values()):
+            # F42: never "complete" a plan whose session has not started. The 09:25 job
+            # fires on weekday holidays too, and `complete_plan` on a date with no bars
+            # writes pmh/pml None and complete=False over the plan it was handed.
+            if ap.plan_for > today:
+                continue
             try:
                 fresh = await self.fetch_today_ext(ap.symbol, ap.plan_for)
                 if fresh:

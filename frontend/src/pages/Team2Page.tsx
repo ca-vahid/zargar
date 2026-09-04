@@ -69,7 +69,8 @@ export function Team2Page() {
     setBusy(true);
     try {
       const r = await api.post<any>("/api/team2/plan-now", { arm: true });
-      toast(r.failed?.length ? "error" : "info", `Team2: ${r.runs?.length ?? 0} plan(s) for ${r.planFor}, ${r.armed?.length ?? 0} armed` + (r.failed?.length ? ` — ${r.failed.join("; ")}` : ""));
+      toast(r.failed?.length ? "error" : "info", `Team2: ${r.runs?.length ?? 0} plan(s) for ${r.planFor}, ${r.armed?.length ?? 0} armed`
+        + (r.skipped?.length ? ` — skipped ${r.skipped.join("; ")}` : "") + (r.failed?.length ? ` — ${r.failed.join("; ")}` : ""));
       await refresh();
     } catch (e) { toast("error", `plan failed: ${String(e)}`); }
     setBusy(false);

@@ -454,6 +454,59 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   (it changes the disarm path for EM and Tip too).
 
 
+- **F41 (2026-09-04 16:05 ET, FIXED — one armed plan per symbol per session; `force` is the manual override)**
+  `team2_plan_nightly` is registered with the scheduler's default `weekdays_only=True`, which checks
+  `now.weekday() >= 5` and nothing else — so it also fires on a **weekday market holiday**.
+  `nightly_plans()` then sees `is_trading_day(today) == False` and targets `next_trading_day(today)`,
+  which is the *same* date Friday's run already planned. Neither `mint_plan_run()` (it always inserts a
+  new `TechniqueRun`) nor `PlanRunner.arm()` (it dedupes on `run_id` only) refuses the repeat, so the
+  session would have opened with **two armed plans per symbol**: two full-size entries per setup, two
+  contributions to the desk-wide loss cap, two records of the same day. Next occurrence was
+  **Monday 2026-09-07 (Labor Day) 17:00 ET → 2026-09-08**, with the desk in AUTO and no watch run
+  between the mint (17:00 ET) and the Tuesday open. Same defect on a second "Plan now" press.
+  Fix: `nightly_plans()` skips a symbol that already has an armed plan for `for_date` and reports it
+  under `skipped` (the toast prints it); `force=True` — exposed on `POST /api/team2/plan-now` — is the
+  manual rebuild. Nothing is disarmed and no sizing changed: it only refuses to duplicate.
+  Test: `tests/test_team2_runner.py::test_nightly_plans_never_arms_a_second_plan_for_the_same_session`.
+
+- **F42 (2026-09-04 16:05 ET, FIXED — the pre-open leaves a session that has not started alone)**
+  Same holiday root: `team2_preopen` (09:25 ET) also fires on a weekday holiday, and
+  `preopen_complete()` walked **every** armed plan regardless of its `plan_for`. `complete_plan()`
+  over a date with no bars writes `pmh: None`, `pml: None`, `complete: False` back onto the plan and
+  keeps the stale `dayType`/`sizingAtOpen`, then `stamp_run()` persists that onto the run — i.e. a
+  holiday morning would blank the plan built for the next trading day, and the real 09:25 read would
+  be the second one written. Fix: skip any plan whose `plan_for` is later than today's ET date;
+  past-dated plans still complete (tests, replays, a manual catch-up).
+  Test: `tests/test_team2_runner.py::test_preopen_never_completes_a_plan_whose_session_has_not_started`.
+
+- **F43 (2026-09-04 16:05 ET, NOT fixed — the Team2 day is never scored)**
+  `_end_session()` writes the execution scorecard from `PlanRunner._score_execution()`, which iterates
+  `ap.trackers` — EM's declared `TriggerTracker`s. **Team2 has no trackers**: its entries come out of
+  the session walk, so the scorecard is structurally empty. Today both surviving plans journalled
+  `TechniquePlanScored {rows: [], matched: 0, actualFires: 0, theoreticalFires: 0, realizedPnl: 0}` at
+  16:00 ET on a day the read took 4 model trades and the book lost **−$454.02** — a record that says
+  "nothing happened". Worse for a plan that disarms early: QQQ (the only symbol that traded real money)
+  never reached `_end_session()` at all, so it has **no scorecard row**, and its persisted
+  `realizedPnl` is −300.00 because of F40. Proposed shape (Team2-local, `runner.py`): override the
+  scorecard with the day's own comparison — `_last_sim` model trades (setup, entry ts, premium, pnl %)
+  against the real fills from `ap.trades`/the book, plus the skips that stopped a model trade from being
+  taken (`skip_loss_cap_desk`, `skip_no_trade_zone`, `skip_last_entry`, `skip_no_contract`); and write
+  it on the loss-halt disarm path too, not only at the close. Wants the F30/F36 answer first (which
+  premium series is authoritative for "what the model made"), so it is the user's call.
+  **Not built here** — it is new reporting, not a defect fix.
+
+- **F44 (2026-09-04 16:05 ET, NOT fixed — shared engine; expired contracts never leave the OPRA batch)**
+  `OptionsService._tracked` only ever grows: `track()` adds, nothing prunes. The 2 s OPRA poll therefore
+  keeps requesting contracts that expired days ago — today's batch of **55** symbols still carried
+  `MU260902P00945000`, `GOOGL260902C00340000`, `META260902C00590000`, `TSLA260902P00355000` (expired
+  2026-09-02) and, after this close, both of the desk's `QQQ260904` puts. Harmless today, but a 0DTE
+  desk adds several dead symbols **every session**, and the batch is a single URL: it grows without
+  bound until the process restarts, wasting the paid quote budget and eventually risking that a
+  provider-side symbol cap clips the contracts the desk is actually trading. Proposed: drop a symbol
+  from `_tracked` when its expiry is past (and when nothing holds or watches it), on the same pass.
+  **`zargar/options/service.py` — shared engine, proposal, not built here.**
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -467,6 +520,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
+| 2026-09-04 | **F41 + F42 fixed** (post-close): the nightly never mints/arms a second plan for a session that already has one (`skipped`, with `force` on plan-now as the manual rebuild), and the 09:25 completion leaves a plan whose session has not started alone. Both are the same root cause — the two Team2 jobs are weekday-gated, not trading-day-gated, so **Labor Day 2026-09-07** would have double-armed 2026-09-08 and blanked its plans that morning. No sizing, entry or exit rule changed | market watch 16:05 ET; `next_trading_day(2026-09-04) == next_trading_day(2026-09-07) == 2026-09-08` | Team2 desk |
 | 2026-09-03 | Method codified v0.1 from 49 public posts; desk opened | `SOURCES.md` | Team2 desk |
 | 2026-09-03 | D3 decided by the user: Team2 is a 0DTE technique; RiskGate gets a per-technique 0DTE policy (E6) instead of the hard-coded EM/tip ids. Engine is ENRICHED, not forked (PLAN §3b, E1–E12) | METHOD §7b/§7c, images INDEX | Team2 desk |
 | 2026-09-03 | Completeness review before the build (PLAN §3c, groups A–H): added day-type classifier, target discovery, zone+EMA gate, range-day confirmation, 5m flag detector, pullback-quality gate, re-entry cap, concurrency cap; bank ext-hours bars from tonight, ^VIX/^VIX1D fetch, fee+slippage in the premium scorer, calibration vs the author's 9 documented trades, market calendar (half days); OPRA-only fires, flatten discipline; per-technique 0DTE policy caps; nightly arming ops; review/evolution loop; settings panel + page | audit of METHOD vs PLAN | Team2 desk |
