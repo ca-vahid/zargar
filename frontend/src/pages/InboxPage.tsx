@@ -840,7 +840,7 @@ function BookVal({ b }: { b?: { pnl?: number | null; pnlPct?: number | null } })
   if (pnl == null) return <span className="muted">—</span>;
   return (
     <span className={pnl > 0 ? "pos" : pnl < 0 ? "neg" : "muted"}>
-      {fmtMoney(pnl)} ({(b?.pnlPct ?? 0).toFixed(1)}%)
+      {fmtMoney(pnl)}{b?.pnlPct != null ? ` (${b.pnlPct.toFixed(1)}%)` : ""}
     </span>
   );
 }

@@ -1776,11 +1776,29 @@ class SignalService:
                                        "contracts": contracts,
                                        "warnings": pick.get("warnings") or []})
                     await self._record_expression(signal_row.id, expression)
-                    return await eng.orders.place(OrderIntent(
+                    placed = await eng.orders.place(OrderIntent(
                         portfolio_id=shadow["id"], symbol=occ_sym, sec_type="OPT",
                         side="BUY", qty=contracts, order_type="MKT",
                         source="auto", signal_id=signal_row.id,
                         technique_id="tip", tags=[f"source:{source}"]))
+                    if (placed or {}).get("status") == "REJECTED_RISK"                             and "spread" in str(placed.get("rejectReason") or ""):
+                        # user decision 2026-09-04: the record book must not lose
+                        # the tip to a wide open — rest a patient limit at the mid
+                        # instead of market-buying into a 50% spread. Fills only
+                        # if the market actually comes there; the counterfactual
+                        # stays honest either way.
+                        q = eng.quotes.get(occ_sym)
+                        mid = round((q.bid + q.ask) / 2, 2) if q and q.bid and q.ask                             and q.bid > 0 and q.ask > 0 else None
+                        if mid and mid > 0:
+                            expression["note"] = (f"spread too wide for a market order — "
+                                                  f"resting a limit at the mid {mid:.2f}")
+                            await self._record_expression(signal_row.id, expression)
+                            placed = await eng.orders.place(OrderIntent(
+                                portfolio_id=shadow["id"], symbol=occ_sym, sec_type="OPT",
+                                side="BUY", qty=contracts, order_type="LMT", limit_price=mid,
+                                source="auto", signal_id=signal_row.id,
+                                technique_id="tip", tags=[f"source:{source}"]))
+                    return placed
                 expression["fallback"] = pick.get("error") or "no usable contract"
 
             if sig.direction == "short":
@@ -2273,7 +2291,14 @@ class SignalService:
             card["books"][book] = {
                 "portfolioId": p["id"], "equity": equity,
                 "pnl": (equity - start) if equity is not None else None,
-                "pnlPct": ((equity - start) / start * 100) if equity is not None and start else None,
+                # the IMMEDIATE book buys EVERY tip by design and spends far past
+                # its notional start — a % of starting cash is meaningless there
+                # and misled the analyst ("immediate book at -126%", audit
+                # 2026-09-04). Dollars and per-trade stats are the record.
+                "pnlPct": (((equity - start) / start * 100)
+                           if equity is not None and start and book == "armed" else None),
+                **({"pnlPctNote": "buys every tip by design — % of a notional start is not meaningful"}
+                   if book == "immediate" else {}),
             }
 
         # earned-auto graduation (POST-SOAK Phase 2): closed tip positions per

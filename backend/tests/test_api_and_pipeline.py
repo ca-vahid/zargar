@@ -536,6 +536,66 @@ async def test_lotto_premium_contract_qty_is_capped(app_client):
     assert eng.proposals._cap_contracts(277) == 277
 
 
+async def test_spread_refused_record_buy_rests_a_limit_at_the_mid(app_client, monkeypatch):
+    # user decision 2026-09-04: a tip whose market order is refused for a wide
+    # open spread must not vanish from the record — the shadow book retries as
+    # a patient limit at the mid, so the counterfactual still exists.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    from zargar.domain import Quote as _Q
+    from zargar.models import RawContent, Signal
+    occ2 = "AAPL261016C00240000"
+    # the overlay survives the sim feed's own publishes (a bare on_quote pin
+    # would be overwritten the moment _shadow_execute ensures the symbol)
+    eng.quotes.set_overlay(occ2, bid=1.00, ask=1.50, bid_size=0, ask_size=0)
+    eng.quotes.on_quote(_Q(symbol=occ2, bid=1.00, ask=1.50, last=1.20))   # 40% spread
+
+    async def fake_pick(eng_, **kw):
+        return {"available": True, "symbol": occ2, "display": "AAPL 240C", "ask": 1.50,
+                "mid": 1.25, "warnings": []}
+    import zargar.techniques.tip.express as express_mod
+    monkeypatch.setattr(express_mod, "pick_tip_contract", fake_pick)
+
+    async def no_track(sym):                     # keep the LIVE CBOE chain out of the test
+        return None
+    monkeypatch.setattr(eng.options, "track", no_track)
+
+    placed = []
+    real_place = eng.orders.place
+
+    async def spy_place(intent):
+        placed.append(intent)
+        if intent.order_type == "MKT":
+            return {"id": "m1", "status": "REJECTED_RISK",
+                    "rejectReason": "bid/ask spread 40.0% exceeds 10% - market order rejected, use a limit"}
+        return {"id": "l1", "status": "SUBMITTED", "symbol": intent.symbol}
+    monkeypatch.setattr(eng.orders, "place", spy_place)
+    try:
+        async with eng.sf() as session:
+            rc = RawContent(id=new_id(), source_type="manual", source_name="TestLetter",
+                            subject="alert", body_text="AAPL 240c Oct")
+            row = Signal(id=new_id(), raw_content_id=rc.id, source_name="TestLetter",
+                         ticker="AAPL", direction="long", action="open", instrument="call",
+                         strike=240.0, expiry="2026-10-16", status="verified",
+                         is_actionable=True, extraction={"signal": {}}, verification={"passed": True})
+            session.add_all([rc, row])
+            await session.commit()
+        from zargar.signals.schemas import TradeSignal
+        sig = TradeSignal(ticker="AAPL", direction="long", action="open", instrument="call",
+                          strike=240.0, expiry="2026-10-16", timeframe="swing",
+                          thesis_summary="calls", evidence_quotes=["AAPL 240c"],
+                          confidence="explicit_call", is_actionable=True)
+        await eng.signals_service._shadow_execute(row, sig)
+    finally:
+        monkeypatch.setattr(eng.orders, "place", real_place)
+    kinds = [(i.order_type, i.limit_price) for i in placed if i.symbol == occ2]
+    assert kinds == [("MKT", None), ("LMT", 1.25)], kinds
+    async with eng.sf() as session:
+        row2 = await session.get(Signal, row.id)
+    note = ((row2.extraction or {}).get("shadowExpression") or {}).get("note") or ""
+    assert "resting a limit at the mid" in note, note
+
+
 async def test_short_tip_without_put_never_proposes_share_short(app_client):
     # shorts are puts only — a bearish tip with no usable contract makes NO
     # proposal (the old builder proposed SELL shares, which is never allowed)
