@@ -35,7 +35,7 @@ default setup) serves the built UI. PostgreSQL is the only external service.
 | `brokers/base.py` | The two interfaces: `QuoteFeed` (where market data comes from) and `Executor` (where orders go), plus `BrokerOrder`/`ExecReport`. |
 | `brokers/sim.py` | `SimQuoteFeed` — deterministic-seedable random-walk market with synthesized history; `SimExecutor` — conservative fill engine (opposite-touch + slippage + size impact, limit-cross fills, stop triggers, OCA groups, simulated latency). |
 | `brokers/ibkr.py` | `IBKRBroker` — ib_async adapter (feed + executor in one). `.TO`/`.V` suffixes map to TSX/TSXV. `orderRef` carries our client order id. |
-| `risk.py` | `RiskGate.evaluate()` — the mandatory pre-trade pipeline (see below) + `HaltState` (kill switch, persisted across restarts). |
+| `risk.py` | `RiskGate.evaluate()` — the mandatory pre-trade pipeline (see below) + `HaltState` (the global kill switch AND per-book daily-loss halts, both persisted across restarts; PLATFORM-RULES 2026-09-04 for the three halt scopes). |
 | `orders.py` | `OrderManager` — write-ahead intents, risk gate, mode-based routing, lifecycle from `ExecReport`s, bracket-children spawning, projections. Option orders: derived open/close action (`derive_option_action`), close-qty guard, venue capability gate (`option_gate`). |
 | `options/occ.py` | OCC symbology — canonical **unpadded** OCC (`F260828C00014500`), SnapTrade's padded form at the venue boundary, display names, DTE. |
 | `options/chain.py` | Chain providers (CBOE free delayed default, Tradier optional) → normalized rows with greeks/IV. |
@@ -48,7 +48,7 @@ default setup) serves the built UI. PostgreSQL is the only external service.
 | `signals/service.py` | Pipeline orchestration: ingest (text / screenshot→transcript) → extract → ground → dedupe (repeats bump `seen_count`) → persist → verify (verified / parked / failed) → propose + **shadow-execute** into the source's immediate book; per-source policies in `signals/sources.py`; two-book scorecards. |
 | `approvals/proposals.py` | Proposal queue: sizing (% of equity), TTL expiry loop, approve/half/reject → order placement. |
 | `approvals/telegram.py` | Long-polling bot: proposal cards with inline buttons, `/halt` `/resume` `/status`. Only the configured chat id may act. |
-| `engine.py` | Wires everything; background tasks: quote consumer, bar persister, equity snapshotter (30 s), daily-loss monitor (auto-halt). |
+| `engine.py` | Wires everything; background tasks: quote consumer, bar persister, equity snapshotter (30 s), daily-loss monitor (halts the losing BOOK by default — `risk.daily_loss_halt_scope`; `trading_halted(pid)` is what runners ask). |
 | `api/app.py` | FastAPI factory — all REST routes. ⚠ no `from __future__ import annotations` here (breaks FastAPI's resolution of locally-scoped request models). |
 | `api/ws.py` | WS hub: snapshot on connect, per-topic delta fan-out, quotes conflated to ~10 Hz. |
 | `tools/ibkr_check.py` | Read-only IBKR connectivity self-test (`python -m zargar.tools.ibkr_check`). |

@@ -330,7 +330,7 @@ class Team2Runner(PlanRunner):
         seen = self._seen.get(ap.run_id, 0)
         new = res.events[seen:]
         self._seen[ap.run_id] = len(res.events)
-        halted = bool(getattr(self.engine.halt, "engaged", False))
+        halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
         for e in new:
             what = e["event"]
             if what == "fire":

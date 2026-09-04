@@ -779,6 +779,7 @@ class PlanRunner(SessionListener):
         return {
             "asOf": now_ms, "window": window_now, "windowOpenNow": window_now in my_windows,
             "haltEngaged": bool(self.engine.halt.engaged),
+            "bookHalts": {pid: b.get("reason") for pid, b in getattr(self.engine.halt, "books", {}).items()},
             "workspace": str(self.engine.settings.get("trading.mode", "practice")),
             "counts": counts,
             "attention": attention, "inTrade": in_trade, "timeline": timeline[:100],
@@ -1440,10 +1441,47 @@ class PlanRunner(SessionListener):
         would roughly realize. 0 when no quote is available (never guessed)."""
         return sum(self._trade_unrealized(ap, t) for t in ap.trades.values())
 
+    async def _maybe_technique_loss_halt(self, ap: ArmedPlan) -> bool:
+        """Per-TECHNIQUE, per-book day loss (`techniques.<id>.daily_loss_halt_pct` → `execution.…`,
+        0 = off): once this technique's realised loss plus its open positions marked at the bid, across
+        every plan it has armed on the book, crosses the % of the book's equity, every one of those plans
+        is PAUSED (no new fires; exits keep being managed) for the day. Sits between the per-plan loss
+        halt and the book-wide breaker (2026-09-04, PLATFORM-RULES)."""
+        pct = float(self.rt("daily_loss_halt_pct", 0.0) or 0)
+        if pct <= 0 or ap.status != "armed":
+            return False
+        pid = ap.config.portfolio_id
+        mine = [o for o in self._armed.values() if o.config.portfolio_id == pid]
+        total = 0.0
+        for o in mine:
+            total += sum(t.realized_pnl for t in o.trades.values()) + min(0.0, self._unrealized(o))
+        if total >= 0:
+            return False
+        eq = 0.0
+        with contextlib.suppress(Exception):
+            eq = float(await self.engine.positions.equity(pid))
+        if eq <= 0 or total > -(eq * pct / 100.0):
+            return False
+        reason = (f"{self.TECHNIQUE_ID} loss halt: {total:,.2f} on this book today crossed -{pct:g}% of "
+                  f"${eq:,.0f} equity — no new entries today (techniques.{self.TECHNIQUE_ID}.daily_loss_halt_pct)")
+        for o in mine:
+            if o.status == "armed":
+                o.stop_reason = reason
+                self._log(o, "technique_loss_halt", reason)
+                await self.pause(o.run_id)
+        await self._alert(ap, reason, stage="loss_halt")
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.TECHNIQUE_LOSS_HALT, {
+                "technique": self.TECHNIQUE_ID, "portfolioId": pid, "lossToday": round(total, 2), "equity": round(eq, 2),
+                "pct": pct, "plans": [o.run_id for o in mine]}, portfolio_id=pid)
+        return True
+
     async def _maybe_loss_halt(self, ap: ArmedPlan) -> bool:
         """The plan's "certain loss halt": once the day's loss — realised PLUS the
         open positions marked at the bid (theta bleed counts) — crosses the dollar
         limit, flatten everything and stop the plan. Returns True if it fired."""
+        if await self._maybe_technique_loss_halt(ap):
+            return True
         limit = float(ap.config.daily_loss_limit or 0)
         if limit <= 0 or ap.status not in ("armed", "paused"):
             return False
@@ -1703,7 +1741,7 @@ class PlanRunner(SessionListener):
         idx = ap.bar_index
         ap.bar_index += 1
         _, close_ms = session_bounds(ap.plan_for)
-        halted = bool(getattr(self.engine.halt, "engaged", False))
+        halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
         # 1) manage open positions first (exits never wait on anything)
         for tr in ap.trades.values():
             if tr.status == "open" and tr.remaining > 0:
@@ -1821,7 +1859,7 @@ class PlanRunner(SessionListener):
                 if halted:
                     tr.status = "observed"
                     tr.fired_index = tr.fired_ts = tr.fired_window = tr.fill_price = None
-                    self._log(ap, "halt_skip", f"{tid}: conditions met but the kill switch is engaged", trigger=tid)
+                    self._log(ap, "halt_skip", f"{tid}: conditions met but trading is halted — {self.engine.trading_halted(ap.config.portfolio_id)}", trigger=tid)
                     if journal:
                         await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "halt", "ts": bar.ts},

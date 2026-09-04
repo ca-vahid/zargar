@@ -494,6 +494,13 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     async def resume():
         return await eng.release_halt(source="app")
 
+    @app.post("/api/portfolios/{pid}/resume", dependencies=[auth])
+    async def resume_book(pid: str):
+        """Release ONE book's daily-loss halt (the global switch is /api/resume)."""
+        if eng.positions.portfolio(pid) is None:
+            raise HTTPException(status_code=404, detail="unknown portfolio")
+        return await eng.release_book_halt(pid, source="app")
+
     @app.get("/api/events", dependencies=[auth])
     async def events(
         type: str | None = None,

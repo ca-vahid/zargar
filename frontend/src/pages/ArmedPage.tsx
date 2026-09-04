@@ -147,7 +147,10 @@ export function ArmedPage() {
               <div className="tq-armed-kpi"><small>In trade</small><b className={openCount ? "pos" : ""}>{openCount}</b></div>
               <div className="tq-armed-kpi"><small>Realized today</small><b className={pnlCls(pnl)}>{fmt(pnl)}</b></div>
               <div className="tq-armed-kpi"><small>Workspace <InfoTip>Everything on this page belongs to the active workspace. PRACTICE = the simulator, fake money. LIVE = your real accounts. Switch it next to HALT in the top bar.</InfoTip></small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
-              <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped.</InfoTip></small><b className={halt.engaged ? "neg" : "pos"}>{halt.engaged ? "ENGAGED" : "off"}</b></div>
+              <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped.</InfoTip></small><b className={halt.engaged ? "neg" : Object.keys(halt.books ?? {}).length ? "warn" : "pos"}>{halt.engaged ? "ENGAGED" : Object.keys(halt.books ?? {}).length ? `${Object.keys(halt.books ?? {}).length} book halted` : "off"}</b>
+                {!halt.engaged && Object.entries(halt.books ?? {}).map(([pid, b]) => (
+                  <div key={pid} className="small muted" title={b.reason}>{b.reason} · <button className="link-btn" onClick={() => api.resumeBook(pid).catch(() => undefined)}>release this book</button></div>
+                ))}</div>
               <div className="tq-armed-topactions">
                 {armed.length > 0 && (
                   <button className="ghost-btn" onClick={() => stopAll(false)}

@@ -208,7 +208,9 @@ start a new block when the user calls a release. `/api/health` reports the versi
 
 - **Every order goes through `RiskGate.evaluate()`** — no code path may submit
   to an executor without it (bracket children are the one exception; they only
-  reduce exposure). Kill-switch state must always be honored.
+  reduce exposure). Kill-switch state must always be honored — in all three scopes
+  (global switch, per-book daily-loss halt, per-technique day-loss pause; PLATFORM-RULES
+  2026-09-04): runners ask `engine.trading_halted(portfolio_id)`, never `halt.engaged` alone.
 - **Journal every decision** via `Journal.append()` (`events` table is
   append-only; never update/delete rows). Quotes are never journaled.
 - Money paths are write-ahead: persist the intent before routing; on unknown

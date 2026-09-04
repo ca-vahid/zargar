@@ -541,11 +541,23 @@ runtime ones to `execution.*`).
 - 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
   `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
   read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.
-- 2026-09-04 · **The kill switch is global while the daily-loss check is per portfolio** (`Engine.check_daily_loss`):
-  a Practice-book loss from one technique halts every technique on every book, and releasing it re-engages
-  on the next pass while that book stays below the limit. Worked around today by raising
-  `risk.daily_loss_halt_pct` 8 -> 12 (practice only). Proposed: per-portfolio halts, or a per-technique
-  practice book that the check judges on its own. User decision needed before real money.
+- 2026-09-04 · **Halts now come in three scopes** (built the same afternoon; was: one global switch that a
+  Practice-book loss from one technique engaged for every technique on every book, re-engaging on release):
+  1. **Global kill switch** — the HALT button, Telegram `/halt`, or the daily-loss breaker when
+     `risk.daily_loss_halt_scope=global`. Unchanged: stops every new buy everywhere; exits still pass.
+  2. **Per-book halt** — `risk.daily_loss_halt_scope=portfolio` (the new default): the daily-loss breaker
+     halts ONLY the losing book (`HaltState.books`, `Engine.engage_book_halt`, journal `BookHaltEngaged`),
+     RiskGate refuses entries on it (`book_halt`; reduce-only exits pass under `risk.halt_allows_exits`),
+     every other book keeps trading. Auto-released at the next ET session, or `POST
+     /api/portfolios/{pid}/resume`. Shadow books never halt (the learning record keeps collecting).
+  3. **Per-technique, per-book halt** — `techniques.<id>.daily_loss_halt_pct` (→ `execution.daily_loss_halt_pct`,
+     0 = off): `PlanRunner._maybe_technique_loss_halt` PAUSES all of that technique's plans on the book
+     once its realised + open-at-bid loss across them crosses the % of the book's equity (journal
+     `TechniqueLossHalt`, event `technique_loss_halt`). Resume per plan, or the plans expire with the day.
+  Runners ask `engine.trading_halted(portfolio_id)` before a fire — never `halt.engaged` directly. The
+  per-plan dollar loss halt (`_maybe_loss_halt`) is unchanged and sits below both. Rationale: the unit of
+  a daily-loss rule is the book the money sits in; the unit of "this method is having a bad day" is the
+  technique. The old behaviour is one setting away (`scope=global`). `tests/test_book_halt.py`.
 - 2026-09-04 · `execution.planrunner.Trade` gained three technique-owned annotations: `is_add` (a scale-in that
   rides the same contract as its base trade — Team2 X5), `live_pct` (the contract's fee-adjusted premium % from
   its own fresh bid) and `target_kind` (planned level vs running high/low of day). Defaults keep EM/tips

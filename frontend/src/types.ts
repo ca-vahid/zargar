@@ -494,6 +494,8 @@ export interface HaltState {
   engaged: boolean;
   reason: string;
   ts: number;
+  /** per-book daily-loss halts (2026-09-04): portfolioId -> reason */
+  books?: Record<string, { reason: string; source: string; ts: number; day: string }>;
 }
 
 export type Settings = Record<string, any>;

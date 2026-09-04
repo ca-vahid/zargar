@@ -60,6 +60,7 @@ export const api = {
   cancelOrder: (id: string) => request<any>("POST", `/api/orders/${id}/cancel`),
   halt: (reason: string) => request<any>("POST", "/api/halt", { reason }),
   resume: () => request<any>("POST", "/api/resume"),
+  resumeBook: (pid: string) => request<any>("POST", `/api/portfolios/${pid}/resume`),
   patchSettings: (values: Record<string, unknown>) =>
     request<Record<string, unknown>>("PATCH", "/api/settings", values),
   approveProposal: (id: string, half = false) =>

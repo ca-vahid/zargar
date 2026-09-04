@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
+      { tag: "improved", text: "The daily-loss breaker now halts only the book that lost (Practice, a live account…), not every book — the big red HALT is still global. Each technique can also pause itself on a book after its own bad day (Team2: 10%). The Armed page's kill-switch tile shows a halted book and lets you release it." },
       { tag: "fixed", text: "Armed page: a Team2 plan no longer wears EM's clothes — its Now line is the method's own read, the chart bands say 'entries all session · no new entries 15:30 · flat 15:45' instead of prime/mid-day windows, and its read events have icons. The Team2 page's Armed tab shows the read per symbol." },
       { tag: "fixed", text: "Quote day high, day low and volume are the session's, not 'since the app started': seeded from the exchange session values, widened by regular-session prints only, reset each session (they used to shrink to nothing after every restart)." },
       { tag: "improved", text: "Team2 trades the way his recaps do: trim heavily on the first push, then re-up the same contract on the next 13 EMA hold; a re-entry sells at the running high/low of day; and in money modes the +50/+100% trims are judged on the contract's live bid, not the model — the Armed row shows 'contract +X% live'." },
