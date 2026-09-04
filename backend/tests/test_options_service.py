@@ -420,6 +420,18 @@ async def test_expired_practice_position_settles_at_intrinsic(opt_engine):
     r = await client.get("/api/events?type=OptionExpired")
     assert r.status_code == 200
     assert any(e["type"] == "OptionExpired" for e in r.json())
+    # the settlement is a TRADE: a FILLED source="settle" order + execution row
+    # exist, so the Ledger sees the exit and the cash identity holds
+    # (audit 2026-09-04: META 590C settled +$5,985 with no execution row)
+    rows = await eng.orders.list_orders(pid)
+    st = next(o for o in rows if o["source"] == "settle" and o["symbol"] == old)
+    assert st["status"] == "FILLED" and st["side"] == "SELL" and st["avgFillPrice"] == 10.0
+    from sqlalchemy import select
+    from zargar.models import Execution
+    async with eng.sf() as session:
+        ex = (await session.execute(select(Execution).where(
+            Execution.order_id == st["id"]))).scalars().all()
+    assert len(ex) == 1 and ex[0].qty == 1 and ex[0].price == 10.0 and ex[0].commission == 0.0
 
 
 async def test_routes_without_snaptrade(opt_engine):

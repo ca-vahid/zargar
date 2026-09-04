@@ -302,6 +302,22 @@ runtime ones to `execution.*`).
   merge onto the tracked snapshot every ~30 s (`greeksLive`), beating the ~15-min chain row —
   the roll-up trigger and the monetize IV-tighten read them; OI stays the chain's (T+1 anyway).
 
+- **2026-09-04 · An expiry settlement is a TRADE and must live in the trade ledger** (shadow-book
+  audit, user request "our shadow numbers are what we learn from"). `settle_expired` credited
+  cash + realized P&L via `apply_fill` but wrote NO order/execution row — META 9/2 590C settled
+  +$5,985 into muggzone's armed book invisibly: the cash identity broke and the round trip never
+  reached the Ledger or any executions-based analytic. Fix: `_record_settlement` writes a FILLED
+  `source="settle"` order + execution at intrinsic (no RiskGate — bookkeeping of an exchange
+  lifecycle event, not a submission); the 5 historical settlements were backfilled FROM their own
+  `OptionExpired` events. Audit results otherwise: 16/17 sim+shadow books balance to the cent on
+  raw flows (Practice's $7.57 residual = the journaled 08-31/09-01 manual corrections, whose
+  equity-level identity holds at unexplained 0); positions == execution flows everywhere; no
+  unsettled expiries; ONE option fill >20% off its contract's own bar across every shadow book
+  (a $0.15-vs-$0.11 micro-option) — the delayed-fill contamination class is otherwise absent
+  from the learning record. Test: `test_expired_practice_position_settles_at_intrinsic` asserts
+  the settle order + execution. Flagged for decision, not changed: immediate shadow books go
+  deeply negative on cash (eva −$80k on a $10k start) because they buy EVERY tip by design.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

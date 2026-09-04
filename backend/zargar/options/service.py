@@ -526,6 +526,29 @@ class OptionsService:
                 aggregate_type="portfolio", aggregate_id=portfolio_id, portfolio_id=portfolio_id)
         return {**result, "supported": True}
 
+    async def _record_settlement(self, portfolio_id: str, symbol: str, side: str,
+                                 qty: float, price: float) -> None:
+        """A FILLED order + execution row for an expiry settlement, so the trade
+        ledger, the Ledger page and every executions-based audit see the exit.
+        No RiskGate (nothing is submitted to a venue — this is bookkeeping of an
+        exchange lifecycle event, like assignment); cash moved via apply_fill."""
+        import datetime as _dt
+
+        from ..domain import new_id
+        from ..models import Execution, Order
+        oid = new_id()
+        now = _dt.datetime.now(_dt.timezone.utc)
+        async with self.engine.sf() as session:
+            session.add(Order(id=oid, portfolio_id=portfolio_id, symbol=symbol,
+                              sec_type="OPT", side=side, qty=qty, order_type="MKT",
+                              tif="DAY", status="FILLED", filled_qty=qty,
+                              avg_fill_price=price, source="settle"))
+            await session.flush()                     # the execution row's FK needs the order first
+            session.add(Execution(id=new_id(), order_id=oid, portfolio_id=portfolio_id,
+                                  symbol=symbol, side=side, qty=qty, price=price,
+                                  commission=0.0, ts=now))
+            await session.commit()
+
     # ------------------------------------------------------------ expiry housekeeping
     async def _expiry_loop(self) -> None:
         while True:
@@ -558,6 +581,16 @@ class OptionsService:
             side = "SELL" if pos["qty"] > 0 else "BUY"
             await pk.apply_fill(pos["portfolioId"], o.symbol, "OPT", side,
                                 abs(pos["qty"]), round(intrinsic, 4), 0.0)
+            # the settlement IS a trade and must live in the trade ledger
+            # (audit 2026-09-04: META 590C settled +$5,985 cash with no
+            # execution row — the cash identity broke and the round trip was
+            # invisible to the Ledger/scorecards). Recorded as a FILLED order
+            # with source "settle"; the cash already moved via apply_fill.
+            try:
+                await self._record_settlement(pos["portfolioId"], o.symbol, side,
+                                              abs(pos["qty"]), round(intrinsic, 4))
+            except Exception:
+                log.exception("settlement ledger row failed for %s", o.symbol)
             record = {"symbol": o.symbol, "display": o.display(), "qty": pos["qty"],
                       "expiry": o.expiry.isoformat(), "underlyingSpot": spot,
                       "intrinsic": round(intrinsic, 4), "kind": pf.get("kind")}
