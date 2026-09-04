@@ -2188,8 +2188,22 @@ class SignalService:
                         and policy.mode in ("proposal", "auto")
                         and policy.meets_conviction(sig.confidence)):
                     with contextlib.suppress(Exception):
-                        await eng.proposals.create_from_signal(row, sig, verification)
-                        # deliberately NOT auto-approved from here
+                        prop = await eng.proposals.create_from_signal(row, sig, verification)
+                        # deliberately NOT auto-approved from here — but unattended
+                        # practice still self-DECLINES an analyst skip/watch, same as
+                        # intake (RDDT 2026-09-04: a "watch" card minted here sat
+                        # pending for a click that never comes). Declining is not
+                        # approving; the never-self-approve invariant stands.
+                        if prop is not None and policy.mode == "auto":
+                            verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
+                            pf = eng.positions.portfolio(prop["portfolioId"]) or {}
+                            unattended = (bool(eng.settings.get("techniques.tip.unattended", True))
+                                          and pf.get("kind") != "live")
+                            if unattended and verdict not in (None, "take"):
+                                why = (f"analyst said {verdict}: "
+                                       f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
+                                await eng.proposals.reject(prop["id"], via="analyst",
+                                                           reason=why)
 
         # -- (b) error content, one retry -------------------------------------
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
