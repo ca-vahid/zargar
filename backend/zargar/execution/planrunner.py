@@ -1149,6 +1149,11 @@ class PlanRunner(SessionListener):
                                                      else ap.config.premium_budget),
                                    "riskPct": float(risk_pct) if risk_pct is not None else ap.config.risk_pct})
         self.validate_config(cfg)                      # gates (mode, live-auto, options capability)
+        if risk_pct is not None and cfg.risk_pct != old_risk and cfg.mode == "auto":
+            # the plan's dollar loss halt was derived from the OLD risk % at arm time (2 x the per-trade
+            # risk); a bigger size with the old limit halts the plan after one stop (QQQ 2026-09-04 14:17:
+            # $341 limit under a $2,000 budget) — derive it again from equity at the new risk %
+            cfg.daily_loss_limit = 0.0
         await self._ensure_loss_halt(ap, cfg)
         ap.config = cfg
         changes = []
@@ -1159,7 +1164,8 @@ class PlanRunner(SessionListener):
         if premium_budget is not None and cfg.premium_budget != old_budget:
             changes.append(f"premium budget ${old_budget:,.0f} -> ${cfg.premium_budget:,.0f}")
         if risk_pct is not None and cfg.risk_pct != old_risk:
-            changes.append(f"risk {old_risk:g}% -> {cfg.risk_pct:g}% of equity")
+            changes.append(f"risk {old_risk:g}% -> {cfg.risk_pct:g}% of equity"
+                           + (f", loss halt re-derived: ${cfg.daily_loss_limit:,.0f}" if cfg.mode == "auto" else ""))
         self._log(ap, "mode_changed", "; ".join(changes) or f"execution mode {old} -> {cfg.mode}")
         await self._persist(ap)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_MODE_CHANGED,

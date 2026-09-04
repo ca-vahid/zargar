@@ -230,6 +230,12 @@ async def test_sizing_can_be_changed_on_an_armed_plan(rig):
     assert ap.config.premium_budget == 2000.0 and ap.config.risk_pct == 6.0     # tonight's defaults
     snap = await runner.set_mode(run_id, premium_budget=750.0, risk_pct=3.0)
     assert ap.config.premium_budget == 750.0 and ap.config.risk_pct == 3.0 and ap.config.mode == "alert"
+    # in AUTO a risk % change re-derives the plan's dollar loss halt (QQQ 2026-09-04: $341 limit under a $2,000 budget)
+    await runner.set_mode(run_id, "auto", risk_pct=3.0)
+    lim3 = ap.config.daily_loss_limit
+    await runner.set_mode(run_id, risk_pct=6.0)
+    assert ap.config.daily_loss_limit == pytest.approx(lim3 * 2, rel=0.05) and ap.config.daily_loss_limit > 0
+    await runner.set_mode(run_id, "alert")
     assert snap["config"]["premiumBudget"] == 750.0
     assert any(e["event"] == "mode_changed" and "premium budget" in str(e) for e in ap.events)
     restored = await runner.load_plan(run_id)
