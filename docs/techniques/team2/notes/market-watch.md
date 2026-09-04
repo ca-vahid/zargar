@@ -243,3 +243,10 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
 - Both deploys: alert → restart → auto with `premiumBudget 2000 / riskPct 6`; no Team2 trade was open either time.
 - Read at 12:28 ET: QQQ **scenario 2 (reject PDH) → puts**, touches 0; SPY still no scenario; IWM scenario 3 → calls,
   touches 0. All three AUTO.
+
+## 2026-09-04 13:05 ET (desk session) — Armed page speaks Team2
+
+- The Armed day panel showed EM's prime/mid-day bands and "1m bar with a volume surge" prose on Team2 plans (user
+  asked where the Team2 items are). Fixed (commit 5b3a8da + merge aa1a061, UI only, dist rebuilt, no restart): Now line
+  = the read's summary, bands = entries all session / no new entries 15:30 / flat 15:45, read events have icons,
+  session banner says Team2 fires all session; Team2 page › Armed tab shows the read per symbol + contract live %.
