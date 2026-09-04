@@ -182,3 +182,55 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   (the shared R1 cap is 5), `zero_dte.max_contracts` 40, `premium_cap` 2000. At $0.60 that is ~33 contracts and
   ~$500 (≈6% of the practice book) at risk per trade under the 25% premium stop.
 - Deployed 11:08 ET via alert → restart → auto (no Team2 trade was open). Plans back in AUTO 11:11 ET.
+
+## 2026-09-04 10:32-10:45 ET (run 4 - first auto session)
+
+- **Alive, real-time, no Team2 orders.** `/api/health` ok v0.7.0, 66 armed. Mode is **auto** on the
+  Practice sim book (`ff3c29d4`) since the 10:36 desk decision; the global kill switch is **released**
+  (`halt.engaged: false`, `risk.daily_loss_halt_pct` now 12.0), Practice equity 8,655.32 / todayPct
+  -0.17%. Alpaca stream `connected` + `authenticated` (10:36:13), OPRA quote+trade polls HTTP 200 every
+  ~2 s, SPY/QQQ/IWM quotes 0 s old session `regular`, 1m bars banking through 10:33 (64 bars since the
+  open, all three). **Zero Team2 orders placed today** (`/api/orders` has nothing on SPY/QQQ/IWM and no
+  `source: team2` row) - correct, because both of QQQ's touches were used before the switch and IWM/SPY
+  have produced no tradable touch.
+- **The app restarted at 10:36:18 ET mid-run** (another session's deploy - four restarts today: 10:14,
+  10:20, 10:22, 10:27, 10:36). All 3 Team2 plans restored, `needsAttention: false`, no attention reasons.
+  My health/replay calls hit the 30 s gap and returned connection-refused; nothing was lost.
+- **Verified: a restart in AUTO mode cannot buy a replayed fire.** The restore seed loop calls
+  `_on_bar(..., journal=False)` (planrunner l.978) and `_fire_rest` reads
+  `if cfg.mode == "alert" or not journal:` - a seeded fire is always stamped `alert`, never routed to
+  `_enter`, and the phantom-drop then removes it. The desk's 10:31 "restart in alert mode on purpose"
+  precaution was not actually required; restarts are safe in auto. (The remaining artifact is
+  cosmetic and already logged: today's QQQ fires live in `last_read` and the event log but not in the
+  Armed page's `trades` list.)
+- **What the read saw since run 3.** QQQ: nothing new - both scenario-1 touches were spent by 10:18
+  (#1 EMA13 720.84 -> stop on the 10:08 2m close 720.75, -14.35%; #2 EMA48 720.13 -> stop on the 10:18
+  close 720.11, -10.33%; day -24.68% on two model trades), price back to 719.26 and the EMA stack has
+  gone `mixed`/chop. IWM: no trade, four more `late_touch` events (10:00, 10:32, 10:34, 10:38 = touches
+  #3-#6) - see F18. SPY: still no scenario at all (770.94, needs 774.03 or 767.45), `setups: 0`, correct.
+- **Replay parity is exact on all three.** `POST /runs/{id}/replay` reproduces the live read
+  bar-for-bar: QQQ 2 trades / same entries 720.84 & 720.13 / same strikes 723 & 722 / same -14.35% and
+  -10.33%; IWM the same scenario + 2 skips + late touches; SPY 0/0. Every plan is `complete: true` with
+  pmh/pml/dayType/sizingAtOpen stamped (QQQ 722.06/717.13 gap_up/full, IWM 295.92/293.24 normal/none,
+  SPY 774.24/770.50 normal/none) - F12/F13 still holding after four restarts.
+- **F18 (new, logged, NOT built).** A refused pullback burns the D9 "first two touches" budget:
+  `session.py` increments `s.touches` before every skip gate, so IWM's two `skip_no_trade_zone`
+  refusals (09:46, 09:56 - both correct per V6/B5, inside PM 293.24-295.92) exhausted the setup, and
+  IWM is now watch-only for the rest of the day on a scenario it never traded. P6's rationale for D9 is
+  that the third bounce is where the *first-dip buyers* stop out - which presumes the first two dips
+  were bought. Proposal: move the increment below `skip_no_trade_zone`/`skip_engulfing`. Money decision,
+  user's call.
+- **F19 (new, shared engine, propose only).** `Quote.day_high`/`day_low`/`volume` from the Alpaca
+  stream are since-process-start, not session-to-date (`brokers/alpaca.py` l.188/212/253 - the Yahoo
+  context is an `or` fallback that one tick discards). Post-restart the API reported SPY dayHigh 771.29
+  vs a real 772.87 and QQQ 719.65 vs 721.86. **No Team2 impact** - the X3b HOD target comes from the bar
+  series (QQQ's 721.86 matches the DB exactly); only the frontend quote card reads it. Not touched.
+- **Still open, unchanged.** F14 closed (chase_cap_mult 1.5 is live in `thresholds`). F15 (five-rung
+  V6 sizing ladder collapsed to three) still proposed - QQQ traded `full` inside its PM range again
+  today. F16 is resolved operationally (halt released). The alert-mode "no contract picked" proposal is
+  moot while the desk is in auto (`pick_contract` runs on the money path) but returns the moment the
+  user goes back to alert. Log rotation still gives only ~20 minutes of history during market hours.
+- **Next run should check:** whether the desk places its **first real order** - a `contract` event with
+  a strike and an OPRA ask, `entry_capped` if the cap bites at 1.5x, then `position_open`/`live_trim`
+  in the audit; whether SPY finally confirms a scenario; whether IWM breaks 295.92 and gets locked out
+  by F18; the 15:30 last-entry and 15:45 flatten discipline if anything is open.

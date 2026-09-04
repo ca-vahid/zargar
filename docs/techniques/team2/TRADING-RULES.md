@@ -128,6 +128,32 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   gate now applies to proposal/auto only; an alert-mode fire during a halt is recorded with
   `haltedAtFire: true` so the audit still says the money path would have refused it.
 
+- **F18 (2026-09-04, market watch)** A **refused** pullback burns the D9 budget. `session.py` does
+  `s.touches += 1` (l.425) *before* every skip check, so a touch rejected for sitting in the pre-market
+  no-trade zone (`skip_no_trade_zone`, V6/B5) or for being an engulfing lunge (`skip_engulfing`, A6/F4)
+  still counts as one of the "first two pullbacks". Live case today: IWM confirmed scenario 3 (bounce
+  PDL) on the 09:30–09:45 15m close at 294.79, then the 09:46 (294.94) and 09:56 (294.64) touches were
+  correctly refused for the PM range 293.24–295.92 — and every touch since (10:00, 10:32, 10:34, 10:38 =
+  #3–#6) is `late_touch`, watch-only. IWM is locked out of its own valid setup for the rest of the day
+  without ever having taken a trade; if it now closes above the PMH 295.92 (it printed 295.91 at 10:20)
+  the first clean full-size EMA13 pullback is unreachable. The book's rationale for D9 is structural —
+  P6: the third bounce is "where the first-dip buyers are stopping out" — which presumes the first two
+  dips were *bought*. A skip for location or candle shape means no one bought. **Proposed, not built**
+  (it changes which trades get taken = money): count a touch toward D9 only when it was tradable, i.e.
+  move `s.touches += 1` below the `skip_no_trade_zone` / `skip_engulfing` gates (keep counting
+  `late_touch` and real fires). Sweep 1/2/3 with and without the change against Q1/D9.
+
+- **F19 (2026-09-04, market watch — shared engine, NOT Team2, propose only)** `Quote.day_high` /
+  `day_low` / `volume` from the Alpaca stream are **since process start**, not session-to-date.
+  `brokers/alpaca.py` seeds `{"day_high": 0.0, "day_low": 0.0, "volume": 0}` per process (l.188) and
+  only accumulates from live prints (l.212); the Yahoo session context is a `or` fallback (l.253), so
+  one tick permanently discards the true session high/low. After today's 10:36 restart the API reported
+  SPY dayHigh 771.29 against a real session high of 772.87 (bars), QQQ 719.65 against 721.86, and SPY
+  volume 317k at 10:33. **No Team2 impact** — the method's HOD/LOD target (X3b) is computed from the
+  bar series in `session.py`, and today's QQQ HOD target 721.86 matches the DB bars exactly; the only
+  consumer of `dayHigh` is the frontend quote card. **Proposed:** `max(st["day_high"], ctx.day_high)` /
+  `min(...)` instead of `or`, and take session volume from the Yahoo context rather than the tick sum.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
