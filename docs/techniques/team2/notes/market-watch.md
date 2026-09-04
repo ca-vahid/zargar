@@ -831,3 +831,56 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   persisted rows at boot (QQQ's two real losers count again after this restart → the desk reads 2 of 2 from the
   book, which is the truth today). F39: zero/negative equity refuses an option entry with its own reason.
 - Watch job: `skip_loss_cap_desk` lines now say "counted from the book/model".
+
+
+## 2026-09-04 15:40 ET (run 14 — F26's last-entry rule fired live; a disarmed plan never books its flatten)
+
+- **Alive, real-time, two plans.** `/api/health` ok v0.7.0, 62 armed. SPY and IWM `armed` + **auto** on
+  Practice (`ff3c29d4`), `needsAttention: false`, no `readError`, nothing open or working; QQQ still
+  disarmed from 14:17. Quotes **0 s** old, session `regular`; OPRA quote+trade polls returning 200
+  every ~2.4 s (the 53-symbol `feed=opra` batch includes both QQQ 0DTE puts). 1m bars banking for
+  **all three** — SPY 1,428 / QQQ 1,043 / IWM 977 rows in 24 h, last bar 15:32, age ~105 s (F34 still
+  proven: QQQ banks although its plan is gone). **Zero `Traceback` / `ERROR` / `read_error`** in the
+  2,451 log lines since the 14:57 boot — 16 warnings, all the benign `dropped N non-bucket-aligned
+  stub bar(s)`.
+- **F26's first live exercise passed on both plans.** `skip_last_entry` at **15:32:00 ET** on SPY and
+  IWM — *"past 15:30 — no new entries, managing what is open until the 15:45 flatten (D6/C3)"* —
+  journaled as `TechniquePlanTriggerSkipped` on both, and at the first 2m **close** past 15:30 exactly
+  as F25's clock predicts. Nothing was open to manage. The 15:45 flatten falls in the next run.
+- **No new trades, model or real, since 14:18.** SPY: bias still scenario 3 (bounce PDL) since the
+  11:15 close, `scenario_3@11:00` **waiting** at 769.26 with price 769.89 (**0.08 %** away, 0 touches);
+  its earlier `pm_break_down@10:30` reads 2 model trades (+57.45 %, −12.23 %). IWM: `scenario_3@09:30`
+  waiting at 293.88, price 295.92 still inside the PM range so F15 refuses every touch;
+  `pm_break_up@12:00` fired once at 12:16 (−19.17 %). Day (model): **5 trades, 1 win / 4 losses**;
+  book: **−$454.02**, all QQQ.
+- **Replay parity exact on both armed plans**, including the new row: SPY 9/9 events + 2/2 trades
+  (pnlPctSum 45.22 on both sides), IWM 8/8 + 1/1 (−19.17); `skip_last_entry` reproduces at 15:32 in
+  the replay too. (`POST /runs/{id}/replay` needs `-d '{}'`; the read comes back under `result`.)
+- **F35 verified in the browser**, not just the API: `/team2` Plans tab prints
+  *"disarmed — loss halt: realised -300.00 + open -54.00 marked at bid crossed -341.38"* on the QQQ row.
+- **F40 (new, NOT fixed — shared engine; a disarmed plan never learns its flatten filled).**
+  `PlanRunner.disarm()` submits the flatten and then pops the plan out of `self._armed` in the same
+  breath; `on_order_update` opens with `ap = self._armed.get(run_id)` and returns when that is `None`,
+  so the fill 2 s later is dropped on the floor. QQQ's flatten order `c4f557e6…` is **FILLED 18 @
+  0.5599** in `orders` + `executions` (14:17:02 ET, $18.72 commission) and the book is flat, yet the
+  persisted plan still reads `status: "open"`, `remaining: 18`, `realizedPnl: 0.0`, exit
+  `{kind: "disarm", status: "SUBMITTED", filledQty: 0.0}`. It bites **F38 today**: the boot seed keys on
+  `status == "closed"`, so the log says *"loss tally seeded with **1** loser(s)"* when QQQ had two —
+  the desk-wide cap loosens by one after precisely the event F38 was built to survive. It also
+  understates the plan's own day by the flatten's **−$54.18** gross (−$91.62 net) and leaves a record
+  claiming an 18-lot 0DTE put held past expiry. No money is misplaced — the book is right throughout —
+  and disarmed plans are never restored, so this is a records/rule-counting defect, not an exposure
+  one. **Not built here: it is `zargar/execution/planrunner.py` and changes the disarm path for EM and
+  Tip too.** Proposal: await the flatten's terminal status (short timeout) before popping from
+  `_armed`, or keep the plan in a `_closing` map `on_order_update` also consults and re-persist when it
+  settles; and have F38's seed count a trade whose exit orders filled at a loss even when the record
+  still says open.
+- **The desk cap is binding anyway.** Right now `losses_across_plans()` = QQQ 1 (book, seeded) + SPY 1
+  (model — its only fire was refused pre-route, so F37 keeps it on the model basis) + IWM 1 (model) =
+  **3 of 2**, so no entry could be taken even if 15:30 had not passed. With F40 fixed it would read 4.
+- **Nothing built or deployed this run.** The only finding is shared-engine, and no fix was queued from
+  earlier runs. No restart: the market is open, both plans are in auto, and there was no reason to.
+- **Next run (16:05, post-close) should check:** the **15:45 flatten** rows on SPY and IWM and that no
+  entry was taken after 15:30; the day's final read/replay parity and the scorecard; the nightly
+  `team2_plan_nightly` at 17:00; and whether the user has ruled on the open money rules — F27/F28
+  residue, **F40**, and the F30-family question of which premium series is authoritative.

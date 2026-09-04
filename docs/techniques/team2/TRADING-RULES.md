@@ -432,6 +432,27 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   its own reason, not silently through one branch and always through the other. **Shared engine
   (`zargar/execution/planrunner.py`) — proposal, not built here.**
 
+- **F40 (2026-09-04 15:40 ET, NOT fixed — a disarmed plan never learns its flatten filled)**
+  `PlanRunner.disarm()` submits the flatten (`_exit(..., "disarm", force_market=True)`), then
+  immediately does `self._armed.pop(run_id)` and persists. The fill arrives ~2 s later on the orders
+  topic and `on_order_update` starts with `ap = self._armed.get(run_id)` → `None` → **return**. The
+  trade record is frozen at the write-ahead intent forever. Proven on today's QQQ plan: order
+  `c4f557e6…` is **FILLED 18 @ 0.5599** in `orders`/`executions` (14:17:02 ET, commission $18.72), the
+  book is flat, yet the persisted plan still reads `status: "open"`, `remaining: 18`,
+  `realizedPnl: 0.0`, exit `{kind: "disarm", status: "SUBMITTED", filledQty: 0.0, price: null}`.
+  Three consequences, all live today: (1) **F38's boot seed counted 1 real loser, not 2** — the log
+  says *"loss tally seeded with 1 loser(s)"* — because the seed keys on `status == "closed"`, so the
+  desk-wide cap loosens by one after exactly the event F38 was built to survive; (2) the plan's own
+  P&L understates the day by the flatten's **−$54.18** gross (−$91.62 net) — anything scoring the day
+  from plan state, not the book, is wrong; (3) the record claims an 18-lot 0DTE put held past
+  expiry. Not a restore hazard (disarmed plans are not restored), and no money moved that shouldn't
+  have — the book is correct throughout; this is the plan's *record* of it. Recommended shape: in
+  `disarm()`, await the flatten's terminal status (short timeout) before popping from `_armed`, or
+  keep the plan in a `_closing` map that `on_order_update` also consults, and persist again when it
+  settles; F38's seed should additionally count a trade whose exit orders filled at a loss even if the
+  record says open. **Shared engine (`zargar/execution/planrunner.py`) — proposal, not built here**
+  (it changes the disarm path for EM and Tip too).
+
 
 ## Theories to test
 
