@@ -506,6 +506,23 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   from `_tracked` when its expiry is past (and when nothing holds or watches it), on the same pass.
   **`zargar/options/service.py` — shared engine, proposal, not built here.**
 
+- **F45 (2026-09-04 16:30 ET, NOT fixed — shared engine/research; the nightly chain sweep is
+  rate-limited out of half the universe)** `research/snapshots.py::_run` walks every optionable
+  universe symbol back-to-back with **no throttle, no retry and no backoff**, and CBOE's free endpoint
+  refuses it. Today's 16:30 job attempted **150** underlyings in ~3 minutes and took **185 HTTP 429s**;
+  once the refusals start they return instantly, so the loop rips through the remainder of the
+  universe in seconds and loses all of them. The damage is dated and measurable in
+  `option_chain_snapshots`: **145–146** distinct underlyings persisted on 2026-08-27/28 versus
+  **73–78** on every session since 2026-08-31 (77 today). That table is Flow's single writer and its
+  nightly 16:45 scan reads it, so roughly half the universe has had no Vol/OI read for five sessions,
+  and the overnight-OI confirmation for the names that *are* saved is comparing against gaps. It also
+  collides with `OptionsService.refresh_tracked`, which shares the same CBOE client and logged 114
+  `enrich skipped … CBOE HTTP 429` lines in the same window. **No Team2 impact** — Team2 picks its
+  contract from OPRA, not from these snapshots — but it is the largest live data defect the desk can
+  see. Proposed: pace the sweep (a small per-request delay or a semaphore of 1–2), retry a 429 once
+  after a backoff, and journal the per-symbol failure count so a half-empty night is visible instead
+  of silent. **`zargar/research/snapshots.py` — shared engine, proposal, not built here.**
+
 
 ## Theories to test
 

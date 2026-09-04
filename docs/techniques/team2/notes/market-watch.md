@@ -950,3 +950,51 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   run must verify exactly ONE armed plan per symbol for 2026-09-08** (F41's live proof) and that the
   09:25 completion filled pmh/pml/dayType/sizing that morning and not before (F42). Still open for the
   user: F40, F43, F44 and the F30-family question of which premium series is authoritative.
+
+
+## 2026-09-04 16:30 ET (run 16, last of the day — the 16:15 deploy is clean; the nightly chain sweep is not)
+
+- **Alive and healthy on the new build.** `/api/health` ok v0.7.0, 17 EM plans armed, no Team2 plan
+  armed (correct: SPY and IWM took the 16:00 `session closed` disarm, QQQ has been out since its 14:17
+  loss halt). **Zero `Traceback` / `ERROR` / `read_error`** in the 7,159 log lines since the 16:13 boot;
+  50 warnings, 47 of them the benign `dropped N non-bucket-aligned stub bar(s)` and the other 3 the
+  restart's own EM housekeeping (`marked N orphaned running sweep(s) as interrupted`, two
+  `TechniqueSweepStarted … missing sweepId` contract warnings — EM's, not ours).
+- **Data still real-time past the close.** Quotes 0–6 s old, session correctly `post`, `regPrice`
+  holding the regular close (SPY 770.19 / QQQ 718.96 / IWM 296.01); the 55-symbol OPRA quote+trade
+  batch is returning 200 every ~2.4 s and still prices contracts live (SPY 260914C775 **2.40 / 2.42**),
+  so this is not an after-hours feed drop; 1m bars banking for all three (SPY 1,428 / QQQ 1,043 /
+  IWM 982 rows in 24 h, last bar 16:33 ET, age 118 s).
+- **Nothing traded and nothing could.** No plan armed, no order, no working exit. Today's final record
+  stands as run 15 left it: model 4 trades (1 win / 3 losses), real book **−$454.02, all QQQ**.
+- **F41 verified deterministically against the calendar.** `is_trading_day(2026-09-07)` is **False**
+  and `next_trading_day(2026-09-04) == next_trading_day(2026-09-07) == 2026-09-08`, so tonight's 17:00
+  nightly targets Tuesday and Labor Day's 17:00 run will hit the new `already armed for 2026-09-08`
+  skip instead of minting a second plan. Also checked the long-weekend hold end-to-end: `_on_bar`
+  returns early unless `session_date(bar.ts) == ap.plan_for`, the 16:05 clock-close and the PlanRunner
+  pre-open are both `plan_for == today` guarded, so plans built tonight ignore every Friday-evening,
+  Sunday-evening and Monday bar and survive intact to Tuesday. **Nothing else double-fires over the
+  long weekend.**
+- **F45 (new, NOT fixed — shared engine/research; the biggest live data defect on the box).** The 16:30
+  `chain_snapshots` job walks the universe with no throttle, retry or backoff: it attempted **150**
+  underlyings and took **185 CBOE 429s** in three minutes (the refusals return instantly, so the loop
+  burns through the tail of the universe in seconds). `option_chain_snapshots` shows the damage by
+  date — **145–146** underlyings on 2026-08-27/28 versus **73–78** every session since 2026-08-31
+  (77 today). That table is **Flow's single writer** and its 16:45 scan reads it, so half the universe
+  has had no Vol/OI read for five sessions. It also starves `OptionsService.refresh_tracked`, which
+  shares the CBOE client (114 `enrich skipped … CBOE HTTP 429` lines in the same window). **No Team2
+  impact** — Team2 picks its contract from OPRA. Written up in TRADING-RULES as a proposal;
+  `zargar/research/snapshots.py` is outside this desk's scope.
+- **F40, F43, F44 unchanged and still the user's call** (QQQ's flatten still persisted as
+  `status: open, remaining: 18` while the fill is FILLED 18 @ 0.5599 in `orders`/`executions`; the
+  16:13 boot again logged *"loss tally seeded with 1 loser(s)"* when QQQ had two — F40's undercount,
+  reproduced on the new build; the Team2 day is still never scored; the OPRA batch still carries the
+  expired `MU260902P…`/`GOOGL260902C…`/`META260902C…`/`TSLA260902P…` plus both `QQQ260904` puts).
+- **Nothing built or deployed this run** — the only new finding is shared-engine research code, and
+  no fix was queued. No restart (none needed; the 16:15 build is clean).
+- **Tuesday's first run (2026-09-08 09:30 ET) must check, in this order:** exactly **ONE** armed plan
+  per symbol for 2026-09-08 (F41's live proof — tonight's 17:00 mints them and Monday's 17:00 must
+  skip); that the 09:25 completion filled `pmh`/`pml`/`dayType`/`sizingAtOpen`/`complete: true`
+  **that morning** and that nothing blanked them on Labor Day (F42's live proof); that the desk loss
+  tally reset for the new day; and the usual real-time data checks. Still open for the user: **F40**,
+  **F43**, **F44**, **F45**, and the F30-family question of which premium series is authoritative.
