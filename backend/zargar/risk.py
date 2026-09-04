@@ -49,19 +49,23 @@ class HaltState:
         self.engaged = False
         self.reason = ""
         self.ts: float = 0.0
+        self.source = ""            # app | telegram | auto — auto = the daily-loss breaker
 
-    def engage(self, reason: str) -> None:
+    def engage(self, reason: str, source: str = "app") -> None:
         self.engaged = True
         self.reason = reason
+        self.source = source
         self.ts = time.time()
 
     def release(self) -> None:
         self.engaged = False
         self.reason = ""
+        self.source = ""
         self.ts = time.time()
 
     def to_dict(self) -> dict:
-        return {"engaged": self.engaged, "reason": self.reason, "ts": self.ts}
+        return {"engaged": self.engaged, "reason": self.reason, "ts": self.ts,
+                "source": self.source}
 
 
 def is_us_market_hours(now: dt.datetime | None = None) -> bool:
@@ -192,9 +196,18 @@ class RiskGate:
         checks: list[RiskCheck] = []
 
         # 1. kill switch -----------------------------------------------------
+        # An AUTO halt (the daily-loss breaker) protects real books from tilt;
+        # the SHADOW books are the learning record and keep collecting evidence
+        # (2026-09-04: Practice's -9.13% halt rejected a research entry at
+        # 09:58). A MANUAL halt (app/Telegram) still stops everything.
+        pf_kind = getattr(portfolio, "kind", None)
+        if pf_kind is None and isinstance(portfolio, dict):
+            pf_kind = portfolio.get("kind")
+        halt_blocks = self._halt.engaged and not (
+            pf_kind == "shadow" and getattr(self._halt, "source", "") == "auto")
         checks.append(RiskCheck(
-            "kill_switch", not self._halt.engaged,
-            "" if not self._halt.engaged else f"halted: {self._halt.reason}"))
+            "kill_switch", not halt_blocks,
+            "" if not halt_blocks else f"halted: {self._halt.reason}"))
 
         # 2. quote freshness / halt -------------------------------------------
         quote = self._quotes.get(symbol)
