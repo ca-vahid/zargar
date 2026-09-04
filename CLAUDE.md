@@ -16,6 +16,7 @@ cd backend && .venv/bin/python -m zargar.main          # run engine+API (+UI if 
 cd frontend && npm run build                           # typecheck + production build (the frontend gate)
 cd frontend && npm run dev                             # hot-reload UI on :5173, proxies :8420
 ./scripts/start.sh | scripts\start.ps1                 # one-process app for the user
+scripts\stop.ps1                                        # stop server + helper windows (user runs it from the ELEVATED terminal that owns the process; afterwards Claude may `scripts\start.ps1 -Detach` from its own non-elevated shell and owns the new process)
 cd backend && .venv/bin/python -m zargar.tools.ibkr_check   # read-only IBKR connectivity test
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTrade status/accounts
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-auth a connection to trade
