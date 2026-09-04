@@ -109,6 +109,14 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
                           "after_r": float(settings.get("techniques.tip.trailing_after_r", 1.0))}
     policy["time_stop_sessions"] = max(1, int(plan.get("maxHoldSessions") or 10))
     if is_option:
+        if bool(settings.get("techniques.tip.bleed_exit_enabled", True)):
+            # BBAI 2026-09-04: -61% on the contract while the stock sat within
+            # 6% of entry — the option failing without the thesis moving. Exit
+            # at bleed_pct instead of donating the way to the full premium stop.
+            policy["premium_bleed"] = {
+                "bleed_pct": float(settings.get("techniques.tip.bleed_exit_pct", 35.0)),
+                "underlying_band_pct": float(settings.get("techniques.tip.bleed_band_pct", 3.0)),
+            }
         # premium stop: the plan's own figure, else the technique's knob
         # (resolver semantics: techniques.tip.premium_stop_pct → execution.*)
         fallback_ps = settings.get("techniques.tip.premium_stop_pct",

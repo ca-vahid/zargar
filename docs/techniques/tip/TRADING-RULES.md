@@ -35,6 +35,17 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-04 — **The bleed exit: an option collapsing while the stock stands still is the
+  OPTION failing, not the thesis** (BBAI Mar-27 4C: bought at the ask of a 26% spread at 0.51,
+  stock never moved more than ~6% off entry, contract bled to the −55% premium stop over four
+  sessions — −$780 where −$450 was available). New `premium_bleed` policy
+  (`techniques.tip.bleed_exit_pct` 35 / `bleed_band_pct` 3): premium down ≥35% with the
+  underlying inside ±3% of entry → exit now. When the stock IS moving, the normal stops own
+  the decision. Note the entry half was fixed separately (spread-gated market orders +
+  limit-at-mid). Watch: band 3% vs BBAI's slow drift — a 5-session drift can walk outside the
+  band before the bleed threshold; revisit with ≥10 bleed-exit samples.
+
+
 - 2026-09-04 — **Swing options run the monetize campaign; deep-ITM winners roll up** (user
   decision after the 09-03 review + literature research; ambitious defaults). Half off at
   +100% premium (the debit is recouped — the trade can no longer lose), ratchet floors

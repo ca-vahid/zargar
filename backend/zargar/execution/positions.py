@@ -1146,8 +1146,12 @@ class PositionManager:
                     for l in p.open_legs)
                 if legs_fresh:
                     today = dt.datetime.fromtimestamp(now / 1000, ET).date()
+                    uq = self.engine.quotes.get(p.symbol)
+                    und_move = ((float(uq.last) / p.entry - 1) * 100
+                                if uq is not None and uq.last and uq.last > 0 and p.entry else None)
                     d = evaluate_premium(p.policy, p.state, mark, p.entry_mark,
-                                         dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
+                                         dte=p.dte_min(today), iv_ratio=self._iv_ratio(p),
+                                         underlying_move_pct=und_move)
                     if d is not None and d.kind == "premium_take" \
                             and self._take_units(p, d.fraction) < 1:
                         # a 1-lot cannot sell half: skip the take, the ratchet

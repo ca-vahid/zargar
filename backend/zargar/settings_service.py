@@ -177,6 +177,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.rollup_target_delta": 0.35,  # the strike the roll buys
     "techniques.tip.rollup_max": 2,              # rolls per position
     "techniques.tip.rollup_max_spread_pct": 10.0,  # skip illiquid legs (bid/ask spread % of mid, either leg)
+    "techniques.tip.bleed_exit_enabled": True,   # exit an option bleeding bleed_exit_pct with the stock inside bleed_band_pct of entry (BBAI 09-04)
+    "techniques.tip.bleed_exit_pct": 35.0,
+    "techniques.tip.bleed_band_pct": 3.0,
     "techniques.tip.unattended": True,           # practice decides itself: analyst skip/watch DECLINES the card (recorded), promoted takes trade; live always waits for the human
     "techniques.tip.triage_at": "09:33",         # morning triage: re-appraise anything still pending against the live open
     "techniques.tip.auto_min_graded": 5,     # earned auto: closed tip positions a source needs before the platform-default auto self-approves
