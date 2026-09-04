@@ -265,7 +265,30 @@ function EquityCurvePanel() {
       // ordinal: the closed market takes no width at all
       xAxis: { ...(base.xAxis as any), ordinal: true },
       yAxis: { ...(base.yAxis as any), opposite: true, startOnTick: false, endOnTick: false },
-      tooltip: { ...(base.tooltip as any), valueDecimals: 2, xDateFormat: "%a %b %e, %H:%M ET" },
+      // The readout used to be a large box that popped the instant the cursor
+      // entered the panel and then sat on top of the line (user 2026-09-04).
+      // Now: it only wakes when you are actually near the line (stickyTracking
+      // off + a tight snap), it is one small line, and it parks in the top
+      // corner AWAY from the cursor so it never covers what you are reading.
+      tooltip: {
+        ...(base.tooltip as any),
+        shared: false, followPointer: false, snap: 8, hideDelay: 120,
+        borderWidth: 0, shadow: false, padding: 6, useHTML: true,
+        backgroundColor: rgbaVar("--surface-2", 0.94),
+        style: { color: cssVar("--text-2"), fontSize: "11px" },
+        // parked, not chasing: a readout that hops between corners as the
+        // cursor moves is its own kind of noise. Top-right, always — where the
+        // value axis already is, and clear of the line's left-hand history.
+        positioner(this: any, w: number) {
+          const c = this.chart;
+          return { x: c.plotLeft + c.plotWidth - w - 4, y: c.plotTop + 2 };
+        },
+        formatter(this: any) {
+          const when = Highcharts.dateFormat("%b %e, %H:%M", this.x);
+          return `<b style="color:${cssVar("--text-1")}">${fmtCcy(this.y, target?.baseCurrency ?? "USD")}</b>`
+            + `<span style="opacity:.7"> · ${when} ET</span>`;
+        },
+      } as any,
       series: [{
         type: "area", name: target?.name ?? "equity", color: col, lineWidth: 2,
         fillColor: { linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
@@ -273,6 +296,7 @@ function EquityCurvePanel() {
         // an area series anchors its axis at 0 by default, which squashed a
         // 8.8k equity line into a hairline at the top of the panel
         threshold: null, data: pts, marker: { enabled: false },
+        stickyTracking: false,   // hovering empty space is not a question
       } as any],
     });
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
