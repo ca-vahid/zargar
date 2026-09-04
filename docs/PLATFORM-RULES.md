@@ -318,6 +318,15 @@ runtime ones to `execution.*`).
   the settle order + execution. Flagged for decision, not changed: immediate shadow books go
   deeply negative on cash (eva −$80k on a $10k start) because they buy EVERY tip by design.
 
+- **2026-09-04 · An AUTO daily-loss halt spares the shadow learning record.** Practice tripped
+  its -8% breaker at 09:38 (BBAI premium stop + the open's marks) and the global kill switch
+  then rejected a RESEARCH-book entry at 09:58 — a tilt-guard for real money was blinding the
+  instrument that collects evidence. `HaltState` now carries its `source`; `kill_switch` passes
+  for `kind == "shadow"` portfolios when the halt is `source == "auto"` (the breaker). A MANUAL
+  halt (app button / Telegram) still stops every book — halt means halt when a human says it.
+  Reduce-only exits were and remain unblockable either way. Test:
+  `test_riskgate.py::test_auto_halt_spares_the_shadow_record_manual_blocks_all`.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
