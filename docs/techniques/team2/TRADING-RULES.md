@@ -138,10 +138,9 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   without ever having taken a trade; if it now closes above the PMH 295.92 (it printed 295.91 at 10:20)
   the first clean full-size EMA13 pullback is unreachable. The book's rationale for D9 is structural —
   P6: the third bounce is "where the first-dip buyers are stopping out" — which presumes the first two
-  dips were *bought*. A skip for location or candle shape means no one bought. **Proposed, not built**
-  (it changes which trades get taken = money): count a touch toward D9 only when it was tradable, i.e.
-  move `s.touches += 1` below the `skip_no_trade_zone` / `skip_engulfing` gates (keep counting
-  `late_touch` and real fires). Sweep 1/2/3 with and without the change against Q1/D9.
+  dips were *bought*. A skip for location or candle shape means no one bought. **Built the same hour by the
+  desk (commit 67c5986):** the no-trade-zone and range-confirmation skips happen before the touch is counted;
+  engulfing bars still count (they were pullbacks, just bad bars) — sweep that half separately. Deployed 11:50 ET.
 
 - **F19 (2026-09-04, market watch — shared engine, NOT Team2, propose only)** `Quote.day_high` /
   `day_low` / `volume` from the Alpaca stream are **since process start**, not session-to-date.
