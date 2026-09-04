@@ -246,7 +246,7 @@ const SORTERS: Record<SortKey, (a: ArmedPlan, b: ArmedPlan) => number> = {
 function FleetSortTable({ armed, selId, onSel, rich, onRich }: {
   armed: ArmedPlan[]; selId: string; onSel: (id: string) => void; rich: boolean; onRich: (rich: boolean) => void;
 }) {
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "status", dir: 1 });
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "dist", dir: 1 });
   const [q, setQ] = useState("");
   const needle = q.trim().toUpperCase();
   const shorts = armed.filter((a) => nearestTrigger(a) && isShortTrigger(nearestTrigger(a))).length;
@@ -260,6 +260,18 @@ function FleetSortTable({ armed, selId, onSel, rich, onRich }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sort.key, sort.dir, memberKey]);
   const byId = useMemo(() => Object.fromEntries(armed.map((a) => [a.runId, a])), [armed]);
+  // A column every row answers the same way is not information — it is noise
+  // repeated N times. Those get hoisted into the one line above the table
+  // (user 2026-09-04: "CLOSED" and "watching 1" sixteen times each).
+  const windows = new Set(armed.map((a) => a.sessionWindowNow));
+  const showWindow = windows.size > 1;
+  const showGrade = armed.some((a) => a.grade);
+  const showPnl = armed.some((a) => Math.abs(a.realizedPnl || 0) >= 0.005);
+  const states = armed.map(chipState);
+  const showState = states.some((st) => st !== "watching");
+  const cols = 3 + (showWindow ? 1 : 0) + (showGrade ? 1 : 0) + (showPnl ? 1 : 0)
+    + (showState ? 1 : 0) + (rich ? 1 : 0);
+  const counts = states.reduce<Record<string, number>>((m, st) => ({ ...m, [st]: (m[st] ?? 0) + 1 }), {});
   const clickSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: 1 }));
   const arrow = (key: SortKey) => (sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "");
@@ -275,33 +287,50 @@ function FleetSortTable({ armed, selId, onSel, rich, onRich }: {
           aria-label="Filter armed plans by symbol" spellCheck={false} />
         <span className="sub">
           {needle ? `${shown.length} of ${armed.length}` : `${armed.length} plan${armed.length === 1 ? "" : "s"}`}
-          {" · "}{armed.length - shorts} long · {shorts} short · ← → to move
+          {" · "}{armed.length - shorts} up · {shorts} down · ← → to move
         </span>
         <div className="seg sm armed-density" role="group" aria-label="Table style">
-          <button className={rich ? "" : "on"} title="Dense table — most rows per screen" onClick={() => onRich(false)}>dense</button>
-          <button className={rich ? "on" : ""} title="Rich rows — sparkline + distance-to-trigger meter" onClick={() => onRich(true)}>rich</button>
+          <button className={rich ? "" : "on"} title="Compact rows" onClick={() => onRich(false)}>dense</button>
+          <button className={rich ? "on" : ""} title="Adds today's price path and the live price" onClick={() => onRich(true)}>rich</button>
         </div>
       </div>
+      {/* what every row would otherwise repeat, said once */}
+      {!showWindow && (
+        <div className="armed-fleet-state">
+          <span className={`armed-mkt ${armed[0] ? (WINDOW_SHORT[armed[0].sessionWindowNow]?.[1] ?? "nosetup") : ""}`}>
+            {armed[0] ? SESSION_LINE[armed[0].sessionWindowNow] ?? armed[0].sessionWindowNow : ""}
+          </span>
+          <span className="muted">
+            {counts.watching ? `${counts.watching} waiting for their price` : ""}
+            {counts.intrade ? ` · ${counts.intrade} in a trade` : ""}
+            {counts.fired ? ` · ${counts.fired} already fired today` : ""}
+            {counts.void ? ` · ${counts.void} can no longer fire today` : ""}
+            {counts.off ? ` · ${counts.off} paused or stopped` : ""}
+            {counts.attn ? ` · ${counts.attn} need attention` : ""}
+          </span>
+        </div>
+      )}
       <div className="panel-body armed-fleet-body" style={{ padding: 0 }}>
         <table className={`tq-table tq-fleet armed-fleet ${rich ? "rich" : ""}`}>
           <thead><tr>
             <TH k="symbol">Symbol</TH>
-            <TH k="grade" title="Deterministic plan grade — tracked against outcomes (TRADING-RULES 1.2)">Gr</TH>
-            <th title="The trigger this plan is watching (the nearest one): bounce/breakout = calls, reject/breakdown = puts">Setup</th>
-            <TH k="window">Window</TH>
+            {showGrade && <TH k="grade" title="Deterministic plan grade — tracked against outcomes (TRADING-RULES 1.2)">Gr</TH>}
+            <th title="What has to happen for this plan to buy, and who called it">The plan</th>
+            {showWindow && <TH k="window">Window</TH>}
             {rich && <th title="Today's price path">Day</th>}
-            <TH k="dist" title="Distance from the nearest trigger">{rich ? "To trigger" : "Dist"}</TH>
-            <TH k="status">Status</TH>
-            <TH k="pnl">P&amp;L</TH>
+            <TH k="dist" title="How far the price still has to move before this fires">How close</TH>
+            {showState && <TH k="status">State</TH>}
+            {showPnl && <TH k="pnl">P&amp;L</TH>}
           </tr></thead>
           <tbody>
             {shown.map((id) => {
               const a = byId[id];
               if (!a) return null;
-              return <FleetRow key={id} a={a} sel={id === selId} rich={rich} onSel={() => onSel(id)} />;
+              return <FleetRow key={id} a={a} sel={id === selId} rich={rich} onSel={() => onSel(id)}
+                showWindow={showWindow} showGrade={showGrade} showPnl={showPnl} showState={showState} />;
             })}
             {needle && !shown.length && (
-              <tr><td colSpan={rich ? 8 : 7} className="muted small">No armed plan matches “{q.trim()}”.</td></tr>
+              <tr><td colSpan={cols} className="muted small">No armed plan matches “{q.trim()}”.</td></tr>
             )}
           </tbody>
         </table>
@@ -310,22 +339,77 @@ function FleetSortTable({ armed, selId, onSel, rich, onRich }: {
   );
 }
 
+/** The session state, said once above the table instead of on every row.
+    "closed" per row was read as "this plan is closed" (user 2026-09-04). */
+const SESSION_LINE: Record<string, string> = {
+  prime_open: "Opening window — plans can fire now",
+  prime_close: "Closing window — plans can fire now",
+  midday: "Mid-day — watching only, nothing fires until 2:45 PM ET",
+  extended: "Market closed — resumes 9:30 AM ET",
+};
+
 type ArmedTrigger = ArmedPlan["triggers"][number];
 const nearestTrigger = (a: ArmedPlan): ArmedTrigger | undefined =>
   (a.triggers ?? []).slice().sort((x, y) => Math.abs(x.distancePct ?? 99) - Math.abs(y.distancePct ?? 99))[0];
 const isShortTrigger = (t?: ArmedTrigger) => !!t && (t.direction === "short" || t.kind === "reject" || t.kind === "breakdown");
 
-/** The trigger kind as a chip: colour says the side (calls / puts), text says the entry style. */
-function SetupBadge({ t }: { t?: ArmedTrigger }) {
-  if (!t) return <span className="muted small">—</span>;
-  const short = isShortTrigger(t);
-  const brk = t.kind === "breakout" || t.kind === "breakdown";
-  const label = t.kind === "reject" ? "reject ↓" : t.kind === "breakdown" ? "breakdown ↓" : t.kind.replace(/_/g, " ");
-  return <span className={`tq-badge ${short ? "dir-short" : brk ? "dir-break" : "dir-long"}`}
-    title={short ? "Short side — expressed with a put" : "Long side — expressed with a call"}>{label}</span>;
+/** What the plan is waiting for, in words a human uses: the action, the price,
+    and who called it. The EM vocabulary (bounce / breakout / reject) became
+    wrong the day tips joined this list — every row on 2026-09-04 was a tip
+    wearing an EM badge — so the setup word is now a quiet sub-label and the
+    headline says what will actually happen. */
+const ACTION_AT: Record<string, string> = {
+  breakout: "above", breakdown: "below", wedge_break: "above",
+};
+const SETUP_WORD: Record<string, string> = {
+  bounce: "off support", breakout: "on a breakout", reject: "off resistance",
+  breakdown: "on a breakdown", wedge_break: "on a wedge break", timed: "timed entry",
+};
+/** "🌟｜eva tip" → "eva"; keeps a branch marker like "1/2" when the tip was split. */
+function sourceName(t?: ArmedTrigger, technique?: string): string {
+  const raw = (t?.label ?? "").replace(/[\u2000-\u3300\uD83C-\uDBFF\uDC00-\uDFFF]/g, "").trim();
+  const cleaned = raw.replace(/^[|｜]\s*/, "").replace(/\s*\btip\b/i, "").trim();
+  if (cleaned) return cleaned;
+  return technique === "enhanced_market" ? "EM plan" : technique ?? "plan";
 }
 
-function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: boolean; onSel: () => void }) {
+function PlanCell({ a, t }: { a: ArmedPlan; t?: ArmedTrigger }) {
+  if (!t) return <span className="muted small">—</span>;
+  const short = isShortTrigger(t);
+  const at = ACTION_AT[t.kind] ?? "at";
+  return (
+    <span className="armed-plan-cell">
+      <span className={`armed-act ${short ? "dir-short" : "dir-long"}`}>
+        {short ? "▼ Bet down" : "▲ Buy"} {at} <b>{t.entry?.toFixed(2)}</b>
+      </span>
+      <span className="armed-plan-sub">
+        {sourceName(t, a.technique)}{SETUP_WORD[t.kind] ? ` · ${SETUP_WORD[t.kind]}` : ""}
+      </span>
+    </span>
+  );
+}
+
+/** How far price still has to travel — as a sentence, not a signed number. */
+function DistanceCell({ pct, rich }: { pct?: number; rich: boolean }) {
+  if (pct === undefined) return <span className="muted small">—</span>;
+  const word = pct > 0 ? "rise" : "fall";
+  const near = Math.abs(pct) <= 0.5;
+  // rich stacks the meter UNDER the sentence: side by side they fought for the
+  // narrow split pane and the words got clipped (user 2026-09-04)
+  return (
+    <span className={`armed-dist-cell${rich ? " stacked" : ""}`}>
+      <span className={near ? "armed-need near" : "armed-need"}>
+        needs to {word} <b>{Math.abs(pct).toFixed(2)}%</b>
+      </span>
+      {rich && <DistMeter pct={pct} />}
+    </span>
+  );
+}
+
+function FleetRow({ a, sel, rich, onSel, showWindow, showGrade, showPnl, showState }: {
+  a: ArmedPlan; sel: boolean; rich: boolean; onSel: () => void;
+  showWindow: boolean; showGrade: boolean; showPnl: boolean; showState: boolean;
+}) {
   const near = nearestTrigger(a);
   const [wTxt, wCls] = WINDOW_SHORT[a.sessionWindowNow] ?? [a.sessionWindowNow, "nosetup"];
   const st = chipState(a);
@@ -341,32 +425,29 @@ function FleetRow({ a, sel, rich, onSel }: { a: ArmedPlan; sel: boolean; rich: b
     : "Every trigger died at the open: the overnight gap either repriced the risk "
     + "(gap rule, TRADING-RULES 1.1 — these are the experiment's counterfactual samples) or "
     + "jumped past the level (chasing is forbidden). Nothing can fire today.";
-  const stLabel = st === "attn" ? "⚠ ATTENTION" : st === "intrade" ? "IN TRADE"
-    : st === "fired" ? `FIRED ${(a.trades ?? []).length}` : st === "off" ? a.status.toUpperCase()
-    : st === "void" ? voidLabel : `watching ${(a.triggers ?? []).filter((t) => t.status === "waiting" || t.status === "observed").length}`;
-  const d = near?.distancePct;
+  const stLabel = st === "attn" ? "⚠ needs you" : st === "intrade" ? "in a trade"
+    : st === "fired" ? `fired ${(a.trades ?? []).length}×` : st === "off" ? a.status
+    : st === "void" ? voidLabel : "";
   return (
     <tr className={`clickable ${sel ? "tq-fleet-sel" : ""}`} onClick={onSel}>
       <td className="nowrap"><SymIcon sym={a.symbol} size={18} /><b>{a.symbol}</b></td>
-      <td>{a.grade ? <span className={`tq-grade g${a.grade}`}>{a.grade}</span> : <span className="muted small">—</span>}</td>
-      <td className="nowrap"><SetupBadge t={near} /></td>
-      <td className="nowrap"><span className={`tq-badge ${wCls}`}>{wTxt}</span></td>
+      {showGrade && <td>{a.grade ? <span className={`tq-grade g${a.grade}`}>{a.grade}</span> : <span className="muted small">—</span>}</td>}
+      <td><PlanCell a={a} t={near} /></td>
+      {showWindow && <td className="nowrap"><span className={`tq-badge ${wCls}`}>{wTxt}</span></td>}
       {rich && <td className="armed-spark-cell"><Spark symbol={a.symbol} /></td>}
-      <td className="nowrap small">
-        {rich
-          ? <DistMeter pct={d} />
-          : d !== undefined ? <span className="muted">{d > 0 ? "+" : ""}{d.toFixed(2)}%</span> : "—"}
-      </td>
-      <td className="nowrap">
-        {st === "attn" ? <span className="tq-badge failed">{stLabel}</span>
-          : st === "intrade" ? <span className="tq-badge setup">{stLabel}</span>
-          : st === "fired" ? <span className="tq-badge plan">{stLabel}</span>
-          : st === "off" ? <span className="tq-badge nosetup">{stLabel}</span>
-          : st === "void" ? <span className="muted small" title={voidTitle} style={{ textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{stLabel}</span>
-          : <span className="muted small">{stLabel}</span>}
-        {a.stale && <span className="tq-badge failed" title="no fresh bars">STALE</span>}
-      </td>
-      <td className={`nowrap ${pnlCls(a.realizedPnl)}`}>{fmt(a.realizedPnl)}</td>
+      <td className="nowrap small"><DistanceCell pct={near?.distancePct} rich={rich} /></td>
+      {showState && (
+        <td className="nowrap">
+          {st === "attn" ? <span className="tq-badge failed">{stLabel}</span>
+            : st === "intrade" ? <span className="tq-badge setup">{stLabel}</span>
+            : st === "fired" ? <span className="tq-badge plan">{stLabel}</span>
+            : st === "off" ? <span className="tq-badge nosetup">{stLabel}</span>
+            : st === "void" ? <span className="muted small" title={voidTitle} style={{ textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{stLabel}</span>
+            : null}
+          {a.stale && <span className="tq-badge failed" title="no fresh bars">STALE</span>}
+        </td>
+      )}
+      {showPnl && <td className={`nowrap ${pnlCls(a.realizedPnl)}`}>{fmt(a.realizedPnl)}</td>}
     </tr>
   );
 }

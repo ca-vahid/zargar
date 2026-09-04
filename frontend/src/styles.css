@@ -2553,3 +2553,27 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 .led-drow-net { font-family: var(--mono); font-size: var(--fs-4); font-weight: 700;
   font-variant-numeric: tabular-nums; }
 .led-drow-body { padding: 4px 12px 12px; background: var(--surface-2); }
+
+/* Armed fleet list, plain-language rewrite (user 2026-09-04): constants are
+   hoisted into one line, the row says what will happen instead of EM jargon. */
+.armed-fleet-state { display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 7px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2);
+  font-size: var(--fs-1); }
+.armed-mkt { font-weight: 600; color: var(--text-1); }
+.armed-mkt.nosetup { color: var(--text-2); }
+.armed-mkt.setup { color: var(--up); }
+.armed-mkt.warnbadge { color: var(--warn); }
+.armed-plan-cell { display: flex; flex-direction: column; gap: 1px; min-width: 168px; }
+.armed-act { font-size: var(--fs-2); white-space: nowrap; }
+.armed-act b { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.armed-act.dir-long { color: var(--up); }
+.armed-act.dir-short { color: var(--down); }
+.armed-plan-sub { font-size: var(--fs-0); color: var(--text-3); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.armed-dist-cell { display: inline-flex; align-items: center; gap: 8px; }
+.armed-need { color: var(--text-2); white-space: nowrap; }
+.armed-need b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text-1); }
+.armed-need.near, .armed-need.near b { color: var(--warn); font-weight: 600; }
+/* rich: the meter sits under the sentence (side by side it clipped the words) */
+.armed-dist-cell.stacked { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.armed-dist-cell.stacked .armed-dist .bar { width: 96px; }
