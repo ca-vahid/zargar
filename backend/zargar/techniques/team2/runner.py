@@ -646,6 +646,20 @@ class Team2Runner(PlanRunner):
             live_pcts = [t.live_pct for t in ap.trades.values() if t.status == "open" and getattr(t, "live_pct", None) is not None]
             if live_pcts:
                 live_s = f" · contract {live_pcts[0]:+.0f}% live"
+            else:
+                # F31 (2026-09-04): the model holds until ITS stop (a 2m close through the level), but the
+                # desk's real contract can already be gone — the live premium stop, the 15:45 flatten or a
+                # failed-exit retry close it without the model knowing. QQQ today: premium stop out at 13:58
+                # while the read still said "1.00 left". "In trade" then claims exposure the book does not
+                # have, and on the phone that is the one line that must never lie. Only counted when
+                # contracts were really filled, so alert mode (which mints trades but never fills) is silent.
+                setup_id = str(open_pos.get("setup") or "")
+                gone = [t for t in ap.trades.values()
+                        if t.status == "closed" and float(getattr(t, "filled_qty", 0) or 0) > 0
+                        and str(getattr(t, "trigger_id", "")).split("#")[0] == setup_id]
+                if gone:
+                    kind = ((gone[-1].exits or [{}])[-1] or {}).get("kind")
+                    live_s = f" · book flat — the desk's contract is already closed ({kind or 'exit'})"
             strike = open_pos.get("strike")
             strike_s = f"{strike:g}" if isinstance(strike, (int, float)) else "?"
             d["summary"] = (f"in trade {open_pos.get('setup')}: {'call' if open_pos.get('call') else 'put'} {strike_s}, "

@@ -309,6 +309,30 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   not one per ticker. Question for the user: should `max_losses_per_day` be desk-wide like A12? Cheap to
   build (the runner already has `open_positions_across_plans`), but it is a money rule.
 
+- **F30 (2026-09-04 14:15 ET, NOT fixed — the live premium stop pays the spread out of the stop budget)**
+  The desk's **first real Team2 order** (BUY 30 QQQ260904P00716000 @ **$0.34**, 13:48 ET, Practice sim)
+  was closed 10 minutes later by the live premium stop: *"bid 0.24 is 29% below the 0.34 paid (limit
+  25%)"* — filled 0.24, realized **−$300** plus $62.40 commission = **−$362.40**. Two things about that:
+  (1) the method's own stop never triggered — the 2m close never went through 717.4513; QQQ's worst 2m
+  close in the trade was 717.22 against a 717.13 entry. (2) The **model** ran the *same* 25% rule
+  (`session.py:294`, `techniques.team2.premium_stop_pct`) and did not fire until **14:12**, 14 minutes
+  later, because the model measures **mark → mark** while the live guard measures **bid → ask-paid**.
+  On a $0.34 contract the 0.01 bid/ask spread is **~3%**, so the live stop starts an eighth of its budget
+  in the hole before the underlying moves at all, and one tick is 3% of a 25% budget. Both stops sold the
+  bottom: at **14:13 the same contract bid 0.335 / ask 0.345** — back to what was paid — with QQQ at
+  717.08, still on the short's side of the 717.13 entry. Proposal: measure the live premium stop
+  **mid-vs-mid** (or bid-vs-bid-at-entry) so it means what the author's ~20% means and matches the model,
+  and/or floor the stop in ticks for cheap contracts. **Threshold + money rule — the user's call.**
+  Related: the 2026-09-04 sizing row already flags that 25% of a $2,000 ticket is ~6% of the practice book.
+
+- **F31 (2026-09-04 14:15 ET, FIXED)** While the book was flat, the Armed/phone headline still read
+  *"in trade pm_break_down@13:30: put 716, **1.00 left**, model peak +12%"*. The model holds until ITS
+  stop; the desk's real contract had been gone since 13:58 (F30). The `· contract N% live` suffix only
+  appears when an open trade exists, so the one case that matters — the contract closed underneath the
+  model — was silent. `runner.py` now appends **"· book flat — the desk's contract is already closed
+  (stop)"** when a filled trade for that setup is closed, so alert mode (which mints trades but never
+  fills) stays silent. Same class of divergence at the 15:45 flatten and after a failed-exit retry.
+
 
 ## Theories to test
 
@@ -347,3 +371,4 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 | 2026-09-04 | Posture pass: X5 trim-and-add (`add_on_retest`, one add), X3b running HOD/LOD target for re-entries (`hod_target=reentry`), trims judged on the LIVE premium in money modes (deferred/no-op vs the model), small positions hold whole to +100%. Default ON for the sweep to judge; the synthetic add day shows an add can cut a winner (+124% → +70%) — decide `add_on_retest` from the walk-forward, not from the image | `tests/test_team2_posture.py`; images 2081050843768660321 (trim-and-add), IWM three-trade day (HOD target) | Team2 desk |
 | 2026-09-04 | Second review: T7 base, T8 200-EMA flush, EMA48 entries, new-extreme trim cue, stalled-pullback rule, cross-plan concurrency cap (A12) in the runner; 8 more images read (INDEX) | images 1979379272990277934, 1961977219590574391-2/3, 1908549478438887528, 2081050843768660321, 1964745974393557113/76528400559, 2013059662812463256 | Team2 desk |
 | 2026-09-04 | **F26 fixed**: the 15:30 last-entry cutoff (D6) and the daily loss cap (D-3) each emit a one-time read event (`skip_last_entry` / `skip_loss_cap`) instead of stopping entries in silence. Reporting only — no entry, exit or size changes; journaled and iconed in the Armed timeline | market watch 13:35 ET; `tests/test_team2_session.py::test_entry_cutoff_and_loss_cap_say_why_the_read_went_quiet` | Team2 desk |
+| 2026-09-04 | **F31 fixed**: the Armed/phone headline no longer claims "in trade" after the desk's real contract has been closed underneath the still-holding model read (premium stop, flatten, failed-exit retry). Reporting only | market watch 14:00 ET; QQQ 13:58 premium stop vs the model holding to 14:12 | Team2 desk |
