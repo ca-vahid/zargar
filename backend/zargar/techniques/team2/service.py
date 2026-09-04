@@ -133,7 +133,8 @@ class Team2Service:
                 try:
                     await self.runner.arm(r["runId"], {"mode": mode, "instrument": "options", "contracts": None,
                                                         "maxContracts": int(s.get("risk.max_option_contracts", 10)),
-                                                        "premiumBudget": float(s.get("techniques.team2.budget_per_trade", 500.0)),
+                                                        "premiumBudget": float(s.get("techniques.team2.budget_per_trade", 2000.0)),
+                                                        "riskPct": float(s.get("techniques.team2.risk_pct", 6.0)),
                                                         "useCritic": False, "maxOpenTrades": 1})
                     out["armed"].append(r["runId"])
                 except Exception as exc:  # noqa: BLE001

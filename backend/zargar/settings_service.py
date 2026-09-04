@@ -138,7 +138,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.max_concurrent_positions": 1,  # A12
     "techniques.team2.shrink_after_win": True,       # P7/D14
     "techniques.team2.avoid_event_days": False,      # D-4 (macro calendar placeholder)
-    "techniques.team2.budget_per_trade": 500.0,      # $ premium per full-size entry in practice (D-2: inside platform caps)
+    "techniques.team2.budget_per_trade": 2000.0,     # $ premium per full-size entry (user 2026-09-04: 500 -> 2000)
+    "techniques.team2.risk_pct": 6.0,                # % of equity at risk per entry: 2000 x the 25% premium stop = $500 on the $8.5k practice book
+    "techniques.team2.max_risk_pct": 6.0,            # Team2's own R1 cap (resolves via rt(); the shared default is 5)
     "techniques.team2.allow_live_auto": False,
     "techniques.tip.entry": "level_touch",   # level_touch | tip_time (tip_time is EARNED per source)
     "techniques.tip.mode": "proposal",       # shadow | alert | proposal | auto (per-source override)

@@ -159,6 +159,25 @@ async def test_live_premium_trims_beat_the_model(rig, monkeypatch):
     assert snap["team2"]["live"] is None or isinstance(snap["team2"]["live"], list)
 
 
+async def test_sizing_can_be_changed_on_an_armed_plan(rig):
+    """The per-trade budget and risk % move in place (user 2026-09-04: 500 -> 2000), without re-arming."""
+    eng, sim = rig
+    prev = prev_day_bars()
+    today, _ = trend_day(prev)
+    await persist_bars(eng.sf, prev)
+    out = await eng.team2.nightly_plans(DAY.isoformat(), arm=True)
+    run_id = out["armed"][0]
+    runner = eng.team2_runner
+    ap = runner.get(run_id)
+    assert ap.config.premium_budget == 2000.0 and ap.config.risk_pct == 6.0     # tonight's defaults
+    snap = await runner.set_mode(run_id, premium_budget=750.0, risk_pct=3.0)
+    assert ap.config.premium_budget == 750.0 and ap.config.risk_pct == 3.0 and ap.config.mode == "alert"
+    assert snap["config"]["premiumBudget"] == 750.0
+    assert any(e["event"] == "mode_changed" and "premium budget" in str(e) for e in ap.events)
+    restored = await runner.load_plan(run_id)
+    assert restored is not None
+
+
 async def test_never_chase_cap_is_the_premium_band(rig):
     """F14: the cap must bind when the live ask ran past the method's band, and stay at ask + tick inside it."""
     eng, sim = rig

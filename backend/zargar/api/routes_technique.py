@@ -508,6 +508,8 @@ def build_technique_routes(app, eng, auth, config) -> None:
         mode: str | None = None
         allowLive: bool = False
         entryFallback: str | None = None      # "off" | "shares"
+        premiumBudget: float | None = None    # $ premium per entry (next entry on)
+        riskPct: float | None = None          # % of equity at risk per entry
 
     @app.post("/api/technique/armed/{run_id}/mode", dependencies=[auth])
     async def technique_armed_mode(run_id: str, body: ArmedModeBody):
@@ -516,7 +518,8 @@ def build_technique_routes(app, eng, auth, config) -> None:
             if runner is None:
                 raise KeyError(run_id)
             return await runner.set_mode(run_id, body.mode, allow_live=body.allowLive,
-                                         entry_fallback=body.entryFallback)
+                                         entry_fallback=body.entryFallback, premium_budget=body.premiumBudget,
+                                         risk_pct=body.riskPct)
         except KeyError:
             raise HTTPException(status_code=404, detail="not armed")
         except (RuntimeError, ValueError) as exc:

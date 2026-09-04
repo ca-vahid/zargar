@@ -1124,21 +1124,28 @@ class PlanRunner(SessionListener):
             await asyncio.gather(*tasks, return_exceptions=True)
 
     async def set_mode(self, run_id: str, mode: str | None = None, *, allow_live: bool = False,
-                       entry_fallback: str | None = None) -> dict:
-        """Change an armed plan's execution mode and/or entry fallback in place.
-        Runs the same gates as arming: auto on a live/paper account still needs
-        allow_live_auto + trading.mode=live + the explicit acknowledgement."""
+                       entry_fallback: str | None = None, premium_budget: float | None = None,
+                       risk_pct: float | None = None) -> dict:
+        """Change an armed plan's execution mode, entry fallback and/or sizing (premium budget,
+        risk %) in place. Runs the same gates as arming: auto on a live/paper account still needs
+        allow_live_auto + trading.mode=live + the explicit acknowledgement. Sizing changes apply
+        to the NEXT entry only — open trades keep their fills."""
         ap = self._armed.get(run_id)
         if ap is None:
             raise KeyError("not armed")
         mode = mode or ap.config.mode
-        if mode == ap.config.mode and (entry_fallback is None or entry_fallback == ap.config.entry_fallback):
+        sizing_same = ((premium_budget is None or float(premium_budget) == ap.config.premium_budget)
+                       and (risk_pct is None or float(risk_pct) == ap.config.risk_pct))
+        if mode == ap.config.mode and (entry_fallback is None or entry_fallback == ap.config.entry_fallback) and sizing_same:
             return self._snapshot(ap)
         old = ap.config.mode
         cfg = ArmConfig.from_dict({**ap.config.to_dict(), "mode": mode,
                                    "entryFallback": (entry_fallback if entry_fallback is not None
                                                      else ap.config.entry_fallback),
-                                   "allowLive": allow_live or ap.config.allow_live})
+                                   "allowLive": allow_live or ap.config.allow_live,
+                                   "premiumBudget": (float(premium_budget) if premium_budget is not None
+                                                     else ap.config.premium_budget),
+                                   "riskPct": float(risk_pct) if risk_pct is not None else ap.config.risk_pct})
         self.validate_config(cfg)                      # gates (mode, live-auto, options capability)
         await self._ensure_loss_halt(ap, cfg)
         ap.config = cfg
@@ -1147,6 +1154,10 @@ class PlanRunner(SessionListener):
             changes.append(f"execution mode {old} -> {cfg.mode}")
         if entry_fallback is not None:
             changes.append(f"entry fallback -> {cfg.entry_fallback}")
+        if premium_budget is not None and cfg.premium_budget != ap.config.premium_budget:
+            changes.append(f"premium budget ${ap.config.premium_budget:,.0f} -> ${cfg.premium_budget:,.0f}")
+        if risk_pct is not None and cfg.risk_pct != ap.config.risk_pct:
+            changes.append(f"risk {ap.config.risk_pct:g}% -> {cfg.risk_pct:g}% of equity")
         self._log(ap, "mode_changed", "; ".join(changes) or f"execution mode {old} -> {cfg.mode}")
         await self._persist(ap)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_MODE_CHANGED,

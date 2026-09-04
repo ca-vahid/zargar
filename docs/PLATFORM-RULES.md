@@ -510,6 +510,9 @@ runtime ones to `execution.*`).
   that guarantee changes — a new `TechniqueInfo` registration, nothing else.
 - 2026-09-04 · `marketdata.persist_bars` inserts in chunks of 2,000 rows (asyncpg's 32,767-parameter cap;
   the first 20-day extended-hours bank failed on it). Found by running the Team2 bank for real.
+- 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
+  `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
+  read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.
 - 2026-09-04 · **The kill switch is global while the daily-loss check is per portfolio** (`Engine.check_daily_loss`):
   a Practice-book loss from one technique halts every technique on every book, and releasing it re-engages
   on the next pass while that book stays below the limit. Worked around today by raising
