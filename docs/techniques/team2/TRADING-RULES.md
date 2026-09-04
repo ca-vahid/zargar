@@ -391,9 +391,9 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live one once a money-mode fill exists so the scorecard compares like with like.
 
 
-- **F37 (2026-09-04 15:15 ET, NOT fixed — the desk-wide loss cap counts trades that were never taken)**
+- **F37 (2026-09-04 15:10 ET, NOT fixed — the desk-wide loss cap counts trades that were never taken)**
   F29 shipped at 15:00 and is binding **right now**: `losses_across_plans()` sums, per armed plan,
-  `max(model losers, real closed losers)`. At 15:15 SPY carries **1 model loser** (11:10, −12.23%) and
+  `max(model losers, real closed losers)`. At 15:10 SPY carries **1 model loser** (11:10, −12.23%) and
   IWM **1** (12:16, −19.17%), so the desk reads **2 of 2** and every remaining entry today is refused —
   including SPY's `scenario_3` at **769.26**, which price is sitting **0.11 %** away from. Neither of
   those two "losses" cost a cent: the live runner **refused both fires at the time** as
@@ -407,7 +407,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   basis was used in the skip line. **Money rule — the user's call.** Same family as F30/F36: the
   model and the book are two premium/P&L series and a *risk gate* now depends on which one you read.
 
-- **F38 (2026-09-04 15:20 ET, NOT fixed — a disarmed plan's losses leave the desk-wide count)**
+- **F38 (2026-09-04 15:10 ET, NOT fixed — a disarmed plan's losses leave the desk-wide count)**
   `losses_across_plans()` iterates `self._armed.values()`, so QQQ's **two real losing round trips**
   (−$300 and −$54 gross, −$454.02 with fees) stopped counting toward the desk the moment its own loss
   halt **disarmed** it at 14:17. The cap therefore *loosens* precisely after the worst outcome a plan
