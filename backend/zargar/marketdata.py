@@ -289,13 +289,18 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar]) -> 
          "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
         for b in bars
     ]
+    # asyncpg caps a statement at 32,767 bind parameters (8 per row): a 20-day
+    # extended-hours bank (~18k bars) blew past it (Team2 desk, 2026-09-04) — chunk.
+    CHUNK = 2000
     async with session_factory() as session:
         dialect = session.bind.dialect.name if session.bind is not None else "postgresql"
-        if dialect == "postgresql":
-            stmt = pg_insert(BarRow).values(rows).on_conflict_do_nothing(constraint="uq_bar")
-        else:
-            stmt = sqlite_insert(BarRow).values(rows).prefix_with("OR IGNORE")
-        await session.execute(stmt)
+        for i in range(0, len(rows), CHUNK):
+            part = rows[i:i + CHUNK]
+            if dialect == "postgresql":
+                stmt = pg_insert(BarRow).values(part).on_conflict_do_nothing(constraint="uq_bar")
+            else:
+                stmt = sqlite_insert(BarRow).values(part).prefix_with("OR IGNORE")
+            await session.execute(stmt)
         await session.commit()
 
 

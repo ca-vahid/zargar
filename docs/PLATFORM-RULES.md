@@ -499,3 +499,5 @@ runtime ones to `execution.*`).
 - 2026-09-03 · `tests/test_platform_phase0.py::test_registry_lists_enhanced_market` expectation widened to
   include `team2` (the registry gained a fourth technique; EM stays first). This is the one intended way
   that guarantee changes — a new `TechniqueInfo` registration, nothing else.
+- 2026-09-04 · `marketdata.persist_bars` inserts in chunks of 2,000 rows (asyncpg's 32,767-parameter cap;
+  the first 20-day extended-hours bank failed on it). Found by running the Team2 bank for real.
