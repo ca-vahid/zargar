@@ -1,0 +1,178 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 425,
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2026-04-17T18:26:54.000Z",
+ "display_text_range": [
+  0,
+  276
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/4ib66og64J",
+    "expanded_url": "https://x.com/Team2Trading/status/2045207389079757153/photo/1",
+    "indices": [
+     276,
+     299
+    ],
+    "url": "https://t.co/4ib66og64J"
+   }
+  ],
+  "symbols": [
+   {
+    "indices": [
+     48,
+     52
+    ],
+    "text": "SPY"
+   }
+  ]
+ },
+ "id_str": "2045207389079757153",
+ "text": "My favorite setup for trading all time highs on $SPY 📝\n\nStep 1 • Mark the Pre Market High (4am to 9:30am est)\n\nStep 2 • Wait for price to break above that PMH level (15 minute candle close)\n\nStep 3 • Enter calls on retest of Pre Market High (2 minute strategy)\n\n*Stop loss is https://t.co/4ib66og64J",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "2045207389079757153"
+  ],
+  "editable_until_msecs": "1776454014000",
+  "edits_remaining": "5",
+  "is_edit_eligible": true
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/4ib66og64J",
+   "expanded_url": "https://x.com/Team2Trading/status/2045207389079757153/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    276,
+    299
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/HGIJR6ma4AAiU5W.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1700,
+      "w": 1700,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1700,
+      "w": 1491,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1700,
+      "w": 850,
+      "x": 239,
+      "y": 0
+     },
+     {
+      "h": 1700,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1700,
+    "width": 2048
+   },
+   "sizes": {
+    "large": {
+     "h": 1700,
+     "resize": "fit",
+     "w": 2048
+    },
+    "medium": {
+     "h": 996,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 564,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/4ib66og64J"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1147,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1700,
+     "w": 1700,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1700,
+     "w": 1491,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1700,
+     "w": 850,
+     "x": 239,
+     "y": 0
+    },
+    {
+     "h": 1700,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/2045207389079757153/photo/1",
+   "url": "https://pbs.twimg.com/media/HGIJR6ma4AAiU5W.jpg",
+   "width": 2048,
+   "height": 1700
+  }
+ ],
+ "conversation_count": 14,
+ "news_action_type": "conversation",
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoyMDQ1MjA3Mzg4OTk1ODc4OTEy"
+ }
+}

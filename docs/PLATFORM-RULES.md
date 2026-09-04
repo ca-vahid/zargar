@@ -472,3 +472,30 @@ runtime ones to `execution.*`).
   (`scan.spot_from_chain`), a spot-less re-scan never overwrites an existing read
   (`noSpot`/`keptExisting` in the scan journal), weekend "Scan now" rolls back to Friday, and a
   boot task re-scans the latest day if it carries the degraded signature (scores w/o flags/spot).
+- 2026-09-03 · **Team2 desk, shared-engine additions (PLAN §3b E1–E7; all additive, RTH behaviour
+  unchanged for every existing technique):**
+  - `marketstructure/history.fetch_window(..., session="rth"|"ext")` + `fetch_extended_session` —
+    the 04:00–20:00 ET tape (Yahoo `includePrePost`, Alpaca unfiltered) for pre-market levels and
+    extended-hours indicators; default stays `rth` and the cache key carries the session.
+  - `marketstructure/aggregate.py` — wall-clock 1m→2m/5m/15m aggregation (a missing minute never
+    shifts the grid), `bar_session` (pre/rth/post/closed), `filter_session`, `closed_bars`.
+  - `marketstructure/market_calendar.py` — NYSE holidays + 13:00 early closes (rule-based);
+    **`sessions.session_bounds` now closes at 13:00 on half days and `next_session_date` skips
+    holidays** — every clock-driven session close honours the real calendar.
+  - `marketstructure/indicators.py` (EMA series/state, stack, fan), `marketstructure/dailylevels.py`
+    (prior-day zones wick→next body, pre-market range, session extremes).
+  - Nightly research jobs `ext_bars` (04:00–20:00 1m bars for `research.ext_bars.symbols`, 20:10 ET)
+    and `vix_bars` (`^VIX`, `^VIX1D`, `^VIX9D` daily closes) into the bars table.
+  - `research/macro_calendar.py` — `engine.macro`, a MANUAL FOMC/CPI/NFP list
+    (`research.macro_events`) behind a stable read API; a fetched source is a placeholder.
+  - `options/pick.select_by_premium` — premium-targeted strike selection (first OTM strike whose
+    ask ≤ target, floor-guarded), returning EM's `ContractPick` shape; EM's just-OTM picker untouched.
+  - **RiskGate never-list, per-technique 0DTE policy (user decision 2026-09-03):** a technique may
+    open 0DTE for ITSELF via `techniques.<id>.zero_dte = {enabled, last_entry_et, flatten_et,
+    max_contracts, premium_cap}`; entries refused after `last_entry_et`, everything after
+    `flatten_et` (reduce-only exits never reach the check), per-order contract + premium caps.
+    Without a policy the hard reject stands; EM's and the tips lotto lane's paths are unchanged.
+    Rationale: different techniques have different rules — Team2 IS a 0DTE method (METHOD §7b).
+- 2026-09-03 · `tests/test_platform_phase0.py::test_registry_lists_enhanced_market` expectation widened to
+  include `team2` (the registry gained a fourth technique; EM stays first). This is the one intended way
+  that guarantee changes — a new `TechniqueInfo` registration, nothing else.

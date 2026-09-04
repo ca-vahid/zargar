@@ -1,0 +1,337 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 18,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1979379265079775324",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-10-18T02:49:27.000Z",
+ "display_text_range": [
+  0,
+  207
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/mEy88VYcNF",
+    "expanded_url": "https://x.com/Team2Trading/status/1979379268410130815/photo/1",
+    "indices": [
+     207,
+     230
+    ],
+    "url": "https://t.co/mEy88VYcNF"
+   }
+  ]
+ },
+ "id_str": "1979379268410130815",
+ "text": "Example of Scenario #3 from as recent as today!\n\nBounces off the PDL support zone and our Bullish EMA trend confirms the move.\n\n100% play on some calls off the 13 EMA entry and we called it a day by 11am! 👇 https://t.co/mEy88VYcNF",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1979379268410130815"
+  ],
+  "editable_until_msecs": "1760759367000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/mEy88VYcNF",
+   "expanded_url": "https://x.com/Team2Trading/status/1979379268410130815/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    207,
+    230
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/G3goKWHWwAA0ggs.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 2240,
+      "w": 4000,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 3532,
+      "w": 3532,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 3532,
+      "w": 3098,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 3532,
+      "w": 1766,
+      "x": 215,
+      "y": 0
+     },
+     {
+      "h": 3532,
+      "w": 4000,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 3532,
+    "width": 4000
+   },
+   "sizes": {
+    "large": {
+     "h": 1808,
+     "resize": "fit",
+     "w": 2048
+    },
+    "medium": {
+     "h": 1060,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 600,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/mEy88VYcNF"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 2240,
+     "w": 4000,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 3532,
+     "w": 3532,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 3532,
+     "w": 3098,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 3532,
+     "w": 1766,
+     "x": 215,
+     "y": 0
+    },
+    {
+     "h": 3532,
+     "w": 4000,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1979379268410130815/photo/1",
+   "url": "https://pbs.twimg.com/media/G3goKWHWwAA0ggs.jpg",
+   "width": 4000,
+   "height": 3532
+  }
+ ],
+ "conversation_count": 1,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 17,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "1979379262043099639",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "possibly_sensitive": false,
+  "reply_count": 1,
+  "retweet_count": 1,
+  "created_at": "2025-10-18T02:49:26.000Z",
+  "display_text_range": [
+   0,
+   274
+  ],
+  "entities": {
+   "media": [
+    {
+     "display_url": "pic.x.com/lUWTkhnh1R",
+     "expanded_url": "https://x.com/Team2Trading/status/1979379265079775324/photo/1",
+     "indices": [
+      275,
+      298
+     ],
+     "url": "https://t.co/lUWTkhnh1R"
+    }
+   ]
+  },
+  "id_str": "1979379265079775324",
+  "text": "Lets go to the opposite end...\n\nScenario #4 ~ Price breaks below the PDL support zone so bias is Bearish.\n\nWhat does the EMA trend look like? Spaced out and showing a strong Bearish trend.\n\nAs price starts to pullback what are we looking for... Okay nice it's Bear Flagging! https://t.co/lUWTkhnh1R",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1979379265079775324"
+   ],
+   "editable_until_msecs": "1760759366000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "mediaDetails": [
+   {
+    "display_url": "pic.x.com/lUWTkhnh1R",
+    "expanded_url": "https://x.com/Team2Trading/status/1979379265079775324/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     275,
+     298
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/G3gnV-GWYAANz15.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 1147,
+       "w": 2048,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1568,
+       "w": 1568,
+       "x": 480,
+       "y": 0
+      },
+      {
+       "h": 1568,
+       "w": 1375,
+       "x": 673,
+       "y": 0
+      },
+      {
+       "h": 1568,
+       "w": 784,
+       "x": 1264,
+       "y": 0
+      },
+      {
+       "h": 1568,
+       "w": 2048,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 1568,
+     "width": 2048
+    },
+    "sizes": {
+     "large": {
+      "h": 1568,
+      "resize": "fit",
+      "w": 2048
+     },
+     "medium": {
+      "h": 919,
+      "resize": "fit",
+      "w": 1200
+     },
+     "small": {
+      "h": 521,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/lUWTkhnh1R"
+   }
+  ],
+  "photos": [
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1568,
+      "w": 1568,
+      "x": 480,
+      "y": 0
+     },
+     {
+      "h": 1568,
+      "w": 1375,
+      "x": 673,
+      "y": 0
+     },
+     {
+      "h": 1568,
+      "w": 784,
+      "x": 1264,
+      "y": 0
+     },
+     {
+      "h": 1568,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/1979379265079775324/photo/1",
+    "url": "https://pbs.twimg.com/media/G3gnV-GWYAANz15.jpg",
+    "width": 2048,
+    "height": 1568
+   }
+  ],
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false
+}

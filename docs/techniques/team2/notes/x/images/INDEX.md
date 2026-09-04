@@ -1,0 +1,35 @@
+# Image index — what each captured picture shows
+
+*Images are fetched with `tools/fetch_tweet_media.py` (X syndication endpoint, no login) as
+`<tweet_id>-<n>.jpg` next to `<tweet_id>.json` (the tweet's text + media metadata). This file
+holds a human-readable description of every image that has been READ, so the knowledge is
+searchable without opening the pictures. Unread images are listed at the bottom.*
+
+## Read on 2026-09-03
+
+| Image | Tweet | What it shows | Facts extracted |
+|---|---|---|---|
+| `2095599035113693522-1.jpg` | 2026-09-03 "This $SPY trade went 10x today" | Full 15m SPY chart annotated with Discord screenshots: 08:45 pre-market plan ("Main watch for upside is our 768.00 zone… room up to 775.29"), zone 766.43–768.00, "BREAK & BASE", "768.00 flips to support", "Getting the 768.00 retest now", "I'm taking SPY 770c", Webull card **SPY $770 03 Sep 26 (W) Call +536.99%** shared 11:19, "selling right now for over 500%", member cards (SPY 9/3 $771 Call +1,077%, SPXW 7735C) | 0DTE, ~$2 OTM strike, entry on the level retest, exit ~+500%, one level/one direction/one target plan format |
+| `2095571390321865119-1/2.jpg` | 2026-09-03 "stopped out of both entries" | Webull cards SPY $771 Call 03 Sep 26 +25.00% (09:52) and SPY $770 Call +26.14% (10:24) | both later stopped; re-entry on the third test paid |
+| `2095671547184988332-1.jpg` | 2026-09-03 pinned "(2) 500% plays" | Four Discord panels: IWM $292 Put 01 Sep 26 (W) +474.14% ("that's enough for me, I'm selling mine" 12:34, 15m chart PDL break), SPY 770c sell at 500%+ (2m chart with 13/48/200 EMA, retest of 768 zone then vertical run) | 0DTE puts on IWM too; exits taken outright at +475–500% |
+| `1810706353427771759-1.jpg` | 2024-07-09 IWM example | 2m IWM chart: pre-market plan "IWM is testing yesterday's support zone at 201.84… puts down to 199.88", entry alert "I'm adding IWM 201p @ .20" on the retest (green box 09:38–09:50), "New low of day is a great spot to lock in gains", Webull IWM $201 09 Jul 24 (W) Put +157.50% (10:32), "tapping 150%! I'm down to runners" | $0.20 premium, ~$1 OTM 0DTE put, trim at +100% on new LOD, runners kept |
+| `1961977207825616952-1.jpg` = `1964745972426416466-1.jpg` | 2025-08-31 / 2025-09-07 sizing guide | 15m SPY chart with PDH zone (570.90 → ~570.0), PMH 567.88 dotted, PML 564.16 dotted, PDL zone (561.70 → ~562.3); labels **Full size** above PDH zone and below PDL zone, **Small size** between PDH zone and PMH and between PML and PDL zone, **No trade zone** between PMH and PML; next zones 576.32 / 556.04 | Q2 sizing buckets |
+| `1961977212145668501-1.jpg` | 2025-08-31 direction guide | 15m SPY: PDH zone 624.03→~623.3, PDL zone 617.87→~618.7, PMH 621.97, PML 620.68, next resistance 626.28, next support 615.04; arrows: CALLS above PMH to PDH, CALLS above PDH to next resistance, NO TRADE inside PM range, PUTS below PML to PDL, PUTS below PDL to next support | targets = next zone; zone width ≈ 0.1% |
+| `1961977214620348801-1.jpg` | 2025-08-31 stop technique (2 SPY trades) | 2m SPY 12:16–15:00 above PDH 647.37: entry at 13 EMA touch 12:50 → "1 candle lost"; re-entry at 13 EMA 13:28 (after a 48 EMA bounce) → "many candles won" to 649.25 | one-candle loss then multi-candle win, same day, same idea |
+| `1961977216818163982-1.jpg` | 2025-08-31 stop technique (3 IWM trades) | 2m IWM above PDH zone 234.87: entry 1 at 13 EMA fails (✗), entry 2 at 48 EMA wins (✓), entry 3 at 13/48 confluence wins (✓); "high of day resistance is the main target for longs until it breaks" | 48 EMA is a valid entry after a 13 EMA failure; HOD as target |
+| `1961977219590574391-1.jpg` | 2025-08-31 win example | 15m SPY: two REJECTs at PDH zone 647.37, then breakout + bull flag; alert 13:24 "I'm taking some SPY calls here… 648c @ .54"; "scaled out at 50% and 100%"; 14:33 "100% on these runners, I'm selling them" | afternoon entry, $0.54 0DTE ~$1 OTM, ladder 50%/100% |
+| `1964745969930817924-1.jpg` | 2025-09-07 "entering near my stop levels" | 2m QQQ: ENTER CALLS at 13 EMA, red box = 1 candle close under 13 EMA (loss), green box = multi-candle reward; same for puts | S1/S2 confirmed visually |
+| `2081050846666891284-1.jpg` | 2026-07-25 A+ example | 2m SPY 2026-04-17: PMH 708.79 dotted, 10:10 "First thing I'm watching today is this pre market high break… going to wait for the 15 minute close then look at the 711c", "I'm taking SPY 711c @ .60" on the PMH retest (PMH + 13 EMA confluence), STOP box below 708.79, RUN box above; 10:46 "711c pushing ITM and up over 120%. I'm selling"; Webull SPY $711 17 Apr 26 Call +122.41% | 15m close → retest entry, $0.60, sold when ITM |
+| `1844848069504020557-1.jpg` | 2024-10 weekly recap | Discord: 10 alerts, 7 W / 3 L, wins +330/+200/+80/+130/+100/+100/+150%, "scaling out of all of them", losers "typical stop outs under the EMA, −20/30%" | loss size in premium terms |
+| `2081050857597211029-1.jpg` | 2026-07-25 thread closer | 15m SPY zone construction: PDH zone = high-of-day wick 563.83 → following candle body (~562.9); PDL zone = low-of-day wick 555.50 → following candle body (~556.5) | L1.2 illustrated; width ≈ 0.17% |
+| `1953540502995055061-2.jpg` | 2025-08-07 bear flag post | 2m SPY bearish stack: "SPY bear flagging right at PDH. I'm watching puts… if we hold the 13ema and break this flag I'll be looking at 631p"; "I'm all loaded up with .50 average"; continuation to 631.13 | flag-break entry variant, scaled-in $0.50 avg, ~$2.5 OTM |
+
+| `1905768108352250355-1.jpg` | 2025-03-28 thread, example #1 | 2m QQQ 2025-03-10: 48 EMA rejection, 13 EMA rejection, PDL 480.53 break, 10:05 "watching puts on the retest of 480.53", bear flag, 10:15 "I'm taking QQQ 472p @ .55" at the 13 EMA retest, "13 EMA holds our hand all the way down", Webull QQQ $472 10 Mar 25 (W) Put +166.07% (10:57), P&L +$4,389.61, "scaled out on the way down and sold into strength when I thought we were extended from the 13 EMA" | $8.5 OTM at $0.55; ≈ $2.6k / 48 contracts full size |
+| `1908549474886312373-1.jpg` | 2025-04-05 cheat codes, +350% calls | 2m QQQ 2025-04-02: support 473.63, bull flags, "I'm taking QQQ 480c" ~11:55 on the 13/48 EMA pullback; 13:00 "13ema been holding strong… one more bounce off the 13ema up to our target"; 13:14 "target hitting here guys. I just sold the rest of mine for 350%"; Webull QQQ $480 02 Apr 25 (W) Call +361.36% | $6.4 OTM 0DTE; exit at target |
+| `1979379268410130815-1.jpg` | 2025-10-18 mega v2, scenario #3 example | 2m QQQ 2025-10-17: pre-market plan "main watch 595.50 support zone… hold → calls, next levels 603.19 then 608.31"; 09:58 "bouncing hard off the PDL support, looking at the PMH retest for calls"; "looking at the 606c if we get this 15 minute candle close above pre market high"; "I'm taking QQQ 606c" on the PMH 599.52 + 13 EMA retest; 10:16 "selling here at my target" 603.19; Webull QQQ $606 17 Oct 25 Call +118.03% | 15m close → retest entry; sell at target; $6.5 OTM |
+
+## Fetched but not yet read
+
+All other `*.jpg` in this folder (thread example charts from 2025-03-28, 2025-04-05, 2025-10-18,
+2026-01-18, 2026-07-25 and the Sunday-prep graphics). Read them when a question needs them; add a
+row here after reading.

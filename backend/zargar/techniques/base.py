@@ -54,6 +54,14 @@ TIP = register(TechniqueInfo(
                 "shadow scorecard every source must clear before real money.",
 ))
 
+TEAM2 = register(TechniqueInfo(
+    id="team2", label="Team2", version="0.1", page="team2", settings_prefix="techniques.team2.",
+    tabs=("plans", "armed", "history", "validation"),
+    description="Casey/@Team2Trading's index day-trading method: prior-day high/low zones + pre-market "
+                "range, 13/48/200 EMA regime on 2m, 15-minute-close confirmation, EMA13 pullback entries, "
+                "0DTE premium-targeted contracts (~$0.50), one-candle stops, +50/+100% trims, flatten 15:45.",
+))
+
 FLOW = register(TechniqueInfo(
     id="flow", label="Flow", version="0.1", page="flow", settings_prefix="techniques.flow.",
     tabs=("reads",),

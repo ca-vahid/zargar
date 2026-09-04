@@ -75,6 +75,8 @@ Identity: `technique` column on `technique_runs/outcomes/sweeps/armed/setups` (D
 `enhanced_market`), `OrderIntent.technique_id`, `ArmedPlan.technique`. Docs: `docs/PLATFORM-RULES.md`
 (shared lessons) and `docs/techniques/<id>/` (the technique's spec, plans and `TRADING-RULES.md`).
 
+**Team2 technique (2026-09-03, `docs/techniques/team2/`).** Fourth registered technique (`team2`): `techniques/team2/` = rules (a `MarketRules` superset snapshotted per plan), regime (13/48/200 EMA on 2m, extended hours), scenario (prior-day-zone bias + 15m-close confirmation), plan (nightly skeleton → 09:25 completion), premium (Black–Scholes 0DTE model, premium-targeted strike), `session.simulate_session` (the ONE pure read used live and in replay), `Team2Runner(PlanRunner)` (overrides the bar loop: re-runs the read on every 2m close and acts on new events through the shared fire/exit path) and `Team2Service` (plan runs, nightly + pre-open jobs, replay, sweep). API `/api/team2/*`; page `Team2Page`. Shared additions it brought: extended-hours bars + `aggregate`/`indicators`/`dailylevels`/`market_calendar` in `marketstructure/`, the nightly `ext_bars` and `vix_bars` research jobs, `options/pick.py`, `research/macro_calendar.py` (`engine.macro`), and the per-technique 0DTE policy in `RiskGate` (`techniques.<id>.zero_dte`).
+
 ### Order lifecycle
 
 ```

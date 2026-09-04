@@ -463,8 +463,43 @@ class RiskGate:
                 out.append(RiskCheck("option_not_expired", not late,
                                      f"0DTE lotto after the {hh:02d}:{mm:02d} ET flatten time" if late else ""))
             elif tid and tid != "enhanced_market":
-                out.append(RiskCheck("option_not_expired", False,
-                                     f"0DTE is never allowed for technique '{tid}' (never-list; EM's gated path only)"))
+                # Per-technique 0DTE policy (2026-09-03, Team2 desk — PLAN §3b E6): a technique
+                # opens the never-list for ITSELF with `techniques.<id>.zero_dte = {enabled,
+                # last_entry_et, flatten_et, max_contracts, premium_cap}`. Entries are refused
+                # after last_entry_et, everything after flatten_et (exits stay allowed — the
+                # reduce-only path never comes here); size and premium caps apply per order.
+                # Without such a policy the hard reject stands.
+                pol = s.get(f"techniques.{tid}.zero_dte", None)
+                if isinstance(pol, dict) and bool(pol.get("enabled", False)):
+                    from zoneinfo import ZoneInfo
+                    now_et = dt.datetime.now(ZoneInfo("America/New_York"))
+                    now_min = now_et.hour * 60 + now_et.minute
+
+                    def _mins(v, dflt):
+                        try:
+                            hh, mm = (int(x) for x in str(v or dflt).split(":"))
+                            return hh * 60 + mm
+                        except ValueError:
+                            hh, mm = (int(x) for x in dflt.split(":"))
+                            return hh * 60 + mm
+                    flat = _mins(pol.get("flatten_et"), "15:45")
+                    last_entry = _mins(pol.get("last_entry_et"), "15:30")
+                    late = now_min >= flat or (side == OrderSide.BUY and not reduces and now_min >= last_entry)
+                    out.append(RiskCheck("option_not_expired", not late,
+                                         (f"0DTE ({tid}): no new entries after {last_entry // 60:02d}:{last_entry % 60:02d} ET / "
+                                          f"nothing after the {flat // 60:02d}:{flat % 60:02d} flatten") if late else ""))
+                    cap_ct = int(pol.get("max_contracts", 10) or 10)
+                    out.append(RiskCheck("zero_dte_max_contracts", qty <= cap_ct or reduces,
+                                         f"{qty:g} contracts exceeds the {tid} 0DTE cap {cap_ct}"
+                                         if (qty > cap_ct and not reduces) else ""))
+                    if side == OrderSide.BUY and ref_price and not reduces:
+                        prem = qty * ref_price * 100.0
+                        cap_p = float(pol.get("premium_cap", 1000.0) or 1000.0)
+                        out.append(RiskCheck("zero_dte_premium_cap", prem <= cap_p,
+                                             f"0DTE premium ${prem:,.0f} exceeds the {tid} cap ${cap_p:,.0f}" if prem > cap_p else ""))
+                else:
+                    out.append(RiskCheck("option_not_expired", False,
+                                         f"0DTE is never allowed for technique '{tid}' (never-list; no techniques.{tid}.zero_dte policy)"))
             else:
                 allow = bool(s.get("risk.allow_0dte", True))
                 out.append(RiskCheck("option_not_expired", allow,

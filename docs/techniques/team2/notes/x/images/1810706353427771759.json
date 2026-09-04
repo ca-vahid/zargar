@@ -1,0 +1,178 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 87,
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2024-07-09T16:03:30.000Z",
+ "display_text_range": [
+  0,
+  276
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/PqiBIdtIwB",
+    "expanded_url": "https://x.com/cs_tradess/status/1810706353427771759/photo/1",
+    "indices": [
+     276,
+     299
+    ],
+    "url": "https://t.co/PqiBIdtIwB"
+   }
+  ],
+  "symbols": [
+   {
+    "indices": [
+     180,
+     184
+    ],
+    "text": "IWM"
+   }
+  ]
+ },
+ "id_str": "1810706353427771759",
+ "text": "Trading is hard! This is why I keep things as simple as possible. Not just for my own execution, but for anyone looking to learn and follow along.\n\nHeres a good example of that on $IWM today 👇\n\n“Top watch • Break under 201.84 and we are going to focus on puts today”\n\nWhen it https://t.co/PqiBIdtIwB",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1810706353427771759"
+  ],
+  "editable_until_msecs": "1720544610000",
+  "edits_remaining": "5",
+  "is_edit_eligible": true
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/PqiBIdtIwB",
+   "expanded_url": "https://x.com/cs_tradess/status/1810706353427771759/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    276,
+    299
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/GSDr1HcbYAAfH1Q.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 541
+     },
+     {
+      "h": 1688,
+      "w": 1688,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1688,
+      "w": 1481,
+      "x": 27,
+      "y": 0
+     },
+     {
+      "h": 1688,
+      "w": 844,
+      "x": 345,
+      "y": 0
+     },
+     {
+      "h": 1688,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1688,
+    "width": 2048
+   },
+   "sizes": {
+    "large": {
+     "h": 1688,
+     "resize": "fit",
+     "w": 2048
+    },
+    "medium": {
+     "h": 989,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 560,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/PqiBIdtIwB"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1147,
+     "w": 2048,
+     "x": 0,
+     "y": 541
+    },
+    {
+     "h": 1688,
+     "w": 1688,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1688,
+     "w": 1481,
+     "x": 27,
+     "y": 0
+    },
+    {
+     "h": 1688,
+     "w": 844,
+     "x": 345,
+     "y": 0
+    },
+    {
+     "h": 1688,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/cs_tradess/status/1810706353427771759/photo/1",
+   "url": "https://pbs.twimg.com/media/GSDr1HcbYAAfH1Q.jpg",
+   "width": 2048,
+   "height": 1688
+  }
+ ],
+ "conversation_count": 3,
+ "news_action_type": "conversation",
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoxODEwNzA2MzUzMzAxOTA1NDA4"
+ }
+}

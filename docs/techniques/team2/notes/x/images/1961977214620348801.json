@@ -1,0 +1,340 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 33,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1961977212145668501",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-08-31T02:19:54.000Z",
+ "display_text_range": [
+  0,
+  280
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/JmpNzmymmn",
+    "expanded_url": "https://x.com/Team2Trading/status/1961977214620348801/photo/1",
+    "indices": [
+     281,
+     304
+    ],
+    "url": "https://t.co/JmpNzmymmn"
+   }
+  ]
+ },
+ "id_str": "1961977214620348801",
+ "text": "Next is keeping my stop losses fairly tight on trades.\n\nTypically I'm using a level or EMA as my stop. I will enter at the level or EMA, then only risk a candle or 2 beyond that level before I cut the trade.\n\nIt's a simple way to keep wins bigger than losses. Here's an example of https://t.co/JmpNzmymmn",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1961977214620348801"
+  ],
+  "editable_until_msecs": "1756610394000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/JmpNzmymmn",
+   "expanded_url": "https://x.com/Team2Trading/status/1961977214620348801/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    281,
+    304
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/GzpNs7obYAA7b8W.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1424,
+      "w": 1424,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1424,
+      "w": 1249,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1424,
+      "w": 712,
+      "x": 1,
+      "y": 0
+     },
+     {
+      "h": 1424,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1424,
+    "width": 2048
+   },
+   "sizes": {
+    "large": {
+     "h": 1424,
+     "resize": "fit",
+     "w": 2048
+    },
+    "medium": {
+     "h": 834,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 473,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/JmpNzmymmn"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1147,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1424,
+     "w": 1424,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1424,
+     "w": 1249,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1424,
+     "w": 712,
+     "x": 1,
+     "y": 0
+    },
+    {
+     "h": 1424,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1961977214620348801/photo/1",
+   "url": "https://pbs.twimg.com/media/GzpNs7obYAA7b8W.jpg",
+   "width": 2048,
+   "height": 1424
+  }
+ ],
+ "conversation_count": 3,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 43,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "1961977210006581550",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "possibly_sensitive": false,
+  "reply_count": 1,
+  "retweet_count": 1,
+  "created_at": "2025-08-31T02:19:53.000Z",
+  "display_text_range": [
+   0,
+   259
+  ],
+  "entities": {
+   "media": [
+    {
+     "display_url": "pic.x.com/NHD8gO9MXE",
+     "expanded_url": "https://x.com/Team2Trading/status/1961977212145668501/photo/1",
+     "indices": [
+      259,
+      282
+     ],
+     "url": "https://t.co/NHD8gO9MXE"
+    }
+   ]
+  },
+  "id_str": "1961977212145668501",
+  "text": "Now here's my guide for direction...\n\nCouple it with the chart above and I have both which direction I want to trade, and how heavy I want to trade it.\n\nGuides like these give me a game plan to follow, and force me to be a little more patient for my setups 👇 https://t.co/NHD8gO9MXE",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1961977212145668501"
+   ],
+   "editable_until_msecs": "1756610393000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "mediaDetails": [
+   {
+    "display_url": "pic.x.com/NHD8gO9MXE",
+    "expanded_url": "https://x.com/Team2Trading/status/1961977212145668501/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     259,
+     282
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/GzpMwc1bkAAPwlA.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 1147,
+       "w": 2048,
+       "x": 0,
+       "y": 91
+      },
+      {
+       "h": 1790,
+       "w": 1790,
+       "x": 258,
+       "y": 0
+      },
+      {
+       "h": 1790,
+       "w": 1570,
+       "x": 478,
+       "y": 0
+      },
+      {
+       "h": 1790,
+       "w": 895,
+       "x": 1036,
+       "y": 0
+      },
+      {
+       "h": 1790,
+       "w": 2048,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 1790,
+     "width": 2048
+    },
+    "sizes": {
+     "large": {
+      "h": 1790,
+      "resize": "fit",
+      "w": 2048
+     },
+     "medium": {
+      "h": 1049,
+      "resize": "fit",
+      "w": 1200
+     },
+     "small": {
+      "h": 594,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/NHD8gO9MXE"
+   }
+  ],
+  "photos": [
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 91
+     },
+     {
+      "h": 1790,
+      "w": 1790,
+      "x": 258,
+      "y": 0
+     },
+     {
+      "h": 1790,
+      "w": 1570,
+      "x": 478,
+      "y": 0
+     },
+     {
+      "h": 1790,
+      "w": 895,
+      "x": 1036,
+      "y": 0
+     },
+     {
+      "h": 1790,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/1961977212145668501/photo/1",
+    "url": "https://pbs.twimg.com/media/GzpMwc1bkAAPwlA.jpg",
+    "width": 2048,
+    "height": 1790
+   }
+  ],
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoxOTYxOTc3MjE0NTMyMjcyMTI4"
+ }
+}

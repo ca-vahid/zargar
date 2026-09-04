@@ -154,7 +154,7 @@ def _rth_only(bars: list[Bar]) -> list[Bar]:
 
 
 async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
-                         http: httpx.AsyncClient) -> list[Bar]:
+                         http: httpx.AsyncClient, *, session: str = "rth") -> list[Bar]:
     headers = {"APCA-API-KEY-ID": _ALPACA["key"], "APCA-API-SECRET-KEY": _ALPACA["secret"]}
     iso = lambda s: dt.datetime.fromtimestamp(s, dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     params = {"timeframe": ALPACA_TF[tf], "start": iso(start_s), "end": iso(end_s),
@@ -177,7 +177,7 @@ async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
         token = data.get("next_page_token")
         if not token:
             break
-    return _rth_only(bars)
+    return bars if session == "ext" else _rth_only(bars)
 
 
 async def fetch_window(
@@ -187,13 +187,22 @@ async def fetch_window(
     end_ms: int,
     *,
     client: httpx.AsyncClient | None = None,
+    session: str = "rth",
 ) -> list[Bar]:
     """Bars in [start_ms, end_ms] at `tf` — Alpaca SIP first for US symbols
-    when keys are configured (no 429s, true volume), Yahoo as the fallback."""
+    when keys are configured (no 429s, true volume), Yahoo as the fallback.
+
+    `session="rth"` (default) is the regular session only — every existing detector
+    keeps seeing exactly what it saw. `session="ext"` (2026-09-03, Team2 desk) returns
+    the full 04:00–20:00 ET tape (Yahoo `includePrePost`, Alpaca unfiltered) for
+    pre-market levels and extended-hours indicators; consumers clip with
+    `aggregate.filter_session`."""
     if tf not in INTERVAL_SECONDS:
         raise HistoryError(f"unsupported interval {tf!r}")
+    if session not in ("rth", "ext"):
+        raise HistoryError(f"unsupported session {session!r} (rth|ext)")
     now = time.time()
-    key = (symbol.upper(), tf, start_ms // 60000, end_ms // 60000)
+    key = (symbol.upper(), tf, start_ms // 60000, end_ms // 60000, session)
     hit = _cache.get(key)
     if hit and now - hit[0] < (_LIVE_TTL if end_ms / 1000 > now - 120 else _HIST_TTL):
         return list(hit[1])
@@ -207,7 +216,7 @@ async def fetch_window(
     bars: list[Bar] = []
     if _ALPACA["key"] and tf in ALPACA_TF and "." not in symbol and "=" not in symbol:
         try:
-            bars = await _alpaca_window(symbol, tf, start_s, end_s, http)
+            bars = await _alpaca_window(symbol, tf, start_s, end_s, http, session=session)
         except Exception as exc:
             log.warning("alpaca history failed for %s %s (%s) — falling back to Yahoo", symbol, tf, exc)
             bars = []
@@ -221,7 +230,8 @@ async def fetch_window(
             cursor = chunks[-1][1]
 
         async def one(c0: int, c1: int) -> list[Bar]:
-            params = {"period1": c0, "period2": c1, "interval": tf, "includePrePost": "false"}
+            params = {"period1": c0, "period2": c1, "interval": tf,
+                      "includePrePost": "true" if session == "ext" else "false"}
             resp = None
             for attempt, pause in enumerate(_RETRY_PAUSES + (None,)):
                 async with _sem:
@@ -289,6 +299,19 @@ async def fetch_session(symbol: str, tf: str, date: str, *,
     o, c = session_bounds(date)
     bars = await fetch_window(symbol, tf, o - INTERVAL_SECONDS.get(tf, 60) * 1000, c, client=client)
     return [b for b in bars if session_date(b.ts) == date and o <= b.ts < c]
+
+
+async def fetch_extended_session(symbol: str, tf: str, date: str, *,
+                                 client: httpx.AsyncClient | None = None) -> list[Bar]:
+    """All 04:00–20:00 ET bars of one date (pre + regular + post). Team2's pre-market
+    range and extended-hours EMAs read this; RTH-only callers keep `fetch_session`."""
+    from .sessions import ET, session_date
+    y, m, d = (int(x) for x in date.split("-"))
+    lo = int(dt.datetime(y, m, d, 4, 0, tzinfo=ET).timestamp() * 1000)
+    hi = int(dt.datetime(y, m, d, 20, 0, tzinfo=ET).timestamp() * 1000)
+    bars = await fetch_window(symbol, tf, lo - INTERVAL_SECONDS.get(tf, 60) * 1000, hi,
+                              client=client, session="ext")
+    return [b for b in bars if session_date(b.ts) == date and lo <= b.ts < hi]
 
 
 def interval_available(tf: str, as_of_ms: int | None) -> bool:

@@ -1,0 +1,186 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 57,
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2024-10-11T21:10:30.000Z",
+ "display_text_range": [
+  0,
+  266
+ ],
+ "entities": {
+  "hashtags": [
+   {
+    "indices": [
+     22,
+     35
+    ],
+    "text": "Team2Trading"
+   }
+  ],
+  "media": [
+   {
+    "display_url": "pic.x.com/G4Z5xrRV7e",
+    "expanded_url": "https://x.com/cs_tradess/status/1844848069504020557/photo/1",
+    "indices": [
+     266,
+     289
+    ],
+    "url": "https://t.co/G4Z5xrRV7e"
+   }
+  ],
+  "urls": [
+   {
+    "display_url": "whop.com/team2trading/",
+    "expanded_url": "https://whop.com/team2trading/",
+    "indices": [
+     242,
+     265
+    ],
+    "url": "https://t.co/xZCPz8Irmz"
+   }
+  ]
+ },
+ "id_str": "1844848069504020557",
+ "text": "It’s very likely that #Team2Trading is the most consistently profitable trading discord out here.\n\nNo offense to the others because I’m sure there are a few great ones. But week after week the results just continue to speak for themselves 💪\n\nhttps://t.co/xZCPz8Irmz https://t.co/G4Z5xrRV7e",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1844848069504020557"
+  ],
+  "editable_until_msecs": "1728684630000",
+  "edits_remaining": "5",
+  "is_edit_eligible": true
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/G4Z5xrRV7e",
+   "expanded_url": "https://x.com/cs_tradess/status/1844848069504020557/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    266,
+    289
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/GZo3imcW4AgPIo3.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 671,
+      "w": 1198,
+      "x": 0,
+      "y": 739
+     },
+     {
+      "h": 1198,
+      "w": 1198,
+      "x": 0,
+      "y": 212
+     },
+     {
+      "h": 1366,
+      "w": 1198,
+      "x": 0,
+      "y": 44
+     },
+     {
+      "h": 1410,
+      "w": 705,
+      "x": 493,
+      "y": 0
+     },
+     {
+      "h": 1410,
+      "w": 1198,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1410,
+    "width": 1198
+   },
+   "sizes": {
+    "large": {
+     "h": 1410,
+     "resize": "fit",
+     "w": 1198
+    },
+    "medium": {
+     "h": 1200,
+     "resize": "fit",
+     "w": 1020
+    },
+    "small": {
+     "h": 680,
+     "resize": "fit",
+     "w": 578
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/G4Z5xrRV7e"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 671,
+     "w": 1198,
+     "x": 0,
+     "y": 739
+    },
+    {
+     "h": 1198,
+     "w": 1198,
+     "x": 0,
+     "y": 212
+    },
+    {
+     "h": 1366,
+     "w": 1198,
+     "x": 0,
+     "y": 44
+    },
+    {
+     "h": 1410,
+     "w": 705,
+     "x": 493,
+     "y": 0
+    },
+    {
+     "h": 1410,
+     "w": 1198,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/cs_tradess/status/1844848069504020557/photo/1",
+   "url": "https://pbs.twimg.com/media/GZo3imcW4AgPIo3.jpg",
+   "width": 1198,
+   "height": 1410
+  }
+ ],
+ "conversation_count": 1,
+ "news_action_type": "conversation",
+ "isEdited": false,
+ "isStaleEdit": false
+}

@@ -1,0 +1,169 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 68,
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2026-09-04T00:33:27.000Z",
+ "display_text_range": [
+  0,
+  278
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/Xu2xZhoxZt",
+    "expanded_url": "https://x.com/Team2Trading/status/2095671547184988332/photo/1",
+    "indices": [
+     278,
+     301
+    ],
+    "url": "https://t.co/Xu2xZhoxZt"
+   }
+  ]
+ },
+ "id_str": "2095671547184988332",
+ "text": "We already hit (2) 500% plays this week!\n\nSo it’s gonna be a chill Friday for me as we roll into this holiday weekend with our pockets fat 😎\n\nBut my DM’s are flooded and I’ve been telling them I’d open the discord for those interested!\n\nAnd we’re also giving them half off! For https://t.co/Xu2xZhoxZt",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "2095671547184988332"
+  ],
+  "editable_until_msecs": "1788485607000",
+  "edits_remaining": "5",
+  "is_edit_eligible": true
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/Xu2xZhoxZt",
+   "expanded_url": "https://x.com/Team2Trading/status/2095671547184988332/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    278,
+    301
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/HRVSKdwbMAAC_1A.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 913,
+      "w": 1630,
+      "x": 0,
+      "y": 924
+     },
+     {
+      "h": 1630,
+      "w": 1630,
+      "x": 0,
+      "y": 418
+     },
+     {
+      "h": 1858,
+      "w": 1630,
+      "x": 0,
+      "y": 190
+     },
+     {
+      "h": 2048,
+      "w": 1024,
+      "x": 606,
+      "y": 0
+     },
+     {
+      "h": 2048,
+      "w": 1630,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 2048,
+    "width": 1630
+   },
+   "sizes": {
+    "large": {
+     "h": 2048,
+     "resize": "fit",
+     "w": 1630
+    },
+    "medium": {
+     "h": 1200,
+     "resize": "fit",
+     "w": 955
+    },
+    "small": {
+     "h": 680,
+     "resize": "fit",
+     "w": 541
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/Xu2xZhoxZt"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 913,
+     "w": 1630,
+     "x": 0,
+     "y": 924
+    },
+    {
+     "h": 1630,
+     "w": 1630,
+     "x": 0,
+     "y": 418
+    },
+    {
+     "h": 1858,
+     "w": 1630,
+     "x": 0,
+     "y": 190
+    },
+    {
+     "h": 2048,
+     "w": 1024,
+     "x": 606,
+     "y": 0
+    },
+    {
+     "h": 2048,
+     "w": 1630,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/2095671547184988332/photo/1",
+   "url": "https://pbs.twimg.com/media/HRVSKdwbMAAC_1A.jpg",
+   "width": 1630,
+   "height": 2048
+  }
+ ],
+ "conversation_count": 5,
+ "news_action_type": "conversation",
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoyMDk1NjcxNTQ3MTA1MzQ1NTM2"
+ }
+}

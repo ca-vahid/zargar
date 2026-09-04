@@ -54,6 +54,14 @@ DEFAULTS: dict[str, Any] = {
     "research.daily_bars.enabled": True,        # tf=1d bars for the universe into the bars table
     "research.daily_bars.at": "20:05",          # ET
     "research.daily_bars.range": "1mo",         # per-night fetch window (idempotent upserts)
+    # --- extended-hours 1m bars + volatility indices (2026-09-03, Team2 desk; PLAN §3c B1/B2) ---
+    "research.ext_bars.enabled": True,          # bank 04:00-20:00 ET 1m bars nightly (Yahoo keeps only ~20 days; a sweep needs more)
+    "research.ext_bars.at": "20:10",            # ET, after the post-market closes
+    "research.ext_bars.symbols": ["SPY", "QQQ", "IWM"],  # the Team2 universe; other techniques may add theirs
+    "research.ext_bars.backfill_days": 20,      # calendar days to (re)fetch each night — idempotent upserts
+    "research.vix.enabled": True,               # daily ^VIX / ^VIX1D closes into the bars table (tf=1d) — the IV proxy for the 0DTE premium scorer
+    "research.vix.symbols": ["^VIX", "^VIX1D", "^VIX9D"],
+    "research.macro_events": [],                # MANUAL macro calendar (FOMC/CPI/NFP...): [{date, name, kind, time}] — research/macro_calendar.py (placeholder source)
 
     "risk.max_day_notional_per_tag": 0.0,        # $ BUY notional per tag (e.g. source:xyz) per ET day (0 = off)
 
@@ -83,6 +91,45 @@ DEFAULTS: dict[str, Any] = {
     "verification.min_price": 1.0,
     "verification.require_actionable": True,
     # --- tip technique (docs/techniques/tip/PLAN.md; per-source overrides in .sources) ---
+    # --- Team2 technique (2026-09-03; docs/techniques/team2/PLAN.md D1-D14) --------------------------
+    "techniques.team2.enabled": True,
+    "techniques.team2.symbols": ["SPY", "QQQ", "IWM"],   # D2: fixed universe, no scan
+    "techniques.team2.mode": "alert",                # alert | proposal | auto (earned the same way EM earned it)
+    "techniques.team2.plan_at": "17:00",             # ET nightly skeleton (PDH/PDL zones, targets)
+    "techniques.team2.preopen_at": "09:25",          # ET completion (PMH/PML, day type, sizing bucket)
+    "techniques.team2.zero_dte": {                   # D3/E6: the per-technique 0DTE policy RiskGate enforces
+        "enabled": True, "last_entry_et": "15:30", "flatten_et": "15:45", "max_contracts": 10, "premium_cap": 1000.0},
+    "techniques.team2.dte_policy": "0dte",           # 0dte | 1dte (sweep variant)
+    "techniques.team2.target_premium": 0.60,         # V1/F5: first OTM strike whose ask <= this
+    "techniques.team2.premium_floor": 0.20,
+    "techniques.team2.sigma_source": "vix1d",        # IV proxy for the premium model: vix1d | vix | chain
+    "techniques.team2.fan_trend_min_atr": 0.60,      # E4 chop/trend threshold (EMA spread in 2m ATRs)
+    "techniques.team2.pm_tol_atr": 0.25,             # D7 touch tolerance
+    "techniques.team2.target_lookback_sessions": 10, # L3.1
+    "techniques.team2.range_day_confirmation": True, # B3/A4
+    "techniques.team2.pullback_max_touches": 2,      # D9
+    "techniques.team2.pullback_max_bars": 8,         # A6
+    "techniques.team2.pullback_body_mult": 2.0,      # A6/F4 engulfing filter
+    "techniques.team2.entry_at": "ema",              # ema | level
+    "techniques.team2.first_entry_min": "09:45",     # D6 (first 15m close)
+    "techniques.team2.last_entry_min": "15:30",
+    "techniques.team2.flatten_min": "15:45",         # C3
+    "techniques.team2.premium_stop_pct": 25.0,       # D13/P1
+    "techniques.team2.trim_1_pct": 50.0,             # V2
+    "techniques.team2.trim_1_frac": 0.3333,
+    "techniques.team2.trim_2_pct": 100.0,
+    "techniques.team2.trim_2_frac": 0.3333,
+    "techniques.team2.runner_exit": "ema_close",     # X2
+    "techniques.team2.target_exit": True,            # X3/V11
+    "techniques.team2.size_full": 1.0,               # V6/D4 buckets
+    "techniques.team2.size_small": 0.5,
+    "techniques.team2.max_reentries": 2,             # A8
+    "techniques.team2.max_losses_per_day": 2,        # D-3
+    "techniques.team2.max_concurrent_positions": 1,  # A12
+    "techniques.team2.shrink_after_win": True,       # P7/D14
+    "techniques.team2.avoid_event_days": False,      # D-4 (macro calendar placeholder)
+    "techniques.team2.budget_per_trade": 500.0,      # $ premium per full-size entry in practice (D-2: inside platform caps)
+    "techniques.team2.allow_live_auto": False,
     "techniques.tip.entry": "level_touch",   # level_touch | tip_time (tip_time is EARNED per source)
     "techniques.tip.mode": "proposal",       # shadow | alert | proposal | auto (per-source override)
     "techniques.tip.risk_pct": 1.0,

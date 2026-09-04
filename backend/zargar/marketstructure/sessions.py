@@ -38,23 +38,29 @@ def session_date(ts_ms: int) -> str:
 
 
 def session_bounds(date: str) -> tuple[int, int]:
-    """(open_ms, close_ms) of the regular session on an ET date."""
+    """(open_ms, close_ms) of the regular session on an ET date. Early-close days
+    (13:00 ET: July 3, Black Friday, Christmas Eve) come from the market calendar
+    (2026-09-03, Team2 desk — every technique's clock-driven close now honours them)."""
+    from .market_calendar import session_close_minutes
     y, m, d = (int(x) for x in date.split("-"))
     o = dt.datetime(y, m, d, 9, 30, tzinfo=ET)
-    c = dt.datetime(y, m, d, 16, 0, tzinfo=ET)
+    close_min = session_close_minutes(dt.date(y, m, d))
+    c = dt.datetime(y, m, d, close_min // 60, close_min % 60, tzinfo=ET)
     return int(o.timestamp() * 1000), int(c.timestamp() * 1000)
 
 
 def next_session_date(ts_ms: int) -> str:
-    """The next regular session after `ts_ms` (skips weekends; holidays are not
-    modelled — a holiday simply yields a session with no bars)."""
+    """The next regular session after `ts_ms` — skips weekends AND exchange
+    holidays (market calendar, 2026-09-03; before that a holiday yielded a
+    session with no bars)."""
+    from .market_calendar import is_trading_day
     t = dt.datetime.fromtimestamp(ts_ms / 1000, ET)
     d = t.date()
     # before the open counts as "today's" session
-    if t.hour * 60 + t.minute < 9 * 60 + 30 and d.weekday() < 5:
+    if t.hour * 60 + t.minute < 9 * 60 + 30 and is_trading_day(d):
         return d.strftime("%Y-%m-%d")
     d = d + dt.timedelta(days=1)
-    while d.weekday() >= 5:
+    while not is_trading_day(d):
         d += dt.timedelta(days=1)
     return d.strftime("%Y-%m-%d")
 

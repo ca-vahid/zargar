@@ -45,6 +45,8 @@ class Engine:
         self.scheduler = Scheduler(self)   # engine-level daily jobs (techniques register scans here)
         from .calendar_service import EventCalendar
         self.calendar = EventCalendar()    # earnings / ex-dividend dates (policies + scans read this)
+        from .research.macro_calendar import MacroCalendar
+        self.macro = MacroCalendar(self.settings)   # FOMC/CPI/... days (manual list for now; placeholder source)
         from .execution.positions import PositionManager
         self.position_manager = PositionManager(self)   # durable multi-day positions (plan phase 2b)
 
