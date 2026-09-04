@@ -712,6 +712,14 @@ async def attach_team2_runner(engine) -> None:
             log.info("team2 runner restored %d armed plan(s)", restored)
     except Exception:  # pragma: no cover
         log.exception("team2 runner restore failed")
+    # The desk's three symbols keep banking 1m bars whether or not a plan is armed on them:
+    # a plan that disarms mid-session (loss halt) otherwise loses the rest of the day's tape
+    # the moment the process restarts, and its replay/review is truncated at the disarm (F34).
+    for sym in (engine.settings.get("techniques.team2.symbols") or []):
+        try:
+            await engine.ensure_symbol(str(sym).upper())
+        except Exception:  # pragma: no cover — the feed must never block the attach
+            log.debug("team2 ensure_symbol failed for %s", sym, exc_info=True)
     from .service import Team2Service
     engine.team2 = Team2Service(engine, runner)
     engine.scheduler.register("team2_plan_nightly", str(engine.settings.get("techniques.team2.plan_at", "17:00")),

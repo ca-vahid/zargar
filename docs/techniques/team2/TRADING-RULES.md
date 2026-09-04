@@ -339,6 +339,57 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   (stop)"** when a filled trade for that setup is closed, so alert mode (which mints trades but never
   fills) stays silent. Same class of divergence at the 15:45 flatten and after a failed-exit retry.
 
+- **F32 (2026-09-04 14:45 ET, NOT fixed — the loss halt does not count commissions)** The per-plan
+  halt (`planrunner._maybe_loss_halt`) sums `trade.realized_pnl`, which is `(fill − avg_fill) × qty ×
+  100` — **gross**. QQQ's two round trips today cost **$99.84** in commissions (executions table:
+  30 contracts 31.20 + 31.20, 18 contracts 18.72 + 18.72) against a gross −$354.18, so the book lost
+  **−$454.02** while the halt was still reading **−$354**. Concretely: after the first trade the book
+  was down **−$362.40**, already past the plan's **−$341.38** limit, but the halt saw −$300 and let a
+  second entry through. On a $0.30–0.60 0DTE contract the round-trip fee is **6–12% of premium**, so
+  the halt understates the real day loss by that much at exactly the moment it is meant to bind.
+  Proposal: mark the halt (and the per-technique `daily_loss_halt_pct`) off the book's own realised
+  P&L, or subtract `fee_per_contract × qty × legs`. **Shared engine + money rule — the user's call.**
+
+- **F33 (2026-09-04 14:45 ET, NOT fixed — the halt is checked after the entry, never before it)**
+  `Team2Runner._on_bar` runs `_act` (which can fire, size and route an order) and only then calls
+  `_maybe_loss_halt`. Live case: at **14:16** the QQQ plan had **$41** of gross loss budget left
+  (−$300 realised against −$341.38) and opened **18 × QQQ260904P00717000 @ $0.59 = $1,062**. One
+  minute later the bid was 0.56, the halt fired on "realised −300.00 + open −54.00", and the plan
+  was disarmed and flattened at 0.5599 — a full round trip (**$37.44** of commission plus the spread)
+  bought nothing. The trade could not have been held: its own worst case was 25× the remaining budget.
+  Proposal: before routing an entry in auto, refuse when `premium_at_risk` (or the trade's own stop
+  loss) exceeds the remaining daily budget — same shape as the existing `max_open_trades` and A12
+  caps, with its own `skip_loss_budget` read event. **Shared engine + money rule — the user's call.**
+
+- **F34 (2026-09-04 14:50 ET, FIXED — deploy queued)** Nothing keeps the desk's symbols on the feed
+  once their plan is gone. QQQ disarmed at 14:17; the 14:33 restart re-armed only SPY and IWM, so
+  nothing called `ensure_symbol("QQQ")` and **QQQ's 1m bars stopped at 14:28** while SPY and IWM kept
+  banking. The day's replay of the disarmed plan is therefore truncated at the disarm — for a
+  technique whose review loop is the point, the "would the method have made it back after the loss
+  cap?" question becomes unanswerable for exactly the plan that most needs it. `attach_team2_runner`
+  now `ensure_symbol`s every `techniques.team2.symbols` entry at boot, armed or not (best-effort;
+  three index ETFs).
+
+- **F35 (2026-09-04 14:50 ET, FIXED — deploy queued)** A plan that disarms mid-session vanishes from
+  the desk with no reason given: `/api/team2/status` drops it from `armed`, and the Team2 **Plans**
+  tab renders a bare *"not armed"*. Today that made "why is QQQ gone?" a journal-archaeology question
+  even though the `technique_armed` row already stores `status: disarmed` and the full
+  `stopReason`. `Team2Service.runs()` now joins that row and returns `status`/`stopReason`; the page
+  shows *"disarmed — loss halt: realised −300.00 + open −54.00 marked at bid crossed −341.38"*.
+
+- **F36 (2026-09-04 14:50 ET, NOT fixed — the read and the book bought different contracts)** On
+  QQQ's 14:14 fire the read says *"buy put **716** ≈ **$0.26**"* while the live order was **717 P at
+  $0.59** — a different strike at **2.3× the premium**, so that trade's model P&L (−19% on 0.26) and
+  book P&L (−$91.62 on 0.59) are not comparable at all. Cause: both aim at `target_premium` 0.60 but
+  from different prices. `PremiumModel.pick_strike` walks OTM until its **flat-IV BS mark ≤ 0.60**; at
+  spot 717.03 its 717 mark was just over 0.60 (σ 0.1669 model vs 0.1335 OPRA), so it stepped to 716.
+  The live picker saw the real ask **0.59 ≤ 0.60** and stopped at 717. A knife-edge on one cent
+  decides the strike, the premium and the size. Same family as F30 (three premium series, one rule).
+  Note the first QQQ fire an hour earlier agreed (716 model $0.33 / live $0.36) — the divergence
+  appears only when the ATM contract prices within a cent of the target. Proposal: pick the strike
+  whose premium is **closest** to the target in both paths, and stamp the read's contract with the
+  live one once a money-mode fill exists so the scorecard compares like with like.
+
 
 ## Theories to test
 
@@ -379,3 +430,4 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 | 2026-09-04 | Second review: T7 base, T8 200-EMA flush, EMA48 entries, new-extreme trim cue, stalled-pullback rule, cross-plan concurrency cap (A12) in the runner; 8 more images read (INDEX) | images 1979379272990277934, 1961977219590574391-2/3, 1908549478438887528, 2081050843768660321, 1964745974393557113/76528400559, 2013059662812463256 | Team2 desk |
 | 2026-09-04 | **F26 fixed**: the 15:30 last-entry cutoff (D6) and the daily loss cap (D-3) each emit a one-time read event (`skip_last_entry` / `skip_loss_cap`) instead of stopping entries in silence. Reporting only — no entry, exit or size changes; journaled and iconed in the Armed timeline | market watch 13:35 ET; `tests/test_team2_session.py::test_entry_cutoff_and_loss_cap_say_why_the_read_went_quiet` | Team2 desk |
 | 2026-09-04 | **F31 fixed**: the Armed/phone headline no longer claims "in trade" after the desk's real contract has been closed underneath the still-holding model read (premium stop, flatten, failed-exit retry). Reporting only | market watch 14:00 ET; QQQ 13:58 premium stop vs the model holding to 14:12 | Team2 desk |
+| 2026-09-04 | **F34 + F35 fixed** (deploy queued for after the 15:45 flatten): the desk's three symbols stay on the feed whether or not a plan is armed on them (a disarmed plan's tape stopped banking at the next restart), and a plan that is no longer armed reports its `status`/`stopReason` on `/api/team2/runs` and in the Plans tab instead of a bare "not armed". Reporting + data continuity only — no entry, exit or size changes | market watch 14:50 ET; QQQ disarmed 14:17, bars stopped 14:28 | Team2 desk |

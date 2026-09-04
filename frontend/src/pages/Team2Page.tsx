@@ -14,7 +14,8 @@ type Team2Status = {
   thresholds: Record<string, unknown>;
 };
 type Team2Run = { runId: string; symbol: string; planFor: string | null; sheet: string | null; complete: boolean | null;
-  dayType: string | null; createdAt: string | null; armed: boolean };
+  dayType: string | null; createdAt: string | null; armed: boolean;
+  status?: string | null; stopReason?: string | null };
 type ReadEvent = { ts: number; time: string; event: string; why: string; [k: string]: unknown };
 type ReadResult = { events: ReadEvent[]; trades: any[]; summary: Record<string, any>; bias: any; setups: any[] };
 type Sweep = { start: string; end: string; symbols: string[]; rows: any[]; summary: Record<string, any>; thresholds: Record<string, unknown> };
@@ -133,7 +134,12 @@ export function Team2Page() {
                 <td className="mono-num">{r.planFor}</td>
                 <td className="muted">{r.dayType ?? (r.complete ? "—" : "pre-open pending")}</td>
                 <td className="muted" style={{ whiteSpace: "normal" }}>{r.sheet}</td>
-                <td>{r.armed ? <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openArmedPlan(r.runId); }}>armed →</button> : <span className="muted">not armed</span>}</td>
+                <td>{r.armed
+                  ? <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openArmedPlan(r.runId); }}>armed →</button>
+                  : <span className="muted" title={r.stopReason ?? undefined}>
+                      {r.status && r.status !== "armed" ? r.status : "not armed"}
+                      {r.stopReason ? ` — ${r.stopReason}` : ""}
+                    </span>}</td>
               </tr>
             ))}
           </tbody>

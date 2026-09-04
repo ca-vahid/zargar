@@ -26,7 +26,7 @@ from ...domain import Bar, new_id
 from ...marketstructure.aggregate import aggregate, bar_session, filter_session
 from ...marketstructure.market_calendar import is_trading_day, next_trading_day, previous_trading_day, trading_days
 from ...marketstructure.sessions import ET, session_date
-from ...models import TechniqueRun
+from ...models import TechniqueArmed, TechniqueRun
 from .plan import build_skeleton, complete_plan
 from .rules import Team2Rules, rules_from_settings
 from .session import simulate_session
@@ -221,13 +221,24 @@ class Team2Service:
             if symbol:
                 stmt = stmt.where(TechniqueRun.symbol == symbol.upper())
             rows = (await session.execute(stmt)).scalars().all()
+            # a plan that is no longer armed must say WHY (a loss halt disarms it mid-session and it
+            # would otherwise just vanish from the desk) — the armed row is the projection that keeps it
+            arm_rows = {}
+            if rows:
+                arm_stmt = select(TechniqueArmed).where(TechniqueArmed.run_id.in_([r.id for r in rows]))
+                arm_rows = {a.run_id: a for a in (await session.execute(arm_stmt)).scalars().all()}
         out = []
         for r in rows:
             plan = (r.result or {}).get("plan") or {}
+            live = r.id in getattr(self.runner, "_armed", {})
+            arm = arm_rows.get(r.id)
             out.append({"runId": r.id, "symbol": r.symbol, "planFor": plan.get("planFor"), "sheet": plan.get("sheet"),
                         "complete": plan.get("complete"), "dayType": plan.get("dayType"),
                         "createdAt": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
-                        "armed": r.id in getattr(self.runner, "_armed", {})})
+                        "armed": live,
+                        "status": ("armed" if live else (arm.status if arm is not None else None)),
+                        "stopReason": (None if live else ((arm.state or {}).get("stopReason") or None)
+                                       if arm is not None else None)})
         return out
 
     async def replay(self, run_id: str, *, overrides: dict | None = None) -> dict | None:
