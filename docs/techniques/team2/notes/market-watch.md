@@ -671,3 +671,14 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
 - **Next run should check:** the **15:30 `skip_last_entry` row** on each plan (F26's first live exercise)
   and the 15:45 flatten; whether the queued F31 deploy went out; whether SPY takes its `scenario_3`
   EMA13 touch at 769.26 and IWM its own; and whether the user has ruled on F27/F28/F29/F30.
+
+## 2026-09-04 14:35 ET (desk session) — halt scopes deployed
+
+- Platform gap closed (commit 29bdb45, merged b52b0c9, deployed 14:31 ET via alert → restart → auto): the daily-loss
+  breaker halts only the losing BOOK (`risk.daily_loss_halt_scope=portfolio`), a technique can pause itself on a book
+  (`techniques.<id>.daily_loss_halt_pct`; Team2 = 10), the HALT button stays global. RiskGate check `book_halt`,
+  `POST /api/portfolios/{pid}/resume`, Armed summary `bookHalts`, kill-switch tile shows a halted book. PLATFORM-RULES
+  has the three scopes. `risk.daily_loss_halt_pct` is still 12 for practice (raised this morning) — with per-book
+  scope there is no longer a reason for it; the user may put it back to 8.
+- After the restart only SPY and IWM are armed for Team2 (62 plans restored) — QQQ's plan is no longer armed; see the
+  desk's note below / the plan's journal.
