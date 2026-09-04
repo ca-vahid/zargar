@@ -70,3 +70,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   optimistic** (chart-read spots, exits taken before the extreme, real spread on the way out). Until the
   execution scorecard measures our own fills, read sweep gains with a ~0.8 haircut; losses (−20/−30% stops)
   are premium-defined and unaffected. Test: `test_premium_model_calibrates_to_the_authors_trades`.
+- **F9 (2026-09-04, first live plan)** The very first plan the desk built for SPY (from the banked 15m bars of
+  2026-09-03) put the PDH zone at 773.76–774.03 with "room up to 775.30". The author's own 2026-09-03 recap
+  annotated the high at 774.03 and his pre-market plan said "room up to 775.29" (notes/x/images INDEX,
+  `2095599035113693522-1.jpg`). Zone construction (L1.2) and target discovery (L3.1) reproduce his sheet to the cent.
