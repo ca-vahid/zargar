@@ -58,11 +58,26 @@ async def snapshot_chains(engine) -> dict:
     symbols = [x for x in await _universe(engine) if is_us_optionable_symbol(x)]
     rows_written = 0
     failures: list[str] = []
+    rate_limited = 0
+    # F45 (2026-09-04): back-to-back requests earned 185 HTTP 429s in three minutes and lost half
+    # the universe for five sessions — pace the sweep and retry a 429 after a backoff
+    delay = float(s.get("research.chain_snapshots.delay_s", 0.75) or 0)
+    retries = int(s.get("research.chain_snapshots.retries", 2) or 0)
     for sym in symbols:
-        try:
-            rows = await provider.all_rows(sym)
-        except Exception as exc:
-            failures.append(f"{sym}: {exc}")
+        rows = None
+        for attempt in range(retries + 1):
+            try:
+                rows = await provider.all_rows(sym)
+                break
+            except Exception as exc:
+                if "429" in str(exc) and attempt < retries:
+                    rate_limited += 1
+                    await asyncio.sleep(3.0 * (attempt + 1))
+                    continue
+                failures.append(f"{sym}: {exc}")
+                break
+        if rows is None:
+            await asyncio.sleep(delay)
             continue
         skip_dead = bool(s.get("research.chain_snapshots.skip_dead", True))
         values = []
@@ -99,7 +114,7 @@ async def snapshot_chains(engine) -> dict:
                 await session.execute(stmt)
             await session.commit()
         rows_written += len(values)
-        await asyncio.sleep(0.25)          # gentle on the free endpoint
+        await asyncio.sleep(delay)         # gentle on the free endpoint (research.chain_snapshots.delay_s)
     # prune beyond the retention window
     keep_days = int(s.get("research.chain_snapshots.keep_days", 400) or 0)
     pruned = 0
@@ -110,9 +125,11 @@ async def snapshot_chains(engine) -> dict:
             pruned = int(res.rowcount or 0)
             await session.commit()
     out = {"date": day, "symbols": len(symbols), "rows": rows_written,
-           "failed": len(failures), "pruned": pruned}
+           "failed": len(failures), "rateLimitedRetries": rate_limited, "pruned": pruned}
     if failures:
         out["failures"] = failures[:10]
+    if symbols and len(failures) > len(symbols) * 0.2:
+        log.warning("chain snapshots: %d of %d underlyings failed — the universe is half-dark tonight", len(failures), len(symbols))
     log.info("chain snapshots: %s", out)
     return out
 

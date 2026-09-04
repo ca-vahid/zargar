@@ -432,7 +432,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   its own reason, not silently through one branch and always through the other. **Shared engine
   (`zargar/execution/planrunner.py`) — proposal, not built here.**
 
-- **F40 (2026-09-04 15:40 ET, NOT fixed — a disarmed plan never learns its flatten filled)**
+- **F40 (2026-09-04 15:40 ET, FIXED 17:45 ET — a disarmed plan keeps listening until its flatten settles; shared engine, PLATFORM-RULES)**
   `PlanRunner.disarm()` submits the flatten (`_exit(..., "disarm", force_market=True)`), then
   immediately does `self._armed.pop(run_id)` and persists. The fill arrives ~2 s later on the orders
   topic and `on_order_update` starts with `ap = self._armed.get(run_id)` → `None` → **return**. The
@@ -479,7 +479,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   past-dated plans still complete (tests, replays, a manual catch-up).
   Test: `tests/test_team2_runner.py::test_preopen_never_completes_a_plan_whose_session_has_not_started`.
 
-- **F43 (2026-09-04 16:05 ET, NOT fixed — the Team2 day is never scored)**
+- **F43 (2026-09-04 16:05 ET, FIXED 17:45 ET — Team2 scores its own day: read vs book, skips, net of fees; also on the disarm path)**
   `_end_session()` writes the execution scorecard from `PlanRunner._score_execution()`, which iterates
   `ap.trackers` — EM's declared `TriggerTracker`s. **Team2 has no trackers**: its entries come out of
   the session walk, so the scorecard is structurally empty. Today both surviving plans journalled
@@ -495,7 +495,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   premium series is authoritative for "what the model made"), so it is the user's call.
   **Not built here** — it is new reporting, not a defect fix.
 
-- **F44 (2026-09-04 16:05 ET, NOT fixed — shared engine; expired contracts never leave the OPRA batch)**
+- **F44 (2026-09-04 16:05 ET, FIXED 17:45 ET — expired contracts are dropped from the tracked batch on every refresh)**
   `OptionsService._tracked` only ever grows: `track()` adds, nothing prunes. The 2 s OPRA poll therefore
   keeps requesting contracts that expired days ago — today's batch of **55** symbols still carried
   `MU260902P00945000`, `GOOGL260902C00340000`, `META260902C00590000`, `TSLA260902P00355000` (expired
@@ -506,7 +506,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   from `_tracked` when its expiry is past (and when nothing holds or watches it), on the same pass.
   **`zargar/options/service.py` — shared engine, proposal, not built here.**
 
-- **F45 (2026-09-04 16:30 ET, NOT fixed — shared engine/research; the nightly chain sweep is
+- **F45 (2026-09-04 16:30 ET, FIXED 17:45 ET — paced, 429s retried with backoff, failures counted; the nightly chain sweep was
   rate-limited out of half the universe)** `research/snapshots.py::_run` walks every optionable
   universe symbol back-to-back with **no throttle, no retry and no backoff**, and CBOE's free endpoint
   refuses it. Today's 16:30 job attempted **150** underlyings in ~3 minutes and took **185 HTTP 429s**;
@@ -555,6 +555,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   annotated the high at 774.03 and his pre-market plan said "room up to 775.29" (notes/x/images INDEX,
   `2095599035113693522-1.jpg`). Zone construction (L1.2) and target discovery (L3.1) reproduce his sheet to the cent.
 | 2026-09-04 | **F17 fixed**: the kill switch no longer suppresses Team2's alert-mode read. `_fire_from_event`'s halt gate now applies to proposal/auto only (alert places nothing); an alert fire during a halt carries `haltedAtFire: true`. Restores live-vs-replay parity while the shared Practice portfolio is halted | market watch 10:00 ET; QQQ 10:02 fire lost to `halt_skip`; `tests/test_team2_runner.py::test_alert_mode_still_reads_the_tape_while_halted` fails without the fix | Team2 desk |
+| 2026-09-04 | **F40, F43, F44, F45 closed** (post-close sweep): a disarmed plan with a flatten in flight stays in a `_closing` map until every exit settles (its fill lands, the record closes, F38's seed also reads pre-fix rows by their exit fills); Team2 overrides the execution scorecard — the session read's model trades matched against the book's fills, unmatched rows named, skips counted, P&L net of fees — and writes it on the loss-halt disarm too; expired contracts leave the OPRA batch; the nightly chain sweep paces itself (`research.chain_snapshots.delay_s` 0.75, `retries` 2 with 3s/6s backoff) and warns when > 20% of the universe failed | post-close 2026-09-04 | Team2 desk |
 | 2026-09-04 | **F37–F39 closed** (run 13): the desk-wide loss cap counts the BOOK for any money-mode plan that routed an order and the model only for alert plans (never the larger of the two); the gate applies in money modes only and says which record it used; a disarmed plan's losers stay in the day's tally and are re-seeded from the persisted rows after a restart; zero/negative equity refuses an option entry with its own reason instead of failing open at 0 / closed below it | run 13 | Team2 desk |
 | 2026-09-04 | **F25–F36 closed (user 2026-09-04 14:50 ET: "implement all the fixes")** — F25 one clock: every read event stamped at its bar's CLOSE (setup ids keep the open in their name); F27 `zone_tol_atr` wired + `flip_body_ratio`, both shipped at 0 (unchanged until the walk-forward); F28 structural reads journal as `TechniquePlanRead`, not skips; F29 `losses_desk_wide=True` — `max_losses_per_day` counts SPY+QQQ+IWM together (`skip_loss_cap_desk`); F30 `premium_stop_basis=mid` + `premium_stop_min_ticks=3` for Team2 (EM keeps bid, 0); F32 both loss halts net of commissions; F33 an entry whose premium-stop risk exceeds the remaining daily budget is refused before routing (`skip_loss_budget`); F36 `premium_pick=closest` — model and live pick the strike CLOSEST to the target in [floor, 1.5x]. F34/F35 (watch job) deployed with them | this session's QQQ trades | Team2 desk |
 | 2026-09-04 | Halt scopes (platform, built by the desk): the daily-loss breaker now halts only the losing BOOK (`risk.daily_loss_halt_scope=portfolio`), and Team2 has its own `techniques.team2.daily_loss_halt_pct` = 10 — after losing 10% of the book in a day (≈ two full-size stops) its plans PAUSE for the day while the other techniques carry on. `risk.daily_loss_halt_pct` stays at the 12 set this morning for practice; re-tighten before real money | PLATFORM-RULES 2026-09-04 | Team2 desk |

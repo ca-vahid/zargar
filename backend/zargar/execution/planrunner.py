@@ -423,6 +423,10 @@ class PlanRunner(SessionListener):
     def __init__(self, engine, *, name: str = "plan-runner") -> None:
         super().__init__(engine, name=name)
         self._armed: dict[str, ArmedPlan] = {}
+        # F40 (2026-09-04): a plan disarmed with a flatten in flight stays here until every exit
+        # order has settled, so the fill still reaches its Trade record and the persisted row
+        # (QQQ 14:17: FILLED 18 @ 0.5599 in the book, "open, remaining 18" in the plan forever)
+        self._closing: dict[str, ArmedPlan] = {}
         # (run_id, trigger_id[, "~prem"]) -> consecutive quote polls seen in breach
         self._quote_breaches: dict[tuple[str, str], int] = {}
         # (run_id, trigger_id) -> (last retry ts, attempts) for the failed-exit watchdog
@@ -1237,6 +1241,8 @@ class PlanRunner(SessionListener):
                 await self._exit(ap, tr, "disarm", tr.remaining, journal=True, force_market=True)
         ap.status = "disarmed"
         self._armed.pop(run_id, None)
+        if any(t.pending_exit_qty > 1e-9 for t in ap.trades.values()):
+            self._closing[run_id] = ap                     # F40: keep listening for the flatten's fill
         await self._persist(ap)
         self._log(ap, "disarmed", reason)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_DISARMED, {
@@ -1603,6 +1609,9 @@ class PlanRunner(SessionListener):
 
     # ---------------------------------------------------------------- persistence / audit
     async def _persist(self, ap: ArmedPlan) -> None:
+        if ap.run_id in self._closing and not any(t.pending_exit_qty > 1e-9 for t in ap.trades.values()):
+            self._closing.pop(ap.run_id, None)             # F40: the flatten settled — this is the final record
+            self._log(ap, "closing_settled", "every exit of the disarmed plan has settled; record final")
         try:
             async with self.engine.sf() as session:
                 row = await session.get(TechniqueArmed, ap.run_id)
@@ -1671,7 +1680,7 @@ class PlanRunner(SessionListener):
         if not key:
             return
         run_id, tid = key
-        ap = self._armed.get(run_id)
+        ap = self._armed.get(run_id) or self._closing.get(run_id)    # F40: a closing plan still listens
         if ap is None:
             return
         tr = ap.trades.get(tid)

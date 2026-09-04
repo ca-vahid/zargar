@@ -639,8 +639,19 @@ class Team2Runner(PlanRunner):
             if row.run_id in self._armed:
                 continue
             trades = (row.state or {}).get("trades") or []
-            n = sum(1 for t in trades if t.get("status") == "closed" and float(t.get("filledQty") or 0) > 0
-                    and float(t.get("realizedPnl") or 0) < 0)
+            n = 0
+            for t in trades:
+                if float(t.get("filledQty") or 0) <= 0:
+                    continue
+                if t.get("status") == "closed" and float(t.get("realizedPnl") or 0) < 0:
+                    n += 1
+                    continue
+                # a pre-F40 record: the flatten filled but the plan never heard — judge it by its exit fills
+                fills = [x for x in (t.get("exits") or []) if x.get("status") == "FILLED" and x.get("price") is not None]
+                if t.get("status") == "open" and fills and t.get("avgFill"):
+                    pnl = sum((float(x["price"]) - float(t["avgFill"])) * float(x.get("filledQty") or 0) for x in fills) * 100.0
+                    if pnl < 0:
+                        n += 1
             if n:
                 tally[row.run_id] = (n, "book")
                 seeded += n
@@ -650,6 +661,65 @@ class Team2Runner(PlanRunner):
         """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap)."""
         return sum(1 for ap in self._armed.values() for t in ap.trades.values()
                    if t.status in ("fired", "submitting", "working", "open") and not getattr(t, "is_add", False))
+
+    # ------------------------------------------------------------- the day's scorecard (F43)
+    def _score_execution(self, ap: ArmedPlan) -> dict | None:
+        """Team2 has no TriggerTrackers, so the shared scorecard was structurally empty (F43). The
+        day's record is the session read's model trades against what the book actually did — and the
+        skips that stood between them. Same journal shape as the shared one (rows / matched /
+        theoreticalFires / actualFires / realizedPnl) plus Team2's own fields."""
+        sim = self._last_sim.get(ap.run_id) or {}
+        model = list(sim.get("trades") or [])
+        real = [t for t in ap.trades.values() if float(t.filled_qty or 0) > 0]
+        rows = []
+        matched = 0
+        used: set[str] = set()
+        for mt in model:
+            cands = [t for t in real if t.setup_id == mt.get("setup") and t.trigger_id not in used]
+            hit = min(cands, key=lambda t: abs(int(t.fired_ts or 0) - int(mt.get("entryTs") or 0)), default=None)
+            if hit is not None:
+                used.add(hit.trigger_id)
+                matched += 1
+            rows.append({"setup": mt.get("setup"), "entryTs": mt.get("entryTs"), "entryKind": mt.get("entryKind"),
+                         "modelStrike": mt.get("strike"), "modelPremium": mt.get("entryPremium"),
+                         "modelPnlPct": mt.get("pnlPct"), "modelExit": mt.get("exitReason"),
+                         "trigger": hit.trigger_id if hit else None, "status": hit.status if hit else "not taken",
+                         "avgFill": hit.avg_fill if hit else None, "qty": hit.filled_qty if hit else None,
+                         "realizedPnl": round(hit.realized_pnl - self._fees_paid(hit), 2) if hit else None,
+                         "contract": hit.order_symbol if hit else None,
+                         "note": ("" if hit else "model trade not taken by the book (see skips)")})
+        for t in real:
+            if t.trigger_id not in used:
+                rows.append({"setup": t.setup_id, "entryTs": t.fired_ts, "trigger": t.trigger_id, "status": t.status,
+                             "avgFill": t.avg_fill, "qty": t.filled_qty, "contract": t.order_symbol,
+                             "realizedPnl": round(t.realized_pnl - self._fees_paid(t), 2),
+                             "note": "the book traded where the read (as recomputed now) did not"})
+        skips: dict[str, int] = {}
+        for e in ap.events:
+            k = str(e.get("event") or "")
+            if k.startswith("skip_") or k in ("max_concurrent_skip", "max_open_skip", "halt_skip", "entry_capped", "technique_loss_halt", "loss_halt"):
+                skips[k] = skips.get(k, 0) + 1
+        net = round(sum(t.realized_pnl - self._fees_paid(t) for t in ap.trades.values()), 2)
+        return {"technique": self.TECHNIQUE_ID, "basis": "session-read vs book",
+                "theoreticalFires": len(model), "actualFires": len(real), "matched": matched,
+                "modelPnlPctSum": round(sum(float(mt.get("pnlPct") or 0) for mt in model), 2),
+                "realizedPnl": net, "realizedPnlGross": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
+                "skips": skips, "rows": rows, "bias": (sim.get("bias") or {}).get("label"),
+                "stopReason": ap.stop_reason or None}
+
+    async def disarm(self, run_id: str, *, reason: str = "manual", flatten: bool = False) -> bool:
+        """A plan that leaves mid-session (loss halt) is scored on the way out — the close never
+        reaches it (F43)."""
+        ap = self._armed.get(run_id)
+        if ap is not None and ap.scorecard is None and ap.config.mode != "alert":
+            with contextlib.suppress(Exception):
+                ap.scorecard = self._score_execution(ap)
+                if ap.scorecard:
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_SCORED, {"runId": ap.run_id, "symbol": ap.symbol,
+                                                                              **ap.scorecard},
+                                                     aggregate_type="technique_run", aggregate_id=ap.run_id,
+                                                     portfolio_id=ap.config.portfolio_id)
+        return await super().disarm(run_id, reason=reason, flatten=flatten)
 
     # ------------------------------------------------------------- read-only views
     def last_read(self, run_id: str) -> dict | None:

@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
+      { tag: "fixed", text: "A plan that halts mid-session now books its own flatten (the record no longer says 'open' after the book is flat), Team2 writes a real day scorecard (the read vs the book, skips, net of fees), expired contracts drop off the live quote batch, and the nightly option-chain sweep paces itself instead of losing half the universe to rate limits." },
       { tag: "fixed", text: "Team2 after its first real trades: the read and the book now pick the same contract (closest to the premium target), the premium stop measures the mid with a 3-tick floor so a one-cent spread cannot stop a cheap contract, both loss halts count commissions and refuse an entry that cannot fit the remaining day budget, the loss cap counts the whole desk, and read events carry one clock (the bar close)." },
       { tag: "improved", text: "The daily-loss breaker now halts only the book that lost (Practice, a live account…), not every book — the big red HALT is still global. Each technique can also pause itself on a book after its own bad day (Team2: 10%). The Armed page's kill-switch tile shows a halted book and lets you release it." },
       { tag: "improved", text: "Dashboard rebuilt around the number that matters: equity leads the page at full size, the accounts fold in underneath instead of repeating in a second card, and the always-green plumbing chips (snaptrade / ibkr / quotes) only appear when something is actually wrong." },

@@ -51,6 +51,8 @@ DEFAULTS: dict[str, Any] = {
     "research.chain_snapshots.at": "16:30",     # ET
     "research.chain_snapshots.keep_days": 400,  # prune beyond this window (0 = keep forever)
     "research.chain_snapshots.skip_dead": True, # drop rows with 0 volume AND 0 OI (no signal, ~60% of the chain)
+    "research.chain_snapshots.delay_s": 0.75,   # F45: pause between underlyings (CBOE 429s at 0.25)
+    "research.chain_snapshots.retries": 2,      # F45: retries after a 429, 3s/6s backoff
     "research.daily_bars.enabled": True,        # tf=1d bars for the universe into the bars table
     "research.daily_bars.at": "20:05",          # ET
     "research.daily_bars.range": "1mo",         # per-night fetch window (idempotent upserts)

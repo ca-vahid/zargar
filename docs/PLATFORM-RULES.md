@@ -541,6 +541,17 @@ runtime ones to `execution.*`).
 - 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
   `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
   read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.
+- 2026-09-04 · **`PlanRunner.disarm` no longer orphans an in-flight flatten** (F40): a disarmed plan whose exits
+  are still working moves to `_closing`; `on_order_update` consults it, and `_persist` drops it once every
+  exit has settled (`closing_settled`). Before, the fill arrived ~2 s after `_armed.pop` and was lost —
+  the plan's record said "open, 18 left" forever while the book was flat. Applies to EM/tips too.
+- 2026-09-04 · `OptionsService.refresh_tracked` drops contracts past expiry from the OPRA batch (F44); the
+  nightly `research.snapshot_chains` sweep is paced (`research.chain_snapshots.delay_s`, `retries`) and
+  retries CBOE 429s with backoff, reporting `rateLimitedRetries` and warning when > 20% of the universe
+  failed (F45: 185 429s in three minutes had halved Flow's universe for five sessions).
+- 2026-09-04 · `PlanRunner._score_execution` is a hook a technique may override (Team2 does: its read has no
+  TriggerTrackers, so the shared scorecard was structurally empty — F43); a technique may also score on its
+  own disarm path.
 - 2026-09-04 · Shared-engine changes from the Team2 watch findings (all default-neutral for EM/tips):
   `events.TECHNIQUE_PLAN_READ` (a structural read is not a skip — F28); `exits.premium_stop_breach` takes a
   `basis` price and a `min_ticks` floor, and PlanRunner resolves `premium_stop_basis` (bid | mid, default bid)

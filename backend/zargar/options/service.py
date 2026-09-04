@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import datetime as dt
+from ..marketstructure.sessions import ET
 import logging
 import time
 from typing import Any
@@ -398,6 +399,14 @@ class OptionsService:
         """One enrichment pass over every tracked contract: real-time OPRA
         quotes first (one batched call), the chain provider's delayed row for
         whatever OPRA did not serve (and, less often, for greeks/OI)."""
+        # F44 (2026-09-04): a contract past its expiry has nothing left to quote — drop it from the
+        # batch (the set only ever grew: 2026-09-02 expiries were still polled on 09-04)
+        today = dt.datetime.now(ET).date()
+        dead = [sym for sym in self._tracked if (occ.parse(sym) is not None and occ.parse(sym).expiry < today)]
+        for sym in dead:
+            self._tracked.discard(sym)
+        if dead:
+            log.info("options: dropped %d expired contract(s) from the tracked batch", len(dead))
         live = await self._refresh_live()
         # greeks/IV/OI/volume still come from the chain row: refresh them for
         # live-served contracts too, every GREEKS_EVERY passes (the quote fields
