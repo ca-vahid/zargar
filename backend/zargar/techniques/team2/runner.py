@@ -344,7 +344,7 @@ class Team2Runner(PlanRunner):
                                                           if k not in ("event", "why", "regime")})
                 if journal and what in ("scenario", "pm_break", "late_touch", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
-                                        "skip_reentries"):
+                                        "skip_reentries", "skip_last_entry", "skip_loss_cap"):
                     await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": str(e.get("setup") or e.get("scenario") or what),
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},

@@ -263,6 +263,51 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   QQQ takes **nothing** (both of its earlier entries sat inside the PM range — F15 refusing them removed
   −14.35% and −10.33%). One day is not a verdict, but the two rules moved the day 68 points of premium
   and the winner is exactly the L2.6/L2.7 entry F20 was built to allow. Judge them from the walk-forward.
+- **F26 (2026-09-04 13:40 ET, FIXED — the two silent entry gates)** `simulate_session` stopped taking
+  entries with a bare `continue` in two places: past `last_entry_min` (15:30, D6) and once
+  `losses_today >= max_losses_per_day` (D-3). Neither wrote a read event, so a session that goes quiet
+  after 15:30 — or a symbol that has spent its loss budget — is indistinguishable in the read, the
+  Armed timeline and the journal from a session with no setup at all. That is exactly the discipline
+  a watcher is supposed to be able to verify, and today it was invisible: the desk's 15:30 cutoff would
+  have passed with no row anywhere. Fixed the same way F23 fixed the skip spam — say it **once** per
+  session, not per 2m close: `skip_last_entry` names the cutoff and the flatten time it hands over to,
+  `skip_loss_cap` names the count and the cap. Purely additive to the read; it changes no entry, exit or
+  size. Both are journaled (`TechniquePlanTriggerSkipped`) and iconed in the Armed timeline. Every full
+  session now carries exactly one `skip_last_entry` at 15:30 — that row IS the discipline record.
+- **F27 (2026-09-04 13:40 ET, NOT fixed — `zone_tol_atr` is a dead knob)** `rules.py:37` declares
+  `zone_tol_atr: float = 0.0` ("PDH/PDL zones are their own tolerance, L1.2") and it is published in
+  `GET /api/team2/status.thresholds`, but **nothing in the codebase reads it** — the only hits are the
+  dataclass line and its own `.pyc`. `ScenarioTracker.on_close` flips the desk's bias on a bare
+  `bar.close > pdh.top` / `< pdl.bottom` with no buffer and no decisiveness test. Evidence from today's
+  QQQ tape (15m bars re-derived from the runtime DB): the **12:30** bar closed **718.94** against a zone
+  top of **718.91** — a **0.025** margin, 0.086 × the 0.289 ATR, on a bar whose body was only 0.55 of its
+  range (below the `decisive_body_ratio` 0.6 the rules already define for breaks). That flipped the desk
+  from "reject PDH → puts" to "break PDH → calls", minted `scenario_1@12:30`, and the **13:00** close
+  (718.13) flipped it straight back and invalidated it 30 minutes later. Four bias flips on QQQ today
+  (09:30 / 10:30 / 12:30 / 13:00) around a 0.31-wide zone, **zero** trades. It cost nothing today because
+  every QQQ entry was refused by F15 anyway, but on a day where QQQ is outside its PM range the desk would
+  have been buying calls into a rejection. Proposal: wire `zone_tol_atr` for real (`close > top + tol·ATR`)
+  and/or require `decisive_body_ratio` on a flip, shipped at **0.0 / off** so behaviour is unchanged until
+  the walk-forward picks the value. Threshold change — user's call, not the watch's.
+- **F28 (2026-09-04 13:40 ET, NOT fixed — the journal calls structure "skipped")** `runner.py` journals
+  the informational read events `scenario`, `pm_break` and `late_touch` under
+  `ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED`, alongside the genuine `skip_*` rows. The bias flip and the PM break
+  are the two **structural** events of the method — the ones that arm the L2.6/L2.7 setups — and the
+  append-only journal records them as trigger skips. It also poisons the counts: IWM's audit shows "40
+  skipped" today, which includes its `pm_break` and both `scenario` rows, so any review tool or morning
+  report that keys off skip volume reads the desk as far more refused than it was. Fix = a new additive
+  event constant (`TechniquePlanRead` or similar) in `zargar/events.py`. Not built here: `events.py` is
+  shared vocabulary, the journal is append-only so the fix splits today's history, and EM's review CLI
+  would want a look. Proposed.
+- **F29 (2026-09-04 13:40 ET, NOT fixed — open method question)** `max_losses_per_day` is counted
+  **per symbol** (`session.py` runs one symbol, `losses_today` is local to it) while
+  `max_concurrent_positions` is deliberately counted **across all three plans** (A12,
+  `open_positions_across_plans`). So the code already treats SPY/QQQ/IWM as one desk for risk *taken* but
+  as three independent desks for losses *absorbed*. Today the desk is at **2 model losses** (SPY −12.23,
+  IWM −19.17) and still has a budget of 2 more in each of the three symbols — up to 6 losers in a session
+  the author would have walked away from after 2. Casey trades one book; §Z-rules read as one daily stop,
+  not one per ticker. Question for the user: should `max_losses_per_day` be desk-wide like A12? Cheap to
+  build (the runner already has `open_positions_across_plans`), but it is a money rule.
 
 
 ## Theories to test
@@ -301,3 +346,4 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 | 2026-09-04 | F14 closed: `chase_cap_mult` = 1.5 — the live entry limit never exceeds target_premium x 1.5 ($0.90 at the $0.60 target); an ask that ran rests at the cap and cancels unfilled. Same day: Team2 moved from alert to AUTO on the Practice (sim) book by the user ("change the alert mode to real mode"); `risk.daily_loss_halt_pct` raised 8 -> 12 for the Practice book so the other techniques' -9.13% morning did not keep the global kill switch engaged (the halt is global, not per book — platform gap, PLATFORM-RULES) | market-watch run 2 (F14), user decision 2026-09-04 10:30 ET | Team2 desk |
 | 2026-09-04 | Posture pass: X5 trim-and-add (`add_on_retest`, one add), X3b running HOD/LOD target for re-entries (`hod_target=reentry`), trims judged on the LIVE premium in money modes (deferred/no-op vs the model), small positions hold whole to +100%. Default ON for the sweep to judge; the synthetic add day shows an add can cut a winner (+124% → +70%) — decide `add_on_retest` from the walk-forward, not from the image | `tests/test_team2_posture.py`; images 2081050843768660321 (trim-and-add), IWM three-trade day (HOD target) | Team2 desk |
 | 2026-09-04 | Second review: T7 base, T8 200-EMA flush, EMA48 entries, new-extreme trim cue, stalled-pullback rule, cross-plan concurrency cap (A12) in the runner; 8 more images read (INDEX) | images 1979379272990277934, 1961977219590574391-2/3, 1908549478438887528, 2081050843768660321, 1964745974393557113/76528400559, 2013059662812463256 | Team2 desk |
+| 2026-09-04 | **F26 fixed**: the 15:30 last-entry cutoff (D6) and the daily loss cap (D-3) each emit a one-time read event (`skip_last_entry` / `skip_loss_cap`) instead of stopping entries in silence. Reporting only — no entry, exit or size changes; journaled and iconed in the Armed timeline | market watch 13:35 ET; `tests/test_team2_session.py::test_entry_cutoff_and_loss_cap_say_why_the_read_went_quiet` | Team2 desk |
