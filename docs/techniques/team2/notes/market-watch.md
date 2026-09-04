@@ -99,3 +99,62 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   did any 13-EMA entry get skipped or sized "full" inside the PM range (F15 evidence); whether SPY/IWM
   produced a scenario; that a fire (if any) carries a `contract` event with a strike and an ask near
   $0.60 and `priced: opra`; and replay parity once there are real events.
+
+## 2026-09-04 10:02–10:22 ET (run 3 — first hour)
+
+- **Alive and real-time.** `/api/health` ok, v0.7.0, 66 armed plans. Zero tracebacks all day; the only
+  non-httpx WARNING remains `persist_bars: dropped N non-bucket-aligned stub bar(s)` (shared path,
+  logged run 2, still untouched). Alpaca stream `connected` + `authenticated`, OPRA option
+  quote/trade polling HTTP 200 every ~2 s, SPY/QQQ/IWM quotes 8 s old session `regular`, 1m bars
+  banking through 10:15. The 09:25 pre-open work from run 2 is intact after the redeploy.
+- **What the read saw.** SPY: still no scenario (772.5 → 772.0, never near PDH 774.03 or PDL 767.45) —
+  correct. IWM: scenario 3 (bounce PDL) confirmed on the 09:30–09:45 15m close at 294.79, then **two
+  EMA13 touches correctly refused** — `skip_no_trade_zone` at 09:46 (294.94) and 09:56 (294.64), both
+  inside PM 293.24–295.92 (V6/B5) — and a third at 10:00 flagged `late_touch` (D9/P6). QQQ: scenario 1
+  (break PDH) at 720.04, then the day's first fires — touch #1 at **10:02** (EMA13 720.84 held, close
+  721.44, model call 723 ≈ $0.47), stopped on the 10:08 2m close through the EMA13 at 720.75
+  (`would_exit`, model −14.4%), then touch #2 at the **EMA48** 720.13 (close 720.30, model call 722 ≈
+  $0.54, target the running HOD 721.86 — X3b). I hand-checked the 2m tape and the EMA13 series against
+  the DB bars: the touches, the stack/fan gates and the 15m confirmations all read correctly.
+- **F17 (new, FIXED — `4a540d6`).** The kill switch was silencing the desk. `_fire_from_event` tested
+  the halt **before** the mode, so with Practice halted since 09:38 (F16) QQQ's 10:02 fire was logged
+  `halt_skip` and no `fired` row was written — and `POST /runs/{id}/replay` over the same bars *did*
+  show the fire, so **live-vs-replay parity broke** as a side effect. Alert mode places nothing
+  (`_fire_rest` only sets `trade.status = "alert"`), and the caps immediately below the halt check plus
+  `_add_from_event`'s `would_add` are already gated to money modes with the comment "money modes only;
+  alert/proposal keep recording every read" — the halt check was the odd one out. Now gated to
+  proposal/auto; an alert fire during a halt carries `haltedAtFire: true` so the audit still says the
+  money path would have refused it. Team2 suite **45 passed** (own DB `zargar_test_team2_watch` on
+  :5433); the new `test_alert_mode_still_reads_the_tape_while_halted` was verified to FAIL without the
+  fix (`['armed','preopen','scenario','halt_skip','halt_skip','disarmed']`). Redeployed 10:19 ET —
+  outside the 09:25–09:35 blackout, no Team2 trade open (`trades=0` on all three) — 66 plans restored,
+  and QQQ's two fires now appear in the event log.
+- **Restore artifact, no action.** The restore re-derived both QQQ fires from banked bars and then
+  dropped the trade objects (`phantom_dropped: replay-minted alert trade removed (live plan never fired
+  it)`) — correct in general (don't invent trades the live desk never had), but here the live desk
+  *had* reached the conditions and only the pre-fix `halt_skip` stopped it. Net: today's QQQ fires live
+  in the events log and in `last_read` (which is what the Team2 page and grading use) but not in the
+  Armed page's `trades` list. One-off; from here the live path writes them itself.
+- **F15 confirmed live, and it is smaller than "a gap-day question".** QQQ fired at 721.44 — inside
+  PM 717.13–722.06, 0.62 under the PMH — with `bucket=full`, while the same engine in the same hour
+  refused IWM's two identical touches for sitting inside *its* PM range. The discriminator is only the
+  day type. Checking METHOD V6: it is a **five-rung ladder** ("above the PDH zone = Full · PDH
+  zone→PMH = **Small** · PMH→PML = No trade · PML→PDL zone = Small · below the PDL zone = Full") and
+  `scenario.sizing_bucket` implements three — it returns "full" for anything above `pdh.top` and can
+  never produce "small" for the PDH-top→PMH band, which is unreachable whenever PMH > PDH top (every
+  gap-up day and plenty of normal ones). The literal V6 reading for QQQ at 721.44 is **small**.
+  **Proposed, not built** — sizing is a money decision: walk the five rungs in price order in
+  `sizing_bucket`. One word from the user and it is a ten-line change plus a test.
+- **Proposed (new).** Alert mode never picks a contract — `_fire_rest` gates `pick_contract` to
+  proposal/auto — so the desk's fires carry only the **modeled** premium (BS on the VIX proxy: $0.47,
+  $0.54) and today's OPRA poll list contains no SPY/QQQ/IWM 0DTE contract. That is exactly the number
+  F8 says is 12–45% optimistic and exactly what F14 (never-chase) needs to be judged on. Picking the
+  contract in alert mode too would give a real NBBO ask per fire at the cost of one OPRA call — no
+  order, no money — and would let the desk answer "is a ~$0.50 strike actually there at that moment?"
+  before proposal mode is ever switched on. Worth deciding before the next practice day.
+- **F16 still open.** Practice remains halted (`-9.13%`, engaged 09:38, other techniques' positions).
+  Release is the user's call; Team2 holds nothing.
+- **Next run should check:** whether QQQ's touch #2 reached the HOD target 721.86 or stopped on the
+  EMA48; whether SPY finally gets a scenario (it needs 774.03 or 767.45 — two-plus points away all
+  morning); that `fired` rows now appear live without a restart (the F17 fix on the live path, not just
+  on restore); IWM's touch count past the `late_touch` cap; and replay parity on the new events.
