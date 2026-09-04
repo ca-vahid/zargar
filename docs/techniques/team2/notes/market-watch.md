@@ -366,3 +366,62 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   `/api/orders` with `source: team2`; whether IWM's pm_break-up gets an EMA13 touch outside the PM range
   (the only way it can enter while F20 stands); QQQ's scenario-2 put touch below 718.60; and the 15:30
   last-entry / 15:45 flatten discipline on anything open.
+
+## 2026-09-04 12:33 ET (run 7 — quiet tape, two read-quality fixes committed but NOT deployed)
+
+- **Alive, real-time, nothing broken.** `/api/health` ok v0.7.0, 64 armed. All three plans `armed` + **auto**
+  on the Practice sim book (`ff3c29d4`), `needsAttention: false`, `complete: true` with pmh/pml/dayType/
+  sizingAtOpen stamped (QQQ 717.13–722.06 gap_up/full, SPY 770.50–774.24 normal/none, IWM 293.24–295.92
+  normal/none). The app restarted at **12:19 ET** (run 6's F22 deploy): Alpaca stream `connected` +
+  `authenticated` 12:19:21, all three plans restored. SPY/QQQ/IWM quotes 0 s old, session `regular`;
+  1m bars banking in the runtime DB through **12:24 ET** (SPY 1,428 / QQQ 1,076 / IWM 976 rows in 24 h),
+  `barAgeSeconds` 89–106, `stale: false`; OPRA quote+trade polls HTTP 200 every ~2 s. The only `ERROR` in
+  `zargar-8420.log` is a benign Windows socket reset (`WinError 10054`) on an outbound HTTP connection at
+  12:10, pre-restart. No `read_error`, no Traceback.
+- **F22 confirmed fixed in the wild.** After the restart the SPY plan's seeded fire re-priced cleanly — the
+  `contract_quality` refusal is gone and the 11:08 trade now appears in the Armed page's `trades` list with
+  its real strike (768 P, entry mark 0.5039). No order followed, which is correct: a restore-seeded fire is
+  stamped `alert` (run 4's finding) and the audit shows only `TechniquePlanArmed`. **Still zero Team2 orders
+  today** — `/api/orders` on the Practice book has no SPY/QQQ/IWM row and no `source: team2` row.
+- **What the read saw since run 6 (13 minutes): nothing new but skip spam.** SPY flipped to scenario 3
+  (bounce PDL) → calls at 11:00, price 770.94, touches 0. QQQ scenario 2 (reject PDH) → puts, touches 0,
+  718.54 against the 718.60 anchor, stack `mixed`. IWM `pm_break_up@12:00` → calls, touches 0, 296.06 just
+  above the 295.92 anchor; its 12:14 retest was the F20 refusal already logged. Day still stands at
+  **3 model trades, 3 losses (−12.23%, −14.35%, −10.33%), 0 real orders.**
+- **Replay parity exact on all three.** SPY 4/4 events + 1/1 trade (769.8082 / 768 P / −12.23), QQQ 6/6 + 2/2
+  (720.8368 / 723 C / −14.35 and 720.1343 / 722 C / −10.33), IWM 2/2 + 0 trades. Note for the next run:
+  `POST /runs/{id}/replay` **requires a JSON body** — send `-d '{}'` or it 422s on a missing body.
+- **F23 (new, FIXED, committed `bbce064`, NOT yet deployed).** `skip_no_trade_zone` (V6/B5) and
+  `skip_range_confirmation` (B3/A4) were re-stated on every 2m close for as long as the condition held —
+  IWM printed **37** identical rows between 09:46 and 12:14, each one both a read event and an
+  append-only `TechniquePlanTriggerSkipped` journal row that can never be pruned. `note_once()` now dedupes
+  per setup (same shape as the existing `pullback_stalled` flag); a real touch past the gate clears it, so a
+  later refusal is said again. No gate, count or D9-allowance change; replay parity holds because live and
+  replay run the same code. Regression test `test_no_trade_zone_skip_is_said_once_per_setup` (5 rows → 1 on
+  the fixture). 48 Team2 + primitives tests green on `zargar_test_team2_watch`.
+- **F24 (new, FIXED, committed `c929c77`, NOT yet deployed).** The Armed/Team2 "Now" line read the D9 touch
+  allowance off the wrong setup: `runner.py` took `max(touches)` over all live setups, while `session.py`
+  enters only the **newest live setup in the bias direction**. SPY read "scenario 3 (bounce PDL) → calls ·
+  touches 1" while that setup had used none of its two — the 1 belonged to `pm_break_down@10:30`, a spent
+  SHORT setup. Fixed by mirroring `session.py`'s selection. Verified against all three live reads:
+  SPY 1 → 0, QQQ and IWM unchanged.
+- **Deploy deliberately QUEUED, not done.** Both fixes are display/journal quality with zero effect on
+  entries. The desk is in AUTO with two waiting setups (IWM 0.05% above its `pm_break_up` anchor, QQQ 0.01%
+  from its scenario-2 anchor), and a fire landing inside a ~30 s restart window is seeded back as `alert`
+  and never routed to `_enter` — i.e. the one thing the desk has waited all day for would be swallowed. Not
+  worth trading that for cosmetics. **Deploy at the next restart another session makes, or after the 15:45
+  flatten.** (Seven restarts today already.)
+- **Unchanged.** F14 closed. **F15 and F20 still open and still the two that matter** — F20 has now refused
+  three PM-break retests in one session (SPY 10:44, SPY's own anchor, IWM 12:14), and on a range day that is
+  the entire setup class; decide it together with F15's collapsed V6 ladder, it is the same ten lines of
+  `sizing_bucket`. F16 resolved operationally. F21 respected (this section is stamped from the app clock).
+- **Observation, not built.** A setup whose target price has already been exceeded stays alive and keeps
+  being evaluated (IWM `scenario_3@09:30`, target 295.07, price 296.06). Harmless today because
+  `session.py` only ever enters the *newest* same-direction setup, so it is shadowed by `pm_break_up@12:00`
+  — but it would matter for a stale setup that is still the newest. Worth a `dead_reason: "target reached"`
+  if the user wants it; method question, so proposed only.
+- **Next run should check:** whether QQQ or IWM finally produces a *sizable* touch and the desk places its
+  **first real order** (`contract` → `entry_capped` → `position_open` → `live_trim` in the audit and a
+  `source: team2` row in `/api/orders`); whether F23/F24 got deployed by someone's restart (`git log` vs the
+  running build); and the 15:30 last-entry / 15:45 flatten discipline on anything open.
+
