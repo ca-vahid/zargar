@@ -252,6 +252,9 @@ start a new block when the user calls a release. `/api/health` reports the versi
   way and a gap-up otherwise vanishes. Pre/after-hours moves show separately.
   Day sparklines/charts are seeded from Yahoo's real 1m session bars on
   `ensure_symbol` (not ticks-since-boot) and filtered to 09:30–16:00 ET.
+  `Quote.day_high/day_low/volume` are SESSION-to-date (F19, 2026-09-04): seeded from Yahoo's
+  regular-session values on every context poll, widened only by 09:30–16:00 ET prints, reset
+  on a new ET session — never "since the process started".
 - SnapTrade accounts hold cash in SEVERAL currencies at once (Webull CASH
   keeps a USD wallet inside a CAD account) — always sum ALL `/balances`
   entries FX-converted, never just the account-currency row.

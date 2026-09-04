@@ -510,6 +510,16 @@ runtime ones to `execution.*`).
   that guarantee changes — a new `TechniqueInfo` registration, nothing else.
 - 2026-09-04 · `marketdata.persist_bars` inserts in chunks of 2,000 rows (asyncpg's 32,767-parameter cap;
   the first 20-day extended-hours bank failed on it). Found by running the Team2 bank for real.
+- 2026-09-04 · **F19 fixed — `Quote.day_high` / `day_low` / `volume` are session-to-date, not process-to-date**
+  (`brokers/alpaca.py`). The Alpaca adapter used to start every symbol's range/volume at zero when the
+  process started and only widen from live prints; Yahoo's session values were an `or` fallback that one
+  tick discarded, and a process left running overnight carried yesterday's numbers into today (SPY after
+  the 10:36 restart: dayHigh 771.29 vs 772.87 real, volume 317k). Now: `absorb_context` SEEDS the running
+  high/low from Yahoo's regular-session values and re-bases the volume (`vol_seed` + prints since), only
+  once Yahoo's session is `regular`/`post` (its pre-market meta still shows the prior session); live prints
+  widen the range and add volume only during 09:30–16:00 ET on weekdays; a new ET session resets
+  everything. Pre/post moves stay separate via `session`. No decision path reads these fields (verified:
+  only the UI types), so no technique behaviour changed. `tests/test_alpaca_feed.py`.
 - 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
   `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
   read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.

@@ -142,7 +142,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   desk (commit 67c5986):** the no-trade-zone and range-confirmation skips happen before the touch is counted;
   engulfing bars still count (they were pullbacks, just bad bars) — sweep that half separately. Deployed 11:50 ET.
 
-- **F19 (2026-09-04, market watch — shared engine, NOT Team2, propose only)** `Quote.day_high` /
+- **F19 (2026-09-04, market watch — shared engine; FIXED by the desk the same day, PLATFORM-RULES 2026-09-04)** `Quote.day_high` /
   `day_low` / `volume` from the Alpaca stream are **since process start**, not session-to-date.
   `brokers/alpaca.py` seeds `{"day_high": 0.0, "day_low": 0.0, "volume": 0}` per process (l.188) and
   only accumulates from live prints (l.212); the Yahoo session context is a `or` fallback (l.253), so
