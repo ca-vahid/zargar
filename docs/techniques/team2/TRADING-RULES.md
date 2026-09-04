@@ -240,6 +240,30 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   in the bias direction, falling back to the old max when none matches). Display only — no gate, count or
   entry changes. Verified against today's three live reads: SPY 1 → 0, QQQ and IWM unchanged.
 
+- **F25 (2026-09-04 13:00 ET, NOT fixed — read labelling)** Read events are stamped with the OPEN time of
+  the 2m bar that produced them, while trades and exits are stamped with that bar's CLOSE (`end_ts`).
+  Within one read the same entry therefore carries two clocks: IWM's fire event says **12:14** while its
+  own trade record says `entryTs` **12:16**, and the fill price (295.96) is the close of the 12:14–12:15
+  bar — knowable only at 12:16. Exits are the mirror image and read correctly: the exit stamped **12:28**
+  quotes close 295.87, which is the close of the **12:26–12:27** bar (the DB's 12:28 bucket closes at
+  295.84), so anyone eyeballing the read against the tape mis-maps every exit by one bar. 15m events skew
+  further: IWM's `pm_break` says 12:00 but the 15m bar 12:00–12:14 only closes at 12:15 (the journal row
+  for QQQ's 12:30 scenario flip was written at 12:46 ET — the runner emitted it when the bar closed).
+  **There is NO look-ahead**: `session.py` consumes a 15m bar only once `bar.ts + confirm_tf <= end_ts`
+  (line 239), which is why IWM's 12:00 PM break was first actionable on the 2m bar ending 12:16 — verified
+  against the DB tape. So this is a reporting defect, not a rule defect. Fix = one convention (stamp every
+  read event at the producing bar's close, like the trades already are). Left for the user because event
+  `ts` values reach the append-only journal, the sweep rows and ~40 tests; a blanket shift also re-emits
+  today's already-journaled events once on the next deploy.
+- **F20/F15 first-day evidence (2026-09-04 13:00 ET)** With both rules live, today's model day flips from
+  **3 trades / 3 losses (−12.23%, −14.35%, −10.33%)** to **3 trades / 1 win / 2 losses, pnlPctSum
+  +30.91**: SPY takes the 10:44 PM-low retest (put 768, small) for **+62.3%** — trim a third at +53%
+  (11:00), the rest at the planned target 769.26 (11:04, +66.9%) — then gives −12.23% back on the 11:08
+  EMA13 touch; IWM takes the 12:14 PMH retest (call 296, small) for −19.17% on the 12:28 one-candle stop;
+  QQQ takes **nothing** (both of its earlier entries sat inside the PM range — F15 refusing them removed
+  −14.35% and −10.33%). One day is not a verdict, but the two rules moved the day 68 points of premium
+  and the winner is exactly the L2.6/L2.7 entry F20 was built to allow. Judge them from the walk-forward.
+
 
 ## Theories to test
 

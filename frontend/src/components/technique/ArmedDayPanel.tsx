@@ -51,6 +51,8 @@ const EVENT_ICON: Record<string, [string, string]> = {
   entry_capped: ["⛔", "warn"], trim_deferred_live: ["·", "muted"], trim_already_live: ["·", "muted"],
   late_touch: ["👁", "muted"], skip_no_trade_zone: ["⛔", "muted"], skip_range_confirmation: ["⛔", "muted"],
   skip_engulfing: ["⛔", "muted"], pullback_stalled: ["👁", "muted"], mode_changed: ["·", "muted"],
+  pm_retest: ["▲", "muted"], skip_reentries: ["⛔", "muted"], skip_no_contract: ["⛔", "muted"],
+  skip_event_day: ["⛔", "muted"],
 };
 
 function buildTimeline(a: ArmedPlan): TimelineRow[] {
