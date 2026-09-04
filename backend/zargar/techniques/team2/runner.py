@@ -382,6 +382,79 @@ class Team2Runner(PlanRunner):
     def last_read(self, run_id: str) -> dict | None:
         return self._last_sim.get(run_id)
 
+    def _snapshot(self, ap: ArmedPlan) -> dict:
+        """The Armed page speaks in triggers; Team2 has none (its read is the session walk), so
+        the snapshot carries PSEUDO-triggers — the zones being watched before a scenario exists,
+        the live setups after — and a summary in the method's own words. Same fields the
+        Armed page already renders (id/label/kind/status/entry/targets/direction/distancePct),
+        so no UI special-casing (user 2026-09-04: 'tell me how it works' inside the Armed section)."""
+        d = super()._snapshot(ap)
+        plan = ap.plan or {}
+        read = self._last_sim.get(ap.run_id) or {}
+        q = self.engine.quotes.get(ap.symbol)
+        last = float(q.last) if q is not None and q.last and q.last > 0 else None
+        zones = plan.get("zones") or {}
+        pdh, pdl = zones.get("pdh") or {}, zones.get("pdl") or {}
+        trig: list[dict] = []
+
+        def pseudo(tid: str, label: str, kind: str, status: str, entry: float | None, direction: str,
+                   targets: list[float] | None = None, stop: float | None = None) -> dict:
+            row = {"id": tid, "label": label, "kind": kind, "status": status, "entry": entry, "stop": stop,
+                   "targets": targets or [], "riskReward": None, "firedTs": None, "firedWindow": None,
+                   "observedMidday": 0, "skipped": [], "gapUnchecked": False, "failedBreaks": 0, "grade": None,
+                   "gradeScore": None, "conditions": None, "setupId": None, "direction": direction,
+                   "levelTouches": None, "levelAge": None, "windowOpenNow": True}
+            if last and entry:
+                row["distancePct"] = round((entry - last) / last * 100, 3)
+                row["distance"] = round(entry - last, 4)
+            return row
+
+        setups = read.get("setups") or []
+        fired_setups = {t["setup"] for t in (read.get("trades") or [])}
+        open_pos = read.get("openPosition")
+        if not setups and pdh and pdl:
+            tgt_up, tgt_dn = (plan.get("targets") or {}).get("above"), (plan.get("targets") or {}).get("below")
+            trig.append(pseudo("pdh", f"15m close above the PDH zone {pdh.get('bottom', 0):.2f}–{pdh.get('top', 0):.2f} → calls",
+                               "break PDH", "waiting" if ap.status == "armed" else ap.status, pdh.get("top"), "long",
+                               [tgt_up] if tgt_up else []))
+            trig.append(pseudo("pdl", f"15m close below the PDL zone {pdl.get('bottom', 0):.2f}–{pdl.get('top', 0):.2f} → puts",
+                               "break PDL", "waiting" if ap.status == "armed" else ap.status, pdl.get("bottom"), "short",
+                               [tgt_dn] if tgt_dn else []))
+        for s in setups:
+            label = (f"{s['kind'].replace('_', ' ')} at {s['anchor']:.2f} — buying the EMA13 pullbacks "
+                     f"({'call' if s['direction'] == 'long' else 'put'}s), touches {s['touches']}")
+            status = ("invalidated" if s.get("dead") else "fired" if (s["id"] in fired_setups or (open_pos and open_pos.get("setup") == s["id"]))
+                      else "observed" if s.get("touches") else "waiting")
+            trig.append(pseudo(s["id"], label, s["kind"], status, s.get("anchor"), s["direction"],
+                               [s["target"]] if s.get("target") else []))
+        if trig:
+            d["triggers"] = trig
+        # summary in the method's words
+        regime = read.get("regimeLast") or {}
+        bias = read.get("bias") or {}
+        if ap.status in ("expired", "disarmed"):
+            pass                                          # the base summary already says so
+        elif ap.status == "paused":
+            d["summary"] = "paused — reading, not firing"
+        elif open_pos:
+            d["summary"] = (f"in trade {open_pos.get('setup')}: {'call' if open_pos.get('call') else 'put'} {open_pos.get('strike'):g}, "
+                            f"{open_pos.get('remaining', 1):.2f} left, peak +{open_pos.get('peakPct', 0):.0f}% — stop is a 2m close through the EMA13")
+        elif bias.get("scenario"):
+            live = [s for s in setups if not s.get("dead")]
+            touches = max((s.get("touches", 0) for s in live), default=0)
+            d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "
+                            f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches}) · EMA stack {regime.get('stack', '?')}, "
+                            f"{regime.get('fan', '?')}")
+        elif pdh and pdl:
+            pm = (f" · PM {plan['pml']:.2f}–{plan['pmh']:.2f}" if plan.get("pmh") and plan.get("pml") else " · pre-market range at 09:25")
+            day = f" · {str(plan.get('dayType')).replace('_', ' ')} day" if plan.get("dayType") else ""
+            d["summary"] = (f"no scenario yet — needs a 15m close above {pdh.get('top', 0):.2f} (calls) or below "
+                            f"{pdl.get('bottom', 0):.2f} (puts){pm}{day}"
+                            + (f" · EMA stack {regime.get('stack')}, {regime.get('fan')}" if regime else ""))
+        d["team2"] = {"sheet": plan.get("sheet"), "dayType": plan.get("dayType"), "sizingAtOpen": plan.get("sizingAtOpen"),
+                      "bias": bias or None, "regime": regime or None, "read": {k: read.get(k) for k in ("summary",)} if read else None}
+        return d
+
 
 # ----------------------------------------------------------------- attach
 async def attach_team2_runner(engine) -> None:

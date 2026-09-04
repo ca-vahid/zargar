@@ -262,7 +262,7 @@ and are now part of the plan; each carries the phase it belongs to.
 - [ ] E-2 (P3) Alert mode first (Telegram/push/toast through `PlanRunner._alert`), then proposal,
       then auto — the same earned ladder as EM; `needsAttention` surfaced on the Armed page.
 - [x] E-3 (P3) Morning desk report line (`zargar/desk.py` 08:25) and nightly soak line for Team2. **← 2026-09-03: the report aggregates `engine.plan_runners` (armed/paused/inTrade per technique), so Team2 is counted; a Team2-specific line (sheet + last read) is still to add**
-- [ ] E-4 (P3) Armed "Now" phone summary via the shared armed hub (register in `engine.plan_runners`).
+- [x] E-4 (P3) Armed "Now" phone summary via the shared armed hub (register in `engine.plan_runners`). **← 2026-09-04: `Team2Runner._snapshot` gives the Armed page pseudo-triggers (the zones being watched, then the live setups) and a summary in the method's words; a "How Team2 works" section sits on the Team2 page**
 - [ ] E-5 (P4) Nightly outcome scoring + scorecard per scenario × entry kind × time bucket.
 
 **F. Review and evolution loop (the desk's own)**

@@ -56,10 +56,21 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     done = await svc.preopen_complete()
     assert run_id in done["completed"] and ap.plan["pmh"] and ap.plan["pml"] and ap.plan["complete"]
     assert any(e["event"] == "preopen" for e in ap.events)
+    # the Armed page's snapshot speaks the method's words before anything happened
+    snap = eng.team2_runner.detail(run_id)
+    assert snap["technique"] == "team2" and len(snap["triggers"]) == 2
+    assert snap["triggers"][0]["kind"] == "break PDH" and snap["triggers"][1]["direction"] == "short"
+    assert "no scenario yet" in snap["summary"] and "PM" in snap["summary"]
+    assert snap["team2"]["sheet"] and snap["team2"]["dayType"]
     # drive the regular session bar by bar
     rth = filter_session(today, "rth")
-    for b in rth:
+    mid_snap = None
+    for i, b in enumerate(rth):
         await eng.team2_runner.on_bar(run_id, b)
+        if i == 60:
+            mid_snap = eng.team2_runner.detail(run_id)
+    assert mid_snap is not None and any(t["kind"].startswith("scenario_") for t in mid_snap["triggers"])
+    assert "scenario 1" in mid_snap["summary"] or "in trade" in mid_snap["summary"], mid_snap["summary"]
     events = [e["event"] for e in ap.events]
     assert "scenario" in events and "fired" in events, events[:20]
     trades = list(ap.trades.values())

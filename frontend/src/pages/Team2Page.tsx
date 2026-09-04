@@ -121,6 +121,7 @@ export function Team2Page() {
         <button className="ghost-btn" disabled={busy} onClick={planNow}>{busy ? "Working…" : "Plan now"}</button>
       </div>
 
+      {tab === "plans" && <HowItWorks status={status} />}
       {tab === "plans" && (
         todaysPlans.length === 0 ? <EmptyState title="No plans yet" hint="Plan now builds tonight's skeleton for each symbol (prior-day zones, targets) and arms it in the configured mode; 09:25 completes it with the pre-market range." /> :
         <table className="table">
@@ -267,6 +268,51 @@ function SweepView({ sweep }: { sweep: Sweep }) {
           </table>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+function HowItWorks({ status }: { status: Team2Status | null }) {
+  const [open, setOpen] = useState(false);
+  const mode = status?.mode ?? "alert";
+  return (
+    <div className="panel" style={{ marginBottom: 10 }}>
+      <div className="panel-head" style={{ cursor: "pointer" }} onClick={() => setOpen(!open)}>
+        How Team2 works {open ? "▾" : "▸"}
+        <span className="sub">deterministic — no model, no LLM; every decision is a rule with a number, and every step is logged with its reason</span>
+      </div>
+      {open && (
+        <div className="panel-body muted" style={{ lineHeight: 1.5 }}>
+          <p><b>Every evening (17:00 ET)</b> one plan per symbol is built from the day's 15-minute bars: the previous-day
+            high and low as small zones (wick to the next candle's body), the next resistance above and support below, and the
+            four scenarios that set the day's bias — break PDH → calls, reject PDH → puts, bounce PDL → calls, break PDL → puts.
+            The plan is armed in <b>{mode}</b> mode and shows on the Armed page like any other plan.</p>
+          <p><b>At 09:25</b> the plan is completed with the pre-market high and low (04:00–09:25), the day type (gap up / gap
+            down / inside / normal) and the sizing bucket: full size beyond yesterday's zones, small between a zone and the
+            pre-market level, no trade inside the pre-market range.</p>
+          <p><b>During the session</b> the read runs after every 2-minute close: the 13/48/200 EMA stack (extended hours on) must
+            agree with the bias and must not be braided; a level counts as broken only when a <b>15-minute candle body closes</b>
+            beyond it; then the first or second <b>2-minute pullback into the 13 EMA</b> (or the retest of the level) that closes
+            back on the trade's side is the fire. A lunging, engulfing candle is not a pullback and is skipped. Before 09:45 and
+            after 15:30 nothing fires.</p>
+          <p><b>The contract</b> is the same-day (0DTE) call or put whose ask is closest under the target premium (≈ $0.60,
+            never below $0.20) — the author's "$0.50 contract". Team2 has its own 0DTE policy in the risk gate: last entry
+            {status?.zeroDte ? ` ${status.zeroDte.last_entry_et}` : ""}, everything flat by{status?.zeroDte ? ` ${status.zeroDte.flatten_et}` : " 15:45"},
+            hard caps on contracts and premium per order.</p>
+          <p><b>Exits</b>: one 2-minute close back through the EMA (or the level) is the stop; a −25% premium loss is the hard
+            cap; a third is sold at +50% and another third at +100%; the rest rides the 13 EMA and sells at the pre-planned
+            target. Two losses end the day; after a win the next trade is half size.</p>
+          <p><b>What each mode means.</b> <b>alert</b>: the read runs and records what it would have done (fires, trims, exits
+            appear in the plan's log as "would …"), nothing is sent. <b>proposal</b>: a fire becomes an approval for you. <b>auto</b>:
+            the order is placed through the risk gate on the practice account; live needs the explicit acknowledgement.
+            The ladder is earned: alert until the walk-forward sweep on ≥ 20 banked sessions and the calibration say the read
+            pays after fees, then proposal on practice, then auto.</p>
+          <p><b>Where to look.</b> Plans: tonight's sheet per symbol. Armed: the live plans (also on the Armed page). History: pick a
+            run to see every decision with its reason — this is the review loop. Validation: run the sweep over the banked days,
+            with variants ("pullback_max_touches=3") to test one rule at a time. Settings → Team2 technique holds every number.</p>
+        </div>
+      )}
     </div>
   );
 }
