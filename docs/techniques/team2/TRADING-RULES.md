@@ -391,6 +391,48 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live one once a money-mode fill exists so the scorecard compares like with like.
 
 
+- **F37 (2026-09-04 15:15 ET, NOT fixed — the desk-wide loss cap counts trades that were never taken)**
+  F29 shipped at 15:00 and is binding **right now**: `losses_across_plans()` sums, per armed plan,
+  `max(model losers, real closed losers)`. At 15:15 SPY carries **1 model loser** (11:10, −12.23%) and
+  IWM **1** (12:16, −19.17%), so the desk reads **2 of 2** and every remaining entry today is refused —
+  including SPY's `scenario_3` at **769.26**, which price is sitting **0.11 %** away from. Neither of
+  those two "losses" cost a cent: the live runner **refused both fires at the time** as
+  `skip_no_trade_zone` (the audit has the rows at 14:46 and 16:16 UTC) because F20/F15 had not been
+  deployed yet — they exist only because the read is recomputed by *today's newest* code. So a rule
+  meant to stop a desk that is bleeding is being tripped by a hindsight simulation of trades the desk
+  declined. The `max(model, real)` choice is right for **alert** mode (the model is the only record
+  there); in **auto** on a plan that has traded for real, the book is the record and the model is
+  commentary. Proposal: count `real` for any plan whose mode is auto/proposal once that plan has
+  routed an order, `model` only for alert-mode plans (or plans that never routed), and say which
+  basis was used in the skip line. **Money rule — the user's call.** Same family as F30/F36: the
+  model and the book are two premium/P&L series and a *risk gate* now depends on which one you read.
+
+- **F38 (2026-09-04 15:20 ET, NOT fixed — a disarmed plan's losses leave the desk-wide count)**
+  `losses_across_plans()` iterates `self._armed.values()`, so QQQ's **two real losing round trips**
+  (−$300 and −$54 gross, −$454.02 with fees) stopped counting toward the desk the moment its own loss
+  halt **disarmed** it at 14:17. The cap therefore *loosens* precisely after the worst outcome a plan
+  can have. It does not bite today only because SPY+IWM already reach 2 on model losers (F37); on a
+  day where QQQ takes both of the desk's losses and halts out, SPY and IWM would each start again from
+  a budget of 2. Fix is small — keep a per-day tally, or iterate today's plans rather than the armed
+  map — but it changes what the desk is allowed to trade. **Money rule — the user's call.**
+  (Related, cosmetic: the F29 gate in `runner.py:379` is **not** mode-guarded, unlike the
+  `max_open_skip` and `max_concurrent_skip` gates immediately around it, so in alert mode it also
+  stops minting the paper trade. Harmless while the desk is in auto; worth aligning with the
+  "money modes only; alert/proposal keep recording every read" convention two lines above it.)
+
+- **F39 (2026-09-04 15:10 ET, latent — negative or zero equity breaks the premium pre-check both ways)**
+  `planrunner.py:2396` reads `elif est > 0 and pct_cap and eq and est > eq * pct_cap / 100.0`. With
+  `eq` **negative** the right-hand side is negative, so *every* option entry is blocked under a message
+  that claims a percentage cap; with `eq` exactly **0** the whole clause is falsy and the cap is skipped
+  — the gate fails open. Neither is "the premium is too large"; both are "we cannot measure the
+  account". Seen today only as the pre-F22 symptom (SPY's 11:10 fire was refused against *"the account's
+  $-267 equity"*, which was the Practice book's **cash**, −5,020.52 + the 4,299.92 SOFI buy + the 454.02
+  QQQ round trips, before F22 switched the check to `positions.equity()`); with the fix live the same
+  book reads **$8,401** and the gate passed at 13:48. Still worth closing: `eq <= 0` should refuse with
+  its own reason, not silently through one branch and always through the other. **Shared engine
+  (`zargar/execution/planrunner.py`) — proposal, not built here.**
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

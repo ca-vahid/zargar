@@ -762,3 +762,63 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   routing, F36 `premium_pick=closest` in both paths. 107 tests green. PLATFORM-RULES logs the shared knobs.
 - Watch job: expect `TechniquePlanRead` rows instead of skip rows for scenario/pm_break/late_touch/pm_retest; skip
   counts drop accordingly. Both plans carry a $997 loss halt at 6% risk.
+
+
+## 2026-09-04 15:30 ET (run 13 — the F25–F36 build is live and healthy; the desk is now loss-capped out for the day)
+
+- **Alive, real-time, two plans.** `/api/health` ok v0.7.0, 62 armed. SPY and IWM `armed` + **auto** on
+  Practice (`ff3c29d4`), `needsAttention: false`, no `readError`, nothing open or working. Quotes **0–1 s**
+  old, session `regular`; the Alpaca stream logged *connected* + *authenticated* at 14:56:30 ET and the
+  OPRA quote/trade polls return 200 continuously. **Zero `Traceback` / `ERROR` / `read_error`** in the
+  2,730 log lines since the 14:57 restart — 22 warnings, all the benign `dropped N non-bucket-aligned
+  stub bar(s)`. Reads current: `regimeLast` at 15:00, bar age 62–82 s.
+- **Every queued deploy is out and verified live.** `bd2a39a` (F25–F36) + `40954d6` (F34/F35) + F31 went
+  out at 14:57. Confirmed on the running process: `losses_desk_wide=true`, `premium_pick=closest`,
+  `premium_stop_basis=mid`, `premium_stop_min_ticks=3`, `zone_tol_atr=0.0`, `flip_body_ratio=0.0` all
+  present in `/api/team2/status.thresholds` and settings; both plans carry `dailyLossLimit` **$997.08**.
+  **F34 proven:** QQQ's 1m bars are banking again (**1,043** rows/24 h, last 15:03) although its plan is
+  disarmed — before the fix they stopped at 14:28. **F35 proven, including in the UI:** the Plans tab
+  prints *"disarmed — loss halt: realised -300.00 + open -54.00 marked at bid crossed -341.38"* on the
+  QQQ row instead of a bare "not armed". **F25 proven:** read events now carry the bar's **close** —
+  today's SPY break reads `10:45 pm_break` where run 12 saw `13:30` for the same shape on QQQ.
+- **No new trades, model or real, since 14:18.** SPY: `pm_break_down@10:30` fired twice in the model
+  (10:46 +57.45 % to target, 11:10 −12.23 % on the EMA13 stop), bias flipped to **scenario 3 (bounce PDL)**
+  at the 11:15 close and has not moved since; `scenario_3@11:00` is **waiting** at 769.26, price 770.12,
+  **0.11 %** away, 0 touches. IWM: `pm_break_up@12:00` fired once (12:16, −19.17 % on the one-candle
+  stop), `scenario_3@09:30` waiting at 293.88; price 295.56 sits inside the PM range so F15 refuses
+  every touch. Day (model): **5 trades, 1 win / 4 losses**; book: **−$454.02**, all QQQ.
+- **Replay parity exact on all three.** SPY 8/8 events + 2/2 trades (pnlPctSum 45.22 both sides),
+  IWM 7/7 + 1/1 (−19.17), QQQ 11 events + 1 trade off the restored tape. *Note for future runs:*
+  `POST /runs/{id}/replay` needs a JSON body (`-d '{}'`), else FastAPI 422s.
+- **Parity against the LIVE audit is only valid within one deploy generation.** SPY's model fire at
+  10:46 and IWM's at 12:16 have **no** `TechniquePlanTriggerFired` row — the live runner logged
+  `skip_no_trade_zone` at those minutes, because F20 (the PM-level retest entry) and F15 were not
+  deployed until 12:58. Today's read is recomputed by the newest code and therefore trades a day the
+  desk did not live. Do not read "model fired, audit didn't" as a defect on 2026-09-04 before 12:58.
+- **F37 (new, NOT fixed — proposal; binding right now).** F29's desk-wide loss cap counts
+  `max(model losers, real losers)` per armed plan. SPY 1 + IWM 1 = **2 of 2**, so **the desk is refusing
+  every remaining entry today** — including SPY's `scenario_3` 0.11 % away — on the strength of two
+  simulated losses the live runner **explicitly declined at the time** (the `skip_no_trade_zone` rows
+  above). A rule for a desk that is bleeding is being tripped by hindsight. Proposal: in auto/proposal,
+  count the **book** once a plan has routed an order; keep the model basis for alert-mode plans; name the
+  basis in the skip line. **Money rule — the user's call.**
+- **F38 (new, NOT fixed — proposal).** `losses_across_plans()` iterates `self._armed`, so QQQ's two
+  **real** losers left the desk count the instant its own loss halt disarmed it at 14:17. The cap
+  loosens right after the worst thing a plan can do. Harmless today (F37 already holds the desk at 2),
+  but on a day QQQ eats both desk losses and halts out, SPY and IWM would each restart with a budget
+  of 2. Also noted: the F29 gate is not mode-guarded, unlike the two gates around it.
+- **F39 (new, NOT fixed — shared engine, latent).** `planrunner.py:2396`: with equity **negative**
+  every option entry is blocked under a bogus "over N% of equity" message; with equity exactly **0**
+  the cap is skipped entirely. Today this only appeared as the pre-F22 symptom — SPY's 11:10 fire was
+  refused against *"the account's $-267 equity"*, which was the Practice book's **cash**, not its
+  equity. With F22 live the same book reads **$8,401** and the 13:48 QQQ ticket passed. Still worth an
+  explicit `eq <= 0` refusal. **`zargar/execution/planrunner.py` — proposal, not built here.**
+- **Nothing built or deployed this run.** All three findings are money rules or shared-engine changes,
+  and it is 15:30 — the last-entry cutoff — with the desk in auto. No restart.
+- **Next run (16:05, post-close) should check:** whether the **15:32 `skip_last_entry`** row appeared on
+  SPY and IWM (F26's first live exercise — expect it at the first 2m close past 15:30, per F25's clock)
+  and the **15:45 flatten**; that no entry was taken after 15:30; the nightly `team2_plan_nightly` at
+  17:00; the day's final read/replay parity and the scorecard; and whether the user has ruled on
+  F27/F28 residue, F29's basis (**F37**), **F38**, **F39**, and the still-open F30-family question of
+  which premium series is authoritative.
+
