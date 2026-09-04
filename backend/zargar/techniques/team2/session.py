@@ -422,8 +422,23 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         # the bar must not be an engulfing lunge into the EMA (A6/F4)
         body = abs(b2.close - b2.open)
         avg = _avg_body(session_bars_2m[:-1])
+        idx = s.touches + 1
+        # F18 (2026-09-04, IWM live): a dip that is not a tradeable location — the range day has not cleared its
+        # PM level yet (B3/A4), or the dip sits inside the pre-market no-trade zone (V6/B5) — is not one of the
+        # method's "first or second pullback": it does not consume the D9 allowance
+        if s.range_day and rules.range_day_confirmation:
+            pm_level = pml if long else pmh
+            if pm_level is not None and ((b2.close < pm_level) if long else (b2.close > pm_level)):
+                note(b2.ts, "skip_range_confirmation", f"range day: price has not cleared the PM level {pm_level:.2f} (B3/A4) — not counted as a pullback",
+                     setup=s.id, touch=idx)
+                continue
+        bucket = sizing_bucket(entry_spot, zones, pmh, pml)
+        mult = {"full": rules.size_full, "small": rules.size_small, "none": rules.size_none}[bucket]
+        if mult <= 0:
+            note(b2.ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5) — not counted as a pullback",
+                 setup=s.id, touch=idx, bucket=bucket)
+            continue
         s.touches += 1
-        idx = s.touches
         if idx > rules.pullback_max_touches:
             note(b2.ts, "late_touch", f"touch #{idx} of {s.id} — beyond the first {rules.pullback_max_touches}, watch-only (D9/P6)",
                  setup=s.id, touch=idx, spot=round(entry_spot, 4))
@@ -432,21 +447,8 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             note(b2.ts, "skip_engulfing", f"touch #{idx}: body {body:.2f} > {rules.pullback_body_mult:.1f}× avg {avg:.2f} — an engulfing lunge, not a drift (A6/F4)",
                  setup=s.id, touch=idx)
             continue
-        if s.range_day and rules.range_day_confirmation:
-            # B3/A4: a range-day scenario needs the PM level on its side as extra confirmation
-            pm_level = pml if long else pmh
-            if pm_level is not None and ((b2.close < pm_level) if long else (b2.close > pm_level)):
-                note(b2.ts, "skip_range_confirmation", f"range day: price has not cleared the PM level {pm_level:.2f} (B3/A4)",
-                     setup=s.id, touch=idx)
-                continue
         if s.entries >= 1 + rules.max_reentries:
             note(b2.ts, "skip_reentries", f"{s.id} already entered {s.entries}× (max {1 + rules.max_reentries}, A8)", setup=s.id)
-            continue
-        bucket = sizing_bucket(entry_spot, zones, pmh, pml)
-        mult = {"full": rules.size_full, "small": rules.size_small, "none": rules.size_none}[bucket]
-        if mult <= 0:
-            note(b2.ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5)",
-                 setup=s.id, touch=idx, bucket=bucket)
             continue
         if rules.shrink_after_win and day_pnl_pct > 0:
             mult = round(mult * 0.5, 4)                # P7/D14: protect the day after a win
