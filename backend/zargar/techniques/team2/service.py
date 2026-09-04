@@ -5,7 +5,9 @@
   15m bars), stored as `TechniqueRun(technique="team2", mode="plan")`, and ARMED in the
   configured mode (`techniques.team2.mode`, alert by default) on the default portfolio.
 - `preopen_complete()`: 09:25, completes every armed Team2 plan in place (PMH/PML, day type,
-  sizing bucket) — the runner's pre-open hook does the same when the heartbeat fires it.
+  sizing bucket) — the runner's pre-open hook does the same when the heartbeat fires it — and
+  `stamp_run()` writes that completed plan plus the rules the session will actually run under back
+  onto the plan run, so `replay()` reproduces the live session instead of re-deriving it (F-1/F-2).
 - `replay(run_id)`: the pure session walk over the banked bars of the plan's date.
 - `sweep(start, end, symbols=None, overrides=None)`: build+walk every trading day in the range
   from the banked extended-hours bars (`research.ext_bars`), returning per-day rows and a
@@ -173,10 +175,43 @@ class Team2Service:
                                  pml=ap.plan.get("pml"), dayType=ap.plan.get("dayType"),
                                  sizing=ap.plan.get("sizingAtOpen"))
                 await self.runner._persist(ap)
+                await self.stamp_run(ap)
                 done.append(ap.run_id)
             except Exception:  # noqa: BLE001
                 log.exception("team2 preopen completion failed for %s", ap.symbol)
         return {"completed": done}
+
+    async def stamp_run(self, ap) -> None:
+        """Write the COMPLETED plan and the rules the session actually runs under back onto the
+        plan run (F-1/F-2).
+
+        Two things drift between minting a plan (17:00 the night before) and trading it:
+
+        - the run's `config.thresholds` are frozen at mint time, while the live runner always reads
+          `rules_from_settings` — a rule change merged overnight makes replay run a different method
+          than the desk did;
+        - the completed plan (PMH/PML, day type, sizing) only ever lived in the armer's memory, so
+          `replay()` re-derived it from whatever bars existed at replay time. After the open that
+          picks the 09:30 RTH open instead of the 09:25 pre-market last price, which can flip the
+          day type and the sizing bucket.
+
+        Stamping both at the pre-open — before a single entry — makes replay reproduce the live
+        session instead of approximating it, and keeps historical runs frozen as they were.
+        """
+        try:
+            async with self.engine.sf() as session:
+                run = await session.get(TechniqueRun, ap.run_id)
+                if run is None:
+                    return
+                result = dict(run.result or {})
+                result["plan"] = dict(ap.plan)
+                run.result = result
+                cfg = dict(run.config or {})
+                cfg["thresholds"] = rules_from_settings(self.engine.settings).to_dict()
+                run.config = cfg
+                await session.commit()
+        except Exception:  # noqa: BLE001
+            log.exception("team2: stamping the completed plan failed for %s", ap.symbol)
 
     # ------------------------------------------------------------- reads
     async def runs(self, *, limit: int = 50, symbol: str | None = None) -> list[dict]:

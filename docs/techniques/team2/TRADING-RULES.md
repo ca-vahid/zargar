@@ -56,6 +56,26 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   premium-% cue so the sweep can compare the two; and `pullback_max_bars` finally does something: a dip that sits on
   the wrong side of the EMA13 for longer than N bars is called a consolidation (`pullback_stalled`).
 
+- **F12 (2026-09-04, market watch)** A plan run's `config.thresholds` were frozen when the plan was
+  MINTED (17:00 the night before), but the live runner always reads `rules_from_settings`. The three
+  plans armed for 2026-09-04 carry `entry_at: "ema"` — the value before the second review (abe9baa)
+  changed the default to `"both"` — and are missing the nine knobs added since (`allow_ema48_entries`,
+  `allow_ema200_flush`, `base_bars`, `base_tol_atr`, `trim_cue`, `hod_target`, `hod_target_min_atr`,
+  `add_on_retest`, `max_adds`). Consequence: `POST /api/team2/runs/{id}/replay` runs a DIFFERENT method
+  than the desk did, so the replay-parity check reports phantom mismatches and any review of the run
+  understates what was traded. No trading impact — the live path was always on the current rules.
+  Fixed by `Team2Service.stamp_run()` (below); today's three runs were minted before the fix, so
+  their replays stay divergent for 2026-09-04 only.
+- **F13 (2026-09-04, market watch)** The COMPLETED plan (PMH/PML, `dayType`, `openPrice`,
+  `sizingAtOpen`) only ever lived in the armer's memory and in `technique_armed.state` — it was never
+  written back to `technique_runs.result.plan`. `replay()` therefore re-derived it with
+  `complete_plan(plan, today)` against whatever bars existed at replay time. Before 09:30 that
+  reproduces the live read; **after the open it does not** — `complete_plan` prefers the 09:30 RTH
+  open over the 09:25 pre-market last price (`openSource` flips `premarket_last` → `rth_open`), and
+  the pre-market range gains its last five minutes. Both feed `classify_day` and `sizing_bucket`, so
+  a mid-day replay can show a different day type and a different sizing bucket than the desk traded.
+  This is the more consequential half of F12: it silently rewrites the day's premise. Fixed the same way.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -73,6 +93,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 | 2026-09-03 | D3 decided by the user: Team2 is a 0DTE technique; RiskGate gets a per-technique 0DTE policy (E6) instead of the hard-coded EM/tip ids. Engine is ENRICHED, not forked (PLAN §3b, E1–E12) | METHOD §7b/§7c, images INDEX | Team2 desk |
 | 2026-09-03 | Completeness review before the build (PLAN §3c, groups A–H): added day-type classifier, target discovery, zone+EMA gate, range-day confirmation, 5m flag detector, pullback-quality gate, re-entry cap, concurrency cap; bank ext-hours bars from tonight, ^VIX/^VIX1D fetch, fee+slippage in the premium scorer, calibration vs the author's 9 documented trades, market calendar (half days); OPRA-only fires, flatten discipline; per-technique 0DTE policy caps; nightly arming ops; review/evolution loop; settings panel + page | audit of METHOD vs PLAN | Team2 desk |
 | 2026-09-03 | **Build v0.1 landed** (PLAN P0–P3 partial, 43 checkboxes): shared primitives + Team2 package + runner (alert mode) + page + sweep. Build-time judgement calls, each a rule the sweep must vindicate: (1) entry mechanics live in ONE pure session walk (`session.py`) instead of `TriggerTracker` — parity by construction; (2) trims are decided on the MODEL premium (BS on the VIX proxy) live too — the execution scorecard must compare against the real premium before proposal mode; (3) the "new high/low of day" trim cue is expressed as +50%/+100% premium (author's own numbers), price cue not yet modelled; (4) range-day confirmation = price beyond the PM level on the trade's side; (5) the event-day gate is a plan flag from the manual macro list, off by default | tests: 35 Team2 + 14 primitives green; shared suites 239 green | Team2 desk |
+| 2026-09-04 | **F12/F13 fixed**: `Team2Service.stamp_run()` writes the completed plan and the rules the session actually runs under back onto the plan run at the 09:25 pre-open, before any entry. Replay now reproduces the live session instead of re-deriving PMH/PML and the day type from later bars; historical runs stay frozen as they were | market watch 09:00 ET; `tests/test_team2_runner.py` asserts the stamp (fails without it) | Team2 desk |
 
 - **F8 (2026-09-03, calibration)** Flat-IV Black–Scholes on the author's four fully documented trades
   (entry premium, entry/exit spot read off his charts): SPY 711c +137% model vs +122% reported; QQQ 472p

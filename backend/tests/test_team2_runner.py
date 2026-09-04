@@ -62,6 +62,17 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     done = await svc.preopen_complete()
     assert run_id in done["completed"] and ap.plan["pmh"] and ap.plan["pml"] and ap.plan["complete"]
     assert any(e["event"] == "preopen" for e in ap.events)
+    # F-1/F-2: the completed plan and the rules the session runs under are stamped back onto the
+    # run, so a replay reproduces the live session instead of re-deriving PMH/PML and the day type
+    # from whatever bars exist later (which would pick the 09:30 RTH open, not the 09:25 read).
+    run_row = await eng.team2_runner.load_plan(run_id)
+    stored_plan = (run_row["result"] or {})["plan"]
+    assert stored_plan["complete"] and stored_plan["pmh"] == ap.plan["pmh"]
+    assert stored_plan["dayType"] == ap.plan["dayType"]
+    assert stored_plan["sizingAtOpen"] == ap.plan["sizingAtOpen"]
+    # and the thresholds are the LIVE rules, not whatever was frozen when the plan was minted
+    from zargar.techniques.team2.rules import rules_from_settings
+    assert (run_row["config"] or {})["thresholds"] == rules_from_settings(eng.settings).to_dict()
     # the Armed page's snapshot speaks the method's words before anything happened
     snap = eng.team2_runner.detail(run_id)
     assert snap["technique"] == "team2" and len(snap["triggers"]) == 2
