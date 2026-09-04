@@ -73,6 +73,11 @@ class Position:
     entry_kind: str = "ema"
     peak_pct: float = 0.0
     extreme: float = 0.0            # highest high (long) / lowest low (short) since entry (X1 new-extreme cue)
+    target: float | None = None     # what this position sells at: the planned level or the running HOD/LOD (X3b)
+    target_kind: str = "plan"       # plan | hod
+    avg_fill: Fill | None = None    # average premium after adds (X5); None = entry_fill
+    adds: int = 0
+    added: list[dict] = field(default_factory=list)      # X5 adds
     realised: list[dict] = field(default_factory=list)   # partial exits
 
     def to_dict(self) -> dict:
@@ -81,7 +86,9 @@ class Position:
                 "entryMark": round(self.entry_mark, 4), "entryPremium": self.entry_fill.premium,
                 "remaining": round(self.remaining, 4), "trims": list(self.trims), "touchIndex": self.touch_index,
                 "early": self.early, "bucket": self.bucket, "sizeMult": self.size_mult, "entryKind": self.entry_kind,
-                "peakPct": round(self.peak_pct, 2)}
+                "peakPct": round(self.peak_pct, 2),
+                "target": None if self.target is None else round(self.target, 4), "targetKind": self.target_kind,
+                "avgPremium": (self.avg_fill or self.entry_fill).premium, "adds": self.adds, "added": list(self.added)}
 
 
 @dataclass
@@ -89,7 +96,7 @@ class Trade:
     """One completed round trip (all fractions closed)."""
     position: dict
     exits: list[dict]
-    pnl_pct_weighted: float          # premium % on the whole position, fee-adjusted
+    pnl_pct_weighted: float          # premium % in units of ONE full position (adds make fractions sum > 1), fee-adjusted
     exit_ts: int
     exit_reason: str                 # the reason the LAST fraction closed
     bars_held: int
@@ -189,7 +196,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             return
         mark = model.mark(spot, p.strike, ts, call=p.call)
         f = model.sell(mark)
-        pct = pnl_pct(p.entry_fill, f)
+        pct = pnl_pct(p.avg_fill or p.entry_fill, f)
         p.realised.append({"ts": ts, "time": _hhmm(ts), "fraction": round(frac, 4), "spot": round(spot, 4),
                            "mark": round(mark, 4), "premium": f.premium, "pnlPct": round(pct, 2), "reason": reason})
         p.remaining = round(p.remaining - frac, 6)
@@ -256,17 +263,19 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             p = pos
             long = p.direction == "long"
             mark = model.mark(b2.close, p.strike, b2.ts, call=p.call)
-            cur_pct = pnl_pct(p.entry_fill, model.sell(mark))
+            cur_pct = pnl_pct(p.avg_fill or p.entry_fill, model.sell(mark))
             p.peak_pct = max(p.peak_pct, cur_pct)
             # flatten (C3) first — nothing survives the flatten time
             if m + rules.entry_tf_min >= rules.flatten_min:
                 close_fraction(p, p.remaining, b2.close, end_ts, "flatten: 0DTE flatten time reached (C3/D-1)")
                 continue
-            # target (X3/V11): the pre-planned level was touched
-            if rules.target_exit and p.setup.target is not None:
-                hit = b2.high >= p.setup.target if long else b2.low <= p.setup.target
+            # target (X3/V11, X3b): the planned level — or the running high/low of day for a re-entry — was touched
+            if rules.target_exit and p.target is not None:
+                hit = b2.high >= p.target if long else b2.low <= p.target
                 if hit:
-                    close_fraction(p, p.remaining, p.setup.target, end_ts, f"target {p.setup.target:.2f} touched — sell at target (X3/V11)")
+                    what = (f"{'high' if long else 'low'} of day" if p.target_kind == "hod" else "planned level")
+                    close_fraction(p, p.remaining, p.target, end_ts,
+                                   f"target {p.target:.2f} ({what}) touched — sell at target (X3/V11{'/X3b' if p.target_kind == 'hod' else ''})")
                     continue
             # premium hard stop (P1/D13)
             if cur_pct <= -rules.premium_stop_pct:
@@ -304,6 +313,29 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                 p.trims.append("trim1")
                 close_fraction(p, rules.trim_1_frac, b2.close, end_ts, f"+{cur_pct:.0f}% ≥ +{rules.trim_1_pct:.0f}% — first trim (V2)")
                 continue
+            # X5 trim-and-add: the trim freed room; a fresh EMA13 hold (the T1 read again) re-fills the position
+            # at the current premium and the average moves ("get a bunch trimmed on that first push so I can free
+            # up room for adds if I like the retest later… re-upped a full position")
+            if (rules.add_on_retest and p.trims and p.adds < rules.max_adds and p.remaining < 1.0 - 1e-9
+                    and r.ema_fast is not None and r.stack == ("bull" if long else "bear")):
+                tol_a = rules.pm_tol_atr * (r.atr or 0.0)
+                held = ((b2.low <= r.ema_fast + tol_a and b2.close > r.ema_fast) if long
+                        else (b2.high >= r.ema_fast - tol_a and b2.close < r.ema_fast))
+                if held:
+                    add_f = round(1.0 - p.remaining, 6)
+                    add_fill = model.buy(mark)
+                    prev_avg = (p.avg_fill or p.entry_fill).premium
+                    new_avg = (p.remaining * prev_avg + add_f * add_fill.premium) / (p.remaining + add_f)
+                    p.avg_fill = Fill(premium=round(new_avg, 4), fee_per_contract=p.entry_fill.fee_per_contract)
+                    p.remaining = round(p.remaining + add_f, 6)
+                    p.adds += 1
+                    p.added.append({"ts": end_ts, "time": _hhmm(end_ts), "fraction": add_f, "premium": add_fill.premium,
+                                    "spot": round(b2.close, 4), "avgPremium": round(new_avg, 4)})
+                    note(b2.ts, "add", f"{p.setup.id}: EMA13 {r.ema_fast:.2f} held again after the trim — re-up "
+                         f"{add_f:.2f} of the position at ≈ ${add_fill.premium:.2f} (average now ${new_avg:.2f}; X5 trim-and-add)",
+                         setup=p.setup.id, fraction=add_f, premium=add_fill.premium, avgPremium=round(new_avg, 4),
+                         spot=round(b2.close, 4), adds=p.adds, prevAvgPremium=round(prev_avg, 4))
+                    continue
             continue                                   # holding; no new entry while in a position (A12)
 
         # ---- entries (T): only inside the entry window, with the regime aligned
@@ -425,17 +457,31 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             continue
         strike, mark = pick
         fill = model.buy(mark)
+        # X3b: "high of day resistance is the main target for longs until it breaks" — a re-entry (this setup
+        # already fired, or the day already has a trade) sells at the running HOD/LOD when it is nearer than
+        # the planned level and leaves room; `hod_target=always` applies it to first entries too
+        target, target_kind = s.target, "plan"
+        if rules.hod_target != "off" and atr > 0 and (rules.hod_target == "always" or s.entries >= 1 or trades):
+            prior = session_bars_2m[:-1]
+            if prior:
+                ext = max(x.high for x in prior) if long else min(x.low for x in prior)
+                room = (ext - entry_spot) if long else (entry_spot - ext)
+                nearer = target is None or ((ext < target) if long else (ext > target))
+                if room >= rules.hod_target_min_atr * atr and nearer:
+                    target, target_kind = ext, "hod"
         s.entries += 1
         pos = Position(setup=s, direction=s.direction, entry_ts=end_ts, entry_spot=entry_spot, strike=strike,
                        call=long, entry_mark=mark, entry_fill=fill, touch_index=idx,
                        early=m < rules.early_flag_before_min, bucket=bucket, size_mult=mult, entry_kind=entry_kind,
-                       extreme=b2.high if long else b2.low)
+                       extreme=b2.high if long else b2.low, target=target, target_kind=target_kind, avg_fill=fill)
         kind_word = {"ema": "EMA13", "ema48": "EMA48", "level": "level", "base": "base beyond the level",
                      "ema200": "200 EMA flush"}[entry_kind]
         note(b2.ts, "fire", f"{s.id}: touch #{idx} — {kind_word} at {entry_spot:.2f} "
              f"held (close {b2.close:.2f}) in a {r.stack} stack — buy {'call' if long else 'put'} {strike:g} "
              f"≈ ${fill.premium:.2f} (T1/T2/V1); size {bucket} ×{mult:g}"
+             + (f" — target the {'high' if long else 'low'} of day {target:.2f} (X3b)" if target_kind == "hod" else "")
              + (" — early (before 10:00, P2)" if m < rules.early_flag_before_min else ""),
+             target=None if target is None else round(target, 4), targetKind=target_kind,
              setup=s.id, touch=idx, spot=round(entry_spot, 4), strike=strike, premium=fill.premium, bucket=bucket,
              sizeMult=mult, early=m < rules.early_flag_before_min, entryKind=entry_kind, regime=r.to_dict())
 

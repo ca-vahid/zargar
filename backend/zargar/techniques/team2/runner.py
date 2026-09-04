@@ -8,7 +8,10 @@ clock-driven close. Team2 supplies the READ:
 - Every 2-minute close, `simulate_session` (the pure session walk in `session.py`) is re-run over
   the bars seen so far with `now_ms` = that close. Events it has not emitted before are ACTED
   on: `fire` mints a Trade and runs the shared fire chain (alert / proposal / auto);
-  `trim`/`exit` on an open trade become reduce-only exits through `PlanRunner._exit`; reads
+  `trim`/`exit` on an open trade become reduce-only exits through `PlanRunner._exit` — but
+  premium-% trims are judged on the contract's LIVE quote first (`_manage_live_trims`, every
+  1m bar): the model's +50/+100% is a forecast, the bid is the fact; `add` (X5 trim-and-add)
+  becomes a second Trade on the SAME contract through the ordinary fire chain (RiskGate inside); reads
   (scenario, pm_break, skips) are logged + journaled so the audit shows what the method saw.
   Because live decisions come from the same function the scorer replays, live ≡ replay by
   construction (§6 parity).
@@ -73,6 +76,7 @@ class Team2Runner(PlanRunner):
         self._seen: dict[str, int] = {}                # run_id -> events already acted on
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
         self._sigma_cache: dict[str, tuple[str, float]] = {}
+        self._small_noted: set[tuple[str, str]] = set()
 
     async def stop(self) -> None:
         for name in ("team2_plan_nightly", "team2_preopen"):
@@ -285,6 +289,12 @@ class Team2Runner(PlanRunner):
         rules = self.rules()
         step = rules.entry_tf_min * 60_000
         end_ts = bar.ts + 60_000
+        # the contract's own price first: premium-% trims on the live bid (every minute, money modes)
+        if journal and bar_session(bar.ts) == "rth":
+            try:
+                await self._manage_live_trims(ap, rules, journal=True)
+            except Exception:
+                log.exception("team2 live trim check failed on %s", ap.symbol)
         # act only when a 2-minute bucket has just closed (decisions on closed bars)
         if bucket_start_ms(bar.ts, rules.entry_tf_min) + step == end_ts and bar_session(bar.ts) == "rth":
             try:
@@ -316,6 +326,8 @@ class Team2Runner(PlanRunner):
             what = e["event"]
             if what == "fire":
                 await self._fire_from_event(ap, e, bar, res, halted=halted, journal=journal)
+            elif what == "add":
+                await self._add_from_event(ap, e, bar, halted=halted, journal=journal)
             elif what in ("trim", "exit"):
                 await self._exit_from_event(ap, e, journal=journal)
             else:
@@ -365,7 +377,7 @@ class Team2Runner(PlanRunner):
         spot = float(e.get("spot") or bar.close)
         atr = float((e.get("regime") or {}).get("atr") or 0.0) or max(spot * 0.001, 0.05)
         stop = spot - atr if direction == "long" else spot + atr
-        target = setup.get("target")
+        target = e.get("target") if e.get("target") is not None else setup.get("target")
         trade = Trade(trigger_id=tid, kind=str(setup.get("kind") or "team2"), direction=direction, fired_ts=e["ts"],
                       window="team2", entry=spot, stop=stop, targets=[float(target)] if target else [],
                       fire_bar_index=ap.bar_index - 1, last_price=bar.close, instrument=ap.config.instrument,
@@ -373,9 +385,11 @@ class Team2Runner(PlanRunner):
         trade._size_mult = float(e.get("sizeMult") or 1.0)        # read by size_multiplier via the contract
         trade._bucket = str(e.get("bucket") or "?")
         trade.setup_id = str(e.get("setup"))
+        trade.target_kind = str(e.get("targetKind") or "plan")
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid}: {e.get('why', '')}", trigger=tid, spot=spot, premiumModel=e.get("premium"),
-                  strikeModel=e.get("strike"), bucket=trade._bucket, early=e.get("early"))
+                  strikeModel=e.get("strike"), bucket=trade._bucket, early=e.get("early"), target=target,
+                  targetKind=trade.target_kind)
         stub = SimpleNamespace(kind=trade.kind, direction=direction, fill_price=spot, entry=spot, stop=stop,
                                fire_event=e, trigger={"targets": [{"price": target}] if target else []},
                                status="fired")
@@ -388,37 +402,167 @@ class Team2Runner(PlanRunner):
             await self._fire_rest(ap, tid, stub, bar, ap.bar_index - 1, trade, journal=False)
 
     async def _exit_from_event(self, ap: ArmedPlan, e: dict, *, journal: bool) -> None:
-        # the simulation names the setup via the position; find the open trade of that setup
-        setup_id = None
+        # the simulation names the setup via the position; every trade of that setup (the entry and its
+        # X5 adds) gets the same instruction — the position that just (partly) closed is either the
+        # open one or the last trade
         sim = self._last_sim.get(ap.run_id) or {}
-        # the position that just (partly) closed is either the open one or the last trade
         pos = sim.get("openPosition") or (sim.get("trades") or [{}])[-1]
         setup_id = pos.get("setup")
         cands = [t for t in ap.trades.values() if t.setup_id == setup_id and t.status in ("open", "working", "alert", "proposal")]
         if not cands:
             return
-        trade = sorted(cands, key=lambda t: t.fired_ts)[-1]
-        kind = _kind_for(str(e.get("why", "")), trade.trims_done)
         frac = float(e.get("fraction") or 1.0)
-        if trade.status in ("alert", "proposal") or not journal:
-            self._log(ap, f"would_{e['event']}", f"{trade.trigger_id}: {e.get('why', '')} (model {e.get('pnlPct')}%)",
-                      trigger=trade.trigger_id, fraction=frac, pnlPctModel=e.get("pnlPct"))
-            if e["event"] == "exit":
-                trade.closed_ts = e.get("ts")
+        for trade in sorted(cands, key=lambda t: t.fired_ts):
+            kind = _kind_for(str(e.get("why", "")), trade.trims_done)
+            if trade.status in ("alert", "proposal") or not journal:
+                self._log(ap, f"would_{e['event']}", f"{trade.trigger_id}: {e.get('why', '')} (model {e.get('pnlPct')}%)",
+                          trigger=trade.trigger_id, fraction=frac, pnlPctModel=e.get("pnlPct"))
+                if e["event"] == "exit":
+                    trade.closed_ts = e.get("ts")
+                continue
+            if trade.status != "open" or trade.remaining <= 0:
+                continue
+            if kind in ("tp1", "tp2"):
+                level = 1 if kind == "tp1" else 2
+                if trade.trims_done >= level:
+                    self._log(ap, "trim_already_live", f"{trade.trigger_id}: the model's {'first' if level == 1 else 'second'} "
+                              f"trim was already taken on the contract's live premium", trigger=trade.trigger_id)
+                    continue
+                live = self._live_pct(trade)
+                need = self.rules().trim_1_pct if level == 1 else self.rules().trim_2_pct
+                if live is not None and live < need:
+                    # the model's flat-IV premium is a forecast; the bid is the fact (F8: the model runs
+                    # 12-45% optimistic) — the live watch takes the trim when the contract gets there
+                    self._log(ap, "trim_deferred_live", f"{trade.trigger_id}: model says +{float(e.get('pnlPct') or 0):.0f}% "
+                              f"but the contract is at {live:+.0f}% live — waiting for +{need:.0f}% on the bid",
+                              trigger=trade.trigger_id, livePct=round(live, 1), pnlPctModel=e.get("pnlPct"))
+                    continue
+                qty = self._trim_qty(ap, trade, level)
+                if qty <= 0:
+                    continue
+                trade.trims_done = level
+                await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")))
+                continue
+            qty = float(int(round(trade.filled_qty * frac))) if e["event"] == "trim" else trade.remaining
+            qty = max(1.0, min(qty, trade.remaining)) if trade.remaining >= 1 else trade.remaining
+            await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")),
+                             force_market=kind in ("stop", "flatten"))
+
+    # ------------------------------------------------------------- live premium (money modes)
+    def _live_pct(self, tr: Trade) -> float | None:
+        """Fee-adjusted premium % of an open option trade from the contract's own FRESH real-time bid;
+        None when there is no usable quote (delayed chain rows never drive money)."""
+        if tr.instrument != "options" or not tr.order_symbol or not tr.avg_fill:
+            return None
+        q = self.engine.quotes.get(tr.order_symbol)
+        if q is None or not q.bid or q.bid <= 0 or getattr(q, "delayed", False):
+            return None
+        max_age = int(self.rt("stale_seconds", 180))
+        if int(time.time() * 1000) - int(q.ts) > max_age * 1000:
+            return None
+        fee = float(self.rules().fee_per_contract)
+        cost = float(tr.avg_fill) * 100.0 + fee
+        proceeds = float(q.bid) * 100.0 - fee
+        return (proceeds - cost) / cost * 100.0 if cost > 0 else None
+
+    def _trim_qty(self, ap: ArmedPlan, tr: Trade, level: int) -> float:
+        """Contracts for the first/second trim. Fewer than 3 contracts cannot be trimmed in thirds:
+        the first trim is skipped and the second closes everything (EM's own small-position rule)."""
+        rules = self.rules()
+        if tr.filled_qty < 3:
+            if level == 1:
+                key = (ap.run_id, tr.trigger_id + "~small")
+                if key not in self._small_noted:
+                    self._small_noted.add(key)
+                    self._log(ap, "too_small_to_trim", f"{tr.trigger_id}: {tr.filled_qty:g} contract(s) cannot be trimmed "
+                              f"in thirds — holds whole until +{rules.trim_2_pct:.0f}%, the target or the EMA stop",
+                              trigger=tr.trigger_id)
+                return 0.0
+            return float(tr.remaining)
+        frac = rules.trim_1_frac if level == 1 else rules.trim_2_frac
+        qty = float(int(round(tr.filled_qty * frac)))
+        return max(1.0, min(qty, tr.remaining - tr.pending_exit_qty))
+
+    async def _manage_live_trims(self, ap: ArmedPlan, rules: Team2Rules, *, journal: bool) -> None:
+        """V2 trims on the contract's LIVE premium — the model's +50/+100% is only a forecast."""
+        if not journal:
             return
-        if trade.status != "open" or trade.remaining <= 0:
+        for tr in list(ap.trades.values()):
+            if tr.status != "open" or tr.remaining <= 0 or tr.handoff_pending or tr.trims_done >= 2:
+                continue
+            pct = self._live_pct(tr)
+            if pct is None:
+                continue
+            tr.live_pct = round(pct, 1)
+            level = 1 if tr.trims_done == 0 else 2
+            need = rules.trim_1_pct if level == 1 else rules.trim_2_pct
+            if pct < need or tr.pending_exit_qty > 0:
+                continue
+            qty = self._trim_qty(ap, tr, level)
+            if qty <= 0:
+                if tr.filled_qty < 3 and level == 1:
+                    tr.trims_done = 1                          # nothing to trim; the next live level closes it
+                continue
+            tr.trims_done = level
+            reason = (f"live premium {pct:+.0f}% ≥ +{need:.0f}% on the bid — {'first' if level == 1 else 'second'} trim "
+                      f"on the contract's own quote (V2)")
+            self._log(ap, "live_trim", f"{tr.trigger_id}: {reason}", trigger=tr.trigger_id, livePct=round(pct, 1), qty=qty)
+            await self._exit(ap, tr, "tp1" if level == 1 else "tp2", qty, journal=True, reason=reason)
+
+    async def _add_from_event(self, ap: ArmedPlan, e: dict, bar: Bar, *, halted: bool, journal: bool) -> None:
+        """X5 trim-and-add: buy the SAME contract again for the trimmed fraction. Auto mode only —
+        a second Trade on the position, through the ordinary fire chain (RiskGate, never-chase cap);
+        alert/proposal record `would_add`."""
+        setup_id = str(e.get("setup"))
+        bases = [t for t in ap.trades.values() if t.setup_id == setup_id and not getattr(t, "is_add", False)
+                 and t.status in ("open", "alert", "proposal")]
+        if not bases:
             return
-        qty = float(int(round(trade.filled_qty * frac))) if e["event"] == "trim" else trade.remaining
-        qty = max(1.0, min(qty, trade.remaining)) if trade.remaining >= 1 else trade.remaining
-        if kind in ("tp1", "tp2"):
-            trade.trims_done += 1
-        await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")),
-                         force_market=kind in ("stop", "flatten"))
+        base = sorted(bases, key=lambda t: t.fired_ts)[-1]
+        tid = f"{base.trigger_id}+add{int(e.get('adds') or 1)}"
+        if tid in ap.trades:
+            return
+        frac = float(e.get("fraction") or 0.0)
+        if ap.config.mode != "auto" or base.status != "open" or not journal:
+            self._log(ap, "would_add", f"{base.trigger_id}: {e.get('why', '')}", trigger=base.trigger_id,
+                      fraction=frac, premiumModel=e.get("premium"), avgPremiumModel=e.get("avgPremium"))
+            return
+        if ap.status == "paused" or halted:
+            self._log(ap, "add_skip", f"{base.trigger_id}: add wanted but the plan is {'paused' if ap.status == 'paused' else 'halted'}",
+                      trigger=base.trigger_id)
+            return
+        if base.remaining <= 0 or base.instrument != "options" or not base.contract or frac <= 0:
+            return
+        c = dict(base.contract)
+        q = self.engine.quotes.get(base.order_symbol) if base.order_symbol else None
+        if q is not None and q.ask and q.ask > 0:
+            c["ask"], c["bid"] = float(q.ask), float(q.bid or 0.0)   # the add pays today's ask, capped by entry_limit_cap
+        c["_sizeMult"] = float(c.get("_sizeMult", 1.0) or 1.0) * frac
+        c["_bucket"] = f"{c.get('_bucket', '?')} add"
+        spot = float(e.get("spot") or bar.close)
+        trade = Trade(trigger_id=tid, kind=base.kind, direction=base.direction, fired_ts=e["ts"], window="team2",
+                      entry=spot, stop=base.stop, targets=list(base.targets), fire_bar_index=ap.bar_index - 1,
+                      last_price=bar.close, instrument="options", multiplier=100.0)
+        trade.setup_id = setup_id
+        trade.contract, trade.contract_attempted, trade.order_symbol = c, True, base.order_symbol
+        trade.is_add = True
+        trade.target_kind = getattr(base, "target_kind", "plan")
+        trade._size_mult = c["_sizeMult"]
+        trade._bucket = c["_bucket"]
+        ap.trades[tid] = trade
+        self._log(ap, "add", f"{tid}: {e.get('why', '')}", trigger=tid, spot=spot, fraction=frac,
+                  premiumModel=e.get("premium"), ask=c.get("ask"))
+        stub = SimpleNamespace(kind=trade.kind, direction=trade.direction, fill_price=spot, entry=spot, stop=base.stop,
+                               fire_event=e, trigger={"targets": [{"price": t} for t in base.targets]}, status="fired")
+        task = asyncio.create_task(self._fire_rest(ap, tid, stub, bar, ap.bar_index - 1, trade, journal=True),
+                                   name=f"add-{ap.symbol}-{tid}")
+        ap.fire_tasks[tid] = task
+        task.add_done_callback(lambda t, tid=tid, ap=ap: ap.fire_tasks.pop(tid, None))
 
     def open_positions_across_plans(self) -> int:
         """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap)."""
         return sum(1 for ap in self._armed.values() for t in ap.trades.values()
-                   if t.status in ("fired", "submitting", "working", "open"))
+                   if t.status in ("fired", "submitting", "working", "open") and not getattr(t, "is_add", False))
 
     # ------------------------------------------------------------- read-only views
     def last_read(self, run_id: str) -> dict | None:
@@ -479,8 +623,20 @@ class Team2Runner(PlanRunner):
         elif ap.status == "paused":
             d["summary"] = "paused — reading, not firing"
         elif open_pos:
-            d["summary"] = (f"in trade {open_pos.get('setup')}: {'call' if open_pos.get('call') else 'put'} {open_pos.get('strike'):g}, "
-                            f"{open_pos.get('remaining', 1):.2f} left, peak +{open_pos.get('peakPct', 0):.0f}% — stop is a 2m close through the EMA13")
+            guard = {"ema": "EMA13", "ema48": "EMA48", "ema200": "200 EMA"}.get(str(open_pos.get("entryKind")), "level")
+            tgt = open_pos.get("target")
+            tgt_s = (f", target {tgt:.2f} ({'high/low of day' if open_pos.get('targetKind') == 'hod' else 'planned level'})"
+                     if tgt else "")
+            adds_s = f", {open_pos.get('adds')} add" if open_pos.get("adds") else ""
+            live_s = ""
+            live_pcts = [t.live_pct for t in ap.trades.values() if t.status == "open" and getattr(t, "live_pct", None) is not None]
+            if live_pcts:
+                live_s = f" · contract {live_pcts[0]:+.0f}% live"
+            strike = open_pos.get("strike")
+            strike_s = f"{strike:g}" if isinstance(strike, (int, float)) else "?"
+            d["summary"] = (f"in trade {open_pos.get('setup')}: {'call' if open_pos.get('call') else 'put'} {strike_s}, "
+                            f"{open_pos.get('remaining', 1):.2f} left{adds_s}, model peak +{open_pos.get('peakPct', 0):.0f}%{tgt_s} — "
+                            f"stop is a 2m close through the {guard}{live_s}")
         elif bias.get("scenario"):
             live = [s for s in setups if not s.get("dead")]
             touches = max((s.get("touches", 0) for s in live), default=0)
@@ -493,8 +649,11 @@ class Team2Runner(PlanRunner):
             d["summary"] = (f"no scenario yet — needs a 15m close above {pdh.get('top', 0):.2f} (calls) or below "
                             f"{pdl.get('bottom', 0):.2f} (puts){pm}{day}"
                             + (f" · EMA stack {regime.get('stack')}, {regime.get('fan')}" if regime else ""))
+        live = [{"trigger": t.trigger_id, "livePct": t.live_pct, "trimsDone": t.trims_done, "isAdd": bool(getattr(t, "is_add", False))}
+                for t in ap.trades.values() if t.status == "open" and getattr(t, "live_pct", None) is not None]
         d["team2"] = {"sheet": plan.get("sheet"), "dayType": plan.get("dayType"), "sizingAtOpen": plan.get("sizingAtOpen"),
-                      "bias": bias or None, "regime": regime or None, "read": {k: read.get(k) for k in ("summary",)} if read else None}
+                      "bias": bias or None, "regime": regime or None, "read": {k: read.get(k) for k in ("summary",)} if read else None,
+                      "live": live or None}
         return d
 
 

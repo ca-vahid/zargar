@@ -298,12 +298,22 @@ and are now part of the plan; each carries the phase it belongs to.
 - [x] T7 break & base entry, T8 range-day 200-EMA flush trigger, E5 EMA48 entries, X1 new-extreme trim cue
       (`trim_cue`), A6 stalled-pullback rule (`pullback_max_bars`), A12 cross-plan concurrency cap in the runner —
       **built 2026-09-04**, `tests/test_team2_entries.py`.
-- [ ] A10 **trim-and-add** (X5): trim heavily on the first push, re-add on the next 13 EMA retest while the setup
-      holds; and averaging into a base (X6 ".31 average"). Needs scale-in support on the shared position (Tip's
-      ladder machinery) — sweep first whether re-adds pay after fees.
-- [ ] A2b running HOD/LOD as the intraday target for range scenarios ("high of day is the main target until it
-      breaks") — the image shows it; the read still uses the next pivot / opposite zone only.
-- [ ] Trims on the LIVE premium (quote) instead of the model mark in auto mode — required before proposal mode.
+- [x] A10 **trim-and-add** (X5) — **built 2026-09-04** (`add_on_retest`, `max_adds`): after a trim, the next EMA13
+      hold re-fills the position in the read (average premium moves, `Position.added`); the runner buys the same
+      contract as a second Trade (`is_add`) through the ordinary fire chain — RiskGate, never-chase limit, no extra
+      count against the A12 cap; every exit instruction of the setup applies to the entry and its adds. Averaging
+      into a base BEFORE a trim (X6) stays out on purpose (METHOD X5). Sweep `add_on_retest` on/off once ≥ 20
+      sessions are banked — on the synthetic add day the add cut the trade from +124% to +70% (the add pays a
+      higher premium and the runner exit came soon after): this is a method question, not a code one.
+- [x] A2b running HOD/LOD as the target — **built 2026-09-04** as X3b (`hod_target` off | reentry | always;
+      `hod_target_min_atr`): a re-entry sells at the running high/low of day when it is nearer than the planned
+      level; first entries keep the planned level unless `always`. `tests/test_team2_posture.py`.
+- [x] Trims on the LIVE premium — **built 2026-09-04**: `Team2Runner._manage_live_trims` runs every RTH minute in
+      money modes and takes +50/+100% on the contract's own fresh real-time bid (fee-adjusted); a model trim whose
+      live premium is not there yet is DEFERRED (`trim_deferred_live`), one already taken live is a no-op
+      (`trim_already_live`); price-based exits (candle stop, target, flatten) still act on the read at once.
+      Fewer than 3 contracts cannot be trimmed in thirds: the first trim is skipped, the second closes all
+      (`too_small_to_trim`, EM's rule). The Armed summary shows "contract +X% live".
 
 ## 4. Testing bar (from BUILDING-A-TECHNIQUE §6, made concrete)
 

@@ -116,6 +116,10 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.base_bars": 3,                 # T7 break & base
     "techniques.team2.base_tol_atr": 1.0,
     "techniques.team2.trim_cue": "premium",          # premium | new_extreme (X1 "new high/low of day")
+    "techniques.team2.hod_target": "reentry",        # off | reentry | always (X3b running HOD/LOD as the target)
+    "techniques.team2.hod_target_min_atr": 1.0,
+    "techniques.team2.add_on_retest": True,          # X5 trim-and-add
+    "techniques.team2.max_adds": 1,
     "techniques.team2.first_entry_min": "09:45",     # D6 (first 15m close)
     "techniques.team2.last_entry_min": "15:30",
     "techniques.team2.flatten_min": "15:45",         # C3

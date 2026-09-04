@@ -217,10 +217,18 @@ exit when a 2-minute candle closes through it, or at the next zone. One or two t
   [2023-02-18, 2025-05-03]. Scale out along the way [2023-02-18].
 - **X3** Zone targets: next zone / most recent pivot (L3); a range trade targets the opposite
   side of yesterday's range (L3.2). Be "cautious of a rejection/reversal" at the target zone.
+- **X3b The running high/low of day is the target for a re-entry** (image 2025-03, IWM three-trade day: "high of
+  day resistance is the main target for longs until it breaks"): after the first push has printed the HOD/LOD,
+  a later entry sells at that extreme when it is nearer than the planned level; once it breaks, the next
+  level applies. Built as `hod_target` (off | reentry | always; default reentry, room ≥ `hod_target_min_atr`).
 - **X5 Trim heavy, then add on the retest** (image 2025-10-17): "I like to get a bunch trimmed on that first push
   so I can free up some room for possible adds if I like the retest later… re-upped a full position and these
   671p are ITM and up 100%". The first push is trimmed HEAVILY; the freed size is re-added on the next 13 EMA
-  retest in the same direction — a scale-out/scale-back-in rhythm, not one static ladder.
+  retest in the same direction — a scale-out/scale-back-in rhythm, not one static ladder. Built 2026-09-04 as
+  `add_on_retest` (one add per position, `max_adds`): after a trim, a fresh EMA13 hold re-fills the position at
+  the current premium and the average moves; the runner buys the SAME contract as a second trade through the
+  fire chain (RiskGate, never-chase cap). Averaging into a base BEFORE any trim (X6's ".31 average") is NOT
+  modelled — an untested add before the first push only raises the loss on the one-candle stop.
 - **X6 Stop for a level entry = the level** (image 2025-08-26 QQQ): ".31 average now — testing that pre market
   high again; if that breaks I'm out. For now those are the dips I'm looking to buy" — for a retest/base entry the
   invalidation is the level, and he averages in (.31 average) across the dips while it holds.

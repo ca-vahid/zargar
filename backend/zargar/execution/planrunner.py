@@ -172,6 +172,12 @@ class Trade:
     # a durable-position handoff has claimed this trade's fill (ARM-GAPS B5):
     # the session exit machinery must not touch it while the adopt is in flight
     handoff_pending: bool = False
+    # technique-owned annotations (Team2 2026-09-04): an X5 add rides the same contract as its base
+    # trade; live_pct is the contract's fee-adjusted premium % from its own fresh bid; target_kind
+    # says whether `targets[0]` is the planned level or the running high/low of day
+    is_add: bool = False
+    live_pct: float | None = None
+    target_kind: str = "plan"
 
     @property
     def open(self) -> bool:

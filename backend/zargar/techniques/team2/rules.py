@@ -63,6 +63,12 @@ class Team2Rules(MarketRules):
     trim_2_frac: float = 1.0 / 3.0
     runner_exit: str = "ema_close"          # X2: runner exits on a 2m close through the EMA13
     target_exit: bool = True                # X3/V11: outright exit when the pre-planned target is touched
+    hod_target: str = "reentry"             # X3b: "off" | "reentry" | "always" — the running HOD/LOD is the target
+                                            #   when it is nearer than the planned level ("HOD resistance is the main
+                                            #   target for longs until it breaks"); re-entries only by default
+    hod_target_min_atr: float = 1.0         # X3b: the HOD/LOD must leave at least this much room (2m ATRs)
+    add_on_retest: bool = True              # X5 trim-and-add: after a trim, a fresh EMA13 hold re-fills the position
+    max_adds: int = 1                       # X5: adds per position
 
     # --- V: expression (0DTE; D3)
     dte_policy: str = "0dte"                # "0dte" | "1dte" (sweep variant)
@@ -115,7 +121,9 @@ SETTINGS_MAP: dict[str, str] = {
     "first_entry_min": "first_entry_min", "last_entry_min": "last_entry_min", "flatten_min": "flatten_min",
     "premium_stop_pct": "premium_stop_pct", "trim_1_pct": "trim_1_pct", "trim_1_frac": "trim_1_frac",
     "trim_2_pct": "trim_2_pct", "trim_2_frac": "trim_2_frac", "runner_exit": "runner_exit",
-    "target_exit": "target_exit", "dte_policy": "dte_policy", "target_premium": "target_premium",
+    "target_exit": "target_exit", "hod_target": "hod_target", "hod_target_min_atr": "hod_target_min_atr",
+    "add_on_retest": "add_on_retest", "max_adds": "max_adds",
+    "dte_policy": "dte_policy", "target_premium": "target_premium",
     "premium_floor": "premium_floor", "size_full": "size_full", "size_small": "size_small",
     "max_reentries": "max_reentries", "max_losses_per_day": "max_losses_per_day",
     "max_concurrent_positions": "max_concurrent_positions", "shrink_after_win": "shrink_after_win",

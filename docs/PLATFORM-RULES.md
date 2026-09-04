@@ -501,3 +501,10 @@ runtime ones to `execution.*`).
   that guarantee changes — a new `TechniqueInfo` registration, nothing else.
 - 2026-09-04 · `marketdata.persist_bars` inserts in chunks of 2,000 rows (asyncpg's 32,767-parameter cap;
   the first 20-day extended-hours bank failed on it). Found by running the Team2 bank for real.
+- 2026-09-04 · `execution.planrunner.Trade` gained three technique-owned annotations: `is_add` (a scale-in that
+  rides the same contract as its base trade — Team2 X5), `live_pct` (the contract's fee-adjusted premium % from
+  its own fresh bid) and `target_kind` (planned level vs running high/low of day). Defaults keep EM/tips
+  byte-identical. Pattern for scale-ins on the shared runner: a SECOND Trade through the ordinary fire chain
+  (RiskGate inside, never-chase cap) — never a quantity edit on a live Trade, never a bare executor call.
+  Premium-% trims in Team2 money modes are judged on the contract's live real-time bid before the model's
+  forecast (delayed chain rows never drive money — same line as the premium stop, 2026-09-02).

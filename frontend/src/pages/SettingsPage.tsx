@@ -506,6 +506,10 @@ export function SettingsPage() {
             <SelectRow k="techniques.team2.trim_cue" label="First trim cue"
               hint="premium = at +50% on the contract; new extreme = on the first new high/low of the move after entry (his 'new high of day, lock in gains')"
               options={[{ value: "premium", label: "premium +50%" }, { value: "new_extreme", label: "new high / low of the move" }]} />
+            <SelectRow k="techniques.team2.hod_target" label="Re-entries target the high/low of day"
+              hint="his 'HOD resistance is the main target for longs until it breaks': a re-entry sells at the running high/low of day when it is nearer than the planned level"
+              options={[{ value: "reentry", label: "re-entries only" }, { value: "always", label: "every entry" }, { value: "off", label: "off" }]} />
+            <ToggleRow k="techniques.team2.add_on_retest" label="Trim, then add" hint="after a trim freed room, a fresh EMA13 hold re-ups the position on the same contract (his 're-upped a full position'); one add per position" />
             <ToggleRow k="techniques.team2.shrink_after_win" label="Shrink after a win" hint="the next trade's size halves once the day is green — one loss can never erase the day" />
             <ToggleRow k="techniques.team2.avoid_event_days" label="Skip macro event days" hint="FOMC/CPI/NFP days from the manual macro list (research.macro_events) take no new entries" />
             <Group>Expression &amp; exits (0DTE)</Group>
