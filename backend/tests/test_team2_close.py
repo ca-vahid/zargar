@@ -98,3 +98,21 @@ async def test_clock_flatten_sells_the_book_at_flatten_time_whatever_the_read_sa
     n = len(calls)
     await runner._clock_flatten(ap, rules)
     assert len(calls) == n
+
+
+async def test_forced_replan_replaces_the_symbols_plan_instead_of_adding_one(rig):
+    """Post-close 2026-09-04: `plan-now` with force armed a SECOND set of Monday plans next to the first —
+    two full-size entries per symbol. A forced re-plan now disarms the old plan for that session first."""
+    eng, sim = rig
+    prev = prev_day_bars()
+    today, _ = trend_day(prev)
+    await persist_bars(eng.sf, prev)
+    await persist_bars(eng.sf, filter_session(today, "pre"))
+    first = await eng.team2.nightly_plans(DAY.isoformat(), arm=True)
+    assert len(first["armed"]) == 1
+    again = await eng.team2.nightly_plans(DAY.isoformat(), arm=True)
+    assert again["skipped"] and not again["armed"]                                   # the guard
+    forced = await eng.team2.nightly_plans(DAY.isoformat(), arm=True, force=True)
+    assert forced["armed"] and forced.get("replaced") == first["armed"]
+    live = [ap for ap in eng.team2_runner._armed.values() if ap.plan_for == DAY.isoformat()]
+    assert len(live) == 1 and live[0].run_id == forced["armed"][0]

@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import logging
 from dataclasses import replace
@@ -140,6 +141,13 @@ class Team2Service:
             if sym in already and not force:
                 out["skipped"].append(f"{sym}: already armed for {for_date}")
                 continue
+            if sym in already and force and self.runner is not None:
+                # a forced re-plan REPLACES the symbol's plan for that session — never a second armed plan
+                # that would trade the day twice (post-close 2026-09-04: force added three duplicates)
+                for ap in [a for a in list(self.runner._armed.values()) if a.symbol == sym and a.plan_for == for_date]:
+                    with contextlib.suppress(Exception):
+                        await self.runner.disarm(ap.run_id, reason="replaced by a forced re-plan", flatten=False)
+                    out.setdefault("replaced", []).append(ap.run_id)
             try:
                 r = await self.mint_plan_run(sym, for_date, rules=rules)
             except Exception as exc:  # noqa: BLE001
