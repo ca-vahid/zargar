@@ -822,3 +822,12 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   F27/F28 residue, F29's basis (**F37**), **F38**, **F39**, and the still-open F30-family question of
   which premium series is authoritative.
 
+
+## 2026-09-04 15:30 ET (desk session) — F37–F39 built and deployed
+
+- Commit 2c4e18c, deployed 15:27 ET (alert → restart → auto, nothing open). F37: the desk-wide loss cap counts the
+  BOOK for any money-mode plan that routed an order and the model only for alert plans — never the larger; gate is
+  money-modes only and names its record. F38: a per-day tally keeps a disarmed plan's losers, seeded from the
+  persisted rows at boot (QQQ's two real losers count again after this restart → the desk reads 2 of 2 from the
+  book, which is the truth today). F39: zero/negative equity refuses an option entry with its own reason.
+- Watch job: `skip_loss_cap_desk` lines now say "counted from the book/model".
