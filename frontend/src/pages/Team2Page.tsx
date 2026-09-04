@@ -143,12 +143,13 @@ export function Team2Page() {
       {tab === "armed" && (
         armedRows.length === 0 ? <EmptyState title="Nothing armed" hint="Armed Team2 plans appear here and on the Armed page." /> :
         <table className="table">
-          <thead><tr><th>Symbol</th><th>For</th><th>Status</th><th>Mode</th><th>Trades</th><th></th></tr></thead>
+          <thead><tr><th>Symbol</th><th>For</th><th>Status</th><th>Mode</th><th>The read right now</th><th>Trades</th><th></th></tr></thead>
           <tbody>
             {armedRows.map((a: any) => (
               <tr key={a.runId}>
                 <td className="mono-num">{a.symbol}</td><td className="mono-num">{a.planFor}</td>
                 <td>{a.status}{a.needsAttention ? " · needs attention" : ""}</td><td>{a.config?.mode ?? a.mode}</td>
+                <td className="small">{a.summary ?? "—"}{a.team2?.live?.length ? ` · contract ${a.team2.live[0].livePct > 0 ? "+" : ""}${a.team2.live[0].livePct}% live` : ""}</td>
                 <td className="mono-num">{(a.trades ?? []).length}</td>
                 <td><button className="ghost-btn" onClick={() => openArmedPlan(a.runId)}>open →</button></td>
               </tr>

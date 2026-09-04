@@ -44,6 +44,13 @@ const EVENT_ICON: Record<string, [string, string]> = {
   observed_midday: ["👁", "muted"], fired: ["▲", "pos"], entry: ["▲", "pos"],
   exit: ["▼", "neg"], flatten: ["▼", "neg"], paused: ["⏸", "muted"], resumed: ["▶", "muted"],
   error: ["✖", "neg"], critic_killed: ["✖", "warn"], expired: ["·", "muted"],
+  // Team2 (the session read speaks in its own events — docs/techniques/team2/METHOD.md)
+  scenario: ["◆", "muted"], pm_break: ["◆", "muted"], preopen: ["·", "muted"],
+  would_exit: ["▼", "muted"], would_trim: ["▼", "muted"], would_add: ["▲", "muted"],
+  live_trim: ["▼", "pos"], add: ["▲", "pos"], position_open: ["▲", "pos"], contract: ["·", "muted"],
+  entry_capped: ["⛔", "warn"], trim_deferred_live: ["·", "muted"], trim_already_live: ["·", "muted"],
+  late_touch: ["👁", "muted"], skip_no_trade_zone: ["⛔", "muted"], skip_range_confirmation: ["⛔", "muted"],
+  skip_engulfing: ["⛔", "muted"], pullback_stalled: ["👁", "muted"], mode_changed: ["·", "muted"],
 };
 
 function buildTimeline(a: ArmedPlan): TimelineRow[] {
@@ -84,6 +91,8 @@ function waitingFor(t: any, windowNow: string | null | undefined): string {
 type ChartStyle = "classic" | "zones" | "panes";
 
 export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
+  // Team2 has no prime windows (METHOD P2/D6): entries all session until 15:30, flat by 15:45 (0DTE)
+  const team2 = (a as any).technique === "team2";
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
@@ -125,7 +134,14 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
 
     const dayStart = etToUtcMs(a.planFor, 9, 25);
     const dayEnd = etToUtcMs(a.planFor, 16, 5);
-    const bands = [
+    const bands = team2 ? [
+      { from: etToUtcMs(a.planFor, 9, 30), to: etToUtcMs(a.planFor, 15, 30), color: rgbaVar("--up", 0.10),
+        label: { text: "● entries all session — 2m EMA13 pullbacks after a 15m close beyond the level", style: { color: up, fontSize: "10px", fontWeight: "700" } } },
+      { from: etToUtcMs(a.planFor, 15, 30), to: etToUtcMs(a.planFor, 15, 45), color: rgbaVar("--warn", 0.10),
+        label: { text: "⏸ no new entries (0DTE)", style: { color: warn, fontSize: "10px", fontWeight: "600" } } },
+      { from: etToUtcMs(a.planFor, 15, 45), to: etToUtcMs(a.planFor, 16, 0), color: rgbaVar("--down", 0.10),
+        label: { text: "▼ flat by 15:45", style: { color: down, fontSize: "10px", fontWeight: "700" } } },
+    ] : [
       { from: etToUtcMs(a.planFor, 9, 30), to: etToUtcMs(a.planFor, 10, 30), color: rgbaVar("--up", 0.12),
         label: { text: "● prime open — can fire", style: { color: up, fontSize: "10px", fontWeight: "700" } } },
       { from: etToUtcMs(a.planFor, 10, 30), to: etToUtcMs(a.planFor, 14, 45), color: rgbaVar("--warn", 0.10),
@@ -199,7 +215,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
       const extraYLines: Highcharts.YAxisPlotLinesOptions[] = [];
       if (preSession) {
         // tomorrow's slot is a sixth of the width: short window labels or they wrap
-        const shortText = ["● open", "mid-day · watch", "● close"];
+        const shortText = team2 ? ["● entries", "no entries", "flat"] : ["● open", "mid-day · watch", "● close"];
         bands.forEach((b, i) => { (b.label as any).text = shortText[i]; });
         // regular-hours 5m bars of the last five sessions, in session order
         const bySess = new Map<string, number[][]>();
@@ -376,7 +392,9 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     <div className="tq-armed-day">
       <div className="tq-armed-day-now">
         <b>Now:</b>{" "}
-        {waiting.length
+        {team2
+          ? <span>{a.summary}{waiting.map((t: any) => <span key={t.id}> <span className="tq-chip" title={t.id}>{t.label}</span>{t.distancePct !== undefined ? ` ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>)}</span>
+          : waiting.length
           ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip" title={t.id}>{t.label ?? `${trigWord(t)} @ ${fmt(t.entry)}`}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct !== undefined ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
           : <span>{a.summary}</span>}
       </div>

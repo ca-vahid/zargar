@@ -344,7 +344,7 @@ function FleetSortTable({ armed, selId, onSel, rich, onRich }: {
 const SESSION_LINE: Record<string, string> = {
   prime_open: "Opening window — plans can fire now",
   prime_close: "Closing window — plans can fire now",
-  midday: "Mid-day — watching only, nothing fires until 2:45 PM ET",
+  midday: "Mid-day — EM and tip plans watch only until 2:45 PM ET · Team2 plans fire all session (until 3:30 PM ET)",
   extended: "Market closed — resumes 9:30 AM ET",
 };
 
@@ -370,7 +370,7 @@ function sourceName(t?: ArmedTrigger, technique?: string): string {
   const raw = (t?.label ?? "").replace(/[\u2000-\u3300\uD83C-\uDBFF\uDC00-\uDFFF]/g, "").trim();
   const cleaned = raw.replace(/^[|｜]\s*/, "").replace(/\s*\btip\b/i, "").trim();
   if (cleaned) return cleaned;
-  return technique === "enhanced_market" ? "EM plan" : technique ?? "plan";
+  return technique === "enhanced_market" ? "EM plan" : technique === "team2" ? "Team2 plan" : technique ?? "plan";
 }
 
 function PlanCell({ a, t }: { a: ArmedPlan; t?: ArmedTrigger }) {
