@@ -682,3 +682,8 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   scope there is no longer a reason for it; the user may put it back to 8.
 - After the restart only SPY and IWM are armed for Team2 (62 plans restored) — QQQ's plan is no longer armed; see the
   desk's note below / the plan's journal.
+- **14:33 ET addendum.** QQQ's plan was disarmed at 14:17 by its own per-plan loss halt: two real round trips
+  (30 × 716p 0.34→0.24 = −$300; 18 × 717p 0.59→0.56 = −$54, flattened on the disarm, all filled, book flat) crossed
+  a $341 limit — the limit derived at 2% risk this morning, never re-derived when risk went to 6% in place. Fixed
+  (commit db1f315): a risk % change in auto re-derives the dollar loss halt; SPY/IWM now carry $997 (6% × 2).
+  Deployed 14:31 with the halt scopes. QQQ stays disarmed for today (its own day is over, by the plan's rule).
