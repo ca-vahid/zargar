@@ -140,10 +140,29 @@ class Team2Service:
         log.info("team2 nightly plans: %s", {k: (len(v) if isinstance(v, list) else v) for k, v in out.items()})
         return out
 
+    async def fetch_today_ext(self, symbol: str, date: str) -> list[Bar]:
+        """Today's 04:00-20:00 1m bars straight from history (Yahoo includePrePost), banked into the
+        bars table so the runner, the replay and the sweep all see the same pre-market. The nightly
+        job only banks after the close; at 09:25 this is the only source of the pre-market range."""
+        try:
+            from ...marketdata import persist_bars
+            from ...marketstructure.history import fetch_extended_session
+            bars = await fetch_extended_session(symbol, "1m", date)
+            bars = [b for b in bars if b.close and b.close > 0]
+            if bars:
+                await persist_bars(self.engine.sf, bars)
+            return bars
+        except Exception:  # noqa: BLE001
+            log.exception("team2: fetching today's extended bars failed for %s", symbol)
+            return []
+
     async def preopen_complete(self) -> dict:
         done = []
         for ap in list(getattr(self.runner, "_armed", {}).values()):
             try:
+                fresh = await self.fetch_today_ext(ap.symbol, ap.plan_for)
+                if fresh:
+                    self.runner.merge_bars(ap, fresh)
                 bars = await self.runner._today_bars(ap)
                 if not bars:
                     rows = await self.bars_1m(ap.symbol, limit=1500)

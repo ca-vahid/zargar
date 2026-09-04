@@ -211,13 +211,35 @@ class Team2Runner(PlanRunner):
             rows = await load_bars(self.engine.sf, ap.symbol, "1m", limit=6000)
         except Exception:  # noqa: BLE001
             rows = []
-        self._warm[ap.run_id] = [b for b in rows if session_date(b.ts) < ap.plan_for]
+        warm = [b for b in rows if session_date(b.ts) < ap.plan_for]
+        if len(warm) < 400:
+            # day one: nothing banked yet — the 200 EMA on 2m needs ~400 minutes of history, so
+            # fetch the last sessions' extended-hours tape once (Yahoo keeps ~20 days)
+            try:
+                from ...marketstructure.history import fetch_window
+                from ...marketstructure.sessions import session_bounds
+                end = session_bounds(ap.plan_for)[0]
+                fetched = await fetch_window(ap.symbol, "1m", end - 5 * 86_400_000, end, session="ext")
+                have = {b.ts for b in warm}
+                warm.extend(b for b in fetched if session_date(b.ts) < ap.plan_for and b.ts not in have)
+                warm.sort(key=lambda b: b.ts)
+            except Exception:  # noqa: BLE001 - a failed warm-up only delays the first reads
+                log.warning("team2 warm-up fetch failed for %s", ap.symbol)
+        self._warm[ap.run_id] = warm
         # today's bars already banked (pre-market) join the live list
         todays = [b for b in rows if session_date(b.ts) == ap.plan_for]
         have = {b.ts for b in self._bars.get(ap.run_id, [])}
         merged = self._bars.setdefault(ap.run_id, [])
         merged.extend(b for b in todays if b.ts not in have)
         merged.sort(key=lambda b: b.ts)
+
+    def merge_bars(self, ap: ArmedPlan, fresh: list[Bar]) -> None:
+        """Add banked/fetched 1m bars of the plan's date (pre-market at 09:25) without disturbing
+        the live sequence; the read re-runs over the merged list at the next 2m close."""
+        cur = self._bars.setdefault(ap.run_id, [])
+        have = {b.ts for b in cur}
+        cur.extend(b for b in fresh if session_date(b.ts) == ap.plan_for and b.ts not in have)
+        cur.sort(key=lambda b: b.ts)
 
     async def _today_bars(self, ap: ArmedPlan) -> list[Bar]:
         await self._load_warmup(ap)

@@ -26,6 +26,12 @@ async def rig(fresh_db, monkeypatch):
     await eng.settings.set("execution.arm_expired_plans", True, journal=False)   # synthetic days are in the past
     await eng.settings.set("techniques.team2.symbols", ["SPY"], journal=False)
     await eng.settings.set("techniques.team2.mode", "alert", journal=False)
+    # no network: the 09:25 completion and the day-one warm-up fetch Yahoo when nothing is banked
+    import zargar.marketstructure.history as hist
+    async def _no_fetch(*a, **k):
+        return []
+    monkeypatch.setattr(hist, "fetch_extended_session", _no_fetch)
+    monkeypatch.setattr(hist, "fetch_window", _no_fetch)
     await attach_team2_runner(eng)
     sim = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")
     await eng.settings.set("trading.default_portfolio", sim["id"], journal=False)
