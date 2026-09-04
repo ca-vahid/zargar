@@ -210,6 +210,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   zero entries taken at the anchor. F20 is not a rare edge — on a range day it is the whole setup class.
   Still **not built**; sizing is a money rule.
 
+- **F23 (2026-09-04 12:25 ET, FIXED)** The two "this is not a tradeable location" skips —
+  `skip_no_trade_zone` (V6/B5) and `skip_range_confirmation` (B3/A4) — were re-stated on **every** 2m close
+  for as long as the condition held. IWM printed 37 identical `skip_no_trade_zone` rows between 09:46 and
+  12:14 (SPY and QQQ add more), each one both a read event and a `TechniquePlanTriggerSkipped` row in the
+  append-only `events` table, which cannot be pruned later. The signal is one bit ("price is parked in the
+  no-trade zone"), so the noise buries the events that matter — F20's refusals, the fires, the exits.
+  **Fixed** in `techniques/team2/session.py`: a `note_once` helper keyed on the setup, the same shape as
+  the existing `pullback_stalled` dedupe (`s._stalled`); the flag clears the moment a real touch gets past
+  the gate, so a later refusal is said again. No decision changes — the gates, counts and the D9 allowance
+  are untouched, and replay parity is preserved because both paths run the same code. Regression test:
+  `test_no_trade_zone_skip_is_said_once_per_setup` (5 rows → 1 on the fixture).
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

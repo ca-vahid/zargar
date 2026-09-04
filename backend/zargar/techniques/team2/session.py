@@ -46,6 +46,7 @@ class Setup:
     dead: bool = False
     dead_reason: str | None = None
     _stalled: bool = False
+    _skipped: str | None = None   # last "not a tradeable location" skip already said out loud (F23)
 
     def to_dict(self) -> dict:
         return {"id": self.id, "kind": self.kind, "direction": self.direction, "anchor": round(self.anchor, 4),
@@ -157,6 +158,15 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
 
     def note(ts: int, what: str, why: str, **detail) -> None:
         events.append({"ts": ts, "time": _hhmm(ts), "event": what, "why": why, **detail})
+
+    def note_once(s: "Setup", ts: int, what: str, why: str, **detail) -> None:
+        # F23: the "not a tradeable location" skips hold for as long as price sits there, and re-stating them
+        # on every 2m close buries the read (and the journal) under identical rows. Say it once per setup and
+        # again only when the reason changes; a real touch clears it (see `s._skipped = None` below).
+        if s._skipped == what:
+            return
+        s._skipped = what
+        note(ts, what, why, **detail)
 
     # ---- bars: 2m for everything EMA/entry, 15m (RTH) for confirmation
     all_1m = sorted([*(warmup_1m or []), *bars1m], key=lambda b: b.ts)
@@ -429,15 +439,16 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         if s.range_day and rules.range_day_confirmation:
             pm_level = pml if long else pmh
             if pm_level is not None and ((b2.close < pm_level) if long else (b2.close > pm_level)):
-                note(b2.ts, "skip_range_confirmation", f"range day: price has not cleared the PM level {pm_level:.2f} (B3/A4) — not counted as a pullback",
-                     setup=s.id, touch=idx)
+                note_once(s, b2.ts, "skip_range_confirmation", f"range day: price has not cleared the PM level {pm_level:.2f} (B3/A4) — not counted as a pullback",
+                          setup=s.id, touch=idx)
                 continue
         bucket = sizing_bucket(entry_spot, zones, pmh, pml)
         mult = {"full": rules.size_full, "small": rules.size_small, "none": rules.size_none}[bucket]
         if mult <= 0:
-            note(b2.ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5) — not counted as a pullback",
-                 setup=s.id, touch=idx, bucket=bucket)
+            note_once(s, b2.ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5) — not counted as a pullback",
+                      setup=s.id, touch=idx, bucket=bucket)
             continue
+        s._skipped = None
         s.touches += 1
         if idx > rules.pullback_max_touches:
             note(b2.ts, "late_touch", f"touch #{idx} of {s.id} — beyond the first {rules.pullback_max_touches}, watch-only (D9/P6)",

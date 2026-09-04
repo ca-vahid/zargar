@@ -9,6 +9,7 @@ zone, the flatten time, and live≡replay parity when the day is truncated at `n
 from __future__ import annotations
 
 import datetime as dt
+import collections
 import math
 
 import pytest
@@ -371,6 +372,29 @@ def test_no_trade_zone_blocks_entries_inside_the_premarket_range():
     today = path_1m(DAY, (4, 0), (20, 0), f)
     plan, res = run(prev, today)
     assert plan["dayType"] in ("inside", "normal")
+    assert not [e for e in res.events if e["event"] == "fire"]
+
+
+def test_no_trade_zone_skip_is_said_once_per_setup():
+    # F23: the skip holds for as long as price sits in the zone, so re-stating it on every 2m close buries
+    # the read — and the append-only journal — under identical rows (IWM printed 37 on 2026-09-04).
+    prev = prev_day_bars()
+    def f(i):
+        m = 4 * 60 + i
+        if m < 9 * 60 + 30:
+            return 564.0 + 2.0 * math.sin(i / 45)      # PM range ≈ 562.0–566.0
+        x = m - 9 * 60 - 30
+        if x < 8:
+            return 562.3                               # dip into the PDL zone (top ≈ 562.50)
+        if x < 15:
+            return 562.3 + 1.2 * ((x - 8) / 7)         # 09:30 15m body closes above it → scenario 3
+        return 564.3 + 0.75 * math.sin((x - 15) / 9)   # then drift inside the PM range all day
+    today = path_1m(DAY, (4, 0), (20, 0), f)
+    _, res = run(prev, today)
+    skips = [e for e in res.events if e["event"] == "skip_no_trade_zone"]
+    assert skips, "the fixture no longer reaches the no-trade-zone gate"
+    per_setup = collections.Counter(e["setup"] for e in skips)
+    assert max(per_setup.values()) == 1, per_setup
     assert not [e for e in res.events if e["event"] == "fire"]
 
 
