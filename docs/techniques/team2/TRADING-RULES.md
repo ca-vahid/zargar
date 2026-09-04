@@ -75,6 +75,35 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   the pre-market range gains its last five minutes. Both feed `classify_day` and `sizing_bucket`, so
   a mid-day replay can show a different day type and a different sizing bucket than the desk traded.
   This is the more consequential half of F12: it silently rewrites the day's premise. Fixed the same way.
+- **F14 (2026-09-04, market watch)** Team2's never-chase cap (`Team2Runner.entry_limit_cap` = the
+  contract's `ask + tick`, T6/C2) can never bind. The shared fire chain re-prices the picked contract
+  on the live NBBO (`OptionsService.reprice` mutates the dict in place) and *then* asks the hook for
+  the cap, so both the limit and the cap are computed from the SAME repriced ask: `cap = limit + 0.01`
+  by construction, and the `entry_capped` branch is unreachable for this technique. Practically the
+  entry still cannot be filled above the current ask, so nothing is over-paid at the moment of the
+  order — but the method's actual intent (don't pay up for a contract that has already run past the
+  $0.20–$0.60 band, F1/F5) is unenforced: a strike picked at $0.55 on the ~15-min delayed CBOE chain
+  can be re-priced to $1.20 on OPRA and still be bought, at half the contracts. Behaviour change →
+  proposed, not built (see the run log 09:32 ET).
+- **F15 (2026-09-04, market watch)** Gap days trade the PM range in the book (L2.4: "on gap days the
+  PM range is the first thing watched for direction — a 15m close outside it, then the first 13 EMA
+  dip"), but two pieces of code disagree with that on a gap day: (a) `sizing_bucket` tests
+  `price > pdh.top` BEFORE the pre-market no-trade zone, so on a gap-up day every price above the PDH
+  zone is "full" size even when it sits inside the pre-market range (V6 calls that range chop); and
+  (b) the `pm_break_up` / `pm_break_down` setups in `session.py` are guarded by
+  `close <= zones["pdh"].top` / `close >= zones["pdl"].bottom`, which is the L2.5 *inside-day* case —
+  so on a gap day the PM level never becomes a setup at all. Live example: QQQ 2026-09-04 opened at
+  719.35, gap-up over the 718.60–718.91 PDH zone but INSIDE the 717.13–722.06 pre-market range; the
+  armed plan's only triggers are the PDH/PDL breaks, and a 15m close over 718.91 would arm full-size
+  13-EMA entries in the middle of the pre-market range. The downside case is the sharper one: a
+  gap-day reversal through PML 717.13 has no setup until PDL 709.69, ten points lower. Behaviour
+  change → proposed, not built.
+- **F16 (2026-09-04, market watch, operational)** The Practice portfolio Team2 is armed to
+  (`ff3c29d4`, sim) tripped its daily-loss halt at **09:38 ET** (`KillSwitchEngaged`, auto, "Practice
+  at -9.13%, halt at -8.0%") — eight minutes into the session, from other techniques' positions;
+  Team2 has no trade and no position today. No impact while Team2 is in `alert` mode, but the kill
+  switch is global: if the mode is moved to proposal/auto today, entries are refused (exits only), so
+  a day's worth of Team2 practice signals would silently produce no fills. Release is the user's call.
 
 ## Theories to test
 
