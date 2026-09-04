@@ -1,0 +1,175 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 233,
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-08-31T02:19:52.000Z",
+ "display_text_range": [
+  0,
+  176
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/jjhY3Rkj12",
+    "expanded_url": "https://x.com/Team2Trading/status/1961977205787107425/photo/1",
+    "indices": [
+     176,
+     199
+    ],
+    "url": "https://t.co/jjhY3Rkj12"
+   }
+  ],
+  "symbols": [
+   {
+    "indices": [
+     0,
+     4
+    ],
+    "text": "SPY"
+   }
+  ]
+ },
+ "id_str": "1961977205787107425",
+ "text": "$SPY We had some tough price action to navigate during this 2nd half of August!\n\nHere are a few tips and tricks I used to not just survive it, but come out with a 78% profit 🧵 https://t.co/jjhY3Rkj12",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1961977205787107425"
+  ],
+  "editable_until_msecs": "1756610392000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/jjhY3Rkj12",
+   "expanded_url": "https://x.com/Team2Trading/status/1961977205787107425/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    176,
+    199
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/GzpI2QubEAA5yKp.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 722,
+      "w": 1290,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 991,
+      "w": 991,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 991,
+      "w": 869,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 991,
+      "w": 496,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 991,
+      "w": 1290,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 991,
+    "width": 1290
+   },
+   "sizes": {
+    "large": {
+     "h": 991,
+     "resize": "fit",
+     "w": 1290
+    },
+    "medium": {
+     "h": 922,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 522,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/jjhY3Rkj12"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 722,
+     "w": 1290,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 991,
+     "w": 991,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 991,
+     "w": 869,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 991,
+     "w": 496,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 991,
+     "w": 1290,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1961977205787107425/photo/1",
+   "url": "https://pbs.twimg.com/media/GzpI2QubEAA5yKp.jpg",
+   "width": 1290,
+   "height": 991
+  }
+ ],
+ "conversation_count": 15,
+ "news_action_type": "conversation",
+ "isEdited": false,
+ "isStaleEdit": false
+}

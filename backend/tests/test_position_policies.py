@@ -199,3 +199,30 @@ def test_monetize_validates():
     assert validate_policy(_mon_pol()) == []
     bad = _mon_pol(floors=[[50, 60]])                    # floor above its arming gain
     assert any("below its arming gain" in w for w in validate_policy(bad))
+
+
+def test_premium_bleed_exits_when_the_stock_is_flat_but_not_when_it_moved():
+    # BBAI 2026-09-04: contract -61% while the stock sat ~-5.6% from entry —
+    # the bleed exit fires at -35% inside the ±3%... 5.6% is OUTSIDE the band?
+    # No: the band judges "did the THESIS move" — BBAI's -5.6% was outside a 3%
+    # band by day 4, but at -35% (day 2) it was ~-2.9%. Unit truths:
+    from zargar.execution.policies import evaluate_premium
+    pol = {"stop": {"kind": "none", "guard": "premium campaign"},
+           "premium_stop_pct": 55,
+           "premium_bleed": {"bleed_pct": 35, "underlying_band_pct": 3}}
+    st = PolicyState()
+    # bleeding with the stock flat -> exit early
+    d = evaluate_premium(pol, st, 0.33, 0.51, underlying_move_pct=-1.2)
+    assert d is not None and d.kind == "premium_stop" and "bleeding without the thesis" in d.reason
+    # same bleed but the stock genuinely fell -> the normal stops own it (no bleed exit)
+    d = evaluate_premium(pol, st, 0.33, 0.51, underlying_move_pct=-6.0)
+    assert d is None
+    # small bleed inside the band -> hold
+    d = evaluate_premium(pol, st, 0.40, 0.51, underlying_move_pct=-1.0)
+    assert d is None
+    # the full premium stop still rules regardless of the underlying
+    d = evaluate_premium(pol, st, 0.20, 0.51, underlying_move_pct=-6.0)
+    assert d is not None and "bled 55%" in d.reason
+    # no underlying reading -> bleed rule stays silent (never guess)
+    d = evaluate_premium(pol, st, 0.33, 0.51)
+    assert d is None

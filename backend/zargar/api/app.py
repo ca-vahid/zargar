@@ -47,6 +47,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         attach_flow_layer(eng)
         from ..techniques.tip.runner import attach_tip_runner
         await attach_tip_runner(eng)
+        from ..techniques.team2.runner import attach_team2_runner
+        await attach_team2_runner(eng)
         from ..desk import attach_desk
         attach_desk(eng)                      # morning report + roll watchdog + nightly soak
         await hub.start()
@@ -538,6 +540,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
     from .routes_flow import build_flow_routes
     build_flow_routes(app, eng, auth, config)
+
+    from .routes_team2 import build_team2_routes
+    build_team2_routes(app, eng, auth, config)
 
     # --- static SPA -----------------------------------------------------------
     if config.frontend_dist and Path(config.frontend_dist).is_dir():

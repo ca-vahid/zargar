@@ -1,0 +1,468 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 88,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1905768083371008327",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-03-28T23:44:54.000Z",
+ "display_text_range": [
+  0,
+  281
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/UflBu4wEET",
+    "expanded_url": "https://x.com/Team2Trading/status/1905768087909204371/photo/1",
+    "indices": [
+     282,
+     305
+    ],
+    "url": "https://t.co/UflBu4wEET"
+   }
+  ]
+ },
+ "id_str": "1905768087909204371",
+ "text": "The first thing you want to do is chart out the previous day high &amp; low zones.\n\nHere's how you do that... (Use the 15 minute chart)\n\nPrevious Day High Zone = High of day wick to the following candle body ✅\n\nPrevious Day Low Zone = Low of day wick to the following candle body ✅ https://t.co/UflBu4wEET",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1905768087909204371"
+  ],
+  "editable_until_msecs": "1743209094000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/UflBu4wEET",
+   "expanded_url": "https://x.com/Team2Trading/status/1905768087909204371/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    282,
+    305
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/GnKOAOcbIAAYPVS.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1079,
+      "w": 1926,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 1794,
+      "x": 114,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 1574,
+      "x": 224,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 897,
+      "x": 563,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 1926,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1794,
+    "width": 1926
+   },
+   "sizes": {
+    "large": {
+     "h": 1794,
+     "resize": "fit",
+     "w": 1926
+    },
+    "medium": {
+     "h": 1118,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 633,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/UflBu4wEET"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1079,
+     "w": 1926,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1794,
+     "w": 1794,
+     "x": 114,
+     "y": 0
+    },
+    {
+     "h": 1794,
+     "w": 1574,
+     "x": 224,
+     "y": 0
+    },
+    {
+     "h": 1794,
+     "w": 897,
+     "x": 563,
+     "y": 0
+    },
+    {
+     "h": 1794,
+     "w": 1926,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1905768087909204371/photo/1",
+   "url": "https://pbs.twimg.com/media/GnKOAOcbIAAYPVS.jpg",
+   "width": 1926,
+   "height": 1794
+  }
+ ],
+ "conversation_count": 2,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 1612,
+  "lang": "en",
+  "possibly_sensitive": false,
+  "reply_count": 69,
+  "retweet_count": 215,
+  "created_at": "2025-03-28T23:44:53.000Z",
+  "display_text_range": [
+   0,
+   247
+  ],
+  "entities": {
+   "media": [
+    {
+     "display_url": "pic.x.com/n6OZy4UoaD",
+     "expanded_url": "https://x.com/Team2Trading/status/1905768083371008327/photo/1",
+     "indices": [
+      245,
+      268
+     ],
+     "url": "https://t.co/n6OZy4UoaD"
+    }
+   ],
+   "symbols": [
+    {
+     "indices": [
+      35,
+      39
+     ],
+     "text": "SPY"
+    },
+    {
+     "indices": [
+      46,
+      50
+     ],
+     "text": "QQQ"
+    }
+   ]
+  },
+  "id_str": "1905768083371008327",
+  "text": "How to actually make money trading $SPY &amp; $QQQ 🧵\n\nDoesn't matter if the market is going up or down, this is the only strategy you will need 👇\n\nTake notes because this will be worth more than any expensive trading course you could ever buy 📝 https://t.co/n6OZy4UoaD",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1905768083371008327"
+   ],
+   "editable_until_msecs": "1743209093000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "mediaDetails": [
+   {
+    "display_url": "pic.x.com/n6OZy4UoaD",
+    "expanded_url": "https://x.com/Team2Trading/status/1905768083371008327/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     245,
+     268
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/GnKKa11bwAAER1F.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 1147,
+       "w": 2048,
+       "x": 0,
+       "y": 194
+      },
+      {
+       "h": 1848,
+       "w": 1848,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1848,
+       "w": 1621,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1848,
+       "w": 924,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1848,
+       "w": 2048,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 1848,
+     "width": 2048
+    },
+    "sizes": {
+     "large": {
+      "h": 1848,
+      "resize": "fit",
+      "w": 2048
+     },
+     "medium": {
+      "h": 1083,
+      "resize": "fit",
+      "w": 1200
+     },
+     "small": {
+      "h": 614,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/n6OZy4UoaD"
+   },
+   {
+    "display_url": "pic.x.com/n6OZy4UoaD",
+    "expanded_url": "https://x.com/Team2Trading/status/1905768083371008327/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     245,
+     268
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/GnKKdjZaEAAqZUx.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 2211,
+       "w": 3948,
+       "x": 0,
+       "y": 177
+      },
+      {
+       "h": 3207,
+       "w": 3207,
+       "x": 741,
+       "y": 0
+      },
+      {
+       "h": 3207,
+       "w": 2813,
+       "x": 1135,
+       "y": 0
+      },
+      {
+       "h": 3207,
+       "w": 1604,
+       "x": 2059,
+       "y": 0
+      },
+      {
+       "h": 3207,
+       "w": 3948,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 3207,
+     "width": 3948
+    },
+    "sizes": {
+     "large": {
+      "h": 1664,
+      "resize": "fit",
+      "w": 2048
+     },
+     "medium": {
+      "h": 975,
+      "resize": "fit",
+      "w": 1200
+     },
+     "small": {
+      "h": 552,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/n6OZy4UoaD"
+   }
+  ],
+  "photos": [
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 194
+     },
+     {
+      "h": 1848,
+      "w": 1848,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1848,
+      "w": 1621,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1848,
+      "w": 924,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1848,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/1905768083371008327/photo/1",
+    "url": "https://pbs.twimg.com/media/GnKKa11bwAAER1F.jpg",
+    "width": 2048,
+    "height": 1848
+   },
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 2211,
+      "w": 3948,
+      "x": 0,
+      "y": 177
+     },
+     {
+      "h": 3207,
+      "w": 3207,
+      "x": 741,
+      "y": 0
+     },
+     {
+      "h": 3207,
+      "w": 2813,
+      "x": 1135,
+      "y": 0
+     },
+     {
+      "h": 3207,
+      "w": 1604,
+      "x": 2059,
+      "y": 0
+     },
+     {
+      "h": 3207,
+      "w": 3948,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/1905768083371008327/photo/1",
+    "url": "https://pbs.twimg.com/media/GnKKdjZaEAAqZUx.jpg",
+    "width": 3948,
+    "height": 3207
+   }
+  ],
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoxOTA1NzY4MDg3Nzk1OTQ1NDcy"
+ }
+}

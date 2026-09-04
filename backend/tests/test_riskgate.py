@@ -107,6 +107,25 @@ async def test_kill_switch_blocks():
     assert not check(verdict, "kill_switch").passed
 
 
+async def test_auto_halt_spares_the_shadow_record_manual_blocks_all():
+    # 2026-09-04: Practice's -9.13% daily-loss halt rejected a RESEARCH entry —
+    # an AUTO halt protects real books from tilt but must not blind the
+    # learning record; a MANUAL halt (app/Telegram) still stops everything.
+    quotes = FakeQuotes()
+    quotes.set("AAPL", 100.0)
+    shadow_pf = type("Pf", (), {"kind": "shadow", "id": "sh1"})()
+    halt = HaltState()
+    halt.engage("daily loss limit: Practice at -9.13%", source="auto")
+    gate = make_gate(quotes=quotes, halt=halt)
+    v_shadow = await gate.evaluate(intent(portfolio_id="sh1"), shadow_pf)
+    assert check(v_shadow, "kill_switch").passed          # the record keeps collecting
+    v_real = await gate.evaluate(intent(), P)
+    assert not check(v_real, "kill_switch").passed        # real books stay halted
+    halt.engage("user hit HALT", source="app")            # manual: everything stops
+    v_manual = await gate.evaluate(intent(portfolio_id="sh1"), shadow_pf)
+    assert not check(v_manual, "kill_switch").passed
+
+
 async def test_stale_quote_blocks():
     quotes = FakeQuotes()
     quotes.set("AAPL", 100.0, age=60)

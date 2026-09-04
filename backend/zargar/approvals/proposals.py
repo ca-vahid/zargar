@@ -619,7 +619,8 @@ class ProposalService:
             task.add_done_callback(lambda _t, k=proposal_id: self._adopt_tasks.pop(k, None))
         return {"proposal": pdict, "order": order}
 
-    async def reject(self, proposal_id: str, *, via: str = "app") -> dict:
+    async def reject(self, proposal_id: str, *, via: str = "app",
+                     reason: str | None = None) -> dict:
         eng = self.engine
         async with eng.sf() as session:
             row = await session.get(Proposal, proposal_id)
@@ -630,9 +631,11 @@ class ProposalService:
             row.status = "rejected"
             row.decided_at = dt.datetime.now(dt.timezone.utc)
             row.decided_via = via
+            if reason:
+                row.context = {**(row.context or {}), "declineReason": reason}
             await session.commit()
             pdict = proposal_dict(row)
-        await eng.journal.append(ev.PROPOSAL_REJECTED, {"via": via},
+        await eng.journal.append(ev.PROPOSAL_REJECTED, {"via": via, **({"reason": reason} if reason else {})},
                                  aggregate_type="proposal", aggregate_id=proposal_id)
         eng.bus.publish(topics.PROPOSALS, pdict)
         return pdict

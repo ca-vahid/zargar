@@ -1,0 +1,231 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 82,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1905768123732766985",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-03-28T23:45:03.000Z",
+ "display_text_range": [
+  0,
+  275
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/0lk0TcNld2",
+    "expanded_url": "https://x.com/Team2Trading/status/1905768125385294099/photo/1",
+    "indices": [
+     273,
+     296
+    ],
+    "url": "https://t.co/0lk0TcNld2"
+   }
+  ],
+  "symbols": [
+   {
+    "indices": [
+     244,
+     248
+    ],
+    "text": "SPY"
+   },
+   {
+    "indices": [
+     256,
+     260
+    ],
+    "text": "SPY"
+   },
+   {
+    "indices": [
+     268,
+     272
+    ],
+    "text": "QQQ"
+   }
+  ]
+ },
+ "id_str": "1905768125385294099",
+ "text": "March stats...\n\nI  took / alerted 31 trades,\n\n26 wins ✅\n5 losses 🛑\n\nThat's an 84% win rate over the entire month 🎯\n\nI do not believe there is another trading group out there who can match our stats month after month!\n\nHere's some highlights 👇\n\n$SPY 210% ✅\n$SPY 200% ✅\n$QQQ https://t.co/0lk0TcNld2",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1905768125385294099"
+  ],
+  "editable_until_msecs": "1743209103000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/0lk0TcNld2",
+   "expanded_url": "https://x.com/Team2Trading/status/1905768125385294099/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    273,
+    296
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/GnKhdqfagAAml2_.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 667,
+      "w": 1191,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 667,
+      "w": 667,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 667,
+      "w": 585,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 667,
+      "w": 334,
+      "x": 58,
+      "y": 0
+     },
+     {
+      "h": 667,
+      "w": 1289,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 667,
+    "width": 1289
+   },
+   "sizes": {
+    "large": {
+     "h": 667,
+     "resize": "fit",
+     "w": 1289
+    },
+    "medium": {
+     "h": 621,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 352,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/0lk0TcNld2"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 667,
+     "w": 1191,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 667,
+     "w": 667,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 667,
+     "w": 585,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 667,
+     "w": 334,
+     "x": 58,
+     "y": 0
+    },
+    {
+     "h": 667,
+     "w": 1289,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1905768125385294099/photo/1",
+   "url": "https://pbs.twimg.com/media/GnKhdqfagAAml2_.jpg",
+   "width": 1289,
+   "height": 667
+  }
+ ],
+ "conversation_count": 6,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 63,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "1905768121195176163",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "reply_count": 1,
+  "retweet_count": 0,
+  "created_at": "2025-03-28T23:45:02.000Z",
+  "display_text_range": [
+   0,
+   281
+  ],
+  "entities": {},
+  "id_str": "1905768123732766985",
+  "text": "The goal of a trader is to risk your hard earned money on high probability setups that have multiple confirmations.\n\nThe techniques &amp; setups I just went over allow you to do exactly that!\n\nI've been trading these exact same setups for years! Hopefully they treat you as well as",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1905768123732766985"
+   ],
+   "editable_until_msecs": "1743209102000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoxOTA1NzY4MTI1MjA5MTgyMjA5"
+ }
+}

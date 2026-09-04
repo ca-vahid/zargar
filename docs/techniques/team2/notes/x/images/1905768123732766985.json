@@ -1,0 +1,208 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 63,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1905768121195176163",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "created_at": "2025-03-28T23:45:02.000Z",
+ "display_text_range": [
+  0,
+  281
+ ],
+ "entities": {},
+ "id_str": "1905768123732766985",
+ "text": "The goal of a trader is to risk your hard earned money on high probability setups that have multiple confirmations.\n\nThe techniques &amp; setups I just went over allow you to do exactly that!\n\nI've been trading these exact same setups for years! Hopefully they treat you as well as",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1905768123732766985"
+  ],
+  "editable_until_msecs": "1743209102000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "conversation_count": 1,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 59,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "1905768117466546451",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "possibly_sensitive": false,
+  "reply_count": 4,
+  "retweet_count": 2,
+  "created_at": "2025-03-28T23:45:02.000Z",
+  "display_text_range": [
+   0,
+   284
+  ],
+  "entities": {
+   "media": [
+    {
+     "display_url": "pic.x.com/7BwKEDYnQX",
+     "expanded_url": "https://x.com/Team2Trading/status/1905768121195176163/photo/1",
+     "indices": [
+      284,
+      307
+     ],
+     "url": "https://t.co/7BwKEDYnQX"
+    }
+   ]
+  },
+  "id_str": "1905768121195176163",
+  "text": "Bonus tip 📝\n\nAlways mark the Pre Market High &amp; Low before market opens. (4am to 9:30am EST)\n\nThese are great additional support &amp; resistance levels to watch.\n\n*Newer traders should avoid trading inside of the pre market high / low range. Price tends to be very choppy in that https://t.co/7BwKEDYnQX",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1905768121195176163"
+   ],
+   "editable_until_msecs": "1743209102000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "mediaDetails": [
+   {
+    "display_url": "pic.x.com/7BwKEDYnQX",
+    "expanded_url": "https://x.com/Team2Trading/status/1905768121195176163/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     284,
+     307
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/GnKfI_3bQAADZxg.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 1100,
+       "w": 1964,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1100,
+       "w": 1100,
+       "x": 319,
+       "y": 0
+      },
+      {
+       "h": 1100,
+       "w": 965,
+       "x": 387,
+       "y": 0
+      },
+      {
+       "h": 1100,
+       "w": 550,
+       "x": 594,
+       "y": 0
+      },
+      {
+       "h": 1100,
+       "w": 2048,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 1100,
+     "width": 2048
+    },
+    "sizes": {
+     "large": {
+      "h": 1100,
+      "resize": "fit",
+      "w": 2048
+     },
+     "medium": {
+      "h": 645,
+      "resize": "fit",
+      "w": 1200
+     },
+     "small": {
+      "h": 365,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/7BwKEDYnQX"
+   }
+  ],
+  "photos": [
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 1100,
+      "w": 1964,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1100,
+      "w": 1100,
+      "x": 319,
+      "y": 0
+     },
+     {
+      "h": 1100,
+      "w": 965,
+      "x": 387,
+      "y": 0
+     },
+     {
+      "h": 1100,
+      "w": 550,
+      "x": 594,
+      "y": 0
+     },
+     {
+      "h": 1100,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/1905768121195176163/photo/1",
+    "url": "https://pbs.twimg.com/media/GnKfI_3bQAADZxg.jpg",
+    "width": 2048,
+    "height": 1100
+   }
+  ],
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoxOTA1NzY4MTIzNjMyMDcwNjU3"
+ }
+}

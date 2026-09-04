@@ -51,7 +51,7 @@ def test_registry_lists_enhanced_market():
     # EM stays first (the default); tip + flow joined 2026-08-27 (wave one)
     ids = [t.id for t in all_techniques()]
     assert ids[0] == "enhanced_market"
-    assert set(ids) == {"enhanced_market", "tip", "flow"}
+    assert set(ids) == {"enhanced_market", "tip", "flow", "team2"}   # team2 joined 2026-09-03 (Team2 desk)
     assert get_technique("enhanced_market") is ENHANCED_MARKET
     d = ENHANCED_MARKET.to_dict()
     assert d["label"] == "EM Options" and d["page"] == "technique" and "validation" in d["tabs"]

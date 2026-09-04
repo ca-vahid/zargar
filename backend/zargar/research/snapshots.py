@@ -146,9 +146,90 @@ async def snapshot_daily_bars(engine) -> dict:
     return out
 
 
+async def snapshot_ext_bars(engine, *, days: int | None = None) -> dict:
+    """Extended-hours (04:00–20:00 ET) 1m bars for `research.ext_bars.symbols` into the bars
+    table (tf='1m'; pre/post rows share the timeframe and are told apart by wall clock —
+    `marketstructure.aggregate.bar_session`). Yahoo serves ~20 days of 1m history, so this
+    runs nightly and re-upserts the last `backfill_days`; the table is the only place a
+    60-session sweep can read from (Team2 desk, 2026-09-03; PLAN §3c B1)."""
+    from ..marketdata import persist_bars
+    from ..marketstructure.history import HistoryError, fetch_window
+    s = engine.settings
+    if not bool(s.get("research.ext_bars.enabled", True)):
+        return {"skipped": "disabled"}
+    symbols = [str(x).upper() for x in (s.get("research.ext_bars.symbols", []) or [])]
+    if not symbols:
+        return {"skipped": "no symbols"}
+    span_days = int(days or s.get("research.ext_bars.backfill_days", 20) or 20)
+    end_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    start_ms = end_ms - span_days * 86_400_000
+    written = 0
+    failures: list[str] = []
+    per_symbol: dict[str, int] = {}
+    for sym in symbols:
+        try:
+            bars = await fetch_window(sym, "1m", start_ms, end_ms, session="ext")
+        except HistoryError as exc:
+            failures.append(f"{sym}: {exc}")
+            continue
+        except Exception as exc:  # noqa: BLE001 - one symbol must not sink the job
+            failures.append(f"{sym}: {type(exc).__name__}: {exc}")
+            continue
+        bars = [b for b in bars if b.close and b.close > 0]
+        if bars:
+            await persist_bars(engine.sf, bars)
+        per_symbol[sym] = len(bars)
+        written += len(bars)
+        await asyncio.sleep(0.2)
+    out = {"symbols": len(symbols), "rows": written, "perSymbol": per_symbol,
+           "days": span_days, "failed": len(failures)}
+    if failures:
+        out["failures"] = failures[:10]
+    log.info("extended-hours bars: %s", out)
+    return out
+
+
+async def snapshot_vix(engine) -> dict:
+    """Daily closes of the volatility indices (^VIX, ^VIX1D, ^VIX9D) into the bars table
+    (tf='1d'). They are the intraday IV proxy for the 0DTE premium-path scorer (PLAN §3c B2)."""
+    from ..marketdata import persist_bars
+    from ..marketstructure.history import HistoryError, fetch_window
+    s = engine.settings
+    if not bool(s.get("research.vix.enabled", True)):
+        return {"skipped": "disabled"}
+    symbols = [str(x) for x in (s.get("research.vix.symbols", []) or [])]
+    end_ms = int(dt.datetime.now(dt.timezone.utc).timestamp() * 1000)
+    start_ms = end_ms - 400 * 86_400_000
+    written = 0
+    failures: list[str] = []
+    for sym in symbols:
+        try:
+            bars = await fetch_window(sym, "1d", start_ms, end_ms)
+        except HistoryError as exc:
+            failures.append(f"{sym}: {exc}")
+            continue
+        except Exception as exc:  # noqa: BLE001
+            failures.append(f"{sym}: {type(exc).__name__}: {exc}")
+            continue
+        bars = [b for b in bars if b.close and b.close > 0]
+        if bars:
+            await persist_bars(engine.sf, bars)
+        written += len(bars)
+        await asyncio.sleep(0.2)
+    out = {"symbols": len(symbols), "rows": written, "failed": len(failures)}
+    if failures:
+        out["failures"] = failures[:10]
+    log.info("vix bars: %s", out)
+    return out
+
+
 def register_jobs(engine) -> None:
     s = engine.settings
     engine.scheduler.register("chain_snapshots", str(s.get("research.chain_snapshots.at", "16:30")),
                               lambda: snapshot_chains(engine))
     engine.scheduler.register("daily_bars", str(s.get("research.daily_bars.at", "20:05")),
                               lambda: snapshot_daily_bars(engine))
+    engine.scheduler.register("ext_bars", str(s.get("research.ext_bars.at", "20:10")),
+                              lambda: snapshot_ext_bars(engine))
+    engine.scheduler.register("vix_bars", str(s.get("research.ext_bars.at", "20:10")),
+                              lambda: snapshot_vix(engine))

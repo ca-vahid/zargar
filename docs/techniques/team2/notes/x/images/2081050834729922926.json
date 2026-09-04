@@ -1,0 +1,455 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 35,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "2081050833106661731",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2026-07-25T16:15:57.000Z",
+ "display_text_range": [
+  0,
+  278
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/VYRtrW3cyy",
+    "expanded_url": "https://x.com/Team2Trading/status/2081050834729922926/photo/1",
+    "indices": [
+     273,
+     296
+    ],
+    "url": "https://t.co/VYRtrW3cyy"
+   }
+  ]
+ },
+ "id_str": "2081050834729922926",
+ "text": "Here's the simple cheat sheet for Bullish vs Bearish EMA trends.\n\nBullish EMA trend 📈\n\n13 EMA on top 🟡\n48 EMA in middle 🟣\n200 EMA on bottim 🔴\n\nThese EMA's will be your ares of support in an uptrend. (Dip to get long)\n\nBearish EMA trend 📉\n\n200 EMA on top 🔴\n48 EMA in middle https://t.co/VYRtrW3cyy",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "2081050834729922926"
+  ],
+  "editable_until_msecs": "1784999757000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/VYRtrW3cyy",
+   "expanded_url": "https://x.com/Team2Trading/status/2081050834729922926/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    273,
+    296
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/HOFSyuMa8AA8bBo.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1390,
+      "w": 1390,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1390,
+      "w": 1219,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1390,
+      "w": 695,
+      "x": 113,
+      "y": 0
+     },
+     {
+      "h": 1390,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1390,
+    "width": 2048
+   },
+   "sizes": {
+    "large": {
+     "h": 1390,
+     "resize": "fit",
+     "w": 2048
+    },
+    "medium": {
+     "h": 814,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 462,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/VYRtrW3cyy"
+  },
+  {
+   "display_url": "pic.x.com/VYRtrW3cyy",
+   "expanded_url": "https://x.com/Team2Trading/status/2081050834729922926/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    273,
+    296
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/HOFS0LFaQAAQWzj.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1081,
+      "w": 1930,
+      "x": 0,
+      "y": 715
+     },
+     {
+      "h": 1796,
+      "w": 1796,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1796,
+      "w": 1575,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1796,
+      "w": 898,
+      "x": 81,
+      "y": 0
+     },
+     {
+      "h": 1796,
+      "w": 1930,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1796,
+    "width": 1930
+   },
+   "sizes": {
+    "large": {
+     "h": 1796,
+     "resize": "fit",
+     "w": 1930
+    },
+    "medium": {
+     "h": 1117,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 633,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/VYRtrW3cyy"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1147,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1390,
+     "w": 1390,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1390,
+     "w": 1219,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1390,
+     "w": 695,
+     "x": 113,
+     "y": 0
+    },
+    {
+     "h": 1390,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/2081050834729922926/photo/1",
+   "url": "https://pbs.twimg.com/media/HOFSyuMa8AA8bBo.jpg",
+   "width": 2048,
+   "height": 1390
+  },
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1081,
+     "w": 1930,
+     "x": 0,
+     "y": 715
+    },
+    {
+     "h": 1796,
+     "w": 1796,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1796,
+     "w": 1575,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 1796,
+     "w": 898,
+     "x": 81,
+     "y": 0
+    },
+    {
+     "h": 1796,
+     "w": 1930,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/2081050834729922926/photo/1",
+   "url": "https://pbs.twimg.com/media/HOFS0LFaQAAQWzj.jpg",
+   "width": 1930,
+   "height": 1796
+  }
+ ],
+ "conversation_count": 2,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 46,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "2081050831156351396",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "possibly_sensitive": false,
+  "reply_count": 1,
+  "retweet_count": 5,
+  "created_at": "2026-07-25T16:15:57.000Z",
+  "display_text_range": [
+   0,
+   125
+  ],
+  "entities": {
+   "media": [
+    {
+     "display_url": "pic.x.com/7bdNlQQBS5",
+     "expanded_url": "https://x.com/Team2Trading/status/2081050833106661731/photo/1",
+     "indices": [
+      122,
+      145
+     ],
+     "url": "https://t.co/7bdNlQQBS5"
+    }
+   ]
+  },
+  "id_str": "2081050833106661731",
+  "text": "Now add these EMA's to your chart 📊\n\n13 EMA 🟡\n48 EMA 🟣\n200 EMA 🔴\n\nThese will help with identifying trends &amp; momentum. https://t.co/7bdNlQQBS5",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "2081050833106661731"
+   ],
+   "editable_until_msecs": "1784999757000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "mediaDetails": [
+   {
+    "display_url": "pic.x.com/7bdNlQQBS5",
+    "expanded_url": "https://x.com/Team2Trading/status/2081050833106661731/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     122,
+     145
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/HOFScMSbMAAvkyU.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 400,
+       "w": 715,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 495,
+       "w": 495,
+       "x": 91,
+       "y": 0
+      },
+      {
+       "h": 495,
+       "w": 434,
+       "x": 121,
+       "y": 0
+      },
+      {
+       "h": 495,
+       "w": 248,
+       "x": 214,
+       "y": 0
+      },
+      {
+       "h": 495,
+       "w": 715,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 495,
+     "width": 715
+    },
+    "sizes": {
+     "large": {
+      "h": 495,
+      "resize": "fit",
+      "w": 715
+     },
+     "medium": {
+      "h": 495,
+      "resize": "fit",
+      "w": 715
+     },
+     "small": {
+      "h": 471,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/7bdNlQQBS5"
+   }
+  ],
+  "photos": [
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 400,
+      "w": 715,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 495,
+      "x": 91,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 434,
+      "x": 121,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 248,
+      "x": 214,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 715,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/2081050833106661731/photo/1",
+    "url": "https://pbs.twimg.com/media/HOFScMSbMAAvkyU.jpg",
+    "width": 715,
+    "height": 495
+   }
+  ],
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoyMDgxMDUwODM0NjY2OTM4MzY4"
+ }
+}

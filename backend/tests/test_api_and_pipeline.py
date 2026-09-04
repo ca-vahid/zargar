@@ -249,6 +249,7 @@ async def test_analyst_take_on_implied_tip_is_promoted_but_never_self_approves(a
     await wait_quote(eng, "AAPL")
     await eng.settings.set("verification.max_price_deviation_pct", 10.0)
     await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+    await eng.settings.set("techniques.tip.unattended", False)   # the ATTENDED contract
     eng.signals_service._analyst_client = _FakeAnthropic()
     tip = ExtractionResult(
         signals=[TradeSignal(
@@ -267,6 +268,30 @@ async def test_analyst_take_on_implied_tip_is_promoted_but_never_self_approves(a
     assert p is not None and p["status"] == "pending", p
     assert p["context"].get("promoted") and "human" in (p["context"].get("autoGate") or "")
     assert not p.get("decidedVia")
+    # UNATTENDED practice (the default; user 2026-09-04): the same promoted
+    # take trades — nobody is watching the queue, the analyst's take decides
+    await eng.settings.set("techniques.tip.unattended", True)
+    await eng.signals_service.dismiss_signals([sig["id"]])
+    tip2 = ExtractionResult(
+        signals=[TradeSignal(
+            ticker="AAPL", direction="long", action="open", instrument="shares",
+            timeframe="swing", catalyst="buyback",
+            thesis_summary="Adding again.", evidence_quotes=["We are buying AAPL today"],
+            confidence="implied", is_actionable=False)],
+        source_type="other")
+    # a SHARES take keeps the test on its actual subject (the unattended
+    # approval flow) instead of the rig's synthetic option quotes
+    class _TakeShares(_FakeAnthropic):
+        async def create(self, **kw):
+            return _FakeAnthropicResp([_Block(type="text", text=(
+                '{"verdict": "take", "instrument": "shares", "quantity": 5,'
+                ' "rationale": "adding with the trend", "confidence": 0.7,'
+                ' "exit_targets": [245.0], "exit_fractions": [1.0],'
+                ' "underlying_stop": 224.0, "max_hold_sessions": 8}'))])
+    eng.signals_service._analyst_client = _TakeShares()
+    out2 = await run_pipeline(eng, tip2)
+    p2 = out2[0]["proposal"]
+    assert p2 is not None and p2["status"] == "executed" and p2["decidedVia"] == "auto", p2
 
 
 async def test_stale_tip_replayed_not_traded(app_client):
@@ -340,6 +365,27 @@ async def test_newer_tip_for_the_same_contract_supersedes_the_pending_proposal(a
     pending = [p for p in (await client.get("/api/proposals?status=pending")).json()
                if p["symbol"] == "AAPL"]
     assert len(pending) == 1 and pending[0]["id"] == p2["id"]
+
+
+async def test_unattended_skip_is_declined_on_the_record(app_client):
+    # user 2026-09-04: "I won't be monitoring — approvals aren't useful." In
+    # unattended practice an analyst SKIP declines the card immediately with
+    # the reasoning attached — history, not a queue item.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    await eng.settings.set("techniques.tip.sources", {"TestLetter": {"mode": "auto"}})
+
+    class _Skip(_FakeAnthropic):
+        async def create(self, **kw):
+            return _FakeAnthropicResp([_Block(type="text", text=(
+                '{"verdict": "skip", "rationale": "chart premise broken", "confidence": 0.8}'))])
+    eng.signals_service._analyst_client = _Skip()
+    out = await run_pipeline(eng, canned_extraction())
+    p = out[0]["proposal"]
+    assert p is not None and p["status"] == "rejected" and p["decidedVia"] == "analyst", p
+    assert "skip" in (p["context"].get("declineReason") or "")
+    assert (await client.get("/api/proposals?status=pending")).json() == []
 
 
 async def test_share_proposal_is_sized_to_fit_the_position_cap(app_client):
@@ -488,6 +534,66 @@ async def test_lotto_premium_contract_qty_is_capped(app_client):
     assert eng.proposals._cap_contracts(3) == 3
     await eng.settings.set("techniques.tip.max_contracts_per_tip", 0)
     assert eng.proposals._cap_contracts(277) == 277
+
+
+async def test_spread_refused_record_buy_rests_a_limit_at_the_mid(app_client, monkeypatch):
+    # user decision 2026-09-04: a tip whose market order is refused for a wide
+    # open spread must not vanish from the record — the shadow book retries as
+    # a patient limit at the mid, so the counterfactual still exists.
+    client, eng = app_client
+    await wait_quote(eng, "AAPL")
+    from zargar.domain import Quote as _Q
+    from zargar.models import RawContent, Signal
+    occ2 = "AAPL261016C00240000"
+    # the overlay survives the sim feed's own publishes (a bare on_quote pin
+    # would be overwritten the moment _shadow_execute ensures the symbol)
+    eng.quotes.set_overlay(occ2, bid=1.00, ask=1.50, bid_size=0, ask_size=0)
+    eng.quotes.on_quote(_Q(symbol=occ2, bid=1.00, ask=1.50, last=1.20))   # 40% spread
+
+    async def fake_pick(eng_, **kw):
+        return {"available": True, "symbol": occ2, "display": "AAPL 240C", "ask": 1.50,
+                "mid": 1.25, "warnings": []}
+    import zargar.techniques.tip.express as express_mod
+    monkeypatch.setattr(express_mod, "pick_tip_contract", fake_pick)
+
+    async def no_track(sym):                     # keep the LIVE CBOE chain out of the test
+        return None
+    monkeypatch.setattr(eng.options, "track", no_track)
+
+    placed = []
+    real_place = eng.orders.place
+
+    async def spy_place(intent):
+        placed.append(intent)
+        if intent.order_type == "MKT":
+            return {"id": "m1", "status": "REJECTED_RISK",
+                    "rejectReason": "bid/ask spread 40.0% exceeds 10% - market order rejected, use a limit"}
+        return {"id": "l1", "status": "SUBMITTED", "symbol": intent.symbol}
+    monkeypatch.setattr(eng.orders, "place", spy_place)
+    try:
+        async with eng.sf() as session:
+            rc = RawContent(id=new_id(), source_type="manual", source_name="TestLetter",
+                            subject="alert", body_text="AAPL 240c Oct")
+            row = Signal(id=new_id(), raw_content_id=rc.id, source_name="TestLetter",
+                         ticker="AAPL", direction="long", action="open", instrument="call",
+                         strike=240.0, expiry="2026-10-16", status="verified",
+                         is_actionable=True, extraction={"signal": {}}, verification={"passed": True})
+            session.add_all([rc, row])
+            await session.commit()
+        from zargar.signals.schemas import TradeSignal
+        sig = TradeSignal(ticker="AAPL", direction="long", action="open", instrument="call",
+                          strike=240.0, expiry="2026-10-16", timeframe="swing",
+                          thesis_summary="calls", evidence_quotes=["AAPL 240c"],
+                          confidence="explicit_call", is_actionable=True)
+        await eng.signals_service._shadow_execute(row, sig)
+    finally:
+        monkeypatch.setattr(eng.orders, "place", real_place)
+    kinds = [(i.order_type, i.limit_price) for i in placed if i.symbol == occ2]
+    assert kinds == [("MKT", None), ("LMT", 1.25)], kinds
+    async with eng.sf() as session:
+        row2 = await session.get(Signal, row.id)
+    note = ((row2.extraction or {}).get("shadowExpression") or {}).get("note") or ""
+    assert "resting a limit at the mid" in note, note
 
 
 async def test_short_tip_without_put_never_proposes_share_short(app_client):

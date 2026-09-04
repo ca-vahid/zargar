@@ -1,0 +1,208 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 14,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1979379260612841554",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-10-18T02:49:25.000Z",
+ "display_text_range": [
+  0,
+  275
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/8nfupddSWN",
+    "expanded_url": "https://x.com/Team2Trading/status/1979379262043099639/photo/1",
+    "indices": [
+     276,
+     299
+    ],
+    "url": "https://t.co/8nfupddSWN"
+   }
+  ]
+ },
+ "id_str": "1979379262043099639",
+ "text": "Remember Scenario #1 from above...\n\nBreaks the PDH resistance so we already have a Bullish Bias for the day,\n\nNow add in the Bullish EMA trend and bull flags!\n\nYou are looking at multiple confirmations to go long as well as multiple entry opportunities to join in and catch a https://t.co/8nfupddSWN",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1979379262043099639"
+  ],
+  "editable_until_msecs": "1760759365000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/8nfupddSWN",
+   "expanded_url": "https://x.com/Team2Trading/status/1979379262043099639/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    276,
+    299
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/G3gl6vSWUAAka4b.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1030,
+      "w": 1840,
+      "x": 0,
+      "y": 451
+     },
+     {
+      "h": 1800,
+      "w": 1800,
+      "x": 40,
+      "y": 0
+     },
+     {
+      "h": 1800,
+      "w": 1579,
+      "x": 261,
+      "y": 0
+     },
+     {
+      "h": 1800,
+      "w": 900,
+      "x": 792,
+      "y": 0
+     },
+     {
+      "h": 1800,
+      "w": 1840,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1800,
+    "width": 1840
+   },
+   "sizes": {
+    "large": {
+     "h": 1800,
+     "resize": "fit",
+     "w": 1840
+    },
+    "medium": {
+     "h": 1174,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 665,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/8nfupddSWN"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1030,
+     "w": 1840,
+     "x": 0,
+     "y": 451
+    },
+    {
+     "h": 1800,
+     "w": 1800,
+     "x": 40,
+     "y": 0
+    },
+    {
+     "h": 1800,
+     "w": 1579,
+     "x": 261,
+     "y": 0
+    },
+    {
+     "h": 1800,
+     "w": 900,
+     "x": 792,
+     "y": 0
+    },
+    {
+     "h": 1800,
+     "w": 1840,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1979379262043099639/photo/1",
+   "url": "https://pbs.twimg.com/media/G3gl6vSWUAAka4b.jpg",
+   "width": 1840,
+   "height": 1800
+  }
+ ],
+ "conversation_count": 1,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 13,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "1979379257504862619",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "reply_count": 1,
+  "retweet_count": 0,
+  "created_at": "2025-10-18T02:49:25.000Z",
+  "display_text_range": [
+   0,
+   152
+  ],
+  "entities": {},
+  "id_str": "1979379260612841554",
+  "text": "So now you have your...\n\nSupport &amp; Resistance Zones ✅\nBullish / Bearish EMA trends ✅\nBullish / Bear Flags ✅\n\nCheck out how they all come together 👇",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1979379260612841554"
+   ],
+   "editable_until_msecs": "1760759365000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoxOTc5Mzc5MjYxOTcxNzk1OTc1"
+ }
+}

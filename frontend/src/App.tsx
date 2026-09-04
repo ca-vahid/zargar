@@ -18,6 +18,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 const TechniquePage = lazy(() => import("./pages/TechniquePage").then((m) => ({ default: m.TechniquePage })));
 const OptionsPage = lazy(() => import("./pages/OptionsPage").then((m) => ({ default: m.OptionsPage })));
 const FlowPage = lazy(() => import("./pages/FlowPage").then((m) => ({ default: m.FlowPage })));
+const Team2Page = lazy(() => import("./pages/Team2Page").then((m) => ({ default: m.Team2Page })));
 import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 import { clientKind, useViewport } from "./lib/viewport";
@@ -149,6 +150,7 @@ export default function App() {
           {page === "settings" && <SettingsPage />}
           {page === "technique" && <Suspense fallback={<div className="state-note">loading…</div>}><TechniquePage /></Suspense>}
           {page === "flow" && <Suspense fallback={<div className="state-note">loading…</div>}><FlowPage /></Suspense>}
+          {page === "team2" && <Suspense fallback={<div className="state-note">loading…</div>}><Team2Page /></Suspense>}
           {page === "armed" && <ArmedPage />}
           {page === "watchlists" && <WatchlistsPage />}
         </div>

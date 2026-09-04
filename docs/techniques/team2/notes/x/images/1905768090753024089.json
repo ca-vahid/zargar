@@ -1,0 +1,340 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 97,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1905768087909204371",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-03-28T23:44:54.000Z",
+ "display_text_range": [
+  0,
+  287
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/J0BQilfeQG",
+    "expanded_url": "https://x.com/Team2Trading/status/1905768090753024089/photo/1",
+    "indices": [
+     285,
+     308
+    ],
+    "url": "https://t.co/J0BQilfeQG"
+   }
+  ]
+ },
+ "id_str": "1905768090753024089",
+ "text": "Now lets break down how to use these zones...\n\nThese are the main areas of support &amp; resistance to watch the following day!\n\nThis gives you 4 of the strongest scenarios to watch.\n\n1️⃣ Break PDH = Favor calls 📈\n2️⃣ Reject PDH = Favor puts 📉\n3️⃣ Bounce PDL = Favor calls 📈\n4️⃣ Break https://t.co/J0BQilfeQG",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1905768090753024089"
+  ],
+  "editable_until_msecs": "1743209094000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/J0BQilfeQG",
+   "expanded_url": "https://x.com/Team2Trading/status/1905768090753024089/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    285,
+    308
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/GnKPXWxbwAAmYn2.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 414
+     },
+     {
+      "h": 1561,
+      "w": 1561,
+      "x": 487,
+      "y": 0
+     },
+     {
+      "h": 1561,
+      "w": 1369,
+      "x": 679,
+      "y": 0
+     },
+     {
+      "h": 1561,
+      "w": 781,
+      "x": 1196,
+      "y": 0
+     },
+     {
+      "h": 1561,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 1561,
+    "width": 2048
+   },
+   "sizes": {
+    "large": {
+     "h": 1561,
+     "resize": "fit",
+     "w": 2048
+    },
+    "medium": {
+     "h": 915,
+     "resize": "fit",
+     "w": 1200
+    },
+    "small": {
+     "h": 518,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/J0BQilfeQG"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 1147,
+     "w": 2048,
+     "x": 0,
+     "y": 414
+    },
+    {
+     "h": 1561,
+     "w": 1561,
+     "x": 487,
+     "y": 0
+    },
+    {
+     "h": 1561,
+     "w": 1369,
+     "x": 679,
+     "y": 0
+    },
+    {
+     "h": 1561,
+     "w": 781,
+     "x": 1196,
+     "y": 0
+    },
+    {
+     "h": 1561,
+     "w": 2048,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1905768090753024089/photo/1",
+   "url": "https://pbs.twimg.com/media/GnKPXWxbwAAmYn2.jpg",
+   "width": 2048,
+   "height": 1561
+  }
+ ],
+ "conversation_count": 3,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 88,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "1905768083371008327",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "possibly_sensitive": false,
+  "reply_count": 2,
+  "retweet_count": 5,
+  "created_at": "2025-03-28T23:44:54.000Z",
+  "display_text_range": [
+   0,
+   281
+  ],
+  "entities": {
+   "media": [
+    {
+     "display_url": "pic.x.com/UflBu4wEET",
+     "expanded_url": "https://x.com/Team2Trading/status/1905768087909204371/photo/1",
+     "indices": [
+      282,
+      305
+     ],
+     "url": "https://t.co/UflBu4wEET"
+    }
+   ]
+  },
+  "id_str": "1905768087909204371",
+  "text": "The first thing you want to do is chart out the previous day high &amp; low zones.\n\nHere's how you do that... (Use the 15 minute chart)\n\nPrevious Day High Zone = High of day wick to the following candle body ✅\n\nPrevious Day Low Zone = Low of day wick to the following candle body ✅ https://t.co/UflBu4wEET",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1905768087909204371"
+   ],
+   "editable_until_msecs": "1743209094000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "mediaDetails": [
+   {
+    "display_url": "pic.x.com/UflBu4wEET",
+    "expanded_url": "https://x.com/Team2Trading/status/1905768087909204371/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     282,
+     305
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/GnKOAOcbIAAYPVS.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 1079,
+       "w": 1926,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1794,
+       "w": 1794,
+       "x": 114,
+       "y": 0
+      },
+      {
+       "h": 1794,
+       "w": 1574,
+       "x": 224,
+       "y": 0
+      },
+      {
+       "h": 1794,
+       "w": 897,
+       "x": 563,
+       "y": 0
+      },
+      {
+       "h": 1794,
+       "w": 1926,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 1794,
+     "width": 1926
+    },
+    "sizes": {
+     "large": {
+      "h": 1794,
+      "resize": "fit",
+      "w": 1926
+     },
+     "medium": {
+      "h": 1118,
+      "resize": "fit",
+      "w": 1200
+     },
+     "small": {
+      "h": 633,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/UflBu4wEET"
+   }
+  ],
+  "photos": [
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 1079,
+      "w": 1926,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 1794,
+      "x": 114,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 1574,
+      "x": 224,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 897,
+      "x": 563,
+      "y": 0
+     },
+     {
+      "h": 1794,
+      "w": 1926,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/1905768087909204371/photo/1",
+    "url": "https://pbs.twimg.com/media/GnKOAOcbIAAYPVS.jpg",
+    "width": 1926,
+    "height": 1794
+   }
+  ],
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false,
+ "note_tweet": {
+  "id": "Tm90ZVR3ZWV0UmVzdWx0czoxOTA1NzY4MDkwNjM5Njk5OTY4"
+ }
+}

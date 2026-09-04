@@ -16,6 +16,7 @@ cd backend && .venv/bin/python -m zargar.main          # run engine+API (+UI if 
 cd frontend && npm run build                           # typecheck + production build (the frontend gate)
 cd frontend && npm run dev                             # hot-reload UI on :5173, proxies :8420
 ./scripts/start.sh | scripts\start.ps1                 # one-process app for the user
+scripts\stop.ps1                                        # stop server + helper windows (user runs it from the ELEVATED terminal that owns the process; afterwards Claude may `scripts\start.ps1 -Detach` from its own non-elevated shell and owns the new process)
 cd backend && .venv/bin/python -m zargar.tools.ibkr_check   # read-only IBKR connectivity test
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTrade status/accounts
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check --upgrade # re-auth a connection to trade
@@ -251,6 +252,9 @@ start a new block when the user calls a release. `/api/health` reports the versi
   way and a gap-up otherwise vanishes. Pre/after-hours moves show separately.
   Day sparklines/charts are seeded from Yahoo's real 1m session bars on
   `ensure_symbol` (not ticks-since-boot) and filtered to 09:30–16:00 ET.
+  `Quote.day_high/day_low/volume` are SESSION-to-date (F19, 2026-09-04): seeded from Yahoo's
+  regular-session values on every context poll, widened only by 09:30–16:00 ET prints, reset
+  on a new ET session — never "since the process started".
 - SnapTrade accounts hold cash in SEVERAL currencies at once (Webull CASH
   keeps a USD wallet inside a CAD account) — always sum ALL `/balances`
   entries FX-converted, never just the account-currency row.
@@ -388,3 +392,4 @@ start a new block when the user calls a release. `/api/health` reports the versi
 - Async predicate waits use `tests/conftest.wait_for` — no bare sleeps.
 - UI verification: build, then Playwright against the served app
   (`/opt/pw-browsers` chromium in the dev container).
+**Team2 technique (BUILT v0.1 2026-09-03; the Team2 desk = this session's group):** `docs/techniques/team2/` — Casey/@Team2Trading's SPY/QQQ/IWM 0DTE method (4 levels + 13/48/200 EMA on 2m + 15m-close confirmation, EMA13 pullback entries, ~$0.50 premium-targeted contracts, +50/+100% trims, flatten 15:45). `README.md` (doc map, capture recipe), `METHOD.md` (numbered rules, §7b/§7c from images + videos), `PLAN.md` (decisions D1–D14, engine list §3b, review §3c, phases with checkboxes), `TRADING-RULES.md`, `SOURCES.md` + `notes/` (49 posts, 2 transcripts, 145 images — jpg local only). Code: `zargar/techniques/team2/` (rules/regime/scenario/levels/plan/premium/**session.py = the one pure read**/runner/service), `api/routes_team2.py`, `frontend/src/pages/Team2Page.tsx`, `tools/team2_sweep.py`. **Built completely separately from EM** — shared engine additions (ext-hours bars, `marketstructure/aggregate|indicators|dailylevels|market_calendar`, `options/pick`, `research/macro_calendar`, per-technique 0DTE RiskGate policy `techniques.<id>.zero_dte`) are logged in PLATFORM-RULES; never edit EM's `zargar/technique/` for Team2. User decision 2026-09-03: **Team2 IS a 0DTE technique** (its own gated policy). Tests: `pytest tests/test_team2_*.py tests/test_marketstructure_extended.py` (own DB `zargar_test_team2` on :5433). Status: alert mode; proposal/auto, mobile-audit, morning-report line, the generic review CLI and the calibration of the remaining 8 documented trades are open (PLAN §3c).

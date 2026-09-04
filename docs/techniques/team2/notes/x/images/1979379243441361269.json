@@ -1,0 +1,337 @@
+{
+ "__typename": "Tweet",
+ "favorite_count": 15,
+ "in_reply_to_screen_name": "Team2Trading",
+ "in_reply_to_status_id_str": "1979379240429850869",
+ "in_reply_to_user_id_str": "1271871440648679426",
+ "lang": "en",
+ "possibly_sensitive": false,
+ "created_at": "2025-10-18T02:49:21.000Z",
+ "display_text_range": [
+  0,
+  125
+ ],
+ "entities": {
+  "media": [
+   {
+    "display_url": "pic.x.com/eCpFf3cDOc",
+    "expanded_url": "https://x.com/Team2Trading/status/1979379243441361269/photo/1",
+    "indices": [
+     122,
+     145
+    ],
+    "url": "https://t.co/eCpFf3cDOc"
+   }
+  ]
+ },
+ "id_str": "1979379243441361269",
+ "text": "Step 2 ~ Add these 3 EMA's to your chart!\n\n13 EMA🟡\n48 EMA🟣\n200 EMA🔴\n\nLet's break down exactly how to utilize these EMA's👇 https://t.co/eCpFf3cDOc",
+ "user": {
+  "id_str": "1271871440648679426",
+  "name": "Casey",
+  "screen_name": "Team2Trading",
+  "is_blue_verified": true,
+  "profile_image_shape": "Circle",
+  "verified": false,
+  "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+ },
+ "edit_control": {
+  "edit_tweet_ids": [
+   "1979379243441361269"
+  ],
+  "editable_until_msecs": "1760759361000",
+  "edits_remaining": "5",
+  "is_edit_eligible": false
+ },
+ "mediaDetails": [
+  {
+   "display_url": "pic.x.com/eCpFf3cDOc",
+   "expanded_url": "https://x.com/Team2Trading/status/1979379243441361269/photo/1",
+   "ext_media_availability": {
+    "status": "Available"
+   },
+   "indices": [
+    122,
+    145
+   ],
+   "media_url_https": "https://pbs.twimg.com/media/G3geJf4WIAAlj7W.jpg",
+   "original_info": {
+    "focus_rects": [
+     {
+      "h": 400,
+      "w": 715,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 495,
+      "x": 91,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 434,
+      "x": 121,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 248,
+      "x": 214,
+      "y": 0
+     },
+     {
+      "h": 495,
+      "w": 715,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "height": 495,
+    "width": 715
+   },
+   "sizes": {
+    "large": {
+     "h": 495,
+     "resize": "fit",
+     "w": 715
+    },
+    "medium": {
+     "h": 495,
+     "resize": "fit",
+     "w": 715
+    },
+    "small": {
+     "h": 471,
+     "resize": "fit",
+     "w": 680
+    },
+    "thumb": {
+     "h": 150,
+     "resize": "crop",
+     "w": 150
+    }
+   },
+   "type": "photo",
+   "url": "https://t.co/eCpFf3cDOc"
+  }
+ ],
+ "photos": [
+  {
+   "backgroundColor": {
+    "red": 204,
+    "green": 214,
+    "blue": 221
+   },
+   "cropCandidates": [
+    {
+     "h": 400,
+     "w": 715,
+     "x": 0,
+     "y": 0
+    },
+    {
+     "h": 495,
+     "w": 495,
+     "x": 91,
+     "y": 0
+    },
+    {
+     "h": 495,
+     "w": 434,
+     "x": 121,
+     "y": 0
+    },
+    {
+     "h": 495,
+     "w": 248,
+     "x": 214,
+     "y": 0
+    },
+    {
+     "h": 495,
+     "w": 715,
+     "x": 0,
+     "y": 0
+    }
+   ],
+   "expandedUrl": "https://x.com/Team2Trading/status/1979379243441361269/photo/1",
+   "url": "https://pbs.twimg.com/media/G3geJf4WIAAlj7W.jpg",
+   "width": 715,
+   "height": 495
+  }
+ ],
+ "conversation_count": 1,
+ "news_action_type": "conversation",
+ "parent": {
+  "favorite_count": 16,
+  "in_reply_to_screen_name": "Team2Trading",
+  "in_reply_to_status_id_str": "1979379237758103876",
+  "in_reply_to_user_id_str": "1271871440648679426",
+  "lang": "en",
+  "possibly_sensitive": false,
+  "reply_count": 1,
+  "retweet_count": 0,
+  "created_at": "2025-10-18T02:49:20.000Z",
+  "display_text_range": [
+   0,
+   218
+  ],
+  "entities": {
+   "media": [
+    {
+     "display_url": "pic.x.com/qD7izmssls",
+     "expanded_url": "https://x.com/Team2Trading/status/1979379240429850869/photo/1",
+     "indices": [
+      217,
+      240
+     ],
+     "url": "https://t.co/qD7izmssls"
+    }
+   ]
+  },
+  "id_str": "1979379240429850869",
+  "text": "Example of Scenario #4 ~ Price breaks below the Previous Day Low Support Zone. \n\nThis is a Bearish scenario 📉\n\nWhen this happens I keep my focus on puts / downside as long as price holds under that PDL support zone 👇 https://t.co/qD7izmssls",
+  "user": {
+   "id_str": "1271871440648679426",
+   "name": "Casey",
+   "screen_name": "Team2Trading",
+   "is_blue_verified": true,
+   "profile_image_shape": "Circle",
+   "verified": false,
+   "profile_image_url_https": "https://pbs.twimg.com/profile_images/1848419400673857537/Y9oyHK_K_normal.jpg"
+  },
+  "edit_control": {
+   "edit_tweet_ids": [
+    "1979379240429850869"
+   ],
+   "editable_until_msecs": "1760759360000",
+   "edits_remaining": "5",
+   "is_edit_eligible": false
+  },
+  "mediaDetails": [
+   {
+    "display_url": "pic.x.com/qD7izmssls",
+    "expanded_url": "https://x.com/Team2Trading/status/1979379240429850869/photo/1",
+    "ext_media_availability": {
+     "status": "Available"
+    },
+    "indices": [
+     217,
+     240
+    ],
+    "media_url_https": "https://pbs.twimg.com/media/G3gdMUDWIAA_VJP.jpg",
+    "original_info": {
+     "focus_rects": [
+      {
+       "h": 1147,
+       "w": 2048,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1586,
+       "w": 1586,
+       "x": 0,
+       "y": 0
+      },
+      {
+       "h": 1586,
+       "w": 1391,
+       "x": 72,
+       "y": 0
+      },
+      {
+       "h": 1586,
+       "w": 793,
+       "x": 371,
+       "y": 0
+      },
+      {
+       "h": 1586,
+       "w": 2048,
+       "x": 0,
+       "y": 0
+      }
+     ],
+     "height": 1586,
+     "width": 2048
+    },
+    "sizes": {
+     "large": {
+      "h": 1586,
+      "resize": "fit",
+      "w": 2048
+     },
+     "medium": {
+      "h": 929,
+      "resize": "fit",
+      "w": 1200
+     },
+     "small": {
+      "h": 527,
+      "resize": "fit",
+      "w": 680
+     },
+     "thumb": {
+      "h": 150,
+      "resize": "crop",
+      "w": 150
+     }
+    },
+    "type": "photo",
+    "url": "https://t.co/qD7izmssls"
+   }
+  ],
+  "photos": [
+   {
+    "backgroundColor": {
+     "red": 204,
+     "green": 214,
+     "blue": 221
+    },
+    "cropCandidates": [
+     {
+      "h": 1147,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1586,
+      "w": 1586,
+      "x": 0,
+      "y": 0
+     },
+     {
+      "h": 1586,
+      "w": 1391,
+      "x": 72,
+      "y": 0
+     },
+     {
+      "h": 1586,
+      "w": 793,
+      "x": 371,
+      "y": 0
+     },
+     {
+      "h": 1586,
+      "w": 2048,
+      "x": 0,
+      "y": 0
+     }
+    ],
+    "expandedUrl": "https://x.com/Team2Trading/status/1979379240429850869/photo/1",
+    "url": "https://pbs.twimg.com/media/G3gdMUDWIAA_VJP.jpg",
+    "width": 2048,
+    "height": 1586
+   }
+  ],
+  "isEdited": false,
+  "isStaleEdit": false
+ },
+ "isEdited": false,
+ "isStaleEdit": false
+}

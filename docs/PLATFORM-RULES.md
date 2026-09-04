@@ -318,6 +318,15 @@ runtime ones to `execution.*`).
   the settle order + execution. Flagged for decision, not changed: immediate shadow books go
   deeply negative on cash (eva −$80k on a $10k start) because they buy EVERY tip by design.
 
+- **2026-09-04 · An AUTO daily-loss halt spares the shadow learning record.** Practice tripped
+  its -8% breaker at 09:38 (BBAI premium stop + the open's marks) and the global kill switch
+  then rejected a RESEARCH-book entry at 09:58 — a tilt-guard for real money was blinding the
+  instrument that collects evidence. `HaltState` now carries its `source`; `kill_switch` passes
+  for `kind == "shadow"` portfolios when the halt is `source == "auto"` (the breaker). A MANUAL
+  halt (app button / Telegram) still stops every book — halt means halt when a human says it.
+  Reduce-only exits were and remain unblockable either way. Test:
+  `test_riskgate.py::test_auto_halt_spares_the_shadow_record_manual_blocks_all`.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
@@ -472,3 +481,59 @@ runtime ones to `execution.*`).
   (`scan.spot_from_chain`), a spot-less re-scan never overwrites an existing read
   (`noSpot`/`keptExisting` in the scan journal), weekend "Scan now" rolls back to Friday, and a
   boot task re-scans the latest day if it carries the degraded signature (scores w/o flags/spot).
+- 2026-09-03 · **Team2 desk, shared-engine additions (PLAN §3b E1–E7; all additive, RTH behaviour
+  unchanged for every existing technique):**
+  - `marketstructure/history.fetch_window(..., session="rth"|"ext")` + `fetch_extended_session` —
+    the 04:00–20:00 ET tape (Yahoo `includePrePost`, Alpaca unfiltered) for pre-market levels and
+    extended-hours indicators; default stays `rth` and the cache key carries the session.
+  - `marketstructure/aggregate.py` — wall-clock 1m→2m/5m/15m aggregation (a missing minute never
+    shifts the grid), `bar_session` (pre/rth/post/closed), `filter_session`, `closed_bars`.
+  - `marketstructure/market_calendar.py` — NYSE holidays + 13:00 early closes (rule-based);
+    **`sessions.session_bounds` now closes at 13:00 on half days and `next_session_date` skips
+    holidays** — every clock-driven session close honours the real calendar.
+  - `marketstructure/indicators.py` (EMA series/state, stack, fan), `marketstructure/dailylevels.py`
+    (prior-day zones wick→next body, pre-market range, session extremes).
+  - Nightly research jobs `ext_bars` (04:00–20:00 1m bars for `research.ext_bars.symbols`, 20:10 ET)
+    and `vix_bars` (`^VIX`, `^VIX1D`, `^VIX9D` daily closes) into the bars table.
+  - `research/macro_calendar.py` — `engine.macro`, a MANUAL FOMC/CPI/NFP list
+    (`research.macro_events`) behind a stable read API; a fetched source is a placeholder.
+  - `options/pick.select_by_premium` — premium-targeted strike selection (first OTM strike whose
+    ask ≤ target, floor-guarded), returning EM's `ContractPick` shape; EM's just-OTM picker untouched.
+  - **RiskGate never-list, per-technique 0DTE policy (user decision 2026-09-03):** a technique may
+    open 0DTE for ITSELF via `techniques.<id>.zero_dte = {enabled, last_entry_et, flatten_et,
+    max_contracts, premium_cap}`; entries refused after `last_entry_et`, everything after
+    `flatten_et` (reduce-only exits never reach the check), per-order contract + premium caps.
+    Without a policy the hard reject stands; EM's and the tips lotto lane's paths are unchanged.
+    Rationale: different techniques have different rules — Team2 IS a 0DTE method (METHOD §7b).
+- 2026-09-03 · `tests/test_platform_phase0.py::test_registry_lists_enhanced_market` expectation widened to
+  include `team2` (the registry gained a fourth technique; EM stays first). This is the one intended way
+  that guarantee changes — a new `TechniqueInfo` registration, nothing else.
+- 2026-09-04 · `marketdata.persist_bars` inserts in chunks of 2,000 rows (asyncpg's 32,767-parameter cap;
+  the first 20-day extended-hours bank failed on it). Found by running the Team2 bank for real.
+- 2026-09-04 · **F19 fixed — `Quote.day_high` / `day_low` / `volume` are session-to-date, not process-to-date**
+  (`brokers/alpaca.py`). The Alpaca adapter used to start every symbol's range/volume at zero when the
+  process started and only widen from live prints; Yahoo's session values were an `or` fallback that one
+  tick discarded, and a process left running overnight carried yesterday's numbers into today (SPY after
+  the 10:36 restart: dayHigh 771.29 vs 772.87 real, volume 317k). Now: `absorb_context` SEEDS the running
+  high/low from Yahoo's regular-session values and re-bases the volume (`vol_seed` + prints since), only
+  once Yahoo's session is `regular`/`post` (its pre-market meta still shows the prior session); live prints
+  widen the range and add volume only during 09:30–16:00 ET on weekdays; a new ET session resets
+  everything. Pre/post moves stay separate via `session`. No decision path reads these fields (verified:
+  only the UI types), so no technique behaviour changed. `tests/test_alpaca_feed.py`. Second half, same day:
+  the Yahoo quote's `volume` was the LAST 1m bar's volume, not the session total, so the seed was wrong —
+  `yahoo._parse_chart` now reports meta `regularMarketVolume` (fallback: the sum of the chart's bars).
+- 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
+  `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
+  read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.
+- 2026-09-04 · **The kill switch is global while the daily-loss check is per portfolio** (`Engine.check_daily_loss`):
+  a Practice-book loss from one technique halts every technique on every book, and releasing it re-engages
+  on the next pass while that book stays below the limit. Worked around today by raising
+  `risk.daily_loss_halt_pct` 8 -> 12 (practice only). Proposed: per-portfolio halts, or a per-technique
+  practice book that the check judges on its own. User decision needed before real money.
+- 2026-09-04 · `execution.planrunner.Trade` gained three technique-owned annotations: `is_add` (a scale-in that
+  rides the same contract as its base trade — Team2 X5), `live_pct` (the contract's fee-adjusted premium % from
+  its own fresh bid) and `target_kind` (planned level vs running high/low of day). Defaults keep EM/tips
+  byte-identical. Pattern for scale-ins on the shared runner: a SECOND Trade through the ordinary fire chain
+  (RiskGate inside, never-chase cap) — never a quantity edit on a live Trade, never a bare executor call.
+  Premium-% trims in Team2 money modes are judged on the contract's live real-time bid before the model's
+  forecast (delayed chain rows never drive money — same line as the premium stop, 2026-09-02).

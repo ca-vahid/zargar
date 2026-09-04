@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.6.2";
+export const APP_VERSION = "0.7.0";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,23 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.0",
+    date: "2026-09-04",
+    title: "The Team2 desk opens",
+    items: [
+      { tag: "fixed", text: "Quote day high, day low and volume are the session's, not 'since the app started': seeded from the exchange session values, widened by regular-session prints only, reset each session (they used to shrink to nothing after every restart)." },
+      { tag: "improved", text: "Team2 trades the way his recaps do: trim heavily on the first push, then re-up the same contract on the next 13 EMA hold; a re-entry sells at the running high/low of day; and in money modes the +50/+100% trims are judged on the contract's live bid, not the model — the Armed row shows 'contract +X% live'." },
+      { tag: "major", text: "Unattended practice: nobody has to watch the Approvals queue. An analyst skip/watch declines the card immediately with the reasoning attached (history, not a to-do); a take trades; anything still pending at the open gets a fresh analyst re-appraisal at 9:33 ET against live prices and is decided then. Live money always keeps the human." },
+      { tag: "improved", text: "Approval cards now say when they were suggested (and that it was after the close, held for the open), how far the market has moved since, and that approving always re-prices at the live ask — plus 'time box 15 sessions', not '15s'." },
+      { tag: "major", text: "A fourth technique, Team2 — Casey/@Team2Trading's SPY·QQQ·IWM day-trading method, codified from 49 public posts, two videos and his own trade screenshots: prior-day high/low zones and the pre-market range, a 13/48/200 EMA regime on the 2-minute chart, a 15-minute-close confirmation, EMA13 pullback entries with a one-candle stop, 0DTE contracts picked by premium (~$0.50), +50/+100% trims and a 15:45 flatten. Nightly plans per symbol, 09:25 completion, alert mode first. Its own page: Plans · Armed · History · Validation." },
+      { tag: "new", text: "Extended-hours bars are banked nightly (04:00–20:00 ET, 1-minute) with the VIX indices — the walk-forward for any intraday technique can finally run on more than Yahoo's 20 days." },
+      { tag: "new", text: "A market calendar: NYSE holidays and 13:00 early closes. Every clock-driven session close now honours them." },
+      { tag: "new", text: "Per-technique 0DTE policy in the risk gate — a technique that IS a 0DTE method (Team2) opens the never-list for itself with its own last-entry time, flatten time and caps; every other technique stays hard-rejected." },
+      { tag: "new", text: "A premium-path scorer for 0DTE: the sweep re-prices the actual $0.50 contract along the day (Black–Scholes on the VIX proxy, fees and slippage included) instead of scoring the underlying in R — calibrated against the author's documented SPY 711c trade." },
+      { tag: "new", text: "Macro event calendar placeholder (FOMC/CPI/NFP) as a manual list in settings; techniques can flag or skip those days once a source is wired." },
+    ],
+  },
   {
     version: "0.6.2",
     date: "2026-09-04",

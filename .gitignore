@@ -29,3 +29,5 @@ backend/discord_dms.jsonl
 backend/discord_media/
 backend/discord_toasts.jsonl
 *.discord.jsonl
+docs/techniques/team2/notes/x/images/*.jpg
+backend/finpages.txt

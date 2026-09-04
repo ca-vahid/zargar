@@ -15,7 +15,7 @@ import type { Page } from "../store";
  */
 
 export const PAGES: Page[] = [
-  "dashboard", "trade", "options", "inbox", "technique", "flow", "armed", "watchlists",
+  "dashboard", "trade", "options", "inbox", "technique", "flow", "team2", "armed", "watchlists",
   "portfolios", "ledger", "journal", "settings",
 ];
 const OCC_RE = /^[A-Z]{1,6}\d{6}[CP]\d{8}$/;
@@ -27,6 +27,7 @@ export type TqTab = (typeof TQ_TABS)[number];
 export const PAGE_TABS: Partial<Record<Page, readonly string[]>> = {
   inbox: ["tips", "approvals", "knowledge", "compose", "analyst", "inbox", "sources"],
   flow: ["reads", "brief"],
+  team2: ["plans", "armed", "history", "validation"],
 };
 
 export interface RouteState {

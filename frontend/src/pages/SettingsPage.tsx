@@ -480,6 +480,54 @@ export function SettingsPage() {
         </div>
 
         <div className="panel">
+          <div className="panel-head">Team2 technique
+            <span className="sub">Casey/@Team2Trading's 0DTE index method — its own read, its own 0DTE policy; the shared order/exit machinery above still applies</span></div>
+          <div className="panel-body">
+            <ToggleRow k="techniques.team2.enabled" label="Enabled" hint="nightly plans + 09:25 completion for SPY · QQQ · IWM" />
+            <SelectRow k="techniques.team2.mode" label="Mode"
+              hint="alert records what the method would do; proposal and auto are earned after the sweep and the practice soak"
+              options={[{ value: "alert", label: "alert only" }, { value: "proposal", label: "propose — I approve each trade" },
+                        { value: "auto", label: "auto — practice account only until allowed live" }]} />
+            <Group>Read</Group>
+            <Cells>
+              <NumCell k="techniques.team2.fan_trend_min_atr" label="EMA fan: trend ≥ (ATR)" step={0.05}
+                hint="spread of the 13/48/200 EMAs in 2m ATRs below which the stack is chop (no trade)" />
+              <NumCell k="techniques.team2.pm_tol_atr" label="Touch tolerance (ATR)" step={0.05}
+                hint="how close to the EMA13 / pre-market level a 2m bar must reach to count as a touch" />
+              <NumCell k="techniques.team2.pullback_max_touches" label="Pullbacks taken" hint="first N EMA13 touches after confirmation; later ones are watch-only" />
+              <NumCell k="techniques.team2.pullback_body_mult" label="Engulfing filter (× avg body)" step={0.25}
+                hint="a touching bar with a body above this many average bodies is a lunge, not a drift — skipped" />
+              <NumCell k="techniques.team2.max_reentries" label="Re-entries per setup" />
+              <NumCell k="techniques.team2.max_losses_per_day" label="Max losses / day" />
+            </Cells>
+            <ToggleRow k="techniques.team2.range_day_confirmation" label="Range days need the PM level" hint="reject-PDH / bounce-PDL scenarios fire only once price is beyond the pre-market level on the trade's side" />
+            <ToggleRow k="techniques.team2.allow_ema200_flush" label="Range days: 200 EMA flush" hint="on a reject/bounce day a 2m close through the 200 EMA in the bias direction is the trigger (his SPY 671p)" />
+            <ToggleRow k="techniques.team2.allow_ema48_entries" label="48 EMA dips" hint="the second line of defense: a deeper dip that holds the 48 EMA is an entry too" />
+            <SelectRow k="techniques.team2.trim_cue" label="First trim cue"
+              hint="premium = at +50% on the contract; new extreme = on the first new high/low of the move after entry (his 'new high of day, lock in gains')"
+              options={[{ value: "premium", label: "premium +50%" }, { value: "new_extreme", label: "new high / low of the move" }]} />
+            <SelectRow k="techniques.team2.hod_target" label="Re-entries target the high/low of day"
+              hint="his 'HOD resistance is the main target for longs until it breaks': a re-entry sells at the running high/low of day when it is nearer than the planned level"
+              options={[{ value: "reentry", label: "re-entries only" }, { value: "always", label: "every entry" }, { value: "off", label: "off" }]} />
+            <ToggleRow k="techniques.team2.add_on_retest" label="Trim, then add" hint="after a trim freed room, a fresh EMA13 hold re-ups the position on the same contract (his 're-upped a full position'); one add per position" />
+            <ToggleRow k="techniques.team2.shrink_after_win" label="Shrink after a win" hint="the next trade's size halves once the day is green — one loss can never erase the day" />
+            <ToggleRow k="techniques.team2.avoid_event_days" label="Skip macro event days" hint="FOMC/CPI/NFP days from the manual macro list (research.macro_events) take no new entries" />
+            <Group>Expression &amp; exits (0DTE)</Group>
+            <Cells>
+              <NumCell k="techniques.team2.target_premium" label="Target premium ($)" step={0.05}
+                hint="the first out-of-the-money strike whose ask is at or under this — the author's ~$0.50 contract" />
+              <NumCell k="techniques.team2.premium_floor" label="Premium floor ($)" step={0.05} hint="never buy cheaper than this" />
+              <NumCell k="techniques.team2.premium_stop_pct" label="Premium stop (%)" step={5} hint="hard cap under the one-candle stop (author: ~20%)" />
+              <NumCell k="techniques.team2.trim_1_pct" label="First trim at (+%)" step={10} />
+              <NumCell k="techniques.team2.trim_2_pct" label="Second trim at (+%)" step={10} />
+              <NumCell k="techniques.team2.budget_per_trade" label="Budget / trade ($)" step={50}
+                hint="premium per full-size entry in practice; the platform's per-order caps still apply" />
+            </Cells>
+            <ToggleRow k="techniques.team2.target_exit" label="Sell at target" hint="the pre-planned next level closes the rest of the position on touch" />
+          </div>
+        </div>
+
+        <div className="panel">
           <div className="panel-head">Tips technique
             <span className="sub">the tip pipeline's own knobs — the shared order/exit machinery above still applies unless a tip-specific override is set</span></div>
           <div className="panel-body">

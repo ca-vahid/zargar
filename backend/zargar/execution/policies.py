@@ -20,6 +20,9 @@ Policy document (all keys optional unless noted):
                                                          #    an underlying ladder never sees it)
       "premium_floor_after_trim": true,                  # after the first premium trim the rest can't go red
       "premium_watch": true,                             # judge premium stop/ladder on the ~2s quote loop too
+      "premium_bleed": {"bleed_pct": 35,                 # options: premium down N% while the UNDERLYING is
+                        "underlying_band_pct": 3},       #   still inside ±band% of entry -> the option is
+                                                         #   failing (vol/decay), not the thesis: exit early
       "monetize": {"take_at_pct": 100, "take_fraction": 0.5,   # options: sell half at +100% (house money),
                    "floors": [[50,15],[100,50],[200,120]]},    # ratchet floors under the rest (see
                                                                # MONETIZE_DEFAULTS for tightening knobs)
@@ -207,7 +210,8 @@ def _monetize_floor_gain(m: dict, peak_gain: float, *, dte: int | None,
 
 def evaluate_premium(policy: dict, state: PolicyState,
                      net_mark: float | None, entry_mark: float | None,
-                     *, dte: int | None = None, iv_ratio: float | None = None) -> Decision | None:
+                     *, dte: int | None = None, iv_ratio: float | None = None,
+                     underlying_move_pct: float | None = None) -> Decision | None:
     """The premium-only judgements, on the CONTRACT's mark alone — no bar needed.
     The bar path (`evaluate`) and the live quote loop (`premium_watch`) both call
     this, so a fast round-trip is judged every ~2 s, not every 15 minutes.
@@ -236,6 +240,20 @@ def evaluate_premium(policy: dict, state: PolicyState,
         if prem_pct and net_mark <= entry_mark * (1 - float(prem_pct) / 100.0):
             return Decision("premium_stop", 1.0,
                             f"net premium {net_mark:.2f} bled {prem_pct:g}% from {entry_mark:.2f}")
+        bleed = policy.get("premium_bleed")
+        if bleed and underlying_move_pct is not None:
+            b_pct = float(bleed.get("bleed_pct", 35.0))
+            band = float(bleed.get("underlying_band_pct", 3.0))
+            if gain <= -b_pct and abs(underlying_move_pct) <= band:
+                # BBAI 2026-09-04: the stock sat within 6% of entry for four
+                # sessions while the contract bled 61% (wide-spread entry + vol
+                # crush). A premium collapsing with the THESIS intact is the
+                # option failing, not the idea — waiting for the full premium
+                # stop just donates the difference.
+                return Decision("premium_stop", 1.0,
+                                f"premium {gain:+.0f}% with the underlying only "
+                                f"{underlying_move_pct:+.1f}% from entry — the option is "
+                                f"bleeding without the thesis moving; exiting early")
         # ---- profit: the house-money take, then the (lotto) ladder
         if m is not None and not state.premium_take_done and gain >= float(m["take_at_pct"]):
             return Decision("premium_take", float(m["take_fraction"]),
@@ -348,7 +366,9 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
         if breached:
             return [Decision("stop", 1.0, f"bar closed through the stop {stop:.4f} (close {bar.close:.4f})")], moves
     prem = evaluate_premium(policy, state, view.net_mark, view.entry_mark,
-                            dte=view.dte_min, iv_ratio=view.iv_ratio)
+                            dte=view.dte_min, iv_ratio=view.iv_ratio,
+                            underlying_move_pct=((bar.close / view.entry - 1) * 100
+                                                 if view.entry else None))
     if prem is not None and prem.kind == "premium_stop":
         return [prem], moves
 

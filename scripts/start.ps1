@@ -6,6 +6,8 @@
 #   scripts\start.ps1 -NoBuild   skip the frontend rebuild check
 #   scripts\start.ps1 -NoDiscord skip the experimental Discord intake window
 #   scripts\start.ps1 -NoIngest  skip the EM ingestion worker window (video transcription)
+#   scripts\stop.ps1             stop the server + helpers (run it from the terminal that OWNS the
+#                                process; a non-elevated shell can then start.ps1 -Detach and own it)
 #
 # The Discord intake (a DM listener that feeds tips into the pipeline) launches
 # by default in ITS OWN window (scripts\discord-intake.ps1). It is experimental

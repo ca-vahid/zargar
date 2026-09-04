@@ -45,6 +45,8 @@ class Engine:
         self.scheduler = Scheduler(self)   # engine-level daily jobs (techniques register scans here)
         from .calendar_service import EventCalendar
         self.calendar = EventCalendar()    # earnings / ex-dividend dates (policies + scans read this)
+        from .research.macro_calendar import MacroCalendar
+        self.macro = MacroCalendar(self.settings)   # FOMC/CPI/... days (manual list for now; placeholder source)
         from .execution.positions import PositionManager
         self.position_manager = PositionManager(self)   # durable multi-day positions (plan phase 2b)
 
@@ -89,7 +91,8 @@ class Engine:
         # restore kill switch state across restarts
         halt_state = self.settings.get("system.halt")
         if isinstance(halt_state, dict) and halt_state.get("engaged"):
-            self.halt.engage(halt_state.get("reason", "restored after restart"))
+            self.halt.engage(halt_state.get("reason", "restored after restart"),
+                             source=halt_state.get("source", "app"))
 
         self.sim_executor = SimExecutor(settings=self.settings)
         if self.config.broker == "ibkr":
@@ -369,7 +372,7 @@ class Engine:
 
     # ------------------------------------------------------------- kill switch
     async def engage_halt(self, reason: str, *, source: str = "app") -> dict:
-        self.halt.engage(reason)
+        self.halt.engage(reason, source=source)
         await self.settings.set("system.halt", self.halt.to_dict(), journal=False)
         await self.journal.append(ev.KILL_SWITCH_ENGAGED, {"reason": reason, "source": source})
         state = {"kind": "halt", **self.halt.to_dict()}

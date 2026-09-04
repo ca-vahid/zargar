@@ -62,6 +62,53 @@ def test_trade_and_quote_messages_emit_with_context_merged():
     assert quotes[-1].bid == 314.41 and quotes[-1].ask == 314.51
 
 
+def _ctx(ts_ms: int, **kw) -> Quote:
+    q = Quote(**{"symbol": "SNOW", "last": 310.0, "prev_close": 309.5, "session": "regular", "reg_price": 310.0, **kw})
+    q.ts = ts_ms
+    return q
+
+REG = "2026-08-25T14:00:00Z"        # 10:00 ET, regular session
+PRE = "2026-08-25T12:00:00Z"        # 08:00 ET, pre-market
+NEXT = "2026-08-26T14:00:00Z"       # the next session
+
+
+def test_day_range_and_volume_are_session_to_date_not_process_to_date():
+    """F19 (2026-09-04): after a restart the day high/low/volume must come from Yahoo's session
+    values and only WIDEN from live prints; pre-market prints never touch the regular range."""
+    quotes, bars = [], []
+    f = make_feed(quotes, bars)
+    reg_ms = parse_rfc3339_ms(REG)
+    # a pre-market print before any seed: last moves, the day range stays empty, no session volume
+    f.handle({"T": "t", "S": "SNOW", "p": 305.0, "s": 100, "t": PRE})
+    q = quotes[-1]
+    assert q.last == 305.0 and q.day_high == 0.0 and q.day_low == 0.0 and q.volume == 0
+    # the process "started" at 10:00: Yahoo says the session has already ranged 308–312 on 5M shares
+    f.absorb_context(_ctx(reg_ms, day_high=312.0, day_low=308.0, volume=5_000_000))
+    f._st("SNOW")["emit_ms"] = 0
+    f.handle({"T": "t", "S": "SNOW", "p": 311.0, "s": 200, "t": REG})
+    q = quotes[-1]
+    assert (q.day_high, q.day_low) == (312.0, 308.0)          # seeded, not "since 10:00"
+    assert q.volume == 5_000_200                                # Yahoo total + the print since the seed
+    # a live print beyond the seed widens it
+    f._st("SNOW")["emit_ms"] = 0
+    f.handle({"T": "t", "S": "SNOW", "p": 313.5, "s": 300, "t": REG})
+    q = quotes[-1]
+    assert q.day_high == 313.5 and q.day_low == 308.0 and q.volume == 5_000_500
+    # a fresh Yahoo total re-bases the volume without double counting the prints already in it
+    f.absorb_context(_ctx(reg_ms + 60_000, day_high=313.5, day_low=308.0, volume=5_100_000))
+    f._st("SNOW")["emit_ms"] = 0
+    f.handle({"T": "t", "S": "SNOW", "p": 313.0, "s": 50, "t": REG})
+    assert quotes[-1].volume == 5_100_050
+    # a Yahoo poll made in PRE-market carries the prior session's range — never seeds
+    f.absorb_context(_ctx(parse_rfc3339_ms(PRE), session="pre", day_high=400.0, day_low=100.0, volume=1))
+    assert f._st("SNOW")["day_high"] == 313.5 and f._st("SNOW")["day_low"] == 308.0
+    # the next session starts from zero
+    f._st("SNOW")["emit_ms"] = 0
+    f.handle({"T": "t", "S": "SNOW", "p": 320.0, "s": 10, "t": NEXT})
+    q = quotes[-1]
+    assert (q.day_high, q.day_low, q.volume) == (320.0, 320.0, 10)
+
+
 async def test_hybrid_routes_us_to_alpaca_and_everything_to_yahoo():
     quotes, bars = [], []
     alpaca = make_feed(quotes, bars)

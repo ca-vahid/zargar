@@ -26,6 +26,8 @@ import websockets
 from zoneinfo import ZoneInfo
 
 from ..domain import Bar, Quote, now_ms
+
+_ET = ZoneInfo("America/New_York")
 from .base import QuoteFeed
 
 log = logging.getLogger(__name__)
@@ -142,8 +144,26 @@ class AlpacaQuoteFeed(QuoteFeed):
     def absorb_context(self, q: Quote) -> None:
         """Session context from the slow Yahoo poll (prev_close, session phase,
         regular-session price) — merged into every fast Alpaca emission so the
-        day-change basis never degrades to 0."""
-        self._context[q.symbol.upper()] = q
+        day-change basis never degrades to 0.
+
+        F19: it also SEEDS the running day range and volume. Alpaca prints only widen
+        what this process has seen, so after a restart at 10:36 the "day high" was the
+        high since 10:36. Yahoo's regular-session high/low/volume are the session-to-date
+        truth once the regular session has started (in pre-market Yahoo still shows the
+        prior session's numbers — never seed from those)."""
+        sym = q.symbol.upper()
+        self._context[sym] = q
+        if q.session not in ("regular", "post"):
+            return
+        st = self._st(sym)
+        self._roll_day(st, int(q.ts or now_ms()))
+        if q.day_high and q.day_high > 0:
+            st["day_high"] = max(st["day_high"], float(q.day_high))
+        if q.day_low and q.day_low > 0:
+            st["day_low"] = float(q.day_low) if not st["day_low"] else min(st["day_low"], float(q.day_low))
+        if q.volume and q.volume > 0:
+            st["vol_seed"] = int(q.volume)
+            st["vol_seed_live"] = st["vol_live"]
 
     # ------------------------------------------------------------- streaming
     @staticmethod
@@ -186,7 +206,38 @@ class AlpacaQuoteFeed(QuoteFeed):
         return self._state.setdefault(s, {
             "bid": 0.0, "ask": 0.0, "bid_size": 0, "ask_size": 0,
             "last": 0.0, "volume": 0, "day_high": 0.0, "day_low": 0.0, "emit_ms": 0,
+            # F19 (2026-09-04): the day range/volume are SESSION-to-date, not process-to-date.
+            # `day` = the ET session the running numbers belong to (reset on a new session);
+            # `vol_live` = regular-session prints seen since that reset; `vol_seed` = the
+            # session total Yahoo reported when we last seeded, `vol_seed_live` = vol_live
+            # at that moment, so volume = seed + (live since the seed).
+            "day": "", "vol_live": 0, "vol_seed": 0, "vol_seed_live": 0,
         })
+
+    @staticmethod
+    def _et(ts_ms: int) -> dt.datetime:
+        return dt.datetime.fromtimestamp(ts_ms / 1000, _ET)
+
+    @classmethod
+    def _session_day(cls, ts_ms: int) -> str:
+        return cls._et(ts_ms).strftime("%Y-%m-%d")
+
+    @classmethod
+    def _is_regular(cls, ts_ms: int) -> bool:
+        """09:30–16:00 ET on a weekday — the only prints that belong to the day range/volume
+        brokers show (pre/post moves are reported separately via `session`)."""
+        t = cls._et(ts_ms)
+        m = t.hour * 60 + t.minute
+        return t.weekday() < 5 and 9 * 60 + 30 <= m < 16 * 60
+
+    @classmethod
+    def _roll_day(cls, st: dict, ts_ms: int) -> None:
+        """A new ET session starts the range and the volume from zero (a process that runs
+        overnight used to carry yesterday's high/low/volume into today)."""
+        day = cls._session_day(ts_ms)
+        if st["day"] != day:
+            st.update({"day": day, "day_high": 0.0, "day_low": 0.0, "vol_live": 0, "vol_seed": 0,
+                       "vol_seed_live": 0})
 
     def handle(self, m: dict) -> None:
         t = m.get("T")
@@ -207,11 +258,17 @@ class AlpacaQuoteFeed(QuoteFeed):
             # touch last/high/low — one such print painted a PM 1m bar with a
             # low 5 points under the tape (2026-08-26 09:55, low 190.045).
             conds = set(m.get("c") or [])
+            ts = parse_rfc3339_ms(str(m["t"])) if m.get("t") else now_ms()
+            self._roll_day(st, ts)
+            regular = self._is_regular(ts)
             if px > 0 and not (conds & _NO_LAST_CONDS):
                 st["last"] = px
-                st["day_high"] = max(st["day_high"], px)
-                st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)
-            st["volume"] += int(m.get("s") or 0)
+                if regular:                              # F19: the day range is the regular session's
+                    st["day_high"] = max(st["day_high"], px)
+                    st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)
+            if regular:
+                st["vol_live"] += int(m.get("s") or 0)
+            st["volume"] = self._session_volume(st)
             self._emit(s, st)
         elif t == "b" and s:
             st = self._st(s)
@@ -239,7 +296,16 @@ class AlpacaQuoteFeed(QuoteFeed):
                 self._authed = True
             log.info("alpaca stream: %s", m.get("msg"))
 
+    @staticmethod
+    def _session_volume(st: dict) -> int:
+        """Session-to-date volume: Yahoo's total at the last seed plus the regular-session
+        prints seen since; before any seed, just what this process has seen."""
+        if st["vol_seed"]:
+            return int(st["vol_seed"] + max(0, st["vol_live"] - st["vol_seed_live"]))
+        return int(st["vol_live"])
+
     def _emit(self, s: str, st: dict, *, force: bool = False) -> None:
+        st["volume"] = self._session_volume(st)
         now = now_ms()
         if not force and now - st["emit_ms"] < EMIT_MS:
             return
@@ -250,8 +316,8 @@ class AlpacaQuoteFeed(QuoteFeed):
                   bid_size=st["bid_size"], ask_size=st["ask_size"], volume=st["volume"],
                   prev_close=(ctx.prev_close if ctx else 0.0),
                   reg_price=(ctx.reg_price if ctx else 0.0),
-                  day_high=st["day_high"] or (ctx.day_high if ctx else 0.0),
-                  day_low=st["day_low"] or (ctx.day_low if ctx else 0.0),
+                  day_high=st["day_high"],
+                  day_low=st["day_low"],
                   session=(ctx.session if ctx else ""))
         q.ts = now
         self._on_quote(q)
