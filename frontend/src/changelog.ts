@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
+      { tag: "improved", text: "The Team2 page now looks like the Tips page: underline tabs with Plan now parked on the right, one panel per tab with a header line, the same table style with symbol icons, status pills and copyable run ids, one row per symbol for the coming session with earlier (replaced or disarmed) plans folded away, and the Armed tab shows mode, budget, loss halt, account, P&L and freshness." },
       { tag: "fixed", text: "The EM page no longer blanks the whole app when a plan is missing a list (confluences, notes, level sources, cautions, symbols) — every such spot is guarded, and a page that still crashes shows an error panel with try-again / reload / clear-saved-state instead of a white screen." },
       { tag: "improved", text: "Technique URLs name the technique: /techniques/em/validation, /techniques/tips, /techniques/team2/armed, /techniques/flow/brief. The old /technique, /inbox, /team2 and /flow links still open the same pages." },
       { tag: "fixed", text: "After the first live day, a post-close audit: Team2 re-prices a stuck exit and flattens the book on the clock at 15:45 whatever the read holds; sizes on the live ask; the premium stop ignores stale option quotes; the day-loss halt keeps counting a plan that already halted; replays use that day's IV; the phone timeline shows the events that stop the desk and the loss-limit tile shows the technique's brake; Settings gained a Risk & clock group for Team2." },

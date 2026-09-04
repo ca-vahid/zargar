@@ -1,6 +1,8 @@
 // The Team2 page (docs/techniques/team2/PLAN.md G-2): Plans · Armed · History · Validation.
 // Less is more: one-line rows, underline tabs, everything links to its run / armed plan.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { CopyChip } from "../components/CopyChip";
+import { SymIcon } from "../components/SymIcon";
 import { EmptyState, Spinner } from "../components/ui";
 import { api } from "../lib/api";
 import { useStore } from "../store";
@@ -100,119 +102,186 @@ export function Team2Page() {
     return runs.filter((r) => r.planFor === latest);
   }, [runs]);
 
-  if (loading) return <div className="page"><Spinner label="loading Team2…" /></div>;
+  if (loading) return <div className="tips-page"><Spinner label="loading Team2…" /></div>;
+
+  const latestFor = runs.length ? runs[0].planFor : null;
+  const pill = (st?: string | null) => st === "armed" ? "ok" : st === "paused" ? "wait" : st === "disarmed" ? "bad" : "dim";
+  const when = (iso?: string | null) => iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
+  const statusLine = status
+    ? `${status.symbols?.join(" · ")} · ${status.mode} mode · plans ${status.planAt} ET, pre-open ${status.preopenAt}`
+      + (status.zeroDte?.enabled ? ` · 0DTE: entries until ${status.zeroDte.last_entry_et}, flat by ${status.zeroDte.flatten_et}` : " · 0DTE policy off")
+      + (status.macro?.next ? ` · next macro: ${status.macro.next.name} ${status.macro.next.date}` : "")
+    : "status unavailable";
+  // one row per symbol for the coming session — the armed plan wins, else the newest; earlier (replaced,
+  // disarmed) plans fold away instead of repeating the same sheet three times
+  const sameDay = runs.filter((r) => r.planFor === latestFor);
+  const bySym = new Map<string, Team2Run>();
+  for (const r of sameDay) {
+    const cur = bySym.get(r.symbol);
+    if (!cur || (r.armed && !cur.armed)) bySym.set(r.symbol, r);
+  }
+  const primary = Array.from(bySym.values());
+  const earlier = sameDay.filter((r) => !primary.includes(r));
+  const planRow = (r: Team2Run) => (
+    <tr key={r.runId} className={selected === r.runId ? "selected" : ""} onClick={() => setSelected(r.runId)}>
+      <td><SymIcon sym={r.symbol} size={18} /> <b>{r.symbol}</b></td>
+      <td className="num">{r.planFor}</td>
+      <td className="muted">{r.dayType ? r.dayType.replace("_", " ") : (r.complete ? "—" : "pre-open pending")}</td>
+      <td className="muted" style={{ whiteSpace: "normal", minWidth: 420 }}>{r.sheet}</td>
+      <td>
+        <span className={`status-pill ${pill(r.status)}`} title={r.stopReason ?? undefined}>{r.status ?? "not armed"}</span>
+        {r.stopReason ? <span className="muted small"> {r.stopReason}</span> : null}
+        {r.armed && <> <button className="link-btn" onClick={(e) => { e.stopPropagation(); openArmedPlan(r.runId); }}>open →</button></>}
+      </td>
+      <td className="muted">{when(r.createdAt)}</td>
+      <td><CopyChip value={r.runId} title={`run ${r.runId} — click to copy`} /></td>
+    </tr>
+  );
 
   return (
-    <div className="page flow-page">
-      <div className="flow-head">
-        <div>
-          <div className="page-title">Team2</div>
-          <div className="muted team2-head-sub">
-            {status ? <>
-              {status.symbols?.join(" · ")} · {status.mode} mode · plans {status.planAt} ET, pre-open {status.preopenAt}
-              {status.zeroDte?.enabled ? ` · 0DTE: entries until ${status.zeroDte.last_entry_et}, flat by ${status.zeroDte.flatten_et}` : " · 0DTE policy off"}
-              {status.macro?.next ? ` · next macro: ${status.macro.next.name} ${status.macro.next.date}` : ""}
-            </> : "status unavailable"}
-          </div>
-        </div>
-        <div className="tabs" role="tablist" style={{ marginLeft: 10 }}>
+    <div className="tips-page">
+      <div className="tips-head">
+        <div className="tabs" role="tablist" style={{ flex: 1 }}>
           {TABS.map((t) => (
-            <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setPageTab(t.key)}>{t.label}</button>
+            <button key={t.key} role="tab" aria-selected={tab === t.key} className={tab === t.key ? "active" : ""} onClick={() => setPageTab(t.key)}>
+              {t.label}{t.key === "armed" && armedRows.length ? <span className="tab-count">{armedRows.length}</span> : null}
+            </button>
           ))}
+          {/* an action, not desk work — parked on the far right like Tips' Sources */}
+          <button role="tab" className="tab-config" disabled={busy} onClick={planNow}
+            title="Build (or rebuild) tonight's plan for each symbol now and arm it in the configured mode">
+            ▶<span className="tab-config-label"> {busy ? "Working…" : "Plan now"}</span>
+          </button>
         </div>
-        <button className="ghost-btn" disabled={busy} onClick={planNow}>{busy ? "Working…" : "Plan now"}</button>
       </div>
 
-      {tab === "plans" && <HowItWorks status={status} />}
       {tab === "plans" && (
-        todaysPlans.length === 0 ? <EmptyState title="No plans yet" hint="Plan now builds tonight's skeleton for each symbol (prior-day zones, targets) and arms it in the configured mode; 09:25 completes it with the pre-market range." /> :
-        <table className="table">
-          <thead><tr><th>Symbol</th><th>For</th><th>Day</th><th>Sheet</th><th></th></tr></thead>
-          <tbody>
-            {todaysPlans.map((r) => (
-              <tr key={r.runId} className={selected === r.runId ? "selected" : ""} onClick={() => setSelected(r.runId)}>
-                <td className="mono-num">{r.symbol}</td>
-                <td className="mono-num">{r.planFor}</td>
-                <td className="muted">{r.dayType ?? (r.complete ? "—" : "pre-open pending")}</td>
-                <td className="muted" style={{ whiteSpace: "normal" }}>{r.sheet}</td>
-                <td>{r.armed
-                  ? <button className="ghost-btn" onClick={(e) => { e.stopPropagation(); openArmedPlan(r.runId); }}>armed →</button>
-                  : <span className="muted" title={r.stopReason ?? undefined}>
-                      {r.status && r.status !== "armed" ? r.status : "not armed"}
-                      {r.stopReason ? ` — ${r.stopReason}` : ""}
-                    </span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {tab === "plans" && status?.thresholds && (
-        <details className="muted small" style={{ marginTop: 12 }}>
-          <summary>Every number the read runs on tonight (read-only — change them in Settings → Team2 technique)</summary>
-          <div className="mono-num" style={{ columns: 3, columnGap: 24, marginTop: 6 }}>
-            {Object.entries(status.thresholds as Record<string, any>).filter(([k]) => !["windows", "round_number_steps"].includes(k)).map(([k, v]) => (
-              <div key={k} style={{ breakInside: "avoid" }}>{k} = {typeof v === "number" ? +v.toFixed(4) : String(v)}</div>
-            ))}
+        <>
+          <div className="panel mb">
+            <div className="panel-head">Plans <span className="sub">{statusLine}</span></div>
+            <div className="scroll-x">
+              {primary.length === 0 ? (
+                <div className="empty">No plans yet — Plan now builds tonight's skeleton for each symbol (prior-day zones, targets) and arms it in the configured mode; 09:25 completes it with the pre-market range.</div>
+              ) : (
+                <table className="tbl">
+                  <thead><tr><th>Symbol</th><th className="num">For</th><th>Day</th><th>Sheet</th><th>Status</th><th>When</th><th>Id</th></tr></thead>
+                  <tbody>{primary.map(planRow)}</tbody>
+                </table>
+              )}
+            </div>
+            {earlier.length > 0 && (
+              <details className="muted small" style={{ padding: "6px 10px" }}>
+                <summary>{earlier.length} earlier plan{earlier.length === 1 ? "" : "s"} for {latestFor} — replaced or disarmed</summary>
+                <div className="scroll-x"><table className="tbl"><tbody>{earlier.map(planRow)}</tbody></table></div>
+              </details>
+            )}
           </div>
-        </details>
+          <HowItWorks status={status} />
+          {status?.thresholds && (
+            <div className="panel mb">
+              <details className="muted small" style={{ padding: "6px 10px" }}>
+                <summary>Every number the read runs on tonight (read-only — change them in Settings → Team2 technique)</summary>
+                <div className="mono-num" style={{ columns: 3, columnGap: 24, marginTop: 6 }}>
+                  {Object.entries(status.thresholds as Record<string, any>).filter(([k]) => !["windows", "round_number_steps"].includes(k)).map(([k, v]) => (
+                    <div key={k} style={{ breakInside: "avoid" }}>{k} = {typeof v === "number" ? +v.toFixed(4) : String(v)}</div>
+                  ))}
+                </div>
+              </details>
+            </div>
+          )}
+        </>
       )}
 
       {tab === "armed" && (
-        armedRows.length === 0 ? <EmptyState title="Nothing armed" hint="Armed Team2 plans appear here and on the Armed page." /> :
-        <table className="table">
-          <thead><tr><th>Symbol</th><th>For</th><th>Status</th><th>Mode · account</th><th>The read right now</th><th>Filled</th><th>P&L</th><th></th></tr></thead>
-          <tbody>
-            {armedRows.map((a: any) => (
-              <tr key={a.runId}>
-                <td className="mono-num">{a.symbol}</td><td className="mono-num">{a.planFor}</td>
-                <td title={a.stopReason ?? undefined}>{a.status}{a.needsAttention ? " · needs attention" : ""}{a.stale ? " · STALE" : ""}{a.stopReason ? ` — ${a.stopReason}` : ""}</td>
-                <td>{a.config?.mode ?? a.mode}{a.portfolio?.name ? ` · ${a.portfolio.name}` : ""}{a.portfolio?.kind === "live" ? <b className="neg"> LIVE</b> : ""}{a.config?.premiumBudget ? ` · $${Number(a.config.premiumBudget).toLocaleString()}/trade` : ""}{a.config?.dailyLossLimit ? ` · halt $${Number(a.config.dailyLossLimit).toFixed(0)}` : ""}</td>
-                <td className="small">{a.summary ?? "—"}{a.team2?.live?.length ? ` · contract ${a.team2.live[0].livePct > 0 ? "+" : ""}${a.team2.live[0].livePct}% live` : ""}{typeof a.barAgeSeconds === "number" ? <span className="muted"> · bar {Math.round(a.barAgeSeconds)}s old</span> : null}</td>
-                <td className="mono-num">{(a.trades ?? []).filter((t: any) => (t.filledQty ?? 0) > 0).length}<span className="muted">/{(a.trades ?? []).length}</span></td>
-                <td className={`mono-num ${(a.realizedPnl ?? 0) > 0 ? "pos" : (a.realizedPnl ?? 0) < 0 ? "neg" : ""}`}>{typeof a.realizedPnl === "number" ? `${a.realizedPnl > 0 ? "+" : ""}${a.realizedPnl.toFixed(0)}` : "—"}</td>
-                <td><button className="ghost-btn" onClick={() => openArmedPlan(a.runId)}>open →</button></td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="panel mb">
+          <div className="panel-head">Armed <span className="sub">the live plans — the same rows sit on the Armed page with every other technique</span></div>
+          <div className="scroll-x">
+            {armedRows.length === 0 ? <div className="empty">Nothing armed — tonight's plans arm at {status?.planAt ?? "17:00"} ET, or use Plan now.</div> : (
+              <table className="tbl">
+                <thead><tr><th>Symbol</th><th className="num">For</th><th>Status</th><th>Mode</th><th>Account</th><th>The read right now</th><th className="num">Filled</th><th className="num">P&amp;L</th><th>Id</th></tr></thead>
+                <tbody>
+                  {armedRows.map((a: any) => (
+                    <tr key={a.runId} onClick={() => openArmedPlan(a.runId)} style={{ cursor: "pointer" }} title="open on the Armed page">
+                      <td><SymIcon sym={a.symbol} size={18} /> <b>{a.symbol}</b></td>
+                      <td className="num">{a.planFor}</td>
+                      <td>
+                        <span className={`status-pill ${pill(a.status)}`} title={a.stopReason ?? undefined}>{a.status}</span>
+                        {a.needsAttention ? <span className="status-pill bad"> needs attention</span> : null}
+                        {a.stale ? <span className="status-pill wait"> stale</span> : null}
+                        {a.stopReason ? <span className="muted small"> {a.stopReason}</span> : null}
+                      </td>
+                      <td>
+                        <span className={`status-pill ${a.config?.mode === "auto" ? "ok" : a.config?.mode === "proposal" ? "wait" : "dim"}`}>{a.config?.mode ?? a.mode}</span>
+                        {a.config?.premiumBudget ? <span className="muted small"> ${Number(a.config.premiumBudget).toLocaleString()}/trade</span> : null}
+                        {a.config?.dailyLossLimit ? <span className="muted small"> · halt ${Number(a.config.dailyLossLimit).toFixed(0)}</span> : null}
+                      </td>
+                      <td>{a.portfolio?.name ?? "—"}{a.portfolio?.kind === "live" ? <span className="status-pill bad"> LIVE</span> : null}</td>
+                      <td className="muted" style={{ whiteSpace: "normal", minWidth: 360 }}>
+                        {a.summary ?? "—"}{a.team2?.live?.length ? ` · contract ${a.team2.live[0].livePct > 0 ? "+" : ""}${a.team2.live[0].livePct}% live` : ""}
+                        {typeof a.barAgeSeconds === "number" ? <span className="small"> · bar {Math.round(a.barAgeSeconds)}s old</span> : null}
+                      </td>
+                      <td className="num">{(a.trades ?? []).filter((t: any) => (t.filledQty ?? 0) > 0).length}<span className="muted">/{(a.trades ?? []).length}</span></td>
+                      <td className={`num ${(a.realizedPnl ?? 0) > 0 ? "pos" : (a.realizedPnl ?? 0) < 0 ? "neg" : ""}`}>{typeof a.realizedPnl === "number" ? `${a.realizedPnl > 0 ? "+" : ""}${a.realizedPnl.toFixed(0)}` : "—"}</td>
+                      <td onClick={(e) => e.stopPropagation()}><CopyChip value={a.runId} title={`run ${a.runId} — click to copy`} /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
       )}
 
       {tab === "history" && (
         <div className="flow-split">
-          <div>
-            {runs.length === 0 ? <EmptyState title="No runs" /> :
-            <table className="table">
-              <thead><tr><th>For</th><th>Symbol</th><th>Day</th><th>Built</th></tr></thead>
-              <tbody>
-                {runs.map((r) => (
-                  <tr key={r.runId} className={selected === r.runId ? "selected" : ""} onClick={() => setSelected(r.runId)}>
-                    <td className="mono-num">{r.planFor}</td><td className="mono-num">{r.symbol}</td>
-                    <td className="muted">{r.dayType ?? "—"}</td><td className="muted mono-num">{r.createdAt?.slice(0, 16).replace("T", " ")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>}
+          <div className="panel mb">
+            <div className="panel-head">Runs <span className="sub">every plan the desk built, newest first — pick one to see what the method saw</span></div>
+            <div className="scroll-x">
+              {runs.length === 0 ? <EmptyState title="No runs" /> : (
+                <table className="tbl">
+                  <thead><tr><th className="num">For</th><th>Symbol</th><th>Day</th><th>Status</th><th>Built</th></tr></thead>
+                  <tbody>
+                    {runs.map((r) => (
+                      <tr key={r.runId} className={selected === r.runId ? "selected" : ""} onClick={() => setSelected(r.runId)} style={{ cursor: "pointer" }}>
+                        <td className="num">{r.planFor}</td><td><SymIcon sym={r.symbol} size={16} /> {r.symbol}</td>
+                        <td className="muted">{r.dayType ? r.dayType.replace("_", " ") : "—"}</td>
+                        <td><span className={`status-pill ${pill(r.status)}`} title={r.stopReason ?? undefined}>{r.status ?? "not armed"}</span></td>
+                        <td className="muted">{when(r.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
-          <div>
-            {!selected ? <div className="state-note">Pick a run to see what the method saw.</div> :
-             !read ? <Spinner label="reading…" /> :
-             <ReadView read={read} />}
+          <div className="panel mb">
+            <div className="panel-head">The read <span className="sub">{selected ? (read?.source === "live" ? "live — what the runner acted on" : "replay over the banked bars") : "nothing selected"}</span></div>
+            <div className="panel-body">
+              {!selected ? <div className="state-note">Pick a run to see what the method saw.</div> :
+               !read ? <Spinner label="reading…" /> :
+               <ReadView read={read} />}
+            </div>
           </div>
         </div>
       )}
 
       {tab === "validation" && (
-        <div>
-          <div className="flow-head" style={{ gap: 8, flexWrap: "wrap" }}>
-            <label className="muted">from <input value={sweepForm.start} onChange={(e) => setSweepForm({ ...sweepForm, start: e.target.value })} style={{ width: 110 }} /></label>
-            <label className="muted">to <input value={sweepForm.end} onChange={(e) => setSweepForm({ ...sweepForm, end: e.target.value })} style={{ width: 110 }} /></label>
-            <label className="muted">variant <input placeholder="pullback_max_touches=3 target_premium=0.5" value={sweepForm.overrides} onChange={(e) => setSweepForm({ ...sweepForm, overrides: e.target.value })} style={{ width: 300 }} /></label>
-            <button className="ghost-btn" disabled={busy} onClick={runSweep}>{busy ? "Sweeping…" : "Run sweep"}</button>
+        <>
+          <div className="panel mb">
+            <div className="panel-head">Walk-forward sweep <span className="sub">every banked day replayed with the same read the live runner uses — deterministic, no LLM; a variant changes one number</span></div>
+            <div className="panel-body" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <label className="muted">from <input value={sweepForm.start} onChange={(e) => setSweepForm({ ...sweepForm, start: e.target.value })} style={{ width: 110 }} /></label>
+              <label className="muted">to <input value={sweepForm.end} onChange={(e) => setSweepForm({ ...sweepForm, end: e.target.value })} style={{ width: 110 }} /></label>
+              <label className="muted">variant <input placeholder="pullback_max_touches=3 target_premium=0.5" value={sweepForm.overrides} onChange={(e) => setSweepForm({ ...sweepForm, overrides: e.target.value })} style={{ width: 300 }} /></label>
+              <button className="primary-btn" disabled={busy} onClick={runSweep}>{busy ? "Sweeping…" : "Run sweep"}</button>
+            </div>
           </div>
-          {!sweep ? <div className="state-note">A sweep walks every banked day with the same read the live runner uses (premium path: Black–Scholes on the VIX proxy, fees and slippage included). Variants change one number at a time.</div> :
-          <SweepView sweep={sweep} />}
-        </div>
+          {!sweep ? (
+            <div className="state-note">Premium path: Black–Scholes on the VIX proxy, fees and slippage included. Judge a rule from ≥ 20 banked sessions, not from one day.</div>
+          ) : (
+            <div className="panel mb"><div className="panel-head">Result <span className="sub">{sweep.start} → {sweep.end} · {sweep.symbols.join(" · ")}</span></div><div className="panel-body"><SweepView sweep={sweep} /></div></div>
+          )}
+        </>
       )}
     </div>
   );
@@ -227,7 +296,7 @@ function ReadView({ read }: { read: { source: string; result: ReadResult } }) {
         {read.source === "live" ? "live read" : "replay"} · {s.trades ?? 0} trade(s), {s.wins ?? 0} won · sum {s.pnlPctSum ?? 0}% · bias {r.bias?.label ?? "none"} · σ {s.sigma}
       </div>
       {(r.trades ?? []).length > 0 && (
-        <table className="table" style={{ marginBottom: 8 }}>
+        <table className="tbl" style={{ marginBottom: 8 }}>
           <thead><tr><th>Setup</th><th>Side</th><th>Entry</th><th>Strike</th><th>Prem</th><th>Result</th><th>Exit</th></tr></thead>
           <tbody>
             {r.trades.map((t: any, i: number) => (
@@ -240,7 +309,7 @@ function ReadView({ read }: { read: { source: string; result: ReadResult } }) {
           </tbody>
         </table>
       )}
-      <table className="table">
+      <table className="tbl">
         <thead><tr><th>Time</th><th>Event</th><th>Why</th></tr></thead>
         <tbody>
           {(r.events ?? []).map((e, i) => (
@@ -275,7 +344,7 @@ function SweepView({ sweep }: { sweep: Sweep }) {
           ))}
         </div>
         <div>
-          <table className="table">
+          <table className="tbl">
             <thead><tr><th>Date</th><th>Sym</th><th>Day</th><th>Scenario</th><th>Trades</th><th>Sum %</th></tr></thead>
             <tbody>
               {sweep.rows.map((r: any, i: number) => (
