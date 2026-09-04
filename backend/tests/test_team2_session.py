@@ -413,3 +413,29 @@ def test_event_day_gate_blocks_entries_when_enabled():
     off = simulate_session(plan, make_rules(avoid_event_days=False), sigma=0.20, warmup_1m=prev) if False else None
     res2 = simulate_session(plan, today, make_rules(), sigma=0.20, warmup_1m=prev)
     assert [e for e in res2.events if e["event"] == "fire"]
+
+
+def test_entry_cutoff_and_loss_cap_say_why_the_read_went_quiet():
+    """F26: both gates used to stop entries in silence — the read has to name the discipline."""
+    prev = prev_day_bars()
+    today, _ = trend_day(prev)
+
+    # last-entry cutoff: pull it back to 10:00 so the trend day's later touches fall past it
+    _, res = run(prev, today, last_entry_min=10 * 60)
+    cut = [e for e in res.events if e["event"] == "skip_last_entry"]
+    assert len(cut) == 1, [e["event"] for e in res.events]          # said ONCE, not per 2m close
+    assert "10:00" in cut[0]["why"] and "flatten" in cut[0]["why"]
+    assert all(e["ts"] >= cut[0]["ts"] for e in res.events
+               if e["event"] == "fire" and e["ts"] > cut[0]["ts"])  # nothing fires after it
+    assert not [e for e in res.events if e["event"] == "fire" and e["ts"] >= cut[0]["ts"]]
+
+    # a normal day says it once too, at the real 15:30 cutoff — one row per session, not per bar
+    _, wide = run(prev, today)
+    normal = [e for e in wide.events if e["event"] == "skip_last_entry"]
+    assert len(normal) == 1 and normal[0]["time"] == "15:30"
+
+    # loss cap: zero losses allowed → the first loss closes the symbol for the day, out loud
+    _, capped = run(prev, today, max_losses_per_day=0)
+    cap = [e for e in capped.events if e["event"] == "skip_loss_cap"]
+    assert len(cap) == 1 and "max 0" in cap[0]["why"]
+    assert not [e for e in capped.events if e["event"] == "fire"]

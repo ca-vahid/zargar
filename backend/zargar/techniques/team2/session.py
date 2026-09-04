@@ -191,6 +191,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     fifteen_seen: list[Bar] = []
     pm_up_done = pm_dn_done = False
     event_day_noted = False
+    last_entry_noted = loss_cap_noted = False
     session_bars_2m: list[Bar] = []
 
     def setup_for(kind: str, direction: str, anchor: float, target: float | None, ts: int, range_day: bool) -> Setup:
@@ -352,6 +353,15 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
 
         # ---- entries (T): only inside the entry window, with the regime aligned
         if m < rules.first_entry_min or m >= rules.last_entry_min:
+            # F26: the cutoff used to stop entries in silence, so a read that goes quiet after
+            # 15:30 looked identical to a read with no setup. Say it once, on the late side only
+            # (the pre-09:45 side is just "the session has not confirmed a 15m bar yet").
+            if m >= rules.last_entry_min and not last_entry_noted:
+                last_entry_noted = True
+                note(b2.ts, "skip_last_entry",
+                     f"past {rules.last_entry_min // 60:02d}:{rules.last_entry_min % 60:02d} — no new entries, "
+                     f"managing what is open until the {rules.flatten_min // 60:02d}:{rules.flatten_min % 60:02d} "
+                     "flatten (D6/C3)")
             continue
         if rules.avoid_event_days and plan.get("eventDay"):
             if not event_day_noted:
@@ -360,6 +370,13 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                      "no new entries (D-4; techniques.team2.avoid_event_days)")
             continue
         if losses_today >= rules.max_losses_per_day:
+            # F26: same silence as the entry cutoff — the day's risk discipline is a decision the
+            # read has to show, not an absence of rows.
+            if not loss_cap_noted:
+                loss_cap_noted = True
+                note(b2.ts, "skip_loss_cap",
+                     f"{losses_today} losing trades today (max {rules.max_losses_per_day}) — done taking "
+                     "entries in this symbol for the session (D-3)")
             continue
         live = [s for s in setups.values() if not s.dead and s.confirmed_ts <= b2.ts]
         if not live or not r.ready:

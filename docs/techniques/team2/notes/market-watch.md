@@ -543,3 +543,131 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   and the 15:30 last-entry / 15:45 flatten discipline.
 - **Log-reading note for future runs:** `backend/zargar-8420.log` timestamps are **machine-local PT
   (ET − 3 h)** — 10:05 in the log is 13:05 ET. Earlier runs quoted log times as ET.
+
+## 2026-09-04 13:50 ET (run 10 — quiet tape; F26 fixed and DEPLOYED, F27/F28/F29 raised)
+
+- **Alive, real-time, all three healthy.** `/api/health` ok v0.7.0, 63 armed. SPY/QQQ/IWM all `armed` +
+  **auto** on Practice (`ff3c29d4`), `needsAttention: false`, pre-open complete (SPY PM 770.50–774.24
+  normal/none, QQQ 717.13–722.06 gap_up/full, IWM 293.24–295.92 normal/none). Quotes **0 s** old, session
+  `regular`; option quotes real-time **OPRA** (`IWM260904C00296000` bid 0.09/ask 0.10, `src: opra`); 1m bars
+  banking in the runtime DB through **13:33 ET** at check time (SPY 1,428 / QQQ 1,069 / IWM 976 rows in
+  24 h), `barAgeSeconds` 71–103, `stale: false`. **Zero `Traceback`/`ERROR`/`read_error`** in
+  `zargar-8420.log` apart from one `ConnectionResetError` at 13:32 ET which is this run's own HTTP client
+  closing. **Practice equity is $8,989** (cash −4,566 against three open non-Team2 positions) — the F22
+  premium pre-check would now pass a $1,014 Team2 ticket at 11% of equity.
+- **Almost no new tape since run 9 (13:05).** One new event across the desk: QQQ's **13:00** 15m close
+  **718.13** flipped the bias back to scenario 2 (reject PDH) → puts. Day unchanged: **3 model
+  trades, 1 win / 2 losses, pnlPctSum +30.91** (SPY +62.31 then −12.23, IWM −19.17, QQQ 0).
+  **Still zero real orders** — `/api/orders` has no `source: team2` row and nothing dated 2026-09-04.
+  All three symbols are currently *inside or under* their PM ranges, so F15 refuses every entry: SPY
+  769.35 (below its range, but its long setup needs a rally back into it), QQQ 716.71 and IWM 295.32
+  (both inside). The F22 fix has **still not been exercised live**.
+- **F23 confirmed holding.** IWM's read carries **2** `skip_no_trade_zone` rows for the day (one per
+  setup) where run 8 counted 38. QQQ 2. The audit's IWM "40 skipped" total is all pre-12:58 rows.
+- **Replay parity exact on all three**, before and after the restart: SPY 8/8 events, QQQ 6/6, IWM 7/7,
+  identical P&L. No drift.
+- **F26 (FIXED + DEPLOYED, commit `b86acda`).** `simulate_session` stopped taking entries with a bare
+  `continue` in two places — past the **15:30 last-entry cutoff** (D6) and once `losses_today >=
+  max_losses_per_day` (D-3). Neither wrote a read event, so today's 15:30 cutoff — the exact discipline
+  this watch is asked to verify — would have passed with **no row in the read, the Armed timeline or the
+  journal**, indistinguishable from a session with no setup. Now said **once** per session (the F23
+  pattern): `skip_last_entry` names the cutoff and the flatten time it hands to, `skip_loss_cap` names the
+  count and the cap. Additive only — no entry, exit or size changes; journaled and iconed (⛔).
+  51 Team2 tests green, `npm run build` clean.
+- **Deployed at 13:47 ET** via `start.ps1 -Detach`: nothing open or working on any plan and all three
+  symbols refusing entries at the time, so the ~30 s restart window carried no fire risk. All 63 plans
+  restored, all three back to `auto`, day P&L identical, parity re-verified after. The **frontend** change
+  went out with no restart (server serves `dist` from disk; `index-Cs0_Vig7.js` HTTP 200). Note this
+  restart also carries F23/F24/F15/F20 forward — they were already live from the 12:58 build.
+- **F27 (NOT fixed — proposal).** `zone_tol_atr` is declared in `rules.py:37`, published in
+  `/api/team2/status.thresholds`, and **read by nothing** — `ScenarioTracker.on_close` flips the desk's
+  bias on a bare `bar.close > pdh.top` with no buffer and no decisiveness test. Evidence from today's QQQ
+  15m bars re-derived off the runtime DB: the **12:30** bar closed **718.94** vs a zone top of **718.91** —
+  a **0.025** margin, **0.086 × ATR**, body only 0.55 of range (under the `decisive_body_ratio` 0.6 the
+  rules already define for breaks). It flipped the desk to calls, minted `scenario_1@12:30`, and the 13:00
+  close flipped it straight back and invalidated it 30 minutes later. **Four** bias flips on QQQ today
+  around a 0.31-wide zone, zero trades. Free today only because F15 was refusing QQQ anyway. Proposal: wire
+  the knob (`close > top + tol·ATR`) and/or require a decisive body on a flip, shipped at 0.0/off so nothing
+  changes until the walk-forward picks the value. **Threshold change — user's call.**
+- **F28 (NOT fixed — proposal).** `runner.py` journals `scenario`, `pm_break` and `late_touch` under
+  `ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED`. The bias flip and the PM break are the method's two *structural*
+  events — the ones that arm the L2.6/L2.7 setups — and the append-only journal files them as trigger
+  skips, which also inflates every skip count a review tool or morning report would read. Fix = an additive
+  event constant in `zargar/events.py`; not built because that is shared vocabulary, the journal is
+  append-only (the fix splits today's history) and EM's review CLI wants a look.
+- **F29 (NOT fixed — open method question).** `max_losses_per_day` is counted **per symbol**, while
+  `max_concurrent_positions` is deliberately counted **across all three plans** (A12). The code treats
+  SPY/QQQ/IWM as one desk for risk *taken* and three desks for losses *absorbed*: today's 2 model losses
+  leave a budget of 2 more in *each* symbol — up to 6 losers in a session the author would have left after
+  2. Casey trades one book. Should the loss cap be desk-wide like A12? Cheap to build
+  (`open_positions_across_plans` already exists), but it is a money rule.
+- **Also seen, no action.** All three plans were flipped auto→alert→auto in an 11-second window at
+  **13:16:41–13:16:52 ET** with no re-arm in between — a manual mode toggle from another session/UI, not a
+  restart (a restart re-arms). Harmless here, but a fire inside such a window is alert-only. 15 mode changes
+  per plan so far today.
+- **Next run should check:** the **15:30 cutoff row** — every plan's read should now carry exactly one
+  `skip_last_entry` at 15:30 (this is F26's first live exercise), then the 15:45 flatten; whether any symbol
+  finally breaks clear of its PM range and places the desk's **first real order** (`contract` →
+  `entry_capped` → `position_open` in the audit plus a `source: team2` row in `/api/orders`, also the first
+  live exercise of the F22 equity fix); and whether the user has ruled on F27/F28/F29.
+
+
+## 2026-09-04 14:15 ET (run 11 — THE DESK'S FIRST REAL ORDER; engine died at 14:01 and came back by itself)
+
+- **The first Team2 money order ever placed.** QQQ `pm_break_down@13:30` → `pm_retest` **13:46** → auto
+  **BUY 30 QQQ260904P00716000 @ $0.34** (limit 0.36) at **13:48:01 ET**, Practice sim book `ff3c29d4`.
+  Closed **13:58:43** by the live premium stop (*"bid 0.24 is 29% below the 0.34 paid, limit 25%"*),
+  filled 0.24 → realized **−$300** + $62.40 commission = **−$362.40**. Full chain in the audit:
+  `TriggerFired → OrderIntent(qty 30) → SUBMITTED → PositionOpened(avgFill 0.34) → PlanError(premium stop)
+  → PlanExit → OrderIntentCreated → RiskCheckPassed → OrderSubmitted → OrderAccepted → OrderFill →
+  PositionClosed`, and two `source: technique` rows in `/api/orders`. **The F22 equity pre-check passed
+  live for the first time** (a $1,020 ticket against ~$8,989 practice equity).
+  *Note for future runs: order `source` is `technique`, not `team2` (the column is 12 chars) — earlier
+  run logs told the next run to grep for `source: team2`, which will never match.*
+- **Verified on the DB tape.** 13:30 15m bar closes **716.805** < PM low 717.13 ✓ → `pm_break`. The
+  13:46–13:47 2m bar highs **717.1299** (the anchor 717.132, within tolerance) and closes **716.95**, on
+  the short's side ✓ → `pm_retest` + fire, F20 working exactly as designed. The underlying stop (717.4513,
+  a 2m close through the level) never triggered: the worst 2m close in the trade was 717.22.
+- **F30 (new, NOT fixed — proposal).** The live premium stop measures **bid → ask-paid**; the model runs
+  the *same* 25% rule mark-to-mark and did not fire until **14:12**, 14 min later. On a $0.34 contract the
+  0.01 spread is ~3%, so the live guard spends an eighth of its budget before the underlying moves.
+  Both sold the bottom: at 14:13 the same contract was **bid 0.335 / ask 0.345**, back to what was paid,
+  with QQQ 717.08 still on the short's side of the 717.13 entry. Proposal: mid-vs-mid (or
+  bid-vs-bid-at-entry) and/or a tick floor for cheap contracts. **Money rule — the user's call.**
+
+  **Sharpened at 14:20 ET:** there are in fact **three** premium series answering the same 25% question and
+  they disagree. The runner's guard (real **bid** vs ask paid) fired at 13:58; the **live read** still had
+  the position open at 14:20 (in money modes it marks on the real premium, which had recovered to 0.335);
+  the **replay** closed it at 14:12 on the synthetic mark-to-mark model. Same rule, same contract, three
+  answers — that, not the 25% number, is the thing to settle first.
+- **F31 (FIXED, committed — deploy QUEUED).** With the book flat, the Armed/phone headline still read
+  "in trade … **1.00 left**". `runner.py` now appends "· book flat — the desk's contract is already closed
+  (stop)" when a *filled* trade for that setup is closed (alert mode mints trades but never fills, so it
+  stays silent). 51 Team2 tests green. **Not deployed this run:** SPY sits 0.02% from its `scenario_3`
+  entry at 769.26 and the desk is in AUTO — a ~30 s restart window would alert-stamp that fire for a
+  cosmetic label. Next run should deploy it when nothing is taking touches.
+- **The engine died at 14:01:05 ET and restarted itself at 14:02:19.** No traceback, no shutdown line —
+  the Windows Application log shows **"Claude VM Service stopped" at 11:01:05 PT / "starting" at 11:01:06**,
+  the same second the log went silent. The `ZargarUnelevatedStart` scheduled task
+  (`start.ps1 -Detach`) ran at 11:01:54 PT and brought it back: engine up 14:02:19, **all 63 plans
+  restored**, 3 Team2 plans back in `auto`, `team2_plan_nightly` 17:00 and `team2_preopen` 09:25
+  re-registered. **No money was left unmanaged** — the QQQ position had closed at 13:58, three minutes
+  before. Worth the user knowing: the trading engine is currently collateral damage of a Claude desktop
+  service restart, and the ~75 s hole would have been a naked 0DTE position had it landed a few minutes
+  earlier. Not a Team2 defect; not fixed here.
+- **Everything else healthy.** `/api/health` ok v0.7.0, 63 armed; all three plans `armed` + auto,
+  `needsAttention: false`. Quotes **0–0.2 s** old, session `regular`; the option quote is real-time
+  **OPRA** (`QQQ260904P00716000` bid 0.335/ask 0.345, `src: opra`); Alpaca stream connected; 1m bars
+  banking through **14:07 ET** (SPY 1,428 / QQQ 1,069 / IWM 977 rows in 24 h), age 81 s.
+  **Zero `Traceback`/`ERROR`/`read_error`** since the restart (40 warnings, all the benign
+  `dropped N non-bucket-aligned stub bar(s)` plus the known SPX calendar 404).
+- **Day so far: 3 closed model trades, 1 win / 2 losses.** SPY `pm_break_down@10:30` +62.31 then −12.23
+  (net +50.08), IWM `pm_break_up@12:00` −19.17, QQQ `pm_break_down@13:30` −29.54 (model) / −$362 (book).
+  QQQ's bias flipped a 4th and 5th time (12:30 scenario 1, 13:00 scenario 2) — more F27 evidence.
+- **Replay parity exact on SPY (8/8 events, 2/2 trades) and IWM (7/7, 1/1).** QQQ shows the expected
+  one-bar drift: the replay ran to 14:12 and reproduced the model's own premium-stop exit the live read
+  had not reached yet (9 vs 10 events). Note for future runs: `POST /runs/{id}/replay` returns the read
+  under **`result`**, not at the top level.
+- **Next run should check:** the **15:30 `skip_last_entry` row** on each plan (F26's first live exercise)
+  and the 15:45 flatten; whether the queued F31 deploy went out; whether SPY takes its `scenario_3`
+  EMA13 touch at 769.26 and IWM its own; and whether the user has ruled on F27/F28/F29/F30.

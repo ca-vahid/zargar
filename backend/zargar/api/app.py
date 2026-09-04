@@ -249,8 +249,8 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
         return {"ok": True, "removed": info.get("name")}
 
     @app.get("/api/portfolios/{pid}/equity", dependencies=[auth])
-    async def equity_series(pid: str, limit: int = 2000):
-        return await eng.positions.equity_series(pid, limit)
+    async def equity_series(pid: str, limit: int = 2000, since: int = 0, points: int = 0):
+        return await eng.positions.equity_series(pid, limit, since=since or None, points=points)
 
     # --- market data --------------------------------------------------------
     # (symbol, tf, range) -> (monotonic ts, rows): a chart re-render within a
