@@ -77,6 +77,7 @@ class Team2Runner(PlanRunner):
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
         self._sigma_cache: dict[str, tuple[str, float]] = {}
         self._small_noted: set[tuple[str, str]] = set()
+        self._loss_tally: dict[str, dict[str, tuple[int, str]]] = {}   # day -> run_id -> (losers, basis) (F37/F38)
 
     async def stop(self) -> None:
         for name in ("team2_plan_nightly", "team2_preopen"):
@@ -376,10 +377,11 @@ class Team2Runner(PlanRunner):
         # F29: the author trades ONE book — max_losses_per_day counts the whole desk (model losses across
         # every plan, plus real closed losers in money modes), not one budget per symbol
         rules_now = self.rules()
-        if getattr(rules_now, "losses_desk_wide", True) and self.losses_across_plans() >= int(rules_now.max_losses_per_day):
+        if (ap.config.mode != "alert" and getattr(rules_now, "losses_desk_wide", True)
+                and self.losses_across_plans() >= int(rules_now.max_losses_per_day)):
             self._log(ap, "skip_loss_cap_desk",
-                      f"{tid}: {self.losses_across_plans()} losing trades across the desk today (max {rules_now.max_losses_per_day}) — "
-                      "done for the day (F29, desk-wide)", trigger=tid)
+                      f"{tid}: {self.losses_across_plans()} losing trades across the desk today (max {rules_now.max_losses_per_day}, "
+                      f"counted from the {self.losses_basis()}) — done for the day (F29, desk-wide)", trigger=tid)
             if journal:
                 await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                     "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_loss_cap_desk",
@@ -589,16 +591,60 @@ class Team2Runner(PlanRunner):
         ap.fire_tasks[tid] = task
         task.add_done_callback(lambda t, tid=tid, ap=ap: ap.fire_tasks.pop(tid, None))
 
-    def losses_across_plans(self) -> int:
-        """F29: losing trades today across every armed Team2 plan — the model's closed losers per plan,
-        or the book's real closed losers where a plan traded for real (the larger of the two per plan)."""
-        n = 0
+    @staticmethod
+    def _plan_losses(mode: str, trades, sim: dict | None) -> tuple[int, str]:
+        """F37: which record counts. A plan in a money mode that has ROUTED an order is judged by the
+        book (its real closed losers); an alert plan — or a money-mode plan that never routed — by the
+        model. Never the larger of the two: the model is recomputed by today's newest code and can
+        "lose" trades the desk declined at the time (SPY/IWM 2026-09-04 15:10)."""
+        routed = [t for t in trades if getattr(t, "entry_order_id", None) or float(getattr(t, "filled_qty", 0) or 0) > 0]
+        if mode in ("auto", "proposal") and routed:
+            return sum(1 for t in trades if t.status == "closed" and float(t.filled_qty or 0) > 0 and t.realized_pnl < 0), "book"
+        return sum(1 for t in ((sim or {}).get("trades") or []) if not t.get("win")), "model"
+
+    def losses_across_plans(self, day: str | None = None) -> int:
+        """F29/F37/F38: losing trades today across the whole desk. Armed plans are counted live; a plan
+        that disarmed (its own loss halt) keeps its losses in the day's tally — the cap must not loosen
+        after the worst outcome a plan can have. The tally is seeded from the persisted rows at boot."""
+        day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
+        tally = self._loss_tally.setdefault(day, {})
         for ap in self._armed.values():
-            sim = self._last_sim.get(ap.run_id) or {}
-            model = sum(1 for t in (sim.get("trades") or []) if not t.get("win"))
-            real = sum(1 for t in ap.trades.values() if t.status == "closed" and t.filled_qty > 0 and t.realized_pnl < 0)
-            n += max(model, real)
-        return n
+            n, basis = self._plan_losses(ap.config.mode, list(ap.trades.values()), self._last_sim.get(ap.run_id))
+            tally[ap.run_id] = (n, basis)
+        for d in [k for k in self._loss_tally if k != day]:
+            self._loss_tally.pop(d, None)
+        return sum(n for n, _ in tally.values())
+
+    def losses_basis(self, day: str | None = None) -> str:
+        day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
+        bases = {b for _, b in self._loss_tally.get(day, {}).values()}
+        return "/".join(sorted(bases)) or "model"
+
+    async def seed_loss_tally(self, day: str | None = None) -> int:
+        """F38: after a restart, today's DISARMED Team2 plans are not restored — read their real closed
+        losers back from the persisted rows so the desk-wide cap still counts them."""
+        day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
+        tally = self._loss_tally.setdefault(day, {})
+        try:
+            from ...models import TechniqueArmed
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(TechniqueArmed).where(
+                    TechniqueArmed.technique == self.TECHNIQUE_ID, TechniqueArmed.plan_for == day,
+                    TechniqueArmed.status.in_(("disarmed", "expired"))))).scalars().all()
+        except Exception:  # noqa: BLE001 - a missing tally only loosens a cap; say so in the log
+            log.exception("team2 loss tally seed failed")
+            return 0
+        seeded = 0
+        for row in rows:
+            if row.run_id in self._armed:
+                continue
+            trades = (row.state or {}).get("trades") or []
+            n = sum(1 for t in trades if t.get("status") == "closed" and float(t.get("filledQty") or 0) > 0
+                    and float(t.get("realizedPnl") or 0) < 0)
+            if n:
+                tally[row.run_id] = (n, "book")
+                seeded += n
+        return seeded
 
     def open_positions_across_plans(self) -> int:
         """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap)."""
@@ -737,6 +783,9 @@ async def attach_team2_runner(engine) -> None:
         restored = await runner.restore()
         if restored:
             log.info("team2 runner restored %d armed plan(s)", restored)
+        seeded = await runner.seed_loss_tally()
+        if seeded:
+            log.info("team2 desk loss tally seeded with %d loser(s) from today's disarmed plans (F38)", seeded)
     except Exception:  # pragma: no cover
         log.exception("team2 runner restore failed")
     # The desk's three symbols keep banking 1m bars whether or not a plan is armed on them:

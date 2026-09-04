@@ -99,6 +99,41 @@ async def test_daily_loss_breaker_halts_the_losing_book_not_the_world(engine, mo
     await engine.release_halt(source="app")
 
 
+async def test_desk_wide_loss_cap_counts_the_book_not_hindsight_and_survives_a_disarm(rig):
+    """F37: a money-mode plan that routed is judged by its real losers, not the recomputed model;
+    F38: a disarmed plan's real losers stay in the day's tally (and are re-seeded after a restart)."""
+    eng, sim = rig
+    prev = prev_day_bars()
+    today, _ = trend_day(prev)
+    for sym in ("SPY", "QQQ"):
+        await persist_bars(eng.sf, [replace(b, symbol=sym) for b in prev])
+        await persist_bars(eng.sf, [replace(b, symbol=sym) for b in filter_session(today, "pre")])
+    await eng.settings.set("techniques.team2.symbols", ["SPY", "QQQ"], journal=False)
+    out = await eng.team2.nightly_plans(DAY.isoformat(), arm=True)
+    runner = eng.team2_runner
+    spy, qqq = [runner.get(r) for r in out["armed"]]
+    # alert plans: the model is the only record — two model losers count 2
+    runner._last_sim[spy.run_id] = {"trades": [{"win": False, "setup": "s"}, {"win": False, "setup": "s"}], "setups": []}
+    runner._last_sim[qqq.run_id] = {"trades": [], "setups": []}
+    assert runner.losses_across_plans(DAY.isoformat()) == 2 and runner.losses_basis(DAY.isoformat()) == "model"
+    # the same plan in auto, having routed one real trade that WON: the book counts, hindsight does not
+    await runner.set_mode(spy.run_id, "auto")
+    spy.trades["t1"] = Trade(trigger_id="t1", kind="scenario_1", fired_ts=1, window="team2", entry=1.0, stop=0.9, targets=[],
+                             status="closed", entry_order_id="o1", filled_qty=3, realized_pnl=+120.0)
+    assert runner.losses_across_plans(DAY.isoformat()) == 0
+    spy.trades["t2"] = Trade(trigger_id="t2", kind="scenario_1", fired_ts=2, window="team2", entry=1.0, stop=0.9, targets=[],
+                             status="closed", entry_order_id="o2", filled_qty=3, realized_pnl=-80.0)
+    assert runner.losses_across_plans(DAY.isoformat()) == 1 and "book" in runner.losses_basis(DAY.isoformat())
+    # the plan disarms (its own loss halt): its loser stays in the desk tally
+    await runner.disarm(spy.run_id, reason="loss halt", flatten=False)
+    assert spy.run_id not in runner._armed
+    assert runner.losses_across_plans(DAY.isoformat()) == 1
+    # after a restart the tally is empty until seeded from the persisted rows
+    runner._loss_tally.clear()
+    assert runner.losses_across_plans(DAY.isoformat()) == 0
+    assert await runner.seed_loss_tally(DAY.isoformat()) == 1 and runner.losses_across_plans(DAY.isoformat()) == 1
+
+
 async def test_technique_pauses_its_own_plans_on_a_book_after_its_bad_day(rig):
     eng, sim = rig
     prev = prev_day_bars()

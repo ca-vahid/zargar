@@ -391,7 +391,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live one once a money-mode fill exists so the scorecard compares like with like.
 
 
-- **F37 (2026-09-04 15:10 ET, NOT fixed — the desk-wide loss cap counts trades that were never taken)**
+- **F37 (2026-09-04 15:10 ET, FIXED 15:35 ET — the book counts once a plan routed; alert plans use the model; the gate is money-modes only)**
   F29 shipped at 15:00 and is binding **right now**: `losses_across_plans()` sums, per armed plan,
   `max(model losers, real closed losers)`. At 15:10 SPY carries **1 model loser** (11:10, −12.23%) and
   IWM **1** (12:16, −19.17%), so the desk reads **2 of 2** and every remaining entry today is refused —
@@ -407,7 +407,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   basis was used in the skip line. **Money rule — the user's call.** Same family as F30/F36: the
   model and the book are two premium/P&L series and a *risk gate* now depends on which one you read.
 
-- **F38 (2026-09-04 15:10 ET, NOT fixed — a disarmed plan's losses leave the desk-wide count)**
+- **F38 (2026-09-04 15:10 ET, FIXED 15:35 ET — a per-day tally keeps a disarmed plan's losers and is re-seeded from the persisted rows at boot)**
   `losses_across_plans()` iterates `self._armed.values()`, so QQQ's **two real losing round trips**
   (−$300 and −$54 gross, −$454.02 with fees) stopped counting toward the desk the moment its own loss
   halt **disarmed** it at 14:17. The cap therefore *loosens* precisely after the worst outcome a plan
@@ -420,7 +420,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   stops minting the paper trade. Harmless while the desk is in auto; worth aligning with the
   "money modes only; alert/proposal keep recording every read" convention two lines above it.)
 
-- **F39 (2026-09-04 15:10 ET, latent — negative or zero equity breaks the premium pre-check both ways)**
+- **F39 (2026-09-04 15:10 ET, FIXED 15:35 ET — an unmeasurable equity refuses with its own reason)**
   `planrunner.py:2396` reads `elif est > 0 and pct_cap and eq and est > eq * pct_cap / 100.0`. With
   `eq` **negative** the right-hand side is negative, so *every* option entry is blocked under a message
   that claims a percentage cap; with `eq` exactly **0** the whole clause is falsy and the cap is skipped
@@ -463,6 +463,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   annotated the high at 774.03 and his pre-market plan said "room up to 775.29" (notes/x/images INDEX,
   `2095599035113693522-1.jpg`). Zone construction (L1.2) and target discovery (L3.1) reproduce his sheet to the cent.
 | 2026-09-04 | **F17 fixed**: the kill switch no longer suppresses Team2's alert-mode read. `_fire_from_event`'s halt gate now applies to proposal/auto only (alert places nothing); an alert fire during a halt carries `haltedAtFire: true`. Restores live-vs-replay parity while the shared Practice portfolio is halted | market watch 10:00 ET; QQQ 10:02 fire lost to `halt_skip`; `tests/test_team2_runner.py::test_alert_mode_still_reads_the_tape_while_halted` fails without the fix | Team2 desk |
+| 2026-09-04 | **F37–F39 closed** (run 13): the desk-wide loss cap counts the BOOK for any money-mode plan that routed an order and the model only for alert plans (never the larger of the two); the gate applies in money modes only and says which record it used; a disarmed plan's losers stay in the day's tally and are re-seeded from the persisted rows after a restart; zero/negative equity refuses an option entry with its own reason instead of failing open at 0 / closed below it | run 13 | Team2 desk |
 | 2026-09-04 | **F25–F36 closed (user 2026-09-04 14:50 ET: "implement all the fixes")** — F25 one clock: every read event stamped at its bar's CLOSE (setup ids keep the open in their name); F27 `zone_tol_atr` wired + `flip_body_ratio`, both shipped at 0 (unchanged until the walk-forward); F28 structural reads journal as `TechniquePlanRead`, not skips; F29 `losses_desk_wide=True` — `max_losses_per_day` counts SPY+QQQ+IWM together (`skip_loss_cap_desk`); F30 `premium_stop_basis=mid` + `premium_stop_min_ticks=3` for Team2 (EM keeps bid, 0); F32 both loss halts net of commissions; F33 an entry whose premium-stop risk exceeds the remaining daily budget is refused before routing (`skip_loss_budget`); F36 `premium_pick=closest` — model and live pick the strike CLOSEST to the target in [floor, 1.5x]. F34/F35 (watch job) deployed with them | this session's QQQ trades | Team2 desk |
 | 2026-09-04 | Halt scopes (platform, built by the desk): the daily-loss breaker now halts only the losing BOOK (`risk.daily_loss_halt_scope=portfolio`), and Team2 has its own `techniques.team2.daily_loss_halt_pct` = 10 — after losing 10% of the book in a day (≈ two full-size stops) its plans PAUSE for the day while the other techniques carry on. `risk.daily_loss_halt_pct` stays at the 12 set this morning for practice; re-tighten before real money | PLATFORM-RULES 2026-09-04 | Team2 desk |
 | 2026-09-04 | **F15 + F20 built** (user 2026-09-04 13:20 ET: "can we fix these all?"). F15: `sizing_bucket` judges the PM no-trade zone BEFORE "beyond yesterday's zone" (a gap-day PM range beyond the PDH/PDL zone is still chop), and on gap days a 15m close beyond the PM level arms `pm_break_*` even outside yesterday's range (L2.4). F20: a `pm_break_*` setup's touch within the tolerance of its own anchor, close on the trade's side, is sized SMALL (the V6 rung) instead of refused — the L2.6/L2.7 retest entry; deeper inside the range V6 stands. `pm_retest` event names it. Watch the sweep: both change which trades are taken | TRADING-RULES F15/F20 evidence (SPY 10:44 → 769.05, IWM 12:14–12:34, QQQ 10:02) | Team2 desk |

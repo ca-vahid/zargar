@@ -2389,9 +2389,14 @@ class PlanRunner(SessionListener):
                                    f"${left:,.0f} of the ${limit:,.0f} daily loss limit is left (F33)")
                         self._log(ap, "skip_loss_budget", f"{trade.trigger_id}: {blocked}", trigger=trade.trigger_id,
                                   atRisk=round(at_risk, 2), left=round(left, 2), limit=limit)
-                if est > 0 and cap and est > cap:
+                if est > 0 and pct_cap and eq <= 0 and blocked is None:
+                    # F39: zero/negative equity is "we cannot measure the account", not a percentage verdict —
+                    # it used to fail OPEN at exactly 0 and refuse everything below it under a %-cap message
+                    blocked = (f"cannot judge the premium cap: the account's equity reads ${eq:,.0f} "
+                               f"(risk.max_option_premium_pct needs a positive equity)")
+                elif est > 0 and cap and est > cap:
                     blocked = f"premium ≈${est:,.0f} exceeds the ${cap:,.0f} per-order cap (risk.max_option_premium_notional)"
-                elif est > 0 and pct_cap and eq and est > eq * pct_cap / 100.0:
+                elif est > 0 and pct_cap and eq > 0 and est > eq * pct_cap / 100.0:
                     blocked = (f"premium ≈${est:,.0f} is over {pct_cap:g}% of the account's ${eq:,.0f} equity "
                                f"(risk.max_option_premium_pct)")
             if contract is None or blocked:
