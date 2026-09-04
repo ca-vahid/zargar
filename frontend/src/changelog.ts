@@ -35,6 +35,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "Winners get banked",
     items: [
+      { tag: "fixed", text: "Validation batch: the Arm button says exactly why nothing qualifies instead of a cheerful \"All 0 armed\", and every bulk arm is verified against the server before it reports success." },
       { tag: "improved", text: "The Armed list reads in plain English. A row now says what will actually happen — \"Buy at 323.71 · eva · off support\", \"needs to fall 1.37%\" — instead of EM-only jargon that every tip row was wearing by accident. Anything identical on every row (market window, \"watching 1\", empty grades, zero P&L) is said once above the list or not at all, and rows sort closest-to-firing first." },
       { tag: "major", text: "Monetize campaign for swing options (researched against practitioner + academic literature): at +100% on the contract, half is sold — the trade has paid for itself and can no longer lose; ratchet floors lock in +15%/+50%/+120% as the premium climbs, tightening near expiry and when the gain is IV-driven. Judged every ~2 seconds. The analyst's stock-level ladder still runs; whichever prints first." },
       { tag: "major", text: "Deep-in-the-money winners roll up: when a call is mostly intrinsic (delta ≥ 0.75), the desk sells it and buys the ~0.35-delta strike — only when the cash banked exceeds what the trade originally cost. Upside stays on, the trade becomes unlosable. Max 2 rolls, both legs must quote tight and real-time." },

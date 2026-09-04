@@ -260,6 +260,17 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
   const armAll = async () => {
     const total = passed.length;
     const fails: string[] = [];
+    if (!total) {
+      // 2026-09-03: "All 0 armed" read as success and 27 setups went unarmed until
+      // the user checked hours later. Say exactly why nothing qualifies instead.
+      const noSetup = ids.filter((id) => !analystOk(full[id]) || !bestTrigger(full[id])).length;
+      const already = ids.filter((id) => isArmed(id)).length;
+      const held = ids.filter((id) => !isArmed(id) && armedElsewhere(id)).length;
+      const expired = ids.filter((id) => planExpired(id)).length;
+      toast("error", `Nothing to arm — ${noSetup} without a setup verdict, ${already} already armed, `
+        + `${held} held by another plan on the same symbol, ${expired} built for a session that is over`);
+      return;
+    }
     setBulkArm({ done: 0, total });
     let done = 0;
     try {
@@ -275,9 +286,19 @@ function ScanPanel({ ids: rawIds, armable, onDone, onClose, onOpen, onArmedAll }
       await Promise.all(Array.from({ length: Math.min(5, queue.length) }, worker));
     } finally { setBulkArm(null); }
     const ok = total - fails.length;
+    // trust nothing the browser did: count what the SERVER now says is armed
+    let verified: number | null = null;
+    try {
+      const now = await api.techniqueArmed(true);
+      const want = new Set(passed);
+      verified = now.filter((a: any) => want.has(a.runId) && (a.status === "armed" || a.status === "paused")).length;
+    } catch { /* leave null: the toast says unverified */ }
+    const tail = verified == null ? " (could not verify on the server)"
+      : verified < ok ? ` — but the server shows only ${verified} armed: check the Armed dashboard`
+      : ` — ${verified} verified on the Armed dashboard`;
     if (fails.length) toast(ok ? "info" : "error",
-      `${ok}/${total} armed · ${fails.length} failed — first: ${fails[0]}`);
-    else toast("success", `All ${ok} armed — they're on the Armed dashboard`);
+      `${ok}/${total} armed · ${fails.length} failed — first: ${fails[0]}${tail}`);
+    else toast(verified != null && verified < ok ? "error" : "success", `All ${ok} armed${tail}`);
     if (ok) onArmedAll?.(ok);
   };
 
