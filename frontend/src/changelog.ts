@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.6.1";
+export const APP_VERSION = "0.6.2";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -18,11 +18,26 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.6.2",
+    date: "2026-09-04",
+    title: "Winners get banked",
+    items: [
+      { tag: "fixed", text: "Validation batch: the Arm button says exactly why nothing qualifies instead of a cheerful \"All 0 armed\", and every bulk arm is verified against the server before it reports success." },
+      { tag: "improved", text: "The Armed list reads in plain English. A row now says what will actually happen — \"Buy at 323.71 · eva · off support\", \"needs to fall 1.37%\" — instead of EM-only jargon that every tip row was wearing by accident. Anything identical on every row (market window, \"watching 1\", empty grades, zero P&L) is said once above the list or not at all, and rows sort closest-to-firing first." },
+      { tag: "major", text: "Monetize campaign for swing options (researched against practitioner + academic literature): at +100% on the contract, half is sold — the trade has paid for itself and can no longer lose; ratchet floors lock in +15%/+50%/+120% as the premium climbs, tightening near expiry and when the gain is IV-driven. Judged every ~2 seconds. The analyst's stock-level ladder still runs; whichever prints first." },
+      { tag: "major", text: "Deep-in-the-money winners roll up: when a call is mostly intrinsic (delta ≥ 0.75), the desk sells it and buys the ~0.35-delta strike — only when the cash banked exceeds what the trade originally cost. Upside stays on, the trade becomes unlosable. Max 2 rolls, both legs must quote tight and real-time." },
+      { tag: "improved", text: "Every option position now records its best premium mark (MFE) — the raw material for tuning the exit thresholds on our own fills once enough history exists." },
+      { tag: "improved", text: "Extraction understands entry slang: 'ape now', 'got starter', 'loading up', 'back in' are fresh entries, not commentary (neal's GME call was missed for this)." },
+      { tag: "fixed", text: "The Ledger always shows a row for today — a quiet day reads 0.00 instead of repeating yesterday's number." },
+    ],
+  },
+  {
     version: "0.6.1",
     date: "2026-09-02",
     title: "Nothing stranded, nothing lost to a bug",
     items: [
-      { tag: "fixed", text: "Validation batch: the Arm button says exactly why nothing qualifies instead of a cheerful \"All 0 armed\", and every bulk arm is verified against the server before it reports success." },
+      { tag: "improved", text: "Ledger, three ways — a view switch between Timeline (the week as a story, today at the head), Sheet (every trade with filters by source, book, win/loss, options/shares, hold time, plus sortable columns and a running balance) and Chart (a real waterfall from your starting cash to now). Day totals no longer look like a trade's P&L, the headline is a balance instead of an equation, and the decorative day bars are gone." },
+      { tag: "fixed", text: "Today is always on the Ledger now, even when nothing closed — a quiet day used to be indistinguishable from a broken page, and the positions you were carrying showed no date at all." },
       { tag: "fixed", text: "A restart no longer strands a working entry: the entry window now times out by the clock, the contract is watched again after a restart, and an order the sim book lost is cancelled instead of sitting 'accepted' forever." },
       { tag: "new", text: "Counterfactual ledger (Armed > History): when a bug costs a trade, the fired order is replayed through the desk's own exit rules on the real bars after the fix - fill, exits, gain, R - and kept beside the real results. Practice stays what actually happened." },
       { tag: "improved", text: "The EM ingestion window says what it captured today on start instead of sitting blank." },

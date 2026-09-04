@@ -317,5 +317,34 @@ class AlpacaOptionsData:
                 }
         return out
 
+    async def greeks(self, symbols: list[str]) -> dict[str, dict]:
+        """Real-time greeks + IV per contract from the snapshots endpoint
+        (phase 2, probed 2026-09-02: delta/gamma/theta/vega/rho + IV ride on
+        every snapshot). ``{occ: {"delta":…, "mid_iv":…}}``; unknown symbols
+        are absent — the delayed chain row remains the fallback."""
+        out: dict[str, dict] = {}
+        syms: list[str] = []
+        for x in symbols:
+            o = occ.parse(x)
+            if o is not None:
+                syms.append(o.symbol)
+        for i in range(0, len(syms), self.BATCH):
+            chunk = syms[i:i + self.BATCH]
+            r = await self._http.get("/v1beta1/options/snapshots",
+                                     params={"symbols": ",".join(chunk), "feed": self._feed})
+            if r.status_code in (401, 403):
+                raise OptionsError(f"Alpaca options snapshots refused ({r.status_code})")
+            if r.status_code >= 400:
+                raise OptionsError(f"Alpaca options snapshots HTTP {r.status_code}")
+            for sym, snap in ((r.json() or {}).get("snapshots") or {}).items():
+                g = snap.get("greeks") or {}
+                iv = snap.get("impliedVolatility")
+                if not g and not iv:
+                    continue
+                out[sym] = {"delta": g.get("delta"), "gamma": g.get("gamma"),
+                            "theta": g.get("theta"), "vega": g.get("vega"),
+                            "mid_iv": iv, "live": True}
+        return out
+
     async def aclose(self) -> None:
         await self._http.aclose()

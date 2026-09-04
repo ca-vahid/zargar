@@ -20,6 +20,9 @@ Policy document (all keys optional unless noted):
                                                          #    an underlying ladder never sees it)
       "premium_floor_after_trim": true,                  # after the first premium trim the rest can't go red
       "premium_watch": true,                             # judge premium stop/ladder on the ~2s quote loop too
+      "monetize": {"take_at_pct": 100, "take_fraction": 0.5,   # options: sell half at +100% (house money),
+                   "floors": [[50,15],[100,50],[200,120]]},    # ratchet floors under the rest (see
+                                                               # MONETIZE_DEFAULTS for tightening knobs)
       "breakeven_after_r": 1.0,                          # favorable excursion >= N R -> stop to entry
       "trailing": {"mode": "pct" | "atr" | "structure",  # trailing stop on the underlying
                    "value": 2.0,                         # pct: %, atr: multiple; structure ignores it
@@ -40,7 +43,7 @@ then stop maintenance (breakeven, trailing).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..domain import Bar
 from ..marketstructure.levels import atr as _atr, find_pivots
@@ -73,11 +76,19 @@ class PolicyState:
     breakeven_done: bool = False
     premium_trims_done: int = 0              # premium-ladder rungs taken
     premium_floor: float | None = None       # net-mark floor once a premium trim is banked
+    premium_peak: float | None = None        # best net mark seen (MFE on the CONTRACT — the calibration stat)
+    premium_take_done: bool = False          # the house-money half-off has fired
+    premium_floor_gain: float | None = None  # ratchet floor as % gain over entry (monetize policy)
+    premium_stall_marks: int = 0             # sessions without a new premium peak (stall exit near expiry)
+    rolls_done: int = 0                      # roll-ups executed on this position
 
     def to_dict(self) -> dict:
         return {"trimsDone": self.trims_done, "stop": self.stop, "trailingActive": self.trailing_active,
                 "peakFavorable": self.peak_favorable, "breakevenDone": self.breakeven_done,
-                "premiumTrimsDone": self.premium_trims_done, "premiumFloor": self.premium_floor}
+                "premiumTrimsDone": self.premium_trims_done, "premiumFloor": self.premium_floor,
+                "premiumPeak": self.premium_peak, "premiumTakeDone": self.premium_take_done,
+                "premiumFloorGain": self.premium_floor_gain, "premiumStallMarks": self.premium_stall_marks,
+                "rollsDone": self.rolls_done}
 
     @classmethod
     def from_dict(cls, d: dict | None) -> "PolicyState":
@@ -86,7 +97,12 @@ class PolicyState:
                    trailing_active=bool(d.get("trailingActive")), peak_favorable=d.get("peakFavorable"),
                    breakeven_done=bool(d.get("breakevenDone")),
                    premium_trims_done=int(d.get("premiumTrimsDone") or 0),
-                   premium_floor=d.get("premiumFloor"))
+                   premium_floor=d.get("premiumFloor"),
+                   premium_peak=d.get("premiumPeak"),
+                   premium_take_done=bool(d.get("premiumTakeDone")),
+                   premium_floor_gain=d.get("premiumFloorGain"),
+                   premium_stall_marks=int(d.get("premiumStallMarks") or 0),
+                   rolls_done=int(d.get("rollsDone") or 0))
 
 
 @dataclass
@@ -104,6 +120,7 @@ class PositionView:
     sessions_held: int = 0               # closed TRADING sessions since open
     days_to_event: int | None = None     # e.g. days to earnings (None = unknown)
     min_dte_floor: int = 1               # execution.min_dte — the platform floor
+    iv_ratio: float | None = None        # options: contract IV now / IV at entry (vega-driven gain marker)
 
     def favorable(self, price: float) -> float:
         return (price - self.entry) if self.direction == "long" else (self.entry - price)
@@ -141,16 +158,77 @@ def _premium_ladder(policy: dict) -> tuple[list[float], list[float]]:
     return gains, fractions
 
 
+MONETIZE_DEFAULTS = {
+    # Layers researched 2026-09-04 (Leung&Zhang: take+trail together; All Star
+    # Charts / Bhansali: sell half at a multiple of cost; ratchet floors are the
+    # noise-immune trail; theta/IV tightening because premium decays and
+    # vega-driven gains mean-revert). All numbers are % GAIN over entry premium.
+    "take_at_pct": 100.0, "take_fraction": 0.5,
+    "floors": [[50.0, 15.0], [100.0, 50.0], [200.0, 120.0]],
+    "extend_step_pct": 100.0, "extend_giveback_pct": 80.0,   # past the last rung: floor = rung - 80
+    "dte_tighten": 7, "tighten_pp": 17.0,                    # inside 7 DTE lift floors half a rung
+    "stall_dte": 2, "stall_giveback_pp": 25.0,               # inside 2 DTE the floor chases the peak
+    "iv_tighten_ratio": 1.3, "iv_tighten_pp": 17.0,          # IV-driven gains mean-revert -> tighter
+}
+
+
+def _monetize(policy: dict) -> dict | None:
+    m = policy.get("monetize")
+    if not m:
+        return None
+    return {**MONETIZE_DEFAULTS, **m}
+
+
+def _monetize_floor_gain(m: dict, peak_gain: float, *, dte: int | None,
+                         iv_ratio: float | None) -> float | None:
+    """The ratchet floor (as % gain over entry) implied by the PEAK gain seen so
+    far, with the tightenings. None until the first rung arms."""
+    floor = None
+    rungs = sorted((float(a), float(b)) for a, b in (m.get("floors") or []))
+    for arm, fl in rungs:
+        if peak_gain >= arm:
+            floor = fl
+    if floor is not None and rungs and peak_gain >= rungs[-1][0]:
+        # beyond the top rung the floor keeps climbing: one step per extend_step
+        step = float(m["extend_step_pct"])
+        extra = int((peak_gain - rungs[-1][0]) // step)
+        if extra > 0:
+            floor = (rungs[-1][0] + extra * step) - float(m["extend_giveback_pct"])
+    if floor is None:
+        return None
+    if dte is not None and dte <= int(m["dte_tighten"]):
+        floor += float(m["tighten_pp"])
+    if iv_ratio is not None and iv_ratio >= float(m["iv_tighten_ratio"]):
+        floor += float(m["iv_tighten_pp"])
+    if dte is not None and dte <= int(m["stall_dte"]):
+        floor = max(floor, peak_gain - float(m["stall_giveback_pp"]))
+    return min(floor, peak_gain)          # a floor can never sit above the peak itself
+
+
 def evaluate_premium(policy: dict, state: PolicyState,
-                     net_mark: float | None, entry_mark: float | None) -> Decision | None:
-    """The premium-only judgements — the premium stop (with the post-trim floor)
-    and the premium ladder — on the CONTRACT's mark alone, no bar needed. The
-    bar path (`evaluate`) and the live quote loop (`premium_watch`) both call
-    this, so a 0DTE lotto is judged every ~2 s, not every 15 minutes."""
+                     net_mark: float | None, entry_mark: float | None,
+                     *, dte: int | None = None, iv_ratio: float | None = None) -> Decision | None:
+    """The premium-only judgements, on the CONTRACT's mark alone — no bar needed.
+    The bar path (`evaluate`) and the live quote loop (`premium_watch`) both call
+    this, so a fast round-trip is judged every ~2 s, not every 15 minutes.
+    Order: ratchet/post-trim floors and the premium stop (protective) first,
+    then the house-money take and the ladder (profit).
+    Floors are judged against the state's PERSISTED peak (advanced afterwards by
+    `advance_premium_state`) — a fresh high can never stop the position out on
+    the same mark that made it."""
     if net_mark is None or not entry_mark:
         return None
     prem_pct = policy.get("premium_stop_pct")
     if entry_mark > 0:                                    # net debit (long premium)
+        gain = (net_mark / entry_mark - 1) * 100.0
+        m = _monetize(policy)
+        # ---- protective: ratchet floor (monetize), post-trim floor, premium stop
+        if m is not None and state.premium_floor_gain is not None \
+                and gain <= state.premium_floor_gain + 1e-9:
+            peak_gain = ((state.premium_peak or net_mark) / entry_mark - 1) * 100.0
+            return Decision("premium_stop", 1.0,
+                            f"ratchet floor +{state.premium_floor_gain:.0f}% hit "
+                            f"(now {gain:+.0f}%, peak was {peak_gain:+.0f}%) — banking the gain")
         floor = state.premium_floor
         if floor is not None and net_mark <= floor:
             return Decision("premium_stop", 1.0,
@@ -158,6 +236,11 @@ def evaluate_premium(policy: dict, state: PolicyState,
         if prem_pct and net_mark <= entry_mark * (1 - float(prem_pct) / 100.0):
             return Decision("premium_stop", 1.0,
                             f"net premium {net_mark:.2f} bled {prem_pct:g}% from {entry_mark:.2f}")
+        # ---- profit: the house-money take, then the (lotto) ladder
+        if m is not None and not state.premium_take_done and gain >= float(m["take_at_pct"]):
+            return Decision("premium_take", float(m["take_fraction"]),
+                            f"contract {gain:+.0f}% — selling {float(m['take_fraction']) * 100:.0f}% "
+                            f"recoups the debit; the rest rides on house money")
         gains, fractions = _premium_ladder(policy)
         i = state.premium_trims_done
         if i < len(gains) and net_mark >= entry_mark * (1 + gains[i] / 100.0):
@@ -165,8 +248,7 @@ def evaluate_premium(policy: dict, state: PolicyState,
             remaining_frac = 1.0 - sum(fractions[:i])
             rel = min(1.0, frac / remaining_frac) if remaining_frac > 1e-9 else 1.0
             return Decision("premium_trim", rel,
-                            f"contract +{(net_mark / entry_mark - 1) * 100:.0f}% "
-                            f"(premium TP{i + 1} +{gains[i]:g}%)")
+                            f"contract +{gain:.0f}% (premium TP{i + 1} +{gains[i]:g}%)")
     elif prem_pct:                                        # net credit: buy-back cost rising against us
         credit = -entry_mark
         if credit > 0 and net_mark >= credit * (1 + float(prem_pct) / 100.0):
@@ -175,19 +257,42 @@ def evaluate_premium(policy: dict, state: PolicyState,
     return None
 
 
+def advance_premium_state(policy: dict, state: PolicyState,
+                          net_mark: float | None, entry_mark: float | None,
+                          *, dte: int | None = None, iv_ratio: float | None = None) -> PolicyState:
+    """Advance the premium MFE peak and the ratchet floor AFTER an evaluation.
+    Called on every mark (bar close and quote tick) whether or not a decision
+    fired — the peak is also the calibration statistic (MFE on the contract).
+    The floor only ever ratchets UP."""
+    if net_mark is None or not entry_mark or entry_mark <= 0:
+        return state
+    peak = max(state.premium_peak or entry_mark, net_mark)
+    floor_gain = state.premium_floor_gain
+    m = _monetize(policy)
+    if m is not None:
+        cand = _monetize_floor_gain(m, (peak / entry_mark - 1) * 100.0,
+                                    dte=dte, iv_ratio=iv_ratio)
+        if cand is not None and (floor_gain is None or cand > floor_gain):
+            floor_gain = cand
+    if peak == state.premium_peak and floor_gain == state.premium_floor_gain:
+        return state
+    return replace(state, premium_peak=peak, premium_floor_gain=floor_gain)
+
+
 def apply_premium_decision(policy: dict, state: PolicyState, d: Decision | None,
                            entry_mark: float | None) -> PolicyState:
-    """State after a premium decision: a trim advances the rung and (by default)
-    floors the rest at the entry premium — a doubled lotto never goes red."""
-    if d is None or d.kind != "premium_trim":
+    """State after a premium decision: a trim advances the rung; the house-money
+    take marks itself done; both (by default) floor the rest at the entry
+    premium — a doubled position never goes red."""
+    if d is None or d.kind not in ("premium_trim", "premium_take"):
         return state
     floor = state.premium_floor
     if policy.get("premium_floor_after_trim", True) and entry_mark and entry_mark > 0:
         floor = max(floor or 0.0, float(entry_mark))
-    return PolicyState(trims_done=state.trims_done, stop=state.stop,
-                       trailing_active=state.trailing_active, peak_favorable=state.peak_favorable,
-                       breakeven_done=state.breakeven_done,
-                       premium_trims_done=state.premium_trims_done + 1, premium_floor=floor)
+    return replace(state,
+                   premium_trims_done=state.premium_trims_done + (1 if d.kind == "premium_trim" else 0),
+                   premium_take_done=state.premium_take_done or d.kind == "premium_take",
+                   premium_floor=floor)
 
 
 def validate_policy(policy: dict) -> list[str]:
@@ -213,6 +318,16 @@ def validate_policy(policy: dict) -> list[str]:
     tf = policy.get("timeframe", DEFAULT_TIMEFRAME)
     if tf not in ("1m", "5m", "15m", "1h", "1d"):
         out.append(f"unsupported timeframe {tf!r}")
+    m = policy.get("monetize")
+    if m:
+        mm = {**MONETIZE_DEFAULTS, **m}
+        if not (0 < float(mm["take_fraction"]) <= 1):
+            out.append("monetize.take_fraction must be in (0, 1]")
+        rungs = list(mm.get("floors") or [])
+        if any(len(r) != 2 for r in rungs):
+            out.append("monetize.floors must be [gain%, floor%] pairs")
+        elif any(float(f) >= float(a) for a, f in rungs):
+            out.append("a monetize floor must sit below its arming gain")
     return out
 
 
@@ -232,7 +347,8 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
         breached = (bar.close >= stop) if short else (bar.close <= stop)
         if breached:
             return [Decision("stop", 1.0, f"bar closed through the stop {stop:.4f} (close {bar.close:.4f})")], moves
-    prem = evaluate_premium(policy, state, view.net_mark, view.entry_mark)
+    prem = evaluate_premium(policy, state, view.net_mark, view.entry_mark,
+                            dte=view.dte_min, iv_ratio=view.iv_ratio)
     if prem is not None and prem.kind == "premium_stop":
         return [prem], moves
 
@@ -275,7 +391,7 @@ def evaluate(policy: dict, state: PolicyState, view: PositionView) -> tuple[list
         if captured >= float(pt):
             return [Decision("credit_target", 1.0,
                              f"captured {captured:.0f}% of the {credit:.2f} credit (target {pt:g}%)")], moves
-    if prem is not None and prem.kind == "premium_trim":
+    if prem is not None and prem.kind in ("premium_trim", "premium_take"):
         return [prem], moves                             # the contract got there first
     targets, fractions = _ladder(policy)
     while state.trims_done < len(targets):
@@ -347,10 +463,12 @@ def apply_moves(state: PolicyState, view: PositionView, decisions: list[Decision
         cand = float(m.new_stop)
         if new_stop is None or (cand > new_stop if not short else cand < new_stop):
             new_stop = cand
-    out = PolicyState(trims_done=trims, stop=new_stop, trailing_active=trailing,
-                      peak_favorable=peak, breakeven_done=be_done,
-                      premium_trims_done=state.premium_trims_done, premium_floor=state.premium_floor)
+    out = replace(state, trims_done=trims, stop=new_stop, trailing_active=trailing,
+                  peak_favorable=peak, breakeven_done=be_done)
     for d in decisions:
-        if d.kind == "premium_trim":
+        if d.kind in ("premium_trim", "premium_take"):
             out = apply_premium_decision(policy or {}, out, d, view.entry_mark)
+    # the premium MFE peak + ratchet floor advance on EVERY bar, decision or not
+    out = advance_premium_state(policy or {}, out, view.net_mark, view.entry_mark,
+                                dte=view.dte_min, iv_ratio=view.iv_ratio)
     return out

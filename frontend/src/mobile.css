@@ -733,3 +733,30 @@ button.bl-card:active { background: var(--surface-2); }
   .led-detail-grid .muted:nth-child(odd) { margin-top: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
   .led-row[role="button"] { min-height: 56px; }
 }
+
+/* Ledger, three views on phones: the spine tightens, the sheet scrolls inside
+   its panel, the chart keeps a scrollable column width, every control is 40px. */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .led-head2 { gap: 14px; padding: 12px; }
+  .led-bal-num { font-size: 26px; }
+  .led-stats { gap: 16px; }
+  .led-controls { margin-left: 0; width: 100%; }
+  .led-controls .seg { flex: 1 1 auto; }
+  .led-controls .seg button { min-width: 40px; flex: 1 1 auto; }
+  .led-tl-panel { padding: 12px 10px; }
+  .led-tl::before { left: 55px; }
+  .led-node { grid-template-columns: 42px 26px minmax(0, 1fr); gap: 0 8px; }
+  .led-when b { font-size: var(--fs-1); }
+  .led-ev { padding: 8px; gap: 8px; }
+  .led-ev-name { min-width: 0; flex: 1 1 100%; }
+  .led-ev-flow { flex: 1 1 auto; font-size: var(--fs-0); }
+  .led-daytot .n { font-size: 19px; }
+  .led-search { flex-basis: 100%; font-size: 16px; min-height: 40px; }
+  .led-chip { min-height: 40px; }
+  .led-sort { min-height: 40px; }
+  .led-drow-date { min-width: 84px; }
+  .led-drow { padding: 10px; }
+  .led-chart { grid-template-columns: 44px minmax(0, 1fr); }
+  .led-col, .led-xlab { min-width: 52px; }
+  .led-chart-panel { padding: 12px 10px; overflow-x: auto; }
+}

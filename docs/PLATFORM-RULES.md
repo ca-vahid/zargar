@@ -281,6 +281,43 @@ runtime ones to `execution.*`).
   every money path: the price you send must be read AFTER the last slow step (critic, sizing,
   hooks), never carried from the fire.
 
+- **2026-09-04 · Winners are banked by design (the monetize campaign + roll-up).** Research
+  decision (two independent tracks converged — Leung & Zhang's optimal-stopping proof that
+  take-profit AND trail together dominate either alone; Bhansali/LongTail's monetize-half-at-a-
+  multiple with its regime findings; practitioner house-money and ratchet rules; Boyer & Vorkink
+  on the negative drift of held long options). Shared policy keys: `monetize` (sell
+  `take_fraction` at `take_at_pct`, ratchet floors `[[50,15],[100,50],[200,120]]` extending
+  +100/+100 beyond, DTE ≤ 7 tightens half a rung, IV-ratio ≥ 1.3 tightens half a rung, ≤ 2 DTE
+  chases peak−25pp) and `rollup` (delta ≥ 0.75 or extrinsic ≤ 10% → roll to ~0.35Δ same expiry
+  ONLY when the credit ≥ the original debit — the position becomes unlosable; failed replacement
+  buy = flat and paid, never limbo; max 2). Floors are judged against the PERSISTED peak (a
+  fresh high can never stop out on its own mark), evaluated on the 2 s quote loop, real-time
+  quotes required. `PolicyState.premium_peak` records per-position contract MFE — calibrate the
+  thresholds from our own fills at ≥50 closed positions, coarse grids only (Bailey/López de
+  Prado overfitting warning). Tests: `test_position_policies.py` monetize block,
+  `test_position_chaos.py::test_monetize_take_and_ratchet_floor_on_the_quote_loop`,
+  `::test_rollup_banks_a_credit_and_keeps_convexity`, `::test_rollup_failed_buy_leaves_us_flat_and_paid`.
+
+- **2026-09-04 · Real-time greeks for tracked contracts** (Alpaca snapshots, phase 2): delta/IV
+  merge onto the tracked snapshot every ~30 s (`greeksLive`), beating the ~15-min chain row —
+  the roll-up trigger and the monetize IV-tighten read them; OI stays the chain's (T+1 anyway).
+
+- **2026-09-04 · An expiry settlement is a TRADE and must live in the trade ledger** (shadow-book
+  audit, user request "our shadow numbers are what we learn from"). `settle_expired` credited
+  cash + realized P&L via `apply_fill` but wrote NO order/execution row — META 9/2 590C settled
+  +$5,985 into muggzone's armed book invisibly: the cash identity broke and the round trip never
+  reached the Ledger or any executions-based analytic. Fix: `_record_settlement` writes a FILLED
+  `source="settle"` order + execution at intrinsic (no RiskGate — bookkeeping of an exchange
+  lifecycle event, not a submission); the 5 historical settlements were backfilled FROM their own
+  `OptionExpired` events. Audit results otherwise: 16/17 sim+shadow books balance to the cent on
+  raw flows (Practice's $7.57 residual = the journaled 08-31/09-01 manual corrections, whose
+  equity-level identity holds at unexplained 0); positions == execution flows everywhere; no
+  unsettled expiries; ONE option fill >20% off its contract's own bar across every shadow book
+  (a $0.15-vs-$0.11 micro-option) — the delayed-fill contamination class is otherwise absent
+  from the learning record. Test: `test_expired_practice_position_settles_at_intrinsic` asserts
+  the settle order + execution. Flagged for decision, not changed: immediate shadow books go
+  deeply negative on cash (eva −$80k on a $10k start) because they buy EVERY tip by design.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

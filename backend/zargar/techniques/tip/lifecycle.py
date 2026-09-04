@@ -128,6 +128,35 @@ def policy_from_exit_plan(plan: dict, *, is_option: bool, settings) -> dict:
                 policy["premium_ladder"] = {"gains_pct": gains, "fractions": fracs[:len(gains)]}
                 policy["premium_floor_after_trim"] = True
             policy["premium_watch"] = True
+        elif bool(settings.get("techniques.tip.monetize_enabled", True)):
+            policy["dte_close"] = max(1, int(settings.get("execution.min_dte", 1)))
+            # swing options: the monetize campaign (research 2026-09-04 — Leung&Zhang
+            # take+trail, Bhansali/ASC house-money half-off, ratchet floors with
+            # theta/IV tightening). The analyst's underlying ladder still runs;
+            # whichever prints first. Knobs are % GAIN over the entry premium.
+            floors = []
+            for pair in str(settings.get("techniques.tip.monetize_floors", "50:15,100:50,200:120")).split(","):
+                try:
+                    a, b = pair.split(":")
+                    floors.append([float(a), float(b)])
+                except ValueError:
+                    continue
+            policy["monetize"] = {
+                "take_at_pct": float(settings.get("techniques.tip.monetize_take_at", 100.0)),
+                "take_fraction": float(settings.get("techniques.tip.monetize_take_fraction", 0.5)),
+                **({"floors": floors} if floors else {}),
+            }
+            policy["premium_watch"] = True
+            if bool(settings.get("techniques.tip.rollup_enabled", True)):
+                # deep-ITM winners roll to fresh convexity for a credit ≥ the
+                # debit (McMillan's test) instead of waiting to be trailed out
+                policy["rollup"] = {
+                    "enabled": True,
+                    "delta": float(settings.get("techniques.tip.rollup_delta", 0.75)),
+                    "target_delta": float(settings.get("techniques.tip.rollup_target_delta", 0.35)),
+                    "max": int(settings.get("techniques.tip.rollup_max", 2)),
+                    "max_spread_pct": float(settings.get("techniques.tip.rollup_max_spread_pct", 10.0)),
+                }
         else:
             policy["dte_close"] = max(1, int(settings.get("execution.min_dte", 1)))
     if plan.get("avoidEarnings", True):

@@ -360,6 +360,172 @@ async def test_premium_watch_takes_lotto_profit_on_the_quote_loop(engine):
     assert any("floor" in str(e) for e in p.events)
 
 
+async def test_monetize_take_and_ratchet_floor_on_the_quote_loop(engine):
+    """2026-09-04 (research decision): swing options run the monetize campaign —
+    at +100% sell half (the debit is recouped), ratchet floors under the rest,
+    judged every quote tick. The RKLB shape (+X% and all the way back) banks the
+    gain instead of round-tripping."""
+    from zargar.domain import Quote, now_ms
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    occ = "RKLB261016C00070000"
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": "RKLB", "direction": "long", "techniqueId": "tip",
+        "entry": 63.15, "risk": 3.35, "entryMark": 3.55,
+        "overnight": "app_managed", "overnightAck": True, "guardAccepted": True,
+        "policy": {"timeframe": "15m", "stop": {"kind": "fixed", "price": 59.8},
+                   "ladder": {"targets": [67.5, 71.0, 75.0], "fractions": [0.4, 0.35, 0.25]},
+                   "premium_stop_pct": 55, "premium_watch": True,
+                   "monetize": {"take_at_pct": 100, "take_fraction": 0.5,
+                                "floors": [[50, 15], [100, 50], [200, 120]]}},
+        "legs": [{"symbol": occ, "secType": "OPT", "qty": 13, "avgFill": 3.55, "multiplier": 100}],
+    })
+    p = pm.get(d["id"])
+    quotes = {"RKLB": Quote(symbol="RKLB", bid=64.0, ask=64.1, last=64.05, ts=now_ms()),
+              occ: Quote(symbol=occ, bid=4.2, ask=4.4, last=4.3, ts=now_ms())}
+    engine.quotes.get = lambda s: quotes.get(s)
+    await pm._watch_once()                                     # +18%: nothing yet
+    assert not fo.placed
+    quotes[occ] = Quote(symbol=occ, bid=7.3, ask=7.6, last=7.45, ts=now_ms())   # +105%
+    await pm._watch_once()
+    assert len(fo.placed) == 1 and fo.placed[0].side == "SELL" and fo.placed[0].qty == 6
+    assert p.state.premium_take_done and p.state.premium_floor == 3.55
+    assert p.state.premium_floor_gain == 50.0                  # the +100 rung locked +50
+    quotes[occ] = Quote(symbol=occ, bid=4.9, ask=5.2, last=5.0, ts=now_ms())    # +38% < floor
+    await pm._watch_once()
+    assert len(fo.placed) == 2 and fo.placed[1].qty == 7       # the rest banked at the floor
+    assert any("ratchet floor" in str(e) for e in p.events)
+
+
+async def test_rollup_banks_a_credit_and_keeps_convexity(engine):
+    """2026-09-04: a deep-ITM winner (delta 0.82, mostly intrinsic) rolls to the
+    ~0.35-delta strike when the credit beats the original debit — cash banked >
+    cost, upside retained, premium campaign restarts on the new contract. A
+    failed replacement buy leaves us FLAT AND PAID, never in limbo."""
+    from zargar.domain import Quote, now_ms
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    cur, new = "NVDA261016C00200000", "NVDA261016C00250000"
+
+    class StubOpts:
+        def __init__(self):
+            self.rows = [
+                {"symbol": new, "expiry": "2026-10-16", "option_type": "call", "strike": 250.0,
+                 "greeks": {"delta": 0.36, "mid_iv": 0.5}},
+                {"symbol": "NVDA261016C00230000", "expiry": "2026-10-16", "option_type": "call",
+                 "strike": 230.0, "greeks": {"delta": 0.52, "mid_iv": 0.5}},
+            ]
+            self.snaps = {cur: {"greeks": {"delta": 0.82, "mid_iv": 0.55}}}
+        def snapshot_cached(self, sym):
+            return self.snaps.get(sym)
+        def provider(self):
+            outer = self
+            class P:
+                async def all_rows(self, underlying):
+                    return outer.rows
+            return P()
+        async def track(self, sym):
+            return None
+        async def stop(self):
+            return None
+    engine.options = StubOpts()
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": "NVDA", "direction": "long", "techniqueId": "tip",
+        "entry": 195.0, "risk": 8.0, "entryMark": 4.00,
+        "overnight": "app_managed", "overnightAck": True, "guardAccepted": True,
+        "policy": {"timeframe": "15m", "stop": {"kind": "none", "guard": "premium campaign"},
+                   "premium_stop_pct": 55, "premium_watch": True,
+                   "monetize": {"take_at_pct": 100, "take_fraction": 0.5},
+                   "rollup": {"enabled": True, "delta": 0.75, "target_delta": 0.35,
+                              "max": 2, "max_spread_pct": 10.0}},
+        "legs": [{"symbol": cur, "secType": "OPT", "qty": 4, "avgFill": 4.00, "multiplier": 100}],
+    })
+    p = pm.get(d["id"])
+    quotes = {"NVDA": Quote(symbol="NVDA", bid=254.0, ask=254.2, last=254.1, ts=now_ms()),
+              cur: Quote(symbol=cur, bid=55.0, ask=55.8, last=55.4, ts=now_ms()),
+              new: Quote(symbol=new, bid=11.8, ask=12.2, last=12.0, ts=now_ms())}
+    engine.quotes.get = lambda s: quotes.get(s)
+    assert await pm._maybe_rollup(p) is True
+    # SELL the old at its bid, BUY the new at its ask — through the order layer
+    assert [(i.symbol, i.side) for i in fo.placed] == [(cur, "SELL"), (new, "BUY")]
+    assert p.status == "open" and p.open_legs[0].symbol == new and p.open_legs[0].qty == 4
+    assert p.entry_mark == 12.2 and p.state.rolls_done == 1 and not p.state.premium_take_done
+    assert p.realized_pnl > 4.00 * 4 * 100          # banked more than the trade ever cost
+    # a second roll with a too-small credit is refused (candidate ask too dear)
+    quotes[new] = Quote(symbol=new, bid=12.5, ask=13.0, last=12.7, ts=now_ms())
+    engine.options.snaps[new] = {"greeks": {"delta": 0.80, "mid_iv": 0.5}}
+    engine.options.rows = [{"symbol": "NVDA261016C00300000", "expiry": "2026-10-16",
+                            "option_type": "call", "strike": 300.0,
+                            "greeks": {"delta": 0.35, "mid_iv": 0.5}}]
+    quotes["NVDA261016C00300000"] = Quote(symbol="NVDA261016C00300000", bid=2.0, ask=2.2,
+                                          last=2.1, ts=now_ms())
+    # credit 12.5 - 2.2 = 10.3 < the NEW debit 12.2 -> refused
+    assert await pm._maybe_rollup(p) is False
+
+
+async def test_rollup_failed_buy_leaves_us_flat_and_paid(engine):
+    from zargar.domain import Quote, now_ms
+    pm, fo = await make_manager(engine, fake_orders=True)
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    cur, new = "AMD261016C00150000", "AMD261016C00190000"
+
+    class StubOpts:
+        def snapshot_cached(self, sym):
+            return {"greeks": {"delta": 0.85, "mid_iv": 0.5}} if sym == cur else None
+        def provider(self):
+            class P:
+                async def all_rows(self, underlying):
+                    return [{"symbol": new, "expiry": "2026-10-16", "option_type": "call",
+                             "strike": 190.0, "greeks": {"delta": 0.34, "mid_iv": 0.5}}]
+            return P()
+        async def track(self, sym):
+            return None
+        async def stop(self):
+            return None
+    engine.options = StubOpts()
+    d = await pm.adopt({
+        "portfolioId": pf, "symbol": "AMD", "direction": "long", "techniqueId": "tip",
+        "entry": 148.0, "risk": 6.0, "entryMark": 3.00,
+        "overnight": "app_managed", "overnightAck": True, "guardAccepted": True,
+        "policy": {"timeframe": "15m", "stop": {"kind": "none", "guard": "premium campaign"},
+                   "premium_watch": True,
+                   "rollup": {"enabled": True, "delta": 0.75, "target_delta": 0.35, "max": 2}},
+        "legs": [{"symbol": cur, "secType": "OPT", "qty": 2, "avgFill": 3.00, "multiplier": 100}],
+    })
+    p = pm.get(d["id"])
+    quotes = {"AMD": Quote(symbol="AMD", bid=189.0, ask=189.2, last=189.1, ts=now_ms()),
+              cur: Quote(symbol=cur, bid=40.0, ask=40.6, last=40.3, ts=now_ms()),
+              new: Quote(symbol=new, bid=8.0, ask=8.3, last=8.1, ts=now_ms())}
+    engine.quotes.get = lambda s: quotes.get(s)
+    fo.script[1] = {"status": "REJECTED_RISK", "reason": "test: refuse the buy"}
+    assert await pm._maybe_rollup(p) is True
+    assert p.status == "closed" and not p.open_legs
+    assert p.realized_pnl > 3.00 * 2 * 100          # flat AND paid
+
+
+async def test_policy_endpoint_upgrades_a_live_position(engine):
+    """POST /api/positions/managed/{pid}/policy — the seam that let the two
+    pre-0.6.2 Practice positions adopt the monetize campaign without a re-fill."""
+    import httpx
+    from zargar.api.app import create_app
+    from tests.conftest import make_test_config
+    pm, fo = await make_manager(engine, fake_orders=True)
+    engine.position_manager = pm
+    pf = next(p for p in engine.positions.portfolios() if p["kind"] == "sim")["id"]
+    d = await pm.adopt(spread_spec(pf, qty=1))
+    app = create_app(make_test_config(), engine)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        new_pol = {**pm.get(d["id"]).policy, "monetize": {"take_at_pct": 100, "take_fraction": 0.5},
+                   "premium_watch": True}
+        r = await client.post(f"/api/positions/managed/{d['id']}/policy", json=new_pol)
+        assert r.status_code == 200, r.text
+        assert pm.get(d["id"]).policy.get("monetize")
+        r = await client.post(f"/api/positions/managed/{d['id']}/policy",
+                              json={"stop": {"kind": "none"}})
+        assert r.status_code == 400            # invalid policies are refused
+
+
 async def test_halt_does_not_trap_the_exit(engine):
     """Kill switch on -> a reduce-only close still routes (the REAL gate)."""
     pm, _ = await make_manager(engine, fake_orders=False)

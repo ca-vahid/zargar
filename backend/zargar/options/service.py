@@ -90,6 +90,10 @@ class OptionsService:
     def served_live(self, symbol: str) -> bool:
         return symbol.upper() in self._served_live
 
+    def snapshot_cached(self, symbol: str) -> dict | None:
+        """The last chain row seen for a contract (greeks/IV/OI), no fetch."""
+        return self._snapshots.get(symbol.upper())
+
     async def reprice(self, contract: dict | None) -> dict | None:
         """A picked contract (chain row: bid/ask/mid/spreadPct from the ~15-min
         delayed chain) re-priced on the real-time NBBO after track(). Sizing,
@@ -243,10 +247,17 @@ class OptionsService:
         """A fresh chain row for a contract — greeks/OI/volume are welcome, but
         the QUOTE fields of a contract OPRA is serving stay live."""
         prev = self._snapshots.get(r["symbol"])
+        out = {**r, "asOf": now}
+        if prev and prev.get("greeksLive"):
+            # real-time greeks (phase 2) beat the ~15-min chain row's
+            out["greeks"] = {**(r.get("greeks") or {}),
+                             **{k: v for k, v in (prev.get("greeks") or {}).items() if v is not None}}
+            out["greeksLive"] = True
         if prev and prev.get("live") and r["symbol"] in self._served_live:
-            return {**r, "bid": prev["bid"], "ask": prev["ask"], "last": prev.get("last") or r.get("last"),
-                    "asOf": prev.get("asOf", now), "live": True}
-        return {**r, "asOf": now}
+            out.update({"bid": prev["bid"], "ask": prev["ask"],
+                        "last": prev.get("last") or r.get("last"),
+                        "asOf": prev.get("asOf", now), "live": True})
+        return out
 
     # ------------------------------------------------------------ quotes
     async def track(self, symbol: str) -> None:
@@ -370,6 +381,17 @@ class OptionsService:
                                   bid_size=int(r.get("bid_size") or 0), ask_size=int(r.get("ask_size") or 0),
                                   volume=0, ts=now, session="regular", source="opra", source_ts=src_ts))
         self._served_live = served
+        # phase 2: real-time greeks/IV every ~15th pass (~30 s at the 2 s cadence)
+        # — the roll-up's delta trigger and the monetize IV-tighten read these;
+        # the delayed chain row remains the fallback for what Alpaca omits (OI)
+        self._greeks_cycle = getattr(self, "_greeks_cycle", 0) + 1
+        if served and self._greeks_cycle % 15 == 1:
+            with contextlib.suppress(Exception):
+                live_g = await src.greeks(sorted(served))
+                for sym, g in live_g.items():
+                    snap = self._snapshots.get(sym) or {"symbol": sym}
+                    merged = {**(snap.get("greeks") or {}), **{k: v for k, v in g.items() if v is not None}}
+                    self._snapshots[sym] = {**snap, "greeks": merged, "greeksLive": True}
         return served
 
     async def refresh_tracked(self) -> None:
@@ -504,6 +526,29 @@ class OptionsService:
                 aggregate_type="portfolio", aggregate_id=portfolio_id, portfolio_id=portfolio_id)
         return {**result, "supported": True}
 
+    async def _record_settlement(self, portfolio_id: str, symbol: str, side: str,
+                                 qty: float, price: float) -> None:
+        """A FILLED order + execution row for an expiry settlement, so the trade
+        ledger, the Ledger page and every executions-based audit see the exit.
+        No RiskGate (nothing is submitted to a venue — this is bookkeeping of an
+        exchange lifecycle event, like assignment); cash moved via apply_fill."""
+        import datetime as _dt
+
+        from ..domain import new_id
+        from ..models import Execution, Order
+        oid = new_id()
+        now = _dt.datetime.now(_dt.timezone.utc)
+        async with self.engine.sf() as session:
+            session.add(Order(id=oid, portfolio_id=portfolio_id, symbol=symbol,
+                              sec_type="OPT", side=side, qty=qty, order_type="MKT",
+                              tif="DAY", status="FILLED", filled_qty=qty,
+                              avg_fill_price=price, source="settle"))
+            await session.flush()                     # the execution row's FK needs the order first
+            session.add(Execution(id=new_id(), order_id=oid, portfolio_id=portfolio_id,
+                                  symbol=symbol, side=side, qty=qty, price=price,
+                                  commission=0.0, ts=now))
+            await session.commit()
+
     # ------------------------------------------------------------ expiry housekeeping
     async def _expiry_loop(self) -> None:
         while True:
@@ -536,6 +581,16 @@ class OptionsService:
             side = "SELL" if pos["qty"] > 0 else "BUY"
             await pk.apply_fill(pos["portfolioId"], o.symbol, "OPT", side,
                                 abs(pos["qty"]), round(intrinsic, 4), 0.0)
+            # the settlement IS a trade and must live in the trade ledger
+            # (audit 2026-09-04: META 590C settled +$5,985 cash with no
+            # execution row — the cash identity broke and the round trip was
+            # invisible to the Ledger/scorecards). Recorded as a FILLED order
+            # with source "settle"; the cash already moved via apply_fill.
+            try:
+                await self._record_settlement(pos["portfolioId"], o.symbol, side,
+                                              abs(pos["qty"]), round(intrinsic, 4))
+            except Exception:
+                log.exception("settlement ledger row failed for %s", o.symbol)
             record = {"symbol": o.symbol, "display": o.display(), "qty": pos["qty"],
                       "expiry": o.expiry.isoformat(), "underlyingSpot": spot,
                       "intrinsic": round(intrinsic, 4), "kind": pf.get("kind")}
