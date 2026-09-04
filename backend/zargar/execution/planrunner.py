@@ -1139,6 +1139,7 @@ class PlanRunner(SessionListener):
         if mode == ap.config.mode and (entry_fallback is None or entry_fallback == ap.config.entry_fallback) and sizing_same:
             return self._snapshot(ap)
         old = ap.config.mode
+        old_budget, old_risk = ap.config.premium_budget, ap.config.risk_pct
         cfg = ArmConfig.from_dict({**ap.config.to_dict(), "mode": mode,
                                    "entryFallback": (entry_fallback if entry_fallback is not None
                                                      else ap.config.entry_fallback),
@@ -1154,10 +1155,10 @@ class PlanRunner(SessionListener):
             changes.append(f"execution mode {old} -> {cfg.mode}")
         if entry_fallback is not None:
             changes.append(f"entry fallback -> {cfg.entry_fallback}")
-        if premium_budget is not None and cfg.premium_budget != ap.config.premium_budget:
-            changes.append(f"premium budget ${ap.config.premium_budget:,.0f} -> ${cfg.premium_budget:,.0f}")
-        if risk_pct is not None and cfg.risk_pct != ap.config.risk_pct:
-            changes.append(f"risk {ap.config.risk_pct:g}% -> {cfg.risk_pct:g}% of equity")
+        if premium_budget is not None and cfg.premium_budget != old_budget:
+            changes.append(f"premium budget ${old_budget:,.0f} -> ${cfg.premium_budget:,.0f}")
+        if risk_pct is not None and cfg.risk_pct != old_risk:
+            changes.append(f"risk {old_risk:g}% -> {cfg.risk_pct:g}% of equity")
         self._log(ap, "mode_changed", "; ".join(changes) or f"execution mode {old} -> {cfg.mode}")
         await self._persist(ap)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_MODE_CHANGED,
