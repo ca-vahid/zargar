@@ -1007,3 +1007,7 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   technique halt, adds judged with their base, entry window on the bar close, replay with that day's IV.
 - Watch job: new events `clock_flatten`, `exit_reprice` (Team2), `closing_settled`; scorecards now carry `basis:
   session-read vs book`; `skip_loss_cap_desk` counts positions (base + adds), not trades.
+- **19:10 ET addendum.** Deployed 72e8990 + 4331301 (the `/api/team2/runs` 500 from a variable slip) + d611706. Monday's
+  plans were re-armed under the new arm config (flatten clock 15:45, loss halt $1,034) — the forced re-plan ADDED a second
+  set instead of replacing (fixed: force now disarms the old plan first, `replaced` in the response); the duplicates
+  were disarmed by hand. 3 Team2 plans armed for 2026-09-08 in auto.
