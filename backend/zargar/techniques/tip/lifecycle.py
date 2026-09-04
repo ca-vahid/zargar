@@ -68,6 +68,118 @@ def build_exit_plan(signal_row, sig, analyst: dict, policy) -> dict:
     }
 
 
+def check_exit_geometry(plan: dict, *, direction: str, entry_ref: float,
+                        bars: list, settings) -> tuple[dict, list[str]]:
+    """The adoption-geometry gate (2026-09-04): the analyst's nine-strike rule
+    made deterministic. Eight adoptions in three days (HOOD 9/02, MU 9/03-04 x4,
+    MRVL 9/03 x2, RKLB 9/04) died in seconds because a handed plan had a target
+    on the wrong side of entry, a penny-wide TP1, or a stop inside noise — the
+    venue GTC fired the instant it armed. Prompt rules did not stop it; this
+    does. Pure function: sanitises the plan against the ACTUAL entry and recent
+    bars, returns (plan, repairs). Every repair is journaled by the caller.
+
+    Post-fill we can never *refuse* (the position exists and must be managed),
+    so the gate REPAIRS: wrong-side / penny targets are dropped, and an invalid
+    stop is re-placed at the structural level the rule demands — below the
+    recent low minus an ATR buffer for a long, and at least the width floor
+    (0.75% of entry, 1.0% on a 3%+ daily-range name; >= ~1x timeframe ATR)."""
+    from ...marketstructure.levels import atr as _atr
+
+    plan = dict(plan or {})
+    repairs: list[str] = []
+    sgn = 1 if direction != "short" else -1
+    entry = float(entry_ref)
+    a = _atr(bars) if bars else 0.0
+
+    # momentum name? judge on the last ~1 session of the plan timeframe
+    floor_pct = 0.75
+    if bars:
+        recent = bars[-26:]                    # ~one session of 15m bars
+        rng = max(b.high for b in recent) - min(b.low for b in recent)
+        if entry > 0 and rng / entry >= 0.03:
+            floor_pct = 1.0
+    width_floor = max(a, entry * floor_pct / 100.0)
+    tp_floor = max(0.5 * a, entry * 0.002)
+
+    # ---- targets: sign, then minimum width (drop, never invent)
+    targets = [float(t) for t in (plan.get("targets") or []) if t]
+    fractions = [float(f) for f in (plan.get("fractions") or [])][:len(targets)]
+    kept, kept_fr = [], []
+    for i, t in enumerate(targets):
+        if sgn * (t - entry) <= 0:
+            repairs.append(f"dropped target {t:g}: wrong side of the {entry:g} entry "
+                           f"(would flatten the instant it arms)")
+            continue
+        if abs(t - entry) < tp_floor:
+            repairs.append(f"dropped target {t:g}: {abs(t - entry):.4g} from entry is "
+                           f"inside the noise floor ({tp_floor:.4g})")
+            continue
+        kept.append(t)
+        if i < len(fractions):
+            kept_fr.append(fractions[i])
+    if len(kept) != len(targets):
+        plan["targets"], plan["fractions"] = kept, kept_fr
+
+    # ---- stop: sign + width + structure (repair by re-placing, never tighter)
+    stop = plan.get("underlyingStop")
+    if stop is not None and entry > 0:
+        stop = float(stop)
+        struct_edge = None
+        if bars:
+            look = bars[-60:]
+            struct_edge = (min(b.low for b in look) - 0.25 * a if sgn > 0
+                           else max(b.high for b in look) + 0.25 * a)
+        bad_sign = sgn * (entry - stop) <= 0
+        too_tight = abs(entry - stop) < width_floor
+        inside_structure = (struct_edge is not None
+                            and sgn * (struct_edge - stop) < 0)  # stop above the low (long)
+        if bad_sign or too_tight or inside_structure:
+            candidates = [entry - sgn * width_floor]
+            if struct_edge is not None:
+                candidates.append(struct_edge)
+            new_stop = min(candidates) if sgn > 0 else max(candidates)
+            why = ("wrong side of entry" if bad_sign
+                   else f"only {abs(entry - stop):.4g} wide (floor {width_floor:.4g})"
+                   if too_tight else "inside recent structure")
+            repairs.append(f"re-placed stop {stop:g} -> {new_stop:.4g}: {why}")
+            plan["underlyingStop"] = round(new_stop, 4)
+    return plan, repairs
+
+
+async def adoption_killswitch(eng) -> str | None:
+    """The nine-strike rule's session clause: once ONE tip adoption today was
+    stopped out within ~5 minutes of arming, the hand-off pipeline itself is
+    suspect — pause further tip AUTO-approvals this session (cards stay pending
+    for the human / the morning triage). Returns the reason, or None."""
+    import datetime as _dt
+
+    from sqlalchemy import select as _sel
+
+    from ...models import ManagedPositionRow
+    try:
+        from zoneinfo import ZoneInfo
+        now_et = _dt.datetime.now(ZoneInfo("America/New_York"))
+        sod = now_et.replace(hour=0, minute=0, second=0, microsecond=0)
+        async with eng.sf() as session:
+            rows = (await session.execute(_sel(ManagedPositionRow).where(
+                ManagedPositionRow.technique == "tip",
+                ManagedPositionRow.status == "closed",
+                ManagedPositionRow.updated_at >= sod))).scalars().all()
+        for r in rows:
+            st = r.state or {}
+            reason = str(st.get("closeReason") or "")
+            if "stop" not in reason.lower():
+                continue
+            opened, closed = r.created_at, r.updated_at
+            if opened and closed and (closed - opened).total_seconds() < 300:
+                return (f"{r.symbol} was stopped out {int((closed - opened).total_seconds())}s "
+                        f"after adoption today — auto-approvals paused for the session "
+                        f"(nine-strike session clause)")
+    except Exception:
+        log.debug("adoption killswitch check failed", exc_info=True)
+    return None
+
+
 def _csv_floats(raw) -> list[float]:
     if isinstance(raw, (list, tuple)):
         parts = raw
@@ -682,6 +794,31 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
         await note(ev.TIP_POSITION_NOT_ADOPTED,
                    {"reason": f"no underlying reference price for {underlying}"})
         return None
+    # ---- adoption-geometry gate (2026-09-04): sanitise the handed plan against
+    # the ACTUAL entry and recent structure BEFORE any venue GTC exists. Repairs
+    # are journaled and appended to the analyst run that wrote the plan.
+    gate_bars: list = []
+    if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
+        # a simulated feed (tests) must stay offline and tick-deterministic —
+        # the gate then checks sign + % width only (no ATR/structure), which is
+        # exactly what the pure tests pin; every real feed gets full structure
+        try:
+            from ...clock import now_ms as _now_ms
+            from ...marketstructure.history import fetch_window
+            nms = _now_ms()
+            gate_bars = await fetch_window(underlying, "15m", nms - 7 * 86_400_000, nms)
+        except Exception:
+            log.debug("geometry gate: no bars for %s (checking without structure)", underlying)
+    plan, repairs = check_exit_geometry(plan, direction=direction,
+                                        entry_ref=entry_ref, bars=gate_bars,
+                                        settings=eng.settings)
+    if repairs:
+        await note(ev.TIP_GEOMETRY_REPAIRED,
+                   {"underlying": underlying, "entryRef": entry_ref, "repairs": repairs})
+        await _note_on_run(eng, ctx.get("analystRunId"),
+                           "Adoption-geometry gate repaired the exit plan before any venue "
+                           "order was placed: " + "; ".join(repairs))
+
     stop = plan.get("underlyingStop")
     risk = abs(entry_ref - float(stop)) if stop else entry_ref * 0.05
 

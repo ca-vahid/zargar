@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.0";
+export const APP_VERSION = "0.7.1";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,19 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.1",
+    date: "2026-09-04",
+    title: "The plan gate",
+    items: [
+      { tag: "new", text: "Adoption geometry gate: a filled tip is checked against its actual entry before any exit order exists — targets on the wrong side or inside the noise are dropped, a stop that would fire instantly is re-placed at real structure, and every repair is journaled and shown on the analyst run. Eight adoptions died in seconds this week to exactly these defects." },
+      { tag: "new", text: "Session brake: if one adopted tip stops out within five minutes of arming, tip auto-approvals pause for the rest of the day and the cards wait for a person (or the morning triage)." },
+      { tag: "new", text: "Per-tip premium cap ($750, adjustable in Settings): one oversized option entry can no longer be the whole day's result." },
+      { tag: "improved", text: "Sources can now earn auto-trading on their record at tip time (the immediate shadow book's aged positions), not only on the wait-for-the-level lane that momentum tips never fill." },
+      { tag: "improved", text: "Knowledge cleanup: nine near-identical versions of one analyst rule were consolidated to one; a new rule now automatically retires the version it replaces. Nightly digests of the conversation channels are ON." },
+      { tag: "fixed", text: "A tip promoted by the recovery sweep with an analyst skip/watch verdict now declines itself in unattended practice instead of waiting for a click that never comes (RDDT sat pending 18 minutes)." },
+    ],
+  },
   {
     version: "0.7.0",
     date: "2026-09-04",
