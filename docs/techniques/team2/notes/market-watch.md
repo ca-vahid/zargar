@@ -634,6 +634,12 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   Both sold the bottom: at 14:13 the same contract was **bid 0.335 / ask 0.345**, back to what was paid,
   with QQQ 717.08 still on the short's side of the 717.13 entry. Proposal: mid-vs-mid (or
   bid-vs-bid-at-entry) and/or a tick floor for cheap contracts. **Money rule — the user's call.**
+
+  **Sharpened at 14:20 ET:** there are in fact **three** premium series answering the same 25% question and
+  they disagree. The runner's guard (real **bid** vs ask paid) fired at 13:58; the **live read** still had
+  the position open at 14:20 (in money modes it marks on the real premium, which had recovered to 0.335);
+  the **replay** closed it at 14:12 on the synthetic mark-to-mark model. Same rule, same contract, three
+  answers — that, not the 25% number, is the thing to settle first.
 - **F31 (FIXED, committed — deploy QUEUED).** With the book flat, the Armed/phone headline still read
   "in trade … **1.00 left**". `runner.py` now appends "· book flat — the desk's contract is already closed
   (stop)" when a *filled* trade for that setup is closed (alert mode mints trades but never fills, so it

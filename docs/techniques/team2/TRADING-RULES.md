@@ -325,6 +325,12 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   and/or floor the stop in ticks for cheap contracts. **Threshold + money rule — the user's call.**
   Related: the 2026-09-04 sizing row already flags that 25% of a $2,000 ticket is ~6% of the practice book.
 
+  **Sharpened at 14:20 ET:** there are in fact **three** premium series answering the same 25% question and
+  they disagree. The runner's guard (real **bid** vs ask paid) fired at 13:58; the **live read** still had
+  the position open at 14:20 (in money modes it marks on the real premium, which had recovered to 0.335);
+  the **replay** closed it at 14:12 on the synthetic mark-to-mark model. Same rule, same contract, three
+  answers — that, not the 25% number, is the thing to settle first.
+
 - **F31 (2026-09-04 14:15 ET, FIXED)** While the book was flat, the Armed/phone headline still read
   *"in trade pm_break_down@13:30: put 716, **1.00 left**, model peak +12%"*. The model holds until ITS
   stop; the desk's real contract had been gone since 13:58 (F30). The `· contract N% live` suffix only
