@@ -250,3 +250,54 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   asked where the Team2 items are). Fixed (commit 5b3a8da + merge aa1a061, UI only, dist rebuilt, no restart): Now line
   = the read's summary, bands = entries all session / no new entries 15:30 / flat 15:45, read events have icons,
   session banner says Team2 fires all session; Team2 page › Armed tab shows the read per symbol + contract live %.
+
+## 2026-09-04 11:05 ET (run 5 — first full auto session, clock-verified)
+
+- **Alive, real-time, nothing broken.** `/api/health` ok v0.7.0, 66 armed. All three plans `armed` +
+  **auto** on the Practice sim book (`ff3c29d4`), `needsAttention: false`, no attention reasons,
+  `complete: true` with pmh/pml/dayType/sizingAtOpen stamped (QQQ 717.13–722.06 gap_up/full,
+  SPY 770.50–774.24 normal/none, IWM 293.24–295.92 normal/none). Alpaca stream `connected` +
+  `authenticated` 10:55:20 ET after the 10:55 restart; SPY/QQQ/IWM quotes 0 s old, session `regular`;
+  1m bars banking in the runtime DB through **11:06 ET** (97 bars each = every bar since 09:30);
+  `barAgeSeconds` 72 on all three, `stale: false`. No errors, no `Traceback`, no `read_error` in
+  `backend/zargar-8420.log`.
+- **Zero Team2 orders today.** `/api/orders` has no SPY/QQQ/IWM row and no `source: team2` row; the
+  audit shows only `TechniquePlanArmed` / `TechniquePlanModeChanged` / `TechniquePlanTriggerSkipped`.
+  Correct — no setup has produced a *sizable* touch since the desk went auto at 10:55 ET.
+- **What the read saw since run 4.** QQQ: the 10:30 15m close at 718.07 flipped the bias to
+  **scenario 2 (reject PDH) → puts**, which killed scenario 1 (`deadReason: bias flipped to reject PDH
+  (D10)`) after its two losing model trades (−14.35%, −10.33%); scenario 2 is waiting, touches 0, price
+  717.37 vs the 718.60 anchor. IWM: scenario 3 alive with **touches 0** — F18 is working, thirteen
+  `skip_no_trade_zone` refusals (09:46 → 11:02, all inside PM 293.24–295.92) no longer burn the D9
+  allowance. SPY: broke its PM low at 10:30 and produced its first setup of the day — see F20.
+- **Replay parity exact on all three.** `POST /runs/{id}/replay` reproduces the live event stream
+  bar-for-bar and trade-for-trade (QQQ 6/6 events, same entries 720.8368 & 720.1343, same strikes
+  723/722, same −14.35% / −10.33%; SPY 2/2; IWM 14 vs 15 — the replay had simply seen one more 2m
+  close, 11:04, than the live read). No drift after five restarts today.
+- **F20 (new, NOT built — the trade of the day was refused).** `pm_break_up`/`pm_break_down` (rules
+  L2.6/L2.7) anchor on the PM level itself, and `sizing_bucket` tests `pml <= price <= pmh`
+  **inclusively**, so a retest of the level the setup is built on is always `bucket: none`. SPY today:
+  15m close 770.30 below the PM low 770.50 at 10:30 → setup with target 769.26; 10:44 retest at exactly
+  770.50 → `skip_no_trade_zone`; SPY then ran to 769.05, **through the target**, and the desk took
+  nothing. The book says the opposite in as many words (L2.7 "enter puts on the retest/rejection of
+  PML"). Sizing is a money rule, so proposed only: exempt a pm_break setup's retest of its own anchor
+  and size it **small** — the V6 rung a PM-level retest actually sits on. Bundle the decision with F15
+  (the five-rung V6 ladder collapsed to three); it is the same ten lines of `sizing_bucket`.
+- **F21 (new, log hygiene).** The last two *desk* entries above are stamped ~1h35m ahead of real ET —
+  "12:28 ET" for commit `d778f48` authored 10:51 ET, "11:50 ET" for F18's 10:41 ET commit. The app's
+  clock is fine (bars/quotes/`regime.ts` all agree with wall-clock ET); it is a writing error. Stamp
+  future sections from `regime.ts` or `TZ=America/New_York date`.
+- **Minor, proposed only.** `skip_no_trade_zone` prints on **every** 2m close while the condition holds
+  (IWM: 13 identical events in 76 minutes, and it will keep going all day). Dedupe it the way
+  `pullback_stalled` already does (`s._stalled`) — emit once, re-emit only when the bucket or setup
+  changes. Cosmetic; not worth a restart mid-session with auto armed.
+- **Unchanged.** F14 closed (`chase_cap_mult` 1.5 live). F15 still open. F16 resolved operationally
+  (kill switch released, `risk.daily_loss_halt_pct` 12). The QQQ restore artifact is unchanged and
+  still cosmetic: today's two QQQ fires live in `last_read` and the event log but not in the Armed
+  page's `trades` list. Log rotates on restart, so only ~15 min of history survives a deploy.
+- **No restart this run** — nothing needed one, and five restarts have already happened today.
+- **Next run should check:** whether QQQ's scenario-2 put setup gets its first EMA13 touch below
+  718.60 and whether that becomes the desk's **first real order** (`contract` event with a strike and
+  an OPRA ask, `entry_capped` if the 1.5x cap bites, then `position_open`/`live_trim`); whether IWM
+  closes above 295.92 and finally has a sizable dip; whether SPY confirms a full scenario (774.03 /
+  767.45) now that the PM-break path is a dead end; and the 15:30 last-entry / 15:45 flatten discipline.

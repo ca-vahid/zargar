@@ -153,6 +153,33 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   consumer of `dayHigh` is the frontend quote card. **Proposed:** `max(st["day_high"], ctx.day_high)` /
   `min(...)` instead of `or`, and take session volume from the Yahoo context rather than the tick sum.
 
+- **F20 (2026-09-04, market watch)** The **PM break-and-retest setups (L2.6 / L2.7) can never take their
+  own entry.** `session.py` anchors `pm_break_up` on the PMH and `pm_break_down` on the PML
+  (l.251 / l.257), so a level retest resolves `entry_spot = s.anchor = pmh|pml`; `scenario.sizing_bucket`
+  then asks `pml <= price <= pmh` **inclusively** and returns `"none"`, and the entry is refused as
+  `skip_no_trade_zone`. The book's own words are the opposite: **L2.7** "mark PML, wait for a break ...
+  enter puts on the **retest/rejection of PML**, stop just above PML"; **L2.6** is the mirror for the PMH.
+  V6/V7's no-trade zone is about sitting *inside* the range, not about the edge you just broke and came
+  back to. EMA13/EMA48 entries on the same setup are refused too until the EMA itself has drifted outside
+  the range, by which time the retest is long gone — so the setup is effectively dead, not merely rare.
+  **Live case today, and it was the trade of the day:** SPY closed the 10:15–10:30 15m candle at 770.30,
+  below the PM low 770.50 → `pm_break` fired, target = PDL zone top **769.26**. At 10:44 SPY retested
+  770.50 exactly and the desk refused it (`bucket: none`, touch #1). SPY then ran to a session low of
+  **769.05** — through the target — and sat at 769.30 at 11:05. Zero trades taken; the read shows
+  `trades: 0, setups: 1`. **Not built — sizing is a money rule.** Proposal: exempt a `pm_break_*` setup's
+  retest of its own anchor from the V6 gate and size it **small** (V6's PDH-zone→PMH / PML→PDL-zone rung,
+  which is exactly where a PM-level retest sits). Same ten lines as [F15]'s five-rung ladder — decide
+  them together.
+
+- **F21 (2026-09-04, market watch — log hygiene, no code)** The ET timestamps in the last two *desk*
+  entries of `notes/market-watch.md` are ~1h35m ahead of real ET, which makes the run log unusable as a
+  chronology. Checks: commit `d778f48` (F19) is authored 07:51:24 -0700 = **10:51 ET** but logged as
+  "deployed 12:28 ET"; commit `67c5986`/`489fa81` (F18) at 07:41 PDT = **10:41 ET** is logged as
+  "deployed 11:50 ET"; the three plans' `armedAt` after that restart is `07:55:23-07:00` = **10:55 ET**.
+  The app's own clock is correct (bars, quotes and `regime.ts` all agree with wall-clock ET), so this is
+  a writing error in the log, not a runtime timezone slip. Stamp future sections from the app
+  (`regime.ts`) or from `TZ=America/New_York date`, not by hand.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
