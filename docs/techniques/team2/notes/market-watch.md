@@ -482,3 +482,64 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   retroactive orders.
 - Watch job: `pm_retest` is a new read event; count it with the fires. Decide F15/F20 permanently from the walk-forward
   (both change which trades are taken).
+
+## 2026-09-04 13:05 ET (run 9 — F15/F20 verified live on the tape; the day's model P&L flipped)
+
+- **Alive, real-time, all three plans healthy.** `/api/health` ok v0.7.0, 63 armed. SPY/QQQ/IWM all
+  `armed` + **auto** on the Practice sim book (`ff3c29d4`), `needsAttention: false`, pre-open complete
+  (QQQ 717.13–722.06 gap_up/full, SPY 770.50–774.24 normal/none, IWM 293.24–295.92 normal/none).
+  Quotes 0 s old, session `regular`; option quotes real-time OPRA (`provider: alpaca`, `delayed: false`,
+  `source: opra` — IWM 296 C bid 0.14/ask 0.15 at 13:04); 1m bars banking in the runtime DB through
+  **13:03 ET**, `barAgeSeconds` 103, `stale: false`; OPRA quote+trade polls HTTP 200 every ~2.4 s.
+  **Zero `Traceback`, `ERROR` or `read_error`** in `zargar-8420.log` (42 warnings, all the benign
+  `dropped N non-bucket-aligned stub bar(s)` + one FX 1:1 line). Running build = the 12:58 ET restart,
+  so **F15, F20, F23 and F24 are all live** (the desk session deployed them; its log header is
+  stamped 13:42/13:45 ET for a 12:58 ET restart — F21 again).
+- **F23/F24 confirmed in the wild.** Since 12:58 the IWM audit has **no** new `skip_no_trade_zone` rows
+  (it had 8 in the 30 minutes before, and 38 for the day) — `note_once` is doing its job. SPY's "Now"
+  line reads "scenario 3 (bounce PDL) → calls · touches 0", the newest long setup's own count, not the
+  spent short setup's 1.
+- **F15/F20 verified against the DB tape, and they changed the day.** Today's model read is now
+  **3 trades / 1 win / 2 losses, pnlPctSum +30.91** where run 8 saw 3 straight losses (−36.91):
+  · SPY `pm_break_down@10:30` (15m close 770.30 < PM low 770.50 ✓) → **`pm_retest` 10:44** (2m bar
+    high 770.49 within tolerance of 770.50, close 770.37 on the short's side ✓) → put 768 ≈ $0.39
+    small → trim ⅓ at +53% (bar closing 11:00, 769.45 ✓) → rest at the planned target **769.26**
+    (bar 11:02–11:03 traded to 769.05 ✓) = **+62.3%**; then touch #2 at the EMA13 11:08 (close
+    769.70 vs EMA13 769.81 ✓) stopped −12.23% (2m close 769.87 back through it ✓).
+  · IWM `pm_break_up@12:00` (15m close 295.97 > PM high 295.92 ✓) → **`pm_retest` 12:14** (close
+    295.96 above the anchor ✓) → call 296 ≈ $0.38 small → −19.17% on the 12:26–12:27 close 295.87
+    back through the level ✓. Its 12:32/12:34 retests are correctly refused: close 295.88/295.89 is
+    below the anchor's tolerance band (295.893), i.e. not on the trade's side.
+  · QQQ takes **nothing** — F15 refuses both of the entries it took this morning (10:02 at 720.84,
+    11:06 at 717.97, both inside the 717.13–722.06 PM range), which removed −14.35% and −10.33%.
+  Every 15m close, 2m close, EMA13 level and target touch quoted above was re-derived from the
+  runtime DB's 1m bars and matches. Evidence appended to `TRADING-RULES.md`.
+- **Replay parity exact on all three** (`POST /runs/{id}/replay` needs `-d '{}'`): SPY 8/8 events +
+  2/2 trades, IWM 7/7 + 1/1, QQQ 5/5 + 0/0, identical strikes and P&L; the only diff is `bars2m`
+  106→108, the 4 minutes that elapsed between the two fetches.
+- **Still zero real orders.** All three of today's fires happened before the code that would take
+  them existed, and restore-seeded fires are alert-stamped, so nothing routed to `_enter`. SPY's
+  snapshot still carries the historical F22 refusal record (`$-267 equity`) from 11:08 — a
+  write-ahead record, not a regression; the F22 fix has **still not been exercised live**.
+- **F25 (new, NOT fixed — read labelling).** Entry-side read events are stamped with the 2m bar's
+  OPEN, trades/exits with its CLOSE: IWM's fire says 12:14 while its own `entryTs` says 12:16, and the
+  exit stamped 12:28 quotes the 12:26–12:27 bar's close (295.87; the 12:28 bucket closes 295.84). 15m
+  events skew 15 min the same way. **No look-ahead** — `session.py:239` only consumes a 15m bar once
+  its close time ≤ `end_ts`, which is why IWM's 12:00 PM break was first actionable on the bar ending
+  12:16 (verified on the tape). Reporting defect only; the fix shifts event `ts` values that reach the
+  append-only journal, sweep rows and ~40 tests, so it is **proposed, not built**.
+- **Fixed and deployed with no restart:** the Armed/Team2 timeline had no icon for the new `pm_retest`
+  event (nor `skip_reentries` / `skip_no_contract` / `skip_event_day`) — today's two PM-retest entries,
+  the whole point of F20, rendered as anonymous "·" noise. Added to `EVENT_ICON` in
+  `ArmedDayPanel.tsx` (`pm_retest` = ▲). `npm run build` clean; the server serves `dist` from disk, so
+  the new bundle (`index-D2T0jFO4.js`, HTTP 200) is live **without touching the process**.
+- **No restart queued.** Nothing pending needs one. Next code deploy should still wait for a moment
+  with no setup taking touches (the desk is in AUTO and a fire inside a ~30 s restart window is seeded
+  back as `alert`).
+- **Next run should check:** whether a *fresh* fire finally reaches the book — `contract` →
+  `entry_capped` → `position_open` → `live_trim` in the audit plus a `source: team2` row in
+  `/api/orders`, which is also the first live exercise of the F22 equity fix; SPY's scenario 3 (769.26)
+  and QQQ's scenario 1 (718.91, flipped on a 0.03 margin at 12:30) waiting for their first EMA13 touch;
+  and the 15:30 last-entry / 15:45 flatten discipline.
+- **Log-reading note for future runs:** `backend/zargar-8420.log` timestamps are **machine-local PT
+  (ET − 3 h)** — 10:05 in the log is 13:05 ET. Earlier runs quoted log times as ET.
