@@ -174,3 +174,11 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
 - **Watch job: from now on check real orders/fills** (`GET /api/orders?portfolio=ff3c29d4…`, the plan's `trades` in
   the armed snapshot, `contract`/`entry_capped`/`position_open`/`live_trim` audit events) and do NOT restart while a
   Team2 trade is open or working.
+
+## 2026-09-04 11:12 ET (desk session) — sizing $500 → $2,000 per trade
+
+- User: budget_per_trade 2000. Applied to settings AND in place on today's three plans (`POST …/mode` now takes
+  `premiumBudget`/`riskPct`, commit cce380f + 1c99f99). Team2 `risk_pct` 6 with its own `max_risk_pct` 6
+  (the shared R1 cap is 5), `zero_dte.max_contracts` 40, `premium_cap` 2000. At $0.60 that is ~33 contracts and
+  ~$500 (≈6% of the practice book) at risk per trade under the 25% premium stop.
+- Deployed 11:08 ET via alert → restart → auto (no Team2 trade was open). Plans back in AUTO 11:11 ET.
