@@ -85,7 +85,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   $0.20–$0.60 band, F1/F5) is unenforced: a strike picked at $0.55 on the ~15-min delayed CBOE chain
   can be re-priced to $1.20 on OPRA and still be bought, at half the contracts. Behaviour change →
   proposed, not built (see the run log 09:32 ET).
-- **F15 (2026-09-04, market watch)** Gap days trade the PM range in the book (L2.4: "on gap days the
+- **F15 (2026-09-04, market watch — BUILT 13:30 ET, see change log)** Gap days trade the PM range in the book (L2.4: "on gap days the
   PM range is the first thing watched for direction — a 15m close outside it, then the first 13 EMA
   dip"), but two pieces of code disagree with that on a gap day: (a) `sizing_bucket` tests
   `price > pdh.top` BEFORE the pre-market no-trade zone, so on a gap-up day every price above the PDH
@@ -153,7 +153,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   consumer of `dayHigh` is the frontend quote card. **Proposed:** `max(st["day_high"], ctx.day_high)` /
   `min(...)` instead of `or`, and take session volume from the Yahoo context rather than the tick sum.
 
-- **F20 (2026-09-04, market watch)** The **PM break-and-retest setups (L2.6 / L2.7) can never take their
+- **F20 (2026-09-04, market watch — BUILT 13:30 ET, see change log)** The **PM break-and-retest setups (L2.6 / L2.7) can never take their
   own entry.** `session.py` anchors `pm_break_up` on the PMH and `pm_break_down` on the PML
   (l.251 / l.257), so a level retest resolves `entry_spot = s.anchor = pmh|pml`; `scenario.sizing_bucket`
   then asks `pml <= price <= pmh` **inclusively** and returns `"none"`, and the entry is refused as
@@ -271,6 +271,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   annotated the high at 774.03 and his pre-market plan said "room up to 775.29" (notes/x/images INDEX,
   `2095599035113693522-1.jpg`). Zone construction (L1.2) and target discovery (L3.1) reproduce his sheet to the cent.
 | 2026-09-04 | **F17 fixed**: the kill switch no longer suppresses Team2's alert-mode read. `_fire_from_event`'s halt gate now applies to proposal/auto only (alert places nothing); an alert fire during a halt carries `haltedAtFire: true`. Restores live-vs-replay parity while the shared Practice portfolio is halted | market watch 10:00 ET; QQQ 10:02 fire lost to `halt_skip`; `tests/test_team2_runner.py::test_alert_mode_still_reads_the_tape_while_halted` fails without the fix | Team2 desk |
+| 2026-09-04 | **F15 + F20 built** (user 2026-09-04 13:20 ET: "can we fix these all?"). F15: `sizing_bucket` judges the PM no-trade zone BEFORE "beyond yesterday's zone" (a gap-day PM range beyond the PDH/PDL zone is still chop), and on gap days a 15m close beyond the PM level arms `pm_break_*` even outside yesterday's range (L2.4). F20: a `pm_break_*` setup's touch within the tolerance of its own anchor, close on the trade's side, is sized SMALL (the V6 rung) instead of refused — the L2.6/L2.7 retest entry; deeper inside the range V6 stands. `pm_retest` event names it. Watch the sweep: both change which trades are taken | TRADING-RULES F15/F20 evidence (SPY 10:44 → 769.05, IWM 12:14–12:34, QQQ 10:02) | Team2 desk |
 | 2026-09-04 | F18: dips skipped because the range day had not cleared its PM level (B3/A4) or because they sat in the pre-market no-trade zone (V6/B5) no longer consume the two-pullback allowance (D9). Live case: IWM scenario 3 showed "touches 5, entries 0" by 11:20 ET — every dip was in the no-trade band, and the setup was spent before it ever became tradeable. Engulfing bars still count (they were pullbacks, just bad bars) | live 2026-09-04 IWM | Team2 desk |
 | 2026-09-04 | Sizing: `budget_per_trade` 500 -> **2000** and `risk_pct` 6% (user); `zero_dte.max_contracts` 10 -> 40 and `premium_cap` 1000 -> 2000 so the RiskGate policy admits the size. At $0.60 that is ~33 contracts; the 25% premium stop puts ~$500 (≈6% of the $8.5k practice book) at risk per trade — well above the author's own daily-risk rule (§7c) for a book this size; revisit before real money | user decision 2026-09-04 10:50 ET | Team2 desk |
 | 2026-09-04 | F14 closed: `chase_cap_mult` = 1.5 — the live entry limit never exceeds target_premium x 1.5 ($0.90 at the $0.60 target); an ask that ran rests at the cap and cancels unfilled. Same day: Team2 moved from alert to AUTO on the Practice (sim) book by the user ("change the alert mode to real mode"); `risk.daily_loss_halt_pct` raised 8 -> 12 for the Practice book so the other techniques' -9.13% morning did not keep the global kill switch engaged (the halt is global, not per book — platform gap, PLATFORM-RULES) | market-watch run 2 (F14), user decision 2026-09-04 10:30 ET | Team2 desk |

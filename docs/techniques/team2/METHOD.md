@@ -76,6 +76,9 @@ exit when a 2-minute candle closes through it, or at the next zone. One or two t
   one move is "usually the only clean move to catch on inside days" [2024-05-24].
 - **L2.6** The **all-time-high variant**: mark PMH, wait for a 15m close above it, buy calls on
   the 2m retest of PMH, stop = 2m close under PMH [2026-04-17].
+- **L2.6/L2.7 in code (F20, 2026-09-04):** the retest of the PM level itself is the entry — the read sizes it
+  SMALL (V6's rung between the PM level and yesterday's zone) instead of refusing it as the no-trade zone;
+  deeper back inside the range the break has failed and no entry is taken.
 - **L2.7** The **PML break & retest** (puts): mark PML, wait for a break "if the market is
   looking weak", enter puts on the retest/rejection of PML, stop just above PML [2024-05-04].
 

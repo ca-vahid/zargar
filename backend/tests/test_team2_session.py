@@ -151,6 +151,9 @@ def test_day_type_and_sizing_bucket():
     assert classify_day((pmh + pml) / 2, z, pmh, pml) == "inside"
     assert classify_day((pmh + pml) / 2, z, None, None) == "normal"
     assert sizing_bucket(pdh.top + 0.5, z, pmh, pml) == "full"
+    # F15: a gap-day PM range that sits ABOVE the PDH zone is still the no-trade zone
+    assert sizing_bucket(pdh.top + 0.5, z, pdh.top + 1.0, pdh.top + 0.2) == "none"
+    assert sizing_bucket(pdh.top + 1.5, z, pdh.top + 1.0, pdh.top + 0.2) == "full"
     assert sizing_bucket(pdl.bottom - 0.5, z, pmh, pml) == "full"
     assert sizing_bucket((pmh + pml) / 2, z, pmh, pml) == "none"
     assert sizing_bucket(pmh + 0.2, z, pmh, pml) == "small"

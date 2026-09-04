@@ -254,14 +254,16 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                      f"{'calls' if bias.direction == 'long' else 'puts'} (B1/C1)",
                      scenario=n, close=round(f15.close, 4), level=round(bias.level, 4),
                      rangeDay=n not in TREND_SCENARIOS)
-            # PM-range breaks (L2.4/L2.5, V7): direction inside yesterday's range
-            if pmh is not None and not pm_up_done and body_closed_beyond(f15, pmh, "long") and f15.close <= zones["pdh"].top:
+            # PM-range breaks (L2.4/L2.5, V7): direction inside yesterday's range — and on a GAP day the PM
+            # range is the first thing watched (L2.4), so the inside-day guard is lifted there (F15)
+            gap_day = str(plan.get("dayType") or "") in ("gap_up", "gap_down")
+            if pmh is not None and not pm_up_done and body_closed_beyond(f15, pmh, "long") and (gap_day or f15.close <= zones["pdh"].top):
                 pm_up_done = True
                 tgt = zones["pdh"].bottom if pmh < zones["pdh"].bottom else targets.get("above")
                 setup_for("pm_break_up", "long", float(pmh), tgt, f15.ts, range_day=False)
                 note(f15.ts, "pm_break", f"15m close above the pre-market high {pmh:.2f} → calls up to the PDH zone (L2.5/V7)",
                      level=round(float(pmh), 4), close=round(f15.close, 4))
-            if pml is not None and not pm_dn_done and body_closed_beyond(f15, pml, "short") and f15.close >= zones["pdl"].bottom:
+            if pml is not None and not pm_dn_done and body_closed_beyond(f15, pml, "short") and (gap_day or f15.close >= zones["pdl"].bottom):
                 pm_dn_done = True
                 tgt = zones["pdl"].top if pml > zones["pdl"].top else targets.get("below")
                 setup_for("pm_break_down", "short", float(pml), tgt, f15.ts, range_day=False)
@@ -443,6 +445,16 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                           setup=s.id, touch=idx)
                 continue
         bucket = sizing_bucket(entry_spot, zones, pmh, pml)
+        # F20 (2026-09-04): a pm_break setup is anchored ON the PM level, so its retest — the entry L2.6/L2.7
+        # describe ("enter puts on the retest/rejection of PML") — always sits on the edge of the no-trade
+        # zone. Within the touch tolerance of the anchor, with the close on the trade's side, it is the
+        # V6 rung between the PM level and yesterday's zone: SMALL size, not refused. Deeper inside the
+        # range the break has failed and V6 stands.
+        if (bucket == "none" and s.kind.startswith("pm_break") and abs(entry_spot - s.anchor) <= max(tol, rules.tick)
+                and ((b2.close > s.anchor) if long else (b2.close < s.anchor))):
+            bucket = "small"
+            note(b2.ts, "pm_retest", f"{s.id}: retest of the pre-market level {s.anchor:.2f} itself — the L2.6/L2.7 entry, "
+                 "small size (F20)", setup=s.id, touch=idx, spot=round(entry_spot, 4))
         mult = {"full": rules.size_full, "small": rules.size_small, "none": rules.size_none}[bucket]
         if mult <= 0:
             note_once(s, b2.ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5) — not counted as a pullback",

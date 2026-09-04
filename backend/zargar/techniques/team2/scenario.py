@@ -37,10 +37,12 @@ def sizing_bucket(price: float, zones: dict[str, Zone], pmh: float | None, pml: 
     """V6: 'full' beyond the PDH/PDL zones · 'small' between a prior-day zone and the PM level
     · 'none' inside the PM range. With no PM range, inside yesterday's range is 'small'."""
     pdh, pdl = zones["pdh"], zones["pdl"]
-    if price > pdh.top or price < pdl.bottom:
-        return "full"
+    # F15 (2026-09-04): the PM range is chop wherever it sits — on a gap day it lies beyond the PDH/PDL
+    # zone, and "full" there was buying the middle of the pre-market range (QQQ 10:02, 0.62 under the PMH)
     if pmh is not None and pml is not None and pml <= price <= pmh:
         return "none"
+    if price > pdh.top or price < pdl.bottom:
+        return "full"
     return "small"
 
 
