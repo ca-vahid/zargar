@@ -44,6 +44,16 @@ const EVENT_ICON: Record<string, [string, string]> = {
   observed_midday: ["👁", "muted"], fired: ["▲", "pos"], entry: ["▲", "pos"],
   exit: ["▼", "neg"], flatten: ["▼", "neg"], paused: ["⏸", "muted"], resumed: ["▶", "muted"],
   error: ["✖", "neg"], critic_killed: ["✖", "warn"], expired: ["·", "muted"],
+  // Team2 (the session read speaks in its own events — docs/techniques/team2/METHOD.md)
+  scenario: ["◆", "muted"], pm_break: ["◆", "muted"], preopen: ["·", "muted"],
+  would_exit: ["▼", "muted"], would_trim: ["▼", "muted"], would_add: ["▲", "muted"],
+  live_trim: ["▼", "pos"], add: ["▲", "pos"], position_open: ["▲", "pos"], contract: ["·", "muted"],
+  entry_capped: ["⛔", "warn"], trim_deferred_live: ["·", "muted"], trim_already_live: ["·", "muted"],
+  late_touch: ["👁", "muted"], skip_no_trade_zone: ["⛔", "muted"], skip_range_confirmation: ["⛔", "muted"],
+  skip_engulfing: ["⛔", "muted"], pullback_stalled: ["👁", "muted"], mode_changed: ["·", "muted"],
+  pm_retest: ["▲", "muted"], skip_reentries: ["⛔", "muted"], skip_no_contract: ["⛔", "muted"],
+  skip_last_entry: ["⛔", "muted"], skip_loss_cap: ["⛔", "muted"],
+  skip_event_day: ["⛔", "muted"],
 };
 
 function buildTimeline(a: ArmedPlan): TimelineRow[] {
@@ -84,6 +94,8 @@ function waitingFor(t: any, windowNow: string | null | undefined): string {
 type ChartStyle = "classic" | "zones" | "panes";
 
 export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
+  // Team2 has no prime windows (METHOD P2/D6): entries all session until 15:30, flat by 15:45 (0DTE)
+  const team2 = (a as any).technique === "team2";
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
   const lastBarTs = useRef<number>(0);
@@ -97,6 +109,15 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     try { localStorage.setItem("zargar_armed_chartstyle", v); } catch { /* private mode */ }
   };
   const timeline = useMemo(() => buildTimeline(a), [a.events]);
+  // rebuild the chart only when a MARKER changes (a fire, a fill, an exit) — Team2's read emits an event on
+  // most 2m closes and rebuilding + refetching the chart for each one thrashed it (UI audit 2026-09-04, item 24)
+  const markerCount = useMemo(() => (a.events ?? []).filter((e: any) => ["fired", "position_open", "exit_fill", "position_closed",
+    "entry_submit", "premium_stop", "quote_stop", "loss_halt", "clock_flatten", "disarmed"].includes(e.event)).length, [a.events]);
+  // three primitive selectors — a fresh object per render would loop React (CLAUDE.md Zustand gotcha)
+  const t2First = useStore((s) => s.settings["techniques.team2.first_entry_min"] as string | number | undefined);
+  const t2Last = useStore((s) => s.settings["techniques.team2.last_entry_min"] as string | number | undefined);
+  const t2Flat = useStore((s) => s.settings["techniques.team2.flatten_min"] as string | number | undefined);
+  const t2 = { first: t2First, last: t2Last, flat: t2Flat };
   const waiting = (a.triggers ?? []).filter((t: any) => t.status === "waiting" || t.status === "observed");
   // Before the plan's session has opened there is nothing to plot in it — the
   // "runway" shows the last five sessions and tomorrow's slot instead (user's
@@ -125,7 +146,19 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
 
     const dayStart = etToUtcMs(a.planFor, 9, 25);
     const dayEnd = etToUtcMs(a.planFor, 16, 5);
-    const bands = [
+    const hm = (v: any, dh: number, dm: number): [number, number] => {
+      const m = typeof v === "string" ? v.match(/^(\d{1,2}):(\d{2})$/) : null;
+      return m ? [Number(m[1]), Number(m[2])] : typeof v === "number" ? [Math.floor(v / 60), v % 60] : [dh, dm];
+    };
+    const [fh, fm] = hm(t2.first, 9, 45), [lh, lm] = hm(t2.last, 15, 30), [xh, xm] = hm(t2.flat, 15, 45);
+    const bands = team2 ? [
+      { from: etToUtcMs(a.planFor, fh, fm), to: etToUtcMs(a.planFor, lh, lm), color: rgbaVar("--up", 0.10),
+        label: { text: `● entries ${String(fh).padStart(2, "0")}:${String(fm).padStart(2, "0")}–${String(lh).padStart(2, "0")}:${String(lm).padStart(2, "0")} — 2m EMA13 pullbacks after a 15m close beyond the level`, style: { color: up, fontSize: "10px", fontWeight: "700" } } },
+      { from: etToUtcMs(a.planFor, lh, lm), to: etToUtcMs(a.planFor, xh, xm), color: rgbaVar("--warn", 0.10),
+        label: { text: "⏸ no new entries (0DTE)", style: { color: warn, fontSize: "10px", fontWeight: "600" } } },
+      { from: etToUtcMs(a.planFor, xh, xm), to: etToUtcMs(a.planFor, 16, 0), color: rgbaVar("--down", 0.10),
+        label: { text: "▼ flat by 15:45", style: { color: down, fontSize: "10px", fontWeight: "700" } } },
+    ] : [
       { from: etToUtcMs(a.planFor, 9, 30), to: etToUtcMs(a.planFor, 10, 30), color: rgbaVar("--up", 0.12),
         label: { text: "● prime open — can fire", style: { color: up, fontSize: "10px", fontWeight: "700" } } },
       { from: etToUtcMs(a.planFor, 10, 30), to: etToUtcMs(a.planFor, 14, 45), color: rgbaVar("--warn", 0.10),
@@ -199,7 +232,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
       const extraYLines: Highcharts.YAxisPlotLinesOptions[] = [];
       if (preSession) {
         // tomorrow's slot is a sixth of the width: short window labels or they wrap
-        const shortText = ["● open", "mid-day · watch", "● close"];
+        const shortText = team2 ? ["● entries", "no entries", "flat"] : ["● open", "mid-day · watch", "● close"];
         bands.forEach((b, i) => { (b.label as any).text = shortText[i]; });
         // regular-hours 5m bars of the last five sessions, in session order
         const bySess = new Map<string, number[][]>();
@@ -299,6 +332,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
           { labels: { enabled: false }, gridLineWidth: 0, top: "82%", height: "18%", offset: 0 },
         ],
         tooltip: {
+          followTouchMove: false,      // a finger must be able to pan (CLAUDE.md Highcharts gotcha)
           backgroundColor: cssVar("--surface-2"), borderColor: cssVar("--border"),
           style: { color: cssVar("--text-2"), fontSize: "12px" }, split: false, shared: false,
           hideDelay: 120,
@@ -370,13 +404,15 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
     });
     return () => { cancelled = true; offBar(); unsub(); chartRef.current?.destroy(); chartRef.current = null; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [a.symbol, a.planFor, a.events?.length, a.triggers?.length, theme, style, sessionStarted]);
+  }, [a.symbol, a.planFor, markerCount, a.triggers?.length, theme, style, sessionStarted, t2.first, t2.last, t2.flat]);
 
   return (
     <div className="tq-armed-day">
       <div className="tq-armed-day-now">
         <b>Now:</b>{" "}
-        {waiting.length
+        {team2
+          ? <span>{a.summary}{waiting.map((t: any) => <span key={t.id}> <span className="tq-chip" title={t.id}>{t.label}</span>{t.distancePct !== undefined ? ` ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>)}</span>
+          : waiting.length
           ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip" title={t.id}>{t.label ?? `${trigWord(t)} @ ${fmt(t.entry)}`}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct !== undefined ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
           : <span>{a.summary}</span>}
       </div>

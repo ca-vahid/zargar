@@ -18,7 +18,11 @@ from ..technique.options import ContractPick, ELEVATED_IV, LOW_DELTA, MAX_SPREAD
 
 def select_by_premium(chain: list[dict], spot: float, direction: str, *, target_premium: float,
                       premium_floor: float, expiry: str, today: dt.date, is_0dte: bool,
-                      max_over_target: float = 1.5) -> ContractPick | None:
+                      max_over_target: float = 1.5, mode: str = "closest") -> ContractPick | None:
+    """`mode="closest"` (F36, 2026-09-04, default): of the OTM contracts whose ask lies in
+    [floor, max_over_target x target], the one CLOSEST to the target — the same rule the model's
+    `PremiumModel.pick_strike` applies, so both paths land on the same strike. `mode="first_under"`
+    is the legacy walk described in the module docstring."""
     want = "call" if direction == "long" else "put"
     rows = [c for c in chain if (c.get("option_type") or "").lower() == want]
     if want == "call":
@@ -29,7 +33,19 @@ def select_by_premium(chain: list[dict], spot: float, direction: str, *, target_
         return None
     chosen = None
     prev = None
-    for c in otm:
+    if mode == "closest":
+        cands = []
+        for c in otm:
+            ask = float(c.get("ask") or 0.0)
+            if ask <= 0:
+                continue
+            if premium_floor <= ask <= target_premium * max_over_target:
+                cands.append(c)
+            if ask < premium_floor:
+                break
+        if cands:
+            chosen = min(cands, key=lambda c: (abs(float(c["ask"]) - target_premium), float(c["ask"])))
+    for c in ([] if mode == "closest" else otm):
         ask = float(c.get("ask") or 0.0)
         if ask <= 0:
             continue                                   # no quote → cannot judge the premium

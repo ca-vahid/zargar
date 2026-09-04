@@ -28,13 +28,14 @@ class Team2Rules(MarketRules):
     ema_slow: int = 200
     entry_tf_min: int = 2                   # T1: entries on the 2-minute chart
     confirm_tf_min: int = 15                # C1: level breaks confirmed on the 15-minute close
-    flag_tf_min: int = 5                    # C5: flags read on the 5-minute chart
+    flag_tf_min: int = 5                    # C5: flags read on the 5-minute chart — NOT WIRED (no flag detector yet; PLAN §3c)
     fan_trend_min_atr: float = 0.60         # E4: EMA spread (max−min of the three) in 2m ATRs below which = chop
     atr_period: int = 14
 
     # --- L/B: levels and bias
     pm_tol_atr: float = 0.25                # Q5/D7: touch tolerance around PMH/PML (2m ATR multiples)
-    zone_tol_atr: float = 0.0               # PDH/PDL zones are their own tolerance (L1.2)
+    zone_tol_atr: float = 0.0               # F27: a scenario needs a 15m close beyond the zone edge by this x ATR (0 = bare close)
+    flip_body_ratio: float = 0.0            # F27: body/range a scenario-setting 15m candle must have (0 = any candle)
     target_lookback_sessions: int = 10      # L3.1: how far back to look for the last pivot beyond PDH/PDL
     range_day_confirmation: bool = True     # B3/A4: scenarios 2/3 need extra confirmation before a fire
     bias_flip_on_15m_close: bool = True     # D10: bias flips only on a 15m close through the zone the other way
@@ -55,13 +56,13 @@ class Team2Rules(MarketRules):
     early_flag_before_min: int = 10 * 60    # P2: fires before 10:00 tagged `early` (riskier, still taken)
 
     # --- S/X: stop and exits (premium terms per §7b; price cues per X1-X3)
-    stop_candles: int = 1                   # S2: one 2m candle close through the EMA/level
+    stop_candles: int = 1                   # S2: one 2m candle close through the EMA/level — informational (always one)
     premium_stop_pct: float = 25.0          # D13/P1: hard cap on the premium loss (author ~20%)
     trim_1_pct: float = 50.0                # X1/V2: first trim at +50% premium
     trim_1_frac: float = 1.0 / 3.0
     trim_2_pct: float = 100.0               # V2: second trim at +100%
     trim_2_frac: float = 1.0 / 3.0
-    runner_exit: str = "ema_close"          # X2: runner exits on a 2m close through the EMA13
+    runner_exit: str = "ema_close"          # X2: runner exits on a 2m close through the EMA13 — the only exit built; knob is informational
     target_exit: bool = True                # X3/V11: outright exit when the pre-planned target is touched
     hod_target: str = "reentry"             # X3b: "off" | "reentry" | "always" — the running HOD/LOD is the target
                                             #   when it is nearer than the planned level ("HOD resistance is the main
@@ -74,6 +75,7 @@ class Team2Rules(MarketRules):
     dte_policy: str = "0dte"                # "0dte" | "1dte" (sweep variant)
     target_premium: float = 0.60            # V1/F5: first OTM strike whose ask <= this
     premium_floor: float = 0.20             # never buy below this (the $0.05 lottery)
+    premium_pick: str = "closest"           # F36: "closest" to target_premium (model AND live) | "first_under" (legacy)
     chase_cap_mult: float = 1.5             # F14: never pay more than target_premium x this for the contract (live ask)
     strike_step: float = 1.0                # SPY/QQQ/IWM $1 strikes
 
@@ -83,6 +85,7 @@ class Team2Rules(MarketRules):
     size_none: float = 0.0
     max_reentries: int = 2                  # A8/T5
     max_losses_per_day: int = 2
+    losses_desk_wide: bool = True           # F29: the loss cap counts SPY+QQQ+IWM together (one book), not per symbol
     max_concurrent_positions: int = 1       # A12
     shrink_after_win: bool = True           # P7: next-trade risk <= half the day's realised P&L after a win
     avoid_event_days: bool = False          # D-4: macro calendar flag (placeholder source)
@@ -114,7 +117,7 @@ SETTINGS_MAP: dict[str, str] = {
     "ema_fast": "ema_fast", "ema_mid": "ema_mid", "ema_slow": "ema_slow",
     "fan_trend_min_atr": "fan_trend_min_atr", "pm_tol_atr": "pm_tol_atr",
     "target_lookback_sessions": "target_lookback_sessions",
-    "range_day_confirmation": "range_day_confirmation",
+    "range_day_confirmation": "range_day_confirmation", "zone_tol_atr": "zone_tol_atr", "flip_body_ratio": "flip_body_ratio",
     "pullback_max_touches": "pullback_max_touches", "pullback_max_bars": "pullback_max_bars",
     "pullback_body_mult": "pullback_body_mult", "entry_at": "entry_at",
     "allow_ema48_entries": "allow_ema48_entries", "allow_ema200_flush": "allow_ema200_flush",
@@ -125,9 +128,9 @@ SETTINGS_MAP: dict[str, str] = {
     "target_exit": "target_exit", "hod_target": "hod_target", "hod_target_min_atr": "hod_target_min_atr",
     "add_on_retest": "add_on_retest", "max_adds": "max_adds",
     "dte_policy": "dte_policy", "target_premium": "target_premium",
-    "premium_floor": "premium_floor", "chase_cap_mult": "chase_cap_mult",
+    "premium_floor": "premium_floor", "chase_cap_mult": "chase_cap_mult", "premium_pick": "premium_pick",
     "size_full": "size_full", "size_small": "size_small",
-    "max_reentries": "max_reentries", "max_losses_per_day": "max_losses_per_day",
+    "max_reentries": "max_reentries", "max_losses_per_day": "max_losses_per_day", "losses_desk_wide": "losses_desk_wide",
     "max_concurrent_positions": "max_concurrent_positions", "shrink_after_win": "shrink_after_win",
     "avoid_event_days": "avoid_event_days", "fee_per_contract": "fee_per_contract",
 }

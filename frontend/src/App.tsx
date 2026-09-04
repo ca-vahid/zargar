@@ -21,6 +21,7 @@ const FlowPage = lazy(() => import("./pages/FlowPage").then((m) => ({ default: m
 const Team2Page = lazy(() => import("./pages/Team2Page").then((m) => ({ default: m.Team2Page })));
 import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
+import { PageErrorBoundary } from "./components/PageErrorBoundary";
 import { clientKind, useViewport } from "./lib/viewport";
 import { TabBar } from "./components/TabBar";
 import { LoginPage } from "./pages/LoginPage";
@@ -140,6 +141,7 @@ export default function App() {
           <Sidebar collapsed={sideCollapsed} onToggleCollapse={() => { const next = !sideCollapsed; localStorage.setItem("zargar_side_collapsed", next ? "1" : "0"); setSideCollapsed(next); }} />
         )}
         <div className="content">
+          <PageErrorBoundary page={page}>
           {page === "dashboard" && <DashboardPage />}
           {page === "trade" && <TradePage />}
           {page === "options" && <Suspense fallback={<div className="state-note">loading…</div>}><OptionsPage /></Suspense>}
@@ -153,6 +155,7 @@ export default function App() {
           {page === "team2" && <Suspense fallback={<div className="state-note">loading…</div>}><Team2Page /></Suspense>}
           {page === "armed" && <ArmedPage />}
           {page === "watchlists" && <WatchlistsPage />}
+          </PageErrorBoundary>
         </div>
       </div>
       <Toasts />

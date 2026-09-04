@@ -217,6 +217,7 @@ class Trade:
                 "entryOrderId": self.entry_order_id, "limitPrice": self.limit_price, "qty": self.qty,
                 "filledQty": self.filled_qty, "avgFill": self.avg_fill, "remaining": self.remaining,
                 "trimsDone": self.trims_done, "exits": list(self.exits), "realizedPnl": round(self.realized_pnl, 2),
+                "isAdd": bool(self.is_add), "livePct": self.live_pct, "targetKind": self.target_kind,
                 "unrealizedPnl": round(unreal, 2),
                 "realizedR": (round(self.realized_pnl / (risk * self.filled_qty), 3)
                               if self.filled_qty and self.instrument != "options" else None),
@@ -423,6 +424,14 @@ class PlanRunner(SessionListener):
     def __init__(self, engine, *, name: str = "plan-runner") -> None:
         super().__init__(engine, name=name)
         self._armed: dict[str, ArmedPlan] = {}
+        # F40 (2026-09-04): a plan disarmed with a flatten in flight stays here until every exit
+        # order has settled, so the fill still reaches its Trade record and the persisted row
+        # (QQQ 14:17: FILLED 18 @ 0.5599 in the book, "open, remaining 18" in the plan forever)
+        self._closing: dict[str, ArmedPlan] = {}
+        # R3 (audit 2026-09-04): the per-technique day-loss halt summed only ARMED plans — a plan that
+        # disarmed on its own loss halt stopped counting. Retired plans park their net P&L here per
+        # (ET day, portfolio); a technique may seed it from persisted rows at boot.
+        self._retired_pnl: dict[tuple[str, str], float] = {}
         # (run_id, trigger_id[, "~prem"]) -> consecutive quote polls seen in breach
         self._quote_breaches: dict[tuple[str, str], int] = {}
         # (run_id, trigger_id) -> (last retry ts, attempts) for the failed-exit watchdog
@@ -526,7 +535,9 @@ class PlanRunner(SessionListener):
                     # anything — that IS the worst bleed, not a data gap. A delayed
                     # chain row with bid 0 (thin contract, audit 2026-09-02) is a
                     # data gap: never market-sell a live position on it.
-                    obid = (float(oq.bid) if oq is not None and oq.bid and oq.bid > 0
+                    # R4 (audit 2026-09-04): a stale or delayed row with a positive bid used to drive the stop —
+                    # a 15-minute-old chain print could market-sell a live position. Fresh real-time only.
+                    obid = (float(oq.bid) if (fresh_o and oq is not None and oq.bid and oq.bid > 0)
                             else (0.0 if fresh_o else None))
                     nkey = (ap.run_id, tr.trigger_id + "~noq")
                     if obid is None:
@@ -539,7 +550,14 @@ class PlanRunner(SessionListener):
                                               stage="option_quote_gap")
                     else:
                         self._quote_breaches.pop(nkey, None)
-                    preason = premium_stop_breach(tr, obid, stop_pct=prem_pct)
+                    # F30: the basis is per technique — EM keeps the real bid; Team2 measures the mid so a
+                    # one-cent spread on a $0.34 contract is not an eighth of the stop budget — and a
+                    # tick floor keeps cheap contracts from being stopped by their own spread
+                    basis = str(self.rt("premium_stop_basis", "bid") or "bid")
+                    oask = float(oq.ask) if (fresh_o and oq is not None and oq.ask and oq.ask > 0) else None
+                    pprice = ((obid + oask) / 2.0) if (basis == "mid" and obid and oask) else obid
+                    preason = premium_stop_breach(tr, pprice, stop_pct=prem_pct, basis=basis,
+                                                  min_ticks=int(self.rt("premium_stop_min_ticks", 0) or 0))
                     pkey = (ap.run_id, tr.trigger_id + "~prem")
                     if preason is None:
                         self._quote_breaches.pop(pkey, None)
@@ -677,6 +695,7 @@ class PlanRunner(SessionListener):
         "exit_failed", "exit_retry", "manual_exit", "loss_halt", "paused", "resumed", "disarmed",
         "skipped", "premium_stop", "quote_stop", "proposal", "contract_skipped", "kill_cap",
         "cooldown_skip", "halt_skip", "max_open_skip", "stale", "preopen_check", "entry_fallback",
+        "technique_loss_halt", "skip_loss_budget", "entry_capped", "skip_loss_cap_desk", "clock_flatten",
         "entry_cancelled", "fire_cancelled", "rearmed_after_kill", "option_pick_failed",
     })
 
@@ -779,6 +798,8 @@ class PlanRunner(SessionListener):
         return {
             "asOf": now_ms, "window": window_now, "windowOpenNow": window_now in my_windows,
             "haltEngaged": bool(self.engine.halt.engaged),
+            "bookHalts": {pid: b.get("reason") for pid, b in getattr(self.engine.halt, "books", {}).items()},
+            "techniqueLossHaltPct": float(self.rt("daily_loss_halt_pct", 0.0) or 0.0),
             "workspace": str(self.engine.settings.get("trading.mode", "practice")),
             "counts": counts,
             "attention": attention, "inTrade": in_trade, "timeline": timeline[:100],
@@ -1158,6 +1179,11 @@ class PlanRunner(SessionListener):
                                                      else ap.config.premium_budget),
                                    "riskPct": float(risk_pct) if risk_pct is not None else ap.config.risk_pct})
         self.validate_config(cfg)                      # gates (mode, live-auto, options capability)
+        if ((risk_pct is not None and cfg.risk_pct != old_risk) or (premium_budget is not None and cfg.premium_budget != old_budget)) and cfg.mode == "auto":
+            # the plan's dollar loss halt was derived from the OLD risk % at arm time (2 x the per-trade
+            # risk); a bigger size with the old limit halts the plan after one stop (QQQ 2026-09-04 14:17:
+            # $341 limit under a $2,000 budget) — derive it again from equity at the new risk %
+            cfg.daily_loss_limit = 0.0
         await self._ensure_loss_halt(ap, cfg)
         ap.config = cfg
         changes = []
@@ -1168,7 +1194,8 @@ class PlanRunner(SessionListener):
         if premium_budget is not None and cfg.premium_budget != old_budget:
             changes.append(f"premium budget ${old_budget:,.0f} -> ${cfg.premium_budget:,.0f}")
         if risk_pct is not None and cfg.risk_pct != old_risk:
-            changes.append(f"risk {old_risk:g}% -> {cfg.risk_pct:g}% of equity")
+            changes.append(f"risk {old_risk:g}% -> {cfg.risk_pct:g}% of equity"
+                           + (f", loss halt re-derived: ${cfg.daily_loss_limit:,.0f}" if cfg.mode == "auto" else ""))
         self._log(ap, "mode_changed", "; ".join(changes) or f"execution mode {old} -> {cfg.mode}")
         await self._persist(ap)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_MODE_CHANGED,
@@ -1233,6 +1260,10 @@ class PlanRunner(SessionListener):
                 await self._exit(ap, tr, "disarm", tr.remaining, journal=True, force_market=True)
         ap.status = "disarmed"
         self._armed.pop(run_id, None)
+        rk = (dt.datetime.now(ET).strftime("%Y-%m-%d"), ap.config.portfolio_id)
+        self._retired_pnl[rk] = self._retired_pnl.get(rk, 0.0) + self._net_realized(ap)
+        if any(t.pending_exit_qty > 1e-9 for t in ap.trades.values()):
+            self._closing[run_id] = ap                     # F40: keep listening for the flatten's fill
         await self._persist(ap)
         self._log(ap, "disarmed", reason)
         await self.engine.journal.append(ev.TECHNIQUE_PLAN_DISARMED, {
@@ -1339,6 +1370,7 @@ class PlanRunner(SessionListener):
                 window=td.get("window") or "", entry=float(td.get("entry") or 0), stop=float(td.get("stop") or 0),
                 targets=[float(x) for x in (td.get("targets") or [])], status=td.get("status") or "open",
                 reason=td.get("reason") or "", setup_id=td.get("setupId"), proposal_id=td.get("proposalId"),
+                is_add=bool(td.get("isAdd", False)), target_kind=str(td.get("targetKind") or "plan"),
                 entry_order_id=td.get("entryOrderId"), limit_price=td.get("limitPrice"),
                 qty=float(td.get("qty") or 0), filled_qty=float(td.get("filledQty") or 0),
                 avg_fill=td.get("avgFill"), remaining=float(td.get("remaining") or 0),
@@ -1437,7 +1469,10 @@ class PlanRunner(SessionListener):
             return 0.0
         if t.instrument == "options" and t.order_symbol:
             q = self.engine.quotes.get(t.order_symbol)
-            px = float(q.bid) if q is not None and q.bid and q.bid > 0 else None
+            max_age = int(self.rt("stale_seconds", 180))
+            fresh = (q is not None and (int(time.time() * 1000) - int(q.ts)) <= max_age * 1000
+                     and not getattr(q, "delayed", False))
+            px = float(q.bid) if (fresh and q.bid and q.bid > 0) else None      # R4: no stale marks in the halts
         else:
             q = self.engine.quotes.get(ap.symbol)
             px = float(q.last) if q is not None and q.last and q.last > 0 else None
@@ -1450,14 +1485,67 @@ class PlanRunner(SessionListener):
         would roughly realize. 0 when no quote is available (never guessed)."""
         return sum(self._trade_unrealized(ap, t) for t in ap.trades.values())
 
+    def _fees_paid(self, tr: Trade) -> float:
+        """F32: commissions + regulatory fees the book actually paid on this trade (options: per
+        contract, entry + every exit fill). The loss halts count them — QQQ 2026-09-04 paid $99.84 on
+        two round trips while the halt read the gross −$354."""
+        if tr.instrument != "options" or tr.filled_qty <= 0:
+            return 0.0
+        s = self.engine.settings
+        per = float(self.rt("fee_per_contract", 0.0) or 0.0) or (
+            float(s.get("options.fee_per_contract", 0.0) or 0.0) + float(s.get("sim.reg_fee_per_contract", 0.0) or 0.0))
+        exited = sum(float(x.get("filledQty") or 0.0) for x in tr.exits)
+        return per * (float(tr.filled_qty) + exited)
+
+    def _net_realized(self, ap: ArmedPlan) -> float:
+        return sum(t.realized_pnl - self._fees_paid(t) for t in ap.trades.values())
+
+    async def _maybe_technique_loss_halt(self, ap: ArmedPlan) -> bool:
+        """Per-TECHNIQUE, per-book day loss (`techniques.<id>.daily_loss_halt_pct` → `execution.…`,
+        0 = off): once this technique's realised loss plus its open positions marked at the bid, across
+        every plan it has armed on the book, crosses the % of the book's equity, every one of those plans
+        is PAUSED (no new fires; exits keep being managed) for the day. Sits between the per-plan loss
+        halt and the book-wide breaker (2026-09-04, PLATFORM-RULES)."""
+        pct = float(self.rt("daily_loss_halt_pct", 0.0) or 0)
+        if pct <= 0 or ap.status != "armed":
+            return False
+        pid = ap.config.portfolio_id
+        mine = [o for o in self._armed.values() if o.config.portfolio_id == pid]
+        total = 0.0
+        for o in mine:
+            total += self._net_realized(o) + min(0.0, self._unrealized(o))
+        total += self._retired_pnl.get((dt.datetime.now(ET).strftime("%Y-%m-%d"), pid), 0.0)   # R3
+        if total >= 0:
+            return False
+        eq = 0.0
+        with contextlib.suppress(Exception):
+            eq = float(await self.engine.positions.equity(pid))
+        if eq <= 0 or total > -(eq * pct / 100.0):
+            return False
+        reason = (f"{self.TECHNIQUE_ID} loss halt: {total:,.2f} on this book today crossed -{pct:g}% of "
+                  f"${eq:,.0f} equity — no new entries today (techniques.{self.TECHNIQUE_ID}.daily_loss_halt_pct)")
+        for o in mine:
+            if o.status == "armed":
+                o.stop_reason = reason
+                self._log(o, "technique_loss_halt", reason)
+                await self.pause(o.run_id)
+        await self._alert(ap, reason, stage="loss_halt")
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(ev.TECHNIQUE_LOSS_HALT, {
+                "technique": self.TECHNIQUE_ID, "portfolioId": pid, "lossToday": round(total, 2), "equity": round(eq, 2),
+                "pct": pct, "plans": [o.run_id for o in mine]}, portfolio_id=pid)
+        return True
+
     async def _maybe_loss_halt(self, ap: ArmedPlan) -> bool:
         """The plan's "certain loss halt": once the day's loss — realised PLUS the
         open positions marked at the bid (theta bleed counts) — crosses the dollar
         limit, flatten everything and stop the plan. Returns True if it fired."""
+        if await self._maybe_technique_loss_halt(ap):
+            return True
         limit = float(ap.config.daily_loss_limit or 0)
         if limit <= 0 or ap.status not in ("armed", "paused"):
             return False
-        realized = sum(t.realized_pnl for t in ap.trades.values())
+        realized = self._net_realized(ap)       # F32: net of commissions
         unreal = self._unrealized(ap)
         total = realized + min(0.0, unreal)     # open gains do not license bigger losses
         if total > -limit:
@@ -1547,6 +1635,9 @@ class PlanRunner(SessionListener):
 
     # ---------------------------------------------------------------- persistence / audit
     async def _persist(self, ap: ArmedPlan) -> None:
+        if ap.run_id in self._closing and not any(t.pending_exit_qty > 1e-9 for t in ap.trades.values()):
+            self._closing.pop(ap.run_id, None)             # F40: the flatten settled — this is the final record
+            self._log(ap, "closing_settled", "every exit of the disarmed plan has settled; record final")
         try:
             async with self.engine.sf() as session:
                 row = await session.get(TechniqueArmed, ap.run_id)
@@ -1615,7 +1706,7 @@ class PlanRunner(SessionListener):
         if not key:
             return
         run_id, tid = key
-        ap = self._armed.get(run_id)
+        ap = self._armed.get(run_id) or self._closing.get(run_id)    # F40: a closing plan still listens
         if ap is None:
             return
         tr = ap.trades.get(tid)
@@ -1713,7 +1804,7 @@ class PlanRunner(SessionListener):
         idx = ap.bar_index
         ap.bar_index += 1
         _, close_ms = session_bounds(ap.plan_for)
-        halted = bool(getattr(self.engine.halt, "engaged", False))
+        halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
         # 1) manage open positions first (exits never wait on anything)
         for tr in ap.trades.values():
             if tr.status == "open" and tr.remaining > 0:
@@ -1831,7 +1922,7 @@ class PlanRunner(SessionListener):
                 if halted:
                     tr.status = "observed"
                     tr.fired_index = tr.fired_ts = tr.fired_window = tr.fill_price = None
-                    self._log(ap, "halt_skip", f"{tid}: conditions met but the kill switch is engaged", trigger=tid)
+                    self._log(ap, "halt_skip", f"{tid}: conditions met but trading is halted — {self.engine.trading_halted(ap.config.portfolio_id)}", trigger=tid)
                     if journal:
                         await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
                             "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "halt", "ts": bar.ts},
@@ -2312,11 +2403,35 @@ class PlanRunner(SessionListener):
                 est = float(contract.get("ask") or contract.get("mid") or 0.0) * 100.0 * max(1, n_est)
                 cap = float(s.get("risk.max_option_premium_notional", 0.0) or 0.0)
                 pct_cap = float(s.get("risk.max_option_premium_pct", 0.0) or 0.0)
-                pf = self.engine.positions.portfolio(cfg.portfolio_id) or {}
-                eq = float(pf.get("equity") or pf.get("cash") or 0.0)
-                if est > 0 and cap and est > cap:
+                # equity, not cash: `positions.portfolio()` returns the cached row
+                # (name/kind/cash/…) which carries NO "equity" key, so this silently
+                # fell back to CASH and refused every option entry in a book that is
+                # simply fully invested. That made this pre-check stricter than the
+                # RiskGate it exists to mirror (risk.py uses `positions.equity()`)
+                # and cost Team2 its first live order on 2026-09-04 (F22).
+                eq = float(await self.engine.positions.equity(cfg.portfolio_id) or 0.0)
+                # F33 (2026-09-04): the loss halt used to be judged only AFTER the entry — QQQ opened
+                # $1,062 of premium with $41 of budget left and was flattened a minute later. Refuse an
+                # entry whose own stop-loss (premium x premium_stop_pct) is bigger than what remains.
+                limit = float(cfg.daily_loss_limit or 0.0)
+                if limit > 0 and est > 0 and blocked is None:
+                    used = -(self._net_realized(ap) + min(0.0, self._unrealized(ap)))
+                    left = limit - max(0.0, used)
+                    prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
+                    at_risk = est * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
+                    if at_risk > left:
+                        blocked = (f"loss budget: this entry risks ≈${at_risk:,.0f} at its premium stop but only "
+                                   f"${left:,.0f} of the ${limit:,.0f} daily loss limit is left (F33)")
+                        self._log(ap, "skip_loss_budget", f"{trade.trigger_id}: {blocked}", trigger=trade.trigger_id,
+                                  atRisk=round(at_risk, 2), left=round(left, 2), limit=limit)
+                if est > 0 and pct_cap and eq <= 0 and blocked is None:
+                    # F39: zero/negative equity is "we cannot measure the account", not a percentage verdict —
+                    # it used to fail OPEN at exactly 0 and refuse everything below it under a %-cap message
+                    blocked = (f"cannot judge the premium cap: the account's equity reads ${eq:,.0f} "
+                               f"(risk.max_option_premium_pct needs a positive equity)")
+                elif est > 0 and cap and est > cap:
                     blocked = f"premium ≈${est:,.0f} exceeds the ${cap:,.0f} per-order cap (risk.max_option_premium_notional)"
-                elif est > 0 and pct_cap and eq and est > eq * pct_cap / 100.0:
+                elif est > 0 and pct_cap and eq > 0 and est > eq * pct_cap / 100.0:
                     blocked = (f"premium ≈${est:,.0f} is over {pct_cap:g}% of the account's ${eq:,.0f} equity "
                                f"(risk.max_option_premium_pct)")
             if contract is None or blocked:

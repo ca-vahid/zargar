@@ -93,6 +93,11 @@ class Engine:
         if isinstance(halt_state, dict) and halt_state.get("engaged"):
             self.halt.engage(halt_state.get("reason", "restored after restart"),
                              source=halt_state.get("source", "app"))
+        # per-book halts survive a restart only within their own ET session
+        today = dt.datetime.now(tz=ET).date().isoformat()
+        for pid, b in ((halt_state or {}).get("books") or {}).items() if isinstance(halt_state, dict) else ():
+            if isinstance(b, dict) and b.get("day") == today:
+                self.halt.books[pid] = dict(b)
 
         self.sim_executor = SimExecutor(settings=self.settings)
         if self.config.broker == "ibkr":
@@ -386,6 +391,43 @@ class Engine:
         self.bus.publish(topics.SYSTEM, {"kind": "halt", **self.halt.to_dict()})
         return self.halt.to_dict()
 
+    # --- per-book halts (the daily-loss breaker, scope "portfolio") -----------
+    def _portfolio_name(self, pid: str) -> str:
+        p = self.positions.portfolio(pid) or {}
+        return str(p.get("name") or pid)
+
+    async def engage_book_halt(self, pid: str, reason: str, *, source: str = "auto") -> dict:
+        """Halt ONE book for the rest of the ET session: entries on it are refused (RiskGate
+        `book_halt`), exits still pass, every other book keeps trading."""
+        day = dt.datetime.now(tz=ET).date().isoformat()
+        b = self.halt.engage_book(pid, reason, source=source, day=day)
+        await self.settings.set("system.halt", self.halt.to_dict(), journal=False)
+        await self.journal.append(ev.BOOK_HALT_ENGAGED, {"portfolioId": pid, "name": self._portfolio_name(pid),
+                                                         "reason": reason, "source": source}, portfolio_id=pid)
+        self.bus.publish(topics.SYSTEM, {"kind": "halt", **self.halt.to_dict(),
+                                         "book": {"portfolioId": pid, "name": self._portfolio_name(pid),
+                                                  "engaged": True, "reason": reason}})
+        return b
+
+    async def release_book_halt(self, pid: str, *, source: str = "app") -> dict:
+        b = self.halt.release_book(pid)
+        if b is not None:
+            await self.settings.set("system.halt", self.halt.to_dict(), journal=False)
+            await self.journal.append(ev.BOOK_HALT_RELEASED, {"portfolioId": pid, "name": self._portfolio_name(pid),
+                                                              "source": source}, portfolio_id=pid)
+            self.bus.publish(topics.SYSTEM, {"kind": "halt", **self.halt.to_dict(),
+                                             "book": {"portfolioId": pid, "name": self._portfolio_name(pid),
+                                                      "engaged": False, "reason": ""}})
+        return self.halt.to_dict()
+
+    def trading_halted(self, pid: str | None) -> str | None:
+        """The reason no NEW entry may be placed on this book right now: the global switch, or
+        the book's own daily-loss halt. None = trade away. Runners ask this, not `halt.engaged`."""
+        if self.halt.engaged:
+            return self.halt.reason or "kill switch engaged"
+        b = self.halt.book_halted(pid)
+        return str(b.get("reason") or "book halted") if b else None
+
     # ------------------------------------------------------------- tasks
     async def _quote_consumer(self) -> None:
         async with self.bus.subscription(topics.QUOTES) as q:
@@ -513,8 +555,13 @@ class Engine:
         drift on real accounts raises a once-a-day warning instead.
         """
         halt_pct = float(self.settings.get("risk.daily_loss_halt_pct", 3.0))
+        scope = str(self.settings.get("risk.daily_loss_halt_scope", "portfolio") or "portfolio")
         traded = await self._traded_today()
         today = dt.datetime.now(tz=ET).date().isoformat()
+        # a book halted on an earlier session is released at the day roll
+        for pid, b in list(self.halt.books.items()):
+            if b.get("day") and b["day"] != today:
+                await self.release_book_halt(pid, source="session")
         for p in self.positions.portfolios():
             if p["kind"] == "shadow":
                 continue
@@ -522,13 +569,22 @@ class Engine:
             if loss is None or loss > -abs(halt_pct):
                 continue
             if p["id"] in traded:
-                if self.halt.engaged:
-                    continue
                 reason = (f"daily loss limit: {p['name']} at {loss:.2f}% "
                           f"(halt at -{halt_pct:.1f}%)")
+                if scope == "global":
+                    if self.halt.engaged:
+                        continue
+                    await self.journal.append(
+                        ev.DAILY_LOSS_HALT, {"portfolioId": p["id"], "lossPct": loss, "scope": "global"})
+                    await self.engage_halt(reason, source="auto")
+                    continue
+                # scope "portfolio" (default since 2026-09-04): only the losing book stops
+                if self.halt.book_halted(p["id"]):
+                    continue
                 await self.journal.append(
-                    ev.DAILY_LOSS_HALT, {"portfolioId": p["id"], "lossPct": loss})
-                await self.engage_halt(reason, source="auto")
+                    ev.DAILY_LOSS_HALT, {"portfolioId": p["id"], "lossPct": loss, "scope": "portfolio"},
+                    portfolio_id=p["id"])
+                await self.engage_book_halt(p["id"], reason, source="auto")
             else:
                 key = (p["id"], today)
                 if key in self._drift_warned:

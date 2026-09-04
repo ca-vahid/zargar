@@ -339,6 +339,21 @@ runtime ones to `execution.*`).
   three techniques (EM, tips, Team2), so a technique's day P&L can no longer be read off the
   book - use the per-plan `realizedPnl` / scorecards, or give each technique its own
   Practice book (`Portfolio.book` exists). Decision left to the user.
+- **2026-09-04 · The premium pre-check in `planrunner` compared premium against CASH, not equity.**
+  `PlanRunner._enter`'s options pre-check (the one that exists so a plan can fall back to shares
+  *before* the RiskGate rejects an order) read
+  `pf = positions.portfolio(pid); eq = pf.get("equity") or pf.get("cash")`. `positions.portfolio()`
+  returns the cached portfolio row — id / name / kind / cash / baseCurrency — which carries **no
+  `equity` key**; equity is the async `positions.equity(pid)`. So the pre-check always fell through
+  to cash and refused every option entry in a book that is merely fully invested. It was therefore
+  strictly stricter than the RiskGate it mirrors (`risk.py` l.263 uses `await positions.equity(...)`),
+  and silently: the message even says "equity". Cost Team2 its first auto order (2026-09-04 11:08 ET,
+  SPY 768P, premium $1,014 vs a Practice book with $8,618 equity and −$267 cash; the gate would have
+  passed it at 50%). Fixed to await the real equity — one line, no behaviour added, the RiskGate is
+  still the authority. Team2 F22. Two deliberate non-changes, flagged for decision: the pre-check has
+  no `kind == "shadow"` exemption (the RiskGate has had one since 2026-09-01, so shadow books with
+  negative cash are blocked from options on this path), and nothing on this path checks buying power,
+  so a fully-invested book can now be sized into an order it could not fund at a real broker.
 
 ## 3. Open questions the shared runtime is collecting data on
 
@@ -544,11 +559,54 @@ runtime ones to `execution.*`).
 - 2026-09-04 · `PlanRunner.set_mode` (and `POST /api/technique/armed/{id}/mode`) also accepts `premiumBudget` and
   `riskPct` so an armed plan's sizing can change in place for its NEXT entry — no re-arm (a re-arm resets the
   read's seen-events and, in auto mode, would re-act on the day's earlier fires). Open trades keep their fills.
-- 2026-09-04 · **The kill switch is global while the daily-loss check is per portfolio** (`Engine.check_daily_loss`):
-  a Practice-book loss from one technique halts every technique on every book, and releasing it re-engages
-  on the next pass while that book stays below the limit. Worked around today by raising
-  `risk.daily_loss_halt_pct` 8 -> 12 (practice only). Proposed: per-portfolio halts, or a per-technique
-  practice book that the check judges on its own. User decision needed before real money.
+- 2026-09-04 · Post-close audit, shared-engine changes (default-neutral for EM/tips unless noted): the ~2 s premium
+  stop and `_trade_unrealized` use an option quote only when it is FRESH real-time (`stale_seconds`, not
+  `delayed`) — a stale positive bid could market-sell a live position; `disarm()` parks a retired plan's net
+  P&L in `_retired_pnl[(day, portfolio)]` so `_maybe_technique_loss_halt` cannot loosen after a disarm;
+  `Trade.to_dict`/`_restore_trades` carry `isAdd`/`targetKind`/`livePct`; `set_mode` re-derives the loss halt
+  on a budget change too; `execution.premium_stop_basis`, `execution.premium_stop_min_ticks` and
+  `execution.fee_per_contract` have DEFAULTS so any technique may set its own; `armed_summary` ORs
+  `windowOpenNow` across runners and reports `windowOpenBy`; `Trade.stop` for Team2 is the entry's line
+  minus one ATR (the quote watch is a crash brake, not the rule); Alpaca skips Yahoo's 09:30 context poll
+  for the day range. Team2-only: `_reprice_stuck_exits` every RTH minute and a clock flatten at
+  `flatten_min` + on `_end_session` — techniques that override `_on_bar` MUST re-provide the stale-exit
+  re-price and a flatten of their own; `_manage` is not inherited by an override (invariant).
+- 2026-09-04 · **`PlanRunner.disarm` no longer orphans an in-flight flatten** (F40): a disarmed plan whose exits
+  are still working moves to `_closing`; `on_order_update` consults it, and `_persist` drops it once every
+  exit has settled (`closing_settled`). Before, the fill arrived ~2 s after `_armed.pop` and was lost —
+  the plan's record said "open, 18 left" forever while the book was flat. Applies to EM/tips too.
+- 2026-09-04 · `OptionsService.refresh_tracked` drops contracts past expiry from the OPRA batch (F44); the
+  nightly `research.snapshot_chains` sweep is paced (`research.chain_snapshots.delay_s`, `retries`) and
+  retries CBOE 429s with backoff, reporting `rateLimitedRetries` and warning when > 20% of the universe
+  failed (F45: 185 429s in three minutes had halved Flow's universe for five sessions).
+- 2026-09-04 · `PlanRunner._score_execution` is a hook a technique may override (Team2 does: its read has no
+  TriggerTrackers, so the shared scorecard was structurally empty — F43); a technique may also score on its
+  own disarm path.
+- 2026-09-04 · Shared-engine changes from the Team2 watch findings (all default-neutral for EM/tips):
+  `events.TECHNIQUE_PLAN_READ` (a structural read is not a skip — F28); `exits.premium_stop_breach` takes a
+  `basis` price and a `min_ticks` floor, and PlanRunner resolves `premium_stop_basis` (bid | mid, default bid)
+  and `premium_stop_min_ticks` (default 0) per technique via `rt()` (F30 — Team2 uses mid + 3 ticks); both
+  loss halts read realised P&L NET of commissions (`_fees_paid`, F32); an auto entry whose premium-stop risk
+  exceeds what is left of `daily_loss_limit` is refused before routing (`skip_loss_budget`, F33); the
+  premium-targeted picker `options/pick.select_by_premium` gained `mode="closest"` (F36; the legacy walk is
+  `first_under`). `techniques.<id>.premium_stop_basis` / `premium_stop_min_ticks` are the knobs.
+- 2026-09-04 · **Halts now come in three scopes** (built the same afternoon; was: one global switch that a
+  Practice-book loss from one technique engaged for every technique on every book, re-engaging on release):
+  1. **Global kill switch** — the HALT button, Telegram `/halt`, or the daily-loss breaker when
+     `risk.daily_loss_halt_scope=global`. Unchanged: stops every new buy everywhere; exits still pass.
+  2. **Per-book halt** — `risk.daily_loss_halt_scope=portfolio` (the new default): the daily-loss breaker
+     halts ONLY the losing book (`HaltState.books`, `Engine.engage_book_halt`, journal `BookHaltEngaged`),
+     RiskGate refuses entries on it (`book_halt`; reduce-only exits pass under `risk.halt_allows_exits`),
+     every other book keeps trading. Auto-released at the next ET session, or `POST
+     /api/portfolios/{pid}/resume`. Shadow books never halt (the learning record keeps collecting).
+  3. **Per-technique, per-book halt** — `techniques.<id>.daily_loss_halt_pct` (→ `execution.daily_loss_halt_pct`,
+     0 = off): `PlanRunner._maybe_technique_loss_halt` PAUSES all of that technique's plans on the book
+     once its realised + open-at-bid loss across them crosses the % of the book's equity (journal
+     `TechniqueLossHalt`, event `technique_loss_halt`). Resume per plan, or the plans expire with the day.
+  Runners ask `engine.trading_halted(portfolio_id)` before a fire — never `halt.engaged` directly. The
+  per-plan dollar loss halt (`_maybe_loss_halt`) is unchanged and sits below both. Rationale: the unit of
+  a daily-loss rule is the book the money sits in; the unit of "this method is having a bad day" is the
+  technique. The old behaviour is one setting away (`scope=global`). `tests/test_book_halt.py`.
 - 2026-09-04 · `execution.planrunner.Trade` gained three technique-owned annotations: `is_add` (a scale-in that
   rides the same contract as its base trade — Team2 X5), `live_pct` (the contract's fee-adjusted premium % from
   its own fresh bid) and `target_kind` (planned level vs running high/low of day). Defaults keep EM/tips

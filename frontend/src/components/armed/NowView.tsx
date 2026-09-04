@@ -20,12 +20,16 @@ const KIND_ICON: Record<string, string> = {
   halt_skip: "·", max_open_skip: "·", stale: "⚠", preopen_check: "☀", entry_fallback: "↪",
   entry_cancelled: "✗", fire_cancelled: "✗", rearmed_after_kill: "▶", option_pick_failed: "⚠",
   armed: "◆", adopted: "◆",
+  // Team2 (2026-09-04): the events that stop the desk, and the clock flatten
+  technique_loss_halt: "🛑", skip_loss_budget: "·", entry_capped: "·", skip_loss_cap_desk: "·", clock_flatten: "⏹",
+  live_trim: "✓", add: "●", would_add: "·", pm_retest: "◆", scenario: "◆", pm_break: "◆",
 };
 const KIND_CLS: Record<string, string> = {
   fired: "pos", position_open: "pos", exit_fill: "pos", resumed: "pos",
   entry_rejected: "neg", fire_error: "neg", critic_killed: "neg", exit_failed: "neg",
   loss_halt: "neg", premium_stop: "neg", quote_stop: "neg", kill_cap: "neg", disarmed: "neg",
   stale: "warn", critic_error: "warn", option_pick_failed: "warn", paused: "warn",
+  technique_loss_halt: "neg", clock_flatten: "warn", live_trim: "pos", add: "pos",
 };
 
 /** reject/breakdown triggers are the short side — always expressed with a put. */
@@ -43,7 +47,7 @@ function ago(ms: number): string {
 }
 const WINDOW_LABEL: Record<string, string> = {
   prime_open: "opening window · firing", prime_close: "closing window · firing",
-  midday: "mid-day · watch only", extended: "market closed", pre: "pre-market",
+  midday: "mid-day", extended: "market closed", pre: "pre-market",
 };
 
 export function NowView() {
@@ -108,7 +112,9 @@ export function NowView() {
           {c.paused ? ` · ${c.paused} paused` : ""}
         </span>
         <span className={`now-strip-halt ${sum.haltEngaged ? "on" : ""}`}>
-          {sum.haltEngaged ? "KILL SWITCH ON" : WINDOW_LABEL[sum.window] ?? sum.window}
+          {sum.haltEngaged ? "KILL SWITCH ON"
+            : Object.keys((sum as any).bookHalts ?? {}).length ? `BOOK HALTED · ${Object.values((sum as any).bookHalts as Record<string, string>)[0]}`
+            : `${WINDOW_LABEL[sum.window] ?? sum.window}${sum.window === "midday" ? (sum.windowOpenNow ? " · Team2 can fire" : " · watch only") : ""}`}
         </span>
         <span className="now-strip-age">{ago(sum.asOf)}</span>
       </button>
@@ -194,7 +200,7 @@ export function NowView() {
               <span className="now-tag">next session</span>
               <span className="now-next-txt">{sum.watching.length} plan{sum.watching.length === 1 ? "" : "s"} · {sum.watching.length - puts} calls · {puts} puts · closest first below</span>
             </div>
-            <div className="now-next-note">Each plan fires in its own technique's windows (EM: 9:30–10:30 and 2:45–4:00 ET; tips: any RTH window). A multi-day tip that doesn't fill rolls to the next session.</div>
+            <div className="now-next-note">Each plan fires in its own technique's windows (EM: 9:30–10:30 and 2:45–4:00 ET; tips: any RTH window; Team2: 9:45–15:30, flat by 15:45). A multi-day tip that doesn't fill rolls to the next session.</div>
           </div>
         );
       })()}
@@ -298,7 +304,7 @@ export function NowView() {
         <div className="now-pnl-row">
           <span><small>realized</small><b className={pnlCls(sum.pnl.realized)}>{sum.pnl.realized > 0 ? "+" : ""}{fmt(sum.pnl.realized)}</b></span>
           <span><small>unrealized</small><b className={pnlCls(sum.pnl.unrealized)}>{sum.pnl.unrealized > 0 ? "+" : ""}{fmt(sum.pnl.unrealized)}</b></span>
-          <span><small>loss limit</small><b>{sum.pnl.lossLimit > 0 ? fmt(sum.pnl.lossLimit, 0) : "off"}</b></span>
+          <span><small>loss limit</small><b>{sum.pnl.lossLimit > 0 ? fmt(sum.pnl.lossLimit, 0) : (sum as any).techniqueLossHaltPct ? `${(sum as any).techniqueLossHaltPct}% of book` : "off"}</b></span>
         </div>
         {sum.pnl.lossLimit > 0 && (
           <div className="now-limit" aria-label={`${sum.pnl.lossLimitUsedPct ?? 0}% of the loss limit used`}>
@@ -309,8 +315,8 @@ export function NowView() {
 
       {nothing && (
         <div className="now-empty">
-          Nothing armed in the {live ? "LIVE" : "practice"} workspace. Arm plans from Techniques → EM Options (desktop is best for that),
-          and they'll show up here with what they're waiting for.
+          Nothing armed in the {live ? "LIVE" : "practice"} workspace. EM plans are armed from Techniques → EM Options (desktop is best for that);
+          Team2 arms its own plans nightly at 17:00 ET. They show up here with what they're waiting for.
         </div>
       )}
 

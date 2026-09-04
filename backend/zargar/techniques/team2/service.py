@@ -16,6 +16,7 @@
 """
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import logging
 from dataclasses import replace
@@ -26,7 +27,7 @@ from ...domain import Bar, new_id
 from ...marketstructure.aggregate import aggregate, bar_session, filter_session
 from ...marketstructure.market_calendar import is_trading_day, next_trading_day, previous_trading_day, trading_days
 from ...marketstructure.sessions import ET, session_date
-from ...models import TechniqueRun
+from ...models import TechniqueArmed, TechniqueRun
 from .plan import build_skeleton, complete_plan
 from .rules import Team2Rules, rules_from_settings
 from .session import simulate_session
@@ -102,7 +103,8 @@ class Team2Service:
             await session.commit()
         return {"runId": run.id, "symbol": run.symbol, "planFor": date, "plan": plan}
 
-    async def nightly_plans(self, for_date: str | None = None, *, arm: bool = True) -> dict:
+    async def nightly_plans(self, for_date: str | None = None, *, arm: bool = True,
+                            force: bool = False) -> dict:
         s = self.engine.settings
         if not bool(s.get("techniques.team2.enabled", True)):
             return {"skipped": "disabled"}
@@ -116,9 +118,36 @@ class Team2Service:
                 for_date = today.isoformat()
         symbols = [str(x).upper() for x in (s.get("techniques.team2.symbols", []) or [])]
         rules = rules_from_settings(self.engine.settings)
-        out = {"planFor": for_date, "runs": [], "failed": [], "armed": []}
+        out = {"planFor": for_date, "runs": [], "failed": [], "armed": [], "skipped": []}
         mode = str(s.get("techniques.team2.mode", "alert"))
+        # F41: one armed plan per symbol per session. The job is weekday-gated, not
+        # trading-day-gated, so a weekday HOLIDAY runs it again for the same next session
+        # (Fri 17:00 and Labor Day 17:00 both plan the Tuesday) — and each run minted AND
+        # armed a second plan, which would trade the day twice. `force` is the manual
+        # override behind `plan-now`.
+        already = {ap.symbol for ap in list(getattr(self.runner, "_armed", {}).values())
+                   if ap.plan_for == for_date}
+        # R10 (audit 2026-09-04): a plan that disarmed on its own loss halt is no longer in memory — the
+        # persisted rows are the record of "this symbol already had a plan for this session"
+        try:
+            from ...models import TechniqueArmed
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(TechniqueArmed).where(
+                    TechniqueArmed.technique == "team2", TechniqueArmed.plan_for == for_date))).scalars().all()
+            already |= {r.symbol for r in rows}
+        except Exception:  # noqa: BLE001
+            log.exception("team2 nightly: could not read the day's armed rows")
         for sym in symbols:
+            if sym in already and not force:
+                out["skipped"].append(f"{sym}: already armed for {for_date}")
+                continue
+            if sym in already and force and self.runner is not None:
+                # a forced re-plan REPLACES the symbol's plan for that session — never a second armed plan
+                # that would trade the day twice (post-close 2026-09-04: force added three duplicates)
+                for ap in [a for a in list(self.runner._armed.values()) if a.symbol == sym and a.plan_for == for_date]:
+                    with contextlib.suppress(Exception):
+                        await self.runner.disarm(ap.run_id, reason="replaced by a forced re-plan", flatten=False)
+                    out.setdefault("replaced", []).append(ap.run_id)
             try:
                 r = await self.mint_plan_run(sym, for_date, rules=rules)
             except Exception as exc:  # noqa: BLE001
@@ -132,9 +161,11 @@ class Team2Service:
             if arm and self.runner is not None:
                 try:
                     await self.runner.arm(r["runId"], {"mode": mode, "instrument": "options", "contracts": None,
-                                                        "maxContracts": int(s.get("risk.max_option_contracts", 10)),
+                                                        "maxContracts": max(int(s.get("risk.max_option_contracts", 10)),
+                                                                            int((s.get("techniques.team2.zero_dte") or {}).get("max_contracts", 10) or 10)),
                                                         "premiumBudget": float(s.get("techniques.team2.budget_per_trade", 2000.0)),
                                                         "riskPct": float(s.get("techniques.team2.risk_pct", 6.0)),
+                                                        "flattenMinutesBeforeClose": 15,     # 15:45 (C3) — what the card prints
                                                         "useCritic": False, "maxOpenTrades": 1})
                     out["armed"].append(r["runId"])
                 except Exception as exc:  # noqa: BLE001
@@ -161,7 +192,13 @@ class Team2Service:
 
     async def preopen_complete(self) -> dict:
         done = []
+        today = dt.datetime.now(ET).date().isoformat()
         for ap in list(getattr(self.runner, "_armed", {}).values()):
+            # F42: never "complete" a plan whose session has not started. The 09:25 job
+            # fires on weekday holidays too, and `complete_plan` on a date with no bars
+            # writes pmh/pml None and complete=False over the plan it was handed.
+            if ap.plan_for > today:
+                continue
             try:
                 fresh = await self.fetch_today_ext(ap.symbol, ap.plan_for)
                 if fresh:
@@ -221,13 +258,25 @@ class Team2Service:
             if symbol:
                 stmt = stmt.where(TechniqueRun.symbol == symbol.upper())
             rows = (await session.execute(stmt)).scalars().all()
+            # a plan that is no longer armed must say WHY (a loss halt disarms it mid-session and it
+            # would otherwise just vanish from the desk) — the armed row is the projection that keeps it
+            arm_rows = {}
+            if rows:
+                arm_stmt = select(TechniqueArmed).where(TechniqueArmed.run_id.in_([r.id for r in rows]))
+                arm_rows = {a.run_id: a for a in (await session.execute(arm_stmt)).scalars().all()}
         out = []
         for r in rows:
             plan = (r.result or {}).get("plan") or {}
+            live = r.id in getattr(self.runner, "_armed", {})
+            arm = arm_rows.get(r.id)
             out.append({"runId": r.id, "symbol": r.symbol, "planFor": plan.get("planFor"), "sheet": plan.get("sheet"),
                         "complete": plan.get("complete"), "dayType": plan.get("dayType"),
                         "createdAt": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
-                        "armed": r.id in getattr(self.runner, "_armed", {})})
+                        "armed": live,
+                        "status": ("armed" if live else (arm.status if arm is not None else None)),
+                        "stopReason": ((getattr(self.runner.get(r.id), "stop_reason", None) if (live and self.runner is not None) else None)
+                                       if live else ((arm.state or {}).get("stopReason") or None)
+                                       if arm is not None else None)})
         return out
 
     async def replay(self, run_id: str, *, overrides: dict | None = None) -> dict | None:
@@ -242,7 +291,7 @@ class Team2Service:
             rules = Team2Rules.from_dict({**rules.to_dict(), **overrides})
         if not plan.get("complete"):
             plan = complete_plan(plan, today)
-        sigma = await self.runner._sigma(run["symbol"]) if hasattr(self.runner, "_sigma") else 0.2
+        sigma = await self._sigma_for(str(run.get("planFor") or run.get("date") or dt.datetime.now(ET).strftime("%Y-%m-%d")))   # R11: that day's IV, not today's
         res = simulate_session({**plan, "date": date}, today, rules, sigma=sigma, warmup_1m=prior)
         return {"runId": run_id, "plan": plan, "result": res.to_dict(), "overrides": overrides or {}}
 

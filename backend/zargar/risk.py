@@ -43,13 +43,33 @@ class RiskVerdict:
 
 
 class HaltState:
-    """Soft kill switch. Engaged state survives restarts via the settings table."""
+    """The kill switch, in two scopes (2026-09-04, PLATFORM-RULES):
+
+    * ``engaged`` — the GLOBAL switch: the HALT button, Telegram /halt, or the daily-loss
+      breaker when ``risk.daily_loss_halt_scope`` is "global". Stops every new buy everywhere.
+    * ``books`` — PER-PORTFOLIO halts: the daily-loss breaker (default scope "portfolio") halts
+      only the book that lost, so one technique's bad morning on Practice no longer stops every
+      technique on every book. Cleared at the next ET session or by a manual release.
+
+    Both survive restarts via the settings table.
+    """
 
     def __init__(self) -> None:
         self.engaged = False
         self.reason = ""
         self.ts: float = 0.0
         self.source = ""            # app | telegram | auto — auto = the daily-loss breaker
+        self.books: dict[str, dict] = {}   # portfolio_id -> {reason, source, ts, day}
+
+    def engage_book(self, pid: str, reason: str, *, source: str = "auto", day: str = "") -> dict:
+        self.books[pid] = {"reason": reason, "source": source, "ts": time.time(), "day": day}
+        return self.books[pid]
+
+    def release_book(self, pid: str) -> dict | None:
+        return self.books.pop(pid, None)
+
+    def book_halted(self, pid: str | None) -> dict | None:
+        return self.books.get(pid) if pid else None
 
     def engage(self, reason: str, source: str = "app") -> None:
         self.engaged = True
@@ -65,7 +85,7 @@ class HaltState:
 
     def to_dict(self) -> dict:
         return {"engaged": self.engaged, "reason": self.reason, "ts": self.ts,
-                "source": self.source}
+                "source": self.source, "books": {k: dict(v) for k, v in self.books.items()}}
 
 
 def is_us_market_hours(now: dt.datetime | None = None) -> bool:
@@ -217,6 +237,11 @@ class RiskGate:
         checks.append(RiskCheck(
             "kill_switch", not halt_blocks,
             "" if not halt_blocks else f"halted: {self._halt.reason}"))
+        # 1b. per-book halt (the daily-loss breaker, scope "portfolio") -------
+        book = self._halt.book_halted(getattr(intent, "portfolio_id", None))
+        checks.append(RiskCheck(
+            "book_halt", book is None,
+            "" if book is None else f"this book is halted for the day: {book.get('reason')}"))
 
         # 2. quote freshness / halt -------------------------------------------
         quote = self._quotes.get(symbol)
@@ -454,6 +479,11 @@ class RiskGate:
             "kill_switch", (not self._halt.engaged) or halt_allows_exits,
             "" if (not self._halt.engaged) or halt_allows_exits
             else f"halted and risk.halt_allows_exits is off: {self._halt.reason}"))
+        book = self._halt.book_halted(getattr(intent, "portfolio_id", None))
+        checks.append(RiskCheck(
+            "book_halt", book is None or halt_allows_exits,
+            "" if book is None or halt_allows_exits
+            else f"book halted and risk.halt_allows_exits is off: {book.get('reason')}"))
         quote = self._quotes.get(symbol)
         if quote is not None:
             checks.append(RiskCheck("not_halted", not quote.halted,

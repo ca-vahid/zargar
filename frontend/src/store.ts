@@ -185,7 +185,7 @@ export const useStore = create<AppState>((set, get) => ({
   watchlists: [],
   proposals: [],
   signals: [],
-  halt: { engaged: false, reason: "", ts: 0 },
+  halt: { engaged: false, reason: "", ts: 0, books: {} },
   broker: null,
   brokerages: null,
   driftWarnings: [],
@@ -338,9 +338,16 @@ export const useStore = create<AppState>((set, get) => ({
 
   applySystem: (msg) => {
     if (msg.kind === "halt") {
-      set({ halt: { engaged: msg.engaged, reason: msg.reason, ts: msg.ts } });
-      get().toast(msg.engaged ? "error" : "success",
-        msg.engaged ? `Kill switch engaged: ${msg.reason}` : "Kill switch released");
+      const before = get().halt;
+      set({ halt: { engaged: msg.engaged, reason: msg.reason, ts: msg.ts, books: msg.books ?? {} } });
+      if (msg.book) {
+        // a per-book daily-loss halt: says which book, leaves the global switch alone
+        get().toast(msg.book.engaged ? "error" : "success",
+          msg.book.engaged ? `${msg.book.name} halted for the day: ${msg.book.reason}` : `${msg.book.name} released`);
+      } else if (before.engaged !== msg.engaged) {
+        get().toast(msg.engaged ? "error" : "success",
+          msg.engaged ? `Kill switch engaged: ${msg.reason}` : "Kill switch released");
+      }
     } else if (msg.kind === "setting") {
       set((st) => ({ settings: { ...st.settings, [msg.key]: msg.value } }));
     } else if (msg.kind === "brokerage") {

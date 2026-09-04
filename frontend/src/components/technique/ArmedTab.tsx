@@ -55,7 +55,7 @@ function TradeRow({ t }: { t: ArmedTrade }) {
       {t.exits.length > 0 && (
         <div className="muted small">exits: {t.exits.map((e, i) => `${e.kind} ${e.filledQty || e.qty}${e.price ? ` @ ${fmt(e.price)}` : ""}${e.status && !["FILLED"].includes(e.status) ? ` (${e.status})` : ""}`).join(" · ")}</div>
       )}
-      {t.errors.length > 0 && <div className="neg small">{t.errors.slice(-2).join(" · ")}{t.retries ? ` · retries ${t.retries}` : ""}</div>}
+      {!!t.errors?.length && <div className="neg small">{t.errors.slice(-2).join(" · ")}{t.retries ? ` · retries ${t.retries}` : ""}</div>}
       {t.critic && <div className="muted small">critic: {t.critic.kill ? "KILLED" : "survived"} — {t.critic.summary}</div>}
     </div>
   );
@@ -76,7 +76,7 @@ function Scorecard({ sc }: { sc: ArmScorecard }) {
       {sc.rows.some((r) => r.notes.length) && (
         <ul className="tq-armed-sc-notes">
           {sc.rows.filter((r) => r.notes.length).map((r) => (
-            <li key={r.trigger}><b>{r.trigger}</b> {r.kind}: {r.notes.join("; ")}</li>
+            <li key={r.trigger}><b>{r.trigger}</b> {r.kind}: {(r.notes ?? []).join("; ")}</li>
           ))}
         </ul>
       )}
@@ -228,7 +228,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           )}
           <button className="link-btn" onClick={() => openRun(a.runId)}>open plan</button>
           <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "hide log" : "log"}</button>
-          <span className="muted small tq-head-right">risk {a.config.riskPct}% · max {a.config.maxQty} sh · critic {(a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off"} · flatten {a.config.flattenMinutesBeforeClose}m before close</span>
+          <span className="muted small tq-head-right">risk {a.config.riskPct}% · {a.config.instrument === "options" && (a.config as any).premiumBudget ? `budget $${Number((a.config as any).premiumBudget).toLocaleString()}` : `max ${a.config.maxQty} sh`} · critic {(a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off"} · flatten {a.config.flattenMinutesBeforeClose}m before close</span>
         </div>
         {open && (
           <div className="tq-armed-log">

@@ -156,3 +156,55 @@ async def test_alert_mode_still_reads_the_tape_while_halted(rig):
     rep = await svc.replay(run_id)
     rep_fire = next(e for e in rep["result"]["events"] if e["event"] == "fire")
     assert rep_fire["ts"] == trades[0].fired_ts
+
+
+async def test_nightly_plans_never_arms_a_second_plan_for_the_same_session(rig):
+    """F41 (2026-09-04): `team2_plan_nightly` is weekday-gated, not trading-day-gated, so a
+    weekday HOLIDAY runs it a second time for the SAME next session (Friday 17:00 and Labor
+    Day 17:00 both plan the Tuesday). Each run minted and armed another plan, so the desk
+    would have opened Tuesday with two armed plans per symbol — double size, double the
+    desk-wide loss count. One armed plan per symbol per session; `force` is the manual
+    override behind plan-now."""
+    eng, _sim = rig
+    prev = prev_day_bars()
+    today, _zones = trend_day(prev)
+    await _bank(eng, prev)
+    await _bank(eng, filter_session(today, "pre"))
+    svc = eng.team2
+
+    first = await svc.nightly_plans(DAY.isoformat(), arm=True)
+    assert len(first["armed"]) == 1 and not first["skipped"], first
+
+    again = await svc.nightly_plans(DAY.isoformat(), arm=True)
+    assert again["runs"] == [] and again["armed"] == [], again
+    assert again["skipped"] == [f"SPY: already armed for {DAY.isoformat()}"], again
+    armed_spy = [ap for ap in eng.team2_runner._armed.values() if ap.symbol == "SPY"]
+    assert len(armed_spy) == 1, [ap.run_id for ap in armed_spy]
+
+    forced = await svc.nightly_plans(DAY.isoformat(), arm=True, force=True)
+    assert forced["runs"] and forced["armed"], forced
+
+
+async def test_preopen_never_completes_a_plan_whose_session_has_not_started(rig, monkeypatch):
+    """F42 (2026-09-04): the 09:25 job also fires on weekday holidays, and it walked EVERY
+    armed plan — including one minted for a later session. `complete_plan` on a date with no
+    bars writes pmh/pml None and complete=False over the plan, so a holiday morning would
+    blank the plan built for the next trading day."""
+    eng, _sim = rig
+    prev = prev_day_bars()
+    today, _zones = trend_day(prev)
+    await _bank(eng, prev)
+    await _bank(eng, filter_session(today, "pre"))
+    svc = eng.team2
+    out = await svc.nightly_plans(DAY.isoformat(), arm=True)
+    run_id = out["armed"][0]
+    ap = eng.team2_runner.get(run_id)
+
+    done = await svc.preopen_complete()
+    assert run_id in done["completed"] and ap.plan["complete"]
+    pmh, pml = ap.plan["pmh"], ap.plan["pml"]
+
+    # the same plan, now for a session that has not started yet: the pre-open must leave it alone
+    ap.plan_for = (dt.date.today() + dt.timedelta(days=3)).isoformat()
+    assert await svc.preopen_complete() == {"completed": []}
+    assert ap.plan["pmh"] == pmh and ap.plan["pml"] == pml and ap.plan["complete"]

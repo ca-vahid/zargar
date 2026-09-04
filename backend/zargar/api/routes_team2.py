@@ -45,10 +45,11 @@ def build_team2_routes(app, eng, auth, config) -> None:
     class PlanBody(BaseModel):
         date: str | None = None
         arm: bool = True
+        force: bool = False        # F41: mint again for a session that already has an armed plan
 
     @app.post("/api/team2/plan-now", dependencies=[auth])
     async def team2_plan_now(body: PlanBody):
-        return await _svc(eng).nightly_plans(body.date, arm=body.arm)
+        return await _svc(eng).nightly_plans(body.date, arm=body.arm, force=body.force)
 
     @app.post("/api/team2/preopen-now", dependencies=[auth])
     async def team2_preopen_now():

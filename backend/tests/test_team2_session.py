@@ -9,6 +9,7 @@ zone, the flatten time, and live≡replay parity when the day is truncated at `n
 from __future__ import annotations
 
 import datetime as dt
+import collections
 import math
 
 import pytest
@@ -150,6 +151,9 @@ def test_day_type_and_sizing_bucket():
     assert classify_day((pmh + pml) / 2, z, pmh, pml) == "inside"
     assert classify_day((pmh + pml) / 2, z, None, None) == "normal"
     assert sizing_bucket(pdh.top + 0.5, z, pmh, pml) == "full"
+    # F15: a gap-day PM range that sits ABOVE the PDH zone is still the no-trade zone
+    assert sizing_bucket(pdh.top + 0.5, z, pdh.top + 1.0, pdh.top + 0.2) == "none"
+    assert sizing_bucket(pdh.top + 1.5, z, pdh.top + 1.0, pdh.top + 0.2) == "full"
     assert sizing_bucket(pdl.bottom - 0.5, z, pmh, pml) == "full"
     assert sizing_bucket((pmh + pml) / 2, z, pmh, pml) == "none"
     assert sizing_bucket(pmh + 0.2, z, pmh, pml) == "small"
@@ -271,7 +275,8 @@ def test_trend_day_scenario_1_fires_on_the_pullback_and_pays():
     kinds = [e["event"] for e in res.events]
     assert "scenario" in kinds, res.events[:5]
     sc = next(e for e in res.events if e["event"] == "scenario")
-    assert sc["scenario"] == 1 and sc["time"] == "09:30"    # the 09:30 15m bar closed above the zone (event ts = bar open)
+    assert sc["scenario"] == 1 and sc["time"] == "09:45"    # the 09:30 15m bar closed above the zone (F25: event ts = bar CLOSE)
+    assert sc["scenario"] == 1 and "@09:30" in sc.get("setup", res.setups[0]["id"])  # the setup keeps the candle's open in its name
     fires = [e for e in res.events if e["event"] == "fire"]
     assert fires, [e for e in res.events][:12]
     f = fires[0]
@@ -374,6 +379,29 @@ def test_no_trade_zone_blocks_entries_inside_the_premarket_range():
     assert not [e for e in res.events if e["event"] == "fire"]
 
 
+def test_no_trade_zone_skip_is_said_once_per_setup():
+    # F23: the skip holds for as long as price sits in the zone, so re-stating it on every 2m close buries
+    # the read — and the append-only journal — under identical rows (IWM printed 37 on 2026-09-04).
+    prev = prev_day_bars()
+    def f(i):
+        m = 4 * 60 + i
+        if m < 9 * 60 + 30:
+            return 564.0 + 2.0 * math.sin(i / 45)      # PM range ≈ 562.0–566.0
+        x = m - 9 * 60 - 30
+        if x < 8:
+            return 562.3                               # dip into the PDL zone (top ≈ 562.50)
+        if x < 15:
+            return 562.3 + 1.2 * ((x - 8) / 7)         # 09:30 15m body closes above it → scenario 3
+        return 564.3 + 0.75 * math.sin((x - 15) / 9)   # then drift inside the PM range all day
+    today = path_1m(DAY, (4, 0), (20, 0), f)
+    _, res = run(prev, today)
+    skips = [e for e in res.events if e["event"] == "skip_no_trade_zone"]
+    assert skips, "the fixture no longer reaches the no-trade-zone gate"
+    per_setup = collections.Counter(e["setup"] for e in skips)
+    assert max(per_setup.values()) == 1, per_setup
+    assert not [e for e in res.events if e["event"] == "fire"]
+
+
 def test_event_day_gate_blocks_entries_when_enabled():
     prev = prev_day_bars()
     today, _ = trend_day(prev)
@@ -386,3 +414,29 @@ def test_event_day_gate_blocks_entries_when_enabled():
     off = simulate_session(plan, make_rules(avoid_event_days=False), sigma=0.20, warmup_1m=prev) if False else None
     res2 = simulate_session(plan, today, make_rules(), sigma=0.20, warmup_1m=prev)
     assert [e for e in res2.events if e["event"] == "fire"]
+
+
+def test_entry_cutoff_and_loss_cap_say_why_the_read_went_quiet():
+    """F26: both gates used to stop entries in silence — the read has to name the discipline."""
+    prev = prev_day_bars()
+    today, _ = trend_day(prev)
+
+    # last-entry cutoff: pull it back to 10:00 so the trend day's later touches fall past it
+    _, res = run(prev, today, last_entry_min=10 * 60)
+    cut = [e for e in res.events if e["event"] == "skip_last_entry"]
+    assert len(cut) == 1, [e["event"] for e in res.events]          # said ONCE, not per 2m close
+    assert "10:00" in cut[0]["why"] and "flatten" in cut[0]["why"]
+    assert all(e["ts"] >= cut[0]["ts"] for e in res.events
+               if e["event"] == "fire" and e["ts"] > cut[0]["ts"])  # nothing fires after it
+    assert not [e for e in res.events if e["event"] == "fire" and e["ts"] >= cut[0]["ts"]]
+
+    # a normal day says it once too, at the real 15:30 cutoff — one row per session, not per bar
+    _, wide = run(prev, today)
+    normal = [e for e in wide.events if e["event"] == "skip_last_entry"]
+    assert len(normal) == 1 and normal[0]["time"] == "15:32"        # F25: the first 2m CLOSE past the 15:30 cutoff
+
+    # loss cap: zero losses allowed → the first loss closes the symbol for the day, out loud
+    _, capped = run(prev, today, max_losses_per_day=0)
+    cap = [e for e in capped.events if e["event"] == "skip_loss_cap"]
+    assert len(cap) == 1 and "max 0" in cap[0]["why"]
+    assert not [e for e in capped.events if e["event"] == "fire"]

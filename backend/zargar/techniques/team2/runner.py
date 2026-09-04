@@ -37,7 +37,7 @@ from sqlalchemy import select
 from ... import events as ev
 from ...domain import Bar
 from ...execution.planrunner import ArmedPlan, FireJudgement, PlanRunner, Trade
-from ...marketstructure.aggregate import bar_session, bucket_start_ms
+from ...marketstructure.aggregate import bar_session, bucket_start_ms, minute_of_day
 from ...marketstructure.sessions import ET, session_bounds, session_date
 from ...models import TechniqueRun
 from .rules import Team2Rules, rules_from_settings
@@ -77,6 +77,7 @@ class Team2Runner(PlanRunner):
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
         self._sigma_cache: dict[str, tuple[str, float]] = {}
         self._small_noted: set[tuple[str, str]] = set()
+        self._loss_tally: dict[str, dict[str, tuple[int, str]]] = {}   # day -> run_id -> (losers, basis) (F37/F38)
 
     async def stop(self) -> None:
         for name in ("team2_plan_nightly", "team2_preopen"):
@@ -178,12 +179,14 @@ class Team2Runner(PlanRunner):
                 spot = float(q.last)
             pick = select_by_premium(chain, spot, trade.direction, target_premium=rules.target_premium,
                                      premium_floor=rules.premium_floor, expiry=expiry, today=today,
-                                     is_0dte=(expiry == today.isoformat()))
+                                     is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick)
             if pick is None:
                 trade.errors.append(f"no {'call' if trade.direction == 'long' else 'put'} between "
                                     f"${rules.premium_floor:.2f} and ${rules.target_premium:.2f} at {expiry}")
                 return None
             c = pick.to_dict()
+            with contextlib.suppress(Exception):
+                await opts.reprice(c)          # R2: size, pre-checks and the cap read the live NBBO, not the delayed chain
             c["_sizeMult"] = float(getattr(trade, "_size_mult", 1.0) or 1.0)
             c["_bucket"] = getattr(trade, "_bucket", "?")
             trade.contract = c
@@ -298,6 +301,16 @@ class Team2Runner(PlanRunner):
         rules = self.rules()
         step = rules.entry_tf_min * 60_000
         end_ts = bar.ts + 60_000
+        # C3/D-1 hard clock: whatever the model thinks, the BOOK is flat by flatten_min. The model's
+        # position can already be gone (its stop fired, a restore-seeded read, an add the read never saw)
+        # while the book still holds a 0DTE contract — and the shared clock-driven close is 16:05,
+        # after expiry. Post-close audit 2026-09-04.
+        if journal and minute_of_day(bar.ts) + 1 >= rules.flatten_min and bar_session(bar.ts) == "rth":
+            await self._clock_flatten(ap, rules)
+        # R1 (audit 2026-09-04): Team2 never ran the shared `_manage`, so a trim resting as a limit was
+        # never re-priced — and the flatten was clamped by that pending quantity. Re-price stuck exits here.
+        if journal and bar_session(bar.ts) == "rth":
+            await self._reprice_stuck_exits(ap)
         # the contract's own price first: premium-% trims on the live bid (every minute, money modes)
         if journal and bar_session(bar.ts) == "rth":
             try:
@@ -329,9 +342,9 @@ class Team2Runner(PlanRunner):
         self._last_sim[ap.run_id] = res.to_dict()
         seen = self._seen.get(ap.run_id, 0)
         new = res.events[seen:]
-        self._seen[ap.run_id] = len(res.events)
-        halted = bool(getattr(self.engine.halt, "engaged", False))
-        for e in new:
+        halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
+        for i, e in enumerate(new):
+            self._seen[ap.run_id] = seen + i + 1        # R16: advance per event — an exception keeps the rest for the next bar
             what = e["event"]
             if what == "fire":
                 await self._fire_from_event(ap, e, bar, res, halted=halted, journal=journal)
@@ -342,10 +355,13 @@ class Team2Runner(PlanRunner):
             else:
                 self._log(ap, what, e.get("why", what), **{k: v for k, v in e.items()
                                                           if k not in ("event", "why", "regime")})
-                if journal and what in ("scenario", "pm_break", "late_touch", "skip_engulfing",
+                if journal and what in ("scenario", "pm_break", "late_touch", "pm_retest", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
-                                        "skip_reentries"):
-                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                                        "skip_reentries", "skip_last_entry", "skip_loss_cap"):
+                    # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
+                    # they get their own journal kind so skip counts mean skips
+                    kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
+                    await self.engine.journal.append(kind, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": str(e.get("setup") or e.get("scenario") or what),
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},
                         aggregate_type="technique_run", aggregate_id=ap.run_id)
@@ -370,6 +386,20 @@ class Team2Runner(PlanRunner):
         if ap.config.mode == "auto" and open_or_working >= max(1, ap.config.max_open_trades):
             self._log(ap, "max_open_skip", f"{tid}: fired but already holding {open_or_working}", trigger=tid)
             return
+        # F29: the author trades ONE book — max_losses_per_day counts the whole desk (model losses across
+        # every plan, plus real closed losers in money modes), not one budget per symbol
+        rules_now = self.rules()
+        if (ap.config.mode != "alert" and getattr(rules_now, "losses_desk_wide", True)
+                and self.losses_across_plans() >= int(rules_now.max_losses_per_day)):
+            self._log(ap, "skip_loss_cap_desk",
+                      f"{tid}: {self.losses_across_plans()} losing trades across the desk today (max {rules_now.max_losses_per_day}, "
+                      f"counted from the {self.losses_basis()}) — done for the day (F29, desk-wide)", trigger=tid)
+            if journal:
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_loss_cap_desk",
+                    "losses": self.losses_across_plans(), "max": int(rules_now.max_losses_per_day), "ts": e.get("ts")},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id)
+            return
         # A12: SPY/QQQ/IWM fire together on index moves — one Team2 position across ALL its plans
         # (money modes only; alert/proposal keep recording every read)
         if ap.config.mode == "auto":
@@ -390,7 +420,20 @@ class Team2Runner(PlanRunner):
         direction = setup.get("direction") or direction
         spot = float(e.get("spot") or bar.close)
         atr = float((e.get("regime") or {}).get("atr") or 0.0) or max(spot * 0.001, 0.05)
-        stop = spot - atr if direction == "long" else spot + atr
+        # R13 (audit 2026-09-04): the ~2 s quote-stop watch reads `trade.stop`; a synthetic 1xATR stop let an
+        # intra-minute spike market-sell a position the method (S1: a 2m CLOSE through the line) would keep.
+        # Use the line the entry leaned on, one ATR further out than the model's close-based stop so the
+        # quote watch is the crash brake, not the rule.
+        rg = e.get("regime") or {}
+        guard = {"ema": rg.get("ema13"), "ema48": rg.get("ema48"), "ema200": rg.get("ema200")}.get(str(e.get("entryKind")), setup.get("anchor"))
+        try:
+            guard_f = float(guard) if guard is not None else None
+        except (TypeError, ValueError):
+            guard_f = None
+        if guard_f is None or (direction == "long" and guard_f >= spot) or (direction == "short" and guard_f <= spot):
+            stop = spot - atr if direction == "long" else spot + atr
+        else:
+            stop = guard_f - atr if direction == "long" else guard_f + atr
         target = e.get("target") if e.get("target") is not None else setup.get("target")
         trade = Trade(trigger_id=tid, kind=str(setup.get("kind") or "team2"), direction=direction, fired_ts=e["ts"],
                       window="team2", entry=spot, stop=stop, targets=[float(target)] if target else [],
@@ -421,7 +464,7 @@ class Team2Runner(PlanRunner):
         # open one or the last trade
         sim = self._last_sim.get(ap.run_id) or {}
         pos = sim.get("openPosition") or (sim.get("trades") or [{}])[-1]
-        setup_id = pos.get("setup")
+        setup_id = e.get("setup") or pos.get("setup")           # R7: the event names its setup since 2026-09-04
         cands = [t for t in ap.trades.values() if t.setup_id == setup_id and t.status in ("open", "working", "alert", "proposal")]
         if not cands:
             return
@@ -461,6 +504,43 @@ class Team2Runner(PlanRunner):
             qty = max(1.0, min(qty, trade.remaining)) if trade.remaining >= 1 else trade.remaining
             await self._exit(ap, trade, kind, qty, journal=True, reason=str(e.get("why", "")),
                              force_market=kind in ("stop", "flatten"))
+
+    async def _reprice_stuck_exits(self, ap: ArmedPlan) -> None:
+        from ...execution.exits import EXIT_REPRICE_BARS, stale_working_exit
+        for tr in list(ap.trades.values()):
+            if tr.status != "open" or tr.remaining <= 0:
+                continue
+            stale = stale_working_exit(tr, ap.bar_index - 1, reprice_bars=EXIT_REPRICE_BARS)
+            if stale is None:
+                continue
+            with contextlib.suppress(Exception):
+                await self.engine.orders.cancel(stale["orderId"])
+            stale["status"] = "CANCELLED"
+            self._log(ap, "exit_reprice", f"{tr.trigger_id}: {stale['kind']} not filled in {EXIT_REPRICE_BARS} bars — re-sending at market",
+                      trigger=tr.trigger_id, kind=stale["kind"])
+            await self._exit(ap, tr, stale["kind"], float(stale.get("qty") or tr.remaining), journal=True, force_market=True)
+
+    async def _end_session(self, ap: ArmedPlan, *, journal: bool, reason: str = "session closed") -> None:
+        """Nothing of a 0DTE book survives the close: flatten on the way out, then the shared close."""
+        if journal and ap.status in ("armed", "paused"):
+            with contextlib.suppress(Exception):
+                await self._clock_flatten(ap, self.rules())
+        await super()._end_session(ap, journal=journal, reason=reason)
+
+    async def _clock_flatten(self, ap: ArmedPlan, rules: Team2Rules) -> None:
+        """Flatten every open Team2 trade and cancel every working entry at flatten_min, once."""
+        for tr in list(ap.trades.values()):
+            if tr.status == "working" and tr.entry_order_id:
+                with contextlib.suppress(Exception):
+                    await self.engine.orders.cancel(tr.entry_order_id)
+                tr.status = "cancelled"
+                tr.reason = "flatten time — working entry cancelled (C3)"
+                self._log(ap, "clock_flatten", f"{tr.trigger_id}: working entry cancelled at the flatten time", trigger=tr.trigger_id)
+            elif tr.status == "open" and tr.remaining > 0 and tr.pending_exit_qty <= 1e-9:
+                self._log(ap, "clock_flatten", f"{tr.trigger_id}: flatten time {rules.flatten_min // 60:02d}:{rules.flatten_min % 60:02d} ET — "
+                          f"selling {tr.remaining:g} at market whatever the read says (C3/D-1)", trigger=tr.trigger_id)
+                await self._exit(ap, tr, "flatten", tr.remaining, journal=True, force_market=True,
+                                 reason="flatten: 0DTE flatten time reached on the clock (C3/D-1)")
 
     # ------------------------------------------------------------- live premium (money modes)
     def _live_pct(self, tr: Trade) -> float | None:
@@ -573,10 +653,153 @@ class Team2Runner(PlanRunner):
         ap.fire_tasks[tid] = task
         task.add_done_callback(lambda t, tid=tid, ap=ap: ap.fire_tasks.pop(tid, None))
 
+    @staticmethod
+    def _plan_losses(mode: str, trades, sim: dict | None) -> tuple[int, str]:
+        """F37: which record counts. A plan in a money mode that has ROUTED an order is judged by the
+        book (its real closed losers); an alert plan — or a money-mode plan that never routed — by the
+        model. Never the larger of the two: the model is recomputed by today's newest code and can
+        "lose" trades the desk declined at the time (SPY/IWM 2026-09-04 15:10)."""
+        routed = [t for t in trades if getattr(t, "entry_order_id", None) or float(getattr(t, "filled_qty", 0) or 0) > 0]
+        if mode in ("auto", "proposal") and routed:
+            # R5: an X5 add rides the same position as its base trade — judge the POSITION
+            groups: dict[str, list] = {}
+            for t in trades:
+                if float(t.filled_qty or 0) > 0:
+                    groups.setdefault(str(t.trigger_id).split("+add")[0], []).append(t)
+            losers = sum(1 for ts in groups.values() if all(t.status == "closed" for t in ts) and sum(t.realized_pnl for t in ts) < 0)
+            return losers, "book"
+        return sum(1 for t in ((sim or {}).get("trades") or []) if not t.get("win")), "model"
+
+    def losses_across_plans(self, day: str | None = None) -> int:
+        """F29/F37/F38: losing trades today across the whole desk. Armed plans are counted live; a plan
+        that disarmed (its own loss halt) keeps its losses in the day's tally — the cap must not loosen
+        after the worst outcome a plan can have. The tally is seeded from the persisted rows at boot."""
+        day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
+        tally = self._loss_tally.setdefault(day, {})
+        for ap in self._armed.values():
+            n, basis = self._plan_losses(ap.config.mode, list(ap.trades.values()), self._last_sim.get(ap.run_id))
+            tally[ap.run_id] = (n, basis)
+        for d in [k for k in self._loss_tally if k != day]:
+            self._loss_tally.pop(d, None)
+        return sum(n for n, _ in tally.values())
+
+    def losses_basis(self, day: str | None = None) -> str:
+        day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
+        bases = {b for _, b in self._loss_tally.get(day, {}).values()}
+        return "/".join(sorted(bases)) or "model"
+
+    async def seed_loss_tally(self, day: str | None = None) -> int:
+        """F38: after a restart, today's DISARMED Team2 plans are not restored — read their real closed
+        losers back from the persisted rows so the desk-wide cap still counts them."""
+        day = day or dt.datetime.now(ET).strftime("%Y-%m-%d")
+        tally = self._loss_tally.setdefault(day, {})
+        try:
+            from ...models import TechniqueArmed
+            async with self.engine.sf() as session:
+                rows = (await session.execute(select(TechniqueArmed).where(
+                    TechniqueArmed.technique == self.TECHNIQUE_ID, TechniqueArmed.plan_for == day,
+                    TechniqueArmed.status.in_(("disarmed", "expired"))))).scalars().all()
+        except Exception:  # noqa: BLE001 - a missing tally only loosens a cap; say so in the log
+            log.exception("team2 loss tally seed failed")
+            return 0
+        seeded = 0
+        for row in rows:
+            if row.run_id in self._armed:
+                continue
+            trades = (row.state or {}).get("trades") or []
+            n = 0
+            for t in trades:
+                if float(t.get("filledQty") or 0) <= 0:
+                    continue
+                if t.get("status") == "closed" and float(t.get("realizedPnl") or 0) < 0:
+                    n += 1
+                    continue
+                # a pre-F40 record: the flatten filled but the plan never heard — judge it by its exit fills
+                fills = [x for x in (t.get("exits") or []) if x.get("status") == "FILLED" and x.get("price") is not None]
+                if t.get("status") == "open" and fills and t.get("avgFill"):
+                    pnl = sum((float(x["price"]) - float(t["avgFill"])) * float(x.get("filledQty") or 0) for x in fills) * 100.0
+                    if pnl < 0:
+                        n += 1
+            if n:
+                tally[row.run_id] = (n, "book")
+                seeded += n
+            # R3: the retired plan's net P&L keeps counting toward the technique day-loss halt
+            net = 0.0
+            for t in trades:
+                fq = float(t.get("filledQty") or 0)
+                if fq <= 0:
+                    continue
+                exited = sum(float(x.get("filledQty") or 0) for x in (t.get("exits") or []))
+                fee = float(self.rules().fee_per_contract) * (fq + exited)
+                net += float(t.get("realizedPnl") or 0) - fee
+            if net:
+                rk = (day, row.portfolio_id)
+                self._retired_pnl[rk] = self._retired_pnl.get(rk, 0.0) + net
+        return seeded
+
     def open_positions_across_plans(self) -> int:
         """Open or in-flight Team2 trades across every armed plan (A12 concurrency cap)."""
         return sum(1 for ap in self._armed.values() for t in ap.trades.values()
                    if t.status in ("fired", "submitting", "working", "open") and not getattr(t, "is_add", False))
+
+    # ------------------------------------------------------------- the day's scorecard (F43)
+    def _score_execution(self, ap: ArmedPlan) -> dict | None:
+        """Team2 has no TriggerTrackers, so the shared scorecard was structurally empty (F43). The
+        day's record is the session read's model trades against what the book actually did — and the
+        skips that stood between them. Same journal shape as the shared one (rows / matched /
+        theoreticalFires / actualFires / realizedPnl) plus Team2's own fields."""
+        sim = self._last_sim.get(ap.run_id) or {}
+        model = list(sim.get("trades") or [])
+        real = [t for t in ap.trades.values() if float(t.filled_qty or 0) > 0]
+        rows = []
+        matched = 0
+        used: set[str] = set()
+        for mt in model:
+            cands = [t for t in real if t.setup_id == mt.get("setup") and t.trigger_id not in used]
+            hit = min(cands, key=lambda t: abs(int(t.fired_ts or 0) - int(mt.get("entryTs") or 0)), default=None)
+            if hit is not None:
+                used.add(hit.trigger_id)
+                matched += 1
+            rows.append({"setup": mt.get("setup"), "entryTs": mt.get("entryTs"), "entryKind": mt.get("entryKind"),
+                         "modelStrike": mt.get("strike"), "modelPremium": mt.get("entryPremium"),
+                         "modelPnlPct": mt.get("pnlPct"), "modelExit": mt.get("exitReason"),
+                         "trigger": hit.trigger_id if hit else None, "status": hit.status if hit else "not taken",
+                         "avgFill": hit.avg_fill if hit else None, "qty": hit.filled_qty if hit else None,
+                         "realizedPnl": round(hit.realized_pnl - self._fees_paid(hit), 2) if hit else None,
+                         "contract": hit.order_symbol if hit else None,
+                         "note": ("" if hit else "model trade not taken by the book (see skips)")})
+        for t in real:
+            if t.trigger_id not in used:
+                rows.append({"setup": t.setup_id, "entryTs": t.fired_ts, "trigger": t.trigger_id, "status": t.status,
+                             "avgFill": t.avg_fill, "qty": t.filled_qty, "contract": t.order_symbol,
+                             "realizedPnl": round(t.realized_pnl - self._fees_paid(t), 2),
+                             "note": "the book traded where the read (as recomputed now) did not"})
+        skips: dict[str, int] = {}
+        for e in ap.events:
+            k = str(e.get("event") or "")
+            if k.startswith("skip_") or k in ("max_concurrent_skip", "max_open_skip", "halt_skip", "entry_capped", "technique_loss_halt", "loss_halt"):
+                skips[k] = skips.get(k, 0) + 1
+        net = round(sum(t.realized_pnl - self._fees_paid(t) for t in ap.trades.values()), 2)
+        return {"technique": self.TECHNIQUE_ID, "basis": "session-read vs book",
+                "theoreticalFires": len(model), "actualFires": len(real), "matched": matched,
+                "modelPnlPctSum": round(sum(float(mt.get("pnlPct") or 0) for mt in model), 2),
+                "realizedPnl": net, "realizedPnlGross": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
+                "skips": skips, "rows": rows, "bias": (sim.get("bias") or {}).get("label"),
+                "stopReason": ap.stop_reason or None}
+
+    async def disarm(self, run_id: str, *, reason: str = "manual", flatten: bool = False) -> bool:
+        """A plan that leaves mid-session (loss halt) is scored on the way out — the close never
+        reaches it (F43)."""
+        ap = self._armed.get(run_id)
+        if ap is not None and ap.scorecard is None and ap.config.mode != "alert":
+            with contextlib.suppress(Exception):
+                ap.scorecard = self._score_execution(ap)
+                if ap.scorecard:
+                    await self.engine.journal.append(ev.TECHNIQUE_PLAN_SCORED, {"runId": ap.run_id, "symbol": ap.symbol,
+                                                                              **ap.scorecard},
+                                                     aggregate_type="technique_run", aggregate_id=ap.run_id,
+                                                     portfolio_id=ap.config.portfolio_id)
+        return await super().disarm(run_id, reason=reason, flatten=flatten)
 
     # ------------------------------------------------------------- read-only views
     def last_read(self, run_id: str) -> dict | None:
@@ -589,6 +812,7 @@ class Team2Runner(PlanRunner):
         Armed page already renders (id/label/kind/status/entry/targets/direction/distancePct),
         so no UI special-casing (user 2026-09-04: 'tell me how it works' inside the Armed section)."""
         d = super()._snapshot(ap)
+        rules_now = self.rules()
         plan = ap.plan or {}
         read = self._last_sim.get(ap.run_id) or {}
         q = self.engine.quotes.get(ap.symbol)
@@ -599,11 +823,13 @@ class Team2Runner(PlanRunner):
 
         def pseudo(tid: str, label: str, kind: str, status: str, entry: float | None, direction: str,
                    targets: list[float] | None = None, stop: float | None = None) -> dict:
+            now_m = dt.datetime.now(ET).hour * 60 + dt.datetime.now(ET).minute
             row = {"id": tid, "label": label, "kind": kind, "status": status, "entry": entry, "stop": stop,
                    "targets": targets or [], "riskReward": None, "firedTs": None, "firedWindow": None,
                    "observedMidday": 0, "skipped": [], "gapUnchecked": False, "failedBreaks": 0, "grade": None,
                    "gradeScore": None, "conditions": None, "setupId": None, "direction": direction,
-                   "levelTouches": None, "levelAge": None, "windowOpenNow": True}
+                   "levelTouches": None, "levelAge": None,
+                   "windowOpenNow": rules_now.first_entry_min <= now_m < rules_now.last_entry_min}
             if last and entry:
                 row["distancePct"] = round((entry - last) / last * 100, 3)
                 row["distance"] = round(entry - last, 4)
@@ -646,6 +872,20 @@ class Team2Runner(PlanRunner):
             live_pcts = [t.live_pct for t in ap.trades.values() if t.status == "open" and getattr(t, "live_pct", None) is not None]
             if live_pcts:
                 live_s = f" · contract {live_pcts[0]:+.0f}% live"
+            else:
+                # F31 (2026-09-04): the model holds until ITS stop (a 2m close through the level), but the
+                # desk's real contract can already be gone — the live premium stop, the 15:45 flatten or a
+                # failed-exit retry close it without the model knowing. QQQ today: premium stop out at 13:58
+                # while the read still said "1.00 left". "In trade" then claims exposure the book does not
+                # have, and on the phone that is the one line that must never lie. Only counted when
+                # contracts were really filled, so alert mode (which mints trades but never fills) is silent.
+                setup_id = str(open_pos.get("setup") or "")
+                gone = [t for t in ap.trades.values()
+                        if t.status == "closed" and float(getattr(t, "filled_qty", 0) or 0) > 0
+                        and str(getattr(t, "trigger_id", "")).split("#")[0] == setup_id]
+                if gone:
+                    kind = ((gone[-1].exits or [{}])[-1] or {}).get("kind")
+                    live_s = f" · book flat — the desk's contract is already closed ({kind or 'exit'})"
             strike = open_pos.get("strike")
             strike_s = f"{strike:g}" if isinstance(strike, (int, float)) else "?"
             d["summary"] = (f"in trade {open_pos.get('setup')}: {'call' if open_pos.get('call') else 'put'} {strike_s}, "
@@ -653,7 +893,12 @@ class Team2Runner(PlanRunner):
                             f"stop is a 2m close through the {guard}{live_s}")
         elif bias.get("scenario"):
             live = [s for s in setups if not s.get("dead")]
-            touches = max((s.get("touches", 0) for s in live), default=0)
+            # F24: report the allowance of the setup the session would actually enter — `session.py` takes the
+            # NEWEST live setup in the bias direction, so a spent setup pointing the other way (SPY's
+            # pm_break_down on 2026-09-04) must not be read as touches already used on this one.
+            cands = [s for s in live if not bias.get("direction") or s.get("direction") == bias.get("direction")]
+            picked = sorted(cands, key=lambda s: s.get("confirmedTs") or 0)[-1] if cands else None
+            touches = picked.get("touches", 0) if picked else max((s.get("touches", 0) for s in live), default=0)
             d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "
                             f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches}) · EMA stack {regime.get('stack', '?')}, "
                             f"{regime.get('fan', '?')}")
@@ -691,8 +936,19 @@ async def attach_team2_runner(engine) -> None:
         restored = await runner.restore()
         if restored:
             log.info("team2 runner restored %d armed plan(s)", restored)
+        seeded = await runner.seed_loss_tally()
+        if seeded:
+            log.info("team2 desk loss tally seeded with %d loser(s) from today's disarmed plans (F38)", seeded)
     except Exception:  # pragma: no cover
         log.exception("team2 runner restore failed")
+    # The desk's three symbols keep banking 1m bars whether or not a plan is armed on them:
+    # a plan that disarms mid-session (loss halt) otherwise loses the rest of the day's tape
+    # the moment the process restarts, and its replay/review is truncated at the disarm (F34).
+    for sym in (engine.settings.get("techniques.team2.symbols") or []):
+        try:
+            await engine.ensure_symbol(str(sym).upper())
+        except Exception:  # pragma: no cover — the feed must never block the attach
+            log.debug("team2 ensure_symbol failed for %s", sym, exc_info=True)
     from .service import Team2Service
     engine.team2 = Team2Service(engine, runner)
     engine.scheduler.register("team2_plan_nightly", str(engine.settings.get("techniques.team2.plan_at", "17:00")),

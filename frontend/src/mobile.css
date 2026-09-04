@@ -183,7 +183,7 @@ html { -webkit-text-size-adjust: 100%; }
   /* grids that assumed a wide screen collapse to one column */
   .trade-grid { grid-template-columns: 1fr; grid-template-areas: "chart" "ticket" "blotter"; grid-template-rows: auto auto auto; }
   .trade-grid--tc { grid-template-columns: 1fr; }
-  .dash-grid { grid-template-columns: 1fr; grid-template-areas: "networth" "providers" "curve" "watch" "orders"; }
+  .dash-grid { grid-template-columns: 1fr; grid-template-areas: "curve" "holdings" "orders"; }
   .dash-providers { grid-template-columns: 1fr; }
   .grid-2col { grid-template-columns: 1fr; }
   .wl-page-grid { grid-template-columns: 1fr; }
@@ -614,6 +614,11 @@ button.bl-card:active { background: var(--surface-2); }
 @media (max-width: 640px), (orientation: landscape) and (max-height: 500px) {
   .flow-head { gap: var(--sp-2); }
   .flow-head-sub { display: none; }
+  /* Team2's status line carries the mode, the 0DTE clock and the next macro event — keep it, wrapped */
+  .team2-head-sub { font-size: 12px; line-height: 1.35; white-space: normal; }
+  /* History / Validation split panes stack on a phone */
+  .flow-split { display: block; }
+  .flow-split > * + * { margin-top: 12px; }
   .flow-strip { gap: var(--sp-2); padding: 8px 10px; }
   .flow-strip-sep { display: none; }
   .flow-detail { width: auto; border: none; }
@@ -664,7 +669,7 @@ button.bl-card:active { background: var(--surface-2); }
   .tips-drop textarea, .tips-compose-row .field input { font-size: 16px; }
   .armed-page input { font-size: 16px; min-height: 38px; }
   /* technique desk chips (scan grid, status pills) grow to thumb size */
-  .tq-scan-chip { min-height: 40px; padding: 6px 10px; }
+  .tq-scan-chip { min-height: 40px; min-width: 40px; padding: 6px 10px; }   /* a 1-letter ticker still needs a thumb */
   /* any pill that is a BUTTON is a tap target (flow chips on tip cards, run pills…) */
   button.status-pill { min-height: 40px; min-width: 40px; }
   /* Tips desk: knowledge notes + Discord source picker */
@@ -759,4 +764,30 @@ button.bl-card:active { background: var(--surface-2); }
   .led-chart { grid-template-columns: 44px minmax(0, 1fr); }
   .led-col, .led-xlab { min-width: 52px; }
   .led-chart-panel { padding: 12px 10px; overflow-x: auto; }
+}
+
+/* Dashboard on phones (user 2026-09-04: "the mobile version doesn't show any
+   of these"): one column, the equity number still the first thing, accounts
+   and holdings as full-width rows, the curve keeps its range picker. */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .dash-hero { padding: 14px; }
+  .dash-hero-num { font-size: 32px; }
+  .dash-hero-top { gap: 10px; }
+  .dash-hero-side { margin-left: 0; width: 100%; justify-content: flex-start; }
+  .dash-hero-sync { min-height: 40px; }
+  .dash-hero-accts { gap: 6px; }
+  .dash-acct { flex: 1 1 100%; justify-content: space-between; min-height: 40px; border-radius: 8px; }
+  .dash-curve-head { gap: 8px; }
+  .dash-curve-range { margin-left: 0; width: 100%; }
+  .dash-curve-range button { flex: 1 1 auto; min-width: 40px; }
+  .dash-curve-delta { flex: 1 1 100%; }
+  .dash-hold { grid-template-columns: 20px minmax(0, 1fr) auto; min-height: 44px; padding: 8px 10px; }
+  .dash-hold-val { display: none; }              /* the P&L is what you scan for */
+  .dash-armed-lbl { flex-basis: 100%; margin-left: 0; }
+  .dash-foot { gap: 10px; }
+  .dash-foot .link-btn { min-height: 40px; }
+}
+/* the phone bar has no room for the money readout — the Dashboard hero owns it */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .topbar .equity-chip { display: none; }
 }

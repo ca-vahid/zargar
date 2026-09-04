@@ -256,13 +256,19 @@ export function TopBar() {
       {mode === "live" && realTotals.length > 0 && (
         <button className="equity-chip equity-chip--real" onClick={() => setPage("dashboard")}
           title="Real brokerage net worth (per currency) — click for the Dashboard">
-          {realTotals.map((t) => fmtCcy(t.brokerage, t.currency)).join(" · ")}
+          <span className="equity-chip-lbl">Real money</span>
+          <span className="equity-chip-num">
+            {realTotals.map((t) => fmtCcy(t.brokerage, t.currency)).join("  ·  ")}
+          </span>
         </button>
       )}
       {mode !== "live" && practice.length > 0 && (
-        <button className="equity-chip" onClick={() => setPage("portfolios")}
-          title="Practice equity (simulated fills) — click for Portfolios">
-          {fmtCcy(practiceTotal, practice[0]?.baseCurrency ?? "USD")}
+        <button className="equity-chip" onClick={() => setPage("dashboard")}
+          title="Practice equity (simulated fills) — click for the Dashboard">
+          <span className="equity-chip-lbl">Practice</span>
+          <span className="equity-chip-num">
+            {fmtCcy(practiceTotal, practice[0]?.baseCurrency ?? "USD")}
+          </span>
         </button>
       )}
       {attention.length > 0 && (

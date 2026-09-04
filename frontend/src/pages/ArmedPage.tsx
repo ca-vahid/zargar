@@ -147,7 +147,10 @@ export function ArmedPage() {
               <div className="tq-armed-kpi"><small>In trade</small><b className={openCount ? "pos" : ""}>{openCount}</b></div>
               <div className="tq-armed-kpi"><small>Realized today</small><b className={pnlCls(pnl)}>{fmt(pnl)}</b></div>
               <div className="tq-armed-kpi"><small>Workspace <InfoTip>Everything on this page belongs to the active workspace. PRACTICE = the simulator, fake money. LIVE = your real accounts. Switch it next to HALT in the top bar.</InfoTip></small><b className={tradingMode === "live" ? "neg" : ""}>{tradingMode.toUpperCase()}</b></div>
-              <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped.</InfoTip></small><b className={halt.engaged ? "neg" : "pos"}>{halt.engaged ? "ENGAGED" : "off"}</b></div>
+              <div className="tq-armed-kpi"><small>Kill switch <InfoTip>The big red HALT stops all new buys instantly. Stops and flatten can still sell so you're never trapped.</InfoTip></small><b className={halt.engaged ? "neg" : Object.keys(halt.books ?? {}).length ? "warn" : "pos"}>{halt.engaged ? "ENGAGED" : Object.keys(halt.books ?? {}).length ? `${Object.keys(halt.books ?? {}).length} book halted` : "off"}</b>
+                {!halt.engaged && Object.entries(halt.books ?? {}).map(([pid, b]) => (
+                  <div key={pid} className="small muted" title={b.reason}>{b.reason} · <button className="link-btn" onClick={() => api.resumeBook(pid).catch(() => undefined)}>release this book</button></div>
+                ))}</div>
               <div className="tq-armed-topactions">
                 {armed.length > 0 && (
                   <button className="ghost-btn" onClick={() => stopAll(false)}
@@ -170,7 +173,7 @@ export function ArmedPage() {
             <div className="panel mb"><div className="panel-body muted">
               Nothing armed in this workspace. Arm plans from Technique — the graded sheet
               (Check &amp; arm) or any run's <b>Arm for live triggers</b>. Armed plans watch live
-              1-minute bars and, depending on mode, alert, propose, or trade.
+              live bars (EM and tips on 1-minute closes, Team2 on 2-minute closes with a 15-minute confirmation) and, depending on mode, alert, propose, or trade.
             </div></div>
           )}
 
@@ -344,7 +347,7 @@ function FleetSortTable({ armed, selId, onSel, rich, onRich }: {
 const SESSION_LINE: Record<string, string> = {
   prime_open: "Opening window — plans can fire now",
   prime_close: "Closing window — plans can fire now",
-  midday: "Mid-day — watching only, nothing fires until 2:45 PM ET",
+  midday: "Mid-day — EM and tip plans watch only until 2:45 PM ET · Team2 plans fire all session (until 3:30 PM ET)",
   extended: "Market closed — resumes 9:30 AM ET",
 };
 
@@ -360,17 +363,25 @@ const isShortTrigger = (t?: ArmedTrigger) => !!t && (t.direction === "short" || 
     headline says what will actually happen. */
 const ACTION_AT: Record<string, string> = {
   breakout: "above", breakdown: "below", wedge_break: "above",
+  // Team2 pseudo-triggers: a 15m body close beyond the level, then a 2m pullback
+  "break PDH": "on a 15m close above", "break PDL": "on a 15m close below",
+  scenario_1: "on pullbacks after the break of", scenario_4: "on pullbacks after the break of",
+  scenario_2: "on pullbacks after the rejection at", scenario_3: "on pullbacks after the bounce off",
+  pm_break_up: "on pullbacks to the pre-market high", pm_break_down: "on pullbacks to the pre-market low",
 };
 const SETUP_WORD: Record<string, string> = {
   bounce: "off support", breakout: "on a breakout", reject: "off resistance",
   breakdown: "on a breakdown", wedge_break: "on a wedge break", timed: "timed entry",
+  "break PDH": "Team2 · calls", "break PDL": "Team2 · puts", scenario_1: "Team2 · calls", scenario_4: "Team2 · puts",
+  scenario_2: "Team2 · puts", scenario_3: "Team2 · calls", pm_break_up: "Team2 · calls", pm_break_down: "Team2 · puts",
 };
 /** "🌟｜eva tip" → "eva"; keeps a branch marker like "1/2" when the tip was split. */
 function sourceName(t?: ArmedTrigger, technique?: string): string {
   const raw = (t?.label ?? "").replace(/[\u2000-\u3300\uD83C-\uDBFF\uDC00-\uDFFF]/g, "").trim();
   const cleaned = raw.replace(/^[|｜]\s*/, "").replace(/\s*\btip\b/i, "").trim();
+  if (technique === "team2") return "Team2 plan";           // its labels are whole sentences, not a source name
   if (cleaned) return cleaned;
-  return technique === "enhanced_market" ? "EM plan" : technique ?? "plan";
+  return technique === "enhanced_market" ? "EM plan" : technique === "team2" ? "Team2 plan" : technique ?? "plan";
 }
 
 function PlanCell({ a, t }: { a: ArmedPlan; t?: ArmedTrigger }) {
@@ -420,7 +431,9 @@ function FleetRow({ a, sel, rich, onSel, showWindow, showGrade, showPnl, showSta
     : trigStatuses.every((s) => s === "gapped_past" || s === "gapped_through") ? "gapped past"
     : allExhausted ? "level exhausted"
     : "no triggers left";
-  const voidTitle = allExhausted
+  const voidTitle = a.technique === "team2"
+    ? "Every setup of the day was invalidated by a later 15-minute close through its zone; the read is still watching for a new scenario (Team2 has no gap rule)."
+    : allExhausted
     ? "Every level failed to hold a break twice today (R3.2: more than two false breakouts = poor price action). Nothing can fire today."
     : "Every trigger died at the open: the overnight gap either repriced the risk "
     + "(gap rule, TRADING-RULES 1.1 — these are the experiment's counterfactual samples) or "

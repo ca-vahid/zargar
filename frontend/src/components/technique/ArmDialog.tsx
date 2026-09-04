@@ -166,7 +166,7 @@ export function ArmDialog({ symbol, planFor, bestTrigger, triggers, onClose, onA
                     {t.assessment?.grade && <span className="muted"> ({GRADE_WORD[t.assessment.grade]})</span>}
                     <span className="muted"> — {firesOnlyIf(t)}; then long {fmt(t.entry.price)}, stop {fmt(t.stop.price)}.</span>
                     {(t.assessment?.cautions ?? []).length > 0 && (
-                      <div className="small warn">⚠ {t.assessment!.cautions.join(" · ")}</div>
+                      <div className="small warn">⚠ {(t.assessment!.cautions ?? []).join(" · ")}</div>
                     )}
                   </li>
                 ))}

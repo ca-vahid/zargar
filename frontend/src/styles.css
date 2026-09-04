@@ -432,11 +432,12 @@ button.brand { background: none; border: 0; padding: 0 4px 0 0; min-height: 40px
 .dash-grid {
   display: grid; gap: var(--pad);
   grid-template-columns: 2fr 1fr;
+  /* rebuilt 2026-09-04: the hero and the fleet sit above this grid now, and the
+     watchlist column became holdings (which follow the workspace) */
   grid-template-areas:
-    "networth networth"
-    "providers providers"
-    "curve watch"
-    "orders orders";
+    "curve holdings"
+    "orders holdings";
+  align-items: start;
 }
 .dash-networth {
   grid-area: networth; position: relative; overflow: hidden;
@@ -452,7 +453,8 @@ button.brand { background: none; border: 0; padding: 0 4px 0 0; min-height: 40px
 [data-theme="light"] .dash-networth::after { opacity: 0.22; }
 .dash-providers { grid-area: providers; display: grid; gap: var(--pad); grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .dash-curve { grid-area: curve; min-width: 0; }
-.dash-watch { grid-area: watch; min-width: 0; }
+.dash-watch { grid-area: holdings; min-width: 0; }
+.dash-holdings { grid-area: holdings; min-width: 0; }
 .dash-orders { grid-area: orders; min-width: 0; }
 .networth-row { display: flex; align-items: baseline; gap: var(--sp-5); flex-wrap: wrap; }
 .networth-badges { margin-left: auto; display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
@@ -880,7 +882,7 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 
 @media (max-width: 1100px) {
   .trade-grid { grid-template-columns: 1fr; grid-template-areas: "chart" "ticket" "blotter"; grid-template-rows: minmax(340px, auto) auto auto; }
-  .dash-grid { grid-template-columns: 1fr; grid-template-areas: "networth" "providers" "curve" "watch" "orders"; }
+  .dash-grid { grid-template-columns: 1fr; grid-template-areas: "curve" "holdings" "orders"; }
   .sidebar { width: 190px; }
 }
 
@@ -2577,3 +2579,113 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 /* rich: the meter sits under the sentence (side by side it clipped the words) */
 .armed-dist-cell.stacked { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
 .armed-dist-cell.stacked .armed-dist .bar { width: 96px; }
+
+
+/* ── Dashboard rebuild (user 2026-09-04) ─────────────────────────────────── */
+/* The equity leads the page; the accounts fold in under it; the old second
+   money card and the always-green plumbing chips are gone. */
+.dash-hero { padding: 16px 18px; margin-bottom: var(--sp-3); }
+.dash-hero-top { display: flex; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+.dash-hero-main { min-width: 0; }
+.dash-hero-lbl { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.09em;
+  color: var(--text-3); }
+.dash-hero-num { font-family: var(--mono); font-size: 40px; font-weight: 700; line-height: 1.1;
+  letter-spacing: -0.03em; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.dash-hero-sub { font-size: var(--fs-1); color: var(--text-2); margin-top: 4px; }
+.dash-hero-side { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  justify-content: flex-end; }
+.dash-hero-sync { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-1); }
+.dash-hero-accts { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px;
+  padding-top: 12px; border-top: 1px solid var(--border); }
+.dash-acct { display: flex; align-items: baseline; gap: 10px; padding: 6px 12px; cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px;
+  color: inherit; font: inherit; }
+.dash-acct:hover { border-color: var(--accent); }
+.dash-acct-name { font-size: var(--fs-1); color: var(--text-2); }
+.dash-acct-val { font-family: var(--mono); font-size: var(--fs-2); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+
+/* holdings: real rows with numbers, not a watchlist in disguise */
+.dash-holdings-rows { display: flex; flex-direction: column; gap: 1px; padding: 4px 0; }
+.dash-hold { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto auto; gap: 10px;
+  align-items: center; padding: 7px 12px; width: 100%; background: none; border: none;
+  border-radius: 6px; cursor: pointer; color: inherit; font: inherit; text-align: left; }
+.dash-hold:hover { background: var(--surface-2); }
+.dash-hold-sym { font-size: var(--fs-2); font-weight: 600; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.dash-hold-sym .muted { font-weight: 400; font-size: var(--fs-0); margin-left: 6px; }
+.dash-hold-val, .dash-hold-pnl { font-family: var(--mono); font-size: var(--fs-1);
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dash-hold-pnl { min-width: 74px; text-align: right; font-weight: 600; }
+
+/* equity curve: range picker + honest footnote */
+.dash-curve-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.dash-curve-delta { font-family: var(--mono); font-size: var(--fs-2); font-weight: 600;
+  font-variant-numeric: tabular-nums; }
+.dash-curve-delta .muted { font-family: var(--font); font-weight: 400; }
+.dash-curve-range { margin-left: auto; }
+.dash-curve-foot { font-size: var(--fs-0); padding: 0 12px 10px; }
+
+/* the fleet card names itself and ranks by what is about to happen */
+.dash-armed-lbl { font-size: var(--fs-0); text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-3); align-self: center; margin-left: 4px; }
+.dash-armed-chip.busy { border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.dash-armed-chip.near { border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+  background: color-mix(in srgb, var(--warn) 10%, transparent); }
+
+.dash-foot { display: flex; gap: 14px; flex-wrap: wrap; padding: 4px 2px 20px; font-size: var(--fs-1); }
+
+.dash-hold-more { align-self: flex-start; margin: 4px 0 2px 12px; font-size: var(--fs-1); }
+.dash-holdings-rows { max-height: 440px; overflow-y: auto; }
+
+
+/* Top bar money: a labelled readout instead of a small grey chip (2026-09-04) */
+.equity-chip { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 0;
+  padding: 3px 12px; line-height: 1.15; border-radius: var(--radius); }
+.equity-chip-lbl { font-family: var(--font); font-size: 9.5px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-3); }
+.equity-chip-num { font-family: var(--mono); font-size: 17px; font-weight: 700;
+  letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-1); }
+.equity-chip--real .equity-chip-num { color: var(--text-1); }
+.equity-chip:hover .equity-chip-lbl { color: var(--text-2); }
+
+/* ---- sidebar motion (2026-09-04): a nav that answers the click --------------------------------
+   an accent bar that slides to the active item, a ripple from the pointer, icons that lift on
+   hover and settle when active, and a sub-item dot that pops. All of it is skipped under
+   prefers-reduced-motion. */
+.nav button { position: relative; overflow: hidden; transition: background 0.18s ease, color 0.18s ease, transform 0.12s ease; }
+.nav button:active { transform: scale(0.97); }
+.nav button::before {
+  content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 0; border-radius: 0 3px 3px 0;
+  background: var(--accent); transform: translateY(-50%); transition: height 0.22s cubic-bezier(.34, 1.56, .64, 1), opacity 0.18s;
+  opacity: 0;
+}
+.nav button.active::before { height: 60%; opacity: 1; }
+.nav button.nav-sub.active::before { height: 50%; }
+.nav button svg { transition: transform 0.25s cubic-bezier(.34, 1.56, .64, 1), opacity 0.18s; }
+.nav button:hover svg { transform: translateY(-1px) scale(1.08); opacity: 1; }
+.nav button.active svg { transform: scale(1.1); opacity: 1; color: var(--accent); }
+.nav button .nav-label { transition: transform 0.2s ease, letter-spacing 0.2s ease; }
+.nav button:hover .nav-label { transform: translateX(2px); }
+.nav button.active .nav-label { transform: translateX(3px); }
+.nav button.nav-sub .nav-sub-dot { transition: transform 0.25s cubic-bezier(.34, 1.56, .64, 1), opacity 0.18s, box-shadow 0.25s; }
+.nav button.nav-sub:hover .nav-sub-dot { transform: scale(1.25); }
+.nav button.nav-sub.active .nav-sub-dot {
+  transform: scale(1.35); animation: nav-dot-pop 0.35s cubic-bezier(.34, 1.56, .64, 1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.nav .badge { transition: transform 0.2s cubic-bezier(.34, 1.56, .64, 1); }
+.nav button:hover .badge { transform: scale(1.08); }
+.nav-ripple {
+  position: absolute; border-radius: 50%; pointer-events: none; transform: scale(0);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: nav-ripple 0.55s ease-out forwards;
+}
+@keyframes nav-ripple { to { transform: scale(1); opacity: 0; } }
+@keyframes nav-dot-pop { 0% { transform: scale(0.6); } 60% { transform: scale(1.6); } 100% { transform: scale(1.35); } }
+.sidebar.collapsed .nav button::before { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .nav button, .nav button svg, .nav button .nav-label, .nav button.nav-sub .nav-sub-dot, .nav .badge, .nav button::before { transition: none; animation: none; }
+  .nav-ripple { display: none; }
+}

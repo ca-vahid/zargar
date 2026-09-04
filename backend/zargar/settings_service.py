@@ -52,6 +52,8 @@ DEFAULTS: dict[str, Any] = {
     "research.chain_snapshots.at": "16:30",     # ET
     "research.chain_snapshots.keep_days": 400,  # prune beyond this window (0 = keep forever)
     "research.chain_snapshots.skip_dead": True, # drop rows with 0 volume AND 0 OI (no signal, ~60% of the chain)
+    "research.chain_snapshots.delay_s": 0.75,   # F45: pause between underlyings (CBOE 429s at 0.25)
+    "research.chain_snapshots.retries": 2,      # F45: retries after a 429, 3s/6s backoff
     "research.daily_bars.enabled": True,        # tf=1d bars for the universe into the bars table
     "research.daily_bars.at": "20:05",          # ET
     "research.daily_bars.range": "1mo",         # per-night fetch window (idempotent upserts)
@@ -68,6 +70,11 @@ DEFAULTS: dict[str, Any] = {
 
     "risk.stale_quote_seconds": 10,
     "risk.daily_loss_halt_pct": 3.0,
+    "risk.daily_loss_halt_scope": "portfolio",   # portfolio (halt only the losing book) | global (the old switch)
+    "execution.daily_loss_halt_pct": 0.0,        # per-TECHNIQUE day loss (% of the book) that pauses its plans; techniques.<id>.* overrides; 0 = off
+    "execution.premium_stop_basis": "bid",       # bid | mid — what the live premium stop measures (techniques.<id>.* overrides)
+    "execution.premium_stop_min_ticks": 0,       # floor on the premium-stop distance in ticks (0 = pure %)
+    "execution.fee_per_contract": 0.0,           # per-technique override of options.fee_per_contract + sim.reg_fee_per_contract (0 = use those)
     "risk.allow_short": False,
     "risk.allow_options": True,
     "risk.max_option_premium_pct": 5.0,     # of equity, per trade
@@ -99,7 +106,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.plan_at": "17:00",             # ET nightly skeleton (PDH/PDL zones, targets)
     "techniques.team2.preopen_at": "09:25",          # ET completion (PMH/PML, day type, sizing bucket)
     "techniques.team2.zero_dte": {                   # D3/E6: the per-technique 0DTE policy RiskGate enforces
-        "enabled": True, "last_entry_et": "15:30", "flatten_et": "15:45", "max_contracts": 10, "premium_cap": 1000.0},
+        "enabled": True, "last_entry_et": "15:30", "flatten_et": "15:45", "max_contracts": 40, "premium_cap": 2000.0},
     "techniques.team2.dte_policy": "0dte",           # 0dte | 1dte (sweep variant)
     "techniques.team2.target_premium": 0.60,         # V1/F5: first OTM strike whose ask <= this
     "techniques.team2.premium_floor": 0.20,
@@ -118,6 +125,12 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.base_tol_atr": 1.0,
     "techniques.team2.trim_cue": "premium",          # premium | new_extreme (X1 "new high/low of day")
     "techniques.team2.chase_cap_mult": 1.5,          # F14: entry limit <= target_premium x this (the premium band)
+    "techniques.team2.premium_pick": "closest",      # F36: model and live pick the strike CLOSEST to the target
+    "techniques.team2.zone_tol_atr": 0.0,            # F27: scenario needs a close beyond the zone by this x ATR (off)
+    "techniques.team2.flip_body_ratio": 0.0,         # F27: body/range a scenario candle must have (off)
+    "techniques.team2.premium_stop_basis": "mid",    # F30: the live premium stop measures mid vs paid (EM keeps bid)
+    "techniques.team2.premium_stop_min_ticks": 3,    # F30: never a stop tighter than 3 ticks on a cheap contract
+    "techniques.team2.losses_desk_wide": True,       # F29: max_losses_per_day counts the whole desk (SPY+QQQ+IWM)
     "techniques.team2.hod_target": "reentry",        # off | reentry | always (X3b running HOD/LOD as the target)
     "techniques.team2.hod_target_min_atr": 1.0,
     "techniques.team2.add_on_retest": True,          # X5 trim-and-add
@@ -142,6 +155,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.budget_per_trade": 2000.0,     # $ premium per full-size entry (user 2026-09-04: 500 -> 2000)
     "techniques.team2.risk_pct": 6.0,                # % of equity at risk per entry: 2000 x the 25% premium stop = $500 on the $8.5k practice book
     "techniques.team2.max_risk_pct": 6.0,            # Team2's own R1 cap (resolves via rt(); the shared default is 5)
+    "techniques.team2.daily_loss_halt_pct": 10.0,    # Team2 pauses its own plans on a book after losing 10% of it today (~2 full stops)
     "techniques.team2.allow_live_auto": False,
     "techniques.tip.entry": "level_touch",   # level_touch | tip_time (tip_time is EARNED per source)
     "techniques.tip.mode": "proposal",       # shadow | alert | proposal | auto (per-source override)

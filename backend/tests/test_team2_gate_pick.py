@@ -69,21 +69,25 @@ def test_select_by_premium_walks_otm_to_the_target_band():
     today = dt.date(2026, 9, 3)
     chain = _chain(768.4, {768: 1.90, 769: 1.10, 770: 0.62, 771: 0.34, 772: 0.15, 773: 0.06})
     pick = select_by_premium(chain, 768.4, "long", target_premium=0.60, premium_floor=0.20, expiry="2026-09-03",
-                             today=today, is_0dte=True)
-    assert pick is not None and pick.strike == 771 and pick.ask == 0.34      # first ask <= 0.60 that is >= 0.20
-    pick2 = select_by_premium(chain, 768.4, "long", target_premium=0.40, premium_floor=0.20, expiry="2026-09-03",
+                             today=today, is_0dte=True, mode="first_under")
+    assert pick is not None and pick.strike == 771 and pick.ask == 0.34      # legacy walk: first ask <= 0.60 that is >= 0.20
+    # F36 (default "closest"): the strike whose ask is nearest the target — 770 @ 0.62 beats 771 @ 0.34 for a $0.60 target
+    close = select_by_premium(chain, 768.4, "long", target_premium=0.60, premium_floor=0.20, expiry="2026-09-03",
                               today=today, is_0dte=True)
+    assert close is not None and abs(close.ask - 0.60) <= abs(0.34 - 0.60)
+    pick2 = select_by_premium(chain, 768.4, "long", target_premium=0.40, premium_floor=0.20, expiry="2026-09-03",
+                              today=today, is_0dte=True, mode="first_under")
     assert pick2.strike == 771
     # target below every floor-respecting ask: previous strike accepted only within 1.5×
     pick3 = select_by_premium(chain, 768.4, "long", target_premium=0.09, premium_floor=0.20, expiry="2026-09-03",
-                              today=today, is_0dte=True)
+                              today=today, is_0dte=True, mode="first_under")
     assert pick3 is None
     pick4 = select_by_premium(chain, 768.4, "long", target_premium=0.12, premium_floor=0.20, expiry="2026-09-03",
-                              today=today, is_0dte=True)
+                              today=today, is_0dte=True, mode="first_under")
     assert pick4 is not None and pick4.strike == 772          # 0.15 ≤ 1.5 × 0.12
     puts = _chain(768.4, {768: 1.80, 767: 1.05, 766: 0.58, 765: 0.30}, kind="put")
     pp = select_by_premium(puts, 768.4, "short", target_premium=0.60, premium_floor=0.20, expiry="2026-09-03",
-                           today=today, is_0dte=True)
+                           today=today, is_0dte=True, mode="first_under")
     assert pp.strike == 766 and pp.option_type == "put" and pp.is_0dte and "V1" in pp.rules
     assert select_by_premium([], 768.4, "long", target_premium=0.6, premium_floor=0.2, expiry="2026-09-03",
                              today=today, is_0dte=True) is None

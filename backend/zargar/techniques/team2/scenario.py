@@ -37,10 +37,12 @@ def sizing_bucket(price: float, zones: dict[str, Zone], pmh: float | None, pml: 
     """V6: 'full' beyond the PDH/PDL zones · 'small' between a prior-day zone and the PM level
     · 'none' inside the PM range. With no PM range, inside yesterday's range is 'small'."""
     pdh, pdl = zones["pdh"], zones["pdl"]
-    if price > pdh.top or price < pdl.bottom:
-        return "full"
+    # F15 (2026-09-04): the PM range is chop wherever it sits — on a gap day it lies beyond the PDH/PDL
+    # zone, and "full" there was buying the middle of the pre-market range (QQQ 10:02, 0.62 under the PMH)
     if pmh is not None and pml is not None and pml <= price <= pmh:
         return "none"
+    if price > pdh.top or price < pdl.bottom:
+        return "full"
     return "small"
 
 
@@ -94,27 +96,36 @@ class ScenarioTracker:
         self.bias.range_day = n not in TREND_SCENARIOS
         return self.bias
 
-    def on_close(self, bar: Bar) -> Bias:
+    def on_close(self, bar: Bar, *, tol: float = 0.0, min_body_ratio: float = 0.0) -> Bias:
+        """F27 (2026-09-04): a scenario is set/flipped on a 15m body close beyond the zone edge by more
+        than `tol` (zone_tol_atr x ATR) on a candle whose body is at least `min_body_ratio` of its range
+        (flip_body_ratio). Both ship at 0 = the bare close, unchanged; the walk-forward picks the values
+        (QQQ 2026-09-04 12:30 flipped on a 0.025 margin, 0.55 body, and flipped back 30 min later)."""
         pdh, pdl = self.pdh, self.pdl
+        rng = max(bar.high - bar.low, 1e-9)
+        if min_body_ratio > 0 and abs(bar.close - bar.open) / rng < min_body_ratio:
+            return self.bias                            # an indecisive candle changes no mind
         if self.bias.scenario is None:
-            if bar.close > pdh.top:
+            if bar.close > pdh.top + tol:
                 return self._set(1, pdh.top, bar)
-            if bar.close < pdl.bottom:
+            if bar.close < pdl.bottom - tol:
                 return self._set(4, pdl.bottom, bar)
             if bar.high >= pdh.bottom and bar.close < pdh.bottom:
                 return self._set(2, pdh.bottom, bar)
             if bar.low <= pdl.top and bar.close > pdl.top:
                 return self._set(3, pdl.top, bar)
             return self.bias
-        # flips: a 15m close through the other side
+        # flips: a 15m close through the other side (D10; `flip_on_close=False` keeps the first read all day)
+        if not self.flip_on_close:
+            return self.bias
         s = self.bias.scenario
-        if s == 1 and bar.close < pdh.bottom:
-            return self._set(2, pdh.bottom, bar)        # failed breakout = rejection
-        if s == 4 and bar.close > pdl.top:
+        if s == 1 and bar.close < pdh.bottom - tol:
+            return self._set(2, pdh.bottom, bar)        # failed breakout = rejection (R20: same tolerance both ways)
+        if s == 4 and bar.close > pdl.top + tol:
             return self._set(3, pdl.top, bar)           # failed breakdown = bounce
-        if s in (2, 3) and bar.close > pdh.top:
+        if s in (2, 3) and bar.close > pdh.top + tol:
             return self._set(1, pdh.top, bar)
-        if s in (2, 3) and bar.close < pdl.bottom:
+        if s in (2, 3) and bar.close < pdl.bottom - tol:
             return self._set(4, pdl.bottom, bar)
         return self.bias
 

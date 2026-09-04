@@ -668,7 +668,7 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
                 </button>
               </div>
               <div className="tq-wf-symbols">
-                {coverage.names.map((c) => <span key={c.label} className="tq-cov-chip" title={c.members.join(", ")}>{c.label} <span>· {c.n}</span></span>)}
+                {coverage.names.map((c) => <span key={c.label} className="tq-cov-chip" title={(c.members ?? []).join(", ")}>{c.label} <span>· {c.n}</span></span>)}
                 {coverage.rest.slice(0, 14).map((x) => <span key={x} className="tq-sym-chip on static">{x}</span>)}
                 {coverage.rest.length > 14 && <span className="muted" title={coverage.rest.slice(14).join(", ")}>+{coverage.rest.length - 14} more</span>}
                 <button type="button" className="secondary-btn tq-wf-pick" onClick={() => setPickerOpen(true)}>Choose symbols…</button>
@@ -899,7 +899,7 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
                             ? <input className="tq-rename" autoFocus value={renaming.value} onChange={(e) => setRenaming({ id: s.id, value: e.target.value })}
                                 onBlur={() => rename(s.id, renaming.value)} onKeyDown={(e) => { if (e.key === "Enter") rename(s.id, renaming.value); if (e.key === "Escape") setRenaming(null); }} />
                             : <><b className="clickable" onClick={() => api.techniqueSweep(s.id).then(setSel).catch(() => undefined)}>{s.label || `${s.start}..${s.end}`}</b> <button className="tq-pencil" title="Rename" onClick={() => setRenaming({ id: s.id, value: s.label || "" })}>✎</button></>}</td>
-                          <td className="muted">{s.symbols.length} · {s.symbols.slice(0, 5).join(", ")}{s.symbols.length > 5 ? ` +${s.symbols.length - 5}` : ""}</td>
+                          <td className="muted">{(s.symbols ?? []).length} · {(s.symbols ?? []).slice(0, 5).join(", ")}{(s.symbols ?? []).length > 5 ? ` +${s.symbols.length - 5}` : ""}</td>
                           <td className="muted nowrap">{s.params?.kind === "next" ? <span title="A plan sheet: plans built at the close of the first date for the second date's session">{s.start} → <b>{s.params.planFor}</b> {s.summary?.pending && <span className="tq-badge plan" style={{ marginLeft: 4 }}>setups · {s.summary?.setups ?? "?"}</span>}</span> : s.start === s.end ? s.start : `${s.start} → ${s.end}`}</td>
                           <td>{s.status === "running" ? <span className="nowrap"><Spinner /> {s.progress?.done ?? 0}/{s.progress?.total ?? s.symbols.length}</span> : s.status === "failed" ? <span className="neg">failed</span> : <span className="pos">done</span>}</td>
                           <td>{s.summary?.sessions ?? "—"}</td>
@@ -933,7 +933,7 @@ export function ValidationTab({ llmAvailable = true, sweepVersion = null }: { ll
                 <b>{s.label || `${s.start}..${s.end}`}</b>
                 {isExperiment(s) && <span className="status-pill dim" title="A variant sweep with threshold overrides — not a regular validation">experiment</span>}
                 {" "}<span className="muted">{s.status}{s.summary?.sample?.fired !== undefined ? ` · ${s.summary.sample.fired} fired` : ""}</span>
-                <span className="muted">{s.symbols.slice(0, 6).join(", ")}{s.symbols.length > 6 ? ` +${s.symbols.length - 6}` : ""} · {s.createdAt ? fmtDateTime(s.createdAt) : ""}</span>
+                <span className="muted">{(s.symbols ?? []).slice(0, 6).join(", ")}{(s.symbols ?? []).length > 6 ? ` +${s.symbols.length - 6}` : ""} · {s.createdAt ? fmtDateTime(s.createdAt) : ""}</span>
               </button>
             ))}
           </div>
