@@ -541,6 +541,14 @@ cancel it (a resting order costs nothing) - to be sized against the critic's sav
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
+- 2026-09-04 · **Author-board auto-arm ON** (`techniques.enhanced_market.ingest.auto_arm=true`,
+  user decision 10:55 ET). The morning board check now arms the "new" plans it builds for the
+  author's names the moment they pass OUR gates (valid trigger, R:R >= 3, grade A/B via
+  `ingest.auto_arm_min_grade`, critic at fire time, per-plan loss halt, Practice account).
+  Rules/thresholds stay human; only the 09:15 click moved. Why: four mornings of a correct
+  pipeline whose output needed a human at 06:15 Vancouver - today NVDA 230.4 / QCOM 170.6 sat
+  unarmed. Evidence: INGESTION-PLAN status, board rows 09-01..09-04. Review after 5 mornings:
+  fires/kills/R of auto-armed vs evening-batch plans (their runs carry the tag `ingest` and the board row `autoArmed`).
 - 2026-09-02 · **T5.4 wide-spread gate judged on the real-time NBBO after the pick**
   (`technique/options.py::rejudge_spread`, called in `arming.py::_pick_contract` right after
   `OptionsService.reprice`). Why: until 13:42 ET every option quote was the ~15-min delayed

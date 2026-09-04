@@ -302,6 +302,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.enhanced_market.ingest.auto_extract": True,
     "techniques.enhanced_market.ingest.auto_plan_board": True,   # deterministic plan runs on the board's symbols (no LLM)
     "techniques.enhanced_market.ingest.auto_arm": False,         # proposes only; a human arms
+    "techniques.enhanced_market.ingest.auto_arm_min_grade": "B",   # auto-arm only plans graded this or better (A > B > C)
     "techniques.enhanced_market.ingest.board_max_symbols": 12,
     "techniques.enhanced_market.ingest.transcribe_max_attempts": 5,
     "techniques.enhanced_market.ingest.live_recheck_seconds": 60,   # a still-live broadcast is re-probed this often (no attempt spent)
