@@ -4,11 +4,18 @@ import type { Page } from "../store";
  * Minimal URL <-> state sync. The app has no router; this keeps the address bar
  * meaningful so a run can be linked, bookmarked and quoted:
  *
- *   /technique                     analyse tab
- *   /technique/history             a tab
- *   /technique/run/<runId>         one run, deep-linkable
- *   /technique/chat/<threadId>     one chat thread
+ *   /techniques/em                 EM Options — analyse tab
+ *   /techniques/em/history         a tab (validation, chat, backtest, ...)
+ *   /techniques/em/run/<runId>     one run, deep-linkable
+ *   /techniques/em/chat/<threadId> one chat thread
+ *   /techniques/tips[/<tab>]       the Tips page (was /inbox)
+ *   /techniques/team2[/<tab>]      Team2 (was /team2)
+ *   /techniques/flow[/<tab>]       Flow (was /flow)
  *   /trade, /journal, ...          the other pages
+ *
+ * The old paths (/technique/..., /inbox/..., /team2, /flow) still parse — bookmarks,
+ * pushes and docs keep working — but every path the app WRITES is the /techniques form,
+ * so the address bar names the technique the page belongs to (user 2026-09-04).
  *
  * Real paths (not hashes) because the server already falls through to
  * index.html for unknown paths.
@@ -49,8 +56,18 @@ export interface RouteState {
   analystRunId?: string | null;
 }
 
+/** URL slug <-> page for the technique family. */
+export const TECHNIQUE_SLUGS: Record<string, Page> = { em: "technique", tips: "inbox", team2: "team2", flow: "flow" };
+const PAGE_SLUGS: Partial<Record<Page, string>> = { technique: "em", inbox: "tips", team2: "team2", flow: "flow" };
+
 export function parseLocation(pathname = window.location.pathname): RouteState {
   const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] === "techniques") {
+    // /techniques/<slug>/<rest…> is the same route as /<page>/<rest…>
+    const page = TECHNIQUE_SLUGS[(parts[1] ?? "").toLowerCase()];
+    if (!page) return { page: "technique", techniqueTab: "analyse" };
+    return parseLocation("/" + [page, ...parts.slice(2)].join("/"));
+  }
   const page = (PAGES as string[]).includes(parts[0]) ? (parts[0] as Page) : "dashboard";
   if (page === "options") {
     const a = (parts[1] ?? "").toUpperCase();
@@ -90,6 +107,15 @@ export function parseLocation(pathname = window.location.pathname): RouteState {
 }
 
 export function buildPath(s: RouteState): string {
+  const legacy = buildLegacyPath(s);
+  const slug = PAGE_SLUGS[s.page];
+  if (!slug) return legacy;
+  // "/technique/validation" -> "/techniques/em/validation", "/inbox" -> "/techniques/tips"
+  const rest = legacy.replace(new RegExp(`^/${s.page}`), "");
+  return `/techniques/${slug}${rest}`;
+}
+
+function buildLegacyPath(s: RouteState): string {
   if (s.page === "options") {
     if (s.optionsContract) return `/options/c/${s.optionsContract}`;
     if (s.optionsUnderlying) {

@@ -65,7 +65,7 @@ function TriggerRow({ t, outcome }: { t: PlanTrigger; outcome?: any }) {
               {t.assessment && t.assessment.cautions.length > 0 && (
                 <ul className="tq-assess-list warn-list small">{t.assessment.cautions.map((s, i) => <li key={i}>⚠ {s}</li>)}</ul>
               )}
-              {!t.assessment && <div>{t.confluences.length ? t.confluences.join("; ") : "no extra confluence"} · confidence {fmt(t.confidence)}</div>}
+              {!t.assessment && <div>{t.confluences?.length ? t.confluences.join("; ") : "no extra confluence"} · confidence {fmt(t.confidence)}</div>}
               {t.noTradeReasons.length > 0 && <ul className="tq-reasons small">{t.noTradeReasons.map((r, i) => <li key={i}>{r}</li>)}</ul>}
               <div className="muted">{t.notes}</div>
               <div className="tq-chips">{t.rules.map((r) => <span key={r} className="tq-chip">{r}</span>)}</div>
@@ -202,7 +202,7 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
               The market was closed at the as-of instant (R6.4), so this is the book's pre-session routine (pp. 116–117, 120):
               the levels that matter and <i>conditional</i> triggers — WATCH a level, IF price reaches it inside a prime window on
               adequate volume, THEN the plan, VOID IF the open gaps past it. Levels are redrawn every session; prior-day HOD/LOD carry.
-              {plan.notes.length > 0 && <div className="tq-nosetup-cand">{plan.notes.join(" ")}</div>}
+              {!!plan.notes?.length && <div className="tq-nosetup-cand">{plan.notes.join(" ")}</div>}
             </div>
           </div>
           <div className="tq-section">
@@ -217,8 +217,8 @@ export function PlanCard({ run, onRefresh, rules = {} }: { run: TechniqueRun; on
                       <td><b>{fmt(l.price)}</b></td>
                       <td><span className={`tq-level ${l.effectiveKind}`}>{l.effectiveKind}</span></td>
                       <td>×{l.touches}</td>
-                      <td className="muted">{l.sources.join(",")}{l.priorDayExtreme ? " · prior-day" : ""}{l.carried ? " (carried)" : ""}</td>
-                      <td className="muted">{l.timeframes.join(",")}</td>
+                      <td className="muted">{(l.sources ?? []).join(",")}{l.priorDayExtreme ? " · prior-day" : ""}{l.carried ? " (carried)" : ""}</td>
+                      <td className="muted">{(l.timeframes ?? []).join(",")}</td>
                       <td>{l.distancePct !== null && l.distancePct !== undefined ? `${l.distancePct > 0 ? "+" : ""}${l.distancePct.toFixed(2)}%` : "—"}</td>
                       <td className="muted">{l.ageSessions ?? "—"}</td>
                       {levelsRow && <td><span className={`tq-badge ${r?.status === "respected" ? "setup" : r?.status === "broken" ? "failed" : "nosetup"}`}>{r?.status ?? "—"}</span></td>}

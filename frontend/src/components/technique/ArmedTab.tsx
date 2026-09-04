@@ -55,7 +55,7 @@ function TradeRow({ t }: { t: ArmedTrade }) {
       {t.exits.length > 0 && (
         <div className="muted small">exits: {t.exits.map((e, i) => `${e.kind} ${e.filledQty || e.qty}${e.price ? ` @ ${fmt(e.price)}` : ""}${e.status && !["FILLED"].includes(e.status) ? ` (${e.status})` : ""}`).join(" · ")}</div>
       )}
-      {t.errors.length > 0 && <div className="neg small">{t.errors.slice(-2).join(" · ")}{t.retries ? ` · retries ${t.retries}` : ""}</div>}
+      {!!t.errors?.length && <div className="neg small">{t.errors.slice(-2).join(" · ")}{t.retries ? ` · retries ${t.retries}` : ""}</div>}
       {t.critic && <div className="muted small">critic: {t.critic.kill ? "KILLED" : "survived"} — {t.critic.summary}</div>}
     </div>
   );
@@ -76,7 +76,7 @@ function Scorecard({ sc }: { sc: ArmScorecard }) {
       {sc.rows.some((r) => r.notes.length) && (
         <ul className="tq-armed-sc-notes">
           {sc.rows.filter((r) => r.notes.length).map((r) => (
-            <li key={r.trigger}><b>{r.trigger}</b> {r.kind}: {r.notes.join("; ")}</li>
+            <li key={r.trigger}><b>{r.trigger}</b> {r.kind}: {(r.notes ?? []).join("; ")}</li>
           ))}
         </ul>
       )}

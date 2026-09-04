@@ -924,7 +924,7 @@ export function TechniquePage() {
   const { isPhone } = useViewport();
   // phones open on Analyse (Validation is a desktop job) unless a deep link asked otherwise
   useEffect(() => {
-    if (isPhone && tab === "validation" && window.location.pathname === "/technique") setTab("analyse");
+    if (isPhone && tab === "validation" && ["/technique", "/techniques/em"].includes(window.location.pathname)) setTab("analyse");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPhone]);
   // Armed moved to its own page; a stale "armed" tab value redirects there
@@ -1065,9 +1065,9 @@ export function TechniquePage() {
     const extra = runs.filter((r) => r.trigger === "promote" && !have.has(r.id) && r.createdAt && r.status !== "failed"
       && new Date(r.createdAt!).getTime() >= lo && new Date(r.createdAt!).getTime() - hi < 10 * 60_000).map((r) => r.id);
     // late-arriving batch members are adopted on every poll: de-duplicate, or the queue shows the same run many times
-    if (extra.length) setScan((s) => (s ? { ...s, ids: Array.from(new Set([...s.ids, ...extra])), done: false } : s));
+    if (extra.length) setScan((s) => (s ? { ...s, ids: Array.from(new Set([...(s.ids ?? []), ...extra])), done: false } : s));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runs, scan?.ids.join(",")]);
+  }, [runs, (scan?.ids ?? []).join(",")]);
   // The batch is the SHEET, not just tonight's fresh runs: rows whose analyst read
   // was REUSED (finished earlier, not paid for again) belong on the panel and in
   // "Arm N confirmed" too — an adopted panel once said 11/42 confirmed when the
@@ -1076,7 +1076,7 @@ export function TechniquePage() {
   const sheetMerged = useRef<string>("");
   useEffect(() => {
     if (!scan?.armable) return;
-    const key = scan.ids.slice().sort().join(",");
+    const key = (scan.ids ?? []).slice().sort().join(",");
     if (sheetMerged.current === key) return;
     sheetMerged.current = key;
     let stop = false;
@@ -1091,14 +1091,14 @@ export function TechniquePage() {
         if (stop || !promoted.length) return;
         setScan((s) => {
           if (!s?.armable) return s;
-          const extra = promoted.filter((id) => !s.ids.includes(id));
-          return extra.length ? { ...s, ids: [...s.ids, ...extra], done: false } : s;
+          const extra = promoted.filter((id) => !(s.ids ?? []).includes(id));
+          return extra.length ? { ...s, ids: [...(s.ids ?? []), ...extra], done: false } : s;
         });
       } catch { /* the panel still shows the runs it already knows */ }
     })();
     return () => { stop = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scan?.armable, scan?.ids.join(",")]);
+  }, [scan?.armable, (scan?.ids ?? []).join(",")]);
   const scanSymbols = status?.scanSymbols ?? [];
   // tonight's sheet, if one exists for the upcoming session: scan can analyst-check its graded rows
   const [sheetScan, setSheetScan] = useState<{ sweepId: string; planFor: string;
