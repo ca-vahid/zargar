@@ -85,11 +85,12 @@ export function AuthorBoardCard() {
                     <td className="small">{his ? his.replace(/^[A-Z.]+\s*[|:]?\s*/, "") : "—"}</td>
                     <td className="small">
                       {isArmed ? <span className="tq-badge setup">ARMED</span>
-                        : r.status === "new" ? <><span className="tq-badge plan">{String(r.kind ?? "").toUpperCase()}</span> grade <b>{r.grade}</b> @ {r.level} · rr {typeof r.rr === "number" ? r.rr.toFixed(1) : r.rr}</>
+                        : r.status === "new" ? <><span className="tq-badge plan">{String(r.kind ?? "").toUpperCase()}</span> grade <b>{r.grade}</b> @ {r.level} · rr {typeof r.rr === "number" ? r.rr.toFixed(1) : r.rr}{r.armSkipped && <span className="muted"> · not auto-armed: {r.armSkipped}</span>}</>
                         : r.status === "rejected" ? <span className="muted" title={r.reason}>rejected · {String(r.reason ?? "").slice(0, 90)}</span>
                         : <span className="neg">{r.reason ?? r.status}</span>}
                     </td>
                     <td className="nowrap tq-arm-cell">
+                      {r.autoArmed && <span className="status-pill ok" title="Armed by the morning board check (ingest.auto_arm): it passed our gates and the grade floor">auto-armed</span>}
                       {!isArmed && r.status === "new" && r.runId && (
                         <button className="tq-act next" disabled={!!busy} onClick={() => void arm(r)}>{busy === r.symbol ? "…" : "⚡ arm"}</button>
                       )}

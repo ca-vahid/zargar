@@ -179,3 +179,12 @@ and idle polls are silent - which read as "it did nothing". `em_ingest` now prin
 today's captured brief (kind, channel, time, status, material, symbols, board counts)
 on start and an "alive" line every ~30 minutes. Where to look: Validation tab, the
 Author's board card (`GET /api/technique/ingest/board`).
+
+### 2026-09-04: auto-arm switched ON (user decision)
+
+Boundary update: `ingest.auto_arm` is now **true**. The board check arms the plans it
+builds for the author's names when they pass the pipeline's own gates (valid trigger,
+R2, grade >= `ingest.auto_arm_min_grade` (B), critic on at fire, loss halt, Practice).
+It still never touches an existing armed plan, a rule or a threshold, and it never arms a
+plan our gate rejected. Auto-armed runs carry the tag `ingest` (board row `autoArmed: true`) so the
+weekly review can compare them with the evening batch. Turn it off with one setting.

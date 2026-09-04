@@ -395,12 +395,21 @@ class MethodIngestService:
                        "direction": best.get("direction"), "level": best.get("levelPrice"),
                        "rr": best.get("riskReward"), "triggerId": best.get("id")}
                 if self._get("ingest.auto_arm", False):
-                    try:
-                        await self.technique.arm_plan(run.get("id"), {})
-                        row["status"] = "armed"
-                        row["autoArmed"] = True
-                    except Exception as exc:           # noqa: BLE001
-                        row["armError"] = str(exc)[:200]
+                    # 2026-09-04 (user decision): arm what passes OUR gates - the plan is
+                    # already valid (R2) and this adds the grade floor; the critic, the
+                    # loss halt and the account come from the normal arm path. The run
+                    # carries tag `ingest`, so auto-armed plans stay distinguishable.
+                    min_grade = str(self._get("ingest.auto_arm_min_grade", "B") or "B").upper()
+                    grade = str(row.get("grade") or "").upper()
+                    if grade and grade > min_grade:          # letters sort A < B < C
+                        row["armSkipped"] = f"grade {grade} below the auto-arm floor {min_grade}"
+                    else:
+                        try:
+                            await self.technique.arm_plan(run.get("id"), {})
+                            row["status"] = "armed"
+                            row["autoArmed"] = True
+                        except Exception as exc:           # noqa: BLE001
+                            row["armError"] = str(exc)[:200]
                 rows.append(row)
             else:
                 # the closest miss explains the rejection (usually R2)

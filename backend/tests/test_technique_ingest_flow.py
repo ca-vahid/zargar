@@ -97,3 +97,42 @@ def test_gateway_surfaces_embed_and_attachment_urls(tmp_path):
     text = posted[0][1]["text"]
     assert "https://x.com/i/broadcasts/1abc" in text and "https://cdn.example/clip.mp4" in text
     assert posted[0][1]["channelName"] == "em-alerts"
+
+
+async def test_auto_arm_arms_board_plans_that_pass_our_gates_and_respects_the_grade_floor(rig, monkeypatch):
+    """2026-09-04 user decision: ingest.auto_arm ON. The board check arms the plans it
+    builds when they pass OUR gates (valid trigger = R2) and the grade floor; a plan
+    below the floor stays 'new' with the reason on the row. The run keeps tag `ingest`."""
+    from .test_technique_ingest import VIDEO_MSG
+    ing = rig.svc.ingest
+    await rig.eng.settings.set("techniques.enhanced_market.ingest.auto_extract", False, journal=False)
+    await rig.eng.settings.set("techniques.enhanced_market.ingest.auto_arm", True, journal=False)
+    await rig.eng.settings.set("techniques.enhanced_market.ingest.auto_arm_min_grade", "B", journal=False)
+    await rig.eng.settings.set("technique.arm.instrument", "shares", journal=False)    # the rig has options off
+    d = await ing.store_message({**VIDEO_MSG, "id": "900077"})
+
+    async def fake_llm(source, body):
+        return {"summary": "two names", "stance": "cautious", "symbols": ["TEST", "ZZZZ"], "board": [], "claims": [], "vetoes": []}
+    monkeypatch.setattr(ing, "_llm_extract", fake_llm)
+    await ing.store_transcript(d["id"], transcript="[0:01] TEST and ZZZZ", meta={"model": "small"})
+    await ing.extract(d["id"])
+
+    real_analyze = ing.technique.analyze
+
+    async def analyze_grade_c_for_zzzz(symbol, **kw):
+        if symbol != "ZZZZ":
+            return await real_analyze(symbol, **kw)
+        return {"id": "zzzz-run", "symbol": "ZZZZ", "result": {"plan": {"planFor": "2099-01-01", "triggers": [
+            {"id": "k1", "kind": "breakout", "direction": "long", "valid": True, "levelPrice": 10.0,
+             "riskReward": 3.5, "assessment": {"grade": "C", "score": 0.2}}]}}}
+    monkeypatch.setattr(ing.technique, "analyze", analyze_grade_c_for_zzzz)
+
+    b = await ing.board_check(d["id"])
+    rows = {r["symbol"]: r for r in b["boardCheck"]["rows"]}
+    # TEST: a real plan in the synthetic market, graded A/B -> armed by the board
+    assert rows["TEST"]["status"] == "armed" and rows["TEST"].get("autoArmed") is True, rows["TEST"]
+    assert rows["TEST"]["runId"] in rig.svc.armer._armed
+    # ZZZZ: valid but grade C -> left for the human, with the reason
+    assert rows["ZZZZ"]["status"] == "new" and "grade C" in rows["ZZZZ"]["armSkipped"]
+    assert "zzzz-run" not in rig.svc.armer._armed
+    await rig.svc.armer.disarm(rows["TEST"]["runId"], reason="test")

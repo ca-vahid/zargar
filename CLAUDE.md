@@ -49,7 +49,7 @@ Session plans + walk-forward + live arming: `docs/techniques/enhanced-market/WAL
 the shared read-only Discord gateway forwards `techniques.enhanced_market.discord.channels` to
 `technique/ingest.py` (`technique_method_notes`); `tools/em_ingest.py` transcribes videos; extraction +
 deterministic board check feed the Validation tab's Author's board card. Never routes through Tip's
-intake/mirror; arming stays human (`ingest.auto_arm` off). Method evolution loop + variant sweeps:
+intake/mirror; `ingest.auto_arm` is ON since 2026-09-04 (board-built plans that pass our gates + grade >= B are armed on Practice; rules/thresholds stay human). Method evolution loop + variant sweeps:
 `docs/techniques/enhanced-market/EVOLUTION-PLAN.md`.
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
 **Multi-technique platform (BUILT through phase 5, 2026-08-27):** `docs/TECHNIQUE-PLATFORM-PLAN.md`;
