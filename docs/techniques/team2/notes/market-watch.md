@@ -687,3 +687,67 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   a $341 limit — the limit derived at 2% risk this morning, never re-derived when risk went to 6% in place. Fixed
   (commit db1f315): a risk % change in auto re-derives the dollar loss halt; SPY/IWM now carry $997 (6% × 2).
   Deployed 14:31 with the halt scopes. QQQ stays disarmed for today (its own day is over, by the plan's rule).
+
+## 2026-09-04 14:45 ET (run 12 — QQQ is out for the day on its own loss halt; the halt math is $100 short)
+
+- **Alive and real-time, but only TWO plans.** `/api/health` ok v0.7.0, 62 armed. SPY and IWM `armed` +
+  **auto** on Practice (`ff3c29d4`), `needsAttention: false`, nothing open or working; **QQQ is
+  disarmed** (see below). Quotes 0 s old, session `regular`; the 14:16 order intent proves the option
+  side is real-time **OPRA** (`priced: "opra"`, bid 0.58/ask 0.59), and the log shows OPRA
+  quote+trade polls returning 200 every ~2.4 s. 1m bars banking through **14:44 ET** for SPY (1,428
+  rows/24 h) and IWM (977), age 73–118 s, `stale: false`. **Zero `Traceback`, `ERROR` or `read_error`**
+  in the 4,586 log lines since the 14:33 restart — 43 warnings, all the benign
+  `dropped N non-bucket-aligned stub bar(s)`.
+- **The engine restarted twice more** (14:30 and 14:33 ET, both `start.ps1` deploys by the desk
+  session — halt scopes `29bdb45` and the loss-limit recompute `db1f315`). Both restored cleanly.
+  Confirmed live: SPY and IWM now carry **`dailyLossLimit` $997.08** (6 % × 2), not the stale $341.38
+  they were restored with at 14:30 — `db1f315` is working.
+- **QQQ took a SECOND real order and then disarmed itself.** `pm_break_down@13:30` touch #2 fired at
+  **14:16**: **BUY 18 QQQ260904P00717000 @ $0.59** (limit 0.59, $1,062). At **14:17** the per-plan loss
+  halt fired — *"realised −300.00 + open −54.00 marked at bid crossed −341.38"* — and the plan was
+  **disarmed and flattened** at 0.5599. Correct behaviour by the rule as written; QQQ's day is over.
+  Full chain in the audit, four `source: technique` executions in the DB. Day's book damage on Team2:
+  **−$454.02** (gross −$354.18 + **$99.84** commission).
+- **F32 (new, NOT fixed — the loss halt does not count commissions).** The halt sums
+  `trade.realized_pnl`, which is gross. After the FIRST QQQ round trip the book was already down
+  **−$362.40**, past the plan's −$341.38 limit, but the halt read **−$300** and let the second entry
+  through. On a $0.30–0.60 0DTE contract the round-trip fee is 6–12 % of premium — the halt understates
+  the day exactly where it is meant to bind. **Shared engine + money rule — the user's call.**
+- **F33 (new, NOT fixed — the halt is checked after the entry, never before it).** `_on_bar` runs
+  `_act` (which fires, sizes and routes) and only then `_maybe_loss_halt`. So at 14:16 the plan opened a
+  **$1,062** ticket with **$41** of gross budget left; one minute of spread was enough to trip the halt
+  and force an immediate flatten that bought nothing but **$37.44** of commission. Proposal: refuse an
+  auto entry whose premium-at-risk exceeds the remaining daily budget, with a `skip_loss_budget` read
+  event — same shape as `max_open_trades` / A12. **Shared engine + money rule — the user's call.**
+- **F36 (new, NOT fixed — the read and the book bought different contracts).** On that same 14:14 fire
+  the read says *"buy put **716** ≈ **$0.26**"* while the order was **717 P at $0.59** — 2.3× the
+  premium, so the model's −19 % and the book's −$91.62 are not comparable. Both aim at
+  `target_premium` 0.60: the model's flat-IV BS mark for 717 was a hair over 0.60 (σ 0.1669 vs OPRA's
+  0.1335) so it stepped OTM; the live picker saw the real ask 0.59 ≤ 0.60 and stopped. One cent decides
+  the strike, the premium and the size. Same family as F30. The 13:46 fire agreed (716, $0.33 model /
+  $0.36 live) — the split only appears when the ATM contract prices within a cent of the target.
+- **F26's first live exercise passed.** QQQ's read carries `skip_loss_cap` at **14:18**: *"2 losing
+  trades today (max 2) — done taking entries in this symbol for the session (D-3)"*. Exactly the row
+  that did not exist before this morning. (The 15:30 `skip_last_entry` row is still ahead of us.)
+- **F34 + F35 (FIXED, committed `40954d6`, deploy QUEUED).** F34: nothing kept the desk's symbols on
+  the feed once a plan was gone — QQQ's 1m bars **stopped at 14:28** because the 14:33 restart re-armed
+  only SPY and IWM, so the day's replay of the disarmed plan is truncated at the disarm (confirmed: its
+  replay reads 147 2m bars and stops). `attach_team2_runner` now `ensure_symbol`s every
+  `techniques.team2.symbols` entry at boot, armed or not. F35: a disarmed plan vanished from the Plans
+  tab as a bare *"not armed"* though `technique_armed` already stores `status: disarmed` + the full
+  `stopReason`; `Team2Service.runs()` now returns both and the page prints the reason. Reporting and
+  data continuity only — no entry, exit or size changes. 51 Team2 tests green, `npm run build` clean
+  (the frontend half is already live, dist is served from disk).
+- **Deploy queued for the 16:05 run (post-close).** SPY sits 0.10 % from its `scenario_3` entry
+  (769.26) and IWM 0.12 % from its `pm_break_up` anchor (295.92) with the desk in AUTO — neither fix is
+  worth alert-stamping a fire for, and 15:30–15:45 must stay untouched (last entry + flatten).
+- **Replay parity exact on all three**, including the disarmed QQQ: SPY 8/8 events + 2/2 trades,
+  IWM 7/7 + 1/1, QQQ 14/14 + 2/2, identical P&L (only `bars2m` 155 vs 156 = the minute between fetches).
+- **Day so far (model): 5 trades, 1 win / 4 losses.** SPY `pm_break_down@10:30` +62.31 then −12.23
+  (net +50.08), IWM `pm_break_up@12:00` −19.17, QQQ two at −48.56 combined. Book: −$454.02, all QQQ.
+- **UI not visually checked this run** — the in-app browser drops `?token=` on the SPA redirect and
+  lands on the sign-in page; the page change was gated on typecheck + build instead.
+- **Next run should check:** the **15:30 `skip_last_entry` row** on SPY and IWM and the **15:45
+  flatten**; whether SPY takes its `scenario_3` EMA13 touch at 769.26 or IWM clears 295.92 (it is
+  inside its PM range, so F15 refuses every entry until it does); that the queued `40954d6` deploy goes
+  out after 15:45; and whether the user has ruled on F27/F28/F29/F30/F32/F33/F36.
