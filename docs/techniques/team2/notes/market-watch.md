@@ -751,3 +751,14 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   flatten**; whether SPY takes its `scenario_3` EMA13 touch at 769.26 or IWM clears 295.92 (it is
   inside its PM range, so F15 refuses every entry until it does); that the queued `40954d6` deploy goes
   out after 15:45; and whether the user has ruled on F27/F28/F29/F30/F32/F33/F36.
+
+## 2026-09-04 15:00 ET (desk session) — F25–F36 built and deployed
+
+- User: "implement all the fixes and then restart the engine". Commit bd2a39a (+ F34/F35 from the watch job) deployed
+  14:57 ET via alert → restart → auto (no Team2 trade open). Closed: F25 one clock (read events at the bar CLOSE;
+  the first 2m close past 15:30 now reads 15:32), F27 `zone_tol_atr` + `flip_body_ratio` wired at 0, F28
+  `TechniquePlanRead` journal kind, F29 desk-wide loss cap (`losses_desk_wide`, `skip_loss_cap_desk`), F30
+  `premium_stop_basis=mid` + `premium_stop_min_ticks=3`, F32 halts net of fees, F33 `skip_loss_budget` before
+  routing, F36 `premium_pick=closest` in both paths. 107 tests green. PLATFORM-RULES logs the shared knobs.
+- Watch job: expect `TechniquePlanRead` rows instead of skip rows for scenario/pm_break/late_touch/pm_retest; skip
+  counts drop accordingly. Both plans carry a $997 loss halt at 6% risk.
