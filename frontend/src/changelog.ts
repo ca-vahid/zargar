@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-02",
     title: "Nothing stranded, nothing lost to a bug",
     items: [
+      { tag: "fixed", text: "Validation batch: the Arm button says exactly why nothing qualifies instead of a cheerful \"All 0 armed\", and every bulk arm is verified against the server before it reports success." },
       { tag: "fixed", text: "A restart no longer strands a working entry: the entry window now times out by the clock, the contract is watched again after a restart, and an order the sim book lost is cancelled instead of sitting 'accepted' forever." },
       { tag: "new", text: "Counterfactual ledger (Armed > History): when a bug costs a trade, the fired order is replayed through the desk's own exit rules on the real bars after the fix - fill, exits, gain, R - and kept beside the real results. Practice stays what actually happened." },
       { tag: "improved", text: "The EM ingestion window says what it captured today on start instead of sitting blank." },
