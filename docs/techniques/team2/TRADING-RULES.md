@@ -98,12 +98,35 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   13-EMA entries in the middle of the pre-market range. The downside case is the sharper one: a
   gap-day reversal through PML 717.13 has no setup until PDL 709.69, ten points lower. Behaviour
   change → proposed, not built.
+  **Confirmed live at 10:02 ET** and sharper than first written. QQQ fired scenario 1 touch #1 at spot
+  721.44 — inside PM 717.13–722.06, 0.62 under the PMH — with `bucket=full`. The same engine, the same
+  minute, skipped IWM's two identical EMA13 touches (294.94 at 09:46, 294.64 at 09:56) with
+  `skip_no_trade_zone` "entry sits inside the pre-market range (V6/B5)". The only discriminator is the
+  day type. And it is not a gap-day ambiguity at all — it is a **missing rung**: V6 states a five-step
+  ladder ("above the PDH zone = Full · PDH zone→PMH = **Small** · PMH→PML = No trade · PML→PDL zone =
+  Small · below the PDL zone = Full"), and `scenario.sizing_bucket` implements only three, returning
+  "full" for anything above `pdh.top` and never producing "small" for the PDH-top→PMH band. Whenever
+  PMH > PDH top (every gap-up day, and plenty of normal ones) the ladder's second rung is unreachable.
+  The literal V6 reading for QQQ at 721.44 is **small**, not full. Fix would be to walk the five rungs
+  in price order; still a sizing (money) change → the user's call, but no longer a judgement about what
+  the author meant.
 - **F16 (2026-09-04, market watch, operational)** The Practice portfolio Team2 is armed to
   (`ff3c29d4`, sim) tripped its daily-loss halt at **09:38 ET** (`KillSwitchEngaged`, auto, "Practice
   at -9.13%, halt at -8.0%") — eight minutes into the session, from other techniques' positions;
   Team2 has no trade and no position today. No impact while Team2 is in `alert` mode, but the kill
   switch is global: if the mode is moved to proposal/auto today, entries are refused (exits only), so
   a day's worth of Team2 practice signals would silently produce no fills. Release is the user's call.
+- **F17 (2026-09-04, market watch — FIXED)** F16 turned out to have a *reading* cost too, not just a
+  money one: `Team2Runner._fire_from_event` checked the kill switch **before** the mode, so while the
+  shared Practice halt was engaged the desk stopped recording its own read of the tape. QQQ's first fire
+  of the day (10:02 ET, scenario 1 touch #1, EMA13 720.84 held on a 721.44 close, model call 723 ≈ $0.47)
+  was logged as `halt_skip` and produced no `fired` row — while `POST /runs/{id}/replay` over the same
+  bars *did* show the fire, so live-vs-replay parity broke as a side effect. Alert mode places nothing
+  (`_fire_rest` only sets `trade.status = "alert"`), and the caps immediately below the halt check —
+  plus `_add_from_event`'s `would_add` — are already gated to money modes with the comment "money modes
+  only; alert/proposal keep recording every read". The halt check was the odd one out. Fixed: the halt
+  gate now applies to proposal/auto only; an alert-mode fire during a halt is recorded with
+  `haltedAtFire: true` so the audit still says the money path would have refused it.
 
 ## Theories to test
 
@@ -134,5 +157,6 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   2026-09-03) put the PDH zone at 773.76–774.03 with "room up to 775.30". The author's own 2026-09-03 recap
   annotated the high at 774.03 and his pre-market plan said "room up to 775.29" (notes/x/images INDEX,
   `2095599035113693522-1.jpg`). Zone construction (L1.2) and target discovery (L3.1) reproduce his sheet to the cent.
+| 2026-09-04 | **F17 fixed**: the kill switch no longer suppresses Team2's alert-mode read. `_fire_from_event`'s halt gate now applies to proposal/auto only (alert places nothing); an alert fire during a halt carries `haltedAtFire: true`. Restores live-vs-replay parity while the shared Practice portfolio is halted | market watch 10:00 ET; QQQ 10:02 fire lost to `halt_skip`; `tests/test_team2_runner.py::test_alert_mode_still_reads_the_tape_while_halted` fails without the fix | Team2 desk |
 | 2026-09-04 | Posture pass: X5 trim-and-add (`add_on_retest`, one add), X3b running HOD/LOD target for re-entries (`hod_target=reentry`), trims judged on the LIVE premium in money modes (deferred/no-op vs the model), small positions hold whole to +100%. Default ON for the sweep to judge; the synthetic add day shows an add can cut a winner (+124% → +70%) — decide `add_on_retest` from the walk-forward, not from the image | `tests/test_team2_posture.py`; images 2081050843768660321 (trim-and-add), IWM three-trade day (HOD target) | Team2 desk |
 | 2026-09-04 | Second review: T7 base, T8 200-EMA flush, EMA48 entries, new-extreme trim cue, stalled-pullback rule, cross-plan concurrency cap (A12) in the runner; 8 more images read (INDEX) | images 1979379272990277934, 1961977219590574391-2/3, 1908549478438887528, 2081050843768660321, 1964745974393557113/76528400559, 2013059662812463256 | Team2 desk |

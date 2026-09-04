@@ -123,3 +123,36 @@ async def test_sweep_over_banked_days(rig):
     res2 = await eng.team2.sweep(PREV.isoformat(), DAY.isoformat(), symbols=["SPY"], sigma=0.2,
                                  overrides={"pullback_max_touches": 0})
     assert res2["summary"]["trades"] == 0 and res2["thresholds"]["pullback_max_touches"] == 0
+
+
+async def test_alert_mode_still_reads_the_tape_while_halted(rig):
+    """F17: the kill switch blocks the MONEY modes. Alert mode places nothing, so a halt on the
+    shared portfolio (another technique's daily loss engages it) must not silence Team2's read —
+    it went silent live on 2026-09-04 when Practice halted at 09:38 and QQQ's 10:02 fire became a
+    `halt_skip`, which also broke live-vs-replay parity."""
+    eng, sim = rig
+    prev = prev_day_bars()
+    today, _zones = trend_day(prev)
+    await _bank(eng, prev)
+    await _bank(eng, filter_session(today, "pre"))
+    svc = eng.team2
+    out = await svc.nightly_plans(DAY.isoformat(), arm=True)
+    run_id = out["armed"][0]
+    ap = eng.team2_runner.get(run_id)
+    await svc.preopen_complete()
+    eng.halt.engage("test: another technique's daily loss")             # the shared-portfolio halt
+    assert eng.halt.engaged
+    for b in filter_session(today, "rth"):
+        await eng.team2_runner.on_bar(run_id, b)
+    events = [e["event"] for e in ap.events]
+    assert "fired" in events, events[:20]                               # the read still happens
+    assert "halt_skip" not in events, events[:20]
+    fired = next(e for e in ap.events if e["event"] == "fired")
+    assert fired["haltedAtFire"] is True                                # ...and says the halt was on
+    trades = list(ap.trades.values())
+    assert trades and trades[0].status == "alert"                       # nothing was routed
+    # parity survives the halt: the replay of the same bars sees the same fire
+    await _bank(eng, filter_session(today, "rth"))
+    rep = await svc.replay(run_id)
+    rep_fire = next(e for e in rep["result"]["events"] if e["event"] == "fire")
+    assert rep_fire["ts"] == trades[0].fired_ts

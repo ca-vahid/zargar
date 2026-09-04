@@ -349,7 +349,12 @@ class Team2Runner(PlanRunner):
         if ap.status == "paused":
             self._log(ap, "paused_skip", f"{tid}: conditions met but the plan is paused", trigger=tid)
             return
-        if halted:
+        # The kill switch blocks the MONEY modes. Alert mode places nothing (`_fire_rest` only
+        # records `trade.status = "alert"`), so a halt on the shared portfolio — which another
+        # technique's daily loss can engage — must not silence the desk's read of the tape: the
+        # same rule the caps below and `_add_from_event`'s `would_add` already follow ("money
+        # modes only; alert/proposal keep recording every read").
+        if halted and ap.config.mode != "alert":
             self._log(ap, "halt_skip", f"{tid}: conditions met but the kill switch is engaged", trigger=tid)
             return
         open_or_working = sum(1 for t in ap.trades.values() if t.status in ("fired", "submitting", "working", "open"))
@@ -389,7 +394,7 @@ class Team2Runner(PlanRunner):
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid}: {e.get('why', '')}", trigger=tid, spot=spot, premiumModel=e.get("premium"),
                   strikeModel=e.get("strike"), bucket=trade._bucket, early=e.get("early"), target=target,
-                  targetKind=trade.target_kind)
+                  targetKind=trade.target_kind, haltedAtFire=halted or None)
         stub = SimpleNamespace(kind=trade.kind, direction=direction, fill_price=spot, entry=spot, stop=stop,
                                fire_event=e, trigger={"targets": [{"price": target}] if target else []},
                                status="fired")
