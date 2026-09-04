@@ -266,7 +266,7 @@ class Team2Service:
                         "createdAt": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
                         "armed": live,
                         "status": ("armed" if live else (arm.status if arm is not None else None)),
-                        "stopReason": ((getattr(self.runner.get(row.run_id), "stop_reason", None) if (live and self.runner is not None) else None)
+                        "stopReason": ((getattr(self.runner.get(r.id), "stop_reason", None) if (live and self.runner is not None) else None)
                                        if live else ((arm.state or {}).get("stopReason") or None)
                                        if arm is not None else None)})
         return out
