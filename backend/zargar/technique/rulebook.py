@@ -118,6 +118,7 @@ class Thresholds:
     pivot_window: int = 3
     # Q3 — sessions of history to consider for level detection
     lookback_sessions: int = 3
+    seed_window_extremes: bool = False   # T1.3a extended: the multi-session swing high/low is a level (theory T-11)
     # Q4/Q5 — volume spike and dry-up, relative to time-of-day baseline
     volume_spike_mult: float = 1.5
     volume_dryup_mult: float = 0.7
@@ -206,6 +207,7 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.min_touches": t.min_touches,
         "technique.pivot_window": t.pivot_window,
         "technique.lookback_sessions": t.lookback_sessions,
+        "technique.seed_window_extremes": t.seed_window_extremes,
         "technique.volume_spike_mult": t.volume_spike_mult,
         "technique.volume_dryup_mult": t.volume_dryup_mult,
         "technique.volume_floor_mult": t.volume_floor_mult,
@@ -263,6 +265,7 @@ def thresholds_from_settings(get) -> Thresholds:
         strong_touches=d.strong_touches,
         pivot_window=int(get("technique.pivot_window", d.pivot_window)),
         lookback_sessions=int(get("technique.lookback_sessions", d.lookback_sessions)),
+        seed_window_extremes=bool(get("technique.seed_window_extremes", d.seed_window_extremes)),
         volume_spike_mult=float(get("technique.volume_spike_mult", d.volume_spike_mult)),
         volume_dryup_mult=float(get("technique.volume_dryup_mult", d.volume_dryup_mult)),
         volume_floor_mult=float(get("technique.volume_floor_mult", d.volume_floor_mult)),

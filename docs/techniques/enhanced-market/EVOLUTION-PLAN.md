@@ -213,3 +213,11 @@ Everything below is deterministic and free (no LLM calls). First run:
 First concrete step: **Phase-1 variant harness with the T-6 continuation
 sweep as the pilot** — it exercises rules-as-data, the compare report, and
 directly answers week 1's "are we too strict" with numbers.
+
+## Experiment log
+
+- 2026-09-04 · **T-11 window-extremes level seed** (`seed_window_extremes`, TRADING-RULES §3):
+  baseline sweep `evo-T11-baseline` 2026-08-24..09-03 (1,053 sessions, 26 fires, +0.79R);
+  first variant run was invalid (the 2-touch floor still dropped single-touch extremes);
+  v2 re-run after the fix: 26 fires / -0.12R vs baseline +0.79R -> NOT adopted (TRADING-RULES §3 T-11).
+  Next variants: `lookback_sessions=5`; gap-through continuation.

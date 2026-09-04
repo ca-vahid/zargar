@@ -83,6 +83,7 @@ TECHNIQUE_RUN_REPLAYED = "TechniqueRunReplayed"
 TECHNIQUE_SWEEP_STARTED = "TechniqueSweepStarted"
 TECHNIQUE_SWEEP_COMPLETED = "TechniqueSweepCompleted"
 TECHNIQUE_PLAN_ARMED = "TechniquePlanArmed"
+TECHNIQUE_PLAN_RESTORED = "TechniquePlanRestored"    # a restart re-attached an armed plan (not a new arm; 2026-09-04: 1,597 restore re-journals read as arms)
 TECHNIQUE_PLAN_DISARMED = "TechniquePlanDisarmed"
 TECHNIQUE_PLAN_TRIGGER_FIRED = "TechniquePlanTriggerFired"
 TECHNIQUE_PLAN_TRIGGER_SKIPPED = "TechniquePlanTriggerSkipped"

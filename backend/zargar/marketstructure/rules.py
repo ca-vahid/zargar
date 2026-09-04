@@ -28,6 +28,7 @@ class MarketRules:
     strong_touches: int = 3
     pivot_window: int = 3
     lookback_sessions: int = 3
+    seed_window_extremes: bool = False   # also seed the window's highest high / lowest low as levels (MU 968, 2026-09-04)
     round_number_steps: tuple[float, ...] = (1.0, 5.0, 10.0, 50.0, 100.0)
     # volume vs the time-of-day baseline
     volume_spike_mult: float = 1.5

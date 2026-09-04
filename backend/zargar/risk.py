@@ -80,6 +80,15 @@ def is_us_market_hours(now: dt.datetime | None = None) -> bool:
 log = logging.getLogger("zargar.risk")
 
 
+
+def _pf(portfolio, key):
+    """Portfolio field, whether the caller handed a dict (OrderManager) or an object (tests)."""
+    if portfolio is None:
+        return None
+    if hasattr(portfolio, "get"):
+        return portfolio.get(key)
+    return getattr(portfolio, key, None)
+
 class RiskGate:
     def __init__(self, settings, quote_cache, position_keeper, halt: HaltState) -> None:
         self._settings = settings
@@ -236,6 +245,20 @@ class RiskGate:
             ref_price = quote.mid
         if intent.limit_price:
             ref_price = ref_price or float(intent.limit_price)
+
+        # 3b. cash on hand (sim books) - the Practice book is a CASH account: a
+        # buy that costs more than the cash on hand would be refused by any real
+        # venue, but the sim executor has no such check and the book went to
+        # -$5,021 on 2026-09-04 (two share tips + a 0DTE lane sharing one book).
+        # Reduce-only exits never reach here; shadow/research books are exempt.
+        if side == OrderSide.BUY and str(_pf(portfolio, "kind") or "") == "sim" and ref_price and bool(s.get("risk.sim_require_cash", True)):
+            cash_raw = _pf(portfolio, "cash")
+            if cash_raw is not None:                 # unknown cash (a bare test stub) = no verdict
+                cost = qty * float(ref_price) * mult
+                cash = float(cash_raw)
+                checks.append(RiskCheck(
+                    "cash_available", cost <= cash + 1e-6,
+                    f"buy costs about ${cost:,.0f} but the book holds ${cash:,.0f} cash" if cost > cash + 1e-6 else ""))
 
         # 3. price collar -----------------------------------------------------
         collar = float(s.get("risk.price_collar_pct", 5.0))

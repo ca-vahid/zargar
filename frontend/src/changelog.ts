@@ -22,6 +22,9 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
+      { tag: "new", text: "EM: the morning board check now arms the author's names itself when they pass our own gates (valid trigger, R:R, grade B or better, critic, loss halt) - his video ends at 06:15 Vancouver time and nobody could click. One setting turns it off." },
+      { tag: "fixed", text: "Practice buys must fit the cash on hand, as any real venue insists - the shared Practice book had gone to -$5,000 cash." },
+      { tag: "improved", text: "A restart re-attaching armed plans no longer journals them as new arms (1,600 phantom \"armed\" events in one day)." },
       { tag: "fixed", text: "Quote day high, day low and volume are the session's, not 'since the app started': seeded from the exchange session values, widened by regular-session prints only, reset each session (they used to shrink to nothing after every restart)." },
       { tag: "improved", text: "Team2 trades the way his recaps do: trim heavily on the first push, then re-up the same contract on the next 13 EMA hold; a re-entry sells at the running high/low of day; and in money modes the +50/+100% trims are judged on the contract's live bid, not the model — the Armed row shows 'contract +X% live'." },
       { tag: "major", text: "Unattended practice: nobody has to watch the Approvals queue. An analyst skip/watch declines the card immediately with the reasoning attached (history, not a to-do); a take trades; anything still pending at the open gets a fresh analyst re-appraisal at 9:33 ET against live prices and is decided then. Live money always keeps the human." },

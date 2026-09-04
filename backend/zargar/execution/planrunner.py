@@ -1028,11 +1028,21 @@ class PlanRunner(SessionListener):
         await self._persist(ap)
         self._log(ap, "armed" if not restored else "restored", f"{cfg.mode} mode on {portfolio['name']} ({portfolio['kind']})",
                   seededBars=seeded)
-        await self.engine.journal.append(ev.TECHNIQUE_PLAN_ARMED, {
-            "runId": run_id, "symbol": symbol, "planFor": ap.plan_for, "triggers": list(trackers),
-            "seededBars": seeded, "enforceWindows": enforce, "config": cfg.to_dict(),
-            "portfolio": {k: portfolio.get(k) for k in ("id", "name", "kind", "venue")}, "restored": restored},
-            aggregate_type="technique_run", aggregate_id=run_id, portfolio_id=cfg.portfolio_id)
+        if restored:
+            # a restart re-attaching a plan is not an arm: 2026-09-04 logged 1,597
+            # "armed" events from Team2 deploy restarts and the day counts read as
+            # 1,669 arms. Journal it under its own type, without the config blob.
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_RESTORED, {
+                "runId": run_id, "symbol": symbol, "planFor": ap.plan_for, "triggers": list(trackers),
+                "seededBars": seeded,
+                "portfolio": {k: portfolio.get(k) for k in ("id", "name", "kind", "venue")}},
+                aggregate_type="technique_run", aggregate_id=run_id, portfolio_id=cfg.portfolio_id)
+        else:
+            await self.engine.journal.append(ev.TECHNIQUE_PLAN_ARMED, {
+                "runId": run_id, "symbol": symbol, "planFor": ap.plan_for, "triggers": list(trackers),
+                "seededBars": seeded, "enforceWindows": enforce, "config": cfg.to_dict(),
+                "portfolio": {k: portfolio.get(k) for k in ("id", "name", "kind", "venue")}, "restored": False},
+                aggregate_type="technique_run", aggregate_id=run_id, portfolio_id=cfg.portfolio_id)
         self.start()
         self._publish(ap, "armed")
         return self._snapshot(ap)

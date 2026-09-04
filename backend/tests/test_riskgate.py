@@ -337,3 +337,31 @@ async def test_phone_entries_allowed_when_setting_off():
     gate = make_gate(settings=FakeSettings(**{"mobile.exit_only": False}), quotes=quotes)
     verdict = await gate.evaluate(intent(client="phone"), LiveP)
     assert verdict.passed, verdict.failures
+
+
+class SimBook:
+    """A Practice-style book: dict-like, with cash (2026-09-04: the real book went to -$5k)."""
+    def __init__(self, kind="sim", cash=500.0):
+        self._d = {"id": "p1", "kind": kind, "cash": cash}
+
+    def get(self, k, default=None):
+        return self._d.get(k, default)
+
+    @property
+    def kind(self):
+        return self._d["kind"]
+
+
+async def test_sim_book_buy_must_fit_the_cash_on_hand():
+    quotes = FakeQuotes()
+    quotes.set("AAPL", 100.0)
+    gate = make_gate(quotes=quotes)
+    ok = await gate.evaluate(intent(qty=2), SimBook(cash=500.0))          # $200 of $500
+    assert check(ok, "cash_available").passed
+    bad = await gate.evaluate(intent(qty=8), SimBook(cash=500.0))         # $800 of $500
+    assert not check(bad, "cash_available").passed and "cash" in check(bad, "cash_available").detail
+    # research books are exempt, and the knob turns it off
+    shadow = await gate.evaluate(intent(qty=8), SimBook(kind="shadow", cash=0.0))
+    assert all(c.name != "cash_available" for c in shadow.checks)
+    off = await make_gate(settings=FakeSettings(**{"risk.sim_require_cash": False}), quotes=quotes).evaluate(intent(qty=8), SimBook(cash=500.0))
+    assert all(c.name != "cash_available" for c in off.checks)

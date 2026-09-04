@@ -162,6 +162,9 @@ a number** (p. 72).
   alone; and it must state which of the two it used. Threshold reset: >= 10 scored kills under
   the current prompt with a net R of the kills below -3R before the prompt changes. Tally: 9,
   net -1.2R.
+- **Day 8 (2026-09-04):** KORU r2 (-1.65R avoided, RIGHT), NOW b2 (-1.59R avoided, RIGHT).
+  Tally: 11 scored kills, right 6 (-13.7R avoided) vs wrong 5 (+11.7R forgone), net of the
+  kills **-2.0R** in the critic's favour. The prompt stays; threshold unchanged.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -270,6 +273,21 @@ cancel it (a resting order costs nothing) - to be sized against the critic's sav
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-04 · Day 8 (Fri, 0DTE): zero fills, three right calls, and the author's best trade
+  was invisible to our level detector.** 27 armed (LLM-verified, the bulk-arm bug from the
+  evening before repaired), 3 fires, 0 trades: HOOD r1 skipped on a 15.4% NBBO spread (the
+  level then failed, -1.08R - the skip was right twice over), KORU r2 and NOW b2 killed
+  (-1.65R / -1.59R if taken). -4.3R avoided. The author's MU call: "968 double-top break,
+  target 989" - MU opened 971, ran to 1017 (+2.2R to his target, +5.2R to the high on a
+  968/958 geometry). Our MU plan had NO level above the 958 close: his 968 was the 09-01
+  session high (969.44), three sessions back and touched once, so the detector (prior-day
+  HOD/LOD only + 2-touch pivots) never drew it, and the board check rejected MU on a 959
+  reject with R:R 1.4. Even with the level, the 971 open would have "gapped through" it and
+  the gap rule voids that. Two method questions, not a bug: T-11 (window extremes as levels,
+  sweepable knob `seed_window_extremes`, off) and the gap-through continuation (T-6/T-7).
+  Did-we-miss for Thursday (next-day replay): 117 sessions, 2 valid fires - DELL r1 +2.55R
+  (NOT armed: coverage leak #2 after CVNA), VST r1 -0.70R (not armed, correctly). Practice
+  -0.11% on the day is tips/Team2 activity in the shared book, not EM.
 - **2026-09-03 · Day 7: zero fills, and flat was the right outcome (-7.0R avoided).** 36 plans,
   6 fires, 0 trades. On the real bars: SOXS r1/r2 shorts into a vertical breakout would have lost
   -5.58R and -2.61R (critic killed both - RIGHT); PLTR r2 was missed by the stale-limit bug
@@ -518,6 +536,21 @@ cancel it (a resting order costs nothing) - to be sized against the critic's sav
   |gap| > 5% next-session veto in the sheet builder would mimic it.
 
 ---
+
+### T-11 · Multi-session swing extremes are levels (the author's "double top")
+The detector seeds only yesterday's HOD/LOD (T1.3a) plus 2-touch pivots. The author's MU 968
+(09-04) was the 09-01 session high, three sessions back, one touch - the strongest level on his
+chart and absent from ours. Knob `seed_window_extremes` (MarketRules + Thresholds, default off)
+seeds the lookback window's highest high / lowest low as `T1.3a-window` levels. Test: variant
+sweep `--set seed_window_extremes=true` vs baseline over 2026-08-24..09-03 (launched 09-04
+evening, label evo-T11-*); adopt if net R/fire improves by >= +0.3R and the fire count does not
+double. Related: the gap-through case (MU opened above the level) is T-6/T-7's territory.
+**Result (2026-09-04 evening):** baseline 1,053 sessions / 26 fires / **+0.79R**; variant 26 fires /
+**-0.12R** (bounce +0.84, reject +2.01, breakout -0.28, breakdown -2.69 - the extra window-LOW seeds
+produced losing breakdown shorts). -0.035R/fire: **NOT adopted**, knob stays off. What the MU case
+actually needed: the morning board build's 3-session window (09-02..09-04) no longer contained the
+09-01 high; the evening build's window did, and the detector found 969.44 there only with the knob.
+Next test: `lookback_sessions=5` as its own variant, and the gap-through continuation (T-6/T-7).
 
 ## 4. Optimization backlog (ranked)
 

@@ -417,6 +417,16 @@ async def test_restore_after_restart(rig):
         await session.commit()
     n = await rig.svc.armer.restore()
     assert n == 1 and rig.svc.armer.get(run["id"]).status == "paused"
+    # a restart re-attach is journaled as a RESTORE, never as a new arm (2026-09-04:
+    # 1,597 restore re-journals read as 1,669 arms in the day counts)
+    from sqlalchemy import func, select
+    from zargar.models import Event
+    async with rig.eng.sf() as session:
+        armed_n = (await session.execute(select(func.count(Event.id)).where(
+            Event.type == "TechniquePlanArmed", Event.aggregate_id == run["id"]))).scalar()
+        restored_n = (await session.execute(select(func.count(Event.id)).where(
+            Event.type == "TechniquePlanRestored", Event.aggregate_id == run["id"]))).scalar()
+    assert armed_n == 1 and restored_n == 1, (armed_n, restored_n)
     await rig.svc.armer.disarm(run["id"])
 
 

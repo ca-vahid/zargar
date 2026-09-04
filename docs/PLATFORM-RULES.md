@@ -327,6 +327,19 @@ runtime ones to `execution.*`).
   Reduce-only exits were and remain unblockable either way. Test:
   `test_riskgate.py::test_auto_halt_spares_the_shadow_record_manual_blocks_all`.
 
+- **2026-09-04 · Three shared-runtime findings from the Friday audit.** (1) A restart
+  re-attaching a plan journaled `TechniquePlanArmed` with `restored: true`: the Team2 deploy
+  restarts produced 1,597 of the day's 1,669 "armed" events. Restores now journal
+  `TechniquePlanRestored` (own contract, no config blob); nothing consumed the flag. (2) The
+  sim executor has no cash check: two share tips (ZURA 702, SOFI 236) plus a 0DTE lane took the
+  Practice book to **-$5,021 cash** while EM sizes off the same book. New RiskGate check
+  `cash_available` (kind `sim`, BUY, non-reduce-only; `risk.sim_require_cash`, default on):
+  a buy must fit the cash on hand, as every real venue would insist. Shadow/research books
+  are exempt. (3) INVARIANT candidate for the desks: one Practice book is now shared by
+  three techniques (EM, tips, Team2), so a technique's day P&L can no longer be read off the
+  book - use the per-plan `realizedPnl` / scorecards, or give each technique its own
+  Practice book (`Portfolio.book` exists). Decision left to the user.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
@@ -337,6 +350,12 @@ runtime ones to `execution.*`).
   app-managed holding is ever acceptable is undecided.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
+
+- 2026-09-04 · **`risk.sim_require_cash` (new, default on)** - RiskGate check `cash_available`:
+  a BUY in a `sim` book must cost no more than the cash on hand (reduce-only exits, shadow and
+  research books exempt). Why: the Practice book reached -$5,021 cash on 2026-09-04 with no gate
+  refusing it; every real venue would. Evidence: orders ZURA 702 @ 6.00, SOFI 236 @ 18.22,
+  Practice cash after = -5,020.52. Off switch exists for a deliberate margin experiment.
 
 - 2026-09-01 · **`execution.arm_expired_plans` (new, default off)** — the runner refuses to arm
   a plan whose last session already closed; replays/tests set it on. Why: 22 stale runs armed

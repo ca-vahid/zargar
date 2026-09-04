@@ -32,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
     "risk.max_position_pct": 10.0,          # per symbol, % of equity
     "risk.max_gross_exposure_pct": 100.0,
     "risk.price_collar_pct": 5.0,           # limit/market sanity vs last quote
+    "risk.sim_require_cash": True,        # Practice (sim) buys must fit the cash on hand (2026-09-04: the book went to -$5k)
     "risk.max_orders_per_minute": 10,
     "risk.max_day_notional_per_technique": 0.0,  # $ BUY notional per technique per ET day (0 = off; EM team B3)
     # --- research feeds (nightly jobs on the engine scheduler; research B4/B5) ---

@@ -219,6 +219,16 @@ def detect_levels(
         seeds.append((hod.high, hod.ts, "resistance", "T1.3a"))
         seeds.append((lod.low, lod.ts, "support", "T1.3a"))
 
+    if getattr(t, "seed_window_extremes", False):
+        # T1.3a extended (theory T-11, MU 2026-09-04): the window's swing high/low
+        # - a prior-session extreme older than yesterday - is a level even with a
+        # single touch. MU's 09-01 high 969.44 was the author's 968 breakout and
+        # ran to 1017; the detector had no level above the close.
+        hb = max(bars, key=lambda b: b.high)
+        lb = min(bars, key=lambda b: b.low)
+        seeds.append((hb.high, hb.ts, "resistance", "T1.3a-window"))
+        seeds.append((lb.low, lb.ts, "support", "T1.3a-window"))
+
     for rn in _round_number_candidates(lo, hi, t):
         kind = "support" if rn <= bars[-1].close else "resistance"
         seeds.append((rn, bars[0].ts, kind, "T1.3d"))
@@ -234,11 +244,16 @@ def detect_levels(
             price = sum(p for p, _ in cluster) / len(cluster)
             tol = tol_for(price)
             touch_ts = _count_touches(bars, price, tol, kind)
-            if len(touch_ts) < t.min_touches:
-                continue
             srcs = sorted({
                 sources_by_price.get(round(p, 6), "T1.3c") for p, _ in cluster
             })
+            # the window's swing extreme is a level on ONE touch by definition
+            # (T-11): the 2-touch floor is what hid MU's 969.44 on 2026-09-04
+            window_extreme = "T1.3a-window" in srcs
+            if len(touch_ts) < t.min_touches and not window_extreme:
+                continue
+            if not touch_ts:
+                touch_ts = [min(ts for _, ts in cluster)]
             levels.append(Level(
                 price=price,
                 kind=kind,
