@@ -425,3 +425,47 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   `source: team2` row in `/api/orders`); whether F23/F24 got deployed by someone's restart (`git log` vs the
   running build); and the 15:30 last-entry / 15:45 flatten discipline on anything open.
 
+## 2026-09-04 12:38 ET (run 8 — quiet, healthy; F20 refused four more IWM touches)
+
+- **Alive and real-time, nothing broken.** `/api/health` ok v0.7.0, 63 armed. All three plans `armed` +
+  **auto** on the Practice sim book (`ff3c29d4`), `needsAttention: false`, pmh/pml/dayType/sizingAtOpen
+  stamped (QQQ 717.13–722.06 gap_up/full, SPY 770.50–774.24 normal/none, IWM 293.24–295.92 normal/none).
+  Quotes 0 s old, session `regular` (SPY 770.79/770.80, QQQ 718.92/718.93, IWM 295.82/295.83); 1m bars
+  banking in the runtime DB through **12:36 ET** at 12:37:42 (SPY 1,428 / QQQ 1,076 / IWM 976 rows in 24 h),
+  `barAgeSeconds` 77, `stale: false`; OPRA `options/quotes/latest` + `trades/latest` polls HTTP 200 every
+  ~2 s. **No `Traceback`, no `ERROR`, no `read_error`** since the pre-restart 12:10 socket reset.
+- **Only 5 minutes of new tape since run 7**, and the session read advanced through 12:34 as expected.
+  SPY: scenario 3 (bounce PDL) → calls, touches 0, 770.86 vs the 769.26 anchor, stack `mixed`. QQQ:
+  scenario 2 (reject PDH) → puts, touches 0, 719.00 vs 718.60, stack `mixed`. IWM: `pm_break_up@12:00` →
+  calls, touches 0, 295.92 sitting exactly on its anchor. Day unchanged: **3 model trades, 3 losses
+  (−12.23%, −14.35%, −10.33%), 0 real orders.** `/api/orders` still has no SPY/QQQ/IWM 0DTE row and no
+  `source: team2` row (the SPY 260914C00775000 fill is another technique's).
+- **Replay parity exact on all three** (`POST /runs/{id}/replay` with `-d '{}'`): SPY 5/5 events + 1/1 trade
+  (768 P, −12.23), QQQ 6/6 + 2/2 (723 C −14.35, 722 C −10.33), IWM 40/40 + 0 trades. No drift.
+- **F20 is now the finding of the day — four more refusals on one setup.** IWM's `pm_break_up@12:00` has had
+  **four** EMA13 touches refused `skip_no_trade_zone` in 34 minutes: 12:14 at 295.92, 12:24 at 295.89,
+  12:32 and 12:34 at 295.88. All "inside the pre-market range" for the one structural reason F20 names —
+  the setup's anchor **is** the PM high, so a pullback to it is by definition inside the range, and that
+  pullback is exactly what L2.7 tells the desk to buy. Seven refusals across two symbols today, zero
+  entries. IWM has held within 0.05% of 295.92 for over half an hour, so it will keep refusing while the
+  chop lasts. Evidence appended to `TRADING-RULES.md` under F20. **Still not built** — sizing is a money
+  rule; decide it with F15 (the collapsed V6 ladder), same ten lines of `sizing_bucket`.
+- **F22's refusal record on the SPY trade is historical, not a regression.** The armed snapshot still shows
+  the 11:08 fire as `skipped … $-267 equity`; that is the write-ahead record persisted at 11:08, restored
+  through the 12:19 restart. The fix landed at 12:18; no fire has been priced since, so the fix has still
+  not been exercised live.
+- **F23 + F24 remain committed (`bbce064`, `c929c77`) but NOT deployed** — the running build is the 12:19
+  one. The spam confirms it: IWM's `skip_no_trade_zone` count went 37 → 38 (34 on `scenario_3@09:30`,
+  4 on `pm_break_up@12:00`). Deploy decision unchanged from run 7 and for the same reason: the desk is in
+  AUTO with a setup taking a touch every few minutes, and a fire landing inside a ~30 s restart window is
+  seeded back as `alert` and never routed to `_enter`. **Deploy after the 15:45 flatten, or on the next
+  restart another session makes.**
+- **Minor, not Team2, no action.** 24 Yahoo `v8/chart` 404s in the last 400 log lines are other techniques'
+  dated option symbols, and `calendar fetch failed for SPY/SPX` (Yahoo `quoteSummary` 404) leaves the macro
+  block empty — harmless here since `avoid_event_days` is false.
+- **Next run should check:** whether any of the three finally takes a touch that is *outside* the PM range
+  and places the desk's **first real order** (`contract` → `entry_capped` → `position_open` → `live_trim`
+  in the audit plus a `source: team2` row in `/api/orders`, which is also the first live exercise of the
+  F22 fix); whether F23/F24 got deployed by someone's restart (`git log` vs the running build); and the
+  15:30 last-entry / 15:45 flatten discipline.
+

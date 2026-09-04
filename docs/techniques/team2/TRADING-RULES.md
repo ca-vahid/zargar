@@ -210,6 +210,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   zero entries taken at the anchor. F20 is not a rare edge — on a range day it is the whole setup class.
   Still **not built**; sizing is a money rule.
 
+  **Further evidence (12:38 ET, same IWM setup).** `pm_break_up@12:00` has now had **four** EMA13 touches
+  refused in 34 minutes — 12:14 at 295.92, 12:24 at 295.89, 12:32 and 12:34 at 295.88 — every one of them
+  "inside the pre-market range" for the simple reason that the setup's own anchor **is** the PM high and
+  price is pulling back to it, which is exactly what L2.7 says to buy. Seven refusals across two symbols
+  in one session, still zero entries. IWM has been within 0.05% of 295.92 for over half an hour, so this
+  setup will keep generating refusals for as long as the chop lasts.
+
 - **F23 (2026-09-04 12:25 ET, FIXED)** The two "this is not a tradeable location" skips —
   `skip_no_trade_zone` (V6/B5) and `skip_range_confirmation` (B3/A4) — were re-stated on **every** 2m close
   for as long as the condition held. IWM printed 37 identical `skip_no_trade_zone` rows between 09:46 and
