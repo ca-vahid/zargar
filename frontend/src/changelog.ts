@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
+      { tag: "improved", text: "Sidebar: the techniques sit in the desk's order — Tips, Team2, EM, Flow — and the nav answers a click: a ripple from the pointer, an accent bar that slides to the active item, icons that lift on hover, a dot that pops on the active technique. All of it is off under reduced-motion." },
       { tag: "improved", text: "The Team2 page now looks like the Tips page: underline tabs with Plan now parked on the right, one panel per tab with a header line, the same table style with symbol icons, status pills and copyable run ids, one row per symbol for the coming session with earlier (replaced or disarmed) plans folded away, and the Armed tab shows mode, budget, loss halt, account, P&L and freshness." },
       { tag: "fixed", text: "The EM page no longer blanks the whole app when a plan is missing a list (confluences, notes, level sources, cautions, symbols) — every such spot is guarded, and a page that still crashes shows an error panel with try-again / reload / clear-saved-state instead of a white screen." },
       { tag: "improved", text: "Technique URLs name the technique: /techniques/em/validation, /techniques/tips, /techniques/team2/armed, /techniques/flow/brief. The old /technique, /inbox, /team2 and /flow links still open the same pages." },

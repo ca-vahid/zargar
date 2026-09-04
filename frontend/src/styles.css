@@ -2649,3 +2649,43 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
   letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-1); }
 .equity-chip--real .equity-chip-num { color: var(--text-1); }
 .equity-chip:hover .equity-chip-lbl { color: var(--text-2); }
+
+/* ---- sidebar motion (2026-09-04): a nav that answers the click --------------------------------
+   an accent bar that slides to the active item, a ripple from the pointer, icons that lift on
+   hover and settle when active, and a sub-item dot that pops. All of it is skipped under
+   prefers-reduced-motion. */
+.nav button { position: relative; overflow: hidden; transition: background 0.18s ease, color 0.18s ease, transform 0.12s ease; }
+.nav button:active { transform: scale(0.97); }
+.nav button::before {
+  content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 0; border-radius: 0 3px 3px 0;
+  background: var(--accent); transform: translateY(-50%); transition: height 0.22s cubic-bezier(.34, 1.56, .64, 1), opacity 0.18s;
+  opacity: 0;
+}
+.nav button.active::before { height: 60%; opacity: 1; }
+.nav button.nav-sub.active::before { height: 50%; }
+.nav button svg { transition: transform 0.25s cubic-bezier(.34, 1.56, .64, 1), opacity 0.18s; }
+.nav button:hover svg { transform: translateY(-1px) scale(1.08); opacity: 1; }
+.nav button.active svg { transform: scale(1.1); opacity: 1; color: var(--accent); }
+.nav button .nav-label { transition: transform 0.2s ease, letter-spacing 0.2s ease; }
+.nav button:hover .nav-label { transform: translateX(2px); }
+.nav button.active .nav-label { transform: translateX(3px); }
+.nav button.nav-sub .nav-sub-dot { transition: transform 0.25s cubic-bezier(.34, 1.56, .64, 1), opacity 0.18s, box-shadow 0.25s; }
+.nav button.nav-sub:hover .nav-sub-dot { transform: scale(1.25); }
+.nav button.nav-sub.active .nav-sub-dot {
+  transform: scale(1.35); animation: nav-dot-pop 0.35s cubic-bezier(.34, 1.56, .64, 1);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.nav .badge { transition: transform 0.2s cubic-bezier(.34, 1.56, .64, 1); }
+.nav button:hover .badge { transform: scale(1.08); }
+.nav-ripple {
+  position: absolute; border-radius: 50%; pointer-events: none; transform: scale(0);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  animation: nav-ripple 0.55s ease-out forwards;
+}
+@keyframes nav-ripple { to { transform: scale(1); opacity: 0; } }
+@keyframes nav-dot-pop { 0% { transform: scale(0.6); } 60% { transform: scale(1.6); } 100% { transform: scale(1.35); } }
+.sidebar.collapsed .nav button::before { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .nav button, .nav button svg, .nav button .nav-label, .nav button.nav-sub .nav-sub-dot, .nav .badge, .nav button::before { transition: none; animation: none; }
+  .nav-ripple { display: none; }
+}
