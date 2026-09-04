@@ -501,6 +501,11 @@ export function SettingsPage() {
               <NumCell k="techniques.team2.max_losses_per_day" label="Max losses / day" />
             </Cells>
             <ToggleRow k="techniques.team2.range_day_confirmation" label="Range days need the PM level" hint="reject-PDH / bounce-PDL scenarios fire only once price is beyond the pre-market level on the trade's side" />
+            <ToggleRow k="techniques.team2.allow_ema200_flush" label="Range days: 200 EMA flush" hint="on a reject/bounce day a 2m close through the 200 EMA in the bias direction is the trigger (his SPY 671p)" />
+            <ToggleRow k="techniques.team2.allow_ema48_entries" label="48 EMA dips" hint="the second line of defense: a deeper dip that holds the 48 EMA is an entry too" />
+            <SelectRow k="techniques.team2.trim_cue" label="First trim cue"
+              hint="premium = at +50% on the contract; new extreme = on the first new high/low of the move after entry (his 'new high of day, lock in gains')"
+              options={[{ value: "premium", label: "premium +50%" }, { value: "new_extreme", label: "new high / low of the move" }]} />
             <ToggleRow k="techniques.team2.shrink_after_win" label="Shrink after a win" hint="the next trade's size halves once the day is green — one loss can never erase the day" />
             <ToggleRow k="techniques.team2.avoid_event_days" label="Skip macro event days" hint="FOMC/CPI/NFP days from the manual macro list (research.macro_events) take no new entries" />
             <Group>Expression &amp; exits (0DTE)</Group>

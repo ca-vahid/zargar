@@ -294,6 +294,17 @@ and are now part of the plan; each carries the phase it belongs to.
       `PLATFORM-RULES.md` (0DTE policy table, new trigger kinds), `BUILDING-A-TECHNIQUE.md` (new
       primitives available to all techniques).
 
+### Second review (2026-09-04) — what the images added, and what is built
+- [x] T7 break & base entry, T8 range-day 200-EMA flush trigger, E5 EMA48 entries, X1 new-extreme trim cue
+      (`trim_cue`), A6 stalled-pullback rule (`pullback_max_bars`), A12 cross-plan concurrency cap in the runner —
+      **built 2026-09-04**, `tests/test_team2_entries.py`.
+- [ ] A10 **trim-and-add** (X5): trim heavily on the first push, re-add on the next 13 EMA retest while the setup
+      holds; and averaging into a base (X6 ".31 average"). Needs scale-in support on the shared position (Tip's
+      ladder machinery) — sweep first whether re-adds pay after fees.
+- [ ] A2b running HOD/LOD as the intraday target for range scenarios ("high of day is the main target until it
+      breaks") — the image shows it; the read still uses the next pivot / opposite zone only.
+- [ ] Trims on the LIVE premium (quote) instead of the model mark in auto mode — required before proposal mode.
+
 ## 4. Testing bar (from BUILDING-A-TECHNIQUE §6, made concrete)
 
 - Live tracker ≡ replay (`simulate_plan`) on every fixture; rules snapshot in every plan run.

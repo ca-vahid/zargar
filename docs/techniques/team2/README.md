@@ -48,6 +48,7 @@ Code: `backend/zargar/techniques/team2/` (see ARCHITECTURE.md); shared primitive
       and Q3 (trims +50/+100%, sell at target). 96 MB — keep local, do not commit without asking.
 - [x] PLAN.md drafted (decisions D1–D14, phases P0–P6, engine list §3b, completeness review §3c); TRADING-RULES.md opened.
 - [x] D3 decided: 0DTE technique with its own gated RiskGate policy; engine ENRICHED not forked.
+- [x] **Second review (2026-09-04):** 8 more images read (INDEX), METHOD T7/T8/X5/X6/V12 added, F9–F11 logged; the read gained break & base, EMA48 and 200-EMA-flush entries, the new-extreme trim cue, the stalled-pullback rule and the cross-plan concurrency cap.
 - [x] **Build v0.1 (2026-09-03):** shared primitives (ext-hours bars, aggregation, EMA, zones, market calendar, VIX + macro placeholder), `zargar/techniques/team2/` (rules → regime → scenario → plan → premium → `session.py` → runner → service), RiskGate 0DTE policy, premium-targeted picker, `/api/team2/*`, `Team2Page`, `tools/team2_sweep.py`; 49 tests green. Alert mode only.
 - [ ] Bank bars for ≥ 20 sessions (nightly job runs from the first night on this build), then the first walk-forward sweep → settle D4–D14 in TRADING-RULES.
 - [ ] Proposal/auto modes (earned ladder), morning-report line, mobile-audit of the page, `/team2-review` skill, calibration of the other 8 documented trades.
