@@ -234,3 +234,12 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   a strike and an OPRA ask, `entry_capped` if the cap bites at 1.5x, then `position_open`/`live_trim`
   in the audit; whether SPY finally confirms a scenario; whether IWM breaks 295.92 and gets locked out
   by F18; the 15:30 last-entry and 15:45 flatten discipline if anything is open.
+
+## 2026-09-04 12:30 ET (desk session) — F18 + F19 deployed, QQQ flipped to puts
+
+- F18 (refused dips no longer burn the D9 allowance) deployed 11:50 ET: IWM's setup went from "touches 5" to
+  "touches 0" — tradeable again. F19 (quote day high/low/volume session-to-date, seeded from Yahoo, regular-session
+  prints only, reset per session) deployed 12:28 ET, commit d778f48, PLATFORM-RULES + CLAUDE.md updated.
+- Both deploys: alert → restart → auto with `premiumBudget 2000 / riskPct 6`; no Team2 trade was open either time.
+- Read at 12:28 ET: QQQ **scenario 2 (reject PDH) → puts**, touches 0; SPY still no scenario; IWM scenario 3 → calls,
+  touches 0. All three AUTO.
