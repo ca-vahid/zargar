@@ -255,6 +255,28 @@ dependent — the F7 grouping fix is still open).
 5. Verdict quality — reasonable *as of tip time* given the replay outcome?
 6. Gaps — anything the pipeline dropped, mislabeled, or should have flagged.
 
+## Knowledge review findings (2026-09-04 evening, full-base audit)
+
+- **What works**: `general` notes are the workhorses (top cites 20–27; source
+  behavior patterns fed the day's best skips — SPY tilt, AVGO re-post).
+  `source` notes moderate (avg 2.7 cites). `ticker` mostly uncited (avg 0.8;
+  the 90d TTL will age them out — no action). 52 `experiment` notes inert by
+  design.
+- **Rule bloat found**: 29 live rules, NINE of them versions of one
+  "adoption geometry" family — each *claimed* supersession in prose, none was
+  marked, all nine were injected into every run. Consolidated to one merged
+  rule (dbfd8177) + the nine marked superseded. Root cause fixed in code:
+  `add_tip_note` now auto-supersedes a live rule whose `RULE (<family>` prefix
+  matches the new one (journaled `TipRuleAudited`, via=family-dedupe;
+  generic prefixes like "extends/new/corollary/refines/sits" carry no claim).
+- **The deeper lesson**: those nine strikes were 8 real failed adoptions in 3
+  days — prompt rules do NOT enforce. The check moved into code
+  (`lifecycle.check_exit_geometry` + session `adoption_killswitch`); the
+  analyst's rule notes remain the reasoning trail, the gate is the enforcement.
+- **Digests were OFF** since the 08-30 test (default False) — ~426 mirrored
+  messages/week never distilled. Enabled 2026-09-04
+  (`techniques.tip.digest_enabled=true`, journaled).
+
 ## Constraints (unchanged)
 
 Never user-token automation beyond reading; never alert-room auto-execution; the
