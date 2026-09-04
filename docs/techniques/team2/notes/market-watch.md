@@ -469,3 +469,16 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   F22 fix); whether F23/F24 got deployed by someone's restart (`git log` vs the running build); and the
   15:30 last-entry / 15:45 flatten discipline.
 
+
+## 2026-09-04 13:45 ET (desk session) — F15 + F20 built and deployed, F23/F24 deployed with them
+
+- User: "can we fix these all?" → F15 and F20 built (commit 10fb660): PM no-trade zone judged before "beyond
+  yesterday's zone"; gap days arm `pm_break_*` at the PM levels; a `pm_break_*` setup's touch within tolerance of its
+  own anchor (close on the trade's side) is sized SMALL and named `pm_retest` instead of refused. Tests: 36 Team2 green.
+- Deployed 13:42 ET (alert → restart → auto, no Team2 trade open; the process that was running had started 12:56 ET,
+  before F23/F24 too, so those are live now as well). Replay of today under the new rules: SPY takes the 10:44 PM-low
+  retest (put 768 ≈ $0.39, small) and the 11:08 EMA13 touch; IWM takes the 12:14 PMH retest (call 296 ≈ $0.38, small);
+  QQQ's 10:02 full-size entry inside the PM range is now refused (F15). Restore-seeded fires are alert-stamped — no
+  retroactive orders.
+- Watch job: `pm_retest` is a new read event; count it with the fires. Decide F15/F20 permanently from the walk-forward
+  (both change which trades are taken).
