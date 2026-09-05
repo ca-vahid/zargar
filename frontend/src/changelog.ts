@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The plan gate",
     items: [
+      { tag: "improved", text: "The Dashboard on a phone actually shows something now: the balance carries today's move (amount and %) and a sparkline of the day right under it, the plans card became one scrollable line of chips instead of a wall, and holdings fit eight to a screen with value over P&L. Panels also stopped sizing to their content — they were 300-347px wide on a 374px board." },
       { tag: "new", text: "Adoption geometry gate: a filled tip is checked against its actual entry before any exit order exists — targets on the wrong side or inside the noise are dropped, a stop that would fire instantly is re-placed at real structure, and every repair is journaled and shown on the analyst run. Eight adoptions died in seconds this week to exactly these defects." },
       { tag: "new", text: "Session brake: if one adopted tip stops out within five minutes of arming, tip auto-approvals pause for the rest of the day and the cards wait for a person (or the morning triage)." },
       { tag: "new", text: "Per-tip premium cap ($750, adjustable in Settings): one oversized option entry can no longer be the whole day's result." },
