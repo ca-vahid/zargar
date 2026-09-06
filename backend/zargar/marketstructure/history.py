@@ -263,8 +263,30 @@ async def fetch_window(
             continue
         seen.add(b.ts)
         clean.append(b)
+    if session == "rth":
+        clean = clip_to_rth(clean, tf)
     _cache_put(key, now, clean)
     return list(clean)
+
+
+def clip_to_rth(bars: list[Bar], tf: str) -> list[Bar]:
+    """Regular session only (09:30 <= t < 16:00 ET) for intraday bars. Yahoo's
+    `includePrePost=false` still returns a trailing bucket stamped at the CLOSE
+    on the same evening (the 16:00:00 print), and a 1h bar stamped 16:00 with a
+    one-print range shrank DELL's ATR-based stop on 2026-09-03 20:54 so the
+    reject trigger failed the chop rule that a next-day replay passed (+2.55R
+    missed). Daily/weekly bars are untouched."""
+    if tf in ("1d", "1wk", "1mo") or not bars:
+        return bars
+    from .sessions import session_bounds, session_date
+    out: list[Bar] = []
+    bounds: dict[str, tuple[int, int]] = {}
+    for b in bars:
+        day = session_date(b.ts)
+        o, c = bounds.get(day) or bounds.setdefault(day, session_bounds(day))
+        if o <= b.ts < c:
+            out.append(b)
+    return out
 
 
 async def fetch_recent(symbol: str, tf: str, *, sessions: int = 5,

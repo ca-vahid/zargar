@@ -271,6 +271,16 @@ day were priced a beat late (PLTR stale limit - bug, fixed; MSTR ran away - rule
 for T-6/exit-tempo work: submit the entry BEFORE the critic on A-grade plans and let the critic
 cancel it (a resting order costs nothing) - to be sized against the critic's save rate above.
 
+### 1.10 Live plan vs replay parity - RESOLVED 2026-09-05 (phantom close bar)
+DELL 2026-09-04: the armed plan (built 09-03 20:54) had r1 INVALID (R3.2, stop 3.23 < 2x ATR
+1.84); the replay of the same close had it VALID (stop 4.28) and it fired 09:39 for +2.55R.
+`replay-facts` on the run's saved bars: detectors unchanged (no code drift). The saved 1h bars
+carried a 16:00-stamped one-print bucket that a next-day fetch lacks; it shrank the stop buffer.
+Platform fix: `clip_to_rth` at the fetch source (PLATFORM-RULES 2026-09-05). Watch: every
+evening-batch plan before 2026-09-05 was built with that phantom bar - stops were slightly
+tighter than the replay's, so some R3.2 rejections in the 09-01..09-04 batches were false.
+DELL is ledgered as a bug-missed trade (counterfactual, put priced from its own prints).
+
 ## 2. Findings (settled, with evidence)
 
 - **2026-09-04 · Day 8 (Fri, 0DTE): zero fills, three right calls, and the author's best trade
@@ -285,8 +295,10 @@ cancel it (a resting order costs nothing) - to be sized against the critic's sav
   reject with R:R 1.4. Even with the level, the 971 open would have "gapped through" it and
   the gap rule voids that. Two method questions, not a bug: T-11 (window extremes as levels,
   sweepable knob `seed_window_extremes`, off) and the gap-through continuation (T-6/T-7).
-  Did-we-miss for Thursday (next-day replay): 117 sessions, 2 valid fires - DELL r1 +2.55R
-  (NOT armed: coverage leak #2 after CVNA), VST r1 -0.70R (not armed, correctly). Practice
+  Did-we-miss for FRIDAY itself (sweep `--start 09-03`: plans built at Thursday's close, scored on
+  Friday's bars - the sweep semantics, see below): 117 sessions, 2 valid fires - DELL r1 +2.55R
+  (DELL WAS armed on Friday and the live runner never fired it: live-vs-replay parity question,
+  §1.10), VST r1 -0.70R (not armed, correctly). Practice
   -0.11% on the day is tips/Team2 activity in the shared book, not EM.
 - **2026-09-03 · Day 7: zero fills, and flat was the right outcome (-7.0R avoided).** 36 plans,
   6 fires, 0 trades. On the real bars: SOXS r1/r2 shorts into a vertical breakout would have lost
@@ -319,11 +331,11 @@ cancel it (a resting order costs nothing) - to be sized against the critic's sav
   25% in five minutes" tempo his own transcript describes. Two days in: our gate is right to
   refuse his levels under OUR exits; the open question is exit tempo, not level quality (T-6
   / exit-tempo parameterisation, §3). Day 1 + day 2 tally on his levels: 0 wins under R2.
-- **2026-09-02 · Did-we-miss replay: run it the NEXT morning.** A same-day universe sweep
-  (`sweep --start D --end D --include-invalid`) returned sessions=0 both at 16:15 and 17:37 ET
-  (the session calendar/daily bars are not final until the next day); the 09-01 sweep of 08-31
-  worked. Today's coverage check is deferred to the 09-03 morning; the critic scorecard above
-  already covers every fire that did happen (8 kills, 2 wrong, +9.2R tally).
+- **2026-09-02 (corrected 09-05) · Sweep semantics: `--start D --end D` builds plans at D's CLOSE and
+  scores them on D+1's bars.** That is why a same-day sweep returns sessions=0 (D+1 has no bars
+  yet) and why it "worked the next day". To review session S, sweep the PREVIOUS session S-1.
+  The 09-01 sweep on 09-01 evening scored 09-02; the 09-02 sweep on 09-03 scored 09-03; the 09-03
+  sweep on 09-04 evening scored 09-04. Earlier entries labelled by sweep date are off by one session.
   **Run 2026-09-03 09:50:** confirmed - the next-day replay of 09-02 works (universe, include-
   invalid): 4 valid fires, 1 win, **-1.30R**; nothing our arming missed. Without the gap rules the
   same day would have fired 14 times for **-8.13R** - the gap rules saved ~6.8R on a gap day.

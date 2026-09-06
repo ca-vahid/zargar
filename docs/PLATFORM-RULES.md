@@ -355,6 +355,19 @@ runtime ones to `execution.*`).
   negative cash are blocked from options on this path), and nothing on this path checks buying power,
   so a fully-invested book can now be sized into an order it could not fund at a real broker.
 
+- **2026-09-05 · A same-evening history fetch carried a phantom bar stamped at the close.** Yahoo
+  answers `includePrePost=false` with a trailing bucket at 16:00 (the closing print) on the
+  evening of the session; a next-day fetch of the same window does not have it. DELL 2026-09-03:
+  the 20:54 batch plan saw a one-print 1h bar at 16:00, the ATR-based stop buffer shrank, the
+  reject trigger's stop (3.23) fell under 2x the 1m ATR and R3.2 invalidated it; the same plan
+  built from a next-day fetch (or the walk-forward replay) had the stop at 4.28, the trigger
+  valid, and it fired 09:39 for +2.55R. Fix: `history.clip_to_rth` in `fetch_window` for
+  `session="rth"` - intraday bars outside 09:30 <= t < 16:00 ET are dropped at the source
+  (`fetch_session` already did this; the analyze/plan path used `fetch_window` unclipped).
+  Evidence: run f80b7ebd bars snapshot (1h stamps ... 15:30, 16:00) vs fresh fetch; sweep
+  21a3a2f8 row DELL; fresh `plan DELL --as-of 2026-09-03` = run a27ff13f. Yahoo also revised
+  7 of 390 1m bars by more than a cent overnight (late prints) - unavoidable, small.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
