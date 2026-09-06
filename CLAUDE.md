@@ -77,8 +77,15 @@ targets/fractions, stop or premium-stop guard, hold cap); every run persists a *
 (kinds appraise/intake/retro, full play-by-play, streamed live on the `tip_analyst` topic — UI
 Tips > Analyst, deep link `/inbox/analyst/<id>`), reads/writes **shared knowledge notes**
 (`tip_notes`, save_note tool, Knowledge panel) and maintains **its own trading rules** (scope
-`rule`, injected into every run; retros update them). Filled tip proposals are adopted into
-`engine.position_manager` with the analyst's policy (`lifecycle.adopt_when_filled`); closed tip
+`rule`, injected into every run; retros update them; a new `rule` note auto-supersedes a live rule
+sharing its `RULE (<family>` prefix, 2026-09-04). Filled tip proposals are adopted into
+`engine.position_manager` with the analyst's policy (`lifecycle.adopt_when_filled`) through the
+**adoption-geometry gate** (2026-09-04, `check_exit_geometry`: wrong-side/penny targets dropped,
+invalid stops re-placed at structure — journaled `TipGeometryRepaired`; one <5-min stop-out pauses
+tip autos for the session, `TipAutoPaused`; sim feed skips the bars fetch). Option sizing is capped
+per tip (`techniques.tip.max_premium_per_tip` $750) and earned-auto trust judges closed positions
+PLUS the immediate shadow book's aged marks (2026-09-04 user decision — armed-only trust never
+graduates momentum sources). Closed tip
 positions get a nightly **retro** (`tip_retro`, `techniques.tip.retro_*`).
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip

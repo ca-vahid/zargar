@@ -510,6 +510,9 @@ async def test_option_tip_proposal_is_the_contract(app_client):
     client, eng = app_client
     await wait_quote(eng, "AAPL")
     await eng.settings.set("verification.max_price_deviation_pct", 10.0)
+    # this test pins the STATED 2-contract count; the per-tip premium cap
+    # (techniques.tip.max_premium_per_tip, its own test) would size it to 1
+    await eng.settings.set("techniques.tip.max_premium_per_tip", 0)
     eng.signals_service._analyst_client = _FakeAnthropic()
     out = await run_pipeline(eng, canned_extraction())
     p = out[0]["proposal"]
@@ -765,7 +768,10 @@ async def test_platform_auto_graduates_per_source(app_client):
     assert p is not None and p["status"] == "pending", p
     assert "not yet earned" in (p["context"].get("autoGate") or ""), p["context"]
     trust = await eng.signals_service.source_trust("TestLetter")
-    assert trust == {"graded": 0, "hits": 0, "hitRate": None}
+    # 2026-09-04: trust also grades the immediate shadow book's aged marks —
+    # a fresh source has nothing in either lane
+    assert (trust["graded"], trust["hits"], trust["hitRate"]) == (0, 0, None)
+    assert trust["shadowImmediate"] == {"graded": 0, "hits": 0}
     # graduate: five winning closed tip positions carrying the source tag
     from zargar.models import ManagedPositionRow
     async with eng.sf() as session:
@@ -826,6 +832,9 @@ async def test_take_fill_adopts_position_under_analyst_exits(app_client):
     # equity option premium cap on the $10k practice book — raise it for the test
     # the way a real config would have to
     await eng.settings.set("risk.max_option_premium_pct", 15.0)
+    # this lifecycle test pins the stated 2-contract count ($920 premium) —
+    # the per-tip premium cap has its own test in test_tip_geometry.py
+    await eng.settings.set("techniques.tip.max_premium_per_tip", 0)
     eng.signals_service._analyst_client = _FakeAnthropic()
     occ = "AAPL261016C00240000"
     # keep the REAL chain out of the test: order placement tracks the contract

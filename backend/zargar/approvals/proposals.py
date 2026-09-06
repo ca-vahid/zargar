@@ -105,6 +105,16 @@ class ProposalService:
         cap = int(self.engine.settings.get("techniques.tip.max_contracts_per_tip", 25) or 0)
         return min(qty, cap) if cap > 0 else qty
 
+    def _cap_premium(self, qty: int, limit: float) -> int:
+        """Per-tip premium concentration cap (BBAI 2026-09-04: 25 x $0.51 =
+        $1,275 on one tip made a single loser the whole day). Caps the option
+        premium a tip may spend — including analyst/tip stated counts — but a
+        single contract always fits (the minimum expression of a take)."""
+        cap = float(self.engine.settings.get("techniques.tip.max_premium_per_tip", 750.0) or 0)
+        if cap > 0 and limit > 0:
+            return min(qty, max(1, int(cap // (limit * 100))))
+        return qty
+
     # ------------------------------------------------------------- create
     async def create_from_armed_fire(self, signal_row: Signal, *, run_id: str, trigger_id: str,
                                      portfolio_id: str, direction: str, entry: float, stop: float,
@@ -135,7 +145,9 @@ class ProposalService:
                 log.warning("armed fire %s: no premium reference for %s — no proposal", run_id, occ)
                 return None
             limit = round(float(ref), 2)
-            qty = self._cap_contracts(int(contracts or 0) or max(1, math.floor(budget / (limit * 100))))
+            qty = self._cap_premium(
+                self._cap_contracts(int(contracts or 0) or max(1, math.floor(budget / (limit * 100)))),
+                limit)
             symbol, sec_type = occ, "OPT"
             label = contract.get("display") or occ
             vehicle = {"kind": "option", "display": label, "underlying": signal_row.ticker,
@@ -329,7 +341,9 @@ class ProposalService:
                 log.warning("no premium reference for %s — no proposal", occ)
                 return None
             limit = round(float(ref_price), 2)
-            qty = self._cap_contracts(int(qty_hint or 0) or max(1, math.floor(budget / (limit * 100))))
+            qty = self._cap_premium(
+                self._cap_contracts(int(qty_hint or 0) or max(1, math.floor(budget / (limit * 100)))),
+                limit)
             from ..options import occ as occ_mod
             parsed = occ_mod.parse(occ)
             opt_type = parsed.option_type if parsed else ("put" if sig.direction == "short" else "call")

@@ -508,7 +508,10 @@ button.bl-card:active { background: var(--surface-2); }
   .half-btn, .reject-btn { min-height: 46px; }
   .proposal-card .head { flex-wrap: wrap; }
   .proposal-card .ttl { font-size: var(--fs-2); }
-  .dash-grid { display: flex; flex-direction: column; }
+  /* a flex column whose items only stretch if told to: the panels were sizing
+     to their content (347 / 318 / 300 px on a 374 px board, 2026-09-04) */
+  .dash-grid { display: flex; flex-direction: column; align-items: stretch; }
+  .dash-grid > * { width: 100%; min-width: 0; }
   .acct-head { flex-wrap: wrap; }
   .acct-head > span:last-child { margin-left: 0 !important; flex-basis: 100%; text-align: left !important; }
   .mismatch-note { white-space: normal; text-align: left; line-height: 1.4; margin: 2px 0 6px; }
@@ -790,4 +793,58 @@ button.bl-card:active { background: var(--surface-2); }
 /* the phone bar has no room for the money readout — the Dashboard hero owns it */
 @media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
   .topbar .equity-chip { display: none; }
+}
+
+/* ── Dashboard on phones, second pass (user 2026-09-04: "I don't see the
+   visuals I want"). The hero shows the move and the day's shape; every card
+   stops shouting so more than one fits on a screen. ── */
+@media (max-width: 639px), ((max-height: 500px) and (max-width: 1023px)) {
+  .dash-hero { padding: 12px 14px; }
+  .dash-hero-lbl { font-size: 10px; }
+  .dash-hero-num { font-size: 30px; }
+  .dash-hero-move { font-size: var(--fs-2); gap: 6px; margin-top: 2px; }
+  /* stack: beside the number the sparkline had no room and drew straight
+     across it, and the label wrapped mid-phrase (2026-09-04) */
+  .dash-hero-top { flex-direction: column; align-items: stretch; gap: 6px; flex-wrap: nowrap; }
+  .dash-hero-main { flex: 1 1 auto; min-width: 0; }
+  .dash-hero-lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dash-hero-move { flex-wrap: nowrap; white-space: nowrap; }
+  .dash-hero-spark { width: 100%; height: 46px; align-self: stretch; }
+  .dash-hero-sub { font-size: 11px; }
+
+  /* the fleet: one scrollable line of chips instead of a 250px wall */
+  .dash-armed .panel-head { padding: 9px 12px; }
+  .dash-armed-rows { display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 6px;
+    padding: 8px 12px; scrollbar-width: none; }
+  .dash-armed-rows::-webkit-scrollbar { display: none; }
+  .dash-armed-chip { flex: none; padding: 5px 9px; font-size: var(--fs-1); }
+  .dash-armed-chip b { font-size: var(--fs-1); }
+  .dash-armed-lbl { flex: none; align-self: center; margin: 0 2px; font-size: 9.5px; }
+
+  /* the curve: title, move and range on one line each, chart gets the height */
+  .dash-curve .panel-head { padding: 9px 12px; gap: 6px; }
+  /* the selected button already says the window — the sentence is a repeat */
+  .dash-curve-delta { font-size: var(--fs-1); flex: 0 0 auto; }
+  .dash-curve-delta .muted { display: none; }
+  .dash-curve-range { width: auto; margin-left: auto; }
+  .dash-curve-range button { min-width: 40px; padding: 0 4px; font-size: var(--fs-1); }
+  .dash-curve-foot { font-size: 10px; padding: 0 12px 8px; }
+
+  /* holdings: three columns, with value stacked over P&L on the right — as
+     four siblings the P&L wrapped onto its own grid row and each holding cost
+     185px (2026-09-04) */
+  .dash-hold { grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-rows: auto auto;
+    gap: 0 8px; align-items: center; padding: 7px 10px; }
+  .dash-hold > :first-child { grid-column: 1; grid-row: 1 / span 2; }
+  .dash-hold-sym { grid-column: 2; grid-row: 1 / span 2; font-size: var(--fs-1); }
+  .dash-hold-val { grid-column: 3; grid-row: 1; display: block; font-size: 10.5px;
+    color: var(--text-3); text-align: right; }
+  .dash-hold-pnl { grid-column: 3; grid-row: 2; min-width: 0; font-size: var(--fs-1); }
+  .dash-holdings-rows { max-height: none; }
+  /* the head's link duplicates the page footer's — the count is what matters */
+  .dash-holdings .panel-head .tq-head-right { display: none; }
+
+  /* an empty blotter should not cost a whole screen */
+  .dash-orders .empty-art, .dash-orders img { display: none; }
+  .dash-orders .empty { padding: 14px 12px; }
 }

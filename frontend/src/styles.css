@@ -2689,3 +2689,14 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
   .nav button, .nav button svg, .nav button .nav-label, .nav button.nav-sub .nav-sub-dot, .nav .badge, .nav button::before { transition: none; animation: none; }
   .nav-ripple { display: none; }
 }
+
+/* hero: the day's move and its shape, next to the number */
+.dash-hero-tag { margin-left: 8px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--text-3); border: 1px solid var(--border);
+  border-radius: 999px; padding: 1px 7px; }
+.dash-hero-move { display: flex; align-items: baseline; gap: 8px; margin-top: 4px;
+  font-family: var(--mono); font-size: var(--fs-3); font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.dash-hero-move .dash-hero-pct { font-size: var(--fs-2); opacity: 0.85; }
+.dash-hero-move .muted { font-family: var(--font); font-weight: 400; font-size: var(--fs-1); }
+.dash-hero-spark { width: 128px; height: 38px; align-self: center; flex: none; }

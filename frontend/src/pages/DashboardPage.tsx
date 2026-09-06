@@ -192,6 +192,71 @@ function inSession(ms: number): boolean {
   return mins >= 240 && mins < 1200;
 }
 
+/** Equity samples for a window, session-filtered and flat-collapsed — the
+    shape both the hero sparkline and the full curve draw from. */
+function useEquityWindow(pid: string | undefined, hours: number, points: number) {
+  const since = hours ? Date.now() - hours * 3600_000 : 0;
+  const series = useAsync<[number, number][]>(() => {
+    if (!pid) return Promise.resolve([]);
+    // samples land every ~30 s; `since`/`points` are honoured by newer servers,
+    // an older one drops them — so the window and thinning are applied again here
+    const limit = hours ? Math.ceil(hours * 140) : 200000;
+    return api.get(`/api/portfolios/${pid}/equity?limit=${limit}&points=${points}`
+      + (since ? `&since=${Math.round(since)}` : ""));
+  }, [pid, hours, points]);
+  const pts = useMemo(() => {
+    let raw = series.data ?? [];
+    if (since) raw = raw.filter((p) => p[0] >= since);
+    const open = raw.filter((p) => inSession(p[0]));
+    let out = open.length >= 2 ? open : raw;
+    // Collapse dead stretches. Pre/post-market samples are kept (they DO move
+    // when the tape prints) but a book that sat at the same cent for four hours
+    // gets one step, not four hours of width — the axis is ordinal, so dropping
+    // the interior of a flat run is what actually removes the desert.
+    out = out.filter((p, i) => {
+      if (i === 0 || i === out.length - 1) return true;
+      return !(p[1] === out[i - 1][1] && p[1] === out[i + 1][1]);
+    });
+    if (out.length > points) {                // thin evenly, always keep the last
+      const step = out.length / points;
+      const keep = new Set<number>([out.length - 1]);
+      for (let i = 0; i < points; i++) keep.add(Math.min(out.length - 1, Math.round(i * step)));
+      out = out.filter((_, i) => keep.has(i));
+    }
+    return out;
+  }, [series.data, since, points]);
+  return { series, pts };
+}
+
+/** The move since this ET session's first sample (falls back to the window). */
+function sessionMove(pts: [number, number][]) {
+  if (pts.length < 2) return null;
+  const today = ET_DAY_KEY.format(Date.now());
+  const startIdx = pts.findIndex((p) => ET_DAY_KEY.format(p[0]) === today);
+  const from = startIdx >= 0 ? pts[startIdx][1] : pts[0][1];
+  const to = pts[pts.length - 1][1];
+  return { abs: to - from, pct: from ? ((to - from) / from) * 100 : 0, today: startIdx >= 0 };
+}
+const ET_DAY_KEY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+
+/** A bare sparkline — no axes, no grid: the shape of the day in 40px. */
+function Spark({ pts, up }: { pts: [number, number][]; up: boolean }) {
+  const d = useMemo(() => {
+    const ys = pts.map((p) => p[1]);
+    if (ys.length < 2) return null;
+    const w = 128, h = 38, lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || 1;
+    const step = w / (ys.length - 1);
+    return ys.map((v, i) => `${i ? "L" : "M"}${(i * step).toFixed(1)} ${(h - 2 - ((v - lo) / span) * (h - 5)).toFixed(1)}`).join(" ");
+  }, [pts]);
+  if (!d) return null;
+  return (
+    <svg className="dash-hero-spark" viewBox="0 0 128 38" preserveAspectRatio="none" aria-hidden="true">
+      <path d={d} fill="none" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"
+        stroke={up ? "var(--up)" : "var(--down)"} />
+    </svg>
+  );
+}
+
 function EquityCurvePanel() {
   const portfolios = useStore((s) => s.portfolios);
   const defaultPid = useStore((s) => s.settings["trading.default_portfolio"]);
@@ -214,39 +279,7 @@ function EquityCurvePanel() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
 
-  const since = spec.hours ? Date.now() - spec.hours * 3600_000 : 0;
-  const series = useAsync<[number, number][]>(() => {
-    if (!target) return Promise.resolve([]);
-    // samples land every ~30 s; ask for the window plus headroom. `since` and
-    // `points` are honoured by newer servers — an older one drops them silently,
-    // which is why the window and the thinning are applied again below.
-    const limit = spec.hours ? Math.ceil(spec.hours * 140) : 200000;
-    return api.get(`/api/portfolios/${target.id}/equity?limit=${limit}&points=${spec.points}`
-      + (since ? `&since=${Math.round(since)}` : ""));
-  }, [target?.id, spec.key]);
-
-  const pts = useMemo(() => {
-    let raw = series.data ?? [];
-    if (since) raw = raw.filter((p) => p[0] >= since);
-    const open = raw.filter((p) => inSession(p[0]));
-    // a book that only ever moved outside the session still deserves a line
-    let out = open.length >= 2 ? open : raw;
-    // Collapse dead stretches. Pre/post-market samples are kept (they DO move
-    // when the tape prints) but a book that sat at the same cent for four hours
-    // gets one step, not four hours of width — the axis is ordinal, so dropping
-    // the interior of a flat run is what actually removes the desert.
-    out = out.filter((p, i) => {
-      if (i === 0 || i === out.length - 1) return true;
-      return !(p[1] === out[i - 1][1] && p[1] === out[i + 1][1]);
-    });
-    if (out.length > spec.points) {           // thin evenly, always keep the last
-      const step = out.length / spec.points;
-      const keep = new Set<number>([out.length - 1]);
-      for (let i = 0; i < spec.points; i++) keep.add(Math.min(out.length - 1, Math.round(i * step)));
-      out = out.filter((_, i) => keep.has(i));
-    }
-    return out;
-  }, [series.data, since, spec.points]);
+  const { series, pts } = useEquityWindow(target?.id, spec.hours, spec.points);
   const first = pts.length ? pts[0][1] : 0;
   const last = pts.length ? pts[pts.length - 1][1] : 0;
   const delta = last - first;
@@ -502,29 +535,41 @@ function EquityHero() {
         name: a.name, ccy: a.currency, value: a.equity, sub: p.broker })))
     : sims.map((p) => ({ name: p.name, ccy: p.baseCurrency ?? "USD", value: p.equity ?? p.cash }));
 
+  // the shape of the day, in the headline — the board's one real visual
+  const chartPid = live
+    ? portfolios.filter((p) => p.kind === "live" || p.kind === "paper")
+        .reduce((b, p) => (!b || (p.equity ?? p.cash) > (b.equity ?? b.cash) ? p : b), undefined as any)?.id
+    : sims[0]?.id;
+  const { pts } = useEquityWindow(chartPid, 24, 60);
+  const move = sessionMove(pts);
+  const upMove = (move?.abs ?? 0) >= 0;
   return (
     <div className="panel dash-hero">
       <div className="dash-hero-top">
         <div className="dash-hero-main">
           <div className="dash-hero-lbl">
-            {live ? "Real money · all accounts" : "Practice book · simulated money"}
+            {live ? "Real money · all accounts" : "Practice book"}
+            {!live && <span className="dash-hero-tag">simulated</span>}
           </div>
           <div className="dash-hero-num">
             {live
               ? (liveTotals.length ? liveTotals.map((t) => fmtCcy(t.total, t.currency)).join("  ·  ") : "—")
               : fmtCcy(practiceTotal, practiceCcy)}
           </div>
+          {move && (
+            <div className={`dash-hero-move ${upMove ? "pos" : "neg"}`}>
+              {upMove ? "▲" : "▼"} {fmtCcy(Math.abs(move.abs), live ? (liveTotals[0]?.currency ?? "USD") : practiceCcy)}
+              <span className="dash-hero-pct">{upMove ? "+" : "−"}{Math.abs(move.pct).toFixed(2)}%</span>
+              <span className="muted">{move.today ? "today" : "past 24h"}</span>
+            </div>
+          )}
           {live && blended !== null && (
             <div className="dash-hero-sub" title={`Blended at live USD/CAD ${usdCad?.toFixed(4)}`}>
               ≈ {fmtCcy(blended, "CAD")} combined at today's FX
             </div>
           )}
-          {!live && (
-            <div className="dash-hero-sub">
-              nothing here is real money — your accounts live in the <b>LIVE</b> workspace
-            </div>
-          )}
         </div>
+        {pts.length > 1 && <Spark pts={pts} up={upMove} />}
         <div className="dash-hero-side">
           {halt.engaged && <span className="status-pill bad">HALTED — nothing can trade</span>}
           {broker && broker.feedConnected === false && (

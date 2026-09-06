@@ -241,7 +241,52 @@ class SignalService:
         await self.engine.journal.append(ev.TIP_NOTE_ADDED, note,
                                          aggregate_type="signal",
                                          aggregate_id=signal_id or row.id)
+        # rule-family hygiene (2026-09-04: nine live versions of the "adoption
+        # geometry" rule were all injected into every run because supersession
+        # was only ever CLAIMED in prose): a new rule whose family matches an
+        # existing live rule supersedes it automatically, journaled.
+        if scope == "rule":
+            with contextlib.suppress(Exception):
+                await self._supersede_rule_family(row)
         return note
+
+    _RULE_FAMILY_STOPWORDS = ("extends", "new", "corollary", "refines",
+                              "consolidates", "sits", "expanded")
+
+    @staticmethod
+    def _rule_family(text: str) -> str | None:
+        """The family key of 'RULE (<family> — …': the parenthetical up to the
+        first dash/colon/comma, lowercased. Generic prefixes ('extends the…',
+        'new, sits beside…') carry no family claim — None."""
+        import re
+        m = re.match(r"\s*RULE\s*\(([^—\-:,)]+)", text or "")
+        if not m:
+            return None
+        fam = re.sub(r"\s+", " ", m.group(1)).strip().lower()
+        fam = re.sub(r"\s*(check|rule)$", "", fam).strip()
+        if not fam or len(fam.split()) < 2:
+            return None
+        if fam.split()[0] in SignalService._RULE_FAMILY_STOPWORDS:
+            return None
+        return fam
+
+    async def _supersede_rule_family(self, new_row) -> None:
+        from ..models import TipNote
+        fam = self._rule_family(new_row.text)
+        if fam is None:
+            return
+        async with self.engine.sf() as session:
+            live = (await session.execute(select(TipNote).where(
+                TipNote.scope == "rule", TipNote.superseded_by.is_(None),
+                TipNote.id != new_row.id))).scalars().all()
+        old = [r.id for r in live if self._rule_family(r.text) == fam]
+        if not old:
+            return
+        await self.supersede_tip_notes(old, by=new_row.id)
+        await self.engine.journal.append(
+            ev.TIP_RULE_AUDITED, {"superseded": old, "by": new_row.id,
+                                  "family": fam, "via": "family-dedupe"},
+            aggregate_type="signal", aggregate_id=new_row.id)
 
     async def update_tip_note(self, note_id: str, *, text: str | None = None,
                               scope: str | None = None) -> dict | None:
@@ -1568,6 +1613,19 @@ class SignalService:
                             elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
                                 gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
                                         f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
+                        if not gate:
+                            # nine-strike session clause (2026-09-04): one adoption
+                            # stopped out within minutes today = the hand-off
+                            # pipeline is suspect — autos pause for the session
+                            with contextlib.suppress(Exception):
+                                from ..techniques.tip.lifecycle import adoption_killswitch
+                                ks = await adoption_killswitch(eng)
+                                if ks:
+                                    gate = ks
+                                    await eng.journal.append(
+                                        ev.TIP_AUTO_PAUSED, {"reason": ks,
+                                                             "proposalId": proposal["id"]},
+                                        aggregate_type="signal", aggregate_id=row.id)
                         if gate:
                             log.info("auto mode: %s (%s) — leaving proposal %s pending",
                                      gate, row.source_name, proposal["id"])
@@ -2236,11 +2294,19 @@ class SignalService:
         return out
 
     async def source_trust(self, source: str) -> dict:
-        """Graduation stats for the earned-auto gate (POST-SOAK Phase 2): the
-        source's CLOSED tip positions (tag `source:<name>` — the armed lineage,
-        per the standing 'judge the ARMED book' rule); realized P&L > 0 = hit."""
-        from ..models import ManagedPositionRow
-        async with self.engine.sf() as session:
+        """Graduation stats for the earned-auto gate (POST-SOAK Phase 2, widened
+        2026-09-04 by user decision): a source earns auto on BOTH lanes —
+        (a) its CLOSED tip positions (tag `source:<name>`; realized P&L > 0 =
+        hit), and (b) its IMMEDIATE shadow book's aged marks: a position first
+        filled >= ~1 session ago grades, marked above cost = hit. Rationale:
+        momentum tips never return to the level, so the armed lane barely
+        trades and a good source could never graduate on it (shadow audit
+        2026-09-04: immediate books +$52k/+$48k/+$18k, armed books ~flat)."""
+        import datetime as _dt
+
+        from ..models import ManagedPositionRow, Order
+        eng = self.engine
+        async with eng.sf() as session:
             rows = (await session.execute(select(ManagedPositionRow).where(
                 ManagedPositionRow.technique == "tip",
                 ManagedPositionRow.status == "closed"))).scalars().all()
@@ -2251,8 +2317,42 @@ class SignalService:
             graded += 1
             if float((r.state or {}).get("realizedPnl") or 0) > 0:
                 hits += 1
+        closed_lane = {"graded": graded, "hits": hits}
+
+        # ---- lane (b): the immediate shadow book, aged marks
+        sh_graded = sh_hits = 0
+        pf = next((p for p in eng.positions.portfolios()
+                   if p.get("kind") == "shadow" and (p.get("book") or "immediate") == "immediate"
+                   and p.get("sourceName") == source), None)
+        if pf is not None:
+            cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=20)
+            async with eng.sf() as session:
+                filled = (await session.execute(select(Order).where(
+                    Order.portfolio_id == pf["id"], Order.side == "BUY",
+                    Order.status == "FILLED"))).scalars().all()
+            first_fill: dict[str, _dt.datetime] = {}
+            for o in filled:
+                ts = o.created_at
+                if ts is not None and (o.symbol not in first_fill or ts < first_fill[o.symbol]):
+                    first_fill[o.symbol] = ts
+            for pos in eng.positions.positions_list(pf["id"]):
+                if (pos.get("qty") or 0) <= 0 or (pos.get("avgCost") or 0) <= 0:
+                    continue
+                ts = first_fill.get(pos.get("symbol"))
+                if ts is None or ts.replace(tzinfo=ts.tzinfo or _dt.timezone.utc) > cutoff:
+                    continue                       # too young to judge
+                last = pos.get("last") or 0
+                if not last:
+                    continue                       # no mark, no grade
+                sh_graded += 1
+                if last > pos["avgCost"]:
+                    sh_hits += 1
+        graded += sh_graded
+        hits += sh_hits
         return {"graded": graded, "hits": hits,
-                "hitRate": (hits / graded) if graded else None}
+                "hitRate": (hits / graded) if graded else None,
+                "closed": closed_lane,
+                "shadowImmediate": {"graded": sh_graded, "hits": sh_hits}}
 
     async def source_scorecards(self) -> list[dict]:
         """Per-source track record, TWO books side by side (user decision
