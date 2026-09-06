@@ -279,7 +279,10 @@ carried a 16:00-stamped one-print bucket that a next-day fetch lacks; it shrank 
 Platform fix: `clip_to_rth` at the fetch source (PLATFORM-RULES 2026-09-05). Watch: every
 evening-batch plan before 2026-09-05 was built with that phantom bar - stops were slightly
 tighter than the replay's, so some R3.2 rejections in the 09-01..09-04 batches were false.
-DELL is ledgered as a bug-missed trade (counterfactual, put priced from its own prints).
+DELL is ledgered as a bug-missed trade (counterfactual 05a21c46): **NOT FILLED** - the 530 put
+printed 5.15 on the fire bar and 10.95 one minute later (DELL fell hard); a resting limit at the
+fire-bar ask never filled inside the entry window. The +2.55R is the underlying's number; under our
+never-chase execution the trade was unreachable anyway. The defect is real, its cost on Friday was 0.
 
 ## 2. Findings (settled, with evidence)
 
