@@ -5,6 +5,12 @@ performance claims. Findings must cite SOURCES.md or an identified replay/run.
 
 ## Decisions
 
+- Automatic preparation (2026-09-07): the user selected automatic execution in
+  Practice. [DAILY-PREPARATION.md](DAILY-PREPARATION.md) records the discovery,
+  evidence, automatic review and contract policies, including engineering
+  defaults and the publisher-observation freshness boundary. Preparation arms
+  qualifying plans; it does not bypass closed-bar entries or shared risk gates.
+
 - D1: Own method namespace `options_cartel`; code target
   `backend/zargar/techniques/options_cartel/`; docs stay in this folder.
 - D2: Treat the method as multi-day momentum swing trading. Do not clone Team2's

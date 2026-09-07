@@ -32,6 +32,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.options_cartel.scan_direction": "long",
     "techniques.options_cartel.recovery_enabled": False,
     "techniques.options_cartel.record_option_quotes": False,
+    "techniques.options_cartel.preparation": {},
     "techniques.options_cartel.allow_live_auto": False,
     "techniques.options_cartel.daily_loss_halt_pct": 0.0,  # optional technique limit; auto still requires the book loss halt
     # --- trading / routing -------------------------------------------------

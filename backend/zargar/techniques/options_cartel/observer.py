@@ -324,6 +324,8 @@ async def attach_cartel_observer(engine):
     from .runtime import CartelRuntime
     from .scan_recovery import recover_interrupted_scans
     await recover_interrupted_scans(engine)
+    from .preparation import recover_interrupted_preparations
+    await recover_interrupted_preparations(engine)
     observer = CartelRuntime(engine)
     await observer.restore()
     engine.cartel_observer = observer

@@ -54,6 +54,9 @@ class CartelEntryController:
 
     def _entry_conditions(self, row, plan, spec):
         now = self.clock()
+        preparation = row.get('config', {}).get('preparation')
+        if preparation and (not preparation.get('practiceOnly') or now >= preparation.get('validUntil', 0)):
+            raise ValueError('Automatic preparation evidence expired or is not Practice-scoped')
         signal = row["state"].get("signal") or {}
         if row["status"] != "armed" or row["state"]["phase"] not in ("signalled", "submitting"):
             raise ValueError("entry is no longer armed and signalled")

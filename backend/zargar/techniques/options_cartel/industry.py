@@ -21,6 +21,7 @@ class IndustrySnapshot(WireModel):
     source: str = Field(min_length=1, max_length=2000)
     observed_at: int = Field(ge=0)
     data_as_of_ms: int | None = Field(default=None, ge=0)
+    freshness_basis: Literal['provider_time', 'publisher_observation'] = 'provider_time'
     expected_count: int = Field(ge=1, le=500)
     week_definition: str = Field(min_length=1, max_length=300)
     month_definition: str = Field(min_length=1, max_length=300)
@@ -63,10 +64,13 @@ def read_industry(snapshot: IndustrySnapshot, industry: str, *, at: int, directi
     if direction not in ('long', 'short') or top_n < 1 or max_age_days < 0:
         raise ValueError('invalid industry rank policy')
     out = {'industry': industry, 'status': 'unknown', 'weekRank': None, 'monthRank': None,
+           'freshnessBasis': snapshot.freshness_basis,
            'source': snapshot.source, 'observedAt': snapshot.observed_at, 'dataAsOfMs': snapshot.data_as_of_ms}
-    if snapshot.data_as_of_ms is None:
+    effective_time = snapshot.observed_at if snapshot.freshness_basis == 'publisher_observation' else snapshot.data_as_of_ms
+    age_limit = min(max_age_days, 1) if snapshot.freshness_basis == 'publisher_observation' else max_age_days
+    if effective_time is None:
         return {**out, 'reason': 'Source data timestamp is unavailable; freshness cannot be established.'}
-    if not snapshot.observed_at <= at or at-snapshot.data_as_of_ms > max_age_days*86_400_000:
+    if not snapshot.observed_at <= at or at-effective_time > age_limit*86_400_000:
         return {**out, 'reason': 'Snapshot was not yet available or its underlying data is stale.'}
     row = next((r for r in snapshot.rows if r.industry.strip().casefold() == industry.strip().casefold()), None)
     if row is None:

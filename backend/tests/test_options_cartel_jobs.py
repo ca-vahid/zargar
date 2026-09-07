@@ -52,7 +52,8 @@ def test_register_jobs_preserves_existing_scheduler_entries():
     assert jobs['other_technique'] == ('12:00', None)
     assert {name: at for name, (at, _) in jobs.items() if name.startswith('options_cartel')} == {
         'options_cartel_nightly_scan': '20:15', 'options_cartel_close_recovery': '20:10',
-        'options_cartel_preopen_recovery': '09:05'}
+        'options_cartel_preopen_recovery': '09:05', 'options_cartel_nightly_preparation': '20:20',
+        'options_cartel_morning_preparation': '08:45'}
 
 
 async def test_scheduled_history_recovery_prepares_owned_batch_without_orders(engine):

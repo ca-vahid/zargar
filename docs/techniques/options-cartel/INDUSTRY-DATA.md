@@ -1,5 +1,12 @@
 # Industry evidence for Cartel
 
+September 7 automation update: [Daily preparation](DAILY-PREPARATION.md) now
+captures the complete publisher table directly and joins the stock screener's
+publisher industry labels. It uses an explicit, at-most-24-hour observation-age
+policy for this current publication, leaving constituent data time unknown.
+The older manual/provider-time workflow below retains its stricter timestamp
+requirement; its collection gaps describe the earlier implementation.
+
 Sean's September thread requires an industry in the top ten on both weekly and
 monthly performance. The linked [TradingView industry page](https://www.tradingview.com/markets/stocks-usa/sectorandindustry-industry/)
 provides a Performance tab with independently sortable 1W and 1M columns.
@@ -28,8 +35,9 @@ rank must not claim exact provider parity without a documented tie rule.
 Historical scans require snapshots available at the historical decision time.
 Today's table cannot establish earlier leadership or membership. A source-dated
 snapshot import/store is now available through
-`POST /api/options-cartel/industry-snapshots`. Automated collection and stock-facts
-integration remain unfinished; manual facts alone are not that data pipeline.
+`POST /api/options-cartel/industry-snapshots`. Daily preparation now adds automated
+collection and stock-facts integration; today's capture still cannot establish
+historical leadership before its observation time.
 
 ## Combining evidence without look-ahead
 

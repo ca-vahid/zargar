@@ -58,6 +58,17 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### 2026-09-07 — Cartel automatic Practice preparation
+
+Cartel owns its discovery/review policy and schedules preparation separately from
+shared execution. Preparation may arm only `sim` portfolios, with auto mode and
+live permission false; existing risk, closed-bar entry, write-ahead submission
+and position protection remain mandatory. Its context snapshot receipt-time
+policy does not relax executable quote freshness. Only unused automatic plans
+are replaced on refresh; working orders, user-paused plans and held positions
+are preserved. See [daily preparation](techniques/options-cartel/DAILY-PREPARATION.md)
+and `test_options_cartel_preparation.py` for lifecycle evidence.
+
 - **2026-09-07 · Cartel's money runtime uses independent fire and reconciliation
   tasks.** Order DTOs now include technique/tags, and SessionListener has an
   overridable order-interest predicate (the default remains its existing id index).

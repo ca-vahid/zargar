@@ -7,6 +7,7 @@ from sqlalchemy import select
 
 from .. import events as ev
 from ..models import Event
+from ..techniques.options_cartel.automatic_plans import PreparationPolicy
 from ..techniques.options_cartel.collect import CollectInput
 from ..techniques.options_cartel.contracts import ContractSelectionInput, select_contract
 from ..techniques.options_cartel.execution import ExecutionInput, preflight
@@ -22,6 +23,13 @@ from ..techniques.options_cartel.premium_replay import (
     StoredPremiumReplayInput,
     save_premium_replay,
     value_stored_quotes,
+)
+from ..techniques.options_cartel.preparation import SETTING as PREPARATION_SETTING
+from ..techniques.options_cartel.preparation import (
+    practice_portfolio,
+    preparation_status,
+    stop_preparation,
+    submit_preparation,
 )
 from ..techniques.options_cartel.quote_observations import capture_cached_quote, quote_observations
 from ..techniques.options_cartel.replay_service import CampaignReplayRequest, replay_from_history
@@ -40,6 +48,25 @@ from ..techniques.options_cartel.sweeps import SweepRequest, run_sweep
 def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
+
+    @app.get('/api/options-cartel/preparation', dependencies=[auth])
+    async def cartel_preparation_status():
+        return await preparation_status(eng)
+
+    @app.post('/api/options-cartel/preparation/config', dependencies=[auth])
+    async def cartel_preparation_config(body: PreparationPolicy):
+        async def save():
+            if body.enabled:
+                await practice_portfolio(eng, body.portfolio_id)
+            await eng.settings.set(PREPARATION_SETTING, body.model_dump(mode='json'))
+            if not body.enabled:
+                await stop_preparation(eng)
+            return await preparation_status(eng)
+        return await respond(save())
+
+    @app.post('/api/options-cartel/preparation/run', dependencies=[auth], status_code=202)
+    async def cartel_prepare_daily():
+        return await respond(submit_preparation(eng))
 
     @app.post("/api/options-cartel/runs/{run_id}/premium-replay-stored", dependencies=[auth])
     async def cartel_stored_premium_replay(run_id: str, body: StoredPremiumReplayInput):
