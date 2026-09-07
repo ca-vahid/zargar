@@ -69,6 +69,23 @@ class EventCalendar:
             log.warning("calendar crumb fetch failed: %s", exc)
         return self._crumb
 
+    async def quote_summary(self, symbol: str, modules: tuple[str, ...]) -> dict:
+        """Shared anonymous Yahoo transport; callers own normalization and dating."""
+        crumb = await self._ensure_crumb()
+        params = {"modules": ",".join(modules)}
+        if crumb:
+            params["crumb"] = crumb
+        r = await self._client.get(QS_URL.format(sym=symbol.upper().strip()), params=params)
+        if r.status_code in (401, 403):
+            self._crumb = None
+            crumb = await self._ensure_crumb()
+            if crumb:
+                params["crumb"] = crumb
+                r = await self._client.get(QS_URL.format(sym=symbol.upper().strip()), params=params)
+        r.raise_for_status()
+        result = (((r.json() or {}).get("quoteSummary") or {}).get("result") or [])
+        return result[0] if result else {}
+
     async def get(self, symbol: str, *, max_age_seconds: int = CACHE_SECONDS) -> dict:
         """The calendar record for one symbol; cached ~12h; empty fields on failure
         (never raises — a missing calendar must not break a scan)."""
@@ -81,20 +98,8 @@ class EventCalendar:
                "dividendDate": None, "confirmed": False, "source": "yahoo",
                "fetchedAt": int(now * 1000)}
         try:
-            crumb = await self._ensure_crumb()
-            params = {"modules": "calendarEvents"}
-            if crumb:
-                params["crumb"] = crumb
-            r = await self._client.get(QS_URL.format(sym=sym), params=params)
-            if r.status_code in (401, 403):                 # stale crumb: one refresh
-                self._crumb = None
-                crumb = await self._ensure_crumb()
-                if crumb:
-                    params["crumb"] = crumb
-                    r = await self._client.get(QS_URL.format(sym=sym), params=params)
-            r.raise_for_status()
-            res = (((r.json() or {}).get("quoteSummary") or {}).get("result") or [])
-            cal = (res[0].get("calendarEvents") if res else None) or {}
+            summary = await self.quote_summary(sym, ("calendarEvents",))
+            cal = summary.get("calendarEvents") or {}
             earn = (cal.get("earnings") or {}).get("earningsDate") or []
             stamps = [int(e.get("raw")) for e in earn if isinstance(e, dict) and e.get("raw")]
             out["earnings"] = sorted({dt.datetime.fromtimestamp(t, ET).strftime("%Y-%m-%d") for t in stamps})

@@ -1,6 +1,7 @@
 """Daily-loss semantics: halts require zargar trades; drift only warns."""
 import datetime as dt
 
+import pytest
 from sqlalchemy import func, select
 
 from zargar import bus as topics
@@ -80,7 +81,9 @@ async def test_passive_drift_warns_but_never_halts(engine):
     assert drift_msgs[0]["lossPct"] < -8
 
 
-async def test_traded_portfolio_still_halts(engine):
+@pytest.mark.parametrize('scope', ['portfolio', 'global'])
+async def test_traded_portfolio_still_halts(engine, scope):
+    await engine.settings.set('risk.daily_loss_halt_scope', scope)
     pid = await seed_live_portfolio(engine, pid="traded1")
     await anchor_with_loss(engine, pid, loss_pct=9.0)
     async with engine.sf() as session:
@@ -89,8 +92,9 @@ async def test_traded_portfolio_still_halts(engine):
         await session.commit()
 
     await engine.check_daily_loss()
-    assert engine.halt.engaged is True
-    assert "Webull CASH" in engine.halt.reason
+    assert engine.halt.engaged is (scope == 'global')
+    assert "Webull CASH" in engine.trading_halted(pid)
+    assert bool(engine.trading_halted('unrelated-book')) is (scope == 'global')
     assert await count_events(engine, "DailyLossHalt") == 1
     assert await count_events(engine, "DailyDriftWarning") == 0
 

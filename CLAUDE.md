@@ -1,5 +1,9 @@
 # Zargar — agent notes
 
+Read [AGENTS.md](AGENTS.md) first for shared Claude/Codex worktree ownership,
+database isolation, and runtime port rules. Those collaboration rules apply
+to the generic commands below. Setup and handoff: [docs/COLLABORATION.md](docs/COLLABORATION.md).
+
 Personal trading app: Python asyncio engine + FastAPI (port 8420),
 React/Vite SPA, Postgres in Docker (the only dockerized piece — do not
 dockerize the app). Single user. Venues: SnapTrade (Wealthsimple + Webull CA,

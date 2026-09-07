@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.1";
+export const APP_VERSION = "0.7.2";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,19 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.2",
+    date: "2026-09-07",
+    title: "Options Cartel desk",
+    items: [
+      { tag: "new", text: "Options Cartel has its own research desk, source library, dated screen profiles, saved plans and history." },
+      { tag: "new", text: "Capture capitalization and industry evidence, scan a focus list, and review completed results or retry individual data failures." },
+      { tag: "new", text: "Review share or option expressions, arm alerts, proposals or automatic execution, and manage positions through the shared risk controls." },
+      { tag: "new", text: "Replay saved campaigns, compare entry variants, and value modeled fills with recorded option quotes and fees. Missing data and simulation limits remain visible." },
+      { tag: "new", text: "Optional Cartel quote recording and scheduled research/recovery have separate controls and start disabled." },
+      { tag: "fixed", text: "Background technique work is fully awaited during shutdown, and option Greek freshness is tracked by field." },
+    ],
+  },
   {
     version: "0.7.1",
     date: "2026-09-04",

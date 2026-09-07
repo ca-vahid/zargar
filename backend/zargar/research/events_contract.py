@@ -24,6 +24,10 @@ log = logging.getLogger("zargar.research.events")
 
 # kind -> {"version", "required": (fields...), "nullable": (fields...)}
 CONTRACTS: dict[str, dict] = {
+    "TechniqueCartelContractSelection": {"version": 1, "required": ("runId", "symbol", "report")},
+    "ManagedPositionHistoryRecovered": {"version": 1, "required": ("positionId", "source", "asOfMs", "addedSessions", "missedCloses")},
+    "TechniqueCartelStateChanged": {"version": 1, "required": ("runId", "symbol", "action", "status", "phase")},
+    "TechniqueCartelPreflight": {"version": 1, "required": ("runId", "symbol", "portfolioId", "report")},
     # --- research: runs / setups / outcomes / reviews / sweeps -------------
     "TechniqueRunStarted":    {"version": 1, "required": ("runId", "symbol")},
     "TechniqueRunCompleted":  {"version": 1, "required": ("runId", "symbol")},
@@ -62,10 +66,15 @@ CONTRACTS: dict[str, dict] = {
     "TechniquePlanPreopen":   {"version": 1, "required": ("runId", "symbol", "planFor", "premarket", "triggers", "replan")},
     "TechniquePlanReplanned": {"version": 1, "required": ("runId", "parentRunId", "symbol", "planFor")},
     "TechniqueHookStats":     {"version": 1, "required": ("technique", "date", "hooks")},
+    "TechniqueLossHalt":      {"version": 1,
+                               "required": ("technique", "portfolioId", "lossToday", "equity", "pct", "plans")},
     # --- durable positions (phase 2b; produced ONLY by execution/positions.py) ---
     "ManagedPositionOpened":  {"version": 1, "required": ("positionId", "technique", "symbol", "portfolioId", "legs", "policy")},
     "ManagedPositionAdopted": {"version": 1, "required": ("positionId", "technique", "symbol", "portfolioId", "legs", "policy")},
+    "TechniqueCartelLossHalt": {"version": 1, "required": ("technique", "portfolioId", "day", "asOfMs", "pnl", "pct", "equity", "limit", "report")},
+    "TechniqueCartelRiskMarksRecovered": {"version": 1, "required": ("portfolioId", "session", "source", "recovered", "preserved", "unavailable")},
     "ManagedPositionExit":    {"version": 1, "required": ("positionId", "symbol", "kind", "leg", "qty", "reduceOnly")},
+    "ManagedPositionExitCancellationRequested": {"version": 1, "required": ("positionId", "symbol", "orderId", "attempt")},
     "ManagedPositionClosed":  {"version": 1, "required": ("positionId", "symbol", "realizedPnl", "reason")},
     "ManagedPositionPolicyChanged": {"version": 1, "required": ("positionId", "symbol", "policy")},
     "ManagedPositionReconciled": {"version": 1, "required": ("positions",)},

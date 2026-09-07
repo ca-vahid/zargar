@@ -1,4 +1,5 @@
 # machine-specific
+.cache/
 docker-compose.override.yml
 backend/.env
 # Claude Code local state is ignored, but project skills are checked in.

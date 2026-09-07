@@ -158,8 +158,9 @@ export function NowView() {
       {sum.inTrade.length > 0 && <div className="now-h">In trade</div>}
       {sum.inTrade.map((t) => {
         const up = (t.unrealizedPnl ?? 0) >= 0;
-        const lo = Math.min(t.stop, t.entry), hi = Math.max(t.nextTarget ?? t.entry, t.entry);
-        const px = t.lastPrice ?? t.entry;
+        const underlyingEntry = t.underlyingEntry ?? t.entry;
+        const lo = Math.min(t.stop, underlyingEntry), hi = Math.max(t.nextTarget ?? underlyingEntry, underlyingEntry);
+        const px = t.lastPrice ?? underlyingEntry;
         const pct = hi > lo ? Math.min(100, Math.max(0, ((px - lo) / (hi - lo)) * 100)) : 50;
         return (
           <button type="button" key={`tr-${t.runId}-${t.triggerId}`} className="now-card now-card--trade"
@@ -170,7 +171,7 @@ export function NowView() {
               <span className="now-acct">{t.instrument === "options" && t.contract?.symbol ? t.contract.symbol : `${t.remaining} sh`}</span>
             </div>
             <div className={`now-big ${up ? "pos" : "neg"}`}>
-              {up ? "+" : "−"}{fmt(Math.abs(t.unrealizedPnl ?? 0))}
+              {t.unrealizedPnl == null ? "Mark unavailable" : `${up ? "+" : "−"}${fmt(Math.abs(t.unrealizedPnl))}`}
               <small>{t.unrealizedR != null ? ` ${t.unrealizedR >= 0 ? "+" : ""}${t.unrealizedR.toFixed(2)}R` : ""} unrealized</small>
             </div>
             <div className="now-meter" aria-hidden="true">
