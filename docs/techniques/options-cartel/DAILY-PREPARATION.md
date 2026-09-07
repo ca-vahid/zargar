@@ -1,9 +1,10 @@
 # Automatic daily preparation
 
 The Cartel desk can prepare and arm options plans for a local **Practice (sim)**
-portfolio. Broker paper and live portfolios are rejected. On the desk, enable
-Daily preparation, choose the Practice account, and save. Scheduled jobs run at
-20:20 and 08:45 ET on trading days. “Save and prepare next session now” starts
+portfolio. Broker paper and live portfolios are rejected. Under Settings, enable
+Daily preparation, choose the Practice account, and save. Plans shows the daily
+shortlist; Armed shows active execution and account risk. Scheduled jobs run at
+20:20 and 08:45 ET on trading days. “Prepare now” on Plans starts
 outside regular market hours. Preparation does not place an entry order;
 the existing closed-bar entry controller executes qualifying armed plans.
 
@@ -63,7 +64,7 @@ but does not disarm existing plans or close positions.
 Requests coalesce into one worker. Progress and inputs persist in an owned
 `TechniqueRun` with mode `preparation`, linked to analyses and plans. On restart,
 interrupted runs are marked failed; existing arms restore through normal runtime
-recovery. The next scheduled job or the desk button starts a fresh preparation.
+recovery. The next scheduled job or the Prepare now button starts a fresh preparation.
 The daily scheduler records job dispatch separately from preparation completion.
 
 ## Data verification

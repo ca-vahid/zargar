@@ -209,11 +209,16 @@ docker-compose.
 
 ## Versioning
 
+For technique-page layout and interaction consistency, follow
+[docs/UI-CONVENTIONS.md](docs/UI-CONVENTIONS.md); Team2 is the compact desk reference.
+
 App version = `frontend/src/changelog.ts` (`APP_VERSION` + the curated CHANGELOG the
 top-bar `v…` chip shows), mirrored in `frontend/package.json`, `backend/zargar/__init__.py`
 and `backend/pyproject.toml` — bump all four together. Every user-visible change adds a
 CONCISE entry (tag: major/new/improved/fixed/security) to the current release's block;
 start a new block when the user calls a release. `/api/health` reports the version.
+`npm run check-release` verifies these values and the package lockfile; the
+frontend production build runs this check automatically.
 
 ## Hard rules
 

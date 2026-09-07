@@ -36,7 +36,8 @@ fs.mkdirSync(OUT, { recursive: true });
 
 const ROUTES = ["/armed", "/trade", "/inbox", "/portfolios", "/", "/options",
   "/watchlists", "/ledger", "/journal", "/settings", "/technique",
-  "/techniques/options-cartel", "/techniques/options-cartel/method"];
+  "/techniques/options-cartel", "/techniques/options-cartel/armed", "/techniques/options-cartel/history",
+  "/techniques/options-cartel/validation", "/techniques/options-cartel/settings", "/techniques/options-cartel/method"];
 const MATRIX = [
   { name: "iphone-se", device: devices["iPhone SE"], phone: true },
   { name: "iphone-14", device: devices["iPhone 14"], phone: true },
@@ -82,8 +83,7 @@ for (const m of MATRIX) {
         const response = await page.request.get(`${BASE}/api/options-cartel/runs/${encodeURIComponent(CARTEL_PLAN)}`);
         if (!response.ok()) throw new Error("Cartel audit fixture is unavailable");
         const plan = await response.json();
-        const when = new Date(plan.createdAt).toLocaleString("en-US", {timeZone: "America/New_York"});
-        await page.getByRole("button", {name: `${plan.symbol} plan · plan ${when}`, exact: true}).click();
+        await page.locator(`tr[data-run-id="${plan.runId}"]`).getByRole("button", {name: `Open ${plan.symbol}`, exact: true}).click();
         await page.getByRole("combobox", {name: "Execution mode", exact: true}).selectOption("proposal");
         await page.getByText("Find an eligible contract", {exact: true}).click();
         await page.getByText("Replay this campaign", {exact: true}).click();
@@ -92,14 +92,13 @@ for (const m of MATRIX) {
           await page.locator('[aria-label="Saved Cartel chart"] .highcharts-container').scrollIntoViewIfNeeded();
         }
       }
+      if (route === "/techniques/options-cartel/validation") await page.getByText("Compare entry rules", {exact: true}).click();
       if (route === "/techniques/options-cartel/history") {
-        await page.getByText("Compare entry rules", {exact: true}).click();
         if (process.env.MOBILE_AUDIT_CARTEL_RUN) {
           const response = await page.request.get(`${BASE}/api/options-cartel/runs/${encodeURIComponent(process.env.MOBILE_AUDIT_CARTEL_RUN)}`);
           if (!response.ok()) throw new Error("Cartel history fixture unavailable");
           const run = await response.json();
-          const when = new Date(run.createdAt).toLocaleString("en-US", {timeZone:"America/New_York"});
-          await page.getByRole("button", {name:`${run.symbol} ${run.mode.replaceAll('_', ' ')} · ${run.verdict.replaceAll('_', ' ')} ${when}`, exact:true}).click();
+          await page.locator(`tr[data-run-id="${run.runId}"]`).getByRole("button", {name: `Open ${run.symbol}`, exact: true}).click();
           if (run.mode === "scan") await page.getByRole("region", {name:"Focus-list scan results", exact:true}).scrollIntoViewIfNeeded();
           if (run.mode === "industry") await page.getByRole("region", {name:"Industry capture results", exact:true}).scrollIntoViewIfNeeded();
           if (run.mode === "fundamentals" || run.mode === "membership") await page.getByRole("region", {name:"Saved stock evidence", exact:true}).scrollIntoViewIfNeeded();
@@ -110,12 +109,14 @@ for (const m of MATRIX) {
           }
         }
       }
-      if (route === "/techniques/options-cartel") {
+      if (route === "/techniques/options-cartel/settings") {
         await page.getByText("Scheduled scans and recovery", {exact: true}).click();
         if (process.env.MOBILE_AUDIT_CARTEL_RECORDING === "1") {
           await page.getByText("Option quote recording", {exact:true}).click();
           await page.getByRole("button", {name:"Save recording setting", exact:true}).scrollIntoViewIfNeeded();
         }
+      }
+      if (route === "/techniques/options-cartel/validation") {
         if (process.env.MOBILE_AUDIT_CARTEL_INDUSTRY === "1") await page.getByText("Import an industry capture", {exact:true}).click();
         if (process.env.MOBILE_AUDIT_CARTEL_EVIDENCE === "1") {
           await page.getByRole("textbox", {name:"Symbol", exact:true}).fill("MU");

@@ -35,7 +35,7 @@ export const PAGE_TABS: Partial<Record<Page, readonly string[]>> = {
   inbox: ["tips", "approvals", "knowledge", "compose", "analyst", "inbox", "sources"],
   flow: ["reads", "brief"],
   team2: ["plans", "armed", "history", "validation"],
-  options_cartel: ["desk", "plans", "history", "method"],
+  options_cartel: ["plans", "armed", "history", "validation", "method", "settings", "desk"],
 };
 
 export interface RouteState {

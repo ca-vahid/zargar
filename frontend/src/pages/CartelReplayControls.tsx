@@ -22,7 +22,7 @@ export function CartelReplayControls({ busy, onReplay }: {
       <label>Replay through (UTC)<input type="datetime-local" required value={cutoff} onChange={e => setCutoff(e.target.value)}/></label>
       <label>Modeled units<input type="number" required min={1} max={1000000} step={1} value={quantity} onChange={e => setQuantity(Number(e.target.value))}/></label>
       <label>Slippage per fill (basis points)<input type="number" required min={0} max={100} step="any" value={slippage} onChange={e => setSlippage(Number(e.target.value))}/></label>
-      <button disabled={busy}>Run campaign replay</button>
+      <button className="ghost-btn" disabled={busy}>Run campaign replay</button>
     </form>
   </details>;
 }
