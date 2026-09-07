@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { Markdown } from "../components/technique/Markdown";
+import preparation from "../../../docs/techniques/options-cartel/DAILY-PREPARATION.md?raw";
 import method from "../../../docs/techniques/options-cartel/METHOD.md?raw";
 import rules from "../../../docs/techniques/options-cartel/TRADING-RULES.md?raw";
 import sources from "../../../docs/techniques/options-cartel/SOURCES.md?raw";
@@ -13,6 +14,7 @@ import scanning from "../../../docs/techniques/options-cartel/SCANNING.md?raw";
 
 const documents = [
   {file:"METHOD.md", title:"Detailed method", text:method},
+  {file:"DAILY-PREPARATION.md", title:"Automatic daily preparation", text:preparation},
   {file:"TRADING-RULES.md", title:"Rules and implementation choices", text:rules},
   {file:"SOURCE-REVIEW.md", title:"Source-version differences", text:versions},
   {file:"VIDEO-REVIEW.md", title:"September video review", text:video},
@@ -29,7 +31,7 @@ export function CartelMethodLibrary() {
   const current = documents.find(d => d.file === file)!;
   const renderLink = useCallback((label: string, href: string) => {
     const local = documents.find(d => d.file === href.split("#")[0]);
-    if (local) return <button type="button" onClick={() => setFile(local.file)}>{label}</button>;
+    if (local) return <button className="ghost-btn" type="button" onClick={() => setFile(local.file)}>{label}</button>;
     if (/^https?:\/\//i.test(href)) return <a href={href} target="_blank" rel="noreferrer">{label}</a>;
     return <span>{label}</span>;
   }, []);

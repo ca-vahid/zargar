@@ -14,7 +14,7 @@ export function CartelScheduleControls() {
     }).catch(e => { if (alive) setError(String(e)); });
     return () => { alive = false; };
   }, []);
-  return <details className="cartel-card"><summary>Scheduled scans and recovery</summary>
+  return <details className="panel cartel-card"><summary>Scheduled scans and recovery</summary>
     {error && <p role="alert">{error}</p>}
     {!configuration ? <p>Schedule configuration unavailable or loading.</p> : <form className="cartel-form" onSubmit={async e => {
       e.preventDefault(); setBusy(true); setError("");
@@ -30,10 +30,10 @@ export function CartelScheduleControls() {
         {['september_2026', 'september_2026_video', 'june_2026', 'june_2026_image', 'may_2026', 'may_2026_image'].map(p => <option key={p} value={p}>{p.replaceAll('_', ' ')}</option>)}
       </select></label>
       <label>Scheduled direction<select value={configuration.scanDirection} onChange={e => setConfiguration({...configuration, scanDirection:e.target.value})}><option value="long">Bullish</option><option value="short">Bearish puts</option></select></label>
-      <p>Scheduled scans save research only. Fundamental and industry snapshots are not collected automatically; missing evidence stays unknown.</p>
+      <p>These selected-symbol scans save research using supplied evidence. Daily preparation above collects its own evidence and arms qualifying Practice plans.</p>
       <label className="cartel-check"><input type="checkbox" checked={configuration.recoveryEnabled} onChange={e => setConfiguration({...configuration, recoveryEnabled:e.target.checked})}/>Recover held Cartel positions at 09:05 and 20:10 ET</label>
       <p>Recovery may trigger managed exits at current prices after missed daily signals are validated. It applies to all held Cartel positions, across accounts.</p>
-      <button disabled={busy}>Save schedule</button>
+      <button className="ghost-btn" disabled={busy}>Save schedule</button>
       <p>Saving does not run a job immediately. Jobs run once per weekday; a job already run or skipped today waits until the next scheduled day.</p>
     </form>}
     <ul>{jobs.map(job => <li key={job.name}>

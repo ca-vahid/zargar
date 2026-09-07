@@ -40,14 +40,14 @@ export function CartelPremiumReplayControls({busy, onValue}: {
       <label>Quote evidence source<input required value={source} onChange={e=>setSource(e.target.value)} placeholder="Provider, dataset and timestamp convention"/></label>
       <label>Fee per contract per fill (USD)<input required type="number" min={0} max={100} step="any" value={fee} onChange={e=>setFee(Number(e.target.value))}/></label>
       <label>Maximum quote age (seconds)<input required type="number" min={0} max={60} step={1} value={age} onChange={e=>setAge(Number(e.target.value))}/></label>
-      <button type="button" disabled={busy || !contract.trim()} onClick={async()=>{
+      <button className="ghost-btn" type="button" disabled={busy || !contract.trim()} onClick={async()=>{
         setError('');
         try { await onValue({contractSymbol:contract.trim().toUpperCase(), feePerContract:fee, maxQuoteAgeMs:age*1000}, true); }
         catch(e) { setError(String(e)); }
       }}>Use stored plan quotes</button>
       <p>Stored observations come only from this replay’s parent plan and contract. Missing observations produce an incomplete valuation; they are not borrowed from another plan.</p>
       <label>Recorded quote rows<textarea required rows={7} value={rows} onChange={e=>setRows(e.target.value)}/></label>
-      <button disabled={busy}>Save option valuation</button>
+      <button className="ghost-btn" disabled={busy}>Save option valuation</button>
     </form>
   </details>;
 }

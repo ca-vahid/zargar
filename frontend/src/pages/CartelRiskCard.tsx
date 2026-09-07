@@ -34,9 +34,9 @@ export function CartelRiskCard() {
       .then(r => { if (alive) setReport(r); }).catch(e => { if (alive) setError(String(e)); });
     return () => { alive = false; };
   }, [selected, revision]);
-  return <section className="cartel-card" aria-label="Cartel daily trading P&L">
+  return <section className="panel cartel-card" aria-label="Cartel daily trading P&L">
     <div className="cartel-row"><h2>Daily trading P&amp;L</h2>
-      <button type="button" disabled={!selected} onClick={() => setRevision(r => r + 1)}>Refresh risk report</button></div>
+      <button className="ghost-btn" type="button" disabled={!selected} onClick={() => setRevision(r => r + 1)}>Refresh risk report</button></div>
     {!books.length ? <p>No accounts in this workspace.</p> : <>
       <div className="cartel-fields"><label>Risk account<select value={selected} onChange={e => setChosen(e.target.value)}>
         {books.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</select></label></div>
@@ -49,7 +49,7 @@ export function CartelRiskCard() {
         {!report.available && <details><summary>Review missing accounting data</summary><ul>
           {report.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul></details>}
         {report.assets.some(asset => asset.openingQty > 0 && asset.priorClose === null) &&
-          <button type="button" disabled={recovering} onClick={recover}>{recovering ? "Recovering prior closes…" : "Recover prior closes"}</button>}
+          <button className="ghost-btn" type="button" disabled={recovering} onClick={recover}>{recovering ? "Recovering prior closes…" : "Recover prior closes"}</button>}
         {recovery?.portfolioId === selected && <div role="status"><p>{recovery.message}</p>
           {recovery.issues.length > 0 && <ul>{recovery.issues.map((issue, i) => <li key={i}>{issue}</li>)}</ul>}</div>}
       </>}

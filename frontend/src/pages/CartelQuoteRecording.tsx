@@ -12,7 +12,7 @@ export function CartelQuoteRecording() {
     setStatus(next); setEnabled(next.enabled);
   };
   useEffect(() => { void refresh().catch(e=>setError(String(e))); }, []);
-  return <details className="cartel-card"><summary>Option quote recording</summary>
+  return <details className="panel cartel-card"><summary>Option quote recording</summary>
     <p>Record cached quotes for active Cartel option plans, including paused plans and positions being closed. This does not subscribe to additional feeds or place orders.</p>
     <p>Samples are taken roughly every five seconds while enabled. Sampling may miss price changes; delayed quotes and missing provider timestamps stay labeled.</p>
     {error && <p role="alert" className="cartel-error">{error}</p>}
@@ -22,9 +22,9 @@ export function CartelQuoteRecording() {
       catch(e) { setError(String(e)); } finally { setBusy(false); }
     }}>
       <label><input type="checkbox" checked={enabled} onChange={e=>setEnabled(e.target.checked)}/>Enable Cartel option quote recording</label>
-      <button disabled={busy || !status}>Save recording setting</button>
+      <button className="ghost-btn" disabled={busy || !status}>Save recording setting</button>
     </form>
-    <button disabled={busy} onClick={()=>{setError(''); void refresh().catch(e=>setError(String(e)));}}>Refresh recording status</button>
+    <button className="ghost-btn" disabled={busy} onClick={()=>{setError(''); void refresh().catch(e=>setError(String(e)));}}>Refresh recording status</button>
     {status && <>
       <p>Saved setting: {status.enabled ? 'on' : 'off'} · {status.running ? 'recording' : 'idle'}.
         Last batch: {status.lastAttemptAt ? new Date(status.lastAttemptAt).toISOString() : 'none'} · {status.captured} observations captured.</p>
