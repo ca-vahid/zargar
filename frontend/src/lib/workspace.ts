@@ -14,6 +14,15 @@ import type { Portfolio } from "../types";
 export type Workspace = "live" | "practice";
 export const LIVE_KINDS = new Set(["live", "paper"]);
 export const PRACTICE_KINDS = new Set(["sim", "shadow"]);
+// Money vs evidence. Shadow books are practice-SIDE (so the workspace filter
+// rightly keeps them) but they are NOT money: they are the per-source track
+// record. Anything that adds up to a balance must use this instead — the
+// Dashboard's holdings once listed 54 research positions under a total that
+// counted 3 of them (2026-09-07).
+export const REAL_KINDS = new Set(["sim", "live", "paper"]);
+export function isRealBook(kind: string | undefined | null): boolean {
+  return REAL_KINDS.has(kind ?? "");
+}
 
 export function workspaceOf(kind: string | undefined | null): Workspace {
   return LIVE_KINDS.has(kind ?? "") ? "live" : "practice";
@@ -34,4 +43,12 @@ export function useWorkspacePortfolios(): Portfolio[] {
 export function useWorkspaceFilter(): (kind: string | undefined | null) => boolean {
   const ws = useWorkspace();
   return useMemo(() => (kind: string | undefined | null) => workspaceOf(kind) === ws, [ws]);
+}
+
+/** kind -> in this workspace AND real money (research books excluded). */
+export function useRealBookFilter(): (kind: string | undefined | null) => boolean {
+  const ws = useWorkspace();
+  return useMemo(
+    () => (kind: string | undefined | null) => workspaceOf(kind) === ws && isRealBook(kind),
+    [ws]);
 }

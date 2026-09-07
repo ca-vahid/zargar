@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-07",
     title: "Options Cartel desk",
     items: [
+      { tag: "fixed", text: "Research (shadow) books no longer pad the Dashboard. \"My holdings\" showed 61 positions worth $327k under a balance that counted 3 of them — the per-source scorecard books are practice-SIDE but they are not money. Real positions now stand alone, with a \"+ research (51)\" toggle that reveals them dimmed and badged; Recent orders and Fills work the same way, and shadow rows there are labelled research instead of \"practice\"." },
       { tag: "new", text: "Options Cartel has its own research desk, source library, dated screen profiles, saved plans and history." },
       { tag: "new", text: "Capture capitalization and industry evidence, scan a focus list, and review completed results or retry individual data failures." },
       { tag: "new", text: "Review share or option expressions, arm alerts, proposals or automatic execution, and manage positions through the shared risk controls." },
