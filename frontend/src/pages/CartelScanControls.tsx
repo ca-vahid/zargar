@@ -17,17 +17,17 @@ export function CartelScanControls({ busy, profile, direction, onScan, onCapture
     }
     try { await action(selected); } catch (e) { setError(String(e)); }
   };
-  return <form className="cartel-card" onSubmit={e => {
+  return <form className="panel cartel-card" onSubmit={e => {
     e.preventDefault(); void run(onScan);
   }}><h2>Scan a focus list</h2>
     <p>Uses {profile.replaceAll("_", " ")} · {direction === "long" ? "bullish" : "bearish"}. Change these settings in Review a candidate below. Evidence entered there applies only to that symbol; other symbols need their own evidence. Scans do not arm plans.</p>
     <label>Symbols (up to 20)<textarea required value={symbols} onChange={e => setSymbols(e.target.value)} placeholder="MU, HOOD, CRCL"/></label>
     {error && <p role="alert" className="cartel-error">{error}</p>}
     <p>Capitalization captures selected this visit: {capturedSymbols.join(', ') || 'none'}. Only matching symbols use these captures; source timestamps are checked during analysis.</p>
-    <button type="button" disabled={busy || !symbols.trim()} onClick={() => void run(onCapture)}>Capture list capitalization</button>
+    <button className="ghost-btn" type="button" disabled={busy || !symbols.trim()} onClick={() => void run(onCapture)}>Capture list capitalization</button>
     <p>Captures each listed symbol before scanning. Industry membership and performance evidence remain separate. Failed refreshes clear that symbol’s selected capitalization capture.</p>
     {Object.entries(captureErrors).map(([symbol, message]) => <p className="cartel-error" key={symbol}>{symbol}: {message}</p>)}
-    <button disabled={busy || !symbols.trim()}>Scan focus list</button>
+    <button className="ghost-btn" disabled={busy || !symbols.trim()}>Scan focus list</button>
   </form>;
 }
 
@@ -40,7 +40,7 @@ export function CartelScanResult({ result, busy, onOpen }: { result: any; busy: 
       {row.reused && <span> · retained from earlier scan</span>}
       {row.error && <p>{row.error}</p>}
       {row.warnings?.map((warning: string) => <p key={warning}>{warning}</p>)}
-      {row.runId && <button disabled={busy} onClick={() => onOpen(row.runId)}>Review {row.symbol}</button>}
+      {row.runId && <button className="ghost-btn" disabled={busy} onClick={() => onOpen(row.runId)}>Review {row.symbol}</button>}
     </li>)}</ul>
   </section>;
 }

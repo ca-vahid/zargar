@@ -64,19 +64,19 @@ export function CartelArmControls({runId, active, onChanged}: {runId: string; ac
             <label>Maximum DTE<input type="number" min="2" value={maxDte} onChange={e => setMaxDte(Number(e.target.value))}/></label>
             <label>Target DTE<input type="number" min="2" value={targetDte} onChange={e => setTargetDte(Number(e.target.value))}/></label>
             <label>Target absolute delta<input type="number" min=".25" max="1" step=".05" value={delta} onChange={e => setDelta(Number(e.target.value))}/></label></div>
-          <button type="button" disabled={!!busy || !maxPremium} onClick={() => run("Searching contracts", async () => {
+          <button className="ghost-btn" type="button" disabled={!!busy || !maxPremium} onClick={() => run("Searching contracts", async () => {
             const value = await api.post<any>(`/api/options-cartel/runs/${runId}/contracts`, {dteMin:minDte,dteMax:maxDte,targetDte,
               targetAbsDelta:delta,maxAsk:Number(maxPremium),maxSpreadPct:10,minOpenInterest:100}); setSelection(value);
           })}>Search contracts</button>
           {selection && <><p>{selection.selected ? "Eligible refreshed contracts:" : "No eligible refreshed contract found."}</p>
-            {selection.candidates?.filter((c: any) => c.eligible).map((c: any) => <button type="button" key={c.symbol} onClick={() => setContract(c.symbol)}>
+            {selection.candidates?.filter((c: any) => c.eligible).map((c: any) => <button className="ghost-btn" type="button" key={c.symbol} onClick={() => setContract(c.symbol)}>
               {c.symbol} · ask {c.ask} · delta {c.delta}</button>)}<p>{selection.note}</p></>}
         </details>
         <label className="cartel-check"><input type="checkbox" required checked={overnightAck} onChange={e => setOvernightAck(e.target.checked)}/>I acknowledge that overnight options use app-managed protection.</label>
       </>}
       {real && <label className="cartel-check"><input type="checkbox" required checked={allowLive} onChange={e => setAllowLive(e.target.checked)}/>Allow this reviewed plan to execute on the selected real/paper account.</label>}
       <p>{mode === "auto" ? "Auto submits when a fresh closed-bar signal passes the execution checks." : "A confirmed signal presents a proposal for your approval."} Orders use the reviewed budget and are sized again at submission.</p>
-      <button type="button" disabled={!!busy || !portfolioId || !budget} onClick={e => {
+      <button className="ghost-btn" type="button" disabled={!!busy || !portfolioId || !budget} onClick={e => {
         if (!e.currentTarget.form?.reportValidity()) return;
         run("Checking execution", async () => setReport(await api.post(`/api/options-cartel/runs/${runId}/preflight`, payload())));
       }}>Check execution now</button>
@@ -85,6 +85,6 @@ export function CartelArmControls({runId, active, onChanged}: {runId: string; ac
           {report.risk?.checks?.filter((c: any) => !c.passed).map((c: any) => <li key={c.name}>{c.detail || c.name}</li>)}</ul></>}
     </>}
     {error && <p className="cartel-error" role="alert">{error}</p>}
-    <button className="cartel-primary" disabled={!!busy || !portfolioId || !!active?.submissionReserved}>{busy || (mode === "alert" ? "Arm alert only" : `Arm ${mode}`)}</button>
+    <button className="primary-btn" disabled={!!busy || !portfolioId || !!active?.submissionReserved}>{busy || (mode === "alert" ? "Arm alert only" : `Arm ${mode}`)}</button>
   </form>;
 }

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.2";
+export const APP_VERSION = "0.7.3";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.3",
+    date: "2026-09-07",
+    title: "A unified Cartel desk",
+    items: [
+      { tag: "new", text: "Options Cartel can discover the market, prepare a daily shortlist and arm qualifying options plans for automatic Practice execution." },
+      { tag: "improved", text: "Cartel now follows the other trading desks: Plans, Armed, History and Validation, with compact tables and separate Method and Settings tabs." },
+      { tag: "improved", text: "Preparation puts the shortlist first. Account, risk and schedule settings have their own home, and saved plans open directly into their details." },
+      { tag: "improved", text: "Shared buttons, status labels, loading and empty states follow the app's theme, density and phone layouts." },
+    ],
+  },
   {
     version: "0.7.2",
     date: "2026-09-07",

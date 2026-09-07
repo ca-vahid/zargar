@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { EmptyState, ErrorState, Spinner } from "../components/ui";
+import { SymIcon } from "../components/SymIcon";
 import { api } from "../lib/api";
 import { useStore } from "../store";
 import "./options-cartel.css";
@@ -39,8 +41,11 @@ function Checks({ rows }: { rows: Gate[] }) {
 export function OptionsCartelPage() {
   const pageTab = useStore(s => s.pageTab);
   const setPageTab = useStore(s => s.setPageTab);
-  const tab = ["desk", "plans", "history", "method"].includes(pageTab) ? pageTab : "desk";
+  const tab = ["plans", "armed", "history", "validation", "method", "settings"].includes(pageTab) ? pageTab : "plans";
+  const detailRef = useRef<HTMLDivElement>(null);
+  const openArmedPlan = useStore(s => s.openArmedPlan);
   const [runs, setRuns] = useState<Run[]>([]);
+  const [plans, setPlans] = useState<Run[]>([]);
   const [industrySnapshots, setIndustrySnapshots] = useState<Run[]>([]);
   const [industrySnapshotId, setIndustrySnapshotId] = useState('');
   const [fundamentalsCaptures, setFundamentalsCaptures] = useState<Record<string, Run>>({});
@@ -86,13 +91,15 @@ export function OptionsCartelPage() {
   const [reviewStage, setReviewStage] = useState("setup");
   const requestId = useRef(0);
   const refresh = useCallback(async () => {
-    const [history, alerts, captures, fundamentals, memberships] = await Promise.all([api.get<Run[]>(`${ROOT}/runs?limit=100`), api.get<any[]>(`${ROOT}/armed`),
+    const [history, alerts, captures, fundamentals, memberships, savedPlans] = await Promise.all([api.get<Run[]>(`${ROOT}/runs?limit=100`), api.get<any[]>(`${ROOT}/armed`),
       api.get<Run[]>(`${ROOT}/runs?mode=industry&limit=200`), api.get<Run[]>(`${ROOT}/runs?mode=fundamentals&limit=200`),
-      api.get<Run[]>(`${ROOT}/runs?mode=membership&limit=200`)]);
+      api.get<Run[]>(`${ROOT}/runs?mode=membership&limit=200`), api.get<Run[]>(`${ROOT}/runs?mode=plan&limit=100`)]);
+    setPlans(savedPlans);
     setRuns(history); setArmed(alerts); setIndustrySnapshots(captures); setSavedFundamentals(fundamentals); setSavedMemberships(memberships);
   }, []);
   useEffect(() => { let alive = true; refresh().catch(e => { if (alive) setError(e.message); })
     .finally(() => { if (alive) setLoading(false); }); return () => { alive = false; requestId.current++; }; }, [refresh]);
+  useEffect(() => { if (selected) { detailRef.current?.scrollIntoView({block: "start"}); detailRef.current?.focus({preventScroll:true}); } }, [selected?.runId]);
   const open = async (id: string) => {
     const ticket = ++requestId.current;
     setBusy("Loading run"); setError(""); setCandidate(null);
@@ -174,30 +181,37 @@ export function OptionsCartelPage() {
     } catch (e) { setError(String(e)); } finally { setBusy(""); }
   };
   const alertAction = async (id:string, action:string) => {
-    setBusy("Updating alert"); setError("");
+    setBusy("Updating plan"); setError("");
     try { await api.post(`${ROOT}/armed/${id}/${action}`); await refresh(); }
     catch(e) { setError(String(e)); } finally { setBusy(""); }
   };
   const analysis = selected?.result?.analysis;
   const visibleArmed = armed.filter(a => workspaceOf(a.portfolio?.kind) === workspace);
   const p = selected?.result?.plan?.plan;
-  const filtered = tab === "plans" ? runs.filter(r => r.mode === "plan") : runs;
-  return <section className="cartel-page">
-    <header className="cartel-header"><div><p className="cartel-eyebrow">SEAN TRADES · MOMENTUM SWINGS</p>
-      <h1>The Options Cartel</h1><p>Leading stocks. Planned entries. Room for the trend to develop.</p></div>
-      <span className="cartel-stage">Research & execution review</span></header>
-    <nav className="cartel-tabs" aria-label="Options Cartel sections">{["desk", "plans", "history", "method"].map(t =>
-      <button key={t} disabled={!!busy} aria-current={tab === t ? "page" : undefined} onClick={() => {
-        setPageTab(t); setCandidate(null); if (t === "plans" && selected?.mode !== "plan") setSelected(null);
-      }}>{label(t)}</button>)}</nav>
-    {error && <div className="cartel-error" role="alert">{error}</div>}
-    {tab === "history" && <CartelSweepControls runs={runs.filter(r => r.mode === "replay")} busy={!!busy} onRun={async body => {
+  const filtered = tab === "plans" ? plans : runs;
+  const tabs = ["plans", "armed", "history", "validation", "method", "settings"];
+  return <section className="tips-page cartel-page" aria-label="Options Cartel">
+    <div className="tips-head"><div className="tabs cartel-nav" role="tablist" aria-label="Options Cartel sections">
+      {tabs.map(t => <button key={t} id={`cartel-tab-${t}`} role="tab" aria-selected={tab === t} tabIndex={tab === t ? 0 : -1} disabled={!!busy}
+        aria-controls="cartel-content" className={`${tab === t ? "active" : ""} ${t === "settings" ? "tab-config" : ""}`}
+        onKeyDown={e => {
+          const index = tabs.indexOf(t);
+          const next = e.key === "ArrowRight" ? tabs[(index+1)%tabs.length] : e.key === "ArrowLeft" ? tabs[(index+tabs.length-1)%tabs.length] : e.key === "Home" ? tabs[0] : e.key === "End" ? tabs[tabs.length-1] : null;
+          if (next) { e.preventDefault(); setPageTab(next); setSelected(null); setCandidate(null); requestId.current++; document.getElementById(`cartel-tab-${next}`)?.focus(); }
+        }}
+        onClick={() => { setPageTab(t); setCandidate(null); setSelected(null); requestId.current++; }}>
+        {t[0].toUpperCase()+t.slice(1)}{t === "armed" && visibleArmed.length > 0 && <span className="tab-count">{visibleArmed.length}</span>}
+      </button>)}
+    </div></div>
+    <div id="cartel-content" role="tabpanel" aria-labelledby={`cartel-tab-${tab}`}>
+    {error && <ErrorState message={error} onRetry={() => refresh().then(() => setError("")).catch(e => setError(String(e)))}/>}
+    {tab === "validation" && <CartelSweepControls runs={runs.filter(r => r.mode === "replay")} busy={!!busy} onRun={async body => {
       setBusy("Comparing entry rules"); setError("");
       try { setSelected(await api.post<Run>(`${ROOT}/sweeps`, body)); await refresh(); }
       catch (e) { setError(String(e)); } finally { setBusy(""); }
     }}/>}
-    {busy && <p role="status">{busy}…</p>}
-    {tab === "method" ? <div className="cartel-card cartel-method">
+    {busy && <Spinner label={`${busy}…`}/>}
+    {tab === "method" ? <div className="panel cartel-card cartel-method">
       <h2>The method</h2><p>Start with market direction, then strong themes and sector leaders. Review weekly bases and daily contraction, with quieter consolidation volume and renewed volume at the breakout.</p>
       <h3>Plan before entry</h3><p>Mark the trigger, invalidation and targets. Confirm the breakout on a closed intraday candle. Bullish ideas can use calls or shares; bearish ideas use puts. Contract selection is separate from the chart setup.</p>
       <h3>Manage the swing</h3><p>Take the first 25% at a meaningful target and move the stop to entry after that trim fills. The September thread adds an extension trim at 3× ATR from the 8 EMA and partial exits on daily closes below the 8, 21 and 50 EMAs. Later trim allocations require an explicit choice.</p>
@@ -207,13 +221,13 @@ export function OptionsCartelPage() {
       <p>Saved plans support alert, proposal and automatic execution modes. Each entry is checked again at submission; confirmed fills use durable position management. Research coverage, calibration and broker rollout verification remain in progress.</p>
       <CartelMethodLibrary />
     </div> : <>
-      {tab === "desk" && <CartelRiskCard />}
-      {tab === "desk" && <CartelPreparation onOpen={open} />}
-      {tab === "desk" && <CartelScheduleControls />}
-      {tab === "desk" && <CartelQuoteRecording/>}
-      {tab === "desk" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}
+      {tab === "armed" && <CartelRiskCard />}
+      {(tab === "plans" || tab === "settings") && <CartelPreparation key={tab} view={tab} onOpen={open} onSettings={() => setPageTab("settings")} />}
+      {tab === "settings" && <CartelScheduleControls />}
+      {tab === "settings" && <CartelQuoteRecording/>}
+      {tab === "validation" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}
         onSelect={setIndustrySnapshotId} onImported={async run => {setSelected(run); await refresh();}}/>}
-      {tab === "desk" && <CartelScanControls busy={!!busy} profile={profile} direction={direction}
+      {tab === "validation" && <CartelScanControls busy={!!busy} profile={profile} direction={direction}
         capturedSymbols={Object.keys(fundamentalsCaptures)} captureErrors={captureErrors} onCapture={async symbols => {
           setError(''); setCaptureErrors({}); setBusy('Capturing list capitalization');
           setFundamentalsCaptures(previous => {
@@ -247,7 +261,7 @@ export function OptionsCartelPage() {
             industrySnapshotId:industrySnapshotId || null})); await refresh();
         } catch (e) { setError(String(e)); } finally { setBusy(""); }
       }}/>}
-      {tab === "desk" && <form className="cartel-card" onSubmit={collect}><h2>Review a candidate</h2>
+      {tab === "validation" && <form className="panel cartel-card" onSubmit={collect}><h2>Review a candidate</h2>
         <div className="cartel-fields"><label>Symbol<input required value={symbol} onChange={e => { setSymbol(e.target.value.toUpperCase()); setCap(''); setIndustry(''); setWeek(''); setMonth(''); setSource(''); }} placeholder="e.g. MU" maxLength={12}/></label>
           <label>Direction<select value={direction} onChange={e => setDirection(e.target.value)}><option value="long">Bullish</option><option value="short">Bearish puts</option></select></label>
           <label>Source profile<select value={profile} onChange={e => setProfile(e.target.value)}>{screenProfiles.map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label></div>
@@ -272,7 +286,7 @@ export function OptionsCartelPage() {
             </option>)}
           </select></label>
           <p>Choose a capture explicitly from the 200 most recent saved captures. Its original timestamps still govern eligibility.</p>
-          <button type="button" disabled={!!busy || !symbol} onClick={async () => {
+          <button className="ghost-btn" type="button" disabled={!!busy || !symbol} onClick={async () => {
             const requested = symbol;
             setBusy('Capturing fundamentals'); setError('');
             try {
@@ -286,7 +300,7 @@ export function OptionsCartelPage() {
               Provider price time: {fundamentalsCapture.result?.providerPriceAt ? new Date(fundamentalsCapture.result.providerPriceAt).toISOString() : 'unknown'}.</p>
             <p>This capture supplies capitalization for this candidate and focus-list scans containing this symbol. Industry membership and ranks require separate evidence.</p>
             {fundamentalsCapture.result?.warnings?.map((w: string) => <p key={w}>{w}</p>)}
-            <button type="button" onClick={() => setFundamentalsCaptures(previous => {
+            <button className="ghost-btn" type="button" onClick={() => setFundamentalsCaptures(previous => {
               const next = {...previous}; delete next[symbol]; return next;
             })}>Use manual capitalization</button>
           </div>}
@@ -316,7 +330,7 @@ export function OptionsCartelPage() {
           <label>Listing exchange<select value={membershipExchange} onChange={e => setMembershipExchange(e.target.value)}>
             <option>NASDAQ</option><option>NYSE</option><option>AMEX</option>
           </select></label>
-          <button type="button" disabled={!!busy || !symbol} onClick={async () => {
+          <button className="ghost-btn" type="button" disabled={!!busy || !symbol} onClick={async () => {
             const requested = symbol;
             setBusy('Verifying industry membership'); setError('');
             try {
@@ -328,7 +342,7 @@ export function OptionsCartelPage() {
             <p>{membershipCapture.result.exchange}:{membershipCapture.symbol} belongs to {membershipCapture.result.industry} on TradingView.
               Observed {new Date(membershipCapture.asOfMs).toISOString()}. Applies to this candidate and matching scan symbols.</p>
             <p>Verified stock-page link and industry-table member row. This establishes current membership; performance ranks still require separate evidence.</p>
-            <button type="button" onClick={() => setMembershipCaptures(previous => {
+            <button className="ghost-btn" type="button" onClick={() => setMembershipCaptures(previous => {
               const next = {...previous}; delete next[symbol]; return next;
             })}>Use manual industry mapping</button>
           </div>}
@@ -339,28 +353,42 @@ export function OptionsCartelPage() {
             <label>Evidence source<input value={source} onChange={e => setSource(e.target.value)} required={!!(cap || industry || week || month)} placeholder="Source URL or description"/></label>
             <label>Observed at (UTC)<input type="datetime-local" required value={observed} onChange={e => setObserved(e.target.value)}/></label></div>
           <p>For bearish candidates, ranks must describe downside leadership.</p></details>
-        <button className="cartel-primary" disabled={!!busy}>Collect history & analyze</button></form>}
-      {armed.length > visibleArmed.length && <p className="cartel-notice">{armed.length-visibleArmed.length} Cartel plan(s) in the other workspace.</p>}
-      {visibleArmed.length > 0 && <section className="cartel-card"><h2>Active plans</h2>{visibleArmed.map(a => <article key={a.runId} className="cartel-candidate">
-        <div className="cartel-row"><strong>{a.symbol} · {a.config?.mode} · {label(a.status)}</strong><span>{a.portfolio?.name}</span></div>
-        {a.execution?.report?.expression && <p>Latest preflight: {a.execution.report.expression.quantity} units of {a.execution.report.expression.symbol} · ask {a.execution.report.expression.ask} · rechecked at submission.</p>}
-        <p>{a.summary}</p><div className="cartel-row"><button disabled={!!busy} onClick={() => open(a.runId)}>View plan</button>
-          <button disabled={!!busy || a.status === "closing"} onClick={() => alertAction(a.runId, a.status === "paused" ? "resume" : "pause")}>{a.status === "paused" ? "Resume" : "Pause"}</button>
-          <button disabled={!!busy} onClick={() => alertAction(a.runId,"disarm")}>Disarm</button>
-          {a.awaitingApproval && <button disabled={!!busy || a.execution?.report?.passed === false} onClick={async () => {
-            setBusy("Approving signal"); setError("");
-            try { await api.post(`${ROOT}/armed/${a.runId}/approve`, {signalId:a.signal.id}); await refresh(); }
-            catch(e) {setError(String(e));} finally {setBusy("");}
-          }}>Approve signal</button>}
-          {a.openPositions > 0 && <button disabled={!!busy} onClick={() => alertAction(a.runId,"flatten")}>Close positions</button>}</div>
-        {a.trades?.map((trade: any) => <p key={trade.triggerId}>{trade.orderSymbol} · filled {trade.filledQty} · remaining {trade.remaining} · {trade.status}</p>)}
-      </article>)}</section>}
-      <div className="cartel-columns"><aside className="cartel-card"><div className="cartel-row"><h2>{tab === "plans" ? "Saved plans" : "Research history"}</h2>
-        <button disabled={!!busy} onClick={() => refresh().catch(e => setError(e.message))}>Refresh</button></div>
-        {loading ? <p>Loading history…</p> : !filtered.length ? <p>No {tab === "plans" ? "plans" : "analyses"} yet. Start with a candidate on the Desk tab.</p> :
-          <ul className="cartel-runs">{filtered.map(r => <li key={r.runId}><button disabled={!!busy} onClick={() => open(r.runId)} aria-pressed={r.runId === selected?.runId}>
-            <strong>{r.symbol}</strong><span>{label(r.mode)} · {label(r.verdict || "done")}</span><small>{new Date(r.createdAt).toLocaleString()}</small></button></li>)}</ul>}
-      </aside><div className="cartel-card">
+        <button className="primary-btn" disabled={!!busy}>Collect history & analyze</button></form>}
+      {tab === "armed" && <section className="panel mb">
+        <div className="panel-head">Armed plans <span className="sub">{workspace} workspace · Options Cartel</span></div>
+        {armed.length > visibleArmed.length && <p className="cartel-inset muted">{armed.length-visibleArmed.length} plan(s) in the other workspace.</p>}
+        {!visibleArmed.length ? <EmptyState art={false} title="No active Cartel plans" hint="Qualifying prepared plans appear here when armed. Switch workspace to see its accounts."/> :
+          <div className="scroll-x"><table className="tbl cartel-table"><thead><tr><th>Symbol</th><th>Status</th><th>Mode</th><th>Account</th><th>Current read</th><th>Actions</th></tr></thead>
+            <tbody>{visibleArmed.map(a => <tr key={a.runId}>
+              <td><SymIcon sym={a.symbol} size={18}/> <button className="link-btn" onClick={() => open(a.runId)}>{a.symbol}</button></td>
+              <td><span className={`status-pill ${a.status === "armed" ? "ok" : "wait"}`}>{label(a.status)}</span></td>
+              <td>{a.config?.mode || a.mode}</td><td>{a.portfolio?.name || "—"}</td><td className="cartel-wrap">{a.summary || "Waiting for entry conditions"}</td>
+              <td><div className="cartel-actions"><button className="link-btn" onClick={() => openArmedPlan(a.runId)}>Monitor</button>
+                <button className="ghost-btn" disabled={!!busy || a.status === "closing"} onClick={() => alertAction(a.runId, a.status === "paused" ? "resume" : "pause")}>{a.status === "paused" ? "Resume" : "Pause"}</button>
+                <button className="ghost-btn" disabled={!!busy} onClick={() => alertAction(a.runId,"disarm")}>Disarm</button>
+                {a.awaitingApproval && <button className="ghost-btn" disabled={!!busy || a.execution?.report?.passed === false} onClick={async () => {
+                  setBusy("Approving signal"); setError("");
+                  try { await api.post(`${ROOT}/armed/${a.runId}/approve`, {signalId:a.signal.id}); await refresh(); }
+                  catch(e) {setError(String(e));} finally {setBusy("");}
+                }}>Approve signal</button>}
+                {a.openPositions > 0 && <button className="ghost-btn" disabled={!!busy} onClick={() => alertAction(a.runId,"flatten")}>Close positions</button>}
+              </div></td>
+            </tr>)}</tbody></table></div>}
+      </section>}
+      {(tab === "plans" || tab === "history") && <section className="panel mb">
+        <div className="panel-head">{tab === "plans" ? "Saved plans" : "Research history"}
+          <span className="sub">{filtered.length} records</span><button className="link-btn cartel-push" disabled={!!busy} onClick={() => refresh().catch(e => setError(String(e)))}>Refresh</button></div>
+        {loading ? <Spinner label="Loading records…"/> : !filtered.length ? <EmptyState art={false} title={tab === "plans" ? "No saved plans" : "No research yet"}
+          hint="Use automatic preparation on Plans or review a candidate under Validation."/> : <div className="scroll-x"><table className="tbl cartel-table">
+          <thead><tr><th>Symbol</th><th>Record</th><th>Result</th><th>Created</th><th>Details</th></tr></thead><tbody>
+          {filtered.map(r => <tr key={r.runId} data-run-id={r.runId} className={r.runId === selected?.runId ? "selected" : ""}>
+            <td><SymIcon sym={r.symbol} size={18}/> <b>{r.symbol}</b></td><td>{label(r.mode)}</td>
+            <td><span className={`status-pill ${r.status === "failed" ? "bad" : r.status === "running" ? "wait" : "dim"}`}>{label(r.verdict || r.status)}</span></td>
+            <td className="muted">{new Date(r.createdAt).toLocaleString()}</td><td><button className="link-btn" disabled={!!busy} onClick={() => open(r.runId)}>Open {r.symbol}</button></td>
+          </tr>)}</tbody></table></div>}
+      </section>}
+      {selected && <div ref={detailRef} className="panel cartel-card" tabIndex={-1}>
+        <div className="cartel-row"><span className="muted">Record details</span><button className="link-btn" disabled={!!busy} onClick={() => { setSelected(null); setCandidate(null); requestId.current++; }}>Close details</button></div>
         {!selected ? <><h2>Plan with context</h2><p>Select an analysis to inspect market conditions, setup measurements and the evidence behind its levels.</p></> : <>
           <div className="cartel-row"><h2>{selected.symbol} · {label(selected.mode)}</h2><span>{label(selected.verdict || "done")}</span></div>
           <p>{['industry', 'fundamentals', 'membership'].includes(selected.mode) ? "Captured at" : "Market data as of"} {new Date(selected.asOfMs).toLocaleString()}</p>
@@ -381,7 +409,7 @@ export function OptionsCartelPage() {
             <CartelScanResult result={selected.result} busy={!!busy} onOpen={open}/>
             {selected.status !== "running" && selected.result.rows.some((row: any) => ["pending", "data_error"].includes(row.status)) && <>
               <p>Retry keeps the original cutoff and evidence and reuses completed analyses. It saves a new linked scan.</p>
-              <button disabled={!!busy} onClick={async () => {
+              <button className="ghost-btn" disabled={!!busy} onClick={async () => {
                 setBusy("Retrying unresolved symbols"); setError("");
                 try { setSelected(await api.post<Run>(`${ROOT}/scans/${selected.runId}/retry`)); await refresh(); }
                 catch (e) { setError(String(e)); } finally { setBusy(""); }
@@ -392,7 +420,7 @@ export function OptionsCartelPage() {
           {analysis && <><h3>Weekly & daily context</h3><Checks rows={analysis.checks}/><h3>Measured candidates</h3>
             {(analysis.candidates as Candidate[]).map((c,i) => <article className="cartel-candidate" key={i}><h4>{label(c.setup)}</h4>
               <p>Trigger {number(c.trigger)} · Invalidation {number(c.invalidation)} · Targets {c.targets.length ? c.targets.map(number).join(", ") : "need reviewed levels"}</p>
-              <p>{c.reason}</p>{selected.mode === "analysis" && <button disabled={!!busy || !c.contextPassed} onClick={() => {
+              <p>{c.reason}</p>{selected.mode === "analysis" && <button className="ghost-btn" disabled={!!busy || !c.contextPassed} onClick={() => {
                 setCandidate(c); setTargets(c.targets.join(", ")); setNote(""); setTargetSource("");
                 const selectedProfile = selected.config?.thresholds?.profile || profile;
                 setExitProfile(selectedProfile === "june_2026_image" ? "june_2026" : selectedProfile === "may_2026_image" ? "may_2026" : selectedProfile === "september_2026_video" ? "september_2026" : selectedProfile);
@@ -413,7 +441,7 @@ export function OptionsCartelPage() {
             <label>Review note<textarea required value={note} onChange={e => setNote(e.target.value)}/></label>
             <p>Volume, candle-close quality and chase limits are adjustable implementation choices, not exact thresholds stated by Sean.</p>
             <p>Saving records a plan and its selected rules. It does not arm a position or submit an order.</p>
-            <button className="cartel-primary" disabled={!!busy}>Save reviewed plan</button></form>}
+            <button className="primary-btn" disabled={!!busy}>Save reviewed plan</button></form>}
           {p && <><h3>Reviewed plan</h3><p>{label(p.direction)} · {label(p.setup)} · {p.first_session} through {p.last_session}</p>
             <p>Trigger {number(p.trigger)} · Invalidation {number(p.invalidation)} · Targets {p.targets.map(number).join(", ")}</p>
             <p>{p.rationale}</p><h3>Exit schedule</h3><ul>{selected.result.exitCampaign?.rungs.map((r: any) => <li key={r.id}>{label(r.id)}: {number(r.fraction*100)}%{r.target ? ` at ${number(r.target)}` : ""}</li>)}</ul>
@@ -430,10 +458,11 @@ export function OptionsCartelPage() {
           <details><summary>Review this record</summary><form onSubmit={saveReview} className="cartel-plan-form"><div className="cartel-fields">
             <label>Verdict<select value={verdict} onChange={e => setVerdict(e.target.value)}>{["correct","wrong_levels","wrong_plan","data_issue","unclear"].map(v => <option key={v} value={v}>{label(v)}</option>)}</select></label>
             <label>Area<select value={reviewStage} onChange={e => setReviewStage(e.target.value)}>{["data","setup","entry","exit","expression","execution","other"].map(v => <option key={v}>{v}</option>)}</select></label></div>
-            <label>Notes<textarea required value={review} onChange={e => setReview(e.target.value)}/></label><button disabled={!!busy}>Save review</button></form></details>
+            <label>Notes<textarea required value={review} onChange={e => setReview(e.target.value)}/></label><button className="ghost-btn" disabled={!!busy}>Save review</button></form></details>
           {selected.reviews?.map(r => <blockquote key={r.id}><strong>{label(r.verdict)} · {r.stage}</strong><p>{r.notes}</p></blockquote>)}
         </>}
-      </div></div>
+      </div>}
     </>}
+    </div>
   </section>;
 }

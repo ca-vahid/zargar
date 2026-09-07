@@ -21,7 +21,7 @@ export function CartelIndustryControls({ snapshots, selectedId, onSelect, onImpo
   const [table, setTable] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  return <section className="cartel-card" aria-label="Industry evidence">
+  return <section className="panel cartel-card" aria-label="Industry evidence">
     <h2>Industry evidence</h2>
     <label>Recent industry snapshot<select value={selectedId} onChange={e => onSelect(e.target.value)}>
       <option value="">Use manually entered ranks</option>
@@ -54,7 +54,7 @@ export function CartelIndustryControls({ snapshots, selectedId, onSelect, onImpo
         <label>Weekly period definition<input required value={week} onChange={e => setWeek(e.target.value)}/></label>
         <label>Monthly period definition<input required value={month} onChange={e => setMonth(e.target.value)}/></label>
         <label>Industry performance rows<textarea required rows={7} value={table} onChange={e => setTable(e.target.value)} placeholder={'Semiconductors\t5.2%\t10.1%'}/></label>
-        <button disabled={busy}>{busy ? 'Importing…' : 'Import capture for review'}</button>
+        <button className="ghost-btn" disabled={busy}>{busy ? 'Importing…' : 'Import capture for review'}</button>
       </form>
     </details>
   </section>;

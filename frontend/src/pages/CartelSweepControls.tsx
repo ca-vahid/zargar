@@ -22,7 +22,7 @@ export function CartelSweepControls({ runs, busy, onRun }: {
       <label>Volume multiple<input type="number" required min={.01} max={100} step="any" value={volume} onChange={e => setVolume(Number(e.target.value))}/></label>
       <label>Minimum close location (0–1)<input type="number" required min={0} max={1} step="any" value={location} onChange={e => setLocation(Number(e.target.value))}/></label>
       <label>Maximum chase (R)<input type="number" required min={0} max={10} step="any" value={chase} onChange={e => setChase(Number(e.target.value))}/></label>
-      <button disabled={busy || ids.length === 0 || ids.length > 20}>Compare with original rules</button>
+      <button className="ghost-btn" disabled={busy || ids.length === 0 || ids.length > 20}>Compare with original rules</button>
     </form>
   </details>;
 }
