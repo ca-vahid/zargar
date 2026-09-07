@@ -19,7 +19,8 @@ from .scans import ScanRequest, scan_focus_list
 from .service import CartelService, WireModel
 
 PREFIX = 'techniques.options_cartel.'
-JOB_NAMES = ('options_cartel_preopen_recovery', 'options_cartel_close_recovery', 'options_cartel_nightly_scan')
+JOB_NAMES = ('options_cartel_preopen_recovery', 'options_cartel_close_recovery', 'options_cartel_nightly_scan',
+             'options_cartel_nightly_preparation', 'options_cartel_morning_preparation')
 
 
 def stopping(engine):
@@ -116,6 +117,9 @@ def register_jobs(engine):
     engine.scheduler.register('options_cartel_preopen_recovery', '09:05', lambda: recover_positions(engine))
     engine.scheduler.register('options_cartel_close_recovery', '20:10', lambda: recover_positions(engine))
     engine.scheduler.register('options_cartel_nightly_scan', '20:15', lambda: nightly_scan(engine))
+    from .preparation import submit_preparation
+    engine.scheduler.register('options_cartel_nightly_preparation', '20:20', lambda: submit_preparation(engine, scheduled=True))
+    engine.scheduler.register('options_cartel_morning_preparation', '08:45', lambda: submit_preparation(engine, scheduled=True))
 
 
 def unregister_jobs(engine):

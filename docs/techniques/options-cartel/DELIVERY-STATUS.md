@@ -2,11 +2,38 @@
 
 Worktree: `C:\Cursor\zargar-codex`, branch `codex/zargar-development`.
 Release checkpoint and rollout boundaries are in [RELEASE-HANDOFF.md](RELEASE-HANDOFF.md).
-No merge or deployment to the main app has occurred.
+The initial Cartel implementation merged through PR #2 at `72d0c80`.
+The new automatic daily preparation phase is implemented and locally verified
+in this worktree; it has not been deployed to the user's normal app.
 The isolated preview uses zargar_dev_codex on 8421; quote recording remains off.
 Claude's worktrees and runtime have not been changed.
 
-## Current verification checkpoint
+## Daily preparation verification
+
+- The Cartel regression run passed 401 tests, with one outdated scheduler-job
+  expectation. That expectation was corrected. The final focused run passed
+  38 tests covering preparation, contract/target policy, industry publication,
+  scheduler and API behavior, including the corrected assertion.
+- Shared platform separation, engine flow, phase 0 and phase 3: 32 passed.
+- Production build and Ruff checks passed. Existing Vite chunk-size/import
+  warnings remain. The full 1,096-test baseline below predates this phase;
+  this phase used the Cartel and shared-platform suites.
+- Desktop and phone preparation rendering passed, including the pending plan
+  state. The existing mobile audit passed all five device combinations.
+- Isolated real-provider run `18fd2863c47242aa924baba66e59e5fb` discovered 3,087
+  supported listings and evaluated 20. SPCX qualified and produced plan
+  `d791ef88d0a84db048c54410b724ffa7`, awaiting a contract within configured
+  limits. No orders were placed. Preparation was disabled afterward in the
+  isolated preview; this does not change the user's runtime settings.
+- Docker was available without permission errors. The missing `zargar_test_codex`
+  and `zargar_dev_codex` databases were recreated individually. Only the verified
+  Codex preview process on 8421 was restarted; normal runtime 8420 was preserved.
+
+Behavior, defaults and operational limits: [DAILY-PREPARATION.md](DAILY-PREPARATION.md).
+Remaining rollout: merge the preparation change, update/restart the normal app
+at a suitable time, then save enabled preparation for the user's Practice account.
+
+## Initial implementation verification checkpoint (before daily preparation)
 
 - Full backend: **1,096 passed, 4 warnings in 1,253.93 seconds**, exit code 0.
   Evidence: `.cache/cartel-full-backend-quotes.log`. No database intervention.

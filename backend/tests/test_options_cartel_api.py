@@ -14,6 +14,23 @@ from .conftest import make_test_config
 from .test_options_cartel_prepare import input_data
 
 
+async def test_preparation_settings_are_authenticated_and_practice_only(client):
+    c, engine = client
+    status = await c.get('/api/options-cartel/preparation')
+    assert status.status_code == 200
+    policy = status.json()['configuration']
+    assert policy['enabled'] is False
+    async with engine.sf() as session, session.begin():
+        session.add(Portfolio(id='prep-live', name='Live', kind='live', base_currency='USD', cash=10000))
+        session.add(Portfolio(id='prep-sim', name='Practice', kind='sim', base_currency='USD', cash=10000))
+    rejected = await c.post('/api/options-cartel/preparation/config', json={**policy, 'enabled': True, 'portfolioId': 'prep-live'})
+    assert rejected.status_code == 400
+    accepted = await c.post('/api/options-cartel/preparation/config', json={**policy, 'enabled': True, 'portfolioId': 'prep-sim'})
+    assert accepted.status_code == 200 and accepted.json()['configuration']['enabled']
+    unauthorized = await c.get('/api/options-cartel/preparation', headers={'Authorization': 'Bearer invalid'})
+    assert unauthorized.status_code == 401
+
+
 def research_payload():
     args = input_data()
     return ResearchInput.model_validate({

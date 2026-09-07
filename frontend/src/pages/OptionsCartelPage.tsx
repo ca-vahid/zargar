@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { useStore } from "../store";
 import "./options-cartel.css";
 import { CartelRiskCard } from "./CartelRiskCard";
+import { CartelPreparation } from "./CartelPreparation";
 import { CartelArmControls } from "./CartelArmControls";
 import { CartelReplayControls, CartelReplayResult } from "./CartelReplayControls";
 import { CartelPremiumReplayControls, CartelPremiumReplayResult } from "./CartelPremiumReplay";
@@ -207,6 +208,7 @@ export function OptionsCartelPage() {
       <CartelMethodLibrary />
     </div> : <>
       {tab === "desk" && <CartelRiskCard />}
+      {tab === "desk" && <CartelPreparation onOpen={open} />}
       {tab === "desk" && <CartelScheduleControls />}
       {tab === "desk" && <CartelQuoteRecording/>}
       {tab === "desk" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}

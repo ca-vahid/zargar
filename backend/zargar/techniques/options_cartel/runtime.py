@@ -29,6 +29,11 @@ class CartelRuntime(CartelObserver):
         self.dirty = set()
         self.stopping = False
         self.position_views = {}
+        self.preparation_quote_task = None
+        self.preparation_quote_at = 0
+        self.preparation_quote_status = {}
+        self.preparation_activation_task = None
+        self.preparation_activation_at = 0
         from .quote_observations import QuoteRecorder
         from .service import CartelService
         self.quote_recorder = QuoteRecorder(CartelService(engine), clock=lambda: self.clock())
@@ -319,6 +324,11 @@ class CartelRuntime(CartelObserver):
                     self._publish(rid)
                 continue
             state = row["state"]
+            preparation = row.get('config', {}).get('preparation')
+            if preparation and row['status'] in ('armed', 'paused') and not state.get('attemptTag') and self.clock() >= preparation.get('validUntil', 0):
+                self.rows[rid] = await self.repository.set_status(rid, 'expired')
+                self._publish(rid)
+                continue
             if state.get("attemptTag") and row["status"] in ("armed", "paused", "closing"):
                 self._schedule_poll(rid)
             elif row["status"] in ("armed", "paused"):
@@ -340,10 +350,42 @@ class CartelRuntime(CartelObserver):
 
     async def on_quote_watch(self):
         self.quote_recorder.observe(list(self.rows.values()))
+        preparation_settings = self.engine.settings.get('techniques.options_cartel.preparation', {})
+        if isinstance(preparation_settings, dict) and preparation_settings.get('enabled') and not self.stopping \
+                and self.clock()-self.preparation_activation_at >= 60_000 \
+                and (self.preparation_activation_task is None or self.preparation_activation_task.done()):
+            from .preparation import activate_pending
+            self.preparation_activation_at = self.clock()
+            self.preparation_activation_task = asyncio.create_task(self._activate_preparation(activate_pending))
+        if not self.stopping and self.clock()-self.preparation_quote_at >= 30_000 \
+                and (self.preparation_quote_task is None or self.preparation_quote_task.done()):
+            contracts = {row['config']['execution'].get('contract_symbol') for row in self.rows.values()
+                         if row.get('config', {}).get('preparation') and row['status'] in ('armed', 'paused', 'closing')}
+            contracts.discard(None)
+            if contracts:
+                self.preparation_quote_at = self.clock()
+                self.preparation_quote_task = asyncio.create_task(self._refresh_preparation_quotes(contracts))
         # Reconciliation only; new entries are never triggered from quote ticks.
         for rid, row in list(self.rows.items()):
             if row["mode"] != "alert" and row["status"] in ("armed", "paused", "closing") and row["state"].get("attemptTag"):
                 self._schedule_poll(rid)
+
+    async def _refresh_preparation_quotes(self, contracts):
+        errors = {}
+        for contract in contracts:
+            if self.stopping:
+                break
+            try:
+                await self.engine.options.reprice({'symbol': contract})
+            except Exception as exc:  # noqa: BLE001 - data refresh cannot interrupt execution
+                errors[contract] = f'{type(exc).__name__}: option data refresh unavailable'
+        self.preparation_quote_status = {'at': self.clock(), 'errors': errors}
+
+    async def _activate_preparation(self, activate):
+        try:
+            await activate(self.engine, clock=self.clock)
+        except Exception as exc:  # noqa: BLE001 - report preparation failures without interrupting orders
+            self.engine._cartel_preparation_activation = {'at': self.clock(), 'error': f'{type(exc).__name__}: activation unavailable'}
 
     async def flatten_trade(self, run_id, trigger_id=None):
         positions = self._positions(run_id)
@@ -363,6 +405,14 @@ class CartelRuntime(CartelObserver):
 
     async def stop(self):
         self.stopping = True
+        from .preparation import stop_preparation
+        await stop_preparation(self.engine)
+        if self.preparation_activation_task is not None and not self.preparation_activation_task.done():
+            self.preparation_activation_task.cancel()
+            await asyncio.gather(self.preparation_activation_task, return_exceptions=True)
+        if self.preparation_quote_task is not None and not self.preparation_quote_task.done():
+            self.preparation_quote_task.cancel()
+            await asyncio.gather(self.preparation_quote_task, return_exceptions=True)
         await self.quote_recorder.stop()
         from .jobs import unregister_jobs
         unregister_jobs(self.engine)

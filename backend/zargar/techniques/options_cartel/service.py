@@ -180,6 +180,7 @@ class CartelService:
             facts = FactsInput.model_validate({**body.facts.model_dump(),
                 'industry_snapshot_id': record.id, 'rank_source': snapshot.source,
                 'rank_observed_at': snapshot.observed_at, 'rank_data_as_of_ms': snapshot.data_as_of_ms,
+                'rank_freshness_basis': snapshot.freshness_basis,
                 'rank_direction': body.direction,
                 'week_rank': (ranked['weekRank'] or {}).get('worst'),
                 'week_rank_best': (ranked['weekRank'] or {}).get('best'),
@@ -204,12 +205,12 @@ class CartelService:
         research, provenance = await collect_inputs(body)
         return await self.analyze(research, collection=provenance)
 
-    async def prepare(self, run_id: str, body: PlanInput):
+    async def prepare(self, run_id: str, body: PlanInput, *, plan_id=None, preparation=None):
         parent = await self._load(run_id)
         if parent.mode != "analysis":
             raise ValueError("prepare requires an analysis run")
         inputs = ResearchInput.model_validate(parent.config["inputs"])
-        new = new_id()
+        new = plan_id or new_id()
         prepared = prepare_plan(plan_id=new, history=inputs.history, indices=inputs.indices, facts=inputs.facts,
                                 rules=inputs.rules, parameters=inputs.parameters, entry_policy=body.entry_policy,
                                 minute_history=[b.bar() for b in inputs.minute_history], as_of_ms=inputs.as_of_ms,
@@ -222,7 +223,8 @@ class CartelService:
             raise ValueError("exit campaign target levels must match the reviewed plan targets")
         prepared["exitCampaign"] = body.exit_campaign.model_dump(mode="json")
         return await self._store(mode="plan", symbol=parent.symbol, at=parent.as_of, result=prepared,
-                                 config={**parent.config, "reviewedPlan": body.model_dump(mode="json")},
+                                 config={**parent.config, "reviewedPlan": body.model_dump(mode="json"),
+                                         **({'preparation': preparation} if preparation is not None else {})},
                                  verdict="plan", parent=parent.id, run_id=new)
 
     async def replay(self, run_id: str, body: ReplayInput):

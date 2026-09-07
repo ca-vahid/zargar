@@ -71,7 +71,10 @@ export function CartelIndustryResult({ result }: { result: any }) {
   });
   const rank = (value: any) => value ? value.best === value.worst ? String(value.best) : `${value.best}–${value.worst}` : 'Unknown';
   return <section aria-label="Industry capture results"><h3>{result.count} captured industries</h3>
-    <p>Source data time: {result.rows[0]?.bullish?.dataAsOfMs == null ? 'Unknown; freshness cannot be established.' : new Date(result.rows[0].bullish.dataAsOfMs).toLocaleString()}</p>
+    <p>Source data time: {result.rows[0]?.bullish?.dataAsOfMs == null ?
+      result.rows[0]?.bullish?.freshnessBasis === 'publisher_observation'
+        ? 'Constituent time unknown. This publisher snapshot uses its receipt time for context freshness, for at most 24 hours.'
+        : 'Unknown; freshness cannot be established.' : new Date(result.rows[0].bullish.dataAsOfMs).toLocaleString()}</p>
     <p>Captured ranks describe only these saved values, including ties and missing-value uncertainty. They do not establish freshness. Trade eligibility is checked separately at the analysis cutoff.</p>
     <label>Rank direction<select value={direction} onChange={e => setDirection(e.target.value)}><option value="bullish">Bullish</option><option value="bearish">Bearish</option></select></label>
     <label>Sort captured values<select value={period} onChange={e=>setPeriod(e.target.value)}><option value="weekPct">Weekly performance</option><option value="monthPct">Monthly performance</option></select></label>
