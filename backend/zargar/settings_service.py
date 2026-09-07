@@ -23,6 +23,17 @@ from .technique.universe import CORE_UNIVERSE
 MODE_ALIASES = {"dry_run": "practice", "sim": "practice", "paper": "live"}
 
 DEFAULTS: dict[str, Any] = {
+    # Options Cartel owns these switches; research registration does not start a runner.
+    "techniques.options_cartel.enabled": True,
+    "techniques.options_cartel.paused": False,
+    "techniques.options_cartel.scan_enabled": False,
+    "techniques.options_cartel.scan_symbols": [],
+    "techniques.options_cartel.scan_profile": "september_2026",
+    "techniques.options_cartel.scan_direction": "long",
+    "techniques.options_cartel.recovery_enabled": False,
+    "techniques.options_cartel.record_option_quotes": False,
+    "techniques.options_cartel.allow_live_auto": False,
+    "techniques.options_cartel.daily_loss_halt_pct": 0.0,  # optional technique limit; auto still requires the book loss halt
     # --- trading / routing -------------------------------------------------
     "trading.mode": "practice",             # practice | live
     "trading.default_portfolio": "",        # filled at seed time

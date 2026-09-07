@@ -655,6 +655,7 @@ export interface ArmConfig {
   contracts: number | null; maxContracts: number; singleContractExit: string;
   riskPct: number; maxQty: number; qty: number | null;
   useCritic: boolean; allowLive: boolean; flattenMinutesBeforeClose: number; slippagePct: number; maxRetries: number;
+  management?: "durable"; lossHaltPolicy?: "required";
   maxOpenTrades?: number; dailyLossLimit?: number; skipWideSpread?: boolean; skipElevatedIv?: boolean;
   entryFallback?: string;
   /** options: $ of premium one entry may spend (tips budget, Team2 budget_per_trade) */
@@ -738,10 +739,10 @@ export interface ArmedSummary {
   attention: (ArmedSummaryBase & { reasons: string[]; hasPosition: boolean })[];
   inTrade: (ArmedSummaryBase & {
     triggerId: string; kind: string; direction: string; remaining: number; filledQty: number; entry: number;
-    stop: number; nextTarget: number | null; targets: number[]; trimsDone: number; unrealizedPnl: number;
+    stop: number; nextTarget: number | null; targets: number[]; trimsDone: number; unrealizedPnl: number | null;
     unrealizedR: number | null; firedTs: number | null; window: string | null; orderSymbol: string | null;
     contract: { symbol?: string; strike?: number; expiry?: string; right?: string; bid?: number; ask?: number } | null;
-    tradeStatus: string; realizedPnl: number; multiplier?: number;
+    tradeStatus: string; realizedPnl: number; multiplier?: number; underlyingEntry?: number;
   })[];
   timeline: { ts: number; runId: string; symbol: string; kind: string; text: string; pnl?: number | null }[];
   watching: (ArmedSummaryBase & {

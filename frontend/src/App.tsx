@@ -19,6 +19,7 @@ const TechniquePage = lazy(() => import("./pages/TechniquePage").then((m) => ({ 
 const OptionsPage = lazy(() => import("./pages/OptionsPage").then((m) => ({ default: m.OptionsPage })));
 const FlowPage = lazy(() => import("./pages/FlowPage").then((m) => ({ default: m.FlowPage })));
 const Team2Page = lazy(() => import("./pages/Team2Page").then((m) => ({ default: m.Team2Page })));
+const OptionsCartelPage = lazy(() => import("./pages/OptionsCartelPage").then(m => ({ default: m.OptionsCartelPage })));
 import { useStore } from "./store";
 import { buildPath, onRouteChange, parseLocation, syncUrl } from "./lib/routing";
 import { PageErrorBoundary } from "./components/PageErrorBoundary";
@@ -153,6 +154,7 @@ export default function App() {
           {page === "technique" && <Suspense fallback={<div className="state-note">loading…</div>}><TechniquePage /></Suspense>}
           {page === "flow" && <Suspense fallback={<div className="state-note">loading…</div>}><FlowPage /></Suspense>}
           {page === "team2" && <Suspense fallback={<div className="state-note">loading…</div>}><Team2Page /></Suspense>}
+          {page === "options_cartel" && <Suspense fallback={<div className="state-note">loading…</div>}><OptionsCartelPage /></Suspense>}
           {page === "armed" && <ArmedPage />}
           {page === "watchlists" && <WatchlistsPage />}
           </PageErrorBoundary>

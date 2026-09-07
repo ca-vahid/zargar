@@ -402,7 +402,7 @@ function PlanCell({ a, t }: { a: ArmedPlan; t?: ArmedTrigger }) {
 
 /** How far price still has to travel — as a sentence, not a signed number. */
 function DistanceCell({ pct, rich }: { pct?: number; rich: boolean }) {
-  if (pct === undefined) return <span className="muted small">—</span>;
+  if (pct == null) return <span className="muted small">—</span>;
   const word = pct > 0 ? "rise" : "fall";
   const near = Math.abs(pct) <= 0.5;
   // rich stacks the meter UNDER the sentence: side by side they fought for the

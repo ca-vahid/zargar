@@ -59,6 +59,7 @@ from ..marketstructure.sessions import ET, session_date, session_window
 from ..models import ManagedPositionRow
 from ..options import occ as occ_mod
 from .exits import reduce_only_exit_intent
+from .serialization import serialized_adapter
 from .policies import (
     DEFAULT_TIMEFRAME,
     PolicyState,
@@ -223,6 +224,18 @@ class PositionManager:
         self._last_decide: dict[str, int] = {}   # position id -> raw-bar ts last decided on
         self._entry_halted: set[str] = set()           # symbols where reconciliation found drift
         self._now = time.time                          # injectable clock (chaos tests)
+        self._policy_adapters: dict[str, object] = {}
+
+    def register_policy_adapter(self, name: str, adapter) -> None:
+        """Explicit opt-in policy extension. The manager retains orders/fills/protection."""
+        existing = self._policy_adapters.get(name)
+        if existing is not None and existing is not adapter:
+            raise ValueError(f"policy adapter already registered: {name}")
+        self._policy_adapters[name] = adapter
+
+    def _policy_adapter(self, p):
+        name = p.policy.get("adapter")
+        return self._policy_adapters.get(name) if name == p.technique else None
 
     # ---------------------------------------------------------------- helpers
     def now_ms(self) -> int:
@@ -323,6 +336,7 @@ class PositionManager:
         )
         return p
 
+    @serialized_adapter
     async def _persist(self, p: Managed) -> None:
         try:
             async with self.engine.sf() as session:
@@ -350,6 +364,8 @@ class PositionManager:
                 await session.commit()
         except Exception:
             log.exception("persisting managed position failed")
+            if p.policy.get("adapter"):
+                raise  # opt-in adapters require durable state before proceeding
 
     def _log(self, p: Managed, what: str, text: str, **detail) -> None:
         p.events.append({"ts": self.now_ms(), "event": what, "text": text, **detail})
@@ -359,9 +375,14 @@ class PositionManager:
     async def _journal(self, kind: str, p: Managed, extra: dict | None = None) -> None:
         payload = {"positionId": p.id, "technique": p.technique, "symbol": p.symbol,
                    "portfolioId": p.portfolio_id, "status": p.status, **(extra or {})}
-        with contextlib.suppress(Exception):
+        if p.policy.get("adapter"):
+            await self._persist(p)
             await self.engine.journal.append(kind, payload, aggregate_type="managed_position",
                                              aggregate_id=p.id, portfolio_id=p.portfolio_id)
+        else:
+            with contextlib.suppress(Exception):
+                await self.engine.journal.append(kind, payload, aggregate_type="managed_position",
+                                                 aggregate_id=p.id, portfolio_id=p.portfolio_id)
         with contextlib.suppress(Exception):
             self.engine.bus.publish(topics.TECHNIQUE, {"kind": "position", "event": kind, "position": p.to_dict()})
 
@@ -379,6 +400,13 @@ class PositionManager:
     # ---------------------------------------------------------------- open / adopt
     def _validate_spec(self, spec: dict) -> list[str]:
         problems = validate_policy(spec.get("policy") or {})
+        adapter_name = (spec.get("policy") or {}).get("adapter")
+        if adapter_name:
+            adapter = self._policy_adapters.get(adapter_name)
+            if adapter is None or spec.get("techniqueId") != adapter_name:
+                problems.append("policy adapter must be registered and belong to this technique")
+            else:
+                problems.extend(adapter.validate(spec))
         legs = spec.get("legs") or []
         if not legs:
             problems.append("a position needs at least one leg")
@@ -475,8 +503,15 @@ class PositionManager:
         problems = self._validate_spec(spec)
         if problems:
             raise ValueError("; ".join(problems))
+        adoption_id = spec.get("positionId")
+        if adoption_id:
+            if not spec.get("policy", {}).get("adapter") or len(str(adoption_id)) > 64:
+                raise ValueError("explicit adoption identity requires a registered policy adapter")
+            async with self.engine.sf() as session:
+                if await session.get(ManagedPositionRow, adoption_id) is not None:
+                    raise ValueError("adoption identity already exists; recover it rather than adopting twice")
         p = Managed(
-            id=new_id(), portfolio_id=str(spec["portfolioId"]), symbol=str(spec.get("symbol") or "").upper(),
+            id=str(adoption_id) if adoption_id else new_id(), portfolio_id=str(spec["portfolioId"]), symbol=str(spec.get("symbol") or "").upper(),
             direction=str(spec.get("direction") or "long"), technique=str(spec.get("techniqueId") or "generic"),
             policy=dict(spec.get("policy") or {}),
             legs=[Leg.from_dict({**l, "origin": l.get("origin") or "adoption"}) for l in spec["legs"]],
@@ -488,8 +523,11 @@ class PositionManager:
         p.state = PolicyState(stop=stop_price(p.policy, PolicyState()))
         p.entry_mark = spec.get("entryMark", self._entry_mark(p))
         p.sessions_seen = [session_date(self.now_ms())]
-        self._pos[p.id] = p
+        if not p.policy.get("adapter"):
+            self._pos[p.id] = p
         await self._persist(p)
+        if p.policy.get("adapter"):
+            self._pos[p.id] = p
         await self._journal(POSITION_ADOPTED, p, {"legs": [l.to_dict() for l in p.legs], "policy": p.policy})
         # the underlying's bars/quotes drive the stop; the legs' quotes drive
         # the premium stop — both must be flowing from the moment we manage
@@ -520,6 +558,8 @@ class PositionManager:
         p = self._pos.get(pid)
         if p is None or p.status not in ("open", "attention"):
             return None
+        if p.policy.get("adapter"):
+            raise ValueError("adapter positions require confirmed-fill reconciliation, not generic leg accumulation")
         new = Leg.from_dict({**leg, "origin": leg.get("origin") or "scale_in"})
         old_abs = sum(abs(l.qty) for l in p.legs) or 1.0
         p.legs.append(new)
@@ -543,10 +583,15 @@ class PositionManager:
         return round(sum((1 if l.qty > 0 else -1) * float(l.avg_fill) * (abs(l.qty) / unit) for l in opt), 4)
 
     # ---------------------------------------------------------------- venue stop
+    @serialized_adapter
     async def _ensure_venue_stop(self, p: Managed) -> None:
         """Share positions that may be held overnight get a resting GTC stop at
         the venue; the app being down must never leave them naked. Tightened
         stops cancel + replace."""
+        adapter = self._policy_adapter(p)
+        if adapter is not None and hasattr(adapter, "ensure_venue_stop"):
+            if await adapter.ensure_venue_stop(self, p):
+                return
         if p.overnight != "venue_stop" or p.status not in ("open",):
             return
         stk = [l for l in p.open_legs if l.sec_type == "STK" and l.qty > 0]
@@ -589,6 +634,9 @@ class PositionManager:
         but not yet filled or dead. New exits may only cover what's left beyond it.
         A record with zero fills past the TTL stops counting: a zombie order
         (crashed venue, lost ack) must never block getting flat."""
+        adapter = self._policy_adapter(p)
+        if adapter is not None and hasattr(adapter, "pending_qty"):
+            return adapter.pending_qty(p, leg_symbol)
         ttl_ms = int(float(self._setting("execution.exit_inflight_ttl_seconds", 900) or 900) * 1000)
         now = self.now_ms()
         out = 0.0
@@ -601,6 +649,7 @@ class PositionManager:
             out += max(0.0, float(rec.get("qty") or 0) - float(rec.get("filledQty") or 0))
         return out
 
+    @serialized_adapter
     async def _close_leg(self, p: Managed, leg: Leg, qty: float, *, force_market: bool,
                          kind: str, reason: str) -> dict | None:
         qty = float(int(min(qty, abs(leg.qty)))) if leg.sec_type == "OPT" else float(min(qty, abs(leg.qty)))
@@ -635,37 +684,56 @@ class PositionManager:
                                              sec_type=leg.sec_type, qty=qty, bid=bid,
                                              force_market=force_market, source="technique",
                                              technique_id=p.technique)
-        rec = {"kind": kind, "leg": leg.symbol, "qty": qty, "orderId": None, "status": None,
+        return await self._submit_exit(p, intent, kind=kind, reason=reason)
+
+    @serialized_adapter
+    async def _submit_exit(self, p, intent, *, kind, reason):
+        """Shared write-ahead router for reduce-only exits, including adapter stops."""
+        if not intent.reduce_only or intent.portfolio_id != p.portfolio_id or intent.technique_id != p.technique:
+            raise ValueError("managed exit intent must reduce exposure on its owned portfolio/technique")
+        rec = {"kind": kind, "leg": intent.symbol, "qty": intent.qty, "orderId": None, "status": None,
                "filledQty": 0.0, "price": None, "ts": self.now_ms(), "reason": reason}
+        if p.policy.get("adapter"):
+            attempt_tag = f"managed_exit:{p.id}:{new_id()}"
+            intent = intent.model_copy(update={"tags": [*intent.tags, attempt_tag]})
+            rec.update(attemptTag=attempt_tag, intent=intent.model_dump())
         p.exits.append(rec)
-        await self._journal(POSITION_EXIT, p, {"kind": kind, "leg": leg.symbol, "qty": qty,
+        await self._journal(POSITION_EXIT, p, {"kind": kind, "leg": intent.symbol, "qty": intent.qty,
                                                "reduceOnly": True, "reason": reason})
         try:
             res = await self.engine.orders.place(intent)
         except Exception as exc:
             rec["status"] = "ERROR"
             rec["error"] = f"{type(exc).__name__}: {exc}"
-            await self._alert(p, f"exit {kind} on {leg.symbol} errored: {exc} — watchdog will retry",
+            await self._alert(p, f"exit {kind} on {intent.symbol} errored: {exc} — watchdog will retry",
                               stage="exit_failed")
             return None
         rec["orderId"] = res.get("id")
         rec["status"] = res.get("status")
+        if kind == "venue_stop":
+            p.venue_stop_order_id = rec["orderId"]
+            p.venue_stop_at = intent.stop_price
         self._register_exit_order(p, rec["orderId"])
         if rec["status"] in ("REJECTED", "REJECTED_RISK"):
             rec["error"] = res.get("rejectReason")
-            await self._alert(p, f"exit {kind} on {leg.symbol} REJECTED — {rec['error']} "
+            await self._alert(p, f"exit {kind} on {intent.symbol} REJECTED — {rec['error']} "
                               f"(watchdog will retry)", stage="exit_failed")
         elif rec["status"] in ("FILLED", "PARTIALLY_FILLED"):
             await self.on_order_update(res)
         await self._persist(p)
         return rec
 
+    @serialized_adapter
     async def close(self, pid: str, *, fraction: float = 1.0, reason: str = "manual close",
                     kind: str = "close", force_market: bool = False) -> dict | None:
         """Reduce every open leg together (partial closes stay proportional)."""
         p = self._pos.get(pid)
         if p is None:
             return None
+        adapter = self._policy_adapter(p)
+        if adapter is not None and hasattr(adapter, "before_close"):
+            if await adapter.before_close(self, p, fraction=fraction, reason=reason, kind=kind, force_market=force_market):
+                return p.to_dict()
         fraction = min(1.0, max(0.0, fraction))
         if fraction >= 1.0 - 1e-9:
             p.status = "closing"
@@ -693,10 +761,21 @@ class PositionManager:
         await self._persist(p)
         return p.to_dict()
 
+    @serialized_adapter
     async def set_policy(self, pid: str, policy: dict) -> dict | None:
         p = self._pos.get(pid)
         if p is None:
             return None
+        old_adapter, new_adapter = p.policy.get("adapter"), policy.get("adapter")
+        if old_adapter or new_adapter:
+            if old_adapter != new_adapter or new_adapter != p.technique:
+                raise ValueError("cannot switch a held position's policy adapter through generic policy replacement")
+            adapter = self._policy_adapter(p)
+            if adapter is None:
+                raise ValueError("position policy adapter is unavailable")
+            adapter_problems = adapter.validate_update(p, policy)
+            if adapter_problems:
+                raise ValueError("; ".join(adapter_problems))
         problems = validate_policy(policy)
         if problems:
             raise ValueError("; ".join(problems))
@@ -714,6 +793,7 @@ class PositionManager:
         return p.to_dict()
 
     # ---------------------------------------------------------------- order updates
+    @serialized_adapter
     async def on_order_update(self, o: dict) -> None:
         idx = getattr(self, "_order_index", {})
         pid = idx.get(o.get("id"))
@@ -751,6 +831,17 @@ class PositionManager:
                 rec["status"] = status
                 self._exit_retries.pop((p.id, "exit"), None)      # a fill resets the watchdog
                 self._log(p, "exit_fill", f"{rec['kind']} {rec.get('leg')}: {fq:g} @ {rec.get('price')}")
+                adapter = self._policy_adapter(p)
+                if adapter is not None:
+                    try:
+                        await adapter.after_fill(self, p)
+                    except Exception as exc:
+                        p.halt_entries = True
+                        self._entry_halted.add(p.symbol.upper())
+                        message = f"policy fill update failed: {exc}"
+                        if message not in p.attention:
+                            p.attention.append(message)
+                            await self._alert(p, message, stage="policy_adapter")
                 if not p.open_legs and p.status != "closed":
                     await self._mark_closed(p, reason=rec.get("reason") or rec["kind"])
                 await self._persist(p)
@@ -804,9 +895,39 @@ class PositionManager:
                 except Exception:
                     log.exception("position bar handling failed")
 
+    @serialized_adapter
     async def on_minute_bar(self, p: Managed, bar: Bar) -> None:
         """Advance the session ledger on every RTH 1m bar; DECIDE only when a bar
         of the policy's timeframe has closed."""
+        adapter = self._policy_adapter(p)
+        if p.policy.get("adapter") and adapter is None:
+            message = "Policy adapter unavailable or ownership mismatch; only protective exits remain active."
+            if message not in p.attention:
+                p.attention.append(message)
+                p.halt_entries = True
+                await self._alert(p, message, stage="policy_adapter")
+            # A missing optional extension must never remove basic protection.
+            from ..marketstructure.aggregate import bar_session
+            if bar.symbol == p.symbol and bar.tf == "1m" and bar_session(bar.ts) == "rth" \
+                    and bar.ts + 60_000 > p.opened_ms \
+                    and 0 <= self.now_ms()-(bar.ts + 60_000) <= 120_000:
+                stop = stop_price(p.policy, p.state)
+                breached = stop is not None and (bar.close >= stop if p.direction == "short" else bar.close <= stop)
+                dte = p.dte_min(dt.datetime.fromtimestamp(self.now_ms()/1000, ET).date())
+                if breached or (dte is not None and dte <= self.min_dte_floor()):
+                    await self.close(p.id, fraction=1, kind="stop" if breached else "dte", force_market=True,
+                                     reason="Protective exit while policy adapter is unavailable")
+            return
+        if adapter is not None:
+            try:
+                await adapter.on_minute_bar(self, p, bar)
+            except Exception as exc:
+                p.halt_entries = True
+                message = f"policy bar update failed: {exc}"
+                if message not in p.attention:
+                    p.attention.append(message)
+                    await self._alert(p, message, stage="policy_adapter")
+            return
         w = session_window(bar.ts)
         if w == "extended":
             return                                       # R6.5 stays runner-core here too
@@ -1089,9 +1210,16 @@ class PositionManager:
         for p in list(self._pos.values()):
             if p.status not in ("open", "closing", "attention") or not p.open_legs:
                 continue
+            adapter = self._policy_adapter(p)
+            if adapter is not None and hasattr(adapter, "on_watch"):
+                if await adapter.on_watch(self, p):
+                    continue
+                if p.status == "closed" or not p.open_legs:
+                    continue
             # failed-exit watchdog
             last = p.exits[-1] if p.exits else None
-            if last and last.get("status") in ("ERROR", "REJECTED", "REJECTED_RISK"):
+            if last and last.get("status") in ("ERROR", "REJECTED", "REJECTED_RISK") \
+                    and not getattr(adapter, "handles_exit_retries", False):
                 key = (p.id, "exit")          # one counter per position: each retry mints a new order id
                 ts0, attempts = self._exit_retries.get(key, (0.0, 0))
                 if attempts < 5 and self._now() - ts0 >= 30.0:

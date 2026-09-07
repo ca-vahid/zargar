@@ -1,6 +1,6 @@
 [project]
 name = "zargar"
-version = "0.7.1"
+version = "0.7.2"
 description = "Zargar — personal trading engine (IBKR + simulation + signal ingestion)"
 requires-python = ">=3.11"
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
     "pydantic-settings>=2.4",
     "httpx>=0.27",
     "pywebpush>=2.0",
+    "matplotlib",
     "PyJWT[crypto]>=2.8",
     "anthropic>=0.40",
     "python-dateutil>=2.9",

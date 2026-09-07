@@ -304,6 +304,26 @@ class ManagedPositionRow(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
 
+class CartelOptionQuote(Base):
+    """Append-only observations for Cartel replay, separate from daily chain data."""
+    __tablename__ = 'options_cartel_quotes'
+    __table_args__ = (Index('ix_cartel_quote_lookup', 'run_id', 'contract', 'available_at'),)
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey('technique_runs.id'))
+    contract: Mapped[str] = mapped_column(String(32))
+    source_at: Mapped[int | None] = mapped_column(BigInteger)
+    available_at: Mapped[int] = mapped_column(BigInteger)
+    confirmed_at: Mapped[int] = mapped_column(BigInteger)
+    bid: Mapped[float] = mapped_column(Float)
+    ask: Mapped[float] = mapped_column(Float)
+    bid_size: Mapped[int] = mapped_column(BigInteger)
+    ask_size: Mapped[int] = mapped_column(BigInteger)
+    source: Mapped[str] = mapped_column(String(64))
+    feed_mode: Mapped[str] = mapped_column(String(32))
+    delayed: Mapped[bool] = mapped_column(Boolean)
+    halted: Mapped[bool] = mapped_column(Boolean)
+
+
 class OptionChainSnapshot(Base):
     """One nightly row per (date, contract): volume, OI, IV, bid/ask/mid (research
     B5, 2026-08-27). OI history cannot be backfilled from any source, which is why

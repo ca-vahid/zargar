@@ -144,6 +144,9 @@ class TechniqueService:
         self._cboe: CboeClient | None = None
         self._scan_task: asyncio.Task | None = None
         self._outcome_task: asyncio.Task | None = None
+        self._sheet_task: asyncio.Task | None = None
+        self._restore_task: asyncio.Task | None = None
+        self._orphan_task: asyncio.Task | None = None
         self._running: dict[str, asyncio.Task] = {}
         self._sweeps: dict[str, asyncio.Task] = {}
         # Ad-hoc runs (scan-now, bulk analyst-checks) queue past this — a 13-symbol
@@ -2146,13 +2149,15 @@ class TechniqueService:
     def start(self) -> None:
         if self._scan_task is None:
             self._scan_task = asyncio.create_task(self._scan_loop(), name="technique-scan")
-        asyncio.create_task(self.fail_orphaned_sweeps(), name="technique-orphaned-sweeps")
+        if self._orphan_task is None:
+            self._orphan_task = asyncio.create_task(self.fail_orphaned_sweeps(), name="technique-orphaned-sweeps")
         if self._outcome_task is None:
             self._outcome_task = asyncio.create_task(self._outcome_loop(), name="technique-outcome")
         if getattr(self, "_sheet_task", None) is None:
             self._sheet_task = asyncio.create_task(self._sheet_loop(), name="technique-sheet-auto")
         self.armer.start()
-        asyncio.create_task(self._restore_armed(), name="technique-armer-restore")
+        if self._restore_task is None:
+            self._restore_task = asyncio.create_task(self._restore_armed(), name="technique-armer-restore")
 
     async def _sheet_exists_for(self, plan_for: str) -> bool:
         async with self.engine.sf() as session:
@@ -2230,18 +2235,22 @@ class TechniqueService:
             log.exception("re-arming plans failed")
 
     async def stop(self) -> None:
-        for t in list(self._running.values()):
-            t.cancel()
-        for t in list(self._sweeps.values()):
-            t.cancel()
+        names = ("_scan_task", "_outcome_task", "_sheet_task", "_restore_task", "_orphan_task")
+        tasks = {t for t in [*self._running.values(), *self._sweeps.values(),
+                            *(getattr(self, name, None) for name in names)]
+                 if t is not None and t is not asyncio.current_task()}
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for result in results:
+                if isinstance(result, Exception):
+                    log.error("Technique background task failed during shutdown", exc_info=result)
+        # Restore/sheet work must finish unwinding before the listener stops;
+        # otherwise it can retain DB transactions or re-arm after shutdown.
         await self.armer.stop()
-        for name in ("_scan_task", "_outcome_task"):
-            task = getattr(self, name)
-            if task:
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
-                setattr(self, name, None)
+        for name in names:
+            setattr(self, name, None)
         if self._tradier:
             with contextlib.suppress(Exception):
                 await self._tradier.aclose()

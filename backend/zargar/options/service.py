@@ -254,6 +254,7 @@ class OptionsService:
             out["greeks"] = {**(r.get("greeks") or {}),
                              **{k: v for k, v in (prev.get("greeks") or {}).items() if v is not None}}
             out["greeksLive"] = True
+            out["greeksFieldAsOf"] = dict(prev.get("greeksFieldAsOf") or {})
         if prev and prev.get("live") and r["symbol"] in self._served_live:
             out.update({"bid": prev["bid"], "ask": prev["ask"],
                         "last": prev.get("last") or r.get("last"),
@@ -391,8 +392,12 @@ class OptionsService:
                 live_g = await src.greeks(sorted(served))
                 for sym, g in live_g.items():
                     snap = self._snapshots.get(sym) or {"symbol": sym}
-                    merged = {**(snap.get("greeks") or {}), **{k: v for k, v in g.items() if v is not None}}
-                    self._snapshots[sym] = {**snap, "greeks": merged, "greeksLive": True}
+                    supplied = {k: v for k, v in g.items() if v is not None}
+                    merged = {**(snap.get("greeks") or {}), **supplied}
+                    field_times = {**(snap.get("greeksFieldAsOf") or {}),
+                                   **{k: now_ms() for k in supplied}}
+                    self._snapshots[sym] = {**snap, "greeks": merged, "greeksLive": True,
+                                             "greeksFieldAsOf": field_times}
         return served
 
     async def refresh_tracked(self) -> None:

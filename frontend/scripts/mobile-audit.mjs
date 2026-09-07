@@ -24,12 +24,19 @@ const REPORT_ONLY = !!process.env.MOBILE_AUDIT_REPORT_ONLY;
 // sign-in is enforced: pass a session from `python -m zargar.tools.mint_session`
 // (backend/) as ZARGAR_SESSION, else every route screenshots the login page
 const SESSION = process.env.ZARGAR_SESSION ?? "";
+// Focused reruns after a route-specific fix; unset retains the complete default audit.
+const REQUESTED_ROUTES = process.env.MOBILE_AUDIT_ROUTES?.split(",").map(s => s.trim()).filter(Boolean);
+const CARTEL_PLAN = process.env.MOBILE_AUDIT_CARTEL_PLAN;
+if (REQUESTED_ROUTES && (!REQUESTED_ROUTES.length || REQUESTED_ROUTES.some(r => !r.startsWith("/")))) {
+  throw new Error("MOBILE_AUDIT_ROUTES must contain comma-separated absolute route paths");
+}
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const OUT = path.join(ROOT, "frontend", ".mobile-shots");
 fs.mkdirSync(OUT, { recursive: true });
 
 const ROUTES = ["/armed", "/trade", "/inbox", "/portfolios", "/", "/options",
-  "/watchlists", "/ledger", "/journal", "/settings", "/technique"];
+  "/watchlists", "/ledger", "/journal", "/settings", "/technique",
+  "/techniques/options-cartel", "/techniques/options-cartel/method"];
 const MATRIX = [
   { name: "iphone-se", device: devices["iPhone SE"], phone: true },
   { name: "iphone-14", device: devices["iPhone 14"], phone: true },
@@ -63,7 +70,7 @@ for (const m of MATRIX) {
   const ctx = await browser.newContext({ ...m.device, locale: "en-US", timezoneId: "America/New_York" });
   if (SESSION) await ctx.addCookies([{ name: "zargar_session", value: SESSION, url: BASE }]);
   const page = await ctx.newPage();
-  for (const route of m.routes ?? ROUTES) {
+  for (const route of REQUESTED_ROUTES ?? m.routes ?? ROUTES) {
     const key = `${m.name} ${route}`;
     try {
       // domcontentloaded + a fixed settle, NOT networkidle: pages like
@@ -71,6 +78,59 @@ for (const m of MATRIX) {
       // network never goes idle and the audit would flake on live systems
       await page.goto(BASE + route, { waitUntil: "domcontentloaded", timeout: 30000 });
       await page.waitForTimeout(3500);
+      if (CARTEL_PLAN && route === "/techniques/options-cartel/plans") {
+        const response = await page.request.get(`${BASE}/api/options-cartel/runs/${encodeURIComponent(CARTEL_PLAN)}`);
+        if (!response.ok()) throw new Error("Cartel audit fixture is unavailable");
+        const plan = await response.json();
+        const when = new Date(plan.createdAt).toLocaleString("en-US", {timeZone: "America/New_York"});
+        await page.getByRole("button", {name: `${plan.symbol} plan · plan ${when}`, exact: true}).click();
+        await page.getByRole("combobox", {name: "Execution mode", exact: true}).selectOption("proposal");
+        await page.getByText("Find an eligible contract", {exact: true}).click();
+        await page.getByText("Replay this campaign", {exact: true}).click();
+        await page.getByRole("heading", {name: "Arm reviewed plan", exact: true}).scrollIntoViewIfNeeded();
+        if (process.env.MOBILE_AUDIT_CARTEL_CHART === "1") {
+          await page.locator('[aria-label="Saved Cartel chart"] .highcharts-container').scrollIntoViewIfNeeded();
+        }
+      }
+      if (route === "/techniques/options-cartel/history") {
+        await page.getByText("Compare entry rules", {exact: true}).click();
+        if (process.env.MOBILE_AUDIT_CARTEL_RUN) {
+          const response = await page.request.get(`${BASE}/api/options-cartel/runs/${encodeURIComponent(process.env.MOBILE_AUDIT_CARTEL_RUN)}`);
+          if (!response.ok()) throw new Error("Cartel history fixture unavailable");
+          const run = await response.json();
+          const when = new Date(run.createdAt).toLocaleString("en-US", {timeZone:"America/New_York"});
+          await page.getByRole("button", {name:`${run.symbol} ${run.mode.replaceAll('_', ' ')} · ${run.verdict.replaceAll('_', ' ')} ${when}`, exact:true}).click();
+          if (run.mode === "scan") await page.getByRole("region", {name:"Focus-list scan results", exact:true}).scrollIntoViewIfNeeded();
+          if (run.mode === "industry") await page.getByRole("region", {name:"Industry capture results", exact:true}).scrollIntoViewIfNeeded();
+          if (run.mode === "fundamentals" || run.mode === "membership") await page.getByRole("region", {name:"Saved stock evidence", exact:true}).scrollIntoViewIfNeeded();
+          if (run.mode === "premium_replay") await page.getByRole("region", {name:"Option replay valuation", exact:true}).scrollIntoViewIfNeeded();
+          if (run.mode === "replay" && process.env.MOBILE_AUDIT_CARTEL_PREMIUM === "1") {
+            await page.getByText("Value with recorded option quotes", {exact:true}).click();
+            await page.getByRole("textbox", {name:"Option contract", exact:true}).scrollIntoViewIfNeeded();
+          }
+        }
+      }
+      if (route === "/techniques/options-cartel") {
+        await page.getByText("Scheduled scans and recovery", {exact: true}).click();
+        if (process.env.MOBILE_AUDIT_CARTEL_RECORDING === "1") {
+          await page.getByText("Option quote recording", {exact:true}).click();
+          await page.getByRole("button", {name:"Save recording setting", exact:true}).scrollIntoViewIfNeeded();
+        }
+        if (process.env.MOBILE_AUDIT_CARTEL_INDUSTRY === "1") await page.getByText("Import an industry capture", {exact:true}).click();
+        if (process.env.MOBILE_AUDIT_CARTEL_EVIDENCE === "1") {
+          await page.getByRole("textbox", {name:"Symbol", exact:true}).fill("MU");
+          await page.getByText("Fundamental and industry evidence", {exact:true}).click();
+          if (process.env.MOBILE_AUDIT_CARTEL_MEMBERSHIP) {
+            await page.getByRole("combobox", {name:"Saved industry membership", exact:true})
+              .selectOption(process.env.MOBILE_AUDIT_CARTEL_MEMBERSHIP);
+            await page.getByRole("button", {name:"Use manual industry mapping", exact:true}).waitFor();
+          }
+          await page.getByRole("combobox", {name:"Saved industry membership", exact:true}).scrollIntoViewIfNeeded();
+        }
+      }
+      if (route === "/techniques/options-cartel/method" && process.env.MOBILE_AUDIT_CARTEL_CHAPTER) {
+        await page.getByRole("combobox", {name:"Read a chapter", exact:true}).selectOption(process.env.MOBILE_AUDIT_CARTEL_CHAPTER);
+      }
       const shot = path.join(OUT, `${m.name}${route === "/" ? "-dashboard" : route.replace(/\//g, "-")}.png`);
       await page.screenshot({ path: shot, fullPage: false });
       const r = await page.evaluate(AUDIT);

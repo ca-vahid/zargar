@@ -2,22 +2,28 @@ import { Fragment, useMemo, type ReactNode } from "react";
 
 /** Tiny dependency-free markdown: headings, bold/italic/code, lists, tables,
  *  fenced code, paragraphs. Enough for model answers; not a full parser. */
-export function Markdown({ text }: { text: string }) {
-  const nodes = useMemo(() => render(text || ""), [text]);
+type LinkRenderer = (label: string, href: string) => ReactNode;
+export function Markdown({ text, renderLink }: { text: string; renderLink?: LinkRenderer }) {
+  const nodes = useMemo(() => render(text || "", renderLink), [text, renderLink]);
   return <div className="md">{nodes}</div>;
 }
 
-function inline(s: string, key: number): ReactNode {
+function inline(s: string, key: number, renderLink?: LinkRenderer): ReactNode {
   // split on **bold**, `code`, *italic*
   const parts: ReactNode[] = [];
-  const re = /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/g;
+  const re = renderLink ? /(\[[^\]\n]+\]\([^\s)]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/g
+    : /(\*\*[^*]+\*\*|`[^`]+`|\*[^*\n]+\*)/g;
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
   while ((m = re.exec(s))) {
     if (m.index > last) parts.push(<Fragment key={`${key}-${i++}`}>{s.slice(last, m.index)}</Fragment>);
     const tok = m[0];
-    if (tok.startsWith("**")) parts.push(<b key={`${key}-${i++}`}>{tok.slice(2, -2)}</b>);
+    if (renderLink && tok.startsWith("[")) {
+      const split = tok.indexOf("](");
+      parts.push(<Fragment key={`${key}-${i++}`}>{renderLink(tok.slice(1, split), tok.slice(split+2, -1))}</Fragment>);
+    }
+    else if (tok.startsWith("**")) parts.push(<b key={`${key}-${i++}`}>{tok.slice(2, -2)}</b>);
     else if (tok.startsWith("`")) parts.push(<code key={`${key}-${i++}`}>{tok.slice(1, -1)}</code>);
     else parts.push(<i key={`${key}-${i++}`}>{tok.slice(1, -1)}</i>);
     last = m.index + tok.length;
@@ -26,7 +32,7 @@ function inline(s: string, key: number): ReactNode {
   return parts;
 }
 
-function render(text: string): ReactNode[] {
+function render(text: string, renderLink?: LinkRenderer): ReactNode[] {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const out: ReactNode[] = [];
   let i = 0;
@@ -44,7 +50,7 @@ function render(text: string): ReactNode[] {
     const h = /^(#{1,4})\s+(.*)$/.exec(line);
     if (h) {
       const lvl = h[1].length;
-      const content = inline(h[2], k);
+      const content = inline(h[2], k, renderLink);
       out.push(lvl <= 2 ? <h4 key={k++}>{content}</h4> : <h5 key={k++}>{content}</h5>);
       i++;
       continue;
@@ -62,8 +68,8 @@ function render(text: string): ReactNode[] {
             <tbody>
               {rows.map((r, ri) => (
                 <tr key={ri}>{r.map((c, ci) => ri === 0
-                  ? <th key={ci}>{inline(c, k * 100 + ci)}</th>
-                  : <td key={ci}>{inline(c, k * 100 + ci)}</td>)}</tr>
+                  ? <th key={ci}>{inline(c, k * 100 + ci, renderLink)}</th>
+                  : <td key={ci}>{inline(c, k * 100 + ci, renderLink)}</td>)}</tr>
               ))}
             </tbody>
           </table>
@@ -78,7 +84,7 @@ function render(text: string): ReactNode[] {
         items.push(lines[i].replace(/^\s*([-*•]|\d+\.)\s+/, ""));
         i++;
       }
-      const els = items.map((it, ii) => <li key={ii}>{inline(it, k * 100 + ii)}</li>);
+      const els = items.map((it, ii) => <li key={ii}>{inline(it, k * 100 + ii, renderLink)}</li>);
       out.push(ordered ? <ol key={k++}>{els}</ol> : <ul key={k++}>{els}</ul>);
       continue;
     }
@@ -88,7 +94,7 @@ function render(text: string): ReactNode[] {
     while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|```|\s*\||\s*([-*•]|\d+\.)\s)/.test(lines[i])) {
       buf.push(lines[i++]);
     }
-    out.push(<p key={k++}>{inline(buf.join(" "), k)}</p>);
+    out.push(<p key={k++}>{inline(buf.join(" "), k, renderLink)}</p>);
   }
   return out;
 }
