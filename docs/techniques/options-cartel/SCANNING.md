@@ -1,5 +1,9 @@
 # Focus-list scanning
 
+For the broader market-to-armed-shortlist workflow, see
+[Automatic daily preparation](DAILY-PREPARATION.md). The selected-symbol scans
+described below remain separate research-only tools.
+
 The Cartel desk accepts up to 20 unique US equity symbols. A scan applies one
 source profile, direction and fixed data cutoff to the whole list, using the
 same collection and analysis functions as single-symbol research. At most two

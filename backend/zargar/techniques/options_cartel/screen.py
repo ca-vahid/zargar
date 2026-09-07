@@ -36,6 +36,7 @@ class ListingFacts(BaseModel):
     rank_observed_at: int | None = Field(default=None, ge=0)
     rank_data_as_of_ms: int | None = Field(default=None, ge=0)
     rank_source: str | None = Field(default=None, min_length=1)
+    rank_freshness_basis: Literal['provider_time', 'publisher_observation'] = 'provider_time'
     industry_snapshot_id: str | None = None
 
     @model_validator(mode='after')
@@ -128,8 +129,10 @@ def screen_listing(bars: list[DailyBar], facts: ListingFacts, indices: dict[str,
     observed = facts.rank_observed_at if facts.rank_observed_at is not None else facts.observed_at
     data_at = facts.rank_data_as_of_ms if facts.rank_data_as_of_ms is not None else \
         None if facts.industry_snapshot_id else observed
-    valid_ranks = valid_mapping and data_at is not None and observed <= at \
-        and 0 <= at-data_at <= rules.max_metadata_age_days*86_400_000
+    rank_time = observed if facts.rank_freshness_basis == 'publisher_observation' else data_at
+    rank_age_limit = min(rules.max_metadata_age_days, 1) if facts.rank_freshness_basis == 'publisher_observation' else rules.max_metadata_age_days
+    valid_ranks = valid_mapping and rank_time is not None and observed <= at \
+        and 0 <= at-rank_time <= rank_age_limit*86_400_000
     gate("M1", "Market agrees with direction", regime["direction"] == direction
          if regime["direction"] != "unknown" else None, regime["direction"])
     gate("DATA", "Latest completed exchange session present", last.session == _latest_session(at) if last else None)
