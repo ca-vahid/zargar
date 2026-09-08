@@ -166,6 +166,11 @@ async def adoption_killswitch(eng) -> str | None:
                 ManagedPositionRow.status == "closed",
                 ManagedPositionRow.updated_at >= sod))).scalars().all()
         for r in rows:
+            # research/shadow books buy everything by design — their fast
+            # deaths are data, not evidence against the REAL hand-off pipeline
+            pf = eng.positions.portfolio(r.portfolio_id) or {}
+            if pf.get("kind") == "shadow":
+                continue
             st = r.state or {}
             reason = str(st.get("closeReason") or "")
             if "stop" not in reason.lower():

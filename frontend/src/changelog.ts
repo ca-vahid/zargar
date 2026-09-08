@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.10";
+export const APP_VERSION = "0.7.11";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.11",
+    date: "2026-09-08",
+    title: "Promoted takes flow",
+    items: [
+      { tag: "fixed", text: "A tip the recovery sweep revives with an analyst TAKE now approves itself in unattended practice (FRVO sat waiting on a quote-data artifact); skip/watch still declines itself, a tip with NO analyst verdict still waits fail-closed, and live books always keep the human." },
+      { tag: "fixed", text: "The session brake (pause autos after a sub-5-minute stop-out) could never fire - the close reason it looked for was never saved. It is saved now, and research-book deaths no longer count against the real book." },
+    ],
+  },
   {
     version: "0.7.10",
     date: "2026-09-08",
