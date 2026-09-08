@@ -541,6 +541,31 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   when `targets_beyond` picks the plan target — a pivot that does not clear it is skipped for the
   next one out, and the target falls back to `None` ("open", ride the EMA) when nothing qualifies.
   **Threshold/rule change on a money path — proposal only, not built by the watch job.**
+- **F48 (2026-09-08 09:40 ET, FIXED — `a53f866`)** `POST /api/team2/runs/{id}/replay` declared
+  `body: ReplayBody` as a **required** model, so the plain parity replay the watch job runs (no
+  overrides) came back **422 Unprocessable Content**. `overrides` is the body's only field and it is
+  optional, so the body is now optional too. Operator/CLI surface only — the UI never calls this route,
+  and nothing on a money path changed. Deploy queued for the next watch run (the fix landed inside the
+  09:30–10:30 prime-open window and a restart there costs live read state for no benefit).
+- **F49 (2026-09-08 09:40 ET, NOT fixed — proposal; the day's premise is read 5 minutes before the
+  open)** `plan.openPrice` — and with it `dayType` (A1) and `sizingAtOpen` (V6) — is set by
+  `complete_plan`, which prefers the **09:30 RTH open** but falls back to the **last pre-market close**
+  when no RTH bar exists yet. The 09:25 pre-open job always runs before the open, so the fallback is
+  what fires **every single session**, and nothing ever re-completes the plan once the real open
+  prints: `Team2Service.preopen_complete` and `Team2Runner._preopen_check` are the only callers, and
+  `replay()` re-derives only when `complete` is False (F13 deliberately stamped the completed plan so
+  replay reproduces the live premise — that fix locked the approximation in). `sizingAtOpen` is only a
+  label (live sizing recomputes `sizing_bucket(entry_spot, …)` per touch), but **`dayType` gates
+  money**: `session.py:268` lifts the inside-day guard on `pm_break_up` / `pm_break_down` only when the
+  day type is `gap_up`/`gap_down` (F15/L2.4), so a mis-typed day changes which setups exist at all.
+  Live today: the stamped opens are the 09:25 prints SPY 769.28 / QQQ 721.18 / IWM 295.59, while the
+  real 09:30 bar opens were **SPY 769.06 / QQQ 720.91 / IWM 295.34** — a 0.22–0.27 gap. All three still
+  classify `normal`, but **SPY's real open sat 0.06 above its PDL zone bottom of 769.00**: an open
+  seven cents lower would have been a `gap_down` day, and the stamped pre-market print would still have
+  said `normal`. Proposed: re-complete the plan on the first RTH bar of the session (upgrading
+  `openPrice`/`openSource`/`dayType`, and re-stamping so replay parity is preserved), leaving the 09:25
+  completion as the pre-open estimate it is. **Money-path behaviour change — proposal only, not built
+  by the watch job.**
 
 ## Theories to test
 
