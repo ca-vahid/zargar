@@ -685,6 +685,26 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   F15: F15 was a real loss inside a *gap* day's PM range; F56 is the cost of the same rule on a
   *normal* day whose PM range is wide.
 
+- **F57 (2026-09-08 11:40 ET, FIXED — the "not a tradeable location" gates were invisible on the one
+  line the desk actually reads).** The waiting headline said *"waiting for the 1st/2nd 2m pullback into
+  the EMA13 (touches 0)"* on all three symbols while every pullback was being refused at the door.
+  `session.py` DOES mint the refusal (`skip_no_trade_zone` V6/B5, `skip_range_confirmation` B3/A4) —
+  but only into the read, and only **once per setup** (F23, so it does not bury the read), and the
+  count it holds down is `touches`, which by design is **not incremented** by a refused dip (F18). The
+  three together mean the page can sit at "touches 0" for hours with a single 10:00 event, five
+  scrolls down, as the only trace. Today it bit every symbol: SPY 10:00, QQQ 10:16 + 11:00, IWM 11:26
+  — the IWM one landing *the moment* its stack turned bull and F53's regime clause cleared, so the
+  line went from "blocked by the regime" straight to a clean-looking "waiting" that could never fire.
+  **Fix:** the setup's current refusal (`_skipped`, cleared by a real touch) is now serialized on the
+  read and appended to the headline — *"· the last pullback sat inside the pre-market range — no-trade
+  zone (V6/B5)"*. Same family as F53 and purely descriptive: **no gate, threshold, size or money path
+  is touched**; the gates stay in `session.py`. Guarded both ends — `tests/test_team2_session.py`
+  pins the read exposing the refusal on the fixture that reaches the gate, and
+  `tests/test_team2_runner.py` asserts the clause appears exactly when the picked setup is refused.
+  (F56 remains the open *rule* question — whether the gate should be this wide on a day whose PM
+  range is 9–12x ATR. F57 only stops it being silent.)
+
+
 
 ## Theories to test
 
@@ -697,6 +717,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
+- **2026-09-08 (market watch, run 22)** — **F57 fixed**: the setup's current no-trade-zone / range-confirmation refusal is serialized on the read and stated on the Armed + phone headline, instead of the page reading "touches 0" while every pullback was refused. Reporting only — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
 - **2026-09-08 (market watch, run 20)** — the plan summary's waiting line now names the silent E3/B9 stack gate and E4 chop gate when they block the setup (F53). Wording only; no rule, threshold, gate or money path changed. F54 logged as observation. Team2 page timestamps pinned to ET (F55) — display only.
 - **2026-09-08 (market watch, run 21)** — F53's follow-up wording deployed (`f89e173`); no code change this run. F56 logged as a proposal (V6's no-trade zone swallows a wide pre-market day). No rule, threshold, gate or money path changed.

@@ -52,7 +52,7 @@ class Setup:
         return {"id": self.id, "kind": self.kind, "direction": self.direction, "anchor": round(self.anchor, 4),
                 "target": None if self.target is None else round(self.target, 4), "confirmedTs": self.confirmed_ts,
                 "rangeDay": self.range_day, "touches": self.touches, "entries": self.entries, "losses": self.losses,
-                "dead": self.dead, "deadReason": self.dead_reason}
+                "dead": self.dead, "deadReason": self.dead_reason, "skipped": self._skipped}
 
 
 @dataclass

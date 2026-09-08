@@ -83,12 +83,14 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     rth = filter_session(today, "rth")
     mid_snap = None
     waiting_snaps = []
+    waiting_setups: list[list[dict]] = []
     for i, b in enumerate(rth):
         await eng.team2_runner.on_bar(run_id, b)
         if i == 60:
             mid_snap = eng.team2_runner.detail(run_id)
         if i % 5 == 0:
             waiting_snaps.append(eng.team2_runner.detail(run_id))
+            waiting_setups.append([dict(x) for x in ((eng.team2_runner.last_read(run_id) or {}).get("setups") or [])])
     # F53: on the "waiting for the 1st/2nd 2m pullback" line, a regime that cannot fire the setup must
     # SAY so — session.py's E3/B9 stack gate and E4 chop gate skip silently, so without this the line
     # promises an entry the next EMA13 touch would not actually take.
@@ -108,6 +110,25 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
         else:
             assert "no entry until" not in s, s
     assert seen_blocked, "no waiting snapshot with a disagreeing regime in this session"
+    # F57: the read must carry each setup's CURRENT "not a tradeable location" refusal, and the waiting
+    # line must state it — the skip is minted once per setup (F23), so without this the page reads
+    # "touches 0" forever while every EMA13 pullback is turned away at the door.
+    for snap, setups_now in zip(waiting_snaps, waiting_setups):
+        s2 = snap["summary"]
+        if "waiting for the 1st/2nd 2m pullback" not in s2:
+            continue
+        assert all("skipped" in x for x in setups_now), setups_now
+        bias2 = snap["team2"].get("bias") or {}
+        cands = [x for x in setups_now if not x.get("dead")
+                 and (not bias2.get("direction") or x.get("direction") == bias2.get("direction"))]
+        picked2 = sorted(cands, key=lambda x: x.get("confirmedTs") or 0)[-1] if cands else None
+        refused2 = (picked2 or {}).get("skipped")
+        if refused2 == "skip_no_trade_zone":
+            assert "no-trade zone (V6/B5)" in s2, s2
+        elif refused2 == "skip_range_confirmation":
+            assert "has not cleared the PM level (B3/A4)" in s2, s2
+        else:
+            assert "no-trade zone (V6/B5)" not in s2 and "has not cleared the PM level" not in s2, s2
     assert mid_snap is not None and any(t["kind"].startswith("scenario_") for t in mid_snap["triggers"])
     assert "scenario 1" in mid_snap["summary"] or "in trade" in mid_snap["summary"], mid_snap["summary"]
     events = [e["event"] for e in ap.events]

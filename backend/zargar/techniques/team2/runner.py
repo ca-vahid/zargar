@@ -916,9 +916,20 @@ class Team2Runner(PlanRunner):
                 blocked_s = f" — no entry until {' and '.join(blocks)} (E3/B9/E4){flush_s}"
             else:
                 blocked_s = ""
+            # F57 (2026-09-08): the "not a tradeable location" gates DO mint an event, but only once per
+            # setup (F23) and only into the read — the one line the Armed page and the phone show still
+            # said "waiting for the 1st/2nd 2m pullback (touches 0)" while every pullback was being turned
+            # away at the door. Today it bit all three symbols (SPY 10:00, QQQ 10:16 + 11:00, IWM 11:26):
+            # with a pre-market range 9–12× ATR wide the no-trade zone is not a moment price passes
+            # through, it is the day. `_skipped` is the setup's CURRENT refusal — a real touch clears it —
+            # so it can be stated in the present tense. Descriptive only; the gates live in session.py.
+            skip_why = {"skip_no_trade_zone": "the last pullback sat inside the pre-market range — no-trade zone (V6/B5)",
+                        "skip_range_confirmation": "range day: price has not cleared the PM level (B3/A4)"}
+            refused = skip_why.get(str((picked or {}).get("skipped") or ""), "")
+            refused_s = f" · {refused}" if refused else ""
             d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "
                             f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches}) · EMA stack {regime.get('stack', '?')}, "
-                            f"{regime.get('fan', '?')}{blocked_s}")
+                            f"{regime.get('fan', '?')}{blocked_s}{refused_s}")
         elif pdh and pdl:
             pm = (f" · PM {plan['pml']:.2f}–{plan['pmh']:.2f}" if plan.get("pmh") and plan.get("pml") else " · pre-market range at 09:25")
             day = f" · {str(plan.get('dayType')).replace('_', ' ')} day" if plan.get("dayType") else ""
