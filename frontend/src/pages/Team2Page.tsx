@@ -106,7 +106,13 @@ export function Team2Page() {
 
   const latestFor = runs.length ? runs[0].planFor : null;
   const pill = (st?: string | null) => st === "armed" ? "ok" : st === "paused" ? "wait" : st === "disarmed" ? "bad" : "dim";
-  const when = (iso?: string | null) => iso ? new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
+  // F55: this desk speaks ET everywhere else on the page (the status line above says "plans 17:00 ET"),
+  // and so does every other technique surface (NowView, ArmedDayPanel, ValidationTab). Rendering the
+  // plan's clock in the BROWSER's zone made Friday's 17:34 ET nightly read "2:34 PM" on a PT machine —
+  // three hours before the 17:00 ET plan time the same line quotes. Stamp the zone and say so.
+  const when = (iso?: string | null) => iso
+    ? new Date(iso).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + " ET"
+    : "—";
   const statusLine = status
     ? `${status.symbols?.join(" · ")} · ${status.mode} mode · plans ${status.planAt} ET, pre-open ${status.preopenAt}`
       + (status.zeroDte?.enabled ? ` · 0DTE: entries until ${status.zeroDte.last_entry_et}, flat by ${status.zeroDte.flatten_et}` : " · 0DTE policy off")

@@ -639,6 +639,17 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   Suggests the tolerance wants to scale with zone width, not just ATR. **Threshold work — for the
   walk-forward and the user, not the watch job.**
 
+- **F55 (2026-09-08 10:55 ET, FIXED — see change log)** The Team2 page rendered plan timestamps in the
+  **browser's** timezone while every other line on the same page is ET. Friday's nightly built today's
+  plans at **17:34 ET**; the Plans table's WHEN column showed **"Sep 4, 2:34 PM"** on this PT machine —
+  directly beneath a status line reading `plans 17:00 ET, pre-open 09:25`, so the plan appeared to have
+  been built three hours *before* the plan job that built it. Every other technique surface already
+  pins ET (`NowView`, `ArmedDayPanel`, `ValidationTab`, `PlanCard`, `StockChart`); `Team2Page.tsx:109`
+  was the only one that did not. Now formatted with `timeZone: "America/New_York"` and suffixed `ET`.
+  Display only — no data, rule or plan changed. (The WHEN column is the run's `createdAt`; `armedAt` is
+  not carried on the runs list, only on the snapshot. That is accurate for a column headed "when", so
+  it was left alone.)
+
 
 ## Theories to test
 
@@ -652,7 +663,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 ## Change log
 
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
-- **2026-09-08 (market watch, run 20)** — the plan summary's waiting line now names the silent E3/B9 stack gate and E4 chop gate when they block the setup (F53). Wording only; no rule, threshold, gate or money path changed. F54 logged as observation.
+- **2026-09-08 (market watch, run 20)** — the plan summary's waiting line now names the silent E3/B9 stack gate and E4 chop gate when they block the setup (F53). Wording only; no rule, threshold, gate or money path changed. F54 logged as observation. Team2 page timestamps pinned to ET (F55) — display only.
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
