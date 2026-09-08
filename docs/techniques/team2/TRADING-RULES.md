@@ -724,6 +724,31 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   (F56 remains the open *rule* question — whether the gate should be this wide on a day whose PM
   range is 9–12x ATR. F57 only stops it being silent.)
 
+- **F58 (2026-09-08 12:35 ET, NOT fixed — proposal; V6's ladder is only defined when the PM range is
+  NESTED inside yesterday's zones, and the code resolves every other geometry as `none`).** Chasing
+  F56 I first tested the cheaper hypothesis — that the pre-market window is wrong — and it is **not**:
+  the sheets' PM ranges reproduce the 04:00–09:30 ET 1m tape to the cent (SPY 766.73–770.48, QQQ
+  716.90–723.72, IWM 293.80–295.91), which is exactly METHOD **L2.1**. The window is faithful; the
+  problem is the *ladder*. **V6** reads, top to bottom: above the PDH zone = Full · PDH zone→PMH =
+  Small · PMH→PML = No trade · PML→PDL zone = Small · below the PDL zone = Full. For those five bands
+  to be ordered at all, the picture must have `PDL zone < PML < PMH < PDH zone` — the PM range nested
+  *inside* yesterday's range. `sizing_bucket` (`scenario.py:36`) does not test for that: it checks
+  `pml <= price <= pmh` **first and unconditionally**, so whenever a PM edge crosses a prior-day zone
+  the overlapping bands are all resolved in favour of `none` — including the band V6 calls **Full**.
+  None of today's three symbols is nested: QQQ PMH 723.72 is *above* its PDH zone top 721.86, SPY PML
+  766.73 is *below* its PDL zone bottom 769.00, IWM PML 293.80 sits inside its PDL zone 293.56–294.59.
+  **SPY 10:00 is the clean demonstration**: entry 767.82 is below the PDL zone bottom 769.00, in the
+  direction of the confirmed scenario-4 bias — V6 puts that band at **Full size** and the function's
+  own `price < pdl.bottom` rung would return `full` — but the PM check pre-empts it and returns
+  `none`. QQQ 11:00 (718.26, mid prior-day range) and IWM 11:26 (295.32, ditto) are defensible `none`s
+  under B7; QQQ 10:16 (716.99, inside the PDL zone) is genuinely undefined. So of the four refusals
+  today, **one contradicts V6 outright and one is undefined** — this is a precedence question, not
+  only the width question F56 raises. Proposed (user's call, NOT built): make the `none` rung apply
+  only where the ladder is defined — i.e. clamp the no-trade band to `max(pml, pdl.top)`…
+  `min(pmh, pdh.bottom)` — so beyond a prior-day zone V6's Full/Small rungs win, and F15's gap-day
+  protection (which was a price in the *middle* of a PM range, inside yesterday's range) is untouched.
+  Cross-refs F56 (width) and F15 (why the rung was widened).
+
 
 
 ## Theories to test
@@ -736,6 +761,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-08 (market watch, run 24)** — no code change. **F58 logged as a proposal**: V6's sizing ladder is only ordered when the PM range is nested inside the prior-day zones, and `sizing_bucket` resolves every other geometry to `none` — SPY's 10:00 refusal contradicts V6's own Full-size band. Also verified (negative result) that the PM window is exactly METHOD L2.1's 04:00–09:30 ET, so F56/F58 are rule questions, not a data defect. No rule, threshold, gate, size or money path changed.
 
 - **2026-09-08 (market watch, run 22)** — **F57 fixed**: the setup's current no-trade-zone / range-confirmation refusal is serialized on the read and stated on the Armed + phone headline, instead of the page reading "touches 0" while every pullback was refused. Reporting only — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.

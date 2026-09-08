@@ -1424,3 +1424,65 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   close-vs-target slippage and **F47**'s thin targets. Still open for the user: **F47**, **F49**,
   **F50**, **F51**, **F54**, **F56**, and the F30-family question of which premium series is
   authoritative.
+
+## 2026-09-08 12:35 ET (run 24 — quiet again; the no-trade zone's *precedence* is the sharper bug, F58)
+
+- **Alive and clean; nothing deployed, nothing queued.** `/api/health` ok, **v0.7.11**; one armed plan
+  per symbol for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode
+  **auto**, Team2 Practice `b9dcd8db…`, `needsAttention: false` and `readError: null` on all three,
+  halt `engaged: false` with no per-book halts and no technique pause. No Team2 code change was made —
+  nothing was found broken.
+- **Data real-time.** Quotes **0 s** old, `session: regular` (SPY 767.15 / QQQ 719.28 / IWM 295.45);
+  1m bars **183 of 183 minutes present since 09:30, zero gaps** on all three, last bar 12:32 ET; the
+  read advanced 78 → 91 2m bars since run 23; the Alpaca **OPRA** batch is 200-ing every ~2 s
+  (freshest 12:33:02 ET), `feed=opra`. EMA/fan values present on all three regimes.
+- **The tape did nothing, for the second run running.** Zero new events on any symbol since run 23 —
+  QQQ still 16, SPY 2, IWM 2; no new touch, no scenario flip, no fire, no skip. Rebuilt today's 15m
+  bars from the `bars` table and every bias is still right: QQQ's last flip was the 10:15 bucket
+  (C717.76 > 717.03 → scenario 3) and 10:30–12:15 (718.15 / 718.94 / 719.91 / 720.09 / 720.85 /
+  719.97 / 719.60 / 719.08) all sit **between** the zones → correctly no flip ✓; SPY below 769.00 on
+  every close since the 09:30 bucket → scenario 4 ✓; IWM above 294.59 on every close → scenario 3 ✓.
+- **Replay parity is exact on all three.** `POST /runs/{id}/replay` reproduced 16 / 2 / 2 events
+  **byte-identically** with `pnlPctSum` 65.61 / 0 / 0; only `bars2m` differs (91 live vs 92 replay — a
+  bar closed between the two calls, not a defect).
+- **Book untouched.** Team2 Practice cash **and** equity $9,934.16, zero open positions, zero Team2
+  working orders, no order routed. Desk loss tally still **1 of 2** on the book basis (F37).
+- **F53 and F57 are both doing their job on the live headline.** QQQ's stack slipped **bull → mixed**
+  during this run, so its regime clause correctly came *back* ("no entry until the stack turns bull");
+  SPY (bear vs short) and IWM (bull vs long) carry no regime clause. All three carry F57's clause —
+  *"the last pullback sat inside the pre-market range — no-trade zone (V6/B5)"*. The line now reads the
+  situation exactly: on QQQ the regime **and** the location are wrong, on SPY and IWM only the location.
+- **F58 (new, proposal — NOT built). The pre-market *window* is correct; V6's *ladder* is the
+  problem.** Rather than re-tell F56 I tested the cheaper hypothesis first — that the PM range is
+  computed over the wrong window. It is not: the sheets reproduce the 04:00–09:30 ET 1m tape to the
+  cent (SPY 766.73–770.48, QQQ 716.90–723.72, IWM 293.80–295.91), which is exactly METHOD **L2.1**.
+  So F56/F58 are rule questions, not a data defect. What the check *did* expose: V6's five bands
+  (Full · PDH zone→PMH Small · PMH→PML No trade · PML→PDL zone Small · Full) are only *ordered* when
+  `PDL zone < PML < PMH < PDH zone` — the PM range nested inside yesterday's. `sizing_bucket`
+  (`scenario.py:36`) never tests for that: it checks `pml <= price <= pmh` **first and
+  unconditionally**, so wherever a PM edge crosses a prior-day zone the overlapping bands all resolve
+  to `none` — including the band V6 calls **Full**. **None of today's three symbols is nested** (QQQ
+  PMH 723.72 above its PDH zone top 721.86; SPY PML 766.73 below its PDL zone bottom 769.00; IWM PML
+  293.80 inside its PDL zone). **SPY 10:00 is the clean case**: entry 767.82 is *below* the PDL zone
+  bottom 769.00 and with the confirmed scenario-4 bias — V6 says **Full size**, the function's own
+  `price < pdl.bottom` rung would say `full`, and the PM check pre-empts both and returns `none`. Of
+  today's four refusals, **one contradicts V6 outright, one (QQQ 10:16, inside the PDL zone) is
+  undefined, two (QQQ 11:00, IWM 11:26, mid prior-day range) are defensible under B7.** Proposed fix
+  for the user, not built: clamp the no-trade band to `max(pml, pdl.top)`…`min(pmh, pdh.bottom)` so
+  beyond a prior-day zone V6's Full/Small rungs win, leaving F15's gap-day protection intact. Written
+  up with the geometry in TRADING-RULES.md as **F58**; cross-refs F56 (width) and F15 (why widened).
+- **Log is clean.** Zero ERRORs and zero Tracebacks in `backend/zargar-8420.log`. The other team's
+  recurring `cartel-observer bar handling failed` has not reappeared. Note the app's total armed count
+  is **78** (was 80 at run 23) — the two that dropped are **not ours**: the breakdown is
+  enhanced_market 45 / tip 28 / options_cartel 2 / **team2 3**, all three of ours present and armed.
+- **UI checked** (cookie handoff — the browser pane normalizes `?token=`, so set `zargar_session` and
+  reload `/team2`): all three plans render with F55's ET stamps ("Sep 4, 5:34 PM ET"), the full sheets,
+  `ARMED`, and the Armed tab shows **3**. No render or console problems. (The pane is narrow so it
+  serves the phone layout — expected, not a defect.)
+- **Next run (13:00 ET) must:** nothing is queued — deploy nothing unless something new is found.
+  Watch whether QQQ's stack recovers to bull (it is now the only regime-blocked symbol) and for a 15m
+  body close outside a zone (QQQ needs > 721.82 or < 717.03 from 719.2; note even a PDH break entry is
+  refused until 723.72 under today's `none` rung — more F58 evidence). Keep the **1-of-2 desk-wide
+  book loss** count in view; if anything fires, re-measure **F50**'s close-vs-target slippage and
+  **F47**'s thin targets. Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**,
+  **F56**, **F58**, and the F30-family question of which premium series is authoritative.
