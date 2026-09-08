@@ -37,6 +37,22 @@ log = logging.getLogger("zargar.techniques.team2.service")
 CODE_VERSION = "team2-0.1"
 
 
+def _day_result(arm) -> dict | None:
+    """F67: the day's own grade, from the scorecard the runner writes at disarm (F43).
+
+    The shared Armed > History table cannot show it — that list is ordered by BUILD time and
+    capped, and Team2's plans are always built the previous session, so they fall off the
+    window; its Realized column also reads the plan's GROSS p&l. The desk's own History tab
+    therefore carries the net number and the model-vs-book comparison."""
+    sc = (getattr(arm, "state", None) or {}).get("scorecard") if arm is not None else None
+    if not sc:
+        return None
+    return {"fires": sc.get("actualFires"), "matched": sc.get("matched"),
+            "theoreticalFires": sc.get("theoreticalFires"),
+            "modelPct": sc.get("modelPnlPctSum"), "net": sc.get("realizedPnl"),
+            "gross": sc.get("realizedPnlGross"), "skips": sc.get("skips") or {}}
+
+
 class Team2Service:
     def __init__(self, engine, runner) -> None:
         self.engine = engine
@@ -273,6 +289,7 @@ class Team2Service:
                         "complete": plan.get("complete"), "dayType": plan.get("dayType"),
                         "createdAt": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
                         "armed": live,
+                        "result": _day_result(arm),
                         "status": ("armed" if live else (arm.status if arm is not None else None)),
                         "stopReason": ((getattr(self.runner.get(r.id), "stop_reason", None) if (live and self.runner is not None) else None)
                                        if live else ((arm.state or {}).get("stopReason") or None)

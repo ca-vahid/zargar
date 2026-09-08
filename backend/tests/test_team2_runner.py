@@ -176,6 +176,14 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     assert rep_fire["ts"] == trades[0].fired_ts                         # same bar, same read (parity)
     listed = await svc.runs()
     assert listed and listed[0]["runId"] == run_id and listed[0]["planFor"] == DAY.isoformat()
+    # F67: the day's grade travels with the run listing — the desk's own History tab is where a
+    # CLOSED session is read back (the shared Armed history is ordered by build time and drops
+    # Team2's plans, which are always built the session before)
+    res = listed[0]["result"]
+    assert res is not None, listed[0]
+    assert res["fires"] == len([t for t in trades if t.status != "alert"])
+    assert res["net"] is not None and res["gross"] is not None
+    assert isinstance(res["skips"], dict) and res["modelPct"] is not None
 
 
 async def test_sweep_over_banked_days(rig):

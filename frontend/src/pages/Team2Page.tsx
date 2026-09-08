@@ -17,7 +17,11 @@ type Team2Status = {
 };
 type Team2Run = { runId: string; symbol: string; planFor: string | null; sheet: string | null; complete: boolean | null;
   dayType: string | null; createdAt: string | null; armed: boolean;
-  status?: string | null; stopReason?: string | null };
+  status?: string | null; stopReason?: string | null;
+  result?: Team2DayResult | null };
+/** the day's own grade, written at disarm — fires, the read's model % and what the BOOK actually kept (net of fees) */
+type Team2DayResult = { fires: number | null; matched: number | null; theoreticalFires: number | null;
+  modelPct: number | null; net: number | null; gross: number | null; skips: Record<string, number> };
 type ReadEvent = { ts: number; time: string; event: string; why: string; [k: string]: unknown };
 type ReadResult = { events: ReadEvent[]; trades: any[]; summary: Record<string, any>; bias: any; setups: any[] };
 type Sweep = { start: string; end: string; symbols: string[]; rows: any[]; summary: Record<string, any>; thresholds: Record<string, unknown> };
@@ -245,13 +249,14 @@ export function Team2Page() {
             <div className="scroll-x">
               {runs.length === 0 ? <EmptyState title="No runs" /> : (
                 <table className="tbl">
-                  <thead><tr><th className="num">For</th><th>Symbol</th><th>Day</th><th>Status</th><th>Built</th></tr></thead>
+                  <thead><tr><th className="num">For</th><th>Symbol</th><th>Day</th><th>Status</th><th>How it went</th><th>Built</th></tr></thead>
                   <tbody>
                     {runs.map((r) => (
                       <tr key={r.runId} className={selected === r.runId ? "selected" : ""} onClick={() => setSelected(r.runId)} style={{ cursor: "pointer" }}>
                         <td className="num">{r.planFor}</td><td><SymIcon sym={r.symbol} size={16} /> {r.symbol}</td>
                         <td className="muted">{r.dayType ? r.dayType.replace("_", " ") : "—"}</td>
                         <td><span className={`status-pill ${pill(r.status)}`} title={r.stopReason ?? undefined}>{r.status ?? "not armed"}</span></td>
+                        <td><DayResult res={r.result} /></td>
                         <td className="muted">{when(r.createdAt)}</td>
                       </tr>
                     ))}
@@ -290,6 +295,31 @@ export function Team2Page() {
         </>
       )}
     </div>
+  );
+}
+
+/** The day's grade for one plan (F67): what the desk actually kept, beside what the read claimed.
+ *  `net` is after commissions — the number the book moved by; `gross` is the raw fill difference. */
+function DayResult({ res }: { res?: Team2DayResult | null }) {
+  if (!res) return <span className="muted small">—</span>;
+  const skips = Object.entries(res.skips ?? {}).filter(([, n]) => n > 0);
+  if (!res.fires) {
+    return (
+      <span className="muted small" title={skips.map(([k, n]) => `${k.replace(/^skip_/, "").replace(/_/g, " ")} ×${n}`).join(" · ")}>
+        no trade{skips.length ? ` · ${skips.reduce((n, [, c]) => n + c, 0)} refused` : ""}
+      </span>
+    );
+  }
+  const net = res.net ?? 0;
+  return (
+    <span className="small" title={[
+      `${res.fires} fired of ${res.theoreticalFires ?? res.fires} the read wanted, ${res.matched ?? 0} matched`,
+      res.gross != null ? `gross ${res.gross.toFixed(2)}, i.e. ${(net - res.gross).toFixed(2)} of commissions` : "",
+      skips.map(([k, n]) => `${k.replace(/^skip_/, "").replace(/_/g, " ")} ×${n}`).join(" · "),
+    ].filter(Boolean).join(" — ")}>
+      {res.fires} trade(s) · <b className={net > 0 ? "pos" : net < 0 ? "neg" : ""}>{net > 0 ? "+" : ""}{net.toFixed(2)}</b> book
+      {res.modelPct != null ? <span className="muted"> · read {res.modelPct > 0 ? "+" : ""}{res.modelPct.toFixed(1)}%</span> : null}
+    </span>
   );
 }
 

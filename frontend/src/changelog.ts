@@ -23,6 +23,7 @@ export const CHANGELOG: Release[] = [
     title: "Promoted takes flow",
     items: [
       { tag: "fixed", text: "A tip the recovery sweep revives with an analyst TAKE now approves itself in unattended practice (FRVO sat waiting on a quote-data artifact); skip/watch still declines itself, a tip with NO analyst verdict still waits fail-closed, and live books always keep the human." },
+      { tag: "improved", text: "Team2's History tab now says how each past session went: trades taken, what the book actually kept after commissions, and the read's own model % beside it (they can disagree in sign) - refusals in the tooltip. A closed Team2 day used to leave no readable record." },
       { tag: "fixed", text: "The session brake (pause autos after a sub-5-minute stop-out) could never fire - the close reason it looked for was never saved. It is saved now, and research-book deaths no longer count against the real book." },
     ],
   },
