@@ -899,9 +899,26 @@ class Team2Runner(PlanRunner):
             cands = [s for s in live if not bias.get("direction") or s.get("direction") == bias.get("direction")]
             picked = sorted(cands, key=lambda s: s.get("confirmedTs") or 0)[-1] if cands else None
             touches = picked.get("touches", 0) if picked else max((s.get("touches", 0) for s in live), default=0)
+            # F53 (2026-09-08): E3/B9 (stack must agree) and E4 (no braided EMAs) are re-judged on every 2m
+            # bar, so `session.py` skips them SILENTLY — no event is minted. That left a trigger the regime
+            # cannot fire reading exactly like one the next EMA13 touch would take (QQQ 10:30 today: bias
+            # flipped to scenario 3 → calls while the stack was still bear). Say it on the one line the
+            # Armed page and the phone show. Purely descriptive — the gate itself lives in session.py.
+            want = "bull" if bias.get("direction") == "long" else "bear"
+            blocks = []
+            if regime.get("stack") and regime.get("stack") != want:
+                blocks.append(f"the stack must turn {want}")
+            if regime.get("fan") == "chop":
+                blocks.append("the EMAs must un-braid")
+            if blocks:
+                flush_s = (", or a 200 EMA flush (T8)"
+                           if bias.get("rangeDay") and getattr(rules_now, "allow_ema200_flush", True) else "")
+                blocked_s = f" — no entry until {' and '.join(blocks)} (E3/B9/E4){flush_s}"
+            else:
+                blocked_s = ""
             d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "
                             f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches}) · EMA stack {regime.get('stack', '?')}, "
-                            f"{regime.get('fan', '?')}")
+                            f"{regime.get('fan', '?')}{blocked_s}")
         elif pdh and pdl:
             pm = (f" · PM {plan['pml']:.2f}–{plan['pmh']:.2f}" if plan.get("pmh") and plan.get("pml") else " · pre-market range at 09:25")
             day = f" · {str(plan.get('dayType')).replace('_', ' ')} day" if plan.get("dayType") else ""

@@ -82,10 +82,32 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     # drive the regular session bar by bar
     rth = filter_session(today, "rth")
     mid_snap = None
+    waiting_snaps = []
     for i, b in enumerate(rth):
         await eng.team2_runner.on_bar(run_id, b)
         if i == 60:
             mid_snap = eng.team2_runner.detail(run_id)
+        if i % 5 == 0:
+            waiting_snaps.append(eng.team2_runner.detail(run_id))
+    # F53: on the "waiting for the 1st/2nd 2m pullback" line, a regime that cannot fire the setup must
+    # SAY so — session.py's E3/B9 stack gate and E4 chop gate skip silently, so without this the line
+    # promises an entry the next EMA13 touch would not actually take.
+    seen_blocked = False
+    for snap in waiting_snaps:
+        s = snap["summary"]
+        if "waiting for the 1st/2nd 2m pullback" not in s:
+            continue
+        regime, bias = snap["team2"].get("regime") or {}, snap["team2"].get("bias") or {}
+        want = "bull" if bias.get("direction") == "long" else "bear"
+        disagrees = bool(regime.get("stack")) and regime.get("stack") != want
+        if disagrees or regime.get("fan") == "chop":
+            assert "no entry until" in s, s
+            seen_blocked = True
+            if disagrees:
+                assert f"the stack must turn {want}" in s, s
+        else:
+            assert "no entry until" not in s, s
+    assert seen_blocked, "no waiting snapshot with a disagreeing regime in this session"
     assert mid_snap is not None and any(t["kind"].startswith("scenario_") for t in mid_snap["triggers"])
     assert "scenario 1" in mid_snap["summary"] or "in trade" in mid_snap["summary"], mid_snap["summary"]
     events = [e["event"] for e in ap.events]

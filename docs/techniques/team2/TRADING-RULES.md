@@ -614,6 +614,31 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   kind and widened the test's scan to `zargar/techniques/**` (the only unregistered kind it finds is
   this one). Advisory logging only — no trade or shape changed.
 
+- **F53 (2026-09-08 10:40 ET, FIXED — see change log)** The Armed page's and the phone's one-line plan
+  summary said `waiting for the 1st/2nd 2m pullback into the EMA13 (touches 0)` for a setup the regime
+  **cannot fire**. `session.py:407` (E3/B9, stack must agree) and `:410` (E4, no braided EMAs) skip
+  silently and deliberately — they are re-judged on every 2m bar, so minting an event would flood the
+  read — but nothing else surfaced them, so a blocked trigger looked identical to one the next EMA13
+  touch would take. Live today: QQQ's 15m close at 10:30 flipped the bias to **scenario 3 (bounce PDL)
+  → calls** while the EMA stack was still **bear** (ema13 717.34 < ema48 718.22 < ema200 718.90, spot
+  717.6). No touch of the EMA13 could have fired that plan; the line implied one would. The summary's
+  waiting branch now appends `— no entry until the stack must turn bull (E3/B9/E4)` (and
+  `, or a 200 EMA flush (T8)` on a range day, where T8 is the documented exception). Descriptive only:
+  the gate itself is unchanged and still lives in `session.py`. Guarded by an invariant in
+  `tests/test_team2_runner.py` that walks the session's snapshots and asserts the clause is present
+  exactly when the regime disagrees.
+- **F54 (2026-09-08 10:40 ET, observation — evidence for F27's open thresholds, NOT fixed)** QQQ's PDL
+  zone today is **716.56–717.03 — 0.47 wide against a 2m ATR of 0.72**, i.e. the whole zone is 0.65 ATR.
+  With `zone_tol_atr` and `flip_body_ratio` both shipping at **0**, the bias flipped twice in two 15m
+  bars: **10:15 close 716.505 flipped scenario 2 → 4 on a 0.055 margin (0.08 ATR)**, then **10:30 close
+  717.76 flipped 4 → 3** (1.0 ATR, decisive). The first flip is noise by any measure and it minted
+  `scenario_4@10:00`, which promptly died on `skip_no_trade_zone`; the second reversed the desk's
+  direction outright. Both flips are *correct* against the rules as written — this is the exact failure
+  F27 anticipated ("QQQ 2026-09-04 12:30 flipped on a 0.025 margin, 0.55 body, and flipped back 30 min
+  later"), now with a second independent day of evidence and a zone-width measurement to go with it.
+  Suggests the tolerance wants to scale with zone width, not just ATR. **Threshold work — for the
+  walk-forward and the user, not the watch job.**
+
 
 ## Theories to test
 
@@ -627,6 +652,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 ## Change log
 
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
+- **2026-09-08 (market watch, run 20)** — the plan summary's waiting line now names the silent E3/B9 stack gate and E4 chop gate when they block the setup (F53). Wording only; no rule, threshold, gate or money path changed. F54 logged as observation.
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
