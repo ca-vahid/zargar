@@ -578,8 +578,9 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   → **−$63**, while the model scored the same trade **+32.7 %** at mark 0.7263.
   · trade #2 fired 10:06, filled 9 × **$0.63**, same target, exit at 10:08:00 filled **$0.68**
   → **+$45**, model **+32.9 %**.
-  Model day: 2 trades, 2 wins, **+65.6 %**. Book day: **−$18** realised (**−$65.84** after $58 of
-  commissions), i.e. the read and the book disagree in *sign* on the desk's first two trades. The gap
+  Model day: 2 trades, 2 wins, **+65.6 %**. Book day: **−$18** realised gross (**−$65.84** after
+  **$47.84** of commissions — 23 contracts × 2 legs × $1.04; the $58 in the first draft of this note
+  was an estimate, the 16:00 scorecard has the exact figures), i.e. the read and the book disagree in *sign* on the desk's first two trades. The gap
   is not the model's premium series — it is **when the sell is sent**: on a target that sits inside one
   bar's range, price is routinely back through the level by the close. The engine already runs an
   exit-only ~2 s quote watch (stop + premium stop + failed-exit retry), so the target could be armed

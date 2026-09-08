@@ -1871,3 +1871,59 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   +65.6% on the model read: the F37 divergence), IWM 14 touches and 0 entries, SPY 0. Still open for
   the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
   **F63**, **F64**, **F65**, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-08 16:20 ET (run 31 — post-close: the session closed clean, the queued F66 deploy went out, F67 fixed — the desk can read a closed day again)
+
+- **Deployed twice, both after the close, nothing armed and nothing open.** First
+  `scripts\start.ps1 -Detach` at 16:05 ET picked up run 30's queued **F66** commit `ce8c543`; the
+  second at 16:17 ET carried this run's **F67** (`55d1b61`). `/api/health` ok, **v0.7.11**, armed 18
+  (all tips/EM — Team2's three are disarmed for the day). Scheduler re-registered
+  `team2_plan_nightly at 17:00 ET` and `team2_preopen at 09:25 ET` on both boots; the desk loss tally
+  re-seeded to **1 loser** from today's disarmed plans (F38), which is correct.
+- **The session closed cleanly.** All three plans went `TechniquePlanScored` → `TechniquePlanDisarmed`
+  at 16:00:00 ET with `reason: session closed`, `flatten: false`, `openLeft: 0`, `stopReason: null` —
+  no `clock_flatten` error, nothing to unwind, no position anywhere. The **15:32 `skip_last_entry`**
+  (D6) is the last event on each read. Banked 1m bars: **390 / 390 minutes 09:30 → 15:59 with zero
+  gaps on SPY, QQQ and IWM**, so even the 14:24–14:33 outage window is complete in the record.
+- **The day, graded.** **SPY** 0 fires (scenario 4 = break PDL at 09:45, one no-trade-zone refusal at
+  10:00). **QQQ** the only trades of the day: both `pm_break_down@09:30` retests of 716.90 —
+  14 × QQQ260908P00714000 @ $0.655 (10:02→10:04) and 9 @ $0.63 (10:06→10:08) — model **+32.69 %** and
+  **+32.92 %**, book **−$92.12** then **+$26.28**. **IWM** 0 entries against **14 touches** on the
+  13:15 pm-break that later failed, plus 2 `skip_no_contract` and 3 no-trade-zone refusals.
+  **Desk day: book 10,000.00 → 9,934.16 = −$65.84** — gross −$18.00 plus **$47.84** of commissions
+  (23 contracts × 2 legs × $1.04). Loss tally ends **1 of 2** on the book basis (F37). F50's estimate
+  of "$58 of commissions" is corrected in place to the scorecard's exact $47.84.
+- **F67 (new, the Team2 half FIXED and deployed `55d1b61`; the shared half PROPOSED) — after the
+  close the day was invisible, and where visible it was wrong.** The shared **Armed > History** list
+  showed **no SPY/QQQ/IWM row at all** for 2026-09-08 (its day header read *"42 plan(s) · 10 fired ·
+  0.00 realized"*): `armed_history` orders by `created_at` and the page asks for 50 rows, and Team2's
+  plans are always built the *previous* session — today's on Friday at 17:34 ET — so 50 plans built
+  Sep 7–8 by EM and tips pushed them out. Sorting by `plan_for` alone would not fix it (Sep 8 has 45
+  rows; Team2's are still the oldest within the day). Second half: that table's Realized column renders
+  `state.realizedPnl`, which is **gross** — QQQ read **−18.00** against the book's **−65.84**, though
+  the net figure sits on the same row in `state.scorecard.realizedPnl` and shared halts have been net
+  since F32. Both halves are EM's technique service / the shared Armed page → **proposals, logged in
+  `docs/PLATFORM-RULES.md` §3**. **Fixed the half this desk owns:** `Team2Service.runs()` now returns a
+  `result` block per plan (fires, matched, the model % sum, the book's net *and* gross, the skip tally)
+  and the Team2 page's History tab renders a **"How it went"** column — verified live in the browser:
+  *"2 trade(s) · -65.84 book · read +65.6%"* (QQQ), *"no trade · 6 refused"* (IWM), *"no trade ·
+  2 refused"* (SPY), with commissions and per-skip counts in the tooltip. Reporting only — no rule,
+  threshold, gate, size or money path changed. 57 Team2 tests pass (new F67 assertions in
+  `test_team2_runner.py`); changelog entry added under 0.7.11.
+- **Replay parity exact on all three** (JSON compare of every event *and* every trade): SPY 3 / QQQ 17
+  / IWM 22 events and QQQ's 2 trades reproduced byte-identically. **Book flat:** Team2 Practice cash
+  **and** equity **$9,934.16**, zero positions, zero Team2 working orders.
+- **Log clean.** Exactly one ERROR in the live file and it is not ours (an asyncio
+  `ConnectionResetError` on a client socket at 13:08 PDT, before the second restart); zero errors and
+  zero Tracebacks since the last boot. EM's `score_run … StringDataRightTruncationError` boot warning
+  recurs (not Team2). The expired `QQQ260908P00714000` is still in the OPRA batch tonight — F44 drops
+  it on the first refresh after expiry, so tomorrow's first run should confirm it is gone.
+- **Next run (tomorrow 09:00 ET, first of the day) must:** (1) confirm the **17:00 ET job minted
+  2026-09-09 plans once per symbol** — F41, never twice, and the desk restarted twice today, so check
+  the count before anything else; (2) confirm the **09:25 pre-open** completed all three
+  (`pmh`/`pml`/`dayType`/`sizingAtOpen`/`complete: true`) and call `POST /api/team2/preopen-now` if
+  not; (3) check quotes/1m bars/OPRA freshness at the open; (4) glance at the new **"How it went"**
+  column on Team2 → History — yesterday's row should read *"2 trade(s) · -65.84 book · read +65.6%"*.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, F67's two shared-side halves, and the F30-family
+  question of which premium series is authoritative.
