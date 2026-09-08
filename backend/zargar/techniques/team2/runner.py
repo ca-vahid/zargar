@@ -858,6 +858,20 @@ class Team2Runner(PlanRunner):
         # summary in the method's words
         regime = read.get("regimeLast") or {}
         bias = read.get("bias") or {}
+        # F66 (2026-09-08, run 30): at 15:33 ET all three rows still read "waiting for the 1st/2nd 2m
+        # pullback into the EMA13" although `session.py` had already minted `skip_last_entry` at 15:32 —
+        # nothing can be entered after 15:30 (D6) and the book is flat at 15:45 (C3). The trigger rows
+        # already carried `windowOpenNow: false`; the one line the Armed page and the phone show did not,
+        # so the desk read as if the next EMA13 touch were still live. Same class as F53/F57/F60:
+        # descriptive only — the cutoff itself lives in session.py. Taken from the session's own event
+        # rather than the wall clock, so a replay of the day says exactly the same thing.
+        entries_closed = any(e.get("event") == "skip_last_entry" for e in (read.get("events") or []))
+        past_flatten = bool(ap.last_bar_ts) and minute_of_day(ap.last_bar_ts) + 1 >= rules_now.flatten_min
+        last_hhmm = f"{rules_now.last_entry_min // 60:02d}:{rules_now.last_entry_min % 60:02d}"
+        flat_hhmm = f"{rules_now.flatten_min // 60:02d}:{rules_now.flatten_min % 60:02d}"
+        closed_s = ("" if not entries_closed else
+                    "the desk is flat for the day (C3)" if past_flatten else
+                    f"past {last_hhmm} — no new entries today, flat by {flat_hhmm} (D6/C3)")
         if ap.status in ("expired", "disarmed"):
             pass                                          # the base summary already says so
         elif ap.status == "paused":
@@ -888,9 +902,10 @@ class Team2Runner(PlanRunner):
                     live_s = f" · book flat — the desk's contract is already closed ({kind or 'exit'})"
             strike = open_pos.get("strike")
             strike_s = f"{strike:g}" if isinstance(strike, (int, float)) else "?"
+            flat_s = f" · sold at {flat_hhmm} whatever the read says (C3/D-1)" if entries_closed and not past_flatten else ""
             d["summary"] = (f"in trade {open_pos.get('setup')}: {'call' if open_pos.get('call') else 'put'} {strike_s}, "
                             f"{open_pos.get('remaining', 1):.2f} left{adds_s}, model peak +{open_pos.get('peakPct', 0):.0f}%{tgt_s} — "
-                            f"stop is a 2m close through the {guard}{live_s}")
+                            f"stop is a 2m close through the {guard}{live_s}{flat_s}")
         elif bias.get("scenario"):
             live = [s for s in setups if not s.get("dead")]
             # F24: report the allowance of the setup the session would actually enter — `session.py` takes the
@@ -941,7 +956,12 @@ class Team2Runner(PlanRunner):
             # could not enter again today. Say whose touches they are and that they are spent. The count
             # comes from `picked`, which is often NOT the setup the scenario label names (F24), so name it.
             max_touch = int(getattr(rules_now, "pullback_max_touches", 2) or 2)
-            if picked and touches >= max_touch:
+            if entries_closed:
+                # F66: nothing is waiting on a pullback any more, and "no entry until the stack turns
+                # bull" / "the last pullback sat inside the range" are answers to a question the clock
+                # has already closed — drop them with it.
+                state_s, blocked_s, refused_s = closed_s, "", ""
+            elif picked and touches >= max_touch:
                 state_s = (f"{picked.get('id')}: its first {max_touch} pullbacks are spent (touches {touches}) — "
                            "further touches are watch-only (D9/P6)")
             else:
@@ -954,7 +974,8 @@ class Team2Runner(PlanRunner):
             day = f" · {str(plan.get('dayType')).replace('_', ' ')} day" if plan.get("dayType") else ""
             d["summary"] = (f"no scenario yet — needs a 15m close above {pdh.get('top', 0):.2f} (calls) or below "
                             f"{pdl.get('bottom', 0):.2f} (puts){pm}{day}"
-                            + (f" · EMA stack {regime.get('stack')}, {regime.get('fan')}" if regime else ""))
+                            + (f" · EMA stack {regime.get('stack')}, {regime.get('fan')}" if regime else "")
+                            + (f" · {closed_s}" if closed_s else ""))
         live = [{"trigger": t.trigger_id, "livePct": t.live_pct, "trimsDone": t.trims_done, "isAdd": bool(getattr(t, "is_add", False))}
                 for t in ap.trades.values() if t.status == "open" and getattr(t, "live_pct", None) is not None]
         d["team2"] = {"sheet": plan.get("sheet"), "dayType": plan.get("dayType"), "sizingAtOpen": plan.get("sizingAtOpen"),

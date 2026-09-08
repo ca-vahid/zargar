@@ -1816,3 +1816,58 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   close-vs-target slippage. Desk loss tally still **1 of 2** on the book basis (F37). Still open for
   the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
   **F63**, **F64**, **F65**, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-08 15:33 ET (run 30 — the 15:30 cutoff held; F66 fixed: the headline was still promising a pullback entry that had closed)
+
+- **Alive and clean, no restart.** `/api/health` ok, **v0.7.11**, armed 78; one armed plan per symbol
+  for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode **auto**, book
+  Team2 Practice `b9dcd8db…`, `needsAttention: false`, `readError: null` on all three. Global halt
+  `engaged: false`, `books: {}` (no per-book halt), no technique pause. Pre-open still complete on all
+  three (SPY PM 766.73–770.48, QQQ 716.90–723.72, IWM 293.80–295.91).
+- **Data real-time.** Quotes 8–9 s old at the moment of the read, `session: regular` (SPY 767.08 /
+  QQQ 718.93 / IWM 295.36); banked 1m bars **363 of 363 minutes 09:30→15:32 ET with zero gaps** on all
+  three; the read is at `bars2m: 181`, `barAgeSeconds` 61–74. The Alpaca **OPRA** batch is polling
+  (last request 15:33 ET). EMA/fan values present on all three — SPY bear/trend, QQQ bear/trend,
+  IWM mixed/trend. Sigma still the one index-wide 0.1203 (F51/F59).
+- **D6 verified — the last-entry cutoff fired correctly.** All three reads minted `skip_last_entry` on
+  the **15:32** 2m close: *"past 15:30 — no new entries, managing what is open until the 15:45 flatten
+  (D6/C3)"*. Emitted once per session (`last_entry_noted`), on the late side only, exactly as F26
+  built it. Every trigger row carries `windowOpenNow: false`.
+- **The tape did nothing new.** SPY still 3 events (last real one 10:00), QQQ still 17 (last 11:00),
+  IWM still 22 (last touch 14:34) — the 15:32 cutoff note is the only new event on each. Counts hold
+  at QQQ 2 trades / IWM touches 14, entries 0. No position is open anywhere, so the 15:45 flatten will
+  be a no-op; nothing to unwind before the close.
+- **F66 (new, FIXED this run, not yet deployed) — the one line the desk reads was still promising a
+  trade the clock had closed.** At 15:33 all three Armed rows read *"waiting for the 1st/2nd 2m
+  pullback into the EMA13 (touches 0) · no entry until the stack turns bull · the last pullback sat
+  inside the pre-market range"* — three minutes after entries closed for the day. The read knew
+  (`skip_last_entry`) and the API knew (`windowOpenNow: false`); only the human sentence did not. Same
+  family as F53/F57/F60. Fixed in `runner.py`'s snapshot: the state line becomes *"past 15:30 — no new
+  entries today, flat by 15:45 (D6/C3)"* (and *"the desk is flat for the day (C3)"* after 15:45), the
+  now-moot "no entry until…" / "no-trade zone" clauses are dropped with it, and an open position's
+  line gains *" · sold at 15:45 whatever the read says (C3/D-1)"*. Driven by the session's own event,
+  not the wall clock, so replays say the same thing. **Reporting only — no rule, threshold, gate, size
+  or money path changed.** 57 Team2 tests pass (new F66 assertions in `test_team2_runner.py`).
+- **DEPLOY QUEUED, deliberately not deployed this run.** Run 29 queued "do not restart between now and
+  the 15:45 flatten"; a restart at 15:33 would drop the desk dark across the flatten window for no
+  reason. Committed on the branch — **the next run (16:00 ET, after the close) must run
+  `scripts\start.ps1 -Detach`** to pick it up.
+- **Replay parity exact on all three** (JSON compare of every event *and* every trade): SPY 3 / QQQ 17
+  / IWM 22 events and QQQ's 2 trades reproduced byte-identically, including the new `skip_last_entry`
+  rows. **Book untouched:** Team2 Practice cash **and** equity **$9,934.16**, zero positions; the last
+  twelve orders on the desk are all tips/EM fills, none Team2. Desk loss tally unchanged at **1 of 2**
+  on the book basis (F37).
+- **Log clean for Team2:** zero Tracebacks and zero ERRORs of any kind in the live file (covering
+  15:18 ET →). Rotation still ~5 MB every 20–35 minutes, dominated by OPRA `httpx` INFO lines.
+- **UI verified** (in-app browser, `localStorage["zargar_token"]` recipe from run 29): `/team2` Plans
+  and Armed tabs render correctly; the plan rows correctly show **"Sep 4, 5:34 PM ET"** as the build
+  time for a 2026-09-08 session — Friday's 17:00 job planning across the weekend **and Labor Day
+  Monday**, which is F41/F42's calendar fix working as intended in production.
+- **Next run (16:00 ET, after the close) must:** (1) **deploy** — `scripts\start.ps1 -Detach` from
+  `C:\Cursor\zargar`, then re-check `/api/team2/status` and confirm the F66 wording; (2) confirm the
+  session closed cleanly — plans `expired`/`disarmed`, no position left open, no `clock_flatten` errors
+  in the journal; (3) confirm the **17:00 plan job** mints tomorrow's (2026-09-09) SPY/QQQ/IWM plans
+  once each (F41: never twice); (4) grade the day — QQQ 2 trades (−63 then +45, **−18** on the book vs
+  +65.6% on the model read: the F37 divergence), IWM 14 touches and 0 entries, SPY 0. Still open for
+  the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
+  **F63**, **F64**, **F65**, and the F30-family question of which premium series is authoritative.

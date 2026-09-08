@@ -947,6 +947,23 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   break that is merely retesting (that retest is F20's small-size L2.6 entry), so the death test wants
   the *close*, not the low.
 
+- **F66 (2026-09-08 15:33 ET, FIXED same run — reporting; the headline kept promising a pullback entry
+  after the 15:30 cutoff).** At 15:33, three minutes past the last-entry time, all three Armed rows
+  still read "waiting for the 1st/2nd 2m pullback into the EMA13 (touches 0) … no entry until the
+  stack turns bull … the last pullback sat inside the pre-market range" — a sentence about a trade
+  that could not be taken for the rest of the day. `session.py` knew: it had minted `skip_last_entry`
+  on the 15:32 close on all three symbols (F26), and the trigger rows already carried
+  `windowOpenNow: false`. Only the one line the Armed page and the phone show was still speaking as
+  if the next EMA13 touch were live — the same class as F53 (silent stack gate), F57 (silent
+  no-trade-zone refusal) and F60 (spent allowance): a gate that stops the desk in silence. Fixed in
+  `runner.py`'s snapshot: past the cutoff the state line becomes "past 15:30 — no new entries today,
+  flat by 15:45 (D6/C3)", and after the flatten "the desk is flat for the day (C3)"; the "no entry
+  until…" and "no-trade zone" clauses are dropped with it, since they answer a question the clock has
+  already closed. An open position keeps its own line and gains " · sold at 15:45 whatever the read
+  says (C3/D-1)" — on the phone at 15:40 that is the fact that matters. Read from the session's own
+  `skip_last_entry` event, not the wall clock, so a replay of the day says exactly the same thing.
+  **Reporting only — no rule, threshold, gate, size or money path changed.**
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -962,6 +979,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 - **2026-09-08 (market watch, run 25)** — no code change. Measured, on today's banked 1m tape, what each of the four no-trade-zone refusals actually did (spot basis) and worked F58's proposed clamp through them: it would have **allowed SPY 10:00** (target hit in the same minute, zero adverse excursion) but **also QQQ 10:16** (3.94 points against, target never reached), and would still refuse QQQ 11:00 and IWM 11:26 — the two that ran 75 % and 98 % of the way to target. So the clamp is a precedence fix that takes a winner and a loser together, and does not address the width F56 measures. Logged as a follow-up under F58. Also verified the desk-wide loss tally against the persisted rows (1 of 2, book basis): re-entries carry `#N` trigger ids so they group as separate positions, only X5 `+add` legs share one. No rule, threshold, gate, size or money path changed.
 
 - **2026-09-08 (market watch, run 27)** — **F60 fixed** (`47b0460`, reporting only): once a setup has spent its two-pullback D9 allowance the Armed + phone headline says so and names the setup the touch count belongs to, instead of reading "waiting for the 1st/2nd 2m pullback into the EMA13 (touches 8)" on a setup that can no longer enter today; the snapshot's `team2` block also carries the 09:25 `pmh`/`pml`/`complete`. **F61 and F62 logged as proposals** (both money-path, user's call): a `skip_no_contract` refusal spends the D9 allowance although F18 already exempts "not a tradeable location" refusals, and a touch has no reset, so a drift sitting on the EMA13 counts as a fresh pullback every 2 minutes (IWM printed touches #3–#8 in twelve minutes). No rule, threshold, gate, size or money path changed.
+- **2026-09-08 (market watch, run 30)** — **F66 fixed** (reporting only): past the 15:30 last-entry cutoff the Armed + phone headline says so instead of promising "waiting for the 1st/2nd 2m pullback into the EMA13", and an open position's line names the 15:45 flatten. Driven by the read's own `skip_last_entry` event so replays agree. Tests: 57 Team2 tests pass (new F66 assertions in `test_team2_runner.py`). No rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, runs 28–29)** — no code change. **F63/F64** logged after a 9-minute unexplained outage (14:24→14:33 ET; a fire during downtime would be neither traded nor recorded, and the catch-up window journals twice), **F65** logged at 15:05: a failed pm-range break is never invalidated and `pm_up_done`/`pm_dn_done` are day-scoped, so one failed break spends the level for the session. All three are proposals for the user — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 26)** — **F59 logged; its reporting half fixed.** IWM's 13:30 PM-break retest was refused `skip_no_contract` because the *modelled* 296 call marked $0.199 against the $0.20 floor, while the real 296C was bid 0.24 / ask 0.25 on 70,329 contracts — the premium model is a veto over a live trade, and `_sigma` returns one index-wide VIX1D for SPY, QQQ and IWM alike. Deployed (reporting only): the refusal now names the modelled premium and its sigma, and is recorded with `note_once` so it reaches the Armed + phone headline — `skip_no_contract` was already in F57's headline list but `_skipped` was never set, so the clause could never fire. **No rule, threshold, gate, size or money path changed**; letting the live chain (or a per-symbol sigma) decide is written up under F59 as a proposal for the user.
 - **2026-09-08 (market watch, run 22)** — **F57 fixed**: the setup's current no-trade-zone / range-confirmation refusal is serialized on the read and stated on the Armed + phone headline, instead of the page reading "touches 0" while every pullback was refused. Reporting only — no rule, threshold, gate, size or money path changed.

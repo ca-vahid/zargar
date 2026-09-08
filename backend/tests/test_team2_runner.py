@@ -84,13 +84,28 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     mid_snap = None
     waiting_snaps = []
     waiting_setups: list[list[dict]] = []
+    late_snaps = []
     for i, b in enumerate(rth):
         await eng.team2_runner.on_bar(run_id, b)
         if i == 60:
             mid_snap = eng.team2_runner.detail(run_id)
         if i % 5 == 0:
-            waiting_snaps.append(eng.team2_runner.detail(run_id))
-            waiting_setups.append([dict(x) for x in ((eng.team2_runner.last_read(run_id) or {}).get("setups") or [])])
+            snap_now = eng.team2_runner.detail(run_id)
+            waiting_snaps.append(snap_now)
+            read_now = eng.team2_runner.last_read(run_id) or {}
+            waiting_setups.append([dict(x) for x in (read_now.get("setups") or [])])
+            if any(e["event"] == "skip_last_entry" for e in (read_now.get("events") or []))                     and ap.status == "armed":
+                late_snaps.append(snap_now)
+    # F66: past the 15:30 cutoff the one line the Armed page and the phone show must say so — it used to
+    # keep promising "waiting for the 1st/2nd 2m pullback into the EMA13" that no touch could take.
+    assert late_snaps, "no armed snapshot after the last-entry cutoff in this session"
+    for snap in late_snaps:
+        s = snap["summary"]
+        assert "waiting for the 1st/2nd 2m pullback" not in s, s
+        assert ("no new entries today" in s or "flat for the day" in s
+                or "in trade" in s or "paused" in s), s
+        if "in trade" not in s and "paused" not in s:
+            assert "no entry until" not in s and "no-trade zone (V6/B5)" not in s, s
     # F53: on the "waiting for the 1st/2nd 2m pullback" line, a regime that cannot fire the setup must
     # SAY so — session.py's E3/B9 stack gate and E4 chop gate skip silently, so without this the line
     # promises an entry the next EMA13 touch would not actually take.
