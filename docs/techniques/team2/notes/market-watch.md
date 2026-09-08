@@ -1848,7 +1848,7 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   line gains *" · sold at 15:45 whatever the read says (C3/D-1)"*. Driven by the session's own event,
   not the wall clock, so replays say the same thing. **Reporting only — no rule, threshold, gate, size
   or money path changed.** 57 Team2 tests pass (new F66 assertions in `test_team2_runner.py`).
-- **DEPLOY QUEUED, deliberately not deployed this run.** Run 29 queued "do not restart between now and
+- **DEPLOY QUEUED (commit `ce8c543`), deliberately not deployed this run.** Run 29 queued "do not restart between now and
   the 15:45 flatten"; a restart at 15:33 would drop the desk dark across the flatten window for no
   reason. Committed on the branch — **the next run (16:00 ET, after the close) must run
   `scripts\start.ps1 -Detach`** to pick it up.
