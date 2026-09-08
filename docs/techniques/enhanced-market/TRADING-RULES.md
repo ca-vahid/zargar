@@ -165,6 +165,11 @@ a number** (p. 72).
 - **Day 8 (2026-09-04):** KORU r2 (-1.65R avoided, RIGHT), NOW b2 (-1.59R avoided, RIGHT).
   Tally: 11 scored kills, right 6 (-13.7R avoided) vs wrong 5 (+11.7R forgone), net of the
   kills **-2.0R** in the critic's favour. The prompt stays; threshold unchanged.
+- **Day 9 (2026-09-08):** 9 kills - 8 right (-8.3R avoided, 3 of them moot/unfilled), 1 wrong
+  (RDDT b2 +1.28R; RDDT b3 +0.75R on the replay but never filled live). **Tally: 20 scored
+  kills, right 14 (-22.0R avoided) vs wrong 6 (+13.0R forgone), net +9.0R in the critic's
+  favour.** The critic is now clearly earning its keep; the "momentum into the level" kills
+  were right on 5 of 6 today. Prompt stays. Question 1.4b is closed unless the tally flips.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -286,6 +291,20 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-08 · Day 9 (Tue, first day on the per-technique books): zero fills, nine fires, the
+  critic right eight times.** 64 EM plans in EM Practice (45 armed: 42 from the evening batch +
+  3 auto-armed from his 09:23 watchlist post - MU, GOOGL, META - the first morning the board
+  armed by itself). 9 fires, 9 critic kills, 0 trades. On the real bars: ASTS -2.75R, SMCI
+  -1.03R, CRCL -1.16R, MU -1.54R, MUU -1.86R (all RIGHT kills, -8.3R avoided); CRCL b2, RDDT
+  b3, MU b2 never filled (moot); **RDDT b2 +1.28R (WRONG kill)**. Net if all taken: -7.1R.
+  Replay of the day (sweep --start 09-04): 4 valid fires, ALL on armed names (coverage 100%):
+  RDDT b2 +1.28R and b3 +0.75R (both critic-killed live), SMCI r1 -1.03R (killed, right), META
+  k1 -1.03R (the live runner skipped it four times and invalidated it at 15:11 - a skip that
+  saved a loss). Auto-armed board names: MU fired twice and was killed correctly both times;
+  GOOGL/META never fired. Books: EM flat at $10,000; the Tips and Team2 books traded on their
+  own (-$224 / -$66). The author's feed was read the same evening - see
+  `notes/2026-09-08-author-x-feed.md` and T-12 below: his wins are FLOW-timed (sweeps on the
+  ask vs open interest), an input we do not have intraday.
 - **2026-09-04 · Day 8 (Fri, 0DTE): zero fills, three right calls, and the author's best trade
   was invisible to our level detector.** 27 armed (LLM-verified, the bulk-arm bug from the
   evening before repaired), 3 fires, 0 trades: HOOD r1 skipped on a 15.4% NBBO spread (the
@@ -566,6 +585,17 @@ produced losing breakdown shorts). -0.035R/fire: **NOT adopted**, knob stays off
 actually needed: the morning board build's 3-session window (09-02..09-04) no longer contained the
 09-01 high; the evening build's window did, and the detector found 969.44 there only with the knob.
 Next test: `lookback_sessions=5` as its own variant, and the gap-through continuation (T-6/T-7).
+
+### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08)
+Every win he posted (TSLA +240% Aug 31, GPRO Aug 31, NVDA +115% Sep 4, Sep 8 OTM prints) names
+a SWEEP: contracts bought at the ask, many times the open interest, in a near-the-money 0DTE or
+weekly strike, minutes after the open; exit the same day on premium percent. Our level says
+where, his sweep says when. Theory: a fire counts only if such a sweep prints in the contract we
+would buy within N minutes of the touch (variant on history with chain snapshots first, then a
+shadow instance). Needs the engine piece: an intraday option-print sweep detector on the Alpaca
+stream (Flow is nightly today; its reads did flag NVDA 11 / MU 11 / TSLA 9 on his days). Adopt
+bar +0.3R/fire; measure exits in premium percent to compare with him (T-6). Evidence:
+`notes/2026-09-08-author-x-feed.md`, flow_reads 09-01..09-08.
 
 ## 4. Optimization backlog (ranked)
 
