@@ -105,6 +105,83 @@ class ProposalService:
         cap = int(self.engine.settings.get("techniques.tip.max_contracts_per_tip", 25) or 0)
         return min(qty, cap) if cap > 0 else qty
 
+    async def _tip_budget(self, policy, pid: str) -> tuple[float, str | None, str | None]:
+        """Reserve-aware per-tip budget (user decision 2026-09-07: ambitious
+        early, never lose a late tip to a full book). budget =
+        min(policy.budget_per_tip, free_cash / reserve_slots) — the desk always
+        keeps room for ~reserve_slots more ideas: full size while cash is
+        plentiful, gliding down as the book fills, then a minimum expression
+        (min_budget) while any cash lasts; only a truly empty book refuses.
+        Also makes two per-source knobs REAL that were parsed and enforced
+        nowhere: max_open_tips refuses a source's N+1th concurrent open tip,
+        budget_open_max shrinks the budget to the source's remaining open
+        allowance (cost basis of its open managed positions).
+        Returns (budget, sizedNote, refuseReason) — budget 0 means no proposal."""
+        eng = self.engine
+        base = float(policy.budget_per_tip)
+        pf = eng.positions.portfolio(pid) or {}
+        if pf.get("kind") == "shadow":
+            return base, None, None                    # research books: never gated
+        note = None
+        budget = base
+        slots = int(eng.settings.get("techniques.tip.reserve_slots", 3) or 0)
+        if slots > 0:
+            cash = max(0.0, float(pf.get("cash") or 0.0))
+            if cash < 50.0:
+                return 0.0, None, f"book full: ${cash:,.0f} free cash in {pf.get('name', pid)}"
+            glide = cash / slots
+            if glide < budget:
+                floor = float(eng.settings.get("techniques.tip.min_budget", 500.0))
+                budget = max(glide, min(floor, cash))
+                note = (f"Sized for the reserve: ${cash:,.0f} free cash across "
+                        f"{slots} slots → ${budget:,.0f} budget (full is ${base:,.0f}).")
+        n_open, open_cost = await self._source_open(pid, policy.name)
+        if int(policy.max_open_tips or 0) > 0 and n_open >= int(policy.max_open_tips):
+            return 0.0, None, (f"source cap: {policy.name} already has {n_open} open tips "
+                               f"(max_open_tips {policy.max_open_tips})")
+        cap_open = float(policy.budget_open_max or 0)
+        if cap_open > 0:
+            room = cap_open - open_cost
+            if room < 50.0:
+                return 0.0, None, (f"source budget spent: ${open_cost:,.0f} of "
+                                   f"${cap_open:,.0f} already open for {policy.name} "
+                                   f"(budget_open_max)")
+            if room < budget:
+                budget = room
+                note = ((note + " ") if note else "") + \
+                    f"Capped to {policy.name}'s remaining open budget ${room:,.0f}."
+        return budget, note, None
+
+    async def _source_open(self, pid: str, source: str) -> tuple[int, float]:
+        """(count, cost basis $) of the source's OPEN managed tip positions in
+        this book — what budget_open_max / max_open_tips are judged against."""
+        n, cost = 0, 0.0
+        async with self.engine.sf() as session:
+            rows = (await session.execute(select(ManagedPositionRow).where(
+                ManagedPositionRow.technique == "tip",
+                ManagedPositionRow.portfolio_id == pid,
+                ManagedPositionRow.status.in_(("open", "attention"))))).scalars().all()
+        for r in rows:
+            if f"source:{source}" not in (r.tags or []):
+                continue
+            n += 1
+            for leg in (r.legs or []):
+                cost += abs(float(leg.get("avgFill") or 0) * float(leg.get("qty") or 0)
+                            * float(leg.get("multiplier") or 1.0))
+        return n, cost
+
+    async def _refuse(self, *, signal_id: str | None, reason: str,
+                      run_id: str | None = None) -> None:
+        """A tip that minted no proposal because the book/source is full — on
+        the record, never silent (the analyst's trail must show WHY)."""
+        log.warning("no proposal: %s", reason)
+        with contextlib.suppress(Exception):
+            await self.engine.journal.append(
+                ev.TIP_LANE_DECIDED,
+                {"signalId": signal_id, "lane": "refused", "reason": reason,
+                 **({"runId": run_id} if run_id else {})},
+                aggregate_type="signal", aggregate_id=signal_id or run_id or "tip")
+
     def _cap_premium(self, qty: int, limit: float) -> int:
         """Per-tip premium concentration cap (BBAI 2026-09-04: 25 x $0.51 =
         $1,275 on one tip made a single loser the whole day). Caps the option
@@ -129,7 +206,10 @@ class ProposalService:
         eng = self.engine
         from ..signals.sources import resolve_policy
         policy = resolve_policy(eng.settings, signal_row.source_name)
-        budget = float(policy.budget_per_tip)
+        budget, glide_note, refuse = await self._tip_budget(policy, portfolio_id)
+        if refuse:
+            await self._refuse(signal_id=signal_row.id, reason=refuse, run_id=run_id)
+            return None
         pf = eng.positions.portfolio(portfolio_id) or {}
         analyst = (signal_row.extraction or {}).get("analyst") or {}
         bracket = None
@@ -186,7 +266,10 @@ class ProposalService:
             rationale=signal_row.thesis_summary,
             context={"techniqueId": "tip", "sourceName": signal_row.source_name,
                      "armedRunId": run_id, "triggerId": trigger_id,
-                     "vehicle": vehicle, "explain": explain,
+                     "vehicle": vehicle,
+                     "explain": explain + ((" " + glide_note) if glide_note else ""),
+                     **({"sizing": {"budget": round(budget, 2), "glide": glide_note}}
+                        if glide_note else {}),
                      "signalPrices": {"entry": entry, "stop": stop,
                                       "target": (targets[0] if targets else None)},
                      **({"exitPlan": exit_plan} if exit_plan else {}),
@@ -215,7 +298,8 @@ class ProposalService:
         from ..signals.sources import resolve_policy
 
         eng = self.engine
-        pid = str(eng.settings.get("trading.default_portfolio", ""))
+        # tip proposals fill in the tips lane's own Practice book (2026-09-08), app default as fallback
+        pid = str(eng.settings.get("techniques.tip.default_portfolio", "") or eng.settings.get("trading.default_portfolio", ""))
         if not pid or eng.positions.portfolio(pid) is None:
             portfolios = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
             if not portfolios:
@@ -224,7 +308,10 @@ class ProposalService:
             pid = portfolios[0]["id"]
         pf = eng.positions.portfolio(pid) or {}
         policy = resolve_policy(eng.settings, signal_row.source_name)
-        budget = float(policy.budget_per_tip)
+        budget, glide_note, refuse = await self._tip_budget(policy, pid)
+        if refuse:
+            await self._refuse(signal_id=signal_row.id, reason=refuse)
+            return None
         # the lotto lane (0-3 DTE, user 2026-09-01): its own budget, tip-time
         # only, and no 0-DTE entries once the expiry-day flatten time has passed
         from ..techniques.tip.lotto import is_lotto, lotto_budget, past_flatten_time
@@ -275,7 +362,8 @@ class ProposalService:
                     context={"techniqueId": "tip", "sourceName": signal_row.source_name,
                              "confidence": sig.confidence, "verification": verification,
                              "sizing": {"budget": round(budget, 2), "qty": qty,
-                                        "maxLossPerSpread": round(max_loss * 100, 2)},
+                                        "maxLossPerSpread": round(max_loss * 100, 2),
+                                        **({"glide": glide_note} if glide_note else {})},
                              "vehicle": {"kind": "spread", "display": disp,
                                          "underlying": sig.ticker.upper(),
                                          "direction": sig.direction,
@@ -492,11 +580,12 @@ class ProposalService:
                 "sourceName": signal_row.source_name,
                 "confidence": sig.confidence,
                 "verification": verification,
-                "sizing": {"budget": round(budget, 2), "refPrice": limit, "qty": qty},
+                "sizing": {"budget": round(budget, 2), "refPrice": limit, "qty": qty,
+                           **({"glide": glide_note} if glide_note else {})},
                 "signalPrices": {"entry": sig.entry_price, "target": sig.target_price,
                                  "stop": sig.stop_price},
                 "vehicle": vehicle,
-                "explain": explain,
+                "explain": explain + ((" " + glide_note) if glide_note else ""),
                 "exitPlan": exit_plan,
                 "analystRunId": analyst.get("runId"),
                 "analyst": ({k: analyst.get(k) for k in

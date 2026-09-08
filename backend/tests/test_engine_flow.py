@@ -148,3 +148,17 @@ async def test_chart_history_seeded(engine):
     assert len(bars) >= 20  # synthesized history present
     bars5 = engine.bars.bars("NVDA", tf="5m", limit=10)
     assert bars5
+
+
+async def test_archived_book_leaves_lists_and_totals_but_stays_addressable(engine):
+    """2026-09-07: the Practice reset gave each technique its own book; the old shared
+    book is archived - out of every list/total, still readable by id for history."""
+    pid = sim_portfolio(engine)["id"]
+    assert any(p["id"] == pid for p in engine.positions.portfolios())
+    p = await engine.positions.set_archived(pid, True)
+    assert p["archived"] is True
+    assert all(q["id"] != pid for q in engine.positions.portfolios())
+    assert engine.positions.portfolio(pid) is not None                     # history/orders still resolve
+    assert any(q["id"] == pid for q in engine.positions.portfolios(include_archived=True))
+    p = await engine.positions.set_archived(pid, False)
+    assert p["archived"] is False and any(q["id"] == pid for q in engine.positions.portfolios())

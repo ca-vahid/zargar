@@ -675,6 +675,10 @@ button.bl-card:active { background: var(--surface-2); }
   .tq-scan-chip { min-height: 40px; min-width: 40px; padding: 6px 10px; }   /* a 1-letter ticker still needs a thumb */
   /* any pill that is a BUTTON is a tap target (flow chips on tip cards, run pills…) */
   button.status-pill { min-height: 40px; min-width: 40px; }
+  /* per-technique book picker + account pills (2026-09-07): 16px or iOS zooms
+     the page on focus, 40px or a thumb cannot hit them */
+  .dash-curve-book { font-size: 16px; min-height: 40px; }
+  .dash-acct { min-height: 40px; }
   /* Tips desk: knowledge notes + Discord source picker */
   .ver-chip { min-height: 40px; }
   .morning-row { min-height: 40px; }   /* the morning card's rows are buttons */

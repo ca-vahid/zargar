@@ -58,7 +58,7 @@ class PositionKeeper:
                     "id": p.id, "name": p.name, "kind": p.kind, "cash": p.cash,
                     "startingCash": p.starting_cash, "baseCurrency": p.base_currency,
                     "sourceName": p.source_name, "isDefault": p.is_default,
-                    "book": getattr(p, "book", None),
+                    "book": getattr(p, "book", None), "archived": bool(getattr(p, "archived", False)),
                     "venue": venues.get(p.id, "ibkr"),
                 }
             for pos in (await session.execute(select(Position))).scalars():
@@ -74,7 +74,7 @@ class PositionKeeper:
             "id": p.id, "name": p.name, "kind": p.kind, "cash": p.cash,
             "startingCash": p.starting_cash, "baseCurrency": p.base_currency,
             "sourceName": p.source_name, "isDefault": p.is_default,
-            "book": getattr(p, "book", None),
+            "book": getattr(p, "book", None), "archived": bool(getattr(p, "archived", False)),
             "venue": venue,
         }
 
@@ -116,8 +116,23 @@ class PositionKeeper:
         return info
 
     # --- queries ------------------------------------------------------------
-    def portfolios(self) -> list[dict]:
-        return list(self._portfolios.values())
+    def portfolios(self, *, include_archived: bool = False) -> list[dict]:
+        """Live books. Archived books (a retired Practice book) stay addressable by
+        id for history and orders but never appear in lists or totals."""
+        return [p for p in self._portfolios.values() if include_archived or not p.get("archived")]
+
+    async def set_archived(self, pid: str, archived: bool) -> dict:
+        p = self._portfolios.get(pid)
+        if p is None:
+            raise ValueError("unknown portfolio")
+        if p.get("kind") not in ("sim", "shadow"):
+            raise ValueError("only practice/research books can be archived")
+        async with self._sf() as session:
+            row = await session.get(Portfolio, pid)
+            row.archived = bool(archived)
+            await session.commit()
+        p["archived"] = bool(archived)
+        return dict(p)
 
     def portfolio(self, pid: str) -> dict | None:
         return self._portfolios.get(pid)
@@ -131,6 +146,8 @@ class PositionKeeper:
         for (p, _sym, _st), pos in self._positions.items():
             if pid and p != pid:
                 continue
+            if not pid and (self._portfolios.get(p) or {}).get("archived"):
+                continue            # an archived book's holdings are history, not exposure
             if abs(pos["qty"]) < 1e-9 and abs(pos["realizedPnl"]) < 1e-9:
                 continue
             out.append(self._enrich(pos))

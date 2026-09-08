@@ -87,7 +87,10 @@ sharing its `RULE (<family>` prefix, 2026-09-04). Filled tip proposals are adopt
 **adoption-geometry gate** (2026-09-04, `check_exit_geometry`: wrong-side/penny targets dropped,
 invalid stops re-placed at structure — journaled `TipGeometryRepaired`; one <5-min stop-out pauses
 tip autos for the session, `TipAutoPaused`; sim feed skips the bars fetch). Option sizing is capped
-per tip (`techniques.tip.max_premium_per_tip` $750) and earned-auto trust judges closed positions
+per tip (`techniques.tip.max_premium_per_tip` $750), the budget GLIDES with the book
+(2026-09-07: min(`budget_per_tip`, free cash / `reserve_slots`), floor `min_budget`; empty book
+refuses on the record `TipLaneDecided lane=refused`; per-source `max_open_tips`/`budget_open_max`
+are enforced in `_tip_budget` — before that they were dead knobs), and earned-auto trust judges closed positions
 PLUS the immediate shadow book's aged marks (2026-09-04 user decision — armed-only trust never
 graduates momentum sources). Closed tip
 positions get a nightly **retro** (`tip_retro`, `techniques.tip.retro_*`).
@@ -193,6 +196,7 @@ gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tool
 `backend/` or every route screenshots the login page); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
 parallel with it.
 **Bug-missed trades (2026-09-02):** replay them AFTER the fix into the counterfactual ledger (`execution/counterfactual.py`, `technique_review counterfactual <run> --trigger r1 --reason ...`, Armed > History "Missed by a bug") - NEVER book a synthetic fill into a portfolio (PLATFORM-RULES invariant).
+**One Practice book per technique (2026-09-08):** `techniques.<id>.default_portfolio` routes each technique's fills (EM also `technique.arm.default_portfolio`); the old shared book is archived, never a fallback (PLATFORM-RULES invariant 15).
 **New technique? Start at `docs/BUILDING-A-TECHNIQUE.md`** — the engine's capabilities (marketstructure,
 PlanRunner hooks, settings resolver `techniques.<id>.<key>` → `execution.<key>`, scheduler, calendar,
 chain snapshots, tags/caps, never-list) and the testing bar. **`docs/PLATFORM-RULES.md` is the shared judgement log** (invariants, engine-level findings, shared-knob

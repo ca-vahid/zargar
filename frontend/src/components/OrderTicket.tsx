@@ -88,11 +88,11 @@ export function OrderTicket({
       return [...realPortfolios]
         .sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))[0]?.id;
     }
-    const def = practicePortfolios.find((p) => p.id === defaultPid);
-    return (def ?? practicePortfolios[0])?.id;
+    // practice: only a CONFIGURED default pre-fills; with none the ticket asks
+    return practicePortfolios.find((p) => p.id === defaultPid)?.id;
   }, [mode, realPortfolios, practicePortfolios, defaultPid, brokerages]);
 
-  const pid = portfolioId || modeDefault || defaultPid || portfolios[0]?.id || "";
+  const pid = portfolioId || modeDefault || "";
   const portfolio = portfolios.find((p) => p.id === pid);
   const needsLimit = orderType === "LMT" || orderType === "STP_LMT";
   const needsStop = orderType === "STP" || orderType === "STP_LMT";

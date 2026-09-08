@@ -65,6 +65,10 @@ class Portfolio(Base):
     # NULL = immediate (rows from before the split) or not a shadow portfolio.
     book: Mapped[str | None] = mapped_column(String(12))
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 2026-09-07 (user): a retired book. Kept with its positions, orders and history for the
+    # audit trail, but out of every list and total - the Practice reset gave each technique
+    # its own book and the old shared one must not count toward the $40k.
+    archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

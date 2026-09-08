@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.8";
+export const APP_VERSION = "0.7.9";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -18,12 +18,21 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "0.7.8",
+    version: "0.7.9",
     date: "2026-09-07",
     title: "Adjustable Cartel preparation risk",
     items: [
       { tag: "improved", text: "Cartel preparation supports up to 10% equity risk per setup in both Practice and Live settings. New Practice configurations default to 10%; new Live configurations stay at 1%, and saved values are preserved." },
       { tag: "improved", text: "Settings explain that the separate premium budget still limits spending. Changing risk does not enable Live trading or bypass cash, exposure and order checks." },
+    ],
+  },
+  {
+    version: "0.7.8",
+    date: "2026-09-07",
+    title: "Room for the next idea",
+    items: [
+      { tag: "new", text: "Glide sizing for tips: each new tip is budgeted at min(full budget, free cash ÷ 3), so the first positions get full size, later ones glide down, and a late great tip still gets a minimum position instead of bouncing off an empty book. The card says when the reserve trimmed it; a truly full book declines on the record." },
+      { tag: "fixed", text: "The per-source limits (max open tips, open budget cap) existed in Settings but were enforced nowhere — they're real now: a source's open dollars shrink its next budget, and its open-count cap declines the tip with the reason journaled." },
     ],
   },
   {
@@ -40,6 +49,10 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-07",
     title: "Clearer Cartel plan details",
     items: [
+      { tag: "fixed", text: "The Dashboard understands the per-technique Practice books: the headline totals all four ($40,000) and the equity chart now plots all four combined, with a picker for any single desk's book — it used to total four books in the headline while charting one arbitrary book underneath. The day's move and the sparkline follow the same set." },
+      { tag: "improved", text: "Holdings name the book that holds them, so you can see which desk is carrying a position at a glance. The archived Practice book never appears — not in the total, the chart, the accounts row or the holdings." },
+      { tag: "major", text: "Practice reset: one $10,000 Practice book per technique (EM, Tips, Team2, Options Cartel - $40,000 in all). The old shared book is archived: its holdings and history stay readable, but it is out of every list and total and trades nothing." },
+      { tag: "improved", text: "Manual tickets ask which book a trade goes in instead of guessing; Flow sits last in the technique list (context only, no book)." },
       { tag: "fixed", text: "Opening or refreshing a Cartel record no longer duplicates its chart." },
       { tag: "improved", text: "Each Cartel record has a dedicated, bookmarkable page with Back navigation. Record links can also open in a new browser tab." },
       { tag: "improved", text: "Plan details lead with status, entry conditions and the actual exit schedule. Evidence and manual execution controls are separate, and the chart starts with the latest 30 saved sessions." },
@@ -61,6 +74,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-07",
     title: "Cartel follows your workspace",
     items: [
+      { tag: "improved", text: "Every trading technique now has its own day-loss pause (Team2, EM and Tips at 10% of the book on practice) with the book breaker at 15% above them as the catastrophe stop — the ladder is one table in PLATFORM-RULES; EM and Tips settings panels show their number." },
       { tag: "fixed", text: "Cartel preparation now shows accounts, settings and saved automatic plans for the selected Practice or Live workspace." },
       { tag: "new", text: "Live preparation has its own disabled-by-default setup, explicit execution and overnight acknowledgements, and the existing Cartel live-auto permission." },
       { tag: "improved", text: "Existing Practice settings remain intact. Switching workspace prevents preparation from arming in the previous mode while held-position protection continues." },
@@ -82,6 +96,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-07",
     title: "Options Cartel desk",
     items: [
+      { tag: "fixed", text: "Research (shadow) books no longer pad the Dashboard. \"My holdings\" showed 61 positions worth $327k under a balance that counted 3 of them — the per-source scorecard books are practice-SIDE but they are not money. Real positions now stand alone, with a \"+ research (51)\" toggle that reveals them dimmed and badged; Recent orders and Fills work the same way, and shadow rows there are labelled research instead of \"practice\"." },
       { tag: "new", text: "Options Cartel has its own research desk, source library, dated screen profiles, saved plans and history." },
       { tag: "new", text: "Capture capitalization and industry evidence, scan a focus list, and review completed results or retry individual data failures." },
       { tag: "new", text: "Review share or option expressions, arm alerts, proposals or automatic execution, and manage positions through the shared risk controls." },
