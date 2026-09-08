@@ -55,6 +55,7 @@ export interface RouteState {
   flowSymbol?: string | null;
   /** analyst run drill-in: /inbox/analyst/<runId> */
   analystRunId?: string | null;
+  cartelRunId?: string | null;
 }
 
 /** URL slug <-> page for the technique family. */
@@ -86,6 +87,10 @@ export function parseLocation(pathname = window.location.pathname): RouteState {
     return { page };
   }
   if (page === "armed") return parts[1] ? { page, armedRunId: parts[1] } : { page };
+  if (page === "options_cartel" && parts[1] === "run" && parts[2]) {
+    try { return {page, cartelRunId:decodeURIComponent(parts[2])}; }
+    catch { return {page}; }
+  }
   if (PAGE_TABS[page]) {
     if (page === "flow" && parts[1] === "story" && parts[2]) {
       return { page, flowSymbol: parts[2].toUpperCase() };
@@ -117,6 +122,7 @@ export function buildPath(s: RouteState): string {
 }
 
 function buildLegacyPath(s: RouteState): string {
+  if (s.page === "options_cartel" && s.cartelRunId) return `/options_cartel/run/${encodeURIComponent(s.cartelRunId)}`;
   if (s.page === "options") {
     if (s.optionsContract) return `/options/c/${s.optionsContract}`;
     if (s.optionsUnderlying) {

@@ -65,23 +65,27 @@ export default function App() {
   const optionsContract = useStore((s) => s.optionsContract);
   const pageTab = useStore((s) => s.pageTab);
   const flowFocusSymbol = useStore((s) => s.flowFocusSymbol);
+  const cartelRunId = useStore(s => s.cartelRunId);
   const analystFocusRunId = useStore((s) => s.analystFocusRunId);
   const applyRoute = useStore((s) => s.applyRoute);
+  const [routeApplied, setRouteApplied] = useState(false);
 
   // URL is the source of truth on load and on back/forward; state drives it after.
   useEffect(() => {
     applyRoute(parseLocation());
+    setRouteApplied(true);
     return onRouteChange(applyRoute);
   }, [applyRoute]);
 
   useEffect(() => {
+    if (!routeApplied) return; // Do not push the initial default state over a direct URL.
     const next = { page, techniqueTab, runId: techniqueRunId, threadId: chatThreadId,
       optionsUnderlying, optionsExpiry, optionsContract, pageTab, flowSymbol: flowFocusSymbol,
-      analystRunId: analystFocusRunId };
+      analystRunId: analystFocusRunId, cartelRunId };
     // pushState only when the destination really changes, so back/forward walks
     // the places the user visited rather than every incidental state write.
     syncUrl(next, buildPath(next) !== window.location.pathname);
-  }, [page, techniqueTab, techniqueRunId, chatThreadId, optionsUnderlying, optionsExpiry, optionsContract, pageTab, flowFocusSymbol, analystFocusRunId]);
+  }, [routeApplied, page, techniqueTab, techniqueRunId, chatThreadId, optionsUnderlying, optionsExpiry, optionsContract, pageTab, flowFocusSymbol, analystFocusRunId, cartelRunId]);
   const halt = useStore((s) => s.halt);
   const driftWarnings = useStore((s) => s.driftWarnings);
   const openJournal = useStore((s) => s.openJournal);

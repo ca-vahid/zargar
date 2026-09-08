@@ -154,9 +154,12 @@ interface AppState {
   seedChatLive: (threadId: string, live: { passes?: any[]; grounding?: any; facts?: any }) => void;
   applyRoute: (r: { page: Page; techniqueTab?: string; runId?: string | null; threadId?: string | null; armedRunId?: string | null;
     optionsUnderlying?: string; optionsExpiry?: string | null; optionsContract?: string | null;
-    pageTab?: string; flowSymbol?: string | null }) => void;
+    pageTab?: string; flowSymbol?: string | null; cartelRunId?: string | null }) => void;
   pageTab: string;                 // active tab on a tabbed page (inbox/flow); "" = default
   setPageTab: (t: string) => void;
+  cartelRunId: string | null;
+  openCartelRun: (id: string) => void;
+  closeCartelRun: () => void;
   analystFocusRunId: string | null;   // selected run on Tips > Analyst (deep-linkable)
   setAnalystFocus: (id: string | null) => void;
   openAnalystRun: (id: string) => void;   // navigate to Tips > Analyst with this run open
@@ -217,8 +220,11 @@ export const useStore = create<AppState>((set, get) => ({
   chatLive: {},
 
   pageTab: "",
+  cartelRunId: null,
+  openCartelRun: (id) => set({page: "options_cartel", cartelRunId:id}),
+  closeCartelRun: () => set({cartelRunId:null}),
   setPageTab: (pageTab) => set({ pageTab, analystFocusRunId: null }),
-  setPage: (page) => set({ page, pageTab: "", analystFocusRunId: null }),   // a fresh page starts on its default tab
+  setPage: (page) => set({ page, pageTab: "", analystFocusRunId: null, cartelRunId:null }),   // a fresh page starts on its default tab
   analystFocusRunId: null,
   setAnalystFocus: (analystFocusRunId) => set({ analystFocusRunId }),
   openAnalystRun: (id) => set({ page: "inbox", pageTab: "analyst", analystFocusRunId: id }),
@@ -378,6 +384,7 @@ export const useStore = create<AppState>((set, get) => ({
   applyRoute: (r) =>
     set((st) => ({
       page: r.page,
+      cartelRunId: r.cartelRunId ?? null,
       pageTab: r.pageTab ?? "",
       analystFocusRunId: (r as any).analystRunId ?? null,
       flowFocusSymbol: r.page === "flow" ? (r.flowSymbol ?? null) : st.flowFocusSymbol,
