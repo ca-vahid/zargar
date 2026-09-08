@@ -206,6 +206,43 @@ async def test_source_open_caps_are_enforced_now(rig):
     assert refuse is None and b > 0
 
 
+# ---------------------------------------------------------- session brake
+async def test_adoption_killswitch_reads_persisted_reason_and_skips_shadow(rig):
+    """2026-09-08: the brake read state.closeReason, which was never persisted
+    (dormant); it also counted SHADOW-book deaths (GME research noise). Now:
+    a real-book stop-out < 5 min pauses autos; shadow deaths never do."""
+    from zargar.models import ManagedPositionRow
+    from zargar.techniques.tip.lifecycle import adoption_killswitch
+    eng = rig
+    sim_pid = next(p["id"] for p in eng.positions.portfolios() if p["kind"] == "sim")
+    shadow = await eng.signals_service.shadow_portfolio("BrakeSrc", "immediate")
+
+    async def add_closed(pid: str, sym: str):
+        async with eng.sf() as session:
+            session.add(ManagedPositionRow(
+                id=new_id(), technique="tip", symbol=sym, portfolio_id=pid,
+                status="closed", tags=["source:BrakeSrc"], config={}, legs=[],
+                state={"closeReason": "venue-side GTC stop", "realizedPnl": -5.0}))
+            await session.commit()
+
+    assert await adoption_killswitch(eng) is None          # clean day
+    await add_closed(shadow["id"], "GME")                  # research noise
+    assert await adoption_killswitch(eng) is None
+    await add_closed(sim_pid, "AAA")                       # real book: brake
+    reason = await adoption_killswitch(eng)
+    assert reason and "AAA" in reason and "paused" in reason
+
+
+def test_close_reason_rides_to_dict():
+    """The Managed dataclass now carries close_reason (the brake reads the
+    persisted state.closeReason — it was never written before 2026-09-08)."""
+    from zargar.execution.positions import Managed
+    p = Managed(id="x", portfolio_id="p", symbol="T", direction="long",
+                technique="tip", policy={}, legs=[], entry=100.0, risk=1.0)
+    p.close_reason = "bar closed through the stop"
+    assert p.to_dict().get("closeReason") == "bar closed through the stop"
+
+
 # ---------------------------------------------------------- premium cap
 async def test_premium_cap_sizes_down(rig):
     svc = rig.proposals

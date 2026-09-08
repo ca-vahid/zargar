@@ -145,6 +145,7 @@ class Managed:
     sessions_seen: list[str] = field(default_factory=list)   # ET session dates with bars since open
     opened_ms: int = 0
     closed_ms: int | None = None
+    close_reason: str | None = None
     last_tf_bar_ts: int | None = None
     venue_stop_order_id: str | None = None
     venue_stop_at: float | None = None
@@ -201,6 +202,7 @@ class Managed:
             "exits": self.exits[-40:], "events": self.events[-100:],
             "sessionsSeen": self.sessions_seen, "sessionsHeld": self.sessions_held(),
             "openedMs": self.opened_ms, "closedMs": self.closed_ms,
+            "closeReason": self.close_reason,
             "lastTfBarTs": self.last_tf_bar_ts,
             "venueStopOrderId": self.venue_stop_order_id, "venueStopAt": self.venue_stop_at,
             "attention": self.attention, "haltEntries": self.halt_entries,
@@ -335,6 +337,7 @@ class PositionManager:
             exits=list(st.get("exits") or []), events=list(st.get("events") or []),
             sessions_seen=list(st.get("sessionsSeen") or []),
             opened_ms=int(st.get("openedMs") or 0), closed_ms=st.get("closedMs"),
+            close_reason=st.get("closeReason"),
             last_tf_bar_ts=st.get("lastTfBarTs"),
             venue_stop_order_id=st.get("venueStopOrderId"), venue_stop_at=st.get("venueStopAt"),
             attention=list(st.get("attention") or []), halt_entries=bool(st.get("haltEntries")),
@@ -352,6 +355,7 @@ class PositionManager:
                 st = {"policyState": p.state.to_dict(), "realizedPnl": round(p.realized_pnl, 2),
                       "exits": p.exits[-100:], "events": p.events[-200:], "sessionsSeen": p.sessions_seen,
                       "openedMs": p.opened_ms, "closedMs": p.closed_ms, "lastTfBarTs": p.last_tf_bar_ts,
+                      "closeReason": p.close_reason,
                       "venueStopOrderId": p.venue_stop_order_id, "venueStopAt": p.venue_stop_at,
                       "attention": p.attention, "haltEntries": p.halt_entries}
                 if row is None:
@@ -861,6 +865,7 @@ class PositionManager:
     async def _mark_closed(self, p: Managed, *, reason: str) -> None:
         p.status = "closed"
         p.closed_ms = self.now_ms()
+        p.close_reason = reason        # persisted: the session brake reads it
         if p.venue_stop_order_id:
             with contextlib.suppress(Exception):
                 await self.engine.orders.cancel(p.venue_stop_order_id)
