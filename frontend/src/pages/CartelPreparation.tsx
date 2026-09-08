@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { SymIcon } from "../components/SymIcon";
+import { CartelRunLink } from "./CartelRunLink";
 import { api } from "../lib/api";
 import { useWorkspace, useWorkspacePortfolios } from "../lib/workspace";
 import { useStore } from "../store";
@@ -143,7 +144,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
               </details>}
               {r.selection?.errors?.map((e: string, j: number) => <p key={j}>{e}</p>)}
               {status.activation?.plans?.[r.planId] && <p>{status.activation.plans[r.planId]}</p>}
-            </td><td>{r.planId && <button className="link-btn" onClick={() => onOpen(r.planId)}>Open {r.symbol}</button>}</td>
+            </td><td>{r.planId && <CartelRunLink id={r.planId} onOpen={onOpen}>Open {r.symbol}</CartelRunLink>}</td>
           </tr>)}
         </tbody></table></div> : <EmptyState art={false} title={running ? label(result.phase || "Starting preparation") : "No qualifying shortlist"} hint={running ? "Progress and provider activity are shown above." : "Missing evidence or a market without alignment can produce no setups."}/>}
         <details className="cartel-inset"><summary>Evidence and exclusions · {result.rows?.length || 0} records</summary>
@@ -151,7 +152,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           <div className="scroll-x"><table className="tbl cartel-table"><thead><tr><th>Symbol</th><th>Result</th><th>Reason</th><th>Evidence</th></tr></thead><tbody>
             {result.rows?.slice(0, evidenceLimit).map((r: any, i: number) => <tr key={i}><td>{r.symbol}</td><td>{label(r.status)}</td>
               <td className="cartel-wrap">{r.reason || r.reasons?.join("; ") || "Checks passed"}</td>
-              <td>{r.analysisId && <button className="link-btn" onClick={() => onOpen(r.analysisId)}>Open evidence</button>}</td>
+              <td>{r.analysisId && <CartelRunLink id={r.analysisId} onOpen={onOpen}>Open evidence</CartelRunLink>}</td>
             </tr>)}
           </tbody></table></div>
           {result.rows?.length > evidenceLimit && <button className="ghost-btn" onClick={() => setEvidenceLimit(n => n+100)}>Show 100 more ({evidenceLimit} of {result.rows.length} shown)</button>}

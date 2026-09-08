@@ -83,7 +83,8 @@ for (const m of MATRIX) {
         const response = await page.request.get(`${BASE}/api/options-cartel/runs/${encodeURIComponent(CARTEL_PLAN)}`);
         if (!response.ok()) throw new Error("Cartel audit fixture is unavailable");
         const plan = await response.json();
-        await page.locator(`tr[data-run-id="${plan.runId}"]`).getByRole("button", {name: `Open ${plan.symbol}`, exact: true}).click();
+        await page.locator(`tr[data-run-id="${plan.runId}"]`).getByRole("link", {name: `Open ${plan.symbol}`, exact: true}).click();
+        await page.getByText("Manual execution controls", {exact:true}).click();
         await page.getByRole("combobox", {name: "Execution mode", exact: true}).selectOption("proposal");
         await page.getByText("Find an eligible contract", {exact: true}).click();
         await page.getByText("Replay this campaign", {exact: true}).click();
@@ -98,7 +99,7 @@ for (const m of MATRIX) {
           const response = await page.request.get(`${BASE}/api/options-cartel/runs/${encodeURIComponent(process.env.MOBILE_AUDIT_CARTEL_RUN)}`);
           if (!response.ok()) throw new Error("Cartel history fixture unavailable");
           const run = await response.json();
-          await page.locator(`tr[data-run-id="${run.runId}"]`).getByRole("button", {name: `Open ${run.symbol}`, exact: true}).click();
+          await page.locator(`tr[data-run-id="${run.runId}"]`).getByRole("link", {name: `Open ${run.symbol}`, exact: true}).click();
           if (run.mode === "scan") await page.getByRole("region", {name:"Focus-list scan results", exact:true}).scrollIntoViewIfNeeded();
           if (run.mode === "industry") await page.getByRole("region", {name:"Industry capture results", exact:true}).scrollIntoViewIfNeeded();
           if (run.mode === "fundamentals" || run.mode === "membership") await page.getByRole("region", {name:"Saved stock evidence", exact:true}).scrollIntoViewIfNeeded();

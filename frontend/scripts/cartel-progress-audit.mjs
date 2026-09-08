@@ -36,7 +36,7 @@ try {
     await evaluation.waitFor(); assert.equal(await evaluation.getAttribute("value"), "205");
     const before = planReads;
     phase = "complete";
-    await page.getByRole("button", {name:"Open TEST", exact:true}).waitFor();
+    await page.getByRole("link", {name:"Open TEST", exact:true}).waitFor();
     assert(planReads > before, "Completion must refresh the separate saved-plan list");
     phase = "interrupted";
     let resumeId = null;
