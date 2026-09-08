@@ -286,6 +286,11 @@ class PositionManager:
         for row in rows:
             try:
                 p = self._from_row(row)
+                if (self.engine.positions.portfolio(p.portfolio_id) or {}).get("archived"):
+                    # a retired book (2026-09-07 Practice reset): its holdings are history,
+                    # not exposure - never managed again, never restored into memory
+                    log.info("managed position %s %s left in the archived book", p.id[:8], p.symbol)
+                    continue
                 if p.status == "opening":
                     # a crash mid-open: some legs may exist at the broker with no manager —
                     # a person must look before anything else happens on this symbol

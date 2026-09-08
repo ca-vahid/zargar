@@ -496,6 +496,24 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   21a3a2f8 row DELL; fresh `plan DELL --as-of 2026-09-03` = run a27ff13f. Yahoo also revised
   7 of 390 1m bars by more than a cent overnight (late prints) - unavoidable, small.
 
+- **2026-09-07 · One Practice book per technique (user decision, reset from 2026-09-08).** The
+  shared "Practice" book was overdrawn to -$5,021 by two $5,000 tip buys sized under the
+  ambitious practice limits (budget_per_tip $5,000, gross exposure 300%, no cash check) while EM
+  and Team2 traded in the same book. From 09-08 FOUR books, $10,000 each ($40,000 total, user
+  decision 09-07): `EM Practice` (045d8c35), `Tips Practice` (4611946d), `Team2 Practice`
+  (b9dcd8db), `Options Cartel Practice`; Flow is context-only and has no book. Routing by
+  `techniques.<id>.default_portfolio`
+  (EM also `technique.arm.default_portfolio`; tips runner/proposals and EM arm-today read the
+  technique key before `trading.default_portfolio`). The old book is renamed
+  "Practice (archived 2026-09-07)" and flagged `Portfolio.archived` (new column; `POST
+  /api/portfolios/{id}/archive`): out of every list and total, its holdings out of the positions
+  list, its managed positions marked `archived` (never restored), its resting orders cancelled at
+  restart. Nothing is deleted; journal, runs, outcomes, reviews and the counterfactual ledger are
+  untouched. `trading.default_portfolio` is now EMPTY: manual tickets ask which book (no guessing). Settings tightened the same
+  night: `techniques.tip.budget_per_tip` 5000 -> 2000, `risk.max_gross_exposure_pct` 300 -> 100,
+  `risk.sim_require_cash` stays on. INVARIANT 15: a technique's orders land only in its own book;
+  a shared book is never a fallback for a technique that has one.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
@@ -579,6 +597,10 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   research books exempt). Why: the Practice book reached -$5,021 cash on 2026-09-04 with no gate
   refusing it; every real venue would. Evidence: orders ZURA 702 @ 6.00, SOFI 236 @ 18.22,
   Practice cash after = -5,020.52. Off switch exists for a deliberate margin experiment.
+  **2026-09-07 23:20 ET - decision needed:** the Practice book still holds ZURA 702 / SOFI 236 with
+  cash -$5,021, so with this check ON every EM option entry on 09-08 is refused. The desk did not
+  flip it (a safety knob is the user's call): either turn `risk.sim_require_cash` off until the
+  book is repaired, close the two share tips, or credit the sim book.
 
 - 2026-09-01 · **`execution.arm_expired_plans` (new, default off)** — the runner refuses to arm
   a plan whose last session already closed; replays/tests set it on. Why: 22 stale runs armed
@@ -798,6 +820,19 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   exceeds what is left of `daily_loss_limit` is refused before routing (`skip_loss_budget`, F33); the
   premium-targeted picker `options/pick.select_by_premium` gained `mode="closest"` (F36; the legacy walk is
   `first_under`). `techniques.<id>.premium_stop_basis` / `premium_stop_min_ticks` are the knobs.
+- 2026-09-07 · **The loss ladder, as one table** (user decision; the numbers nest — a technique always hits its own
+  wall before the book's, and the book breaker is the catastrophe stop above any single budget):
+
+  | layer | key | practice value | before real money |
+  |---|---|---|---|
+  | Team2 day-loss pause | `techniques.team2.daily_loss_halt_pct` | 10% | 3–4% |
+  | EM day-loss pause | `techniques.enhanced_market.daily_loss_halt_pct` | 10% | 3–4% |
+  | Tips day-loss pause | `techniques.tip.daily_loss_halt_pct` | 10% | 3–4% |
+  | Options Cartel | `techniques.options_cartel.daily_loss_halt_pct` | 0 (off — its author relies on the book) | its author's call |
+  | Book breaker (per portfolio) | `risk.daily_loss_halt_pct`, scope `portfolio` | 15% | 8–10% |
+  | Global kill switch | HALT button / Telegram | manual | manual |
+
+  Rule: book breaker > max(technique budgets) and < their sum. Per-plan dollar halts sit under all of it.
 - 2026-09-04 · **Halts now come in three scopes** (built the same afternoon; was: one global switch that a
   Practice-book loss from one technique engaged for every technique on every book, re-engaging on release):
   1. **Global kill switch** — the HALT button, Telegram `/halt`, or the daily-loss breaker when

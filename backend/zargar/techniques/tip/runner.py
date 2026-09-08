@@ -414,7 +414,9 @@ class TipRunner(PlanRunner):
         riding on the run. Preflight warns (journaled) when the tip budget
         exceeds the platform risk caps instead of failing silently at fill."""
         eng = self.engine
-        pid = str(eng.settings.get("trading.default_portfolio", ""))
+        # the tips lane trades its OWN Practice book (2026-09-08: one book per technique - the
+        # shared book went to -$5k cash on 09-04); the app-wide default is the fallback
+        pid = str(eng.settings.get("techniques.tip.default_portfolio", "") or eng.settings.get("trading.default_portfolio", ""))
         if not pid or eng.positions.portfolio(pid) is None:
             sims = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
             if not sims:

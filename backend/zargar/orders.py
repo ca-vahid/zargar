@@ -619,6 +619,12 @@ class OrderManager:
             rows = (await session.execute(select(Order).where(Order.status.in_(OPEN_STATUSES)))).scalars().all()
         for order in rows:
             portfolio = self._positions.portfolio(order.portfolio_id) or {}
+            if portfolio.get("archived"):
+                # a retired book trades nothing: its resting orders are cancelled, not re-seated
+                await self._transition(order.id, OrderStatus.CANCELLED, ev.ORDER_CANCELLED,
+                                       reject_reason="book archived - resting order cancelled at restart")
+                cancelled.append(order.id)
+                continue
             executor = self._executor_for(portfolio)
             restore = getattr(executor, "restore", None)
             if executor is None or restore is None:

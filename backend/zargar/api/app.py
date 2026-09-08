@@ -498,6 +498,18 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     async def resume():
         return await eng.release_halt(source="app")
 
+    @app.post("/api/portfolios/{pid}/archive", dependencies=[auth])
+    async def archive_portfolio(pid: str, archived: bool = True):
+        """Retire a practice/research book: it keeps its positions and history but
+        leaves every list and total (2026-09-07: one Practice book per technique)."""
+        try:
+            p = await eng.positions.set_archived(pid, archived)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        await eng.journal.append("PortfolioArchived" if archived else "PortfolioUnarchived",
+                                 {"portfolioId": pid, "name": p.get("name")}, portfolio_id=pid)
+        return p
+
     @app.post("/api/portfolios/{pid}/resume", dependencies=[auth])
     async def resume_book(pid: str):
         """Release ONE book's daily-loss halt (the global switch is /api/resume)."""

@@ -473,6 +473,10 @@ export function SettingsPage() {
             <ToggleRow k="technique.arm.use_critic" label="AI double-check before auto-buying" hint="an AI reads the live chart and can veto a weak setup (needs an API key)" />
             <ToggleRow k="risk.halt_allows_exits" label="Kill switch still lets you sell" hint="ON (recommended): the halt stops new buys but stops/flatten can still close a position so you're never trapped" />
             <ToggleRow k="technique.arm.allow_live_auto" label="Allow auto-trade on REAL accounts" hint="off by default; auto on real money also needs LIVE mode and a per-plan tick" />
+            <Cells>
+              <NumCell k="techniques.enhanced_market.daily_loss_halt_pct" label="Day loss pause (% of book)" step={1}
+                hint="once EM's realised + open loss on a book crosses this, all its plans on that book pause for the day (0 = off); the book breaker in Risk sits above every technique's number" />
+            </Cells>
             <Group>Experiments</Group>
             <ToggleRow k="technique.arm.midday_trading" label="Trade during mid-day (R6.3 experiment)"
               hint="normally 10:30–14:45 ET is watch-only; ON lets armed triggers fire mid-day. Fires carry window=midday so outcomes stay separable — the experiment lives in TRADING-RULES 1.7" />
@@ -589,6 +593,10 @@ export function SettingsPage() {
             </Cells>
             <ToggleRow k="techniques.tip.shadow_auto" label="Shadow books" hint="every open tip auto-arms in its source's shadow book each morning — the track record real money is gated on" />
             <ToggleRow k="techniques.tip.allow_live_auto" label="Auto mode may trade REAL accounts" hint="off by default — a live portfolio needs this AND the source's earned auto mode" />
+            <Cells>
+              <NumCell k="techniques.tip.daily_loss_halt_pct" label="Day loss pause (% of book)" step={1}
+                hint="once the tip technique's realised + open loss on a book crosses this, all its plans on that book pause for the day (0 = off)" />
+            </Cells>
           </div>
         </div>
 

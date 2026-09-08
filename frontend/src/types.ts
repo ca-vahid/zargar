@@ -21,7 +21,6 @@ export interface Quote {
 }
 
 export interface Portfolio {
-  archived?: boolean;
   id: string;
   name: string;
   kind: "live" | "paper" | "sim" | "shadow";
@@ -30,6 +29,8 @@ export interface Portfolio {
   startingCash: number;
   sourceName?: string | null;
   book?: string | null;      // shadow research books: "immediate" | "armed"
+  /** retired book (2026-09-07): kept for history, out of every list and total */
+  archived?: boolean;
   isDefault?: boolean;
   baseCurrency?: string;
   venue?: string; // "ibkr" | "snaptrade" for live/paper portfolios

@@ -397,6 +397,9 @@ async def test_share_proposal_is_sized_to_fit_the_position_cap(app_client):
     await wait_quote(eng, "AAPL")
     await eng.settings.set("verification.max_price_deviation_pct", 10.0)
     await eng.settings.set("techniques.tip.budget_per_tip", 8_000.0)
+    # glide sizing (2026-09-07, its own tests in test_tip_geometry.py) would
+    # trim the $8k budget before the position cap gets to speak — off here
+    await eng.settings.set("techniques.tip.reserve_slots", 0)
     await eng.settings.set("risk.max_position_pct", 50.0)
     await eng.settings.set("risk.max_position_notional", 1_000_000.0)
     out = await run_pipeline(eng, canned_extraction())

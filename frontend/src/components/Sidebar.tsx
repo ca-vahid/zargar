@@ -33,7 +33,8 @@ const PAGES: { key: Page; label: string; icon: ReactNode }[] = [
 
 // the desk's order for the technique family (user 2026-09-04): Tips, Team2, EM, Flow — and the short
 // sidebar name for each; anything the registry adds later lands after these in registry order
-const TECHNIQUE_ORDER: Record<string, number> = { inbox: 0, team2: 1, technique: 2, flow: 3 };
+// 2026-09-07 (user): Options Cartel joins the trading techniques; Flow is context-only (no book) and sits last
+const TECHNIQUE_ORDER: Record<string, number> = { inbox: 0, team2: 1, technique: 2, options_cartel: 3, flow: 4 };
 const TECHNIQUE_SHORT: Record<string, string> = { enhanced_market: "EM" };
 
 /** A click ripple from where the pointer landed — pure CSS animation, removed when it ends. */
