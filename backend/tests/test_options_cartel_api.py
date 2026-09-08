@@ -31,6 +31,27 @@ async def test_preparation_settings_are_authenticated_and_practice_only(client):
     assert unauthorized.status_code == 401
 
 
+async def test_preparation_api_keeps_live_configuration_separate_and_requires_acknowledgements(client):
+    c, engine = client
+    practice = (await c.get('/api/options-cartel/preparation?workspace=practice')).json()['configuration']
+    live = (await c.get('/api/options-cartel/preparation?workspace=live')).json()['configuration']
+    assert live['workspace'] == 'live' and not live['enabled'] and not live['allowLive']
+    async with engine.sf() as session, session.begin():
+        session.add(Portfolio(id='live-scope', name='Live', kind='live', base_currency='USD', cash=10000))
+    body = {**live, 'portfolioId':'live-scope', 'enabled':True}
+    assert (await c.post('/api/options-cartel/preparation/config?workspace=live', json=body)).status_code == 422
+    body.update(allowLive=True, overnightAck=True, budget=123)
+    saved = await c.post('/api/options-cartel/preparation/config?workspace=live', json=body)
+    assert saved.status_code == 200, saved.text
+    assert (await c.get('/api/options-cartel/preparation?workspace=practice')).json()['configuration'] == practice
+    assert (await c.get('/api/options-cartel/preparation?workspace=live')).json()['configuration']['budget'] == 123
+    assert not saved.json()['liveAutoAllowed']  # Saving preparation does not grant the shared permission.
+    assert (await c.post('/api/options-cartel/preparation/config?workspace=practice', json=body)).status_code == 400
+    assert (await c.post('/api/options-cartel/preparation/run?workspace=live')).status_code == 400
+    phone = await c.post('/api/options-cartel/preparation/config?workspace=live', json=body, headers={'X-Zargar-Client':'phone'})
+    assert phone.status_code == 400
+
+
 def research_payload():
     args = input_data()
     return ResearchInput.model_validate({

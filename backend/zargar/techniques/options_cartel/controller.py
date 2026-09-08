@@ -55,8 +55,17 @@ class CartelEntryController:
     def _entry_conditions(self, row, plan, spec):
         now = self.clock()
         preparation = row.get('config', {}).get('preparation')
-        if preparation and (not preparation.get('practiceOnly') or now >= preparation.get('validUntil', 0)):
-            raise ValueError('Automatic preparation evidence expired or is not Practice-scoped')
+        if preparation:
+            from .preparation_scope import read_policy, require_execution_scope
+            if now >= preparation.get('validUntil', 0):
+                raise ValueError('Automatic preparation evidence expired')
+            scope = preparation.get('workspace', 'practice' if preparation.get('practiceOnly') else None)
+            if scope not in ('practice', 'live'):
+                raise ValueError('Automatic preparation workspace is missing')
+            require_execution_scope(self.engine, read_policy(self.engine, scope))
+            book = self.engine.positions.portfolio(spec.portfolio_id)
+            if not book or book['kind'] not in (('sim',) if scope == 'practice' else ('live', 'paper')):
+                raise ValueError('Prepared account no longer belongs to its workspace')
         signal = row["state"].get("signal") or {}
         if row["status"] != "armed" or row["state"]["phase"] not in ("signalled", "submitting"):
             raise ValueError("entry is no longer armed and signalled")

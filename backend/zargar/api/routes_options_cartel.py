@@ -24,13 +24,13 @@ from ..techniques.options_cartel.premium_replay import (
     save_premium_replay,
     value_stored_quotes,
 )
-from ..techniques.options_cartel.preparation import SETTING as PREPARATION_SETTING
 from ..techniques.options_cartel.preparation import (
-    practice_portfolio,
+    preparation_portfolio,
     preparation_status,
     stop_preparation,
     submit_preparation,
 )
+from ..techniques.options_cartel.preparation_scope import Workspace, active_workspace, setting_key
 from ..techniques.options_cartel.quote_observations import capture_cached_quote, quote_observations
 from ..techniques.options_cartel.replay_service import CampaignReplayRequest, replay_from_history
 from ..techniques.options_cartel.scan_tasks import submit_scan
@@ -50,23 +50,31 @@ def build_options_cartel_routes(app, eng, auth, config):
     eng.options_cartel = service
 
     @app.get('/api/options-cartel/preparation', dependencies=[auth])
-    async def cartel_preparation_status():
-        return await preparation_status(eng)
+    async def cartel_preparation_status(workspace: Workspace | None = None):
+        return await preparation_status(eng, workspace)
 
     @app.post('/api/options-cartel/preparation/config', dependencies=[auth])
-    async def cartel_preparation_config(body: PreparationPolicy):
+    async def cartel_preparation_config(body: PreparationPolicy, request: Request, workspace: Workspace | None = None):
         async def save():
-            if body.enabled:
-                await practice_portfolio(eng, body.portfolio_id)
-            await eng.settings.set(PREPARATION_SETTING, body.model_dump(mode='json'))
+            scope = workspace or active_workspace(eng)
+            if body.workspace != scope:
+                raise ValueError('Preparation settings belong to a different workspace')
+            if scope == 'live' and body.enabled and request.headers.get('X-Zargar-Client') == 'phone' and eng.settings.get('mobile.exit_only', True):
+                raise ValueError('Phones are exit-only on real accounts')
+            if body.enabled or body.portfolio_id:
+                await preparation_portfolio(eng, body.portfolio_id, scope)
+            await eng.settings.set(setting_key(scope), body.model_dump(mode='json'))
             if not body.enabled:
-                await stop_preparation(eng)
-            return await preparation_status(eng)
+                await stop_preparation(eng, scope)
+            return await preparation_status(eng, scope)
         return await respond(save())
 
     @app.post('/api/options-cartel/preparation/run', dependencies=[auth], status_code=202)
-    async def cartel_prepare_daily():
-        return await respond(submit_preparation(eng))
+    async def cartel_prepare_daily(request: Request, workspace: Workspace | None = None):
+        scope = workspace or active_workspace(eng)
+        if scope == 'live' and request.headers.get('X-Zargar-Client') == 'phone' and eng.settings.get('mobile.exit_only', True):
+            raise HTTPException(status_code=400, detail='Phones are exit-only on real accounts')
+        return await respond(submit_preparation(eng, workspace=scope))
 
     @app.post("/api/options-cartel/runs/{run_id}/premium-replay-stored", dependencies=[auth])
     async def cartel_stored_premium_replay(run_id: str, body: StoredPremiumReplayInput):
@@ -223,8 +231,8 @@ def build_options_cartel_routes(app, eng, auth, config):
 
     @app.get("/api/options-cartel/runs", dependencies=[auth])
     async def cartel_runs(limit: int = Query(50, ge=1, le=200), symbol: str | None = None,
-                          mode: str | None = Query(None, max_length=24)):
-        return await service.runs(limit, symbol, mode)
+                          mode: str | None = Query(None, max_length=24), workspace: Workspace | None = None):
+        return await service.runs(limit, symbol, mode, workspace)
 
     @app.get("/api/options-cartel/runs/{run_id}", dependencies=[auth])
     async def cartel_run(run_id: str):

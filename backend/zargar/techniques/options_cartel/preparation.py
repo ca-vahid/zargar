@@ -1,4 +1,4 @@
-"""Daily market discovery -> reviewed plans -> automatic Practice arming."""
+"""Daily market discovery -> reviewed plans -> workspace-scoped automatic arming."""
 from __future__ import annotations
 
 import asyncio
@@ -23,49 +23,59 @@ from .execution import ExecutionInput
 from .industry import save_snapshot
 from .industry_feed import capture_industries
 from .plans import CartelPlan
+from .preparation_scope import SETTING as SETTING  # noqa: PLC0414 - preserve the existing public constant
+from .preparation_scope import (
+    read_policy,
+    require_execution_scope,
+    workspace_filter,
+)
 from .prepare import build_volume_baseline
 from .rules import CartelRules
 from .screen import market_regime
 from .service import CartelService, FactsInput, MinuteInput, ResearchInput
 
-SETTING = 'techniques.options_cartel.preparation'
-
 
 async def affordable_contract_policy(engine, portfolio_id, policy):
     book = engine.positions.portfolio(portfolio_id)
     if not book:
-        raise ValueError('Practice account valuation is unavailable')
+        raise ValueError('Account valuation is unavailable')
     equity = float(await engine.positions.equity(portfolio_id))
     fx = engine.positions.fx.rate('USD', book.get('baseCurrency', 'USD'))
     if not math.isfinite(equity) or equity <= 0 or fx is None or not math.isfinite(fx) or fx <= 0:
-        raise ValueError('Practice equity or currency conversion is unavailable')
+        raise ValueError('Account equity or currency conversion is unavailable')
     limit = min(policy.contract_policy.max_ask, policy.budget/(100*fx), equity*policy.risk_pct/100/(100*fx))
     return policy.contract_policy.model_copy(update={'max_ask': limit})
 
 
-async def practice_portfolio(engine, requested=None):
+async def preparation_portfolio(engine, requested=None, workspace='practice'):
+    kinds = ('sim',) if workspace == 'practice' else ('live', 'paper')
     async with engine.sf() as session:
         if requested:
             row = await session.get(Portfolio, requested)
-            if row is None or row.kind != 'sim':
-                raise ValueError('Automatic Cartel preparation can arm only a Practice (sim) portfolio')
+            if row is None or row.kind not in kinds:
+                raise ValueError(f'Choose a {workspace.title()} account for this preparation workspace')
             return row.id
-        rows = (await session.scalars(select(Portfolio).where(Portfolio.kind == 'sim').order_by(Portfolio.id))).all()
-    if len(rows) != 1:
-        raise ValueError('Choose the Practice portfolio for automatic preparation')
+        rows = (await session.scalars(select(Portfolio).where(Portfolio.kind.in_(kinds)).order_by(Portfolio.id))).all()
+    if workspace == 'live' or len(rows) != 1:
+        raise ValueError(f'Choose the {workspace.title()} account explicitly for automatic preparation')
     return rows[0].id
+
+
+async def practice_portfolio(engine, requested=None):
+    return await preparation_portfolio(engine, requested, 'practice')
 
 
 async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, discover=discover_market,
                           industries=capture_industries, fetch=fetch_window, choose=planning_contract, on_started=None):
     started = clock()
     if not policy.enabled:
-        raise ValueError('Enable automatic Practice preparation before starting a run')
+        raise ValueError('Enable automatic preparation before starting a run')
+    require_execution_scope(engine, policy)
     day = dt.datetime.fromtimestamp(started/1000, ET).date()
     opens, closes = session_bounds(day.isoformat())
     if is_trading_day(day) and opens <= started < closes:
         raise ValueError('Daily preparation runs before the open or after the close, using completed sessions')
-    portfolio_id = await practice_portfolio(engine, policy.portfolio_id)
+    portfolio_id = await preparation_portfolio(engine, policy.portfolio_id, policy.workspace)
     runtime = getattr(engine, 'cartel_observer', None)
     if runtime is None or runtime.stopping:
         raise ValueError('Cartel runtime is unavailable')
@@ -73,11 +83,11 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
     target_session = next_session_date(started)
     run_id = new_id()
     result = {'phase': 'discovering', 'session': target_session, 'portfolioId': portfolio_id,
-              'mode': 'auto', 'practiceOnly': True, 'rows': [], 'shortlist': [], 'warnings': [],
+              'mode': 'auto', 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'rows': [], 'shortlist': [], 'warnings': [],
               'discovered': 0, 'evaluated': 0, 'qualifying': 0, 'armed': 0}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
         primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
-        config={'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
+        config={'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
         result=result, tags=['cartel:preparation'])
     async with engine.sf() as session:
         session.add(record); await session.commit()
@@ -113,6 +123,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
         result['replacedPlans'] = []
         for old_id in list(runtime.rows):
             async with runtime.controller._guard(old_id):
+                require_execution_scope(engine, policy)
                 old = runtime.rows[old_id]
                 if old['portfolioId'] != portfolio_id or not old.get('config', {}).get('preparation') \
                         or old['status'] != 'armed' or old['state'].get('attemptTag'):
@@ -203,22 +214,23 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                     enriched = await service.analyze(inputs, parent_run_id=run_id)
                     key = hashlib.sha256(f'{target_session}:{portfolio_id}:{symbol}:{at}'.encode()).hexdigest()[:32]
                     plan_record = await service.prepare(enriched['runId'], review, plan_id=key,
-                        preparation={'runId': run_id, 'session': target_session, 'portfolioId': portfolio_id, 'reviewer': 'automatic_rules'})
+                        preparation={'runId': run_id, 'workspace': policy.workspace, 'session': target_session, 'portfolioId': portfolio_id, 'reviewer': 'automatic_rules'})
                     plan = CartelPlan.model_validate(plan_record['result']['plan']['plan'])
                     selected = await choose(engine, plan, await affordable_contract_policy(engine, portfolio_id, policy))
                     row = {'symbol': symbol, 'planId': plan.id, 'setup': plan.setup, 'trigger': plan.trigger,
                            'invalidation': plan.invalidation, 'targets': list(plan.targets), 'selection': selected,
                            'status': 'awaiting_contract'}
                     if selected['selected']:
-                        current = PreparationPolicy.model_validate(engine.settings.get(SETTING, {}))
+                        current = read_policy(engine, policy.workspace)
                         if current != policy or not current.enabled:
                             raise ValueError('Preparation configuration changed before arming; rerun with current settings')
-                        await practice_portfolio(engine, portfolio_id)  # recheck identity immediately before arming
+                        await preparation_portfolio(engine, portfolio_id, policy.workspace)
+                        require_execution_scope(engine, policy)  # recheck identity immediately before arming
                         spec = ExecutionInput(portfolio_id=portfolio_id, mode='auto', instrument='options',
                             contract_symbol=selected['selected']['symbol'], budget=policy.budget, risk_pct=policy.risk_pct,
-                            max_units=policy.max_contracts, overnight_ack=True, allow_live=False)
+                            max_units=policy.max_contracts, overnight_ack=policy.workspace == 'practice' or policy.overnight_ack, allow_live=policy.workspace == 'live' and policy.allow_live)
                         await runtime.arm(plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
-                            'clientKind': 'desktop', 'preparation': {'runId': run_id, 'practiceOnly': True,
+                            'clientKind': 'desktop', 'preparation': {'runId': run_id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice',
                                 'validUntil': min(at+86_400_000, session_bounds(plan.last_session.isoformat())[1])}})
                         row['status'] = 'armed'; result['armed'] += 1
                     result['shortlist'].append(row)
@@ -232,13 +244,14 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
         raise
 
 
-async def preparation_status(engine):
-    policy = PreparationPolicy.model_validate(engine.settings.get(SETTING, {}))
+async def preparation_status(engine, workspace=None):
+    policy = read_policy(engine, workspace)
     async with engine.sf() as session:
         row = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
-            TechniqueRun.mode == 'preparation').order_by(TechniqueRun.created_at.desc()).limit(1))
+            TechniqueRun.mode == 'preparation', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
     latest = None if row is None else {**CartelService._view(row), 'error': row.error,
                                      'result': json.loads(json.dumps(row.result))}
+    arms = []
     if latest:
         ids = [r['planId'] for r in latest['result'].get('shortlist', []) if r.get('planId')]
         async with engine.sf() as session:
@@ -249,9 +262,11 @@ async def preparation_status(engine):
             if item.get('planId') in states:
                 item['status'] = states[item['planId']]
         latest['result']['armed'] = sum(r['status'] == 'armed' for r in latest['result'].get('shortlist', []))
-    return {'configuration': policy.model_dump(mode='json', by_alias=True), 'latest': latest,
-            'quoteRefresh': getattr(getattr(engine, 'cartel_observer', None), 'preparation_quote_status', {}),
-            'activation': getattr(engine, '_cartel_preparation_activation', {})}
+    refresh = getattr(getattr(engine, 'cartel_observer', None), 'preparation_quote_status', {})
+    contracts = {a.config.get('execution', {}).get('contract_symbol') for a in arms}
+    return {'configuration': policy.model_dump(mode='json', by_alias=True), 'latest': latest, 'liveAutoAllowed': bool(engine.settings.get('techniques.options_cartel.allow_live_auto', False)),
+            'quoteRefresh': {**refresh, 'errors': {k: v for k, v in refresh.get('errors', {}).items() if k in contracts}},
+            'activation': getattr(engine, '_cartel_preparation_activations', {}).get(policy.workspace, {})}
 
 
 async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
@@ -263,7 +278,7 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
     running = getattr(engine, '_cartel_preparation_task', None)
     if running is not None and not running.done():
         return
-    policy = PreparationPolicy.model_validate(engine.settings.get(SETTING, {}))
+    policy = read_policy(engine)
     if not policy.enabled:
         return
     runtime = getattr(engine, 'cartel_observer', None)
@@ -271,11 +286,11 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
         return
     async with engine.sf() as session:
         row = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
-            TechniqueRun.mode == 'preparation', TechniqueRun.status == 'done').order_by(TechniqueRun.created_at.desc()).limit(1))
-    if row is None or row.config.get('policy') != policy.model_dump(mode='json'):
+            TechniqueRun.mode == 'preparation', TechniqueRun.status == 'done', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
+    if row is None or PreparationPolicy.model_validate(row.config.get('policy', {})) != policy:
         return
     service = CartelService(engine)
-    portfolio_id = await practice_portfolio(engine, row.config['portfolioId'])
+    portfolio_id = await preparation_portfolio(engine, row.config['portfolioId'], policy.workspace)
     statuses = {}
     for item in row.result.get('shortlist', []):
         if item.get('status') != 'awaiting_contract' or not item.get('planId'):
@@ -300,19 +315,22 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
             if not selection['selected']:
                 statuses[plan.id] = 'Waiting for an option contract meeting the configured DTE, delta, liquidity and premium limits'
                 continue
-            current = PreparationPolicy.model_validate(engine.settings.get(SETTING, {}))
+            current = read_policy(engine, policy.workspace)
             if not current.enabled or current != policy or runtime.stopping:
                 break
-            await practice_portfolio(engine, portfolio_id)
+            await preparation_portfolio(engine, portfolio_id, policy.workspace)
+            require_execution_scope(engine, policy)
             spec = ExecutionInput(portfolio_id=portfolio_id, mode='auto', instrument='options',
                 contract_symbol=selection['selected']['symbol'], budget=policy.budget, risk_pct=policy.risk_pct,
-                max_units=policy.max_contracts, overnight_ack=True, allow_live=False)
+                max_units=policy.max_contracts, overnight_ack=policy.workspace == 'practice' or policy.overnight_ack, allow_live=policy.workspace == 'live' and policy.allow_live)
             await runtime.arm(plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
-                'clientKind': 'desktop', 'preparation': {'runId': row.id, 'practiceOnly': True, 'validUntil': valid_until}})
+                'clientKind': 'desktop', 'preparation': {'runId': row.id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'validUntil': valid_until}})
             statuses[plan.id] = 'armed'
         except Exception as exc:  # noqa: BLE001 - expose retry state without interrupting execution
             statuses[item['planId']] = f'{type(exc).__name__}: option preparation remains pending'
-    engine._cartel_preparation_activation = {'at': now, 'plans': statuses}
+    if not hasattr(engine, '_cartel_preparation_activations'):
+        engine._cartel_preparation_activations = {}
+    engine._cartel_preparation_activations[policy.workspace] = {'at': now, 'plans': statuses}
 
 
 async def submit_preparation(engine, *, scheduled=False, **kwargs):
@@ -323,25 +341,28 @@ async def submit_preparation(engine, *, scheduled=False, **kwargs):
         return await _submit_preparation(engine, scheduled=scheduled, **kwargs)
 
 
-async def _submit_preparation(engine, *, scheduled=False, **kwargs):
+async def _submit_preparation(engine, *, scheduled=False, workspace=None, **kwargs):
+    policy = read_policy(engine, workspace)
     if getattr(getattr(engine, 'cartel_observer', None), 'stopping', False):
         return {'status': 'stopping'}
     running = getattr(engine, '_cartel_preparation_task', None)
     if running is not None and not running.done():
+        if getattr(engine, '_cartel_preparation_workspace', 'practice') != policy.workspace:
+            raise ValueError('Preparation is already running in the other workspace')
         return await asyncio.shield(engine._cartel_preparation_ready)
-    policy = PreparationPolicy.model_validate(engine.settings.get(SETTING, {}))
     if not policy.enabled:
         if scheduled:
             return {'status': 'disabled'}
-        raise ValueError('Automatic Practice preparation is disabled')
-    await practice_portfolio(engine, policy.portfolio_id)
+        raise ValueError(f'Automatic {policy.workspace.title()} preparation is disabled')
+    await preparation_portfolio(engine, policy.portfolio_id, policy.workspace)
+    require_execution_scope(engine, policy)
     if scheduled:
         now = kwargs.get('clock', now_ms)()
         if not is_trading_day(dt.datetime.fromtimestamp(now/1000, ET).date()):
             return {'status': 'non_trading_day'}
         async with engine.sf() as session:
             latest = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
-                TechniqueRun.mode == 'preparation', TechniqueRun.status == 'done').order_by(TechniqueRun.created_at.desc()).limit(1))
+                TechniqueRun.mode == 'preparation', TechniqueRun.status == 'done', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
         if latest and latest.config.get('session') == next_session_date(now) and 0 <= now-latest.as_of < 12*3_600_000:
             return {'status': 'already_prepared', 'runId': latest.id}
     ready = asyncio.get_running_loop().create_future()
@@ -350,6 +371,7 @@ async def _submit_preparation(engine, *, scheduled=False, **kwargs):
     def started(row):
         if not ready.done():
             ready.set_result(row)
+    engine._cartel_preparation_workspace = policy.workspace
     task = asyncio.create_task(run_preparation(engine, policy, on_started=started, **kwargs), name='cartel-daily-preparation')
     engine._cartel_preparation_task = task
     def done(worker):
@@ -362,14 +384,14 @@ async def _submit_preparation(engine, *, scheduled=False, **kwargs):
     return await asyncio.shield(ready)
 
 
-async def stop_preparation(engine):
+async def stop_preparation(engine, workspace=None):
     task = getattr(engine, '_cartel_preparation_task', None)
-    if task is not None and not task.done():
+    if task is not None and not task.done() and (workspace is None or getattr(engine, '_cartel_preparation_workspace', 'practice') == workspace):
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
     runtime = getattr(engine, 'cartel_observer', None)
     activation = getattr(runtime, 'preparation_activation_task', None)
-    if activation is not None and not activation.done() and activation is not asyncio.current_task():
+    if activation is not None and not activation.done() and activation is not asyncio.current_task() and (workspace is None or getattr(runtime, 'preparation_activation_workspace', None) == workspace):
         activation.cancel()
         await asyncio.gather(activation, return_exceptions=True)
 

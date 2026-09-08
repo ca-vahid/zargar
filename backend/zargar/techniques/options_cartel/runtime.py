@@ -62,6 +62,12 @@ class CartelRuntime(CartelObserver):
             raise ValueError("plan horizon is not valid for arming")
         if portfolio is None:
             raise ValueError("portfolio not found")
+        if config.get('preparation'):
+            from .preparation_scope import read_policy, require_execution_scope
+            scope = config['preparation'].get('workspace', 'practice')
+            if portfolio.kind not in (('sim',) if scope == 'practice' else ('live', 'paper')):
+                raise ValueError('Prepared plan account does not belong to its workspace')
+            require_execution_scope(self.engine, read_policy(self.engine, scope))
         cached = self.engine.positions.portfolio(spec.portfolio_id)
         if cached is None or cached["kind"] != portfolio.kind:
             raise ValueError("refresh portfolio identity before arming")
@@ -350,12 +356,15 @@ class CartelRuntime(CartelObserver):
 
     async def on_quote_watch(self):
         self.quote_recorder.observe(list(self.rows.values()))
-        preparation_settings = self.engine.settings.get('techniques.options_cartel.preparation', {})
+        from .preparation_scope import active_workspace, setting_key
+        scope = active_workspace(self.engine)
+        preparation_settings = self.engine.settings.get(setting_key(scope), {})
         if isinstance(preparation_settings, dict) and preparation_settings.get('enabled') and not self.stopping \
                 and self.clock()-self.preparation_activation_at >= 60_000 \
                 and (self.preparation_activation_task is None or self.preparation_activation_task.done()):
             from .preparation import activate_pending
             self.preparation_activation_at = self.clock()
+            self.preparation_activation_workspace = scope
             self.preparation_activation_task = asyncio.create_task(self._activate_preparation(activate_pending))
         if not self.stopping and self.clock()-self.preparation_quote_at >= 30_000 \
                 and (self.preparation_quote_task is None or self.preparation_quote_task.done()):
@@ -385,7 +394,9 @@ class CartelRuntime(CartelObserver):
         try:
             await activate(self.engine, clock=self.clock)
         except Exception as exc:  # noqa: BLE001 - report preparation failures without interrupting orders
-            self.engine._cartel_preparation_activation = {'at': self.clock(), 'error': f'{type(exc).__name__}: activation unavailable'}
+            if not hasattr(self.engine, '_cartel_preparation_activations'):
+                self.engine._cartel_preparation_activations = {}
+            self.engine._cartel_preparation_activations[self.preparation_activation_workspace] = {'at': self.clock(), 'error': f'{type(exc).__name__}: activation unavailable'}
 
     async def flatten_trade(self, run_id, trigger_id=None):
         positions = self._positions(run_id)

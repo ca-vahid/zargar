@@ -106,6 +106,10 @@ async def test_concurrent_requests_share_preparation_and_shutdown_cancels_resear
         first, second = await asyncio.gather(*[submit_preparation(engine, clock=lambda: at, **providers) for _ in range(2)])
         assert first['runId'] == second['runId']
         await entered.wait()
+        await stop_preparation(engine, 'live')
+        assert not engine._cartel_preparation_task.done()
+        with pytest.raises(ValueError, match='other workspace'):
+            await submit_preparation(engine, workspace='live', clock=lambda: at, **providers)
         await stop_preparation(engine)
         assert engine._cartel_preparation_task.cancelled()
         async with engine.sf() as session:
