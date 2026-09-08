@@ -318,6 +318,17 @@ and are now part of the plan; each carries the phase it belongs to.
       Fewer than 3 contracts cannot be trimmed in thirds: the first trim is skipped, the second closes all
       (`too_small_to_trim`, EM's rule). The Armed summary shows "contract +X% live".
 
+## 3d. Promotion governance (user decision 2026-09-08 evening)
+
+- **Twenty banked Practice sessions trigger a REVIEW, not a promotion.** When the Team2 Practice book has twenty
+  scored sessions (History tab rows with a book result), the desk writes a review note under `notes/research/`:
+  book vs read per session, every refusal class counted, the sweep of each EXPERIMENTAL variant (F47 target floor,
+  F56a edge-reversal small-size, F56b six-ATR bypass) against the banked tape, and a recommendation. The user decides.
+- Experimental variants live in `tools/team2_sweep.py --set …` overlays only; the live rules never carry them.
+- Practice continues at the existing risk limits ($2,000 premium / 6 % risk / 10 % technique pause / 15 % book
+  breaker / desk-wide two losses) while recovery (watchdog) and exit protection (F50 + premium stop + failed-exit
+  watchdog) hold; any of those failing on a live day pauses the desk to alert mode.
+
 ## 4. Testing bar (from BUILDING-A-TECHNIQUE §6, made concrete)
 
 - Live tracker ≡ replay (`simulate_plan`) on every fixture; rules snapshot in every plan run.

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.11";
+export const APP_VERSION = "0.7.12";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,20 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.12",
+    date: "2026-09-08",
+    title: "Team2: the read cannot rewrite itself",
+    items: [
+      { tag: "fixed", text: "The engine now runs under the Windows Task Scheduler (ZargarWatchdog every 3 minutes, ZargarRestart on demand) instead of inside the assistant's process tree: the 14:24 outage on 2026-09-08 was the Claude desktop package update stopping its VM service, which took the engine with it. The app log keeps days instead of 50 minutes and says hello/goodbye with its pid." },
+      { tag: "fixed", text: "Team2 recognises the read's events by fingerprint, so an input that moves under the recomputed read (IV, a corrected bar, a level) can never repeat a fire it already took or skip one; a rewritten history is reported once as 'read_rewritten'." },
+      { tag: "fixed", text: "Team2 locks the read's IV per session from today's 0DTE at-the-money chain (falls back to the VIX proxy), stamps it on the plan and the run, and replays with the same number: the read's history is a point-in-time record, not a function of the latest quote." },
+      { tag: "fixed", text: "Team2 finalizes the day type, open and sizing on the real 09:30 bar; the 09:25 pre-market estimate is kept as a snapshot and the change is journaled." },
+      { tag: "fixed", text: "Team2 sells the rest at the plan target on the first FRESH underlying print through it (reduce-only limit at the contract's bid) instead of waiting for the 2-minute close; the model labels its own target exits as an intrabar assumption." },
+      { tag: "fixed", text: "A Team2 pullback is an episode (price must close half an ATR off the EMA13 before the next one counts), and only a PRICED pullback spends the two-pullback allowance: a no-contract refusal no longer burns it. The read shows pullbacks / opportunities / spent / attempts." },
+      { tag: "improved", text: "The F47 target-floor and both F56 no-trade-zone variants stay EXPERIMENTAL (sweep-only); twenty banked Practice sessions trigger a review, never an automatic promotion." },
+    ],
+  },
   {
     version: "0.7.11",
     date: "2026-09-08",

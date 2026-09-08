@@ -524,7 +524,9 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   of silent. **`zargar/research/snapshots.py` — shared engine, proposal, not built here.**
 
 
-- **F47 (2026-09-08 09:15 ET, NOT fixed — proposal; the planned target has no minimum-room floor)**
+- **F47 (2026-09-08 09:15 ET, EXPERIMENTAL — sweep variant only, user decision 2026-09-08 evening after the Codex
+  review: "as written it is wrong" — a target too close should mean skip or degrade size, not a farther target
+  invented for it; nothing promotes without the twenty-session review; the planned target has no minimum-room floor)**
   `levels.targets_beyond` sets a break trade's outright exit to the **most recent 15m pivot** beyond
   the zone within the 10-session lookback, with **no check that the pivot leaves enough room to be
   worth trading**. `session.py` then exits the *whole* remaining position the moment that level is
@@ -547,7 +549,9 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   optional, so the body is now optional too. Operator/CLI surface only — the UI never calls this route,
   and nothing on a money path changed. Deploy queued for the next watch run (the fix landed inside the
   09:30–10:30 prime-open window and a restart there costs live read state for no benefit).
-- **F49 (2026-09-08 09:40 ET, NOT fixed — proposal; the day's premise is read 5 minutes before the
+- **F49 (2026-09-08 09:40 ET, FIXED 2026-09-08 evening — `Team2Runner._finalize_open`: the first regular bar re-runs
+  `complete_plan`, keeps the 09:25 estimate as `plan.preopenSnapshot`, journals `open_finalized` and re-stamps the run;
+  `test_team2_integrity.py::test_day_type_is_finalized_on_the_real_open…`; the day's premise is read 5 minutes before the
   open)** `plan.openPrice` — and with it `dayType` (A1) and `sizingAtOpen` (V6) — is set by
   `complete_plan`, which prefers the **09:30 RTH open** but falls back to the **last pre-market close**
   when no RTH bar exists yet. The 09:25 pre-open job always runs before the open, so the fallback is
@@ -567,7 +571,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   completion as the pre-open estimate it is. **Money-path behaviour change — proposal only, not built
   by the watch job.**
 
-- **F50 (2026-09-08 10:10 ET, NOT fixed — proposal; the target exit is decided a bar late and the
+- **F50 (2026-09-08 10:10 ET, FIXED 2026-09-08 evening — the plan target is now an UNDERLYING condition on the ~2 s quote
+  watch (`PlanRunner.target_breach` hook, Team2 implements long `last ≥ target` / short `last ≤ target`): the first FRESH
+  print through it sells the remaining size as a reduce-only LIMIT at the contract's fresh bid, never a premium limit;
+  duplicates are impossible while an exit is pending (`pending_exit_qty`), a stale print never sells, a resting limit is
+  re-priced by `_reprice_stuck_exits` and the failed-exit watchdog; the model labels its own exits
+  `fillAssumption: target_touch_intrabar`. Semantics in PLATFORM-RULES 2026-09-08. `test_target_sells_once_on_a_fresh_print…`;
+  the target exit WAS decided a bar late and the
   book pays for it. First live money evidence.)** The plan target is judged on the CLOSED 2m bar
   (`session.py` X3/V11: "target touched → sell the whole position"), and the live runner then routes
   that exit **at the bar close** — so the desk sells wherever price is when the bar ends, while the
@@ -590,7 +600,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   match what the read claims. **Money-path behaviour change — proposal only, not built by the watch
   job.** Note this compounds F47: a target one bar wide guarantees the timing loss shows up on every
   trade.
-- **F51 (2026-09-08 10:10 ET, NOT fixed — proposal; the read's IV proxy is half the traded 0DTE IV)**
+- **F51 (2026-09-08 10:10 ET, FIXED 2026-09-08 evening — `Team2Runner._session_sigma`: the read's IV is captured ONCE per
+  plan at the first 2m read from today's 0DTE ATM chain IV (call+put `mid_iv` averaged at the strike nearest spot,
+  `source: chain_atm`, flagged `chainDelayed` because CBOE is ~15 min behind) else the VIX proxy (`vix_proxy`), stamped as
+  `plan.sigma {value, source, lockedAt, strike, spot, capturedAt}` on the plan AND the run row, journaled `sigma_locked`;
+  `replay()` uses the stamped value. `techniques.team2.sigma_source` default `vix1d → chain`. A later IV can never rewrite
+  an earlier signal — it may only inform the next session (Codex: point-in-time provenance). Tests: `test_iv_is_locked…`,
+  `test_the_locked_iv_comes_from_todays_atm_chain…`, `…falls_back_to_the_vix_proxy…`; the read's IV proxy WAS half the traded 0DTE IV)**
   The session read prices every model trade with `PremiumModel(sigma=…)` fed by the IV proxy
   `^VIX1D → ^VIX×1.3 → 0.20` (`runner.py::_sigma`, B2). Today's sigma is **0.1203** while the contract
   the desk actually bought, `QQQ260908P00714000`, quoted **IV 0.236** on OPRA — a factor of two. Two
@@ -652,7 +668,9 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   it was left alone.)
 
 
-- **F56 (2026-09-08 11:10 ET, NOT fixed — proposal; a wide pre-market range makes V6's no-trade zone
+- **F56 (2026-09-08 11:10 ET, EXPERIMENTAL — split per the Codex review into (a) edge-reversal at small size and (b) the
+  six-ATR bypass; BOTH sweep variants only, neither promotes without the twenty-session review (user 2026-09-08 evening);
+  a wide pre-market range makes V6's no-trade zone
   swallow the whole session, so no scenario setup can ever fire)** `sizing_bucket` (`scenario.py:36`)
   returns **`none`** for any entry price inside the PM range — F15's deliberate widening on 2026-09-04,
   which stopped the desk buying the middle of a gap day's pre-market range. The gate is applied to the
@@ -858,7 +876,10 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   threshold, size or money path changed; Team2 tests 57 passed, and `test_team2_runner.py` now asserts
   both wordings (the E3/B9/E4 and no-trade-zone clauses are judged on either).
 
-- **F61 (2026-09-08 14:10 ET, NOT fixed — proposal; a plumbing refusal spends the method's D9
+- **F61 (2026-09-08 14:10 ET, FIXED 2026-09-08 evening — `Setup.touches` (the D9 allowance) is incremented only by a PRICED
+  pullback: a fire or an engulfing skip; `skip_no_contract` and the location/regime skips count as `opportunities` but do
+  not spend; the read exposes `pullbacks ≥ opportunities ≥ touches ≥ attempts`. `test_a_plumbing_refusal_does_not_spend…`;
+  a plumbing refusal WAS spending the method's D9
   allowance).** `session.py` increments `s.touches` **before** it asks the premium model for a
   strike, so a `skip_no_contract` — a refusal that says nothing about the tape — consumes one of the
   two pullbacks D9/P6 allows. This is the exact inverse of the principle **F18** already established:
@@ -873,7 +894,12 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   which touches can enter, so it is the user's call, not the watch's. `skip_engulfing` should keep
   consuming (that *was* a pullback, just a bad bar).
 
-- **F62 (2026-09-08 14:10 ET, NOT fixed — proposal; a touch has no reset, so a drift on the EMA13
+- **F62 (2026-09-08 14:10 ET, FIXED 2026-09-08 evening — a pullback is an EPISODE: after a counted contact the setup is
+  `_departed=False` until a 2m close at least `pullback_reset_atr` (0.5) × ATR off the EMA13 on the trade's side; contacts
+  before that are one `same_pullback` note, not new pullbacks. Chosen from the method's "pullback = leaves and returns"
+  reading and the Codex caution NOT to tune it to today's two entries: on the synthetic drift day it is 4 episodes vs 16
+  bar-contacts (`test_a_drift_on_the_ema_is_one_pullback_not_many`); today's IWM 13:42–13:54 would have been one. Knob
+  `techniques.team2.pullback_reset_atr` (0 = the old every-bar behaviour); a touch HAD no reset, so a drift on the EMA13
   counts as many pullbacks).** `touched_ema` is judged bar by bar with no requirement that price ever
   *leave* the EMA13 band between touches, so a sideways drift sitting on the EMA prints a fresh touch
   every 2 minutes. IWM 13:42–13:54: six consecutive 2m closes oscillating 295.86–296.04 around an
@@ -888,7 +914,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   against those two entries before it is shipped. Interacts with **F61** (both decide what "spends"
   the D9 allowance) and with **F60** (which only reports the spend honestly).
 
-- **F63 (2026-09-08 14:40 ET, NOT fixed — proposal; a fire that happens while the app is DOWN is
+- **F63 (2026-09-08 14:40 ET, MITIGATED 2026-09-08 evening — the cause was found and removed: the 14:24:01 stop is the
+  Claude desktop package update ("Relaunch to update", 1.49585) stopping `CoworkVMService`; the engine was a child of that
+  process tree (third such stop). It now runs under the Task Scheduler (`scripts/install-watchdog.ps1`: `ZargarWatchdog`
+  every 3 min + at logon starts it when :8420 is silent, `ZargarRestart` on demand is the deploy path) — recovery ≤ 3 min
+  instead of "whenever someone notices". The fire-during-downtime gap itself is unchanged: a bar the engine never saw
+  is still not traded (by design — never a synthetic fill) and the catch-up read journals it `haltedAtFire`-style as before;
+  a fire that happens while the app is DOWN is
   neither traded nor recorded).** The app died at 14:24 ET with no traceback and no shutdown line and
   was restarted at 14:33 (9 minutes dark; the third such unexplained mid-session stop, see the
   2026-09-04 pattern). Nothing was lost today — the only events in the gap were `late_touch` and one
@@ -1008,7 +1040,10 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   entry"* in the tooltip. **Reporting only — no rule, threshold, gate, size or money path changed.**
   57 Team2 tests pass (F68 assertions in `test_team2_runner.py`).
 
-- **F69 (2026-09-08 16:45 ET, NOT fixed — proposal, shared; the app log keeps ~50 minutes of history,
+- **F69 (2026-09-08 16:45 ET, FIXED 2026-09-08 evening — shared `main.py`: rotation 50 MB × 10, `httpx` logger at WARNING
+  (its per-poll INFO line was 99 % of the file; F45's CBOE 429 storm still surfaces as WARNING/ERROR), a startup line with
+  pid/parent/argv and an atexit/SIGTERM/SIGBREAK goodbye line so the next unexplained stop leaves evidence;
+  the app log KEPT ~50 minutes of history,
   so a post-mortem past lunchtime is impossible).** Measured this run: of **5,430** lines written in
   **13.5 minutes**, **5,378 (99.0 %)** are `INFO httpx HTTP Request` lines from the polling loops
   (4,316 Yahoo 1m, 635 Alpaca/OPRA, 406 CBOE). The app's own content is ~52 lines in the same 13.5
@@ -1032,6 +1067,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
+- **2026-09-08 (evening, after the Codex review — v0.7.12, one deploy)** — **Hosting:** the 14:24 outage was the Claude
+  desktop package update stopping its VM service with the engine inside its process tree; the engine now runs under the
+  Windows Task Scheduler (`ZargarWatchdog` / `ZargarRestart`, `scripts/watchdog.ps1`), the log keeps days (F69), and the
+  process announces start/stop. **Read integrity:** acted-on read events are recognised by FINGERPRINT (ts · event ·
+  setup · touch · why) instead of list position, so an input moving under the recomputed read can neither re-fire nor
+  skip an event (`read_rewritten` said once); the read's IV is locked per session from the 0DTE ATM chain and stamped
+  (F51); the day premise is finalized on the 09:30 bar with the 09:25 estimate kept (F49). **Execution:** the plan target
+  is an underlying condition on the quote watch, sold reduce-only at the fresh bid (F50). **Read:** pullbacks are episodes
+  (`pullback_reset_atr` 0.5, F62) and only priced pullbacks spend the D9 allowance (F61). **Kept experimental:** F47, F56a/b
+  (sweep variants only). **Governance:** twenty banked Practice sessions trigger a REVIEW, never a promotion (PLAN §3d).
+  Tests: `tests/test_team2_integrity.py` (9) + the Team2/halt/exit/arming suites. Threshold changed: `pullback_reset_atr`
+  0 → 0.5 (new), `sigma_source` vix1d → chain. No size, gate or money-path knob changed; Practice continues at
+  $2,000 / 6 % / 10 % technique pause / 15 % book breaker.
 - **2026-09-08 (market watch, run 32, post-close)** — **F68 fixed** (reporting only): the History tab's "How it went" column now counts only setups the method actually refused. `skip_last_entry`, `skip_event_day` and `skip_loss_cap` are once-a-session state notes (F26), and counting them as refusals made SPY read "2 refused" for one real refusal and IWM "6" for five; they now ride in the tooltip as day states. **F69 logged as a proposal** (shared, user's call): 99.0 % of the app log is `httpx` INFO chatter, so 5 MB × 3 rotation retains only ~50 minutes and a post-close review cannot read the open. Tests: 57 Team2 tests pass. No rule, threshold, gate, size or money path changed.
 
 - **2026-09-08 (market watch, run 24)** — no code change. **F58 logged as a proposal**: V6's sizing ladder is only ordered when the PM range is nested inside the prior-day zones, and `sizing_bucket` resolves every other geometry to `none` — SPY's 10:00 refusal contradicts V6's own Full-size band. Also verified (negative result) that the PM window is exactly METHOD L2.1's 04:00–09:30 ET, so F56/F58 are rule questions, not a data defect. No rule, threshold, gate, size or money path changed.
