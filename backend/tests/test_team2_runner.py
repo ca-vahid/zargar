@@ -94,10 +94,15 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     # F53: on the "waiting for the 1st/2nd 2m pullback" line, a regime that cannot fire the setup must
     # SAY so — session.py's E3/B9 stack gate and E4 chop gate skip silently, so without this the line
     # promises an entry the next EMA13 touch would not actually take.
+    # F60 (2026-09-08): once the setup's D9 allowance is spent the line says so instead of "waiting for
+    # the 1st/2nd" — the E3/B9/E4 clause is judged the same way on both wordings, so match either.
+    def _watch_line(text: str) -> bool:
+        return "waiting for the 1st/2nd 2m pullback" in text or "pullbacks are spent" in text
+
     seen_blocked = False
     for snap in waiting_snaps:
         s = snap["summary"]
-        if "waiting for the 1st/2nd 2m pullback" not in s:
+        if not _watch_line(s):
             continue
         regime, bias = snap["team2"].get("regime") or {}, snap["team2"].get("bias") or {}
         want = "bull" if bias.get("direction") == "long" else "bear"
@@ -115,13 +120,18 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     # "touches 0" forever while every EMA13 pullback is turned away at the door.
     for snap, setups_now in zip(waiting_snaps, waiting_setups):
         s2 = snap["summary"]
-        if "waiting for the 1st/2nd 2m pullback" not in s2:
+        if not _watch_line(s2):
             continue
         assert all("skipped" in x for x in setups_now), setups_now
         bias2 = snap["team2"].get("bias") or {}
         cands = [x for x in setups_now if not x.get("dead")
                  and (not bias2.get("direction") or x.get("direction") == bias2.get("direction"))]
         picked2 = sorted(cands, key=lambda x: x.get("confirmedTs") or 0)[-1] if cands else None
+        # F60: the line must never promise a 1st/2nd pullback the setup can no longer take
+        if picked2 and (picked2.get("touches") or 0) >= 2:
+            assert "pullbacks are spent" in s2 and str(picked2.get("id")) in s2, s2
+        else:
+            assert "waiting for the 1st/2nd 2m pullback" in s2, s2
         refused2 = (picked2 or {}).get("skipped")
         if refused2 == "skip_no_trade_zone":
             assert "no-trade zone (V6/B5)" in s2, s2

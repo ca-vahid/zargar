@@ -935,8 +935,19 @@ class Team2Runner(PlanRunner):
                                             "modelled premium, not the live chain"}
             refused = skip_why.get(str((picked or {}).get("skipped") or ""), "")
             refused_s = f" · {refused}" if refused else ""
+            # F60 (2026-09-08): once a setup has spent its D9 allowance every further touch is watch-only,
+            # so "waiting for the 1st/2nd 2m pullback" is not what the desk is doing — IWM read
+            # "waiting for the 1st/2nd 2m pullback into the EMA13 (touches 8)" while its pm_break_up@13:15
+            # could not enter again today. Say whose touches they are and that they are spent. The count
+            # comes from `picked`, which is often NOT the setup the scenario label names (F24), so name it.
+            max_touch = int(getattr(rules_now, "pullback_max_touches", 2) or 2)
+            if picked and touches >= max_touch:
+                state_s = (f"{picked.get('id')}: its first {max_touch} pullbacks are spent (touches {touches}) — "
+                           "further touches are watch-only (D9/P6)")
+            else:
+                state_s = f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches})"
             d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "
-                            f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches}) · EMA stack {regime.get('stack', '?')}, "
+                            f"{state_s} · EMA stack {regime.get('stack', '?')}, "
                             f"{regime.get('fan', '?')}{blocked_s}{refused_s}")
         elif pdh and pdl:
             pm = (f" · PM {plan['pml']:.2f}–{plan['pmh']:.2f}" if plan.get("pmh") and plan.get("pml") else " · pre-market range at 09:25")
@@ -947,6 +958,9 @@ class Team2Runner(PlanRunner):
         live = [{"trigger": t.trigger_id, "livePct": t.live_pct, "trimsDone": t.trims_done, "isAdd": bool(getattr(t, "is_add", False))}
                 for t in ap.trades.values() if t.status == "open" and getattr(t, "live_pct", None) is not None]
         d["team2"] = {"sheet": plan.get("sheet"), "dayType": plan.get("dayType"), "sizingAtOpen": plan.get("sizingAtOpen"),
+                      # the 09:25 pre-open result, so a reader (or the watch job) can verify completion
+                      # from the snapshot instead of parsing the sheet string
+                      "pmh": plan.get("pmh"), "pml": plan.get("pml"), "complete": bool(plan.get("complete")),
                       "bias": bias or None, "regime": regime or None, "read": {k: read.get(k) for k in ("summary",)} if read else None,
                       "live": live or None}
         return d
