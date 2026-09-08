@@ -23,6 +23,19 @@ from .technique.universe import CORE_UNIVERSE
 MODE_ALIASES = {"dry_run": "practice", "sim": "practice", "paper": "live"}
 
 DEFAULTS: dict[str, Any] = {
+    # Options Cartel owns these switches; research registration does not start a runner.
+    "techniques.options_cartel.enabled": True,
+    "techniques.options_cartel.paused": False,
+    "techniques.options_cartel.scan_enabled": False,
+    "techniques.options_cartel.scan_symbols": [],
+    "techniques.options_cartel.scan_profile": "september_2026",
+    "techniques.options_cartel.scan_direction": "long",
+    "techniques.options_cartel.recovery_enabled": False,
+    "techniques.options_cartel.record_option_quotes": False,
+    "techniques.options_cartel.preparation": {},
+    "techniques.options_cartel.preparation_live": {},
+    "techniques.options_cartel.allow_live_auto": False,
+    "techniques.options_cartel.daily_loss_halt_pct": 0.0,  # optional technique limit; auto still requires the book loss halt
     # --- trading / routing -------------------------------------------------
     "trading.mode": "practice",             # practice | live
     "trading.default_portfolio": "",        # filled at seed time
@@ -159,6 +172,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.allow_live_auto": False,
     "techniques.tip.entry": "level_touch",   # level_touch | tip_time (tip_time is EARNED per source)
     "techniques.tip.mode": "proposal",       # shadow | alert | proposal | auto (per-source override)
+    "techniques.tip.daily_loss_halt_pct": 10.0,           # the tip technique pauses its plans on a book after losing 10% of it today (ladder 2026-09-07)
     "techniques.tip.risk_pct": 1.0,
     "techniques.tip.budget_per_tip": 1000.0,
     "techniques.tip.budget_open_max": 5000.0,
@@ -377,6 +391,7 @@ DEFAULTS: dict[str, Any] = {
         {"channelId": "1126325195301462117", "label": "em-alerts"},     # the pre-trading setups video + his alerts
         {"channelId": "1126364741779062974", "label": "watchlists"},    # morning board posts
     ],
+    "techniques.enhanced_market.daily_loss_halt_pct": 10.0,   # EM pauses its plans on a book after losing 10% of it today (ladder 2026-09-07)
     "techniques.enhanced_market.ingest.enabled": True,
     "techniques.enhanced_market.ingest.auto_transcribe": True,
     "techniques.enhanced_market.ingest.auto_extract": True,

@@ -1,0 +1,21 @@
+# Opt-in, isolated test PostgreSQL. Never combine with docker-compose.yml.
+name: zargar-codex-tests
+services:
+  db:
+    image: postgres:16
+    container_name: zargar-codex-test-db
+    environment:
+      POSTGRES_USER: zargar
+      POSTGRES_PASSWORD: zargar
+      POSTGRES_DB: zargar_test_codex
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - codex_test_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zargar -d zargar_test_codex"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  codex_test_pgdata:

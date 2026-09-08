@@ -7,6 +7,7 @@ state transitions.
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 from typing import Callable
 
 from pydantic import BaseModel, Field, field_validator
@@ -106,6 +107,7 @@ def order_dict(o: Order) -> dict:
         "filledQty": o.filled_qty,
         "avgFillPrice": o.avg_fill_price,
         "source": o.source,
+        "technique": o.technique, "tags": list(o.tags or []),
         "parentId": o.parent_id,
         "ocaGroup": o.oca_group,
         "signalId": o.signal_id,
@@ -466,6 +468,7 @@ class OrderManager:
                 id=report.exec_id, order_id=order.id, portfolio_id=order.portfolio_id,
                 symbol=order.symbol, side=order.side, qty=report.fill_qty,
                 price=report.fill_price, commission=report.commission,
+                ts=dt.datetime.fromtimestamp(report.ts/1000, dt.timezone.utc),
             )
             session.add(exec_row)
             prev_filled = order.filled_qty or 0.0

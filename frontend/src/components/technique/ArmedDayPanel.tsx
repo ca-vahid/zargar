@@ -78,6 +78,7 @@ function buildTimeline(a: ArmedPlan): TimelineRow[] {
 
 /** What each still-waiting trigger needs before it can fire, in one sentence. */
 function waitingFor(t: any, windowNow: string | null | undefined): string {
+  if (t.waitingText) return `${t.waitingText}${windowNow === "extended" ? " — market closed" : ""}`;
   const inPrime = windowNow === "prime_open" || windowNow === "prime_close";
   const windowBit = inPrime ? "" : windowNow === "midday"
     ? " — mid-day is watch-only, next chance 14:45–16:00 ET"
@@ -411,9 +412,9 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
       <div className="tq-armed-day-now">
         <b>Now:</b>{" "}
         {team2
-          ? <span>{a.summary}{waiting.map((t: any) => <span key={t.id}> <span className="tq-chip" title={t.id}>{t.label}</span>{t.distancePct !== undefined ? ` ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>)}</span>
+          ? <span>{a.summary}{waiting.map((t: any) => <span key={t.id}> <span className="tq-chip" title={t.id}>{t.label}</span>{t.distancePct != null ? ` ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>)}</span>
           : waiting.length
-          ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip" title={t.id}>{t.label ?? `${trigWord(t)} @ ${fmt(t.entry)}`}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct !== undefined ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
+          ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip" title={t.id}>{t.label ?? `${trigWord(t)} @ ${fmt(t.entry)}`}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct != null ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
           : <span>{a.summary}</span>}
       </div>
       {!sessionStarted && (

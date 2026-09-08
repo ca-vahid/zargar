@@ -58,6 +58,124 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### Cartel preparation coverage/recovery — 2026-09-07
+
+Preparation completion must distinguish successful checks, definite early
+rejections, data failures and unprocessed listings. Its optional resource cap
+does not limit default market coverage or relax trading gates. Recovery reuses
+the original snapshot only within its validity window and unchanged policy;
+it creates a linked run and preserves completed records. Cached history retains
+its original observation and cannot establish executable quote freshness.
+See [preparation review](techniques/options-cartel/PREPARATION-REVIEW.md).
+
+### Cartel preparation workspace separation — 2026-09-07
+
+User requirement: Practice and Live preparation have separate settings, account
+selection and results. Legacy preparation settings/records belong to Practice;
+the new Live policy starts disabled. Scheduled dispatch follows `trading.mode`,
+and automatic prepared entries recheck workspace, account kind and existing
+live permissions before submission. Switching workspace never turns a Practice
+plan into a live plan. Held-position protection remains independent of the view.
+Tests: `test_options_cartel_preparation_workspaces.py` and scoped API tests.
+This extends the earlier Practice-only preparation boundary below.
+
+### 2026-09-07 — Cartel automatic Practice preparation
+
+Cartel owns its discovery/review policy and schedules preparation separately from
+shared execution. Preparation may arm only `sim` portfolios, with auto mode and
+live permission false; existing risk, closed-bar entry, write-ahead submission
+and position protection remain mandatory. Its context snapshot receipt-time
+policy does not relax executable quote freshness. Only unused automatic plans
+are replaced on refresh; working orders, user-paused plans and held positions
+are preserved. See [daily preparation](techniques/options-cartel/DAILY-PREPARATION.md)
+and `test_options_cartel_preparation.py` for lifecycle evidence.
+
+- **2026-09-07 · Cartel's money runtime uses independent fire and reconciliation
+  tasks.** Order DTOs now include technique/tags, and SessionListener has an
+  overridable order-interest predicate (the default remains its existing id index).
+  This lets Cartel observe an order before its submission response returns.
+  The controller releases its reservation mutex before broker I/O; partial fills
+  can be protected while that I/O is pending. Caller cancellation does not cancel
+  the background order task. Disarm cancels pending entry exposure but preserves
+  managed exits; explicit flatten persists its intent across late fills/restart.
+  Cartel publishes a display-only trigger projection for the shared Armed page,
+  including its own confirmation wording and durable-management metadata. The
+  shared UI does not substitute EM's timing/flatten wording for those fields.
+  Unknown distances/marks render as unavailable. Other runners retain their prior
+  order-interest and execution behavior. Tests: `test_options_cartel_runtime.py`.
+
+- **2026-09-07 · Prior-risk-mark recovery preserves data and source identity.**
+  Cartel recovery inserts only missing daily bars for the requested completed
+  exchange session; a concurrent insert wins without being overwritten. Source
+  compatibility is per symbol, not per connection: real OPRA contracts may coexist
+  with a simulated stock feed, but simulated marks are not replaced with real
+  historical prices. `TechniqueCartelRiskMarksRecovered` is a version-1 audit event
+  covering the portfolio, session, source, recovered/preserved symbols and gaps.
+  A copied quote snapshot keeps risk reports tied to their requested cutoff while
+  historical data is fetched; the entry path separately refreshes its clock.
+
+- **2026-09-07 · Daily technique P&L must not count prior-day gains again.** Cartel
+  uses today's execution cash flows and recorded fees, plus current marked value,
+  minus carried inventory at the preceding session's close. Option marks belong
+  to the contract, with the 100x multiplier. Incomplete execution totals/costs,
+  missing marks or inventory mismatches make the report unavailable, not zero.
+  Its optional day-loss guard compares this price/fee P&L at current FX against
+  current book equity and latches an observed breach in a versioned
+  `TechniqueCartelLossHalt` event. FX translation remains outside this technique
+  attribution; the book loss guard remains independent. OrderManager now preserves
+  `ExecReport.ts` in Execution.ts rather than replacing it with database receipt
+  time. Adapters that supply only receipt time still need venue-time normalization
+  for exact broker-day attribution. Existing records are not rewritten.
+
+- **2026-09-06 · Entry identity must distinguish entry orders from their descendants.**
+  Cartel exit orders retain entry-lineage tags. A tag-only association therefore
+  sees both the BUY and its SELL exits. Cartel entry recovery/readiness now matches
+  the owned BUY; duplicate BUY submissions remain ambiguous. Its read-only readiness
+  gate uses persisted order/position evidence, scoped to the book and underlying,
+  to block new Cartel exposure until statuses, fills and costs agree. It installs
+  no global halt and leaves protective exit routing independent. Other techniques'
+  entry policies and knowledge are unchanged. Evidence: `test_options_cartel_readiness.py`.
+
+- **2026-09-06 · Cartel primary exits wait for verified cancellation.** The opt-in
+  adapter now owns a persisted close request and applies actual cumulative fills
+  before replacing a venue stop or submitting a forced close. Working profit
+  orders and venue stops share the held-quantity budget. Its pending quantity
+  does not disappear on an arbitrary TTL or an unknown submission error.
+  PositionManager supplies a common `_submit_exit` write-ahead/RiskGate route for
+  the adapter's stop and ordinary exits, passes close arguments to its adapter,
+  and lets that adapter handle bounded retries. Non-adapter policies retain their
+  existing cancellation path. `ManagedPositionExitCancellationRequested` is a
+  registered version-1 event with position, symbol, order id and attempt number.
+  Cartel-specific tests cover optimistic cancellation responses, cancellation-time
+  fills, stop resizing, shared exit quantity, lost responses, restart and rejected
+  stop retry limits. This does not authorize interactive or live activation.
+
+- **2026-09-06 · Residual exits reconcile their write-ahead attempts.** Adapter
+  exits now persist an attempt tag and exact intent before `OrderManager.place`.
+  Optional adapter close/watch hooks let Cartel residual positions reconcile
+  that tag to the actual order before retrying. The manager remains the sole
+  order router via `_close_leg` and RiskGate. Unknown outcomes and still-working
+  orders never become retry permission merely because the generic exit TTL
+  elapsed; only confirmed terminal attempts retry, at 30-second intervals with
+  a five-attempt cap. Original campaigns and their pending exits are unchanged
+  when a separately attributed late-fill residual is closed. No other policy
+  opts into these hooks. Evidence: `test_options_cartel_residuals.py`, including
+  lost responses, restart, a terminal cancelled order with fills, and an unknown
+  submission through both manual close and the quote-watch path.
+
+- **2026-09-06 · Opt-in position adapters serialize mutable fill state.** Cartel's
+  provisional partial-entry protection can receive another entry fill while an
+  exit callback is persisting. `execution.serialization` supplies a per-position
+  reentrant guard for adapter policies; PositionManager persistence, close,
+  venue-stop maintenance, minute decisions and order updates use it. Nested
+  immediate fills remain legal; unrelated callbacks wait. Cartel quantity
+  reconciliation and history recovery take the same guard. Policies without an
+  adapter retain their existing path. Evidence: Cartel's concurrent entry-growth
+  / exit-fill test pauses persistence, delivers an exit, then verifies the
+  persisted remaining quantity and campaign accounting. This is serialization,
+  not proof of venue cancellation acknowledgement or complete partial-entry
+  recovery; those remain Cartel activation requirements.
+
 - **2026-08-30 · A quote source must be judged per SYMBOL, never per connection.**
   The hybrid feed demoted Yahoo to context whenever the Alpaca socket was up and the
   symbol was subscribed — but a subscribed name that never PRINTS (weekend, halted,
@@ -379,6 +497,73 @@ runtime ones to `execution.*`).
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-09-06 · Opt-in adapter adoption supports deterministic `positionId`
+  identities (existing ids are rejected rather than overwritten). Adapter-backed
+  persistence/journal failures propagate; initial adoption enters the in-memory
+  manager only after a successful durable save. Non-adapter adoption retains its
+  prior path. Cartel's terminal-entry helper validates actual fills and holdings,
+  locks arming state and serializes allocation to prevent duplicate adoption.
+  Tests: `test_options_cartel_adoption.py`, including injected save failure/retry.
+
+- 2026-09-06 · `TechniqueCartelContractSelection` contract records Cartel's
+  reviewed selection policy, eligible/rejected candidates and bounded-search
+  coverage. Reuses shared chain/reprice/snapshot interfaces; no order submission
+  or existing technique selection policy is changed.
+
+- 2026-09-06 · OptionsService snapshots gain additive `greeksFieldAsOf` metadata.
+  Only non-null fields actually returned by the live Greeks provider get new
+  observation timestamps. Quote-only refreshes and delayed-chain merges preserve
+  them. Cartel uses delta's own observation age for its source-backed 0.25 floor;
+  existing consumers keep their prior values/behavior. Tests:
+  `test_options_greeks_freshness.py`, Cartel execution tests and options-service suite.
+
+- 2026-09-06 · `ManagedPositionHistoryRecovered` contract added for explicit
+  Cartel daily-data restoration. Restoring source data never alters actual fills
+  or creates orders; missed closes remain identified separately. Conflicting
+  existing observations and future/rewound history are rejected. Tests:
+  `test_options_cartel_recovery.py`. Other techniques' history paths unchanged.
+
+- 2026-09-06 · PositionManager gains explicit opt-in policy adapters: registered
+  validation/update validation, minute-bar decisions and after-fill callbacks.
+  Only policies declaring an adapter matching their technique use this path;
+  all existing policies retain the previous behavior. Generic policy replacement
+  cannot remove/swap a held position's adapter or rewrite its campaign state.
+  Missing adapters alert and retain basic stop/expiry protection. Cartel's adapter
+  routes every exit through existing close/reduce-only/in-flight accounting;
+  after confirmed fills it synchronizes campaign quantities and re-sizes share
+  GTC stops even when the stop price is unchanged. Source tests are in
+  `test_options_cartel_position_adapter.py`, including a real OrderManager/sim trim.
+
+- 2026-09-06 · Cartel adds the `TechniqueCartelStateChanged` versioned journal
+  contract for its own transactional armed-state repository. Existing tables
+  are reused with technique ownership checks; parent-plan row locks serialize
+  creation, armed-row locks serialize trigger/attempt claims. No running broker
+  or existing technique behavior is changed. Eleven PostgreSQL tests verify
+  cross-instance races and ambiguous crash recovery (`test_options_cartel_state.py`).
+
+- 2026-09-06 · Cartel preflight adds own `enabled`, `paused`, `allow_live_auto`
+  settings (auto live off) and a versioned `TechniqueCartelPreflight` journal
+  contract. Uses shared sizing helpers and RiskGate directly; no order submission.
+  Requires fresh quotes/FX and explicit option/overnight/account choices. Actual
+  execution integration remains separate. Tests: `test_options_cartel_execution.py`
+  and Cartel API tests. Existing technique defaults and money paths unchanged.
+
+- 2026-09-06 · Options Cartel registered as a fifth technique, with its own
+  research/plan page and route. Registry test widened only for the new identity.
+  Mobile More selection now follows registry pages excluding primary tabs;
+  existing technique navigation remains equivalent. No Cartel execution runner
+  or new trading behavior is enabled. Frontend build and Cartel device audit
+  passed; all verification uses the separate Codex database and port.
+
+- 2026-09-06 · Options Cartel research API added under `/api/options-cartel`.
+  Uses the existing `TechniqueRun`/`TechniqueReview` schema with explicit
+  `technique=options_cartel` ownership checks and existing `TechniqueRunCompleted`
+  / `TechniqueReviewAdded` journal contracts. Analyses, reviewed plans and entry
+  replays create separate rows; completed parent runs remain immutable. Route
+  attachment starts no engine, broker, scheduler or execution runner and changes
+  no existing technique behavior. Evidence: `tests/test_options_cartel_api.py`
+  (PostgreSQL/ASGI ownership/authentication/provenance/no-orders tests).
+
 - 2026-09-04 · **`risk.sim_require_cash` (new, default on)** - RiskGate check `cash_available`:
   a BUY in a `sim` book must cost no more than the cash on hand (reduce-only exits, shadow and
   research books exempt). Why: the Practice book reached -$5,021 cash on 2026-09-04 with no gate
@@ -607,6 +792,19 @@ runtime ones to `execution.*`).
   exceeds what is left of `daily_loss_limit` is refused before routing (`skip_loss_budget`, F33); the
   premium-targeted picker `options/pick.select_by_premium` gained `mode="closest"` (F36; the legacy walk is
   `first_under`). `techniques.<id>.premium_stop_basis` / `premium_stop_min_ticks` are the knobs.
+- 2026-09-07 · **The loss ladder, as one table** (user decision; the numbers nest — a technique always hits its own
+  wall before the book's, and the book breaker is the catastrophe stop above any single budget):
+
+  | layer | key | practice value | before real money |
+  |---|---|---|---|
+  | Team2 day-loss pause | `techniques.team2.daily_loss_halt_pct` | 10% | 3–4% |
+  | EM day-loss pause | `techniques.enhanced_market.daily_loss_halt_pct` | 10% | 3–4% |
+  | Tips day-loss pause | `techniques.tip.daily_loss_halt_pct` | 10% | 3–4% |
+  | Options Cartel | `techniques.options_cartel.daily_loss_halt_pct` | 0 (off — its author relies on the book) | its author's call |
+  | Book breaker (per portfolio) | `risk.daily_loss_halt_pct`, scope `portfolio` | 15% | 8–10% |
+  | Global kill switch | HALT button / Telegram | manual | manual |
+
+  Rule: book breaker > max(technique budgets) and < their sum. Per-plan dollar halts sit under all of it.
 - 2026-09-04 · **Halts now come in three scopes** (built the same afternoon; was: one global switch that a
   Practice-book loss from one technique engaged for every technique on every book, re-engaging on release):
   1. **Global kill switch** — the HALT button, Telegram `/halt`, or the daily-loss breaker when
@@ -631,3 +829,74 @@ runtime ones to `execution.*`).
   (RiskGate inside, never-chase cap) — never a quantity edit on a live Trade, never a bare executor call.
   Premium-% trims in Team2 money modes are judged on the contract's live real-time bid before the model's
   forecast (delayed chain rows never drive money — same line as the premium stop, 2026-09-02).
+
+### Cartel scheduled jobs (2026-09-07)
+
+Cartel attachment registers only its three options_cartel_* names on the existing
+scheduler (09:05/20:10 recovery, 20:15 research). New owned settings are
+techniques.options_cartel.scan_enabled, scan_symbols, scan_profile,
+scan_direction and recovery_enabled. Both switches default false. Recovery
+selects only held Cartel adapter positions and can lead to managed reduce-only
+catch-up exits; nightly scans save research and never arm. Other techniques'
+job registrations, defaults and scheduler once-per-day semantics are unchanged.
+
+### Optional Markdown links for Cartel documentation (2026-09-07)
+
+The shared Markdown renderer accepts an optional renderLink callback. Its default
+rendering behavior remains unchanged for other techniques. Cartel opts in for
+its bundled method library, routing known chapter names internally and allowing
+only HTTP(S) external links; unsupported protocols remain plain text. No raw
+HTML is inserted and no arbitrary filesystem path is served by the backend.
+
+### Existing loss-halt contract and test scope (2026-09-07)
+
+Registered TechniqueLossHalt version 1 with the shared runner's existing payload
+fields: technique, portfolioId, lossToday, equity, pct, plans. This adds missing
+schema coverage; emission and trading behavior are unchanged. The daily-loss
+regression now checks both configured portfolio and global scopes, including
+unrelated-book behavior. The default remains portfolio; no risk setting or
+other technique's trading rule was changed.
+
+### Service task ownership during shutdown (2026-09-07)
+
+A focused PostgreSQL test reproduced TechniqueService.stop returning while its
+startup restore still held a table lock. The service now retains restore and
+orphan-sweep task handles, cancels and awaits its research/sheet/startup tasks,
+then stops the armer. This is lifecycle cleanup only: no method thresholds,
+entry/exit rules, portfolios or routing settings changed. The test verifies the
+transaction is released by acquiring an exclusive table lock after shutdown.
+The observed full-suite stale connection remains documented separately; this
+reproducer establishes the underlying cleanup defect, not a retroactive clean
+result for that run.
+
+### Shared quote-summary transport (2026-09-07)
+
+EventCalendar exposes its existing anonymous Yahoo quote-summary request/refresh
+mechanics for other read-only consumers. Calendar parsing and caching still use
+calendarEvents; Cartel requests price/assetProfile separately and normalizes its
+own dated fundamentals evidence. No broker credentials are involved, no industry
+mapping is inferred, and provider session tokens are excluded from captured data.
+The calendar/platform regression selection passed with the shared transport.
+
+### Cartel option observations (2026-09-07)
+
+Added `options_cartel_quotes` as a Cartel-owned append-only observation table,
+separate from nightly option-chain research. Capture is an explicit authenticated
+Cartel plan operation using an existing QuoteCache entry. It does not subscribe,
+request broker data, arm, place orders or change another technique's rules.
+Provider `source_ts` is preserved independently of local confirmation and capture
+times; missing provider time remains null. Delayed/halted flags, sizes, source
+and feed mode are retained. Repeating the identical observation is idempotent.
+The standard metadata creation path provisions this additive table; tests use
+only zargar_test_codex. Interactive database provisioning/preview acceptance is
+still pending. No continuous recorder is enabled by this change.
+
+Continuous recording follow-up: CartelRuntime now samples only selected option
+contracts on active Cartel proposal/auto plans (including paused/closing state).
+`techniques.options_cartel.record_option_quotes` defaults false. One background
+batch at a time and a five-second minimum interval prevent a queued tick backlog;
+shutdown cancels and awaits the recorder independently of order tasks. Errors
+surface through the recorder status and do not interrupt execution. The desk has
+an explicit save/refresh control. The additive table was provisioned only in
+zargar_dev_codex after verifying empty execution state. Recording remains off in
+the interactive preview. Other techniques and runtime databases were untouched.

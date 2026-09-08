@@ -69,3 +69,11 @@ FLOW = register(TechniqueInfo(
                 "repeat hits with overnight OI confirmation. Context for Tips and EM — "
                 "places no orders.",
 ))
+
+OPTIONS_CARTEL = register(TechniqueInfo(
+    id="options_cartel", label="Options Cartel", version="0.1", page="options_cartel",
+    settings_prefix="techniques.options_cartel.", tabs=("desk", "plans", "history", "method"),
+    description="Sean Trades' momentum swing method: market and industry leadership, "
+                "weekly/daily contraction, reviewed breakout plans and partial daily EMA exits. "
+                "Research and plan review; execution integration in progress.",
+))

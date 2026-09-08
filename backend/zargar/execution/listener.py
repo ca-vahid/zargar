@@ -62,6 +62,9 @@ class SessionListener:
     def forget_order(self, order_id: str) -> None:
         self._order_index.pop(order_id, None)
 
+    def watches_order(self, order: dict) -> bool:
+        return order.get("id") in self._order_index
+
     # -- hooks (subclass fills these) ----------------------------------------
     async def on_minute_bar(self, symbol: str, bar) -> None:  # pragma: no cover - overridden
         ...
@@ -108,7 +111,7 @@ class SessionListener:
             while True:
                 msg = await q.get()
                 try:
-                    if msg.get("id") in self._order_index:
+                    if self.watches_order(msg):
                         await self.on_order(msg)
                 except asyncio.CancelledError:
                     raise

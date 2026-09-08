@@ -1,11 +1,12 @@
 {
   "name": "zargar-frontend",
   "private": true,
-  "version": "0.7.1",
+  "version": "0.7.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "node scripts/check-release.mjs && tsc -b && vite build",
+    "check-release": "node scripts/check-release.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "mobile-audit": "node scripts/mobile-audit.mjs"

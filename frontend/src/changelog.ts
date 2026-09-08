@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.1";
+export const APP_VERSION = "0.7.5";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,53 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.5",
+    date: "2026-09-07",
+    title: "Preparation with visible coverage",
+    items: [
+      { tag: "improved", text: "Cartel checks the full eligible universe by default. An optional resource cap is separate from shortlist size; definite industry failures avoid unnecessary history downloads." },
+      { tag: "new", text: "Preparation shows discovery and evaluation progress, current work, elapsed time, heartbeat, coverage gaps and history reuse. Interrupted scans can resume their saved snapshot." },
+      { tag: "fixed", text: "Saved plans refresh as preparation publishes results, and filtered stocks show their later-stage rejection reasons. Data errors are counted separately." },
+      { tag: "improved", text: "Option selection searches beyond the nearest three expiry dates when needed and explains rejection counts and the effective per-contract premium limit." },
+    ],
+  },
+  {
+    version: "0.7.4",
+    date: "2026-09-07",
+    title: "Cartel follows your workspace",
+    items: [
+      { tag: "improved", text: "Every trading technique now has its own day-loss pause (Team2, EM and Tips at 10% of the book on practice) with the book breaker at 15% above them as the catastrophe stop — the ladder is one table in PLATFORM-RULES; EM and Tips settings panels show their number." },
+      { tag: "fixed", text: "Cartel preparation now shows accounts, settings and saved automatic plans for the selected Practice or Live workspace." },
+      { tag: "new", text: "Live preparation has its own disabled-by-default setup, explicit execution and overnight acknowledgements, and the existing Cartel live-auto permission." },
+      { tag: "improved", text: "Existing Practice settings remain intact. Switching workspace prevents preparation from arming in the previous mode while held-position protection continues." },
+    ],
+  },
+  {
+    version: "0.7.3",
+    date: "2026-09-07",
+    title: "A unified Cartel desk",
+    items: [
+      { tag: "new", text: "Options Cartel can discover the market, prepare a daily shortlist and arm qualifying options plans for automatic Practice execution." },
+      { tag: "improved", text: "Cartel now follows the other trading desks: Plans, Armed, History and Validation, with compact tables and separate Method and Settings tabs." },
+      { tag: "improved", text: "Preparation puts the shortlist first. Account, risk and schedule settings have their own home, and saved plans open directly into their details." },
+      { tag: "improved", text: "Shared buttons, status labels, loading and empty states follow the app's theme, density and phone layouts." },
+    ],
+  },
+  {
+    version: "0.7.2",
+    date: "2026-09-07",
+    title: "Options Cartel desk",
+    items: [
+      { tag: "fixed", text: "Research (shadow) books no longer pad the Dashboard. \"My holdings\" showed 61 positions worth $327k under a balance that counted 3 of them — the per-source scorecard books are practice-SIDE but they are not money. Real positions now stand alone, with a \"+ research (51)\" toggle that reveals them dimmed and badged; Recent orders and Fills work the same way, and shadow rows there are labelled research instead of \"practice\"." },
+      { tag: "new", text: "Options Cartel has its own research desk, source library, dated screen profiles, saved plans and history." },
+      { tag: "new", text: "Capture capitalization and industry evidence, scan a focus list, and review completed results or retry individual data failures." },
+      { tag: "new", text: "Review share or option expressions, arm alerts, proposals or automatic execution, and manage positions through the shared risk controls." },
+      { tag: "new", text: "Replay saved campaigns, compare entry variants, and value modeled fills with recorded option quotes and fees. Missing data and simulation limits remain visible." },
+      { tag: "new", text: "Optional Cartel quote recording and scheduled research/recovery have separate controls and start disabled." },
+      { tag: "fixed", text: "Background technique work is fully awaited during shutdown, and option Greek freshness is tracked by field." },
+    ],
+  },
   {
     version: "0.7.1",
     date: "2026-09-04",

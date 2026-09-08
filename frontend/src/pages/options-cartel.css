@@ -1,0 +1,37 @@
+/* Cartel uses the shared desk shell, panels, tables, buttons and status pills.
+   Only technique-specific composition belongs here; touch rules live in mobile.css. */
+.cartel-page { min-width:0; color:var(--text-1); }
+.cartel-page p { color:var(--text-2); line-height:1.45; margin:var(--sp-2) 0; }
+.cartel-nav { flex:1; }
+.cartel-page .panel-head { flex-wrap:wrap; }
+.cartel-card { min-width:0; padding:var(--pad); margin-bottom:var(--sp-3); }
+.cartel-card h2 { font-size:var(--fs-2); font-weight:600; margin:0 0 var(--sp-3); }
+.cartel-card h3 { font-size:var(--fs-2); margin:var(--sp-4) 0 var(--sp-2); }
+.cartel-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr)); gap:var(--sp-3); margin-bottom:var(--sp-3); }
+.cartel-page label { display:flex; flex-direction:column; gap:var(--sp-1); font-size:var(--fs-1); color:var(--text-2); }
+.cartel-page input,.cartel-page select,.cartel-page textarea { width:100%; min-width:0; border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--control-y) var(--sp-2); background:var(--surface-2); color:var(--text-1); font:inherit; font-size:var(--fs-3); box-sizing:border-box; }
+.cartel-page textarea { min-height:80px; }
+.cartel-row,.cartel-actions { display:flex; align-items:center; gap:var(--sp-2); flex-wrap:wrap; }
+.cartel-row { justify-content:space-between; }
+.cartel-checks { list-style:none; padding:0; margin:0; }
+.cartel-checks li { display:flex; justify-content:space-between; gap:var(--sp-3); padding:var(--cell-y) 0; border-bottom:1px solid var(--border); }
+.cartel-pass { color:var(--up); }.cartel-fail { color:var(--down); }.cartel-unknown { color:var(--warn); }
+.cartel-candidate { border:1px solid var(--border); border-radius:var(--radius-sm); padding:var(--sp-3); margin-bottom:var(--sp-2); }
+.cartel-candidate h4 { margin:0 0 var(--sp-1); text-transform:capitalize; }
+.cartel-notice,.cartel-error { padding:var(--sp-2); border-left:3px solid var(--warn); background:var(--surface-2); overflow-wrap:anywhere; }
+.cartel-error { border-color:var(--down); margin-bottom:var(--sp-3); }
+.cartel-plan-form,.cartel-form { display:grid; gap:var(--sp-3); }
+.cartel-plan-form { margin-top:var(--sp-3); }
+.cartel-page summary { cursor:pointer; padding:var(--sp-2) 0; color:var(--text-2); }
+.cartel-page .cartel-check { flex-direction:row; align-items:center; gap:var(--sp-2); }
+.cartel-page .cartel-check input { width:18px; height:18px; padding:0; flex-shrink:0; }
+.cartel-page a { color:var(--accent); }
+.cartel-inset { padding:var(--sp-2) var(--sp-3); }
+.cartel-inset > .link-btn { margin-left:var(--sp-3); }
+.cartel-push { margin-left:auto; }
+.cartel-table .cartel-wrap { white-space:normal; min-width:220px; max-width:420px; overflow-wrap:anywhere; }
+.cartel-table tr.selected td { background:color-mix(in srgb,var(--accent) 8%,var(--surface-1)); }
+.cartel-table td:first-child { vertical-align:middle; }
+.cartel-page [tabindex="-1"] { scroll-margin-top:var(--sp-3); }
+
+.cartel-page progress { width:100%; height:8px; accent-color:var(--accent); }

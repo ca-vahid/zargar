@@ -184,7 +184,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
               <span className="tq-chip">{t.label ?? t.id}</span>
               <b>{t.kind.replace(/_/g, " ")}</b>
               <span>@ <b>{fmt(t.entry)}</b></span>
-              <span className="muted">{t.distancePct !== undefined ? `${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>
+              <span className="muted">{t.distancePct != null ? `${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>
               <span className={`tq-badge ${t.status === "fired" ? "setup" : t.status === "waiting" ? "nosetup" : "failed"}`}>{STATUS_LABEL[t.status] ?? t.status}</span>
               <span className="muted small">stop {fmt(t.stop)} · R:R {fmt(t.riskReward)}{t.observedMidday ? ` · ${t.observedMidday} mid-day touch(es)` : ""}</span>
             </div>
@@ -212,7 +212,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           {openTrades.length > 0 && <button className="ghost-btn neg" disabled={busy}
             onClick={() => { if (confirm(`Sell everything this plan holds in ${a.symbol} at market and disarm?`)) act(() => api.techniqueDisarm(a.runId, true), "Flattened and disarmed"); }}>
             Flatten &amp; disarm</button>}
-          <label className="tq-armed-modesel" title="Change what happens when a trigger fires: alert = note only · proposal = you approve each trade · auto = trade and manage it automatically (auto derives a daily loss halt if none is set)">
+          <label className="tq-armed-modesel" title={`Change what happens when a trigger fires: alert = note only · proposal = you approve each trade · auto = trade and manage it automatically (${a.config.lossHaltPolicy === "required" ? "auto requires an enabled book loss halt" : "auto derives a daily loss halt if none is set"})`}>
             <span className="muted small">on fire:</span>
             <select value={a.config.mode} disabled={busy}
               onChange={(e) => { const m = e.target.value; void act(() => api.techniqueSetMode(a.runId, { mode: m }), `${a.symbol}: mode → ${m}`); }}>
@@ -228,7 +228,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
           )}
           <button className="link-btn" onClick={() => openRun(a.runId)}>open plan</button>
           <button className="link-btn" onClick={() => setOpen((v) => !v)}>{open ? "hide log" : "log"}</button>
-          <span className="muted small tq-head-right">risk {a.config.riskPct}% · {a.config.instrument === "options" && (a.config as any).premiumBudget ? `budget $${Number((a.config as any).premiumBudget).toLocaleString()}` : `max ${a.config.maxQty} sh`} · critic {(a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off"} · flatten {a.config.flattenMinutesBeforeClose}m before close</span>
+          <span className="muted small tq-head-right">risk {a.config.riskPct}% · {a.config.instrument === "options" && (a.config as any).premiumBudget ? `budget $${Number((a.config as any).premiumBudget).toLocaleString()}` : `max ${a.config.maxQty} sh`} · critic {(a as any).reviewerAvailable === false ? "n/a (no reviewer)" : a.config.useCritic ? "on" : "off"} · {a.config.management === "durable" ? "managed swing exits" : `flatten ${a.config.flattenMinutesBeforeClose}m before close`}</span>
         </div>
         {open && (
           <div className="tq-armed-log">

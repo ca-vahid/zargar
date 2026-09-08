@@ -75,6 +75,9 @@ Backend tests (needs the Postgres from docker compose, or set
 
 ## Documentation
 
+For parallel Claude/Codex work, start with [shared agent guidance](AGENTS.md)
+and the [isolated collaboration setup](docs/COLLABORATION.md).
+
 | Doc | What's in it |
 |---|---|
 | [docs/ROADMAP.md](./docs/ROADMAP.md) | **Start here to continue** — current status, your next steps in order, and the development plan (v0.2–v0.5 + backlog). |

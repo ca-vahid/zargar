@@ -6,7 +6,8 @@ import { baseChartOptions, cssVar } from "../lib/highchartsTheme";
 import { useAsync } from "../lib/useAsync";
 import { netWorthByCurrency, useStore } from "../store";
 import { useViewport } from "../lib/viewport";
-import { useWorkspace, useWorkspaceFilter } from "../lib/workspace";
+import { isRealBook, useWorkspace, useWorkspaceFilter } from "../lib/workspace";
+import { ResearchBadge } from "../components/ResearchBadge";
 import { parseOcc } from "../lib/occ";
 import { rgbaVar } from "../lib/highchartsTheme";
 import { SymIcon } from "../components/SymIcon";
@@ -370,9 +371,18 @@ function RecentActivity() {
   const allExecutions = useStore((s) => s.executions);
   const portfolios = useStore((s) => s.portfolios);
   const wsOk = useWorkspaceFilter();
+  const [showResearch, setShowResearch] = useState(false);
   const kindOf = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p.kind])), [portfolios]);
-  const recentOrders = useMemo(() => allOrders.filter((o) => wsOk(kindOf[o.portfolioId])), [allOrders, wsOk, kindOf]);
-  const executions = useMemo(() => allExecutions.filter((e) => wsOk(kindOf[e.portfolioId])), [allExecutions, wsOk, kindOf]);
+  // research books trade constantly (54 shadow fills in a day the real books did
+  // nothing) — they would drown the desk's own activity, so they are opt-in
+  const keep = useMemo(
+    () => (pid: string) => wsOk(kindOf[pid]) && (showResearch || isRealBook(kindOf[pid])),
+    [wsOk, kindOf, showResearch]);
+  const recentOrders = useMemo(() => allOrders.filter((o) => keep(o.portfolioId)), [allOrders, keep]);
+  const executions = useMemo(() => allExecutions.filter((e) => keep(e.portfolioId)), [allExecutions, keep]);
+  const hiddenResearch = useMemo(
+    () => (showResearch ? 0 : allOrders.filter((o) => wsOk(kindOf[o.portfolioId]) && !isRealBook(kindOf[o.portfolioId])).length),
+    [allOrders, wsOk, kindOf, showResearch]);
   const setActiveSymbol = useStore((s) => s.setActiveSymbol);
   const setPage = useStore((s) => s.setPage);
   const [tab, setTab] = useState<"orders" | "fills">("orders");
@@ -385,9 +395,9 @@ function RecentActivity() {
   const portfolioCell = (pid: string) => (
     <td className="muted">
       {pname[pid] ?? "—"}{" "}
-      <span className={`status-pill ${preal[pid] ? "bad" : "dim"}`}>
-        {preal[pid] ? "real" : "practice"}
-      </span>
+      {isRealBook(kindOf[pid])
+        ? <span className={`status-pill ${preal[pid] ? "bad" : "dim"}`}>{preal[pid] ? "real" : "practice"}</span>
+        : <ResearchBadge compact />}
     </td>
   );
 
@@ -404,6 +414,13 @@ function RecentActivity() {
             Fills
           </button>
         </div>
+        {(hiddenResearch > 0 || showResearch) && (
+          <button className="link-btn dash-research-toggle" aria-pressed={showResearch}
+            title="Research (shadow) books track each tip source's record — not money."
+            onClick={() => setShowResearch((v) => !v)}>
+            {showResearch ? "hide research" : `+ research (${hiddenResearch})`}
+          </button>
+        )}
       </div>
       <div className="scroll-x">
         {isPhone ? (
@@ -705,18 +722,26 @@ function HoldingsWidget() {
   const openTrade = useStore((s) => s.openTrade);
   const wsOk = useWorkspaceFilter();
   const kindOf = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p.kind])), [portfolios]);
-  const rows = useMemo(() => {
-    const by = new Map<string, { qty: number; value: number; pnl: number }>();
-    for (const p of Object.values(positionsMap)) {
-      if (!wsOk(kindOf[p.portfolioId]) || Math.abs(p.qty) < 1e-9) continue;
-      const cur = by.get(p.symbol) ?? { qty: 0, value: 0, pnl: 0 };
-      cur.qty += p.qty;
-      cur.value += p.marketValue ?? 0;
-      cur.pnl += p.unrealizedPnl ?? 0;
-      by.set(p.symbol, cur);
-    }
-    return [...by.entries()].map(([symbol, v]) => ({ symbol, ...v }))
-      .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+  const [showResearch, setShowResearch] = useState(false);
+  // Research books are grouped SEPARATELY, never summed into the headline: the
+  // balance above this panel counts real books only, so a list that mixed the
+  // two could never add up to it (2026-09-07).
+  const { rows, research } = useMemo(() => {
+    const fold = (real: boolean) => {
+      const by = new Map<string, { qty: number; value: number; pnl: number }>();
+      for (const p of Object.values(positionsMap)) {
+        const kind = kindOf[p.portfolioId];
+        if (!wsOk(kind) || isRealBook(kind) !== real || Math.abs(p.qty) < 1e-9) continue;
+        const cur = by.get(p.symbol) ?? { qty: 0, value: 0, pnl: 0 };
+        cur.qty += p.qty;
+        cur.value += p.marketValue ?? 0;
+        cur.pnl += p.unrealizedPnl ?? 0;
+        by.set(p.symbol, cur);
+      }
+      return [...by.entries()].map(([symbol, v]) => ({ symbol, ...v }))
+        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+    };
+    return { rows: fold(true), research: fold(false) };
   }, [positionsMap, kindOf, wsOk]);
   const ws = useWorkspace();
   const [all, setAll] = useState(false);
@@ -728,12 +753,20 @@ function HoldingsWidget() {
       <div className="panel-head">My holdings
         <span className="sub">{rows.length} in the {ws === "live" ? "real accounts" : "practice book"}
           {rows.length > 0 ? ` · ${fmtCcy(value, "USD")}` : ""}</span>
+        {research.length > 0 && (
+          <button className="link-btn dash-research-toggle" aria-pressed={showResearch}
+            title="Research (shadow) books track each tip source's record. They are not money and never count toward the balance."
+            onClick={() => setShowResearch((v) => !v)}>
+            {showResearch ? `hide research (${research.length})` : `+ research (${research.length})`}
+          </button>
+        )}
         <button className="link-btn tq-head-right" onClick={() => setPage("portfolios")}>portfolios →</button>
       </div>
       <div className="panel-body dash-holdings-rows">
         {rows.length === 0 && (
           <div className="muted small" style={{ padding: "10px 2px" }}>
             Nothing held in the {ws === "live" ? "real accounts" : "practice book"} right now.
+            {research.length > 0 && ` ${research.length} research position${research.length === 1 ? "" : "s"} are tracked separately.`}
           </div>
         )}
         {shown.map((h) => {
@@ -755,6 +788,34 @@ function HoldingsWidget() {
           <button className="link-btn dash-hold-more" onClick={() => setAll(!all)}>
             {all ? "show the biggest 8" : `show all ${rows.length}`}
           </button>
+        )}
+        {showResearch && research.length > 0 && (
+          <>
+            <div className="dash-research-head">
+              <ResearchBadge /> <span className="muted small">
+                per-source track record · not money, not in the balance above</span>
+            </div>
+            {research.slice(0, 12).map((h) => {
+              const occ = parseOcc(h.symbol);
+              return (
+                <button key={`r-${h.symbol}`} className="dash-hold dash-hold--research"
+                  onClick={() => openTrade(occ?.underlying ?? h.symbol)}
+                  title={`${occ?.underlying ?? h.symbol} — research book position`}>
+                  <SymIcon sym={occ?.underlying ?? h.symbol} size={20} />
+                  <span className="dash-hold-sym">{occ?.display ?? h.symbol}
+                    <span className="muted">{h.qty < 0 ? "short " : ""}{Math.abs(h.qty)}{occ ? "×" : " sh"}</span></span>
+                  <span className="dash-hold-val">{fmtCcy(Math.abs(h.value), "USD")}</span>
+                  <span className={`dash-hold-pnl ${h.pnl >= 0 ? "pos" : "neg"}`}>
+                    {h.pnl >= 0 ? "+" : "−"}{fmtCcy(Math.abs(h.pnl), "USD")}</span>
+                </button>
+              );
+            })}
+            {research.length > 12 && (
+              <div className="muted small" style={{ padding: "4px 12px 2px" }}>
+                +{research.length - 12} more research positions
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
