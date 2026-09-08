@@ -384,6 +384,10 @@ runtime ones to `execution.*`).
   research books exempt). Why: the Practice book reached -$5,021 cash on 2026-09-04 with no gate
   refusing it; every real venue would. Evidence: orders ZURA 702 @ 6.00, SOFI 236 @ 18.22,
   Practice cash after = -5,020.52. Off switch exists for a deliberate margin experiment.
+  **2026-09-07 23:20 ET - decision needed:** the Practice book still holds ZURA 702 / SOFI 236 with
+  cash -$5,021, so with this check ON every EM option entry on 09-08 is refused. The desk did not
+  flip it (a safety knob is the user's call): either turn `risk.sim_require_cash` off until the
+  book is repaired, close the two share tips, or credit the sim book.
 
 - 2026-09-01 · **`execution.arm_expired_plans` (new, default off)** — the runner refuses to arm
   a plan whose last session already closed; replays/tests set it on. Why: 22 stale runs armed
