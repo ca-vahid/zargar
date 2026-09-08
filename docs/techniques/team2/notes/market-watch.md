@@ -1168,7 +1168,7 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   **IV 0.236** on OPRA: the model priced its 716 put at $0.5216 where the desk paid $0.655 for the
   further-out 714. Live money is unaffected (trims on the live bid, sizing on the live NBBO) but every
   read/scorecard percentage is. Proposed: seed sigma from the 0DTE chain's ATM IV per symbol.
-- **F52 (new, FIXED — commit `bd0ee7a`, deploy QUEUED).** `TechniquePlanRead` was unregistered in the
+- **F52 (new, FIXED — commit `25a4921`, deploy QUEUED).** `TechniquePlanRead` was unregistered in the
   shared event contract (6 advisory warnings today, one per structural read event); the guard test only
   scanned `zargar/technique/` and `zargar/execution/`, never the per-technique packages. Registered the
   kind, widened the test's scan to `zargar/techniques/**`. Logged in `docs/PLATFORM-RULES.md` §4.
