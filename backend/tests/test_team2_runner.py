@@ -184,6 +184,13 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
     assert res["fires"] == len([t for t in trades if t.status != "alert"])
     assert res["net"] is not None and res["gross"] is not None
     assert isinstance(res["skips"], dict) and res["modelPct"] is not None
+    # F68: a once-per-session day note (the 15:30 cutoff, an event day, the loss cap) is not a setup
+    # the method refused — it must not inflate the refusal count the History tab shows
+    from zargar.techniques.team2.service import DAY_NOTES
+    assert "skip_last_entry" in res["skips"]                            # the day ran past 15:30 (D6)
+    assert res["refused"] == sum(n for k, n in res["skips"].items() if k not in DAY_NOTES)
+    assert res["refused"] < sum(res["skips"].values())
+    assert res["notes"] == [k for k in DAY_NOTES if res["skips"].get(k)]
 
 
 async def test_sweep_over_banked_days(rig):

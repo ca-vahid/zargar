@@ -21,7 +21,8 @@ type Team2Run = { runId: string; symbol: string; planFor: string | null; sheet: 
   result?: Team2DayResult | null };
 /** the day's own grade, written at disarm — fires, the read's model % and what the BOOK actually kept (net of fees) */
 type Team2DayResult = { fires: number | null; matched: number | null; theoreticalFires: number | null;
-  modelPct: number | null; net: number | null; gross: number | null; skips: Record<string, number> };
+  modelPct: number | null; net: number | null; gross: number | null; skips: Record<string, number>;
+  refused?: number; notes?: string[] };
 type ReadEvent = { ts: number; time: string; event: string; why: string; [k: string]: unknown };
 type ReadResult = { events: ReadEvent[]; trades: any[]; summary: Record<string, any>; bias: any; setups: any[] };
 type Sweep = { start: string; end: string; symbols: string[]; rows: any[]; summary: Record<string, any>; thresholds: Record<string, unknown> };
@@ -303,10 +304,17 @@ export function Team2Page() {
 function DayResult({ res }: { res?: Team2DayResult | null }) {
   if (!res) return <span className="muted small">—</span>;
   const skips = Object.entries(res.skips ?? {}).filter(([, n]) => n > 0);
+  // F68: a once-per-session day note (past the 15:30 cutoff, event day, loss cap) is not a setup the
+  // method refused — the backend splits them out, so the count here is refusals only and the notes
+  // ride along in the tooltip. Older rows have no `refused`, so fall back to the raw sum.
+  const words = (k: string) => k.replace(/^skip_/, "").replace(/_/g, " ");
+  const refused = res.refused ?? skips.reduce((n, [, c]) => n + c, 0);
+  const notes = (res.notes ?? []).map(words).join(" · ");
+  const tip = [skips.map(([k, n]) => `${words(k)} ×${n}`).join(" · "), notes ? `day: ${notes}` : ""].filter(Boolean).join(" — ");
   if (!res.fires) {
     return (
-      <span className="muted small" title={skips.map(([k, n]) => `${k.replace(/^skip_/, "").replace(/_/g, " ")} ×${n}`).join(" · ")}>
-        no trade{skips.length ? ` · ${skips.reduce((n, [, c]) => n + c, 0)} refused` : ""}
+      <span className="muted small" title={tip}>
+        no trade{refused ? ` · ${refused} refused` : ""}
       </span>
     );
   }
@@ -315,7 +323,7 @@ function DayResult({ res }: { res?: Team2DayResult | null }) {
     <span className="small" title={[
       `${res.fires} fired of ${res.theoreticalFires ?? res.fires} the read wanted, ${res.matched ?? 0} matched`,
       res.gross != null ? `gross ${res.gross.toFixed(2)}, i.e. ${(net - res.gross).toFixed(2)} of commissions` : "",
-      skips.map(([k, n]) => `${k.replace(/^skip_/, "").replace(/_/g, " ")} ×${n}`).join(" · "),
+      tip,
     ].filter(Boolean).join(" — ")}>
       {res.fires} trade(s) · <b className={net > 0 ? "pos" : net < 0 ? "neg" : ""}>{net > 0 ? "+" : ""}{net.toFixed(2)}</b> book
       {res.modelPct != null ? <span className="muted"> · read {res.modelPct > 0 ? "+" : ""}{res.modelPct.toFixed(1)}%</span> : null}

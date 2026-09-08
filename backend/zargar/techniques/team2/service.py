@@ -36,6 +36,10 @@ log = logging.getLogger("zargar.techniques.team2.service")
 
 CODE_VERSION = "team2-0.1"
 
+#: once-per-session state notes (`session.py` mints each at most once) — the day said what it was
+#: doing, it did not refuse a setup. Kept out of the refusal tally the History tab shows (F68).
+DAY_NOTES = ("skip_last_entry", "skip_event_day", "skip_loss_cap")
+
 
 def _day_result(arm) -> dict | None:
     """F67: the day's own grade, from the scorecard the runner writes at disarm (F43).
@@ -47,10 +51,18 @@ def _day_result(arm) -> dict | None:
     sc = (getattr(arm, "state", None) or {}).get("scorecard") if arm is not None else None
     if not sc:
         return None
+    skips = sc.get("skips") or {}
+    # F68 (2026-09-08): DAY_NOTES are minted once per session by `session.py` to say what state the
+    # day is in — they are not setups the method turned down, so counting them as refusals inflated
+    # the tally (2026-09-08 read "SPY no trade - 2 refused" for one real refusal plus the 15:30
+    # cutoff note). Same principle as F28: skip counts must mean skips. The raw `skips` map stays
+    # untouched; `refused` is the number a human should read, `notes` names the day-state rows.
+    refused = sum(n for k, n in skips.items() if k not in DAY_NOTES and n > 0)
     return {"fires": sc.get("actualFires"), "matched": sc.get("matched"),
             "theoreticalFires": sc.get("theoreticalFires"),
             "modelPct": sc.get("modelPnlPctSum"), "net": sc.get("realizedPnl"),
-            "gross": sc.get("realizedPnlGross"), "skips": sc.get("skips") or {}}
+            "gross": sc.get("realizedPnlGross"), "skips": skips, "refused": refused,
+            "notes": [k for k in DAY_NOTES if skips.get(k)]}
 
 
 class Team2Service:

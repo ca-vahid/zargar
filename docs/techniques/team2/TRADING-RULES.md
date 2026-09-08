@@ -991,6 +991,36 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   page, for any past session. **Reporting only — no rule, threshold, gate, size or money path
   changed.**
 
+- **F68 (2026-09-08 16:45 ET, FIXED same run — reporting; the day's own grade counted its state notes
+  as refusals).** F67's new "How it went" column shipped counting *every* `skip_*` row in the
+  scorecard as a setup the method turned down. Three of them are not: `skip_last_entry`,
+  `skip_event_day` and `skip_loss_cap` are minted **once per session** by `session.py` to say what
+  state the day is in (F26 added them precisely so a day that goes quiet after 15:30 does not look
+  like a day with no setups). So today's closed rows read **SPY "no trade · 2 refused"** where exactly
+  one setup was refused (the 10:00 no-trade-zone, plus the 15:32 cutoff note) and **IWM "6 refused"**
+  against five real refusals (2 × no contract, 3 × no-trade-zone). A desk grading its own day would
+  over-count how often the method said no — on the very number the F62/F65 discussion about refusal
+  rates turns on. Exactly F28's principle one layer up: *skip counts must mean skips*. Fixed in
+  `techniques/team2/service.py`: `DAY_NOTES` names the three once-a-session rows, the result block
+  gains **`refused`** (the tally a human should read) and **`notes`** (which day states applied); the
+  raw `skips` map is unchanged, so nothing is lost and older rows without `refused` still render from
+  the raw sum. The History column now reads *"no trade · 1 refused"* / *"5 refused"* with *"day: last
+  entry"* in the tooltip. **Reporting only — no rule, threshold, gate, size or money path changed.**
+  57 Team2 tests pass (F68 assertions in `test_team2_runner.py`).
+
+- **F69 (2026-09-08 16:45 ET, NOT fixed — proposal, shared; the app log keeps ~50 minutes of history,
+  so a post-mortem past lunchtime is impossible).** Measured this run: of **5,430** lines written in
+  **13.5 minutes**, **5,378 (99.0 %)** are `INFO httpx HTTP Request` lines from the polling loops
+  (4,316 Yahoo 1m, 635 Alpaca/OPRA, 406 CBOE). The app's own content is ~52 lines in the same 13.5
+  minutes. `main.py:20` rotates at `maxBytes=5_000_000, backupCount=3`, so the entire retained window
+  is **~50 minutes** — which is why this watch has repeatedly found the 09:25 pre-open lines already
+  rotated away (runs at market-watch.md:93, :232, :1622), and why a post-close review cannot read what
+  the 09:30 open logged. Two independent options, neither built here because both are shared:
+  (a) **`backupCount` 3 → 20** (~5 hours of history, ~100 MB of disk) — loses no information at all,
+  one number; (b) `logging.getLogger("httpx").setLevel(WARNING)` — a ~100× shrink, but it deletes the
+  request trace that diagnosed **F45**'s CBOE 429 storm, so (a) is the recommendation and (b) only
+  alongside it. `backend/zargar/main.py` — shared engine, **user's call**.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1001,6 +1031,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-08 (market watch, run 32, post-close)** — **F68 fixed** (reporting only): the History tab's "How it went" column now counts only setups the method actually refused. `skip_last_entry`, `skip_event_day` and `skip_loss_cap` are once-a-session state notes (F26), and counting them as refusals made SPY read "2 refused" for one real refusal and IWM "6" for five; they now ride in the tooltip as day states. **F69 logged as a proposal** (shared, user's call): 99.0 % of the app log is `httpx` INFO chatter, so 5 MB × 3 rotation retains only ~50 minutes and a post-close review cannot read the open. Tests: 57 Team2 tests pass. No rule, threshold, gate, size or money path changed.
 
 - **2026-09-08 (market watch, run 24)** — no code change. **F58 logged as a proposal**: V6's sizing ladder is only ordered when the PM range is nested inside the prior-day zones, and `sizing_bucket` resolves every other geometry to `none` — SPY's 10:00 refusal contradicts V6's own Full-size band. Also verified (negative result) that the PM window is exactly METHOD L2.1's 04:00–09:30 ET, so F56/F58 are rule questions, not a data defect. No rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 25)** — no code change. Measured, on today's banked 1m tape, what each of the four no-trade-zone refusals actually did (spot basis) and worked F58's proposed clamp through them: it would have **allowed SPY 10:00** (target hit in the same minute, zero adverse excursion) but **also QQQ 10:16** (3.94 points against, target never reached), and would still refuse QQQ 11:00 and IWM 11:26 — the two that ran 75 % and 98 % of the way to target. So the clamp is a precedence fix that takes a winner and a loser together, and does not address the width F56 measures. Logged as a follow-up under F58. Also verified the desk-wide loss tally against the persisted rows (1 of 2, book basis): re-entries carry `#N` trigger ids so they group as separate positions, only X5 `+add` legs share one. No rule, threshold, gate, size or money path changed.
