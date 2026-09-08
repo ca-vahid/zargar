@@ -54,8 +54,11 @@ class ArmRepository:
             plan = CartelPlan.model_validate(run.result["plan"]["plan"])
             if not plan.created_at <= now_ms < session_bounds(plan.last_session.isoformat())[1]:
                 raise ValueError("plan does not exist yet or its horizon has closed")
-            if await session.get(Portfolio, portfolio_id) is None:
+            portfolio = await session.get(Portfolio, portfolio_id)
+            if portfolio is None:
                 raise ValueError("portfolio not found")
+            from .accounts import validate_account
+            validate_account(self.engine, portfolio)
             existing = await session.get(TechniqueArmed, run_id)
             if existing is not None:
                 if existing.technique != TECHNIQUE:
