@@ -778,6 +778,19 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   exceeds what is left of `daily_loss_limit` is refused before routing (`skip_loss_budget`, F33); the
   premium-targeted picker `options/pick.select_by_premium` gained `mode="closest"` (F36; the legacy walk is
   `first_under`). `techniques.<id>.premium_stop_basis` / `premium_stop_min_ticks` are the knobs.
+- 2026-09-07 · **The loss ladder, as one table** (user decision; the numbers nest — a technique always hits its own
+  wall before the book's, and the book breaker is the catastrophe stop above any single budget):
+
+  | layer | key | practice value | before real money |
+  |---|---|---|---|
+  | Team2 day-loss pause | `techniques.team2.daily_loss_halt_pct` | 10% | 3–4% |
+  | EM day-loss pause | `techniques.enhanced_market.daily_loss_halt_pct` | 10% | 3–4% |
+  | Tips day-loss pause | `techniques.tip.daily_loss_halt_pct` | 10% | 3–4% |
+  | Options Cartel | `techniques.options_cartel.daily_loss_halt_pct` | 0 (off — its author relies on the book) | its author's call |
+  | Book breaker (per portfolio) | `risk.daily_loss_halt_pct`, scope `portfolio` | 15% | 8–10% |
+  | Global kill switch | HALT button / Telegram | manual | manual |
+
+  Rule: book breaker > max(technique budgets) and < their sum. Per-plan dollar halts sit under all of it.
 - 2026-09-04 · **Halts now come in three scopes** (built the same afternoon; was: one global switch that a
   Practice-book loss from one technique engaged for every technique on every book, re-engaging on release):
   1. **Global kill switch** — the HALT button, Telegram `/halt`, or the daily-loss breaker when
