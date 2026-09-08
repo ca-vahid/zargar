@@ -143,6 +143,47 @@ async def test_promoted_park_self_declines_skip_watch_unattended(rig, monkeypatc
     assert "watch" in ((prow.context or {}).get("declineReason") or "")
 
 
+async def test_promoted_park_take_self_approves_unattended(rig, monkeypatch):
+    """FRVO 2026-09-08: an analyst TAKE promoted off a data-artifact park sat
+    pending — under unattended practice a promoted take now self-approves
+    (skip/watch declines, NO verdict stays pending fail-closed, live waits)."""
+    import zargar.brokers.sim as simmod
+
+    from .conftest import wait_for
+    eng = rig
+    svc = eng.signals_service
+    await eng.settings.set("techniques.tip.sources", {"TakeSrc": {"mode": "auto"}})
+    await eng.settings.set("techniques.tip.unattended", True)
+    monkeypatch.setitem(simmod.KNOWN_PRICES, "COLDT", 231.8)
+    sig = _tip(ticker="COLDT")
+    row_id = new_id()
+    async with eng.sf() as session:
+        session.add(Signal(
+            id=row_id, source_name="TakeSrc", ticker="COLDT", direction="long",
+            action="open", entry_type="limit", timeframe="swing",
+            confidence="explicit_call", is_actionable=True, status="parked",
+            entry_price=231.5, target_price=260.0, stop_price=220.0,
+            extraction={"signal": sig.model_dump(),
+                        "analyst": {"verdict": "take", "rationale": "clean open"}},
+            verification={"passed": False, "park": True, "shadow_only": False,
+                          "checks": [{"name": "ticker_resolves", "passed": False,
+                                      "fatal": False, "detail": "no market data yet"}]},
+            created_at=dt.datetime.now(dt.timezone.utc), seen_count=1))
+        await session.commit()
+    await svc.recovery_sweep()                       # nudge warms the feed
+    await wait_for(lambda: (q := eng.quotes.get("COLDT")) is not None
+                   and bool(q.last and q.last > 0))
+    out = await svc.recovery_sweep()
+    assert out["promoted"] == 1, out
+    from sqlalchemy import select as sa_select
+    from zargar.models import Proposal
+    async with eng.sf() as session:
+        prow = (await session.execute(sa_select(Proposal).where(
+            Proposal.signal_id == row_id))).scalars().first()
+    assert prow is not None and prow.status == "executed", (prow.status if prow else None)
+    assert prow.decided_via == "auto"
+
+
 async def test_error_content_retries_exactly_once(rig):
     eng = rig
     svc = eng.signals_service

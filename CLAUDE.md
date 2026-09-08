@@ -122,8 +122,9 @@ values as the safe baseline.
 morning desk surface (`zargar/desk.py`: 08:25 report/push, 09:00 roll watchdog, nightly
 soak), EARNED auto per source (`auto_min_graded`/`auto_min_hit`; explicit per-source auto
 bypasses), shadow-book de-noise (Blotter hide/dim/show, no research toasts, one row per
-source, `ResearchBadge`), intake recovery sweep (cold parks re-verify — promotions never
-self-approve; error content retries once), pinned test clock (`zargar/clock.py`,
+source, `ResearchBadge`), intake recovery sweep (cold parks re-verify; promoted cards decide themselves under
+unattended practice — take approves, skip/watch declines, NO verdict waits fail-closed,
+live always human (2026-09-08); error content retries once), pinned test clock (`zargar/clock.py`,
 ZARGAR_TEST_NOW), batch-1 F-fixes harness-enforced. Phase 6 (real-device/Alpaca/first
 live tip) = manual calendar gates with run-books in the build plan.
 **Team split: EM evolution + other-technique enhancement = ANOTHER TEAM; this desk works
