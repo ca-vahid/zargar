@@ -1486,3 +1486,71 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   book loss** count in view; if anything fires, re-measure **F50**'s close-vs-target slippage and
   **F47**'s thin targets. Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**,
   **F56**, **F58**, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-08 13:15 ET (run 25 — third quiet run; measured what the four refusals would have done)
+
+- **Alive and clean; nothing deployed, nothing queued.** `/api/health` ok, **v0.7.11**; one armed plan
+  per symbol for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode
+  **auto**, Team2 Practice `b9dcd8db…`, `needsAttention: false` and `readError: null` on all three,
+  halt `engaged: false` with no per-book halts and no technique pause. No Team2 code change was made —
+  nothing was found broken.
+- **Data real-time.** Quotes **0–1 s** old, `session: regular` (SPY 767.77 / QQQ 720.42 / IWM 295.73);
+  1m bars **213 of 213 minutes present since 09:30, zero gaps** on all three, last bar 13:02 ET; the
+  read advanced 91 → 106 2m bars since run 24; the Alpaca **OPRA** batch is 200-ing every ~2 s
+  (freshest 13:05:02 ET), `feed=opra`, and QQQ's traded contract is still in the subscription list.
+  EMA/fan values present on all three regimes.
+- **The tape did nothing, for the third run running.** Zero new events since run 23 — QQQ still 16,
+  SPY 2, IWM 2; no new touch, no scenario flip, no fire, no skip. Rebuilt today's 15m closes from the
+  `bars` table and every bias is still right: QQQ's last flip was the 10:15 bucket (C717.76 > 717.03 →
+  scenario 3) and 10:30–13:00 (718.15 / 718.94 / 719.91 / 720.09 / 720.85 / 719.97 / 719.60 / 719.08 /
+  719.27 / 719.23 / 720.39) all sit **between** the zones → correctly no flip ✓; SPY below 769.00 on
+  every close (highest 768.04) → scenario 4 ✓; IWM above 294.59 on every close → scenario 3 ✓.
+- **Replay parity is exact on all three.** `POST /runs/{id}/replay` reproduced 16 / 2 / 2 events
+  **byte-identically** (JSON compare, not eyeball) with `pnlPctSum` 65.61 / 0 / 0; only `bars2m`
+  differs (106 live vs 108 replay — bars closed between the two calls, not a defect).
+- **Book untouched, and the desk loss tally VERIFIED rather than carried forward.** Team2 Practice cash
+  **and** equity $9,934.16, zero open positions, zero Team2 working orders (the 6 open orders in
+  `/api/state` are other teams' books). Reading the persisted `technique_armed.state.trades` and
+  applying `_plan_losses` by hand: QQQ's two round trips are `pm_break_down@09:30#1` (−$63) and
+  `#2` (+$45) — re-entries carry a **`#N`** suffix, so they are two groups, not one, and only X5
+  `+add` legs collapse into a base position. Tally = **1 of 2 on the book basis** (F37), SPY and IWM
+  contribute 0 on the model basis. One more book loser stops the desk. Today's trades are still fully
+  explained by **F50** (exit routed at the bar close, not the target) and **F51** (model sigma 0.1203
+  vs the contract's traded IV 0.236, and the model's 716 strike vs the desk's 714) — nothing new.
+- **F53 and F57 are both reading the live headline correctly.** QQQ's stack recovered mixed → **bull**
+  during this run, so its regime clause is gone again; all three now carry only F57's clause —
+  *"the last pullback sat inside the pre-market range — no-trade zone (V6/B5)"*. Regime agrees on all
+  three; location does not.
+- **New evidence for F56/F58 (measurement, nothing built).** Rather than re-tell the refusals I
+  measured them: from each refusal's own minute to 13:05 ET, on the banked 1m bars, taking the refused
+  entry and the setup's plan target — **SPY 10:00** short 767.82 → 767.45 **hit its target in the same
+  minute with 0.00 adverse excursion**; **QQQ 10:16** short 716.99 → 716.34 never got there and went
+  **3.94 against**; **QQQ 11:00** long 718.26 → 721.82 has run **75 %** of the way with MAE 0.00;
+  **IWM 11:26** long 295.32 → 295.955 has run **98 %** with MAE 0.12. Working F58's proposed clamp
+  through them: it would allow **SPY 10:00 (the winner) *and* QQQ 10:16 (the loser)** — 716.99 sits
+  inside the PDL zone 716.56–717.03, i.e. below the clamped band bottom — and would **still refuse**
+  QQQ 11:00 and IWM 11:26, the two that nearly reached target. So the clamp is a precedence fix that
+  buys a winner and a loser together, and it does **not** address the width F56 measures (94 % of
+  candidate pullbacks refused, run 23). Spot basis only — no premium path, no trims, no stop, and F50
+  warns a spot win is not a book win. Written up as a follow-up table under **F58**; both stay
+  **proposals for the user**, unbuilt.
+- **Log is clean for Team2.** Logs rotate at 5 MB (~every 35 min), so I scanned all four files back to
+  11:19 ET: **zero Team2 errors, zero Tracebacks of ours**. The only ERRORs are the other team's
+  recurring `cartel-observer bar handling failed` (`options_cartel/entry.py:45`) — now a **third and
+  fourth** occurrence, 11:21 and 12:08 ET. Flagged for them, not touched. The 28-per-6-minutes
+  `zargar.marketdata persist_bars: dropped N non-bucket-aligned stub bar(s)` warnings are **deliberate**
+  (EM team's write-time bucket guard, `marketdata.py:283`) and cost us nothing — our bar continuity is
+  213/213 — but at ~300/hour they are the only thing in the WARNING channel and would mask a real one.
+  Shared code, so noted only.
+- **UI not re-verified this run.** The browser pane strips `?token=` and the cookie-injection step was
+  refused by the tool policy, so `/team2` only rendered the sign-in page. Nothing UI-facing has changed
+  since run 24's pass (no deploy since 11:43 ET), and every string the page renders — the F53/F57
+  summaries, the sheets, the trigger rows — was verified directly on the API this run.
+- **Next run (13:30 ET) must:** nothing is queued — deploy nothing unless something new is found. Watch
+  QQQ's two live cases (spot 720.4: a 15m body close above **721.82** flips it to scenario 1/calls, and
+  the 11:00 refused long is 75 % to that same target) and IWM's 295.32 long, now 98 % of the way to
+  295.955 — if either completes, that is the first *closed* counterfactual and worth recording against
+  F56/F58. Keep the **1-of-2 desk-wide book loss** count in view; if anything fires, re-measure
+  **F50**'s close-vs-target slippage and **F47**'s thin targets. Still open for the user: **F47**,
+  **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, and the F30-family question of which premium
+  series is authoritative.

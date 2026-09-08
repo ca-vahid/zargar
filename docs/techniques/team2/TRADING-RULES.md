@@ -749,6 +749,36 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   protection (which was a price in the *middle* of a PM range, inside yesterday's range) is untouched.
   Cross-refs F56 (width) and F15 (why the rung was widened).
 
+  **Follow-up (2026-09-08 13:15 ET, run 25) — what the four refusals actually did on today's tape,
+  and what the proposed clamp would and would not have changed.** Measured on the banked 1m bars from
+  each refusal's own minute to 13:05 ET, taking the entry price the gate refused and the plan target
+  the setup carried. **Spot only** — no premium path, no trims, no stop: this says where price went,
+  not what the book would have made (F50 shows the exit *timing* is what turns a model win into a book
+  loss, and F51 that the model's sigma is half the traded IV). MFE/MAE are in points.
+  | refusal | dir | entry → target (room) | outcome | MFE | MAE |
+  |---|---|---|---|---|---|
+  | SPY 10:00 | short | 767.82 → 767.45 (0.37) | **target hit in the same minute** | 1.83 later | **0.00** before the target |
+  | QQQ 10:16 | short | 716.99 → 716.34 (0.65) | never reached it | 0.54 (83 %) | **3.94 against** |
+  | QQQ 11:00 | long | 718.26 → 721.82 (3.56) | not yet | 2.67 (75 %) | **0.00** |
+  | IWM 11:26 | long | 295.32 → 295.955 (0.63) | not yet | 0.62 (**98 %**) | 0.12 |
+  Three of the four went the setup's way and one went hard against it — and the split does **not**
+  line up with F58's precedence argument the way the geometry alone suggested. Working the proposed
+  clamp (`max(pml, pdl.top)`…`min(pmh, pdh.bottom)`) through today's four:
+  · **SPY 10:00 would be allowed** — 767.82 is below the PDL zone, so the band no longer covers it.
+  That is the case V6 explicitly calls Full size, and it hit its target with **zero** adverse
+  excursion: the clamp buys the desk its one clean trade of the day. ✓
+  · **QQQ 10:16 would ALSO be allowed** — 716.99 sits inside the PDL zone 716.56–717.03, so it falls
+  *below* the clamped band bottom of 717.03 and is no longer refused. That is the −3.94 loser. ✗ The
+  "genuinely undefined" case is exactly the one the clamp resolves in the wrong direction, so a clamp
+  shipped as written is **not free**: it takes the winner and the loser together. If the clamp is
+  adopted, the inside-a-prior-day-zone band needs its own answer rather than falling through.
+  · **QQQ 11:00 and IWM 11:26 would still be refused** — both sit inside the clamped band — even
+  though they are the two that ran 75 % and 98 % of the way to target. So the clamp does **not**
+  address most of what F56 measures; it is a precedence fix, and the width question stays open on its
+  own evidence (run 23: 94 % of candidate pullbacks refused desk-wide).
+  Caveats: one session, four cases, spot basis, and the two open cases could still reverse before the
+  close. This is evidence for the user's decision on F56/F58, not a calibration.
+
 
 
 ## Theories to test
@@ -763,6 +793,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 ## Change log
 
 - **2026-09-08 (market watch, run 24)** — no code change. **F58 logged as a proposal**: V6's sizing ladder is only ordered when the PM range is nested inside the prior-day zones, and `sizing_bucket` resolves every other geometry to `none` — SPY's 10:00 refusal contradicts V6's own Full-size band. Also verified (negative result) that the PM window is exactly METHOD L2.1's 04:00–09:30 ET, so F56/F58 are rule questions, not a data defect. No rule, threshold, gate, size or money path changed.
+- **2026-09-08 (market watch, run 25)** — no code change. Measured, on today's banked 1m tape, what each of the four no-trade-zone refusals actually did (spot basis) and worked F58's proposed clamp through them: it would have **allowed SPY 10:00** (target hit in the same minute, zero adverse excursion) but **also QQQ 10:16** (3.94 points against, target never reached), and would still refuse QQQ 11:00 and IWM 11:26 — the two that ran 75 % and 98 % of the way to target. So the clamp is a precedence fix that takes a winner and a loser together, and does not address the width F56 measures. Logged as a follow-up under F58. Also verified the desk-wide loss tally against the persisted rows (1 of 2, book basis): re-entries carry `#N` trigger ids so they group as separate positions, only X5 `+add` legs share one. No rule, threshold, gate, size or money path changed.
 
 - **2026-09-08 (market watch, run 22)** — **F57 fixed**: the setup's current no-trade-zone / range-confirmation refusal is serialized on the read and stated on the Armed + phone headline, instead of the page reading "touches 0" while every pullback was refused. Reporting only — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
