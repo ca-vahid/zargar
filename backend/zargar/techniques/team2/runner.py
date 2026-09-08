@@ -907,9 +907,9 @@ class Team2Runner(PlanRunner):
             want = "bull" if bias.get("direction") == "long" else "bear"
             blocks = []
             if regime.get("stack") and regime.get("stack") != want:
-                blocks.append(f"the stack must turn {want}")
+                blocks.append(f"the stack turns {want}")
             if regime.get("fan") == "chop":
-                blocks.append("the EMAs must un-braid")
+                blocks.append("the EMAs un-braid")
             if blocks:
                 flush_s = (", or a 200 EMA flush (T8)"
                            if bias.get("rangeDay") and getattr(rules_now, "allow_ema200_flush", True) else "")

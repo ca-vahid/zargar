@@ -104,7 +104,7 @@ async def test_nightly_plan_arm_and_alert_mode_fire(rig):
             assert "no entry until" in s, s
             seen_blocked = True
             if disagrees:
-                assert f"the stack must turn {want}" in s, s
+                assert f"the stack turns {want}" in s, s
         else:
             assert "no entry until" not in s, s
     assert seen_blocked, "no waiting snapshot with a disagreeing regime in this session"
