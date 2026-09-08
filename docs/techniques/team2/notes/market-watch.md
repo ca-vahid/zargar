@@ -1695,3 +1695,68 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   slippage. Keep the **1-of-2 desk-wide book loss** count in view. Still open for the user: **F47**,
   **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, and the F30-family
   question of which premium series is authoritative.
+
+## 2026-09-08 14:45 ET (run 28 — the app was DOWN for 9 minutes; restarted, nothing lost, but the restart itself is a trade filter)
+
+- **The app was dead when this run started.** `/api/health` refused the connection; nothing was
+  listening on :8420. The server log stops mid-stream at **14:24 ET** with no traceback, no shutdown
+  line and no ERROR of any kind in the whole file — an external kill, the same unexplained pattern as
+  the 2026-09-04 mid-session stops. No Team2 commit or deploy of mine ran between 14:12 and 14:24, and
+  the other team's branch has not committed since 08:33. **Restarted at 14:33 ET** with
+  `scripts\start.ps1 -Detach` — 62 plans restored on the first pass, all three Team2 plans back and
+  `armed`. Dark window: **14:24 → 14:33, ~9 minutes.**
+- **Everything is healthy now.** `/api/health` ok, **v0.7.11**, armed 77; SPY `c861c19d`, QQQ
+  `61293ed7`, IWM `33afee68` all `armed`, mode **auto**, Team2 Practice `b9dcd8db…`,
+  `needsAttention: false`, `readError: null`, halt `engaged: false`, no per-book halt, no technique
+  pause. Pre-open still complete on all three (`complete: true`, SPY PM 766.73–770.48, QQQ
+  716.90–723.72, IWM 293.80–295.91).
+- **No data was lost to the outage.** Banked 1m bars are **305 of 305 minutes since 09:30 with zero
+  gaps** on all three symbols (last bar 14:39 at the time of the check) — the restart's history
+  backfill filled the dark window. Quotes **0.1–0.2 s** old, `session: regular` (SPY 767.32 / QQQ
+  719.47 / IWM 295.82). The Alpaca **OPRA** batch is polling again (last 14:36 ET). EMA/fan values
+  present on all three regimes (SPY mixed, QQQ mixed, IWM bull, all "trend"); sigma still the one
+  index-wide 0.1203 (F59/F51).
+- **What the tape did.** SPY unchanged at 2 events (still nothing since 10:00). QQQ unchanged at 16
+  (nothing since 11:00); its two morning round trips remain the day's only trades. IWM's exhausted
+  `pm_break_up@13:15` kept printing watch-only touches straight through the outage — #9 at 14:16, #10
+  14:20, #11 14:22, **#12 14:26 and #13 14:30 while the app was dark**, #14 at 14:34 — now **touches
+  14, entries 0**, plus a `skip_no_trade_zone` at 14:32 (entry 295.84 back inside the PM range). Spot
+  295.82 is below the 295.91 break level: the break has failed on the tape. **Nothing tradeable
+  happened in the dark window** — every gap event was a `late_touch` or a no-trade-zone skip.
+- **F63 (new, PROPOSED, not built) — a fire during downtime is neither traded nor recorded.** Reading
+  the restore path: `PlanRunner.arm(restored=True)` replays the day's bars with `journal=False`,
+  `_fire_rest` turns `not journal` into `trade.status = "alert"`, and the next block drops
+  replay-minted `alert` trades the live record never had (`phantom_dropped`, added for EM's GOLD
+  2026-08-25 case) — while `_act`'s `_seen` cursor has already moved past that event, so no later bar
+  reconsiders it. A fire at 14:26 today would have left **no order, no trade row and no journal
+  entry**, visible only in the pure re-simulation the read renders. Team2 is more exposed than EM
+  because its entire read is re-simulated each bar instead of carried in an incremental tracker. Fix
+  belongs in shared `execution/planrunner.py` (tell "the replay contradicts the live record" apart
+  from "no live plan existed because the process was down"; then either fire it if the window and
+  level still hold, or write it to the counterfactual ledger) — **user's call**.
+- **F64 (new, PROPOSED, not built) — a mid-session restart journals the catch-up window twice.** The
+  boot restored Team2 plans **twice** (11:33:34 and 11:33:48 PDT, the second right after EM's
+  `re-armed 45 plan(s) after restart`), and each pass journaled the three unprocessed events: IWM bars
+  14:26, 14:30, 14:32 each have two `events` rows (29750/29794, 29754/29800, 29755/29803). Steady
+  state is single-stream (the 14:34 bar journaled once) and the read is unaffected, so no decision was
+  doubled — but any audit that *counts* `TechniquePlanRead` / `TechniquePlanTriggerSkipped` rows
+  over-counts on every day the desk restarts to deploy, which is most of them. Shared code → proposal.
+- **Replay parity exact on all three.** SPY 2 / QQQ 16 / IWM 21 events reproduced byte-identically
+  (JSON compare), including the two 13:30/13:40 `skip_no_contract` refusals and all fourteen touches.
+  **Book untouched:** Team2 Practice cash **and** equity **$9,934.16**, zero positions, zero Team2
+  orders (the last ten orders on the desk are all tips-technique fills). Desk loss tally unchanged at
+  **1 of 2** on the book basis (F37).
+- **Log otherwise clean for Team2:** zero Tracebacks and zero Team2 ERRORs in the live file (covering
+  11:05 PDT →). One non-Team2 warning worth passing on: `zargar.technique score_run b1ddda0b… failed:
+  StringDataRightTruncationError — value too long for character varying(24)` at boot (EM's scorer, not
+  ours). The **UI check did not complete**: `http://127.0.0.1:8420/team2?token=…` strips the query and
+  lands on the sign-in screen in the in-app browser, so the page was verified through the API only.
+- **Next run (15:15 ET) must:** nothing is queued; deploy nothing unless something new appears. The
+  second session window (14:45–16:00) is open, so watch for **new** setups — IWM's PM break is
+  exhausted and has failed, live 15m levels are QQQ above 721.82 / below 717.03, SPY below 769.00, IWM
+  above the PDH zone top 296.18. **Check `/api/health` first** — if the app is dark again, that is the
+  headline (F63: outage minutes are unmonitored, not empty). If anything fires, read the `contract`
+  event before anything else (F59) and re-measure **F50**'s close-vs-target slippage; 15:30 is the last
+  entry and 15:45 the flatten. Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**,
+  **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, and the F30-family question of which
+  premium series is authoritative.

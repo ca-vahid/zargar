@@ -887,6 +887,40 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   against those two entries before it is shipped. Interacts with **F61** (both decide what "spends"
   the D9 allowance) and with **F60** (which only reports the spend honestly).
 
+- **F63 (2026-09-08 14:40 ET, NOT fixed — proposal; a fire that happens while the app is DOWN is
+  neither traded nor recorded).** The app died at 14:24 ET with no traceback and no shutdown line and
+  was restarted at 14:33 (9 minutes dark; the third such unexplained mid-session stop, see the
+  2026-09-04 pattern). Nothing was lost today — the only events in the gap were `late_touch` and one
+  `skip_no_trade_zone` — but the restore path means a *fire* in that window would have been silently
+  swallowed. `PlanRunner.arm(restored=True)` replays every banked bar of the day with `journal=False`;
+  `_fire_rest` maps `not journal` to `trade.status = "alert"` (planrunner.py:2271), and the block that
+  follows drops replay-minted `alert` trades the live record never had (`phantom_dropped`, added for
+  EM's GOLD 2026-08-25 case). Meanwhile `Team2Runner._act`'s `_seen` cursor has already advanced past
+  that event, so the next live bar will not reconsider it. Net: no order, no trade row, no journal —
+  the fire exists only in the pure re-simulation the read shows. Team2 is more exposed than EM here
+  because its whole read is re-simulated each bar rather than carried in an incremental tracker.
+  Proposal (shared `zargar/execution/planrunner.py`, so **not** built by the watch): during a restore,
+  distinguish "the replay minted a trade the live plan contradicted" (drop it — the GOLD case) from
+  "the replay minted a trade in a window where no live plan existed" (the process was down), and for
+  the latter either fire it when it is still inside the entry window and the level is still valid, or
+  record it to the counterfactual ledger so a bug-missed trade is at least measured. Until then, a
+  restart is a silent trade filter and outage minutes should be treated as unmonitored, not as
+  "nothing happened".
+
+- **F64 (2026-09-08 14:40 ET, NOT fixed — cosmetic; a mid-session restart journals the catch-up
+  window twice).** The 14:33 boot restored every Team2 plan **twice** — `team2 runner restored 3
+  armed plan(s)` at 11:33:34 and again at 11:33:48 PDT, the second following EM's `re-armed 45
+  plan(s) after restart` pass — and the three events the outage had left unprocessed were journaled
+  once per pass: IWM bars 14:26 and 14:30 (`late_touch`) and 14:32 (`skip_no_trade_zone`) each have
+  two `events` rows (ids 29750/29794, 29754/29800, 29755/29803). Steady-state operation is
+  single-stream (the 14:34 bar journaled once) and the read itself is unaffected — replay parity was
+  exact on all three symbols — so no decision was doubled. It matters only for anything that *counts*
+  journal rows: skip tallies, touch counts and F28-style audits over `TechniquePlanRead` /
+  `TechniquePlanTriggerSkipped` will over-count on any day with a mid-session restart, and this desk
+  restarts to deploy most runs. Shared restore code, so proposal only: either seed the runner's
+  `_seen` cursor from the persisted event log on restore, or make the catch-up journal idempotent on
+  (runId, event, bar ts).
+
 
 ## Theories to test
 
