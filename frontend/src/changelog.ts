@@ -22,6 +22,8 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-07",
     title: "Clearer Cartel plan details",
     items: [
+      { tag: "fixed", text: "The Dashboard understands the per-technique Practice books: the headline totals all four ($40,000) and the equity chart now plots all four combined, with a picker for any single desk's book — it used to total four books in the headline while charting one arbitrary book underneath. The day's move and the sparkline follow the same set." },
+      { tag: "improved", text: "Holdings name the book that holds them, so you can see which desk is carrying a position at a glance. The archived Practice book never appears — not in the total, the chart, the accounts row or the holdings." },
       { tag: "major", text: "Practice reset: one $10,000 Practice book per technique (EM, Tips, Team2, Options Cartel - $40,000 in all). The old shared book is archived: its holdings and history stay readable, but it is out of every list and total and trades nothing." },
       { tag: "improved", text: "Manual tickets ask which book a trade goes in instead of guessing; Flow sits last in the technique list (context only, no book)." },
       { tag: "fixed", text: "Opening or refreshing a Cartel record no longer duplicates its chart." },

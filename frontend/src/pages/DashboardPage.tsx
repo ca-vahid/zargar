@@ -195,16 +195,34 @@ function inSession(ms: number): boolean {
 
 /** Equity samples for a window, session-filtered and flat-collapsed — the
     shape both the hero sparkline and the full curve draw from. */
-function useEquityWindow(pid: string | undefined, hours: number, points: number) {
+function useEquityWindow(pids: string[], hours: number, points: number) {
   const since = hours ? Date.now() - hours * 3600_000 : 0;
-  const series = useAsync<[number, number][]>(() => {
-    if (!pid) return Promise.resolve([]);
+  const key = pids.join(",");
+  const series = useAsync<[number, number][]>(async () => {
+    if (!pids.length) return [];
     // samples land every ~30 s; `since`/`points` are honoured by newer servers,
     // an older one drops them — so the window and thinning are applied again here
     const limit = hours ? Math.ceil(hours * 140) : 200000;
-    return api.get(`/api/portfolios/${pid}/equity?limit=${limit}&points=${points}`
-      + (since ? `&since=${Math.round(since)}` : ""));
-  }, [pid, hours, points]);
+    const q = `limit=${limit}&points=${points}` + (since ? `&since=${Math.round(since)}` : "");
+    const all = await Promise.all(
+      pids.map((pid) => api.get<[number, number][]>(`/api/portfolios/${pid}/equity?${q}`)));
+    if (all.length === 1) return all[0];
+    // Since 2026-09-07 each technique owns its own Practice book, so "equity" is
+    // a SUM. The books sample independently, so walk the union of timestamps and
+    // carry each book's last known value (seeded with its first sample, or a book
+    // would read as 0 before its first point and the total would leap).
+    const cursor = all.map(() => 0);
+    const last = all.map((one) => one[0]?.[1] ?? 0);
+    const stamps = [...new Set(all.flat().map((p) => p[0]))].sort((a, b) => a - b);
+    return stamps.map((ts) => {
+      let sum = 0;
+      all.forEach((one, i) => {
+        while (cursor[i] < one.length && one[cursor[i]][0] <= ts) { last[i] = one[cursor[i]][1]; cursor[i]++; }
+        sum += last[i];
+      });
+      return [ts, Math.round(sum * 100) / 100] as [number, number];
+    });
+  }, [key, hours, points]);
   const pts = useMemo(() => {
     let raw = series.data ?? [];
     if (since) raw = raw.filter((p) => p[0] >= since);
@@ -266,21 +284,23 @@ function EquityCurvePanel() {
   const [range, setRange] = useState<string>(() => lsGet("zargar_dash_curve", "1d"));
   const spec = CURVE_RANGES.find((r) => r.key === range) ?? CURVE_RANGES[0];
   // live mode charts your biggest real account; practice charts the sandbox
-  const target = useMemo(() => {
-    if (mode === "live") {
-      const real = portfolios.filter((p) => p.kind === "live" || p.kind === "paper");
-      if (real.length > 0) {
-        return real.reduce((best, p) =>
-          (p.equity ?? p.cash) > (best.equity ?? best.cash) ? p : best);
-      }
-    }
-    return portfolios.find((p) => p.id === defaultPid && p.kind === "sim")
-      ?? portfolios.find((p) => p.kind === "sim") ?? portfolios[0];
-  }, [mode, portfolios, defaultPid]);
+  // Every book the workspace's money lives in — four Practice books since the
+  // per-technique split (2026-09-07), the real accounts in LIVE. Archived books
+  // never arrive in the snapshot, so nothing extra to filter here.
+  const books = useMemo(
+    () => portfolios.filter((p) => (mode === "live"
+      ? p.kind === "live" || p.kind === "paper"
+      : p.kind === "sim") && !p.archived)
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    [portfolios, mode]);
+  const [bookId, setBookId] = useState<string>(() => lsGet("zargar_dash_curve_book", "all"));
+  const target = books.find((p) => p.id === bookId);
+  const pids = useMemo(
+    () => (target ? [target.id] : books.map((p) => p.id)), [target, books]);
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<Highcharts.Chart | null>(null);
 
-  const { series, pts } = useEquityWindow(target?.id, spec.hours, spec.points);
+  const { series, pts } = useEquityWindow(pids, spec.hours, spec.points);
   const first = pts.length ? pts[0][1] : 0;
   const last = pts.length ? pts[pts.length - 1][1] : 0;
   const delta = last - first;
@@ -324,7 +344,8 @@ function EquityCurvePanel() {
         },
       } as any,
       series: [{
-        type: "area", name: target?.name ?? "equity", color: col, lineWidth: 2,
+        type: "area", color: col, lineWidth: 2,
+        name: target?.name ?? (books.length > 1 ? `all ${books.length} books` : books[0]?.name ?? "equity"),
         fillColor: { linearGradient: { x1: 0, y1: 0, x2: 0, y2: 1 },
           stops: [[0, rgbaVar(up ? "--up" : "--down", 0.22)], [1, rgbaVar(up ? "--up" : "--down", 0)]] },
         // an area series anchors its axis at 0 by default, which squashed a
@@ -340,9 +361,16 @@ function EquityCurvePanel() {
     <div className="panel dash-curve">
       <div className="panel-head dash-curve-head">
         <span>Equity</span>
+        {books.length > 1 && (
+          <select className="dash-curve-book" value={bookId} aria-label="Which book"
+            onChange={(e) => { setBookId(e.target.value); lsSet("zargar_dash_curve_book", e.target.value); }}>
+            <option value="all">All {books.length} books</option>
+            {books.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+        )}
         {pts.length > 1 && (
           <span className={`dash-curve-delta ${delta >= 0 ? "pos" : "neg"}`}>
-            {delta >= 0 ? "+" : "−"}{fmtCcy(Math.abs(delta), target?.baseCurrency ?? "USD")}
+            {delta >= 0 ? "+" : "−"}{fmtCcy(Math.abs(delta), target?.baseCurrency ?? books[0]?.baseCurrency ?? "USD")}
             <span className="muted"> over {spec.label === "All" ? "all time" : `the last ${spec.label}`}</span>
           </span>
         )}
@@ -553,11 +581,14 @@ function EquityHero() {
     : sims.map((p) => ({ name: p.name, ccy: p.baseCurrency ?? "USD", value: p.equity ?? p.cash }));
 
   // the shape of the day, in the headline — the board's one real visual
-  const chartPid = live
-    ? portfolios.filter((p) => p.kind === "live" || p.kind === "paper")
-        .reduce((b, p) => (!b || (p.equity ?? p.cash) > (b.equity ?? b.cash) ? p : b), undefined as any)?.id
-    : sims[0]?.id;
-  const { pts } = useEquityWindow(chartPid, 24, 60);
+  // the headline totals every book, so its move and its shape must too — it
+  // used to sparkline ONE arbitrary sim book under a four-book total
+  const heroPids = useMemo(
+    () => (live
+      ? portfolios.filter((p) => (p.kind === "live" || p.kind === "paper") && !p.archived).map((p) => p.id)
+      : sims.map((p) => p.id)),
+    [live, portfolios, sims]);
+  const { pts } = useEquityWindow(heroPids, 24, 60);
   const move = sessionMove(pts);
   const upMove = (move?.abs ?? 0) >= 0;
   return (
@@ -722,29 +753,35 @@ function HoldingsWidget() {
   const openTrade = useStore((s) => s.openTrade);
   const wsOk = useWorkspaceFilter();
   const kindOf = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p.kind])), [portfolios]);
+  const nameOf = useMemo(() => Object.fromEntries(portfolios.map((p) => [p.id, p.name])), [portfolios]);
   const [showResearch, setShowResearch] = useState(false);
   // Research books are grouped SEPARATELY, never summed into the headline: the
   // balance above this panel counts real books only, so a list that mixed the
   // two could never add up to it (2026-09-07).
   const { rows, research } = useMemo(() => {
+    // Each technique owns its own book now (2026-09-07), so a holding is folded
+    // per (symbol, book) and names its book — "which desk is holding this?" is
+    // the question the split exists to answer.
     const fold = (real: boolean) => {
-      const by = new Map<string, { qty: number; value: number; pnl: number }>();
+      const by = new Map<string, { symbol: string; book: string; qty: number; value: number; pnl: number }>();
       for (const p of Object.values(positionsMap)) {
         const kind = kindOf[p.portfolioId];
         if (!wsOk(kind) || isRealBook(kind) !== real || Math.abs(p.qty) < 1e-9) continue;
-        const cur = by.get(p.symbol) ?? { qty: 0, value: 0, pnl: 0 };
+        const book = nameOf[p.portfolioId] ?? "—";
+        const k = `${p.symbol}@${book}`;
+        const cur = by.get(k) ?? { symbol: p.symbol, book, qty: 0, value: 0, pnl: 0 };
         cur.qty += p.qty;
         cur.value += p.marketValue ?? 0;
         cur.pnl += p.unrealizedPnl ?? 0;
-        by.set(p.symbol, cur);
+        by.set(k, cur);
       }
-      return [...by.entries()].map(([symbol, v]) => ({ symbol, ...v }))
-        .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+      return [...by.values()].sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
     };
     return { rows: fold(true), research: fold(false) };
-  }, [positionsMap, kindOf, wsOk]);
+  }, [positionsMap, kindOf, nameOf, wsOk]);
   const ws = useWorkspace();
   const [all, setAll] = useState(false);
+  const multiBook = new Set(rows.map((r) => r.book)).size > 1;
   const CAP = 8;
   const shown = all ? rows : rows.slice(0, CAP);
   const value = rows.reduce((t, r) => t + r.value, 0);
@@ -773,11 +810,12 @@ function HoldingsWidget() {
           const occ = parseOcc(h.symbol);
           const short = h.qty < 0;
           return (
-            <button key={h.symbol} className="dash-hold" onClick={() => openTrade(occ?.underlying ?? h.symbol)}
+            <button key={`${h.symbol}@${h.book}`} className="dash-hold" onClick={() => openTrade(occ?.underlying ?? h.symbol)}
               title={`Open ${occ?.underlying ?? h.symbol} on the Trade page`}>
               <SymIcon sym={occ?.underlying ?? h.symbol} size={20} />
               <span className="dash-hold-sym">{occ?.display ?? h.symbol}
-                <span className="muted">{short ? "short " : ""}{Math.abs(h.qty)}{occ ? "×" : " sh"}</span></span>
+                <span className="muted">{short ? "short " : ""}{Math.abs(h.qty)}{occ ? "×" : " sh"}</span>
+                {multiBook && <span className="dash-hold-book">{h.book}</span>}</span>
               <span className="dash-hold-val">{fmtCcy(Math.abs(h.value), "USD")}</span>
               <span className={`dash-hold-pnl ${h.pnl >= 0 ? "pos" : "neg"}`}>
                 {h.pnl >= 0 ? "+" : "−"}{fmtCcy(Math.abs(h.pnl), "USD")}</span>
@@ -798,7 +836,7 @@ function HoldingsWidget() {
             {research.slice(0, 12).map((h) => {
               const occ = parseOcc(h.symbol);
               return (
-                <button key={`r-${h.symbol}`} className="dash-hold dash-hold--research"
+                <button key={`r-${h.symbol}@${h.book}`} className="dash-hold dash-hold--research"
                   onClick={() => openTrade(occ?.underlying ?? h.symbol)}
                   title={`${occ?.underlying ?? h.symbol} — research book position`}>
                   <SymIcon sym={occ?.underlying ?? h.symbol} size={20} />

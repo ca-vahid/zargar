@@ -2710,3 +2710,6 @@ input[type="number"].disc-days { width: 48px; padding: 2px 4px;
 /* the toggle shares the header row — let it wrap below instead of squeezing the title */
 .dash-holdings .panel-head { flex-wrap: wrap; row-gap: 2px; }
 .dash-holdings .panel-head > .sub { flex: 1 1 auto; min-width: 0; }
+/* per-technique books (2026-09-07): which desk holds this, and which book is charted */
+.dash-curve-book { font-size: var(--fs-1); padding: 3px 8px; max-width: 190px; }
+.dash-hold-book { display: block; font-size: var(--fs-0); color: var(--text-3); }
