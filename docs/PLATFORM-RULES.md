@@ -525,6 +525,17 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-09-08 · `TechniquePlanRead` registered in `research/events_contract.py`
+  (required: runId, symbol, trigger, event, reason) and
+  `test_every_journaled_kind_has_a_contract` widened to scan `zargar/techniques/**`
+  as well as `zargar/technique/` and `zargar/execution/`. Why: a kind journaled by a
+  per-technique package (Team2's structural read events, F28) was outside the test's
+  scan, so it shipped shapeless and logged an advisory `unregistered Technique event
+  kind` warning on every read event. `TechniquePlanRead` is the only such kind today.
+  Advisory logging only — no journaled shape, hook or money path changed.
+  Evidence: Team2 TRADING-RULES F52; tests `test_platform_phase3.py` (70 passed with
+  the Team2 suite).
+
 - 2026-09-06 · Opt-in adapter adoption supports deterministic `positionId`
   identities (existing ids are rejected rather than overwritten). Adapter-backed
   persistence/journal failures propagate; initial adoption enters the in-memory

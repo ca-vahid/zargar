@@ -59,8 +59,10 @@ def build_team2_routes(app, eng, auth, config) -> None:
         overrides: dict | None = None
 
     @app.post("/api/team2/runs/{run_id}/replay", dependencies=[auth])
-    async def team2_replay(run_id: str, body: ReplayBody):
-        rep = await _svc(eng).replay(run_id, overrides=body.overrides)
+    async def team2_replay(run_id: str, body: ReplayBody = None):
+        # F48: overrides are optional, so a bare replay (the parity check) must not need a body — a
+        # required model made `POST …/replay` with no payload a 422.
+        rep = await _svc(eng).replay(run_id, overrides=(body.overrides if body is not None else None))
         if rep is None:
             raise HTTPException(status_code=404, detail="run not found")
         return rep
