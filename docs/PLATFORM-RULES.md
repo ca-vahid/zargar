@@ -495,8 +495,11 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   `techniques.<id>.default_portfolio`
   (EM also `technique.arm.default_portfolio`; tips runner/proposals and EM arm-today read the
   technique key before `trading.default_portfolio`). The old book is renamed
-  "Practice (archived 2026-09-07)" and keeps its positions/history - nothing is deleted; journal,
-  runs, outcomes, reviews and the counterfactual ledger are untouched. Settings tightened the same
+  "Practice (archived 2026-09-07)" and flagged `Portfolio.archived` (new column; `POST
+  /api/portfolios/{id}/archive`): out of every list and total, its holdings out of the positions
+  list, its managed positions marked `archived` (never restored), its resting orders cancelled at
+  restart. Nothing is deleted; journal, runs, outcomes, reviews and the counterfactual ledger are
+  untouched. `trading.default_portfolio` is now EMPTY: manual tickets ask which book (no guessing). Settings tightened the same
   night: `techniques.tip.budget_per_tip` 5000 -> 2000, `risk.max_gross_exposure_pct` 300 -> 100,
   `risk.sim_require_cash` stays on. INVARIANT 15: a technique's orders land only in its own book;
   a shared book is never a fallback for a technique that has one.
