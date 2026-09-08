@@ -1370,3 +1370,57 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   if anything fires, re-measure **F50**'s close-vs-target slippage and **F47**'s thin targets. Still
   open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, and the F30-family question
   of which premium series is authoritative.
+## 2026-09-08 12:05 ET (run 23 — quiet, clean, nothing queued; F56 measured properly)
+
+- **Alive and clean; nothing deployed this run and nothing is queued.** `/api/health` ok, **v0.7.11**;
+  one armed plan per symbol for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all
+  `armed`, mode **auto**, Team2 Practice `b9dcd8db…`, `needsAttention: false` on all three, halt
+  `engaged: false` with no per-book halts and no technique pause. No Team2 code change was needed —
+  nothing was found broken.
+- **Data real-time.** Quotes 0–1 s old, `session: regular` (SPY 767.40 / QQQ 719.98 / IWM 295.61); 1m
+  bars **154 of 154 minutes present since 09:30, zero gaps**, last bar 12:03 ET (~2 min); the read
+  advanced 65 → 76 → 78 2m bars across the run; the Alpaca **OPRA** batch is 200-ing every ~2 s
+  (freshest 12:04:09 ET), `feed=opra`. EMA/fan values present on all three regimes.
+- **The tape did nothing.** Zero new events on any symbol since run 22 — QQQ still 16, SPY 2, IWM 2.
+  No new touches, no scenario flip, no fire, no skip. Rebuilt today's 15m closes from the `bars` table
+  and every bias is still correct: QQQ's last flip was the 10:15 bucket (C717.76 > 717.03 → scenario 3)
+  and 10:30–11:45 (718.15 / 718.94 / 719.91 / 720.09 / 720.85 / 719.97) all sit **between** the zones →
+  correctly no flip ✓; SPY below 769.00 on every bar since 09:45 → scenario 4 ✓; IWM above 294.59 on
+  every bar → scenario 3 ✓. Worth noting QQQ's day high **721.886 tagged the PDH zone (721.82–721.86)**
+  in the 11:30 window and the desk correctly did **not** flip — the rule wants a 15m *body* close above
+  721.82 and the highest close was 720.85 ✓.
+- **Replay parity is exact on all three.** `POST /runs/{id}/replay` reproduced 16 / 2 / 2 events
+  **event-for-event** (byte-identical JSON) with `pnlPctSum` 65.61 / 0 / 0. The only difference is
+  `bars2m` 77 vs 78 — a new 2m bar closed between the live read and the replay call, not a defect.
+- **Book untouched.** Team2 Practice cash **and** equity $9,934.16, zero open positions, zero Team2
+  working orders, no order routed. (The one open order in `/api/state` is a TSLA GTC stop in portfolio
+  `e39cc477…` — another team's book, not ours.) Desk loss tally still **1 of 2** on the book basis
+  (F37); one more book loser stops the desk.
+- **All three symbols are still blocked only by the no-trade zone, and the regime clause has cleared
+  everywhere.** F53's clause is now absent from all three (QQQ bull stack vs long bias ✓, SPY bear vs
+  short ✓, IWM bull vs long ✓) while F57's clause is present on all three — so the headline now reads
+  the situation exactly right: the regime agrees, the location does not. Both of last week's deploys
+  are doing their job.
+- **F56 quantified (still a proposal — NOT built).** Instead of re-telling the anecdote I measured the
+  refusal rate: rebuilt today's 78 2m bars per symbol and counted bars whose range **straddles** a
+  session-seeded EMA13, then how many of those sat inside the pre-market range. **SPY 31/33 (94%),
+  QQQ 26/28 (93%), IWM 41/41 (100%) — 98 of 102 (94%) across the desk.** The `none` bucket is not
+  filtering the odd bad location, it is refusing 19 of every 20 candidate pullbacks. Honest caveat
+  recorded with it: the straddle test is a geometric proxy (no direction/tolerance/live-setup filter),
+  so 102 is an upper bound on *candidates*, not a count of gate firings. Written into TRADING-RULES.md
+  under F56 as a follow-up table.
+- **Log is clean.** Zero ERRORs and zero Tracebacks in `backend/zargar-8420.log` since the 11:43 ET
+  restart. The other team's recurring `cartel-observer bar handling failed` has **not** reappeared in
+  this log window (it is theirs either way — `options_cartel/entry.py:45`, flagged, not touched).
+- **UI checked.** `/team2` renders all three plans with F55's ET stamps ("Sep 4, 5:34 PM ET") and the
+  sheets; `/armed` header reads **"MID-DAY · TEAM2 CAN FIRE"** with 80 armed / 0 in trade. No console
+  or render problems.
+- **Next run (12:30 ET) must:** nothing is queued — deploy nothing unless something new is found.
+  Watch for a 15m body close that flips a bias (QQQ is the live one: 720.0 spot vs its PDH zone
+  721.82–721.86, and a close above it would flip to scenario 1/calls with room to 724.12), and note
+  that a *break above the PDH zone* is one of the few places today's entries would sit **outside** the
+  PM range (QQQ PM top 723.72 — so even a PDH break entry is refused until 723.72; more F56 evidence).
+  Keep the **1-of-2 desk-wide book loss** count in view; if anything fires, re-measure **F50**'s
+  close-vs-target slippage and **F47**'s thin targets. Still open for the user: **F47**, **F49**,
+  **F50**, **F51**, **F54**, **F56**, and the F30-family question of which premium series is
+  authoritative.

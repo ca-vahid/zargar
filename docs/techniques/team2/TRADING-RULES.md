@@ -685,6 +685,26 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   F15: F15 was a real loss inside a *gap* day's PM range; F56 is the cost of the same rule on a
   *normal* day whose PM range is wide.
 
+  **Follow-up measurement (run 23, 12:05 ET — the refusal rate, not just the anecdote).** Rebuilt the
+  session's 2m bars from the `bars` table (09:30–12:03 ET, 78 bars per symbol) and counted how many of
+  them **straddle a session-seeded EMA13** (bar low ≤ EMA13 ≤ bar high) — a deliberately generous
+  proxy for "a pullback into the 13 happened here" — then how many of those sat inside the PM range:
+
+  | | 2m EMA13 straddles | of which inside PM | 2m closes inside PM |
+  |---|---|---|---|
+  | SPY | 33 | 31 (**94%**) | 68/78 (87%) |
+  | QQQ | 28 | 26 (**93%**) | 68/78 (87%) |
+  | IWM | 41 | **41 (100%)** | 78/78 (100%) |
+  | **all three** | **102** | **98 (94%)** | |
+
+  So on this day the `none` bucket is not filtering the odd bad location — it is refusing **19 of every
+  20 candidate pullbacks**, and on IWM every single one. Caveat on the number: the straddle test is a
+  geometric proxy, not the technique's own touch test (which additionally requires a live setup, the
+  right direction and the touch tolerance), so 102 is an **upper bound on candidates**, not a count of
+  gate firings — the read mints one `skip_no_trade_zone` per setup by design (F23). It measures the
+  *geometry* the gate is applied to, which is exactly what the proposal above is about. Strengthens
+  the case for the width-scaled rung; still the user's call.
+
 - **F57 (2026-09-08 11:40 ET, FIXED — the "not a tradeable location" gates were invisible on the one
   line the desk actually reads).** The waiting headline said *"waiting for the 1st/2nd 2m pullback into
   the EMA13 (touches 0)"* on all three symbols while every pullback was being refused at the door.
