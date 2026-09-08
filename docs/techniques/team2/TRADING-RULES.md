@@ -524,6 +524,24 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   of silent. **`zargar/research/snapshots.py` — shared engine, proposal, not built here.**
 
 
+- **F47 (2026-09-08 09:15 ET, NOT fixed — proposal; the planned target has no minimum-room floor)**
+  `levels.targets_beyond` sets a break trade's outright exit to the **most recent 15m pivot** beyond
+  the zone within the 10-session lookback, with **no check that the pivot leaves enough room to be
+  worth trading**. `session.py` then exits the *whole* remaining position the moment that level is
+  touched (`rules.target_exit`, X3/V11), so a target sitting just past the break level closes the
+  trade before the +50 % / +100 % trims can ever engage. The engine already knows the test — the X3b
+  HOD/LOD substitute must clear `hod_target_min_atr` (1.0) × ATR before it may replace the plan
+  target — but that floor is applied **only to the substitute**, never to the plan target itself.
+  Live today (2026-09-08), measured against Friday's average 2m bar range as the ATR proxy
+  (SPY 0.254 / QQQ 0.375 / IWM 0.152): SPY's targets leave 1.16 up (4.6 ATR) and 1.55 down (6.1 ATR),
+  IWM's 0.40 up (2.6 ATR) — all sane — but **QQQ's break-below target is 716.34 against a PDL zone
+  bottom of 716.56: 0.22 of room, 0.59 ATR, 0.03 % of spot.** If QQQ breaks its PDL zone today the
+  auto desk buys puts and then exits in full ~0.22 under the break, for a few percent of premium,
+  instead of running the method's trim ladder. Proposed: apply the same `hod_target_min_atr` floor
+  when `targets_beyond` picks the plan target — a pivot that does not clear it is skipped for the
+  next one out, and the target falls back to `None` ("open", ride the EMA) when nothing qualifies.
+  **Threshold/rule change on a money path — proposal only, not built by the watch job.**
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

@@ -1018,3 +1018,59 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   `ff3c29d4…` is archived. Watch job: query orders/positions/P&L by the NEW book id, not the old one; loss halts
   re-derived to $1,200 at 6%; budget $2,000/trade; `risk.sim_require_cash` is on (an entry must fit cash on hand).
 - Loss ladder set tonight: Team2/EM/Tips 10% each (technique pause), book breaker 15% (per portfolio), HALT global.
+
+
+## 2026-09-08 09:15 ET (run 17, first of the day — pre-open; F41 and F42 both proved live on Labor Day)
+
+- **Alive and clean.** `/api/health` ok **v0.7.9** (main merged since Friday's 0.7.0), 82 plans armed
+  desk-wide. The app restarted **02:59 ET** today (`BrokerConnected` / `SimBookRestored` /
+  `TechniquePlanRestored` ×3 for Team2); the log since the 05:58 rotation is **1,746 lines with zero
+  `Traceback` and zero `ERROR`**, 12 warnings, none Team2's. `FeedSelfTestPassed` at 09:00.
+- **F41 PROVED LIVE — the Labor Day double-arm did not happen.** `ScheduledJobRan` at
+  **09-07 17:00:04** reads `{"job": "team2_plan_nightly", "planFor": "2026-09-08", "runs": [],
+  "armed": [], "skipped": ["SPY: already armed for 2026-09-08", "QQQ: …", "IWM: …"]}` — the holiday
+  nightly minted nothing and the guard named every symbol. Status now shows **exactly one armed plan
+  per symbol** for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode
+  **auto**, on **Team2 Practice** `b9dcd8db…` — the new per-technique book, not the archived shared one.
+- **F42 PROVED LIVE — nothing blanked the plans on the holiday.** `team2_preopen` on 09-07 returned
+  `{"completed": []}`: the date guard left the future-dated plans alone, and their zones are still the
+  ones built Friday 21:34 UTC.
+- **Levels reconcile exactly to Friday's tape.** Friday RTH 1m H/L: SPY 772.87 / 769.00, QQQ 721.86 /
+  716.56, IWM 296.18 / 293.56 — the PDH/PDL zone edges in all three sheets match to the cent, and
+  SPY's "room" levels (774.03 up / 767.45 down) are Thursday's H/L. Correct previous session used
+  across the long weekend.
+- **Data is real-time.** Quotes 15 s old, session `pre`, `regPrice` holding Friday's close
+  (SPY 770.19 / QQQ 718.96 / IWM 296.01) and `dayHigh/dayLow/volume` correctly reset to 0 for the new
+  ET session (F19). 1m bars banking for all three, last bar 09:03 ET (~1,000 rows each in 24 h).
+  The **OPRA batch is 200-ing every ~2 s** and is down to **39 symbols with no expired contracts in
+  it** — F44's prune is holding (Friday's batch carried 55 including four dead 260902 strikes).
+- **Book and brakes are a clean slate for day one.** Team2 Practice: cash **$10,000**, equity $10,000,
+  zero positions, **no order has ever been routed on it**. Global halt not engaged, `books: {}`, and
+  no pause/halt/needs-attention event today. Per-plan loss halt $1,200, premium budget $2,000,
+  flatten 15:45, `maxOpenTrades` 1.
+- **Pre-market so far (04:00–09:03 ET):** SPY 766.73–770.48, QQQ 716.90–723.72, IWM 293.80–295.91.
+  QQQ has already traded **above** its PDH zone (723.72 vs 721.86) and IWM sits inside its PDH zone —
+  both are live break candidates at the open. The 09:25 job has not run yet (correct at 09:15); the
+  replay-side read already computes `pmh/pml`, `dayType: normal`, `complete: true`, so the stamp onto
+  the armed plans is the thing to verify next run.
+- **F47 (new, NOT fixed — proposal; a planned target with no minimum-room floor).**
+  `levels.targets_beyond` takes the most recent 15m pivot beyond the zone as the outright exit, with
+  no test that it leaves tradeable room, and `session.py` closes the **whole** position when it is
+  touched (X3/V11). The engine already has the test — X3b's HOD/LOD substitute must clear
+  `hod_target_min_atr` (1.0) × ATR — but it is applied only to the substitute, never to the plan
+  target. Against Friday's average 2m range as the ATR proxy (SPY 0.254 / QQQ 0.375 / IWM 0.152),
+  SPY (4.6 / 6.1 ATR) and IWM (2.6 ATR) are fine, but **QQQ's break-below target 716.34 sits 0.22
+  under its PDL zone bottom 716.56 — 0.59 ATR, 0.03 % of spot.** A QQQ breakdown today would buy puts
+  and exit in full almost immediately, before the +50 % trim engages. Proposed: apply the same
+  `hod_target_min_atr` floor when the plan target is picked, skip to the next qualifying pivot, and
+  fall back to `None` ("open", ride the EMA) when none qualifies. **Money-path threshold change —
+  written up, not built by this job.**
+- **Nothing built, nothing deployed, no restart this run** (none needed, and 09:25–09:35 is the
+  no-restart window anyway).
+- **Next run (09:30/10:00 ET) must check:** that the 09:25 `team2_preopen` stamped `pmh`/`pml`/
+  `dayType`/`sizingAtOpen`/`complete: true` onto all three ARMED plans (the snapshot's `team2` block
+  was all-null pre-open, as expected); that the read advances on every 2m close with fresh
+  `regimeLast` EMAs; QQQ's and IWM's PDH breaks, given both were at/above the zone pre-market; and
+  whether a QQQ break-below would hit F47's 0.22-room target. Still open for the user: **F47** and the
+  F30-family question of which premium series is authoritative.
+
