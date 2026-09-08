@@ -1263,3 +1263,55 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   **F50**'s close-vs-target slippage and **F47**'s thin targets if anything fires. Still open for the
   user: **F47**, **F49**, **F50**, **F51**, **F54** and the F30-family question of which premium series
   is authoritative.
+
+
+## 2026-09-08 11:15 ET (run 21 — quiet tape; the last queued fix deployed; F56 on the no-trade zone)
+
+- **Alive, clean, and the queue is empty.** `/api/health` ok, **v0.7.10**; one armed plan per symbol
+  for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode **auto**, Team2
+  Practice `b9dcd8db…`, `needsAttention: false`, no halt or pause. `f89e173` (F53's wording) deployed
+  at 11:10 ET with `start.ps1 -Detach` — no position open, no order working, midday window. Verified
+  live: the clause now reads *"no entry until the stack turns bull … (E3/B9/E4)"* on QQQ/IWM and, new
+  since run 20, on **SPY** too — SPY's stack slipped bear → **mixed** around 11:00, so all three
+  symbols are now regime-blocked. Second clean mid-session restart in a row: 79 plans restored and the
+  Team2 read rebuilt **identically** (bars2m 48, 2 trades, `pnlPctSum` 65.61).
+- **Data real-time.** Quotes 0 s old, `session: regular` (SPY 767.67 / QQQ 718.84 / IWM 295.15); 1m
+  bars banking with **94 of 94 minutes present since 09:30, no gaps**, last bar ~60 s old; the read
+  advanced 37 → 48 2m bars across the run; the Alpaca **OPRA** batch is 200-ing every ~2 s (freshest
+  11:03:46 ET), `feed=opra`. EMA/fan classification checked by hand and correct — `fanWidth` is
+  ATR-normalised (QQQ 1.03, SPY 1.91 → trend; IWM 0.40 < `fan_trend_min_atr` 0.6 → chop), all three
+  match their own EMA spreads.
+- **No trade this run; the book is untouched.** Cash and equity both **$9,934.16**, zero open
+  positions, no order routed. Desk loss tally still **1 of 2** on the book basis (F37) from QQQ's
+  −$63; one more book loser stops the whole desk (`losses_desk_wide`).
+- **The read still reconciles to the tape, exactly.** Rebuilt today's 15m bars from the `bars` table:
+  QQQ's last flip was 10:15 C717.76 > 717.03 → scenario 3, and 10:45 C718.94 / 11:00 C718.74 both sit
+  between the zones, so **correctly no flip** ✓. SPY has closed below 769.00 on every 15m bar since
+  09:45 → scenario 4 unchanged ✓. IWM has closed above 294.59 on every bar → scenario 3 unchanged ✓.
+  **Replay parity is exact on all three** (`POST /runs/{id}/replay`, no body): 16/2/1 events matched
+  event-for-event, `pnlPctSum` 65.61 / 0 / 0.
+- **F56 (new, proposal — NOT fixed).** The desk cannot fire a scenario setup today, and the reason is
+  structural, not the tape. `sizing_bucket` returns **`none`** for any entry inside the pre-market
+  range (F15, 2026-09-04) and the gate is applied to the *pullback's entry price* ≈ spot — so on a day
+  with a wide PM range the no-trade zone is not a zone price crosses, **it is the day**: QQQ PM 6.82
+  wide = **12.4× ATR** (80% of today's closes inside), SPY 3.75 = 9.4× (76%), IWM 2.11 = 9.0× (**100%
+  — it has never left**). QQQ's PDH zone *and* its PDL zone top both sit inside its own PM range, so
+  scenarios 2 and 3 are anchored on lines the sizing ladder refuses; `skip_no_trade_zone` has now
+  fired on QQQ at 10:16 and 11:00 and on SPY at 10:00. **Both of today's actual fires came from the
+  one carve-out that already exists** — F20's PM-level retest exemption. Without it the desk would be
+  0-for-4 setups and 8 EMA13 touches. Proposed (same shape as F20): bucket an entry within touch
+  tolerance of a *prior-day zone edge* as `small`, not `none`; optionally disable the `none` rung once
+  the PM range exceeds ~6× ATR. Rule/threshold work — written up with the measurements in
+  TRADING-RULES.md, **not built**.
+- **One ERROR in the log all session, and it is not ours.** `zargar.execution.listener cartel-observer
+  bar handling failed` at 10:54 ET — `options_cartel/entry.py:45` raising *"entry read requires
+  symbol-matched, minute-aligned 1m bars"* out of `observer.on_minute_bar`. That is the **other team's**
+  options_cartel technique; the shared listener caught it and the loop continued, and no Team2 plan was
+  affected. Flagged for them, not touched. Zero Team2 errors, zero `TechniquePlanRead` warnings since
+  the F52 deploy.
+- **Next run (11:30 ET) must:** nothing is queued — deploy nothing unless something new is found. Watch
+  for a stack flip that releases QQQ's or IWM's scenario-3 calls (both bear/mixed against a long bias),
+  or a 15m close that flips a bias; keep the **1-of-2 desk-wide book loss** count in view; and if
+  anything fires, re-measure **F50**'s close-vs-target slippage and **F47**'s thin targets. Still open
+  for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, and the F30-family question of
+  which premium series is authoritative.

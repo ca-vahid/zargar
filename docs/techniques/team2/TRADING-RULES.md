@@ -651,6 +651,41 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   it was left alone.)
 
 
+- **F56 (2026-09-08 11:10 ET, NOT fixed — proposal; a wide pre-market range makes V6's no-trade zone
+  swallow the whole session, so no scenario setup can ever fire)** `sizing_bucket` (`scenario.py:36`)
+  returns **`none`** for any entry price inside the PM range — F15's deliberate widening on 2026-09-04,
+  which stopped the desk buying the middle of a gap day's pre-market range. The gate is applied to the
+  **pullback's entry price**, i.e. roughly spot, so when the PM range is wide it is not a zone the
+  price passes through — it *is* the day. Today, on a plain `normal` day:
+
+  | | PM range | width | vs 2m ATR | today's 1m closes inside it |
+  |---|---|---|---|---|
+  | QQQ | 716.90–723.72 | 6.82 | **12.4×** | 78/97 (80%) |
+  | SPY | 766.73–770.48 | 3.75 | **9.4×** | 74/97 (76%) |
+  | IWM | 293.80–295.91 | 2.11 | **9.0×** | **97/97 (100%)** |
+
+  QQQ's PDH zone (721.82–721.86) *and* PDL zone top (717.03) both lie **inside** its own PM range, so
+  scenario 2 and scenario 3 are anchored on lines the sizing ladder refuses. The result is visible in
+  the read: QQQ logged `skip_no_trade_zone` at **10:16** (entry 716.99) and again at **11:00** (entry
+  718.26); SPY at **10:00** (entry 767.82) and will repeat while it holds this range; IWM has never
+  left its PM range at all. **Every fire the desk took today came from the one carve-out that already
+  exists** — F20's PM-level retest exemption (`session.py:478`), which re-buckets a `pm_break` retest
+  *on* the anchor as `small`. Without F20 the desk would have taken zero trades in a session with four
+  scenario setups and eight EMA13 touches.
+
+  The V6 ladder has three rungs — `full` beyond the prior-day zones, `small` between a prior-day zone
+  and the PM level, `none` inside the PM range — but when the PM range **contains** yesterday's zones
+  the middle rung is geometrically empty and everything collapses to `none`. **Proposed** (same shape
+  as F20, Team2-local, one function): when the entry sits within the touch tolerance of a **prior-day
+  zone edge**, bucket it `small` rather than `none` — a tested structural line is not the middle of
+  the chop, whichever side of the overnight range it happens to fall on. Optionally gate the whole
+  rule on PM width (e.g. skip the `none` bucket entirely once the PM range exceeds ~6× ATR, where it
+  has stopped describing chop and is just describing the day). **Threshold/rule work — the user's
+  call and the walk-forward's to size; not built by the watch job.** Note this is the mirror image of
+  F15: F15 was a real loss inside a *gap* day's PM range; F56 is the cost of the same rule on a
+  *normal* day whose PM range is wide.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -664,6 +699,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
 - **2026-09-08 (market watch, run 20)** — the plan summary's waiting line now names the silent E3/B9 stack gate and E4 chop gate when they block the setup (F53). Wording only; no rule, threshold, gate or money path changed. F54 logged as observation. Team2 page timestamps pinned to ET (F55) — display only.
+- **2026-09-08 (market watch, run 21)** — F53's follow-up wording deployed (`f89e173`); no code change this run. F56 logged as a proposal (V6's no-trade zone swallows a wide pre-market day). No rule, threshold, gate or money path changed.
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
