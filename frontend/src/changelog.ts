@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.9";
+export const APP_VERSION = "0.7.10";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.10",
+    date: "2026-09-08",
+    title: "The gate covers both doors",
+    items: [
+      { tag: "fixed", text: "The exit-plan geometry gate now also covers fills from armed plans, not just approved cards. This morning AVGO filled at 370.39 into a ladder drawn at 359/361 (both below the buy) and sold itself at a loss six minutes later, and GME armed a hair-width stop that died in the same minute - plans are now re-checked against the actual fill price, targets on the wrong side are dropped, too-tight stops move to real structure, and every repair is journaled and shown on the run." },
+    ],
+  },
   {
     version: "0.7.9",
     date: "2026-09-07",

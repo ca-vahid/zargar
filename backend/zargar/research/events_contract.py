@@ -82,7 +82,8 @@ CONTRACTS: dict[str, dict] = {
     "ManagedPositionAttention": {"version": 1, "required": ("positionId", "symbol", "error")},
     "ManagedPositionScaledIn": {"version": 1, "required": ("positionId", "symbol")},
     "ManagedPositionRolledUp": {"version": 1, "required": ("positionId", "symbol", "from", "to", "qty", "creditPerContract")},
-    "TipGeometryRepaired": {"version": 1, "required": ("proposalId", "underlying", "entryRef", "repairs")},
+    "TipGeometryRepaired": {"version": 2, "required": ("proposalId", "underlying", "entryRef", "repairs"),
+                            "nullable": ("proposalId",)},   # v2 2026-09-08: armed-lane repairs carry runId/trigger, no proposal
     "TipAutoPaused": {"version": 1, "required": ("reason",)},
 }
 
