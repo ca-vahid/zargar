@@ -31,9 +31,15 @@ remaining listing, industry, relative-strength, daily and weekly setup gates.
 Missing evidence blocks a candidate. A mixed market can legitimately produce
 an empty shortlist.
 
-Detailed history is evaluated in descending listing-volume order, with an
-explicit default budget of 200 symbols. Discovery is broader than this budget;
-the result records the count not evaluated. Default shortlist size is five.
+Every supported price/capitalization-eligible listing is checked by default
+(`scanAll=true`). A definite failure of the profile's required industry-ranking
+gate is recorded before downloading history; unknown industry evidence is not
+silently treated as a definite failure. Remaining names receive completed daily
+history analysis. Discovery-volume order remains the documented shortlist priority.
+Shortlist size (default five) never truncates universe evaluation. An optional
+explicit resource cap (`scanAll=false`, `historyLimit`) remains available up to
+10,000; older saved 200 limits apply only if the cap is enabled.
+
 Each selected plan includes measured entry/stop geometry, target provenance,
 same-time minute-volume history and an exit campaign. Chain data selects a draft
 option expression; fresh execution quotes and Greeks, shared risk checks,
@@ -100,3 +106,43 @@ APIs accept `workspace=practice|live`; preparation defaults to the active worksp
 when omitted. Manual research remains shared; automatically prepared plans retain
 their originating workspace. The same daily schedule dispatches only the active
 workspace. Changing workspace does not cancel working orders or abandon positions.
+
+## Progress, coverage and recovery (0.7.5)
+
+Discovery reports received/total listings per page, then industry context, index
+context, stock evaluation and option selection report their own operations.
+Provider waits emit a heartbeat every ten seconds; normal UI polling is three
+seconds while running. `processed` counts completed listing decisions;
+`prefiltered` is definite industry rejection; `evaluated` counts completed history
+analyses; `dataErrors` is separate. `notEvaluated` reports untouched listings and
+`coverageComplete` requires all supported listings processed without data errors.
+A cap or data failure yields partial coverage, not a claim that all candidates
+were evaluated. Missing market alignment explicitly skips stock evaluation.
+
+History calls are paced (default 0.25s minimum start interval), use the shared
+provider's bounded retries and have an overall request deadline. Exhausted rate
+limits stop the batch; three consecutive transport failures also stop it. The
+worker owns and awaits cancellation of pending provider requests.
+
+Saved completed daily history may be reused for twelve hours only when its
+original observation precedes the new cutoff and its last session matches the
+required completed session. Cache reuse retains the original observation and
+source-run pointer; it does not make executable option quotes fresh. Minute
+baselines are collected for shortlisted plans. Candidate queues retain IDs,
+not every candidate's full bar arrays.
+
+A failed/partial run with a complete discovery/industry snapshot may be resumed
+for the same session, workspace and unchanged policy, within 24 hours. Resume
+creates a linked run, preserves the original failed record and snapshot cutoff,
+and reuses successful analyses. Children committed before a progress checkpoint
+are recovered too. Discovery failures need a fresh run. New settings or expired
+evidence require a fresh run. Existing arm/order checks prevent duplicate entries;
+retired arms are not silently revived. Resume is an explicit action; startup marks
+interrupted work and the UI offers Resume saved scan when eligible.
+
+Contract diagnostics count the first failed filter per inspected row, record the
+effective ask/debit ceiling and show provider errors separately. Search proceeds
+through allowed expiries until an eligible nearest-DTE group is found or all
+allowed dates are checked. No price, delta, liquidity or risk limits are relaxed.
+The saved-plan table refreshes on published results/completion, and evidence rows
+are paged to keep large runs usable on phones.

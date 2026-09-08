@@ -23,6 +23,9 @@ def test_discovery_does_not_replace_cartel_with_most_active_or_current_volume_fi
 
 async def test_all_pages_are_collected_with_a_shared_capture_cutoff():
     calls = []
+    progress = []
+    async def on_progress(value):
+        progress.append(value)
     def respond(request):
         import json
         body = json.loads(request.content)
@@ -31,8 +34,11 @@ async def test_all_pages_are_collected_with_a_shared_capture_cutoff():
         return httpx.Response(200, json={'totalCount': 3, 'data': rows[body['range'][0]:body['range'][1]]})
     times = iter([200_000, 201_000])
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
-        result = await discover_market(CartelRules(), client=client, clock=lambda: next(times), page_size=2, pace=0)
+        result = await discover_market(CartelRules(), client=client, clock=lambda: next(times), page_size=2, pace=0, on_progress=on_progress)
     assert calls == [[0, 2], [2, 4]]
+    assert progress[0]['total'] is None
+    assert any(p['received'] == 2 and p['total'] == 3 for p in progress)
+    assert progress[-1]['received'] == progress[-1]['total'] == 3
     assert result['complete'] and result['received'] == 3 and not result['excluded']
     assert {r['observedAt'] for r in result['rows']} == {201_000}
     assert result['rows'][0]['sourceBarOpenAt'] == 100_000

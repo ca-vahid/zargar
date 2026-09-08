@@ -226,7 +226,7 @@ export function OptionsCartelPage() {
       <CartelMethodLibrary />
     </div> : <>
       {tab === "armed" && <CartelRiskCard />}
-      {(tab === "plans" || tab === "settings") && <CartelPreparation key={`${tab}:${workspace}`} view={tab} onOpen={open} onSettings={() => setPageTab("settings")} />}
+      {(tab === "plans" || tab === "settings") && <CartelPreparation key={`${tab}:${workspace}`} view={tab} onOpen={open} onChanged={refresh} onSettings={() => setPageTab("settings")} />}
       {tab === "settings" && <CartelScheduleControls />}
       {tab === "settings" && <CartelQuoteRecording/>}
       {tab === "validation" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}
@@ -449,7 +449,7 @@ export function OptionsCartelPage() {
           {p && <><h3>Reviewed plan</h3><p>{label(p.direction)} · {label(p.setup)} · {p.first_session} through {p.last_session}</p>
             <p>Trigger {number(p.trigger)} · Invalidation {number(p.invalidation)} · Targets {p.targets.map(number).join(", ")}</p>
             <p>{p.rationale}</p><h3>Exit schedule</h3><ul>{selected.result.exitCampaign?.rungs.map((r: any) => <li key={r.id}>{label(r.id)}: {number(r.fraction*100)}%{r.target ? ` at ${number(r.target)}` : ""}</li>)}</ul>
-            <CartelArmControls key={selected.runId} runId={selected.runId} active={armed.find(a => a.runId === selected.runId)} onChanged={refresh}/></>}
+            <CartelArmControls key={selected.runId} runId={selected.runId} active={armed.find(a => a.runId === selected.runId)} preferredPortfolioId={selected.config?.preparation?.portfolioId} onChanged={refresh}/></>}
           {selected.mode === "plan" && <CartelReplayControls key={selected.runId} busy={!!busy} onReplay={async request => {
             setBusy("Replaying campaign"); setError("");
             try {
