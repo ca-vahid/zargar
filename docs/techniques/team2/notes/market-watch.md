@@ -1011,3 +1011,10 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   plans were re-armed under the new arm config (flatten clock 15:45, loss halt $1,034) — the forced re-plan ADDED a second
   set instead of replacing (fixed: force now disarms the old plan first, `replaced` in the response); the duplicates
   were disarmed by hand. 3 Team2 plans armed for 2026-09-08 in auto.
+
+## 2026-09-07 evening (desk session) — new book for Tuesday
+
+- Team2's three 2026-09-08 plans now sit on **Team2 Practice** (`b9dcd8db…`, $10,000) — the shared Practice book
+  `ff3c29d4…` is archived. Watch job: query orders/positions/P&L by the NEW book id, not the old one; loss halts
+  re-derived to $1,200 at 6%; budget $2,000/trade; `risk.sim_require_cash` is on (an entry must fit cash on hand).
+- Loss ladder set tonight: Team2/EM/Tips 10% each (technique pause), book breaker 15% (per portfolio), HALT global.
