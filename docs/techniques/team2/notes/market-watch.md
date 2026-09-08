@@ -1315,3 +1315,58 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   anything fires, re-measure **F50**'s close-vs-target slippage and **F47**'s thin targets. Still open
   for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, and the F30-family question of
   which premium series is authoritative.
+
+
+## 2026-09-08 11:45 ET (run 22 — every symbol structurally blocked; F57 makes the refusal visible)
+
+- **Alive and clean.** `/api/health` ok; one armed plan per symbol for 2026-09-08 (SPY `c861c19d`,
+  QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode **auto**, Team2 Practice `b9dcd8db…`,
+  `needsAttention: false`, no halt or pause. Version reads **v0.7.11** after this run's deploy — as in
+  run 21, the bump was the other team's, already committed and merely un-deployed; my commit touches
+  five files and none of them is a version file (`git show --stat 1cdc89c`).
+- **Data real-time.** Quotes ~6 s old, `session: regular` (SPY 767.77 / QQQ 720.13 / IWM 295.52); 1m
+  bars **123 of 123 minutes present since 09:30, zero gaps**, last bar 11:32 ET; the read advanced
+  48 → 61 → 65 2m bars across the run; the Alpaca **OPRA** batch is 200-ing every ~2 s (freshest
+  11:40:49 ET). EMA stacks hand-checked against spot on all three and correct — QQQ's turned
+  **mixed → bull** during this run, SPY's is **mixed**, IWM's **bull**.
+- **The read reconciles to the tape, exactly, and replay parity is exact.** Rebuilt today's 15m bars
+  from the `bars` table: QQQ's last flip was the 10:15 bucket (C717.76 > 717.03 → scenario 3) and the
+  10:30/10:45/11:00/11:15 closes (718.15 / 718.94 / 719.91 / 720.09) all sit **between** the zones →
+  correctly no flip ✓; SPY has closed below 769.00 on every bar since 09:45 → scenario 4 unchanged ✓;
+  IWM above 294.59 on every bar → scenario 3 unchanged ✓. `POST /runs/{id}/replay` reproduced
+  16 / 2 / 2 events event-for-event with `pnlPctSum` 65.61 / 0 / 0.
+- **No trade this run; the book is untouched.** Zero open positions, zero working orders, no order
+  routed. Desk loss tally still **1 of 2** on the book basis (F37); one more book loser stops the desk.
+- **The one new tape event is IWM's 11:26 `skip_no_trade_zone`** (entry 295.32 inside PM
+  293.80–295.91) — and it is the sharpest evidence yet for **F56**. IWM's stack turned bull during
+  this run, which cleared F53's regime clause, and the **very next gate refused the pullback anyway**.
+  All three symbols are now blocked structurally rather than by the tape: SPY 10:00, QQQ 10:16 + 11:00,
+  IWM 11:26. F56 stays a **proposal** — it is rule/threshold work, not the watch job's.
+- **F57 (new, FIXED, commit `1cdc89c`, DEPLOYED).** With all three refused, the headline the Armed page
+  and the phone show still read *"waiting for the 1st/2nd 2m pullback into the EMA13 (touches 0)"* —
+  no hint that nothing was going to happen. `session.py` **does** mint the refusal, but three correct
+  behaviours compound into an invisible one: it goes only into the read, only **once per setup** (F23,
+  so the read is not buried), and the number the line leads with is `touches`, which a refused dip
+  **does not increment** by design (F18). So the page can sit at "touches 0" for an hour with a single
+  10:00 event, well down the timeline, as the only trace. The setup's current refusal (`_skipped`,
+  cleared by a real touch) is now serialized on the read and appended: *"· the last pullback sat inside
+  the pre-market range — no-trade zone (V6/B5)"*. Same family as F53, **descriptive only — no gate,
+  threshold, size or money path touched**. Verified live on all three after deploy; SPY correctly
+  carries *both* clauses (regime mixed vs wanted bear, **and** the no-trade zone). Guarded at both
+  ends: `test_team2_session.py` pins the read exposing the refusal on the fixture that actually reaches
+  the gate, `test_team2_runner.py` asserts the clause appears exactly when the picked setup is refused.
+  `pytest tests/test_team2_*.py tests/test_marketstructure_extended.py` → **57 passed**.
+- **Third clean mid-session restart in a row.** Deployed 11:43 ET (midday, nothing open, nothing
+  working); 80 plans restored and the Team2 read rebuilt **identically** (QQQ trades 2, `pnlPctSum`
+  65.61). Backend-only change, so no frontend build was needed.
+- **Log is clean.** Exactly one ERROR all session and it is still **not ours**: `cartel-observer bar
+  handling failed` at 11:21 ET (`options_cartel/entry.py:45`, the other team's technique) — a **second
+  occurrence** after run 21's 10:54 ET, so it is recurring, not a one-off. The shared listener caught
+  it and the loop continued; no Team2 plan affected. Flagged for them, not touched. Zero Team2 errors,
+  zero `TechniquePlanRead` warnings since F52.
+- **Next run (12:00 ET) must:** nothing is queued — deploy nothing unless something new is found.
+  Watch whether SPY's stack turns bear (it is the only symbol still regime-blocked) and whether QQQ can
+  reach its PDH zone 721.82–721.86 from 720.20; keep the **1-of-2 desk-wide book loss** count in view;
+  if anything fires, re-measure **F50**'s close-vs-target slippage and **F47**'s thin targets. Still
+  open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, and the F30-family question
+  of which premium series is authoritative.
