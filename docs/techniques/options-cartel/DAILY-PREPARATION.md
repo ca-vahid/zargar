@@ -51,7 +51,7 @@ saved preparation evidence and current configuration remain valid.
 
 - September 2026 screen and exit profile; closed 15-minute entry and gap retest.
 - One-session entry window. Position management can continue for multiple days.
-- Maximum premium 500 in account currency, capped again by 1% of current equity
+- Maximum premium 500 in account currency, capped again by the configured equity-risk percentage
   using **full premium debit** as risk, and at most ten contracts.
 - Draft options: 21–90 DTE, target 45 DTE, target absolute delta 0.5,
   minimum absolute delta 0.25, maximum ask $5, spread 20%, open interest 100.
@@ -146,3 +146,17 @@ through allowed expiries until an eligible nearest-DTE group is found or all
 allowed dates are checked. No price, delta, liquidity or risk limits are relaxed.
 The saved-plan table refreshes on published results/completion, and evidence rows
 are paged to keep large runs usable on phones.
+
+## Adjustable risk limit (0.7.8)
+
+Equity at risk (%) on the technique Settings tab accepts values above zero
+through 10 in both workspaces. New Practice configurations default to 10%; new
+Live configurations default to 1%. Explicit saved percentages remain unchanged,
+and the two workspaces retain independent values. Users with a saved 1% value
+must change it and save to use 10%; deployment never silently raises it.
+
+This is full option-premium allocation per setup, not a stop-loss estimate.
+The separate premium budget still applies: on a hypothetical 10,000-equity book,
+10% allows 1,000, but a 500 premium budget still caps the purchase at 500. Existing
+contract-price/quantity limits, cash requirements, exposure and loss gates remain
+in force. No change to Live acknowledgements or permission requirements.
