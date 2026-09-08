@@ -486,6 +486,21 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   21a3a2f8 row DELL; fresh `plan DELL --as-of 2026-09-03` = run a27ff13f. Yahoo also revised
   7 of 390 1m bars by more than a cent overnight (late prints) - unavoidable, small.
 
+- **2026-09-07 · One Practice book per technique (user decision, reset from 2026-09-08).** The
+  shared "Practice" book was overdrawn to -$5,021 by two $5,000 tip buys sized under the
+  ambitious practice limits (budget_per_tip $5,000, gross exposure 300%, no cash check) while EM
+  and Team2 traded in the same book. From 09-08 FOUR books, $10,000 each ($40,000 total, user
+  decision 09-07): `EM Practice` (045d8c35), `Tips Practice` (4611946d), `Team2 Practice`
+  (b9dcd8db), `Options Cartel Practice`; Flow is context-only and has no book. Routing by
+  `techniques.<id>.default_portfolio`
+  (EM also `technique.arm.default_portfolio`; tips runner/proposals and EM arm-today read the
+  technique key before `trading.default_portfolio`). The old book is renamed
+  "Practice (archived 2026-09-07)" and keeps its positions/history - nothing is deleted; journal,
+  runs, outcomes, reviews and the counterfactual ledger are untouched. Settings tightened the same
+  night: `techniques.tip.budget_per_tip` 5000 -> 2000, `risk.max_gross_exposure_pct` 300 -> 100,
+  `risk.sim_require_cash` stays on. INVARIANT 15: a technique's orders land only in its own book;
+  a shared book is never a fallback for a technique that has one.
+
 ## 3. Open questions the shared runtime is collecting data on
 
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)

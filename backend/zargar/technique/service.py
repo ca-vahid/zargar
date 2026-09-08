@@ -1014,7 +1014,7 @@ class TechniqueService:
         proposal id (None when no portfolio could take it). Armed plans pass the
         account / sizing they were configured with."""
         eng = self.engine
-        pid = portfolio_id or str(eng.settings.get("trading.default_portfolio", ""))
+        pid = portfolio_id or str(eng.settings.get("technique.arm.default_portfolio", "") or eng.settings.get("trading.default_portfolio", ""))
         if not pid or eng.positions.portfolio(pid) is None:
             sims = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
             if not sims:

@@ -215,7 +215,8 @@ class ProposalService:
         from ..signals.sources import resolve_policy
 
         eng = self.engine
-        pid = str(eng.settings.get("trading.default_portfolio", ""))
+        # tip proposals fill in the tips lane's own Practice book (2026-09-08), app default as fallback
+        pid = str(eng.settings.get("techniques.tip.default_portfolio", "") or eng.settings.get("trading.default_portfolio", ""))
         if not pid or eng.positions.portfolio(pid) is None:
             portfolios = [p for p in eng.positions.portfolios() if p["kind"] == "sim"]
             if not portfolios:

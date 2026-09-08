@@ -114,6 +114,8 @@ DEFAULTS: dict[str, Any] = {
     # --- tip technique (docs/techniques/tip/PLAN.md; per-source overrides in .sources) ---
     # --- Team2 technique (2026-09-03; docs/techniques/team2/PLAN.md D1-D14) --------------------------
     "techniques.team2.enabled": True,
+    "techniques.team2.default_portfolio": "",    # Team2's own Practice book (2026-09-08); empty = trading.default_portfolio
+    "techniques.options_cartel.default_portfolio": "",   # Options Cartel's own Practice book (2026-09-08)
     "techniques.team2.symbols": ["SPY", "QQQ", "IWM"],   # D2: fixed universe, no scan
     "techniques.team2.mode": "alert",                # alert | proposal | auto (earned the same way EM earned it)
     "techniques.team2.plan_at": "17:00",             # ET nightly skeleton (PDH/PDL zones, targets)
@@ -175,6 +177,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.daily_loss_halt_pct": 10.0,           # the tip technique pauses its plans on a book after losing 10% of it today (ladder 2026-09-07)
     "techniques.tip.risk_pct": 1.0,
     "techniques.tip.budget_per_tip": 1000.0,
+    "techniques.tip.default_portfolio": "",      # the tips lane's own Practice book (2026-09-08: one book per technique); empty = trading.default_portfolio
     "techniques.tip.budget_open_max": 5000.0,
     "techniques.tip.dte_min": 10,            # option expression window — never 0DTE
     "techniques.tip.dte_max": 30,
@@ -416,6 +419,7 @@ DEFAULTS: dict[str, Any] = {
 
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
+    "techniques.enhanced_market.default_portfolio": "",   # EM's own Practice book (2026-09-08); the runner resolves this before execution.*
     "technique.arm.risk_pct": 2.0,             # R1: % of equity risked per entry (practice: 2%; the book's live range is 0.5-1%)
     "technique.arm.max_qty": 100,              # hard cap on shares per entry
     "technique.arm.allow_live_auto": False,    # auto mode on live/paper accounts needs this AND per-arm ack
