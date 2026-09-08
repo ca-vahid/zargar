@@ -17,6 +17,7 @@ from ...marketstructure.history import UA, fetch_window
 from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import ET, next_session_date, session_bounds
 from ...models import ManagedPositionRow, Portfolio, TechniqueArmed, TechniqueRun
+from .accounts import default_practice_book, is_archived, validate_account
 from .automatic_plans import PreparationPolicy, automatic_review, planning_contract
 from .discovery import discover_market
 from .execution import ExecutionInput
@@ -49,14 +50,21 @@ async def affordable_contract_policy(engine, portfolio_id, policy):
 
 
 async def preparation_portfolio(engine, requested=None, workspace='practice'):
+    dedicated = default_practice_book(engine) if workspace == 'practice' else ''
+    if dedicated:
+        if requested and requested != dedicated:
+            raise ValueError('Cartel must use its configured dedicated Practice book')
+        requested = dedicated
     kinds = ('sim',) if workspace == 'practice' else ('live', 'paper')
     async with engine.sf() as session:
         if requested:
             row = await session.get(Portfolio, requested)
             if row is None or row.kind not in kinds:
                 raise ValueError(f'Choose a {workspace.title()} account for this preparation workspace')
+            validate_account(engine, row)
             return row.id
         rows = (await session.scalars(select(Portfolio).where(Portfolio.kind.in_(kinds)).order_by(Portfolio.id))).all()
+        rows = [r for r in rows if not is_archived(engine, r)]
     if workspace == 'live' or len(rows) != 1:
         raise ValueError(f'Choose the {workspace.title()} account explicitly for automatic preparation')
     return rows[0].id
@@ -378,8 +386,11 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
 async def preparation_status(engine, workspace=None):
     policy = read_policy(engine, workspace)
     async with engine.sf() as session:
-        row = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
-            TechniqueRun.mode == 'preparation', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
+        query = select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
+            TechniqueRun.mode == 'preparation', workspace_filter(policy.workspace))
+        if policy.portfolio_id:
+            query = query.where(TechniqueRun.config['portfolioId'].as_string() == policy.portfolio_id)
+        row = await session.scalar(query.order_by(TechniqueRun.created_at.desc()).limit(1))
     latest = None if row is None else {**CartelService._view(row), 'error': row.error,
                                      'result': json.loads(json.dumps(row.result))}
     arms = []

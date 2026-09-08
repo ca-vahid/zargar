@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.6";
+export const APP_VERSION = "0.7.7";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.7",
+    date: "2026-09-07",
+    title: "Cartel uses its own Practice book",
+    items: [
+      { tag: "fixed", text: "Cartel preparation honors its dedicated Practice account even when an older shared-book selection was saved. Archived or unavailable assigned books never fall back to another technique's account." },
+      { tag: "improved", text: "Cartel account selectors and new-entry checks honor book ownership and archive flags. Risk percentages use the selected book's equity, not the combined Practice total." },
+    ],
+  },
   {
     version: "0.7.6",
     date: "2026-09-07",

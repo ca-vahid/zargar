@@ -1,9 +1,10 @@
+import { useCartelPortfolios } from "./cartelAccounts";
 import { useState } from "react";
 import { api } from "../lib/api";
-import { useWorkspacePortfolios } from "../lib/workspace";
+
 
 export function CartelArmControls({runId, active, preferredPortfolioId, onChanged}: {runId: string; active?: any; preferredPortfolioId?: string; onChanged: () => Promise<void>}) {
-  const books = useWorkspacePortfolios();
+  const books = useCartelPortfolios();
   const initial = active?.executionSettings || {};
   const [book, setBook] = useState(initial.portfolioId || preferredPortfolioId || "");
   const portfolioId = books.some(b => b.id === book) ? book : books.find(b => b.kind === "sim")?.id || books[0]?.id || "";

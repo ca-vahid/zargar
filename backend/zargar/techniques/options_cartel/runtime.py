@@ -62,6 +62,8 @@ class CartelRuntime(CartelObserver):
             raise ValueError("plan horizon is not valid for arming")
         if portfolio is None:
             raise ValueError("portfolio not found")
+        from .accounts import validate_account
+        validate_account(self.engine, portfolio)
         if config.get('preparation'):
             from .preparation_scope import read_policy, require_execution_scope
             scope = config['preparation'].get('workspace', 'practice')
@@ -124,6 +126,9 @@ class CartelRuntime(CartelObserver):
         async with self.engine.sf() as session:
             rows = (await session.scalars(select(TechniqueArmed).where(TechniqueArmed.technique == self.TECHNIQUE_ID))).all()
         for stored in rows:
+            book = self.engine.positions.portfolio(stored.portfolio_id)
+            if book and book.get('archived'):
+                continue
             row = self.repository.view(stored)
             if row["status"] not in ("armed", "paused", "closing") and not row["state"].get("orderId"):
                 continue
@@ -205,6 +210,9 @@ class CartelRuntime(CartelObserver):
         row = await self.repository.load(run_id)
         if row is None:
             return None
+        book = self.engine.positions.portfolio(row['portfolioId'])
+        if book and book.get('archived'):
+            return None  # Historical run APIs remain available; a read must not restore observation.
         await self._remember(row)
         await self._load_positions(run_id)
         return self.detail(run_id)
