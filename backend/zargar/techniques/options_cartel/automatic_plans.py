@@ -23,7 +23,9 @@ class PreparationPolicy(WireModel):
     overnight_ack: bool = False
     portfolio_id: str | None = Field(default=None, max_length=64)
     profile: ScreenProfile = 'september_2026'
-    history_limit: int = Field(default=200, ge=1, le=2000)
+    scan_all: bool = True
+    history_limit: int = Field(default=200, ge=1, le=10000)
+    request_interval_seconds: float = Field(default=.25, ge=0, le=5)
     focus_count: int = Field(default=5, ge=1, le=20)
     horizon_sessions: int = Field(default=1, ge=1, le=20)
     budget: float = Field(default=500, gt=0, le=100000)
@@ -99,40 +101,68 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
         raise ValueError('Options provider is unavailable')
     import datetime as dt
     provider = engine.options.provider()
-    expiries = [e for e in await provider.expirations(plan.symbol)
+    try:
+        available = await provider.expirations(plan.symbol)
+    except Exception as exc:  # noqa: BLE001 - missing provider data must remain pending, never eligible
+        return {'selected': None, 'candidates': [], 'errors': [f'Expiry data unavailable: {type(exc).__name__}'],
+                'pendingReason': 'Option provider unavailable; contract selection will retry during its activation window.',
+                'planningOnly': True}
+    expiries = [e for e in available
                 if policy.dte_min <= (dt.date.fromisoformat(e)-plan.first_session).days <= policy.dte_max]
     expiries.sort(key=lambda e: (abs((dt.date.fromisoformat(e)-plan.first_session).days-policy.target_dte), e))
     candidates, errors = [], []
-    for expiry in expiries[:3]:
+    rejected = {k: 0 for k in ('identity', 'quotes', 'delta', 'spread', 'open_interest', 'premium')}
+    examined = checked = 0
+    lowest_ask = None
+    best_distance = None
+    for expiry in expiries:
+        distance = abs((dt.date.fromisoformat(expiry)-plan.first_session).days-policy.target_dte)
+        if best_distance is not None and distance > best_distance:
+            break  # Later expiries cannot improve the primary DTE ranking.
+        checked += 1
         try:
             rows = await provider.chain(plan.symbol, expiry)
         except Exception as exc:  # noqa: BLE001 - preserve per-expiry provider failure
             errors.append(f'{expiry}: {type(exc).__name__}')
             continue
         for row in rows:
+            examined += 1
             option = parse(row.get('symbol'))
-            if option is None or option.underlying != plan.symbol or option.right != ('C' if plan.direction == 'long' else 'P'):
+            if option is None or option.underlying != plan.symbol or option.expiry.isoformat() != expiry or option.right != ('C' if plan.direction == 'long' else 'P'):
+                rejected['identity'] += 1
                 continue
             bid, ask, delta = row.get('bid'), row.get('ask'), (row.get('greeks') or {}).get('delta')
             oi = row.get('open_interest')
-            if any(not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v) for v in (bid, ask, delta)):
+            numeric = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            if not numeric(bid) or not numeric(ask) or not 0 < bid <= ask:
+                rejected['quotes'] += 1
                 continue
-            if not 0 < bid <= ask <= policy.max_ask or not policy.min_abs_delta <= abs(delta) <= 1 \
-                    or delta*(1 if plan.direction == 'long' else -1) <= 0:
+            if not numeric(delta) or not policy.min_abs_delta <= abs(delta) <= 1 or delta*(1 if plan.direction == 'long' else -1) <= 0:
+                rejected['delta'] += 1
                 continue
             spread = (ask-bid)/((ask+bid)/2)*100
-            if spread > policy.max_spread_pct or policy.min_open_interest and (
-                    not isinstance(oi, (int, float)) or isinstance(oi, bool)
-                    or not math.isfinite(oi) or oi < policy.min_open_interest):
+            if spread > policy.max_spread_pct:
+                rejected['spread'] += 1
                 continue
-            if option.expiry.isoformat() != expiry:
+            if policy.min_open_interest and (not numeric(oi) or oi < policy.min_open_interest):
+                rejected['open_interest'] += 1
+                continue
+            lowest_ask = ask if lowest_ask is None else min(lowest_ask, ask)
+            if ask > policy.max_ask:
+                rejected['premium'] += 1
                 continue
             dte = (option.expiry-plan.first_session).days
-            if not policy.dte_min <= dte <= policy.dte_max:
-                continue
             candidates.append({'symbol': option.symbol, 'expiry': expiry, 'delta': delta, 'bid': bid, 'ask': ask,
                 'openInterest': oi, 'spreadPct': spread, 'dte': dte})
+            best_distance = distance
     candidates.sort(key=lambda c: (abs(c['dte']-policy.target_dte), abs(abs(c['delta'])-policy.target_abs_delta), c['spreadPct'], c['symbol']))
+    audit = {'expiriesInRange': len(expiries), 'expiriesChecked': checked, 'rowsExamined': examined,
+             'eligible': len(candidates), 'rejections': rejected, 'effectiveMaxAsk': policy.max_ask,
+             'maxDebitUsd': round(100*policy.max_ask, 2), 'lowestOtherwiseEligibleAsk': lowest_ask,
+             'searchComplete': not errors and (bool(candidates) or checked == len(expiries)),
+             'note': 'Rejection counts use the first failing filter for each inspected contract. Provider failures remain separate.'}
+    reason = None if candidates else ('No expiries fall inside the configured DTE range.' if not expiries else
+        f'No eligible contract in {checked} checked expiry dates. Maximum ask ${policy.max_ask:.2f} (${100*policy.max_ask:.2f} per contract before fees).')
     return {'selected': candidates[0] if candidates else None, 'candidates': candidates[:10], 'errors': errors,
-            'pendingReason': None if candidates else 'No available chain contract meets the configured expiry, delta, premium, spread and open-interest limits.',
-            'planningOnly': True, 'note': 'Chain evidence selects the planned expression; fresh quotes/Greeks are required again before execution.'}
+            'pendingReason': reason, 'audit': audit, 'planningOnly': True,
+            'note': 'Chain evidence selects the planned expression; fresh quotes/Greeks are required again before execution.'}

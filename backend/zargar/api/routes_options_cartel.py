@@ -70,11 +70,12 @@ def build_options_cartel_routes(app, eng, auth, config):
         return await respond(save())
 
     @app.post('/api/options-cartel/preparation/run', dependencies=[auth], status_code=202)
-    async def cartel_prepare_daily(request: Request, workspace: Workspace | None = None):
+    async def cartel_prepare_daily(request: Request, workspace: Workspace | None = None,
+                                   resume_run_id: str | None = Query(None, alias='resumeRunId', max_length=64)):
         scope = workspace or active_workspace(eng)
         if scope == 'live' and request.headers.get('X-Zargar-Client') == 'phone' and eng.settings.get('mobile.exit_only', True):
             raise HTTPException(status_code=400, detail='Phones are exit-only on real accounts')
-        return await respond(submit_preparation(eng, workspace=scope))
+        return await respond(submit_preparation(eng, workspace=scope, resume_run_id=resume_run_id))
 
     @app.post("/api/options-cartel/runs/{run_id}/premium-replay-stored", dependencies=[auth])
     async def cartel_stored_premium_replay(run_id: str, body: StoredPremiumReplayInput):

@@ -6,6 +6,7 @@ import datetime as dt
 import hashlib
 import json
 import math
+import time
 
 import httpx
 from sqlalchemy import select
@@ -17,12 +18,12 @@ from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import ET, next_session_date, session_bounds
 from ...models import ManagedPositionRow, Portfolio, TechniqueArmed, TechniqueRun
 from .automatic_plans import PreparationPolicy, automatic_review, planning_contract
-from .collect import normalize_daily
 from .discovery import discover_market
 from .execution import ExecutionInput
-from .industry import save_snapshot
+from .industry import IndustrySnapshot, read_industry, save_snapshot
 from .industry_feed import capture_industries
 from .plans import CartelPlan
+from .preparation_io import DATA_ERRORS, PreparationHistory, observed_work, rate_limited
 from .preparation_scope import SETTING as SETTING  # noqa: PLC0414 - preserve the existing public constant
 from .preparation_scope import (
     read_policy,
@@ -65,8 +66,26 @@ async def practice_portfolio(engine, requested=None):
     return await preparation_portfolio(engine, requested, 'practice')
 
 
+def resumable(row, policy, now):
+    return bool(row.technique == 'options_cartel' and row.mode == 'preparation'
+        and row.status in ('done', 'failed') and row.result.get('resumeReady')
+        and (row.status == 'failed' or row.result.get('dataErrors', 0) > 0 or row.result.get('planErrors', 0) > 0)
+        and row.config.get('workspace', 'practice') == policy.workspace
+        and PreparationPolicy.model_validate(row.config.get('policy', {})) == policy
+        and 0 <= now-row.as_of < 86_400_000 and row.config.get('session') == next_session_date(now))
+
+
+def evaluation_row(saved, review):
+    checks = [*saved['result']['screen']['gates'], *saved['result']['analysis'].get('checks', [])]
+    reasons = list(dict.fromkeys(g.get('label') or g.get('name') or 'Unspecified check' for g in checks if g['status'] != 'pass'))
+    if not review and not reasons:
+        reasons = ['No qualifying measured setup with valid automatic target geometry']
+    return {'symbol': saved['symbol'], 'analysisId': saved['runId'],
+            'status': 'candidate' if review else 'filtered', 'reasons': reasons}
+
+
 async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, discover=discover_market,
-                          industries=capture_industries, fetch=fetch_window, choose=planning_contract, on_started=None):
+                          industries=capture_industries, fetch=fetch_window, choose=planning_contract, on_started=None, resume_run_id=None):
     started = clock()
     if not policy.enabled:
         raise ValueError('Enable automatic preparation before starting a run')
@@ -81,12 +100,17 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
         raise ValueError('Cartel runtime is unavailable')
     service = CartelService(engine)
     target_session = next_session_date(started)
+    prior = await service._load(resume_run_id) if resume_run_id else None
+    if prior and not resumable(prior, policy, started):
+        raise ValueError('This preparation cannot be resumed with current settings or expired evidence; start a fresh run')
     run_id = new_id()
     result = {'phase': 'discovering', 'session': target_session, 'portfolioId': portfolio_id,
               'mode': 'auto', 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'rows': [], 'shortlist': [], 'warnings': [],
-              'discovered': 0, 'evaluated': 0, 'qualifying': 0, 'armed': 0}
+              'discovered': 0, 'evaluated': 0, 'qualifying': 0, 'armed': 0, 'processed': 0, 'dataErrors': 0,
+              'startedAt': started, 'updatedAt': started, 'message': 'Starting market discovery', 'currentSymbol': None,
+              'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
-        primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
+        parent_run_id=resume_run_id, primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
         config={'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
         result=result, tags=['cartel:preparation'])
     async with engine.sf() as session:
@@ -94,8 +118,18 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
     if on_started:
         on_started(service._view(record, detail=True))
 
-    async def checkpoint(phase, *, terminal=False, error=None):
+    last_persisted = 0.
+    async def checkpoint(phase, *, terminal=False, error=None, force=False):
+        nonlocal last_persisted
         result['phase'] = phase
+        result['updatedAt'] = clock()
+        result['cacheHits'] = history_reader.cache_hits
+        result['historyRequests'] = history_reader.requests
+        if terminal:
+            result['finishedAt'] = clock()
+        if not terminal and not force and time.monotonic()-last_persisted < 1:
+            return None
+        last_persisted = time.monotonic()
         async with engine.sf() as session:
             row = await session.get(TechniqueRun, run_id)
             row.result = json.loads(json.dumps(result))
@@ -108,20 +142,28 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
             view = service._view(row, detail=True)
         if terminal:
             await engine.journal.append(ev.TECHNIQUE_RUN_FAILED if error else ev.TECHNIQUE_RUN_COMPLETED,
-                {'runId': run_id, 'technique': 'options_cartel', 'mode': 'preparation',
+                {'runId': run_id, 'symbol': 'MULTI', 'technique': 'options_cartel', 'mode': 'preparation',
                  'phase': phase, 'armed': result['armed'], 'error': error},
                 aggregate_type='technique_run', aggregate_id=run_id)
         return view
 
+    async def report(*, symbol=None, message=None, phase=None):
+        if symbol is not None:
+            result['currentSymbol'] = symbol
+        if message:
+            result['message'] = message
+        await checkpoint(phase or result['phase'])
+
+    history_reader = PreparationHistory(engine, fetch, report, policy, clock)
     try:
         await engine.journal.append(ev.TECHNIQUE_RUN_STARTED,
-            {'runId': run_id, 'technique': 'options_cartel', 'mode': 'preparation',
+            {'runId': run_id, 'symbol': 'MULTI', 'technique': 'options_cartel', 'mode': 'preparation',
              'portfolioId': portfolio_id, 'session': target_session},
             aggregate_type='technique_run', aggregate_id=run_id)
         # Refresh only unused automatic arms. Paused plans express user intent;
         # working entries and held positions retain their existing protection.
         result['replacedPlans'] = []
-        for old_id in list(runtime.rows):
+        for old_id in ([] if prior else list(runtime.rows)):
             async with runtime.controller._guard(old_id):
                 require_execution_scope(engine, policy)
                 old = runtime.rows[old_id]
@@ -132,44 +174,103 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                     continue
                 await runtime.disarm(old_id, reason='daily preparation refresh')
                 result['replacedPlans'].append(old_id)
-        await checkpoint('discovering')
         rules = CartelRules.for_profile(policy.profile)
-        universe = await discover(rules, clock=clock)
+        async def discovery_progress(update):
+            result['discoveryProgress'] = update
+            await report(message=update['message'], phase='discovering')
+        if prior:
+            universe = prior.config['discoverySnapshot']
+            captured = {'runId': prior.result['industrySnapshotId']}
+            industry_record = await service._load(captured['runId'])
+            industry = IndustrySnapshot.model_validate(industry_record.config['inputs'])
+            industry_raw = prior.config['industryPublication']
+            at = prior.as_of
+        else:
+            await checkpoint('discovering', force=True)
+            args = {'clock': clock}
+            if discover is discover_market:
+                args['on_progress'] = discovery_progress
+            universe = await observed_work(discover(rules, **args), report, message='Discovering market listings', timeout=600)
+            result['discovered'] = len(universe['rows'])
+            await report(message='Capturing published weekly and monthly industry ranks', phase='industry_context')
+            industry, industry_raw = await observed_work(industries(clock=clock), report, message='Loading industry publication')
+            captured = await save_snapshot(service, industry, now_ms=clock())
+            at = clock()
         result['discovered'] = len(universe['rows'])
         result['discovery'] = {k: universe[k] for k in ('providerTotal', 'received', 'complete', 'excluded', 'observedAt', 'inputSha256')}
-        industry, industry_raw = await industries(clock=clock)
-        captured = await save_snapshot(service, industry, now_ms=clock())
         result['industrySnapshotId'] = captured['runId']
-        at = clock()
+        result['resumeReady'] = True
         async with engine.sf() as session:
             row = await session.get(TechniqueRun, run_id)
             row.as_of = at
             row.config = {**row.config, 'discoverySnapshot': universe, 'industryPublication': industry_raw}
             await session.commit()
-        await checkpoint('market_context')
+        await checkpoint('market_context', force=True)
         async with httpx.AsyncClient(headers={'User-Agent': UA}, timeout=30.) as client:
             indices = {}
             for symbol in ('SPY', 'QQQ'):
-                indices[symbol] = normalize_daily(await fetch(symbol, '1d', at-550*86_400_000, at, client=client), symbol, at)
+                indices[symbol], _ = await history_reader.daily(symbol, at, client)
             regime = market_regime(indices, rules, at)
             result['market'] = regime
             direction = regime['direction']
             if direction not in ('long', 'short'):
                 result['warnings'].append('SPY and QQQ do not establish an aligned trend; no new plans armed.')
+                result['message'] = 'Market alignment does not permit new setups; stock evaluation skipped'
+                result['notEvaluated'] = result['discovered']
+                result['coverageComplete'] = False
                 return await checkpoint('no_market_alignment', terminal=True)
-            eligible = [r for r in universe['rows'] if rules.volume_basis != 'last_session' or
-                        r['dailyVolume'] is not None and r['dailyVolume'] > rules.min_volume]
-            result['liquidityCandidates'] = len(eligible)
-            result['notEvaluated'] = max(0, len(eligible)-policy.history_limit)
-            if result['notEvaluated']:
-                result['warnings'].append(f"History budget evaluates the first {policy.history_limit} volume-ranked listings; {result['notEvaluated']} remain outside this run.")
+            eligible = universe['rows']
+            selected_listings = eligible if policy.scan_all else eligible[:policy.history_limit]
+            result['eligible'] = len(eligible)
+            result['evaluationTotal'] = len(selected_listings)
+            result['notEvaluated'] = len(eligible)
+            if len(selected_listings) < len(eligible):
+                result['warnings'].append(f"Optional cap limits this run to {len(selected_listings)} of {len(eligible)} eligible listings.")
+            reused = {}
+            if prior:
+                reused = {r['symbol']: r['analysisId'] for r in prior.result.get('rows', []) if r.get('analysisId') and r['status'] in ('candidate', 'filtered')}
+                # Child analyses survive a crash between their commit and the next progress checkpoint.
+                async with engine.sf() as session:
+                    children = (await session.execute(select(TechniqueRun.symbol, TechniqueRun.id).where(TechniqueRun.parent_run_id == prior.id,
+                        TechniqueRun.mode == 'analysis', TechniqueRun.result['collection']['historyCacheVersion'].as_integer() == 1))).all()
+                reused.update({r.symbol: r.id for r in children})
             pool = []
-            for listing in eligible[:policy.history_limit]:
+            consecutive_transport_errors = 0
+            industry_reads = {}
+            await report(message='Evaluating all eligible listings' if policy.scan_all else 'Evaluating the explicitly capped universe', phase='evaluating')
+            for listing in selected_listings:
                 if runtime.stopping:
                     raise asyncio.CancelledError()
                 symbol = listing['symbol']
+                result['currentSymbol'] = symbol
                 try:
-                    history = normalize_daily(await fetch(symbol, '1d', at-550*86_400_000, at, client=client), symbol, at)
+                    group = listing.get('industry') or ''
+                    if rules.require_industry_rank and group not in industry_reads:
+                        industry_reads[group] = read_industry(industry, group, at=at, direction=direction,
+                            top_n=rules.industry_top_n, max_age_days=rules.max_metadata_age_days)
+                    if rules.require_industry_rank and industry_reads[group]['status'] == 'fail':
+                        result['rows'].append({'symbol': symbol, 'status': 'prefiltered',
+                            'reasons': ['Industry fails the required weekly/monthly ranking gate; history is unnecessary'],
+                            'industrySnapshotId': captured['runId']})
+                        result['prefiltered'] += 1; result['processed'] += 1
+                        result['notEvaluated'] = len(eligible)-result['processed']
+                        await checkpoint('evaluating')
+                        continue
+                    if symbol in reused:
+                        saved = service._view(await service._load(reused[symbol]), detail=True)
+                        if saved['config']['inputs']['as_of_ms'] != at:
+                            raise ValueError('Resumed analysis cutoff differs from the saved preparation')
+                        review = automatic_review(saved['config']['inputs'], saved['result']['analysis'], policy)
+                        result['resumedAnalyses'] += 1
+                        entry = evaluation_row(saved, review)
+                        if review:
+                            result['qualifying'] += 1
+                            pool.append((saved['runId'], review))
+                        result['rows'].append(entry); result['evaluated'] += 1; result['processed'] += 1
+                        result['notEvaluated'] = len(eligible)-result['processed']
+                        await checkpoint('evaluating')
+                        continue
+                    history, provenance = await history_reader.daily(symbol, at, client)
                     facts = FactsInput(symbol=symbol, observed_at=listing['observedAt'], source=listing['source'],
                         market_cap=listing['marketCap'], cap_observed_at=listing['observedAt'],
                         cap_data_as_of_ms=listing['sourceBarOpenAt'], fundamentals_snapshot_id=run_id, industry=listing['industry'],
@@ -177,19 +278,34 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                     research = ResearchInput(history=history, indices=indices, facts=facts, rules=rules,
                         parameters=policy.setups, as_of_ms=at, direction=direction, data_source=listing['source'],
                         industry_snapshot_id=captured['runId'])
-                    saved = await service.analyze(research, parent_run_id=run_id)
+                    saved = await service.analyze(research, collection=provenance, parent_run_id=run_id)
                     review = automatic_review(saved['config']['inputs'], saved['result']['analysis'], policy)
-                    entry = {'symbol': symbol, 'analysisId': saved['runId'], 'status': 'candidate' if review else 'filtered',
-                             'reasons': [g['label'] for g in saved['result']['screen']['gates'] if g['status'] != 'pass']}
+                    entry = evaluation_row(saved, review)
                     if review:
                         result['qualifying'] += 1
-                        pool.append((saved, review))
-                except (ValueError, httpx.HTTPError, OSError) as exc:
+                        pool.append((saved['runId'], review))
+                    result['evaluated'] += 1
+                    consecutive_transport_errors = 0
+                except (*DATA_ERRORS, httpx.HTTPError) as exc:
+                    result['dataErrors'] += 1
+                    if rate_limited(exc):
+                        result['message'] = 'Provider rate limit reached after bounded retries. Resume to continue saved work.'
+                        raise
+                    transport_error = isinstance(exc, (TimeoutError, httpx.TimeoutException, httpx.NetworkError)) or 'HTTP 5' in str(exc)
+                    consecutive_transport_errors = consecutive_transport_errors+1 if transport_error else 0
+                    if consecutive_transport_errors >= 3:
+                        result['message'] = 'Provider unavailable after three consecutive transport failures. Saved work can be resumed.'
+                        raise
                     entry = {'symbol': symbol, 'status': 'data_error', 'reason': str(exc)[:600]}
-                result['rows'].append(entry); result['evaluated'] += 1
+                result['rows'].append(entry); result['processed'] += 1
+                result['notEvaluated'] = len(eligible)-result['processed']
+                result['cacheHits'] = history_reader.cache_hits
+                result['historyRequests'] = history_reader.requests
                 await checkpoint('evaluating')
             # Discovery volume order is retained; choose one measured setup per name.
-            for saved, review in pool:
+            for saved_id, review in pool:
+                saved = service._view(await service._load(saved_id), detail=True)
+                await report(symbol=saved['symbol'], message=f"Preparing {saved['symbol']} plan and option expression", phase='preparing_plans')
                 if len(result['shortlist']) >= policy.focus_count:
                     break
                 symbol = saved['symbol']
@@ -204,7 +320,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                     result['shortlist'].append({'symbol': symbol, 'status': 'already_managed', 'planId': existing.run_id if existing else held.run_id})
                     continue
                 try:
-                    minutes = await fetch(symbol, '1m', at-19*86_400_000, at, client=client)
+                    minutes = await history_reader.window(symbol, '1m', at-19*86_400_000, at, client)
                     baseline = build_volume_baseline(minutes, symbol, review.entry_policy.timeframe_minutes, at)
                     if not baseline['baselines']:
                         raise ValueError('No supported same-time volume baseline; plan cannot be armed')
@@ -213,10 +329,18 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                             low=b.low, close=b.close, volume=b.volume) for b in minutes if b.ts+60_000 <= at]})
                     enriched = await service.analyze(inputs, parent_run_id=run_id)
                     key = hashlib.sha256(f'{target_session}:{portfolio_id}:{symbol}:{at}'.encode()).hexdigest()[:32]
-                    plan_record = await service.prepare(enriched['runId'], review, plan_id=key,
-                        preparation={'runId': run_id, 'workspace': policy.workspace, 'session': target_session, 'portfolioId': portfolio_id, 'reviewer': 'automatic_rules'})
+                    async with engine.sf() as session:
+                        existing_plan = await session.get(TechniqueRun, key)
+                    if existing_plan:
+                        if existing_plan.technique != 'options_cartel' or existing_plan.mode != 'plan' or existing_plan.config.get('preparation', {}).get('portfolioId') != portfolio_id:
+                            raise ValueError('Existing plan identity does not match this preparation')
+                        plan_record = service._view(existing_plan, detail=True)
+                    else:
+                        plan_record = await service.prepare(enriched['runId'], review, plan_id=key,
+                            preparation={'runId': run_id, 'workspace': policy.workspace, 'session': target_session, 'portfolioId': portfolio_id, 'reviewer': 'automatic_rules'})
                     plan = CartelPlan.model_validate(plan_record['result']['plan']['plan'])
-                    selected = await choose(engine, plan, await affordable_contract_policy(engine, portfolio_id, policy))
+                    selection_policy = await affordable_contract_policy(engine, portfolio_id, policy)
+                    selected = await observed_work(choose(engine, plan, selection_policy), report, message=f'Selecting {symbol} option contract')
                     row = {'symbol': symbol, 'planId': plan.id, 'setup': plan.setup, 'trigger': plan.trigger,
                            'invalidation': plan.invalidation, 'targets': list(plan.targets), 'selection': selected,
                            'status': 'awaiting_contract'}
@@ -234,13 +358,20 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                                 'validUntil': min(at+86_400_000, session_bounds(plan.last_session.isoformat())[1])}})
                         row['status'] = 'armed'; result['armed'] += 1
                     result['shortlist'].append(row)
-                except (ValueError, httpx.HTTPError, OSError) as exc:
+                except (*DATA_ERRORS, httpx.HTTPError) as exc:
+                    result['planErrors'] += 1
                     result['rows'].append({'symbol': symbol, 'status': 'plan_blocked', 'reason': str(exc)[:600]})
                 await checkpoint('preparing_plans')
-        return await checkpoint('complete', terminal=True)
+        result['coverageComplete'] = result.get('notEvaluated', 0) == 0 and result['dataErrors'] == 0
+        result['currentSymbol'] = None
+        complete = result['coverageComplete'] and result['planErrors'] == 0
+        result['message'] = 'Preparation finished' if complete else 'Preparation finished with coverage gaps or blocked plans; review exclusions'
+        return await checkpoint('complete' if complete else 'partial', terminal=True)
     except BaseException as exc:
+        if not rate_limited(exc):
+            result['message'] = 'Preparation interrupted; completed work is saved'
         result['warnings'].append(f'{type(exc).__name__}: preparation interrupted; saved plans and execution are preserved.')
-        await checkpoint('interrupted', terminal=True, error=f'{type(exc).__name__}: preparation interrupted')
+        await checkpoint('interrupted', terminal=True, error=f'{type(exc).__name__}: {str(exc)[:500] or "Preparation interrupted"}')
         raise
 
 
@@ -265,6 +396,7 @@ async def preparation_status(engine, workspace=None):
     refresh = getattr(getattr(engine, 'cartel_observer', None), 'preparation_quote_status', {})
     contracts = {a.config.get('execution', {}).get('contract_symbol') for a in arms}
     return {'configuration': policy.model_dump(mode='json', by_alias=True), 'latest': latest, 'liveAutoAllowed': bool(engine.settings.get('techniques.options_cartel.allow_live_auto', False)),
+            'canResume': bool(row and resumable(row, policy, now_ms())), 'serverNow': now_ms(),
             'quoteRefresh': {**refresh, 'errors': {k: v for k, v in refresh.get('errors', {}).items() if k in contracts}},
             'activation': getattr(engine, '_cartel_preparation_activations', {}).get(policy.workspace, {})}
 
@@ -407,4 +539,5 @@ async def recover_interrupted_preparations(engine):
             row.status, row.verdict = 'failed', 'interrupted'
             row.error = 'Runtime restarted during preparation; published plans remain preserved'
             row.finished_at = dt.datetime.now(dt.UTC)
-            row.result = {**row.result, 'phase': 'interrupted'}
+            row.result = {**row.result, 'phase': 'interrupted', 'updatedAt': now_ms(), 'finishedAt': now_ms(),
+                          'message': 'Runtime restarted; completed work is saved'}

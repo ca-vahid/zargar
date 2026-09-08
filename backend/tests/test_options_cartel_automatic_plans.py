@@ -49,3 +49,22 @@ async def test_contract_selection_rejects_bad_interest_and_expiry_identity():
 def test_invalid_exit_allocations_rejected():
     with pytest.raises(ValueError):
         PreparationPolicy(september_fractions=(.5, .5, .5, .5, .5))
+
+
+async def test_contract_search_continues_beyond_three_expiries_and_explains_premium_rejections():
+    first = dt.date(2026, 9, 8)
+    expiries = [(first+dt.timedelta(days=n)).isoformat() for n in (45, 46, 47, 48)]
+    class Provider:
+        async def expirations(self, symbol):
+            return expiries
+        async def chain(self, symbol, expiry):
+            ask = 1. if expiry == expiries[-1] else 3.
+            return [{'symbol': Occ('TEST', dt.date.fromisoformat(expiry), 'C', 100).symbol,
+                     'bid': ask*.95, 'ask': ask, 'greeks': {'delta':.5}, 'open_interest':200}]
+    engine = SimpleNamespace(options=SimpleNamespace(provider=lambda: Provider()))
+    result = await planning_contract(engine, SimpleNamespace(symbol='TEST', direction='long', first_session=first),
+                                    PreparationPolicy().contract_policy.model_copy(update={'max_ask':1.}))
+    assert result['selected']['expiry'] == expiries[-1]
+    assert result['audit']['expiriesChecked'] == 4
+    assert result['audit']['rejections']['premium'] == 3
+    assert result['audit']['maxDebitUsd'] == 100

@@ -59,7 +59,7 @@ def normalize(row, observed_at):
         'observedAt': observed_at, 'updateMode': data['update_mode'], 'source': URL}
 
 
-async def discover_market(rules: CartelRules, *, client=None, clock=now_ms, page_size=250, max_rows=10000, pace=.25):
+async def discover_market(rules: CartelRules, *, client=None, clock=now_ms, page_size=250, max_rows=10000, pace=.25, on_progress=None):
     if not 1 <= page_size <= 1000 or not 1 <= max_rows <= 10000 or pace < 0:
         raise ValueError('invalid discovery bounds')
     own = client is None
@@ -67,6 +67,8 @@ async def discover_market(rules: CartelRules, *, client=None, clock=now_ms, page
     started, raw, identities, expected = clock(), [], set(), None
     try:
         while expected is None or len(raw) < expected:
+            if on_progress:
+                await on_progress({'received': len(raw), 'total': expected, 'message': f'Requesting discovery page {len(raw)//page_size+1}'})
             response = await client.post(URL, json=request_body(rules, len(raw), page_size))
             response.raise_for_status()
             body = response.json()
@@ -87,6 +89,8 @@ async def discover_market(rules: CartelRules, *, client=None, clock=now_ms, page
                 if not isinstance(identity, str) or identity in identities:
                     raise ValueError('duplicate or missing discovery identity; no partial universe accepted')
                 identities.add(identity); raw.append(row)
+            if on_progress:
+                await on_progress({'received': len(raw), 'total': expected, 'message': f'Received {len(raw)} of {expected} listings'})
             if len(raw) < expected and pace:
                 await asyncio.sleep(pace)
     finally:
