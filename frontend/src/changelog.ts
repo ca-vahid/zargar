@@ -22,6 +22,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-07",
     title: "Cartel follows your workspace",
     items: [
+      { tag: "improved", text: "Every trading technique now has its own day-loss pause (Team2, EM and Tips at 10% of the book on practice) with the book breaker at 15% above them as the catastrophe stop — the ladder is one table in PLATFORM-RULES; EM and Tips settings panels show their number." },
       { tag: "fixed", text: "Cartel preparation now shows accounts, settings and saved automatic plans for the selected Practice or Live workspace." },
       { tag: "new", text: "Live preparation has its own disabled-by-default setup, explicit execution and overnight acknowledgements, and the existing Cartel live-auto permission." },
       { tag: "improved", text: "Existing Practice settings remain intact. Switching workspace prevents preparation from arming in the previous mode while held-position protection continues." },
@@ -71,7 +72,6 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-04",
     title: "The Team2 desk opens",
     items: [
-      { tag: "improved", text: "Every trading technique now has its own day-loss pause (Team2, EM and Tips at 10% of the book on practice) with the book breaker at 15% above them as the catastrophe stop — the ladder is one table in PLATFORM-RULES; EM and Tips settings panels show their number." },
       { tag: "new", text: "EM: the morning board check now arms the author's names itself when they pass our own gates (valid trigger, R:R, grade B or better, critic, loss halt) - his video ends at 06:15 Vancouver time and nobody could click. One setting turns it off." },
       { tag: "fixed", text: "Practice buys must fit the cash on hand, as any real venue insists - the shared Practice book had gone to -$5,000 cash." },
       { tag: "improved", text: "A restart re-attaching armed plans no longer journals them as new arms (1,600 phantom \"armed\" events in one day)." },
