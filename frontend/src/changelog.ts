@@ -22,6 +22,8 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-07",
     title: "Clearer Cartel plan details",
     items: [
+      { tag: "major", text: "Practice reset: one $10,000 Practice book per technique (EM, Tips, Team2, Options Cartel - $40,000 in all). The old shared book is archived: its holdings and history stay readable, but it is out of every list and total and trades nothing." },
+      { tag: "improved", text: "Manual tickets ask which book a trade goes in instead of guessing; Flow sits last in the technique list (context only, no book)." },
       { tag: "fixed", text: "Opening or refreshing a Cartel record no longer duplicates its chart." },
       { tag: "improved", text: "Each Cartel record has a dedicated, bookmarkable page with Back navigation. Record links can also open in a new browser tab." },
       { tag: "improved", text: "Plan details lead with status, entry conditions and the actual exit schedule. Evidence and manual execution controls are separate, and the chart starts with the latest 30 saved sessions." },

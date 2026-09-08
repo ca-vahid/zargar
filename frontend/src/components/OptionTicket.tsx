@@ -94,10 +94,10 @@ export function OptionTicket({ contract }: { contract: string | null }) {
       });
       return ranked[0]?.id;
     }
-    const def = practicePortfolios.find((p) => p.id === defaultPid);
-    return (def ?? practicePortfolios[0])?.id;
+    // practice: only a CONFIGURED default pre-fills; with none the ticket asks
+    return practicePortfolios.find((p) => p.id === defaultPid)?.id;
   }, [mode, realPortfolios, practicePortfolios, capByPid, defaultPid]);
-  const pid = portfolioId || modeDefault || portfolios[0]?.id || "";
+  const pid = portfolioId || modeDefault || "";
   const portfolio = portfolios.find((p) => p.id === pid);
   const cap = capByPid.get(pid);
 
