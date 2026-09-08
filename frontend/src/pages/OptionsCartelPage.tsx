@@ -56,6 +56,8 @@ export function OptionsCartelPage() {
   const [membershipExchange, setMembershipExchange] = useState('NASDAQ');
   const [armed, setArmed] = useState<any[]>([]);
   const workspace = useWorkspace();
+  const workspaceRef = useRef(workspace);
+  workspaceRef.current = workspace;
   const streamedArmed = useStore(s => s.techniqueArmed);
   useEffect(() => setArmed(streamedArmed.filter(a => a.technique === "options_cartel" && ["armed", "paused", "closing"].includes(a.status))), [streamedArmed]);
   const [selected, setSelected] = useState<Run | null>(null);
@@ -91,12 +93,14 @@ export function OptionsCartelPage() {
   const [reviewStage, setReviewStage] = useState("setup");
   const requestId = useRef(0);
   const refresh = useCallback(async () => {
-    const [history, alerts, captures, fundamentals, memberships, savedPlans] = await Promise.all([api.get<Run[]>(`${ROOT}/runs?limit=100`), api.get<any[]>(`${ROOT}/armed`),
+    const [history, alerts, captures, fundamentals, memberships, savedPlans] = await Promise.all([api.get<Run[]>(`${ROOT}/runs?limit=100&workspace=${workspace}`), api.get<any[]>(`${ROOT}/armed`),
       api.get<Run[]>(`${ROOT}/runs?mode=industry&limit=200`), api.get<Run[]>(`${ROOT}/runs?mode=fundamentals&limit=200`),
-      api.get<Run[]>(`${ROOT}/runs?mode=membership&limit=200`), api.get<Run[]>(`${ROOT}/runs?mode=plan&limit=100`)]);
+      api.get<Run[]>(`${ROOT}/runs?mode=membership&limit=200`), api.get<Run[]>(`${ROOT}/runs?mode=plan&limit=100&workspace=${workspace}`)]);
+    if (workspaceRef.current !== workspace) return;
     setPlans(savedPlans);
     setRuns(history); setArmed(alerts); setIndustrySnapshots(captures); setSavedFundamentals(fundamentals); setSavedMemberships(memberships);
-  }, []);
+  }, [workspace]);
+  useEffect(() => { setSelected(null); setCandidate(null); setRuns([]); setPlans([]); setLoading(true); }, [workspace]);
   useEffect(() => { let alive = true; refresh().catch(e => { if (alive) setError(e.message); })
     .finally(() => { if (alive) setLoading(false); }); return () => { alive = false; requestId.current++; }; }, [refresh]);
   useEffect(() => { if (selected) { detailRef.current?.scrollIntoView({block: "start"}); detailRef.current?.focus({preventScroll:true}); } }, [selected?.runId]);
@@ -222,7 +226,7 @@ export function OptionsCartelPage() {
       <CartelMethodLibrary />
     </div> : <>
       {tab === "armed" && <CartelRiskCard />}
-      {(tab === "plans" || tab === "settings") && <CartelPreparation key={tab} view={tab} onOpen={open} onSettings={() => setPageTab("settings")} />}
+      {(tab === "plans" || tab === "settings") && <CartelPreparation key={`${tab}:${workspace}`} view={tab} onOpen={open} onSettings={() => setPageTab("settings")} />}
       {tab === "settings" && <CartelScheduleControls />}
       {tab === "settings" && <CartelQuoteRecording/>}
       {tab === "validation" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}

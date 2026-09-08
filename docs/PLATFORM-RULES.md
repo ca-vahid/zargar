@@ -58,6 +58,17 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### Cartel preparation workspace separation — 2026-09-07
+
+User requirement: Practice and Live preparation have separate settings, account
+selection and results. Legacy preparation settings/records belong to Practice;
+the new Live policy starts disabled. Scheduled dispatch follows `trading.mode`,
+and automatic prepared entries recheck workspace, account kind and existing
+live permissions before submission. Switching workspace never turns a Practice
+plan into a live plan. Held-position protection remains independent of the view.
+Tests: `test_options_cartel_preparation_workspaces.py` and scoped API tests.
+This extends the earlier Practice-only preparation boundary below.
+
 ### 2026-09-07 — Cartel automatic Practice preparation
 
 Cartel owns its discovery/review policy and schedules preparation separately from

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.3";
+export const APP_VERSION = "0.7.4";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.4",
+    date: "2026-09-07",
+    title: "Cartel follows your workspace",
+    items: [
+      { tag: "fixed", text: "Cartel preparation now shows accounts, settings and saved automatic plans for the selected Practice or Live workspace." },
+      { tag: "new", text: "Live preparation has its own disabled-by-default setup, explicit execution and overnight acknowledgements, and the existing Cartel live-auto permission." },
+      { tag: "improved", text: "Existing Practice settings remain intact. Switching workspace prevents preparation from arming in the previous mode while held-position protection continues." },
+    ],
+  },
   {
     version: "0.7.3",
     date: "2026-09-07",
