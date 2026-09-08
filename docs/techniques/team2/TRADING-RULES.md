@@ -922,6 +922,31 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   (runId, event, bar ts).
 
 
+- **F65 (2026-09-08 15:05 ET, NOT fixed — proposal; a FAILED pm-range break never dies, and the level
+  can never be re-armed).** `session.py` marks `scenario_*` setups dead on a bias flip (D10, line 259)
+  but a `pm_break_up` / `pm_break_down` setup has **no death condition at all** — `s.dead` is never set
+  for them anywhere in the file. Today's IWM: the 13:30 15m close above the pre-market high 295.91
+  armed `pm_break_up@13:15`; price never made the PDH zone, fell back inside the pre-market range and
+  by 15:05 sits at 295.45, ~0.46 below the broken level, with the read's own events twice saying so
+  (`skip_no_trade_zone` 13:58 "entry 295.76 sits inside the pre-market range", again 14:32 at 295.84).
+  The method already calls that dead: **L2.6** makes "a 2m close under PMH" the stop for the
+  break-retest trade, and F20's own note says "deeper back inside the range the break has failed and
+  no entry is taken". Two consequences. (1) Reporting: the failed setup stays *live*, so under F24 it
+  owns the Armed/phone headline — IWM's line all afternoon has been about a setup that died at 13:58.
+  (2) Money path, the real one: `pm_up_done` / `pm_dn_done` (line 198) are day-scoped, so **only one
+  PM-high break setup can ever exist per day**. IWM's is exhausted at 14 touches (F62's no-reset
+  counting did that in twelve minutes), so a *second, genuine* 15m close above 295.91 into the close
+  could not create a fresh setup and could not be traded — the level is spent for the day on the
+  strength of one failed break. The shared engine already has the concept Team2 is missing:
+  `TriggerTracker` retires a level after `max_false_breaks` (=2, `marketstructure/tracker.py:338`),
+  and that threshold is already in Team2's rules payload — unused by `session.py`. Proposal: kill a
+  `pm_break_*` setup on the first 2m close back inside the pre-market range beyond tolerance (L2.6's
+  own stop), and clear the corresponding `pm_*_done` flag so a later confirmed 15m close beyond the
+  level arms a fresh setup, capped by `max_false_breaks`. Changes which setups can fire → **user's
+  call**, not built by the watch. Judge the cap on the sweep: a fast wick back inside must not kill a
+  break that is merely retesting (that retest is F20's small-size L2.6 entry), so the death test wants
+  the *close*, not the low.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -937,6 +962,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 - **2026-09-08 (market watch, run 25)** — no code change. Measured, on today's banked 1m tape, what each of the four no-trade-zone refusals actually did (spot basis) and worked F58's proposed clamp through them: it would have **allowed SPY 10:00** (target hit in the same minute, zero adverse excursion) but **also QQQ 10:16** (3.94 points against, target never reached), and would still refuse QQQ 11:00 and IWM 11:26 — the two that ran 75 % and 98 % of the way to target. So the clamp is a precedence fix that takes a winner and a loser together, and does not address the width F56 measures. Logged as a follow-up under F58. Also verified the desk-wide loss tally against the persisted rows (1 of 2, book basis): re-entries carry `#N` trigger ids so they group as separate positions, only X5 `+add` legs share one. No rule, threshold, gate, size or money path changed.
 
 - **2026-09-08 (market watch, run 27)** — **F60 fixed** (`47b0460`, reporting only): once a setup has spent its two-pullback D9 allowance the Armed + phone headline says so and names the setup the touch count belongs to, instead of reading "waiting for the 1st/2nd 2m pullback into the EMA13 (touches 8)" on a setup that can no longer enter today; the snapshot's `team2` block also carries the 09:25 `pmh`/`pml`/`complete`. **F61 and F62 logged as proposals** (both money-path, user's call): a `skip_no_contract` refusal spends the D9 allowance although F18 already exempts "not a tradeable location" refusals, and a touch has no reset, so a drift sitting on the EMA13 counts as a fresh pullback every 2 minutes (IWM printed touches #3–#8 in twelve minutes). No rule, threshold, gate, size or money path changed.
+- **2026-09-08 (market watch, runs 28–29)** — no code change. **F63/F64** logged after a 9-minute unexplained outage (14:24→14:33 ET; a fire during downtime would be neither traded nor recorded, and the catch-up window journals twice), **F65** logged at 15:05: a failed pm-range break is never invalidated and `pm_up_done`/`pm_dn_done` are day-scoped, so one failed break spends the level for the session. All three are proposals for the user — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 26)** — **F59 logged; its reporting half fixed.** IWM's 13:30 PM-break retest was refused `skip_no_contract` because the *modelled* 296 call marked $0.199 against the $0.20 floor, while the real 296C was bid 0.24 / ask 0.25 on 70,329 contracts — the premium model is a veto over a live trade, and `_sigma` returns one index-wide VIX1D for SPY, QQQ and IWM alike. Deployed (reporting only): the refusal now names the modelled premium and its sigma, and is recorded with `note_once` so it reaches the Armed + phone headline — `skip_no_contract` was already in F57's headline list but `_skipped` was never set, so the clause could never fire. **No rule, threshold, gate, size or money path changed**; letting the live chain (or a per-symbol sigma) decide is written up under F59 as a proposal for the user.
 - **2026-09-08 (market watch, run 22)** — **F57 fixed**: the setup's current no-trade-zone / range-confirmation refusal is serialized on the read and stated on the Armed + phone headline, instead of the page reading "touches 0" while every pullback was refused. Reporting only — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.

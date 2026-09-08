@@ -1760,3 +1760,59 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   entry and 15:45 the flatten. Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**,
   **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, and the F30-family question of which
   premium series is authoritative.
+
+## 2026-09-08 15:05 ET (run 29 — quiet tape, everything healthy; F65: a failed PM break never dies and spends the level for the day)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.11**, armed 77; one armed plan per symbol for
+  2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode **auto**, book Team2
+  Practice `b9dcd8db…`, `needsAttention: false`, `readError: null` on all three. Global halt
+  `engaged: false`, no book halt, no technique pause. Pre-open still complete on all three
+  (`complete: true`; SPY PM 766.73–770.48, QQQ 716.90–723.72, IWM 293.80–295.91). **No restart this
+  run** — nothing was queued and nothing needed deploying.
+- **Data real-time.** Quotes **0–1 s** old, `session: regular` (SPY 766.76 / QQQ 719.20 / IWM 295.45);
+  banked 1m bars **333 of 333 minutes 09:30→15:02 ET with zero gaps** on all three; the read is at
+  `bars2m: 166` (= 15:02) with `barAgeSeconds` 64; the Alpaca **OPRA** batch is polling (quotes,
+  trades and snapshots at 15:04 ET). EMA/fan values present on all three regimes — SPY bear/trend
+  (strength 3), QQQ mixed/trend, IWM mixed/trend. Sigma is still the one index-wide 0.1203 (F51/F59).
+- **The tape did nothing new.** SPY unchanged at 2 events (nothing since 10:00), QQQ unchanged at 16
+  (nothing since 11:00) — its two 10:06/10:08 round trips remain the day's only trades. IWM added
+  nothing after the 14:34 touch: spot fell below its 2m EMA13 (close 295.51 vs EMA13 295.54 on the
+  15:00 bar), and a long pullback needs `low <= ema+tol` **and** `close > ema` (session.py:419), so
+  the drift below the 13 correctly stops printing touches. Count stands at **touches 14, entries 0**.
+- **F65 (new, PROPOSED, not built) — a failed pm-range break is never invalidated, and the level is
+  then spent for the day.** `pm_break_*` setups have no death condition anywhere in `session.py`
+  (only `scenario_*` die, on the D10 bias flip). IWM's 13:30 break of 295.91 failed — the read itself
+  said so twice (`skip_no_trade_zone` 13:58 at 295.76, 14:32 at 295.84, both "inside the pre-market
+  range") and price is now 0.46 below the level — yet the setup is still live, still owns the headline
+  under F24, and, because `pm_up_done` is day-scoped (line 198), **a second genuine 15m close above
+  295.91 could not arm a fresh setup**; the old one is exhausted at 14 touches. The method already
+  kills it (L2.6 stop = a 2m close under PMH; F20's "deeper back inside the range the break has
+  failed"), and the shared engine already has the mechanism (`TriggerTracker` retires a level after
+  `max_false_breaks`, tracker.py:338 — the threshold is in Team2's rules payload and unused by the
+  read). Proposal: die on the first 2m **close** back inside the PM range beyond tolerance, clear
+  `pm_*_done`, cap re-arms with `max_false_breaks`. Money path → **user's call**. Related to F62: the
+  no-reset touch counter is what burned the allowance in twelve minutes.
+- **Replay parity exact on all three** (JSON compare of every event): SPY 2 / QQQ 16 / IWM 21
+  reproduced byte-identically. **Book untouched:** Team2 Practice cash **and** equity **$9,934.16**,
+  zero positions; the last eight orders on the desk are all tips/EM fills, none Team2. QQQ's two
+  trades still read −63 then +45 on the book (**−18** net) against +65.6% on the model read — the
+  F37 model-vs-book divergence, now visible side by side on the Armed row.
+- **Log clean for Team2:** zero Tracebacks and zero Team2 ERRORs across the live file (covering 11:45
+  PDT →). One non-Team2 warning recurs at boot and again at 12:03 PDT: EM's
+  `score_run … StringDataRightTruncationError — value too long for character varying(24)`.
+- **UI verified this run — and the sign-in blocker from run 28 is solved.** The in-app browser drops
+  a `?token=` query, but the SPA reads its bearer from `localStorage["zargar_token"]`
+  (`frontend/src/lib/api.ts:4`), so: open `http://127.0.0.1:8420`, set that key to the minted session
+  via the browser's JS tool, reload. `/team2` Plans + Armed tabs render correctly; **F60's new wording
+  is live on IWM** — *"pm_break_up@13:15: its first 2 pullbacks are spent (touches 14) — further
+  touches are watch-only (D9/P6)"* — and the Armed rows show account, mode, `$2,000/trade · halt
+  $1200`, fills 2/2 and P&L −18 on QQQ, with `bar 118s old`.
+- **Next run (15:30–15:35 ET) must:** nothing queued; deploy nothing unless something new appears —
+  and in any case **do not restart between now and the 15:45 flatten**. 15:30 is the last entry (D6)
+  and 15:45 the flatten (C3): confirm the read emits `skip_last_entry` at 15:30 (F26) and that no
+  position is left open at 15:45 (there are none open now). Live 15m levels if anything still fires:
+  QQQ above 721.82 / below 717.03, SPY below 769.00, IWM above the PDH zone top 296.18 (its own PM
+  break is exhausted, F65). Check the `contract` event first on any fire (F59) and re-measure **F50**
+  close-vs-target slippage. Desk loss tally still **1 of 2** on the book basis (F37). Still open for
+  the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
+  **F63**, **F64**, **F65**, and the F30-family question of which premium series is authoritative.
