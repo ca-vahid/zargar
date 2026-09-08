@@ -14,7 +14,16 @@ function Log($m) { Add-Content -Path $log -Value ("{0} {1}" -f (Get-Date -Format
 $up = $false
 try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $up = [bool]$h.ok } catch { $up = $false }
 if ($up -and -not $Force) { exit 0 }
-Log ("engine " + $(if ($Force) { "restart requested" } else { "DOWN — no answer on :8420" }) + " -> start.ps1 -Detach")
+# one start at a time: a start takes ~30-60 s (start.ps1 stops the old process, rebuilds dist if stale, launches)
+# and the 3-minute tick must not pile a second engine onto a restart in progress. The lock is age-based
+# (never deleted), so a crash mid-start cannot wedge the watchdog either.
+$lock = Join-Path $logDir "watchdog.lock"
+if (Test-Path $lock) {
+  $age = ((Get-Date) - (Get-Item $lock).LastWriteTime).TotalSeconds
+  if ($age -lt 180) { Log ("a start began {0:N0}s ago - skipping this tick" -f $age); exit 0 }
+}
+Set-Content -Path $lock -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+Log ("engine " + $(if ($Force) { "restart requested" } else { "DOWN - no answer on :8420" }) + " -> start.ps1 -Detach")
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "start.ps1") -Detach 2>&1 | ForEach-Object { Log ("  " + $_) }
 Log ("exit " + $LASTEXITCODE)
 exit $LASTEXITCODE

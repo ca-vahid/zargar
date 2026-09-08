@@ -11,11 +11,15 @@ $wd = Join-Path $PSScriptRoot "watchdog.ps1"
 if ($Remove) {
   schtasks /Delete /TN ZargarWatchdog /F | Out-Null
   schtasks /Delete /TN ZargarRestart /F | Out-Null
+  schtasks /Delete /TN ZargarWatchdogLogon /F 2>$null | Out-Null
   Write-Host "removed ZargarWatchdog and ZargarRestart"
   exit 0
 }
 schtasks /Create /F /TN ZargarWatchdog /SC MINUTE /MO 3 /TR "$ps `"$wd`"" /RL LIMITED | Out-Null
-schtasks /Create /F /TN ZargarWatchdogLogon /SC ONLOGON /TR "$ps `"$wd`"" /RL LIMITED | Out-Null
+# an at-logon trigger needs an elevated shell on this machine ("Access is denied" unelevated); best-effort -
+# the 3-minute tick covers a logon within 3 minutes anyway
+schtasks /Create /F /TN ZargarWatchdogLogon /SC ONLOGON /TR "$ps `"$wd`"" /RL LIMITED 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { Write-Host "note: ZargarWatchdogLogon not registered (needs an elevated shell); the 3-minute tick covers logon" }
 schtasks /Create /F /TN ZargarRestart /SC ONCE /SD 01/01/2000 /ST 00:00 /TR "$ps `"$wd`" -Force" /RL LIMITED | Out-Null
 Write-Host "installed: ZargarWatchdog (every 3 min), ZargarWatchdogLogon (at logon), ZargarRestart (on demand)"
 schtasks /Query /TN ZargarWatchdog /FO LIST | Select-String "Status|Next Run"
