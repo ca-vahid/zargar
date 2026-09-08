@@ -1191,3 +1191,75 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   scenario 3 / a 10:15 bias flip; and, if anything fires, re-measure F50's close-vs-target slippage.
   Still open for the user: **F47**, **F49**, **F50**, **F51** and the F30-family question of which
   premium series is authoritative.
+
+
+## 2026-09-08 11:00 ET (run 20 — the two queued fixes deployed; F53/F55 found and shipped)
+
+- **Alive, clean, both queued commits deployed.** `/api/health` ok, **v0.7.10** (the version bump came
+  from the other team's `c6db9a5`, already committed and merely un-deployed — not ours). Exactly one
+  armed plan per symbol for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`,
+  mode **auto**, on **Team2 Practice** `b9dcd8db…`, `needsAttention: false`, no halt or pause.
+  **Zero `ERROR` and zero `Traceback`** all session (checked the current log and the rotated `.1`);
+  the only warnings are the benign stub-bar drops.
+- **F48 and F52 are live and proved.** `POST /runs/{id}/replay` with **no body now returns 200** (F48).
+  All four `unregistered Technique event kind: TechniquePlanRead` warnings are timestamped 07:14–07:30
+  PDT, i.e. **before** the 10:37 ET restart; **zero since** (F52). The Team2 runner restored 3 armed
+  plans and — worth recording, since runs 18/19 both deferred a restart fearing this — **the session
+  read rebuilt identically** across the restart: same 15 events, same 4 setups, same 2 trades, same
+  `pnlPctSum` 65.61, touch counts intact. `session.py` being one pure walk over the banked bars is
+  what makes a mid-session restart cheap. Future runs can deploy display-only fixes without waiting.
+- **Data real-time.** Quotes 0 s old, `session: regular`; 1m bars banking for all three (last bar always
+  within ~1 min of now); the read advanced 31 → 37 2m bars across the run; the Alpaca **OPRA** batch is
+  200-ing every ~2 s (`feed=opra`), no expired contracts (F44 still holding). EMAs sane against spot on
+  all three.
+- **Book untouched since run 19.** Cash and equity both **$9,934.16**, zero open positions, no order
+  routed this run. **F37 confirmed live**: QQQ is `auto` *and has routed*, so it is judged on the
+  **book** — trade #1 −$63 is the one loss, trade #2 +$45 is a win → **1 of 2** desk-wide; SPY and IWM
+  never routed, so they fall to the model basis at 0. `losses_basis` = book/model. **One more book loss
+  on any symbol stops the whole desk for the day** (`losses_desk_wide`).
+- **The read reconciles to the tape, exactly.** Rebuilt today's 15m bars from the `bars` table and
+  checked every scenario call against `ScenarioTracker`: QQQ 09:45 C716.72 (H721.886 into the PDH zone
+  → scenario 2) ✓; **09:45–10:00 C717.47 correctly did NOT flip** (s2 flips only through 721.86 or
+  716.56 — D10, not on a close back above the PDL zone) ✓; 10:15 C716.505 < 716.56 → scenario 4 ✓;
+  10:30 C717.76 > 717.03 → scenario 3 ✓. SPY 09:45 C767.29 < 769.00 → scenario 4, no flip since ✓.
+  IWM 09:45 L294.26 into the zone, C294.81 above → scenario 3 ✓. Replay parity is **exact** on all
+  three, event-for-event and pnl-for-pnl.
+- **F53 (new, FIXED, commits `00e5218` + `f89e173`, DEPLOYED).** The Armed page and the phone said
+  `waiting for the 1st/2nd 2m pullback into the EMA13 (touches 0)` for setups the regime **cannot
+  fire**. `session.py:407` (E3/B9 stack must agree) and `:410` (E4 no braided EMAs) skip **silently**
+  by design — they are re-judged every 2m bar, so an event per skip would flood the read — but nothing
+  else surfaced them, so a blocked trigger read exactly like one the next touch would take. It bit
+  **two of three symbols at once**: QQQ's 10:30 close flipped the bias to scenario 3 → **calls** and
+  IWM has been scenario 3 → **calls** since 09:45, while both stacks are **bear**. The waiting line now
+  appends `— no entry until the stack turns bull (E3/B9/E4), or a 200 EMA flush (T8)`. Verified live
+  after deploy: QQQ and IWM carry the clause, **SPY does not** (scenario 4 → puts agrees with its bear
+  stack). Descriptive only — the gate is untouched and still lives in `session.py`. Guarded by an
+  invariant in `tests/test_team2_runner.py` that walks the session's snapshots and asserts the clause
+  appears **exactly** when the regime disagrees. `f89e173` (wording: "until the stack turns bull", not
+  "must turn") is committed and tested but **deploy QUEUED** — not worth a third restart for a verb.
+- **F55 (new, FIXED, commit `6a2ac26`, DEPLOYED).** The Plans table rendered timestamps in the
+  **browser's** timezone. Friday's nightly built today's plans at **17:34 ET**; the WHEN column read
+  **"Sep 4, 2:34 PM"** on this PT machine — directly under a status line saying `plans 17:00 ET`, so
+  the plan looked like it predated the job that built it. Every other technique surface already pins
+  `America/New_York` (`NowView`, `ArmedDayPanel`, `ValidationTab`, `PlanCard`, `StockChart`);
+  `Team2Page.tsx:109` was the lone holdout. Now ET-stamped and suffixed `ET`. `npm run build` clean.
+  (The column is the run's `createdAt`, which is accurate for a header reading "when" — left alone.)
+- **F54 (new, observation — NOT fixed; evidence for F27's open thresholds).** QQQ's PDL zone today is
+  **716.56–717.03, 0.47 wide against a 2m ATR of 0.72 — the whole zone is 0.65 ATR**. With
+  `zone_tol_atr` and `flip_body_ratio` both at **0**, the bias flipped twice in two 15m bars: 10:15
+  C716.505 flipped 2 → 4 on a **0.055 margin (0.08 ATR)** — noise by any measure, and it minted
+  `scenario_4@10:00` which died on `skip_no_trade_zone` — then 10:30 C717.76 flipped 4 → 3 (1.0 ATR,
+  decisive) and **reversed the desk's direction**. Both flips are correct against the rules as written;
+  this is the exact failure F27 anticipated on 2026-09-04, now with a second independent day and a
+  zone-width measurement. Suggests the tolerance should scale with **zone width**, not ATR alone.
+  Threshold work — for the walk-forward and the user, not the watch job.
+- **Also confirmed:** run 18's prediction held — SPY's scenario 4 logged `skip_no_trade_zone` at 10:00
+  (entry 767.82 inside PM 766.73–770.48) and will keep repeating while price stays in that range.
+  Note for the recipe: the `?token=` URL handoff does **not** sign the SPA in (it redirects to `/` and
+  drops it); set the `zargar_session` cookie in the browser instead.
+- **Next run (11:30 ET) must:** deploy `f89e173` (wording only — safe whenever no trade is open); watch
+  whether QQQ/IWM's bear stack turns bull to release their scenario-3 calls, or the bias flips back;
+  keep an eye on the **1-of-2 desk-wide book loss count** (one more loser ends the day); and re-measure
+  **F50**'s close-vs-target slippage and **F47**'s thin targets if anything fires. Still open for the
+  user: **F47**, **F49**, **F50**, **F51**, **F54** and the F30-family question of which premium series
+  is authoritative.
