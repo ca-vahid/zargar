@@ -842,6 +842,51 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   structural answer; (b) is the one-symbol fix. Cross-refs **F51** (same sigma error, milder effect)
   and the open F30-family question of which premium series is authoritative.
 
+- **F60 (2026-09-08 14:10 ET, FIXED — the headline promised a pullback the setup could no longer
+  take).** With IWM's `pm_break_up@13:15` exhausted (touches 1 and 2 both refused by F59's model
+  price, touch 3+ `late_touch`), the Armed + phone line still read *"scenario 3 (bounce PDL) → calls ·
+  **waiting for the 1st/2nd 2m pullback into the EMA13 (touches 8)**"*. Two things were wrong in one
+  sentence: the desk was not waiting for anything tradeable on that setup — every further touch is
+  watch-only under D9/P6 — and the touch count belongs to `pm_break_up@13:15` while the scenario label
+  comes from `bias` (scenario 3, confirmed 09:45): per **F24** the count is taken from the newest live
+  setup in the bias direction, which today is not the setup the label names. Fixed (reporting only,
+  `47b0460`): once `touches >= pullback_max_touches` the line reads *"pm_break_up@13:15: its first 2
+  pullbacks are spent (touches 8) — further touches are watch-only (D9/P6)"*, naming the setup the
+  count belongs to. The same commit puts the 09:25 pre-open result (`pmh`, `pml`, `complete`) on the
+  snapshot's `team2` block, so completion can be checked without parsing the sheet string. No gate,
+  threshold, size or money path changed; Team2 tests 57 passed, and `test_team2_runner.py` now asserts
+  both wordings (the E3/B9/E4 and no-trade-zone clauses are judged on either).
+
+- **F61 (2026-09-08 14:10 ET, NOT fixed — proposal; a plumbing refusal spends the method's D9
+  allowance).** `session.py` increments `s.touches` **before** it asks the premium model for a
+  strike, so a `skip_no_contract` — a refusal that says nothing about the tape — consumes one of the
+  two pullbacks D9/P6 allows. This is the exact inverse of the principle **F18** already established:
+  a dip that is "not a tradeable location" (`skip_no_trade_zone`, `skip_range_confirmation`) returns
+  *before* the increment and does **not** spend the allowance. Today's cost is concrete: IWM's
+  `pm_break_up@13:15` spent touch #1 (13:30) and touch #2 (13:40) on the model's $0.199 mark for a
+  296 call that was really 0.24/0.25 with 70,329 contracts traded (F59), and from 13:42 the setup was
+  permanently watch-only — 9 touches, 0 entries, on the only PM break the desk got today. Proposal:
+  move the `pick_strike` failure branch above `s.touches += 1`, i.e. treat "we could not price a
+  contract" like F18's non-locations, not like a pullback the desk passed on. Note it is only a
+  partial remedy for F59 — it preserves the allowance but still takes no trade — and it does change
+  which touches can enter, so it is the user's call, not the watch's. `skip_engulfing` should keep
+  consuming (that *was* a pullback, just a bad bar).
+
+- **F62 (2026-09-08 14:10 ET, NOT fixed — proposal; a touch has no reset, so a drift on the EMA13
+  counts as many pullbacks).** `touched_ema` is judged bar by bar with no requirement that price ever
+  *leave* the EMA13 band between touches, so a sideways drift sitting on the EMA prints a fresh touch
+  every 2 minutes. IWM 13:42–13:54: six consecutive 2m closes oscillating 295.86–296.04 around an
+  EMA13 of 295.86–295.93 minted touches #3 through #8 of the same setup. The method's words are
+  "**the first or second pullback**" — a pullback is an event (price extends away from the 13, then
+  returns), not a state. A6/`pullback_max_bars` guards only the opposite case (price closed on the
+  *wrong* side of the EMA for too long = consolidation). Proposal: require a reset before counting a
+  new touch — e.g. one 2m close at least k×ATR clear of the EMA13 on the trade's side, or N bars off
+  the band. **Caution, from today's own tape:** QQQ's two winners were touch #1 at 10:02 and touch #2
+  at 10:06, four minutes apart on the same retest of 716.90 (+65.6 % model P&L combined); a reset rule
+  set too wide would have refused the second one. Any reset threshold must be judged by the sweep
+  against those two entries before it is shipped. Interacts with **F61** (both decide what "spends"
+  the D9 allowance) and with **F60** (which only reports the spend honestly).
+
 
 ## Theories to test
 
@@ -857,6 +902,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 - **2026-09-08 (market watch, run 24)** — no code change. **F58 logged as a proposal**: V6's sizing ladder is only ordered when the PM range is nested inside the prior-day zones, and `sizing_bucket` resolves every other geometry to `none` — SPY's 10:00 refusal contradicts V6's own Full-size band. Also verified (negative result) that the PM window is exactly METHOD L2.1's 04:00–09:30 ET, so F56/F58 are rule questions, not a data defect. No rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 25)** — no code change. Measured, on today's banked 1m tape, what each of the four no-trade-zone refusals actually did (spot basis) and worked F58's proposed clamp through them: it would have **allowed SPY 10:00** (target hit in the same minute, zero adverse excursion) but **also QQQ 10:16** (3.94 points against, target never reached), and would still refuse QQQ 11:00 and IWM 11:26 — the two that ran 75 % and 98 % of the way to target. So the clamp is a precedence fix that takes a winner and a loser together, and does not address the width F56 measures. Logged as a follow-up under F58. Also verified the desk-wide loss tally against the persisted rows (1 of 2, book basis): re-entries carry `#N` trigger ids so they group as separate positions, only X5 `+add` legs share one. No rule, threshold, gate, size or money path changed.
 
+- **2026-09-08 (market watch, run 27)** — **F60 fixed** (`47b0460`, reporting only): once a setup has spent its two-pullback D9 allowance the Armed + phone headline says so and names the setup the touch count belongs to, instead of reading "waiting for the 1st/2nd 2m pullback into the EMA13 (touches 8)" on a setup that can no longer enter today; the snapshot's `team2` block also carries the 09:25 `pmh`/`pml`/`complete`. **F61 and F62 logged as proposals** (both money-path, user's call): a `skip_no_contract` refusal spends the D9 allowance although F18 already exempts "not a tradeable location" refusals, and a touch has no reset, so a drift sitting on the EMA13 counts as a fresh pullback every 2 minutes (IWM printed touches #3–#8 in twelve minutes). No rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 26)** — **F59 logged; its reporting half fixed.** IWM's 13:30 PM-break retest was refused `skip_no_contract` because the *modelled* 296 call marked $0.199 against the $0.20 floor, while the real 296C was bid 0.24 / ask 0.25 on 70,329 contracts — the premium model is a veto over a live trade, and `_sigma` returns one index-wide VIX1D for SPY, QQQ and IWM alike. Deployed (reporting only): the refusal now names the modelled premium and its sigma, and is recorded with `note_once` so it reaches the Armed + phone headline — `skip_no_contract` was already in F57's headline list but `_skipped` was never set, so the clause could never fire. **No rule, threshold, gate, size or money path changed**; letting the live chain (or a per-symbol sigma) decide is written up under F59 as a proposal for the user.
 - **2026-09-08 (market watch, run 22)** — **F57 fixed**: the setup's current no-trade-zone / range-confirmation refusal is serialized on the read and stated on the Armed + phone headline, instead of the page reading "touches 0" while every pullback was refused. Reporting only — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.

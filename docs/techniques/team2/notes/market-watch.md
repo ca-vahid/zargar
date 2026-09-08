@@ -1629,3 +1629,69 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   a sub-floor mark *more* likely, not less. Keep the **1-of-2 desk-wide book loss** count in view. Still
   open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, and the
   F30-family question of which premium series is authoritative.
+
+## 2026-09-08 14:15 ET (run 27 — IWM's only PM break ends 9 touches / 0 entries; the headline said it was still waiting)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.11**; one armed plan per symbol for 2026-09-08 (SPY
+  `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode **auto**, Team2 Practice `b9dcd8db…`,
+  `needsAttention: false` and `readError: null` on all three, halt `engaged: false`, no per-book halt,
+  no technique pause. **Redeployed at 14:12 ET** with F60 (`47b0460`); 77 armed plans restored, all
+  three of ours back and armed, and the new snapshot fields confirm the 09:25 pre-open on each plan:
+  `complete: true`, SPY PM 766.73–770.48, QQQ 716.90–723.72, IWM 293.80–295.91.
+- **Data real-time.** Quotes **0–1 s** old, `session: regular` (SPY 767.51 / QQQ 719.63 / IWM 295.79);
+  banked 1m bars **274 of 274 minutes since 09:30, zero gaps** on all three, last bar 14:03 ET at the
+  time of the check; EMA/fan values present on all three regimes (SPY mixed, QQQ mixed, IWM bull, all
+  "trend"). Sigma still the one index-wide 0.1203 (F59/F51).
+- **SPY and QQQ did nothing new.** SPY 2 events (unchanged since 10:00), QQQ 16 (unchanged since
+  11:00); QQQ's stack slipped back to **mixed**, so its headline carries the E3/B9 clause again. Both
+  still carry F57's no-trade-zone clause. QQQ's two morning round trips remain the day's only trades
+  (2 wins, +65.6 % model P&L); the desk-wide loss tally is unchanged at **1 of 2** on the book basis.
+- **IWM: the 13:30 PM break is now dead for the day.** After F59's two model refusals (13:30, 13:40)
+  the setup printed `late_touch` at 13:42, 13:44, 13:48, 13:50, 13:52 and 13:54 and one more
+  `skip_no_trade_zone` at 13:58 (entry 295.76 back inside the PM range) — **touches 9, entries 0**.
+  Verified against the banked tape: 13:42–13:54 the 1m bars oscillate 295.86–296.04 while the 2m EMA13
+  sits 295.86–295.93, i.e. price rode the EMA. Spot has since faded to 295.79, below the 295.91 break
+  level, so the break itself has failed on the tape as well.
+- **F60 (new, FIXED, `47b0460`) — the headline promised a pullback the setup could not take.** The
+  Armed + phone line read *"scenario 3 (bounce PDL) → calls · waiting for the 1st/2nd 2m pullback into
+  the EMA13 (touches 8)"*: the desk was not waiting for anything tradeable (D9/P6 makes touch 3+
+  watch-only), and the count belongs to `pm_break_up@13:15` while the scenario label comes from the
+  09:45 bias — per F24 the count is taken from the newest live setup in the bias direction, which
+  today is not the setup the label names. It now reads *"pm_break_up@13:15: its first 2 pullbacks are
+  spent (touches 8) — further touches are watch-only (D9/P6)"*. Same commit adds the 09:25 pre-open
+  result (`pmh`/`pml`/`complete`) to the snapshot's `team2` block so completion is checkable without
+  parsing the sheet string. **Reporting only — no gate, threshold, size or money path changed.** Team2
+  tests **57 passed** on `zargar_test_team2_watch`; `test_team2_runner.py` now asserts both wordings
+  (its F53/F57 clauses are judged on either) plus F60 itself.
+- **F61 (new, PROPOSED, not built) — a plumbing refusal spends the method's two-pullback allowance.**
+  `session.py` does `s.touches += 1` **before** it asks the premium model for a strike, so
+  `skip_no_contract` consumes a D9 pullback. That is the inverse of F18, which deliberately exempts
+  the "not a tradeable location" refusals (`skip_no_trade_zone`, `skip_range_confirmation`) by
+  returning before the increment. Cost today: IWM's only PM break spent both tradeable touches on the
+  model's $0.199 mark for a 296C that was really 0.24/0.25 with 70,329 traded. Proposal: move the
+  `pick_strike` failure branch above the increment. It changes which touches can enter → **user's
+  call**. `skip_engulfing` should keep consuming (that was a real pullback, just a bad bar).
+- **F62 (new, PROPOSED, not built) — a touch has no reset.** `touched_ema` is judged bar by bar with
+  no requirement that price leave the EMA13 band in between, so a drift on the 13 prints a fresh
+  pullback every 2 minutes (IWM's touches #3–#8 in twelve minutes above). The method says "the first
+  or second **pullback**" — an event, not a state; A6/`pullback_max_bars` only guards the opposite
+  case. Proposal: require a reset (one 2m close ≥ k×ATR clear of the EMA13, or N bars off the band)
+  before counting a new touch. **Caution from today's own tape:** QQQ's two winners were touches #1
+  (10:02) and #2 (10:06) on the same 716.90 retest, four minutes apart — a reset set too wide refuses
+  the second. Must be judged by the sweep, not by today.
+- **Replay parity exact on all three** (JSON compare of every event): SPY 2 / QQQ 16 / IWM 13
+  reproduced byte-identically, including both `skip_no_contract` refusals and the six late touches.
+  **Book untouched:** Team2 Practice cash **and** equity $9,934.16, zero positions, zero Team2 working
+  orders.
+- **Log clean.** Zero Tracebacks and zero ERRORs of any kind across the live file and its two
+  rotations (covering 12:59 ET →) — the other team's `cartel-observer` errors have not recurred since
+  the 4th occurrence at 12:08 ET. Rotation is still ~5 MB every 6–33 minutes, dominated by OPRA
+  `httpx` INFO lines (run 26's note about log retention stands).
+- **Next run (14:45 ET) must:** nothing is queued. 14:45 opens the second session window (R6), so
+  watch for **new** setups — IWM's PM break is exhausted and has failed on the tape; live 15m levels
+  are QQQ above 721.82 / below 717.03, SPY below 769.00, IWM above the PDH zone top 296.18. **If
+  anything fires, check the `contract` event first** (F59: a model refusal can silently cancel it, and
+  decay into the close makes a sub-floor mark more likely) and re-measure **F50**'s close-vs-target
+  slippage. Keep the **1-of-2 desk-wide book loss** count in view. Still open for the user: **F47**,
+  **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, and the F30-family
+  question of which premium series is authoritative.
