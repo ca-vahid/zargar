@@ -1927,3 +1927,62 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
   **F61**, **F62**, **F63**, **F64**, **F65**, F67's two shared-side halves, and the F30-family
   question of which premium series is authoritative.
+
+## 2026-09-08 16:45 ET (run 32 — last of the day; F68 fixed: "refused" now means refused, F69 logged — the log only remembers ~50 minutes)
+
+- **Alive, clean, deployed once (post-close, nothing armed or open).** `/api/health` ok, **v0.7.11**,
+  armed 18 (all tips/EM). `/api/team2/status` `armed: []` — today's three plans are disarmed for the
+  day, as run 31 recorded. Team2 Practice **$9,934.16** cash *and* equity, zero positions, zero Team2
+  working orders; the last dozen orders on the desk are all tips/EM. Nothing on the tape to read: the
+  market closed 45 minutes ago and the 15:32 `skip_last_entry` is still the last event on each read.
+- **F41 re-verified from the journal, not the UI.** `ScheduledJobRan` shows **Labor Day's** 17:00 job
+  (`2026-09-07T21:00Z`) minting nothing: `runs: [], armed: [], skipped: ["SPY: already armed for
+  2026-09-08", …]` — exactly the double-arm F41 was built to prevent, with today's real plans coming
+  from Friday's 17:34 ET run. Today's `team2_preopen` ran at `13:25:07Z` = **09:25 ET** and completed
+  all three. Tonight's 17:00 ET job fires ~15 minutes after this run ends, so **tomorrow's first run
+  still owns the "2026-09-09 minted once per symbol" check**, and the desk restarted twice today plus
+  once more this run.
+- **F68 (new, FIXED and deployed `1600b68` + `dc9bdc0`) — yesterday's new "How it went" column
+  over-counted how often the method said no.** F67 shipped counting *every* `skip_*` row in the
+  scorecard as a refused setup. Three of them are not refusals at all: `skip_last_entry`,
+  `skip_event_day` and `skip_loss_cap` are minted **once per session** by `session.py` to say what
+  state the day is in — F26 added them precisely so a day that goes quiet after 15:30 does not look
+  like a day with no setups. Today's closed rows therefore read **SPY "no trade · 2 refused"** for one
+  real refusal (the 10:00 no-trade-zone + the 15:32 cutoff note) and **IWM "6 refused"** against five
+  (2 × no contract, 3 × no-trade-zone) — an inflated number on exactly the statistic the F62/F65
+  argument about refusal rates turns on. This is F28's principle one layer up: *skip counts must mean
+  skips*. `service.py` now names the three in `DAY_NOTES`; the result block gains **`refused`** (the
+  tally to read) and **`notes`** (which day states applied), the raw `skips` map is untouched, and
+  rows written before the fix still render from the raw sum. **Verified live in the browser:** IWM
+  *"no trade · 5 refused"*, SPY *"no trade · 1 refused"*, QQQ unchanged at *"2 trade(s) · -65.84 book ·
+  read +65.6%"*, with *"day: last entry"* now in the tooltip. **Reporting only — no rule, threshold,
+  gate, size or money path changed.** 57 Team2 tests pass (F68 assertions in `test_team2_runner.py`).
+- **Self-inflicted, worth recording:** the first `start.ps1 -Detach` **failed the frontend build and
+  left the server down for ~90 seconds** — my changelog edit put unescaped `"` inside a double-quoted
+  TS literal (TS1005). `start.ps1` stops the old process *before* it rebuilds, so a build error is an
+  outage, not a no-op. Fixed and redeployed immediately (`dc9bdc0`); nothing was armed or open, and
+  the 18 tips/EM plans restored. Lesson for this watch: **run `npm run build` before `start.ps1`,
+  never rely on the deploy to catch it** (the CLAUDE.md gate exists for this reason).
+- **F69 (new, PROPOSED, not built — shared).** The app log keeps **~50 minutes** of history and this
+  watch has now lost the 09:25 pre-open lines three separate times. Measured this run: **5,378 of
+  5,430 lines (99.0 %)** written in 13.5 minutes are `INFO httpx HTTP Request` polling lines (4,316
+  Yahoo 1m · 635 Alpaca/OPRA · 406 CBOE); the app's own content is ~52 lines in that window.
+  `main.py:20` rotates at `maxBytes=5_000_000, backupCount=3`. Options: **(a) `backupCount` 3 → 20**
+  (~5 hours, ~100 MB — loses nothing, one number, recommended) or (b) `httpx` logger → WARNING (~100×
+  smaller, but it deletes the request trace that diagnosed **F45**'s CBOE 429 storm). Shared engine →
+  **user's call.**
+- **Log clean for Team2** across both boots: zero Tracebacks, zero Team2 ERRORs; the scheduler
+  re-registered `team2_plan_nightly at 17:00 ET` and `team2_preopen at 09:25 ET`, and the loss tally
+  re-seeded to **1 loser** (F38, correct). The only warning is EM's known `score_run …
+  StringDataRightTruncationError` — not ours. The expired `QQQ260908P00714000` is still in the OPRA
+  batch, which is F44 behaving as written (it drops a contract once its expiry is *past*); tomorrow's
+  first run should see it gone.
+- **Next run (tomorrow 2026-09-09 09:00 ET, first of the day) must:** (1) confirm the 17:00 ET job
+  minted **2026-09-09** plans **once per symbol** (F41 — the desk restarted three times today);
+  (2) confirm the **09:25 pre-open** stamped `pmh`/`pml`/`dayType`/`sizingAtOpen`/`complete: true` on
+  all three, else `POST /api/team2/preopen-now`; (3) check quote/1m-bar/OPRA freshness at the open and
+  that `QQQ260908P00714000` has left the batch (F44); (4) yesterday's History row should read
+  *"2 trade(s) · -65.84 book · read +65.6%"* (QQQ), *"no trade · 5 refused"* (IWM), *"no trade ·
+  1 refused"* (SPY). Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**,
+  **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, F67's two shared-side halves,
+  and the F30-family question of which premium series is authoritative.
