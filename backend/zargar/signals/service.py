@@ -2247,11 +2247,13 @@ class SignalService:
                         and policy.meets_conviction(sig.confidence)):
                     with contextlib.suppress(Exception):
                         prop = await eng.proposals.create_from_signal(row, sig, verification)
-                        # deliberately NOT auto-approved from here — but unattended
-                        # practice still self-DECLINES an analyst skip/watch, same as
-                        # intake (RDDT 2026-09-04: a "watch" card minted here sat
-                        # pending for a click that never comes). Declining is not
-                        # approving; the never-self-approve invariant stands.
+                        # UNATTENDED practice decides promoted cards too (user
+                        # 2026-09-08, FRVO: an analyst TAKE promoted off a
+                        # prevClose-artifact park sat waiting for a click that
+                        # never comes). skip/watch self-DECLINES (RDDT 09-04),
+                        # a take self-APPROVES on a practice book; NO VERDICT
+                        # stays pending (fail-closed, the TSLA lesson) and live
+                        # books always keep the human.
                         if prop is not None and policy.mode == "auto":
                             verdict = ((row.extraction or {}).get("analyst") or {}).get("verdict")
                             pf = eng.positions.portfolio(prop["portfolioId"]) or {}
@@ -2262,6 +2264,8 @@ class SignalService:
                                        f"{(((row.extraction or {}).get('analyst') or {}).get('rationale') or '')[:300]}")
                                 await eng.proposals.reject(prop["id"], via="analyst",
                                                            reason=why)
+                            elif unattended and verdict == "take":
+                                await eng.proposals.approve(prop["id"], via="auto")
 
         # -- (b) error content, one retry -------------------------------------
         cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
