@@ -56,6 +56,16 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-07 — **Glide sizing** (user decision: "ambitious but never lose a late
+  tip to a full book" — the per-technique $10k cash-checked book made this real):
+  per-tip budget = min(`budget_per_tip`, free cash / `reserve_slots` 3), floored
+  at `min_budget` $500 while any cash lasts; only an empty book refuses, journaled
+  `TipLaneDecided lane=refused`. On the $10k book: tips 1–5 full $2k, ~#6–8 glide
+  $1.5k→$900, #9+ minimum expression. Cards carry the glide note. Also made the
+  two DEAD per-source knobs real (`max_open_tips` count gate, `budget_open_max`
+  shrinks to remaining allowance) — they were parsed and enforced nowhere.
+  Shadow books never gated (counterfactuals stay full-size comparable).
+
 - 2026-09-04 (evening) — **The adoption-geometry gate is CODE now** (the analyst's
   nine-strike rule made deterministic; `lifecycle.check_exit_geometry` +
   `adoption_killswitch`). Eight adoptions in three days (HOOD 9/02, MU 9/03–04 ×4,

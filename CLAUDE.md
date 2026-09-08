@@ -87,7 +87,10 @@ sharing its `RULE (<family>` prefix, 2026-09-04). Filled tip proposals are adopt
 **adoption-geometry gate** (2026-09-04, `check_exit_geometry`: wrong-side/penny targets dropped,
 invalid stops re-placed at structure — journaled `TipGeometryRepaired`; one <5-min stop-out pauses
 tip autos for the session, `TipAutoPaused`; sim feed skips the bars fetch). Option sizing is capped
-per tip (`techniques.tip.max_premium_per_tip` $750) and earned-auto trust judges closed positions
+per tip (`techniques.tip.max_premium_per_tip` $750), the budget GLIDES with the book
+(2026-09-07: min(`budget_per_tip`, free cash / `reserve_slots`), floor `min_budget`; empty book
+refuses on the record `TipLaneDecided lane=refused`; per-source `max_open_tips`/`budget_open_max`
+are enforced in `_tip_budget` — before that they were dead knobs), and earned-auto trust judges closed positions
 PLUS the immediate shadow book's aged marks (2026-09-04 user decision — armed-only trust never
 graduates momentum sources). Closed tip
 positions get a nightly **retro** (`tip_retro`, `techniques.tip.retro_*`).

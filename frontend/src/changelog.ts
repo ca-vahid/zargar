@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.6";
+export const APP_VERSION = "0.7.7";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.7",
+    date: "2026-09-07",
+    title: "Room for the next idea",
+    items: [
+      { tag: "new", text: "Glide sizing for tips: each new tip is budgeted at min(full budget, free cash ÷ 3), so the first positions get full size, later ones glide down, and a late great tip still gets a minimum position instead of bouncing off an empty book. The card says when the reserve trimmed it; a truly full book declines on the record." },
+      { tag: "fixed", text: "The per-source limits (max open tips, open budget cap) existed in Settings but were enforced nowhere — they're real now: a source's open dollars shrink its next budget, and its open-count cap declines the tip with the reason journaled." },
+    ],
+  },
   {
     version: "0.7.6",
     date: "2026-09-07",
