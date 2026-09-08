@@ -542,9 +542,13 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   during the Claude desktop package update 1.49585; the engine had been started from that tree by `start.ps1 -Detach` and
   died with it; the user's one-shot `ZargarUnelevatedStart` task brought it back 8 minutes later. Now: `scripts/watchdog.ps1`
   (health-check `/api/health`, `-Force` restarts) registered by `scripts/install-watchdog.ps1` as user tasks **`ZargarWatchdog`**
-  (every 3 min + `ZargarWatchdogLogon` at logon: start only if :8420 is silent) and **`ZargarRestart`** (on demand:
+  (every 3 min: start only if :8420 is silent; an age-based lock in `logs/watchdog.lock` keeps it to one start per
+  3 minutes so a tick cannot pile onto a restart in progress; `ZargarWatchdogLogon` needs an ELEVATED shell to register
+  and is best-effort) and **`ZargarRestart`** (on demand:
   `schtasks /Run /TN ZargarRestart` — the deploy path, so the new process is owned by the scheduler). Rule: assistants
-  deploy through `ZargarRestart`, never by running `start.ps1` from their own shell; never `Stop-Process` :8420.
+  deploy through `ZargarRestart` (from PowerShell — Git Bash rewrites `/Run` into a path), never by running `start.ps1`
+  from their own shell; never `Stop-Process` :8420. Verified 2026-09-08 16:54 ET: engine pid's parent chain ends in the
+  scheduler, not `claude.exe`; a full restart took 30 s; the tick that landed during it exited 0.
   Log: `backend/zargar-8420.log` rotates 50 MB × 10, `httpx` at WARNING, start/stop lines with pid (F69).
 - 2026-09-08 · **Invariant 16 — a recomputed read never re-acts.** A technique that recomputes its whole session read
   every bar (Team2 `simulate_session`) must recognise acted-on events by a content fingerprint (ts · event · setup ·

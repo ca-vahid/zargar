@@ -2004,5 +2004,10 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
 - **Execution:** F50 `target_breach` hook — plan target on a fresh underlying print, reduce-only limit at the bid.
 - **Read:** F62 pullback episodes (`pullback_reset_atr` 0.5), F61 only priced pullbacks spend.
 - **Experimental, not promoted:** F47, F56a, F56b. **Governance:** 20 sessions → review (PLAN §3d).
-- Tests: `tests/test_team2_integrity.py` (9 new) + Team2/halt/exit/arming suites green. Deployed once via
-  `ZargarRestart`; plans set back to auto at $2,000 / 6 %.
+- Tests: `tests/test_team2_integrity.py` (9 new) + Team2/halt/exit/arming suites: 114 passed (the first full run
+  caught three pure-read regressions from F62 — the departure was judged only at the entry gate, so a bar spent in a
+  trade never re-armed the next pullback; now judged on every 2m close, `268adf6`). Deployed 16:53–16:54 ET via
+  `schtasks /Run /TN ZargarRestart` (30 s, engine pid 18364 owned by the scheduler); the 3 plans for 2026-09-09 restored
+  on Team2 Practice and set back to auto at $2,000 / 6 % (per-plan halt $1,192); `sigma`/`complete` stay empty until the
+  09:25 pre-open and the first 2m read. Zero `httpx` INFO lines since boot (F69). EM's known
+  `technique_outcomes` truncation error is still in the log — not ours.
