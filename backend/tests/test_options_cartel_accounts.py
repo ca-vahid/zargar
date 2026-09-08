@@ -36,7 +36,7 @@ async def test_dedicated_book_overrides_legacy_selection_and_no_fallback(engine)
 async def test_preparation_uses_dedicated_book_without_moving_history(engine):
     at, providers = inputs()
     runtime = engine.cartel_observer = CartelRuntime(engine); runtime.clock = lambda: at
-    await engine.settings.set(setting_key('practice'), {'enabled':True})
+    await engine.settings.set(setting_key('practice'), {'enabled':True, 'risk_pct':1})
     try:
         first = await run_preparation(engine, read_policy(engine), clock=lambda: at, **providers)
         async with engine.sf() as session, session.begin():

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.8";
+export const APP_VERSION = "0.7.9";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.9",
+    date: "2026-09-07",
+    title: "Adjustable Cartel preparation risk",
+    items: [
+      { tag: "improved", text: "Cartel preparation supports up to 10% equity risk per setup in both Practice and Live settings. New Practice configurations default to 10%; new Live configurations stay at 1%, and saved values are preserved." },
+      { tag: "improved", text: "Settings explain that the separate premium budget still limits spending. Changing risk does not enable Live trading or bypass cash, exposure and order checks." },
+    ],
+  },
   {
     version: "0.7.8",
     date: "2026-09-07",
