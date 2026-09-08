@@ -32,9 +32,9 @@ try {
   assert.ok(response.ok(), "Saved plans endpoint must be available");
   const [plan] = await response.json();
   if (plan) {
-    await page.locator(`tr[data-run-id="${plan.runId}"]`).getByRole("button", {name:`Open ${plan.symbol}`, exact:true}).click();
+    await page.locator(`tr[data-run-id="${plan.runId}"]`).getByRole("link", {name:`Open ${plan.symbol}`, exact:true}).click();
     await page.getByRole("heading", {name:`${plan.symbol} · plan`, exact:true}).waitFor();
-    await page.getByRole("button", {name:"Close details", exact:true}).click();
+    await page.getByRole("button", {name:"← Back", exact:true}).click();
   }
   await page.goto(`${base}/techniques/options-cartel/desk`);
   await page.getByRole("tab", {name:"Plans", exact:true, selected:true}).waitFor();

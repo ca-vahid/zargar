@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.5";
+export const APP_VERSION = "0.7.6";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.6",
+    date: "2026-09-07",
+    title: "Clearer Cartel plan details",
+    items: [
+      { tag: "fixed", text: "Opening or refreshing a Cartel record no longer duplicates its chart." },
+      { tag: "improved", text: "Each Cartel record has a dedicated, bookmarkable page with Back navigation. Record links can also open in a new browser tab." },
+      { tag: "improved", text: "Plan details lead with status, entry conditions and the actual exit schedule. Evidence and manual execution controls are separate, and the chart starts with the latest 30 saved sessions." },
+    ],
+  },
   {
     version: "0.7.5",
     date: "2026-09-07",
