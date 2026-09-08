@@ -29,7 +29,7 @@ class PreparationPolicy(WireModel):
     focus_count: int = Field(default=5, ge=1, le=20)
     horizon_sessions: int = Field(default=1, ge=1, le=20)
     budget: float = Field(default=500, gt=0, le=100000)
-    risk_pct: float = Field(default=1, gt=0, le=5)
+    risk_pct: float = Field(default=10, gt=0, le=10)
     max_contracts: int = Field(default=10, ge=1, le=1000)
     entry: EntryPolicy = Field(default_factory=lambda: EntryPolicy(allow_gap_retest=True))
     setups: SetupParameters = Field(default_factory=SetupParameters)
@@ -40,6 +40,13 @@ class PreparationPolicy(WireModel):
     contract_policy: ContractSelectionInput = Field(default_factory=lambda: ContractSelectionInput(
         dte_min=21, dte_max=90, target_dte=45, target_abs_delta=.5, max_ask=5,
         max_spread_pct=20, min_open_interest=100, refresh_limit=6))
+
+    @model_validator(mode='before')
+    @classmethod
+    def workspace_risk_default(cls, values):
+        if isinstance(values, dict) and values.get('workspace') == 'live' and 'risk_pct' not in values and 'riskPct' not in values:
+            return {**values, 'risk_pct': 1}
+        return values
 
     @model_validator(mode='after')
     def valid_exit_policy(self):

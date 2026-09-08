@@ -53,6 +53,7 @@ CONTRACTS: dict[str, dict] = {
                                   "required": ("runId", "symbol", "trigger", "kind", "window", "entry", "stop", "mode"),
                                   "nullable": ("fill", "critic", "setupId")},
     "TechniquePlanTriggerSkipped": {"version": 1, "required": ("runId", "symbol", "trigger", "event")},
+    "TechniquePlanRead":      {"version": 1, "required": ("runId", "symbol", "trigger", "event", "reason")},   # F28/F52: a structural read event (scenario, PM break, retest, late touch) journaled by a technique package, not the runner
     "TechniquePlanOrderIntent": {"version": 1,
                                  "required": ("runId", "symbol", "orderSymbol", "secType", "trigger",
                                               "side", "qty", "portfolioId")},
@@ -81,7 +82,8 @@ CONTRACTS: dict[str, dict] = {
     "ManagedPositionAttention": {"version": 1, "required": ("positionId", "symbol", "error")},
     "ManagedPositionScaledIn": {"version": 1, "required": ("positionId", "symbol")},
     "ManagedPositionRolledUp": {"version": 1, "required": ("positionId", "symbol", "from", "to", "qty", "creditPerContract")},
-    "TipGeometryRepaired": {"version": 1, "required": ("proposalId", "underlying", "entryRef", "repairs")},
+    "TipGeometryRepaired": {"version": 2, "required": ("proposalId", "underlying", "entryRef", "repairs"),
+                            "nullable": ("proposalId",)},   # v2 2026-09-08: armed-lane repairs carry runId/trigger, no proposal
     "TipAutoPaused": {"version": 1, "required": ("reason",)},
 }
 

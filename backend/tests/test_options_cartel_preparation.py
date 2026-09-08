@@ -54,7 +54,7 @@ async def test_full_preparation_builds_and_arms_automatic_practice_plan_without_
     at, providers = inputs()
     runtime = CartelRuntime(engine); runtime.clock = lambda: at
     engine.cartel_observer = runtime
-    policy = PreparationPolicy(enabled=True, history_limit=10)
+    policy = PreparationPolicy(risk_pct=1, enabled=True, history_limit=10)
     await engine.settings.set(SETTING, policy.model_dump(mode='json'))
     try:
         result = await run_preparation(engine, policy, clock=lambda: at, **providers)
@@ -97,7 +97,7 @@ async def test_concurrent_requests_share_preparation_and_shutdown_cancels_resear
     at, providers = inputs()
     runtime = CartelRuntime(engine); runtime.clock = lambda: at
     engine.cartel_observer = runtime
-    await engine.settings.set(SETTING, PreparationPolicy(enabled=True).model_dump(mode='json'))
+    await engine.settings.set(SETTING, PreparationPolicy(risk_pct=1, enabled=True).model_dump(mode='json'))
     entered = asyncio.Event()
     async def blocked(*args, **kwargs):
         entered.set(); await asyncio.Event().wait()

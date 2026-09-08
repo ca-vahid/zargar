@@ -739,21 +739,60 @@ class TipRunner(PlanRunner):
         # one; SHADOW-book fills keep the standard ladder so the per-source
         # scorecard's counterfactual stays comparable across sources.
         from ...signals.sources import resolve_policy
-        from .lifecycle import build_exit_plan, default_policy, policy_from_exit_plan
+        from .lifecycle import (build_exit_plan, check_exit_geometry, default_policy,
+                                policy_from_exit_plan)
         pf = self.engine.positions.portfolio(ap.config.portfolio_id) or {}
         analyst = ((sig.extraction or {}).get("analyst") or {}) if sig is not None else {}
         catalyst = (sig.catalyst or "").lower() if sig else ""
+
+        # ---- adoption-geometry gate on the ARMED lane too (2026-09-08): the
+        # plan's stop/targets were drawn at ARM time against the level, but the
+        # FILL can land far from it — AVGO today filled 370.39 into a ladder of
+        # 359.51/361.57 (both BELOW entry) and flattened itself at a loss six
+        # minutes later; GME armed a 0.09%-wide stop and died the same minute.
+        # Same pure gate as the proposal path; shadow books included — bad
+        # geometry poisons the armed-lane counterfactual we judge sources by.
+        async def _gate(plan_dict: dict) -> dict:
+            gate_bars: list = []
+            if type(getattr(self.engine, "feed", None)).__name__ != "SimQuoteFeed":
+                with contextlib.suppress(Exception):
+                    from ...clock import now_ms as _now_ms
+                    from ...marketstructure.history import fetch_window
+                    nms = _now_ms()
+                    gate_bars = await fetch_window(ap.symbol, "15m",
+                                                   nms - 7 * 86_400_000, nms)
+            plan2, repairs = check_exit_geometry(
+                plan_dict, direction=trade.direction, entry_ref=entry_ref,
+                bars=gate_bars, settings=self.engine.settings)
+            if repairs:
+                from ... import events as ev
+                with contextlib.suppress(Exception):
+                    await self.engine.journal.append(
+                        ev.TIP_GEOMETRY_REPAIRED,
+                        {"proposalId": None, "runId": ap.run_id, "trigger": tid,
+                         "underlying": ap.symbol, "entryRef": entry_ref,
+                         "repairs": repairs},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id,
+                        portfolio_id=ap.config.portfolio_id)
+                self._log(ap, "geometry_repaired",
+                          f"{tid}: exit plan repaired against the {entry_ref:g} fill — "
+                          + "; ".join(repairs), trigger=tid)
+            return plan2
+
         exit_author = "default"
         if analyst.get("exit_targets") and not pf.get("book") and sig is not None:
             src_policy = resolve_policy(self.engine.settings, ctx.get("source"))
             plan = build_exit_plan(sig, sig, analyst, src_policy)
             plan["maxHoldSessions"] = min(int(plan.get("maxHoldSessions") or hold_cap), hold_cap)
+            plan = await _gate(plan)
             policy = policy_from_exit_plan(plan, is_option=is_opt,
                                            settings=self.engine.settings)
             exit_author = f"analyst:{str(analyst.get('runId') or '')[:8]}"
         else:
+            gated = await _gate({"targets": [float(t) for t in trade.targets],
+                                 "underlyingStop": float(trade.stop)})
             policy = default_policy(
-                stop=float(trade.stop), targets=[float(t) for t in trade.targets],
+                stop=gated.get("underlyingStop"), targets=gated.get("targets") or [],
                 hold=hold_cap, is_option=is_opt, settings=self.engine.settings,
                 avoid_earnings="earnings" not in catalyst)
         source = ctx.get("source") or "unknown"

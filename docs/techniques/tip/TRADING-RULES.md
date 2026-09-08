@@ -56,6 +56,42 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-08 — **Promoted cards decide themselves; the session brake actually works**
+  (v0.7.11). FRVO: an analyst TAKE promoted off a prevClose-artifact park sat
+  pending under the old "promotions never self-approve" invariant — under
+  unattended practice a promoted take now self-approves (skip/watch declines,
+  NO verdict stays pending fail-closed per the TSLA lesson, live always human).
+  APLD the same hour showed the fail-closed gate correctly holding a card the
+  analyst never appraised. Also: the <5-min-stop-out session brake read
+  `state.closeReason`, which was NEVER persisted (dormant since 09-04) — now
+  written by `_mark_closed`; and shadow-book deaths no longer count against
+  the real book (GME research noise would have paused autos all day).
+
+- 2026-09-08 — **The geometry gate covers the ARMED lane** (v0.7.10). The
+  nine-strike failures were armed-handoff adoptions, but the 09-04 gate only
+  covered proposal fills. Day-1 evidence on the new books: AVGO armed-book
+  fill 370.39 into a ladder of 359.51/361.57 (both below entry) self-flattened
+  at −$17 in 6 min ("TP2 reached"); GME armed a 0.09%-wide stop and died the
+  same minute. `runner._gate` now runs `check_exit_geometry` against the
+  ACTUAL fill for both the analyst plan and the default ladder; repairs
+  journal `TipGeometryRepaired` v2 (armed repairs carry runId/trigger,
+  proposalId null) and land on the run log. Shadow books included — bad
+  geometry poisons the armed-lane counterfactual sources are judged by.
+  DEBT: the wiring has no end-to-end degenerate-fill test (forcing a fill
+  past the planned ladder through the arm machinery is expensive); the pure
+  gate is fully tested and the first live `TipGeometryRepaired` from the
+  armed lane is the acceptance check — verify one appears within days.
+
+- 2026-09-07 — **Glide sizing** (user decision: "ambitious but never lose a late
+  tip to a full book" — the per-technique $10k cash-checked book made this real):
+  per-tip budget = min(`budget_per_tip`, free cash / `reserve_slots` 3), floored
+  at `min_budget` $500 while any cash lasts; only an empty book refuses, journaled
+  `TipLaneDecided lane=refused`. On the $10k book: tips 1–5 full $2k, ~#6–8 glide
+  $1.5k→$900, #9+ minimum expression. Cards carry the glide note. Also made the
+  two DEAD per-source knobs real (`max_open_tips` count gate, `budget_open_max`
+  shrinks to remaining allowance) — they were parsed and enforced nowhere.
+  Shadow books never gated (counterfactuals stay full-size comparable).
+
 - 2026-09-04 (evening) — **The adoption-geometry gate is CODE now** (the analyst's
   nine-strike rule made deterministic; `lifecycle.check_exit_geometry` +
   `adoption_killswitch`). Eight adoptions in three days (HOOD 9/02, MU 9/03–04 ×4,

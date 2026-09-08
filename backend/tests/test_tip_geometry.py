@@ -126,6 +126,123 @@ async def test_new_rule_supersedes_family(rig):
     assert rc.superseded_by is None              # other families untouched
 
 
+# ---------------------------------------------------------- glide sizing
+async def test_glide_budget_full_then_glides_then_floors(rig):
+    """2026-09-07: budget = min(budget_per_tip, free cash / reserve_slots) —
+    full size early, gliding down as the book fills, minimum expression late,
+    refusal only when the book is truly empty."""
+    from zargar.signals.sources import resolve_policy
+    eng = rig
+    svc = eng.proposals
+    await eng.settings.set("techniques.tip.budget_per_tip", 2000.0)
+    policy = resolve_policy(eng.settings, "GlideSrc")
+    pid = next(p["id"] for p in eng.positions.portfolios() if p["kind"] == "sim")
+    pf = eng.positions.portfolio(pid)
+
+    pf["cash"] = 10_000.0                              # plenty: full budget, no note
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert (b, note, refuse) == (2000.0, None, None)
+
+    pf["cash"] = 4_500.0                               # glide: 4500/3 = 1500
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert b == 1500.0 and refuse is None and "reserve" in note
+
+    pf["cash"] = 900.0                                 # under the floor: min expression
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert b == 500.0 and refuse is None
+
+    pf["cash"] = 300.0                                 # floor bounded by actual cash
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert b == 300.0 and refuse is None
+
+    pf["cash"] = 30.0                                  # truly empty: refuse, on record
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert b == 0.0 and "book full" in refuse
+
+    await eng.settings.set("techniques.tip.reserve_slots", 0)   # 0 = off
+    pf["cash"] = 30.0
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert b == 2000.0 and refuse is None
+    pf["cash"] = 10_000.0
+
+
+async def test_source_open_caps_are_enforced_now(rig):
+    """max_open_tips and budget_open_max were parsed but enforced NOWHERE —
+    the glide helper makes them real (count gate refuses, $ cap shrinks)."""
+    from zargar.models import ManagedPositionRow
+    from zargar.signals.sources import resolve_policy
+    eng = rig
+    svc = eng.proposals
+    await eng.settings.set("techniques.tip.sources",
+                           {"CapSrc": {"max_open_tips": 2, "budget_open_max": 3000.0}})
+    policy = resolve_policy(eng.settings, "CapSrc")
+    pid = next(p["id"] for p in eng.positions.portfolios() if p["kind"] == "sim")
+    eng.positions.portfolio(pid)["cash"] = 10_000.0
+
+    async with eng.sf() as session:                     # one open $2,500 position
+        session.add(ManagedPositionRow(
+            id=new_id(), technique="tip", symbol="AAA", portfolio_id=pid,
+            status="open", tags=["source:CapSrc"], config={},
+            legs=[{"symbol": "AAA", "secType": "STK", "qty": 25, "avgFill": 100.0}],
+            state={}))
+        await session.commit()
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert refuse is None and b == 500.0                # 3000 cap - 2500 open = 500 room
+    assert "remaining open budget" in note
+
+    async with eng.sf() as session:                     # second open position: count gate
+        session.add(ManagedPositionRow(
+            id=new_id(), technique="tip", symbol="BBB", portfolio_id=pid,
+            status="open", tags=["source:CapSrc"], config={},
+            legs=[{"symbol": "BBB", "secType": "STK", "qty": 1, "avgFill": 10.0}],
+            state={}))
+        await session.commit()
+    b, note, refuse = await svc._tip_budget(policy, pid)
+    assert b == 0.0 and "max_open_tips" in refuse
+
+    # other sources are unaffected by CapSrc's positions
+    other = resolve_policy(eng.settings, "OtherSrc")
+    b, note, refuse = await svc._tip_budget(other, pid)
+    assert refuse is None and b > 0
+
+
+# ---------------------------------------------------------- session brake
+async def test_adoption_killswitch_reads_persisted_reason_and_skips_shadow(rig):
+    """2026-09-08: the brake read state.closeReason, which was never persisted
+    (dormant); it also counted SHADOW-book deaths (GME research noise). Now:
+    a real-book stop-out < 5 min pauses autos; shadow deaths never do."""
+    from zargar.models import ManagedPositionRow
+    from zargar.techniques.tip.lifecycle import adoption_killswitch
+    eng = rig
+    sim_pid = next(p["id"] for p in eng.positions.portfolios() if p["kind"] == "sim")
+    shadow = await eng.signals_service.shadow_portfolio("BrakeSrc", "immediate")
+
+    async def add_closed(pid: str, sym: str):
+        async with eng.sf() as session:
+            session.add(ManagedPositionRow(
+                id=new_id(), technique="tip", symbol=sym, portfolio_id=pid,
+                status="closed", tags=["source:BrakeSrc"], config={}, legs=[],
+                state={"closeReason": "venue-side GTC stop", "realizedPnl": -5.0}))
+            await session.commit()
+
+    assert await adoption_killswitch(eng) is None          # clean day
+    await add_closed(shadow["id"], "GME")                  # research noise
+    assert await adoption_killswitch(eng) is None
+    await add_closed(sim_pid, "AAA")                       # real book: brake
+    reason = await adoption_killswitch(eng)
+    assert reason and "AAA" in reason and "paused" in reason
+
+
+def test_close_reason_rides_to_dict():
+    """The Managed dataclass now carries close_reason (the brake reads the
+    persisted state.closeReason — it was never written before 2026-09-08)."""
+    from zargar.execution.positions import Managed
+    p = Managed(id="x", portfolio_id="p", symbol="T", direction="long",
+                technique="tip", policy={}, legs=[], entry=100.0, risk=1.0)
+    p.close_reason = "bar closed through the stop"
+    assert p.to_dict().get("closeReason") == "bar closed through the stop"
+
+
 # ---------------------------------------------------------- premium cap
 async def test_premium_cap_sizes_down(rig):
     svc = rig.proposals

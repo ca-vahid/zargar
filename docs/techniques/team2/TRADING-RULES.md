@@ -524,6 +524,97 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   of silent. **`zargar/research/snapshots.py` — shared engine, proposal, not built here.**
 
 
+- **F47 (2026-09-08 09:15 ET, NOT fixed — proposal; the planned target has no minimum-room floor)**
+  `levels.targets_beyond` sets a break trade's outright exit to the **most recent 15m pivot** beyond
+  the zone within the 10-session lookback, with **no check that the pivot leaves enough room to be
+  worth trading**. `session.py` then exits the *whole* remaining position the moment that level is
+  touched (`rules.target_exit`, X3/V11), so a target sitting just past the break level closes the
+  trade before the +50 % / +100 % trims can ever engage. The engine already knows the test — the X3b
+  HOD/LOD substitute must clear `hod_target_min_atr` (1.0) × ATR before it may replace the plan
+  target — but that floor is applied **only to the substitute**, never to the plan target itself.
+  Live today (2026-09-08), measured against Friday's average 2m bar range as the ATR proxy
+  (SPY 0.254 / QQQ 0.375 / IWM 0.152): SPY's targets leave 1.16 up (4.6 ATR) and 1.55 down (6.1 ATR),
+  IWM's 0.40 up (2.6 ATR) — all sane — but **QQQ's break-below target is 716.34 against a PDL zone
+  bottom of 716.56: 0.22 of room, 0.59 ATR, 0.03 % of spot.** If QQQ breaks its PDL zone today the
+  auto desk buys puts and then exits in full ~0.22 under the break, for a few percent of premium,
+  instead of running the method's trim ladder. Proposed: apply the same `hod_target_min_atr` floor
+  when `targets_beyond` picks the plan target — a pivot that does not clear it is skipped for the
+  next one out, and the target falls back to `None` ("open", ride the EMA) when nothing qualifies.
+  **Threshold/rule change on a money path — proposal only, not built by the watch job.**
+- **F48 (2026-09-08 09:40 ET, FIXED — `a53f866`)** `POST /api/team2/runs/{id}/replay` declared
+  `body: ReplayBody` as a **required** model, so the plain parity replay the watch job runs (no
+  overrides) came back **422 Unprocessable Content**. `overrides` is the body's only field and it is
+  optional, so the body is now optional too. Operator/CLI surface only — the UI never calls this route,
+  and nothing on a money path changed. Deploy queued for the next watch run (the fix landed inside the
+  09:30–10:30 prime-open window and a restart there costs live read state for no benefit).
+- **F49 (2026-09-08 09:40 ET, NOT fixed — proposal; the day's premise is read 5 minutes before the
+  open)** `plan.openPrice` — and with it `dayType` (A1) and `sizingAtOpen` (V6) — is set by
+  `complete_plan`, which prefers the **09:30 RTH open** but falls back to the **last pre-market close**
+  when no RTH bar exists yet. The 09:25 pre-open job always runs before the open, so the fallback is
+  what fires **every single session**, and nothing ever re-completes the plan once the real open
+  prints: `Team2Service.preopen_complete` and `Team2Runner._preopen_check` are the only callers, and
+  `replay()` re-derives only when `complete` is False (F13 deliberately stamped the completed plan so
+  replay reproduces the live premise — that fix locked the approximation in). `sizingAtOpen` is only a
+  label (live sizing recomputes `sizing_bucket(entry_spot, …)` per touch), but **`dayType` gates
+  money**: `session.py:268` lifts the inside-day guard on `pm_break_up` / `pm_break_down` only when the
+  day type is `gap_up`/`gap_down` (F15/L2.4), so a mis-typed day changes which setups exist at all.
+  Live today: the stamped opens are the 09:25 prints SPY 769.28 / QQQ 721.18 / IWM 295.59, while the
+  real 09:30 bar opens were **SPY 769.06 / QQQ 720.91 / IWM 295.34** — a 0.22–0.27 gap. All three still
+  classify `normal`, but **SPY's real open sat 0.06 above its PDL zone bottom of 769.00**: an open
+  seven cents lower would have been a `gap_down` day, and the stamped pre-market print would still have
+  said `normal`. Proposed: re-complete the plan on the first RTH bar of the session (upgrading
+  `openPrice`/`openSource`/`dayType`, and re-stamping so replay parity is preserved), leaving the 09:25
+  completion as the pre-open estimate it is. **Money-path behaviour change — proposal only, not built
+  by the watch job.**
+
+- **F50 (2026-09-08 10:10 ET, NOT fixed — proposal; the target exit is decided a bar late and the
+  book pays for it. First live money evidence.)** The plan target is judged on the CLOSED 2m bar
+  (`session.py` X3/V11: "target touched → sell the whole position"), and the live runner then routes
+  that exit **at the bar close** — so the desk sells wherever price is when the bar ends, while the
+  model books the exit **at the target price**. QQQ today, both legs of the same setup, entry on the
+  716.90 retest with the plan target 716.34 (F47's thin 0.65-ATR target):
+  · trade #1 fired 10:02, filled 14 × **$0.655**; the 10:02–10:04 bar wicked to 715.87 (target touched,
+  the put was worth ≈$0.85 there) and closed 716.86 — the exit routed at 10:04:00 and filled **$0.61**
+  → **−$63**, while the model scored the same trade **+32.7 %** at mark 0.7263.
+  · trade #2 fired 10:06, filled 9 × **$0.63**, same target, exit at 10:08:00 filled **$0.68**
+  → **+$45**, model **+32.9 %**.
+  Model day: 2 trades, 2 wins, **+65.6 %**. Book day: **−$18** realised (**−$65.84** after $58 of
+  commissions), i.e. the read and the book disagree in *sign* on the desk's first two trades. The gap
+  is not the model's premium series — it is **when the sell is sent**: on a target that sits inside one
+  bar's range, price is routinely back through the level by the close. The engine already runs an
+  exit-only ~2 s quote watch (stop + premium stop + failed-exit retry), so the target could be armed
+  the same way. Proposed, in order of preference: (a) rest a **SELL limit at the target premium** from
+  the moment the entry fills — the method's own "sell into the spike" — or (b) put the plan-target
+  touch on the quote-watch loop and exit on the print instead of the close. Either makes the book
+  match what the read claims. **Money-path behaviour change — proposal only, not built by the watch
+  job.** Note this compounds F47: a target one bar wide guarantees the timing loss shows up on every
+  trade.
+- **F51 (2026-09-08 10:10 ET, NOT fixed — proposal; the read's IV proxy is half the traded 0DTE IV)**
+  The session read prices every model trade with `PremiumModel(sigma=…)` fed by the IV proxy
+  `^VIX1D → ^VIX×1.3 → 0.20` (`runner.py::_sigma`, B2). Today's sigma is **0.1203** while the contract
+  the desk actually bought, `QQQ260908P00714000`, quoted **IV 0.236** on OPRA — a factor of two. Two
+  measurable consequences on today's tape: the model priced its 716-strike put (nearer the money) at
+  **$0.5216** while the desk paid **$0.655** for the 714 strike (further out, so the real 716 strike
+  was worth ≈$0.9), and the model's premium moved **+33 %** for a 0.56 spot move where the real
+  contract moves ≈half that per point (a low IV inflates the percentage sensitivity of a near-dated
+  OTM contract). The live money path is unaffected — trims and the premium stop are judged on the
+  contract's own fresh bid (F8) and sizing on the live NBBO (F14) — but every number the *read*
+  produces is affected: the +50 %/+100 % trim forecasts, `pnlPct`, the walk-forward sweep and any
+  scorecard row still carried on the `session-read` basis. Proposed: seed sigma per symbol from the
+  0DTE chain the picker already fetches (the ATM IV of the expiry) and fall back to the VIX1D proxy
+  only when no chain is available; stamp the source next to `premiumPathSimulated`. **Calibration
+  change to the model — proposal only, not built by the watch job.**
+- **F52 (2026-09-08 10:10 ET, FIXED — see change log)** Team2's `TechniquePlanRead` journal kind
+  (F28: scenario / pm_break / pm_retest / late_touch) was **not registered** in the shared event
+  contract, so every structural read event logged
+  `WARNING event contract: unregistered Technique event kind: TechniquePlanRead` (6 today, first at
+  09:46 ET — every session since Team2 started reading). The guard test
+  `test_every_journaled_kind_has_a_contract` never caught it because it scans only `zargar/technique/`
+  and `zargar/execution/`, not the per-technique packages under `zargar/techniques/`. Registered the
+  kind and widened the test's scan to `zargar/techniques/**` (the only unregistered kind it finds is
+  this one). Advisory logging only — no trade or shape changed.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -534,6 +625,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
@@ -557,6 +650,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 | 2026-09-04 | **F17 fixed**: the kill switch no longer suppresses Team2's alert-mode read. `_fire_from_event`'s halt gate now applies to proposal/auto only (alert places nothing); an alert fire during a halt carries `haltedAtFire: true`. Restores live-vs-replay parity while the shared Practice portfolio is halted | market watch 10:00 ET; QQQ 10:02 fire lost to `halt_skip`; `tests/test_team2_runner.py::test_alert_mode_still_reads_the_tape_while_halted` fails without the fix | Team2 desk |
 | 2026-09-04 | **Post-close audit (two fresh-eyes reviews, 26 backend + 26 UI items) — F46 batch, all built:** (1) Team2 runs the stale-exit re-price every RTH minute and flattens the BOOK on the clock at `flatten_min` and again on the way out of the session, whatever the read holds (a resting trim limit used to clamp the flatten and the shared close is 16:05, after 0DTE expiry); (2) `pick_contract` re-prices on the live NBBO before sizing/caps (was sized on the delayed ask); (3) the technique day-loss halt keeps a retired plan's net P&L (`_retired_pnl`, seeded at boot); (4) the premium stop and the halt marks trust only FRESH real-time option quotes; (5) an X5 add is judged with its base position, not as a second loser; (6) `isAdd`/`targetKind` survive a restart; (7) trim/exit read events name their setup and the runner routes by it; (9) a budget change re-derives the plan loss halt; (10) the double-arm guard reads the persisted rows; (11) replay prices the past with THAT day's IV; (12) defaults now express the shipped sizing (`zero_dte` 40 / $2,000; `maxContracts` follows the policy); (13) a trade's quote-watch stop is the line the entry leaned on minus one ATR, not spot ± ATR; (16) `_seen` advances per event; (19/20) D10's flip knob wired, F27's tolerance symmetric; (21) `execution.premium_stop_basis/min_ticks/fee_per_contract` defaults exist; (22) the entry window is judged on the bar CLOSE (the first eligible dip after the 09:45 close was refused); (23) `pnlPctPerUnit` beside the weighted %; (25) Alpaca never seeds the day range from Yahoo's 09:30 poll. Open on purpose: (8) `_seen` not persisted (rare), (17/18) `runner_exit`/`stop_candles`/`flag_tf_min` informational — no 5m flag detector yet, (24) `shrink_after_win` per symbol, (26) sizing computed twice per entry. UI: the phone timeline sees the desk-stopping events, the loss-limit tile shows the technique brake, book halts on the phone strip, Team2's Armed tab shows account/P&L/stop reason/bar age, chart bands from the settings, no chart rebuild per read event, touch-safe tooltip, Settings has a Risk & clock group + live-auto toggle, thresholds read-only on Plans, Team2 wording on the Armed page, phone CSS no longer hides Team2's status line | reviews 2026-09-04 post-close | Team2 desk |
 | 2026-09-04 | **F40, F43, F44, F45 closed** (post-close sweep): a disarmed plan with a flatten in flight stays in a `_closing` map until every exit settles (its fill lands, the record closes, F38's seed also reads pre-fix rows by their exit fills); Team2 overrides the execution scorecard — the session read's model trades matched against the book's fills, unmatched rows named, skips counted, P&L net of fees — and writes it on the loss-halt disarm too; expired contracts leave the OPRA batch; the nightly chain sweep paces itself (`research.chain_snapshots.delay_s` 0.75, `retries` 2 with 3s/6s backoff) and warns when > 20% of the universe failed | post-close 2026-09-04 | Team2 desk |
+| 2026-09-07 | **Team2 trades its own book from 2026-09-08: `Team2 Practice` ($10,000)** — the shared Practice book is archived (platform change by another desk, PLATFORM-RULES invariant 15: a technique's orders land only in its own book; `techniques.team2.default_portfolio` set). Consequences for the ladder: the 10% technique pause and the 15% book breaker are now percentages of Team2's OWN $10k, so the per-plan halt re-derived to $1,200 (6% x 2), the desk-wide loss tally and the retired-P&L tally already key on the book id; `risk.sim_require_cash` is on — a $2,000 entry must fit the cash on hand. Every 2026-09-04 figure in this file (equity $8.5k, −$454 day) refers to the archived book | other desk's notice 2026-09-07 | Team2 desk |
 | 2026-09-04 | **F37–F39 closed** (run 13): the desk-wide loss cap counts the BOOK for any money-mode plan that routed an order and the model only for alert plans (never the larger of the two); the gate applies in money modes only and says which record it used; a disarmed plan's losers stay in the day's tally and are re-seeded from the persisted rows after a restart; zero/negative equity refuses an option entry with its own reason instead of failing open at 0 / closed below it | run 13 | Team2 desk |
 | 2026-09-04 | **F25–F36 closed (user 2026-09-04 14:50 ET: "implement all the fixes")** — F25 one clock: every read event stamped at its bar's CLOSE (setup ids keep the open in their name); F27 `zone_tol_atr` wired + `flip_body_ratio`, both shipped at 0 (unchanged until the walk-forward); F28 structural reads journal as `TechniquePlanRead`, not skips; F29 `losses_desk_wide=True` — `max_losses_per_day` counts SPY+QQQ+IWM together (`skip_loss_cap_desk`); F30 `premium_stop_basis=mid` + `premium_stop_min_ticks=3` for Team2 (EM keeps bid, 0); F32 both loss halts net of commissions; F33 an entry whose premium-stop risk exceeds the remaining daily budget is refused before routing (`skip_loss_budget`); F36 `premium_pick=closest` — model and live pick the strike CLOSEST to the target in [floor, 1.5x]. F34/F35 (watch job) deployed with them | this session's QQQ trades | Team2 desk |
 | 2026-09-04 | Halt scopes (platform, built by the desk): the daily-loss breaker now halts only the losing BOOK (`risk.daily_loss_halt_scope=portfolio`), and Team2 has its own `techniques.team2.daily_loss_halt_pct` = 10 — after losing 10% of the book in a day (≈ two full-size stops) its plans PAUSE for the day while the other techniques carry on. `risk.daily_loss_halt_pct` stays at the 12 set this morning for practice; re-tighten before real money | PLATFORM-RULES 2026-09-04 | Team2 desk |

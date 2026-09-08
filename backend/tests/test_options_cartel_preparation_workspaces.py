@@ -35,7 +35,7 @@ async def test_live_and_practice_prepare_independently_without_cross_account_ord
     at, providers = inputs()
     runtime = CartelRuntime(engine); runtime.clock = lambda: at
     engine.cartel_observer = runtime
-    practice = PreparationPolicy(enabled=True)
+    practice = PreparationPolicy(risk_pct=1, enabled=True)
     await engine.settings.set(setting_key('practice'), practice.model_dump(mode='json'))
     try:
         first = await run_preparation(engine, practice, clock=lambda: at, **providers)
@@ -50,7 +50,7 @@ async def test_live_and_practice_prepare_independently_without_cross_account_ord
             session.add(Portfolio(id='cartel-live', name='Live fixture', kind='live', base_currency='USD', cash=10000))
         await engine.positions.load()
         monkeypatch.setattr(engine, 'executor_for', lambda _: SimpleNamespace(connected=True))
-        live = PreparationPolicy(enabled=True, workspace='live', portfolio_id='cartel-live',
+        live = PreparationPolicy(risk_pct=1, enabled=True, workspace='live', portfolio_id='cartel-live',
                                  allow_live=True, overnight_ack=True)
         await engine.settings.set(setting_key('live'), live.model_dump(mode='json'))
         await engine.settings.set('trading.mode', 'live')
@@ -89,7 +89,7 @@ async def test_mode_switch_during_collection_prevents_arming(engine):
     at, providers = inputs()
     runtime = CartelRuntime(engine); runtime.clock = lambda: at
     engine.cartel_observer = runtime
-    policy = PreparationPolicy(enabled=True)
+    policy = PreparationPolicy(risk_pct=1, enabled=True)
     await engine.settings.set(setting_key('practice'), policy.model_dump(mode='json'))
     choose = providers['choose']
     async def switch_before_arm(*args):

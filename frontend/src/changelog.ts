@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.6";
+export const APP_VERSION = "0.7.11";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -18,10 +18,56 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.7.11",
+    date: "2026-09-08",
+    title: "Promoted takes flow",
+    items: [
+      { tag: "fixed", text: "A tip the recovery sweep revives with an analyst TAKE now approves itself in unattended practice (FRVO sat waiting on a quote-data artifact); skip/watch still declines itself, a tip with NO analyst verdict still waits fail-closed, and live books always keep the human." },
+      { tag: "fixed", text: "The session brake (pause autos after a sub-5-minute stop-out) could never fire - the close reason it looked for was never saved. It is saved now, and research-book deaths no longer count against the real book." },
+    ],
+  },
+  {
+    version: "0.7.10",
+    date: "2026-09-08",
+    title: "The gate covers both doors",
+    items: [
+      { tag: "fixed", text: "The exit-plan geometry gate now also covers fills from armed plans, not just approved cards. This morning AVGO filled at 370.39 into a ladder drawn at 359/361 (both below the buy) and sold itself at a loss six minutes later, and GME armed a hair-width stop that died in the same minute - plans are now re-checked against the actual fill price, targets on the wrong side are dropped, too-tight stops move to real structure, and every repair is journaled and shown on the run." },
+    ],
+  },
+  {
+    version: "0.7.9",
+    date: "2026-09-07",
+    title: "Adjustable Cartel preparation risk",
+    items: [
+      { tag: "improved", text: "Cartel preparation supports up to 10% equity risk per setup in both Practice and Live settings. New Practice configurations default to 10%; new Live configurations stay at 1%, and saved values are preserved." },
+      { tag: "improved", text: "Settings explain that the separate premium budget still limits spending. Changing risk does not enable Live trading or bypass cash, exposure and order checks." },
+    ],
+  },
+  {
+    version: "0.7.8",
+    date: "2026-09-07",
+    title: "Room for the next idea",
+    items: [
+      { tag: "new", text: "Glide sizing for tips: each new tip is budgeted at min(full budget, free cash ÷ 3), so the first positions get full size, later ones glide down, and a late great tip still gets a minimum position instead of bouncing off an empty book. The card says when the reserve trimmed it; a truly full book declines on the record." },
+      { tag: "fixed", text: "The per-source limits (max open tips, open budget cap) existed in Settings but were enforced nowhere — they're real now: a source's open dollars shrink its next budget, and its open-count cap declines the tip with the reason journaled." },
+    ],
+  },
+  {
+    version: "0.7.7",
+    date: "2026-09-07",
+    title: "Cartel uses its own Practice book",
+    items: [
+      { tag: "fixed", text: "Cartel preparation honors its dedicated Practice account even when an older shared-book selection was saved. Archived or unavailable assigned books never fall back to another technique's account." },
+      { tag: "improved", text: "Cartel account selectors and new-entry checks honor book ownership and archive flags. Risk percentages use the selected book's equity, not the combined Practice total." },
+    ],
+  },
+  {
     version: "0.7.6",
     date: "2026-09-07",
     title: "Clearer Cartel plan details",
     items: [
+      { tag: "fixed", text: "The Dashboard understands the per-technique Practice books: the headline totals all four ($40,000) and the equity chart now plots all four combined, with a picker for any single desk's book — it used to total four books in the headline while charting one arbitrary book underneath. The day's move and the sparkline follow the same set." },
+      { tag: "improved", text: "Holdings name the book that holds them, so you can see which desk is carrying a position at a glance. The archived Practice book never appears — not in the total, the chart, the accounts row or the holdings." },
       { tag: "major", text: "Practice reset: one $10,000 Practice book per technique (EM, Tips, Team2, Options Cartel - $40,000 in all). The old shared book is archived: its holdings and history stay readable, but it is out of every list and total and trades nothing." },
       { tag: "improved", text: "Manual tickets ask which book a trade goes in instead of guessing; Flow sits last in the technique list (context only, no book)." },
       { tag: "fixed", text: "Opening or refreshing a Cartel record no longer duplicates its chart." },
