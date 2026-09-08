@@ -516,6 +516,18 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 3. Open questions the shared runtime is collecting data on
 
+- **The post-close record of a plan built on an earlier session** (Team2 F67, 2026-09-08, no code
+  change — a proposal for the user). `technique/service.py::armed_history` orders by `created_at`
+  and the Armed > History page asks for 50 rows, so a technique that builds its plans the PREVIOUS
+  session loses its day to whatever was built today: all three of Team2's 2026-09-08 plans (built
+  Friday 17:34 ET) were absent from the page, whose day header still read "42 plan(s) · 10 fired ·
+  0.00 realized". Ordering by `plan_for` is not enough (within a day Team2's rows are still the
+  oldest by build time) — it wants a bigger window or a `planFor`/technique filter. Second half:
+  that table's Realized column renders `state.realizedPnl`, which is GROSS — QQQ read −18.00 while
+  the book moved −65.84 (23 contracts × 2 legs × $1.04 of commissions); the net number is already on
+  the same row as `state.scorecard.realizedPnl`, and shared halts have been net since Team2 F32.
+  Team2 works around both on its own page for now (`Team2Service.runs()` carries the day's grade).
+
 - **Reviewer net value** (EM 1.4 today): the runner's counters (kills, cooldown re-fires, failures)
   are per technique; a cross-technique tally is the capture-rate telemetry item.
 - **Quote-stop breach parameters** (`quote_exit_excess_r` 0.25, `quote_exit_polls` 2): tuned on
