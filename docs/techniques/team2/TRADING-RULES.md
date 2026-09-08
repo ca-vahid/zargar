@@ -780,6 +780,58 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   close. This is evidence for the user's decision on F56/F58, not a calibration.
 
 
+- **F59 (2026-09-08 13:40 ET, PARTLY fixed — the reporting half is deployed; the gate itself is a
+  proposal for the user)** **A real, liquid contract existed and the desk refused the trade on a
+  synthetic price that missed the floor by one tenth of a cent.** IWM's PM high finally broke at 13:30
+  (15m bucket 13:15–13:30 closed 295.97 > PMH 295.91 — verified against the banked 1m tape, and the
+  2m bar ending 13:30 ran 295.87–295.97 so the F20 retest of 295.91 is real). The read minted
+  `pm_break` → `pm_retest` → and then **`skip_no_contract`: "no strike prices between $0.20 and
+  $0.60 (V1)"**. That statement is about the **model**, not the chain:
+  · `session.py` picks the strike with `PremiumModel.pick_strike`, Black–Scholes at the day's sigma.
+  Today's sigma is **0.1203**. At spot 295.91, 13:30, 2.5 h to the 16:00 expiry, the model marks the
+  IWM **296 call at $0.199** — **$0.001 under the `premium_floor` of $0.20**. `pick_strike` breaks out
+  of its walk the moment a mark falls under the floor, so it collected **zero** candidates and returned
+  `None`. The 297 call models $0.009.
+  · The **real** 0DTE chain at the same moment (CBOE, spot 295.87): **IWM 296C bid 0.24 / ask 0.25**,
+  **volume 70,329**, OI 2,635, IV 0.1346, delta 0.43 — squarely inside the band, and the most heavily
+  traded call on the sheet. The live picker would have bought it. Replay reproduces the refusal
+  byte-identically, so this is deterministic, not a glitch.
+  · **The model is the gatekeeper for whether the real chain is ever consulted.** The runner only asks
+  the venue for a contract after the read emits `fire`; a `skip_no_contract` ends the touch inside
+  `session.py`. So a cent of model error is a veto over a real trade. This is the same root as
+  **F51** (model sigma 0.1203 vs the traded IV 0.236 on QQQ's actual fill) but with a much sharper
+  consequence: F51 mis-*prices* a trade the desk still takes, F59 *cancels* it.
+  · **Why IWM is the symbol it bit.** `runner._sigma(symbol)` **ignores its `symbol` argument** — it
+  caches per symbol but returns one index-wide number, `^VIX1D` (fallback `^VIX`×1.3, then 0.20), for
+  SPY, QQQ **and IWM** alike. VIX1D is an S&P 500 measure; the Russell is the more volatile index, and
+  today the real IWM 296C printed IV 0.1346 against the model's 0.1203 — ~11 % low, which is all it
+  took at a hard floor. Compounding it: IWM's $1 strikes at 295.9 with 2.5 h left step **0.95 (295,
+  ITM) → 0.25 (296) → 0.04 (297)**, so the $0.20–$0.60 band spans *at most one strike* on this symbol
+  late in the session. The model has to be right to the cent or it whiffs entirely.
+  · Cost today: the setup's target was 295.955 (PDH zone bottom) and spot printed 296.03 in the very
+  bar of the refusal, so the trade was an immediate spot winner — but in **premium** terms the 296C
+  was ~0.25 at 13:30 and ~0.245 at 13:36 with spot 296.00, i.e. roughly flat, no +50 % trim. So the
+  honest reading is *a real trade was cancelled for a bad reason*, not *a large P&L was lost*. The
+  setup keeps **touch 1 of 2**, so one more retest is available today — and the model will refuse it
+  harder, since decay only pushes the 296 mark further under the floor and 297 is worthless.
+  **Fixed this run (reporting only, no gate changed):** the refusal now says whose price it is
+  ("no strike **MODELS** between $0.20 and $0.60 (V1) — modelled premium at sigma 0.1203, not the live
+  chain") and is recorded on the setup with `note_once` so it reaches the Armed page and the phone.
+  `skip_no_contract` was **already** in the runner's headline list from F57, but `session.py` used
+  `note` rather than `note_once`, so the setup's `_skipped` stayed `None` and the clause could never
+  fire — IWM's headline read *"waiting for the 1st/2nd 2m pullback into the EMA13 (touches 1) · EMA
+  stack bull, trend"* with no hint that the pullback had been turned away. Same defect class as F53
+  and F57: a silent gate.
+  **Proposed, NOT built (user's call — this is the money path):** (a) let the **live chain** decide
+  when the runner is live — have the read emit the fire with a `needs_contract` flag and let the
+  existing live picker (which already applies `chase_cap_mult`) accept or refuse against the real ask,
+  so the model prices the *simulation* but never vetoes a *trade*; or, much cheaper, (b) make
+  `_sigma` actually per-symbol (`sigma_source: "chain"` already exists as a setting value and is
+  unimplemented in `_sigma`) — reading the day's ATM IV off the 0DTE chain would have marked the 296C
+  at ~0.22 and taken the trade; or (c) widen `premium_floor` for $1-strike underlyings. (a) is the
+  structural answer; (b) is the one-symbol fix. Cross-refs **F51** (same sigma error, milder effect)
+  and the open F30-family question of which premium series is authoritative.
+
 
 ## Theories to test
 
@@ -795,6 +847,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 - **2026-09-08 (market watch, run 24)** — no code change. **F58 logged as a proposal**: V6's sizing ladder is only ordered when the PM range is nested inside the prior-day zones, and `sizing_bucket` resolves every other geometry to `none` — SPY's 10:00 refusal contradicts V6's own Full-size band. Also verified (negative result) that the PM window is exactly METHOD L2.1's 04:00–09:30 ET, so F56/F58 are rule questions, not a data defect. No rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 25)** — no code change. Measured, on today's banked 1m tape, what each of the four no-trade-zone refusals actually did (spot basis) and worked F58's proposed clamp through them: it would have **allowed SPY 10:00** (target hit in the same minute, zero adverse excursion) but **also QQQ 10:16** (3.94 points against, target never reached), and would still refuse QQQ 11:00 and IWM 11:26 — the two that ran 75 % and 98 % of the way to target. So the clamp is a precedence fix that takes a winner and a loser together, and does not address the width F56 measures. Logged as a follow-up under F58. Also verified the desk-wide loss tally against the persisted rows (1 of 2, book basis): re-entries carry `#N` trigger ids so they group as separate positions, only X5 `+add` legs share one. No rule, threshold, gate, size or money path changed.
 
+- **2026-09-08 (market watch, run 26)** — **F59 logged; its reporting half fixed.** IWM's 13:30 PM-break retest was refused `skip_no_contract` because the *modelled* 296 call marked $0.199 against the $0.20 floor, while the real 296C was bid 0.24 / ask 0.25 on 70,329 contracts — the premium model is a veto over a live trade, and `_sigma` returns one index-wide VIX1D for SPY, QQQ and IWM alike. Deployed (reporting only): the refusal now names the modelled premium and its sigma, and is recorded with `note_once` so it reaches the Armed + phone headline — `skip_no_contract` was already in F57's headline list but `_skipped` was never set, so the clause could never fire. **No rule, threshold, gate, size or money path changed**; letting the live chain (or a per-symbol sigma) decide is written up under F59 as a proposal for the user.
 - **2026-09-08 (market watch, run 22)** — **F57 fixed**: the setup's current no-trade-zone / range-confirmation refusal is serialized on the read and stated on the Armed + phone headline, instead of the page reading "touches 0" while every pullback was refused. Reporting only — no rule, threshold, gate, size or money path changed.
 - **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
 - **2026-09-08 (market watch, run 20)** — the plan summary's waiting line now names the silent E3/B9 stack gate and E4 chop gate when they block the setup (F53). Wording only; no rule, threshold, gate or money path changed. F54 logged as observation. Team2 page timestamps pinned to ET (F55) — display only.

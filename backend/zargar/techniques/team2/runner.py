@@ -923,8 +923,16 @@ class Team2Runner(PlanRunner):
             # with a pre-market range 9–12× ATR wide the no-trade zone is not a moment price passes
             # through, it is the day. `_skipped` is the setup's CURRENT refusal — a real touch clears it —
             # so it can be stated in the present tense. Descriptive only; the gates live in session.py.
+            # F59 (2026-09-08): `skip_no_contract` was already in the journal list above but never
+            # reached this line — session.py recorded it with `note`, so the setup's `_skipped` stayed
+            # None. IWM's 13:30 PM-break retest was refused on the MODELLED premium (296C $0.199 vs the
+            # $0.20 floor) while the real 296C was 0.24/0.25, and the headline said only "touches 1".
+            floor_s = getattr(rules_now, "premium_floor", 0.20)
+            targ_s = getattr(rules_now, "target_premium", 0.60)
             skip_why = {"skip_no_trade_zone": "the last pullback sat inside the pre-market range — no-trade zone (V6/B5)",
-                        "skip_range_confirmation": "range day: price has not cleared the PM level (B3/A4)"}
+                        "skip_range_confirmation": "range day: price has not cleared the PM level (B3/A4)",
+                        "skip_no_contract": f"the last pullback found no strike MODELLING ${floor_s:.2f}–${targ_s:.2f} (V1) — "
+                                            "modelled premium, not the live chain"}
             refused = skip_why.get(str((picked or {}).get("skipped") or ""), "")
             refused_s = f" · {refused}" if refused else ""
             d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "

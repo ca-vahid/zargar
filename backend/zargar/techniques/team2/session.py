@@ -503,7 +503,15 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         pick = model.pick_strike(entry_spot, end_ts, s.direction, target_premium=rules.target_premium,
                                  premium_floor=rules.premium_floor, step=rules.strike_step, mode=rules.premium_pick)
         if pick is None:
-            note(end_ts, "skip_no_contract", f"no strike prices between ${rules.premium_floor:.2f} and ${rules.target_premium:.2f} (V1)", setup=s.id)
+            # F59 (2026-09-08): say whose price this is. The band is checked against the MODELLED
+            # premium (BS at the day's VIX1D sigma), not the chain — IWM 13:30 was refused with the
+            # model's 296C at $0.199 while the real 296C was 0.24/0.25 with 70k volume. And record it
+            # on the setup like the other "not tradeable" refusals so the Armed/phone headline can
+            # state it (the runner already lists this kind; `_skipped` was never set, so it never showed).
+            note_once(s, end_ts, "skip_no_contract",
+                      f"no strike MODELS between ${rules.premium_floor:.2f} and ${rules.target_premium:.2f} (V1) — "
+                      f"modelled premium at sigma {sigma:.4f}, not the live chain",
+                      setup=s.id, touch=idx)
             continue
         strike, mark = pick
         fill = model.buy(mark)
