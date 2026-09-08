@@ -87,7 +87,8 @@ def test_every_journaled_kind_has_a_contract():
     from zargar.research.events_contract import CONTRACTS
     root = Path(ev.__file__).parent
     used = set()
-    for p in list((root / "technique").glob("*.py")) + list((root / "execution").glob("*.py")):
+    for p in (list((root / "technique").glob("*.py")) + list((root / "execution").glob("*.py"))
+              + list((root / "techniques").rglob("*.py"))):   # F52: per-technique packages journal their own kinds too
         used |= set(re.findall(r"ev\.(TECHNIQUE_[A-Z_]+)", p.read_text(encoding="utf-8")))
     for const in used:
         kind = getattr(ev, const)

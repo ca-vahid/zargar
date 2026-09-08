@@ -1134,3 +1134,60 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   `skip_no_trade_zone` fired as predicted above, and — if a QQQ or IWM breakdown fires — exactly how
   F47's thin target behaves live. Still open for the user: **F47**, **F49**, and the F30-family
   question of which premium series is authoritative.
+
+
+## 2026-09-08 10:10 ET (run 19 — THE DESK'S FIRST TRADES: two QQQ round trips, model +65.6% / book −$66)
+
+- **Alive and clean.** `/api/health` ok **v0.7.9**, 81 plans armed desk-wide; exactly one Team2 plan
+  per symbol for 2026-09-08 (SPY `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode
+  **auto**, on **Team2 Practice** `b9dcd8db…`. **Zero `Traceback` and zero `ERROR`** in the 14k-line
+  current log; 74 warnings, all benign stub-bar drops except the six covered by F52 below and the
+  tip technique's `TechniquePlanError missing 'error'` (not ours).
+- **Data real-time.** Quotes 0–1 s old, `session: regular` (SPY 766.78 / QQQ 716.75 / IWM 294.85);
+  1m bars banking for all three with the current minute's bar always present (QQQ 10:04 bar at
+  10:05); the read advanced every 2m close (bars2m 16 → 20 across the run) with fresh `regimeLast`
+  EMAs; the option the desk traded priced **`source: opra`** the whole way (0.63/0.64 at 10:04).
+- **QQQ traded twice and the book is down $65.84.** 09:45 15m close below 721.82 → scenario 2
+  (reject PDH, puts) *and* below the PM low 716.90 → `pm_break_down`. Then two retests of 716.90:
+  **10:02** fired, bought **14 × QQQ 260908 P714 @ $0.655** ($917 premium, small bucket ×0.5, RiskGate
+  all-pass), exited 10:04 at **$0.61** → **−$63**; **10:06** fired again, **9 × @ $0.63** (×0.25),
+  exited 10:08 at **$0.68** → **+$45**. Realised **−$18**, **−$65.84** with $58 of commissions; book
+  cash 9,934.16, no open position, `needsAttention: false`, no halt. A third touch at 10:10 was
+  correctly `late_touch` (watch-only, D9/P6), so this setup is finished for the day.
+- **The model scored those same two trades +32.7% and +32.9% — two wins.** Read and book disagree in
+  *sign* on the desk's first day. Root cause is **F50 (new, proposal)**: the target exit is decided on
+  the closed 2m bar and routed at that close, while the model books it at the target price. Trade #1's
+  bar wicked to 715.87 (target 716.34 touched, put ≈$0.85 there) and closed 716.86 — the desk sold the
+  close. Proposed fix: rest a SELL limit at the target premium on fill, or move the target touch onto
+  the existing exit-only ~2 s quote watch. Money path — written up, not built.
+- **F47 proved live and it compounds F50.** QQQ's plan target 716.34 sat **0.56 below the entry level
+  and 0.65 ATR** — under the `hod_target_min_atr` 1.0 floor the engine already applies to X3b
+  substitutes. Both trades hit it **within one bar**, so the ladder (+50%/+100% trims) never engaged
+  and the timing loss landed on every trade. Still the user's call.
+- **F51 (new, proposal).** The read's IV proxy is **VIX1D 0.1203** while the traded contract quoted
+  **IV 0.236** on OPRA: the model priced its 716 put at $0.5216 where the desk paid $0.655 for the
+  further-out 714. Live money is unaffected (trims on the live bid, sizing on the live NBBO) but every
+  read/scorecard percentage is. Proposed: seed sigma from the 0DTE chain's ATM IV per symbol.
+- **F52 (new, FIXED — commit `bd0ee7a`, deploy QUEUED).** `TechniquePlanRead` was unregistered in the
+  shared event contract (6 advisory warnings today, one per structural read event); the guard test only
+  scanned `zargar/technique/` and `zargar/execution/`, never the per-technique packages. Registered the
+  kind, widened the test's scan to `zargar/techniques/**`. Logged in `docs/PLATFORM-RULES.md` §4.
+  **70 passed** (`tests/test_team2_*.py`, `test_marketstructure_extended.py`, `test_platform_phase3.py`,
+  own DB `zargar_test_team2_watch`).
+- **SPY and IWM: no trade, and the predicted skip fired.** SPY took scenario 4 (break PDL) at 09:45 and
+  then logged **`skip_no_trade_zone` at 10:00 — "entry 767.82 sits inside the pre-market range (V6/B5)"**,
+  exactly as run 18 predicted; it is not counted as a pullback. IWM took scenario 3 (bounce PDL, calls)
+  at 09:45 and has not touched the EMA13. Both reads reconcile to the tape.
+- **Parity is exact.** `POST /runs/{id}/replay` (with `{}`, since F48 is not deployed) reproduces the
+  live QQQ read event-for-event — same two fires, same two exits, same +32.69 / +32.92, plus the 10:10
+  late touch.
+- **No restart this run.** Both F48 and F52 are queued: 10:10 ET is inside the prime-open window with
+  three live setups and QQQ still eligible for another scenario-2 entry, and neither fix touches money.
+  **Deploy both at the next run (10:30+, midday window) with `scripts\start.ps1 -Detach` if no trade is
+  open or working.**
+- **Next run (10:30 ET) must:** deploy the two queued commits; check that the desk loss tally reads
+  **1 of 2** on the book basis (F37) after QQQ's −$63; watch SPY's scenario 4 for a pullback that
+  clears the PM range (its skip will keep repeating while price stays inside 766.73–770.48) and IWM's
+  scenario 3 / a 10:15 bias flip; and, if anything fires, re-measure F50's close-vs-target slippage.
+  Still open for the user: **F47**, **F49**, **F50**, **F51** and the F30-family question of which
+  premium series is authoritative.

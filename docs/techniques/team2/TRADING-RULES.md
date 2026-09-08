@@ -567,6 +567,54 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   completion as the pre-open estimate it is. **Money-path behaviour change — proposal only, not built
   by the watch job.**
 
+- **F50 (2026-09-08 10:10 ET, NOT fixed — proposal; the target exit is decided a bar late and the
+  book pays for it. First live money evidence.)** The plan target is judged on the CLOSED 2m bar
+  (`session.py` X3/V11: "target touched → sell the whole position"), and the live runner then routes
+  that exit **at the bar close** — so the desk sells wherever price is when the bar ends, while the
+  model books the exit **at the target price**. QQQ today, both legs of the same setup, entry on the
+  716.90 retest with the plan target 716.34 (F47's thin 0.65-ATR target):
+  · trade #1 fired 10:02, filled 14 × **$0.655**; the 10:02–10:04 bar wicked to 715.87 (target touched,
+  the put was worth ≈$0.85 there) and closed 716.86 — the exit routed at 10:04:00 and filled **$0.61**
+  → **−$63**, while the model scored the same trade **+32.7 %** at mark 0.7263.
+  · trade #2 fired 10:06, filled 9 × **$0.63**, same target, exit at 10:08:00 filled **$0.68**
+  → **+$45**, model **+32.9 %**.
+  Model day: 2 trades, 2 wins, **+65.6 %**. Book day: **−$18** realised (**−$65.84** after $58 of
+  commissions), i.e. the read and the book disagree in *sign* on the desk's first two trades. The gap
+  is not the model's premium series — it is **when the sell is sent**: on a target that sits inside one
+  bar's range, price is routinely back through the level by the close. The engine already runs an
+  exit-only ~2 s quote watch (stop + premium stop + failed-exit retry), so the target could be armed
+  the same way. Proposed, in order of preference: (a) rest a **SELL limit at the target premium** from
+  the moment the entry fills — the method's own "sell into the spike" — or (b) put the plan-target
+  touch on the quote-watch loop and exit on the print instead of the close. Either makes the book
+  match what the read claims. **Money-path behaviour change — proposal only, not built by the watch
+  job.** Note this compounds F47: a target one bar wide guarantees the timing loss shows up on every
+  trade.
+- **F51 (2026-09-08 10:10 ET, NOT fixed — proposal; the read's IV proxy is half the traded 0DTE IV)**
+  The session read prices every model trade with `PremiumModel(sigma=…)` fed by the IV proxy
+  `^VIX1D → ^VIX×1.3 → 0.20` (`runner.py::_sigma`, B2). Today's sigma is **0.1203** while the contract
+  the desk actually bought, `QQQ260908P00714000`, quoted **IV 0.236** on OPRA — a factor of two. Two
+  measurable consequences on today's tape: the model priced its 716-strike put (nearer the money) at
+  **$0.5216** while the desk paid **$0.655** for the 714 strike (further out, so the real 716 strike
+  was worth ≈$0.9), and the model's premium moved **+33 %** for a 0.56 spot move where the real
+  contract moves ≈half that per point (a low IV inflates the percentage sensitivity of a near-dated
+  OTM contract). The live money path is unaffected — trims and the premium stop are judged on the
+  contract's own fresh bid (F8) and sizing on the live NBBO (F14) — but every number the *read*
+  produces is affected: the +50 %/+100 % trim forecasts, `pnlPct`, the walk-forward sweep and any
+  scorecard row still carried on the `session-read` basis. Proposed: seed sigma per symbol from the
+  0DTE chain the picker already fetches (the ATM IV of the expiry) and fall back to the VIX1D proxy
+  only when no chain is available; stamp the source next to `premiumPathSimulated`. **Calibration
+  change to the model — proposal only, not built by the watch job.**
+- **F52 (2026-09-08 10:10 ET, FIXED — see change log)** Team2's `TechniquePlanRead` journal kind
+  (F28: scenario / pm_break / pm_retest / late_touch) was **not registered** in the shared event
+  contract, so every structural read event logged
+  `WARNING event contract: unregistered Technique event kind: TechniquePlanRead` (6 today, first at
+  09:46 ET — every session since Team2 started reading). The guard test
+  `test_every_journaled_kind_has_a_contract` never caught it because it scans only `zargar/technique/`
+  and `zargar/execution/`, not the per-technique packages under `zargar/techniques/`. Registered the
+  kind and widened the test's scan to `zargar/techniques/**` (the only unregistered kind it finds is
+  this one). Advisory logging only — no trade or shape changed.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -577,6 +625,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-08 (market watch, run 19)** — `TechniquePlanRead` registered in the shared event contract and the contract test widened to scan `zargar/techniques/**` (F52). No rule, threshold or money path changed.
 
 | Date | Change | Evidence | By |
 |---|---|---|---|

@@ -53,6 +53,7 @@ CONTRACTS: dict[str, dict] = {
                                   "required": ("runId", "symbol", "trigger", "kind", "window", "entry", "stop", "mode"),
                                   "nullable": ("fill", "critic", "setupId")},
     "TechniquePlanTriggerSkipped": {"version": 1, "required": ("runId", "symbol", "trigger", "event")},
+    "TechniquePlanRead":      {"version": 1, "required": ("runId", "symbol", "trigger", "event", "reason")},   # F28/F52: a structural read event (scenario, PM break, retest, late touch) journaled by a technique package, not the runner
     "TechniquePlanOrderIntent": {"version": 1,
                                  "required": ("runId", "symbol", "orderSymbol", "secType", "trigger",
                                               "side", "qty", "portfolioId")},
