@@ -51,6 +51,7 @@ class Setup:
     _stalled: bool = False
     _skipped: str | None = None   # last "not a tradeable location" skip already said out loud (F23)
     _departed: bool = True        # F62: price has moved off the EMA13 band since the last counted contact
+    _same_said: bool = False      # F62: the "same pullback" note was said for this episode
 
     def to_dict(self) -> dict:
         return {"id": self.id, "kind": self.kind, "direction": self.direction, "anchor": round(self.anchor, 4),
@@ -284,6 +285,19 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                 note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break", f"15m close below the pre-market low {pml:.2f} → puts down to the PDL zone (L2.5/V7)",
                      level=round(float(pml), 4), close=round(f15.close, 4))
 
+        # F62 (2026-09-08): a pullback is an EVENT — price leaves the EMA13 band and comes back — not a state.
+        # Judged on EVERY 2m close, for every live setup, before anything below can `continue`: a close at least
+        # pullback_reset_atr x ATR on the setup's side re-arms its next contact; consecutive bars drifting on the
+        # band are one pullback (IWM 13:42–13:54 minted six). Judged here (not at the entry gate) so a bar spent
+        # in a position or outside the entry window still counts as the departure it is.
+        if rules.pullback_reset_atr > 0 and r.ema_fast is not None and (r.atr or 0.0) > 0:
+            for s_ in setups.values():
+                if s_.dead or s_._departed:
+                    continue
+                away_ = (b2.close - r.ema_fast) if s_.direction == "long" else (r.ema_fast - b2.close)
+                if away_ >= rules.pullback_reset_atr * r.atr:
+                    s_._departed, s_._same_said = True, False
+
         # ---- manage an open position on this 2m close (S/X)
         if pos is not None:
             p = pos
@@ -422,13 +436,6 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             continue
         atr = r.atr or 0.0
         tol = rules.pm_tol_atr * atr
-        # F62 (2026-09-08): a pullback is an EVENT — price leaves the EMA13 band and comes back — not a
-        # state. A close at least pullback_reset_atr x ATR on the trade's side re-arms the next contact;
-        # consecutive bars drifting on the band are one pullback (IWM 13:42–13:54 minted six).
-        if rules.pullback_reset_atr > 0 and atr > 0:
-            away = (b2.close - ema) if long else (ema - b2.close)
-            if away >= rules.pullback_reset_atr * atr:
-                s._departed = True
         want_ema = rules.entry_at in ("ema", "both")
         want_lvl = rules.entry_at in ("level", "both")
         # T1: a touch — the bar reached INTO the EMA13 band and closed back on the trade's side
@@ -463,10 +470,12 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             continue
         s._stalled = False
         if rules.pullback_reset_atr > 0 and not s._departed and not (based or flushed):
-            note_once(s, end_ts, "same_pullback", f"{s.id}: still the same pullback — price has not closed "
-                      f"{rules.pullback_reset_atr:g} ATR off the EMA13 since the last contact (F62)", setup=s.id)
+            if not s._same_said:
+                s._same_said = True
+                note(end_ts, "same_pullback", f"{s.id}: still the same pullback — price has not closed "
+                     f"{rules.pullback_reset_atr:g} ATR off the EMA13 since the last contact (F62)", setup=s.id)
             continue
-        s._departed = False
+        s._departed, s._same_said = False, False
         s.pullbacks += 1
         if touched_ema:
             entry_kind, entry_spot = "ema", ema
