@@ -58,6 +58,16 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### Cartel preparation coverage/recovery — 2026-09-07
+
+Preparation completion must distinguish successful checks, definite early
+rejections, data failures and unprocessed listings. Its optional resource cap
+does not limit default market coverage or relax trading gates. Recovery reuses
+the original snapshot only within its validity window and unchanged policy;
+it creates a linked run and preserves completed records. Cached history retains
+its original observation and cannot establish executable quote freshness.
+See [preparation review](techniques/options-cartel/PREPARATION-REVIEW.md).
+
 ### Cartel preparation workspace separation — 2026-09-07
 
 User requirement: Practice and Live preparation have separate settings, account

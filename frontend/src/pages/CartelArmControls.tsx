@@ -2,11 +2,11 @@ import { useState } from "react";
 import { api } from "../lib/api";
 import { useWorkspacePortfolios } from "../lib/workspace";
 
-export function CartelArmControls({runId, active, onChanged}: {runId: string; active?: any; onChanged: () => Promise<void>}) {
+export function CartelArmControls({runId, active, preferredPortfolioId, onChanged}: {runId: string; active?: any; preferredPortfolioId?: string; onChanged: () => Promise<void>}) {
   const books = useWorkspacePortfolios();
   const initial = active?.executionSettings || {};
-  const [book, setBook] = useState(initial.portfolioId || "");
-  const portfolioId = books.some(b => b.id === book) ? book : books[0]?.id || "";
+  const [book, setBook] = useState(initial.portfolioId || preferredPortfolioId || "");
+  const portfolioId = books.some(b => b.id === book) ? book : books.find(b => b.kind === "sim")?.id || books[0]?.id || "";
   const real = books.find(b => b.id === portfolioId)?.kind === "live" || books.find(b => b.id === portfolioId)?.kind === "paper";
   const [mode, setMode] = useState(active?.config?.mode || "alert");
   const [instrument, setInstrument] = useState(initial.instrument || "options");

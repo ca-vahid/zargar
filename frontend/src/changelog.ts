@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.4";
+export const APP_VERSION = "0.7.5";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.5",
+    date: "2026-09-07",
+    title: "Preparation with visible coverage",
+    items: [
+      { tag: "improved", text: "Cartel checks the full eligible universe by default. An optional resource cap is separate from shortlist size; definite industry failures avoid unnecessary history downloads." },
+      { tag: "new", text: "Preparation shows discovery and evaluation progress, current work, elapsed time, heartbeat, coverage gaps and history reuse. Interrupted scans can resume their saved snapshot." },
+      { tag: "fixed", text: "Saved plans refresh as preparation publishes results, and filtered stocks show their later-stage rejection reasons. Data errors are counted separately." },
+      { tag: "improved", text: "Option selection searches beyond the nearest three expiry dates when needed and explains rejection counts and the effective per-contract premium limit." },
+    ],
+  },
   {
     version: "0.7.4",
     date: "2026-09-07",
