@@ -64,6 +64,7 @@ export function OptionsCartelPage() {
   const [membershipExchange, setMembershipExchange] = useState('NASDAQ');
   const [armed, setArmed] = useState<any[]>([]);
   const workspace = useWorkspace();
+  const practiceBookId = useStore(s => String(s.settings["techniques.options_cartel.default_portfolio"] || ""));
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const streamedArmed = useStore(s => s.techniqueArmed);
@@ -244,7 +245,7 @@ export function OptionsCartelPage() {
     </div> : <>
       {!detailMode && <>
       {tab === "armed" && <CartelRiskCard />}
-      {(tab === "plans" || tab === "settings") && <CartelPreparation key={`${tab}:${workspace}`} view={tab} onOpen={open} onChanged={refresh} onSettings={() => setPageTab("settings")} />}
+      {(tab === "plans" || tab === "settings") && <CartelPreparation key={`${tab}:${workspace}:${workspace === "practice" ? practiceBookId : ""}`} view={tab} onOpen={open} onChanged={refresh} onSettings={() => setPageTab("settings")} />}
       {tab === "settings" && <CartelScheduleControls />}
       {tab === "settings" && <CartelQuoteRecording/>}
       {tab === "validation" && <CartelIndustryControls snapshots={industrySnapshots} selectedId={industrySnapshotId}

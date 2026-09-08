@@ -63,6 +63,8 @@ async def preflight(engine, plan: CartelPlan, spec: ExecutionInput, *, client_ki
         portfolio = await session.get(Portfolio, spec.portfolio_id)
     if portfolio is None:
         raise ValueError("portfolio not found")
+    from .accounts import validate_account
+    validate_account(engine, portfolio)
     real = portfolio.kind in ("live", "paper")
     check("live_acknowledgements", not real or (spec.allow_live
           and (spec.mode != "auto" or engine.settings.get("techniques.options_cartel.allow_live_auto", False))

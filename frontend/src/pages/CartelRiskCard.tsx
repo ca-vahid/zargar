@@ -1,13 +1,14 @@
+import { useCartelPortfolios } from "./cartelAccounts";
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
-import { useWorkspacePortfolios } from "../lib/workspace";
+
 
 type RiskReport = { portfolioId: string; day: string; asOfMs: number; available: boolean;
   pnl: number | null; baseCurrency: string; issues: string[]; limitPct: number; halted: boolean;
   assets: {symbol: string; openingQty: number; priorClose: number | null}[] };
 
 export function CartelRiskCard() {
-  const books = useWorkspacePortfolios();
+  const books = useCartelPortfolios();
   const [chosen, setChosen] = useState("");
   const selected = books.some(b => b.id === chosen) ? chosen : books[0]?.id || "";
   const [report, setReport] = useState<RiskReport | null>(null);

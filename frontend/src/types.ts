@@ -21,6 +21,7 @@ export interface Quote {
 }
 
 export interface Portfolio {
+  archived?: boolean;
   id: string;
   name: string;
   kind: "live" | "paper" | "sim" | "shadow";

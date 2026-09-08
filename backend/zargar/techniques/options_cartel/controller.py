@@ -54,6 +54,10 @@ class CartelEntryController:
 
     def _entry_conditions(self, row, plan, spec):
         now = self.clock()
+        from .accounts import validate_account
+        book = self.engine.positions.portfolio(spec.portfolio_id)
+        if book:
+            validate_account(self.engine, book)
         preparation = row.get('config', {}).get('preparation')
         if preparation:
             from .preparation_scope import read_policy, require_execution_scope

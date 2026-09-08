@@ -58,6 +58,16 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### Cartel dedicated Practice-book compatibility — 2026-09-08 reset
+
+Cartel consumes `techniques.options_cartel.default_portfolio` as its authoritative
+Practice destination, including when preparation retained a legacy shared-book
+selection. A configured missing/archived book never falls back to another book.
+Arming and entry validation enforce this boundary; archived-book arms are not
+restored. Live accounts remain separately selected. This consumes the reset's
+per-technique/archival contract without merging another desk's implementation.
+See [dedicated-book integration](techniques/options-cartel/DEDICATED-BOOK.md).
+
 ### Cartel preparation coverage/recovery — 2026-09-07
 
 Preparation completion must distinguish successful checks, definite early

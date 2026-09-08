@@ -4,6 +4,7 @@ from typing import Literal
 from sqlalchemy import func
 
 from ...models import TechniqueRun
+from .accounts import default_practice_book
 from .automatic_plans import PreparationPolicy
 
 Workspace = Literal['practice', 'live']
@@ -22,7 +23,11 @@ def setting_key(workspace):
 
 def read_policy(engine, workspace=None):
     workspace = workspace or active_workspace(engine)
-    return PreparationPolicy.model_validate({**engine.settings.get(setting_key(workspace), {}), 'workspace': workspace})
+    values = {**engine.settings.get(setting_key(workspace), {}), 'workspace': workspace}
+    if workspace == 'practice' and default_practice_book(engine):
+        values['portfolio_id'] = default_practice_book(engine)
+        values.pop('portfolioId', None)
+    return PreparationPolicy.model_validate(values)
 
 
 def workspace_filter(workspace):

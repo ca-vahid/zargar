@@ -1,9 +1,10 @@
+import { useCartelPortfolios } from "./cartelAccounts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { SymIcon } from "../components/SymIcon";
 import { CartelRunLink } from "./CartelRunLink";
 import { api } from "../lib/api";
-import { useWorkspace, useWorkspacePortfolios } from "../lib/workspace";
+import { useWorkspace } from "../lib/workspace";
 import { useStore } from "../store";
 
 const ROOT = "/api/options-cartel/preparation";
@@ -14,7 +15,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
   const workspace = useWorkspace();
   const live = workspace === "live";
   const workspaceLabel = live ? "Live" : "Practice";
-  const portfolios = useWorkspacePortfolios();
+  const portfolios = useCartelPortfolios();
   const endpoint = (suffix = "") => `${ROOT}${suffix}?workspace=${workspace}`;
   const toast = useStore(s => s.toast);
   const books = portfolios.filter(p => live ? p.kind === "live" || p.kind === "paper" : p.kind === "sim");
@@ -99,7 +100,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         <label>Premium limit (account currency)<input required type="number" min={1} max={100000} value={config.budget} onChange={e => setConfig({...config, budget:Number(e.target.value)})}/></label>
         <label>Equity at risk (%)<input required type="number" min={0.01} max={5} step={0.01} value={config.riskPct} onChange={e => setConfig({...config, riskPct:Number(e.target.value)})}/></label>
       </div>
-      <p>All eligible listings are checked by default. Stocks that clearly fail the required industry gate are ruled out before requesting history. The shortlist size limits final selection, not coverage. History requests are paced and cached. Full option premium counts toward risk.</p>
+      <p>All eligible listings are checked by default. Stocks that clearly fail the required industry gate are ruled out before requesting history. The shortlist size limits final selection, not coverage. History requests are paced and cached. Full option premium counts toward risk. The risk percentage uses this account’s equity, not the combined Practice total.</p>
       <details><summary>Plan policy and exit allocations</summary>
         <p>Screen: {label(config.profile)}. Exit profile: {label(config.exitProfile)}. Entry window: {config.horizonSessions} session(s); held positions may continue longer.</p>
         <p>September allocations: {config.septemberFractions.map((v: number) => `${v * 100}%`).join(" / ")}. Automatic Fibonacci targets: {config.allowFibonacciTargets ? "enabled when historical pivots are unavailable" : "disabled"}.</p>
