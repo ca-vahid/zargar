@@ -40,18 +40,24 @@ class Setup:
     target: float | None      # X3 outright exit
     confirmed_ts: int
     range_day: bool = False
-    touches: int = 0          # EMA13 touches seen after confirmation (D9)
+    touches: int = 0          # the D9 allowance actually SPENT: priced pullbacks (fired or engulfing) — F61
+    pullbacks: int = 0        # structural pullback episodes seen (F62: a return after a departure, not a drift)
+    opportunities: int = 0    # pullbacks that passed the location/regime gates (executable candidates)
+    attempts: int = 0         # fires attempted (the runner records fills on its own side)
     entries: int = 0          # fires (incl. re-entries, A8)
     losses: int = 0
     dead: bool = False
     dead_reason: str | None = None
     _stalled: bool = False
     _skipped: str | None = None   # last "not a tradeable location" skip already said out loud (F23)
+    _departed: bool = True        # F62: price has moved off the EMA13 band since the last counted contact
+    _same_said: bool = False      # F62: the "same pullback" note was said for this episode
 
     def to_dict(self) -> dict:
         return {"id": self.id, "kind": self.kind, "direction": self.direction, "anchor": round(self.anchor, 4),
                 "target": None if self.target is None else round(self.target, 4), "confirmedTs": self.confirmed_ts,
-                "rangeDay": self.range_day, "touches": self.touches, "entries": self.entries, "losses": self.losses,
+                "rangeDay": self.range_day, "touches": self.touches, "pullbacks": self.pullbacks,
+                "opportunities": self.opportunities, "attempts": self.attempts, "entries": self.entries, "losses": self.losses,
                 "dead": self.dead, "deadReason": self.dead_reason, "skipped": self._skipped}
 
 
@@ -279,6 +285,19 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                 note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break", f"15m close below the pre-market low {pml:.2f} → puts down to the PDL zone (L2.5/V7)",
                      level=round(float(pml), 4), close=round(f15.close, 4))
 
+        # F62 (2026-09-08): a pullback is an EVENT — price leaves the EMA13 band and comes back — not a state.
+        # Judged on EVERY 2m close, for every live setup, before anything below can `continue`: a close at least
+        # pullback_reset_atr x ATR on the setup's side re-arms its next contact; consecutive bars drifting on the
+        # band are one pullback (IWM 13:42–13:54 minted six). Judged here (not at the entry gate) so a bar spent
+        # in a position or outside the entry window still counts as the departure it is.
+        if rules.pullback_reset_atr > 0 and r.ema_fast is not None and (r.atr or 0.0) > 0:
+            for s_ in setups.values():
+                if s_.dead or s_._departed:
+                    continue
+                away_ = (b2.close - r.ema_fast) if s_.direction == "long" else (r.ema_fast - b2.close)
+                if away_ >= rules.pullback_reset_atr * r.atr:
+                    s_._departed, s_._same_said = True, False
+
         # ---- manage an open position on this 2m close (S/X)
         if pos is not None:
             p = pos
@@ -297,6 +316,10 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                     what = (f"{'high' if long else 'low'} of day" if p.target_kind == "hod" else "planned level")
                     close_fraction(p, p.remaining, p.target, end_ts,
                                    f"target {p.target:.2f} ({what}) touched — sell at target (X3/V11{'/X3b' if p.target_kind == 'hod' else ''})")
+                    if p.realised:
+                        # F50: the model books the exit AT the target on the touching bar; the desk sells on the
+                        # first fresh print through it — a replay must say which it is claiming
+                        p.realised[-1]["fillAssumption"] = "target_touch_intrabar"
                     continue
             # premium hard stop (P1/D13)
             if cur_pct <= -rules.premium_stop_pct:
@@ -446,6 +469,14 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                      f"{rules.pullback_max_bars} bars — that is a consolidation, not a dip (A6)", setup=s.id)
             continue
         s._stalled = False
+        if rules.pullback_reset_atr > 0 and not s._departed and not (based or flushed):
+            if not s._same_said:
+                s._same_said = True
+                note(end_ts, "same_pullback", f"{s.id}: still the same pullback — price has not closed "
+                     f"{rules.pullback_reset_atr:g} ATR off the EMA13 since the last contact (F62)", setup=s.id)
+            continue
+        s._departed, s._same_said = False, False
+        s.pullbacks += 1
         if touched_ema:
             entry_kind, entry_spot = "ema", ema
         elif touched_48:
@@ -486,12 +517,13 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                       setup=s.id, touch=idx, bucket=bucket)
             continue
         s._skipped = None
-        s.touches += 1
+        s.opportunities += 1
         if idx > rules.pullback_max_touches:
             note(end_ts, "late_touch", f"touch #{idx} of {s.id} — beyond the first {rules.pullback_max_touches}, watch-only (D9/P6)",
                  setup=s.id, touch=idx, spot=round(entry_spot, 4))
             continue
         if avg > 0 and body > rules.pullback_body_mult * avg:
+            s.touches += 1                                  # that WAS a pullback, just a bad bar — it spends
             note(end_ts, "skip_engulfing", f"touch #{idx}: body {body:.2f} > {rules.pullback_body_mult:.1f}× avg {avg:.2f} — an engulfing lunge, not a drift (A6/F4)",
                  setup=s.id, touch=idx)
             continue
@@ -514,6 +546,8 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                       setup=s.id, touch=idx)
             continue
         strike, mark = pick
+        s.touches += 1                                      # F61: only a PRICED pullback spends the D9 allowance
+        s.attempts += 1
         fill = model.buy(mark)
         # X3b: "high of day resistance is the main target for longs until it breaks" — a re-entry (this setup
         # already fired, or the day already has a trade) sells at the running HOD/LOD when it is nearer than

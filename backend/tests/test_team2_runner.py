@@ -32,6 +32,11 @@ async def rig(fresh_db, monkeypatch):
         return []
     monkeypatch.setattr(hist, "fetch_extended_session", _no_fetch)
     monkeypatch.setattr(hist, "fetch_window", _no_fetch)
+    # F51: the read's IV snapshot asks the chain provider for today's ATM IV — never the network in tests.
+    # The synthetic days are modelled at sigma 0.20 (the VIX-less fallback); `test_team2_integrity`
+    # proves the chain path with a fake chain of its own.
+    monkeypatch.setattr(eng.options.provider().__class__, "chain", _no_fetch)
+    monkeypatch.setattr(eng.options.provider().__class__, "expirations", _no_fetch)
     await attach_team2_runner(eng)
     sim = next(p for p in eng.positions.portfolios() if p["kind"] == "sim")
     await eng.settings.set("trading.default_portfolio", sim["id"], journal=False)

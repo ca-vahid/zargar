@@ -572,6 +572,16 @@ class PlanRunner(SessionListener):
                             await self._exit(ap, tr, "stop", tr.remaining, journal=True, force_market=True,
                                              reason=preason)
                             continue
+                # 2b) the plan TARGET on the underlying's fresh print — a technique hook (Team2 F50); exit-only,
+                #     reduce-only limit at the contract's fresh bid, never an entry
+                if last is not None and fresh and tr.pending_exit_qty <= 1e-9:
+                    treason = None
+                    with contextlib.suppress(Exception):
+                        treason = self.target_breach(tr, last)
+                    if treason:
+                        self._log(ap, "target_hit", f"{tr.trigger_id}: {treason}", trigger=tr.trigger_id, last=last)
+                        await self._exit(ap, tr, "tp3", tr.remaining, journal=True, force_market=False, reason=treason)
+                        continue
                 # 3) underlying decisively through the stop
                 key = (ap.run_id, tr.trigger_id)
                 reason = quote_stop_breach(tr, last, excess_r=excess, direction=tr.direction) if (last is not None and fresh) else None
@@ -2951,6 +2961,12 @@ class PlanRunner(SessionListener):
     def size_multiplier(self, contract: dict) -> tuple[float, list[str]]:
         """Policy multipliers on the risk-based contract count, with reasons."""
         return 1.0, []
+
+    def target_breach(self, tr: "Trade", last: float) -> str | None:
+        """Hook: the reason the plan target counts as hit on this fresh underlying print, or None. The
+        base runner manages targets on closed bars (`_manage`); a technique whose read judges the target
+        intrabar (Team2 F50) overrides this so the book sells on the print. Exit-only by construction."""
+        return None
 
     async def entry_limit_cap(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> float | None:
         """The most an auto entry may pay for the contract (ARM-GAPS C1) —

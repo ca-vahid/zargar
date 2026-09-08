@@ -1986,3 +1986,23 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   1 refused"* (SPY). Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**,
   **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, F67's two shared-side halves,
   and the F30-family question of which premium series is authoritative.
+
+## Desk session 2026-09-08 evening — the Codex batch (v0.7.12)
+
+User instruction: "Go ahead with the hosting investigation and revised correctness work. Keep F47 and both F56
+variants experimental. Add tests proving IV updates cannot rewrite past signals or cause skipped/duplicate
+events, and define realistic quote-target execution semantics. Twenty sessions triggers a review, not
+automatic promotion. Continue Practice with existing risk limits once recovery and exit protection are verified."
+
+- **Hosting — cause found.** Windows Application log: `CoworkVMService` "Claude VM Service stopped" 11:24:01 PT
+  (14:24:01 ET) during the Claude desktop package update 1.49585 ("Relaunch to update"). The engine was a child of
+  that tree. Fix: `scripts/watchdog.ps1` + `scripts/install-watchdog.ps1` → user tasks `ZargarWatchdog` (3 min),
+  `ZargarWatchdogLogon`, `ZargarRestart` (on demand = the deploy path). Log retention 50 MB × 10, httpx quiet,
+  start/stop lines with pid (F69).
+- **Read integrity:** fingerprints (no re-fire / no skip when an input moves; `read_rewritten` once), sigma locked
+  per session from the 0DTE ATM chain and stamped (F51), open finalized on the 09:30 bar (F49).
+- **Execution:** F50 `target_breach` hook — plan target on a fresh underlying print, reduce-only limit at the bid.
+- **Read:** F62 pullback episodes (`pullback_reset_atr` 0.5), F61 only priced pullbacks spend.
+- **Experimental, not promoted:** F47, F56a, F56b. **Governance:** 20 sessions → review (PLAN §3d).
+- Tests: `tests/test_team2_integrity.py` (9 new) + Team2/halt/exit/arming suites green. Deployed once via
+  `ZargarRestart`; plans set back to auto at $2,000 / 6 %.

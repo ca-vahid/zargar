@@ -320,7 +320,8 @@ class Team2Service:
             rules = Team2Rules.from_dict({**rules.to_dict(), **overrides})
         if not plan.get("complete"):
             plan = complete_plan(plan, today)
-        sigma = await self._sigma_for(str(run.get("planFor") or run.get("date") or dt.datetime.now(ET).strftime("%Y-%m-%d")))   # R11: that day's IV, not today's
+        stamped = (plan.get("sigma") or {}).get("value") if isinstance(plan.get("sigma"), dict) else None
+        sigma = float(stamped) if stamped else await self._sigma_for(str(run.get("planFor") or run.get("date") or dt.datetime.now(ET).strftime("%Y-%m-%d")))   # F51: the IV the desk ran on, else that day's proxy
         res = simulate_session({**plan, "date": date}, today, rules, sigma=sigma, warmup_1m=prior)
         return {"runId": run_id, "plan": plan, "result": res.to_dict(), "overrides": overrides or {}}
 

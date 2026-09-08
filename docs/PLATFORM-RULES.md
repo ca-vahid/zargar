@@ -537,6 +537,27 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-09-08 · **Hosting: the engine must not live in an assistant's process tree.** Root cause of the 14:24:01 ET outage
+  (and two earlier ones): the Windows Application log shows `CoworkVMService` "Claude VM Service stopped" at 11:24:01 PT
+  during the Claude desktop package update 1.49585; the engine had been started from that tree by `start.ps1 -Detach` and
+  died with it; the user's one-shot `ZargarUnelevatedStart` task brought it back 8 minutes later. Now: `scripts/watchdog.ps1`
+  (health-check `/api/health`, `-Force` restarts) registered by `scripts/install-watchdog.ps1` as user tasks **`ZargarWatchdog`**
+  (every 3 min + `ZargarWatchdogLogon` at logon: start only if :8420 is silent) and **`ZargarRestart`** (on demand:
+  `schtasks /Run /TN ZargarRestart` — the deploy path, so the new process is owned by the scheduler). Rule: assistants
+  deploy through `ZargarRestart`, never by running `start.ps1` from their own shell; never `Stop-Process` :8420.
+  Log: `backend/zargar-8420.log` rotates 50 MB × 10, `httpx` at WARNING, start/stop lines with pid (F69).
+- 2026-09-08 · **Invariant 16 — a recomputed read never re-acts.** A technique that recomputes its whole session read
+  every bar (Team2 `simulate_session`) must recognise acted-on events by a content fingerprint (ts · event · setup ·
+  touch · why), never by list position, and must log once (`read_rewritten`) when earlier fingerprints disappear. Any
+  input the read consumes that can move intraday (IV, a corrected bar, a level) must be captured point-in-time and
+  stamped on the plan + run (`plan.sigma`), and replay must use the stamped value. `tests/test_team2_integrity.py`.
+- 2026-09-08 · **`PlanRunner.target_breach(tr, last)` hook (exit-only)** on the ~2 s quote watch, after the premium stop and
+  before the quote stop: a technique may declare the plan target hit on a FRESH underlying print (Team2 F50). Semantics:
+  requires `fresh` (quote age ≤ `quote_exit_max_age`) and no pending exit (`pending_exit_qty`); sells `tr.remaining` via
+  `_exit(..., "tp3", force_market=False)` = reduce-only LIMIT at the contract's fresh bid; a partial fill reduces
+  `remaining` and the next poll re-checks; a resting unfilled limit is re-priced by the technique's stale-exit pass and
+  the failed-exit watchdog (market after 30 s × 5); after a restart the trade is restored with its exits and the same
+  poll applies. The base runner keeps managing targets on closed bars; the hook defaults to None. Never an entry path.
 - 2026-09-08 · `TechniquePlanRead` registered in `research/events_contract.py`
   (required: runId, symbol, trigger, event, reason) and
   `test_every_journaled_kind_has_a_contract` widened to scan `zargar/techniques/**`
