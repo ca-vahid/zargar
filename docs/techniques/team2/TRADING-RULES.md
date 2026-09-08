@@ -822,6 +822,16 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   fire — IWM's headline read *"waiting for the 1st/2nd 2m pullback into the EMA13 (touches 1) · EMA
   stack bull, trend"* with no hint that the pullback had been turned away. Same defect class as F53
   and F57: a silent gate.
+  **Follow-up after the 13:44 redeploy — it cost the whole setup, not one touch.** The re-simulated
+  read shows the retest was refused **twice** (13:30 and 13:40, both `skip_no_contract` with the new
+  honest wording), and the 13:42 touch was `late_touch` — beyond `pullback_max_touches` = 2, watch
+  only. So `pm_break_up@13:15` ends the day **touches 3, entries 0**: the model burned both tradable
+  touches of the only PM break the desk got today, and no further entry is possible on it. Residual
+  (noted, not changed): the headline clause still does not show here, because `session.py` clears
+  `_skipped` on *every* real touch (line 488) before the late-touch branch, so touch #3 wiped the
+  refusal touch #2 had recorded and the summary reads a bare "touches 3". That is F57's intended
+  "a real touch clears it" semantics; whether an exhausted setup should keep saying *why* it never
+  entered is a wording question for the user, not a defect.
   **Proposed, NOT built (user's call — this is the money path):** (a) let the **live chain** decide
   when the runner is live — have the read emit the fire with a `needs_contract` flag and let the
   existing live picker (which already applies `chase_cap_mult`) accept or refuse against the real ask,

@@ -1554,3 +1554,78 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   **F50**'s close-vs-target slippage and **F47**'s thin targets. Still open for the user: **F47**,
   **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, and the F30-family question of which premium
   series is authoritative.
+
+## 2026-09-08 13:45 ET (run 26 — the tape finally moved, and the desk refused it on a modelled price)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.11**; one armed plan per symbol for 2026-09-08 (SPY
+  `c861c19d`, QQQ `61293ed7`, IWM `33afee68`), all `armed`, mode **auto**, Team2 Practice `b9dcd8db…`,
+  `needsAttention: false` and `readError: null` on all three, halt `engaged: false`, no per-book halt,
+  no technique pause. **Redeployed at 13:44 ET** with F59's reporting fix (`b69d086`); 77 armed plans
+  restored, all three of ours back and armed.
+- **Data real-time.** Quotes **0–1 s** old, `session: regular` (SPY 767.68 / QQQ 720.51 / IWM 296.00);
+  1m bars **247 of 247 minutes present since 09:30, zero gaps** on all three, last bar 13:36 ET; the
+  Alpaca **OPRA** batch is 200-ing every ~2 s (freshest 13:38 ET). EMA/fan values present on all three
+  regimes (SPY mixed, QQQ bull, IWM bull, all "trend").
+- **IWM broke its pre-market high at 13:30 — the first new structure since run 22.** The 15m bucket
+  13:15–13:30 closed **295.97** above PMH **295.91** (verified bar by bar against the banked 1m tape:
+  the 13:29 bar closed 295.97, the bucket's body top clears the level ✓). `pm_break` → new setup
+  `pm_break_up@13:15`, direction long, target 295.955 (PDH zone bottom). The 2m bar ending 13:30 ran
+  295.87–295.97, so the F20 retest of 295.91 is real ✓. SPY and QQQ did nothing again (2 and 16 events,
+  unchanged); every 15m close still sits between the zones on QQQ, below 769.00 on SPY.
+- **F59 (new, PARTLY fixed) — a real, liquid contract existed and the desk refused the trade on a
+  synthetic price that missed the floor by one tenth of a cent.** The retest minted
+  **`skip_no_contract`: "no strike prices between $0.20 and $0.60 (V1)"**. That is a statement about
+  the **model**, not the chain. At today's sigma **0.1203** (Black–Scholes, 2.5 h to the 16:00 expiry,
+  spot 295.91) the model marks the IWM **296 call at $0.199** — **$0.001 under `premium_floor`** — and
+  `pick_strike` breaks out of its walk the instant a mark falls under the floor, so it collected zero
+  candidates and returned `None`. The **real** 0DTE chain at the same moment: **IWM 296C bid 0.24 /
+  ask 0.25, volume 70,329**, OI 2,635, IV 0.1346, delta 0.43 — squarely in band and the most traded
+  call on the sheet. Replay reproduces the refusal byte-identically, so it is deterministic.
+- **Root cause, and why IWM.** The read is the gatekeeper: the runner only asks the venue for a real
+  contract after `fire`, so a `skip_no_contract` ends the touch inside `session.py` and a cent of model
+  error becomes a veto over a live trade. `runner._sigma(symbol)` **ignores its `symbol` argument** —
+  it returns one index-wide `^VIX1D` for SPY, QQQ **and** IWM. VIX1D is an S&P measure; today's real
+  IWM 296C printed IV 0.1346 against the model's 0.1203, ~11 % low, which is all a hard floor needs.
+  Compounding it, IWM's $1 strikes at 295.9 with 2.5 h left step **0.95 (295, ITM) → 0.25 (296) →
+  0.04 (297)**, so the $0.20–$0.60 band spans *at most one strike* on this symbol late in the day.
+  Same root as **F51** (model sigma vs traded IV) but sharper: F51 mis-*prices* a trade the desk still
+  takes; F59 *cancels* it.
+- **It cost the whole setup, not one touch.** After the redeploy the re-simulated read shows the retest
+  refused **twice** (13:30 and 13:40) and the 13:42 touch logged `late_touch` — beyond the 2-touch cap.
+  `pm_break_up@13:15` ends **touches 3, entries 0**; no further entry is possible on it today. Honest
+  cost: spot hit the 295.955 target in the refusal bar itself (13:30 high 296.03), but in **premium**
+  terms the 296C was ~0.25 at 13:30 and ~0.245 at 13:36 with spot 296.00 — roughly flat, no +50 % trim.
+  So: *a real trade was cancelled for a bad reason*, not *a large P&L was lost*.
+- **Fixed and deployed (`b69d086`, reporting only — no gate, threshold, size or money path changed).**
+  The refusal now says whose price it is — *"no strike **MODELS** between $0.20 and $0.60 (V1) —
+  modelled premium at sigma 0.1203, not the live chain"* — and is recorded with `note_once` so it
+  serializes on the setup and can reach the Armed page and the phone. `skip_no_contract` was **already**
+  in F57's headline list, but `session.py` used `note`, so `_skipped` stayed `None` and the clause could
+  never fire: IWM's headline read *"waiting for the 1st/2nd 2m pullback into the EMA13 (touches 1) ·
+  EMA stack bull, trend"* with no hint the pullback had been turned away. Same silent-gate class as F53
+  and F57. Team2 tests **57 passed** on `zargar_test_team2_watch`. Residual noted in F59: the clause
+  still does not render on IWM now, because a real touch clears `_skipped` (line 488) and touch #3 wiped
+  what touch #2 recorded — F57's intended semantics, a wording question for the user, not a defect.
+- **Proposed, NOT built (money path — user's call).** (a) Let the **live chain** decide: have the read
+  emit the fire with a `needs_contract` flag and let the existing live picker (which already applies
+  `chase_cap_mult`) accept or refuse against the real ask, so the model prices the *simulation* but
+  never vetoes a *trade*. (b) Much cheaper: make `_sigma` genuinely per-symbol — `sigma_source: "chain"`
+  already exists as a settings value and is **unimplemented** in `_sigma`; the day's ATM 0DTE IV would
+  have marked the 296C at ~0.22 and taken the trade. (c) Widen `premium_floor` for $1-strike
+  underlyings. (a) is the structural answer, (b) the one-symbol fix.
+- **Replay parity exact on all three.** 2 / 16 / 5 events reproduced byte-identically (JSON compare),
+  including the IWM refusal. **Book untouched:** Team2 Practice cash **and** equity $9,934.16, zero
+  positions, zero Team2 working orders. Desk loss tally still **1 of 2** on the book basis (F37).
+- **Log clean for Team2.** Zero Tracebacks and zero Team2 ERRORs across the live file and its three
+  rotations (covering 11:53 ET →). The only ERRORs are the other team's `cartel-observer bar handling
+  failed` (12:08 ET, the 4th occurrence already flagged) and one asyncio connection-lost callback at
+  12:06 ET. Note the log now rotates every ~6 minutes at this volume — the OPRA `httpx` INFO lines
+  dominate it — so an error more than ~25 minutes old is already gone; that limits what a later run can
+  scan and is worth a quieter log level for `httpx`.
+- **Next run (14:15 ET) must:** nothing is queued. IWM's PM-break setup is exhausted (touches 3/2), so
+  watch for a **new** setup — a 15m body close above IWM's PDH zone top 296.18, QQQ above 721.82 or
+  below 717.03, SPY below 769.00 is already live. **If any of them fires, check the contract event
+  first**: F59 says a model refusal can silently cancel it, and the 14:45–16:00 window plus decay makes
+  a sub-floor mark *more* likely, not less. Keep the **1-of-2 desk-wide book loss** count in view. Still
+  open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, and the
+  F30-family question of which premium series is authoritative.
