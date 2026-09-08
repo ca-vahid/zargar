@@ -225,3 +225,4 @@ directly answers week 1's "are we too strict" with numbers.
   entries; `notes/2026-09-08-author-x-feed.md`). Engine piece first: intraday option-print sweep
   detector (Alpaca options trades) feeding a `flow_sweeps` table; then a variant sweep on the days we
   hold chain snapshots, then a shadow instance. Pairs with T-6 (exit tempo, measured in premium %).
+- 2026-09-08 · T-12 build plan written: `FLOW-CONFIRMATION-PLAN.md` (phases 0-4, decisions D1-D7). Alpaca option trades verified available.
