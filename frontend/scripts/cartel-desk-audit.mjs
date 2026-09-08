@@ -39,15 +39,15 @@ try {
   await page.goto(`${base}/techniques/options-cartel/desk`);
   await page.getByRole("tab", {name:"Plans", exact:true, selected:true}).waitFor();
   const preparation = await (await page.request.get(`${base}/api/options-cartel/preparation`)).json();
-  await page.route("**/api/options-cartel/preparation", route => route.fulfill({
+  await page.route("**/api/options-cartel/preparation?*", route => route.fulfill({
     status:503, contentType:"application/json", body:JSON.stringify({detail:"Preparation temporarily unavailable"}),
   }));
   await page.reload();
   await page.getByRole("alert").first().waitFor();
-  await page.unroute("**/api/options-cartel/preparation");
+  await page.unroute("**/api/options-cartel/preparation?*");
   await page.getByRole("button", {name:"retry", exact:true}).click();
   await page.getByRole("region", {name:"Daily preparation", exact:true}).getByText(/Automatic Practice/).waitFor();
-  await page.route("**/api/options-cartel/preparation", route => route.fulfill({
+  await page.route("**/api/options-cartel/preparation?*", route => route.fulfill({
     status:200, contentType:"application/json", body:JSON.stringify({...preparation, latest:null}),
   }));
   await page.reload();

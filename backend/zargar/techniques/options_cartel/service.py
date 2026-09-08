@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
-from sqlalchemy import select
+from sqlalchemy import case, func, or_, select
 
 from ... import events as ev
 from ...domain import Bar, new_id
@@ -239,12 +239,18 @@ class CartelService:
                                          "planSnapshot": parent.result["plan"], "dataSource": body.data_source},
                                  verdict=result["status"], parent=parent.id)
 
-    async def runs(self, limit=50, symbol=None, mode=None):
+    async def runs(self, limit=50, symbol=None, mode=None, workspace=None):
         query = select(TechniqueRun).where(TechniqueRun.technique == TECHNIQUE)
         if symbol:
             query = query.where(TechniqueRun.symbol == symbol.upper())
         if mode:
             query = query.where(TechniqueRun.mode == mode)
+        if workspace is not None:
+            scope = case(
+                (TechniqueRun.mode == 'preparation', func.coalesce(TechniqueRun.config['workspace'].as_string(), 'practice')),
+                (func.jsonb_exists(TechniqueRun.config, 'preparation'), func.coalesce(TechniqueRun.config['preparation']['workspace'].as_string(), 'practice')),
+                else_=None)
+            query = query.where(or_(scope.is_(None), scope == workspace))
         async with self.engine.sf() as session:
             rows = (await session.scalars(query.order_by(TechniqueRun.created_at.desc(), TechniqueRun.id)
                                          .limit(min(200, max(1, limit))))).all()

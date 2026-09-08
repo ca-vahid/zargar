@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { EmptyState, ErrorState, Spinner } from "../components/ui";
 import { SymIcon } from "../components/SymIcon";
 import { api } from "../lib/api";
+import { useWorkspace, useWorkspacePortfolios } from "../lib/workspace";
 import { useStore } from "../store";
 
 const ROOT = "/api/options-cartel/preparation";
@@ -9,9 +10,13 @@ const label = (value: string) => value.replaceAll("_", " ");
 export function CartelPreparation({onOpen, onSettings, view}: {
   onOpen: (id: string) => void; onSettings: () => void; view: "plans" | "settings";
 }) {
-  const portfolios = useStore(s => s.portfolios);
+  const workspace = useWorkspace();
+  const live = workspace === "live";
+  const workspaceLabel = live ? "Live" : "Practice";
+  const portfolios = useWorkspacePortfolios();
+  const endpoint = (suffix = "") => `${ROOT}${suffix}?workspace=${workspace}`;
   const toast = useStore(s => s.toast);
-  const books = portfolios.filter(p => p.kind === "sim");
+  const books = portfolios.filter(p => live ? p.kind === "live" || p.kind === "paper" : p.kind === "sim");
   const [status, setStatus] = useState<any>(null);
   const [config, setConfig] = useState<any>(null);
   const [busy, setBusy] = useState(false);
@@ -24,7 +29,7 @@ export function CartelPreparation({onOpen, onSettings, view}: {
     const poll = async () => {
       let running = false;
       try {
-        const next = await api.get<any>(ROOT);
+        const next = await api.get<any>(endpoint());
         if (alive) { setStatus(next); setConfig((old: any) => old ?? next.configuration); setError(""); }
         running = next.latest?.status === "running";
       } catch (e) { if (alive) setError(String(e)); }
@@ -32,38 +37,50 @@ export function CartelPreparation({onOpen, onSettings, view}: {
     };
     void poll();
     return () => { alive = false; clearTimeout(timer); };
-  }, [revision]);
+  }, [revision, workspace]);
   const act = async (save: boolean) => {
     setBusy(true); setError("");
     try {
       if (save) {
-        const next = await api.post<any>(`${ROOT}/config`, config);
+        const next = await api.post<any>(endpoint("/config"), {...config, workspace, portfolioId: config.portfolioId || (!live && books.length === 1 ? books[0].id : null)});
         setStatus(next); setConfig(next.configuration); toast("info", "Cartel preparation settings saved");
       } else {
-        await api.post(`${ROOT}/run`, {});
+        await api.post(endpoint("/run"), {});
         toast("info", "Cartel preparation started"); reload();
       }
     } catch (e) { setError(String(e)); } finally { setBusy(false); }
   };
   const result = status?.latest?.result;
-  const account = books.find(p => p.id === status?.configuration?.portfolioId) || (books.length === 1 ? books[0] : null);
+  const account = books.find(p => p.id === status?.configuration?.portfolioId) || (!live && books.length === 1 ? books[0] : null);
   const running = status?.latest?.status === "running";
+  const permissionBlocked = live && status?.configuration?.enabled && !status?.liveAutoAllowed;
   return <section className="panel mb" aria-label={view === "settings" ? "Daily preparation settings" : "Daily preparation"}>
     <div className="panel-head">{view === "settings" ? "Daily preparation settings" : "Daily preparation"}
-      <span className={`status-pill ${status?.configuration?.enabled ? "ok" : "dim"}`}>{status?.configuration?.enabled ? "Scheduled" : "Off"}</span>
-      {view === "plans" && <button className="primary-btn cartel-push" disabled={busy || running || !status?.configuration?.enabled}
+      <span className={`status-pill ${permissionBlocked ? "wait" : status?.configuration?.enabled ? "ok" : "dim"}`}>{permissionBlocked ? "Permission required" : status?.configuration?.enabled ? "Scheduled" : "Off"}</span>
+      {view === "plans" && <button className="primary-btn cartel-push" disabled={busy || running || !status?.configuration?.enabled || (live && !status?.liveAutoAllowed)}
         onClick={() => void act(false)}>{busy || running ? "Preparing…" : "Prepare now"}</button>}
     </div>
     {error && <ErrorState message={error} onRetry={reload}/>}
     {!status && !error && <Spinner label="Loading preparation…"/>}
-    {status && <div className="cartel-inset muted">Automatic Practice · {account?.name || "Choose a Practice account"} · 08:45 / 20:20 ET
+    {status && <div className="cartel-inset muted">Automatic {workspaceLabel} · {account?.name || `Choose a ${workspaceLabel} account`} · 08:45 / 20:20 ET
       {view === "plans" && <button className="link-btn" onClick={onSettings}>Settings</button>}
     </div>}
     {view === "settings" && config && <form className="panel-body cartel-form" onSubmit={e => { e.preventDefault(); void act(true); }}>
-      <label className="cartel-check"><input type="checkbox" checked={config.enabled} onChange={e => setConfig({...config, enabled:e.target.checked})}/>Enable scheduled preparation and automatic Practice arming</label>
+      <label className="cartel-check"><input type="checkbox" checked={config.enabled} onChange={e => setConfig({...config, enabled:e.target.checked})}/>Enable scheduled preparation and automatic {workspaceLabel} arming</label>
+      {live && <>
+        <label className="cartel-check"><input type="checkbox" checked={config.allowLive} onChange={e => setConfig({...config, allowLive:e.target.checked})}/>Allow this preparation to arm automatic trades on the selected Live account</label>
+        <label className="cartel-check"><input type="checkbox" checked={config.overnightAck} onChange={e => setConfig({...config, overnightAck:e.target.checked})}/>I acknowledge that overnight options use app-managed protection</label>
+        <p>Live settings are separate from Practice. The selected broker must be connected and all execution checks must pass.</p>
+        <p>Cartel live-auto permission: <strong>{status?.liveAutoAllowed ? "enabled" : "disabled"}</strong>.</p>
+        <button className="ghost-btn" type="button" disabled={busy} onClick={async () => {
+          setBusy(true); setError("");
+          try { await api.patchSettings({"techniques.options_cartel.allow_live_auto": !status?.liveAutoAllowed}); reload(); }
+          catch (e) { setError(String(e)); } finally { setBusy(false); }
+        }}>{status?.liveAutoAllowed ? "Disable Cartel live-auto permission" : "Enable Cartel live-auto permission"}</button>
+      </>}
       <div className="cartel-fields">
-        <label>Practice account<select value={config.portfolioId || ""} onChange={e => setConfig({...config, portfolioId:e.target.value || null})}>
-          <option value="">Use the sole Practice account</option>{books.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        <label>{workspaceLabel} account<select required value={config.portfolioId || (!live && books.length === 1 ? books[0].id : "")} onChange={e => setConfig({...config, portfolioId:e.target.value || null})}>
+          <option value="" disabled>Choose an account</option>{books.map(p => <option key={p.id} value={p.id}>{p.name}{p.kind === "paper" ? " (broker paper)" : ""}</option>)}
         </select></label>
         <label>Shortlist size<input required type="number" min={1} max={20} value={config.focusCount} onChange={e => setConfig({...config, focusCount:Number(e.target.value)})}/></label>
         <label>Symbols to evaluate<input required type="number" min={1} max={2000} value={config.historyLimit} onChange={e => setConfig({...config, historyLimit:Number(e.target.value)})}/></label>
@@ -80,7 +97,8 @@ export function CartelPreparation({onOpen, onSettings, view}: {
       <p className="muted">Runs outside regular hours. Disabling stops future preparation; existing armed plans and positions remain managed.</p>
     </form>}
     {view === "plans" && status && <>
-      {!status.configuration.enabled && <div className="cartel-inset">Enable preparation in Settings to build and arm your daily shortlist.</div>}
+      {!status.configuration.enabled && <div className="cartel-inset">Enable {workspaceLabel} preparation in Settings to build and arm your daily shortlist.</div>}
+      {live && !status.liveAutoAllowed && <div className="cartel-inset">Cartel live-auto permission is off. Enable it in Settings before preparing Live plans.</div>}
       {result ? <>
         <div className="cartel-inset cartel-row" role="status"><strong>{result.session} · {label(result.phase || "pending")}</strong>
           <span className="muted">{result.discovered} discovered · {result.evaluated} evaluated · {result.qualifying} qualifying · {result.armed} armed</span></div>
@@ -107,7 +125,7 @@ export function CartelPreparation({onOpen, onSettings, view}: {
         </details>
         {status.activation?.error && <ErrorState message={status.activation.error}/>}
         {Object.entries(status.quoteRefresh?.errors || {}).map(([symbol, reason]) => <ErrorState key={symbol} message={`${symbol}: ${reason}`}/>)}
-      </> : <EmptyState art={false} title="No preparation yet" hint="Enable automatic Practice preparation in Settings, then prepare the next session outside regular market hours." action={<button className="ghost-btn" onClick={onSettings}>Set up preparation</button>}/>}
+      </> : <EmptyState art={false} title="No preparation yet" hint={`Enable automatic ${workspaceLabel} preparation in Settings, then prepare the next session outside regular market hours.`} action={<button className="ghost-btn" onClick={onSettings}>Set up preparation</button>}/>}
     </>}
   </section>;
 }

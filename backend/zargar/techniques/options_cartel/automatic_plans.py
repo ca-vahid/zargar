@@ -1,4 +1,4 @@
-"""Explicit automatic review policy for Cartel's Practice preparation workflow."""
+"""Explicit automatic review policy for Cartel's workspace-scoped preparation workflow."""
 from __future__ import annotations
 
 import math
@@ -18,6 +18,9 @@ from .setups import SetupParameters
 
 class PreparationPolicy(WireModel):
     enabled: bool = False
+    workspace: Literal['practice', 'live'] = 'practice'
+    allow_live: bool = False
+    overnight_ack: bool = False
     portfolio_id: str | None = Field(default=None, max_length=64)
     profile: ScreenProfile = 'september_2026'
     history_limit: int = Field(default=200, ge=1, le=2000)
@@ -38,6 +41,8 @@ class PreparationPolicy(WireModel):
 
     @model_validator(mode='after')
     def valid_exit_policy(self):
+        if self.enabled and self.workspace == 'live' and not (self.allow_live and self.overnight_ack):
+            raise ValueError('Live preparation requires live execution and overnight-protection acknowledgements')
         ExitCampaign.for_profile(self.exit_profile, [1., 2.], september_fractions=self.september_fractions)
         return self
 

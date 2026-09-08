@@ -1,12 +1,27 @@
 # Automatic daily preparation
 
-The Cartel desk can prepare and arm options plans for a local **Practice (sim)**
-portfolio. Broker paper and live portfolios are rejected. Under Settings, enable
-Daily preparation, choose the Practice account, and save. Plans shows the daily
+The Cartel desk prepares and arms options plans for the active workspace.
+**Practice** uses the local sim account; **Live** uses an explicitly selected
+live brokerage or broker-paper account. Each workspace has independent settings
+and preparation results. Existing settings and records remain Practice-owned.
+Under Settings, enable Daily preparation, choose the account, and save. Plans shows the daily
 shortlist; Armed shows active execution and account risk. Scheduled jobs run at
 20:20 and 08:45 ET on trading days. “Prepare now” on Plans starts
 outside regular market hours. Preparation does not place an entry order;
 the existing closed-bar entry controller executes qualifying armed plans.
+
+Live starts disabled. It requires the preparation's live-execution and overnight
+protection acknowledgements, the separate **Cartel live-auto permission**, Live
+trading mode and a connected broker. The existing loss, instrument, quote and
+order risk gates still apply. The permission control is explicitly labeled in
+Live settings; saving a preparation policy never grants it implicitly. Phones
+remain exit-only for enabling/running Live preparation under the existing policy.
+
+Scheduled preparation and pending-contract retries use the active workspace at
+dispatch. A mode change prevents an in-progress preparation from arming in its
+former workspace, and prepared entries recheck workspace at submission. Existing
+position management and exits continue. One preparation worker runs at a time;
+requests for the other workspace are rejected rather than joining the wrong run.
 
 The workflow discovers primary US stock/DR listings from TradingView's complete
 paginated screener, using the selected Cartel price and capitalization floors.
@@ -55,7 +70,7 @@ stock or option prices executable.
 
 Automatic arms expire for new entries no later than 24 hours after preparation
 or the plan's last-session close, whichever comes first. Each fresh run disarms
-unused automatic arms for that Practice account before rebuilding. User-paused
+unused automatic arms for the selected account before rebuilding. User-paused
 plans, working submissions and held positions are preserved and count as
 already managed. A failed refresh can leave no new arms; it does not restore an
 obsolete shortlist. Disabling preparation stops its worker and future runs,
@@ -78,3 +93,10 @@ closed. Provider availability can prevent completion and appears in the run.
 Implementation: `discovery.py`, `industry_feed.py`, `automatic_plans.py`,
 `preparation.py`; authenticated `/api/options-cartel/preparation` status,
 `/preparation/config` settings and `/preparation/run` submission.
+
+Settings storage: `techniques.options_cartel.preparation` retains Practice;
+`techniques.options_cartel.preparation_live` holds Live. The preparation and run-list
+APIs accept `workspace=practice|live`; preparation defaults to the active workspace
+when omitted. Manual research remains shared; automatically prepared plans retain
+their originating workspace. The same daily schedule dispatches only the active
+workspace. Changing workspace does not cancel working orders or abandon positions.
