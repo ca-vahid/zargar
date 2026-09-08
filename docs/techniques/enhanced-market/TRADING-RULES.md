@@ -291,6 +291,17 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-08 · Does the nightly LLM plan review earn its time? First measurement.** Join of the
+  replay's VALID fires to the evening batch's verdict, three sessions (09-03, 09-04, 09-08):
+  plans the review ACCEPTED: 6 fires, **+3.10R (+0.52R/fire)**; plans it REJECTED: 4 fires,
+  **-2.59R (-0.65R/fire)**. Ten fires is not proof, but the direction is the right one and the
+  cost fell to ~5 minutes at 16-wide. Decision: keep it, re-measure at ten sessions (~09-19);
+  cut it only if the accepted/rejected gap closes. The FIRE-time critic is a different question
+  and is proven (+9.0R over 20 kills, 1.4b).
+- **2026-09-08 · Option trade prints are available to us.** Alpaca's options data on our
+  subscription returns historical option TRADES: the author's TSLA $360C (08-31) shows 10,000+
+  prints and 37,874 contracts in the first 40 minutes. T-12 can be tested on history, not only
+  live. Plan: `FLOW-CONFIRMATION-PLAN.md`.
 - **2026-09-08 · Day 9 (Tue, first day on the per-technique books): zero fills, nine fires, the
   critic right eight times.** 64 EM plans in EM Practice (45 armed: 42 from the evening batch +
   3 auto-armed from his 09:23 watchlist post - MU, GOOGL, META - the first morning the board
