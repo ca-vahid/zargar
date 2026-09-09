@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.27";
+export const APP_VERSION = "0.7.28";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,19 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.28",
+    date: "2026-09-09",
+    title: "Market data with provenance",
+    items: [
+      { tag: "fixed", text: "Every stored bar now says where it came from (exchange, quote-sampled, sim, or legacy unknown), and an exchange correction overwrites a sampled bar in storage instead of being ignored — the sampled bar used to survive on disk after memory had already been corrected. A sampled bar can never undo an exchange bar." },
+      { tag: "fixed", text: "Bars form and persist only in market minutes on trading days: the one-price weekend and Labor Day \"sessions\" (the app ran on closed days) cannot be written again, and synthetic sim-feed bars are refused by the shared table unless a test allows them." },
+      { tag: "fixed", text: "Bar volume for Alpaca-streamed symbols is a sum of print sizes; the session-to-date counter it used to difference was re-seeded from Yahoo and painted a 43-million-share minute on September 8. A counter that goes down (session roll / re-seed) is never a spike." },
+      { tag: "new", text: "A bars repair tool: audit every symbol-session (closed day, one-price, outlier range, thin, volume spike), quarantine by explicit reason with the original rows preserved and verified before deletion, backfill exchange bars from Alpaca by provenance, and stamp a CONTENT-hash dataset version. Team2 plans and sweeps cite the dataset they ran on." },
+      { tag: "fixed", text: "Team2 reads only valid sessions (no closed days, one-price or outlier sessions in the lookback or the EMA warm-up), counts its ten-session lookback in valid sessions, and records the sessions used and excluded on the plan." },
+      { tag: "improved", text: "Restarts are coordinated app-wide: start.ps1 asks the engine what a restart would interrupt across every technique (open trades, working entries and exits, venue orders, analyst reads) and refuses unless overridden; after a detached restart it compares armed plans, open trades and orders by id with the state before (restoration check). The scheduler tasks ZargarRestart (refuses) and ZargarRestartOverride (emergency) go through the same door." },
+    ],
+  },
   {
     version: "0.7.27",
     date: "2026-09-09",

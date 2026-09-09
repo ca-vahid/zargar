@@ -2465,3 +2465,25 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question** (measured; the
   recommendation is "leave it off"), **F74**, **F75**, **F76**, F67's two shared-side halves, and the
   F30-family question of which premium series is authoritative.
+
+## Desk session 2026-09-09 evening — F75 repair batch (v0.7.28)
+
+Reviewer's second pass accepted with additions; user: "Proceed with the repair right away since we're still in
+practice mode. Include the real-session volume defect and persistence of authoritative corrections, use
+content-based dataset versions, and strengthen restart checks beyond open positions. Preserve the contaminated
+data and original research records. Keep target_replan off until the clean dataset supports a reproducible rerun."
+
+- **Corrections carried:** 09-05 = Saturday; the flat sessions are the app running on closed days; "no observed
+  effect on the values checked" replaces "the live plans are clean".
+- **Built (shared):** `bars.source` provenance, precedence upsert (the sampled bar no longer survives its exchange
+  correction on disk — a sampled bar + its correction in one flush was also a cardinality error in the first cut,
+  caught by the new test), calendar gate in the aggregator and the persister, sim isolation, F77 print-based
+  volume, `bars_quarantine` / `bars_dataset_versions`, `zargar.tools.bars_repair`, `marketdata.dataset_version`.
+- **Built (Team2):** `history.validate_sessions` in plans / warm-up / replay / sweep; lookback in valid sessions;
+  `plan.history` provenance; sweeps stamped with the dataset hash.
+- **Built (restarts):** `/api/ops/restart-check|state|restore-check`, start.ps1 refusal + restoration check,
+  watchdog `-Override`, `ZargarRestartOverride` task.
+- **Tests:** `test_bars_integrity.py` (7), `test_bars_repair.py`, `test_team2_history.py` (3), `test_ops_restart.py`
+  (3) + the Team2 / halt / arming / API / Cartel / flow suites.
+- **Repair record:** appended below once the tool has run (pre-repair dataset hashes, quarantine batches, backfill
+  counts, post-repair hashes).

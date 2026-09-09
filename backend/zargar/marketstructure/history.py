@@ -119,7 +119,7 @@ def _parse(symbol: str, tf: str, data: dict) -> list[Bar]:
         if o is None or h is None or lo is None or c is None:
             continue
         v = vols[i] if i < len(vols) and vols[i] is not None else 0
-        out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000,
+        out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000, source="exchange",
                        open=float(o), high=float(h), low=float(lo), close=float(c),
                        volume=int(v)))
     return out
@@ -171,7 +171,7 @@ async def _alpaca_window(symbol: str, tf: str, start_s: int, end_s: int,
         data = r.json()
         for row in data.get("bars") or []:
             from ..brokers.alpaca import parse_rfc3339_ms
-            bars.append(Bar(symbol=symbol.upper(), tf=tf, ts=parse_rfc3339_ms(str(row["t"])),
+            bars.append(Bar(symbol=symbol.upper(), tf=tf, ts=parse_rfc3339_ms(str(row["t"])), source="exchange",
                             open=float(row["o"]), high=float(row["h"]), low=float(row["l"]),
                             close=float(row["c"]), volume=int(row.get("v") or 0)))
         token = data.get("next_page_token")

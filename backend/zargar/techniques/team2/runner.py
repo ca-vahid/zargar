@@ -255,6 +255,12 @@ class Team2Runner(PlanRunner):
         except Exception:  # noqa: BLE001
             rows = []
         warm = [b for b in rows if session_date(b.ts) < ap.plan_for]
+        from .history import validate_sessions
+        warm, rep = validate_sessions(warm)                  # F75: no closed-day / one-price sessions in the EMA seed
+        if rep["excluded"]:
+            self._log(ap, "history_excluded", f"warm-up skipped {len(rep['excluded'])} session(s) that are not market data: "
+                      + ", ".join(f"{x['date']} ({x['reason']})" for x in rep["excluded"][:6]) + " (F75)",
+                      excluded=rep["excluded"], used=rep["used"][-12:])
         if len(warm) < 400:
             # day one: nothing banked yet — the 200 EMA on 2m needs ~400 minutes of history, so
             # fetch the last sessions' extended-hours tape once (Yahoo keeps ~20 days)

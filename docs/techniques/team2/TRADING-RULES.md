@@ -1267,6 +1267,23 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   build mid-session on an auto desk. **User's call.**
 
 
+- **F75 addendum (2026-09-09 evening, after the reviewer's second pass — REPAIR BUILT, v0.7.28).** Corrections to the
+  row above: **2026-09-05 was a Saturday**, not a trading Friday — every stub date (08-22/23, 09-05/06) is a weekend and
+  09-07 is Labor Day; the flat sessions are the app RUNNING on closed days (the aggregator formed a bar from every
+  quote), not days it was down; the SPY block is the sim feed's random walk banked before the paid feed existed. The
+  "today's live plans are clean" claim is downgraded to **"no observed effect on the values checked"**: targets, level
+  ladders and the 13/48/200 EMA state at the open were recomputed with the flagged sessions excluded and came out
+  identical for SPY/QQQ/IWM on 09-09 (EMA200 differed by 1–2 cents on 09-08), but the stored lookback held seven real
+  sessions plus three flat ones, and the F72 measurement's 09-08 window contained those three — so the measurement
+  stays preliminary and `target_replan` stays off until a rerun on a versioned clean dataset. Built on the Team2
+  side: `techniques/team2/history.py::validate_sessions` (closed_day / thin_rth / degenerate_flat / outlier_range;
+  a session's OWN bars decide), applied in `history_for` (plans, replay, sweep) and the runner's warm-up, the
+  lookback counted in VALID sessions, `plan.history = {sessionsUsed, excluded, datasetVersion}`, sweeps stamped with
+  `datasetVersion`. Shared side (PLATFORM-RULES 2026-09-09): provenance column + precedence upsert + calendar gate +
+  sim isolation + `bars_repair` tool + content-hash dataset versions + F77. Tests: `tests/test_team2_history.py`.
+- **F77 (2026-09-09, FIXED — shared; bar volume was the difference of a re-seeded counter).** Not a Team2 input (the
+  read is price-only), logged here because the desk found it: SPY 2026-09-08 carried a 43,496,831-share minute and a
+  352M-share day. Cause, fix and the per-technique consumer assessment are in PLATFORM-RULES 2026-09-09.
 - **F76 (2026-09-09 11:35 ET, NOT fixed — proposal; on a gap day a `pm_break` setup is born with a
   target the gap has already consumed, so it can never trade).** Both PM-break setups minted today
   were **dead on arrival**: SPY `pm_break_down@11:00` (anchor = PM low 762.49, target **764.75** —
@@ -1316,6 +1333,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
+- **2026-09-09 (evening — F75 repair, v0.7.28, one deploy after the close)** — **Read inputs validated:** every prior
+  session the desk plans, warms up, replays or sweeps on passes `validate_sessions` (closed days, one-price, outlier
+  and thin sessions excluded and recorded on the plan); the ten-session lookback counts valid sessions. **Data
+  repaired (shared):** provenance + precedence upsert + calendar gate + sim isolation + F77 print-based volume;
+  closed-day sessions and the SPY sim block quarantined with the originals preserved; SPY/QQQ/IWM backfilled from
+  Alpaca exchange bars; dataset versions recorded before and after (hashes in the market-watch desk section).
+  **Restarts:** app-wide readiness + restoration check on every restart path. **Unchanged:** `target_replan` off;
+  F72 stays measured-but-preliminary until the rerun on the clean dataset; no size, gate or money-path knob moved.
 - **2026-09-09 (market watch, run 37, 11:35 ET — no code change)** — **F76 logged as a proposal**
   (rule-adjacent, user's call): on a gap day a `pm_break` setup inherits the plan's frozen room
   target, which the gap has already consumed, so it is born unable to trade — SPY

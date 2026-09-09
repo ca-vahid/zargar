@@ -215,6 +215,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             # session total Yahoo reported when we last seeded, `vol_seed_live` = vol_live
             # at that moment, so volume = seed + (live since the seed).
             "day": "", "vol_live": 0, "vol_seed": 0, "vol_seed_live": 0,
+            "pending_size": 0,            # F77: print shares not yet handed to a quote (all sessions)
         })
 
     @staticmethod
@@ -271,6 +272,7 @@ class AlpacaQuoteFeed(QuoteFeed):
                     st["day_low"] = px if not st["day_low"] else min(st["day_low"], px)
             if regular:
                 st["vol_live"] += int(m.get("s") or 0)
+            st["pending_size"] += int(m.get("s") or 0)
             st["volume"] = self._session_volume(st)
             self._emit(s, st)
         elif t == "b" and s:
@@ -278,7 +280,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             bar = Bar(symbol=s, tf="1m", ts=parse_rfc3339_ms(str(m.get("t"))),
                       open=float(m.get("o") or 0), high=float(m.get("h") or 0),
                       low=float(m.get("l") or 0), close=float(m.get("c") or 0),
-                      volume=int(m.get("v") or 0))
+                      volume=int(m.get("v") or 0), source="exchange")
             if bar.close > 0:
                 st["last"] = bar.close
             if self._on_bars is not None and bar.open > 0:
@@ -321,7 +323,9 @@ class AlpacaQuoteFeed(QuoteFeed):
                   reg_price=(ctx.reg_price if ctx else 0.0),
                   day_high=st["day_high"],
                   day_low=st["day_low"],
-                  session=(ctx.session if ctx else ""))
+                  session=(ctx.session if ctx else ""),
+                  trade_size=int(st.get("pending_size") or 0))
+        st["pending_size"] = 0
         q.ts = now
         self._on_quote(q)
 

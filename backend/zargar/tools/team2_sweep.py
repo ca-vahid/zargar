@@ -95,6 +95,8 @@ def main() -> None:
             r.raise_for_status()
             res = r.json()
             _print_sweep(res)
+            if res.get("datasetVersion"):
+                print(f"dataset {res['datasetVersion'][:16]}… ({res.get('datasetRows')} rows) — cite this hash with the result (F75)")
             if a.json:
                 with open(a.json, "w", encoding="utf-8") as f:
                     json.dump(res, f, indent=1)

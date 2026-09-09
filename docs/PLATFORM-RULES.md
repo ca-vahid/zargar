@@ -55,6 +55,25 @@ runtime ones to `execution.*`).
     are re-priced on the NBBO (`OptionsService.reprice`) before sizing, limits or the
     never-chase rule read them. Exits stay reduce-only and never wait on a quote. The UI
     badges any contract priced off the chain as `delayed` on every money screen.
+15. **One Practice book per technique** (2026-09-08, user decision): `techniques.<id>.default_portfolio` routes each
+    technique's fills; the old shared Practice book is archived and never a fallback (detail in the 2026-09-08 change-log entry).
+16. **A recomputed read never re-acts** (2026-09-08): a technique that recomputes its whole session read every bar
+    recognises acted-on events by content fingerprint, logs `read_rewritten` once when history moves, and captures
+    point-in-time inputs (IV) on the plan + run so replay uses the stamped value (detail in the 2026-09-08 entry).
+17. **The shared `bars` table holds market data only, with provenance** (F75, 2026-09-09). Every row carries
+   `source` (exchange | sampled | sim | unknown); writes go through `persist_bars`, which drops bars outside a
+   market minute, refuses `sim` rows unless the caller allows them (tests), and upserts by precedence
+   (exchange > sampled | unknown > sim; exchange refreshes exchange). A consumer that reads history for a decision
+   validates sessions (Team2: `techniques/team2/history.py`) and cites a CONTENT-hash dataset version
+   (`marketdata.dataset_version`). Suspect rows are quarantined with the originals preserved
+   (`bars_quarantine`), never deleted outright; flatness flags, an operator classifies.
+18. **Every restart goes through one door** (2026-09-09). `scripts/restart.ps1` (and `start.ps1` under it) asks `/api/ops/restart-check`
+   what a restart would interrupt across EVERY technique (open trades, working entries/exits, venue orders,
+   analyst reads) and refuses unless `-Force`; after a detached restart it compares armed plans, open trades,
+   pending exits and working orders BY ID with the state before (restoration check, `logs/restore-mismatch-*.json`
+   on a mismatch). Assistants restart via the scheduler's `ZargarRestart` task (same door, same refusal);
+   `ZargarRestartOverride` (= `restart.ps1 -Force`) exists for emergencies and is logged as an override. Task
+   scripts are ASCII (Windows PowerShell 5.1). "No open positions" is not a restart test.
 
 ## 2. Findings (settled, with evidence)
 
@@ -557,6 +576,49 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-09-09 · **F75 repair — the shared `bars` table was partly synthetic, and its writers were live code.** Facts, from
+  the runtime DB (406 symbols, 1.42M 1m rows): (1) SPY 2026-08-14 22:15 → 08-19 (7,300 rows, 24-hour bars, RTH ranges up
+  to 769–1459) is the SIM quote feed's random walk, persisted by the bar persister while the app ran on the sim feed
+  before the paid feed was wired (+ `synthesize_history` seeding two days for any symbol with no bars); (2) one-price
+  "sessions" on 08-15/16, 08-22/23, 08-29/30, 09-05/06 and Labor Day 09-07 across up to 128 symbols (51k rows on 09-07
+  alone) are the bar aggregator forming a bar from every quote with no calendar gate while the app ran on CLOSED days —
+  the row spans show exactly when it was up (Sat 09-05 all day, Sun to 10:39, Mon from 13:47); 2026-09-05 is a Saturday
+  (the watch job had called it a trading Friday); (3) exchange corrections replaced sampled bars in memory but the DB
+  write was `on_conflict_do_nothing`, so the sampled bar survived on disk — every replay/sweep read the uncorrected
+  minute. Built: `Bar.source` + `bars.source` (additive column, legacy rows `unknown`), precedence upsert (exchange >
+  sampled|unknown > sim; exchange refreshes exchange; one row per key per statement — a sampled bar and its correction
+  share a flush), calendar gate (`market_calendar.is_market_minute`: trading day, 04:00–20:00 ET, 17:00 on early
+  closes) in BOTH the aggregator (real feeds) and `persist_bars`, sim isolation (`AppConfig.persist_sim_bars`, tests on,
+  runtime off), `bars_quarantine` + `bars_dataset_versions` tables, `zargar.tools.bars_repair` (audit / quarantine /
+  backfill / version), `marketdata.dataset_version` (sha256 over scope + rules + every (symbol, ts, OHLCV, source)
+  row — a volume fix with the same row count is a new version). Tests: `tests/test_bars_integrity.py`,
+  `tests/test_bars_repair.py`. Repair record (what was quarantined/backfilled, hashes before/after): the Team2 desk
+  section in `docs/techniques/team2/notes/market-watch.md` 2026-09-09 evening.
+- 2026-09-09 · **F77 (shared) — bar volume was the difference of a re-seeded counter.** `BarAggregator.on_quote`
+  differenced `Quote.volume`, which since F19 (09-04) is Yahoo's session total re-seeded every context poll plus prints
+  since the seed; a re-seed jump landed in one bar (SPY 2026-09-08 09:3x: 43,496,831 shares in a minute; the day summed to
+  352M vs ~40M real) and the first quote after a `seed()` painted Friday's 33M onto Saturday's flat bar. Now: Alpaca
+  prints accumulate `Quote.trade_size` per emission and the aggregator SUMS them for Alpaca-streamed symbols
+  (`volume_from_prints`); the cumulative path treats a counter that goes DOWN as 0 (session roll / re-seed), never a
+  clamp-to-jump. Historical repair = exchange backfill by provenance (above). **Consumers of bar volume, assessed
+  2026-09-09:** EM — `marketstructure/volume.py` relative-volume + profile via `technique/analysis|walkforward` (stored
+  1m rows: AFFECTED for sweeps/backtests on 08-20..09-09; live gates saw the exchange bar in memory within ~5 s);
+  Options Cartel — confirmation-volume baselines / entry / replay read stored minutes (`prepare.py`, `entry.py`,
+  `replay.py`, `preparation_readiness.py`: AFFECTED for anything computed from stored bars in that window; PR 13's
+  "complete confirmation-volume baselines" should be re-derived after the backfill); Flow — option-chain volume and
+  quote-level stock volume (NOT bar rows; the quote-level session volume carries F19's re-seed semantics but is a
+  session total, not a per-minute delta — unaffected by F77); Tips, Team2 — no bar-volume reads. The desks that own
+  EM/Cartel decide whether to re-run their calibrations on the post-backfill dataset version.
+- 2026-09-09 · **Restart coordination is app-wide now** (Invariant 18). `zargar/ops.py` (`restart_state`,
+  `readiness_from_state`, `compare_states`) + `api/routes_ops.py` (`GET /api/ops/restart-check`, `GET /api/ops/state`,
+  `POST /api/ops/restore-check`; loopback-only like /api/health's local block; the check is journaled as
+  `OpsRestartCheck`). `scripts/restart.ps1` (the deploy door; exit 2 refused, 6 restoration mismatch) and `scripts/start.ps1`
+  (exit 2 refused) both refuse when not safe unless `-Force`, and compare the state after a detached start with the
+  state before; the `ZargarRestart` task runs `restart.ps1`, `ZargarRestartOverride` runs `restart.ps1 -Force`
+  (`install-watchdog.ps1` refreshes both - the task had a baked `-Expect 0.7.22`, a dead deploy for any other
+  version); `watchdog.ps1 -Force [-Override]` carries the same checks. Why: the tips desk's 11:07 ET restart on 2026-09-09 landed while Team2
+  was live in auto — it happened to be flat, and "no open trades" was the only test anyone had. Tests:
+  `tests/test_ops_restart.py`.
 - 2026-09-08 · **Hosting: the engine must not live in an assistant's process tree.** Root cause of the 14:24:01 ET outage
   (and two earlier ones): the Windows Application log shows `CoworkVMService` "Claude VM Service stopped" at 11:24:01 PT
   during the Claude desktop package update 1.49585; the engine had been started from that tree by `start.ps1 -Detach` and

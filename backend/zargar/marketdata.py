@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from . import bus as topics
 from .bus import Bus
 from .domain import Bar, Quote, now_ms
-from .models import BarRow
+from .models import BarRow, BarsDatasetVersion
 
 log = logging.getLogger("zargar.marketdata")
 
@@ -31,6 +31,15 @@ MINUTE_MS = 60_000
 TF_MS = {"1m": MINUTE_MS, "5m": 5 * MINUTE_MS, "15m": 15 * MINUTE_MS, "1h": 60 * MINUTE_MS,
          "1d": 24 * 60 * MINUTE_MS}
 INTRADAY_TF_MS.update({k: v for k, v in TF_MS.items() if k != "1d"})
+
+# F75 (2026-09-09): provenance precedence at write — a venue's completed bar beats a quote-sampled
+# one (which beats nothing), a sampled bar never undoes an exchange correction, a synthetic bar
+# never enters a table that real feeds write to (unless a test says so). Exchange-over-exchange is
+# an update (a re-fetch is a correction too).
+SOURCE_RANK = {"sim": 0, "": 1, "unknown": 1, "sampled": 1, "exchange": 2}
+# the data-processing rules a dataset version is hashed together with — bump when write rules change
+DATA_RULES_VERSION = ("bars-rules/2026-09-09: bucket-aligned writes; source precedence exchange>sampled|unknown>sim; "
+                      "calendar-gated 04:00-20:00 ET trading days; sim bars isolated")
 
 
 class QuoteCache:
@@ -139,10 +148,24 @@ class BarAggregator:
         self._expects_exchange = None        # (symbol) -> bool
         self._pending: dict[str, tuple[Bar, object]] = {}   # held sampled bar + timer handle
         self._early: dict[str, Bar] = {}     # exchange bar that arrived before the sampled minute rolled
+        # F75/F77 (2026-09-09): what a quote-built bar is (sampled | sim), whether quotes outside a
+        # market minute may form bars at all (never for a real feed), and which symbols' volume comes
+        # from print sizes instead of a cumulative counter
+        self._sampled_source = "sampled"
+        self._calendar_gated = False
+        self._volume_from_prints = None      # (symbol) -> bool
 
-    def configure(self, *, hold_seconds=None, expects_exchange=None) -> None:
-        self._hold_seconds = hold_seconds
-        self._expects_exchange = expects_exchange
+    def configure(self, *, hold_seconds=None, expects_exchange=None, sampled_source=None, calendar_gated=None,
+                  volume_from_prints=None) -> None:
+        if hold_seconds is not None or expects_exchange is not None:
+            self._hold_seconds = hold_seconds
+            self._expects_exchange = expects_exchange
+        if sampled_source is not None:
+            self._sampled_source = str(sampled_source)
+        if calendar_gated is not None:
+            self._calendar_gated = bool(calendar_gated)
+        if volume_from_prints is not None:
+            self._volume_from_prints = volume_from_prints
 
     def _hold_for(self, symbol: str) -> float:
         if self._hold_seconds is None or self._expects_exchange is None:
@@ -188,9 +211,24 @@ class BarAggregator:
         price = q.last if q.last > 0 else q.mid
         if price <= 0:
             return
+        if self._calendar_gated:
+            from .marketstructure.market_calendar import is_market_minute
+            if not is_market_minute(q.ts):
+                return                       # F75: a quote on a closed day is not a bar
         bucket = (q.ts // MINUTE_MS) * MINUTE_MS
-        vol_delta = max(0, q.volume - self._last_volume.get(q.symbol, q.volume))
-        self._last_volume[q.symbol] = q.volume
+        prints = False
+        if self._volume_from_prints is not None:
+            try:
+                prints = bool(self._volume_from_prints(q.symbol))
+            except Exception:  # noqa: BLE001
+                prints = False
+        if prints:
+            vol_delta = max(0, int(q.trade_size or 0))       # F77: a sum of prints
+        else:
+            last = self._last_volume.get(q.symbol)
+            # first sight, or the counter went DOWN (a session roll / a re-seed): never a fake spike
+            vol_delta = 0 if (last is None or q.volume < last) else q.volume - last
+            self._last_volume[q.symbol] = q.volume
         forming = self._forming.get(q.symbol)
         if forming is None or forming.ts != bucket:
             if forming is not None and forming.ts < bucket:
@@ -198,6 +236,7 @@ class BarAggregator:
             self._forming[q.symbol] = Bar(
                 symbol=q.symbol, tf="1m", ts=bucket,
                 open=price, high=price, low=price, close=price, volume=vol_delta,
+                source=self._sampled_source,
             )
         else:
             forming.high = max(forming.high, price)
@@ -221,6 +260,7 @@ class BarAggregator:
         minute is never touched, and same-minute DB writes conflict-ignore."""
         if bar.tf != "1m" or bar.close <= 0:
             return
+        bar.source = "exchange"
         forming = self._forming.get(bar.symbol)
         if forming is not None and bar.ts >= forming.ts:
             if bar.ts == forming.ts:
@@ -272,7 +312,29 @@ class BarAggregator:
         return out[-limit:]
 
 
-async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar]) -> None:
+async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar], *, allow_sim: bool = False) -> None:
+    if not bars:
+        return
+    # F75 (2026-09-09): provenance at write. A synthetic bar never enters the table unless the caller
+    # (tests, or an explicit config) allows it; a real-feed bar outside a market minute is a closed-day
+    # artefact (the app ran through a weekend) and is dropped — the one-price "sessions" came from here.
+    from .marketstructure.market_calendar import is_market_minute
+    kept: list[Bar] = []
+    dropped_sim = dropped_closed = 0
+    for b in bars:
+        src = b.source or "unknown"
+        if src == "sim" and not allow_sim:
+            dropped_sim += 1
+            continue
+        if src != "sim" and b.tf in INTRADAY_TF_MS and not is_market_minute(b.ts):
+            dropped_closed += 1
+            continue
+        kept.append(b)
+    if dropped_sim:
+        log.warning("persist_bars: refused %d synthetic (sim) bar(s) — the shared table holds market data only", dropped_sim)
+    if dropped_closed:
+        log.warning("persist_bars: dropped %d bar(s) outside a market minute (closed day / after 20:00 ET) — F75", dropped_closed)
+    bars = kept
     if not bars:
         return
     # Bucket alignment is enforced AT WRITE (EM team #5, 2026-08-27): a bar whose ts
@@ -284,9 +346,20 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar]) -> 
     bars = aligned
     if not bars:
         return
+    # one row per (symbol, tf, ts) per statement: a sampled bar and its exchange correction routinely
+    # share a flush, and an upsert may not touch the same row twice — keep the best provenance
+    # (the later write wins a tie, e.g. an exchange re-fetch)
+    best: dict[tuple[str, str, int], Bar] = {}
+    for b in bars:
+        k = (b.symbol, b.tf, b.ts)
+        cur = best.get(k)
+        if cur is None or SOURCE_RANK.get(b.source or "unknown", 1) >= SOURCE_RANK.get(cur.source or "unknown", 1):
+            best[k] = b
+    bars = list(best.values())
     rows = [
         {"symbol": b.symbol, "tf": b.tf, "ts": b.ts, "open": b.open,
-         "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
+         "high": b.high, "low": b.low, "close": b.close, "volume": b.volume,
+         "source": (b.source or "unknown")}
         for b in bars
     ]
     # asyncpg caps a statement at 32,767 bind parameters (8 per row): a 20-day
@@ -296,10 +369,25 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar]) -> 
         dialect = session.bind.dialect.name if session.bind is not None else "postgresql"
         for i in range(0, len(rows), CHUNK):
             part = rows[i:i + CHUNK]
+            # precedence upsert (F75): the row with the better provenance wins; an exchange bar may
+            # also refresh an exchange bar (a re-fetch is a correction); a sampled bar never clobbers
+            # an exchange one. Until 2026-09-09 this was on_conflict_do_nothing, so the exchange
+            # correction that replaced a sampled bar in memory never reached storage.
+            from sqlalchemy import case
             if dialect == "postgresql":
-                stmt = pg_insert(BarRow).values(part).on_conflict_do_nothing(constraint="uq_bar")
+                ins = pg_insert(BarRow).values(part)
             else:
-                stmt = sqlite_insert(BarRow).values(part).prefix_with("OR IGNORE")
+                ins = sqlite_insert(BarRow).values(part)
+            exc_src = ins.excluded.source
+            new_rank = case((exc_src == "exchange", 2), (exc_src == "sim", 0), else_=1)
+            old_rank = case((BarRow.source == "exchange", 2), (BarRow.source == "sim", 0), else_=1)
+            better = (new_rank > old_rank) | ((exc_src == "exchange") & (BarRow.source == "exchange"))
+            set_ = {"open": ins.excluded.open, "high": ins.excluded.high, "low": ins.excluded.low,
+                    "close": ins.excluded.close, "volume": ins.excluded.volume, "source": exc_src}
+            if dialect == "postgresql":
+                stmt = ins.on_conflict_do_update(constraint="uq_bar", set_=set_, where=better)
+            else:
+                stmt = ins.on_conflict_do_update(index_elements=["symbol", "tf", "ts"], set_=set_, where=better)
             await session.execute(stmt)
         await session.commit()
 
@@ -335,7 +423,7 @@ async def load_bars(
         rows = (await session.execute(stmt)).scalars().all()
     return [
         Bar(symbol=r.symbol, tf=r.tf, ts=r.ts, open=r.open, high=r.high, low=r.low,
-            close=r.close, volume=r.volume)
+            close=r.close, volume=r.volume, source=(r.source or "unknown"))
         for r in reversed(rows)
     ]
 
@@ -343,9 +431,10 @@ async def load_bars(
 class BarPersister:
     """Consumes closed bars off the bus and batches them into the DB."""
 
-    def __init__(self, bus: Bus, session_factory: async_sessionmaker) -> None:
+    def __init__(self, bus: Bus, session_factory: async_sessionmaker, *, allow_sim: bool = False) -> None:
         self._bus = bus
         self._sf = session_factory
+        self._allow_sim = allow_sim
         self._pending: list[Bar] = []
         self._last_flush = now_ms()
 
@@ -360,5 +449,48 @@ class BarPersister:
     async def flush(self) -> None:
         if self._pending:
             batch, self._pending = self._pending, []
-            await persist_bars(self._sf, batch)
+            await persist_bars(self._sf, batch, allow_sim=self._allow_sim)
         self._last_flush = now_ms()
+
+
+async def dataset_version(session_factory: async_sessionmaker, symbols: list[str], *, tf: str = "1m",
+                          start: str | None = None, end: str | None = None, note: str = "",
+                          record: bool = True) -> dict:
+    """The CONTENT identity of a slice of `bars` (F75, 2026-09-09): sha256 over every row's
+    (symbol, ts, open, high, low, close, volume, source) in scope, ordered, plus the data-processing
+    rules (`DATA_RULES_VERSION`). A volume repair with the same row count is a different version;
+    the same bytes hash the same on any machine. `start`/`end` are ET session dates (inclusive).
+    Recorded in `bars_dataset_versions` so a sweep / plan can cite it."""
+    import datetime as _dt
+    import hashlib
+    import json
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    syms = sorted({s.upper() for s in symbols})
+    start_ms = int(_dt.datetime.combine(_dt.date.fromisoformat(start), _dt.time(0, 0), et).timestamp() * 1000) if start else None
+    end_ms = int((_dt.datetime.combine(_dt.date.fromisoformat(end), _dt.time(0, 0), et) + _dt.timedelta(days=1)).timestamp() * 1000) if end else None
+    h = hashlib.sha256()
+    # the scope is part of the identity: the same rows asked for as "SPY" and as "SPY+QQQ" are two datasets
+    h.update(json.dumps({"symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION},
+                        sort_keys=True).encode("utf-8"))
+    n = 0
+    async with session_factory() as session:
+        for sym in syms:
+            stmt = select(BarRow.ts, BarRow.open, BarRow.high, BarRow.low, BarRow.close, BarRow.volume, BarRow.source).where(
+                BarRow.symbol == sym, BarRow.tf == tf)
+            if start_ms is not None:
+                stmt = stmt.where(BarRow.ts >= start_ms)
+            if end_ms is not None:
+                stmt = stmt.where(BarRow.ts < end_ms)
+            res = await session.execute(stmt.order_by(BarRow.ts))
+            for ts, o, hi, lo, c, v, src in res:
+                h.update(f"{sym}|{ts}|{o!r}|{hi!r}|{lo!r}|{c!r}|{int(v or 0)}|{src or 'unknown'}\n".encode("utf-8"))
+                n += 1
+    digest = h.hexdigest()
+    scope = {"symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION}
+    if record:
+        async with session_factory() as session:
+            if (await session.get(BarsDatasetVersion, digest)) is None:
+                session.add(BarsDatasetVersion(id=digest, scope=scope, rows=n, note=note[:200]))
+                await session.commit()
+    return {"hash": digest, "rows": n, **scope, "note": note}

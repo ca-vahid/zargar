@@ -129,6 +129,21 @@ def next_trading_day(d: dt.date | str) -> dt.date:
     return d
 
 
+def is_market_minute(ts_ms: int) -> bool:
+    """True when a 1m bar opening at `ts_ms` can exist on a US equity venue: a trading day on the NYSE
+    calendar, 04:00 ET up to the end of after-hours (20:00, or 17:00 after a 13:00 early close).
+    F75 (2026-09-09): the bar aggregator and the bar persister gate on this so a process that runs
+    through a weekend or Labor Day never banks one-price "sessions" again."""
+    from zoneinfo import ZoneInfo
+    t = dt.datetime.fromtimestamp(ts_ms / 1000, ZoneInfo("America/New_York"))
+    d = t.date()
+    if not is_trading_day(d):
+        return False
+    m = t.hour * 60 + t.minute
+    end = 17 * 60 if is_early_close(d) else 20 * 60
+    return 4 * 60 <= m < end
+
+
 def trading_days(start: dt.date | str, end: dt.date | str) -> list[dt.date]:
     a = dt.date.fromisoformat(start) if isinstance(start, str) else start
     b = dt.date.fromisoformat(end) if isinstance(end, str) else end

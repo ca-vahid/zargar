@@ -170,17 +170,24 @@ class Engine:
                     self.bars.configure(
                         hold_seconds=lambda: (float(self.settings.get("feed.exchange_bar_hold_seconds", 5))
                                               if bool(self.settings.get("feed.exchange_bars", True)) else 0.0),
-                        expects_exchange=lambda sym: alpaca.connected and sym.upper() in alpaca.symbols)
+                        expects_exchange=lambda sym: alpaca.connected and sym.upper() in alpaca.symbols,
+                        # F75/F77: real feeds form bars only in market minutes; Alpaca-streamed symbols
+                        # take their sampled volume from print sizes, not a re-seeded counter
+                        sampled_source="sampled", calendar_gated=True,
+                        volume_from_prints=lambda sym: alpaca.connected and sym.upper() in alpaca.symbols)
                 else:
                     self.feed = YahooQuoteFeed(
                         on_quote=self.quotes.on_quote,
                         poll_seconds=lambda: self.settings.get("quotes.yahoo_poll_seconds", 1.0),
                         on_bars=self._ingest_exchange_bars)
+                    self.bars.configure(sampled_source="sampled", calendar_gated=True)
             else:
                 self.feed = SimQuoteFeed(
                     on_quote=self.quotes.on_quote,
                     tick_interval=self.config.sim_tick_interval,
                     seed=self.config.sim_seed)
+                # the synthetic feed ticks 24/7: its bars are labelled so the shared table can refuse them
+                self.bars.configure(sampled_source="sim", calendar_gated=False)
 
         self.orders = OrderManager(
             self.sf, self.bus, self.journal, self.risk, self.settings,
@@ -211,7 +218,7 @@ class Engine:
                 await self.feed.watch(pair)
         await self.feed.start()
 
-        self._bar_persister = BarPersister(self.bus, self.sf)
+        self._bar_persister = BarPersister(self.bus, self.sf, allow_sim=bool(self.config.persist_sim_bars))
         self._tasks = [
             asyncio.create_task(self._quote_consumer(), name="quote-consumer"),
             asyncio.create_task(self._bar_persister.run(), name="bar-persister"),
@@ -351,7 +358,9 @@ class Engine:
         existing = await load_bars(self.sf, symbol, "1m", limit=3000)
         if not existing and isinstance(self.feed, SimQuoteFeed) and not is_option:
             history = self.feed.synthesize_history(symbol, minutes=self.config.sim_history_minutes)
-            await persist_bars(self.sf, history)
+            for b in history:
+                b.source = "sim"
+            await persist_bars(self.sf, history, allow_sim=bool(self.config.persist_sim_bars))
             existing = history[-3000:]
         if isinstance(self.feed, YahooQuoteFeed):
             # real exchange bars for today beat our ticks-since-boot aggregation;

@@ -27,6 +27,7 @@ def make_test_config(**overrides) -> AppConfig:
         session_secret="",
         anthropic_api_key="",
         telegram_bot_token="",
+        persist_sim_bars=True,     # tests bank the sim feed's bars; the runtime refuses them (F75)
         alpaca_key_id="",          # never let a test reach OPRA/SIP with the real .env keys
         alpaca_secret="",
     )

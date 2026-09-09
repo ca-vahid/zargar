@@ -179,6 +179,43 @@ class BarRow(Base):
     low: Mapped[float] = mapped_column(Float)
     close: Mapped[float] = mapped_column(Float)
     volume: Mapped[int] = mapped_column(BigInteger, default=0)
+    # F75 (2026-09-09): where the row came from — exchange | sampled | sim | unknown (legacy rows)
+    source: Mapped[str] = mapped_column(String(12), default="unknown")
+
+
+class BarQuarantineRow(Base):
+    """Rows removed from `bars` by `zargar.tools.bars_repair quarantine` — preserved verbatim with the
+    original id, the reason and a batch id. Never deleted from (F75: preserve before modifying)."""
+    __tablename__ = "bars_quarantine"
+    __table_args__ = (Index("ix_bars_quarantine_lookup", "symbol", "tf", "ts"), Index("ix_bars_quarantine_batch", "batch"))
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    orig_id: Mapped[int] = mapped_column(BigInteger)
+    symbol: Mapped[str] = mapped_column(String(32))
+    tf: Mapped[str] = mapped_column(String(8))
+    ts: Mapped[int] = mapped_column(BigInteger)
+    open: Mapped[float] = mapped_column(Float)
+    high: Mapped[float] = mapped_column(Float)
+    low: Mapped[float] = mapped_column(Float)
+    close: Mapped[float] = mapped_column(Float)
+    volume: Mapped[int] = mapped_column(BigInteger, default=0)
+    source: Mapped[str] = mapped_column(String(12), default="unknown")
+    reason: Mapped[str] = mapped_column(String(40))
+    batch: Mapped[str] = mapped_column(String(32))
+    note: Mapped[str] = mapped_column(String(200), default="")
+    quarantined_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class BarsDatasetVersion(Base):
+    """A content hash of a slice of `bars` (+ the data-processing rules) — the identity a sweep or a
+    plan cites so a rerun can say whether it ran on the same data (F75: row counts are not a version)."""
+    __tablename__ = "bars_dataset_versions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)          # sha256 hex
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    scope: Mapped[dict] = mapped_column(JSONVariant, default=dict)          # symbols, tf, start, end, rules
+    rows: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[str] = mapped_column(String(200), default="")
 
 
 class EquityPoint(Base):

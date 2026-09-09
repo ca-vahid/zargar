@@ -35,6 +35,9 @@ class AppConfig(BaseSettings):
     # Where quotes come from: "auto" (ibkr if connected, else yahoo when
     # SnapTrade is active, else sim) | "sim" | "yahoo"
     quote_source: str = "auto"
+    # F75 (2026-09-09): synthetic (sim-feed) bars never enter the shared `bars` table unless this is on
+    # (tests turn it on; the runtime never should — a random walk was banked as SPY 08-14..08-19)
+    persist_sim_bars: bool = False
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 4002  # 4002 gateway paper, 4001 gateway live, 7497 TWS paper
     ibkr_client_id: int = 17

@@ -108,7 +108,7 @@ class SimQuoteFeed(QuoteFeed):
             lo = min(o, c) * (1 - abs(rng.gauss(0, st.sigma_per_min / 3)))
             ts = end_bucket - (minutes - i) * 60_000
             vol = int(abs(rng.gauss(12_000, 8_000))) + 500
-            bars.append(Bar(symbol=symbol, tf="1m", ts=ts,
+            bars.append(Bar(symbol=symbol, tf="1m", ts=ts, source="sim",
                             open=round(o, 4), high=round(hi, 4), low=round(lo, 4),
                             close=round(c, 4), volume=vol))
         return bars

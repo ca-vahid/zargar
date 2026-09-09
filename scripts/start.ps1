@@ -2,7 +2,8 @@
 #
 #   scripts\start.ps1            run in this terminal (Ctrl+C stops it)
 #   scripts\start.ps1 -Detach    run hidden in the background and return
-#   scripts\start.ps1 -Force     restart even if analyst runs are in flight
+#   scripts\start.ps1 -Force     restart even if work is in flight (analyst runs, open technique trades,
+#                                working entries/exits, venue orders) - the readiness check refuses otherwise
 #   scripts\start.ps1 -NoBuild   skip the frontend rebuild check
 #   scripts\start.ps1 -NoDiscord skip the experimental Discord intake window
 #   scripts\start.ps1 -NoIngest  skip the EM ingestion worker window (video transcription)
@@ -23,8 +24,11 @@
 #   4. frontend       rebuild dist only when sources changed
 #   5. run            engine + API + UI as one process
 #
-# Exit codes: 0 ok / 1 build or launch failure / 2 refused (runs in flight)
+# Exit codes: 0 ok / 1 build or launch failure / 2 refused (work in flight)
 #             3 port 8420 held by something that is not Zargar
+# After a detached restart the engine's state (armed plans, open trades, pending exits, working orders)
+# is compared with the state before it (restoration check); a mismatch is printed loudly and saved to
+# logs\restore-mismatch-<ts>.json (PLATFORM-RULES 2026-09-09).
 
 param(
   [switch]$Force,
@@ -102,6 +106,19 @@ try {
   if ($running -gt 0) { Warn "-Force: restarting over $running in-flight run(s)" }
   if ($armed -gt 0)   { Warn "$armed armed plan(s) will be restored after the restart" }
   $armedBefore = $armed
+  # 2026-09-09 (F75 review): "no open positions" was never the test. Ask the engine what a restart
+  # would interrupt across EVERY technique + the order book, and keep its state for the check after.
+  try { $script:stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $script:stateBefore = $null }
+  try {
+    $rc = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restart-check?caller=start.ps1" -TimeoutSec 6
+    if (-not $rc.safe) {
+      foreach ($r in $rc.reasons) { Warn "in flight: $r" }
+      if (-not $Force) { Fail "Not safe to restart now. Wait, or run again with -Force (logged as an override)." 2 }
+      Warn "-Force: restarting over the work listed above"
+    }
+  } catch {
+    Warn "restart-check unavailable ($($_.Exception.Message)) - proceeding on the health check alone"
+  }
 } catch {
   # nothing answering on :8420 - nothing to protect
 }
@@ -205,6 +222,27 @@ if ($Detach) {
     } catch { }
   }
   Step "Zargar is up -> http://127.0.0.1:8420 (armed plans restored: $restored)"
+  # restoration check: what was armed / open / working before must be back (ids, not counts)
+  if ($script:stateBefore -ne $null) {
+    $ok = $false; $last = $null
+    foreach ($i in 1..12) {
+      try {
+        $cmp = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restore-check" -Method Post -ContentType "application/json" -Body ($script:stateBefore | ConvertTo-Json -Depth 6 -Compress) -TimeoutSec 8
+        $last = $cmp
+        if ($cmp.ok) { $ok = $true; break }
+      } catch { }
+      Start-Sleep -Seconds 5
+    }
+    if ($ok) {
+      Step ("Restore check OK: " + (($last.counts.PSObject.Properties | ForEach-Object { $_.Name + " " + $_.Value }) -join ", "))
+    } else {
+      $logDir = Join-Path $Root "logs"
+      if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out-Null }
+      $snap = Join-Path $logDir ("restore-mismatch-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
+      @{ before = $script:stateBefore; after = $last } | ConvertTo-Json -Depth 8 | Set-Content -Path $snap
+      Warn ("RESTORE MISMATCH: " + $(if ($last) { ($last.missing | ConvertTo-Json -Compress) } else { "restore-check unreachable" }) + " - saved " + $snap)
+    }
+  }
   Write-Host "  Watch the log anytime: scripts\logs.ps1 (Ctrl+C detaches, server unaffected)" -ForegroundColor DarkGray
   if (-not $NoDiscord) { Start-DiscordIntake }
   if (-not $NoIngest) { Start-EmIngest }
