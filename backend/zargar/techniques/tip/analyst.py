@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import time
 import json
 import logging
 from typing import Optional
@@ -99,11 +100,15 @@ class AnalystOpinion(BaseModel):
 
 
 TOOLS = [
-    {"name": "get_quote", "description": "Live quote for a stock symbol.",
+    {"name": "get_quote", "description": "Live quote for a stock symbol, with its "
+                                         "source and age in seconds (trust fresh opra "
+                                         "over an aged poll).",
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string"}}, "required": ["symbol"]}},
     {"name": "get_bars",
-     "description": "Recent OHLC bars for a symbol (compact). tf: 1h or 5m.",
+     "description": "Recent bars for a symbol: timestamped OHLCV rows (last 24) plus "
+                    "range high/low — enough to judge structure, ATR-scale noise and "
+                    "stop placement. tf: 1h, 30m, 15m or 5m.",
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string"}, "tf": {"type": "string"},
          "sessions": {"type": "integer"}}, "required": ["symbol"]}},
@@ -111,9 +116,15 @@ TOOLS = [
      "input_schema": {"type": "object", "properties": {
          "symbol": {"type": "string"}}, "required": ["symbol"]}},
     {"name": "get_chain",
-     "description": "Option chain for one expiry, strikes near the money (bid/ask/delta/OI).",
+     "description": "Option chain for one expiry (bid/ask/delta/OI). Default window is "
+                    "near the money; pass strike= to center the window there, or "
+                    "contract= (an OCC symbol like CRWV260918C00105000) for an EXACT "
+                    "lookup of a tip's named contract with a live reprice when the "
+                    "real-time source serves it. An absent strike in a WINDOWED result "
+                    "is never proof the contract does not exist.",
      "input_schema": {"type": "object", "properties": {
-         "symbol": {"type": "string"}, "expiry": {"type": "string"}},
+         "symbol": {"type": "string"}, "expiry": {"type": "string"},
+         "strike": {"type": "number"}, "contract": {"type": "string"}},
          "required": ["symbol", "expiry"]}},
     {"name": "get_flow",
      "description": "The options-flow desk's full evidence for the symbol: today's flagged "
@@ -291,19 +302,32 @@ STARTER_RULES = """- Prefer the tip's own contract when it is liquid; say why wh
 (starter rules — none saved yet; write your own with save_note scope "rule" as experience accrues)"""
 
 
-def _compact_bars(bars: list) -> dict:
+def _compact_bars(bars: list, *, sessions_requested: int | None = None) -> dict:
+    """Codex audit finding 6: the analyst reasons about structure/ATR/stops but
+    only saw 24 bare closes. Now: timestamped OHLCV rows (compact), plus honest
+    completeness flags — absence of data must read as absence, never as fact."""
     if not bars:
-        return {"note": "no bars"}
-    closes = [round(float(b.close), 4) for b in bars[-24:]]
-    return {"bars": len(bars), "lastCloses": closes,
+        return {"note": "no bars", "complete": False}
+    rows = [[dt.datetime.fromtimestamp(b.ts / 1000, dt.timezone.utc)
+             .strftime("%Y-%m-%d %H:%M"),      # year included (Codex review, 2026-09-09)
+             round(float(b.open), 4), round(float(b.high), 4),
+             round(float(b.low), 4), round(float(b.close), 4),
+             int(getattr(b, "volume", 0) or 0)]
+            for b in bars[-24:]]
+    return {"bars": len(bars), "shown": len(rows),
+            "columns": ["ts(UTC)", "open", "high", "low", "close", "volume"],
+            "ohlcv": rows,
             "high": round(max(float(b.high) for b in bars), 4),
-            "low": round(min(float(b.low) for b in bars), 4)}
+            "low": round(min(float(b.low) for b in bars), 4),
+            **({"sessionsRequested": sessions_requested}
+               if sessions_requested is not None else {})}
 
 
 def _compact_chain(chain: dict, want: float | None = None) -> dict:
     spot = float(chain.get("spot") or 0)
     center = want or spot
     rows = chain.get("rows") or []
+    total = len(rows)
     rows = sorted(rows, key=lambda r: abs(float(r["strike"]) - center))[:9]
     rows = sorted(rows, key=lambda r: float(r["strike"]))
     slim = []
@@ -317,7 +341,14 @@ def _compact_chain(chain: dict, want: float | None = None) -> dict:
                               "openInterest", "delta")}
         slim.append(row)
     return {"underlying": chain.get("underlying"), "expiry": chain.get("expiry"),
-            "dte": chain.get("dte"), "spot": chain.get("spot"), "strikes": slim}
+            "dte": chain.get("dte"), "spot": chain.get("spot"), "strikes": slim,
+            # completeness (Codex finding 6): a strike absent from this WINDOW
+            # is not proof it does not exist or is illiquid
+            "strikesShown": len(slim), "strikesTotal": total,
+            "note": (f"showing {len(slim)} of {total} strikes nearest "
+                     f"{center:g} — an absent strike is NOT proof of "
+                     f"illiquidity; use get_chain with strike= or contract= "
+                     f"for an exact lookup" if total > len(slim) else "")}
 
 
 def _our_positions(eng, symbol: str = "") -> dict:
@@ -652,24 +683,96 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             except Exception:
                 log.debug("get_quote history fallback failed for %s", sym, exc_info=True)
             return {"error": f"no quote for {sym}"}
+        # provenance (Codex finding 6): the platform tracks quote source/age —
+        # the analyst must see whether it prices against OPRA or a stale poll
+        src_ts = getattr(q, "source_ts", None) or getattr(q, "ts", None)
+        age_s = round(max(0.0, time.time() - src_ts / 1000), 1) if src_ts else None
         return {"symbol": sym, "last": q.last, "bid": q.bid, "ask": q.ask,
                 "spreadPct": round(q.spread_pct, 3), "prevClose": q.prev_close,
-                "session": getattr(q, "session", None)}
+                "session": getattr(q, "session", None),
+                "source": getattr(q, "source", "") or "feed",
+                "ageSeconds": age_s,
+                "delayed": bool(getattr(q, "delayed", False))}
     if name == "get_bars":
         from ...marketstructure.history import fetch_recent
         tf = str(args.get("tf") or "1h")
         if tf not in ("1h", "5m", "15m", "30m"):
             tf = "1h"
-        bars = await fetch_recent(sym, tf, sessions=int(args.get("sessions") or 5))
-        return {"symbol": sym, "tf": tf, **_compact_bars(bars)}
+        n_sessions = int(args.get("sessions") or 5)
+        bars = await fetch_recent(sym, tf, sessions=n_sessions)
+        return {"symbol": sym, "tf": tf,
+                **_compact_bars(bars, sessions_requested=n_sessions)}
     if name == "get_expiries":
         out = await eng.options.expiries(sym)
         # 0DTE listed too since the lotto lane (2026-09-01); flagged is0dte
         exps = list(out.get("expiries", []))[:12]
         return {"symbol": sym, "spot": out.get("spot"), "expiries": exps}
     if name == "get_chain":
+        # exact-contract evidence (Codex finding 6): a tip naming a far-OTM
+        # contract must be inspectable — `contract` (OCC) or `strike` centers/
+        # pins the lookup instead of the old fixed near-the-money window
+        occ_sym = str(args.get("contract") or "").upper().strip()
+        if occ_sym:
+            from ...options import occ as occ_mod
+            parsed = occ_mod.parse(occ_sym)
+            if parsed is None:
+                return {"error": f"'{occ_sym}' is not a valid OCC contract symbol"}
+            exp_s = (parsed.expiry.isoformat()
+                     if hasattr(parsed.expiry, "isoformat") else str(parsed.expiry))
+            chain = await eng.options.chain(parsed.underlying, exp_s)
+            side = "call" if parsed.right == "C" else "put"
+            hit = next((r.get(side) for r in (chain.get("rows") or [])
+                        if abs(float(r["strike"]) - float(parsed.strike)) < 1e-6
+                        and r.get(side)), None)
+            out = {"contract": occ_sym, "underlying": parsed.underlying,
+                   "expiry": exp_s, "strike": parsed.strike,
+                   "right": parsed.right, "spot": chain.get("spot"),
+                   "found": hit is not None}
+            if hit is not None:
+                out["row"] = {k: hit.get(k) for k in
+                              ("bid", "ask", "spreadPct", "volume",
+                               "openInterest", "delta", "iv")}
+            else:
+                out["note"] = ("contract NOT in the delayed chain snapshot — "
+                               "this is NOT proof it is unlisted or illiquid; "
+                               "check get_expiries and the exact expiry")
+            # live reprice when a real-time source serves it (never inferred
+            # from the delayed chain's spot). FRESHNESS IS PART OF THE EVIDENCE
+            # (Codex review E1, 2026-09-09): the service accepts any cached
+            # OPRA quote, so the tool ages it itself — an old quote is labeled
+            # a last-known quote, never presented as live.
+            import contextlib as _ctx
+            import time as _time
+            live_max_age_s = 120            # OPRA NBBO older than this is not "live"
+            got_live = False
+            with _ctx.suppress(Exception):
+                live = await eng.options.reprice({"symbol": occ_sym})
+                if live and live.get("priced") == "opra":
+                    fields = {k: live.get(k) for k in
+                              ("bid", "ask", "mid", "spreadPct", "last", "priced")}
+                    fields["source"] = "opra"
+                    q = eng.quotes.get(occ_sym)
+                    ts = getattr(q, "source_ts", None) if q is not None else None
+                    age_s = (max(0.0, _time.time() - float(ts) / 1000.0)
+                             if ts else None)
+                    fields["ageSeconds"] = round(age_s) if age_s is not None else None
+                    if age_s is not None and age_s <= live_max_age_s:
+                        out["live"] = fields
+                    else:
+                        out["lastQuote"] = {**fields, "stale": True}
+                        out["liveNote"] = (
+                            f"real-time source served this contract but the quote is "
+                            f"{'of unknown age' if age_s is None else f'~{age_s / 60:.0f} min old'} "
+                            f"— treat as last-known, NOT current pricing")
+                    got_live = True
+            if not got_live:
+                out["liveNote"] = ("no fresh real-time quote for this contract — the "
+                                   "row above is the ~15-min delayed chain snapshot; "
+                                   "that gap is part of the evidence")
+            return out
+        want = float(args.get("strike")) if args.get("strike") else None
         chain = await eng.options.chain(sym, str(args.get("expiry")))
-        return _compact_chain(chain)
+        return _compact_chain(chain, want=want)
     if name == "get_flow":
         flow = getattr(eng, "flow_service", None)
         if flow is None:
