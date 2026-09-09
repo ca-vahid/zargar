@@ -301,10 +301,15 @@ class TechniqueService:
 
     # ------------------------------------------------------------ queries
     async def runs_today(self) -> int:
+        """EM's own runs since UTC midnight - the `technique.max_runs_per_day` cap bounds
+        THIS technique's LLM spend. It used to count every technique's rows: on
+        2026-09-08 the Options Cartel desk's nightly scan wrote 5,557 deterministic runs
+        at 23:00 ET and EM's evening review was refused with the cap "reached"."""
         start = dt.datetime.now(dt.timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
         async with self.engine.sf() as session:
             n = (await session.execute(select(func.count()).select_from(TechniqueRun)
-                                       .where(TechniqueRun.created_at >= start))).scalar()
+                                       .where(TechniqueRun.created_at >= start,
+                                              TechniqueRun.technique == "enhanced_market"))).scalar()
         return int(n or 0)
 
     async def list_runs(self, *, limit: int = 50, symbol: str | None = None,

@@ -987,3 +987,16 @@ Decision explanations survive recovery and are journaled as Cartel state changes
 ETF coverage, industry interpretation and research variants are Cartel-owned;
 other techniques, book routing, loss guards and protective exits are unchanged.
 Details: techniques/options-cartel/FIDELITY-REVIEW-2026-09-08.md.
+
+
+### Per-technique LLM run caps count only that technique's runs — 2026-09-09
+
+`technique.max_runs_per_day` is EM's LLM budget, but `TechniqueService.runs_today()` counted
+every row in `technique_runs` since UTC midnight. On 2026-09-08 the Options Cartel desk's
+nightly scan wrote 5,557 deterministic runs at 23:00 ET (trigger `manual`, no model calls)
+and EM's evening review of the 09-09 sheet (119 setups) was refused with "daily run cap
+reached (600)"; no EM plan was armed for the session until the user was told. Fix: the count
+is scoped to `technique == "enhanced_market"` (test
+`test_daily_run_cap_counts_only_this_techniques_runs`). Rule for every desk: a cap that
+bounds spend is scoped to the technique that spends; shared tables are not shared budgets.
+The cap itself is a user knob - the desk does not raise it on its own.
