@@ -1009,6 +1009,18 @@ other techniques, book routing, loss guards and protective exits are unchanged.
 Details: techniques/options-cartel/FIDELITY-REVIEW-2026-09-08.md.
 
 
+### Per-technique LLM run caps count only that technique's runs — 2026-09-09
+
+`technique.max_runs_per_day` is EM's LLM budget, but `TechniqueService.runs_today()` counted
+every row in `technique_runs` since UTC midnight. On 2026-09-08 the Options Cartel desk's
+nightly scan wrote 5,557 deterministic runs at 23:00 ET (trigger `manual`, no model calls)
+and EM's evening review of the 09-09 sheet (119 setups) was refused with "daily run cap
+reached (600)"; no EM plan was armed for the session until the user was told. Fix: the count
+is scoped to `technique == "enhanced_market"` (test
+`test_daily_run_cap_counts_only_this_techniques_runs`). Rule for every desk: a cap that
+bounds spend is scoped to the technique that spends; shared tables are not shared budgets.
+The cap itself is a user knob - the desk does not raise it on its own.
+
 ### Cartel market-blocked research — 2026-09-08 (0.7.14)
 
 Preparation may retain research candidates while its market gate blocks trading.
@@ -1016,3 +1028,28 @@ Their screen/plan context remains failed: research eligibility is a separate fie
 not an override of the trading gate. They are stored as analysis records, never
 submitted to contract selection, plan arming or the pending-contract activator.
 Fresh aligned preparation is required. No common risk or execution rule is relaxed.
+
+
+### The deploy task must be ASCII and must hold the watchdog off — 2026-09-09
+
+Two engine-hosting findings from the first `schtasks /Run /TN ZargarRestart` deploy
+(2026-09-09 01:17-01:30 ET, the EM desk deploying the run-cap fix):
+
+1. **The task ran nothing.** `ZargarRestart` now invokes `scripts\restart.ps1` under Windows
+   PowerShell 5.1, which reads a BOM-less UTF-8 file as ANSI; the em dash inside a string
+   literal made the whole file a parse error ("The string is missing the terminator", exit 1,
+   red text in a console that closed itself). The engine kept running on the old code. Rule:
+   scripts that a scheduled task runs are ASCII only (comments included - a mangled comment is
+   harmless, a mangled string literal is a dead deploy). `restart.ps1` is ASCII now; the other
+   scripts carry non-ASCII only in comments and run under pwsh 7 (UTF-8 by default).
+2. **The watchdog started a second engine inside the restart.** The engine is silent on
+   /api/health for ~45 s while it restores; the 3-minute `ZargarWatchdog` tick landed in that
+   window and ran `start.ps1 -Detach` again. Two engines ran restore, sim-book restore and every
+   scheduler on one database for four minutes; health did not answer for two of them; the
+   duplicate exited only when uvicorn failed to bind :8420. Fix: `restart.ps1` stamps
+   `logs\watchdog.lock` before it stops anything - the watchdog already skips a tick while that
+   lock is younger than 180 s. Symptom to recognise next time: two `python -m zargar.main` pairs
+   in the process list, `process starting` twice in the log, one `engine started`.
+
+Also observed: the Task Scheduler reports `ZargarRestart` as still running (267009) for as
+long as the detached engine it started lives - that is the job object, not a hung script.
