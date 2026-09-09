@@ -69,7 +69,9 @@ if (-not $KeepHelpers) {
   $stopped = 0
   try {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -match "discord_gateway|discord-intake\.ps1|em_ingest|em-ingest\.ps1") } |
+      Where-Object { $_.CommandLine -and (
+          ($_.Name -match '^python' -and $_.CommandLine -match "discord_gateway|em_ingest") -or
+          ($_.Name -match '^(pwsh|powershell)' -and $_.CommandLine -match "discord-intake\.ps1|em-ingest\.ps1" -and $_.CommandLine -match '-File')) } |
       ForEach-Object {
         Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue
         $stopped++

@@ -71,10 +71,15 @@ if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir | O
 Set-Content -Path (Join-Path $lockDir "watchdog.lock") -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 # --- 1. stop, elevation-aware ------------------------------------------------
-$patterns = "zargar\.main|discord_gateway|discord-intake\.ps1|em_ingest|em-ingest\.ps1|discord_watch"
+# match by PROCESS NAME + command line, never by command line alone: an assistant's shell whose command
+# text merely mentions the engine module was killed by this step (2026-09-09 09:33 ET, twice)
+$pyPatterns = "zargar\.main|discord_gateway|em_ingest|discord_watch"
+$psPatterns = "discord-intake\.ps1|em-ingest\.ps1"
 $leftAlive = @()
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-  Where-Object { $_.CommandLine -and $_.CommandLine -match $patterns -and $_.ProcessId -ne $PID } |
+  Where-Object { $_.CommandLine -and $_.ProcessId -ne $PID -and (
+      ($_.Name -match '^python' -and $_.CommandLine -match $pyPatterns) -or
+      ($_.Name -match '^(pwsh|powershell)' -and $_.CommandLine -match $psPatterns -and $_.CommandLine -match '-File')) } |
   ForEach-Object {
     Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 200
