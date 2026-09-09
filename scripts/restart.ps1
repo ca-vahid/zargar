@@ -29,6 +29,17 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 function Step($m) { Write-Host "> $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
 
+# --- 0. hold the watchdog off ---------------------------------------------------
+# ZargarWatchdog ticks every 3 minutes and starts the engine whenever /api/health is
+# silent. A restart is ~45 s of silence, and on 2026-09-09 01:25 ET the tick landed
+# inside it: a SECOND engine started, both ran restore + schedulers on one database,
+# health hung for two minutes and the duplicate only exited when its bind failed.
+# The watchdog honours an age-based lock (logs\watchdog.lock < 180 s = skip), so
+# stamp it here before stopping anything.
+$lockDir = Join-Path $Root "logs"
+if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir | Out-Null }
+Set-Content -Path (Join-Path $lockDir "watchdog.lock") -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
+
 # --- 1. stop, elevation-aware ------------------------------------------------
 $patterns = "zargar\.main|discord_gateway|discord-intake\.ps1|em_ingest|em-ingest\.ps1|discord_watch"
 $leftAlive = @()

@@ -60,6 +60,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-08",
     title: "Team2: the read cannot rewrite itself",
     items: [
+      { tag: "fixed", text: "The ZargarRestart deploy task works again: restart.ps1 is ASCII-only (Windows PowerShell read its em dash as a broken string and ran nothing), and it holds the 3-minute watchdog off so a restart can no longer spawn a second engine." },
       { tag: "fixed", text: "EM's daily LLM run cap counts only EM's own runs: another technique's nightly scan (5,557 rows on 2026-09-08) had used it up and the evening review was refused." },
       { tag: "fixed", text: "The engine now runs under the Windows Task Scheduler (ZargarWatchdog every 3 minutes, ZargarRestart on demand) instead of inside the assistant's process tree: the 14:24 outage on 2026-09-08 was the Claude desktop package update stopping its VM service, which took the engine with it. The app log keeps days instead of 50 minutes and says hello/goodbye with its pid." },
       { tag: "fixed", text: "Team2 recognises the read's events by fingerprint, so an input that moves under the recomputed read (IV, a corrected bar, a level) can never repeat a fire it already took or skip one; a rewritten history is reported once as 'read_rewritten'." },
