@@ -141,7 +141,9 @@ class Extractor:
                 model=self.model, max_tokens=16000, system=system, messages=messages)
             if response.stop_reason == "refusal":
                 log.warning("extraction refused by safety classifier")
-                return ExtractionResult(signals=[], source_type="other")
+                return ExtractionResult(signals=[], source_type="other",
+                                        outcome="refused",
+                                        outcome_detail="refused by safety classifier")
             raw = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
             try:
                 return _parse_result_json(raw)
@@ -154,7 +156,12 @@ class Extractor:
                         f"That JSON failed validation: {last_err[:1500]}\n"
                         "Reply again with ONLY the corrected JSON object."}]
         log.warning("extraction returned unparseable output: %s", last_err)
-        return ExtractionResult(signals=[], source_type="other")
+        # typed outcome (Codex audit 2026-09-08 finding 3): a malformed reply
+        # must never masquerade as a genuine no-signal read — the caller marks
+        # the content error so the recovery sweep retries it once
+        return ExtractionResult(signals=[], source_type="other",
+                                outcome="invalid_output",
+                                outcome_detail=str(last_err)[:400])
 
 
 def _parse_result_json(raw: str) -> ExtractionResult:

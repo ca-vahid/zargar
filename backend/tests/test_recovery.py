@@ -184,6 +184,52 @@ async def test_promoted_park_take_self_approves_unattended(rig, monkeypatch):
     assert prow.decided_via == "auto"
 
 
+async def test_invalid_extraction_is_error_not_silence(rig):
+    """Codex audit 2026-09-08 finding 3: a malformed extraction reply became
+    signals=[] 'other' and was marked extracted — indistinguishable from
+    commentary, invisible to recovery. Typed outcomes: invalid_output marks
+    the content ERROR (the sweep retries it once); refused is terminal but
+    distinctly recorded — neither counts as a quiet no-signal read."""
+    from zargar.domain import new_id
+    from zargar.models import RawContent
+    eng = rig
+    svc = eng.signals_service
+
+    bad_id, ref_id = new_id(), new_id()
+    async with eng.sf() as session:
+        session.add(RawContent(id=bad_id, source_type="manual", source_name="S",
+                               subject="x", body_text="BUY AAPL", status="new",
+                               received_at=dt.datetime.now(dt.timezone.utc)))
+        session.add(RawContent(id=ref_id, source_type="manual", source_name="S",
+                               subject="x", body_text="BUY TSLA", status="new",
+                               received_at=dt.datetime.now(dt.timezone.utc)))
+        await session.commit()
+
+    svc.extractor = _FakeExtractor(ExtractionResult(
+        signals=[], source_type="other", outcome="invalid_output",
+        outcome_detail="no JSON object in reply"))
+    out = await svc.process_content(bad_id)
+    assert out["status"] == "error" and "invalid_output" in out["error"]
+    async with eng.sf() as session:
+        assert (await session.get(RawContent, bad_id)).status == "error"
+
+    svc.extractor = _FakeExtractor(ExtractionResult(
+        signals=[], source_type="other", outcome="refused",
+        outcome_detail="safety classifier"))
+    out2 = await svc.process_content(ref_id)
+    assert out2["status"] == "refused"
+    async with eng.sf() as session:
+        assert (await session.get(RawContent, ref_id)).status == "refused"
+
+    # the error one is retried by the sweep exactly once; refused is left alone
+    svc.extractor = _FakeExtractor(ExtractionResult(signals=[], source_type="commentary"))
+    sweep = await svc.recovery_sweep()
+    assert sweep["retried"] == 1 and svc.extractor.calls == 1
+    async with eng.sf() as session:
+        assert (await session.get(RawContent, bad_id)).status != "error"
+        assert (await session.get(RawContent, ref_id)).status == "refused"
+
+
 async def test_error_content_retries_exactly_once(rig):
     eng = rig
     svc = eng.signals_service

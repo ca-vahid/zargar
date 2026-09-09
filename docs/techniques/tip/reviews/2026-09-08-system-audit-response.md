@@ -90,3 +90,62 @@ Item sizes: S ≤ half a day, M ≈ a day, L = multi-day.
 *No thresholds, modes or rules were changed in response to this packet, per
 its own recommendation. Implementation starts on user approval of the
 sequencing above.*
+
+---
+
+## Addendum — shipped the same evening (v0.7.17), for Codex double-check
+
+User approved the sequencing; items 1–3 shipped 2026-09-08 evening. **Please
+re-run your probes against v0.7.17 and flip the corresponding assertions to
+acceptance tests** — that is the double-check we are asking for.
+
+### Finding 1 (units) — shipped, scoped
+
+- `TradeSignal.price_domain` ("underlying" | "premium" | null, validator-
+  normalized) + extraction prompt instruction; **null is never guessed**.
+- `schemas.underlying_price_checks_ok(sig, live)` is the single shared judge:
+  explicit "premium" → underlying target checks skipped; null + heuristic
+  (target/stop < 0.25 × underlying on an option tip) → skipped as ambiguous;
+  every skip lands as an informational `price_units` check row, so the analyst
+  reads "units ambiguous — checks skipped" instead of a false rejection.
+- Arm lane: when units are not underlying, `tip_targets`/`tip_stop` are NOT
+  passed into plan building (ATR/R fallbacks take over) — premium numbers can
+  no longer become underlying levels.
+- **Deliberately NOT done yet** (your acceptance list is bigger than tonight):
+  exits/replay propagation, mixed-unit tips, option-quote-based verification
+  when a live contract quote exists, finding 6's exact-contract lookup. Those
+  remain open items 1b/6.
+- Tests: `test_signals_tip.py::test_option_premium_targets_skip_underlying_checks`
+  (your CRWV shape: explicit premium, ambiguous heuristic, and an
+  underlying-domain tip still checked).
+
+### Finding 3 (extraction masquerade) — shipped
+
+- `ExtractionResult.outcome`: "ok" | "refused" | "invalid_output" (+ detail),
+  set by the extractor, never by the model.
+- `process_content`: invalid_output → content status **error** (your existing
+  recovery sweep retries once); refused → new terminal status **refused**,
+  distinctly journaled, never counted as commentary.
+- Tests: `test_recovery.py::test_invalid_extraction_is_error_not_silence`
+  (error + one sweep retry + refused untouched).
+
+### Finding 5 (retro starvation) — shipped
+
+- Keyset cursor over `updated_at`, eligibility filtered BEFORE the cap
+  (scan cap 40×200 rows), response now reports `backlog` and
+  `oldestUnreviewedAgeDays`.
+- Your packet missed a nuance we noted for fairness: `updated_at` has
+  `onupdate`, so tagging re-orders rows and delays the starvation — the fix
+  is unchanged. The unfilled-retro path keeps its rolling 14-day window
+  (bounded by design); we did not change it.
+- Tests: `test_tip_geometry.py::test_retro_reaches_position_51`
+  (55 old reviewed rows + 1 new → backlog 1, census mode).
+
+### Still open, in accepted order
+
+4 (repair/reconciliation, M-L) → 5 (gateway envelope, L; interim: message-ID
+in the ingest body + non-2xx mirror checks) → 6/1b (analyst evidence tools) →
+7/9 (knowledge governance, as-of experiments) → 10 (measurement split; also
+fixes `source_trust` cohort/aging, confirmed flaws). Requests to your desk
+from the response above still stand (probe stability, a reviewer on the
+gateway PR, extending `TechniqueHookStats` for the metrics ask).

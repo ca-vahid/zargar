@@ -206,6 +206,39 @@ async def test_source_open_caps_are_enforced_now(rig):
     assert refuse is None and b > 0
 
 
+# ---------------------------------------------------------- retro cursor
+async def test_retro_reaches_position_51(rig):
+    """Codex audit 2026-09-08 finding 5: 'oldest 50 then filter reviewed'
+    starved newer closures once 50 tagged rows sat older than them. The keyset
+    cursor filters eligibility before the cap and reports the real backlog."""
+    import datetime as _dt
+
+    from zargar.models import ManagedPositionRow
+    from zargar.techniques.tip.retro import run_tip_retros
+    eng = rig
+    await eng.settings.set("techniques.tip.retro_enabled", True)
+    old = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(days=5)
+    async with eng.sf() as session:
+        for i in range(55):                       # 55 already-reviewed, OLD rows
+            session.add(ManagedPositionRow(
+                id=new_id(), technique="tip", symbol=f"T{i:02d}", portfolio_id="p1",
+                status="closed", tags=["retro-done"], config={}, legs=[],
+                state={}, created_at=old, updated_at=old))
+        session.add(ManagedPositionRow(              # position 56: NEW, unreviewed
+            id="pos-51", technique="tip", symbol="NEWP", portfolio_id="p1",
+            status="closed", tags=["source:S"],
+            config={"direction": "long", "entry": 10.0, "risk": 1.0, "policy": {}},
+            legs=[{"symbol": "NEWP", "secType": "STK", "qty": 0, "avgFill": 10.0}],
+            state={"realizedPnl": 5.0, "exits": [], "events": []}))
+        await session.commit()
+
+    class _NoLLM:                                  # count eligibility only
+        pass
+    out = await run_tip_retros(eng, client=None, limit=0)   # limit 0: census only
+    assert out["backlog"] == 1, out
+    assert out["oldestUnreviewedAgeDays"] is not None
+
+
 # ---------------------------------------------------------- session brake
 async def test_adoption_killswitch_reads_persisted_reason_and_skips_shadow(rig):
     """2026-09-08: the brake read state.closeReason, which was never persisted

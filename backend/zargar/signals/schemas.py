@@ -98,6 +98,13 @@ class TradeSignal(BaseModel):
         description="ALL stated price targets in order (first = nearest). Repeat target_price "
                     "here if there is only one.")
     stop_price: Optional[float] = None
+    price_domain: Optional[str] = Field(
+        default=None,
+        description='For OPTION tips only: what unit the targets/stop are stated in — '
+                    '"underlying" (the stock\'s price) or "premium" (the contract\'s own '
+                    'price, e.g. "1.40 → 1.75, stop 0.90" on a 105C). Null when unclear '
+                    'or for share tips. NEVER guess: a wrong unit corrupts every '
+                    'downstream price check (Codex audit 2026-09-08 finding 1).')
     timeframe: str = Field(
         default="unspecified",
         description='One of: "day_trade", "swing", "position", "long_term", "unspecified"')
@@ -226,6 +233,12 @@ class TradeSignal(BaseModel):
     def _v_entry_type(cls, v: object) -> str:
         return _norm(v, {"market", "limit", "range", "unspecified"}, "unspecified")
 
+    @field_validator("price_domain", mode="before")
+    @classmethod
+    def _v_price_domain(cls, v: object):
+        s = str(v or "").strip().lower()
+        return s if s in ("underlying", "premium") else None
+
     @field_validator("timeframe", mode="before")
     @classmethod
     def _v_timeframe(cls, v: object) -> str:
@@ -238,7 +251,34 @@ class TradeSignal(BaseModel):
         return _norm(v, {"explicit_call", "implied", "commentary_only"}, "commentary_only")
 
 
+def underlying_price_checks_ok(sig: "TradeSignal",
+                               live_underlying: float | None) -> tuple[bool, str]:
+    """Can this tip's targets/stop be judged against the UNDERLYING's price?
+    (Codex audit 2026-09-08 finding 1: a 105C tip stating premium 1.40→1.75
+    had 98.87 compared with 1.75 — wrong rejections that then taught the
+    analyst wrong lessons.) False = skip every underlying-price check and say
+    so; ambiguous units are never guessed."""
+    if sig.instrument not in ("call", "put"):
+        return True, ""
+    if sig.price_domain == "underlying":
+        return True, ""
+    first = sig.target_price or (sig.target_prices[0] if sig.target_prices else None)
+    ref = first if first is not None else sig.stop_price
+    if sig.price_domain == "premium":
+        return False, "targets/stop are premium-denominated (the contract's own price)"
+    if ref is not None and live_underlying and ref < live_underlying * 0.25:
+        return False, (f"units ambiguous: target/stop {ref:g} vs underlying "
+                       f"{live_underlying:g} — treated as premium; price checks skipped")
+    return True, ""
+
+
 class ExtractionResult(BaseModel):
+    outcome: str = Field(
+        default="ok",
+        description='Machine-set, never by the model: "ok" | "refused" | "invalid_output". '
+                    'Distinguishes a real no-signal read from a failed one '
+                    '(Codex audit 2026-09-08 finding 3).')
+    outcome_detail: Optional[str] = None
     signals: List[TradeSignal] = Field(
         description="All trade signals present. Empty list when the content contains no signal.")
     source_type: str = Field(
@@ -287,7 +327,7 @@ evidence_quotes, copied character-for-character from the source text.
 - Alert-room bot grammar (Discord trade-alert services): "OPEN:" = action open, "CLOSE:"/"STC" \
 = close, "TRIM" = trim, "Update:" usually references an earlier position (action per its text). \
 "NTR 82.5C 03/19/2027 Exp. At 4.60" = NTR calls, strike 82.5, expiry 2027-03-19, premium 4.60 \
-(the contract's price — put it in `premium`, never entry_price). Ignore boilerplate \
+(the contract's price — put it in `premium`, never entry_price). When an OPTION tip states targets or a stop, say which unit they are in via `price_domain`: "premium" when they are the contract's own prices (e.g. "1.40, target 1.75, stop 0.90" on a 105C), "underlying" when they are stock prices; null when unclear — NEVER guess. Ignore boilerplate \
 (disclaimers, "Informational purposes only", bot version lines) but transcribe it in \
 source_transcript when reading a screenshot.
 - Chat shorthand: "NVDA 180c 9/19" = NVDA calls, strike 180, expiry Sep 19 (instrument="call"); \
