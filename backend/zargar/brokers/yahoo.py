@@ -242,12 +242,16 @@ class YahooQuoteFeed(QuoteFeed):
             bar_ms = int(t) * 1000
             if bar_ms >= now_bucket:                 # still-forming minute — skip
                 continue
+            if i >= len(v) or v[i] is None:
+                # F79 (2026-09-09): Yahoo populates a minute's volume with a lag; until it does the row is
+                # PROVISIONAL and must not be handed on as an exchange correction — with source precedence
+                # it overwrote Alpaca's true bar with volume 0 (SPY 12:08/12:09 ET) and nothing healed it
+                continue
             op = o[i] if i < len(o) and o[i] is not None else c[i]
             hi = h[i] if i < len(h) and h[i] is not None else c[i]
             lo = l[i] if i < len(l) and l[i] is not None else c[i]
-            vol = int(v[i]) if i < len(v) and v[i] is not None else 0
             out.append(Bar(symbol=symbol.upper(), tf="1m", ts=bar_ms, source="exchange",
-                           open=float(op), high=float(hi), low=float(lo), close=float(c[i]), volume=vol))
+                           open=float(op), high=float(hi), low=float(lo), close=float(c[i]), volume=int(v[i])))
         return out[-30:]
 
     def _parse_chart(self, symbol: str, data: dict) -> Quote | None:

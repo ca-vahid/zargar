@@ -210,3 +210,19 @@ async def test_fetch_bars_maps_range_and_interval():
     with _pytest.raises(ValueError):
         await feed.fetch_bars("AAPL", tf="1m", range_="1y")  # Yahoo has no 1m that far back
     assert "1m" not in RANGE_TFS["1y"]
+
+
+def test_provisional_minutes_without_volume_are_not_exchange_bars():
+    """F79 (2026-09-09): Yahoo fills a minute's volume with a lag; until then the row is provisional and
+    must not be handed on as an exchange correction (it overwrote Alpaca's true bar with volume 0)."""
+    from zargar.brokers.yahoo import YahooQuoteFeed
+    from zargar.domain import now_ms
+    feed = YahooQuoteFeed(on_quote=lambda q: None)
+    bucket = (now_ms() // 60_000) * 60_000
+    ts = [(bucket - k * 60_000) // 1000 for k in (4, 3, 2, 1)]
+    data = {"chart": {"result": [{"timestamp": ts, "indicators": {"quote": [{
+        "open": [10, 10, 10, 10], "high": [11, 11, 11, 11], "low": [9, 9, 9, 9], "close": [10.5, 10.5, 10.5, 10.5],
+        "volume": [1000, 1200, None, None]}]}}]}}
+    bars = feed._parse_completed_bars("TST", data)
+    assert [b.ts for b in bars] == [ts[0] * 1000, ts[1] * 1000]
+    assert all(b.source == "exchange" and b.volume > 0 for b in bars)

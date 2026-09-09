@@ -66,14 +66,27 @@ async def test_an_exchange_correction_reaches_storage_and_a_sampled_bar_cannot_u
     await persist_bars(sf, [bar("TST", TUE_1000, 100.1, 100.4, 99.8, 100.2, 813_000, "exchange")])
     rows = await load_bars(sf, "TST", "1m")
     assert rows[0].volume == 813_000
-    # a legacy row (unknown) is overwritten by exchange, not by sampled
+    # a legacy row (unknown = no provenance) loses to a sampled bar and to an exchange bar (F79)
     await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 1, 1, 1, 1, 5, "")])
-    await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 2, 2, 2, 2, 6, "sampled")])
     rows = await load_bars(sf, "TST", "1m")
     assert rows[-1].volume == 5 and rows[-1].source == "unknown"
+    await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 2, 2, 2, 2, 6, "sampled")])
+    rows = await load_bars(sf, "TST", "1m")
+    assert rows[-1].volume == 6 and rows[-1].source == "sampled"
+    await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 1, 1, 1, 1, 5, "")])
+    rows = await load_bars(sf, "TST", "1m")
+    assert rows[-1].volume == 6 and rows[-1].source == "sampled"                   # unknown never overwrites sampled
     await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 3, 3, 3, 3, 7, "exchange")])
     rows = await load_bars(sf, "TST", "1m")
     assert rows[-1].volume == 7 and rows[-1].source == "exchange"
+    # exchange over exchange: OHLC follows the newer bar, volume is never lowered (Yahoo's provisional
+    # zero must not erase Alpaca's true count — F79)
+    await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 4, 4, 4, 4, 0, "exchange")])
+    rows = await load_bars(sf, "TST", "1m")
+    assert rows[-1].close == 4 and rows[-1].volume == 7
+    await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 4, 4, 4, 4, 9, "exchange")])
+    rows = await load_bars(sf, "TST", "1m")
+    assert rows[-1].volume == 9
 
 
 async def test_sim_bars_are_refused_and_closed_day_bars_are_dropped(fresh_db):

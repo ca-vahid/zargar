@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.28";
+export const APP_VERSION = "0.7.29";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.29",
+    date: "2026-09-09",
+    title: "Provisional minutes are not corrections",
+    items: [
+      { tag: "fixed", text: "Yahoo's poll re-sends its last 30 minutes with volume still empty for the freshest ones; with source precedence those overwrote Alpaca's true bars with volume 0 (F79). A minute without volume is provisional and is no longer handed on as an exchange bar; an exchange re-fetch never lowers a bar's volume; legacy rows with no provenance rank below live sampled bars." },
+      { tag: "fixed", text: "On the Alpaca+Yahoo feed a restart seeds today's completed minutes from the venue's history at boot, so the minute that was forming when the old process died is no longer a silent hole in the 2-minute tape (F80)." },
+    ],
+  },
   {
     version: "0.7.28",
     date: "2026-09-09",
