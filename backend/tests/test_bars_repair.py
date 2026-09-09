@@ -55,7 +55,14 @@ async def test_audit_quarantine_and_backfill(fresh_db, monkeypatch):
     async with sf() as s:
         db_rows = (await s.execute(select(BarRow).where(BarRow.symbol == "TST").order_by(BarRow.ts))).scalars().all()
     rep = {r["date"]: r for r in audit_sessions(db_rows)}
-    assert rep["2026-09-01"]["flags"] == []
+    assert rep["2026-09-01"]["flags"] == [] and rep["2026-09-01"]["kind"] == "stock"
+    # an option contract is never flagged for its range or flatness
+    opt = [dict(r, symbol="TST260918C00100000", high=r["close"], low=r["close"]) for r in rows_for("TST260918C00100000", dt.date(2026, 9, 2), lambda i: 0.05)]
+    await _plant(sf, opt)
+    async with sf() as s:
+        opt_rows = (await s.execute(select(BarRow).where(BarRow.symbol == "TST260918C00100000"))).scalars().all()
+    orep = audit_sessions(opt_rows)
+    assert orep[0]["kind"] == "option" and orep[0]["flags"] == []
     assert rep["2026-09-05"]["flags"] == ["closed_day"] and rep["2026-09-07"]["flags"] == ["closed_day"]
     assert rep["2026-08-18"]["flags"] == ["outlier_range"]
     assert rep["2026-09-03"]["flags"] == ["degenerate_flat"]
@@ -93,9 +100,19 @@ async def test_audit_quarantine_and_backfill(fresh_db, monkeypatch):
         out.append(Bar(symbol=symbol, tf="1m", ts=missing["ts"], open=1, high=1, low=1, close=1, volume=1))
         return out
 
+    # one sampled minute the venue never returns (no prints there) that carries a bogus volume
+    orphan_ts = spike[-1]["ts"] - 60_000
+    spike[:] = [r for r in spike if r["ts"] != orphan_ts]
+    from sqlalchemy import update
+    async with sf() as s_:
+        await s_.execute(update(BarRow).where(BarRow.symbol == "TST", BarRow.ts == orphan_ts).values(volume=7_000_000))
+        await s_.commit()
     res = await cmd_backfill(sf, symbols=["TST"], all_symbols=False, date_from="2026-09-08", date_to="2026-09-08", pace=0, fetch=fake_fetch)
     st = res["symbols"]["TST"]
-    assert st["changed"] == len(spike) and st["added"] == 1 and st["sources"] == {"exchange": len(spike) + 1}
+    assert st["changed"] == len(spike) + 1 and st["added"] == 1 and st["sources"] == {"exchange": len(spike) + 1, "sampled": 1}   # +1: the zeroed orphan
+    assert st["volumeZeroed"] == 1
+    orphan_row = [b for b in await load_bars(sf, "TST", "1m", limit=100000) if b.ts == orphan_ts][0]
+    assert orphan_row.volume == 0 and orphan_row.source == "sampled"
     fixed = [b for b in await load_bars(sf, "TST", "1m", limit=100000) if b.ts == spike[400]["ts"]][0]
     assert fixed.volume == 812 and fixed.source == "exchange"
     v_after = await dataset_version(sf, ["TST"], start="2026-09-08", end="2026-09-08", record=False)
