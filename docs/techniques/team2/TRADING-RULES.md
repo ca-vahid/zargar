@@ -1098,6 +1098,34 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
     level, "needs to rise" is wrong in the same way — the trigger is satisfied on price and waiting
     on its confirmation. Shared engine + EM surface → **user's call**.
 
+- **F72 (2026-09-09 09:46 ET, PROPOSED — NOT built; a rules question, and it is LIVE today).**
+  On a gap-down morning the planned target can already be **behind price when the scenario arms**,
+  and a *first* entry would then exit on its very next 2m bar. Measured at 09:46 ET, minutes after
+  the 09:45 15m close armed all three symbols short: **SPY** `scenario_4 break PDL`, anchor 765.14,
+  **target 764.75** — with SPY trading **763.7**, already 1.05 *below* its own target. **IWM**
+  `scenario_4`, anchor 294.26, **target 293.56**, with IWM at **293.2**. (QQQ's `scenario_2 reject
+  PDH` target 716.50 is still ahead of price at 717.3, so it is unaffected.) The targets come from
+  the plan's next prior-day level (`target_lookback_sessions=10`); a gap that opens *through* the
+  zone consumes the room before the confirmation even arrives.
+  - **Why a first entry cannot dodge it.** `techniques.team2.hod_target` is **`reentry`**, so the
+    X3b running-LOD retarget in `session.py:556` is gated on `hod_target == "always" or s.entries >= 1
+    or trades` — all false for the day's first entry, which therefore keeps `s.target`. The exit
+    check at `session.py:313` is `hit = b2.low <= p.target` for a short, which is **already true**,
+    so the position closes on the first 2m close after it opens.
+  - **And it books the wrong sign.** For a short, a target *above* the entry is a loss: the model
+    would sell the put at spot 764.75 against an entry near 763.8 — a real modelled loss recorded
+    under a `would_exit`/`exit` labelled "target reached". So the day's grade would read a stop-out
+    as a target hit.
+  - **Not yet reached today** only because both setups are still gated on the EMA stack ("no entry
+    until the stack turns bear, E3/B9/E4") with `touches 0`. If the stack turns bear this session,
+    SPY and IWM can hit this.
+  - **Options for the user** (each is a rule change, so none is built here): **(a)** refuse a setup
+    whose planned target is already beyond price at arming — no room, no trade, journalled like the
+    other refusals; **(b)** flip `hod_target` to `always` so the running LOD/HOD retargets first
+    entries too (the `hod_target_min_atr=1.0` room test already guards it); **(c)** re-derive the
+    target at arming time from the next level *below current price* rather than below the zone.
+    (a) is the most conservative and (b) is one settings change. **User's call.**
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

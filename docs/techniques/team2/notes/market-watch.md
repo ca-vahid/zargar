@@ -1814,7 +1814,7 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   QQQ above 721.82 / below 717.03, SPY below 769.00, IWM above the PDH zone top 296.18 (its own PM
   break is exhausted, F65). Check the `contract` event first on any fire (F59) and re-measure **F50**
   close-vs-target slippage. Desk loss tally still **1 of 2** on the book basis (F37). Still open for
-  the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
+  the user: **F72 (live today)**, **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
   **F63**, **F64**, **F65**, and the F30-family question of which premium series is authoritative.
 
 ## 2026-09-08 15:33 ET (run 30 — the 15:30 cutoff held; F66 fixed: the headline was still promising a pullback entry that had closed)
@@ -2133,6 +2133,24 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   non-bucket-aligned stub bar(s)` is still the loudest line in the log (~1–9 per minute all morning),
   plus a `calendar fetch failed for SPX: 404` from the Yahoo quoteSummary endpoint. Both are outside
   Team2.
+- **09:46 ET, after the fix landed — the 09:45 15m close armed all three, every one SHORT.** SPY
+  `scenario 4 break PDL` (level 765.14, target 764.75), IWM `scenario 4 break PDL` (294.26 → 293.56),
+  QQQ `scenario 2 reject PDH` (717.47 → 716.50, `rangeDay: true`). All three read
+  *"waiting for the 1st/2nd 2m pullback into the EMA13 (touches 0) · EMA stack mixed, trend — no
+  entry until the stack turns bear (E3/B9/E4)"* — method-correct: the scenarios are right for a
+  gap-down open (two straight through the PDL, one rejecting the PDH from inside), and the desk is
+  correctly refusing to buy puts into a mixed stack. This also settles the queued-restart call:
+  **do not restart while these are live.**
+- **F72 (new, PROPOSED, NOT built — a rules question, and it is LIVE today).** SPY's and IWM's
+  planned targets are **already behind price**: SPY's target is 764.75 with SPY at 763.7, IWM's is
+  293.56 with IWM at 293.2. Because `techniques.team2.hod_target` is **`reentry`**, the X3b running-LOD
+  retarget does not apply to the day's *first* entry (`session.py:556` needs `s.entries >= 1` or a
+  prior trade), so a first entry keeps that stale target — and `session.py:313`'s short exit test
+  `b2.low <= target` is **already true**, so the position would close on the very next 2m bar. Worse,
+  for a short a target *above* the entry is a **loss** booked under a "target reached" label, so the
+  day's grade would score a stop-out as a win. Only the EMA-stack gate is holding it off right now.
+  Three options written up in TRADING-RULES F72 — refuse the setup for lack of room, set
+  `hod_target=always`, or re-derive the target below *current* price. **Not built: user's call.**
 - **Next run (10:00 ET) should:** (1) run the queued `start.ps1 -Detach` if flat, and confirm
   `/api/health` reads 0.7.23; (2) get the visual confirmation of F71 on the Team2 plan panel;
   (3) check what the 09:45 and 10:00 15m closes did — SPY and IWM were through their PDL zones, so a
