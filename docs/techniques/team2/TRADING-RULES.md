@@ -1322,6 +1322,25 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   behind a measured variant. Nothing was built — mid-session, on an auto desk, this touches setup
   creation and therefore opportunity counting and grading.
 
+- **F77 (2026-09-09 12:05 ET, NOT fixed — measured, low severity; the strike *pick* reads a chain
+  row that can lag OPRA by one refresh cycle).** Sampling `GET /api/options/quote/<occ>` for the
+  three 0DTE ATM puts showed the top-level chain row and the nested real-time quote agreeing on
+  every call except the **first call after an idle gap**, where the row served the previous cycle's
+  value while the nested quote was live: SPY 762P row 0.74/0.75 vs OPRA 0.875/0.885, QQQ 716P row
+  0.97/0.98 vs OPRA 1.235/1.245 (IWM agreed); five immediately-following samples agreed exactly on
+  all three. Both series are Alpaca/OPRA (`source: "opra"`, `delayed: false`) — this is a refresh
+  cadence artifact, not a delayed-feed fallback. Why it is only *low* severity: **F14 already covers
+  the money path** — `Team2Runner.pick_contract` calls `opts.reprice(c)` after selecting, so sizing,
+  the pre-checks and the never-chase cap (`entry_limit_cap`) all read the live NBBO. What the
+  reprice does **not** revisit is *which strike was selected*: `select_by_premium` ranks the ladder
+  on the chain's asks, so a pick made on a one-cycle-stale ladder could land on an adjacent strike
+  from the one the $0.60 target would have chosen on the live NBBO (strike step is 1.0 on all three
+  symbols). Untested against a live pick — **no `contract` event has been exercised yet on this
+  desk**, so this is a measurement of the inputs, not an observed mis-pick. This is direct evidence
+  for the still-open **F30-family question of which premium series is authoritative**; the fix, if
+  the user wants one, is to reprice (or re-rank) *before* `select_by_premium` rather than after.
+  Nothing built — it touches the shared `options/pick` path.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1333,6 +1352,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
+- **2026-09-09 (market watch, run 38, 12:05 ET — no code change)** — **F77 logged** (measured, low
+  severity): the option chain row can lag the OPRA quote by one refresh cycle on the first call
+  after an idle gap, which leaves the *strike selection* (not the money path, which F14 already
+  reprices) reading a possibly one-cycle-stale ladder. **F76 confirmed twice more** on live tape —
+  SPY refused a second qualifying pullback at 11:58 (target 764.75 vs a 762.16 entry) and IWM at
+  11:56 (293.56 vs 291.24), exactly as F76 predicts; QQQ, the control with a genuinely valid
+  target, stayed blocked by the no-trade zone instead. Desk healthy: v0.7.27, three plans armed and
+  complete, zero trades all day, RTH 1m bars complete to the minute (153/153 SPY) with zero flat and
+  zero zero-volume rows, option quotes OPRA and sub-second, **replay parity exact on all three**
+  (identical event lists and sigma). The **`/team2` UI check that run 37 could not complete is now
+  green** — the workaround is to set the `zargar_session` cookie in the browser (`?token=` does not
+  authenticate the SPA route); Plans and Armed tabs both render all three plans with correct
+  live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 (evening — F75 repair, v0.7.28, one deploy after the close)** — **Read inputs validated:** every prior
   session the desk plans, warms up, replays or sweeps on passes `validate_sessions` (closed days, one-price, outlier
   and thin sessions excluded and recorded on the plan); the ten-session lookback counts valid sessions. **Data

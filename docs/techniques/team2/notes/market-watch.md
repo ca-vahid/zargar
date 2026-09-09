@@ -2466,6 +2466,63 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   recommendation is "leave it off"), **F74**, **F75**, **F76**, F67's two shared-side halves, and the
   F30-family question of which premium series is authoritative.
 
+
+## 2026-09-09 12:05 ET (run 38 — desk healthy, still flat; F77: the strike pick reads a chain row that can lag OPRA)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.27**, unchanged since the 11:26 ET boot by the tips
+  desk — **no restart this run and none queued**. Three plans armed for 2026-09-09 (SPY `e4d39d00`,
+  QQQ `9a1094ed`, IWM `e87e4ad2`), `complete: true`, `needsAttention` false, mode **auto** on Team2
+  Practice `b9dcd8db…`, **zero trades and zero open positions** all day. No Team2 errors or
+  Tracebacks in `backend/zargar-8420.log` since that boot — only the known `persist_bars` stub-bar
+  noise, two client-disconnect `ConnectionResetError`s and Yahoo calendar 404s (SPX/USO/DRAM).
+- **Data is real-time and clean.** RTH 1m bars banked to **12:02 ET** read at 12:03 — **153 rows for
+  09:30–12:02 on SPY, i.e. every minute present**, QQQ/IWM 152 (the in-flight minute), and **zero
+  flat bars, zero zero-volume bars** on all three, so F75's synthetic-bar corruption is again not
+  touching today's session. Underlying quotes seconds old, session `regular`. Option quotes are
+  **OPRA** (`source: "opra"`, `delayed: false`, sub-second `ts`).
+- **Replay parity is exact on all three** — identical event lists (SPY 7, QQQ 5, IWM 15), identical
+  sigma (0.1212 / 0.1748 / 0.1610), zero trades both ways. The only difference is one extra 2m bar
+  (77 vs 76) that arrived between the live read and the replay. Cleaner than run 37, which saw a
+  spurious extra `same_pullback` from the same fetch-timing effect.
+- **What the read saw since 11:35 — nothing new, only more refusals.** SPY: `same_pullback` 11:42,
+  then a **second `skip_target_behind` at 11:58** (target 764.75 vs a 762.16 short entry). IWM:
+  `same_pullback` 11:34, then `skip_target_behind` **11:56** (293.56 vs 291.24). QQQ: one
+  `same_pullback` at 11:42 and no new opportunity. All three remain short-biased scenario 4 (break
+  PDL); **QQQ is still the only symbol with a genuinely valid target** (710.81) and it stays blocked
+  by the no-trade zone because its 7.2-point PM range (713.50–720.67) swallows the whole PDL break.
+  Price at 12:03: SPY 762.15, QQQ 716.13, IWM 291.03.
+- **F76 confirmed, exactly as predicted.** Run 37 forecast that SPY and IWM would keep refusing while
+  their PM-break targets sit above their own anchors; both did, once each. Logged as confirming
+  evidence, not re-litigated. **Still a proposal — nothing built**; recommendation stays option (b)
+  (validate the target against the anchor at construction and mint no setup, with a stated reason).
+- **F77 (new, NOT fixed — measured, low severity).** Sampling `GET /api/options/quote/<occ>` on the
+  three 0DTE ATM puts: the top-level chain row and the nested real-time quote agree on every call
+  **except the first after an idle gap**, where the row serves the previous cycle's value — SPY 762P
+  row 0.74/0.75 vs OPRA 0.875/0.885, QQQ 716P row 0.97/0.98 vs OPRA 1.235/1.245 (IWM agreed); five
+  immediately-following samples matched exactly on all three. Both series are Alpaca/OPRA, so this is
+  refresh cadence, **not** a delayed-feed fallback. The money path is already safe — **F14**'s
+  `opts.reprice(c)` in `pick_contract` means sizing, pre-checks and the never-chase cap all read the
+  live NBBO. What the reprice does not revisit is *which strike was chosen*: `select_by_premium`
+  ranks the ladder on chain asks, so a one-cycle-stale ladder could land on an adjacent strike
+  (step 1.0 on all three). **Unobserved in practice — no `contract` pick has fired on this desk yet**,
+  so this measures the inputs, not a mis-pick. Direct evidence for the open **F30-family question of
+  which premium series is authoritative**; the fix, if wanted, is to reprice before ranking rather
+  than after. Not built — it touches the shared `options/pick` path.
+- **The `/team2` UI check run 37 could not complete is now green.** The blocker was that `?token=`
+  does not authenticate the SPA route; the workaround is to set the `zargar_session` cookie in the
+  browser before navigating. Both the **Plans** and **Armed** tabs render all three plans correctly,
+  with live reads and the right plain-language refusal text ("the planned target is already behind
+  price … (F72)" on SPY/IWM, the no-trade-zone line on QQQ), version chip 0.7.27, bar age ~109s.
+  Recording the recipe so future runs do not re-lose it.
+- **Next run (12:30–13:00 ET) should:** (1) still hunt the **first priced fire of the day** — strike
+  selection (~$0.60 ask) and live-vs-replay fire parity remain untested today, and F77 is one of the
+  things that first `contract` event would let us check for real; (2) watch **QQQ**, the only symbol
+  that can still trade, which needs price to leave 713.50–720.67; (3) expect continued SPY/IWM
+  refusals and note them once, not per row. No restart queued. Still open for the user: **F47**,
+  **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**,
+  **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question** (measured; the
+  recommendation is "leave it off"), **F74**, **F75**, **F76**, **F77**, F67's two shared-side
+  halves, and the F30-family question of which premium series is authoritative.
 ## Desk session 2026-09-09 evening — F75 repair batch (v0.7.28)
 
 Reviewer's second pass accepted with additions; user: "Proceed with the repair right away since we're still in
