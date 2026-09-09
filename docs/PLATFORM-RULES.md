@@ -976,3 +976,14 @@ surface through the recorder status and do not interrupt execution. The desk has
 an explicit save/refresh control. The additive table was provisioned only in
 zargar_dev_codex after verifying empty execution state. Recording remains off in
 the interactive preview. Other techniques and runtime databases were untouched.
+
+
+### Cartel readiness and coverage review — 2026-09-08
+
+Cartel's new preparation readiness checks precede its existing arming and common
+order/risk path. Bounded recovered minute history seeds only its own plan, with the
+new observation cutoff intact. No historical crossing is replayed as an order.
+Decision explanations survive recovery and are journaled as Cartel state changes.
+ETF coverage, industry interpretation and research variants are Cartel-owned;
+other techniques, book routing, loss guards and protective exits are unchanged.
+Details: techniques/options-cartel/FIDELITY-REVIEW-2026-09-08.md.

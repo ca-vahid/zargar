@@ -20,6 +20,7 @@ from ...marketstructure.sessions import session_bounds, session_date
 from ...models import BarRow, Event, TechniqueRun
 from .entry import read_entry
 from .plans import CartelPlan
+from .preparation_readiness import retain_decisions
 from .state import ArmRepository
 
 
@@ -104,6 +105,9 @@ class CartelObserver(SessionListener):
             for b in self.engine.bars.bars(symbol, tf="1m", limit=1000, include_forming=False):
                 if opens <= b.ts < closes and b.ts+60_000 <= now:
                     minutes[str(b.ts)] = b.to_row()
+            for values in locked.config.get('preparation', {}).get('contextMinutes', []):
+                if opens <= values[0] < closes and values[0]+60_000 <= now:
+                    minutes.setdefault(str(values[0]), values)
             if locked.state.get("day") == day:
                 minutes.update(locked.state.get("minutes", {}))
             cutoff = locked.state.get("observeAfter", locked.state["armedAt"])
@@ -139,7 +143,7 @@ class CartelObserver(SessionListener):
         dto.bar_index = len(state.get("minutes", {}))
         result = dto.to_dict(portfolio=self.engine.positions.portfolio(row["portfolioId"]),
                              quote=self.engine.quotes.get(plan.symbol), now_ms=self.clock())
-        result.update(observation=state.get("observation"), signal=state.get("signal"),
+        result.update(decisionHistory=state.get("decisionHistory", []), observation=state.get("observation"), signal=state.get("signal"),
                       phase=state["phase"], executionAvailable=False)
         trigger = {"id": "cartel_entry", "label": "Cartel entry",
                    "kind": "breakdown" if plan.direction == "short" and plan.entry.mode == "breakout" else plan.entry.mode,
@@ -235,13 +239,16 @@ class CartelObserver(SessionListener):
                 tape = [Bar(symbol, "1m", *values) for values in minutes.values()]
                 observation = read_entry(plan, tape, now, entry_after=state.get("observeAfter", state["armedAt"]))
                 row.state = {**state, "minutes": minutes, "day": day, "lastMinute": bar.ts,
-                             "observation": observation}
+                             "observation": observation, "decisionHistory": retain_decisions(
+                                 state.get("decisionHistory", (state.get("observation") or {}).get("trace", [])), observation)}
                 if observation["status"] in ("expired", "invalidated"):
                     row.status = "expired" if observation["status"] == "expired" else "disarmed"
                 consumed = bool(observation["signal"]) and self.repository.consume_locked(
                     row, observation["signal"], now_ms=now)
                 observed = self.repository.view(row)
             self.rows[rid] = observed
+            if observed['state'].get('decisionHistory') and observed['state']['decisionHistory'] != state.get('decisionHistory'):
+                await self.repository._journal(observed, 'entry_decision')
             if observation["status"] in ("expired", "invalidated"):
                 await self.repository._journal(observed, observation["status"])
             if consumed:

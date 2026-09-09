@@ -25,6 +25,7 @@ from .industry import IndustrySnapshot, read_industry, save_snapshot
 from .industry_feed import capture_industries
 from .plans import CartelPlan
 from .preparation_io import DATA_ERRORS, PreparationHistory, observed_work, rate_limited
+from .preparation_readiness import baseline_coverage, entry_readiness, load_session_context
 from .preparation_scope import SETTING as SETTING  # noqa: PLC0414 - preserve the existing public constant
 from .preparation_scope import (
     read_policy,
@@ -76,6 +77,7 @@ async def practice_portfolio(engine, requested=None):
 
 def resumable(row, policy, now):
     return bool(row.technique == 'options_cartel' and row.mode == 'preparation'
+        and row.config.get('coverageVersion') == 2
         and row.status in ('done', 'failed') and row.result.get('resumeReady')
         and (row.status == 'failed' or row.result.get('dataErrors', 0) > 0 or row.result.get('planErrors', 0) > 0)
         and row.config.get('workspace', 'practice') == policy.workspace
@@ -119,7 +121,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
               'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
         parent_run_id=resume_run_id, primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
-        config={'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
+        config={'coverageVersion': 2, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
         result=result, tags=['cartel:preparation'])
     async with engine.sf() as session:
         session.add(record); await session.commit()
@@ -182,7 +184,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                     continue
                 await runtime.disarm(old_id, reason='daily preparation refresh')
                 result['replacedPlans'].append(old_id)
-        rules = CartelRules.for_profile(policy.profile)
+        rules = CartelRules.for_profile(policy.profile, require_industry_rank=policy.industry_policy == 'strict', reviewed_etfs=policy.reviewed_etfs)
         async def discovery_progress(update):
             result['discoveryProgress'] = update
             await report(message=update['message'], phase='discovering')
@@ -253,13 +255,13 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                 result['currentSymbol'] = symbol
                 try:
                     group = listing.get('industry') or ''
-                    if rules.require_industry_rank and group not in industry_reads:
+                    if group not in industry_reads:
                         industry_reads[group] = read_industry(industry, group, at=at, direction=direction,
                             top_n=rules.industry_top_n, max_age_days=rules.max_metadata_age_days)
-                    if rules.require_industry_rank and industry_reads[group]['status'] == 'fail':
+                    if rules.require_industry_rank and listing.get('securityType') != 'etf' and industry_reads[group]['status'] == 'fail':
                         result['rows'].append({'symbol': symbol, 'status': 'prefiltered',
                             'reasons': ['Industry fails the required weekly/monthly ranking gate; history is unnecessary'],
-                            'industrySnapshotId': captured['runId']})
+                            'industrySnapshotId': captured['runId'], 'industryContext': industry_reads[group]})
                         result['prefiltered'] += 1; result['processed'] += 1
                         result['notEvaluated'] = len(eligible)-result['processed']
                         await checkpoint('evaluating')
@@ -280,7 +282,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                         continue
                     history, provenance = await history_reader.daily(symbol, at, client)
                     facts = FactsInput(symbol=symbol, observed_at=listing['observedAt'], source=listing['source'],
-                        market_cap=listing['marketCap'], cap_observed_at=listing['observedAt'],
+                        market_cap=listing['marketCap'], security_type=listing.get('securityType', 'stock'), cap_observed_at=listing['observedAt'],
                         cap_data_as_of_ms=listing['sourceBarOpenAt'], fundamentals_snapshot_id=run_id, industry=listing['industry'],
                         membership_observed_at=listing['observedAt'], membership_source='TradingView primary listing classification')
                     research = ResearchInput(history=history, indices=indices, facts=facts, rules=rules,
@@ -305,11 +307,17 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                         result['message'] = 'Provider unavailable after three consecutive transport failures. Saved work can be resumed.'
                         raise
                     entry = {'symbol': symbol, 'status': 'data_error', 'reason': str(exc)[:600]}
+                entry['industryContext'] = industry_reads[group]
+                entry['industryPolicy'] = policy.industry_policy
                 result['rows'].append(entry); result['processed'] += 1
                 result['notEvaluated'] = len(eligible)-result['processed']
                 result['cacheHits'] = history_reader.cache_hits
                 result['historyRequests'] = history_reader.requests
                 await checkpoint('evaluating')
+            evaluated_by_symbol = {r['symbol']: r for r in result['rows']}
+            result['watchlistComparison'] = {'source': policy.comparison_source, 'rows': [
+                {'symbol': sym, **evaluated_by_symbol.get(sym, {'status': 'outside_universe', 'reasons': ['Not returned by the eligible discovery universe; not assumed to fail setup checks.']})}
+                for sym in policy.comparison_symbols]}
             # Discovery volume order is retained; choose one measured setup per name.
             for saved_id, review in pool:
                 saved = service._view(await service._load(saved_id), detail=True)
@@ -347,6 +355,9 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                         plan_record = await service.prepare(enriched['runId'], review, plan_id=key,
                             preparation={'runId': run_id, 'workspace': policy.workspace, 'session': target_session, 'portfolioId': portfolio_id, 'reviewer': 'automatic_rules'})
                     plan = CartelPlan.model_validate(plan_record['result']['plan']['plan'])
+                    coverage = baseline_coverage(plan)
+                    if not coverage['ready']:
+                        raise ValueError(f"Volume baseline covers {coverage['available']}/{coverage['expected']} periods; plan saved but not armed. Rebuild with complete history.")
                     selection_policy = await affordable_contract_policy(engine, portfolio_id, policy)
                     selected = await observed_work(choose(engine, plan, selection_policy), report, message=f'Selecting {symbol} option contract')
                     row = {'symbol': symbol, 'planId': plan.id, 'setup': plan.setup, 'trigger': plan.trigger,
@@ -454,6 +465,11 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
             if now >= valid_until:
                 statuses[plan.id] = 'Preparation evidence expired; next preparation run must rebuild the plan'
                 continue
+            context = await load_session_context(engine, plan, now)
+            readiness = entry_readiness(plan, context, now)
+            if not readiness['ready']:
+                statuses[plan.id] = '; '.join(readiness['reasons'])
+                continue
             selection = await choose(engine, plan, await affordable_contract_policy(engine, portfolio_id, policy))
             if not selection['selected']:
                 statuses[plan.id] = 'Waiting for an option contract meeting the configured DTE, delta, liquidity and premium limits'
@@ -467,7 +483,8 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
                 contract_symbol=selection['selected']['symbol'], budget=policy.budget, risk_pct=policy.risk_pct,
                 max_units=policy.max_contracts, overnight_ack=policy.workspace == 'practice' or policy.overnight_ack, allow_live=policy.workspace == 'live' and policy.allow_live)
             await runtime.arm(plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
-                'clientKind': 'desktop', 'preparation': {'runId': row.id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'validUntil': valid_until}})
+                'clientKind': 'desktop', 'preparation': {'runId': row.id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'validUntil': valid_until,
+                    'contextMinutes': [b.to_row() for b in context]}})
             statuses[plan.id] = 'armed'
         except Exception as exc:  # noqa: BLE001 - expose retry state without interrupting execution
             statuses[item['planId']] = f'{type(exc).__name__}: option preparation remains pending'

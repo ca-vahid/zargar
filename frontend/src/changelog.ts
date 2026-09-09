@@ -29,6 +29,12 @@ export const CHANGELOG: Release[] = [
       { tag: "fixed", text: "Team2 sells the rest at the plan target on the first FRESH underlying print through it (reduce-only limit at the contract's bid) instead of waiting for the 2-minute close; the model labels its own target exits as an intrabar assumption." },
       { tag: "fixed", text: "A Team2 pullback is an episode (price must close half an ATR off the EMA13 before the next one counts), and only a PRICED pullback spends the two-pullback allowance: a no-contract refusal no longer burns it. The read shows pullbacks / opportunities / spent / attempts." },
       { tag: "improved", text: "The F47 target-floor and both F56 no-trade-zone variants stay EXPERIMENTAL (sweep-only); twenty banked Practice sessions trigger a review, never an automatic promotion." },
+    title: "Cartel coverage and entry explanations",
+    items: [
+      { tag: "improved", text: "Cartel preparation can evaluate leaders across industries with ranks as context, retains a strict-rank option, and includes explicitly reviewed ETFs such as DRAM. A sourced comparison watchlist shows why names were included or excluded." },
+      { tag: "fixed", text: "New automatic plans require complete confirmation-volume baselines. Pending contracts need complete opening history and an unreached target before arming; recovered history never turns a missed crossing into a live entry." },
+      { tag: "improved", text: "Entry rejections retain timestamps and measured thresholds through recovery. Practice and Live settings expose the entry timeframe, breakout/retest approach, volume and close-quality choices." },
+      { tag: "new", text: "Research replay comparisons support 5m and 15m breakout/retest variants with separately rebuilt historical volume baselines. Comparisons place no orders and never change the active strategy automatically." },
     ],
   },
   {
