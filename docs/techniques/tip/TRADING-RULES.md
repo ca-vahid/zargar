@@ -56,6 +56,17 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-08 (night) — **Codex audit fixes 1/3/5 shipped** (v0.7.17; full
+  triage + verification in `reviews/2026-09-08-system-audit-response.md`).
+  Units: `price_domain` on option tips + `underlying_price_checks_ok` gate —
+  premium targets are never judged against (or planned as) underlying prices;
+  ambiguous units skip on the record. Extraction: typed outcomes — a garbled
+  reply is status=error (sweep retries once), a refusal is status=refused;
+  neither masquerades as commentary. Retros: keyset cursor + true backlog +
+  oldest-unreviewed age (the oldest-50 window starved at ~50 lifetime retros).
+  Open, in order: repair/reconciliation, gateway envelope, analyst evidence
+  tools, knowledge governance + as-of experiments, measurement split.
+
 - 2026-09-08 (evening) — **"Skip must never sit armed" is CODE** (v0.7.15, user
   yes after 8 manual analyst disarms in one day, one near-fire: eva's skipped
   MU 850P waiting AT live spot). `arm_shadow` refuses skip/watch verdicts, the

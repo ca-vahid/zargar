@@ -164,16 +164,38 @@ async def run_tip_retros(eng, *, client=None, limit: int = 5) -> dict:
 
     if not bool(eng.settings.get("techniques.tip.retro_enabled", True)):
         return {"skipped": "techniques.tip.retro_enabled off"}
+    # Codex audit 2026-09-08 finding 5: "oldest 50 then filter reviewed"
+    # starves — once 50 tagged rows sit older than any new closure, position
+    # 51 is never reached while the response says pending: 0. Page with a
+    # keyset cursor, filtering eligibility BEFORE the cap, and report the
+    # real backlog + the oldest unreviewed age.
+    todo: list[dict] = []
+    backlog = 0
+    oldest_unreviewed = None
+    cursor = None
     async with eng.sf() as session:
-        rows = (await session.execute(
-            _sel(ManagedPositionRow)
-            .where(ManagedPositionRow.technique == "tip",
-                   ManagedPositionRow.status == "closed")
-            .order_by(ManagedPositionRow.updated_at.asc()).limit(50))).scalars().all()
-        todo = [{"id": r.id, "symbol": r.symbol, "tags": list(r.tags or []),
-                 "config": r.config or {}, "state": r.state or {},
-                 "legs": r.legs or []}
-                for r in rows if "retro-done" not in (r.tags or [])][:limit]
+        for _page in range(40):                       # scan cap: 40 x 200 rows
+            q = (_sel(ManagedPositionRow)
+                 .where(ManagedPositionRow.technique == "tip",
+                        ManagedPositionRow.status == "closed")
+                 .order_by(ManagedPositionRow.updated_at.asc()).limit(200))
+            if cursor is not None:
+                q = q.where(ManagedPositionRow.updated_at > cursor)
+            rows = (await session.execute(q)).scalars().all()
+            if not rows:
+                break
+            cursor = rows[-1].updated_at
+            for r in rows:
+                if "retro-done" in (r.tags or []):
+                    continue
+                backlog += 1
+                if oldest_unreviewed is None:
+                    oldest_unreviewed = r.updated_at
+                if len(todo) < limit:
+                    todo.append({"id": r.id, "symbol": r.symbol,
+                                 "tags": list(r.tags or []),
+                                 "config": r.config or {}, "state": r.state or {},
+                                 "legs": r.legs or []})
     done = failed = 0
     for row in todo:
         res = await retro_position(eng, row, client=client)
@@ -186,7 +208,16 @@ async def run_tip_retros(eng, *, client=None, limit: int = 5) -> dict:
             if db is not None:
                 db.tags = list(db.tags or []) + ["retro-done"]
                 await session.commit()
-    return {"retros": done, "failed": failed, "pending": max(0, len(todo) - done - failed)}
+    import datetime as _dt
+    age_days = None
+    if oldest_unreviewed is not None:
+        _now = _dt.datetime.now(_dt.timezone.utc)
+        _ts = oldest_unreviewed if oldest_unreviewed.tzinfo else \
+            oldest_unreviewed.replace(tzinfo=_dt.timezone.utc)
+        age_days = round((_now - _ts).total_seconds() / 86400, 1)
+    return {"retros": done, "failed": failed,
+            "pending": max(0, backlog - done),
+            "backlog": backlog, "oldestUnreviewedAgeDays": age_days}
 
 
 async def grade_lanes(eng, *, limit: int = 25) -> dict:

@@ -116,16 +116,25 @@ async def verify_signal(
                 if quote.spread_pct > max_spread else "")
 
         # 6. price deviation vs claimed entry — PARKING, not fatal: the tip
-        # technique waits for the level instead of chasing or dying
+        # technique waits for the level instead of chasing or dying.
+        # entry_price is underlying by schema contract (premium has its own field)
         if signal.entry_price:
             max_dev = float(settings.get("verification.max_price_deviation_pct", 3.0))
             dev = abs(quote.last - signal.entry_price) / signal.entry_price * 100
             add("price_deviation", dev <= max_dev,
                 f"live price {quote.last:.2f} is {dev:.1f}% from claimed entry "
                 f"{signal.entry_price:.2f} (max {max_dev:.1f}%)" if dev > max_dev else "")
+        # 6b. UNITS (Codex audit 2026-09-08 finding 1): an option tip's
+        # targets/stop may be the CONTRACT's prices — never compare those to
+        # the underlying's last. Ambiguous units skip the check, on the record.
+        from .schemas import underlying_price_checks_ok
+        units_ok, units_why = underlying_price_checks_ok(signal, float(quote.last or 0))
+        if not units_ok:
+            add("price_units", True,          # informational, never fatal
+                f"{units_why} — underlying target checks skipped")
         # already past target = the move already happened (both directions)
         first_target = signal.target_price or (signal.target_prices[0] if signal.target_prices else None)
-        if first_target:
+        if first_target and units_ok:
             if signal.direction == "long":
                 add("not_past_target", quote.last < first_target,
                     f"live price {quote.last:.2f} already at/past target {first_target:.2f}"

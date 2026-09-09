@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.16";
+export const APP_VERSION = "0.7.17";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.17",
+    date: "2026-09-08",
+    title: "The audit's first three fixes",
+    items: [
+      { tag: "fixed", text: "Option tips whose targets are the contract's own price (\"1.40 → 1.75\") are no longer judged against the stock's price — the units are labeled at extraction, ambiguous ones skip the check on the record instead of guessing, and premium numbers never become stock levels in an armed plan. (Codex audit finding 1.)" },
+      { tag: "fixed", text: "A garbled AI extraction no longer masquerades as \"no signal here\": it is recorded as an error and retried once; a safety refusal is recorded distinctly. Silent tip loss closed. (Finding 3.)" },
+      { tag: "fixed", text: "Nightly position reviews can no longer starve: eligibility is checked before the batch cap, and the response reports the true backlog and the oldest unreviewed age. (Finding 5.)" },
+    ],
+  },
   {
     version: "0.7.16",
     date: "2026-09-08",
