@@ -2956,3 +2956,83 @@ data and original research records. Keep target_replan off until the clean datas
   bar exists on a closed day); the sim-block minutes hold 15,641 live exchange rows, all from the backfill that ran
   after the batches committed. No correction had a writer to race against.
 - Deploy: after the close through `ZargarRestart` (the door refuses on missing evidence from now on).
+
+## 2026-09-09 15:45 ET (run 45 — another desk deployed v0.7.32 mid-session at 15:33; the 15:30 gate fired clean; new F84 fixed as v0.7.33)
+
+- **The desk went down and came back inside this run — not a crash.** Health was green on v0.7.30 at
+  15:31; five minutes later `:8420` refused connections. Cause found in
+  `logs/restart-20260909-123337.log`: **another desk ran `scriptsestart.ps1` at 15:33:37 ET**,
+  deploying **v0.7.32** (which carries our queued v0.7.31 F82a fix). The app is up on **v0.7.32**,
+  armed 73, and the script's own restore check passed: `armed 70/70, openTrades 0/0, workingEntries
+  0/0, pendingExits 0/0, restingOrders 10/10, inflightOrders 0/0`. **This is a mid-session restart
+  spanning the 15:30 last-entry gate** — harmless today because Team2's book was empty and its
+  15:32 `skip_last_entry` was already logged, but it is not a thing this watch would have done, and
+  it is worth the platform owners knowing a deploy landed 27 minutes before the close.
+- **Team2 came through it intact.** All three plans `armed`, `complete: true`, `needsAttention`
+  false, `readError` null, mode **auto** on Team2 Practice, **zero trades, zero open positions**,
+  ninth session. Every event survived (SPY 13, QQQ 11, IWM 38 — identical counts either side of the
+  restart); `team2 runner restored 3 armed plan(s)` in the log; bars resumed immediately.
+- **The 15:30 last-entry gate fired correctly on all three** — `skip_last_entry` at 15:32 on SPY,
+  QQQ and IWM ("past 15:30 — no new entries, managing what is open until the 15:45 flatten, D6/C3").
+  The 15:45 flatten was still one minute out at the end of this run; **next run confirms it** (there
+  is nothing to flatten).
+- **Data real-time and provenance-clean.** 363/363 RTH 1m rows per symbol 09:30–15:32, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps** on all three. Quote age 0 s, session `regular`, bar age 75–106 s (elevated only across the
+  reboot, back to normal after). F75/F79/F80 stay closed.
+- **Replay parity exact on all three, post-restart**: SPY 13/13, QQQ 11/11, IWM 38/38, zero trades
+  both ways.
+- **What the read saw since 14:38.** IWM only: `late_touch` at **15:02, 15:26, 15:30** (all
+  watch-only past the D9 allowance) plus a 15:28 `same_pullback`. QQQ nothing since its 14:02
+  `same_pullback` on scenario 3; SPY nothing since 12:28. Prices at 15:44: SPY 762.75, QQQ 716.09,
+  IWM 290.42 — QQQ never left 713.50–720.67, so its scenario 3 was never takeable. **Day totals: 18
+  `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`, 7 `late_touch`, 3
+  `skip_last_entry`, 0 fires.**
+- **F84 — NEW, found and FIXED this run (v0.7.33, commit `1853ace`).** IWM's `pm_break_down@10:30`
+  logged **seven** `late_touch` events today and **every one said "touch #3"**. Cause: a watch-only
+  contact must not spend the D9 allowance, so `session.py` `continue`s without incrementing
+  `s.touches`, and the label `idx = s.touches + 1` is pinned at the cap forever. The freeze is
+  correct and stays — the *message* was the defect: seven distinct contacts are indistinguishable
+  from one re-logged contact, and it misled this watch twice (runs 43 and 44 both recorded "touch
+  #4" for the 14:16 event, a number no code ever emitted). The prose now counts with
+  `s.opportunities`, which does advance. **Prose only** — the `touch` payload keeps the frozen index
+  (contract unchanged); no rule, threshold, gate, size or money path moved. 120 Team2 tests pass,
+  `check-release` and the frontend build green.
+- **F82 addendum — the late-session survivor is decided by luck, not by the method.** Third
+  read-only chain measurement (no order, no plan touched), 23 minutes to expiry: **SPY 1** in-band
+  strike (763P @ $0.31, **delta −0.435**, spot 763.14 — the strike is 0.14 away), **QQQ 1** (717C @
+  $0.24, delta 0.342), **IWM 0** (nearest OTM put $0.02 → `select_by_premium` returns `None`). This
+  **corrects the shape** of run 44's reading: the band does not simply empty after ~15:00 — SPY had
+  0 in-band at 15:05 and 1 again at 15:37 because price drifted back onto a strike. The real
+  behaviour is that **the band collapses onto whichever strike is nearest the money**, so which
+  symbol is tradeable late, and at what delta, is set by spot's distance to the nearest strike
+  rather than by anything in the method. Strongest argument yet for F82 option **(c), a delta band
+  beside the premium band** — still the user's call.
+- **Proposed (not built) — an empty OPRA warning.** `zargar/options/service.py:356` logs
+  `"OPRA quotes failed: %s"` on the generic exception path, and today's boot produced exactly that
+  with an **empty reason** (`OPRA quotes failed: ` — the exception's `str()` is blank). Three
+  occurrences all-time, all at startup, no impact — but OPRA is the source Team2's fire path
+  reprices from, so a blank warning about it is the one line a post-mortem would need. One-line fix
+  (log `type(exc).__name__` beside the message). **Shared engine code, so not touched** — the user's
+  call, and it would want a PLATFORM-RULES row.
+- **Also for the platform owners (not Team2, not fixed):** the restart logged one
+  `restore check MISMATCH after restart` naming **36 `enhanced_market` plans**, which resolved on its
+  own as the restore finished (`restart-check` now `safe: true`, armed 73). And
+  `persist_bars: dropped N non-bucket-aligned stub bar(s)` continues at roughly two warnings a
+  minute — the shared F75 guard doing its job, Team2's tape is complete, but it is enough noise to
+  bury a real warning. Both were already flagged in run 44.
+- **UI green.** `/team2` renders on v0.7.32 with all three plans, correct sheets, ARMED status, the
+  0DTE line ("entries until 15:30, flat by 15:45") and armed 73.
+- **DEPLOY QUEUED: v0.7.33 (`1853ace`).** Deliberately not taken — a prose-only fix is worth nothing
+  in the last ten minutes of a session, and `restart-check` being `safe: true` is not a reason to
+  restart across the 15:45 flatten. **Deploy on the next run, after the 16:00 close.**
+- **Next run (16:00–16:30 ET, after the close) should:** (1) **deploy v0.7.33** (`1853ace`) via the
+  scheduler task `ZargarRestart` — check `restart-check` first; (2) confirm the **15:45 flatten** ran
+  clean on the empty book and the ninth session closed with 0 trades; (3) re-confirm bar provenance
+  stays `exchange` through the close and the 17:00 `team2_plan_nightly` job is registered for
+  tomorrow's plans; (4) verify the new `late_touch` prose reads correctly once 0.7.33 is serving.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82** (now with a third
+  measurement), **F83**, F67's two shared-side halves, and the F30-family question of which premium
+  series is authoritative.
