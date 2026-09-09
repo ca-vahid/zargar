@@ -89,7 +89,10 @@ if ($leftAlive.Count -gt 0) {
 Start-Sleep -Seconds 2
 
 # --- 2. start ------------------------------------------------------------------
-$args2 = @("-Detach"); if ($Force) { $args2 += "-Force" }
+# splat a HASHTABLE: under Windows PowerShell 5.1 an array splat passes "-Detach" as a positional string,
+# not as the switch, and start.ps1 then ran the engine in this console's FOREGROUND (2026-09-09 09:26 ET:
+# the restart never reached its health wait or restoration check)
+$args2 = @{ Detach = $true }; if ($Force) { $args2.Force = $true }
 & (Join-Path $Root "scripts\start.ps1") @args2
 if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; exit 1 }
 
