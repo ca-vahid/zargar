@@ -607,6 +607,10 @@ shadow instance). Needs the engine piece: an intraday option-print sweep detecto
 stream (Flow is nightly today; its reads did flag NVDA 11 / MU 11 / TSLA 9 on his days). Adopt
 bar +0.3R/fire; measure exits in premium percent to compare with him (T-6). Evidence:
 `notes/2026-09-08-author-x-feed.md`, flow_reads 09-01..09-08.
+**Phase 0 built 2026-09-08 evening:** the detector finds his TSLA sweep at 09:40 (he entered 09:49),
+GPRO at 14:22, NVDA's put flow at 09:42, and nothing on NVDA's liquid calls - see
+FLOW-CONFIRMATION-PLAN phase 0 for the calibrated definition. Next: backfill the universe's
+near-the-money contracts for the last 20 sessions and run the `flow_confirm` variant.
 
 ## 4. Optimization backlog (ranked)
 

@@ -45,6 +45,7 @@ CONTRACTS: dict[str, dict] = {
     "TechniquePlanRestored":  {"version": 1, "required": ("runId", "symbol", "planFor", "portfolio")},   # restart re-attach; never counted as an arm
     "TechniquePlanDisarmed":  {"version": 1, "required": ("runId", "symbol", "reason")},
     "TechniquePlanRolled":    {"version": 1, "required": ("runId", "symbol", "from", "to")},   # multi-day plan advanced to its next session (ARM-GAPS A2/A4); was journaled without a contract
+    "FlowSweep":              {"version": 1, "required": ("underlying", "occ", "ts", "windowBuys", "cumulative", "volOi", "method")},   # research/optiontrades.py (live detector, phase 2)
     "TechniqueCounterfactual": {"version": 1, "required": ("runId", "symbol", "trigger", "reason", "status", "pnl")},   # a trade the app missed through a bug, reconstructed after the fix (execution/counterfactual.py) - never a portfolio fill
     "TechniquePlanPaused":    {"version": 1, "required": ("runId", "symbol")},
     "TechniquePlanResumed":   {"version": 1, "required": ("runId", "symbol")},

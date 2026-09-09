@@ -58,13 +58,29 @@ available to us, historically and (via the same feed's websocket) live.
 
 ## 4. Phases
 
-### Phase 0 - measurement plumbing (half a day)
-- [ ] `flow_sweeps` table + model; `FlowSweep` event contract.
-- [ ] `tools/optiontrades_backfill.py`: pull Alpaca option trades for a symbol list and a date
-      range, classify against the NBBO quotes from the same API, write sweeps. Verify on
-      the author's three named trades (TSLA 08-31, GPRO 08-31, NVDA 09-04) - the detector
-      must find them or D1 is wrong.
-- [ ] Open-interest source: the morning CBOE chain snapshot we already store (`option_chain_snapshots`).
+### Phase 0 - measurement plumbing (BUILT 2026-09-08 evening)
+- [x] `flow_sweeps` table + model; `FlowSweep` event contract.
+- [x] `research/optiontrades.py` (fetch, classify, detect) + `tools/optiontrades_backfill.py`
+      (`--occ` / `--underlying --near N`, `--oi`, `--dry --verbose`). Historical option QUOTES
+      are not on our Alpaca plan (404), so history classifies buys with the TICK TEST (uptick =
+      buy, repeat = half); the live detector (phase 2) classifies on the real NBBO and rows
+      carry `method` so the two are never mixed in a sweep.
+- [x] Open interest from `option_chain_snapshots` (latest snapshot at or before the day);
+      unknown OI is judged against an assumed 2,000, never against 1.
+- [x] Calibrated on the author's named trades (dry runs, 2026-09-08 22:30 ET):
+
+| contract | day | prints / contracts | OI | sweeps found | the author |
+|---|---|---|---|---|---|
+| TSLA $360C 0DTE | 08-31 | 31,807 / 108,445 (16x OI) | 6,742 | **09:40** (5,009 buys in the window, cumulative 3.0x OI) | entered 09:49, +240% |
+| GPRO $1C 9/18 | 08-31 | 1,657 / 32,651 (12x) | 2,733 | **14:22** and 15:48 | "32,702 contracts, all on the ask", closed at $0.24 |
+| NVDA $230P 0DTE | 09-04 | 54,952 / 499,435 (65x) | 7,716 | **09:42** and 10:55 | (he traded the calls, +115%; the puts were the flow) |
+| NVDA $230C 0DTE | 09-04 | 37,602 / 291,995 (4.2x) | 70,246 | none | liquid contract: no burst against its own pace |
+
+      D1 as calibrated (`SweepRules`): 5-minute window; window buys >= max(250, 0.25 x OI);
+      session cumulative >= max(1,000, 3 x OI); the window must be >= 3x the contract's own
+      prior 30-minute pace once 15 minutes have been seen; 10-minute cooldown; at most 3 sweeps
+      per contract per day. The first version fired every 10 minutes on NVDA's puts (33 "sweeps")
+      until the pace rule went in - a liquid contract is busy, not swept.
 
 ### Phase 1 - history and the variant (one to two days)
 - [ ] Backfill sweeps for the EM universe over the sessions we can replay (last 20 trading days).

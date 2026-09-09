@@ -729,3 +729,29 @@ class TechniqueCounterfactual(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)  # win | loss | scratch | not_filled | open | error
     result: Mapped[dict] = mapped_column(JSONVariant, default=dict)                # fill, exits, pnl, r, price sources
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class FlowSweep(Base):
+    """A sweep: the minute a rolling window of buyer-initiated option volume,
+    on a session already trading a multiple of open interest, qualified
+    (`research/optiontrades.py`, FLOW-CONFIRMATION-PLAN phase 0). One row per
+    contract per qualifying minute; `method` says whether buys were classified
+    on the live NBBO or by the historical tick test."""
+    __tablename__ = "flow_sweeps"
+    __table_args__ = (UniqueConstraint("occ", "minute_ts", name="uq_flow_sweep_occ_minute"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    underlying: Mapped[str] = mapped_column(String(32), index=True)
+    occ: Mapped[str] = mapped_column(String(32), index=True)
+    day: Mapped[str] = mapped_column(String(10), index=True)          # ET session date
+    minute_ts: Mapped[int] = mapped_column(BigInteger)                 # epoch ms of the qualifying minute
+    window_contracts: Mapped[int] = mapped_column(Integer, default=0)
+    window_buys: Mapped[int] = mapped_column(Integer, default=0)
+    cumulative: Mapped[int] = mapped_column(Integer, default=0)
+    oi: Mapped[int] = mapped_column(Integer, default=0)
+    vol_oi: Mapped[float] = mapped_column(Float, default=0.0)
+    big_prints: Mapped[int] = mapped_column(Integer, default=0)
+    notional: Mapped[float] = mapped_column(Float, default=0.0)
+    method: Mapped[str] = mapped_column(String(8), default="tick")      # tick | nbbo
+    source: Mapped[str] = mapped_column(String(16), default="alpaca")
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
