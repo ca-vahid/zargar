@@ -611,6 +611,15 @@ bar +0.3R/fire; measure exits in premium percent to compare with him (T-6). Evid
 GPRO at 14:22, NVDA's put flow at 09:42, and nothing on NVDA's liquid calls - see
 FLOW-CONFIRMATION-PLAN phase 0 for the calibrated definition. Next: backfill the universe's
 near-the-money contracts for the last 20 sessions and run the `flow_confirm` variant.
+**Phase 1a verdict, 2026-09-08 late (the confirm-gate is REJECTED on history):** of the 30 valid
+replay fires over ten sessions (08-27..09-08), 19 had a chain snapshot to rebuild the contract;
+sweeps printed inside [-15, +10] minutes of the touch on **1 of 19** (META k1 09-08, a -1.03R
+loser). All 19 unfilled by the gate would have made +2.61R. A gate that keeps 1 fire in 19 and
+picks a loser is not a gate; the finding is that the author's sweeps do not sit on OUR levels
+(GPRO had no level at all). D4 ("confirm, never create") is the wrong premise for his edge.
+Next test (phase 1b): sweeps as the TRIGGER - every sweep in the universe's near-the-money
+contracts, entered at the sweep minute and exited on his tempo (+100% / -50% / 15:45), scored
+in premium percent from the contract's own 1-minute bars. `tools/flow_sweep_universe.py`.
 
 ## 4. Optimization backlog (ranked)
 

@@ -78,3 +78,23 @@ def test_a_steadily_heavy_tape_is_busy_not_swept():
         steady[i].contracts, steady[i].buys = 12000, 6000
     sweeps = detect_sweeps("NVDA260904P00230000", steady, 8000)
     assert any(T0 + 90 * MIN <= sw.ts <= T0 + 94 * MIN for sw in sweeps)
+
+
+def test_score_trade_takes_stops_and_flattens_on_the_contract_bars():
+    from zargar.tools.flow_sweep_universe import score_trade
+    def bar(minute, o, h, l, c):
+        ts = dt.datetime(2026, 8, 31, 13, 30, tzinfo=dt.timezone.utc) + dt.timedelta(minutes=minute)
+        return {"t": ts.strftime("%Y-%m-%dT%H:%M:%SZ"), "o": o, "h": h, "l": l, "c": c}
+    entry_ts = T0 + 10 * MIN
+    # doubles by minute 25 -> take
+    bars = [bar(i, 2.0, 2.1, 1.9, 2.0) for i in range(11)] + [bar(i, 2.5, 4.5, 2.4, 4.4) for i in range(11, 30)]
+    r = score_trade(bars, entry_ts)
+    assert r["how"] == "take" and r["entry"] == 2.0 and r["exit"] == 4.0 and r["pct"] == 100.0 and r["netPct"] < 100.0
+    # halves -> stop, pessimistic when a bar straddles both
+    bars = [bar(i, 2.0, 2.1, 1.9, 2.0) for i in range(11)] + [bar(11, 2.0, 4.5, 0.9, 1.0)]
+    r = score_trade(bars, entry_ts)
+    assert r["how"] == "stop" and r["exit"] == 1.0
+    # nothing happens -> flat at 15:45
+    bars = [bar(i, 2.0, 2.05, 1.95, 2.0) for i in range(0, 390)]
+    r = score_trade(bars, entry_ts)
+    assert r["how"] == "flat" and dt.datetime.fromtimestamp(r["exitTs"] / 1000, dt.timezone(dt.timedelta(hours=-4))).strftime("%H:%M") == "15:45"

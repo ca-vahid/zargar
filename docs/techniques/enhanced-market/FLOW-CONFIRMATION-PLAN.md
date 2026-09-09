@@ -82,7 +82,22 @@ available to us, historically and (via the same feed's websocket) live.
       per contract per day. The first version fired every 10 minutes on NVDA's puts (33 "sweeps")
       until the pace rule went in - a liquid contract is busy, not swept.
 
-### Phase 1 - history and the variant (one to two days)
+### Phase 1a - the confirm-gate on history (DONE 2026-09-08 late, REJECTED)
+- [x] `tools/flow_variant.py`: rebuild each replay fire's contract (+/-1 strike), backfill its
+      sweeps, mark the fire confirmed inside [-15, +10] min. Result on 30 valid fires / 19 with a
+      chain: **1 confirmed (a -1.03R loser), 18 unconfirmed (+2.61R)**. His sweeps do not sit on
+      our levels; decision D4 (confirm, never create) is withdrawn for the test that follows.
+
+### Phase 1b - sweeps as the trigger (running)
+- [ ] `tools/flow_sweep_universe.py --backfill`: every universe name x snapshot day x the
+      near-the-money contracts (call+put, nearest expiry, +/-1 strike) -> `flow_sweeps`.
+- [ ] `--score`: each sweep entered at its minute's close (proxy for the ask), exited at +100%
+      premium, -50% premium, or 15:45, from the contract's own 1-minute bars (Alpaca). Report
+      win rate, mean/median return, by underlying, by time of day, first-sweep-of-day only.
+      Verdict against D7 restated in premium terms: the strategy must be positive after the
+      $1.04/contract round trip and a 5% slippage haircut on a sample of >= 50 sweeps.
+
+### Phase 1c - the walk-forward variant (only if 1b is positive)
 - [ ] Backfill sweeps for the EM universe over the sessions we can replay (last 20 trading days).
 - [ ] `flow_confirm` in `MarketRules`/`Thresholds` (off | log | require), read by `TriggerTracker`
       via a `sweeps_for(symbol, minute)` lookup injected by the walk-forward.
