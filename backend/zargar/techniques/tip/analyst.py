@@ -89,6 +89,11 @@ class AnalystOpinion(BaseModel):
         default=None, description="Time box in TRADING sessions; re-evaluate dies with it")
     exit_rationale: Optional[str] = Field(
         default=None, description="One sentence: the exit campaign in words")
+    used_notes: list[str] = Field(
+        default_factory=list,
+        description='Labels of the SHARED NOTES you actually relied on for this '
+                    'verdict (e.g. ["N2", "N5"]). Empty when none mattered - '
+                    'being shown a note is not using it.')
     legs: list[dict] = Field(
         default_factory=list,
         description='DEFINED-RISK SPREAD expression (exactly 2 legs, one buy one sell, '
@@ -496,20 +501,30 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
     sym = str(args.get("symbol") or "").upper()
     exp = bool((ctx or {}).get("experiment"))
     as_of_ms = (ctx or {}).get("asOfMs")
+    if exp and name in ("get_chain", "get_expiries", "get_flow", "get_earnings",
+                        "get_positions", "get_open_tips"):
+        # Codex finding 9: complete event-time isolation, not a prompt warning.
+        # The tool-availability matrix in historical mode (documented in the
+        # audit response): quotes WITHHELD (F11), bars CLAMPED to as-of,
+        # search CAPPED at as-of, chain/expiries/flow/earnings and the desk's
+        # CURRENT book all WITHHELD — none of them existed at event time.
+        return {"error": f"historical mode — {name} returns TODAY's state, which "
+                         "did not exist at the tip's time; judge from the tip's "
+                         "own numbers, as-of bars and the capped mirror"}
     if name == "get_positions":
         return _our_positions(eng, sym)
     if name == "search_messages":
+        # F5 + Codex finding 9: as-of isolation belongs IN THE QUERY, before
+        # the LIMIT — post-filtering let newer messages consume the limit and
+        # hide older valid evidence
+        as_of_iso = (dt.datetime.fromtimestamp(as_of_ms / 1000, dt.timezone.utc)
+                     .isoformat() if (exp and as_of_ms) else None)
         rows = await eng.signals_service.discord_search_messages(
             source=str(args.get("source") or "") or None,
             contains=str(args.get("contains") or "") or None,
             hours=float(args["hours"]) if args.get("hours") else None,
+            before=as_of_iso,
             limit=int(args.get("limit") or 20))
-        if exp and as_of_ms:
-            # F5 (batch-1): as-of isolation is HARNESS-enforced — a historical
-            # appraisal must never read the source's LATER messages
-            cap = dt.datetime.fromtimestamp(as_of_ms / 1000,
-                                            dt.timezone.utc).isoformat()
-            rows = [r for r in rows if str(r.get("postedAt") or "") <= cap]
         slim = [{"at": _et_label(r.get("postedAt")), "source": r.get("source"),
                  "author": r.get("author"), "text": (r.get("text") or "")[:280],
                  **({"images": len(r.get("images") or []), "messageId": r.get("id")}
@@ -694,13 +709,19 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                 "ageSeconds": age_s,
                 "delayed": bool(getattr(q, "delayed", False))}
     if name == "get_bars":
-        from ...marketstructure.history import fetch_recent
+        from ...marketstructure.history import fetch_recent, fetch_window
         tf = str(args.get("tf") or "1h")
         if tf not in ("1h", "5m", "15m", "30m"):
             tf = "1h"
         n_sessions = int(args.get("sessions") or 5)
-        bars = await fetch_recent(sym, tf, sessions=n_sessions)
+        if exp and as_of_ms:
+            # as-of clamp (finding 9): the window ENDS at the tip's moment
+            start = int(as_of_ms) - n_sessions * 86_400_000
+            bars = await fetch_window(sym, tf, start, int(as_of_ms))
+        else:
+            bars = await fetch_recent(sym, tf, sessions=n_sessions)
         return {"symbol": sym, "tf": tf,
+                **({"asOfClamped": True} if (exp and as_of_ms) else {}),
                 **_compact_bars(bars, sessions_requested=n_sessions)}
     if name == "get_expiries":
         out = await eng.options.expiries(sym)
@@ -807,10 +828,19 @@ async def _rules_text(eng) -> tuple[str, int]:
         rules = await eng.signals_service.tip_notes(["rule"], limit=50)
     except Exception:
         rules = []
+    _rules_text.last_snapshot = None      # Codex finding 7: per-run rule snapshot
     if not rules:
         return STARTER_RULES, 0
-    lines = "\n".join(f"- {n['text']} ({(n['createdAt'] or '')[:10]})"
-                      for n in reversed(rules))
+    lines = "\n".join(
+        ("- [DISPUTED — the audit flagged a conflict; weigh it, do not follow blindly] "
+         if n.get("needsHuman") else "- ")
+        + f"{n['text']} ({(n['createdAt'] or '')[:10]})"
+        for n in reversed(rules))
+    import hashlib
+    ids = [str(n["id"]) for n in reversed(rules)]
+    _rules_text.last_snapshot = {
+        "ruleIds": [i[:8] for i in ids],
+        "rulesHash": hashlib.sha1("|".join(ids).encode()).hexdigest()[:12]}
     return lines, len(rules)
 
 
@@ -1095,10 +1125,16 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
             limit=int(s.get("techniques.tip.analyst_notes_max", 12)))
     except Exception:                                   # knowledge is best-effort
         log.debug("notes lookup failed for %s", signal_row.id)
+    # N-labels (Codex finding 7): the model reports which notes it actually
+    # USED via used_notes — supplied is no longer conflated with used
     notes_txt = "\n".join(
-        f"- [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
-        for n in notes) or "(none yet)"
+        f"- N{i + 1} [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
+        for i, n in enumerate(notes)) or "(none yet)"
     rules_txt, rules_n = await _rules_text(eng)
+    snap = getattr(_rules_text, "last_snapshot", None)
+    if rules_n and snap:
+        rec.step("note", f"Rulebook snapshot: {rules_n} rule(s), hash "
+                         f"{snap['rulesHash']}.", **snap)
     if experiment:
         # F5 (batch-1): the live mirror reaches PAST the tip's time — withheld;
         # search_messages remains available, capped to the tip's own moment
@@ -1234,11 +1270,21 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
              opinion=result)
     await _persist_run(eng, run_id, status="done", rec=rec, opinion=result)
     if notes and experiment is None:
-        # KNOWLEDGE B5: knowledge that participates in a completed LIVE
-        # appraisal stays alive (historical batches must not refresh TTLs)
+        # KNOWLEDGE B5 + Codex finding 7: supplied and USED are different
+        # facts - only notes the model says it relied on keep their TTL alive;
+        # merely-injected notes record supplied_count and age out on schedule
         import contextlib as _ctx
         with _ctx.suppress(Exception):
-            await eng.signals_service.refresh_notes_cited([n["id"] for n in notes])
+            used_ids = []
+            for label in (opinion.used_notes or []):
+                try:
+                    idx = int(str(label).strip().upper().lstrip("N")) - 1
+                except ValueError:
+                    continue
+                if 0 <= idx < len(notes):
+                    used_ids.append(notes[idx]["id"])
+            await eng.signals_service.refresh_notes_cited(
+                [n["id"] for n in notes], used_ids=used_ids)
     return result
 
 

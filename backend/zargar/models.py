@@ -675,6 +675,8 @@ class TipNote(Base):
     # extends valid_until by the scope's TTL.
     valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
     last_cited_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    supplied_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # times INJECTED (Codex finding 7: supplied != used)
+    last_supplied_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     cited_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 

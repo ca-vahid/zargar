@@ -310,19 +310,29 @@ class SignalService:
                                          aggregate_id=note_id)
         return note
 
-    async def refresh_notes_cited(self, note_ids: list[str]) -> int:
-        """KNOWLEDGE B5 (FinMem's promotion pattern): a note that participated in
-        a completed LIVE appraisal stays alive — cited_count++, last_cited_at,
-        and a TTL'd note's valid_until extends by its scope's TTL. Experiment
-        runs never call this (historical batches must not keep notes alive)."""
+    async def refresh_notes_cited(self, note_ids: list[str],
+                                  used_ids: list[str] | None = None) -> int:
+        """KNOWLEDGE B5, split per Codex finding 7: SUPPLIED (injected into a
+        run) records supplied_count/last_supplied_at only; USED (the model says
+        it relied on it — used_ids) keeps the old promotion: cited_count++,
+        last_cited_at, TTL extension. Frequently-injected-but-never-used advice
+        now ages out on schedule. When used_ids is None (legacy callers), every
+        note keeps the old full-promotion behavior. Experiment runs never call
+        this (historical batches must not keep notes alive)."""
         from ..models import TipNote
         n = 0
+        used = set(used_ids) if used_ids is not None else None
         now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             for nid in note_ids:
                 row = await session.get(TipNote, nid)
                 if row is None:
                     continue
+                row.supplied_count = int(getattr(row, "supplied_count", 0) or 0) + 1
+                row.last_supplied_at = now
+                if used is not None and nid not in used:
+                    n += 1
+                    continue                    # supplied only: no TTL promotion
                 row.cited_count = int(row.cited_count or 0) + 1
                 row.last_cited_at = now
                 ttl = self._note_ttl_days(row.scope)
@@ -361,14 +371,29 @@ class SignalService:
                             limit: int = 12) -> list[dict]:
         """The notes an analyst run should see: this tip's own, its ticker's,
         its source's, and the general ones — newest first, capped."""
-        scopes = ["general"]
-        if ticker:
-            scopes.append(f"ticker:{ticker.upper()}")
+        # per-scope allocation (Codex finding 7): newest-12-of-anything let one
+        # noisy scope crowd out the others — reserve slots per scope, then fill
+        # the remainder by recency across all of them
+        alloc: list[tuple[str, int]] = [("general", 4)]
         if source:
-            scopes.append(f"source:{source}")
+            alloc.append((f"source:{source}", 4))
+        if ticker:
+            alloc.append((f"ticker:{ticker.upper()}", 3))
         if signal_id:
-            scopes.append(f"signal:{signal_id}")
-        return await self.tip_notes(scopes, limit=limit)
+            alloc.append((f"signal:{signal_id}", 3))
+        picked: list[dict] = []
+        seen: set[str] = set()
+        for scope, cap in alloc:
+            for note in await self.tip_notes([scope], limit=cap):
+                if note["id"] not in seen:
+                    seen.add(note["id"])
+                    picked.append(note)
+        if len(picked) < limit:
+            for note in await self.tip_notes([s for s, _ in alloc], limit=limit):
+                if note["id"] not in seen and len(picked) < limit:
+                    seen.add(note["id"])
+                    picked.append(note)
+        return picked[:limit]
 
     # ---------------------------------------------------- discord message mirror
     # The source's own history is context ("bought NVDA" → "sold 40%"): every
