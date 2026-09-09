@@ -137,8 +137,21 @@ class Extractor:
         messages: list = [{"role": "user", "content": user_content}]
         last_err = ""
         for attempt in range(2):
+            import time as _time
+            _t0 = _time.perf_counter()
             response = await client.messages.create(
                 model=self.model, max_tokens=16000, system=system, messages=messages)
+            try:
+                from ..research import llm_stats
+                _u = getattr(response, "usage", None)
+                llm_stats.record("extraction", model=self.model,
+                                 input_tokens=int(getattr(_u, "input_tokens", 0) or 0) if _u else 0,
+                                 output_tokens=int(getattr(_u, "output_tokens", 0) or 0) if _u else 0,
+                                 stop_reason=str(getattr(response, "stop_reason", None)),
+                                 latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                                 retried=attempt > 0)
+            except Exception:
+                pass
             if response.stop_reason == "refusal":
                 log.warning("extraction refused by safety classifier")
                 return ExtractionResult(signals=[], source_type="other",
@@ -160,6 +173,11 @@ class Extractor:
                     {"role": "user", "content":
                         f"That JSON failed validation: {last_err[:1500]}\n"
                         "Reply again with ONLY the corrected JSON object."}]
+        try:
+            from ..research import llm_stats
+            llm_stats.record("extraction", model=self.model, invalid_output=True)
+        except Exception:
+            pass
         log.warning("extraction returned unparseable output: %s", last_err)
         # typed outcome (Codex audit 2026-09-08 finding 3): a malformed reply
         # must never masquerade as a genuine no-signal read — the caller marks

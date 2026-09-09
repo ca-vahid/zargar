@@ -2370,6 +2370,12 @@ class SignalService:
         for r in rows:
             if f"source:{source}" not in (r.tags or []):
                 continue
+            # cohort filter (Codex finding 10, confirmed): shadow research
+            # books and archived books are NOT the real record — a GME shadow
+            # death must not count as closed practice history
+            pf = eng.positions.portfolio(r.portfolio_id) or {}
+            if pf.get("kind") == "shadow" or pf.get("archived"):
+                continue
             graded += 1
             if float((r.state or {}).get("realizedPnl") or 0) > 0:
                 hits += 1
@@ -2384,19 +2390,30 @@ class SignalService:
             cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=20)
             async with eng.sf() as session:
                 filled = (await session.execute(select(Order).where(
-                    Order.portfolio_id == pf["id"], Order.side == "BUY",
-                    Order.status == "FILLED"))).scalars().all()
-            first_fill: dict[str, _dt.datetime] = {}
+                    Order.portfolio_id == pf["id"],
+                    Order.status == "FILLED")
+                    .order_by(Order.created_at.asc()))).scalars().all()
+            # EPISODE start (Codex finding 10, confirmed): the earliest-ever
+            # BUY made a re-entry inherit an old holding's age — reconstruct
+            # the running quantity and take the first BUY after it last hit 0
+            episode_start: dict[str, _dt.datetime] = {}
+            running: dict[str, float] = {}
             for o in filled:
-                ts = o.created_at
-                if ts is not None and (o.symbol not in first_fill or ts < first_fill[o.symbol]):
-                    first_fill[o.symbol] = ts
+                sym = o.symbol
+                q = float(o.filled_qty or 0)
+                prev = running.get(sym, 0.0)
+                if o.side == "BUY":
+                    if prev <= 1e-9 and o.created_at is not None:
+                        episode_start[sym] = o.created_at   # a NEW holding episode
+                    running[sym] = prev + q
+                else:
+                    running[sym] = max(0.0, prev - q)
             for pos in eng.positions.positions_list(pf["id"]):
                 if (pos.get("qty") or 0) <= 0 or (pos.get("avgCost") or 0) <= 0:
                     continue
-                ts = first_fill.get(pos.get("symbol"))
+                ts = episode_start.get(pos.get("symbol"))
                 if ts is None or ts.replace(tzinfo=ts.tzinfo or _dt.timezone.utc) > cutoff:
-                    continue                       # too young to judge
+                    continue                       # this EPISODE is too young to judge
                 last = pos.get("last") or 0
                 if not last:
                     continue                       # no mark, no grade

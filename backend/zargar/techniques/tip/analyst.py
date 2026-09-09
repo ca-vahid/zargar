@@ -997,6 +997,14 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         if _u is not None:
             usage["in"] += int(getattr(_u, "input_tokens", 0) or 0)
             usage["out"] += int(getattr(_u, "output_tokens", 0) or 0)
+        # shared collector (Codex finding 10): appraise/review/retro run outside
+        # the PlanRunner hooks — their cost now reaches TechniqueHookStats.llm
+        from ...research import llm_stats
+        llm_stats.record(str(tool_ctx.get("stage") or "appraise"), model=model,
+                         input_tokens=int(getattr(_u, "input_tokens", 0) or 0) if _u else 0,
+                         output_tokens=int(getattr(_u, "output_tokens", 0) or 0) if _u else 0,
+                         stop_reason=str(getattr(resp, "stop_reason", None)),
+                         retried=usage["calls"] > 1)
         if getattr(resp, "stop_reason", "") == "max_tokens":
             rec.step("note", "Reply hit the output-token limit (stop=max_tokens) — "
                              "recorded; the answer may be truncated.")
