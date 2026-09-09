@@ -1566,6 +1566,37 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   time is the 2m bar's CLOSE (bucket `[t-2m, t)`), the regime block's `ts` is that bar's START.**
 
 
+- **F84 (2026-09-09 15:40 ET, FIXED — v0.7.33; every watch-only contact reported the same touch
+  number, so one late contact read exactly like seven).** A contact past the D9 allowance must NOT
+  spend that allowance, so `session.py` logs `late_touch` and `continue`s **without** incrementing
+  `s.touches`. Since the label is `idx = s.touches + 1`, it is pinned at `max_touches + 1` forever:
+  IWM's `pm_break_down@10:30` logged **seven** `late_touch` events today (13:38, 13:42, 14:12, 14:16,
+  15:02, 15:26, 15:30) and **every one** said "touch #3". The freeze is correct behaviour and is not
+  being changed; the *message* was the defect — seven distinct contacts are indistinguishable from
+  one re-logged contact, and it misled this watch twice (runs 43 and 44 both wrote "touch #4" for the
+  14:16 event, a number no code ever emitted). The setup already carries a counter that does advance,
+  `s.opportunities` (19 on that setup by the close), so the prose now reads "contact #17 of
+  pm_break_down@10:30 — past the first 2 pullbacks, watch-only (D9/P6)". **Prose only** — the event's
+  `touch` payload still carries the frozen index (unchanged contract), no rule, threshold, gate, size
+  or money path moved. A regression test pins the numbers strictly increasing while `touch` stays
+  frozen.
+
+- **F82 addendum (2026-09-09 15:37 ET — the late-session survivor is decided by luck, not by the
+  method).** Third read-only measurement of the live CBOE chain, each symbol on its own live
+  direction, 23 minutes to expiry (no order, no plan touched): **SPY 1** in-band strike (763P @
+  $0.31, **delta −0.435**, with spot at 763.14 — the strike is 0.14 away, i.e. all but ATM), **QQQ 1**
+  (717C @ $0.24, delta 0.342), **IWM 0** (nearest OTM put $0.02 — `select_by_premium` returns `None`,
+  so a fire would refuse with `skip_no_contract`). This corrects the shape of run 44's reading: the
+  band does **not** simply empty and stay empty after ~15:00 — SPY had 0 in-band at 15:05 and 1 again
+  at 15:37, because the underlying drifted back onto a strike. The real behaviour is that **the whole
+  band collapses onto whichever strike happens to be nearest the money**, so late in the session
+  whether a symbol is tradeable at all — and at what delta — is set by spot's distance to the nearest
+  strike, not by anything in the method. IWM (1-point strikes, spot 0.78 off the strike) has nothing;
+  SPY (0.14 off) has a delta-0.44 contract. That is the strongest argument yet for F82 option (c), a
+  **delta band beside the premium band**: a price band alone cannot express "the author's morning
+  contract" once theta has eaten the chain. Still the user's call.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

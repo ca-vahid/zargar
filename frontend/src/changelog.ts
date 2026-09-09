@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.32";
+export const APP_VERSION = "0.7.33";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.33",
+    date: "2026-09-09",
+    title: "A watch-only pullback says which contact it is",
+    items: [
+      { tag: "fixed", text: "Past its first two pullbacks Team2 keeps watching but stops counting, so every later contact reported the same “touch #3” — one late contact read exactly like seven (IWM logged seven today). Each now states its own running number (F84)." },
+    ],
+  },
   {
     version: "0.7.32",
     date: "2026-09-09",

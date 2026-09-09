@@ -537,7 +537,12 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         s._skipped = None
         s.opportunities += 1
         if idx > rules.pullback_max_touches:
-            note(end_ts, "late_touch", f"touch #{idx} of {s.id} — beyond the first {rules.pullback_max_touches}, watch-only (D9/P6)",
+            # F84 (2026-09-09): a watch-only contact must NOT spend the D9 allowance, so `s.touches`
+            # (and with it `idx`) is frozen at the cap — every late contact would otherwise report the
+            # same "touch #N" and a reader cannot tell one late contact from seven. State the running
+            # count of tradeable contacts (`s.opportunities`, which does advance) instead. Prose only.
+            note(end_ts, "late_touch", f"contact #{s.opportunities} of {s.id} — past the first "
+                 f"{rules.pullback_max_touches} pullbacks, watch-only (D9/P6)",
                  setup=s.id, touch=idx, spot=round(entry_spot, 4))
             continue
         if avg > 0 and body > rules.pullback_body_mult * avg:
