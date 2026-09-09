@@ -1360,6 +1360,10 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   dead setup is still minted and still refused by F72's entry guard. Test:
   `test_pm_break_note_states_the_setups_own_target` (118 Team2 tests pass). Deploy queued for the next
   restart rather than taken mid-session: it is reporting-only and the desk is in auto mode.
+  **DEPLOYED 2026-09-09 14:12 ET in v0.7.30** (run 42; the code commit `05fb2b2` carried no release
+  bump, so it could not ship under the versioning rule until `73495eb` bumped all five files).
+  Verified live on the tape: SPY 11:15 now reads *"→ puts down to 764.75 — already behind the break,
+  so this setup has no room (F76)"* with `target: 764.75` in the payload, IWM 10:45 the same at 293.56.
 
 - **F77 (2026-09-09 12:05 ET, NOT fixed — measured, low severity; the strike *pick* reads a chain
   row that can lag OPRA by one refresh cycle).** Sampling `GET /api/options/quote/<occ>` for the
@@ -1483,6 +1487,16 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
+- **2026-09-09 (market watch, run 42, 14:12 ET — release v0.7.30, reporting only)** — **F76's
+  reporting half DEPLOYED.** `05fb2b2` had been committed without a version bump, so the versioning
+  rule blocked it from shipping; `73495eb` bumps APP_VERSION/package.json/lockfile/`__init__`/
+  pyproject to **0.7.30** with the changelog entry, and the restart (scheduler task `ZargarRestart`,
+  restart-check `safe: true`, restore check **OK 71/71, openTrades 0/0, restingOrders 10/10**) put it
+  live at 14:12 ET with zero Team2 trades open. Both `pm_break` notes on today's tape now state their
+  own target and flag it as behind the break. **Replay parity is now exact on all three** — QQQ's
+  extra 12:14 `same_pullback` disappeared once the live read was recomputed on the repaired tape after
+  the restart, which is exactly what run 41 predicted, so that artifact is closed. No rule, threshold,
+  gate, size or money path changed.
 - **2026-09-09 (market watch, run 41, 13:45 ET — code change, reporting only; deploy queued)** —
   **F76's reporting half fixed**: the `pm_break` note now states the setup's own target (and says when
   that target is already behind the break) instead of always claiming "the PDH/PDL zone", and carries

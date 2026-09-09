@@ -2754,3 +2754,55 @@ data and original research records. Keep target_replan off until the clean datas
   **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**,
   **F81**, F67's two shared-side halves, and the F30-family question of which premium series is
   authoritative.
+
+## 2026-09-09 14:15 ET (run 42 — the queued F76 fix is deployed as v0.7.30; desk healthy, still zero fires)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.30** after this run's deploy, armed 74. SPY
+  `e4d39d00`, QQQ `9a1094ed`, IWM `e87e4ad2` all `armed`, `complete: true` (pmh/pml/dayType/
+  sizingAtOpen present), `needsAttention` false, mode **auto** on Team2 Practice `b9dcd8db…`,
+  **zero trades, zero open positions**, ninth session. Quote age 0 s, session `regular`, bar age
+  85–118 s. The engine log carries **no warning or traceback since the 12:55 ET boot**; everything
+  above that line pre-dates it.
+- **Data is real-time and provenance-clean.** 274/274 RTH 1m rows per symbol 09:30–14:03, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps** on all three. Option quotes: SPY 763P 0.51/0.52, QQQ 717C 0.50/0.51, IWM 291P 0.23/0.24 —
+  all `source: "opra"`, `provider: alpaca`, `delayed: false`, 0 DTE. F77 did not reproduce for a
+  third consecutive run. F79/F80 stay closed.
+- **F76's reporting half is DEPLOYED (v0.7.30, commit `73495eb`).** Run 41 committed the fix
+  (`05fb2b2`) but **without a release bump**, and the versioning rule requires APP_VERSION,
+  package.json, the lockfile, `backend/zargar/__init__.py` and pyproject to move together — so the
+  fix could not ship. `73495eb` bumps all five to **0.7.30** with the changelog entry
+  ("A setup's note states its own target"); `npm run check-release` green, **118 Team2 tests pass**,
+  frontend build green. Deployed at 14:10–14:12 ET through the scheduler task **ZargarRestart**
+  (`/api/ops/restart-check` returned `safe: true` first; restore check **OK 71/71, openTrades 0/0,
+  pendingExits 0/0, restingOrders 10/10, inflightOrders 0/0**). Verified live: SPY 11:15 now reads
+  *"→ puts down to 764.75 — already behind the break, so this setup has no room (F76)"* with
+  `target: 764.75` in the payload; IWM 10:45 the same at 293.56. **Reporting only** — no target,
+  size, gate, rule or money path changed.
+- **Replay parity is now exact on all three.** SPY 12/12, QQQ 10/10, IWM 30/30, zero trades both
+  ways. **QQQ's extra 12:14 `same_pullback` is gone** — the restart recomputed the live read on the
+  repaired tape, exactly as run 41 predicted, so that artifact is closed. (IWM briefly showed one
+  extra 14:14 `same_pullback` in the replay: a race, the 2m bar closed between the live read and the
+  replay call, not a divergence.)
+- **What the read saw since 13:37.** IWM: `late_touch` at **13:38, 13:42 and 14:12** — touch #3 of
+  `pm_break_down@10:30`, watch-only past the first two (D9/P6), the first appearance of that event
+  kind today and the correct behaviour; plus `same_pullback` 13:44. QQQ: `same_pullback` 14:02 on
+  its new scenario 3 (bounce PDL, calls, target 717.47), which flipped at 13:15. SPY: nothing since
+  12:28. Prices at 14:14: SPY 763.12, QQQ 716.71, IWM 291.04. **Day totals unchanged in cause: 18
+  `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`, 3 `late_touch`, 0 fires.**
+- **The day's two blockers still stand.** SPY and IWM (the symbols that left their pre-market range)
+  are killed by the frozen target — **F76**/**F81**; QQQ (which never left it) by V6's no-trade zone
+  — **F56**. Nothing new to add: both mechanisms are already written up with evidence, and both are
+  rules questions for the user, not defects to fix here.
+- **UI green.** `/team2` renders on 0.7.30 with all three plans, right sheets, ARMED status, and the
+  "74" armed count (cookie recipe: set `zargar_session` via `document.cookie`, then navigate;
+  `?token=` still does not authenticate the SPA route).
+- **Next run (14:30–15:00 ET) should:** (1) still hunt the **first priced fire** — strike selection
+  near $0.60 and live-vs-replay fire parity remain untested after nine sessions; (2) watch the
+  **14:45 prime-close window**, the day's last real chance, and **QQQ's scenario 3**, the only symbol
+  with a live target, which needs price out of 713.50–720.67; (3) remember the **15:30 last-entry /
+  15:45 flatten** 0DTE gates; (4) **no restart is queued** — the desk is current at v0.7.30. Still
+  open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**,
+  **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy
+  question**, **F74**, **F76's rule question**, **F81**, F67's two shared-side halves, and the
+  F30-family question of which premium series is authoritative.
