@@ -50,6 +50,8 @@ try {
       await page.goto(`${base}/techniques/options-cartel/settings`);
       await page.locator('.splash').waitFor({state:'detached'});
       await page.getByRole('combobox',{name:/^Industry policy/}).selectOption('strict');
+      await page.getByLabel('History batch size',{exact:true}).fill('50');
+      await page.getByLabel('Parallel history fetches',{exact:true}).fill('8');
       await page.getByLabel('Reviewed ETF symbols',{exact:true}).fill('DRAM, TEST');
       await page.getByRole('combobox',{name:/^Confirmation timeframe/}).selectOption('5');
       await page.getByRole('combobox',{name:/^Entry approach/}).selectOption('retest');
@@ -57,6 +59,7 @@ try {
       await page.getByText('Cartel preparation settings saved',{exact:true}).waitFor();
       assert.equal(saved.workspace,workspace);
       assert.equal(saved.industryPolicy,'strict');
+      assert.equal(saved.historyBatchSize,50); assert.equal(saved.historyConcurrency,8);
       assert.deepEqual(saved.reviewedEtfs,['DRAM','TEST']);
       assert.equal(saved.entry.timeframe_minutes,5); assert.equal(saved.entry.mode,'retest');
       assert.equal(saved.allowLive,false); assert.equal(saved.enabled,false);

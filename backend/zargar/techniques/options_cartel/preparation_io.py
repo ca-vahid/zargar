@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from contextlib import asynccontextmanager
 
 from sqlalchemy import BigInteger, cast, select
 
@@ -40,6 +41,57 @@ class PreparationHistory:
         self.cache_hits = 0
         self.requests = 0
         self.last_request = 0.
+        self.request_lock = asyncio.Lock()
+        self.provider_error = None
+        self.active_requests = 0
+        self.prefetched = 0
+
+    @asynccontextmanager
+    async def prefetch(self, listings, at, client, *, skip):
+        """Bounded sliding window; fetch concurrently, consume in discovery order.
+
+        Every task is owned by this context and awaited on every exit. Failures
+        reach the coordinator in order so successful prior analyses remain resumable.
+        """
+        concurrency = self.policy.history_concurrency
+        window = self.policy.history_batch_size
+        semaphore = asyncio.Semaphore(concurrency)
+        tasks = {}
+
+        async def load(listing):
+            if skip(listing):
+                return None
+            async with semaphore:
+                try:
+                    if self.provider_error:
+                        raise self.provider_error
+                    value = await self.daily(listing['symbol'], at, client)
+                    self.prefetched += 1
+                    return value
+                except Exception as exc:  # noqa: BLE001 - coordinator owns ordered failure handling
+                    if rate_limited(exc):
+                        self.provider_error = exc
+                    return exc
+
+        async def ordered():
+            launched = 0
+            for index, listing in enumerate(listings):
+                while launched < min(len(listings), index+window):
+                    tasks[launched] = asyncio.create_task(load(listings[launched]), name=f"cartel-history-{launched}")
+                    launched += 1
+                outcome = await tasks[index]
+                del tasks[index]
+                yield listing, outcome
+
+        iterator = ordered()
+        try:
+            yield iterator
+        finally:
+            await iterator.aclose()
+            for task in tasks.values():
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     async def daily(self, symbol, at, client):
         await self.report(symbol=symbol, message=f'Checking saved {symbol} daily history')
@@ -64,14 +116,25 @@ class PreparationHistory:
                       'historySource': 'Shared historical provider; completed daily bars only'}
 
     async def window(self, symbol, timeframe, start, end, client):
-        delay = max(0, self.policy.request_interval_seconds-(time.monotonic()-self.last_request))
-        if delay:
-            await asyncio.sleep(delay)
-        self.last_request = time.monotonic()
-        self.requests += 1
         await self.report(symbol=symbol, message=f'Loading {symbol} {timeframe} history')
-        return await observed_work(self.fetch(symbol, timeframe, start, end, client=client), self.report,
-                                   message=f'Loading {symbol} {timeframe} history')
+        async with self.request_lock:
+            delay = max(0, self.policy.request_interval_seconds-(time.monotonic()-self.last_request))
+            if delay:
+                await asyncio.sleep(delay)
+            if self.provider_error:
+                raise self.provider_error
+            self.last_request = time.monotonic()
+            self.requests += 1
+        self.active_requests += 1
+        try:
+            return await observed_work(self.fetch(symbol, timeframe, start, end, client=client), self.report,
+                                       message=f'Loading {symbol} {timeframe} history')
+        except Exception as exc:
+            if rate_limited(exc):
+                self.provider_error = exc
+            raise
+        finally:
+            self.active_requests -= 1
 
 
 DATA_ERRORS = (ValueError, OSError, HistoryError)

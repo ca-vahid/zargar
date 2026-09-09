@@ -30,6 +30,8 @@ class PreparationPolicy(WireModel):
     comparison_symbols: tuple[str, ...] = ('MU', 'SNDK', 'NVDA', 'INTC', 'SMCI', 'AMD', 'ALAB', 'TEM', 'MRNA', 'DELL', 'HPE', 'NTAP', 'DRAM')
     comparison_source: str = Field(default='Historical reference: Sean weekly watchlist, 2026-09-07, https://x.com/SRxTrades/status/2097097587828707793 (comparison only; not a live signal)', max_length=2000)
     scan_all: bool = True
+    history_concurrency: int = Field(default=6, ge=1, le=12)
+    history_batch_size: int = Field(default=25, ge=1, le=50)
     history_limit: int = Field(default=200, ge=1, le=10000)
     request_interval_seconds: float = Field(default=.25, ge=0, le=5)
     focus_count: int = Field(default=5, ge=1, le=20)

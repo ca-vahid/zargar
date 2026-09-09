@@ -69,10 +69,15 @@ async def test_rate_limit_stops_batch_and_resume_reuses_completed_analyses(engin
     await engine.settings.set(setting_key('practice'), policy.model_dump(mode='json'))
     runtime = engine.cartel_observer = CartelRuntime(engine); runtime.clock = lambda: at
     fetch = providers['fetch']
+    first_fetch = asyncio.Event()
     async def limited(symbol, *args, **kwargs):
         if symbol == 'ALT':
+            await first_fetch.wait()
             raise HistoryError('HTTP 429 rate limited')
-        return await fetch(symbol, *args, **kwargs)
+        result = await fetch(symbol, *args, **kwargs)
+        if symbol == 'TEST':
+            first_fetch.set()
+        return result
     try:
         with pytest.raises(HistoryError):
             await run_preparation(engine, policy, clock=lambda: at, **{**providers, 'fetch': limited})
