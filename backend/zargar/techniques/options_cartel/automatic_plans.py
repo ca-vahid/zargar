@@ -24,6 +24,7 @@ class PreparationPolicy(WireModel):
     overnight_ack: bool = False
     portfolio_id: str | None = Field(default=None, max_length=64)
     profile: ScreenProfile = 'september_2026'
+    market_alignment: Literal['strict', 'moderate'] = 'strict'
     research_direction: Literal['long', 'short'] = 'long'
     industry_policy: Literal['context', 'strict'] = 'context'
     reviewed_etfs: tuple[str, ...] = ('DRAM',)
@@ -58,6 +59,8 @@ class PreparationPolicy(WireModel):
 
     @model_validator(mode='after')
     def valid_exit_policy(self):
+        if self.workspace == 'live' and self.market_alignment != 'strict':
+            raise ValueError('Moderate market alignment is a Practice-only experiment; Live requires strict alignment')
         if self.enabled and self.workspace == 'live' and not (self.allow_live and self.overnight_ack):
             raise ValueError('Live preparation requires live execution and overnight-protection acknowledgements')
         for symbols in (self.reviewed_etfs, self.comparison_symbols):

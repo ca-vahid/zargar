@@ -203,3 +203,22 @@ window of uncommitted histories needs fetching again after interruption.
 An in-progress run is not hot-upgraded. Let it finish; deploy outside an active run
 and use fresh preparation with the new version. Larger batches alone cannot bypass
 the provider rate cap, and higher concurrency does not guarantee faster scans.
+
+
+## Moderate Practice market experiment (0.7.18)
+
+Strict remains the default. To opt in: select Practice, open Cartel Settings,
+choose Market alignment = Moderate, save, and run fresh preparation outside regular
+hours. Moderate uses completed daily 8/21/50 EMAs: bullish alignment needs at least
+one index above all three and both indices strictly above their 50 EMA. An index
+at/below its 50 EMA, missing/stale evidence, or neither index fully bullish does not
+qualify for the bullish exception. Strict bearish alignment is unchanged. The
+selected mode, effective direction, strict direction and measurements are saved.
+This is an engineering Practice experiment, not an author-prescribed threshold.
+
+Live preparation rejects Moderate configuration; arming and submission also reject
+Moderate plans on Live/broker-paper books. Existing budgets, risk percentages,
+contract constraints and entry checks are unchanged. Old research-only records
+cannot be promoted; prepare new plans. Scheduled deduplication now compares policy
+as well as session and age, so a changed policy is not skipped as already prepared.
+Review results across sessions before considering further changes.

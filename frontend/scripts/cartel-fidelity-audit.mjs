@@ -28,7 +28,7 @@ try {
       let saved;
       const config={enabled:false,workspace,allowLive:false,overnightAck:false,portfolioId:workspace,
         profile:'september_2026',scanAll:true,historyLimit:200,focusCount:5,budget:500,riskPct:10,
-        industryPolicy:'context',reviewedEtfs:['DRAM'],comparisonSymbols:['MU'],comparisonSource:'Synthetic dated watchlist',
+        marketAlignment:'strict',industryPolicy:'context',reviewedEtfs:['DRAM'],comparisonSymbols:['MU'],comparisonSource:'Synthetic dated watchlist',
         entry:{timeframe_minutes:15,mode:'breakout',allow_gap_retest:true,volume_multiple:1.5,min_close_location:.7},
         exitProfile:'september_2026',horizonSessions:1,septemberFractions:[.25,.25,.2,.2,.1],allowFibonacciTargets:true};
       await page.routeWebSocket('**/ws**',socket=>socket.send(JSON.stringify({t:'snapshot',d:{
@@ -49,6 +49,9 @@ try {
       });
       await page.goto(`${base}/techniques/options-cartel/settings`);
       await page.locator('.splash').waitFor({state:'detached'});
+      const alignment = page.getByRole('combobox',{name:'Market alignment',exact:true});
+      if(workspace==='practice') await alignment.selectOption('moderate');
+      else { assert(await alignment.isDisabled()); assert.equal(await alignment.locator('option[value=moderate]').count(),0); }
       await page.getByRole('combobox',{name:/^Industry policy/}).selectOption('strict');
       await page.getByLabel('History batch size',{exact:true}).fill('50');
       await page.getByLabel('Parallel history fetches',{exact:true}).fill('8');
@@ -58,6 +61,7 @@ try {
       await page.getByRole('button',{name:'Save preparation settings',exact:true}).click();
       await page.getByText('Cartel preparation settings saved',{exact:true}).waitFor();
       assert.equal(saved.workspace,workspace);
+      assert.equal(saved.marketAlignment,workspace==='practice'?'moderate':'strict');
       assert.equal(saved.industryPolicy,'strict');
       assert.equal(saved.historyBatchSize,50); assert.equal(saved.historyConcurrency,8);
       assert.deepEqual(saved.reviewedEtfs,['DRAM','TEST']);

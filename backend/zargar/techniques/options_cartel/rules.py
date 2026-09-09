@@ -33,6 +33,7 @@ class CartelRules(BaseModel):
     relative_volume_period: int = Field(default=10, ge=1, le=252)
     min_adr_pct: float = Field(default=3.0, gt=0)
     stock_ema_periods: tuple[int, ...] = (21, 50)
+    market_alignment: Literal['strict', 'moderate'] = 'strict'
     market_ema_periods: tuple[int, ...] = (8, 21, 50)
     require_positive_change: bool = False
     industry_top_n: int = Field(default=10, ge=1)
@@ -89,7 +90,7 @@ class CartelRules(BaseModel):
                            if self.volume_basis == "average" else "last completed regular-session daily share volume"),
                 "relativeVolume": f"completed session volume / mean of previous {self.relative_volume_period} sessions, excluding that session; not intraday relative volume at time",
                 "sourceDiscrepancy": "June text states ADR >3%; screenshot states ADR >2% and 10-day average volume >500K.",
-                "marketAgreement": "both SPY and QQQ must agree; mixed means watch-only",
+                "marketAgreement": ("Practice experiment: one index above 8/21/50; both above 50 for bullish alignment; bearish alignment remains strict" if self.market_alignment == "moderate" else "both SPY and QQQ must agree; mixed means watch-only"),
                 "bearishScreen": "directional mirror for puts; no share shorting",
                 "metadataAge": "calendar-day limit, source observation time required",
                 "septemberScreen": "June numerical screen retained where September gives no replacement",
