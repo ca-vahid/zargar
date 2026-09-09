@@ -314,7 +314,7 @@ def _compact_bars(bars: list, *, sessions_requested: int | None = None) -> dict:
     if not bars:
         return {"note": "no bars", "complete": False}
     rows = [[dt.datetime.fromtimestamp(b.ts / 1000, dt.timezone.utc)
-             .strftime("%m-%d %H:%M"),
+             .strftime("%Y-%m-%d %H:%M"),      # year included (Codex review, 2026-09-09)
              round(float(b.open), 4), round(float(b.high), 4),
              round(float(b.low), 4), round(float(b.close), 4),
              int(getattr(b, "volume", 0) or 0)]
@@ -501,16 +501,30 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
     sym = str(args.get("symbol") or "").upper()
     exp = bool((ctx or {}).get("experiment"))
     as_of_ms = (ctx or {}).get("asOfMs")
-    if exp and name in ("get_chain", "get_expiries", "get_flow", "get_earnings",
-                        "get_positions", "get_open_tips"):
-        # Codex finding 9: complete event-time isolation, not a prompt warning.
-        # The tool-availability matrix in historical mode (documented in the
-        # audit response): quotes WITHHELD (F11), bars CLAMPED to as-of,
-        # search CAPPED at as-of, chain/expiries/flow/earnings and the desk's
-        # CURRENT book all WITHHELD — none of them existed at event time.
-        return {"error": f"historical mode — {name} returns TODAY's state, which "
-                         "did not exist at the tip's time; judge from the tip's "
-                         "own numbers, as-of bars and the capped mirror"}
+    if exp:
+        # Codex finding 9 + review K1/K2 (2026-09-09): historical mode runs on
+        # an explicit ALLOWLIST enforced at dispatch, independent of prompts.
+        # Everything else — today's quotes/chain/expiries/flow/earnings/source
+        # stats, the desk's CURRENT book, and every tool that can MUTATE
+        # current state (close_position, update_exit_plan, disarm_plan) — is
+        # refused: none of it existed, or may be touched, at event time.
+        # save_note stays allowed because its writes are QUARANTINED per batch
+        # (F12); bars are as-of-clamped to CLOSED bars; search is capped in-query.
+        if name not in ("search_messages", "view_image", "get_bars", "save_note"):
+            return {"error": f"historical mode — {name} reads or manages TODAY's "
+                             "state, which did not exist at the tip's time; judge "
+                             "from the tip's own numbers, as-of bars and the capped mirror"}
+        if name in ("search_messages", "get_bars"):
+            # K2: time-dependent evidence REQUIRES a valid as-of — a missing or
+            # invalid timestamp refuses, never falls through to current data
+            try:
+                as_of_ok = as_of_ms is not None and float(as_of_ms) > 0
+            except (TypeError, ValueError):
+                as_of_ok = False
+            if not as_of_ok:
+                return {"error": "historical mode without a valid asOfMs — "
+                                 f"{name} refused (it would silently serve "
+                                 "CURRENT data as event-time evidence)"}
     if name == "get_positions":
         return _our_positions(eng, sym)
     if name == "search_messages":
@@ -715,13 +729,19 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
             tf = "1h"
         n_sessions = int(args.get("sessions") or 5)
         if exp and as_of_ms:
-            # as-of clamp (finding 9): the window ENDS at the tip's moment
+            # as-of clamp (finding 9): the window ENDS at the tip's moment, and
+            # only bars CLOSED by then count (Codex K2 — a bar still forming at
+            # as-of carries a high/low/close the analyst could not have seen)
+            tf_ms = {"5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+                     "1h": 3_600_000}[tf]
             start = int(as_of_ms) - n_sessions * 86_400_000
             bars = await fetch_window(sym, tf, start, int(as_of_ms))
+            bars = [b for b in bars if int(b.ts) + tf_ms <= int(as_of_ms)]
         else:
             bars = await fetch_recent(sym, tf, sessions=n_sessions)
         return {"symbol": sym, "tf": tf,
-                **({"asOfClamped": True} if (exp and as_of_ms) else {}),
+                **({"asOfClamped": True, "closedBarsOnly": True}
+                   if (exp and as_of_ms) else {}),
                 **_compact_bars(bars, sessions_requested=n_sessions)}
     if name == "get_expiries":
         out = await eng.options.expiries(sym)
@@ -758,13 +778,38 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                                "this is NOT proof it is unlisted or illiquid; "
                                "check get_expiries and the exact expiry")
             # live reprice when a real-time source serves it (never inferred
-            # from the delayed chain's spot)
+            # from the delayed chain's spot). FRESHNESS IS PART OF THE EVIDENCE
+            # (Codex review E1, 2026-09-09): the service accepts any cached
+            # OPRA quote, so the tool ages it itself — an old quote is labeled
+            # a last-known quote, never presented as live.
             import contextlib as _ctx
+            import time as _time
+            live_max_age_s = 120            # OPRA NBBO older than this is not "live"
+            got_live = False
             with _ctx.suppress(Exception):
                 live = await eng.options.reprice({"symbol": occ_sym})
                 if live and live.get("priced") == "opra":
-                    out["live"] = {k: live.get(k) for k in
-                                   ("bid", "ask", "mid", "spreadPct", "last", "priced")}
+                    fields = {k: live.get(k) for k in
+                              ("bid", "ask", "mid", "spreadPct", "last", "priced")}
+                    fields["source"] = "opra"
+                    q = eng.quotes.get(occ_sym)
+                    ts = getattr(q, "source_ts", None) if q is not None else None
+                    age_s = (max(0.0, _time.time() - float(ts) / 1000.0)
+                             if ts else None)
+                    fields["ageSeconds"] = round(age_s) if age_s is not None else None
+                    if age_s is not None and age_s <= live_max_age_s:
+                        out["live"] = fields
+                    else:
+                        out["lastQuote"] = {**fields, "stale": True}
+                        out["liveNote"] = (
+                            f"real-time source served this contract but the quote is "
+                            f"{'of unknown age' if age_s is None else f'~{age_s / 60:.0f} min old'} "
+                            f"— treat as last-known, NOT current pricing")
+                    got_live = True
+            if not got_live:
+                out["liveNote"] = ("no fresh real-time quote for this contract — the "
+                                   "row above is the ~15-min delayed chain snapshot; "
+                                   "that gap is part of the evidence")
             return out
         want = float(args.get("strike")) if args.get("strike") else None
         chain = await eng.options.chain(sym, str(args.get("expiry")))
@@ -821,27 +866,42 @@ async def _source_history(eng, source: str | None, *, hours: float = 72,
                      for r in rows)
 
 
-async def _rules_text(eng) -> tuple[str, int]:
+async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
     """The analyst's own rulebook (tip_notes scope 'rule'), oldest first so the
-    rulebook reads in the order it was written; starter rules until one exists."""
+    rulebook reads in the order it was written; starter rules until one exists.
+    `as_of` (historical experiments) bounds the rulebook to event time.
+
+    Returns (text, count, snapshot) — the SNAPSHOT is explicit (Codex review
+    K3, 2026-09-09): full ids, each rule's exact supplied text, its disputed
+    flag, and a hash of that CANONICAL CONTENT (an in-place text edit or a
+    dispute-flag change produces a different hash — id-only hashing hid both).
+    The function attribute mirrors the return for existing introspection."""
     try:
-        rules = await eng.signals_service.tip_notes(["rule"], limit=50)
+        kwargs = {"as_of": as_of} if as_of is not None else {}
+        rules = await eng.signals_service.tip_notes(["rule"], limit=50, **kwargs)
     except Exception:
         rules = []
     _rules_text.last_snapshot = None      # Codex finding 7: per-run rule snapshot
     if not rules:
-        return STARTER_RULES, 0
+        return STARTER_RULES, 0, None
+    ordered = list(reversed(rules))
     lines = "\n".join(
         ("- [DISPUTED — the audit flagged a conflict; weigh it, do not follow blindly] "
          if n.get("needsHuman") else "- ")
         + f"{n['text']} ({(n['createdAt'] or '')[:10]})"
-        for n in reversed(rules))
+        for n in ordered)
     import hashlib
-    ids = [str(n["id"]) for n in reversed(rules)]
-    _rules_text.last_snapshot = {
-        "ruleIds": [i[:8] for i in ids],
-        "rulesHash": hashlib.sha1("|".join(ids).encode()).hexdigest()[:12]}
-    return lines, len(rules)
+    canon = "\n".join(f"{n['id']}|{int(bool(n.get('needsHuman')))}|{n['text']}"
+                      for n in ordered)
+    snapshot = {
+        "ruleIds": [str(n["id"]) for n in ordered],
+        "rulesHash": hashlib.sha1(canon.encode("utf-8")).hexdigest()[:12],
+        "rules": [{"id": str(n["id"]), "text": n["text"],
+                   "disputed": bool(n.get("needsHuman")),
+                   "createdAt": n.get("createdAt")} for n in ordered],
+    }
+    _rules_text.last_snapshot = snapshot
+    return lines, len(rules), snapshot
 
 
 def _parse_opinion(raw: str) -> AnalystOpinion:
@@ -1125,12 +1185,28 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
 
     rec = _Recorder(eng, run_id)
 
-    # the desk's shared knowledge for this tip (notes earlier runs / the user saved)
+    as_of_ms = None
+    as_of_dt = None
+    if experiment:
+        stated = (getattr(signal_row, "extraction", None) or {}).get("statedAt")
+        if stated:
+            try:
+                as_of_dt = dt.datetime.fromisoformat(str(stated))
+                if as_of_dt.tzinfo is None:
+                    as_of_dt = as_of_dt.replace(tzinfo=dt.timezone.utc)
+                as_of_ms = int(as_of_dt.timestamp() * 1000)
+            except ValueError:
+                as_of_ms = as_of_dt = None
+
+    # the desk's shared knowledge for this tip (notes earlier runs / the user
+    # saved) — in historical mode, bounded to what existed AT the tip's time
+    # (Codex review K2, 2026-09-09: a September rule reached a June appraisal)
     notes: list[dict] = []
     try:
         notes = await eng.signals_service.notes_for_tip(
             signal_row.ticker, signal_row.source_name, signal_id=signal_row.id,
-            limit=int(s.get("techniques.tip.analyst_notes_max", 12)))
+            limit=int(s.get("techniques.tip.analyst_notes_max", 12)),
+            as_of=as_of_dt)
     except Exception:                                   # knowledge is best-effort
         log.debug("notes lookup failed for %s", signal_row.id)
     # N-labels (Codex finding 7): the model reports which notes it actually
@@ -1138,8 +1214,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     notes_txt = "\n".join(
         f"- N{i + 1} [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
         for i, n in enumerate(notes)) or "(none yet)"
-    rules_txt, rules_n = await _rules_text(eng)
-    snap = getattr(_rules_text, "last_snapshot", None)
+    rules_txt, rules_n, snap = await _rules_text(eng, as_of=as_of_dt)
     if rules_n and snap:
         rec.step("note", f"Rulebook snapshot: {rules_n} rule(s), hash "
                          f"{snap['rulesHash']}.", **snap)
@@ -1150,14 +1225,6 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                        "to the tip's own time)")
     else:
         history_txt = await _source_history(eng, signal_row.source_name)
-    as_of_ms = None
-    if experiment:
-        stated = (getattr(signal_row, "extraction", None) or {}).get("statedAt")
-        if stated:
-            try:
-                as_of_ms = int(dt.datetime.fromisoformat(str(stated)).timestamp() * 1000)
-            except ValueError:
-                as_of_ms = None
 
     rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
              f"from {signal_row.source_name or 'unknown'}. Tools available: "
@@ -1437,7 +1504,7 @@ class IntakeRun:
             pass
         self.step("note", "Nothing tradable — reviewing the update against the desk's "
                           "own book (positions, open tips, notes).")
-        rules_txt, _rules_n = await _rules_text(eng)
+        rules_txt, _rules_n, _snap = await _rules_text(eng)
         history_txt = await _source_history(eng, source)
         header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
                   f"SOURCE: {source}\n"

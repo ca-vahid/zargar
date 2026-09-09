@@ -175,7 +175,8 @@ class SignalService:
 
     async def tip_notes(self, scopes: list[str] | None = None,
                         limit: int = 100, *, include_superseded: bool = False,
-                        include_expired: bool = False) -> list[dict]:
+                        include_expired: bool = False,
+                        as_of: dt.datetime | None = None) -> list[dict]:
         from ..models import TipNote
         async with self.engine.sf() as session:
             q = select(TipNote).order_by(TipNote.created_at.desc()).limit(limit)
@@ -183,12 +184,20 @@ class SignalService:
                 q = q.where(TipNote.scope.in_(scopes))
             if not include_expired:
                 # QUERY-TIME expiry (B1): an expired note stops being served —
-                # no sweep, no mutation, deterministic and restart-proof
-                now = dt.datetime.now(dt.timezone.utc)
+                # no sweep, no mutation, deterministic and restart-proof.
+                # With as_of, expiry is judged at THAT moment.
+                now = as_of or dt.datetime.now(dt.timezone.utc)
                 q = q.where((TipNote.valid_until.is_(None)) | (TipNote.valid_until > now))
             if not include_superseded:
                 # superseded rules are history, not live knowledge (A8.2)
                 q = q.where(TipNote.superseded_by.is_(None))
+            if as_of is not None:
+                # event-time boundary (Codex review K2, 2026-09-09): knowledge
+                # created after the tip's moment never reaches a historical
+                # appraisal. (Supersession has no timestamp, so a rule
+                # superseded later is conservatively ABSENT rather than
+                # resurrected — never a future leak.)
+                q = q.where(TipNote.created_at <= as_of)
             rows = (await session.execute(q)).scalars().all()
         return [self.note_dict(r) for r in rows]
 
@@ -368,12 +377,15 @@ class SignalService:
 
     async def notes_for_tip(self, ticker: str | None, source: str | None,
                             signal_id: str | None = None,
-                            limit: int = 12) -> list[dict]:
+                            limit: int = 12,
+                            as_of: dt.datetime | None = None) -> list[dict]:
         """The notes an analyst run should see: this tip's own, its ticker's,
-        its source's, and the general ones — newest first, capped."""
-        # per-scope allocation (Codex finding 7): newest-12-of-anything let one
-        # noisy scope crowd out the others — reserve slots per scope, then fill
-        # the remainder by recency across all of them
+        its source's, and the general ones — newest first, capped. `as_of`
+        (historical experiments) bounds every scope to event-time knowledge."""
+        # per-scope allocation (Codex finding 7; made EXPLICIT per the 2026-09-09
+        # review): reservations are a PRIORITY order — general 4, source 4,
+        # ticker 3, signal 3 nominally total 14, and the overall `limit` (12)
+        # trims from the TAIL scope up. Remaining slots fill by recency.
         alloc: list[tuple[str, int]] = [("general", 4)]
         if source:
             alloc.append((f"source:{source}", 4))
@@ -384,12 +396,15 @@ class SignalService:
         picked: list[dict] = []
         seen: set[str] = set()
         for scope, cap in alloc:
-            for note in await self.tip_notes([scope], limit=cap):
-                if note["id"] not in seen:
+            if len(picked) >= limit:
+                break                       # explicit: the tail scope is trimmed
+            for note in await self.tip_notes([scope], limit=cap, as_of=as_of):
+                if note["id"] not in seen and len(picked) < limit:
                     seen.add(note["id"])
                     picked.append(note)
         if len(picked) < limit:
-            for note in await self.tip_notes([s for s, _ in alloc], limit=limit):
+            for note in await self.tip_notes([s for s, _ in alloc], limit=limit,
+                                             as_of=as_of):
                 if note["id"] not in seen and len(picked) < limit:
                     seen.add(note["id"])
                     picked.append(note)
