@@ -7,7 +7,7 @@ import logging
 
 from fastapi import HTTPException, Request
 
-from ..ops import compare_states, restart_readiness, restart_state
+from ..ops import compare_states, quiesce, release_quiesce, restart_readiness, restart_state
 
 log = logging.getLogger("zargar.api.ops")
 
@@ -30,8 +30,22 @@ def build_ops_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=403, detail="local callers only")
         return await restart_state(eng)
 
-    class CompareBody(dict):
-        pass
+    @app.post("/api/ops/quiesce")
+    async def ops_quiesce(request: Request, minutes: float = 5.0, release: bool = False):
+        """R1: suspend new entries before a restart captures its state (self-expiring); `release=true` lifts it."""
+        if not _local(request):
+            raise HTTPException(status_code=403, detail="local callers only")
+        if release:
+            release_quiesce(eng)
+            until = 0
+        else:
+            until = quiesce(eng, minutes)
+        try:
+            from .. import events as ev
+            await eng.journal.append(ev.OPS_QUIESCE, {"until": until or None, "release": bool(release), "minutes": minutes})
+        except Exception:  # noqa: BLE001
+            log.debug("quiesce not journaled", exc_info=True)
+        return {"quiesced": bool(until), "until": until or None}
 
     @app.post("/api/ops/restore-check")
     async def ops_restore_check(request: Request):

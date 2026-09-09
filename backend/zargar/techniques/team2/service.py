@@ -100,9 +100,17 @@ class Team2Service:
         prior, report = validate_sessions(prior)
         if not hasattr(self, "_history_reports"):
             self._history_reports = {}
-        self._history_reports[(symbol.upper(), date)] = report
         dates = list(report["used"])[-sessions:]
         prior = [b for b in prior if session_date(b.ts) in dates]
+        # R8: the identity of the bars this plan is BUILT FROM (the rows in hand), not a later table read
+        try:
+            from ...marketdata import hash_bars
+            ident = hash_bars({symbol.upper(): prior}, start=(dates[0] if dates else None), end=(dates[-1] if dates else None))
+            report["datasetVersion"], report["datasetRows"] = ident["hash"], ident["rows"]
+            report["datasetIdentity"] = ident
+        except Exception:  # noqa: BLE001
+            log.warning("team2: history identity not computed for %s %s", symbol, date, exc_info=True)
+        self._history_reports[(symbol.upper(), date)] = report
         fifteen = [b for b in aggregate(prior, 15) if bar_session(b.ts) == "rth"] if prior else []
         return prior, fifteen, today
 
@@ -122,9 +130,10 @@ class Team2Service:
         if fifteen is None:
             _, fifteen, _ = await self.history_for(symbol, date, sessions=rules.target_lookback_sessions + 2)
         sk = build_skeleton(symbol, date, fifteen, rules)
-        sk["history"] = await self._history_provenance(symbol, date, rules)
         if sk is None:
+            log.info("team2: no usable prior history for %s %s — no plan minted", symbol, date)
             return None
+        sk["history"] = await self._history_provenance(symbol, date, rules)
         prev_rth = [b for b in fifteen if session_date(b.ts) == sk["prevSession"]]
         last_close = float(prev_rth[-1].close) if prev_rth else None
         plan = {**sk, "planFor": date, "triggers": [], "referencePrice": last_close, "lastClose": last_close,
@@ -261,16 +270,15 @@ class Team2Service:
         and the content version of the bars slice they came from."""
         rep = (getattr(self, "_history_reports", {}) or {}).get((symbol.upper(), date)) or {"used": [], "excluded": []}
         used = list(rep.get("used") or [])[-(int(rules.target_lookback_sessions) + 2):]
-        out = {"sessionsUsed": used, "excluded": list(rep.get("excluded") or []), "datasetVersion": None}
-        if used:
+        out = {"sessionsUsed": used, "excluded": list(rep.get("excluded") or []),
+               "datasetVersion": rep.get("datasetVersion"), "datasetRows": rep.get("datasetRows")}
+        ident = rep.get("datasetIdentity")
+        if ident:
             try:
-                from ...marketdata import dataset_version
-                dv = await dataset_version(self.engine.sf, [symbol], start=used[0], end=used[-1],
-                                           note=f"team2 plan {symbol} {date}")
-                out["datasetVersion"] = dv["hash"]
-                out["datasetRows"] = dv["rows"]
+                from ...marketdata import record_dataset_version
+                await record_dataset_version(self.engine.sf, ident, note=f"team2 plan {symbol} {date}")
             except Exception:  # noqa: BLE001 - provenance must never block a plan
-                log.warning("team2: dataset version not computed for %s %s", symbol, date, exc_info=True)
+                log.warning("team2: dataset version not recorded for %s %s", symbol, date, exc_info=True)
         return out
 
     async def stamp_run(self, ap) -> None:
@@ -357,16 +365,30 @@ class Team2Service:
         symbols = [x.upper() for x in (symbols or s.get("techniques.team2.symbols", []) or [])]
         base = rules_from_settings(s)
         rules = Team2Rules.from_dict({**base.to_dict(), **(overrides or {})}) if overrides else base
-        # F75: a sweep cites the content version of the data it ran on, so a rerun can say "same data"
+        # R7/R8 (2026-09-09): load every symbol's tape ONCE, validate the sessions the same way plans and
+        # warm-ups do, and hash the bars actually consumed (not a separate table read that a correction can
+        # slip between). `coverage` says what was excluded and why.
+        from .history import validate_sessions
+        from ...marketdata import hash_bars, record_dataset_version
+        tapes: dict[str, list[Bar]] = {}
+        coverage: dict[str, dict] = {}
+        end_ms = int((dt.datetime.combine(dt.date.fromisoformat(end), dt.time(0, 0), ET) + dt.timedelta(days=1)).timestamp() * 1000)
+        for sym in symbols:
+            loaded = [b for b in await self.bars_1m(sym, limit=60000) if b.ts < end_ms]
+            valid, rep = validate_sessions(loaded)
+            tapes[sym] = valid
+            coverage[sym] = {"loaded": len(loaded), "used": len(valid), "sessionsUsed": rep["used"], "excluded": rep["excluded"]}
         dataset: dict | None = None
         try:
-            from ...marketdata import dataset_version
-            dataset = await dataset_version(self.engine.sf, symbols, start=None, end=end, note=f"team2 sweep {start}..{end}")
+            dataset = hash_bars(tapes, start=None, end=end)
+            dataset["loadedRows"] = sum(c["loaded"] for c in coverage.values())
+            if getattr(self.engine, "sf", None) is not None:
+                await record_dataset_version(self.engine.sf, dataset, note=f"team2 sweep {start}..{end} (validated sessions)")
         except Exception:  # noqa: BLE001
-            log.warning("team2 sweep: dataset version not computed", exc_info=True)
+            log.warning("team2 sweep: dataset identity not computed", exc_info=True)
         rows: list[dict] = []
         for sym in symbols:
-            all_bars = await self.bars_1m(sym, limit=60000)
+            all_bars = tapes[sym]
             by_day: dict[str, list[Bar]] = {}
             for b in all_bars:
                 by_day.setdefault(session_date(b.ts), []).append(b)
@@ -405,7 +427,7 @@ class Team2Service:
         }
         return {"start": start, "end": end, "symbols": symbols, "rows": rows, "summary": summary,
                 "datasetVersion": (dataset or {}).get("hash"), "datasetRows": (dataset or {}).get("rows"),
-                "thresholds": rules.to_dict()}
+                "coverage": coverage, "thresholds": rules.to_dict()}
 
     async def _sigma_for(self, date: str) -> float:
         """VIX1D close of the previous session as the day's IV proxy; 0.20 when unknown."""

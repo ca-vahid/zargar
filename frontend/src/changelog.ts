@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.29";
+export const APP_VERSION = "0.7.30";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.30",
+    date: "2026-09-09",
+    title: "Review fixes: restart evidence, one merge policy",
+    items: [
+      { tag: "fixed", text: "Restart readiness now blocks on what it cannot see: an order-book failure, a fire chain still choosing its contract or awaiting review, and a missing readiness answer all refuse the restart unless overridden. The scripts suspend new entries (self-expiring) before they capture the state they compare afterwards, and the restoration check reconciles managed positions by id (a position that closed is explained, one that vanished fails)." },
+      { tag: "fixed", text: "One merge policy for two venue observations of the same minute, applied identically in memory, in a flush and in the database: the newer OHLC wins, a zero volume is an incomplete observation and the known volume stands, any other newer volume (lower included) is a correction. A recovered minute that falls between existing bars is inserted, not dropped; seeding history never turns a session total into one minute's volume." },
+      { tag: "fixed", text: "The bars repair names its provider and only zeroes a day's print-less minutes when Alpaca covered that day; a Yahoo fallback or a partial answer writes what it got and zeroes nothing. Quarantine locks, archives the CURRENT rows column-for-column and deletes in one transaction, so a correction that lands after selection is archived, never lost." },
+      { tag: "fixed", text: "Team2 sweeps validate their warm-up sessions the way plans do and stamp the hash of the bars they actually consumed (plans do the same); a symbol with no usable history yields no plan instead of an error." },
+    ],
+  },
   {
     version: "0.7.29",
     date: "2026-09-09",

@@ -2698,3 +2698,20 @@ data and original research records. Keep target_replan off until the clean datas
 - **Open for the user:** F81 (pre-open never re-derives the plan targets; today's gap day was born dead — a rules
   change, the watch job's counterfactual is on the pre-repair tape); the residual audit flags on other symbols
   (`outlier_range` 20 real large-move days, `volume_spike` 10) are reports for their desks, not defects.
+
+## Desk record 2026-09-09 14:00–14:40 ET — Codex review of PRs 33–45 (v0.7.30)
+
+- The reviewer reproduced ten gaps with twelve regressions at a3885a9. All fixed; the regression file is now
+  `tests/test_codex_f75_regressions.py` and passes with the rest of the affected suites (39) and the broad set.
+- Restart evidence is now a blocker when missing (order inventory, readiness answer), fire chains in flight block,
+  new entries are quiesced before the state capture, managed positions are reconciled by id after the restart.
+- Data: one venue-merge policy (memory = batch = database), interior-minute recovery, seed baseline, provider-named
+  backfill with per-day coverage before any zeroing, transactional quarantine with full-row verification, the Yahoo
+  history parser no longer invents zero volumes.
+- Research path: sweeps validate their warm-up sessions and stamp the hash of the bars they consumed; plans hash the
+  bars they were built from. F72 re-measured in-process on frozen inputs (`600a8d75…`): baseline +247.7 vs variant
+  +207.0 pnl%-sum, 30 shared / 6 variant-only / 1 baseline-only trades; 13 dates × 3 symbols. Stays off.
+- Retained evidence for the runtime quarantine batches: closed-day rows have no live rows at their minutes (no venue
+  bar exists on a closed day); the sim-block minutes hold 15,641 live exchange rows, all from the backfill that ran
+  after the batches committed. No correction had a writer to race against.
+- Deploy: after the close through `ZargarRestart` (the door refuses on missing evidence from now on).

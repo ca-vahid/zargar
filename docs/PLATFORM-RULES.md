@@ -577,6 +577,35 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-09-09 · **Codex review of PRs 33–45 (a3885a9): ten findings, twelve reproducible regressions — all fixed in
+  v0.7.30, the regression file adopted verbatim as `tests/test_codex_f75_regressions.py`** (packet:
+  `docs/techniques/team2/notes/research/2026-09-09-pr33-45-review.md` in the Codex checkout). R1 readiness: an
+  order/position inventory failure is a blocker (`inventoryError`), a fire chain in flight (`trades[*].status ==
+  fired` in a money mode, or any `ArmedPlan.fire_tasks` entry) is a blocker (`firing`), and the three restart scripts
+  refuse — instead of "proceeding on the health check alone" — when no readiness answer comes back, unless `-Force`;
+  `POST /api/ops/quiesce` (self-expiring, 5 min) suspends NEW money-mode fire chains (`_fire_rest` skips them as
+  `quiesced_skip`; exits and alert reads untouched) and the scripts call it before capturing state, releasing it on a
+  refusal. R2 restoration: managed positions are compared by id; one that shows up CLOSED afterwards is `explained`,
+  one that vanished fails; counts-only states fail on a lower open count; working entries join the comparison. R3:
+  `ingest_exchange_bar` inserts a recovered minute BETWEEN existing bars (and before the first) instead of dropping
+  it. R4: `marketdata.merge_exchange` is the ONE policy for two venue observations of a minute — newer OHLC; a newer
+  volume of 0 is incomplete and the known volume stands; any other newer volume (lower included) is a correction —
+  applied in memory, in the persist batch and in the upsert (GREATEST is gone; `DATA_RULES_VERSION` bumped to
+  2026-09-09b). R5: `fetch_window_ex` names the provider; `bars_repair backfill` zeroes a day's print-less sampled
+  volumes only when ALPACA covered that session (≥ 300 regular-session bars), never on a Yahoo fallback or a
+  partial answer (`coveredDays`/`uncoveredDays` in the result); the historical Yahoo parser no longer turns a
+  missing volume into 0. R6: `apply_quarantine` locks the ids (`FOR UPDATE`), archives the CURRENT rows column for
+  column, verifies, and deletes in the same transaction; a correction after selection is archived, one during the
+  lock lands as a fresh live row. R7: the sweep runs `validate_sessions` on every symbol's tape before choosing
+  previous sessions, pivots, warm-up and scoring, and reports `coverage`. R8: sweeps and plans hash the bars they
+  actually hold (`marketdata.hash_bars`, same bytes as `dataset_version`), not a separate table read. R9:
+  `BarAggregator.seed` no longer pretends the cumulative counter was 0 (a 10M session total became one minute's
+  volume). R10: no usable history → no plan, not a TypeError. **Retained-evidence check on the three runtime
+  quarantine batches** (the review could not verify them): `7f6269da4e71` (closed days) has zero live rows at its
+  minutes — no venue bar exists on a closed day, so no correction could have been in flight; `bfa00d50b550` and
+  `a9116e809b6e` (sim blocks) have 15,641 live EXCHANGE rows at their minutes, all written by the Alpaca backfill
+  AFTER the batches committed (16:36/17:06 vs 17:13–17:18 UTC) and none by the live engine (it writes today's
+  minutes only) — the R6 interleaving had no writer to race against on 2026-09-09.
 - 2026-09-09 · **F75 repair EXECUTED on the runtime DB (12:38–13:18 ET) — the record.** Pre-repair identity (Team2
   symbols, 2026-08-14..09-09): `0155fbe4247ee049…`, 67,780 rows. Quarantine batches in `bars_quarantine` (copied, verified
   row-for-row, then deleted; never deleted from): `7f6269da4e71` = 316,603 rows / 439 symbol-sessions on non-trading days

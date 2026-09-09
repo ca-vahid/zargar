@@ -1287,6 +1287,18 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   775–779 → 766–772, exchange source), print-less minutes' volumes zeroed (SPY 644 / IWM 107 / QQQ 51). Dataset identity:
   pre `0155fbe4247ee049…` (67,780 rows) → FINAL `a00ecad1ef7fddd3…` (55,219 rows); Team2 audit after the repair: no flags.
   Full shared record in PLATFORM-RULES 2026-09-09.
+- **F72 addendum 3 — re-measured on FROZEN clean inputs with the review-fixed sweep (2026-09-09 14:30 ET, in-process,
+  the running desk untouched; dataset `600a8d75294d47d4…` = the validated tapes actually consumed, 52,877 rows; 13
+  trading dates 2026-08-20..09-08 × 3 symbols = 39 SYMBOL-sessions, not 39 sessions — the review's correction).**
+  Same numbers as addendum 2 (the repair had already removed every closed-day row, so validation excluded nothing):
+  baseline 37 trades / 15 wins / wr 0.405 / +247.7 pnl%-sum; `target_replan=entry` 45 / 16 / 0.356 / +207.0 — a
+  −40.7 difference in SUMMED MODELLED TRADE PERCENTAGES, not a dollar or equity return. **Matched comparison:** 30
+  trades are shared (one changed outcome: IWM 08-28 scenario_4 −3.0 → −4.3 on the re-planned target); 6 exist only
+  in the variant (SPY 08-27 pm_break_up −2.1, SPY 08-28 scenario_1 −6.1, SPY 09-03 pm_break_up −40.4, QQQ 08-27
+  pm_break_up −11.8, QQQ 08-28 scenario_1 −6.3, QQQ 09-01 pm_break_down +39.5) and 1 only in the baseline (QQQ 08-28
+  scenario_2 −10.0). Verdict unchanged: `target_replan` stays off. Thirteen dates do not meet any twenty-session
+  milestone. F81's pre-open re-derivation is a separate candidate, to be tested on these frozen inputs with the
+  invalid-target guard kept; the pre-repair counterfactual is not performance evidence.
 - **F72 addendum 2 — re-measured on the clean, versioned dataset (2026-09-09 13:20 ET; sweep dataset
   `96129c00accdf882…`, 52,877 rows = SPY/QQQ/IWM history through 09-08; 39 sessions, 2026-08-20..09-08, SPY included
   for the first time).** Baseline: 37 trades, 15 wins, wr 0.405, +247.7 pnl%-sum (avg win +39.0 / avg loss −15.3);
@@ -1481,6 +1493,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   green** — the workaround is to set the `zargar_session` cookie in the browser (`?token=` does not
   authenticate the SPA route); Plans and Armed tabs both render all three plans with correct
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
+- **2026-09-09 (14:00–14:40 ET — Codex review of the repair, v0.7.30)** — ten findings / twelve regressions fixed
+  (PLATFORM-RULES 2026-09-09: readiness blocks on unknown inventory and in-flight fire chains, quiesce before the
+  capture, managed positions reconciled by id, interior-minute recovery, one venue-merge policy, provider-named
+  backfill with per-day coverage, transactional quarantine, sweeps validate warm-up and hash what they consume,
+  seed baseline, empty-history guard); the reviewer's regression file is in the suite. F72 re-measured on frozen
+  inputs with a matched comparison (addendum 3); wording corrected to 13 dates × 3 symbols. No method, size or gate
+  knob changed; `target_replan` stays off.
 - **2026-09-09 (12:26–13:20 ET — F75 repair executed, v0.7.28 → v0.7.29, five scheduler restarts)** — repair record and
   the clean-set F72 rerun above (baseline +247.7 vs variant +207.0 on `96129c00…`; `target_replan` stays off); F79/F80
   (Yahoo provisional minutes, the lost boot minute) fixed in v0.7.29 and verified by the 13:05 watch; nothing in the

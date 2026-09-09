@@ -164,37 +164,54 @@ async def select_quarantine(sf, *, reason: str, symbols: list[str] | None, date_
     return picked
 
 
+_ROW_COLS = ("symbol", "tf", "ts", "open", "high", "low", "close", "volume", "source")
+
+
 async def apply_quarantine(sf, rows: list[BarRow], *, reason: str, note: str = "") -> dict:
-    """Copy → verify → delete. Returns the batch record. Raises (and deletes nothing) if the copy
-    does not match the selection row for row."""
+    """Lock → copy the CURRENT rows → verify every column → delete, all in ONE transaction (review R6).
+    The selection only names ids; what is archived is what the row holds at the moment it is locked,
+    so a venue correction that landed after selection is archived, not lost, and a correction that
+    arrives while the batch holds the lock waits and then lands as a fresh live row (the old one is
+    gone) — evidence is preserved either way. Rows that vanished since selection are reported, not
+    assumed. Returns the batch record; raises (and commits nothing) on any verification mismatch."""
     if not rows:
         return {"batch": None, "rows": 0}
     batch = uuid.uuid4().hex[:12]
     when = dt.datetime.now(dt.timezone.utc)
-    ids = [r.id for r in rows]
+    ids = sorted({r.id for r in rows})
     async with sf() as s:
-        for i in range(0, len(rows), 2000):
-            part = rows[i:i + 2000]
-            s.add_all([BarQuarantineRow(orig_id=r.id, symbol=r.symbol, tf=r.tf, ts=r.ts, open=r.open, high=r.high,
-                                        low=r.low, close=r.close, volume=r.volume, source=r.source or "unknown",
-                                        reason=reason, batch=batch, note=note, quarantined_at=when) for r in part])
-        await s.commit()
-    # verify: same count, same ids, same (ts, close, volume) checksum
-    async with sf() as s:
-        q = (await s.execute(select(BarQuarantineRow).where(BarQuarantineRow.batch == batch))).scalars().all()
-    if len(q) != len(rows) or {x.orig_id for x in q} != set(ids):
-        raise RuntimeError(f"quarantine copy MISMATCH for batch {batch}: {len(q)} copied vs {len(rows)} selected — nothing deleted")
-    want = sorted((r.ts, r.close, int(r.volume or 0)) for r in rows)
-    have = sorted((x.ts, x.close, int(x.volume or 0)) for x in q)
-    if want != have:
-        raise RuntimeError(f"quarantine content MISMATCH for batch {batch} — nothing deleted")
-    async with sf() as s:
-        deleted = 0
-        for i in range(0, len(ids), 5000):
-            res = await s.execute(delete(BarRow).where(BarRow.id.in_(ids[i:i + 5000])))
-            deleted += int(res.rowcount or 0)
-        await s.commit()
-    return {"batch": batch, "rows": len(rows), "deleted": deleted, "reason": reason, "at": when.isoformat(timespec="seconds")}
+        async with s.begin():
+            current: list[BarRow] = []
+            for i in range(0, len(ids), 5000):
+                stmt = select(BarRow).where(BarRow.id.in_(ids[i:i + 5000])).with_for_update()
+                current.extend((await s.execute(stmt)).scalars().all())
+            missing = sorted(set(ids) - {r.id for r in current})
+            copies = [BarQuarantineRow(orig_id=r.id, symbol=r.symbol, tf=r.tf, ts=r.ts, open=r.open, high=r.high,
+                                       low=r.low, close=r.close, volume=r.volume, source=r.source or "unknown",
+                                       reason=reason, batch=batch, note=note, quarantined_at=when) for r in current]
+            for i in range(0, len(copies), 2000):
+                s.add_all(copies[i:i + 2000])
+            await s.flush()
+            # verify against the LOCKED rows, every column, before anything is deleted
+            q = (await s.execute(select(BarQuarantineRow).where(BarQuarantineRow.batch == batch))).scalars().all()
+            by_orig = {x.orig_id: x for x in q}
+            if len(q) != len(current) or set(by_orig) != {r.id for r in current}:
+                raise RuntimeError(f"quarantine copy MISMATCH for batch {batch}: {len(q)} copied vs {len(current)} locked — rolled back")
+            for r in current:
+                x = by_orig[r.id]
+                mine = tuple(getattr(r, c) if c != "source" else (r.source or "unknown") for c in _ROW_COLS)
+                theirs = tuple(getattr(x, c) for c in _ROW_COLS)
+                if mine != theirs:
+                    raise RuntimeError(f"quarantine content MISMATCH for batch {batch} at id {r.id} — rolled back")
+            deleted = 0
+            live_ids = [r.id for r in current]
+            for i in range(0, len(live_ids), 5000):
+                res = await s.execute(delete(BarRow).where(BarRow.id.in_(live_ids[i:i + 5000])))
+                deleted += int(res.rowcount or 0)
+            if deleted != len(current):
+                raise RuntimeError(f"quarantine delete count MISMATCH for batch {batch}: {deleted} vs {len(current)} — rolled back")
+    return {"batch": batch, "rows": len(current), "deleted": deleted, "missingAtApply": missing, "reason": reason,
+            "at": when.isoformat(timespec="seconds")}
 
 
 async def cmd_quarantine(sf, *, reason: str, symbols, date_from, date_to, apply: bool, note: str) -> dict:
@@ -215,16 +232,19 @@ async def cmd_quarantine(sf, *, reason: str, symbols, date_from, date_to, apply:
 # ------------------------------------------------------------------ backfill
 async def cmd_backfill(sf, *, symbols: list[str] | None, all_symbols: bool, date_from: str, date_to: str, pace: float,
                        fetch=None) -> dict:
-    """Exchange 1m bars (Alpaca SIP via `fetch_window`, extended hours) for the range, written with
-    source=exchange so they overwrite sampled/unknown rows. One request per symbol for the whole
-    range (Alpaca pages 10k bars) — paced so the live feed's REST budget is not starved."""
-    from ..marketstructure.history import fetch_window, set_alpaca_credentials
+    """Exchange 1m bars for the range, written with source=exchange so they overwrite sampled/unknown
+    rows by provenance. One request per symbol for the whole range — paced so the live feed's REST
+    budget is not starved. Review R5 (2026-09-09): the repair names its provider; only a response from
+    Alpaca that COVERS a session day (>= 300 regular-session bars of it) authorises zeroing that day's
+    surviving quote-sampled volumes (no venue bar = no prints). A Yahoo fallback or a partial response
+    writes what it returned and zeroes nothing; unknowns stay visible in the result."""
+    from ..marketstructure.history import fetch_window_ex, set_alpaca_credentials
     cfg = get_config()
     if fetch is None:
         if not (cfg.alpaca_key_id and cfg.alpaca_secret):
             raise SystemExit("backfill needs ZARGAR_ALPACA_KEY_ID / SECRET (Yahoo's 1m depth is ~20 days; the sim block is older)")
         set_alpaca_credentials(cfg.alpaca_key_id, cfg.alpaca_secret)
-        fetch = fetch_window
+        fetch = fetch_window_ex
     syms = await _symbols(sf, None if all_symbols else symbols)
     if all_symbols:
         from ..options import occ
@@ -240,37 +260,47 @@ async def cmd_backfill(sf, *, symbols: list[str] | None, all_symbols: bool, date
     out = {"symbols": {}, "days": days, "from": date_from, "to": date_to}
     for i, sym in enumerate(syms):
         try:
-            bars = await fetch(sym, "1m", start_ms, end_ms, session="ext")
+            got = await fetch(sym, "1m", start_ms, end_ms, session="ext")
         except Exception as exc:  # noqa: BLE001
             print(f"{sym}: fetch failed: {exc}")
-            out["symbols"][sym] = {"error": str(exc)[:120]}
+            out["symbols"][sym] = {"error": str(exc)[:120], "provider": None}
             continue
+        # a test double may hand back a bare list: that models a venue (Alpaca-equivalent) answer
+        bars, provider = (got if isinstance(got, tuple) else (got, "alpaca"))
+        bars = list(bars or [])
         for b in bars:
             b.source = "exchange"
         before = await _rows(sf, sym, start_ms, end_ms)
         before_by = {r.ts: (r.open, r.high, r.low, r.close, r.volume, r.source) for r in before}
-        await persist_bars(sf, bars)
-        # a minute the venue has NO bar for had no prints: a surviving quote-sampled row there keeps its
-        # price track but its volume was a counter artefact (SPY 2026-08-20 pre-market: 39.8M in one
-        # minute) - it is zero by definition (F78)
-        zeroed = 0
         if bars:
-            have = {b.ts for b in bars}
-            lo_ts, hi_ts = min(have), max(have)
+            await persist_bars(sf, bars)
+        # coverage: a session day is covered only when the VENUE returned (nearly) its whole regular session;
+        # only then does "no bar for this minute" mean "no prints" and a surviving sampled volume become 0
+        by_day: dict[str, int] = {}
+        for b in bars:
+            if _rth(b.ts):
+                by_day[session_date(b.ts)] = by_day.get(session_date(b.ts), 0) + 1
+        covered = sorted(d for d, n in by_day.items() if n >= 300) if provider == "alpaca" else []
+        uncovered = sorted(set(days) - set(covered))
+        zeroed = 0
+        for d in covered:
+            lo_ts, hi_ts = _day_bounds_ms(d)
             async with sf() as s:
                 res = await s.execute(
-                    text("UPDATE bars SET volume = 0 WHERE symbol = :sym AND tf = '1m' AND ts >= :lo AND ts <= :hi "
+                    text("UPDATE bars SET volume = 0 WHERE symbol = :sym AND tf = '1m' AND ts >= :lo AND ts < :hi "
                          "AND source <> 'exchange' AND volume <> 0"),
                     {"sym": sym, "lo": lo_ts, "hi": hi_ts})
-                zeroed = int(res.rowcount or 0)
+                zeroed += int(res.rowcount or 0)
                 await s.commit()
         after = await _rows(sf, sym, start_ms, end_ms)
         changed = sum(1 for r in after if r.ts in before_by and before_by[r.ts] != (r.open, r.high, r.low, r.close, r.volume, r.source))
         added = sum(1 for r in after if r.ts not in before_by)
         srcs = Counter((r.source or "unknown") for r in after)
         out["symbols"][sym] = {"fetched": len(bars), "changed": changed, "added": added, "rowsAfter": len(after),
-                               "volumeZeroed": zeroed, "sources": dict(srcs)}
-        print(f"{sym:<6} fetched={len(bars):<6} changed={changed:<6} added={added:<6} zeroed={zeroed:<6} rows={len(after):<6} {dict(srcs)}")
+                               "volumeZeroed": zeroed, "sources": dict(srcs), "provider": provider,
+                               "coveredDays": covered, "uncoveredDays": uncovered}
+        print(f"{sym:<6} provider={provider or '-':<7} fetched={len(bars):<6} changed={changed:<6} added={added:<6} zeroed={zeroed:<6} "
+              f"covered={len(covered)}/{len(days)} rows={len(after):<6} {dict(srcs)}")
         if pace and i + 1 < len(syms):
             await asyncio.sleep(pace)
     return out
