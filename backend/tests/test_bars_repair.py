@@ -47,9 +47,11 @@ async def test_audit_quarantine_and_backfill(fresh_db, monkeypatch):
     walk = rows_for("TST", dt.date(2026, 8, 18), lambda i: 800 + 300 * math.sin(i / 200))
     flat_trading = [dict(r, high=r["close"], low=r["close"]) for r in rows_for("TST", dt.date(2026, 9, 3), lambda i: 100.0)]
     spike = rows_for("TST", dt.date(2026, 9, 8), lambda i: 100 + math.sin(i / 50))
-    spike[400]["volume"] = 43_000_000
+    spike[400]["volume"] = 43_000_000                                # 10:40 ET, a sampled row: flagged
+    auction = rows_for("TST", dt.date(2026, 9, 2), lambda i: 100.0 + math.sin(i / 40), source="exchange")
+    auction[330]["volume"] = 40_000_000                             # 09:30 ET on an exchange row: an auction, not a spike
     missing = spike.pop(500)                                   # a minute the app never banked (it was down)
-    await _plant(sf, real + sat + labor + walk + flat_trading + spike)
+    await _plant(sf, real + sat + labor + walk + flat_trading + spike + auction)
 
     rows = list((await load_bars(sf, "TST", "1m", limit=100000)))
     async with sf() as s:
@@ -67,6 +69,7 @@ async def test_audit_quarantine_and_backfill(fresh_db, monkeypatch):
     assert rep["2026-08-18"]["flags"] == ["outlier_range"]
     assert rep["2026-09-03"]["flags"] == ["degenerate_flat"]
     assert "volume_spike" in rep["2026-09-08"]["flags"]
+    assert rep["2026-09-02"]["flags"] == []                                # the 09:30 auction print on a venue bar is not a spike
 
     # quarantine by reason = closed_day takes ONLY the closed days; the flat trading day and the walk stay
     picked = await select_quarantine(sf, reason="closed_day", symbols=["TST"], date_from=None, date_to=None)
@@ -76,7 +79,7 @@ async def test_audit_quarantine_and_backfill(fresh_db, monkeypatch):
     done = await cmd_quarantine(sf, reason="closed_day", symbols=["TST"], date_from=None, date_to=None, apply=True, note="test")
     assert done["applied"] and done["rows"] == len(sat) + len(labor) == done["deleted"]
     left = await load_bars(sf, "TST", "1m", limit=100000)
-    assert {b.ts for b in left} == {r["ts"] for r in real + walk + flat_trading + spike}
+    assert {b.ts for b in left} == {r["ts"] for r in real + walk + flat_trading + spike + auction}
     async with sf() as s:
         q = (await s.execute(select(BarQuarantineRow).where(BarQuarantineRow.batch == done["batch"]))).scalars().all()
     assert len(q) == done["rows"] and all(x.reason == "closed_day" and x.orig_id for x in q)
