@@ -2610,3 +2610,71 @@ data and original research records. Keep target_replan off until the clean datas
   **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
   strategy question**, **F74**, **F75**, **F76**, **F77**, **F79**, **F80**, F67's two shared-side
   halves, and the F30-family question of which premium series is authoritative.
+
+
+## 2026-09-09 13:05 ET (run 40 — desk healthy, bar data now clean, still zero fires; F81 explains why)
+
+- **Alive, three plans armed, nothing traded.** `/api/health` ok, **v0.7.29**. SPY `e4d39d00`,
+  QQQ `9a1094ed`, IWM `e87e4ad2` all `armed`, `complete: true`, `needsAttention` false, mode
+  **auto** on Team2 Practice `b9dcd8db…`, **zero trades, zero open positions**, ninth session
+  running. Quote age 0 s, session `regular`, bar age 73–96 s. Option quotes on the three 0DTE ATM
+  puts are **OPRA real-time** (`source: "opra"`, `provider: alpaca`, `delayed: false`) and the chain
+  row matched the nested quote **exactly on all three** (SPY 762P 0.55/0.56, QQQ 716P 0.77/0.78,
+  IWM 291P 0.38/0.39) — **F77 did not reproduce**, second run running.
+- **A fifth restart today, 12:54 ET, deploying v0.7.29** (another desk; `logs/restart-20260909-095443.log`).
+  It came back clean — `Healthy: v0.7.29 | armed 43`, `Restore check OK: armed 73/73, openTrades 0/0,
+  pendingExits 0/0, restingOrders 10/10, inflightOrders 0/0`, and `team2 runner restored 3 armed
+  plan(s)`. No Team2 trade was live at any point. A transient `restore check MISMATCH` warning at
+  09:55:41 PT listed 32 EM plans still restoring and cleared before the script's own check. **I
+  queued no restart of my own.**
+- **F79 and F80 are FIXED and verified.** Commits `568f3e7` / `663b5fc` from the other desk.
+  Re-measured on today's live tape: **all 214 RTH 1m rows 09:30–13:03 on all three symbols carry
+  `source='exchange'`** — no `unknown`, no `sampled`, **zero zero-volume bars** (the 11:58–12:06
+  band and the SPY/IWM 12:19–12:20 rows hold real volume again) and **no interior gaps**, including
+  the **11:25 ET minute F80 recorded as permanently missing** on QQQ and IWM. The bar dataset this
+  desk sweeps on is now clean for today.
+- **What the read saw since 12:40 ET — one new event, still no fire.** IWM `skip_target_behind` at
+  13:00 (291.04 against its 293.56 target). SPY has been quiet since its 12:28 `same_pullback`,
+  QQQ since 12:38. All three remain short-biased scenario 4 (break PDL). Prices at 13:04: SPY
+  762.50, QQQ 716.30, IWM 290.92. Day totals: **14 refusals, 0 fires** — 5 on SPY, 9 on IWM, and
+  QQQ still walled off by its 713.50–720.67 pre-market no-trade zone.
+- **Replay parity holds.** SPY 12/12 and IWM 22/22 events identical, zero trades both ways on all
+  three. QQQ's replay emits one extra `same_pullback` at 12:14 that the live read did not — a
+  bookkeeping event only, and explained: this morning's live reads ran on the pre-correction tape
+  while the replay now reads the corrected exchange bars. Should disappear for sessions that run
+  entirely on v0.7.29. **No fire/trim/exit divergence anywhere.**
+- **F81 (new, NOT fixed — proposal; this is why the desk has never fired).**
+  `plan.complete_preopen()` updates `pmh`/`pml`/`dayType`/`sizingAtOpen`/`sheet` but **never
+  recomputes `plan["targets"]`**, which are frozen at the 17:00 build. On a gap day the overnight
+  move can put price through the plan's own down-target before the method may take anything. Today
+  both `gap_down` symbols were born dead: **SPY's 764.75 target was already behind at the 09:30
+  close of 763.85**, IWM's 293.56 was behind by the 09:45 15m confirmation at 293.30. Every later
+  pullback then hit the F72 guard. The refusals were **right about direction** — SPY refused
+  761.70–762.17 and traded to 760.94, IWM refused 290.85–292.42 and traded to 290.58 — only the
+  target arithmetic blocked them.
+- **Counterfactual measured (read-only sweep, no orders, no settings touched), dataset
+  `164a83894fbbca79…`:** the already-built variant `techniques.team2.target_replan=entry` takes
+  **4 trades today, +85.6% summed premium, 2 winners** (SPY −20.9%/−7.9%, IWM +46.6%/+67.8%)
+  against the baseline's **zero**. Over 30 sessions (2026-08-26→09-09; tape before today is
+  pre-repair): **41 trades / wr 0.341 / +188.0%** vs baseline **33 / 0.333 / +125.8%**.
+  **The asymmetry matters:** the whole gain is in `pm_break_down` (69.4→194.4%), while
+  `pm_break_up` gets worse (112.4→47.1%, wr .38→.27) — and the window is itself down-biased, which
+  is exactly what would manufacture a down-only edge. **Proposed, for the user:** (a) leave off,
+  (b) on, (c) on for down-breaks only, or (d) re-derive targets at the 09:25 pre-open, which fixes
+  the cause instead of the symptom. Not built — thresholds and rules are the user's call.
+- **Known log noise, not a defect:** `persist_bars: dropped N non-bucket-aligned stub bar(s)` fires
+  constantly (2208 lines since 2026-09-08 16:26) but it is the deliberate write-time bucket
+  alignment guard (`marketdata.py:344`, EM team #5). Recorded so future runs stop re-flagging it;
+  the only improvement would be to aggregate or demote it, and that is shared engine.
+- **UI green.** `/team2` renders all three plans with the right sheets and statuses on v0.7.29 via
+  the cookie recipe (set `zargar_session` in the browser, then navigate; `?token=` does not
+  authenticate the SPA route).
+- **Next run (13:30–14:00 ET) should:** (1) still hunt the **first priced fire** — strike selection
+  near $0.60 and live-vs-replay fire parity remain untested after nine sessions; (2) watch **QQQ**,
+  the only symbol that can still trade, which needs price out of 713.50–720.67; (3) expect SPY/IWM
+  refusals to continue (F81/F76/F72) and note them once; (4) re-check that bar provenance stays
+  `exchange` now that v0.7.29 is running a full session. No restart queued. Still open for the user:
+  **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**,
+  **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**,
+  **F76**, **F81**, F67's two shared-side halves, and the F30-family question of which premium
+  series is authoritative. **F75, F79 and F80 are now closed.**
