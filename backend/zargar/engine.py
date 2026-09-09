@@ -14,7 +14,7 @@ from . import events as ev
 from .bus import Bus
 from .config import AppConfig
 from .db import create_all, make_engine, make_session_factory
-from .domain import OrderStatus, new_id
+from .domain import now_ms, OrderStatus, new_id
 from .events import Journal
 from .marketdata import BarAggregator, BarPersister, QuoteCache, load_bars, persist_bars
 from .models import BarRow, Order, Portfolio, Watchlist
@@ -371,7 +371,42 @@ class Engine:
                 merged = {b.ts: b for b in existing}
                 merged.update({b.ts: b for b in day})
                 existing = [merged[k] for k in sorted(merged)][-3000:]
+        else:
+            from .brokers.alpaca import HybridQuoteFeed
+            if isinstance(self.feed, HybridQuoteFeed) and not is_option:
+                # F80 (2026-09-09): the minute that was forming when the old process died never reached the
+                # table (QQQ/IWM 11:25 ET had no bar after the 11:26 boot); seed today's completed minutes from
+                # the venue's history so a restart leaves no silent hole in the 2m tape
+                day = await self._today_exchange_bars(symbol)
+                if day:
+                    await persist_bars(self.sf, day)
+                    merged = {b.ts: b for b in existing}
+                    merged.update({b.ts: b for b in day})
+                    existing = [merged[k] for k in sorted(merged)][-3000:]
         self.bars.seed(symbol, existing)
+
+    async def _today_exchange_bars(self, symbol: str) -> list:
+        """Today's completed 1m exchange bars (extended hours) from the history provider, up to the
+        minute before now — empty outside a market day or when history is unavailable."""
+        try:
+            from .marketstructure.history import fetch_window
+            from .marketstructure.market_calendar import is_market_minute
+            now = now_ms()
+            if not is_market_minute(now):
+                return []
+            from zoneinfo import ZoneInfo
+            import datetime as _dt
+            et = ZoneInfo("America/New_York")
+            t = _dt.datetime.fromtimestamp(now / 1000, et)
+            start = int(_dt.datetime.combine(t.date(), _dt.time(4, 0), et).timestamp() * 1000)
+            end = (now // 60_000) * 60_000 - 1                 # never the still-forming minute
+            bars = await fetch_window(symbol, "1m", start, end, session="ext")
+            for b in bars:
+                b.source = "exchange"
+            return [b for b in bars if b.ts < (now // 60_000) * 60_000]
+        except Exception:  # noqa: BLE001 - seeding is best effort; the stream corrects what it can
+            log.debug("today's exchange bars unavailable for %s", symbol, exc_info=True)
+            return []
 
     # ------------------------------------------------------------- routing
     def executor_for(self, portfolio: dict | None):

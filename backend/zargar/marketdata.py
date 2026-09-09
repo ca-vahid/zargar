@@ -33,10 +33,11 @@ TF_MS = {"1m": MINUTE_MS, "5m": 5 * MINUTE_MS, "15m": 15 * MINUTE_MS, "1h": 60 *
 INTRADAY_TF_MS.update({k: v for k, v in TF_MS.items() if k != "1d"})
 
 # F75 (2026-09-09): provenance precedence at write — a venue's completed bar beats a quote-sampled
-# one (which beats nothing), a sampled bar never undoes an exchange correction, a synthetic bar
-# never enters a table that real feeds write to (unless a test says so). Exchange-over-exchange is
-# an update (a re-fetch is a correction too).
-SOURCE_RANK = {"sim": 0, "": 1, "unknown": 1, "sampled": 1, "exchange": 2}
+# one, which beats a legacy row with no provenance (F79: `unknown` ranks below `sampled`), a sampled
+# bar never undoes an exchange correction, a synthetic bar never enters a table that real feeds
+# write to (unless a test says so). Exchange-over-exchange is an update (a re-fetch is a correction
+# too) whose volume never goes down.
+SOURCE_RANK = {"sim": 0, "": 1, "unknown": 1, "sampled": 2, "exchange": 3}   # F79: no provenance < sampled
 # the data-processing rules a dataset version is hashed together with — bump when write rules change
 DATA_RULES_VERSION = ("bars-rules/2026-09-09: bucket-aligned writes; source precedence exchange>sampled|unknown>sim; "
                       "calendar-gated 04:00-20:00 ET trading days; sim bars isolated")
@@ -379,11 +380,16 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar], *, 
             else:
                 ins = sqlite_insert(BarRow).values(part)
             exc_src = ins.excluded.source
-            new_rank = case((exc_src == "exchange", 2), (exc_src == "sim", 0), else_=1)
-            old_rank = case((BarRow.source == "exchange", 2), (BarRow.source == "sim", 0), else_=1)
-            better = (new_rank > old_rank) | ((exc_src == "exchange") & (BarRow.source == "exchange"))
+            new_rank = case((exc_src == "exchange", 3), (exc_src == "sampled", 2), (exc_src == "sim", 0), else_=1)
+            old_rank = case((BarRow.source == "exchange", 3), (BarRow.source == "sampled", 2), (BarRow.source == "sim", 0), else_=1)
+            both_exchange = (exc_src == "exchange") & (BarRow.source == "exchange")
+            better = (new_rank > old_rank) | both_exchange
+            # F79: two exchange sources (Alpaca SIP stream/history, Yahoo consolidated) may both correct a
+            # minute; OHLC follows the newer bar, volume is never LOWERED by a re-fetch to a lesser total
+            from sqlalchemy import func as _f
+            volume_expr = case((both_exchange, _f.greatest(BarRow.volume, ins.excluded.volume)), else_=ins.excluded.volume)
             set_ = {"open": ins.excluded.open, "high": ins.excluded.high, "low": ins.excluded.low,
-                    "close": ins.excluded.close, "volume": ins.excluded.volume, "source": exc_src}
+                    "close": ins.excluded.close, "volume": volume_expr, "source": exc_src}
             if dialect == "postgresql":
                 stmt = ins.on_conflict_do_update(constraint="uq_bar", set_=set_, where=better)
             else:
