@@ -1097,8 +1097,14 @@ class Gateway:
         images = collect_images(msg)
         image_data_url = await fetch_image_data_url(http, images[0]) if images else None
         if not text.strip() and image_data_url is None:
-            print("    -> nothing to ingest (no text, no usable image)")
-            return {"ok": False, "note": "nothing to ingest — the message has no text and no usable image"}
+            # TERMINAL, not a failure (first live dead-letter, 2026-09-09): a
+            # sticker/reaction-only post has nothing to extract, ever — the
+            # message is already mirrored, so this delivery is COMPLETE. An
+            # ok:False here made the ledger burn 5 retries and dead-letter it
+            # as if a real tip had been lost.
+            print("    -> nothing to ingest (no text, no usable image) — mirrored only")
+            return {"ok": True, "signals": [],
+                    "note": "nothing to ingest — no text and no usable image (mirrored only)"}
         try:
             body = {"text": text, "source_name": source_name or "auto",
                     "subject": f"discord: {describe_author(msg)}",

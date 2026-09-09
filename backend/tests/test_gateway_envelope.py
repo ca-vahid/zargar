@@ -134,6 +134,23 @@ async def test_cancelled_worker_leaves_delivery_pending(tmp_path):
     assert [r["mid"] for r in GatewayStore(tmp_path).drain_spool()] == ["111"]
 
 
+async def test_empty_message_is_terminal_not_a_dead_letter(tmp_path):
+    """A sticker/reaction-only post (no text, no usable image) is a COMPLETE
+    delivery once mirrored — first live dead-letter, 2026-09-09: ok:False here
+    burned 5 retries and dead-lettered a message that never held a tip."""
+    from types import SimpleNamespace as NS
+    gw = _gateway(tmp_path)
+
+    class _Http:
+        async def post(self, url, **kw):
+            return NS(status_code=200, json=lambda: {})
+    m = _msg(text="")
+    m["embeds"] = []
+    gw._enqueue("create", m)
+    assert await gw._deliver(_Http(), {}, gw._queue.get_nowait())
+    assert gw._store.counts() == (0, 0)
+
+
 async def test_em_ack_is_separate_from_tips_failure(tmp_path):
     from types import SimpleNamespace as NS
     gw = _gateway(tmp_path)
