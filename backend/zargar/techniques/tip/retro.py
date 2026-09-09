@@ -169,22 +169,27 @@ async def run_tip_retros(eng, *, client=None, limit: int = 5) -> dict:
     # 51 is never reached while the response says pending: 0. Page with a
     # keyset cursor, filtering eligibility BEFORE the cap, and report the
     # real backlog + the oldest unreviewed age.
+    from sqlalchemy import tuple_ as _tuple
     todo: list[dict] = []
     backlog = 0
     oldest_unreviewed = None
-    cursor = None
+    cursor = None                                     # (updated_at, id) — R2:
+    scan_complete = False                             # timestamp ties must not drop rows
     async with eng.sf() as session:
         for _page in range(40):                       # scan cap: 40 x 200 rows
             q = (_sel(ManagedPositionRow)
                  .where(ManagedPositionRow.technique == "tip",
                         ManagedPositionRow.status == "closed")
-                 .order_by(ManagedPositionRow.updated_at.asc()).limit(200))
+                 .order_by(ManagedPositionRow.updated_at.asc(),
+                           ManagedPositionRow.id.asc()).limit(200))
             if cursor is not None:
-                q = q.where(ManagedPositionRow.updated_at > cursor)
+                q = q.where(_tuple(ManagedPositionRow.updated_at,
+                                   ManagedPositionRow.id) > cursor)
             rows = (await session.execute(q)).scalars().all()
             if not rows:
+                scan_complete = True
                 break
-            cursor = rows[-1].updated_at
+            cursor = (rows[-1].updated_at, rows[-1].id)
             for r in rows:
                 if "retro-done" in (r.tags or []):
                     continue
@@ -217,7 +222,10 @@ async def run_tip_retros(eng, *, client=None, limit: int = 5) -> dict:
         age_days = round((_now - _ts).total_seconds() / 86400, 1)
     return {"retros": done, "failed": failed,
             "pending": max(0, backlog - done),
-            "backlog": backlog, "oldestUnreviewedAgeDays": age_days}
+            # scanComplete False = the 40x200 cap truncated the census and
+            # backlog is a LOWER BOUND, never "the true global backlog" (R2)
+            "backlog": backlog, "scanComplete": scan_complete,
+            "oldestUnreviewedAgeDays": age_days}
 
 
 async def grade_lanes(eng, *, limit: int = 25) -> dict:

@@ -47,6 +47,7 @@ async def verify_signal(
         checks.append({"name": name, "passed": passed, "detail": detail,
                        "fatal": name not in PARKING_CHECKS and name not in SHADOW_CHECKS})
 
+
     # 0. grounding (from the extraction stage). When the ONLY gap is the ticker
     # itself — quotes found, every price evidenced — the model inferred the
     # ticker from context the checker can't see (chart screenshot, channel
@@ -91,6 +92,18 @@ async def verify_signal(
     symbol = signal.ticker.upper()
     quote = quotes.get(symbol)
     warm = quote is not None and float(quote.last or 0) > 0
+
+    # UNITS (Codex audit 2026-09-08 finding 1 + follow-up R1/R4): an option
+    # tip's targets/stop may be the CONTRACT's prices — never compare those to
+    # underlying prices in ANY check (not_past_target AND price_ordering), warm
+    # or cold. Undeclared units resolve only on exclusive consistency (see
+    # underlying_price_checks_ok); ambiguity skips the checks on the record.
+    from .schemas import underlying_price_checks_ok
+    units_ok, units_why = underlying_price_checks_ok(
+        signal, float(quote.last) if warm else None)
+    if not units_ok:
+        add("price_units", True,              # informational, never fatal
+            f"{units_why} — underlying target checks skipped")
     add("ticker_resolves", warm,
         f"no market data for {symbol} yet — parked until the feed warms"
         if not warm else "")
@@ -124,14 +137,6 @@ async def verify_signal(
             add("price_deviation", dev <= max_dev,
                 f"live price {quote.last:.2f} is {dev:.1f}% from claimed entry "
                 f"{signal.entry_price:.2f} (max {max_dev:.1f}%)" if dev > max_dev else "")
-        # 6b. UNITS (Codex audit 2026-09-08 finding 1): an option tip's
-        # targets/stop may be the CONTRACT's prices — never compare those to
-        # the underlying's last. Ambiguous units skip the check, on the record.
-        from .schemas import underlying_price_checks_ok
-        units_ok, units_why = underlying_price_checks_ok(signal, float(quote.last or 0))
-        if not units_ok:
-            add("price_units", True,          # informational, never fatal
-                f"{units_why} — underlying target checks skipped")
         # already past target = the move already happened (both directions)
         first_target = signal.target_price or (signal.target_prices[0] if signal.target_prices else None)
         if first_target and units_ok:
@@ -144,8 +149,12 @@ async def verify_signal(
                     f"live price {quote.last:.2f} already at/past target {first_target:.2f}"
                     if quote.last <= first_target else "")
 
-    # 7. internal price ordering (direction-aware)
-    if signal.entry_price:
+    # 7. internal price ordering (direction-aware). entry_price is underlying
+    # by schema contract; target/stop join the comparison ONLY when their
+    # units are underlying too (Codex follow-up R1: premium 1.75/0.90 vs an
+    # underlying 98.87 entry failed FATALLY here after the target check was
+    # correctly skipped — both calls and puts).
+    if signal.entry_price and units_ok:
         ok = True
         detail = ""
         if signal.direction == "long":

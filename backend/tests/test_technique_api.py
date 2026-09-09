@@ -53,6 +53,23 @@ async def test_status_and_rules(app_client):
     assert r.json()["R2"].startswith("Require R:R")
 
 
+async def test_daily_run_cap_counts_only_this_techniques_runs(app_client):
+    """2026-09-08: the Options Cartel desk's nightly scan wrote 5,557 deterministic
+    runs and EM's evening review was refused with "daily run cap reached (600)".
+    The cap bounds EM's own LLM spend; other techniques' rows must not count."""
+    from zargar.models import TechniqueRun
+    client, eng = app_client
+    async with eng.sf() as session:
+        for i in range(3):
+            session.add(TechniqueRun(id=f"cartel-{i}", technique="options_cartel", symbol="SPY", mode="scan",
+                                     status="done", result={}, config={}))
+        session.add(TechniqueRun(id="em-1", technique="enhanced_market", symbol="AAPL", mode="analysis",
+                                 status="done", result={}, config={}))
+        await session.commit()
+    assert await eng.technique.runs_today() == 1
+    assert (await client.get("/api/technique/status")).json()["runsToday"] == 1
+
+
 async def test_analyze_fails_closed_without_key(app_client):
     client, _ = app_client
     r = await client.post("/api/technique/analyze", json={"symbol": "AAPL"})

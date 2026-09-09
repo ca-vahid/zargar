@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.18";
+export const APP_VERSION = "0.7.19";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.19",
+    date: "2026-09-08",
+    title: "Audit boundary cases closed",
+    items: [
+      { tag: "fixed", text: "Premium-priced targets can no longer fail a tip on the stock-price ordering check (they were correctly skipped in one check but still compared in another), and the units guard works even when the quote feed is cold." },
+      { tag: "fixed", text: "The nightly review census no longer skips positions that share a timestamp, and a capped scan says so instead of calling itself the full backlog." },
+      { tag: "fixed", text: "The AI cannot label its own extraction as a refusal or failure - those statuses come only from the provider and the parser. Undeclared option units resolve only when the numbers fit exactly one interpretation; ambiguous stays skipped, on the record." },
+      { tag: "improved", text: "The independent auditor's five boundary tests now run in the main suite (tests/test_tip_audit_acceptance.py), all green." },
+    ],
+  },
   {version:"0.7.18", date:"2026-09-08", title:"Moderate market alignment for Practice",
     items:[
       {tag:"new", text:"Cartel Practice Settings offer an explicit Moderate market experiment: one index above its 8/21/50 EMAs and both above their 50 EMA. Strict remains the default and Live requires strict plans."},
@@ -65,6 +76,8 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-08",
     title: "Team2: the read cannot rewrite itself",
     items: [
+      { tag: "fixed", text: "The ZargarRestart deploy task works again: restart.ps1 is ASCII-only (Windows PowerShell read its em dash as a broken string and ran nothing), and it holds the 3-minute watchdog off so a restart can no longer spawn a second engine." },
+      { tag: "fixed", text: "EM's daily LLM run cap counts only EM's own runs: another technique's nightly scan (5,557 rows on 2026-09-08) had used it up and the evening review was refused." },
       { tag: "fixed", text: "The engine now runs under the Windows Task Scheduler (ZargarWatchdog every 3 minutes, ZargarRestart on demand) instead of inside the assistant's process tree: the 14:24 outage on 2026-09-08 was the Claude desktop package update stopping its VM service, which took the engine with it. The app log keeps days instead of 50 minutes and says hello/goodbye with its pid." },
       { tag: "fixed", text: "Team2 recognises the read's events by fingerprint, so an input that moves under the recomputed read (IV, a corrected bar, a level) can never repeat a fire it already took or skip one; a rewritten history is reported once as 'read_rewritten'." },
       { tag: "fixed", text: "Team2 locks the read's IV per session from today's 0DTE at-the-money chain (falls back to the VIX proxy), stamps it on the plan and the run, and replays with the same number: the read's history is a point-in-time record, not a function of the latest quote." },

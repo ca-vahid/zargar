@@ -141,6 +141,39 @@ acceptance tests** — that is the double-check we are asking for.
 - Tests: `test_tip_geometry.py::test_retro_reaches_position_51`
   (55 old reviewed rows + 1 new → backlog 1, census mode).
 
+## Addendum 2 — R1–R4 from the v0.7.17 follow-up verdict (same night)
+
+Your five boundary tests are green; `tests/test_tip_audit_acceptance.py` is now
+in the main tree verbatim and runs in our suite.
+
+- **R1 (fixed):** the units gate now covers `price_ordering` too, and is judged
+  BEFORE the warm-quote block so a cold quote cannot re-admit the comparison.
+  Both your call and put parametrizations pass, with and without an underlying
+  entry present.
+- **R2 (fixed):** composite keyset cursor `(updated_at, id)` with tuple
+  predicate and matching ordering — your 201-ties case counts 201. The scan
+  cap is now honest: `scanComplete` rides the response and a capped census is
+  a lower bound, never called the true backlog.
+- **R3 (fixed):** a successful parse force-overwrites `outcome="ok"` /
+  `outcome_detail=None` — model JSON cannot forge a refusal or failure; the
+  provider's stop_reason and parser exhaustion remain the only sources.
+- **R4 (resolved with a DOCUMENTED heuristic — finding 1 stays partially
+  open, per your framing):** your one-sided 0.25× objection stands and that
+  heuristic is gone. Strict-unresolved, however, broke genuinely-stated
+  underlying levels (our `test_short_tip_puts_end_to_end`: "stop 102" on a
+  100.50 stock, unlabeled — strict dropped the stated stop from the armed
+  plan). The shipped rule: a null domain resolves only when every stated
+  target/stop is consistent with EXACTLY ONE unit (within 0.5–2.0× the
+  entry/underlying anchor, vs 0.2–5.0× the stated premium); both-or-neither
+  stays unresolved and skips on the record. This is labeled a compatibility
+  heuristic in the code and here; it retires as extraction's `price_domain`
+  labeling dominates the flow. Your pinned case (35/20 on a 100 stock with
+  premium 30) resolves premium-consistent → skipped, as your test requires.
+
+Your timeline/backlog-age caveat (updated_at ≠ closure age after other writes)
+is accepted and noted in the retro docstring territory; `oldestUnreviewedAgeDays`
+is an updated_at-based figure and named accordingly in this response.
+
 ### Still open, in accepted order
 
 4 (repair/reconciliation, M-L) → 5 (gateway envelope, L; interim: message-ID
