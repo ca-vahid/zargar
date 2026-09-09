@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.13";
+export const APP_VERSION = "0.7.17";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,44 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.17",
+    date: "2026-09-08",
+    title: "The audit's first three fixes",
+    items: [
+      { tag: "fixed", text: "Option tips whose targets are the contract's own price (\"1.40 → 1.75\") are no longer judged against the stock's price — the units are labeled at extraction, ambiguous ones skip the check on the record instead of guessing, and premium numbers never become stock levels in an armed plan. (Codex audit finding 1.)" },
+      { tag: "fixed", text: "A garbled AI extraction no longer masquerades as \"no signal here\": it is recorded as an error and retried once; a safety refusal is recorded distinctly. Silent tip loss closed. (Finding 3.)" },
+      { tag: "fixed", text: "Nightly position reviews can no longer starve: eligibility is checked before the batch cap, and the response reports the true backlog and the oldest unreviewed age. (Finding 5.)" },
+    ],
+  },
+  {
+    version: "0.7.16",
+    date: "2026-09-08",
+    title: "Cartel scans fetch histories in parallel",
+    items: [
+      { tag: "improved", text: "Cartel preparation prefetches a bounded window of 25 histories with up to six concurrent fetches by default. Batch size and concurrency are adjustable in Practice and Live Settings; provider pacing and throttling protections remain." },
+      { tag: "improved", text: "Progress shows active history fetches and completed prefetches. Evaluation and shortlist selection retain discovery order, and cancellation awaits pending work before saving the final state." },
+    ],
+  },
+  {
+    version: "0.7.15",
+    date: "2026-09-08",
+    title: "Skips never arm",
+    items: [
+      { tag: "fixed", text: "A tip the analyst said skip/watch to can no longer sit armed waiting for its level - it never arms, and a verdict that arrives after arming vetoes the fire and disarms the plan. The analyst hand-cleaned eight of these in one day, one minutes from firing a skipped short." },
+      { tag: "fixed", text: "Scoring a tip-triggered plan no longer fails on a too-narrow database column (plan_source widened; the error appeared at every startup while it retried)." },
+      { tag: "new", text: "scripts/restart.ps1: the one deploy script for every desk - stop, start, and WAIT for the app to answer before exiting, reporting anything an unelevated shell could not stop. Three market-hours outages came from deploys that walked away early." },
+    ],
+  },
+  {
+    version: "0.7.14",
+    date: "2026-09-08",
+    title: "Cartel research continues through mixed markets",
+    items: [
+      { tag: "improved", text: "Cartel now evaluates stocks and saves research candidates when market alignment blocks trading. Research-only candidates cannot auto-arm; fresh aligned preparation is required." },
+      { tag: "improved", text: "Plans show SPY/QQQ closes, EMA levels and alignment, with market restrictions separated from data-coverage failures. Settings select bullish or bearish research when the market is blocked." },
+    ],
+  },
   {
     version: "0.7.13",
     date: "2026-09-08",

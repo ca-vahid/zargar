@@ -160,3 +160,46 @@ The separate premium budget still applies: on a hypothetical 10,000-equity book,
 10% allows 1,000, but a 500 premium budget still caps the purchase at 500. Existing
 contract-price/quantity limits, cash requirements, exposure and loss gates remain
 in force. No change to Live acknowledgements or permission requirements.
+
+
+## Mixed-market research (0.7.14)
+
+Market alignment controls automatic arming separately from research coverage. If
+SPY/QQQ are mixed or unknown, preparation still evaluates stock/setup evidence in
+the configured research direction (bullish by default). Other stock, history,
+industry and setup checks remain unchanged. Qualifying research candidates are
+saved as analysis records with a market-blocked label, not executable plans.
+No contract is selected and no arm/order is created. Pending activation explicitly
+ignores these preparation snapshots; fresh preparation with aligned market evidence
+is required before execution. Normal plan construction still rejects their failed
+market screen, so manual plan creation cannot promote the saved research snapshot.
+
+The Plans tab displays the completed-session date, close, EMA levels and alignment
+for each index. Research-only candidate counts are distinct from executable setup
+counts. A complete research run with a trading restriction is not an incomplete
+scan; genuine data failures and optional-cap gaps remain visible. Historical runs
+that skipped evaluation on a market block are no longer labeled as download failures.
+A coverage-version change requires fresh preparation rather than resuming old scans.
+
+
+## Bounded parallel history loading (0.7.16)
+
+Settings expose a history batch window (default 25, range 1–50) and parallel fetches
+(default 6, range 1–12). The batch window bounds queued/completed history buffers;
+it is not a provider bulk endpoint or permission to send every request at once.
+The shared provider's existing concurrency cap remains authoritative. Cartel's
+request spacing is serialized across fetches (default 0.25 seconds, approximately
+four request starts per second), so overlap removes response-wait serialization
+without removing pacing. Cache hits bypass provider requests.
+
+Only history reads overlap. The coordinator evaluates/persists in discovery order,
+keeping shortlist ranking reproducible. Definite strict-industry exclusions and
+resumed analyses do not prefetch. Checkpoint writes serialize to avoid stale progress
+commits. Progress reports active fetches, prefetch completions and configured bounds.
+Rate-limit exhaustion blocks new request starts; interruption cancels and awaits all
+owned prefetch work. Already committed analyses remain resumable. At most the bounded
+window of uncommitted histories needs fetching again after interruption.
+
+An in-progress run is not hot-upgraded. Let it finish; deploy outside an active run
+and use fresh preparation with the new version. Larger batches alone cannot bypass
+the provider rate cap, and higher concurrency does not guarantee faster scans.

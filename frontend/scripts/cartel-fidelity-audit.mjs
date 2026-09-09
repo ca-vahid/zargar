@@ -42,7 +42,7 @@ try {
         if(url.pathname.startsWith('/api/auth/')) data={required:false,user:null};
         else if(url.pathname.includes('/preparation')) {
           if(route.request().method()==='POST') saved=route.request().postDataJSON();
-          data={configuration:saved||config,latest:null,liveAutoAllowed:false,activation:{},quoteRefresh:{errors:{}}};
+          data={configuration:saved||config,latest:{runId:'research-fixture',status:'done',result:{phase:'complete',armingBlocked:true,researchDirection:'long',researchCandidates:1,discovered:1,evaluated:1,notEvaluated:0,dataErrors:0,qualifying:0,armed:0,coverageComplete:true,rows:[],shortlist:[{symbol:'TEST',analysisId:'research-analysis',status:'market_blocked',reason:'Research only: market alignment blocks arming'}],market:{direction:'mixed',reason:'Both indices must agree',indices:{SPY:{direction:'mixed',session:'2026-09-08',close:100,emas:{8:101,21:99},aboveEmas:{8:false,21:true}}}}}},liveAutoAllowed:false,activation:{},quoteRefresh:{errors:{}}};
         } else if(url.pathname.endsWith('/schedule')) data={configuration:{scanSymbols:[]},jobs:[]};
         else if(url.pathname.endsWith('/quote-recording')) data={enabled:false,errors:{},captured:0};
         await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
@@ -50,6 +50,8 @@ try {
       await page.goto(`${base}/techniques/options-cartel/settings`);
       await page.locator('.splash').waitFor({state:'detached'});
       await page.getByRole('combobox',{name:/^Industry policy/}).selectOption('strict');
+      await page.getByLabel('History batch size',{exact:true}).fill('50');
+      await page.getByLabel('Parallel history fetches',{exact:true}).fill('8');
       await page.getByLabel('Reviewed ETF symbols',{exact:true}).fill('DRAM, TEST');
       await page.getByRole('combobox',{name:/^Confirmation timeframe/}).selectOption('5');
       await page.getByRole('combobox',{name:/^Entry approach/}).selectOption('retest');
@@ -57,13 +59,18 @@ try {
       await page.getByText('Cartel preparation settings saved',{exact:true}).waitFor();
       assert.equal(saved.workspace,workspace);
       assert.equal(saved.industryPolicy,'strict');
+      assert.equal(saved.historyBatchSize,50); assert.equal(saved.historyConcurrency,8);
       assert.deepEqual(saved.reviewedEtfs,['DRAM','TEST']);
       assert.equal(saved.entry.timeframe_minutes,5); assert.equal(saved.entry.mode,'retest');
       assert.equal(saved.allowLive,false); assert.equal(saved.enabled,false);
       assert.deepEqual(errors,[]);
       assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1),'document overflow');
+      await page.getByRole('tab',{name:'Plans',exact:true}).click();
+      await page.getByRole('region',{name:'Market alignment',exact:true}).waitFor();
+      assert.equal(await page.getByText(/Coverage incomplete:/).count(),0);
+      assert((await page.getByRole('link',{name:'Open TEST',exact:true}).getAttribute('href')).endsWith('/run/research-analysis'));
       await page.screenshot({path:resolve(output,`cartel-fidelity-${device}-${workspace}.png`),fullPage:true});
-      console.log(`PASS ${device} ${workspace}: controls, save payload, disabled execution, no overflow`);
+      console.log(`PASS ${device} ${workspace}: controls, save payload, disabled execution, research-only market banner, no overflow`);
       await page.close();
     }
   }

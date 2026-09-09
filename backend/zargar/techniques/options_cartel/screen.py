@@ -84,7 +84,9 @@ def market_regime(indices: dict[str, list[DailyBar]], rules: CartelRules, at: in
             below = all(bars[-1].close < v for v in emas.values())
             state = "long" if above else "short" if below else "mixed"
         reads[symbol] = {"direction": state, "emas": {str(k): v for k, v in emas.items()},
-                         "session": bars[-1].session.isoformat() if bars else None}
+                         "session": bars[-1].session.isoformat() if bars else None,
+                         "close": bars[-1].close if bars else None,
+                         "aboveEmas": {str(p): (bars[-1].close > value if bars and value is not None else None) for p, value in emas.items()}}
     directions = {v["direction"] for v in reads.values()}
     direction = "unknown" if "unknown" in directions else next(iter(directions)) if len(directions) == 1 else "mixed"
     return {"direction": direction, "indices": reads, "asOfMs": at,
@@ -203,6 +205,7 @@ def screen_listing(bars: list[DailyBar], facts: ListingFacts, indices: dict[str,
             facts_view[key] = None
     return {"symbol": facts.symbol, "direction": direction, "asOfMs": at,
             "screenPassed": all(g["status"] == "pass" for g in gates),
+            "researchPassed": all(g["status"] == "pass" for g in gates if g["label"] != "Market agrees with direction"),
             "gates": gates, "market": regime, "config": rules.snapshot(),
             "facts": facts_view,
             "metrics": {"adrPct": adr, "atr": atr, "dailyVolume": last.volume if last else None,
