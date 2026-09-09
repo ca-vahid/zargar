@@ -68,9 +68,10 @@ runtime ones to `execution.*`).
    (`marketdata.dataset_version`). Suspect rows are quarantined with the originals preserved
    (`bars_quarantine`), never deleted outright; flatness flags, an operator classifies.
 18. **Every restart goes through one door** (2026-09-09). `scripts/restart.ps1` (and `start.ps1` under it) asks `/api/ops/restart-check`
-   what a restart would interrupt across EVERY technique (open trades, working entries/exits, venue orders,
-   analyst reads) and refuses unless `-Force`; after a detached restart it compares armed plans, open trades,
-   pending exits and working orders BY ID with the state before (restoration check, `logs/restore-mismatch-*.json`
+   what a restart would interrupt across EVERY technique (open trades, working entries/exits, venue orders IN
+   FLIGHT, analyst reads) and refuses unless `-Force`; RESTING venue orders (durable-position stops, resting limits)
+   never block - the sim book and a live venue keep them - but must be found again by id afterwards; after a detached restart it compares armed plans, open trades,
+   pending exits and resting/in-flight orders BY ID with the state before (restoration check, `logs/restore-mismatch-*.json`
    on a mismatch). Assistants restart via the scheduler's `ZargarRestart` task (same door, same refusal);
    `ZargarRestartOverride` (= `restart.ps1 -Force`) exists for emergencies and is logged as an override. Task
    scripts are ASCII (Windows PowerShell 5.1). "No open positions" is not a restart test.
