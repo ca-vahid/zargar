@@ -1067,7 +1067,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
-- **2026-09-08 (evening, after the Codex review — v0.7.12, one deploy)** — **Hosting:** the 14:24 outage was the Claude
+- **2026-09-08 (evening, after the Codex review — v0.7.13, one deploy; stamped 0.7.12 at first, renumbered because the Cartel desk's PR 13 took 0.7.12 on origin/main the same evening)** — **Hosting:** the 14:24 outage was the Claude
   desktop package update stopping its VM service with the engine inside its process tree; the engine now runs under the
   Windows Task Scheduler (`ZargarWatchdog` / `ZargarRestart`, `scripts/watchdog.ps1`), the log keeps days (F69), and the
   process announces start/stop. **Read integrity:** acted-on read events are recognised by FINGERPRINT (ts · event ·
