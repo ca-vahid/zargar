@@ -2940,7 +2940,7 @@ data and original research records. Keep target_replan off until the clean datas
   **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's
   rule question**, **F81**, **F82** (now with confirmed evidence), **F83**, F67's two shared-side
   halves, and the F30-family question of which premium series is authoritative.
-## Desk record 2026-09-09 14:00–14:40 ET — Codex review of PRs 33–45 (v0.7.30)
+## Desk record 2026-09-09 14:00–14:40 ET — Codex review of PRs 33–45 (v0.7.32)
 
 - The reviewer reproduced ten gaps with twelve regressions at a3885a9. All fixed; the regression file is now
   `tests/test_codex_f75_regressions.py` and passes with the rest of the affected suites (39) and the broad set.

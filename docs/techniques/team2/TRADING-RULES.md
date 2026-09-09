@@ -1632,7 +1632,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   green** — the workaround is to set the `zargar_session` cookie in the browser (`?token=` does not
   authenticate the SPA route); Plans and Armed tabs both render all three plans with correct
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
-- **2026-09-09 (14:00–14:40 ET — Codex review of the repair, v0.7.30)** — ten findings / twelve regressions fixed
+- **2026-09-09 (14:00–14:40 ET — Codex review of the repair, v0.7.32)** — ten findings / twelve regressions fixed
   (PLATFORM-RULES 2026-09-09: readiness blocks on unknown inventory and in-flight fire chains, quiesce before the
   capture, managed positions reconciled by id, interior-minute recovery, one venue-merge policy, provider-named
   backfill with per-day coverage, transactional quarantine, sweeps validate warm-up and hash what they consume,
