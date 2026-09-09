@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.26";
+export const APP_VERSION = "0.7.27";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.27",
+    date: "2026-09-09",
+    title: "Ledger acknowledgments keep their exact identity",
+    items: [
+      { tag: "fixed", text: "An acknowledged Discord edit no longer comes back after a restart (the intake ledger's completion record now names the exact revision it completed)." },
+      { tag: "fixed", text: "A repeated delivery of a message that already failed keeps its real retry count and its already-confirmed EM delivery - it can no longer reset retries or send EM a second copy." },
+    ],
+  },
   {
     version: "0.7.26",
     date: "2026-09-09",
