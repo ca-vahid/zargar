@@ -2159,3 +2159,47 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
   **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, F67's two shared-side halves,
   and the F30-family question of which premium series is authoritative.
+
+## 2026-09-09 10:15 ET (run 34b — F72's safety guard built and deployed, v0.7.24)
+
+- **Built to the user's scope: a guard, not a strategy change.** `scenario.target_is_ahead()` —
+  strictly above for a long, strictly below for a short; `None` (no target) and an unjudgeable spot
+  stay allowed; **equality is refused**. Applied at BOTH money-path entrances: the read refuses the
+  entry (`skip_target_behind`, `session.py`) and the runner **drops** a stale fallback target
+  (`target_dropped`, `runner.py`). The runner half is the one that closes the **quote-watch**
+  exposure — `target_breach` runs on the ~2s watch, so a wrong-side target would have sold the whole
+  position on the FIRST live print, before any 2m bar closed.
+- **Explicitly not relied on, per the instruction:** the EMA-stack gate (it was only incidentally
+  holding this off today) and a global `hod_target` flip (that is the strategy decision, kept
+  separate). **Existing-position protection untouched** — an open position keeps its target exit,
+  premium stop, candle stop, trims and flatten; two tests pin it, including one proving a *valid*
+  target still exits on the live print.
+- **Placement detail worth keeping:** the target resolution was hoisted above the strike pick, so a
+  refusal costs no `pick_strike` call and — like the other structural refusals (F18) — **does not
+  spend the D9 pullback allowance**; only a priced fire does (F61). Location gates still run first,
+  which is why IWM's pullbacks today are refused by the no-trade zone before the target is ever
+  judged.
+- **Surfaced, per the F57/F59 lesson** (a refusal the desk cannot see is a refusal that does not
+  exist): journalled as a trigger skip, stated in the Armed/phone headline via `skip_why`, and given
+  timeline icons in `ArmedDayPanel`.
+- **Tests: 28 new in `tests/test_team2_target_guard.py`, every case mirrored long/short** — the
+  predicate (ahead / wrong-side / equal / `None` / no spot), end-to-end refusal on a new synthetic
+  `down_day` and its long mirror, the boundary a ten-thousandth on the wrong side, controls proving
+  the guard does not over-fire, the D9 allowance, note-once behaviour, and the quote watch (a
+  wrong-side target *would* fire on the first print; a dropped one does not; a valid one still does).
+  **94 Team2 tests pass**; frontend build green. One test had to be rewritten honestly: an EXACT
+  price tie is unreachable end-to-end because the trade dict rounds the entry spot to 4 dp, so
+  equality is pinned at the predicate level and the integration test proves the boundary a hair off.
+- **Deployed at 10:15 ET with the desk flat** (no trades, no open positions, touches 0 on all three
+  — the one moment it was safe). `start.ps1 -Detach`, v0.7.24 live, `/api/health` agrees, all three
+  Team2 plans restored with their scenarios intact (tips 18, managed positions 9, no errors).
+- **Honest live status: deployed, NOT yet exercised by the tape.** SPY (target 764.75 at 763.8) and
+  IWM (293.56 at 292.8) would both be refused, but no qualifying pullback has reached the guard yet.
+  QQQ is correctly unaffected — its 716.50 target is genuinely ahead of 718.75 for a short, which is
+  the selectivity check. Next run should look for a real `skip_target_behind` in the read.
+- **The strategy question is deliberately still open** — the guard stops the bad trade, it does not
+  recover a good one. Three replacement options are written up in TRADING-RULES F72 (refuse and move
+  on / `hod_target=always` / re-derive the target below current price) with the cost of each. Also
+  still open: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**,
+  **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, F67's two shared-side
+  halves, and the F30-family question of which premium series is authoritative.

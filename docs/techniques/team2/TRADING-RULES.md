@@ -1098,7 +1098,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
     level, "needs to rise" is wrong in the same way — the trigger is satisfied on price and waiting
     on its confirmation. Shared engine + EM surface → **user's call**.
 
-- **F72 (2026-09-09 09:46 ET, PROPOSED — NOT built; a rules question, and it is LIVE today).**
+- **F72 (2026-09-09 09:46 ET — GUARD BUILT 10:15 ET, v0.7.24; the strategy question stays OPEN).**
   On a gap-down morning the planned target can already be **behind price when the scenario arms**,
   and a *first* entry would then exit on its very next 2m bar. Measured at 09:46 ET, minutes after
   the 09:45 15m close armed all three symbols short: **SPY** `scenario_4 break PDL`, anchor 765.14,
@@ -1119,12 +1119,43 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   - **Not yet reached today** only because both setups are still gated on the EMA stack ("no entry
     until the stack turns bear, E3/B9/E4") with `touches 0`. If the stack turns bear this session,
     SPY and IWM can hit this.
-  - **Options for the user** (each is a rule change, so none is built here): **(a)** refuse a setup
-    whose planned target is already beyond price at arming — no room, no trade, journalled like the
-    other refusals; **(b)** flip `hod_target` to `always` so the running LOD/HOD retargets first
-    entries too (the `hod_target_min_atr=1.0` room test already guards it); **(c)** re-derive the
-    target at arming time from the next level *below current price* rather than below the zone.
-    (a) is the most conservative and (b) is one settings change. **User's call.**
+  - **BUILT 2026-09-09 10:15 ET (v0.7.24) — the safety guard only, not the strategy.** A trade with
+    no room is refused rather than taken: `scenario.target_is_ahead()` is one predicate (strictly
+    above for a long, strictly below for a short; `None` and an unjudgeable spot stay allowed;
+    **equality is refused**), and it is applied at both money-path entrances.
+    **(1) The read** (`session.py`) refuses the ENTRY with `skip_target_behind`. The target
+    resolution was hoisted above the strike pick, so the refusal costs no `pick_strike` call and —
+    like the other structural refusals (F18) — **does not spend the D9 pullback allowance**; only a
+    priced fire does (F61). **(2) The runner** (`runner.py`) falls back to the SETUP's target when a
+    fire carries none, which could put the stale level back on a live trade; it is now **dropped**
+    (`target_dropped`). That is what closes the **quote-watch** exposure — `target_breach` runs on
+    the ~2s watch (planrunner 2b), so a wrong-side target would have sold the whole position on the
+    FIRST live print, before any 2m bar closed. No target is safe (candle stop, premium stop, trims
+    and the 15:45 flatten still manage the trade); a wrong one is not. Surfaced per the F57/F59
+    lesson: journalled as a trigger skip, stated in the Armed/phone headline, given timeline icons.
+    **Existing-position protection is unchanged** — an open position keeps its target exit, premium
+    stop, candle stop, trims and flatten, pinned by tests. 28 new tests in
+    `tests/test_team2_target_guard.py`, every case mirrored long/short; 94 Team2 tests pass.
+    **Deliberately NOT done:** the EMA-stack gate is not relied on (it was only incidentally holding
+    this off), and `hod_target` was **not** switched globally.
+  - **Live status 2026-09-09 10:20 ET: deployed, not yet exercised by the tape.** SPY's target
+    (764.75 at 763.8) and IWM's (293.56 at 292.8) are still behind price, so both would be refused,
+    but no qualifying pullback has reached the guard yet — IWM's are being turned away earlier by the
+    no-trade zone (V6/B5) and SPY/QQQ have not produced one with a bear stack. QQQ is unaffected
+    (target 716.50 below price 718.75 — correctly ahead for a short), which is the selectivity check.
+  - **STILL OPEN — the strategy decision (the guard only stops the bad trade; it does not recover a
+    good one).** Three replacement options, none built:
+    **(a) Refuse and move on** — what the guard does today, made permanent policy: no room means no
+    trade on that setup for the session. Safest, zero new knobs; the cost is that a genuine gap-down
+    trend day produces *no* Team2 trade at all, which is the F72 morning itself.
+    **(b) `hod_target=always`** — one settings change, so the running LOD/HOD retargets first entries
+    too, with the existing `hod_target_min_atr=1.0` room test as the guard. Recovers the trade and
+    reuses machinery already proven on re-entries; the cost is that every first entry now targets an
+    intraday extreme instead of a planned level, which is a real change to how the method exits and
+    should be swept before it is trusted.
+    **(c) Re-derive the target at arming** from the next prior-day level *below current price*
+    (rather than below the zone). Keeps targets structural and planned; the cost is new code in the
+    level sheet and the risk of reaching for a level far away on a big gap. **User's call.**
 
 ## Theories to test
 
