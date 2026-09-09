@@ -43,6 +43,7 @@ class Team2Rules(MarketRules):
     # --- T: entry
     pullback_max_touches: int = 2           # D9/P6: first two EMA13 touches after confirmation, third is watch-only
     pullback_max_bars: int = 8              # A6: a pullback longer than this is a new consolidation, not a dip
+    pullback_reset_atr: float = 0.5         # F62: a new pullback needs a close this many ATRs off the EMA13 first (0 = every bar)
     pullback_body_mult: float = 2.0         # A6/F4: a bar with body > k×avg body INTO the EMA is an engulfing entry — skip
     entry_at: str = "both"                  # "ema" (T1) | "level" (T2 retest / T7 base) | "both"
     allow_ema48_entries: bool = True        # E5: the 48 EMA is the second line of defense — a deeper dip that holds
@@ -118,7 +119,7 @@ SETTINGS_MAP: dict[str, str] = {
     "fan_trend_min_atr": "fan_trend_min_atr", "pm_tol_atr": "pm_tol_atr",
     "target_lookback_sessions": "target_lookback_sessions",
     "range_day_confirmation": "range_day_confirmation", "zone_tol_atr": "zone_tol_atr", "flip_body_ratio": "flip_body_ratio",
-    "pullback_max_touches": "pullback_max_touches", "pullback_max_bars": "pullback_max_bars",
+    "pullback_max_touches": "pullback_max_touches", "pullback_max_bars": "pullback_max_bars", "pullback_reset_atr": "pullback_reset_atr",
     "pullback_body_mult": "pullback_body_mult", "entry_at": "entry_at",
     "allow_ema48_entries": "allow_ema48_entries", "allow_ema200_flush": "allow_ema200_flush",
     "base_bars": "base_bars", "base_tol_atr": "base_tol_atr", "trim_cue": "trim_cue",

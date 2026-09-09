@@ -125,13 +125,14 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.dte_policy": "0dte",           # 0dte | 1dte (sweep variant)
     "techniques.team2.target_premium": 0.60,         # V1/F5: first OTM strike whose ask <= this
     "techniques.team2.premium_floor": 0.20,
-    "techniques.team2.sigma_source": "vix1d",        # IV proxy for the premium model: vix1d | vix | chain
+    "techniques.team2.sigma_source": "chain",        # F51: the read's IV = today's 0DTE ATM IV from the chain, locked for the session; vix1d | vix are the fallbacks
     "techniques.team2.fan_trend_min_atr": 0.60,      # E4 chop/trend threshold (EMA spread in 2m ATRs)
     "techniques.team2.pm_tol_atr": 0.25,             # D7 touch tolerance
     "techniques.team2.target_lookback_sessions": 10, # L3.1
     "techniques.team2.range_day_confirmation": True, # B3/A4
     "techniques.team2.pullback_max_touches": 2,      # D9
     "techniques.team2.pullback_max_bars": 8,         # A6
+    "techniques.team2.pullback_reset_atr": 0.5,      # F62: a pullback is an event — price must leave the EMA13 band (x ATR) before the next one counts
     "techniques.team2.pullback_body_mult": 2.0,      # A6/F4 engulfing filter
     "techniques.team2.entry_at": "both",             # ema | level | both (T1 pullbacks, T2 retests + T7 bases)
     "techniques.team2.allow_ema48_entries": True,    # E5 second line of defense

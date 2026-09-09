@@ -76,6 +76,11 @@ class Team2Runner(PlanRunner):
         self._seen: dict[str, int] = {}                # run_id -> events already acted on
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
         self._sigma_cache: dict[str, tuple[str, float]] = {}
+        # 2026-09-08 (Codex review): the read is recomputed every 2m close; acted-on events are recognised by
+        # FINGERPRINT, not by their position in the list, so an input that moves under the read (IV, a late
+        # bar) can never re-fire or skip one. `_seen` (the count) stays for the tests/UI that read it.
+        self._seen_fp: dict[str, set[str]] = {}
+        self._rewrite_noted: dict[str, int] = {}
         self._small_noted: set[tuple[str, str]] = set()
         self._loss_tally: dict[str, dict[str, tuple[int, str]]] = {}   # day -> run_id -> (losers, basis) (F37/F38)
 
@@ -217,6 +222,27 @@ class Team2Runner(PlanRunner):
                   dayType=ap.plan.get("dayType"), sizing=ap.plan.get("sizingAtOpen"))
         return {"rows": [], "reference": ref, "gapPct": round(gap, 3), "replan": False}
 
+    async def _finalize_open(self, ap: ArmedPlan, bars: list[Bar]) -> None:
+        from .plan import complete_plan
+        before = {k: ap.plan.get(k) for k in ("openPrice", "openSource", "dayType", "sizingAtOpen", "completedAt")}
+        try:
+            done = complete_plan(ap.plan, bars)
+        except Exception:  # noqa: BLE001
+            log.exception("team2 open finalize failed for %s", ap.symbol)
+            return
+        if done.get("openSource") != "rth_open":
+            return
+        ap.plan["preopenSnapshot"] = before
+        ap.plan.update(done)
+        ap.plan["openFinalizedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        self._log(ap, "open_finalized", f"day type finalized on the 09:30 open {done.get('openPrice')}: "
+                  f"{before.get('dayType')} (09:25 estimate) -> {done.get('dayType')}, sizing at open {done.get('sizingAtOpen')} (F49)",
+                  before=before, openPrice=done.get("openPrice"), dayType=done.get("dayType"))
+        svc = getattr(self.engine, "team2", None)
+        if svc is not None:
+            with contextlib.suppress(Exception):
+                await svc.stamp_run(ap)
+
     # ------------------------------------------------------------- bars
     async def _load_warmup(self, ap: ArmedPlan) -> None:
         if ap.run_id in self._warm_loaded:
@@ -261,6 +287,55 @@ class Team2Runner(PlanRunner):
         await self._load_warmup(ap)
         return list(self._bars.get(ap.run_id, []))
 
+    @staticmethod
+    def _fingerprint(e: dict) -> str:
+        return f"{e.get('ts')}|{e.get('event')}|{e.get('setup') or e.get('scenario') or ''}|{e.get('touch') or ''}|{str(e.get('why'))[:48]}"
+
+    async def _session_sigma(self, ap: ArmedPlan) -> float:
+        """F51 (2026-09-08): the read's IV is a point-in-time input — captured ONCE per plan, from today's
+        0DTE ATM chain IV when available (else the VIX proxy), stamped on the plan and the run row, and
+        held for the whole session. A later IV can never rewrite an earlier signal (the read is
+        recomputed every bar) — it may only inform the next session."""
+        snap = (ap.plan or {}).get("sigma")
+        if isinstance(snap, dict) and snap.get("value"):
+            return float(snap["value"])
+        value, source, detail = await self._sigma_snapshot(ap.symbol)
+        ap.plan["sigma"] = {"value": round(float(value), 4), "source": source,
+                            "lockedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"), **detail}
+        self._log(ap, "sigma_locked", f"read IV locked at {value:.4f} from {source} — held for the session so the "
+                  "read's history cannot change under it (F51)", source=source, **detail)
+        svc = getattr(self.engine, "team2", None)
+        if svc is not None:
+            with contextlib.suppress(Exception):
+                await svc.stamp_run(ap)                    # point-in-time provenance on the run row
+        return float(value)
+
+    async def _sigma_snapshot(self, symbol: str) -> tuple[float, str, dict]:
+        """Today's 0DTE ATM IV from the chain (call/put mid_iv averaged at the strike nearest spot), with its
+        provenance; the VIX proxy when the chain has none. The chain row is CBOE-delayed (~15 min): say so."""
+        src = str(self.rt("sigma_source", "chain"))
+        if src == "chain":
+            try:
+                opts = getattr(self.engine, "options", None)
+                today = dt.datetime.now(ET).date().isoformat()
+                q = self.engine.quotes.get(symbol)
+                spot = float(q.last) if q is not None and q.last and q.last > 0 else None
+                if opts is not None and spot:
+                    rows = await opts.provider().chain(symbol, today)
+                    priced = [c for c in rows if (c.get("greeks") or {}).get("mid_iv")]
+                    if priced:
+                        k = min({float(c.get("strike") or 0) for c in priced}, key=lambda x: abs(x - spot))
+                        ivs = [float(c["greeks"]["mid_iv"]) for c in priced if float(c.get("strike") or 0) == k
+                               and float(c["greeks"]["mid_iv"]) > 0]
+                        if ivs:
+                            iv = sum(ivs) / len(ivs)
+                            return iv, "chain_atm", {"expiry": today, "strike": k, "spot": round(spot, 4), "chainDelayed": True,
+                                                     "capturedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+            except Exception:  # noqa: BLE001 - the proxy below is the fallback, and the source is stamped
+                log.warning("team2 chain IV snapshot failed for %s — falling back to the VIX proxy", symbol)
+        value = await self._sigma(symbol)
+        return value, "vix_proxy", {"capturedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+
     async def _sigma(self, symbol: str) -> float:
         """IV proxy for the premium model (B2): ^VIX1D → ^VIX×1.3 → 0.20, cached per day."""
         day = dt.datetime.now(ET).strftime("%Y-%m-%d")
@@ -269,6 +344,8 @@ class Team2Runner(PlanRunner):
             return hit[1]
         sigma = 0.20
         src = str(self.rt("sigma_source", "vix1d"))
+        if src == "chain":
+            src = "vix1d"                                  # the chain path lives in _sigma_snapshot; this is its fallback
         try:
             from ...marketdata import load_bars
             if src in ("vix1d", "vix"):
@@ -297,6 +374,10 @@ class Team2Runner(PlanRunner):
         bars = self._bars.setdefault(ap.run_id, [])
         if not bars or bars[-1].ts < bar.ts:
             bars.append(bar)
+        # F49 (2026-09-08): the 09:25 completion is an ESTIMATE from the last pre-market print; the first
+        # regular bar finalizes the day type / open / sizing, keeping the estimate as a snapshot
+        if bar_session(bar.ts) == "rth" and (ap.plan or {}).get("zones") and (ap.plan or {}).get("openSource") != "rth_open":
+            await self._finalize_open(ap, bars)
         _, close_ms = session_bounds(ap.plan_for)
         rules = self.rules()
         step = rules.entry_tf_min * 60_000
@@ -336,15 +417,23 @@ class Team2Runner(PlanRunner):
         plan.setdefault("date", ap.plan_for)
         if not plan.get("zones"):
             return
-        sigma = await self._sigma(ap.symbol)
+        sigma = await self._session_sigma(ap)
+        plan["sigma"] = ap.plan.get("sigma")
         res = simulate_session(plan, self._bars.get(ap.run_id, []), rules, sigma=sigma, now_ms=now_ms,
                                warmup_1m=self._warm.get(ap.run_id, []))
         self._last_sim[ap.run_id] = res.to_dict()
-        seen = self._seen.get(ap.run_id, 0)
-        new = res.events[seen:]
+        seen_fp = self._seen_fp.setdefault(ap.run_id, set())
+        fps = [self._fingerprint(e) for e in res.events]
+        missing = seen_fp - set(fps)
+        if missing and not self._rewrite_noted.get(ap.run_id):
+            self._rewrite_noted[ap.run_id] = len(missing)
+            self._log(ap, "read_rewritten", f"{len(missing)} earlier read event(s) no longer appear in the recomputed read — "
+                      "an input moved under it; events already acted on are never repeated, new ones still act", count=len(missing))
+        new = [e for e, fp in zip(res.events, fps) if fp not in seen_fp]
+        self._seen[ap.run_id] = len(res.events)
         halted = bool(self.engine.trading_halted(ap.config.portfolio_id))    # global switch OR this book's halt
-        for i, e in enumerate(new):
-            self._seen[ap.run_id] = seen + i + 1        # R16: advance per event — an exception keeps the rest for the next bar
+        for e in new:
+            seen_fp.add(self._fingerprint(e))           # before handling: a failing event is dropped, the rest still act
             what = e["event"]
             if what == "fire":
                 await self._fire_from_event(ap, e, bar, res, halted=halted, journal=journal)
@@ -543,6 +632,24 @@ class Team2Runner(PlanRunner):
                                  reason="flatten: 0DTE flatten time reached on the clock (C3/D-1)")
 
     # ------------------------------------------------------------- live premium (money modes)
+    def target_breach(self, tr: Trade, last: float) -> str | None:
+        """F50 (2026-09-08): the plan target is an UNDERLYING condition. The first fresh print at or through
+        it sells the rest as a reduce-only limit at the contract's fresh bid (the shared `_exit` path; a
+        resting unfilled limit is re-priced to market by `_reprice_stuck_exits`, duplicates are prevented by
+        `pending_exit_qty`, partial fills reduce `remaining`). The model books the same exit at its mark on
+        the touching bar and labels it `target_touch_intrabar` — replay is a claim, the book is the record."""
+        if tr.instrument != "options" or not tr.targets or tr.remaining <= 0 or tr.status != "open":
+            return None
+        try:
+            tgt = float(tr.targets[0])
+        except (TypeError, ValueError):
+            return None
+        hit = last >= tgt if tr.direction == "long" else last <= tgt
+        if not hit:
+            return None
+        return (f"target {tgt:.2f} touched on the live print {last:.2f} — selling the remaining {tr.remaining:g} at the "
+                "contract's fresh bid (X3/V11, F50)")
+
     def _live_pct(self, tr: Trade) -> float | None:
         """Fee-adjusted premium % of an open option trade from the contract's own FRESH real-time bid;
         None when there is no usable quote (delayed chain rows never drive money)."""
@@ -858,6 +965,20 @@ class Team2Runner(PlanRunner):
         # summary in the method's words
         regime = read.get("regimeLast") or {}
         bias = read.get("bias") or {}
+        # F66 (2026-09-08, run 30): at 15:33 ET all three rows still read "waiting for the 1st/2nd 2m
+        # pullback into the EMA13" although `session.py` had already minted `skip_last_entry` at 15:32 —
+        # nothing can be entered after 15:30 (D6) and the book is flat at 15:45 (C3). The trigger rows
+        # already carried `windowOpenNow: false`; the one line the Armed page and the phone show did not,
+        # so the desk read as if the next EMA13 touch were still live. Same class as F53/F57/F60:
+        # descriptive only — the cutoff itself lives in session.py. Taken from the session's own event
+        # rather than the wall clock, so a replay of the day says exactly the same thing.
+        entries_closed = any(e.get("event") == "skip_last_entry" for e in (read.get("events") or []))
+        past_flatten = bool(ap.last_bar_ts) and minute_of_day(ap.last_bar_ts) + 1 >= rules_now.flatten_min
+        last_hhmm = f"{rules_now.last_entry_min // 60:02d}:{rules_now.last_entry_min % 60:02d}"
+        flat_hhmm = f"{rules_now.flatten_min // 60:02d}:{rules_now.flatten_min % 60:02d}"
+        closed_s = ("" if not entries_closed else
+                    "the desk is flat for the day (C3)" if past_flatten else
+                    f"past {last_hhmm} — no new entries today, flat by {flat_hhmm} (D6/C3)")
         if ap.status in ("expired", "disarmed"):
             pass                                          # the base summary already says so
         elif ap.status == "paused":
@@ -888,9 +1009,10 @@ class Team2Runner(PlanRunner):
                     live_s = f" · book flat — the desk's contract is already closed ({kind or 'exit'})"
             strike = open_pos.get("strike")
             strike_s = f"{strike:g}" if isinstance(strike, (int, float)) else "?"
+            flat_s = f" · sold at {flat_hhmm} whatever the read says (C3/D-1)" if entries_closed and not past_flatten else ""
             d["summary"] = (f"in trade {open_pos.get('setup')}: {'call' if open_pos.get('call') else 'put'} {strike_s}, "
                             f"{open_pos.get('remaining', 1):.2f} left{adds_s}, model peak +{open_pos.get('peakPct', 0):.0f}%{tgt_s} — "
-                            f"stop is a 2m close through the {guard}{live_s}")
+                            f"stop is a 2m close through the {guard}{live_s}{flat_s}")
         elif bias.get("scenario"):
             live = [s for s in setups if not s.get("dead")]
             # F24: report the allowance of the setup the session would actually enter — `session.py` takes the
@@ -899,18 +1021,74 @@ class Team2Runner(PlanRunner):
             cands = [s for s in live if not bias.get("direction") or s.get("direction") == bias.get("direction")]
             picked = sorted(cands, key=lambda s: s.get("confirmedTs") or 0)[-1] if cands else None
             touches = picked.get("touches", 0) if picked else max((s.get("touches", 0) for s in live), default=0)
+            # F53 (2026-09-08): E3/B9 (stack must agree) and E4 (no braided EMAs) are re-judged on every 2m
+            # bar, so `session.py` skips them SILENTLY — no event is minted. That left a trigger the regime
+            # cannot fire reading exactly like one the next EMA13 touch would take (QQQ 10:30 today: bias
+            # flipped to scenario 3 → calls while the stack was still bear). Say it on the one line the
+            # Armed page and the phone show. Purely descriptive — the gate itself lives in session.py.
+            want = "bull" if bias.get("direction") == "long" else "bear"
+            blocks = []
+            if regime.get("stack") and regime.get("stack") != want:
+                blocks.append(f"the stack turns {want}")
+            if regime.get("fan") == "chop":
+                blocks.append("the EMAs un-braid")
+            if blocks:
+                flush_s = (", or a 200 EMA flush (T8)"
+                           if bias.get("rangeDay") and getattr(rules_now, "allow_ema200_flush", True) else "")
+                blocked_s = f" — no entry until {' and '.join(blocks)} (E3/B9/E4){flush_s}"
+            else:
+                blocked_s = ""
+            # F57 (2026-09-08): the "not a tradeable location" gates DO mint an event, but only once per
+            # setup (F23) and only into the read — the one line the Armed page and the phone show still
+            # said "waiting for the 1st/2nd 2m pullback (touches 0)" while every pullback was being turned
+            # away at the door. Today it bit all three symbols (SPY 10:00, QQQ 10:16 + 11:00, IWM 11:26):
+            # with a pre-market range 9–12× ATR wide the no-trade zone is not a moment price passes
+            # through, it is the day. `_skipped` is the setup's CURRENT refusal — a real touch clears it —
+            # so it can be stated in the present tense. Descriptive only; the gates live in session.py.
+            # F59 (2026-09-08): `skip_no_contract` was already in the journal list above but never
+            # reached this line — session.py recorded it with `note`, so the setup's `_skipped` stayed
+            # None. IWM's 13:30 PM-break retest was refused on the MODELLED premium (296C $0.199 vs the
+            # $0.20 floor) while the real 296C was 0.24/0.25, and the headline said only "touches 1".
+            floor_s = getattr(rules_now, "premium_floor", 0.20)
+            targ_s = getattr(rules_now, "target_premium", 0.60)
+            skip_why = {"skip_no_trade_zone": "the last pullback sat inside the pre-market range — no-trade zone (V6/B5)",
+                        "skip_range_confirmation": "range day: price has not cleared the PM level (B3/A4)",
+                        "skip_no_contract": f"the last pullback found no strike MODELLING ${floor_s:.2f}–${targ_s:.2f} (V1) — "
+                                            "modelled premium, not the live chain"}
+            refused = skip_why.get(str((picked or {}).get("skipped") or ""), "")
+            refused_s = f" · {refused}" if refused else ""
+            # F60 (2026-09-08): once a setup has spent its D9 allowance every further touch is watch-only,
+            # so "waiting for the 1st/2nd 2m pullback" is not what the desk is doing — IWM read
+            # "waiting for the 1st/2nd 2m pullback into the EMA13 (touches 8)" while its pm_break_up@13:15
+            # could not enter again today. Say whose touches they are and that they are spent. The count
+            # comes from `picked`, which is often NOT the setup the scenario label names (F24), so name it.
+            max_touch = int(getattr(rules_now, "pullback_max_touches", 2) or 2)
+            if entries_closed:
+                # F66: nothing is waiting on a pullback any more, and "no entry until the stack turns
+                # bull" / "the last pullback sat inside the range" are answers to a question the clock
+                # has already closed — drop them with it.
+                state_s, blocked_s, refused_s = closed_s, "", ""
+            elif picked and touches >= max_touch:
+                state_s = (f"{picked.get('id')}: its first {max_touch} pullbacks are spent (touches {touches}) — "
+                           "further touches are watch-only (D9/P6)")
+            else:
+                state_s = f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches})"
             d["summary"] = (f"scenario {bias['scenario']} ({bias.get('label')}) → {'calls' if bias.get('direction') == 'long' else 'puts'} · "
-                            f"waiting for the 1st/2nd 2m pullback into the EMA13 (touches {touches}) · EMA stack {regime.get('stack', '?')}, "
-                            f"{regime.get('fan', '?')}")
+                            f"{state_s} · EMA stack {regime.get('stack', '?')}, "
+                            f"{regime.get('fan', '?')}{blocked_s}{refused_s}")
         elif pdh and pdl:
             pm = (f" · PM {plan['pml']:.2f}–{plan['pmh']:.2f}" if plan.get("pmh") and plan.get("pml") else " · pre-market range at 09:25")
             day = f" · {str(plan.get('dayType')).replace('_', ' ')} day" if plan.get("dayType") else ""
             d["summary"] = (f"no scenario yet — needs a 15m close above {pdh.get('top', 0):.2f} (calls) or below "
                             f"{pdl.get('bottom', 0):.2f} (puts){pm}{day}"
-                            + (f" · EMA stack {regime.get('stack')}, {regime.get('fan')}" if regime else ""))
+                            + (f" · EMA stack {regime.get('stack')}, {regime.get('fan')}" if regime else "")
+                            + (f" · {closed_s}" if closed_s else ""))
         live = [{"trigger": t.trigger_id, "livePct": t.live_pct, "trimsDone": t.trims_done, "isAdd": bool(getattr(t, "is_add", False))}
                 for t in ap.trades.values() if t.status == "open" and getattr(t, "live_pct", None) is not None]
         d["team2"] = {"sheet": plan.get("sheet"), "dayType": plan.get("dayType"), "sizingAtOpen": plan.get("sizingAtOpen"),
+                      # the 09:25 pre-open result, so a reader (or the watch job) can verify completion
+                      # from the snapshot instead of parsing the sheet string
+                      "pmh": plan.get("pmh"), "pml": plan.get("pml"), "complete": bool(plan.get("complete")),
                       "bias": bias or None, "regime": regime or None, "read": {k: read.get(k) for k in ("summary",)} if read else None,
                       "live": live or None}
         return d
