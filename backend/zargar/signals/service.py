@@ -878,6 +878,18 @@ class SignalService:
                         dup.meta = {**(dup.meta or {}), "claimedAt": now.isoformat()}
                         await session.commit()
                         resume_id = dup.id
+                    elif dup.status == "new":
+                        # FRESH claim: possibly still in flight, possibly a
+                        # worker that died seconds ago — indistinguishable from
+                        # here (Codex review A3, 2026-09-09). Say so explicitly:
+                        # the caller must NOT acknowledge this as completed —
+                        # the gateway keeps it pending and retries; once the
+                        # claim goes stale a retry RESUMES it above.
+                        return {"contentId": dup.id, "status": dup.status,
+                                "duplicate": True, "inFlight": True, "signals": [],
+                                "note": f"message {message_id} is claimed and "
+                                        f"processing (content {dup.id[:8]}) — "
+                                        "not yet complete, retry to confirm"}
                     else:
                         return {"contentId": dup.id, "status": dup.status,
                                 "duplicate": True, "signals": [],

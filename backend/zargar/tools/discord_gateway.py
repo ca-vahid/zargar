@@ -246,7 +246,16 @@ class GatewayStore:
 
     @staticmethod
     def key(env: dict) -> str:
-        return f"{env.get('kind') or 'create'}:{env.get('cid')}:{env.get('mid')}"
+        """Ledger identity. Updates carry their REVISION (edited timestamp —
+        Codex review A1, 2026-09-09): two edits of one message are two ledger
+        entries, so ACKing the old edit can never erase the newer pending one."""
+        kind = env.get("kind") or "create"
+        base = f"{kind}:{env.get('cid')}:{env.get('mid')}"
+        if kind == "update":
+            rev = str((env.get("msg") or {}).get("edited_timestamp")
+                      or env.get("editedAt") or "")
+            return f"{base}:{rev}"
+        return base
 
     def _load_spool(self) -> None:
         try:
@@ -278,21 +287,42 @@ class GatewayStore:
                   f"delivery is only as durable as RAM until this clears")
 
     def _compact(self) -> None:
-        """Rewrite the journal to live entries only (drops done tombstones)."""
+        """Rewrite the journal to live entries only (drops done tombstones) —
+        ATOMICALLY (Codex review A2, 2026-09-09): the replacement is written
+        and fsynced to a temp file first and swapped in with os.replace; the
+        committed ledger is never truncated while its replacement is being
+        produced, so an interruption mid-compaction loses nothing."""
+        tmp = self.spool_path.with_name(self.spool_path.name + ".tmp")
         try:
-            self.spool_path.write_text(
-                "".join(json.dumps(r, default=str) + "\n"
-                        for r in self._entries.values()), encoding="utf-8")
+            with tmp.open("w", encoding="utf-8") as f:
+                f.write("".join(json.dumps(r, default=str) + "\n"
+                                for r in self._entries.values()))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, self.spool_path)
             self._acks_since_compact = 0
         except OSError:
             self.io_errors += 1
+            try:
+                tmp.unlink()
+            except OSError:
+                pass
 
     def accept(self, env: dict) -> None:
         """Write-ahead: persist an accepted envelope BEFORE processing and
-        lease it (it is about to sit in the in-memory queue)."""
+        lease it (it is about to sit in the in-memory queue). A DUPLICATE
+        delivery of an entry already in the ledger preserves the existing
+        retry count and destination ACKs (Codex A1) — a re-delivery never
+        resets a pending retry to a fresh state."""
         k = self.key(env)
         rec = dict(env)
         rec.setdefault("attempts", 0)
+        prev = self._entries.get(k)
+        if prev is not None:
+            rec["attempts"] = max(int(rec.get("attempts") or 0),
+                                  int(prev.get("attempts") or 0))
+            if prev.get("emDone"):
+                rec["emDone"] = True
         rec["state"] = "pending"
         rec["acceptedAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
         self._entries[k] = rec
@@ -1065,6 +1095,13 @@ class Gateway:
             r = await http.post(f"{self.api}/api/ingest/manual", headers=headers,
                                 json=body, timeout=200)
             out = r.json() if r.status_code == 200 else {"error": r.text[:200]}
+            if out.get("duplicate") and out.get("inFlight"):
+                # the app holds a FRESH claim on this message (Codex A3): that
+                # is acceptance, not completion — stay pending and retry; once
+                # the claim goes stale the app resumes it on our retry
+                print("    -> in flight in the app (fresh claim) — will retry to confirm")
+                return {"ok": False,
+                        "error": "content claimed but not yet processed — retrying"}
             n = len(out.get("signals") or [])
             print(f"    -> ingest {r.status_code}: {n} signal(s) "
                   f"src={out.get('source') or '?'} {out.get('error') or ''}")
