@@ -1640,7 +1640,16 @@ function StepRow({ s, openRun }: { s: AnalystStep; openRun?: (id: string) => voi
     alone doesn't say whether anything was asked of the user or ordered. */
 function outcomeLine(run: AnalystRun): string | null {
   if (run.status === "running") return null;
-  if (run.status === "failed") return "The run failed — nothing was asked or ordered.";
+  if (run.status === "failed") {
+    // Codex audit finding 4: tools can act BEFORE the final answer validates —
+    // a failed run is not necessarily free of side effects. Count receipts.
+    const receipts = (run.trace ?? []).filter((s: any) => s.kind === "receipt");
+    if (receipts.length > 0) {
+      const what = receipts.map((s: any) => s.tool).join(", ");
+      return `The run failed AFTER acting: ${receipts.length} side effect${receipts.length > 1 ? "s" : ""} (${what}) — see the play-by-play; the aftermath above reflects them.`;
+    }
+    return "The run failed — nothing was asked or ordered.";
+  }
   const v = run.verdict ?? "";
   if (run.kind === "retro") {
     return "Retro — lessons went to Knowledge (and the rulebook if the grade earned it). No orders.";

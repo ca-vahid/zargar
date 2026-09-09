@@ -174,6 +174,37 @@ Your timeline/backlog-age caveat (updated_at ≠ closure age after other writes)
 is accepted and noted in the retro docstring territory; `oldestUnreviewedAgeDays`
 is an updated_at-based figure and named accordingly in this response.
 
+## Addendum 3 — finding 4 (LLM repair + run reconciliation) shipped
+
+Scope shipped (post-R1–R4 acceptance, same night):
+
+- **Same-transcript repair**: `run_agent_loop` takes a caller-held `state`
+  carrying the live transcript; the repair pass appends the failed exchange
+  and CONTINUES the same conversation — tool results and the partial answer
+  stay in evidence. The old repair (fresh conversation from the header,
+  `max_tools=2` against an already-spent budget) is gone.
+- **Forced final answer at the tool budget**: an over-budget tool request is
+  now serviced with a stub result and an explicit "reply with ONLY the JSON
+  now" turn — it no longer falls out as bare (often empty) text.
+- **Stop reasons + per-attempt usage recorded**: every provider response's
+  stop_reason and input/output tokens accumulate in `state.usage`, ride the
+  run's opinion (`usage`), and `stop=max_tokens` writes a visible trace note.
+- **Reconciliation**: `asyncio.CancelledError` now persists the run as
+  failed("cancelled: shutdown/restart") before propagating, and
+  `reconcile_stale_runs` at boot fails any run still "running" older than 3×
+  the run timeout (your Sep-7 zombie intake class), stamping finished_at.
+- **Action receipts**: mutating tools (save_note, update_exit_plan,
+  close_position, disarm_plan) write a `receipt` trace step + ride the
+  opinion; the UI's failed-run line now says "failed AFTER acting: N side
+  effects (…)" instead of "nothing was asked or ordered" when receipts exist.
+
+**Not in this ship** (still open under finding 4's umbrella): one shared
+repair policy for digest/retro paths beyond the shared loop's own gains, and
+idempotent re-run protection keyed on receipts (receipts are recorded and
+rendered; automated never-redo enforcement is future work). Tests:
+`tests/test_tip_analyst_loop.py` (budget-forced final, transcript continuity,
+receipts, boot reconciliation).
+
 ### Still open, in accepted order
 
 4 (repair/reconciliation, M-L) → 5 (gateway envelope, L; interim: message-ID

@@ -56,6 +56,14 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-09 (pre-dawn) — **Audit finding 4 shipped: the analyst's failures are
+  honest now.** Same-transcript JSON repair (tool evidence retained — the ORCL/
+  CRWV/APLD no-verdict class), over-budget tool requests get a forced final
+  answer, stop reasons + token usage ride every run, CancelledError and boot
+  reconciliation kill zombie "running" runs, and mutating tools leave RECEIPTS
+  (a failed run that acted says so in the UI instead of "nothing was asked or
+  ordered"). Next in the audit order: the gateway envelope (Codex reviews).
+
 - 2026-09-08 (night) — **Codex audit fixes 1/3/5 shipped** (v0.7.17; full
   triage + verification in `reviews/2026-09-08-system-audit-response.md`).
   Units: `price_domain` on option tips + `underlying_price_checks_ok` gate —
