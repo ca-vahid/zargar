@@ -165,6 +165,8 @@ def analyze_setups(history: list[DailyBar], benchmark: list[DailyBar], screen: d
         targets = _targets(bars[:-n], trigger, direction, parameters.touch_tolerance_pct)
         out["candidates"].append({"setup": kind, "trigger": trigger, "invalidation": invalidation,
                                   "targets": targets, "contextPassed": passed,
+                                  "researchContextPassed": screen.get("researchPassed") is True and all(
+                                      c["status"] == "pass" for c in out["checks"] if c["name"] != "Market/universe screen"),
                                   "reviewRequired": True,
                                   "needsTargets": not targets,
                                   "evidence": {"baseStart": base[0].session.isoformat(),

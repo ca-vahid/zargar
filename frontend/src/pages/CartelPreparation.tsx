@@ -109,6 +109,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           <label>Industry policy<select value={config.industryPolicy || "context"} onChange={e => setConfig({...config, industryPolicy:e.target.value})}>
             <option value="context">Context — evaluate strong stocks across industries</option><option value="strict">Strict — require both top-ten industry ranks</option>
           </select></label>
+          <label>Research direction when market is blocked<select value={config.researchDirection || "long"} onChange={e => setConfig({...config, researchDirection:e.target.value})}><option value="long">Bullish research</option><option value="short">Bearish research</option></select></label>
           <label>Reviewed ETF symbols<input defaultValue={(config.reviewedEtfs || []).join(", ")} onBlur={e => setConfig({...config, reviewedEtfs:e.target.value.toUpperCase().split(/[ ,]+/).filter(Boolean)})}/></label>
           <label>Confirmation timeframe<select value={config.entry.timeframe_minutes} onChange={e => setConfig({...config, entry:{...config.entry, timeframe_minutes:Number(e.target.value)}})}>
             <option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes (research variant)</option>
@@ -136,6 +137,15 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
       {!status.configuration.enabled && <div className="cartel-inset">Enable {workspaceLabel} preparation in Settings to build and arm your daily shortlist.</div>}
       {live && !status.liveAutoAllowed && <div className="cartel-inset">Cartel live-auto permission is off. Enable it in Settings before preparing Live plans.</div>}
       {result ? <>
+        {result.market && <section className="cartel-inset" aria-label="Market alignment">
+          <strong>{result.armingBlocked || result.phase === "no_market_alignment" ? "Automatic arming blocked — research does not grant trading permission" : "Market alignment permits plan evaluation"}</strong>
+          <p>{result.market.reason}</p>
+          {Object.entries(result.market.indices || {}).map(([symbol, value]) => { const read = value as any; return <p key={symbol}>
+            <b>{symbol}</b> · {read.session || "session unavailable"} · {label(read.direction)} · close {read.close?.toFixed(2) ?? "not recorded"}
+            {Object.entries(read.emas || {}).map(([period, value]) => <span key={period}> · EMA {period}: {typeof value === "number" ? value.toFixed(2) : "unavailable"}{read.aboveEmas?.[period] != null ? (read.aboveEmas[period] ? " (price above)" : " (price at/below)") : ""}</span>)}
+          </p>; })}
+          {result.armingBlocked && <p>{label(result.researchDirection || "long")} candidates are research only. Run fresh preparation after market alignment changes; these records cannot auto-arm.</p>}
+        </section>}
         <div className="cartel-inset" role="status" aria-live="polite">
           <strong>{result.message || (running ? `Working: ${label(result.phase || "starting")}` : "Preparation finished")}</strong>
           {running && <>
@@ -147,18 +157,19 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           <p className="muted">{elapsed != null ? `Elapsed ${Math.floor(elapsed/60)}m ${elapsed%60}s` : ""}{sinceUpdate != null ? ` · Last update ${sinceUpdate}s ago` : ""}
             {result.cacheHits != null ? ` · ${result.cacheHits} history cache hits` : ""}{result.resumedAnalyses ? ` · ${result.resumedAnalyses} saved analyses reused` : ""}</p>
           {running && sinceUpdate != null && sinceUpdate > 30 && <p className="cartel-notice">No recent progress update. The provider or worker may be delayed; this does not confirm progress.</p>}
-          {!running && result.coverageComplete === false && <p className="cartel-notice">Coverage incomplete: {result.notEvaluated || 0} not processed · {result.dataErrors || 0} data errors.</p>}
+          {!running && result.coverageComplete === false && result.phase !== "no_market_alignment" && <p className="cartel-notice">Coverage incomplete: {result.notEvaluated || 0} not processed · {result.dataErrors || 0} data errors.</p>}
           {result.planErrors > 0 && <p className="cartel-notice">{result.planErrors} plan(s) blocked during preparation. Review evidence and exclusions for the reasons.</p>}
           {status.canResume && <p>Resume reuses the original snapshot and successful analyses. Prepare now refreshes market evidence.</p>}
         </div>
         <div className="cartel-inset cartel-row"><strong>{result.session} · {label(result.phase || "pending")}</strong>
-          <span className="muted">{result.discovered} discovered · {result.prefiltered || 0} ruled out by industry · {result.evaluated} histories evaluated · {result.dataErrors || 0} data errors · {result.qualifying} qualifying · {result.armed} armed</span></div>
+          <span className="muted">{result.discovered} discovered · {result.prefiltered || 0} ruled out by industry · {result.evaluated} histories evaluated · {result.dataErrors || 0} data errors · {result.qualifying} qualifying · {result.researchCandidates || 0} research-only candidates · {result.armed} armed</span></div>
         {status.latest.error && <ErrorState message={status.latest.error}/>}
         {result.shortlist?.length ? <div className="scroll-x"><table className="tbl cartel-table"><thead><tr><th>Symbol</th><th>Setup</th><th className="num">Trigger</th><th className="num">Invalidation</th><th>Status</th><th>Plan</th></tr></thead><tbody>
           {result.shortlist.map((r: any, i: number) => <tr key={r.planId || i}>
             <td><SymIcon sym={r.symbol} size={18}/> <b>{r.symbol}</b></td><td>{label(r.setup || "existing plan")}</td>
             <td className="num">{r.trigger?.toFixed(2) || "—"}</td><td className="num">{r.invalidation?.toFixed(2) || "—"}</td>
             <td className="cartel-wrap"><span className={`status-pill ${r.status === "armed" ? "ok" : r.status === "awaiting_contract" ? "wait" : "dim"}`}>{label(r.status)}</span>
+              {r.reason && <p className="small">{r.reason}</p>}
               {r.status === "awaiting_contract" && <p className="small">{r.selection?.pendingReason || "Waiting for a contract within the selection limits."}</p>}
               {r.selection?.audit && <details><summary>Contract selection details</summary>
                 <p>Maximum ask ${r.selection.audit.effectiveMaxAsk.toFixed(2)} · maximum debit ${r.selection.audit.maxDebitUsd.toFixed(2)} per contract before fees.</p>
@@ -168,7 +179,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
               </details>}
               {r.selection?.errors?.map((e: string, j: number) => <p key={j}>{e}</p>)}
               {status.activation?.plans?.[r.planId] && <p>{status.activation.plans[r.planId]}</p>}
-            </td><td>{r.planId && <CartelRunLink id={r.planId} onOpen={onOpen}>Open {r.symbol}</CartelRunLink>}</td>
+            </td><td>{(r.planId || r.analysisId) && <CartelRunLink id={r.planId || r.analysisId} onOpen={onOpen}>Open {r.symbol}</CartelRunLink>}</td>
           </tr>)}
         </tbody></table></div> : <EmptyState art={false} title={running ? label(result.phase || "Starting preparation") : "No qualifying shortlist"} hint={running ? "Progress and provider activity are shown above." : "Missing evidence or a market without alignment can produce no setups."}/>}
         {!!result.watchlistComparison?.rows?.length && <details className="cartel-inset" open><summary>Watchlist coverage comparison</summary>

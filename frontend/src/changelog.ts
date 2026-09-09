@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.13";
+export const APP_VERSION = "0.7.14";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.14",
+    date: "2026-09-08",
+    title: "Cartel research continues through mixed markets",
+    items: [
+      { tag: "improved", text: "Cartel now evaluates stocks and saves research candidates when market alignment blocks trading. Research-only candidates cannot auto-arm; fresh aligned preparation is required." },
+      { tag: "improved", text: "Plans show SPY/QQQ closes, EMA levels and alignment, with market restrictions separated from data-coverage failures. Settings select bullish or bearish research when the market is blocked." },
+    ],
+  },
   {
     version: "0.7.13",
     date: "2026-09-08",
