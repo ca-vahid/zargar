@@ -1056,6 +1056,23 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   request trace that diagnosed **F45**'s CBOE 429 storm, so (a) is the recommendation and (b) only
   alongside it. `backend/zargar/main.py` — shared engine, **user's call**.
 
+- **F70 (2026-09-09 09:00 ET, PROPOSED — shared feed, not built here).** `Quote.prev_close` is **one
+  session stale during pre-market**, so every day-change on the desk reads against the wrong base
+  between the close and the next 09:30 open. Measured this run at 09:03 ET: `/api/quotes` returned
+  SPY `prevClose 770.19` / `regPrice 765.96`, but 770.19 is the **2026-09-04** close (the `bars` 1d
+  table confirms it) and 765.96 is 2026-09-08's — the actual prior close. CBOE agrees with the tape:
+  `/api/options/SPY/expiries` reports `prevClose 765.96`. Cause: `brokers/yahoo.py:287` takes
+  `chartPreviousClose` from the v8 chart meta, and before the open Yahoo's 1d chart is still
+  **yesterday's** session, whose "previous close" is the session before that. SPY therefore shows
+  about **-0.86 %** pre-market where the truth is **-0.29 %** (QQQ and IWM the same way). Once the
+  09:30 bar prints, Yahoo's chart rolls to today and the value self-corrects, which is why this has
+  never been caught in-session. **Team2's own numbers are unaffected** — the gap rule and `dayType`
+  come from the plan's `lastClose` and the 1m bars (today: SPY `lastClose 765.99`, `openPrice 763.70`
+  → `gap_down`, correct), and `techniques/team2/` never reads `quote.prev_close`. Fix would be one
+  clause in the shared Yahoo poll (when `session != "regular"` and the chart day is not today, prefer
+  `regularMarketPrice` as the day-change basis) — `backend/zargar/brokers/yahoo.py`, shared engine,
+  **user's call**.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

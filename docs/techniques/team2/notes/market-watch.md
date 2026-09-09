@@ -2011,3 +2011,65 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   on Team2 Practice and set back to auto at $2,000 / 6 % (per-plan halt $1,192); `sigma`/`complete` stay empty until the
   09:25 pre-open and the first 2m read. Zero `httpx` INFO lines since boot (F69). EM's known
   `technique_outcomes` truncation error is still in the log — not ours.
+
+## 2026-09-09 09:00 ET (run 33 — first of the day, pre-open; everything green, F70 logged)
+
+- **Alive and current.** `/api/health` ok, **v0.7.22** (the desk moved 0.7.13 → 0.7.22 overnight on
+  other teams' merges — EM run-cap, Cartel moderate alignment, tips intake reviews, `restart.ps1`
+  watchdog-lock and ASCII fixes). Engine up since **02:59 ET** (pid 14092); the app log shows nine
+  boots between 20:27 and 23:59 PDT last night, all the evening desk session and its watchdog, and
+  eleven `TechniquePlanRestored` events on each Team2 plan to match. Nothing armed or open was lost.
+- **F41 clean — plans minted once, from the journal not the UI.** Exactly **one**
+  `ScheduledJobRan team2_plan_nightly` at **2026-09-08 17:00:26 ET**, and exactly **three**
+  `technique_runs` rows for it (SPY `e4d39d00` 17:00:25, QQQ `9a1094ed` 17:00:25, IWM `e87e4ad2`
+  17:00:26), all `armed` for `planFor 2026-09-09`. No duplicate despite the nine restarts.
+- **Mode is `auto` on all three, as the evening session left it** (`TechniquePlanModeChanged
+  alert → auto` at 21:16 ET yesterday, journaled): Team2 Practice, premium budget **$2,000**,
+  risk **6 %**, per-plan daily loss halt **$1,192.10**, `maxOpenTrades 1`, `allowLive false`.
+  Not touched by this watch.
+- **Data is real-time.** 1m bars for SPY/QQQ/IWM banking to **09:02 ET** (92 s old, pre-market);
+  quotes `quoteAgeSeconds 0–2`, `session: "pre"`; `alpaca stream: connected` + `authenticated` at
+  boot with no reconnects since. `dayHigh/dayLow/volume` are 0 pre-open, which is F19 behaving.
+  **0DTE chains exist for all three** (`/api/options/{sym}/expiries` → `2026-09-09 dte 0 is0dte`),
+  so the contract pick has something to hit today: SPY spot 763.57 iv30 12.6, QQQ 715.06 / 18.4,
+  IWM 293.12 / 17.3.
+- **F44 confirmed closed:** the expired `QQQ260908P00714000` appears **1,339 times** in the log
+  history and **zero** times since the 23:59 boot — it dropped out of the OPRA batch on the first
+  refresh after expiry, exactly as written.
+- **Tonight's sheet (gap-down day on all three, plan `complete` in replay, `openPrice` from the
+  pre-market print):** SPY PDH 767.46–769.70 / PDL 765.14–765.99, PM 762.49–767.13, last close
+  765.99, open 763.70. QQQ PDH 717.47–721.89 / PDL 715.57–716.50, PM 713.50–720.67, close 718.38,
+  open 715.09. IWM PDH 295.86–296.10 / PDL 294.26–294.81, PM 292.62–294.82, close 294.70, open
+  293.31. QQQ sits **0.05 %** under its PDL trigger and IWM **0.33 %** — a 15m close below either
+  starts a put day. No scenario, no bias, no regime yet: correct at 09:12 ET, before the open.
+- **Yesterday's History row renders right** (F67 + F68 verified live through the API): QQQ
+  *"2 trade(s) · -65.84 book · read +65.6%"*, IWM *"no trade · 5 refused"*, SPY *"no trade ·
+  1 refused"*, each with `notes: ["skip_last_entry"]` kept out of the refusal tally. **Book flat:**
+  Team2 Practice cash **and** equity **$9,934.16**, zero positions.
+- **Tests green on the new version:** 66 passed (`tests/test_team2_*.py
+  tests/test_marketstructure_extended.py`, own DB `zargar_test_team2_watch`) — the 0.7.13 → 0.7.22
+  merges broke nothing of ours.
+- **F70 (new, PROPOSED, not built — shared feed).** `Quote.prev_close` is **one session stale in
+  pre-market**: `/api/quotes` gave SPY `prevClose 770.19` (the **09-04** close, confirmed against the
+  1d `bars` table) with `regPrice 765.96` (the real prior close, which CBOE also reports via
+  `/api/options/SPY/expiries`). `brokers/yahoo.py:287` reads `chartPreviousClose`, and before the
+  open Yahoo's 1d chart is still yesterday's session. So the desk shows SPY at about **-0.86 %**
+  pre-market where the truth is **-0.29 %**; it self-corrects on the 09:30 bar, which is why it has
+  never been caught in-session. **Team2 is unaffected** — the gap rule and `dayType` come from the
+  plan's `lastClose` and the 1m bars, and `techniques/team2/` never reads `quote.prev_close`.
+  One clause in the shared Yahoo poll would fix it → **user's call**. Written up in TRADING-RULES.
+- **Log clean, one piece of shared noise.** Zero Team2 errors, zero Tracebacks since boot; the
+  scheduler re-registered `team2_plan_nightly 17:00 ET` and `team2_preopen 09:25 ET`. The only two
+  ERRORs in the file are EM's (an httpx connect failure at 21:40 ET yesterday, twice). Worth a
+  mention for whoever owns marketdata: **~1,100 `persist_bars: dropped N non-bucket-aligned stub
+  bar(s)` WARNINGs in six hours**, N climbing 1 → 15 — the EM #5 guard doing its job, but it is now
+  the loudest thing in the log and F69's rotation fix is what makes it visible. Not ours, not fixed.
+- **Nothing deployed this run** — no defect found in Team2 code, and the window was inside the
+  09:25–09:35 no-restart guard by the end of it.
+- **Next run (09:30 ET) owns the pre-open check:** the 09:25 job fires 13 minutes after this run
+  ended, so confirm `pmh`/`pml`/`dayType`/`sizingAtOpen`/`complete: true` on all three and call
+  `POST /api/team2/preopen-now` if any is missing; then watch the first 2m closes against the PDL
+  zones (QQQ and IWM are the near ones) and check that `bias`/`regimeLast` start advancing.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, F67's two shared-side halves, and
+  the F30-family question of which premium series is authoritative.
