@@ -19,6 +19,7 @@ def clean_metrics(monkeypatch):
     # the collector is module-global and now WIRED into the analyst loop —
     # other test modules' runs would leak into these exact-count assertions
     monkeypatch.setattr(llm_stats, "_ACC", {})
+    monkeypatch.setattr(llm_stats, "_PENDING", {})
 
 
 @pytest.fixture

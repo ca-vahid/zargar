@@ -95,47 +95,44 @@ class timed:
         return (time.perf_counter() - self._t0) * 1000.0
 
 
-def _merge_back(key: tuple[str, str], stages: dict) -> None:
-    """A failed flush returns its batch to the accumulator, SUMMED into
-    whatever was recorded concurrently — nothing lost, nothing doubled."""
-    acc = _ACC.setdefault(key, {})
-    for stage, st in stages.items():
-        cur = acc.setdefault(stage, {
-            "requests": 0, "retries": 0, "inputTokens": 0, "outputTokens": 0,
-            "invalidOutputs": 0, "stops": {}, "totalMs": 0.0, "maxMs": 0.0,
-            "models": {}})
-        for k in ("requests", "retries", "inputTokens", "outputTokens",
-                  "invalidOutputs"):
-            cur[k] += st.get(k, 0)
-        cur["totalMs"] = round(cur["totalMs"] + st.get("totalMs", 0.0), 1)
-        cur["maxMs"] = round(max(cur["maxMs"], st.get("maxMs", 0.0)), 1)
-        for d in ("stops", "models"):
-            for name, n in (st.get(d) or {}).items():
-                cur[d][name] = cur[d].get(name, 0) + n
+# frozen batches awaiting a confirmed journal write: (technique, day) -> list
+# of complete payloads. Contents AND batchId are fixed at freeze time (Codex
+# review A4, 2026-09-09) — an ambiguous outcome (commit + lost ACK) retries
+# the SAME payload with the SAME batchId, so consumers can deduplicate;
+# counts recorded during a retry accumulate separately in _ACC.
+_PENDING: dict[tuple[str, str], list[dict]] = {}
 
 
 async def flush(eng, *, technique: str = "tip") -> int:
     """Journal + clear every accumulated day for `technique` (the current day
     included — the nightly job runs after the close; a restart mid-day loses
     only what was recorded since the last flush — disclosed, the collector is
-    memory-only by design). A FAILED journal write returns the batch to the
-    accumulator for the next flush (Codex review M2, 2026-09-09), merged with
-    concurrently recorded counts; `batchId` gives consumers an idempotency key
-    for ambiguous journal outcomes."""
+    memory-only by design). Flushing FREEZES the accumulation into a pending
+    batch (stable contents + batchId) BEFORE any write; a failed or ambiguous
+    write retains that exact batch for the next flush (Codex M2 + A4)."""
     from ..domain import new_id
     from .. import events as ev
-    flushed = 0
+    # freeze current accumulation first — identity fixed before any attempt
     for key in [k for k in list(_ACC) if k[0] == technique]:
-        stages = _ACC.pop(key, None)   # swap out: concurrent records start fresh
-        if not stages:
-            continue
-        try:
-            await eng.journal.append(ev.TECHNIQUE_HOOK_STATS, {
+        stages = _ACC.pop(key, None)
+        if stages:
+            _PENDING.setdefault(key, []).append({
                 "technique": key[0], "date": key[1], "batchId": new_id(),
                 "hooks": {},                    # runner hooks journal their own row
                 "llm": stages})
-            flushed += 1
-        except Exception:
-            log.exception("llm stats flush failed for %s — batch retained", key)
-            _merge_back(key, stages)
+    flushed = 0
+    for key in [k for k in list(_PENDING) if k[0] == technique]:
+        remaining: list[dict] = []
+        for payload in _PENDING[key]:
+            try:
+                await eng.journal.append(ev.TECHNIQUE_HOOK_STATS, payload)
+                flushed += 1
+            except Exception:
+                log.exception("llm stats flush failed for %s — batch %s retained "
+                              "verbatim for retry", key, payload["batchId"])
+                remaining.append(payload)
+        if remaining:
+            _PENDING[key] = remaining
+        else:
+            _PENDING.pop(key, None)
     return flushed
