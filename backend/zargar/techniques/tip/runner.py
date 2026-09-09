@@ -94,6 +94,28 @@ class TipRunner(PlanRunner):
                 "result": row.result or {}, "config": row.config or {}, "tags": row.tags or []}
 
     async def analyze_fire(self, ap, tid, tr, trade) -> FireJudgement:
+        # "skip must never fill" — the analyst's own process rule, codified
+        # (2026-09-08: it hand-disarmed EIGHT skip-verdict armed plans in one
+        # day; eva's skipped MU 850P was minutes from firing a short into a
+        # rising tape). Re-read the CURRENT verdict at fire time — a verdict
+        # written after arming still vetoes — and disarm so the plan stops
+        # burning watch cycles. Take/None fire as before (None = never
+        # appraised: the books' raw counterfactual is measured downstream).
+        ctx = ap.plan.get("context") or {}
+        sid = ctx.get("signalId")
+        if sid:
+            async with self.engine.sf() as session:
+                sig = await session.get(Signal, sid)
+            verdict = ((sig.extraction or {}).get("analyst") or {}).get("verdict") \
+                if sig is not None else None
+            if verdict in ("skip", "watch"):
+                asyncio.create_task(
+                    self.disarm(ap.run_id,
+                                reason=f"analyst verdict is '{verdict}' — a skipped tip "
+                                       f"never fills (codified 2026-09-08)"),
+                    name=f"tip-skip-disarm-{ap.run_id[:8]}")
+                return FireJudgement(verdict=f"vetoed: analyst said {verdict}",
+                                     confidence=0.0, stop=True)
         conf = float((tr.trigger.get("confidence") or 0.5))
         return FireJudgement(verdict="setup", confidence=conf)
 
@@ -463,6 +485,11 @@ class TipRunner(PlanRunner):
             sig = await session.get(Signal, signal_id)
         if sig is None:
             raise ValueError("unknown signal")
+        verdict = ((sig.extraction or {}).get("analyst") or {}).get("verdict")
+        if verdict in ("skip", "watch"):
+            # codified 2026-09-08: a skipped tip never sits armed — the armed
+            # book measures takes and unappraised tips, not declined ideas
+            raise ValueError(f"analyst verdict is '{verdict}' — skipped tips never arm")
         source = sig.source_name or "unknown"
         shadow = await svc.shadow_portfolio(source, "armed")
         from ...signals.sources import resolve_policy
@@ -494,6 +521,10 @@ class TipRunner(PlanRunner):
             policy = resolve_policy(eng.settings, sig.source_name)
             if policy.entry != "level_touch":
                 skipped += 1          # tip-time sources live in the immediate book only
+                continue
+            if (((sig.extraction or {}).get("analyst") or {}).get("verdict")
+                    in ("skip", "watch")):
+                skipped += 1          # codified 2026-09-08: skipped tips never arm
                 continue
             expiry = tip_expiry(sig.expiry, sig.dte_hint_days,
                                 (sig.created_at.date() if sig.created_at else today))

@@ -1413,6 +1413,44 @@ async def test_seen_again_annotates_armed_plan(tip_rig):
     assert any(e.get("event") == "seen_again" for e in s["events"])
 
 
+async def _set_verdict(eng, sid: str, verdict: str):
+    from zargar.models import Signal as SignalRow
+    async with eng.sf() as session:
+        row = await session.get(SignalRow, sid)
+        row.extraction = {**(row.extraction or {}),
+                          "analyst": {"verdict": verdict, "rationale": "x"}}
+        await session.commit()
+
+
+async def test_skip_verdict_never_arms(tip_rig):
+    """Codified 2026-09-08 (the analyst hand-disarmed 8 such plans in one day):
+    a skip/watch verdict refuses arm_shadow and the morning sweep skips it."""
+    import pytest as _pt
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)
+    await _set_verdict(eng, sid, "skip")
+    with _pt.raises(ValueError, match="never arm"):
+        await eng.tip_runner.arm_shadow(sid)
+    out = await eng.tip_runner.shadow_arm_open_tips()
+    assert out["armed"] == 0 and not out.get("errors"), out
+
+
+async def test_late_skip_verdict_vetoes_the_fire(tip_rig):
+    """A verdict written AFTER arming still vetoes at fire time (eva's skipped
+    MU 850P sat armed at live spot, minutes from firing a short)."""
+    from types import SimpleNamespace
+    eng, sim = tip_rig
+    sid = await _ingest_tip(eng)                     # no verdict yet: arms fine
+    snap = await eng.tip_runner.arm_shadow(sid)
+    await _set_verdict(eng, sid, "skip")             # the late skip
+    ap = eng.tip_runner._armed[snap["runId"]]
+    tr = SimpleNamespace(trigger={"confidence": 0.9})
+    j = await eng.tip_runner.analyze_fire(ap, "t1", tr, None)
+    assert j.verdict != "setup" and "skip" in j.verdict
+    from .conftest import wait_for
+    await wait_for(lambda: snap["runId"] not in eng.tip_runner._armed)   # disarmed
+
+
 async def _ingest_tip_again(eng):
     from zargar.domain import new_id
     from zargar.models import RawContent
