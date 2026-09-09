@@ -1344,12 +1344,10 @@ class IntakeRun:
         except Exception as exc:
             log.warning("intake review failed: %s", exc)
             self.step("error", f"Review failed: {exc}")
-            import contextlib as _ctx
-            with _ctx.suppress(Exception):
-                await _persist_run(eng, self.id, status="failed", rec=self.rec,
-                                   error=str(exc)[:500],
-                                   opinion=_fail_meta(review_state, tool_ctx))
-            await self.finish("review", f"Review failed: {exc}", failed=True)
+            # finalize ONCE, metadata through finish() — a second persist with
+            # opinion={} was erasing usage/receipts (Codex v0.7.21 note)
+            await self.finish("review", f"Review failed: {exc}", failed=True,
+                              opinion=_fail_meta(review_state, tool_ctx))
             return None
         result = {"verdict": "review", "rationale": op.headline
                   + (f" {op.details}" if op.details else ""),
