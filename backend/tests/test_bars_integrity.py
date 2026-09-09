@@ -177,3 +177,37 @@ async def test_dataset_version_is_a_content_hash(fresh_db):
     # scope matters: a different symbol set is a different dataset
     d = await dataset_version(sf, ["TST", "OTHER"], start="2026-09-01", end="2026-09-01")
     assert d["hash"] != c["hash"]
+
+
+async def test_f80_boot_seed_lands_todays_exchange_minutes_in_memory_and_storage(fresh_db, monkeypatch):
+    """After a restart the streamed symbols' completed minutes are re-read from the venue (paced, in the
+    background) and reach memory and storage as exchange bars; option/foreign symbols are skipped."""
+    from zargar.engine import Engine
+    from zargar.marketstructure.market_calendar import is_market_minute
+    from .conftest import make_test_config
+    eng = Engine(make_test_config())
+    await eng.start()
+    try:
+        import zargar.engine as engmod
+        monkeypatch.setattr(engmod, "is_market_minute", lambda ts: True, raising=False)
+        now = (int(__import__("time").time() * 1000) // 60_000) * 60_000
+        seen = []
+
+        async def fake_fetch(symbol, tf, start_ms, end_ms, *, session="ext", **kw):
+            seen.append(symbol)
+            return [Bar(symbol=symbol, tf="1m", ts=now - k * MINUTE_MS, open=1, high=2, low=0.5, close=1.5, volume=100 + k)
+                    for k in (3, 2, 1)]
+
+        # is_market_minute is imported inside the method: patch the calendar module instead
+        import zargar.marketstructure.market_calendar as cal
+        monkeypatch.setattr(cal, "is_market_minute", lambda ts: True)
+        out = await eng.seed_today_exchange_bars(["TST", "TST260918C00100000", "SHOP.TO"], fetch=fake_fetch, pace_s=0)
+        assert seen == ["TST"] and out["bars"] == 3
+        mem = eng.bars.bars("TST", include_forming=False)
+        assert [b.ts for b in mem][-3:] == [now - 3 * MINUTE_MS, now - 2 * MINUTE_MS, now - MINUTE_MS]
+        assert all(b.source == "exchange" for b in mem[-3:])
+        await eng._bar_persister.flush()
+        stored = await load_bars(eng.sf, "TST", "1m")
+        assert {b.ts for b in stored} >= {now - 3 * MINUTE_MS, now - MINUTE_MS} and all(b.source == "exchange" for b in stored)
+    finally:
+        await eng.stop()
