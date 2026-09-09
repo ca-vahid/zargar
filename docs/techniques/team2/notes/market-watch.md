@@ -2870,3 +2870,73 @@ data and original research records. Keep target_replan off until the clean datas
   **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**,
   **F81**, **F82**, F67's two shared-side halves, and the F30-family question of which premium
   series is authoritative.
+
+## 2026-09-09 15:15 ET (run 44 — F82's decay prediction CONFIRMED on the live chain; its reporting half fixed as v0.7.31; new F83)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.30** running, armed 73. SPY `e4d39d00`, QQQ
+  `9a1094ed`, IWM `e87e4ad2` all `armed`, `complete: true` (pmh/pml/dayType/sizingAtOpen present),
+  `needsAttention` false, mode **auto** on Team2 Practice `b9dcd8db…`, **zero trades, zero open
+  positions**, ninth session. Quote age 0.1–0.3 s, session `regular`, bar age 92 s, window
+  `prime_close`. `restart-check` `safe: true`.
+- **Data real-time and provenance-clean.** 334/334 RTH 1m rows per symbol 09:30–15:03, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps** on all three.
+- **Replay parity exact on all three**: SPY 12/12, QQQ 10/10, IWM 34/34, zero trades both ways.
+- **What the read saw since 14:38.** IWM only: `late_touch` at **15:02** (touch #4 of
+  `pm_break_down@10:30`, watch-only past the first two — D9/P6). QQQ nothing since its 14:02
+  `same_pullback` on scenario 3; SPY nothing since 12:28. Prices at 15:16: SPY 763.16, QQQ 716.48,
+  IWM 290.79. **Day totals: 18 `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`,
+  5 `late_touch`, 0 fires.**
+- **F82 CONFIRMED, and the band empties 25 minutes EARLIER than the gate.** Run 43 predicted from
+  decay that the last in-band strike would drop under the $0.20 floor around 15:10–15:25 ET.
+  Re-measured **read-only at 15:05 ET** (54 min to expiry) on the live CBOE chain, each symbol on its
+  own live direction — **no order, no plan touched**: **SPY 0 in-band strikes, IWM 0 in-band strikes**,
+  `select_by_premium` returns `None` on both, so any fire from ~15:05 on is a `skip_no_contract`
+  refusal. (SPY puts 762/761/760 = 0.15/0.06/0.04 · IWM puts 290/289/288 = 0.04/0.02/0.01.) The
+  desk's **effective** last-entry on a quiet day is ~15:00, not the configured 15:30, and nothing in
+  the plan, the headline or the gate says so. **QQQ sharpens the delta half:** 2 in band (716 @ 0.77,
+  717 @ 0.26) and "closest to $0.60" picked **716 @ 0.77 — delta 0.63**, drifting from run 43's
+  −0.51 to +0.63 in 27 minutes. A fixed *price* band on a decaying chain can only be met by moving
+  toward the money. Options (a)–(d) in F82 remain the user's call; (d) now has a measured cost.
+- **Fixed and released: F82's reporting half (v0.7.31, commit `4fa1cab`).** Both refusal strings —
+  the live runner's error and the modelled read's `skip_no_contract` note — said no strike priced
+  *"between $0.20 and $0.60"*, while **both** pickers accept `[floor, 1.5 × target] = [0.20, 0.90]`:
+  a note understating the accepted band by 50%, the same class of defect as F76. The edge is now a
+  named constant on each side (`options.pick.MAX_OVER_TARGET`, `team2.premium.MAX_OVER_TARGET` —
+  previously a hard-coded 1.5 in the model), both strings quote it and name the target beside it, and
+  a new test pins the two constants equal and the prose to the band. **119 Team2 tests pass**;
+  `npm run check-release` and the frontend build green. **Reporting only** — no band, threshold, gate,
+  size or money path changed.
+- **DEPLOY QUEUED, deliberately not taken.** The commit is on the branch at v0.7.31 but the desk is
+  still serving 0.7.30. A prose-only fix is worth nothing in the last 40 minutes of the session, and
+  a restart spanning the **15:30 last-entry** and **15:45 flatten** gates with 73 armed plans (mostly
+  another desk's EM) is risk for no gain. **Deploy on the next run, after the 16:00 close.**
+- **F83 — NEW (labelling, not money).** The same 2m bar carries two different times: the read's
+  **events** are stamped with the bar's **close**, the snapshot's **`regime` block** with its
+  **start**. Proof: IWM's `late_touch` `time 15:02` `spot 290.8233` vs regime `ts` **15:00**
+  `ema13 290.8233` — one bar, two labels. It has now cost two watch runs a false alarm: this run's
+  first tape check evaluated IWM's touches under start-labelling and got **two phantom failures**;
+  re-checked under close-labelling, **all three of IWM's 14:12/14:16/15:02 touches satisfy the coded
+  rule** (`high >= ema13 − pm_tol_atr × atr and close < ema13`, tol ≈ 0.025). The touches are
+  correct — the labels are not. Written up with the three options in TRADING-RULES; **not built**
+  (it changes the read/snapshot contract and the UI, so it is the user's call).
+  **Working rule for future runs: an event's time is the 2m bar's CLOSE; the regime block's `ts` is
+  that bar's START.**
+- **Method sanity otherwise green.** QQQ's scenario 3 (bounce PDL, calls, target 717.47) still the
+  only symbol with a live target. EMA200 sane vs price on all three. The engine log has **no
+  traceback** and one non-Team2 warning kind since the 14:12 ET boot: 274 × `persist_bars: dropped N
+  non-bucket-aligned stub bar(s)`. **Not new (first seen 2026-09-08 16:26) and not Team2** — it is the
+  shared F75 guard refusing stub bars, and Team2's own tape is complete (334/334, zero gaps), so
+  nothing is being lost here. Noted for the platform owners as **noise, not breakage**: ~2 warnings a
+  minute is enough to bury a real one.
+- **UI green.** `/team2` renders on 0.7.30 with all three plans, correct sheets, ARMED status, the
+  0DTE line ("entries until 15:30, flat by 15:45") and the armed count 73.
+- **Next run (15:45–16:15 ET, after the close) should:** (1) **deploy v0.7.31** (`4fa1cab`) via the
+  scheduler task `ZargarRestart` once the book is flat — check `restart-check` first; (2) confirm the
+  **15:45 flatten** ran clean on an empty book and the session closed with 0 trades on the tenth
+  session; (3) record the day's final totals and whether QQQ's scenario 3 ever left 713.50–720.67;
+  (4) re-confirm bar provenance stays `exchange` through the close. Still open for the user: **F47**,
+  **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**,
+  **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's
+  rule question**, **F81**, **F82** (now with confirmed evidence), **F83**, F67's two shared-side
+  halves, and the F30-family question of which premium series is authoritative.

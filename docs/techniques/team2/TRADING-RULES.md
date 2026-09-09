@@ -1532,6 +1532,28 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   prose to the band. Reporting only — no band, gate, size or money path moved.
 
 
+- **F83 (2026-09-09 15:10 ET, NOT fixed — proposal; the same 2m bar carries two different times
+  depending on where you read it, and it has now cost two watch runs a false alarm).** The read's
+  **events** are timestamped with the bar's **close** (`note(end_ts, ...)` in `session.py`), while the
+  snapshot's **`team2.regime` block** timestamps the same bar by its **start**. Proof from today's
+  tape: IWM's `late_touch` event carries `time 15:02` with `spot 290.8233`, and the regime block
+  carries `ts 1788980400000` = **15:00** with `ema13 290.8233` — the identical EMA to four decimals,
+  i.e. one bar under two labels two minutes apart. **Why it matters beyond cosmetics:** anyone
+  checking a read against the tape — which is this watch's job every run — reconstructs 2m bars and
+  has no way to know which convention applies. Verified today: under **close**-labelling all three of
+  IWM's `late_touch` events (14:12, 14:16, 15:02) satisfy the coded rule
+  (`high >= ema13 - pm_tol_atr x atr and close < ema13`, tol ~0.025 on IWM); under start-labelling
+  two of the three evaluate **False**, which reads as a phantom touch. Run 43 checked 14:16 with a
+  looser straddle test and got the right answer for the wrong reason; this run got a false negative
+  and had to chase it. **The touches themselves are correct — this is a labelling defect, not a rule
+  defect, and no money path is affected.** **Proposed, for the user:** (a) label both by the bar's
+  close (matches how a trader speaks — "the 15:02 bar" is the one that just closed) and state the
+  convention in the API contract; (b) label both by the start; or (c) leave the values and add an
+  explicit `barStart`/`barClose` pair to each event and to the regime block so neither reader has to
+  guess. **Until it is decided, the rule for checking a Team2 read against the tape is: an event's
+  time is the 2m bar's CLOSE (bucket `[t-2m, t)`), the regime block's `ts` is that bar's START.**
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
