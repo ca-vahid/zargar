@@ -578,7 +578,7 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
 - 2026-09-09 · **Codex review of PRs 33–45 (a3885a9): ten findings, twelve reproducible regressions — all fixed in
-  v0.7.30, the regression file adopted verbatim as `tests/test_codex_f75_regressions.py`** (packet:
+  v0.7.32 (the Team2 watch job released 0.7.30 and 0.7.31 in between), the regression file adopted verbatim as `tests/test_codex_f75_regressions.py`** (packet:
   `docs/techniques/team2/notes/research/2026-09-09-pr33-45-review.md` in the Codex checkout). R1 readiness: an
   order/position inventory failure is a blocker (`inventoryError`), a fire chain in flight (`trades[*].status ==
   fired` in a money mode, or any `ArmedPlan.fire_tasks` entry) is a blocker (`firing`), and the three restart scripts
