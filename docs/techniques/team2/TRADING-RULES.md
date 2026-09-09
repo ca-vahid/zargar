@@ -1509,6 +1509,29 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   cutoff rather than an accidental one at the floor. Whichever is chosen, the honest fix for F14's
   half is to run the **selection** on the live OPRA quotes, not only the reprice.
 
+- **F82a (2026-09-09 15:05 ET, CONFIRMED on the live chain — the band empties 25 minutes BEFORE the
+  15:30 last-entry gate; the reporting half is FIXED in v0.7.31).** Run 43 predicted from decay that
+  the last in-band strike would fall under the $0.20 floor around 15:10–15:25 ET. Re-measured
+  read-only at **15:05 ET (54 minutes to expiry)** on the live CBOE chain, each symbol on its own live
+  direction: **SPY 0 in-band strikes, IWM 0 in-band strikes** — `select_by_premium` returns `None` on
+  both, i.e. any fire from 15:05 onward is a `skip_no_contract` refusal. (SPY puts 762/761/760 =
+  0.15/0.06/0.04 · IWM puts 290/289/288 = 0.04/0.02/0.01 — every OTM ask is already under the floor.)
+  So the prediction holds and is if anything **early**: the desk's effective last-entry time on a
+  quiet day is ~15:00, not the configured 15:30, and nothing in the plan, the headline or the gate
+  says so. **QQQ went the other way and sharpens the delta half of F82:** 2 strikes in band (716 @
+  0.77, 717 @ 0.26), and "closest to $0.60" picked **716 @ 0.77 — delta 0.63**, i.e. the pick drifted
+  from run 43's −0.51 to +0.63 in 27 minutes. The drift is monotone with time-to-expiry, because a
+  fixed *price* band on a decaying chain can only be met by moving toward the money. **Nothing about
+  the rule was changed** — options (a)–(d) in F82 remain the user's call, and (d) now has a measured
+  cost: the accidental cutoff arrives ~25 minutes before the deliberate one. **What was fixed** is
+  the reporting: both refusal strings said no strike priced "between $0.20 and $0.60" while both the
+  modelled (`premium.pick_strike`) and live (`options.pick.select_by_premium`) pickers accept
+  `[floor, 1.5 × target] = [0.20, 0.90]` — a note understating the accepted band by 50%, the same
+  class of defect as F76. Both now state the real edge and name the target beside it, the 1.5 is a
+  named constant on each side (`MAX_OVER_TARGET`), and a test pins the two constants equal and the
+  prose to the band. Reporting only — no band, gate, size or money path moved.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1519,6 +1542,17 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-09 (market watch, run 44, 15:15 ET — release v0.7.31, reporting only)** — **F82a**:
+  the `skip_no_contract` refusal (both the live runner's error and the modelled read's note) said no
+  strike priced "between $0.20 and $0.60", but both pickers accept up to **1.5× the target = $0.90**.
+  The band's upper edge is now a named constant on each side (`options.pick.MAX_OVER_TARGET` and
+  `techniques.team2.premium.MAX_OVER_TARGET`, previously a hard-coded 1.5 in the model), both strings
+  quote it and name the target beside it, and `test_the_stated_premium_band_matches_the_band_the_
+  pickers_accept` pins the two constants equal. 119 Team2 tests pass; frontend build and
+  `check-release` green. **No band, threshold, gate, size or money path changed.** Same run confirmed
+  F82's decay prediction on the live chain (SPY and IWM had **zero** in-band strikes at 15:05 ET,
+  25 minutes before the 15:30 gate) — that remains a rules question for the user, not a fix.
 
 - **2026-09-09 (market watch, run 42, 14:12 ET — release v0.7.30, reporting only)** — **F76's
   reporting half DEPLOYED.** `05fb2b2` had been committed without a version bump, so the versioning

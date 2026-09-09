@@ -20,7 +20,7 @@ from ...domain import Bar
 from ...marketstructure.aggregate import aggregate, bar_session, minute_of_day
 from ...marketstructure.dailylevels import Zone
 from ...marketstructure.sessions import ET, session_date
-from .premium import Fill, PremiumModel, pnl_pct
+from .premium import MAX_OVER_TARGET, Fill, PremiumModel, pnl_pct
 from .regime import RegimeRead, RegimeReader
 from .rules import Team2Rules
 from .levels import next_structural_level
@@ -607,8 +607,10 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             # model's 296C at $0.199 while the real 296C was 0.24/0.25 with 70k volume. And record it
             # on the setup like the other "not tradeable" refusals so the Armed/phone headline can
             # state it (the runner already lists this kind; `_skipped` was never set, so it never showed).
+            # F82 (2026-09-09): state the band's real upper edge (1.5x the target), not the target.
             note_once(s, end_ts, "skip_no_contract",
-                      f"no strike MODELS between ${rules.premium_floor:.2f} and ${rules.target_premium:.2f} (V1) — "
+                      f"no strike MODELS between ${rules.premium_floor:.2f} and "
+                      f"${rules.target_premium * MAX_OVER_TARGET:.2f} (target ${rules.target_premium:.2f}, V1) — "
                       f"modelled premium at sigma {sigma:.4f}, not the live chain",
                       setup=s.id, touch=idx)
             continue

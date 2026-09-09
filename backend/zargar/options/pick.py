@@ -15,10 +15,14 @@ import datetime as dt
 
 from ..technique.options import ContractPick, ELEVATED_IV, LOW_DELTA, MAX_SPREAD_PCT, MIN_OPEN_INTEREST, MIN_VOLUME
 
+# The band's upper edge is this multiple of the target (F82, 2026-09-09): callers that STATE the
+# band in prose read it from here instead of quoting the target, which is not the edge.
+MAX_OVER_TARGET = 1.5
+
 
 def select_by_premium(chain: list[dict], spot: float, direction: str, *, target_premium: float,
                       premium_floor: float, expiry: str, today: dt.date, is_0dte: bool,
-                      max_over_target: float = 1.5, mode: str = "closest") -> ContractPick | None:
+                      max_over_target: float = MAX_OVER_TARGET, mode: str = "closest") -> ContractPick | None:
     """`mode="closest"` (F36, 2026-09-04, default): of the OTM contracts whose ask lies in
     [floor, max_over_target x target], the one CLOSEST to the target — the same rule the model's
     `PremiumModel.pick_strike` applies, so both paths land on the same strike. `mode="first_under"`

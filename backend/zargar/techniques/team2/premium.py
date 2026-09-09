@@ -19,6 +19,10 @@ from dataclasses import dataclass
 from ...marketstructure.sessions import ET
 
 RISK_FREE = 0.04
+# The premium band's upper edge, as a multiple of the target (F82, 2026-09-09). Must equal
+# `options.pick.MAX_OVER_TARGET` so the modelled and live pickers accept the same band
+# (`tests/test_team2_premium.py` asserts it); prose that STATES the band reads it from here.
+MAX_OVER_TARGET = 1.5
 EXPIRY_MIN = 16 * 60            # 0DTE expires at the 16:00 ET close
 MIN_T_YEARS = 1.0 / (365.0 * 24 * 60)   # one minute
 
@@ -118,7 +122,7 @@ class PremiumModel:
             cands: list[tuple[float, float]] = []
             for _ in range(max_steps):
                 m = self.mark(spot, k, ts_ms, call=call, expiry=expiry)
-                if premium_floor <= m <= target_premium * 1.5:
+                if premium_floor <= m <= target_premium * MAX_OVER_TARGET:
                     cands.append((k, m))
                 if m < premium_floor:
                     break

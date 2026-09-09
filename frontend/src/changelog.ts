@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.30";
+export const APP_VERSION = "0.7.31";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.31",
+    date: "2026-09-09",
+    title: "A refused pullback states the premium band it really used",
+    items: [
+      { tag: "fixed", text: "When Team2 turned a pullback away for want of a contract it said no strike priced “between $0.20 and $0.60”, but both the modelled and the live picker accept up to 1.5× the target — $0.90. The refusal now quotes the band it actually applied, and names the target beside it (F82)." },
+    ],
+  },
   {
     version: "0.7.30",
     date: "2026-09-09",
