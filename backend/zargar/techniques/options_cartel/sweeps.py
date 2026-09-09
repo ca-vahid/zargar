@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+from typing import Literal
 
 from pydantic import Field, model_validator
 
@@ -11,12 +12,15 @@ from ...domain import Bar
 from .data import DailyBar
 from .exits import ExitCampaign
 from .plans import CartelPlan, EntryPolicy
+from .preparation_readiness import baseline_coverage
 from .replay import replay_campaign
 from .service import WireModel
 
 
 class SweepVariant(WireModel):
     name: str = Field(min_length=1, max_length=80)
+    timeframe_minutes: Literal[5, 15, 30] | None = None
+    mode: Literal["breakout", "retest"] | None = None
     volume_multiple: float | None = Field(default=None, gt=0, le=100)
     min_close_location: float | None = Field(default=None, ge=0, le=1)
     max_chase_r: float | None = Field(default=None, ge=0, le=10)
@@ -46,10 +50,23 @@ def evaluate_sweep(snapshots, variants):
         for name, overrides in [("baseline", {})] + [
                 (v.name.strip(), v.model_dump(exclude_none=True, exclude={"name"})) for v in variants]:
             policy = EntryPolicy.model_validate({**original.entry.model_dump(), **overrides})
-            plan = original.model_copy(update={"entry": policy})
+            updates = {"entry": policy}
+            if policy.timeframe_minutes != original.entry.timeframe_minutes:
+                from .prepare import build_volume_baseline
+                source = config.get('baselineMinutes', [])
+                if not source:
+                    raise ValueError('Timeframe comparisons need historical baseline minutes. Create a new campaign replay from the original plan.')
+                historical = [Bar(original.symbol, '1m', b['ts'], b['open'], b['high'], b['low'], b['close'], b['volume']) for b in source]
+                updates['volume_baseline'] = build_volume_baseline(historical, original.symbol,
+                    policy.timeframe_minutes, original.created_at)['baselines']
+            plan = original.model_copy(update=updates)
             result = replay_campaign(plan, campaign, minutes, daily, as_of_ms=saved["asOfMs"],
                 quantity=config["request"]["quantity"], slippage_bps=config["request"]["slippage_bps"])
-            rows.append({"replayId": saved["runId"], "symbol": original.symbol, "variant": name,
+            coverage = baseline_coverage(plan)
+            if policy.timeframe_minutes != original.entry.timeframe_minutes and not coverage['ready']:
+                result['dataComplete'] = False
+                result['warnings'].append(f"Variant baseline incomplete: {coverage['available']}/{coverage['expected']} periods; not scored.")
+            rows.append({"baselineCoverage": coverage, "replayId": saved["runId"], "symbol": original.symbol, "variant": name,
                          "entryPolicy": policy.model_dump(mode="json"), "result": result})
     summaries = []
     baseline = {r["replayId"]: r["result"] for r in rows if r["variant"] == "baseline"}
@@ -91,4 +108,4 @@ async def run_sweep(service, body: SweepRequest):
     digest = hashlib.sha256(json.dumps(snapshots, sort_keys=True).encode()).hexdigest()
     return await service._store(mode="sweep", symbol="MULTI", at=max(s["asOfMs"] for s in snapshots),
         verdict="experiment", result=result, config={"request": body.model_dump(mode="json"),
-            "inputSha256": digest, "codeVersion": "cartel-sweep-1", "snapshots": snapshots})
+            "inputSha256": digest, "codeVersion": "cartel-sweep-2", "snapshots": snapshots})

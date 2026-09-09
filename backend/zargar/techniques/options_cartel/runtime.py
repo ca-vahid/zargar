@@ -513,5 +513,8 @@ class CartelRuntime(CartelObserver):
         result.update(needsAttention=bool(reasons), attentionReasons=reasons,
                       summary=reasons[0] if reasons else "Managing confirmed Cartel exposure." if positions else
                       f"Cartel {row['mode']} is paused." if row["status"] == "paused" else
-                      "Cartel signal awaits approval." if result["awaitingApproval"] else f"Cartel {row['mode']}: {state['phase']}.")
+                      "Cartel signal awaits approval." if result["awaitingApproval"] else
+                      "Entry window expired without a purchase." if row['status'] == 'expired' and not state.get('signal') else
+                      "Last entry check: " + state['decisionHistory'][-1]['reason'] if state.get('decisionHistory') else
+                      f"Cartel {row['mode']}: {state['phase']}.")
         return result

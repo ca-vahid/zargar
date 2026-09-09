@@ -65,4 +65,5 @@ async def replay_from_history(service: CartelService, run_id, body: CampaignRepl
     return await service._store(mode="replay", symbol=plan.symbol, at=at, verdict=result["status"], parent=run_id,
         result=result, config={"request": body.model_dump(mode="json"), "dataSource": source,
             "planSnapshot": parent.result["plan"], "exitCampaign": campaign.model_dump(mode="json"),
+            "baselineMinutes": [b for b in parent.config["inputs"].get("minute_history", [])],
             "minutes": [b.to_row() for b in minutes], "daily": [b.model_dump(mode="json") for b in daily]})

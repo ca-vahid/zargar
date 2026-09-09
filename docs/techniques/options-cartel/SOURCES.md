@@ -232,3 +232,12 @@ April 2025 thread date; the other image illustrates a historical NVDA base and
 volume expansion. These images do not independently verify strategy returns.
 The primary coverage table above now reflects completed media/ledger reviews;
 the dated notes below retain the inspection trail.
+
+
+## September 8 fidelity follow-up
+
+- S27: [Sean's system summary, September 8](https://x.com/SRxTrades/status/2097459972884058424): full public post read; theme/catalyst leadership, lower-timeframe entries, scaling and trailing. Does not prescribe our 70% close-location threshold.
+- S28: [September 7 weekly focus](https://x.com/SRxTrades/status/2097097587828707793): memory, storage, semiconductors and biotech reference list. Used as a dated coverage comparison, not an order feed or timeless universe.
+- S29: [Cartel DRAM swing highlight, September 8](https://x.com/TheOptionCartel/status/2097414673662718231): public text reports over 200%; not a complete realized daily account return or independently verified Sean execution.
+
+See [the implementation review](FIDELITY-REVIEW-2026-09-08.md) for the exact changes and remaining limitations.
