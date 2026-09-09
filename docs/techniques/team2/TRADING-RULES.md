@@ -694,7 +694,18 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
   The V6 ladder has three rungs — `full` beyond the prior-day zones, `small` between a prior-day zone
   and the PM level, `none` inside the PM range — but when the PM range **contains** yesterday's zones
-  the middle rung is geometrically empty and everything collapses to `none`. **Proposed** (same shape
+  the middle rung is geometrically empty and everything collapses to `none`. **Confirmed again, at the
+  extreme, on 2026-09-09 (watch run 41, 13:45 ET): QQQ spent 246 of 246 RTH minutes — 100% — inside
+  its own pre-market range** (713.50–720.67, width 7.18 = **21.8× the 2m ATR** of 0.329), with its PDL
+  zone 715.57–716.50 wholly inside it and its PDH zone 717.47–721.89 straddling the top. All three
+  scenarios the tape produced were refused on arrival — scenario 2 at 11:10 (entry 716.03), scenario 4
+  at 11:32 (715.41) and the fresh scenario 3 at 13:34 (716.28), each `skip_no_trade_zone`. QQQ printed
+  no PM break, so F20's carve-out — the only thing that rescued 2026-09-08 — never applied and the
+  symbol was untradeable by construction for a whole session. SPY (17.6× ATR, 61% of closes inside)
+  and IWM (17.6×, 20%) did escape their ranges, and were then blocked by the frozen-target arithmetic
+  instead (**F76**/**F81**). Between the two mechanisms they account for 23 of today's 25 refusals
+  (18 `skip_target_behind`, 5 `skip_no_trade_zone`); the remaining 2 are genuine method refusals
+  (`skip_engulfing`, A6/F4). **Proposed** (same shape
   as F20, Team2-local, one function): when the entry sits within the touch tolerance of a **prior-day
   zone edge**, bucket it `small` rather than `none` — a tested structural line is not the middle of
   the chop, whichever side of the overnight range it happens to fall on. Optionally gate the whole
@@ -1337,6 +1348,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   behind a measured variant. Nothing was built — mid-session, on an auto desk, this touches setup
   creation and therefore opportunity counting and grading.
 
+- **F76 addendum — the reporting half IS fixed (2026-09-09 13:45 ET watch, committed, deploy queued).**
+  The rule question above stays entirely open; only the misleading prose is gone. `session.py`'s
+  `pm_break` note said *"→ puts down to the PDL zone (L2.5/V7)"* whichever candidate the target
+  actually resolved to, so on a gap day it advertised a level the setup does not hold. It now states
+  the setup's own number and, when that number sits on the wrong side of the break, says so:
+  *"→ puts down to 764.75 — already behind the break, so this setup has no room (F76)"*. The note also
+  carries `target` in its payload, so the claim is machine-checkable against the setup rather than
+  read out of prose. Helper `_pm_break_target_says()`, mirrored long/short, `None` renders as
+  *"the next level (none on the plan)"*. **No target, size, gate, rule or money path changed** — a
+  dead setup is still minted and still refused by F72's entry guard. Test:
+  `test_pm_break_note_states_the_setups_own_target` (118 Team2 tests pass). Deploy queued for the next
+  restart rather than taken mid-session: it is reporting-only and the desk is in auto mode.
+
 - **F77 (2026-09-09 12:05 ET, NOT fixed — measured, low severity; the strike *pick* reads a chain
   row that can lag OPRA by one refresh cycle).** Sampling `GET /api/options/quote/<occ>` for the
   three 0DTE ATM puts showed the top-level chain row and the nested real-time quote agreeing on
@@ -1458,6 +1482,18 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-09 (market watch, run 41, 13:45 ET — code change, reporting only; deploy queued)** —
+  **F76's reporting half fixed**: the `pm_break` note now states the setup's own target (and says when
+  that target is already behind the break) instead of always claiming "the PDH/PDL zone", and carries
+  `target` in its payload; new test `test_pm_break_note_states_the_setups_own_target`, 118 Team2 tests
+  pass. No rule, threshold, gate, size or money path changed; F76's rule question and F81 stay open for
+  the user. **F56 confirmed at its extreme**: QQQ spent 100% of the session inside a pre-market range
+  21.8× its 2m ATR and refused all three of its scenarios on `skip_no_trade_zone`. **F77 did not
+  reproduce** for a second consecutive run (chain row = nested OPRA quote exactly on all three 0DTE
+  ATM contracts). **F79/F80 stay closed** — 244/244 RTH minutes per symbol are `exchange`, zero
+  zero-volume rows, no gaps. Replay parity holds (SPY 12/12, IWM 26/26; QQQ's one extra 12:14
+  `same_pullback` is the known pre-repair-tape artifact). Ninth session, still zero fires.
 
 - **2026-09-09 (market watch, run 40, 13:05 ET — no code change, no setting change)** — **F79 and
   **F80 verified fixed** on today's live tape under v0.7.29 (214/214 RTH minutes `exchange`, no

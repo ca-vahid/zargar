@@ -151,6 +151,18 @@ def _avg_body(bars: list[Bar], n: int = 20) -> float:
     return sum(xs) / len(xs) if xs else 0.0
 
 
+def _pm_break_target_says(target: float | None, anchor: float, direction: str) -> str:
+    # F76 (reporting half, 2026-09-09): the PM-break note used to say "the PDH/PDL zone" whichever
+    # candidate the target actually resolved to. On a gap day the zone candidate loses to the plan's
+    # frozen level and can land on the WRONG SIDE of the break, so the read stated a target the setup
+    # does not hold. State the number, and say plainly when the break has already run through it.
+    # Reporting only — the target itself is unchanged; the rule question stays open in TRADING-RULES.
+    if target is None:
+        return "the next level (none on the plan)"
+    behind = target >= anchor if direction == "short" else target <= anchor
+    return f"{target:.2f}" + (" — already behind the break, so this setup has no room (F76)" if behind else "")
+
+
 def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma: float,
                      now_ms: int | None = None, warmup_1m: list[Bar] | None = None) -> SessionResult:
     """See module docstring. `bars1m` = the session date's 04:00–20:00 1m bars (or as many as
@@ -277,14 +289,18 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                 pm_up_done = True
                 tgt = zones["pdh"].bottom if pmh < zones["pdh"].bottom else targets.get("above")
                 setup_for("pm_break_up", "long", float(pmh), tgt, f15.ts, range_day=False)
-                note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break", f"15m close above the pre-market high {pmh:.2f} → calls up to the PDH zone (L2.5/V7)",
-                     level=round(float(pmh), 4), close=round(f15.close, 4))
+                note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break",
+                     f"15m close above the pre-market high {pmh:.2f} → calls up to {_pm_break_target_says(tgt, float(pmh), 'long')} (L2.5/V7)",
+                     level=round(float(pmh), 4), close=round(f15.close, 4),
+                     target=(round(float(tgt), 4) if tgt is not None else None))
             if pml is not None and not pm_dn_done and body_closed_beyond(f15, pml, "short") and (gap_day or f15.close >= zones["pdl"].bottom):
                 pm_dn_done = True
                 tgt = zones["pdl"].top if pml > zones["pdl"].top else targets.get("below")
                 setup_for("pm_break_down", "short", float(pml), tgt, f15.ts, range_day=False)
-                note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break", f"15m close below the pre-market low {pml:.2f} → puts down to the PDL zone (L2.5/V7)",
-                     level=round(float(pml), 4), close=round(f15.close, 4))
+                note(f15.ts + rules.confirm_tf_min * 60_000, "pm_break",
+                     f"15m close below the pre-market low {pml:.2f} → puts down to {_pm_break_target_says(tgt, float(pml), 'short')} (L2.5/V7)",
+                     level=round(float(pml), 4), close=round(f15.close, 4),
+                     target=(round(float(tgt), 4) if tgt is not None else None))
 
         # F62 (2026-09-08): a pullback is an EVENT — price leaves the EMA13 band and comes back — not a state.
         # Judged on EVERY 2m close, for every live setup, before anything below can `continue`: a close at least
