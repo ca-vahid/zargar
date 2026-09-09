@@ -193,7 +193,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                     continue
                 await runtime.disarm(old_id, reason='daily preparation refresh')
                 result['replacedPlans'].append(old_id)
-        rules = CartelRules.for_profile(policy.profile, require_industry_rank=policy.industry_policy == 'strict', reviewed_etfs=policy.reviewed_etfs)
+        rules = CartelRules.for_profile(policy.profile, market_alignment=policy.market_alignment, require_industry_rank=policy.industry_policy == 'strict', reviewed_etfs=policy.reviewed_etfs)
         async def discovery_progress(update):
             result['discoveryProgress'] = update
             await report(message=update['message'], phase='discovering')
@@ -559,7 +559,7 @@ async def _submit_preparation(engine, *, scheduled=False, workspace=None, **kwar
         async with engine.sf() as session:
             latest = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
                 TechniqueRun.mode == 'preparation', TechniqueRun.status == 'done', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
-        if latest and latest.config.get('session') == next_session_date(now) and 0 <= now-latest.as_of < 12*3_600_000:
+        if latest and PreparationPolicy.model_validate(latest.config.get('policy', {})) == policy and latest.config.get('session') == next_session_date(now) and 0 <= now-latest.as_of < 12*3_600_000:
             return {'status': 'already_prepared', 'runId': latest.id}
     ready = asyncio.get_running_loop().create_future()
     ready.add_done_callback(lambda f: f.exception() if not f.cancelled() else None)

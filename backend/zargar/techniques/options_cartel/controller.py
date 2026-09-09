@@ -101,6 +101,8 @@ class CartelEntryController:
         if self.engine.position_manager.entries_halted(plan.symbol):
             raise ValueError("position reconciliation has halted entries on this symbol")
         portfolio = self.engine.positions.portfolio(spec.portfolio_id)
+        if portfolio and portfolio["kind"] in ("live", "paper") and plan.rules.market_alignment != "strict":
+            raise ValueError("Moderate market-alignment plans cannot execute on Live accounts")
         if portfolio and portfolio["kind"] in ("live", "paper") and (not spec.allow_live
                 or self.engine.settings.get("trading.mode") != "live"
                 or row["mode"] == "auto" and not self.engine.settings.get("techniques.options_cartel.allow_live_auto", False)):

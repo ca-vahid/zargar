@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.17";
+export const APP_VERSION = "0.7.18";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.18", date:"2026-09-08", title:"Moderate market alignment for Practice",
+    items:[
+      {tag:"new", text:"Cartel Practice Settings offer an explicit Moderate market experiment: one index above its 8/21/50 EMAs and both above their 50 EMA. Strict remains the default and Live requires strict plans."},
+      {tag:"improved", text:"Preparation records the selected alignment mode. Changing the policy requires fresh preparation; a recent scan under different settings no longer suppresses the scheduled run."},
+    ]},
   {
     version: "0.7.17",
     date: "2026-09-08",

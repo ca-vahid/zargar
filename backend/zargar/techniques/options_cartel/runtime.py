@@ -74,6 +74,8 @@ class CartelRuntime(CartelObserver):
         if cached is None or cached["kind"] != portfolio.kind:
             raise ValueError("refresh portfolio identity before arming")
         if portfolio.kind in ("live", "paper"):
+            if plan.rules.market_alignment != "strict":
+                raise ValueError("Moderate market-alignment plans are Practice-only; Live requires a new strict plan")
             if config.get("clientKind") == "phone" and self.engine.settings.get("mobile.exit_only", True):
                 raise ValueError("phones are exit-only on real accounts")
             if not spec.allow_live or self.engine.settings.get("trading.mode") != "live" \
