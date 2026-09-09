@@ -1386,6 +1386,53 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   explicitly re-fetch the minute that was forming at shutdown, or have `validate_sessions` report
   interior 1m gaps in an RTH window instead of only session validity. Nothing built.
 
+- **F79 + F80 VERIFIED FIXED (2026-09-09 13:05 ET watch, v0.7.29).** Both findings were fixed by the
+  other desk the same afternoon (`568f3e7`, `663b5fc`) and re-measured here on today's live tape.
+  Every RTH 1m row 09:30–13:03 on SPY, QQQ and IWM — 214 minutes each — now carries
+  `source='exchange'`; there is **no `unknown` or `sampled` row left in the session**, **zero
+  zero-volume bars** (the 11:58–12:06 band and the SPY/IWM 12:19–12:20 rows all hold real volume
+  again), and **no interior gaps**, including the 11:25 ET minute that F80 recorded as permanently
+  missing on QQQ and IWM. The mechanisms cited in both findings — `unknown` tying with `sampled` at
+  rank 1, an exchange re-fetch lowering volume, the in-flight minute never being re-fetched — are
+  addressed by the boot-time exchange seed plus the rank and volume-monotonicity rules. No Team2
+  decision had been affected either way (the method has no volume rule), but the provenance
+  guarantee now actually holds. **One residual effect, not a defect:** live reads taken this morning
+  ran on the pre-correction tape, so a replay today reproduces them with an occasional extra
+  bookkeeping event (QQQ replay emits a `same_pullback` at 12:14 that the live read did not) — no
+  fire/trim/exit ever diverged, and this should disappear for sessions that run entirely on
+  v0.7.29.
+
+- **F81 (2026-09-09 13:05 ET, NOT fixed — proposal; the pre-open completion never re-derives the
+  plan's targets, so a gap day is born dead).** `plan.complete_preopen()`
+  (`zargar/techniques/team2/plan.py:74–90`) updates `pmh`, `pml`, `dayType`, `sizingAtOpen` and the
+  printed `sheet`, but it **never recomputes `plan["targets"]`** — those are fixed at the 17:00
+  build from `targets_beyond(prev 15m RTH, zones, lookback)`. On a gap day the overnight move can
+  put price through the plan's own target before the method is allowed to take anything, and
+  nothing notices. **Today is the clean case.** SPY and IWM both classified `gap_down`. SPY's
+  planned down-target was 764.75 (“room down to”, from a 765.14–765.99 PDL zone) and the **09:30
+  bar closed at 763.85 — already through it, in the first minute of the session**; IWM's was 293.56
+  and the 09:45 15m confirmation printed 293.30, through it before the scenario was even confirmed.
+  Result: **every subsequent pullback was refused by the F72 guard — 5 on SPY (11:32, 11:58, 12:08,
+  12:14, 12:26) and 9 on IWM (10:42 → 13:00), 14 refusals and zero fires**, while QQQ (a `normal`
+  day, target 710.81 still valid) was independently blocked by the pre-market no-trade zone. Nine
+  sessions of this desk and the read has still never priced a contract. The refusals were not
+  wrong about direction — SPY was refused between 761.70 and 762.17 and went on to 760.94; IWM was
+  refused between 290.85 and 292.42 and went on to 290.58 — only the target arithmetic blocked
+  them. **Counterfactual measured, read-only, dataset `164a83894fbbca79…` (50231 rows):** the
+  existing F72 variant `techniques.team2.target_replan=entry` (built, default `off`) takes **4
+  trades today for +85.6% summed premium, 2 of 4 winners** (SPY −20.9% and −7.9%, IWM +46.6% and
+  +67.8%) against the baseline's **zero**. Over 2026-08-26→2026-09-09 (30 sessions, tape before
+  today is the pre-repair dataset) it is **41 trades / wr 0.341 / +188.0%** versus baseline **33 /
+  0.333 / +125.8%**. **Report the asymmetry honestly:** the entire gain sits in `pm_break_down`
+  (69.4% → 194.4%, 12 → 17 trades, wr .42 → .47); `pm_break_up` gets *worse* (112.4% → 47.1%, wr
+  .38 → .27) and `scenario_1` is unchanged-bad. The sample window is itself down-biased, so a
+  down-break-only edge is exactly what a down-biased sample would manufacture. **For the user to
+  decide** — the precondition set on 2026-09-09 evening (“keep `target_replan` off until the clean
+  dataset supports a reproducible rerun”) is now met for *today*, and the options are (a) leave it
+  off, (b) turn it on, (c) turn it on for down-breaks only, or (d) re-derive the target at the
+  09:25 pre-open rather than at entry, which fixes the cause rather than the symptom. Nothing
+  built and no setting changed — this watch does not move thresholds.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1396,6 +1443,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-09 (market watch, run 40, 13:05 ET — no code change, no setting change)** — **F79 and
+  **F80 verified fixed** on today's live tape under v0.7.29 (214/214 RTH minutes `exchange`, no
+  zero-volume rows, no interior gaps, 11:25 present on all three). **F81 logged**: the 09:25
+  pre-open never re-derives the plan's targets, so on a gap day the plan's own down-target can be
+  behind price before the first setup forms — SPY and IWM produced 14 refusals and zero fires
+  today. Counterfactual measured read-only: `target_replan=entry` = 4 trades / +85.6% today and
+  41 trades / +188.0% over 30 sessions vs baseline 0 and 33 / +125.8%, with the whole gain in
+  `pm_break_down` and `pm_break_up` degrading. Decision left to the user.
 
 - **2026-09-09 (market watch, run 38, 12:05 ET — no code change)** — **F77 logged** (measured, low
   severity): the option chain row can lag the OPRA quote by one refresh cycle on the first call
