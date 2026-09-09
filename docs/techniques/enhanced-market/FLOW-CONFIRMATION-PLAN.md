@@ -6,6 +6,12 @@ TRADING-RULES (method) and PLATFORM-RULES (engine). The evolution loop applies: 
 here changes a live threshold until a variant sweep, then a shadow instance, then Practice
 money has earned it (EVOLUTION-PLAN.md).
 
+**STATUS 2026-09-09 00:30 ET: phases 0-1 done, the theory is REJECTED on our history in both
+forms (confirm gate and sweeps-as-trigger); T-6 exit tempo also negative. Sections 2-3 are kept
+as the original design record; D4-D7 did not survive phase 1. Nothing here runs live. The only
+open item is phase 2 in log mode (live NBBO-classified sweeps), optional, revisited after ten
+sessions of live data if it is ever built.**
+
 ## 1. The finding, in one paragraph
 
 Nine days of EM: one fill (GLD, +$175), zero on eight of nine days, and the review says our
@@ -21,7 +27,7 @@ option TRADES. The contract he named (TSLA $360C expiring 2026-08-31) returns 10
 for 09:30-10:10 ET that day, 37,874 contracts, 23 prints of 100+ contracts. The signal is
 available to us, historically and (via the same feed's websocket) live.
 
-## 2. What we are building
+## 2. What we set out to build (design record; items 2, 3 and 5 were never built - phase 1 killed them)
 
 1. **A sweep detector** (platform, `zargar/marketstructure/flowprints.py` +
    `zargar/research/optiontrades.py`): option prints from Alpaca (REST for history, websocket
@@ -44,7 +50,7 @@ available to us, historically and (via the same feed's websocket) live.
 5. **A shadow instance** (`em_flow_shadow`, EVOLUTION phase 4) running `require` + fast exits
    live in alert mode beside EM, on the same tape, before any Practice money.
 
-## 3. Decisions to take before phase 1 (defaults proposed; the user decides)
+## 3. Decisions taken before phase 1 (as proposed; outcome: D1-D3 calibrated in phase 0, D4 withdrawn in 1a, D5-D7 moot after 1b)
 
 | decision | proposal | why |
 |---|---|---|
@@ -138,15 +144,15 @@ log mode at no cost, revisited after 10 sessions. Phases 2-4 below are re-scoped
 - The nightly LLM plan review stays while it is measured (2026-09-08: accepted plans +0.52R per
   valid fire, rejected -0.65R, ten fires over three sessions - promising, not proven; decision
   at ten sessions, TRADING-RULES 2).
-- Arming stays as it is (batch + auto-arm from the board). Sweeps confirm fires; they do not
-  build plans.
+- Arming stays as it is (batch + auto-arm from the board). Sweeps neither confirm fires nor
+  build plans in the live runner - they are rows in `flow_sweeps` for research.
 
 ## 6. Risks and honest caveats
 
 - His posts are his selection of his wins. We have no verified record of his losses; the plan
   tests the MECHANISM on our own data, not his claimed results.
-- Sweep detection on thin names (GPRO) will produce many false positives; D1's 250-contract
-  floor and the "confirm, never create" rule (D4) are the guard.
+- Sweep detection on thin names (GPRO) produces many false positives; D1's 250-contract
+  floor and the pace rule are the guard (D4 no longer applies).
 - Alpaca option trades are one feed; OPRA consolidated prints may differ in size attribution.
   The backfill check against his three named trades is the calibration.
 - Latency: a live sweep arrives seconds after the print; the fire-to-order chain already costs

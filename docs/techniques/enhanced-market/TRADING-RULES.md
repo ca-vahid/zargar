@@ -565,6 +565,10 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
   and breakouts are the weakest in BOTH configs (negative even fully confirmed);
   prime_open carries all the edge, prime_close was net negative in all three
   variants (more T-1 evidence).
+  **2026-09-09 exit-tempo half measured (FLOW-CONFIRMATION-PLAN phase 1b, `flow_variant --tempo`):**
+  our 19 replay fires exited on premium percent (his tempo) lose in every grid cell (best
+  -14.8% mean); the underlying ladder is better on the same fires. The continuation ENTRY
+  archetype (backlog 9) is still unmeasured on a parameterised ladder; the exit half is closed.
 - **T-7 Gap-fill targets:** an unfilled overnight gap in the trade's path is a target
   magnet in the author's practice (IWM/QQQ longs "into the gap", AMD short "gap to
   fill below"), not only a hazard. Experiment: add gap edges to the target-anchor set
@@ -597,7 +601,8 @@ actually needed: the morning board build's 3-session window (09-02..09-04) no lo
 09-01 high; the evening build's window did, and the detector found 969.44 there only with the knob.
 Next test: `lookback_sessions=5` as its own variant, and the gap-through continuation (T-6/T-7).
 
-### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08)
+### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08) - REJECTED on history 2026-09-09
+**Status: both forms (confirm gate, sweeps as trigger) measured and rejected; no rule change; the detector stays as research tooling. The paragraphs below are the dated record in the order it happened.**
 Every win he posted (TSLA +240% Aug 31, GPRO Aug 31, NVDA +115% Sep 4, Sep 8 OTM prints) names
 a SWEEP: contracts bought at the ask, many times the open interest, in a near-the-money 0DTE or
 weekly strike, minutes after the open; exit the same day on premium percent. Our level says
@@ -658,7 +663,8 @@ tempo is not where our edge is hiding either.
    exists); persist critic veto counts across restarts.
 9. **T-6 continuation-breakout walk-forward** (2026-08-29): sweep the archetype over
    60 days on the universe + SPY/QQQ/IWM before any live arming — deterministic,
-   free, and it directly answers "are we too strict or missing a lane".
+   free, and it directly answers "are we too strict or missing a lane". (Exit-tempo half
+   closed 2026-09-09, negative; only the entry archetype remains.)
 
 ---
 
