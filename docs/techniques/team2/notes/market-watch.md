@@ -2203,3 +2203,78 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   still open: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**,
   **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, F67's two shared-side
   halves, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-09 10:30 ET (run 35 — F72's guard fires for real; F71 turned out to be dead code, fixed as F73, v0.7.25)
+
+- **Alive and clean.** `/api/health` ok, v0.7.24, armed 77 — the queued restart from run 34 was
+  already taken at 10:15, so the health version and the UI chip agreed on arrival. Three Team2 plans
+  armed for 2026-09-09 (SPY, QQQ, IWM), all `complete: true`, no `read_error`, `needsAttention`
+  false on all three, and **zero Team2 errors or Tracebacks since the 10:15 boot**. Alpaca stream
+  `connected` + `authenticated` at 07:15:19 PT with no reconnects since.
+- **Mode is `auto`, and that is the user's own setting, not drift** — `techniques.team2.mode` was set
+  to `auto` on **2026-09-04**, five days ago, and every plan carries `allowLive: false` on the sim
+  book **Team2 Practice**. Recording it because the watch recipe still says "alert unless the user
+  changed it": the user changed it, and the desk has been trading Practice on auto since.
+- **Data is real-time on all three legs.** 1m bars banking to 10:32 read at 10:34 (SPY/QQQ/IWM all
+  the same ts); underlying quotes `quoteAgeSeconds 0`, `session: "regular"`, volumes session-to-date
+  (SPY 5.96 M). **Option quotes are OPRA**: the three 0DTE ATM puts came back `provider: "alpaca"`,
+  `delayed: false`, `asOf` the same second (SPY 763P 0.78/0.79, QQQ 717P 1.00/1.01, IWM 292P
+  0.39/0.41 — the ~$0.50 band the method wants is populated and tight).
+- **F72's guard fired live at 10:32 on IWM — its first real instance, and it was right.** The read
+  journalled `skip_target_behind`: *"target 293.56 is above the 292.58 entry — price has already run
+  through it"*. Worth noting exactly why this one reached the guard when SPY's did not: IWM's
+  pullback at 292.58 fell just **below** the pre-market low 292.62, so it escaped the no-trade zone
+  that has been refusing SPY all morning (SPY 10:28, entry 763.57 inside PM 762.49–767.13) — the
+  guard was the only thing standing between the desk and a short whose target sat $0.98 *above* the
+  entry. QQQ is correctly unaffected (target 716.50 genuinely below spot), which is the selectivity
+  check.
+- **The read is advancing and matches the tape.** I rebuilt the 15m bars from the DB's 1m rows and
+  checked every scenario call against them: SPY 09:30 close **763.75** body-below 765.14 ✓, IWM
+  **293.30** body-below 294.26 ✓, QQQ **716.96** body-below 717.47 ✓ — all three match the read's own
+  `scenario` events to the cent. 31 → 33 2m bars, 4 fifteen-minute bars, `regimeLast` EMAs present
+  everywhere. **Replay parity holds on all three**: same sigma, same scenarios, same skips, zero
+  trades — and IWM's replay reproduced `skip_target_behind`, so the new guard is deterministic.
+- **F73 (new, FIXED and deployed this run, v0.7.25) — yesterday's F71 fix never fired once.** F71
+  (v0.7.23) added the direction-aware wording so a break row already through its level would say
+  *"price is already through, waiting on the 15m close"*. It is gated on
+  `t.kind === "break PDH" || t.kind === "break PDL"` — the human labels — but the pseudo-trigger the
+  API serves carries `Setup.kind`, which is `scenario_1..4` / `pm_break_up` / `pm_break_down`
+  (`session.py:37`). Measured live at 10:38: SPY's trigger is
+  `{"kind": "scenario_4", "direction": "short", "distancePct": 0.211}` — 1.61 already through its
+  PDL — and the panel rendered the generic fallback *"— 0.24% from the level"*, the exact wording
+  F71 was written to replace. Fixed by matching the kinds the desk emits (`TEAM2_BREAK_KINDS`); the
+  `through` test itself was correct and untouched. **Reporting only — no rule, threshold, gate, size
+  or money path changed.** 94 Team2 tests pass, `npm run build` green.
+- **This one is a lesson about verification, not about the code.** Run 34 verified F71 at the data
+  level and in the bundle but explicitly could not get a clean on-screen check, and owed one to this
+  run. A predicate that never matches is invisible to both of those checks and visible instantly on
+  screen. **This time it is confirmed on screen**: SPY's plan panel now reads *"— price is already
+  through, waiting on the 15m close"*, and QQQ — a *reject* row, not a break — correctly still reads
+  *"— 0.09% from the level"*.
+- **Deployed without a restart, deliberately.** v0.7.25 touches no backend logic at all (the panel
+  plus four version strings and the lockfile), and `start.ps1`'s `dist` was rebuilt, which the running
+  server serves off disk — the new bundle is live and the chip reads 0.7.25. `/api/health` will read
+  0.7.24 until the next restart. I did **not** bounce an AUTO-mode desk with three armed plans for a
+  cosmetic version number; **queue the restart for the post-close run**, not for a mid-session one.
+- **F74 (new, PROPOSED, NOT built — a rules question).** QQQ's 09:30 15m close set
+  `scenario_2 reject PDH → puts` at 717.47, and **every 15m bar since has closed above it** (718.86,
+  718.95, 718.29, 717.89) — but D10 flips a scenario 2/3 only on a close through the *far* side
+  (721.89 / 715.57), so the short is still live, still owns the headline, and `bias.history` still
+  has one entry. The narrow, useful version: the level-retest entry (T2) **is** side-gated and so is
+  break-and-base (T7); it is the **EMA13/EMA48 touch entries (T1/E5) that have no anchor-side test**,
+  so in the 4.42-point band between a reclaimed anchor and the flip level the desk would buy puts on
+  a rejection sitting *below* price. **F72's guard does not catch this** (QQQ's target is genuinely
+  below spot). Nothing was at risk today — QQQ is double-gated by a bull stack (strength 3) and by
+  the PM no-trade zone — which is why it has not surfaced before. Sibling of **F65**. Three options
+  in TRADING-RULES F74. **User's call.**
+- **Not ours, unchanged:** `persist_bars: dropped N non-bucket-aligned stub bar(s)` still dominates
+  the log, plus `calendar fetch failed for SPX/USO: 404` from Yahoo's quoteSummary endpoint. Both
+  outside Team2.
+- **Next run (11:00 ET) should:** (1) watch for the first EMA13 touch that clears both the no-trade
+  zone and the stack gate — no fire has been priced yet today, so the `contract` pick (strike, ask
+  near $0.60) and live-vs-replay fire parity are still unexercised; (2) check whether QQQ's 15m
+  closes ever reach 721.89 (which would flip the bias and settle F74 on its own for today); (3) keep
+  the restart queued for post-close. Still open for the user: **F47**, **F49**, **F50**, **F51**,
+  **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**,
+  **F71's shared half**, **F72's strategy question**, **F74**, F67's two shared-side halves, and the
+  F30-family question of which premium series is authoritative.
