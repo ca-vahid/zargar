@@ -56,6 +56,16 @@ live in `docs/PLATFORM-RULES.md`.*
 
 ## Change log
 
+- 2026-09-08 (evening) — **"Skip must never sit armed" is CODE** (v0.7.15, user
+  yes after 8 manual analyst disarms in one day, one near-fire: eva's skipped
+  MU 850P waiting AT live spot). `arm_shadow` refuses skip/watch verdicts, the
+  morning sweep skips them silently, and `analyze_fire` re-reads the CURRENT
+  verdict at fire time — a late verdict vetoes the fire and disarms the plan.
+  Unappraised tips (verdict None) still arm: the armed book keeps measuring
+  the source raw; what it stops measuring is ideas the desk already declined.
+  RESEARCH NOTE: armed-lane counterfactuals are takes + unappraised from today
+  — the scorecard comparison window resets accordingly.
+
 - 2026-09-08 — **Promoted cards decide themselves; the session brake actually works**
   (v0.7.11). FRVO: an analyst TAKE promoted off a prevClose-artifact park sat
   pending under the old "promotions never self-approve" invariant — under

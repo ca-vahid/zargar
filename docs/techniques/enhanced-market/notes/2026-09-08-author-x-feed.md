@@ -70,6 +70,11 @@ he did; none of it is broker-verified by us.
 4. **Do not loosen R2 or the critic on this evidence.** Today the critic was right 8 times
    in 9 and avoided -8.3R. His edge is an input we do not have, not a gate we have wrong.
 
+**Outcome (2026-09-09):** proposals 1-3 were built and measured the same night (FLOW-CONFIRMATION-PLAN
+phases 0-1, TRADING-RULES T-12): the detector finds his named trades, but the confirm gate kept 1
+fire in 19 (a loser), sweeps as a trigger lost 13% of premium on average over 847 trades, and our
+fires on his exit tempo lost 14.8%. Proposal 4 stands. Nothing from this note changed a live rule.
+
 Recorded by the EM desk on 2026-09-08. Evidence: the posts above (status ids not kept; search
 `from:EnhancedMarket TSLA 358.53` reproduces the key one), flow_reads Sep 1..8, TRADING-RULES
 day-9 entry.

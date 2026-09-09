@@ -20,6 +20,7 @@ cd backend && .venv/bin/python -m zargar.main          # run engine+API (+UI if 
 cd frontend && npm run build                           # typecheck + production build (the frontend gate)
 cd frontend && npm run dev                             # hot-reload UI on :5173, proxies :8420
 ./scripts/start.sh | scripts\start.ps1                 # one-process app for the user
+scripts\restart.ps1 [-Expect 0.7.15]                    # THE deploy script for every desk: stop -> start -> WAIT for /api/health (2026-09-08; never walk away from a dark app)
 scripts\stop.ps1                                        # stop server + helper windows (user runs it from the ELEVATED terminal that owns the process; afterwards Claude may `scripts\start.ps1 -Detach` from its own non-elevated shell and owns the new process)
 cd backend && .venv/bin/python -m zargar.tools.ibkr_check   # read-only IBKR connectivity test
 cd backend && .venv/bin/python -m zargar.tools.snaptrade_check          # SnapTrade status/accounts
@@ -197,7 +198,7 @@ gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tool
 `backend/` or every route screenshots the login page); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
 parallel with it.
 **Bug-missed trades (2026-09-02):** replay them AFTER the fix into the counterfactual ledger (`execution/counterfactual.py`, `technique_review counterfactual <run> --trigger r1 --reason ...`, Armed > History "Missed by a bug") - NEVER book a synthetic fill into a portfolio (PLATFORM-RULES invariant).
-**EM flow confirmation (T-12, phase 0 built 2026-09-08):** `docs/techniques/enhanced-market/FLOW-CONFIRMATION-PLAN.md`; `research/optiontrades.py` (Alpaca option trades -> sweeps; history uses the tick test, live the NBBO), `flow_sweeps` table, `tools/optiontrades_backfill.py`. Sweeps CONFIRM fires, never create them.
+**EM flow confirmation (T-12): MEASURED AND REJECTED on history 2026-09-09** - `docs/techniques/enhanced-market/FLOW-CONFIRMATION-PLAN.md` (verdicts in TRADING-RULES T-12). The sweep detector is research tooling only: `research/optiontrades.py` (Alpaca option trades -> sweeps; history uses the tick test, live would use the NBBO), `flow_sweeps` table, `tools/optiontrades_backfill.py` / `flow_variant.py` / `flow_sweep_universe.py`. Neither the confirm gate nor sweeps-as-trigger had an edge (847 sweep trades mean -13% premium); no `flow_confirm` runtime knob exists and none is planned unless 10 sessions of live NBBO-classified sweeps say otherwise.
 **One Practice book per technique (2026-09-08):** `techniques.<id>.default_portfolio` routes each technique's fills (EM also `technique.arm.default_portfolio`); the old shared book is archived, never a fallback (PLATFORM-RULES invariant 15).
 **New technique? Start at `docs/BUILDING-A-TECHNIQUE.md`** — the engine's capabilities (marketstructure,
 PlanRunner hooks, settings resolver `techniques.<id>.<key>` → `execution.<key>`, scheduler, calendar,

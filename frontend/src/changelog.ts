@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.14";
+export const APP_VERSION = "0.7.15";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.15",
+    date: "2026-09-08",
+    title: "Skips never arm",
+    items: [
+      { tag: "fixed", text: "A tip the analyst said skip/watch to can no longer sit armed waiting for its level - it never arms, and a verdict that arrives after arming vetoes the fire and disarms the plan. The analyst hand-cleaned eight of these in one day, one minutes from firing a skipped short." },
+      { tag: "fixed", text: "Scoring a tip-triggered plan no longer fails on a too-narrow database column (plan_source widened; the error appeared at every startup while it retried)." },
+      { tag: "new", text: "scripts/restart.ps1: the one deploy script for every desk - stop, start, and WAIT for the app to answer before exiting, reporting anything an unelevated shell could not stop. Three market-hours outages came from deploys that walked away early." },
+    ],
+  },
   {
     version: "0.7.14",
     date: "2026-09-08",
