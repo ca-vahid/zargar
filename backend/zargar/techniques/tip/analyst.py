@@ -20,6 +20,7 @@ continues exactly as before. Tool budget: `techniques.tip.analyst_max_tools`.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import datetime as dt
 import time
 import json
@@ -1030,9 +1031,12 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     st = state if state is not None else {}
     messages: list = st.setdefault("messages", [{"role": "user", "content": header}])
     usage = st.setdefault("usage", {"in": 0, "out": 0, "calls": 0, "stops": []})
+    from ...research import llm_stats
+    stage = str(tool_ctx.get("stage") or "appraise")
     for _ in range(max_tools + 2):
         resp = None
         for attempt in (1, 2, 3):
+            _t0 = time.perf_counter()
             try:
                 resp = await client.messages.create(
                     model=model, max_tokens=2000, system=system,
@@ -1041,7 +1045,14 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
             except Exception as exc:
                 # a transient API error must not cost the whole appraisal (529
                 # killed the APPL run on its FIRST call, 2026-08-31): retry
-                # twice with backoff, then let the run fail as before
+                # twice with backoff, then let the run fail as before. Failed
+                # attempts are MEASURED (Codex M1) — a provider retry is a
+                # retry; an ordinary tool-use turn never is.
+                with contextlib.suppress(Exception):
+                    llm_stats.record(stage, model=model,
+                                     stop_reason=f"exception:{type(exc).__name__}"[:48],
+                                     latency_ms=(time.perf_counter() - _t0) * 1000.0,
+                                     retried=attempt > 1)
                 transient = ("overloaded" in str(exc).lower()
                              or getattr(exc, "status_code", 0) in (429, 500, 502, 503, 529))
                 if not transient or attempt >= 3:
@@ -1057,6 +1068,19 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         if _u is not None:
             usage["in"] += int(getattr(_u, "input_tokens", 0) or 0)
             usage["out"] += int(getattr(_u, "output_tokens", 0) or 0)
+        # shared collector (Codex finding 10, corrected per review M1): the
+        # stage comes from the CALLER (appraise/review/retro), a successful
+        # tool-use turn is a new model turn — `retried` only marks provider
+        # retries (attempt > 1, recorded in the except path above), and each
+        # turn carries its own latency.
+        _stop = getattr(resp, "stop_reason", None)
+        with contextlib.suppress(Exception):
+            llm_stats.record(stage, model=model,
+                             input_tokens=int(getattr(_u, "input_tokens", 0) or 0) if _u else 0,
+                             output_tokens=int(getattr(_u, "output_tokens", 0) or 0) if _u else 0,
+                             stop_reason=str(_stop) if _stop else None,
+                             latency_ms=(time.perf_counter() - _t0) * 1000.0,
+                             retried=attempt > 1)
         if getattr(resp, "stop_reason", "") == "max_tokens":
             rec.step("note", "Reply hit the output-token limit (stop=max_tokens) — "
                              "recorded; the answer may be truncated.")
@@ -1258,7 +1282,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     tools_used: list[dict] = []
     tool_ctx = {"ticker": signal_row.ticker, "source": signal_row.source_name,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
-                "experiment": experiment, "asOfMs": as_of_ms}
+                "experiment": experiment, "asOfMs": as_of_ms,
+                "stage": "appraise"}
 
     loop_state: dict = {}
 
@@ -1509,7 +1534,8 @@ class IntakeRun:
                                             separators=(",", ":"))
         tools_used: list[dict] = []
         tool_ctx = {"ticker": (outcomes[0].get("ticker") if outcomes else ""),
-                    "source": source, "signal_id": None, "run_id": self.id}
+                    "source": source, "signal_id": None, "run_id": self.id,
+                    "stage": "review"}
         review_state: dict = {}
         try:
             text = await asyncio.wait_for(run_agent_loop(

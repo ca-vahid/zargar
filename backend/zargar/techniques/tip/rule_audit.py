@@ -137,10 +137,13 @@ async def run_rule_audit(eng, *, client=None) -> dict | None:
                                        separators=(",", ":"))
     try:
         import asyncio
-        resp = await asyncio.wait_for(
-            client.messages.create(model=model, max_tokens=2000, system=system,
-                                   messages=[{"role": "user", "content": header}]),
-            timeout=AUDIT_TIMEOUT_S)
+        from ...research import llm_stats
+        with llm_stats.timed() as _t:
+            resp = await asyncio.wait_for(
+                client.messages.create(model=model, max_tokens=2000, system=system,
+                                       messages=[{"role": "user", "content": header}]),
+                timeout=AUDIT_TIMEOUT_S)
+        llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms)
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         i, j = text.find("{"), text.rfind("}")
         op = RuleAuditOpinion.model_validate_json(text[i:j + 1])
@@ -241,13 +244,16 @@ async def run_knowledge_audit(eng, *, client=None) -> dict | None:
         header = (f"These are the desk's ACTIVE knowledge notes in scope '{scope}' "
                   f"(not trading rules — market/source knowledge):\n{notes_txt}")
         try:
-            resp = await asyncio.wait_for(
-                client.messages.create(model=model, max_tokens=1500,
-                                       system=AUDIT_SYSTEM + json.dumps(
-                                           RuleAuditOpinion.model_json_schema(),
-                                           separators=(",", ":")),
-                                       messages=[{"role": "user", "content": header}]),
-                timeout=AUDIT_TIMEOUT_S)
+            from ...research import llm_stats
+            with llm_stats.timed() as _t:
+                resp = await asyncio.wait_for(
+                    client.messages.create(model=model, max_tokens=1500,
+                                           system=AUDIT_SYSTEM + json.dumps(
+                                               RuleAuditOpinion.model_json_schema(),
+                                               separators=(",", ":")),
+                                           messages=[{"role": "user", "content": header}]),
+                    timeout=AUDIT_TIMEOUT_S)
+            llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms)
             text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
             i, j = text.find("{"), text.rfind("}")
             op = RuleAuditOpinion.model_validate_json(text[i:j + 1])

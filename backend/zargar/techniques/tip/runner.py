@@ -931,6 +931,11 @@ async def attach_tip_runner(engine) -> None:
     triage_at = str(engine.settings.get("techniques.tip.triage_at", "09:33"))
     engine.scheduler.register("tip_morning_triage", triage_at,
                               lambda: engine.signals_service.morning_triage())
+    # nightly LLM usage rollup into TechniqueHookStats.llm (Codex finding 10)
+    from ...research import llm_stats
+    stats_at = str(engine.settings.get("techniques.tip.llm_stats_at", "17:40"))
+    engine.scheduler.register("tip_llm_stats", stats_at,
+                              lambda: llm_stats.flush(engine))
     # restart safety: re-arm adopt-on-fill waiters for approved tip proposals
     # whose orders were still resting at shutdown (ARM-PLAN P2)
     try:

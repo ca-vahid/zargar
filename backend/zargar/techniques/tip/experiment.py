@@ -243,10 +243,13 @@ async def review_batch(eng, batch: str, *, client=None) -> dict | None:
               "and never let hindsight grade a decision.")
 
     async def _ask(recs_json: str) -> tuple[str, str | None]:
-        resp = await client.messages.create(
-            model=model, max_tokens=10000, system=system,
-            messages=[{"role": "user", "content":
-                       RUBRIC.format(n=len(records)) + "\n\nBATCH RECORDS:\n" + recs_json}])
+        from ...research import llm_stats
+        with llm_stats.timed() as _t:
+            resp = await client.messages.create(
+                model=model, max_tokens=10000, system=system,
+                messages=[{"role": "user", "content":
+                           RUBRIC.format(n=len(records)) + "\n\nBATCH RECORDS:\n" + recs_json}])
+        llm_stats.record_response("experiment_review", resp, model=model, latency_ms=_t.ms)
         return ("".join(b.text for b in resp.content
                         if getattr(b, "type", "") == "text").strip(),
                 getattr(resp, "stop_reason", None))
