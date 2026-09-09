@@ -175,7 +175,8 @@ class SignalService:
 
     async def tip_notes(self, scopes: list[str] | None = None,
                         limit: int = 100, *, include_superseded: bool = False,
-                        include_expired: bool = False) -> list[dict]:
+                        include_expired: bool = False,
+                        as_of: dt.datetime | None = None) -> list[dict]:
         from ..models import TipNote
         async with self.engine.sf() as session:
             q = select(TipNote).order_by(TipNote.created_at.desc()).limit(limit)
@@ -183,12 +184,20 @@ class SignalService:
                 q = q.where(TipNote.scope.in_(scopes))
             if not include_expired:
                 # QUERY-TIME expiry (B1): an expired note stops being served —
-                # no sweep, no mutation, deterministic and restart-proof
-                now = dt.datetime.now(dt.timezone.utc)
+                # no sweep, no mutation, deterministic and restart-proof.
+                # With as_of, expiry is judged at THAT moment.
+                now = as_of or dt.datetime.now(dt.timezone.utc)
                 q = q.where((TipNote.valid_until.is_(None)) | (TipNote.valid_until > now))
             if not include_superseded:
                 # superseded rules are history, not live knowledge (A8.2)
                 q = q.where(TipNote.superseded_by.is_(None))
+            if as_of is not None:
+                # event-time boundary (Codex review K2, 2026-09-09): knowledge
+                # created after the tip's moment never reaches a historical
+                # appraisal. (Supersession has no timestamp, so a rule
+                # superseded later is conservatively ABSENT rather than
+                # resurrected — never a future leak.)
+                q = q.where(TipNote.created_at <= as_of)
             rows = (await session.execute(q)).scalars().all()
         return [self.note_dict(r) for r in rows]
 
@@ -310,19 +319,29 @@ class SignalService:
                                          aggregate_id=note_id)
         return note
 
-    async def refresh_notes_cited(self, note_ids: list[str]) -> int:
-        """KNOWLEDGE B5 (FinMem's promotion pattern): a note that participated in
-        a completed LIVE appraisal stays alive — cited_count++, last_cited_at,
-        and a TTL'd note's valid_until extends by its scope's TTL. Experiment
-        runs never call this (historical batches must not keep notes alive)."""
+    async def refresh_notes_cited(self, note_ids: list[str],
+                                  used_ids: list[str] | None = None) -> int:
+        """KNOWLEDGE B5, split per Codex finding 7: SUPPLIED (injected into a
+        run) records supplied_count/last_supplied_at only; USED (the model says
+        it relied on it — used_ids) keeps the old promotion: cited_count++,
+        last_cited_at, TTL extension. Frequently-injected-but-never-used advice
+        now ages out on schedule. When used_ids is None (legacy callers), every
+        note keeps the old full-promotion behavior. Experiment runs never call
+        this (historical batches must not keep notes alive)."""
         from ..models import TipNote
         n = 0
+        used = set(used_ids) if used_ids is not None else None
         now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             for nid in note_ids:
                 row = await session.get(TipNote, nid)
                 if row is None:
                     continue
+                row.supplied_count = int(getattr(row, "supplied_count", 0) or 0) + 1
+                row.last_supplied_at = now
+                if used is not None and nid not in used:
+                    n += 1
+                    continue                    # supplied only: no TTL promotion
                 row.cited_count = int(row.cited_count or 0) + 1
                 row.last_cited_at = now
                 ttl = self._note_ttl_days(row.scope)
@@ -358,17 +377,38 @@ class SignalService:
 
     async def notes_for_tip(self, ticker: str | None, source: str | None,
                             signal_id: str | None = None,
-                            limit: int = 12) -> list[dict]:
+                            limit: int = 12,
+                            as_of: dt.datetime | None = None) -> list[dict]:
         """The notes an analyst run should see: this tip's own, its ticker's,
-        its source's, and the general ones — newest first, capped."""
-        scopes = ["general"]
-        if ticker:
-            scopes.append(f"ticker:{ticker.upper()}")
+        its source's, and the general ones — newest first, capped. `as_of`
+        (historical experiments) bounds every scope to event-time knowledge."""
+        # per-scope allocation (Codex finding 7; made EXPLICIT per the 2026-09-09
+        # review): reservations are a PRIORITY order — general 4, source 4,
+        # ticker 3, signal 3 nominally total 14, and the overall `limit` (12)
+        # trims from the TAIL scope up. Remaining slots fill by recency.
+        alloc: list[tuple[str, int]] = [("general", 4)]
         if source:
-            scopes.append(f"source:{source}")
+            alloc.append((f"source:{source}", 4))
+        if ticker:
+            alloc.append((f"ticker:{ticker.upper()}", 3))
         if signal_id:
-            scopes.append(f"signal:{signal_id}")
-        return await self.tip_notes(scopes, limit=limit)
+            alloc.append((f"signal:{signal_id}", 3))
+        picked: list[dict] = []
+        seen: set[str] = set()
+        for scope, cap in alloc:
+            if len(picked) >= limit:
+                break                       # explicit: the tail scope is trimmed
+            for note in await self.tip_notes([scope], limit=cap, as_of=as_of):
+                if note["id"] not in seen and len(picked) < limit:
+                    seen.add(note["id"])
+                    picked.append(note)
+        if len(picked) < limit:
+            for note in await self.tip_notes([s for s, _ in alloc], limit=limit,
+                                             as_of=as_of):
+                if note["id"] not in seen and len(picked) < limit:
+                    seen.add(note["id"])
+                    picked.append(note)
+        return picked[:limit]
 
     # ---------------------------------------------------- discord message mirror
     # The source's own history is context ("bought NVDA" → "sold 40%"): every

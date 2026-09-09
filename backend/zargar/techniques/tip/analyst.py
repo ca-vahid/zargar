@@ -89,6 +89,11 @@ class AnalystOpinion(BaseModel):
         default=None, description="Time box in TRADING sessions; re-evaluate dies with it")
     exit_rationale: Optional[str] = Field(
         default=None, description="One sentence: the exit campaign in words")
+    used_notes: list[str] = Field(
+        default_factory=list,
+        description='Labels of the SHARED NOTES you actually relied on for this '
+                    'verdict (e.g. ["N2", "N5"]). Empty when none mattered - '
+                    'being shown a note is not using it.')
     legs: list[dict] = Field(
         default_factory=list,
         description='DEFINED-RISK SPREAD expression (exactly 2 legs, one buy one sell, '
@@ -496,20 +501,44 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
     sym = str(args.get("symbol") or "").upper()
     exp = bool((ctx or {}).get("experiment"))
     as_of_ms = (ctx or {}).get("asOfMs")
+    if exp:
+        # Codex finding 9 + review K1/K2 (2026-09-09): historical mode runs on
+        # an explicit ALLOWLIST enforced at dispatch, independent of prompts.
+        # Everything else — today's quotes/chain/expiries/flow/earnings/source
+        # stats, the desk's CURRENT book, and every tool that can MUTATE
+        # current state (close_position, update_exit_plan, disarm_plan) — is
+        # refused: none of it existed, or may be touched, at event time.
+        # save_note stays allowed because its writes are QUARANTINED per batch
+        # (F12); bars are as-of-clamped to CLOSED bars; search is capped in-query.
+        if name not in ("search_messages", "view_image", "get_bars", "save_note"):
+            return {"error": f"historical mode — {name} reads or manages TODAY's "
+                             "state, which did not exist at the tip's time; judge "
+                             "from the tip's own numbers, as-of bars and the capped mirror"}
+        if name in ("search_messages", "get_bars"):
+            # K2: time-dependent evidence REQUIRES a valid as-of — a missing or
+            # invalid timestamp refuses, never falls through to current data
+            try:
+                as_of_ok = as_of_ms is not None and float(as_of_ms) > 0
+            except (TypeError, ValueError):
+                as_of_ok = False
+            if not as_of_ok:
+                return {"error": "historical mode without a valid asOfMs — "
+                                 f"{name} refused (it would silently serve "
+                                 "CURRENT data as event-time evidence)"}
     if name == "get_positions":
         return _our_positions(eng, sym)
     if name == "search_messages":
+        # F5 + Codex finding 9: as-of isolation belongs IN THE QUERY, before
+        # the LIMIT — post-filtering let newer messages consume the limit and
+        # hide older valid evidence
+        as_of_iso = (dt.datetime.fromtimestamp(as_of_ms / 1000, dt.timezone.utc)
+                     .isoformat() if (exp and as_of_ms) else None)
         rows = await eng.signals_service.discord_search_messages(
             source=str(args.get("source") or "") or None,
             contains=str(args.get("contains") or "") or None,
             hours=float(args["hours"]) if args.get("hours") else None,
+            before=as_of_iso,
             limit=int(args.get("limit") or 20))
-        if exp and as_of_ms:
-            # F5 (batch-1): as-of isolation is HARNESS-enforced — a historical
-            # appraisal must never read the source's LATER messages
-            cap = dt.datetime.fromtimestamp(as_of_ms / 1000,
-                                            dt.timezone.utc).isoformat()
-            rows = [r for r in rows if str(r.get("postedAt") or "") <= cap]
         slim = [{"at": _et_label(r.get("postedAt")), "source": r.get("source"),
                  "author": r.get("author"), "text": (r.get("text") or "")[:280],
                  **({"images": len(r.get("images") or []), "messageId": r.get("id")}
@@ -694,13 +723,25 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                 "ageSeconds": age_s,
                 "delayed": bool(getattr(q, "delayed", False))}
     if name == "get_bars":
-        from ...marketstructure.history import fetch_recent
+        from ...marketstructure.history import fetch_recent, fetch_window
         tf = str(args.get("tf") or "1h")
         if tf not in ("1h", "5m", "15m", "30m"):
             tf = "1h"
         n_sessions = int(args.get("sessions") or 5)
-        bars = await fetch_recent(sym, tf, sessions=n_sessions)
+        if exp and as_of_ms:
+            # as-of clamp (finding 9): the window ENDS at the tip's moment, and
+            # only bars CLOSED by then count (Codex K2 — a bar still forming at
+            # as-of carries a high/low/close the analyst could not have seen)
+            tf_ms = {"5m": 300_000, "15m": 900_000, "30m": 1_800_000,
+                     "1h": 3_600_000}[tf]
+            start = int(as_of_ms) - n_sessions * 86_400_000
+            bars = await fetch_window(sym, tf, start, int(as_of_ms))
+            bars = [b for b in bars if int(b.ts) + tf_ms <= int(as_of_ms)]
+        else:
+            bars = await fetch_recent(sym, tf, sessions=n_sessions)
         return {"symbol": sym, "tf": tf,
+                **({"asOfClamped": True, "closedBarsOnly": True}
+                   if (exp and as_of_ms) else {}),
                 **_compact_bars(bars, sessions_requested=n_sessions)}
     if name == "get_expiries":
         out = await eng.options.expiries(sym)
@@ -825,18 +866,42 @@ async def _source_history(eng, source: str | None, *, hours: float = 72,
                      for r in rows)
 
 
-async def _rules_text(eng) -> tuple[str, int]:
+async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
     """The analyst's own rulebook (tip_notes scope 'rule'), oldest first so the
-    rulebook reads in the order it was written; starter rules until one exists."""
+    rulebook reads in the order it was written; starter rules until one exists.
+    `as_of` (historical experiments) bounds the rulebook to event time.
+
+    Returns (text, count, snapshot) — the SNAPSHOT is explicit (Codex review
+    K3, 2026-09-09): full ids, each rule's exact supplied text, its disputed
+    flag, and a hash of that CANONICAL CONTENT (an in-place text edit or a
+    dispute-flag change produces a different hash — id-only hashing hid both).
+    The function attribute mirrors the return for existing introspection."""
     try:
-        rules = await eng.signals_service.tip_notes(["rule"], limit=50)
+        kwargs = {"as_of": as_of} if as_of is not None else {}
+        rules = await eng.signals_service.tip_notes(["rule"], limit=50, **kwargs)
     except Exception:
         rules = []
+    _rules_text.last_snapshot = None      # Codex finding 7: per-run rule snapshot
     if not rules:
-        return STARTER_RULES, 0
-    lines = "\n".join(f"- {n['text']} ({(n['createdAt'] or '')[:10]})"
-                      for n in reversed(rules))
-    return lines, len(rules)
+        return STARTER_RULES, 0, None
+    ordered = list(reversed(rules))
+    lines = "\n".join(
+        ("- [DISPUTED — the audit flagged a conflict; weigh it, do not follow blindly] "
+         if n.get("needsHuman") else "- ")
+        + f"{n['text']} ({(n['createdAt'] or '')[:10]})"
+        for n in ordered)
+    import hashlib
+    canon = "\n".join(f"{n['id']}|{int(bool(n.get('needsHuman')))}|{n['text']}"
+                      for n in ordered)
+    snapshot = {
+        "ruleIds": [str(n["id"]) for n in ordered],
+        "rulesHash": hashlib.sha1(canon.encode("utf-8")).hexdigest()[:12],
+        "rules": [{"id": str(n["id"]), "text": n["text"],
+                   "disputed": bool(n.get("needsHuman")),
+                   "createdAt": n.get("createdAt")} for n in ordered],
+    }
+    _rules_text.last_snapshot = snapshot
+    return lines, len(rules), snapshot
 
 
 def _parse_opinion(raw: str) -> AnalystOpinion:
@@ -1112,18 +1177,39 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
 
     rec = _Recorder(eng, run_id)
 
-    # the desk's shared knowledge for this tip (notes earlier runs / the user saved)
+    as_of_ms = None
+    as_of_dt = None
+    if experiment:
+        stated = (getattr(signal_row, "extraction", None) or {}).get("statedAt")
+        if stated:
+            try:
+                as_of_dt = dt.datetime.fromisoformat(str(stated))
+                if as_of_dt.tzinfo is None:
+                    as_of_dt = as_of_dt.replace(tzinfo=dt.timezone.utc)
+                as_of_ms = int(as_of_dt.timestamp() * 1000)
+            except ValueError:
+                as_of_ms = as_of_dt = None
+
+    # the desk's shared knowledge for this tip (notes earlier runs / the user
+    # saved) — in historical mode, bounded to what existed AT the tip's time
+    # (Codex review K2, 2026-09-09: a September rule reached a June appraisal)
     notes: list[dict] = []
     try:
         notes = await eng.signals_service.notes_for_tip(
             signal_row.ticker, signal_row.source_name, signal_id=signal_row.id,
-            limit=int(s.get("techniques.tip.analyst_notes_max", 12)))
+            limit=int(s.get("techniques.tip.analyst_notes_max", 12)),
+            as_of=as_of_dt)
     except Exception:                                   # knowledge is best-effort
         log.debug("notes lookup failed for %s", signal_row.id)
+    # N-labels (Codex finding 7): the model reports which notes it actually
+    # USED via used_notes — supplied is no longer conflated with used
     notes_txt = "\n".join(
-        f"- [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
-        for n in notes) or "(none yet)"
-    rules_txt, rules_n = await _rules_text(eng)
+        f"- N{i + 1} [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]}, {n['author']})"
+        for i, n in enumerate(notes)) or "(none yet)"
+    rules_txt, rules_n, snap = await _rules_text(eng, as_of=as_of_dt)
+    if rules_n and snap:
+        rec.step("note", f"Rulebook snapshot: {rules_n} rule(s), hash "
+                         f"{snap['rulesHash']}.", **snap)
     if experiment:
         # F5 (batch-1): the live mirror reaches PAST the tip's time — withheld;
         # search_messages remains available, capped to the tip's own moment
@@ -1131,14 +1217,6 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                        "to the tip's own time)")
     else:
         history_txt = await _source_history(eng, signal_row.source_name)
-    as_of_ms = None
-    if experiment:
-        stated = (getattr(signal_row, "extraction", None) or {}).get("statedAt")
-        if stated:
-            try:
-                as_of_ms = int(dt.datetime.fromisoformat(str(stated)).timestamp() * 1000)
-            except ValueError:
-                as_of_ms = None
 
     rec.step("start", f"Appraising {signal_row.ticker} {signal_row.direction} "
              f"from {signal_row.source_name or 'unknown'}. Tools available: "
@@ -1259,11 +1337,21 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
              opinion=result)
     await _persist_run(eng, run_id, status="done", rec=rec, opinion=result)
     if notes and experiment is None:
-        # KNOWLEDGE B5: knowledge that participates in a completed LIVE
-        # appraisal stays alive (historical batches must not refresh TTLs)
+        # KNOWLEDGE B5 + Codex finding 7: supplied and USED are different
+        # facts - only notes the model says it relied on keep their TTL alive;
+        # merely-injected notes record supplied_count and age out on schedule
         import contextlib as _ctx
         with _ctx.suppress(Exception):
-            await eng.signals_service.refresh_notes_cited([n["id"] for n in notes])
+            used_ids = []
+            for label in (opinion.used_notes or []):
+                try:
+                    idx = int(str(label).strip().upper().lstrip("N")) - 1
+                except ValueError:
+                    continue
+                if 0 <= idx < len(notes):
+                    used_ids.append(notes[idx]["id"])
+            await eng.signals_service.refresh_notes_cited(
+                [n["id"] for n in notes], used_ids=used_ids)
     return result
 
 
@@ -1408,7 +1496,7 @@ class IntakeRun:
             pass
         self.step("note", "Nothing tradable — reviewing the update against the desk's "
                           "own book (positions, open tips, notes).")
-        rules_txt, _rules_n = await _rules_text(eng)
+        rules_txt, _rules_n, _snap = await _rules_text(eng)
         history_txt = await _source_history(eng, source)
         header = (f"Today (ET): {dt.datetime.now(dt.timezone(dt.timedelta(hours=-4))):%Y-%m-%d %H:%M}\n"
                   f"SOURCE: {source}\n"

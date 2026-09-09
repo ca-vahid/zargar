@@ -1665,7 +1665,7 @@ async def test_rule_audit_merges_expires_and_flags(tip_rig):
     hist = await svc.tip_notes(["rule"], include_superseded=True)
     assert {a["id"], b["id"], c["id"]} <= {n["id"] for n in hist}
     # the injection reads only live rules
-    txt, n = await _rules_text(eng)
+    txt, n, _snap = await _rules_text(eng)
     assert "7% over the stated premium" in txt and "size hedges small" not in txt
     # human resolves the contradiction
     assert await svc.flag_tip_notes([d["id"]], needs_human=False) == 1
