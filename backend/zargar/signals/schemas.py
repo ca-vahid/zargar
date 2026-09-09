@@ -262,14 +262,31 @@ def underlying_price_checks_ok(sig: "TradeSignal",
         return True, ""
     if sig.price_domain == "underlying":
         return True, ""
-    first = sig.target_price or (sig.target_prices[0] if sig.target_prices else None)
-    ref = first if first is not None else sig.stop_price
     if sig.price_domain == "premium":
         return False, "targets/stop are premium-denominated (the contract's own price)"
-    if ref is not None and live_underlying and ref < live_underlying * 0.25:
-        return False, (f"units ambiguous: target/stop {ref:g} vs underlying "
-                       f"{live_underlying:g} — treated as premium; price checks skipped")
-    return True, ""
+    first = sig.target_price or (sig.target_prices[0] if sig.target_prices else None)
+    vals = [v for v in (first, sig.stop_price) if v]
+    if not vals:
+        return True, ""                       # no targets/stop: nothing to misjudge
+    # null domain (Codex follow-up R4, 2026-09-08): a DOCUMENTED compatibility
+    # heuristic, not proof of units — resolve only when every stated value is
+    # consistent with EXACTLY ONE unit; anything ambiguous (both, neither)
+    # stays unresolved and the checks are skipped on the record. Chosen over
+    # strict-unresolved because sources routinely state obviously-underlying
+    # levels unlabeled ("stop 102" on a 100.50 stock) and dropping those threw
+    # away real stated stops. Finding 1 stays PARTIALLY OPEN on this point
+    # until extraction labels dominate the flow.
+    anchor = sig.entry_price or live_underlying
+    und = bool(anchor) and all(0.5 * anchor <= v <= 2.0 * anchor for v in vals)
+    prem = bool(sig.premium) and all(0.2 * sig.premium <= v <= 5.0 * sig.premium
+                                     for v in vals)
+    if und and not prem:
+        return True, ""
+    if prem and not und:
+        return False, ("target/stop are consistent with the stated premium "
+                       f"({sig.premium:g}), not the underlying — treated as premium")
+    return False, ("option tip's target/stop units are undeclared and ambiguous "
+                   "— unresolved by design; underlying price checks skipped")
 
 
 class ExtractionResult(BaseModel):

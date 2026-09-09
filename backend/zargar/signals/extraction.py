@@ -146,7 +146,12 @@ class Extractor:
                                         outcome_detail="refused by safety classifier")
             raw = "".join(b.text for b in response.content if getattr(b, "type", "") == "text")
             try:
-                return _parse_result_json(raw)
+                parsed = _parse_result_json(raw)
+                # machine-owned outcome (Codex follow-up R3): a successful
+                # parse IS "ok" — model-authored outcome/outcome_detail in the
+                # JSON must never forge a refusal or failure classification
+                parsed.outcome, parsed.outcome_detail = "ok", None
+                return parsed
             except Exception as exc:           # invalid JSON / failed validation
                 last_err = str(exc)
                 log.warning("extraction JSON invalid (attempt %d): %s", attempt + 1, exc)
