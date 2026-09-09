@@ -570,6 +570,9 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
     from .routes_options_cartel import build_options_cartel_routes
     build_options_cartel_routes(app, eng, auth, config)
 
+    from .routes_ops import build_ops_routes
+    build_ops_routes(app, eng, auth, config)
+
     # --- static SPA -----------------------------------------------------------
     if config.frontend_dist and Path(config.frontend_dist).is_dir():
         dist = Path(config.frontend_dist)

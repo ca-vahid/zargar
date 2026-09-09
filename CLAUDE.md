@@ -404,6 +404,11 @@ frontend production build runs this check automatically.
   walk-forward the backtester uses — change one, change both. Yahoo 1m depth
   (~20 d) bounds how late a run can still be scored; the bars snapshot saved per
   run is what makes replay possible after that.
+- **Bars have provenance (F75, 2026-09-09):** `Bar.source` / `bars.source` (exchange | sampled | sim | unknown); write only
+  through `persist_bars` (precedence upsert, calendar gate, sim refused unless `persist_sim_bars`); a decision that reads
+  history validates sessions and cites `marketdata.dataset_version`. Repair/audit: `python -m zargar.tools.bars_repair`.
+  **Restarts go through `scripts/start.ps1`'s readiness check** (`/api/ops/restart-check`); assistants use the scheduler's
+  `ZargarRestart` task, never `start.ps1` from their own shell (PLATFORM-RULES invariants 17–18).
 - Patching files from scripts on Windows: open with `encoding="utf-8"`
   (the default cp1252 silently corrupts em dashes / arrows).
 

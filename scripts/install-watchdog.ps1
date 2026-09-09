@@ -1,6 +1,8 @@
 # Register the engine's watchdog + restart tasks under the CURRENT user (no elevation needed).
-#   ZargarWatchdog  — every 3 minutes and at logon: start the engine if :8420 is not answering
-#   ZargarRestart   — on demand only: restart the engine (deploys: schtasks /Run /TN ZargarRestart)
+#   ZargarWatchdog  - every 3 minutes and at logon: start the engine if :8420 is not answering
+#   ZargarRestart   - on demand only: restart the engine (deploys: schtasks /Run /TN ZargarRestart); REFUSES while
+#                     the engine reports work in flight (/api/ops/restart-check)
+#   ZargarRestartOverride - on demand, emergencies only: restart over in-flight work (logged as an override)
 # Both run start.ps1 from the Task Scheduler's own process tree, so the engine no longer dies when
 # the assistant that happened to start it restarts (docs/PLATFORM-RULES.md 2026-09-08).
 # The 3-minute tick runs WINDOWLESS: a plain "powershell -File" task action allocates a visible
@@ -19,6 +21,7 @@ if (-not (Test-Path $wd)) { Write-Error "no watchdog.ps1 in $ScriptsDir"; exit 1
 if ($Remove) {
   schtasks /Delete /TN ZargarWatchdog /F | Out-Null
   schtasks /Delete /TN ZargarRestart /F | Out-Null
+  schtasks /Delete /TN ZargarRestartOverride /F 2>$null | Out-Null
   schtasks /Delete /TN ZargarWatchdogLogon /F 2>$null | Out-Null
   Write-Host "removed ZargarWatchdog and ZargarRestart"
   exit 0
@@ -34,9 +37,10 @@ schtasks /Create /F /TN ZargarWatchdog /SC MINUTE /MO 3 /TR $hidden /RL LIMITED 
 schtasks /Create /F /TN ZargarWatchdogLogon /SC ONLOGON /TR $hidden /RL LIMITED 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Host "note: ZargarWatchdogLogon not registered (needs an elevated shell); the 3-minute tick covers logon" }
 # ZargarRestart is on-demand and desks re-point it (e.g. at restart.ps1 -Expect <version>): create it only if missing
-schtasks /Query /TN ZargarRestart 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
-  schtasks /Create /F /TN ZargarRestart /SC ONCE /SD 01/01/2000 /ST 00:00 /TR "$ps `"$wd`" -Force" /RL LIMITED | Out-Null
-}
-Write-Host "installed: ZargarWatchdog (every 3 min, windowless), ZargarWatchdogLogon (at logon), ZargarRestart (on demand)"
+# the deploy door is restart.ps1 (ASCII, Windows PowerShell 5.1): readiness check -> stop -> start -> wait for
+# health -> restoration check. Always refreshed: a task with a baked "-Expect <version>" is a dead deploy.
+$rs = Join-Path $PSScriptRoot "restart.ps1"
+schtasks /Create /F /TN ZargarRestart /SC ONCE /SD 01/01/2000 /ST 00:00 /TR "$ps `"$rs`"" /RL LIMITED | Out-Null
+schtasks /Create /F /TN ZargarRestartOverride /SC ONCE /SD 01/01/2000 /ST 00:00 /TR "$ps `"$rs`" -Force" /RL LIMITED | Out-Null
+Write-Host "installed: ZargarWatchdog (every 3 min), ZargarWatchdogLogon (at logon, best-effort), ZargarRestart (on demand; refuses over in-flight work), ZargarRestartOverride (emergency)"
 schtasks /Query /TN ZargarWatchdog /FO LIST | Select-String "Status|Next Run|Task To Run"

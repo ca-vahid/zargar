@@ -93,7 +93,15 @@ class Team2Service:
             except Exception:  # noqa: BLE001
                 log.exception("team2 history fetch failed for %s", symbol)
                 prior = []
-        dates = sorted({session_date(b.ts) for b in prior})[-sessions:]
+        # F75 (2026-09-09): only VALID sessions feed the read — closed days, one-price and outlier
+        # sessions are excluded (and remembered, so the plan can say so) and the lookback counts the
+        # last N valid sessions, not the last N dates present
+        from .history import validate_sessions
+        prior, report = validate_sessions(prior)
+        if not hasattr(self, "_history_reports"):
+            self._history_reports = {}
+        self._history_reports[(symbol.upper(), date)] = report
+        dates = list(report["used"])[-sessions:]
         prior = [b for b in prior if session_date(b.ts) in dates]
         fifteen = [b for b in aggregate(prior, 15) if bar_session(b.ts) == "rth"] if prior else []
         return prior, fifteen, today
@@ -114,6 +122,7 @@ class Team2Service:
         if fifteen is None:
             _, fifteen, _ = await self.history_for(symbol, date, sessions=rules.target_lookback_sessions + 2)
         sk = build_skeleton(symbol, date, fifteen, rules)
+        sk["history"] = await self._history_provenance(symbol, date, rules)
         if sk is None:
             return None
         prev_rth = [b for b in fifteen if session_date(b.ts) == sk["prevSession"]]
@@ -247,6 +256,23 @@ class Team2Service:
                 log.exception("team2 preopen completion failed for %s", ap.symbol)
         return {"completed": done}
 
+    async def _history_provenance(self, symbol: str, date: str, rules) -> dict:
+        """What the plan was built from (F75): the valid sessions used, the excluded ones with reasons,
+        and the content version of the bars slice they came from."""
+        rep = (getattr(self, "_history_reports", {}) or {}).get((symbol.upper(), date)) or {"used": [], "excluded": []}
+        used = list(rep.get("used") or [])[-(int(rules.target_lookback_sessions) + 2):]
+        out = {"sessionsUsed": used, "excluded": list(rep.get("excluded") or []), "datasetVersion": None}
+        if used:
+            try:
+                from ...marketdata import dataset_version
+                dv = await dataset_version(self.engine.sf, [symbol], start=used[0], end=used[-1],
+                                           note=f"team2 plan {symbol} {date}")
+                out["datasetVersion"] = dv["hash"]
+                out["datasetRows"] = dv["rows"]
+            except Exception:  # noqa: BLE001 - provenance must never block a plan
+                log.warning("team2: dataset version not computed for %s %s", symbol, date, exc_info=True)
+        return out
+
     async def stamp_run(self, ap) -> None:
         """Write the COMPLETED plan and the rules the session actually runs under back onto the
         plan run (F-1/F-2).
@@ -331,6 +357,13 @@ class Team2Service:
         symbols = [x.upper() for x in (symbols or s.get("techniques.team2.symbols", []) or [])]
         base = rules_from_settings(s)
         rules = Team2Rules.from_dict({**base.to_dict(), **(overrides or {})}) if overrides else base
+        # F75: a sweep cites the content version of the data it ran on, so a rerun can say "same data"
+        dataset: dict | None = None
+        try:
+            from ...marketdata import dataset_version
+            dataset = await dataset_version(self.engine.sf, symbols, start=None, end=end, note=f"team2 sweep {start}..{end}")
+        except Exception:  # noqa: BLE001
+            log.warning("team2 sweep: dataset version not computed", exc_info=True)
         rows: list[dict] = []
         for sym in symbols:
             all_bars = await self.bars_1m(sym, limit=60000)
@@ -371,6 +404,7 @@ class Team2Service:
             "overrides": overrides or {}, "codeVersion": CODE_VERSION,
         }
         return {"start": start, "end": end, "symbols": symbols, "rows": rows, "summary": summary,
+                "datasetVersion": (dataset or {}).get("hash"), "datasetRows": (dataset or {}).get("rows"),
                 "thresholds": rules.to_dict()}
 
     async def _sigma_for(self, date: str) -> float:

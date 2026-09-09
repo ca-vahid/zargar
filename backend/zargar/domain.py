@@ -89,6 +89,10 @@ class Quote:
     volume: int = 0
     halted: bool = False
     ts: int = field(default_factory=now_ms)
+    # F78 (2026-09-09): shares printed since this symbol's previous emission — a feed that sees
+    # prints (Alpaca) fills it so bar volume is a SUM of prints, never the difference of a
+    # session-to-date counter that gets re-seeded (that difference painted a 43M-share minute)
+    trade_size: int = 0
     # session context from real feeds (0 / "" when the feed doesn't know):
     prev_close: float = 0.0   # prior session close — THE day-change basis
     reg_price: float = 0.0    # regular-session price (differs from last pre/post)
@@ -151,6 +155,9 @@ class Bar:
     low: float
     close: float
     volume: int = 0
+    # provenance (F75, 2026-09-09): "exchange" (a venue's completed bar — Alpaca/Yahoo history or
+    # stream), "sampled" (built from our quote stream), "sim" (the synthetic feed), "" = unknown
+    source: str = ""
 
     def to_row(self) -> list:
         return [self.ts, self.open, self.high, self.low, self.close, self.volume]

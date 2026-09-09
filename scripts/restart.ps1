@@ -2,7 +2,8 @@
 #
 #   scripts\restart.ps1                stop -> start -> WAIT for /api/health (the whole point)
 #   scripts\restart.ps1 -Expect 0.7.15 additionally require that version to report healthy
-#   scripts\restart.ps1 -Force         pass -Force to start.ps1 (restart over in-flight runs)
+#   scripts\restart.ps1 -Force         restart over in-flight work (open technique trades, working orders,
+#                                      analyst runs) - the readiness check refuses otherwise; logged as an override
 #
 # Why this exists (2026-09-08): three market-hours outages in three sessions
 # came from a desk stopping the app and walking away before it was back
@@ -15,7 +16,8 @@
 #   3. WAITS for /api/health - it does not exit 0 until the app answers
 #   4. prints the restored armed-plan/managed-position counts
 #
-# Exit codes: 0 healthy / 1 start failed / 4 health never came back / 5 stale version
+# Exit codes: 0 healthy / 1 start failed / 2 refused (work in flight) / 4 health never came back / 5 stale version
+#             6 restoration check failed (state before vs after, logs\restore-mismatch-*.json)
 # ASCII ONLY in this file: the ZargarRestart task runs it under Windows PowerShell 5.1, which reads a
 # BOM-less file as ANSI - an em dash inside a string literal made the whole script a parse error
 # (2026-09-09 01:20 ET: "The string is missing the terminator", exit 1, nothing restarted).
@@ -25,9 +27,32 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+# the scheduler runs this in a console nobody sees: keep a transcript per run in logsestart-<ts>.log
+$logDirEarly = Join-Path $Root "logs"
+if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
+try { Start-Transcript -Path (Join-Path $logDirEarly ("restart-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")) -Append | Out-Null } catch { }
 
 function Step($m) { Write-Host "> $m" -ForegroundColor Cyan }
 function Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
+
+# --- -1. readiness: what would this restart interrupt? (2026-09-09, PLATFORM-RULES invariant 18) -----
+# "No open positions" was never the test. The engine enumerates open technique trades, working
+# entries/exits, venue orders and paid analyst reads across EVERY technique; refuse unless -Force
+# (which is logged as an override). The state captured here is compared after the restart.
+$stateBefore = $null
+$engineUp = $false
+try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $engineUp = $true } catch { $engineUp = $false }
+if ($engineUp) {
+  try { $stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $stateBefore = $null }
+  try {
+    $rc = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restart-check?caller=restart.ps1" -TimeoutSec 6
+    if (-not $rc.safe) {
+      foreach ($r in $rc.reasons) { Warn ("in flight: " + $r) }
+      if (-not $Force) { Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; exit 2 }
+      Warn "-Force: restarting over the work listed above (override)"
+    }
+  } catch { Warn ("restart-check unavailable (" + $_.Exception.Message + ") - proceeding on the health check alone") }
+}
 
 # --- 0. hold the watchdog off ---------------------------------------------------
 # ZargarWatchdog ticks every 3 minutes and starts the engine whenever /api/health is
@@ -76,4 +101,26 @@ if ($Expect -and ($h.version -ne $Expect)) {
   Warn "App is up but on v$($h.version), expected v$Expect (stale checkout?)"; exit 5
 }
 Step ("Healthy: v" + $h.version + " | armed " + $h.local.armed + " | runs in flight " + $h.local.techniqueRunning)
+
+# --- 4. restoration check: what was armed / open / working before must be back (by id) ---------
+if ($stateBefore -ne $null) {
+  $ok = $false; $last = $null
+  foreach ($i in 1..12) {
+    try {
+      $cmp = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restore-check" -Method Post -ContentType "application/json" -Body ($stateBefore | ConvertTo-Json -Depth 6 -Compress) -TimeoutSec 8
+      $last = $cmp
+      if ($cmp.ok) { $ok = $true; break }
+    } catch { }
+    Start-Sleep -Seconds 5
+  }
+  if ($ok) {
+    Step ("Restore check OK: " + (($last.counts.PSObject.Properties | ForEach-Object { $_.Name + " " + $_.Value }) -join ", "))
+  } else {
+    $snap = Join-Path $lockDir ("restore-mismatch-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".json")
+    @{ before = $stateBefore; after = $last } | ConvertTo-Json -Depth 8 | Set-Content -Path $snap
+    if ($last) { Warn ("RESTORE MISMATCH: " + ($last.missing | ConvertTo-Json -Compress) + " - saved " + $snap) }
+    else { Warn ("RESTORE CHECK unreachable - saved " + $snap) }
+    exit 6
+  }
+}
 exit 0

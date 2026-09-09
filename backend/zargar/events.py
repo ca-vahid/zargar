@@ -34,6 +34,7 @@ KILL_SWITCH_RELEASED = "KillSwitchReleased"
 BOOK_HALT_ENGAGED = "BookHaltEngaged"          # per-portfolio daily-loss halt (2026-09-04)
 BOOK_HALT_RELEASED = "BookHaltReleased"
 TECHNIQUE_LOSS_HALT = "TechniqueLossHalt"      # one technique paused on one book for the day
+OPS_RESTART_CHECK = "OpsRestartCheck"          # 2026-09-09: a restart path asked whether it is safe to restart, and the answer
 TECHNIQUE_PLAN_READ = "TechniquePlanRead"      # F28: a structural read event (scenario, PM break, late touch) — not a skip
 DAILY_LOSS_HALT = "DailyLossHalt"
 DAILY_DRIFT_WARNING = "DailyDriftWarning"
