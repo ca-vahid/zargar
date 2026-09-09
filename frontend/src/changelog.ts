@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.12";
+export const APP_VERSION = "0.7.13";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -18,7 +18,7 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "0.7.12",
+    version: "0.7.13",
     date: "2026-09-08",
     title: "Team2: the read cannot rewrite itself",
     items: [
@@ -29,6 +29,11 @@ export const CHANGELOG: Release[] = [
       { tag: "fixed", text: "Team2 sells the rest at the plan target on the first FRESH underlying print through it (reduce-only limit at the contract's bid) instead of waiting for the 2-minute close; the model labels its own target exits as an intrabar assumption." },
       { tag: "fixed", text: "A Team2 pullback is an episode (price must close half an ATR off the EMA13 before the next one counts), and only a PRICED pullback spends the two-pullback allowance: a no-contract refusal no longer burns it. The read shows pullbacks / opportunities / spent / attempts." },
       { tag: "improved", text: "The F47 target-floor and both F56 no-trade-zone variants stay EXPERIMENTAL (sweep-only); twenty banked Practice sessions trigger a review, never an automatic promotion." },
+    ],
+  },
+  {
+    version: "0.7.12",
+    date: "2026-09-08",
     title: "Cartel coverage and entry explanations",
     items: [
       { tag: "improved", text: "Cartel preparation can evaluate leaders across industries with ranks as context, retains a strict-rank option, and includes explicitly reviewed ETFs such as DRAM. A sourced comparison watchlist shows why names were included or excluded." },

@@ -1987,7 +1987,7 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, F67's two shared-side halves,
   and the F30-family question of which premium series is authoritative.
 
-## Desk session 2026-09-08 evening — the Codex batch (v0.7.12)
+## Desk session 2026-09-08 evening — the Codex batch (v0.7.13; first deployed as 0.7.12, renumbered after PR 13 took that number)
 
 User instruction: "Go ahead with the hosting investigation and revised correctness work. Keep F47 and both F56
 variants experimental. Add tests proving IV updates cannot rewrite past signals or cause skipped/duplicate
