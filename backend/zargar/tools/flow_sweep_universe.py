@@ -191,7 +191,11 @@ async def score(eng, cfg, args) -> int:
     sem = asyncio.Semaphore(args.concurrency)
     rows = []
 
+    GRID = [(0.3, 0.3), (0.5, 0.3), (0.5, 0.5), (1.0, 0.5), (1.0, 0.3)]
+
     async def one(sw):
+        if et_minute(sw.minute_ts) >= "15:30":          # a sweep in the last half hour has no room to be a trade
+            return None
         key = (sw.occ, sw.day)
         if key not in bars_cache:
             async with sem:
@@ -199,8 +203,12 @@ async def score(eng, cfg, args) -> int:
         tr = score_trade(bars_cache[key], sw.minute_ts)
         if tr is None:
             return None
+        grid = {}
+        for take, stop in GRID:
+            g = score_trade(bars_cache[key], sw.minute_ts, take=take, stop=stop)
+            grid[f"t{int(take*100)}s{int(stop*100)}"] = g["netPct"] if g else None
         return {"day": sw.day, "underlying": sw.underlying, "occ": sw.occ, "minute": et_minute(sw.minute_ts), "volOi": round(sw.vol_oi, 1),
-                "windowBuys": sw.window_buys, **tr}
+                "windowBuys": sw.window_buys, "grid": grid, **tr}
     for r in await asyncio.gather(*(one(sw) for sw in sweeps)):
         if r:
             rows.append(r)
@@ -225,10 +233,22 @@ async def score(eng, cfg, args) -> int:
               "byHour": {h: agg([x for x in rows if x["minute"][:2] == h]) for h in sorted({x["minute"][:2] for x in rows})},
               "byUnderlying": {u: agg([x for x in rows if x["underlying"] == u]) for u in sorted({x["underlying"] for x in rows})},
               "best": sorted(rows, key=lambda x: -x["netPct"])[:8], "worst": sorted(rows, key=lambda x: x["netPct"])[:5]}
+    def grid_agg(xs):
+        out = {}
+        for k in (xs[0]["grid"].keys() if xs else []):
+            vals = [x["grid"][k] for x in xs if x["grid"].get(k) is not None]
+            if vals:
+                out[k] = {"n": len(vals), "win": round(sum(1 for v in vals if v > 0) / len(vals), 2), "mean": round(statistics.mean(vals), 1)}
+        return out
+    early = [x for x in rows if "09:30" <= x["minute"] < "11:00"]
+    report["exitGrid"] = {"all": grid_agg(rows), "firstPerName": grid_agg(list(first_und.values())),
+                          "first90min": grid_agg(early), "first90minFirstPerName": grid_agg([x for x in first_und.values() if "09:30" <= x["minute"] < "11:00"])}
     if args.json:
         print(json.dumps(report, indent=1, default=str))
         return 0
     print("ALL               ", report["all"])
+    for k, v in report["exitGrid"].items():
+        print(f"  exit grid {k}: {v}")
     print("first per contract", report["firstPerContract"])
     print("first per name    ", report["firstPerUnderlying"])
     for h, v in report["byHour"].items():

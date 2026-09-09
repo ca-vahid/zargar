@@ -169,6 +169,24 @@ async def run(args) -> int:
         f["confirmed"] = bool(hits)
         f["sweeps"] = [(o, et_minute(m)) for o, m in hits]
         scored.append(f)
+    # --- T-6: OUR fires on HIS tempo (premium exits on the contract's own 1m bars)
+    if args.tempo:
+        import httpx
+        from .flow_sweep_universe import _bars, score_trade
+        http = httpx.AsyncClient(timeout=60)
+        GRID = [(0.3, 0.3), (0.5, 0.3), (0.5, 0.5), (1.0, 0.5), (1.0, 0.3)]
+        for f in scored:
+            if not f.get("contract"):
+                continue
+            async with sem:
+                bars = await _bars(f["contract"], f["session"], cfg, http)
+            f["tempo"] = {}
+            for take, stop in GRID:
+                g = score_trade(bars, f["firedTs"], take=take, stop=stop)
+                f["tempo"][f"t{int(take*100)}s{int(stop*100)}"] = g["netPct"] if g else None
+            base = score_trade(bars, f["firedTs"])
+            f["tempoBase"] = base
+        await http.aclose()
     await eng.db.dispose()
     # --- report
     with_c = [f for f in scored if f.get("contract")]
@@ -198,6 +216,17 @@ async def run(args) -> int:
         print(f"  {d} all {v['all']} | confirmed {v['confirmed']}")
     for f in conf:
         print(f"   + {f['session']} {f['symbol']} {f['trigger']} {f['kind']} R {f['r']:+.2f} {f['outcome']} via {f['sweeps']}")
+    if args.tempo:
+        import statistics
+        have = [f for f in with_c if f.get("tempo")]
+        print(f"T-6 tempo on our {len(have)} fires (premium %, net of fees + 5% slippage):")
+        for k in (have[0]["tempo"].keys() if have else []):
+            vals = [f["tempo"][k] for f in have if f["tempo"].get(k) is not None]
+            if vals:
+                print(f"   {k}: n {len(vals)} win {sum(1 for v in vals if v > 0) / len(vals):.2f} mean {statistics.mean(vals):+.1f}% median {statistics.median(vals):+.1f}%")
+        for f in have:
+            b = f.get("tempoBase") or {}
+            print(f"     {f['session']} {f['symbol']} {f['trigger']} {f['kind']} planR {f['r']:+.2f} | {f['contract']} entry {b.get('entry')} -> {b.get('exit')} {b.get('how')} {b.get('netPct')}%")
     return 0
 
 
@@ -208,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--after", type=int, default=10, help="minutes after the touch to wait (D3)")
     p.add_argument("--include-invalid", action="store_true")
     p.add_argument("--json", action="store_true")
+    p.add_argument("--tempo", action="store_true", help="also score OUR fires on the author's premium tempo (T-6)")
     a = p.parse_args(argv)
     return asyncio.run(run(a))
 

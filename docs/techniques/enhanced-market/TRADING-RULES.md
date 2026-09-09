@@ -620,6 +620,27 @@ picks a loser is not a gate; the finding is that the author's sweeps do not sit 
 Next test (phase 1b): sweeps as the TRIGGER - every sweep in the universe's near-the-money
 contracts, entered at the sweep minute and exited on his tempo (+100% / -50% / 15:45), scored
 in premium percent from the contract's own 1-minute bars. `tools/flow_sweep_universe.py`.
+**Phase 1b verdict, 2026-09-09 00:30 ET (sweeps as the trigger: REJECTED on our data).** 923 sweeps
+across the core universe's near-the-money contracts over 8 sessions (08-27..09-08; the detector
+that finds his TSLA/GPRO/NVDA trades). Every sweep taken as a trade on his tempo (+100% / -50% /
+flat 15:45), net of $1.04 fees and a 5% slippage haircut: **847 trades, 30% win rate, mean -13.0%
+of premium, median -55%** (439 stops, 188 takes, 218 flats). No slice survives: first sweep per
+name -12.1%; first 90 minutes -5.0%; the best exit in a 5-point grid (take 30% / stop 30%, first
+90 minutes, first per name) reaches a 56% win rate and still averages **-2.4%** per trade. AAPL is
+the only name positive (+2.3% on 50). Conclusion: the mechanism he names, as observable from
+public prints, has no standalone edge on our data. What we cannot observe from history is his
+ask-side classification (our history uses the tick test) and his selection; what we cannot
+verify is survivorship in what he posts. T-12 stays as a LOGGED signal only: phase 2 collects
+NBBO-classified sweeps live at zero cost and the question reopens after 10 sessions of live
+data, not before. No rule changes.
+**T-6 measured the same night (our fires on HIS tempo): also negative.** The 19 replay fires with a
+chain, entered in the contract our pick would buy at the fire minute and exited on premium
+(grid of take 30-100% / stop 30-50% / flat 15:45), net of fees and slippage: best cell take 30% /
+stop 30% = 32% win rate, **mean -14.8%**; the default +100/-50 = 21% win, -18%. The three
+winners are the plan winners (HOOD +94%, DELL +95%, CVNA +38%); the losers include every
+illiquid contract (HYG $0.05, LQD $0.11: the round trip eats them). The plan-level ladder on the
+underlying (+0.08R/fire on the same 19) beats his tempo on our fires. T-6 is not adopted; exit
+tempo is not where our edge is hiding either.
 
 ## 4. Optimization backlog (ranked)
 
