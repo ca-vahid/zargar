@@ -579,6 +579,18 @@ class SignalService:
                     continue
                 row = await session.get(DiscordMessage, mid)
                 if row is not None:
+                    # revision upsert (gateway envelope 2026-09-09): an EDITED
+                    # message updates the mirror row when the revision is newer
+                    ets = str(m.get("editedAt") or "")
+                    try:
+                        edited = dt.datetime.fromisoformat(ets.replace("Z", "+00:00")) if ets else None
+                    except ValueError:
+                        edited = None
+                    if edited is not None and (row.edited_at is None or edited > row.edited_at):
+                        row.text = str(m.get("text") or "")[:8000]
+                        row.images = [str(u) for u in (m.get("images") or [])][:6]
+                        row.edited_at = edited
+                        stored += 1
                     continue
                 posted = None
                 try:
@@ -787,15 +799,38 @@ class SignalService:
             {"id": row.id, "source": source_name, "subject": row.subject,
              "sourceType": "email"},
             aggregate_type="content", aggregate_id=row.id)
-        return await self.process_content(row.id)
+        return await self.process_content(row.id, stated_at=posted_at or None)
 
     async def ingest_manual(self, text: str, *, source_name: str = "manual",
                             subject: str = "", image: bytes | None = None,
-                            image_media_type: str = "image/png") -> dict:
+                            image_media_type: str = "image/png",
+                            message_id: str | None = None,
+                            posted_at: str | None = None,
+                            edited_at: str | None = None) -> dict:
         """Paste-in path — text, or a screenshot of the user's own client (the
-        model transcribes it; the image is kept as evidence in chat_assets)."""
+        model transcribes it; the image is kept as evidence in chat_assets).
+        `message_id`/`posted_at` (gateway envelope 2026-09-09): the Discord
+        identity dedupes BEFORE extraction — a repeat delivery costs no LLM
+        call — and the authoritative posting time feeds stated_at."""
         eng = self.engine
+        if message_id:
+            with contextlib.suppress(Exception):
+                async with eng.sf() as session:
+                    dup = (await session.execute(select(RawContent).where(
+                        RawContent.meta.op('->>')('messageId') == str(message_id))
+                        .limit(1))).scalars().first()
+                if dup is not None:
+                    return {"contentId": dup.id, "status": dup.status,
+                            "duplicate": True, "signals": [],
+                            "note": f"message {message_id} already ingested "
+                                    f"(content {dup.id[:8]}) — no re-extraction"}
         meta: dict = {}
+        if message_id:
+            meta["messageId"] = str(message_id)
+        if posted_at:
+            meta["postedAt"] = str(posted_at)
+        if edited_at:
+            meta["editedAt"] = str(edited_at)
         if image is not None:
             asset = ChatAsset(id=new_id(), thread_id=None, media_type=image_media_type,
                               data=image, meta={"kind": "tip_screenshot"})
@@ -813,6 +848,34 @@ class SignalService:
                                   "hasImage": image is not None},
             aggregate_type="content", aggregate_id=row.id)
         return await self.process_content(row.id)
+
+    async def discord_message_edited(self, message_id: str, *, edited_at: str = "",
+                                     text: str = "") -> dict:
+        """A source EDITED a message we may have ingested. POLICY (gateway
+        envelope 2026-09-09, GATEWAY-PLAN.md): the mirror row is upserted by
+        the gateway; here the edit is JOURNALED against the ingested content
+        and stamped on its meta — NEVER auto re-extracted and never traded on.
+        The analyst sees revised text through the mirror it already searches."""
+        eng = self.engine
+        found = None
+        with contextlib.suppress(Exception):
+            async with eng.sf() as session:
+                found = (await session.execute(select(RawContent).where(
+                    RawContent.meta.op('->>')('messageId') == str(message_id))
+                    .limit(1))).scalars().first()
+                if found is not None:
+                    found.meta = {**(found.meta or {}),
+                                  "revisedAt": edited_at or dt.datetime.now(dt.timezone.utc).isoformat(),
+                                  "revisionPreview": (text or "")[:400]}
+                    await session.commit()
+        await eng.journal.append(
+            ev.TIP_MESSAGE_REVISED,
+            {"messageId": str(message_id), "editedAt": edited_at,
+             "ingestedContentId": found.id if found is not None else None,
+             "preview": (text or "")[:200]},
+            aggregate_type="content",
+            aggregate_id=(found.id if found is not None else str(message_id)))
+        return {"ok": True, "ingested": found is not None}
 
     def _match_source(self, sender: str) -> str | None:
         registry = self.engine.settings.get("sources.registry") or []

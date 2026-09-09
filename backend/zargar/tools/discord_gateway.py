@@ -211,6 +211,70 @@ def describe_author(msg: dict) -> str:
     return f"{name}{' [bot]' if a.get('bot') else ''}"
 
 
+class GatewayStore:
+    """Durable envelope state next to the DM log (gateway envelope, 2026-09-09;
+    GATEWAY-PLAN.md): per-channel forward CURSORS (gap recovery on reconnect)
+    and a delivery SPOOL that survives restarts (failed/overflow deliveries are
+    replayed; after MAX_ATTEMPTS they stay in the file marked dead=true)."""
+    MAX_ATTEMPTS = 5
+
+    def __init__(self, root: Path) -> None:
+        root.mkdir(parents=True, exist_ok=True)
+        self.cursors_path = root / "gateway_cursors.json"
+        self.spool_path = root / "gateway_spool.jsonl"
+        try:
+            self.cursors: dict[str, str] = json.loads(
+                self.cursors_path.read_text(encoding="utf-8"))
+        except Exception:
+            self.cursors = {}
+
+    def advance(self, cid: str, mid: str) -> None:
+        """Move a channel's cursor forward (never backward — snowflakes sort)."""
+        if not mid:
+            return
+        cur = self.cursors.get(cid)
+        try:
+            if cur is None or int(mid) > int(cur):
+                self.cursors[cid] = str(mid)
+                self.cursors_path.write_text(json.dumps(self.cursors), encoding="utf-8")
+        except (ValueError, OSError):
+            pass
+
+    def spool(self, env: dict, error: str) -> None:
+        rec = {k: v for k, v in env.items()}
+        rec["attempts"] = int(env.get("attempts") or 0) + 1
+        rec["error"] = str(error)[:300]
+        rec["spooledAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        if rec["attempts"] >= self.MAX_ATTEMPTS:
+            rec["dead"] = True
+        try:
+            with self.spool_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, default=str) + "\n")
+        except OSError:
+            pass
+
+    def drain_spool(self) -> list[dict]:
+        """Pop every retryable entry; dead ones are rewritten back untouched."""
+        try:
+            lines = self.spool_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+        keep, retry = [], []
+        for ln in lines:
+            try:
+                rec = json.loads(ln)
+            except ValueError:
+                continue
+            (keep if rec.get("dead") else retry).append(rec)
+        try:
+            self.spool_path.write_text(
+                "".join(json.dumps(r, default=str) + "\n" for r in keep),
+                encoding="utf-8")
+        except OSError:
+            pass
+        return retry
+
+
 def mirror_record(msg: dict, source_name: str | None,
                   guild_name: str | None = None) -> dict:
     """One message -> the mirror row the app stores (full text + image URLs) —
@@ -225,7 +289,8 @@ def mirror_record(msg: dict, source_name: str | None,
             "isBot": bool(author.get("bot")),
             "text": flatten_message(msg),
             "images": collect_images(msg),
-            "postedAt": str(msg.get("timestamp") or "")}
+            "postedAt": str(msg.get("timestamp") or ""),
+            "editedAt": str(msg.get("edited_timestamp") or "")}
 
 
 class Gateway:
@@ -262,6 +327,12 @@ class Gateway:
         self._hb_interval = 41.25
         self._acked = True
         self._started = time.time()
+        # gateway envelope (2026-09-09, GATEWAY-PLAN.md): receive-path stays
+        # hot — matched messages are enqueued and WORKERS do all downstream I/O
+        self._store = GatewayStore(self.log_path.parent)
+        self._queue: asyncio.Queue | None = None
+        self._chan_locks: dict[str, asyncio.Lock] = {}
+        self._dropped = 0
 
     async def run(self) -> None:
         import websockets
@@ -293,6 +364,10 @@ class Gateway:
         try:
             async with httpx.AsyncClient(timeout=30) as http:
                 self._http = http
+                self._queue = asyncio.Queue(500)
+                workers = [asyncio.create_task(self._worker(http, headers))
+                           for _ in range(2)]
+                retry = asyncio.create_task(self._retry_loop(http, headers))
                 poll = asyncio.create_task(self._watch_loop(http, headers))
                 peek = asyncio.create_task(self._peek_loop(http, headers))
                 async for raw in ws:
@@ -304,6 +379,10 @@ class Gateway:
                 poll.cancel()
             if peek:
                 peek.cancel()
+            for w in locals().get("workers") or []:
+                w.cancel()
+            if locals().get("retry"):
+                retry.cancel()
 
     async def _peek_loop(self, http, headers) -> None:
         """Serve the UI's 'show last message' tests: poll the app for pending
@@ -354,23 +433,28 @@ class Gateway:
         except Exception as exc:
             return {"error": str(exc)[:200]}
 
-    async def _mirror(self, http, headers, records: list[dict]) -> None:
-        """Best-effort: store messages in the app's mirror (the analyst's
-        searchable source history)."""
+    async def _mirror(self, http, headers, records: list[dict]) -> bool:
+        """Store messages in the app's mirror (the analyst's searchable source
+        history). STATUS-CHECKED (gateway envelope 2026-09-09) — the audit
+        found failures silently suppressed; callers spool on False."""
         records = [r for r in records if r.get("id")]
         if not records:
-            return
+            return True
         try:
-            await http.post(f"{self.api}/api/tip/discord/messages", headers=headers,
-                            json={"messages": records})
+            r = await http.post(f"{self.api}/api/tip/discord/messages", headers=headers,
+                                json={"messages": records})
+            return r.status_code == 200
         except Exception:
-            pass
+            return False
 
     async def _fetch_messages(self, http, cid: str, *, limit: int = 100,
-                              before: str | None = None) -> list[dict]:
+                              before: str | None = None,
+                              after: str | None = None) -> list[dict]:
         url = f"https://discord.com/api/v10/channels/{cid}/messages?limit={min(100, limit)}"
         if before:
             url += f"&before={before}"
+        if after:
+            url += f"&after={after}"
         try:
             r = await http.get(url, headers={"Authorization": self.token}, timeout=20)
             return r.json() if r.status_code == 200 else []
@@ -447,6 +531,37 @@ class Gateway:
         if total:
             print(f"[gateway] mirror updated: {total} message(s) across "
                   f"{len(self._watch)} watched channel(s)")
+
+    async def _recover_gaps(self, http, headers) -> None:
+        """Forward-cursor gap check: for every watched channel with a cursor,
+        enqueue the messages Discord holds AFTER it (<=3 pages), oldest first."""
+        # the watchlist may not be loaded yet on the very first READY
+        for _ in range(20):
+            if self._watch_loaded:
+                break
+            await asyncio.sleep(1.0)
+        recovered = 0
+        for cid in list(self._watch):
+            cur = self._store.cursors.get(cid)
+            if not cur:
+                continue
+            after = cur
+            for _page in range(3):
+                msgs = await self._fetch_messages(http, cid, limit=100, after=after)
+                if not msgs:
+                    break
+                msgs.sort(key=lambda m: int(m.get("id") or 0))   # oldest first
+                for m in msgs:
+                    m.setdefault("channel_id", cid)
+                    self._enqueue("create", m)
+                    recovered += 1
+                after = str(msgs[-1].get("id") or "")
+                if len(msgs) < 100 or not after:
+                    break
+                await asyncio.sleep(0.7)
+        if recovered:
+            print(f"[gateway] gap recovery: {recovered} message(s) enqueued "
+                  f"from cursors after (re)connect")
 
     async def _watch_loop(self, http, headers) -> None:
         """Poll the app for the watchlist (the allowlist). Empty = manual flags
@@ -539,11 +654,20 @@ class Gateway:
             print(f"[gateway] READY as {u.get('username')} "
                   f"({len(data['d'].get('private_channels') or [])} DM channels)")
             await self._report_catalog(data["d"], http, headers)
+            # gap recovery (gateway envelope): a reconnect re-identifies with no
+            # session resume — fetch what each watched channel posted past its
+            # cursor while we were dark, oldest first, through the same queue
+            asyncio.create_task(self._recover_gaps(http, headers))
             print("[gateway] listening.")
             return
-        if t != "MESSAGE_CREATE":
+        if t == "MESSAGE_CREATE":
+            self._enqueue("create", data["d"])
             return
-        await self._on_message(data["d"], http, headers)
+        if t == "MESSAGE_UPDATE":
+            # edits are revisions with an explicit policy (GATEWAY-PLAN.md):
+            # mirror upsert + journal, NEVER auto re-extracted
+            self._enqueue("update", data["d"])
+            return
 
     def _match(self, msg: dict, is_dm: bool, author: dict, is_self: bool):
         """(should_ingest, source_name). The WATCHLIST is the allowlist; manual
@@ -568,23 +692,100 @@ class Gateway:
             return (is_dm, "auto")
         return (False, None)                      # allowlist default: no match
 
-    async def _on_message(self, msg: dict, http, headers) -> None:
-        is_dm = msg.get("guild_id") is None          # DMs carry no guild
+    def _enqueue(self, kind: str, msg: dict) -> None:
+        """Receive-path half: match cheaply, envelope, hand to the workers.
+        NEVER blocks and NEVER awaits — heartbeat ACKs stay instant however
+        slow downstream is (the audit's zombie-connection path)."""
+        cid = str(msg.get("channel_id") or "")
+        mid = str(msg.get("id") or "")
+        is_dm = msg.get("guild_id") is None
         author = msg.get("author") or {}
         is_self = bool(self.user_id and str(author.get("id")) == self.user_id)
-        cid_em = str(msg.get("channel_id") or "")
-        if cid_em in self._em:                    # EM method inbox (independent of tips)
-            await self._em_forward(http, headers, msg, self._em[cid_em])
-        matched, source_name = self._match(msg, is_dm, author, is_self)
-        if not matched:
+        em_entry = self._em.get(cid)
+        if kind == "create":
+            matched, source_name = self._match(msg, is_dm, author, is_self)
+        else:
+            matched, source_name = (cid in self._watch), None
+        if not matched and em_entry is None:
+            return
+        if kind == "update" and not mid:
+            return
+        env = {"kind": kind, "cid": cid, "mid": mid, "isDM": is_dm,
+               "self": is_self, "source": source_name, "msg": msg,
+               "em": bool(em_entry) and kind == "create", "matched": bool(matched),
+               "attempts": 0}
+        if self._queue is None:
+            self._store.spool(env, "queue not ready")
+            return
+        try:
+            self._queue.put_nowait(env)
+        except asyncio.QueueFull:
+            self._dropped += 1
+            self._store.spool(env, "queue full")
+
+    async def _worker(self, http, headers) -> None:
+        """Drain the queue; a per-channel lock keeps in-channel ORDER while
+        channels process in parallel. Failures go to the durable spool."""
+        while True:
+            env = await self._queue.get()
+            lock = self._chan_locks.setdefault(env["cid"], asyncio.Lock())
+            try:
+                async with lock:
+                    await self._process_envelope(http, headers, env)
+            except Exception as exc:
+                self._store.spool(env, str(exc))
+                print(f"    ! delivery failed (spooled, attempt "
+                      f"{int(env.get('attempts') or 0) + 1}): {str(exc)[:120]}")
+            finally:
+                self._queue.task_done()
+
+    async def _retry_loop(self, http, headers) -> None:
+        """Replay the durable spool every 60s (app-unavailable case): each entry
+        retries up to GatewayStore.MAX_ATTEMPTS, then stays on disk dead=true."""
+        while True:
+            await asyncio.sleep(60)
+            for env in self._store.drain_spool():
+                try:
+                    lock = self._chan_locks.setdefault(env["cid"], asyncio.Lock())
+                    async with lock:
+                        await self._process_envelope(http, headers, env)
+                except Exception as exc:
+                    self._store.spool(env, str(exc))
+
+    async def _process_envelope(self, http, headers, env: dict) -> None:
+        """Worker half: everything the old receive path did inline, plus
+        revisions. Raises on delivery failure (the caller spools)."""
+        msg, cid, mid = env["msg"], env["cid"], env["mid"]
+        entry = self._watch.get(cid) or {}
+        source_name = env.get("source") or entry.get("sourceName") or "auto"
+        if env["kind"] == "update":
+            ok = await self._mirror(http, headers,
+                                    [mirror_record(msg, source_name,
+                                                   entry.get("guildName") or None)])
+            if not ok:
+                raise RuntimeError("mirror upsert failed for edit")
+            r = await http.post(f"{self.api}/api/tip/discord/message-edited",
+                                headers=headers,
+                                json={"messageId": mid,
+                                      "editedAt": str(msg.get("edited_timestamp") or ""),
+                                      "text": flatten_message(msg)[:2000]})
+            if r.status_code != 200:
+                raise RuntimeError(f"message-edited HTTP {r.status_code}")
+            print(f"[{dt.datetime.now():%H:%M:%S}] EDIT in {source_name}: mirror revised "
+                  f"(policy: never auto re-extracted)")
+            return
+        if env.get("em"):                       # EM method inbox (independent of tips)
+            await self._em_forward(http, headers, msg, self._em.get(cid) or {})
+        if not env.get("matched"):
+            self._store.advance(cid, mid)
             return
         text = flatten_message(msg)
         images = collect_images(msg)
         self.seen_count += 1
         rec = {"at": dt.datetime.now(dt.timezone.utc).isoformat(),
-               "channelId": msg.get("channel_id"), "isDM": is_dm,
-               "author": describe_author(msg), "authorId": author.get("id"),
-               "text": text, "images": images, "self": bool(is_self)}
+               "channelId": cid, "isDM": env.get("isDM"),
+               "author": describe_author(msg), "authorId": (msg.get("author") or {}).get("id"),
+               "text": text, "images": images, "self": bool(env.get("self"))}
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
         shape = f"{len(text)} chars" + (f" + {len(images)} image(s)" if images else "")
@@ -592,19 +793,22 @@ class Gateway:
               f"{text[:110]!r}")
         # every matched message joins the mirror (the analyst's source history),
         # ingested or not — follow-ups like "sold 40%" rarely extract as tips
-        entry = self._watch.get(str(msg.get("channel_id"))) or {}
-        await self._mirror(http, headers,
-                           [mirror_record(msg, source_name or entry.get("sourceName") or "auto",
-                                          entry.get("guildName") or None)])
-        # context channels (KNOWLEDGE plan C1): general-conversation rooms like
-        # trading-floor are mirrored for search + digests but NEVER auto-intake —
-        # chatter is not a tip
+        ok = await self._mirror(http, headers, [mirror_record(msg, source_name,
+                                                              entry.get("guildName") or None)])
+        if not ok:
+            raise RuntimeError("mirror store failed")
+        # context channels (KNOWLEDGE plan C1): mirrored, never auto-intake
         if (entry.get("mode") or "tips") == "context":
             print("    -> context channel: mirrored only (no tip intake)")
+            self._store.advance(cid, mid)
             return
         if not self.ingest:
+            self._store.advance(cid, mid)
             return
-        await self._ingest_message(http, headers, msg, source_name or "auto")
+        out = await self._ingest_message(http, headers, msg, source_name)
+        if not out.get("ok"):
+            raise RuntimeError(str(out.get("error") or out.get("note") or "ingest failed")[:200])
+        self._store.advance(cid, mid)
 
     async def _em_forward(self, http, headers, msg: dict, entry: dict) -> None:
         """EM method ingestion: post the message to EM's own inbox. Read-only
@@ -647,7 +851,12 @@ class Gateway:
             return {"ok": False, "note": "nothing to ingest — the message has no text and no usable image"}
         try:
             body = {"text": text, "source_name": source_name or "auto",
-                    "subject": f"discord: {describe_author(msg)}"}
+                    "subject": f"discord: {describe_author(msg)}",
+                    # gateway envelope: identity dedupes BEFORE extraction and
+                    # the authoritative posting time beats model inference
+                    "messageId": str(msg.get("id") or "") or None,
+                    "postedAt": str(msg.get("timestamp") or "") or None,
+                    "editedAt": str(msg.get("edited_timestamp") or "") or None}
             if image_data_url:
                 body["imageDataUrl"] = image_data_url
             r = await http.post(f"{self.api}/api/ingest/manual", headers=headers,
