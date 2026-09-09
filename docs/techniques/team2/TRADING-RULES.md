@@ -1566,6 +1566,104 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   time is the 2m bar's CLOSE (bucket `[t-2m, t)`), the regime block's `ts` is that bar's START.**
 
 
+- **F84 (2026-09-09 15:40 ET, FIXED — v0.7.33; every watch-only contact reported the same touch
+  number, so one late contact read exactly like seven).** A contact past the D9 allowance must NOT
+  spend that allowance, so `session.py` logs `late_touch` and `continue`s **without** incrementing
+  `s.touches`. Since the label is `idx = s.touches + 1`, it is pinned at `max_touches + 1` forever:
+  IWM's `pm_break_down@10:30` logged **seven** `late_touch` events today (13:38, 13:42, 14:12, 14:16,
+  15:02, 15:26, 15:30) and **every one** said "touch #3". The freeze is correct behaviour and is not
+  being changed; the *message* was the defect — seven distinct contacts are indistinguishable from
+  one re-logged contact, and it misled this watch twice (runs 43 and 44 both wrote "touch #4" for the
+  14:16 event, a number no code ever emitted). The setup already carries a counter that does advance,
+  `s.opportunities` (19 on that setup by the close), so the prose now reads "contact #17 of
+  pm_break_down@10:30 — past the first 2 pullbacks, watch-only (D9/P6)". **Prose only** — the event's
+  `touch` payload still carries the frozen index (unchanged contract), no rule, threshold, gate, size
+  or money path moved. A regression test pins the numbers strictly increasing while `touch` stays
+  frozen.
+
+- **F82 addendum (2026-09-09 15:37 ET — the late-session survivor is decided by luck, not by the
+  method).** Third read-only measurement of the live CBOE chain, each symbol on its own live
+  direction, 23 minutes to expiry (no order, no plan touched): **SPY 1** in-band strike (763P @
+  $0.31, **delta −0.435**, with spot at 763.14 — the strike is 0.14 away, i.e. all but ATM), **QQQ 1**
+  (717C @ $0.24, delta 0.342), **IWM 0** (nearest OTM put $0.02 — `select_by_premium` returns `None`,
+  so a fire would refuse with `skip_no_contract`). This corrects the shape of run 44's reading: the
+  band does **not** simply empty and stay empty after ~15:00 — SPY had 0 in-band at 15:05 and 1 again
+  at 15:37, because the underlying drifted back onto a strike. The real behaviour is that **the whole
+  band collapses onto whichever strike happens to be nearest the money**, so late in the session
+  whether a symbol is tradeable at all — and at what delta — is set by spot's distance to the nearest
+  strike, not by anything in the method. IWM (1-point strikes, spot 0.78 off the strike) has nothing;
+  SPY (0.14 off) has a delta-0.44 contract. That is the strongest argument yet for F82 option (c), a
+  **delta band beside the premium band**: a price band alone cannot express "the author's morning
+  contract" once theta has eaten the chain. Still the user's call.
+
+
+- **F85 (2026-09-09 15:15 ET, NOT FIXED — the desk went blind on bars for ~2 minutes inside the
+  0DTE session and nothing but the journal remembers it).** At **15:15:02–15:15:04 ET** the plan
+  runner journaled `TechniquePlanError {stage: "data", error: "stale bars", lastBarTs: 15:12}` on
+  **all three** Team2 plans — and, with the identical `lastBarTs`, on **36 `enhanced_market` plans
+  and 10 `tip` plans**. Four seconds later the feed log shows
+  `alpaca stream dropped: no close frame received or sent — reconnecting in 1s` (15:15:06),
+  reconnected and authenticated by **15:15:08**. The runner consumes **1m** bars, so in health the
+  newest closed bar is at most ~65 s old; **182 s means the 15:13 and 15:14 closes never reached
+  it**. Team2's first in-session stale event ever (over the last 10 days stale-bar errors appear on
+  five days; 2026-09-07 produced 1,504 of them on `tip`).
+  **What makes this a finding is that it is invisible afterwards.** `ap.stale` clears on the next
+  bar; `needsAttention` lists staleness *only while a position is open* (correct — nothing was at
+  risk); `readError` stayed null; quotes are a different path and stayed fresh (0.1–0.3 s); and the
+  `bars` tape is **complete and 100 % `source='exchange'` across 15:08–15:22 on all three symbols**,
+  because the missing minutes were filled in behind the outage. An audit of the tape, the snapshot or
+  the read therefore shows a **perfect day** — run 44 of this watch ran at exactly 15:15 ET and
+  reported everything green. The only durable trace is the `TechniquePlanError` row.
+  **Cost today: none** — no setup was live, the day ended 0 fires — but this is precisely the failure
+  mode that silently drops a trade: for those ~2 minutes no 2m close was evaluated, no trigger could
+  fire and no bar-close exit could run (the ~2 s quote stop watch does keep working), 15 minutes
+  before the 15:30 last-entry gate.
+  **Working rule for every future watch run: query the journal for `TechniquePlanError` — a healed
+  stall leaves no other trace.** Not fixed here: both halves live in shared code
+  (`zargar/execution/planrunner.py` staleness reporting, `zargar/brokers/alpaca.py` stream
+  liveness), so this is for the user / platform owners. Options: **(a)** record a healed stall
+  durably on the session read as a "blind window HH:MM–HH:MM" line, so a day's record states where
+  it was blind; **(b)** add a data-liveness watchdog on the stream (no bar for N seconds → force
+  reconnect) — the socket's own keepalive only noticed ~2 minutes after data stopped, and the
+  reconnect itself took 2 s, so the dark window is nearly all detection latency; **(c)** leave it.
+
+
+- **F86 (2026-09-09 post-close, NOT FIXED — the pre-market high/low that sets day type, sizing and
+  the `pm_break` trigger levels is computed over bars of ANY provenance, and a zero-volume bar has
+  already moved it).** `premarket_range()` (`zargar/marketstructure/dailylevels.py:82`) is a plain
+  `max(high)/min(low)` over every 04:00–09:30 ET bar it is handed, and Team2 hands it everything the
+  bars table holds: `complete_plan` (`techniques/team2/plan.py:74`) reads `runner._today_bars` →
+  `load_bars(..., "1m", limit=6000)`, which is source-blind. F75's `validate_sessions` guard runs on
+  the **warm-up** (prior sessions) only — today's pre-market rows go in unfiltered.
+  **Measured, 20 sessions × SPY/QQQ/IWM (38 symbol-days that contain non-exchange pre-market rows):
+  one case where a non-exchange row set the extreme.** `IWM 2026-08-25 07:01 ET` —
+  `O 299.81 H 299.81 L 297.97 C 297.97, volume 0, source 'unknown'` — put **PML at 297.97 against a
+  real traded pre-market low of 298.26**, i.e. **0.29 (0.10 % of price) too wide**, on the one symbol
+  whose zone widths are smallest. Every other symbol-day agreed to the cent.
+  **Why it matters:** pmh/pml are not cosmetic. They feed `classify_day` (gap vs inside-day),
+  `sizing_bucket` (inside the PM range → half size) and the **`pm_break_up` / `pm_break_down` setups**,
+  whose trigger level is literally `float(pmh)` / `float(pml)` and whose confirmation is a 15m body
+  close beyond it (session.py:288 ff). A PML 0.29 too low delays or cancels a `pm_break_down`
+  confirmation; a too-wide range also enlarges the "inside the PM range" half-size bucket.
+  **Provenance status:** all 1,888 non-exchange pre-market rows for the three symbols are
+  `source='unknown'`, dated 2026-08-17 → 2026-09-09, and the newest is **09:12 ET today** — i.e. they
+  are consistent with pre-F75 writes (before today the column had no writer and defaulted to
+  `unknown`); no `unknown` row has been written since this morning's F75 build. That does **not**
+  close the hole going forward: quote-`sampled` bars still rank above `unknown` and are still written
+  in thin extended-hours minutes (IWM banked two `sampled` 1m rows at 16:30/16:31 ET today), and a
+  sampled bar takes its price from a quote, so it can print outside the traded range exactly as the
+  08-25 row did.
+  **Not fixed here** — the natural filter sits either in shared `dailylevels.premarket_range` or on
+  Team2's call site, and it changes a live trigger level, so it is the user's call. Options:
+  **(a)** filter the pre-market bars Team2 passes to `premarket_range` to `source == 'exchange'`
+  (Team2-local, one line in `complete_plan`'s caller, falls back to unfiltered when the day has no
+  exchange pre-market rows); **(b)** require `volume > 0` (provenance-agnostic, and the same rule
+  F79 already applies to history: "a minute without volume is provisional, not a bar");
+  **(c)** filter inside shared `premarket_range` so every technique gets it, plus a PLATFORM-RULES
+  row; **(d)** leave it and rely on F75 having ended the `unknown` writes. (b) is the cheapest and
+  matches the existing house rule; (a) is the most conservative for Team2 alone.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
