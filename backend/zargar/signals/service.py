@@ -2560,3 +2560,8 @@ async def attach_signal_layer(engine) -> None:
     engine.signals_service.start_media_catchup()
     # POST-SOAK 4.1/4.3: cold parks re-verify, error content retries once
     engine.signals_service.start_recovery()
+    # Codex finding 4: runs a restart/cancel left "running" are failed on the record
+    import contextlib as _ctx
+    with _ctx.suppress(Exception):
+        from ..techniques.tip.analyst import reconcile_stale_runs
+        await reconcile_stale_runs(engine)

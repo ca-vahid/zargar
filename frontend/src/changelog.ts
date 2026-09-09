@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.19";
+export const APP_VERSION = "0.7.20";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.20",
+    date: "2026-09-09",
+    title: "Honest failures",
+    items: [
+      { tag: "fixed", text: "When the analyst's answer fails to parse, the retry now continues the same conversation with all its tool evidence instead of starting over blind - the failure mode behind several no-verdict cards. A run that runs out of tool budget is told to answer, not left returning nothing." },
+      { tag: "fixed", text: "Runs interrupted by a restart no longer sit labeled running forever - they are reconciled to failed at startup, and cancellation mid-run records itself." },
+      { tag: "new", text: "Side-effect receipts: if a run saved a note, changed an exit, closed a position or disarmed a plan before failing, the run says exactly that - never \"nothing was asked or ordered\". Every run also records its token usage and stop reasons." },
+    ],
+  },
   {
     version: "0.7.19",
     date: "2026-09-08",

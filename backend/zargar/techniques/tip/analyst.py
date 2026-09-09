@@ -807,12 +807,50 @@ _API_RETRY_DELAYS = (5.0, 20.0)   # transient-API backoff; tests patch to (0, 0)
 API_RETRIES = {"n": 0}            # since-boot 529-retry tally (POST-SOAK 4.4, morning report)
 
 
+MUTATING_TOOLS = ("save_note", "update_exit_plan", "close_position", "disarm_plan")
+
+
+async def reconcile_stale_runs(eng, *, older_than_s: float | None = None) -> int:
+    """Boot reconciliation (Codex audit finding 4): a restart or cancellation
+    used to leave analyst runs labeled "running" forever (a Sep-7 intake was
+    still "running" on Sep 8's evening inspection). Any run older than ~3x the
+    run timeout that still says running is terminally failed, on the record.
+    Side effects its tools performed are preserved in the trace as receipts."""
+    from sqlalchemy import select as _sel
+
+    from ...models import TipAnalystRun
+    cutoff = dt.datetime.now(dt.timezone.utc) - dt.timedelta(
+        seconds=older_than_s if older_than_s is not None else TIMEOUT_S * 3)
+    n = 0
+    async with eng.sf() as session:
+        rows = (await session.execute(_sel(TipAnalystRun).where(
+            TipAnalystRun.status == "running",
+            TipAnalystRun.created_at < cutoff))).scalars().all()
+        for r in rows:
+            r.status = "failed"
+            r.error = "interrupted (restart/cancel) — reconciled at boot"
+            r.finished_at = dt.datetime.now(dt.timezone.utc)
+            n += 1
+        await session.commit()
+    if n:
+        log.info("reconciled %d stale 'running' analyst run(s) at boot", n)
+    return n
+
+
 async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                          rec: _Recorder, run_id: str, max_tools: int,
-                         tool_ctx: dict, tools_used: list[dict]) -> str | None:
+                         tool_ctx: dict, tools_used: list[dict],
+                         state: dict | None = None) -> str | None:
     """The shared tool loop: LLM turns with metered tool calls, every step
-    streamed + persisted. Returns the final text (the JSON answer) or None."""
-    messages: list = [{"role": "user", "content": header}]
+    streamed + persisted. Returns the final text (the JSON answer) or None.
+
+    `state` (Codex audit finding 4): a caller-held dict carrying the live
+    transcript (`messages`) and per-attempt `usage`/stop reasons — a repair
+    pass continues the SAME conversation instead of discarding the first
+    attempt's tool evidence, and the provider metadata is on the record."""
+    st = state if state is not None else {}
+    messages: list = st.setdefault("messages", [{"role": "user", "content": header}])
+    usage = st.setdefault("usage", {"in": 0, "out": 0, "calls": 0, "stops": []})
     for _ in range(max_tools + 2):
         resp = None
         for attempt in (1, 2, 3):
@@ -834,11 +872,24 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 rec.step("note", f"Transient API error ({type(exc).__name__}) — "
                                  f"retry {attempt}/2 in {delay:g}s.")
                 await asyncio.sleep(delay)
+        usage["calls"] += 1
+        usage["stops"].append(str(getattr(resp, "stop_reason", None)))
+        _u = getattr(resp, "usage", None)
+        if _u is not None:
+            usage["in"] += int(getattr(_u, "input_tokens", 0) or 0)
+            usage["out"] += int(getattr(_u, "output_tokens", 0) or 0)
+        if getattr(resp, "stop_reason", "") == "max_tokens":
+            rec.step("note", "Reply hit the output-token limit (stop=max_tokens) — "
+                             "recorded; the answer may be truncated.")
         calls = [b for b in resp.content if getattr(b, "type", "") == "tool_use"]
         think = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         if think.strip():
             rec.step("llm", think.strip())
-        if not calls or len(tools_used) >= max_tools:
+        if not calls:
+            # NOTE: an over-budget tool REQUEST no longer falls out here
+            # unserviced (Codex finding 4: four tools used + a fifth request
+            # returned bare text, often empty -> parse failure); the per-call
+            # branch below stubs it and the model is told to answer.
             await _persist_run(eng, run_id, status="running", rec=rec)
             return think
         messages.append({"role": "assistant", "content": resp.content})
@@ -856,6 +907,15 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 except Exception as exc:
                     out = {"error": str(exc)[:300]}
                 tools_used.append({"tool": c.name, "args": args})
+                if c.name in MUTATING_TOOLS and not out.get("error"):
+                    # ACTION RECEIPT (Codex finding 4): tools can act before the
+                    # final JSON validates — a failed run is not free of side
+                    # effects, and the aftermath must render from receipts
+                    receipt = {"tool": c.name, "args": args,
+                               "at": dt.datetime.now(dt.timezone.utc).isoformat()}
+                    tool_ctx.setdefault("receipts", []).append(receipt)
+                    rec.step("receipt", f"side effect: {c.name}"
+                             f"({json.dumps(args, default=str)[:200]})", **receipt)
                 if "_image_b64" in out:
                     # the model SEES the image; the trace records only a stub
                     rec.step("tool_result", f"← {c.name}: {out.get('note') or 'image shown'}",
@@ -873,6 +933,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 results.append({"type": "tool_result", "tool_use_id": c.id,
                                 "content": json.dumps(out, default=str)[:6000]})
         messages.append({"role": "user", "content": results})
+        if len(tools_used) >= max_tools:
+            messages.append({"role": "user", "content":
+                             "Tool budget exhausted. Reply with ONLY the JSON "
+                             "opinion object now — request no more tools."})
         await _persist_run(eng, run_id, status="running", rec=rec)   # progress visible
     return None
 
@@ -1001,31 +1065,45 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 "signal_id": getattr(signal_row, "id", None), "run_id": run_id,
                 "experiment": experiment, "asOfMs": as_of_ms}
 
+    loop_state: dict = {}
+
     async def loop() -> AnalystOpinion | None:
         text = await run_agent_loop(
             eng, client, model=model, system=system, header=header, rec=rec,
             run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
-            tools_used=tools_used)
+            tools_used=tools_used, state=loop_state)
         if text is None:
             return None
         try:
             return _parse_opinion(text)
         except ValueError as exc:
-            # one cheap retry: an unparseable reply cost a whole appraisal (TSLA
-            # 2026-08-31 — the run failed and auto-approve had to fail closed).
-            # The overall TIMEOUT_S still bounds both attempts.
-            rec.step("note", f"Reply had no parseable opinion ({exc}) — one retry, "
-                             "JSON only.")
+            # one cheap retry — on the SAME transcript (Codex finding 4: the
+            # old repair restarted from the header, discarding every tool
+            # result and the partial answer). TIMEOUT_S bounds both attempts.
+            rec.step("note", f"Reply had no parseable opinion ({exc}) — same-"
+                             "transcript repair, tool evidence retained; JSON only.")
+            loop_state["messages"].append(
+                {"role": "assistant", "content": text.strip() or "(no answer)"})
+            loop_state["messages"].append(
+                {"role": "user", "content": "Your reply contained no parseable JSON "
+                 "opinion object. Reply with ONLY the JSON opinion object now."})
             text = await run_agent_loop(
-                eng, client, model=model, system=system,
-                header=header + "\n\nYour previous reply contained no JSON opinion "
-                                "object. Reply with ONLY the JSON opinion object now.",
-                rec=rec, run_id=run_id, max_tools=2, tool_ctx=tool_ctx,
-                tools_used=tools_used)
+                eng, client, model=model, system=system, header=header,
+                rec=rec, run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
+                tools_used=tools_used, state=loop_state)
             return _parse_opinion(text) if text is not None else None
 
     try:
         opinion = await asyncio.wait_for(loop(), timeout=TIMEOUT_S)
+    except asyncio.CancelledError:
+        # shutdown/restart mid-run (Codex finding 4): CancelledError is not an
+        # Exception — the run used to stay "running" forever; reconcile now
+        rec.step("error", "Cancelled (shutdown/restart) — reconciled as failed.")
+        import contextlib as _ctx
+        with _ctx.suppress(Exception):
+            await _persist_run(eng, run_id, status="failed", rec=rec,
+                               error="cancelled: shutdown/restart")
+        raise
     except Exception as exc:
         log.warning("tip analyst failed for %s: %s", signal_row.id, exc)
         rec.step("error", f"Analyst failed: {exc}")
@@ -1037,6 +1115,8 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         return None
     result = {**opinion.model_dump(), "model": model, "toolsUsed": tools_used,
               "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat(),
+              "usage": loop_state.get("usage"),
+              **({"receipts": tool_ctx["receipts"]} if tool_ctx.get("receipts") else {}),
               **({"experiment": experiment} if experiment else {})}
     exit_bits = []
     if opinion.exit_targets:
