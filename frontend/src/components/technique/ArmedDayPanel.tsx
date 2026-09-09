@@ -53,7 +53,7 @@ const EVENT_ICON: Record<string, [string, string]> = {
   skip_engulfing: ["⛔", "muted"], pullback_stalled: ["👁", "muted"], mode_changed: ["·", "muted"],
   pm_retest: ["▲", "muted"], skip_reentries: ["⛔", "muted"], skip_no_contract: ["⛔", "muted"],
   skip_last_entry: ["⛔", "muted"], skip_loss_cap: ["⛔", "muted"],
-  skip_target_behind: ["⛔", "muted"], target_dropped: ["·", "warn"],
+  skip_target_behind: ["⛔", "muted"], target_replanned: ["◆", "muted"],
   skip_event_day: ["⛔", "muted"],
 };
 
@@ -77,6 +77,10 @@ function buildTimeline(a: ArmedPlan): TimelineRow[] {
   return rows;
 }
 
+/** F73 (2026-09-09): the break rows as `Setup.kind` actually spells them (session.py:37) —
+ * F71 matched the human labels ("break PDL") and so never fired on a single live row. */
+const TEAM2_BREAK_KINDS = new Set(["scenario_1", "scenario_4", "pm_break_up", "pm_break_down"]);
+
 /** F71 (2026-09-09): a pseudo-trigger's `distancePct` is (level - price), so on a SHORT row a
  * POSITIVE number means price is already BELOW the level — the exact opposite of "away". On
  * 2026-09-09 SPY opened 1.50 through its PDL and this line still read "+0.20% away" while QQQ,
@@ -86,7 +90,7 @@ function team2Distance(t: any): string {
   if (t.distancePct == null) return "";
   const pct = Math.abs(t.distancePct).toFixed(2);
   const through = t.direction === "short" ? t.distancePct > 0 : t.distancePct < 0;
-  if (t.kind === "break PDH" || t.kind === "break PDL") {
+  if (TEAM2_BREAK_KINDS.has(t.kind)) {
     return through ? " — price is already through, waiting on the 15m close" : ` — ${pct}% away`;
   }
   return ` — ${pct}% from the level`;

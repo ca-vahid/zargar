@@ -1157,6 +1157,46 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
     (rather than below the zone). Keeps targets structural and planned; the cost is new code in the
     level sheet and the risk of reaching for a level far away on a big gap. **User's call.**
 
+- **F73 (2026-09-09 10:40 ET, FIXED and deployed, v0.7.25 — F71's fix shipped as dead code).**
+  F71 (v0.7.23, yesterday's 09:45 run) added a direction-aware `team2Distance()` to `ArmedDayPanel`
+  so a break row already through its level would read *"price is already through, waiting on the 15m
+  close"* instead of a sign-inverted percentage. It never fired once. The branch is gated on
+  `t.kind === "break PDH" || t.kind === "break PDL"` — the human labels from `SCENARIO_LABEL` — but
+  the pseudo-trigger the API serves carries `Setup.kind`, which is `scenario_1..4` /
+  `pm_break_up` / `pm_break_down` (`session.py:37`). Measured live at 10:38 ET on the served bundle:
+  SPY's trigger came back `{"kind": "scenario_4", "direction": "short", "distancePct": 0.211}` —
+  already 1.61 through its PDL — and the panel rendered the generic fallback *"— 0.24% from the
+  level"*, exactly the wording F71 was written to replace. Fixed by matching the kinds the desk
+  actually emits (`TEAM2_BREAK_KINDS`); the `through` test itself was correct and is untouched.
+  **Reporting only — no rule, threshold, gate, size or money path changed.** The lesson is the
+  reusable one: F71 was verified at the *data* level (both signs measured off the API) and in the
+  bundle, but never on screen, and the on-screen check is the only one that would have caught a
+  predicate that never matches. Verified on screen this time.
+
+- **F74 (2026-09-09 10:35 ET, NOT fixed — proposal; a reclaimed scenario anchor keeps a live short,
+  and only the EMA-touch entries are missing the side test).** D10 deliberately makes the bias
+  sticky: `ScenarioTracker.on_close` flips a scenario 2/3 only on a 15m close through the *far* side
+  of the range (`scenario.py:146-149`). QQQ today shows what that costs. The 09:30 15m bar closed
+  716.96 under the PDH zone bottom 717.47 and set `scenario_2 reject PDH → puts`. Every 15m bar
+  since has closed **above** that level — 718.86, 718.95, 718.29, 717.89 — and QQQ has held above it
+  for 45 minutes, but a flip needs a close above 721.89 (or below 715.57), so the short setup is
+  still live, still owns the Armed headline, and `bias.history` still has exactly one entry. The
+  gap is narrower than it first looks, and that is the useful part: the level-retest entry **is**
+  side-gated (T2, `session.py`: a short needs `b2.close < s.anchor`), and so is "break & base" (T7).
+  It is the **EMA13 / EMA48 touch entries (T1/E5) that carry no anchor-side test at all** — they ask
+  only for a touch and the stack. So on a day where the stack turns bear while price sits inside the
+  4.42-point band between the reclaimed anchor and the flip level, the desk would buy puts with the
+  rejection it is trading on 1–3 points *below* price. **F72's new guard does not catch it**: QQQ's
+  target 716.50 is genuinely below spot, so it reads as room. Nothing was at risk today — QQQ is
+  double-gated by a bull stack (strength 3) and by the pre-market no-trade zone (V6/B5; PM
+  713.50–720.67 means an entry needs price above 720.67, by which point the anchor is 3.2 below) —
+  which is also why this has not shown up before. Sibling of **F65** (a failed `pm_break_*` setup
+  that never dies): both are "the setup outlived its premise". Options: (a) require the EMA-touch
+  entries to sit on the trade's side of `s.anchor`, the same test T2 already applies; (b) kill a
+  scenario setup after N 15m closes back through its anchor (the `max_false_breaks=2` already in the
+  rules payload and still unused by `session.py`, per F65); (c) leave it — D10's stickiness is the
+  method's own choice and the other gates cover it. **A rule change either way, so: user's call.**
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1168,6 +1208,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
+- **2026-09-09 (market watch, run 35, 10:40 ET — v0.7.25)** — **F73 fixed** (reporting only): F71's "price is already through" wording was keyed to the labels `break PDH`/`break PDL` while the served pseudo-trigger carries `Setup.kind` (`scenario_4`, `pm_break_down`, …), so the branch never matched a single live row and every Team2 break setup fell back to a bare percentage; break rows now match on the kinds the desk emits, verified on screen. **F74 logged as a proposal** (rule change, user's call): a scenario 2/3 anchor reclaimed by later 15m closes keeps its setup live, and the EMA13/EMA48 touch entries — unlike T2 and T7 — have no anchor-side test. **F72's guard fired live for the first time** (IWM 10:32, `skip_target_behind`, target 293.56 above a 292.58 short entry) and replayed identically. Tests: 94 Team2 tests pass; frontend build green. No rule, threshold, gate, size or money path changed.
 - **2026-09-08 (evening, after the Codex review — v0.7.13, one deploy; stamped 0.7.12 at first, renumbered because the Cartel desk's PR 13 took 0.7.12 on origin/main the same evening)** — **Hosting:** the 14:24 outage was the Claude
   desktop package update stopping its VM service with the engine inside its process tree; the engine now runs under the
   Windows Task Scheduler (`ZargarWatchdog` / `ZargarRestart`, `scripts/watchdog.ps1`), the log keeps days (F69), and the

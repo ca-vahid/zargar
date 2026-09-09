@@ -525,20 +525,16 @@ class Team2Runner(PlanRunner):
             stop = spot - atr if direction == "long" else spot + atr
         else:
             stop = guard_f - atr if direction == "long" else guard_f + atr
-        target = e.get("target") if e.get("target") is not None else setup.get("target")
-        # F72 (2026-09-09): the read refuses an entry whose target is not ahead of it, but this line
-        # FALLS BACK to the setup's own target when the fire carried none — which puts the stale planned
-        # level back on the live trade. `target_breach` runs on the ~2s quote watch (planrunner 2b), so a
-        # target at or behind the fill sells the whole position on the FIRST live print, before a single
-        # 2m bar closes. Drop it instead: no target is safe (the candle stop, the premium stop, the trims
-        # and the 15:45 flatten all still manage the trade), a wrong one is not. Entry-side only — a
-        # target already on an OPEN trade is never rewritten here.
-        if target is not None and not target_is_ahead(float(target), spot, direction):
-            self._log(ap, "target_dropped",
-                      f"{tid}: planned target {float(target):.2f} is not ahead of the {spot:.2f} entry — "
-                      f"dropped, the trade is managed by its stops and the flatten (F72)",
-                      trigger=tid, spot=spot, target=round(float(target), 4))
-            target = None
+        target, target_refusal = self.resolve_fire_target(e, setup, spot, direction)
+        if target_refusal is not None:
+            # F72: REFUSE, never enter targetless. See `resolve_fire_target`.
+            self._log(ap, "skip_target_behind", f"{tid}: {target_refusal}", trigger=tid, spot=spot)
+            if journal:
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": tid, "event": "skip_target_behind",
+                    "spot": spot, "why": target_refusal, "ts": e.get("ts")},
+                    aggregate_type="technique_run", aggregate_id=ap.run_id)
+            return
         trade = Trade(trigger_id=tid, kind=str(setup.get("kind") or "team2"), direction=direction, fired_ts=e["ts"],
                       window="team2", entry=spot, stop=stop, targets=[float(target)] if target else [],
                       fire_bar_index=ap.bar_index - 1, last_price=bar.close, instrument=ap.config.instrument,
@@ -645,6 +641,44 @@ class Team2Runner(PlanRunner):
                           f"selling {tr.remaining:g} at market whatever the read says (C3/D-1)", trigger=tr.trigger_id)
                 await self._exit(ap, tr, "flatten", tr.remaining, journal=True, force_market=True,
                                  reason="flatten: 0DTE flatten time reached on the clock (C3/D-1)")
+
+    # ------------------------------------------------------------- the fire's target (F72)
+    def resolve_fire_target(self, e: dict, setup: dict, spot: float,
+                            direction: str) -> tuple[float | None, str | None]:
+        """The target a live trade will carry, or the reason to REFUSE the fire. Never both.
+
+        `e["target"]` is the read's own resolved-and-validated target. The fallback to
+        `setup["target"]` covers a fire that carried none — a restored or replayed event, a plan
+        whose target was rewritten under a running session — and that fallback is the one path by
+        which a target the read never judged can reach a live trade. It matters because
+        `target_breach` runs on the ~2 s quote watch (planrunner 2b): a target at or behind the
+        fill sells the whole position on the FIRST live print, before a single 2m bar closes.
+
+        An invalid target is **never coerced to None**. Doing that would turn "this trade has no
+        room" into permission to enter WITHOUT a target — a *weaker* outcome than the refusal the
+        read already applies to the same condition, and a silent one. Invalid means refused, at
+        both layers, so the baseline holds wherever the fire came from.
+
+        A genuinely ABSENT target (no target on the fire and none on the setup) is a different
+        thing and stays allowed: the read validated that shape, and the candle stop, premium stop,
+        trims and the 15:45 flatten manage the trade. Entry-side only — a target already on an
+        OPEN trade is never rewritten here.
+        """
+        target, src = e.get("target"), "fire"
+        if target is None:
+            target, src = setup.get("target"), "setup"
+        if target is None:
+            return None, None                    # no target anywhere: the shape the read allowed
+        try:
+            t = float(target)
+        except (TypeError, ValueError):
+            return None, f"target {target!r} carried by the {src} is not a number — refusing the entry (F72)"
+        if not target_is_ahead(t, spot, direction):
+            side = "above" if direction == "short" else "below"
+            return None, (f"target {t:.2f} (from the {src}) is {side} the {spot:.2f} entry — no room left, so the "
+                          f"trade would exit on its first bar or its first live print; refusing the entry "
+                          f"rather than entering with no target at all (F72)")
+        return t, None
 
     # ------------------------------------------------------------- live premium (money modes)
     def target_breach(self, tr: Trade, last: float) -> str | None:
@@ -1001,7 +1035,9 @@ class Team2Runner(PlanRunner):
         elif open_pos:
             guard = {"ema": "EMA13", "ema48": "EMA48", "ema200": "200 EMA"}.get(str(open_pos.get("entryKind")), "level")
             tgt = open_pos.get("target")
-            tgt_s = (f", target {tgt:.2f} ({'high/low of day' if open_pos.get('targetKind') == 'hod' else 'planned level'})"
+            tgt_word = {"hod": "high/low of day", "replan": "re-planned level"}.get(
+                str(open_pos.get("targetKind")), "planned level")
+            tgt_s = (f", target {tgt:.2f} ({tgt_word})"
                      if tgt else "")
             adds_s = f", {open_pos.get('adds')} add" if open_pos.get("adds") else ""
             live_s = ""

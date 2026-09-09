@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.24";
+export const APP_VERSION = "0.7.25";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.25",
+    date: "2026-09-09",
+    title: "Saying \"already through\" out loud",
+    items: [
+      { tag: "fixed", text: "The Team2 plan line that was supposed to say a level is already broken never actually said it: the wording was keyed to a label the desk does not use, so every break setup fell back to a bare percentage. Break rows now read \"price is already through, waiting on the 15m close\"." },
+    ],
+  },
   {
     version: "0.7.24",
     date: "2026-09-09",
