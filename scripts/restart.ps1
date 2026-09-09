@@ -27,7 +27,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-# the scheduler runs this in a console nobody sees: keep a transcript per run in logsestart-<ts>.log
+# the scheduler runs this in a console nobody sees: keep a transcript per run in logs/restart-<ts>.log
 $logDirEarly = Join-Path $Root "logs"
 if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
 try { Start-Transcript -Path (Join-Path $logDirEarly ("restart-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")) -Append | Out-Null } catch { }
@@ -44,8 +44,13 @@ $engineUp = $false
 try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $engineUp = $true } catch { $engineUp = $false }
 if ($engineUp) {
   try { $stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $stateBefore = $null }
+  # an older engine answers the SPA shell (or nothing): no state, no restoration check
+  if (-not ($stateBefore -is [System.Management.Automation.PSCustomObject]) -or -not ($stateBefore.PSObject.Properties.Name -contains "armed")) { $stateBefore = $null }
   try {
     $rc = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restart-check?caller=restart.ps1" -TimeoutSec 6
+    if (-not ($rc -is [System.Management.Automation.PSCustomObject]) -or -not ($rc.PSObject.Properties.Name -contains "safe")) {
+      throw "no readiness answer (older engine or a non-JSON reply)"
+    }
     if (-not $rc.safe) {
       foreach ($r in $rc.reasons) { Warn ("in flight: " + $r) }
       if (-not $Force) { Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; exit 2 }

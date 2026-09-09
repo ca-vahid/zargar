@@ -109,8 +109,13 @@ try {
   # 2026-09-09 (F75 review): "no open positions" was never the test. Ask the engine what a restart
   # would interrupt across EVERY technique + the order book, and keep its state for the check after.
   try { $script:stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $script:stateBefore = $null }
+  # an older engine answers the SPA shell (or nothing): no state, no restoration check
+  if (-not ($script:stateBefore -is [System.Management.Automation.PSCustomObject]) -or -not ($script:stateBefore.PSObject.Properties.Name -contains "armed")) { $script:stateBefore = $null }
   try {
     $rc = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restart-check?caller=start.ps1" -TimeoutSec 6
+    if (-not ($rc -is [System.Management.Automation.PSCustomObject]) -or -not ($rc.PSObject.Properties.Name -contains "safe")) {
+      throw "no readiness answer (older engine or a non-JSON reply)"
+    }
     if (-not $rc.safe) {
       foreach ($r in $rc.reasons) { Warn "in flight: $r" }
       if (-not $Force) { Fail "Not safe to restart now. Wait, or run again with -Force (logged as an override)." 2 }

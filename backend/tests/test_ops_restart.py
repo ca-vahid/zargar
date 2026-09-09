@@ -75,3 +75,6 @@ async def test_the_endpoints_answer_local_callers_only(rig):
         assert r.status_code == 200 and r.json()["ok"] is True
         r = await c.get("/api/ops/state", headers={"x-forwarded-for": "10.0.0.9"})
         assert r.status_code == 403
+        # an unknown API route is a 404, never the SPA shell (the restart scripts parse these answers)
+        r = await c.get("/api/ops/does-not-exist")
+        assert r.status_code == 404 and "text/html" not in r.headers.get("content-type", "")

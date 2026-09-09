@@ -582,6 +582,10 @@ def create_app(config: AppConfig, engine: Engine | None = None) -> FastAPI:
 
         @app.get("/{path:path}", include_in_schema=False)
         async def spa(path: str):
+            if path.startswith("api/"):
+                # 2026-09-09: an unknown /api route is an API 404, never the SPA shell (the restart scripts
+                # read /api/ops/* and a 200 HTML answer was mistaken for "not safe")
+                raise HTTPException(status_code=404, detail="no such API route")
             # Deep links (/technique/run/<id>) fall through to index.html, but the
             # path is attacker-controlled: resolve it and refuse anything that
             # escapes the dist directory, or `../../backend/.env` is served.

@@ -34,8 +34,13 @@ if (Test-Path $lock) {
 $before = $null
 if ($up) {
   try { $before = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $before = $null }
+  # an older engine answers the SPA shell (or nothing): no state, no restoration check
+  if (-not ($before -is [System.Management.Automation.PSCustomObject]) -or -not ($before.PSObject.Properties.Name -contains "armed")) { $before = $null }
   try {
     $rc = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/restart-check?caller=watchdog" -TimeoutSec 6
+    if (-not ($rc -is [System.Management.Automation.PSCustomObject]) -or -not ($rc.PSObject.Properties.Name -contains "safe")) {
+      throw "no readiness answer (older engine or a non-JSON reply)"
+    }
     if (-not $rc.safe) {
       $why = ($rc.reasons -join "; ")
       if ($Override) { Log ("OVERRIDE: restarting over in-flight work: " + $why) }
