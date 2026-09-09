@@ -114,6 +114,9 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             else:
                 ready = crossed
             if not ready:
+                if (close-plan.targets[0])*sign >= 0:
+                    trace.append({"at": end, "rule": "M4", "decision": "target_passed",
+                                  "reason": "First target is already behind the current price; no new qualifying crossing. Reassess the next plan."})
                 continue
             reasons = []
             if baseline is None:
@@ -140,7 +143,11 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             if (close - stop) * sign <= 0:
                 reasons.append("No positive entry-to-stop risk.")
             if reasons:
-                trace.append({"at": end, "rule": "M4/M3", "decision": "watch_only", "reason": " ".join(reasons)})
+                trace.append({"at": end, "rule": "M4/M3", "decision": "watch_only", "reason": " ".join(reasons),
+                              "measurements": {"close": close, "trigger": plan.trigger, "volume": volume,
+                                  "baselineVolume": baseline, "requiredVolumeMultiple": plan.entry.volume_multiple,
+                                  "volumeRatio": volume/baseline if baseline else None,
+                                  "closeLocation": location, "requiredCloseLocation": plan.entry.min_close_location}})
                 continue
             event_id = f"{plan.id}:entry:{end}"
             trace.append({"at": end, "rule": "M4", "decision": "triggered",

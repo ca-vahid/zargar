@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import re
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -23,6 +24,10 @@ class PreparationPolicy(WireModel):
     overnight_ack: bool = False
     portfolio_id: str | None = Field(default=None, max_length=64)
     profile: ScreenProfile = 'september_2026'
+    industry_policy: Literal['context', 'strict'] = 'context'
+    reviewed_etfs: tuple[str, ...] = ('DRAM',)
+    comparison_symbols: tuple[str, ...] = ('MU', 'SNDK', 'NVDA', 'INTC', 'SMCI', 'AMD', 'ALAB', 'TEM', 'MRNA', 'DELL', 'HPE', 'NTAP', 'DRAM')
+    comparison_source: str = Field(default='Historical reference: Sean weekly watchlist, 2026-09-07, https://x.com/SRxTrades/status/2097097587828707793 (comparison only; not a live signal)', max_length=2000)
     scan_all: bool = True
     history_limit: int = Field(default=200, ge=1, le=10000)
     request_interval_seconds: float = Field(default=.25, ge=0, le=5)
@@ -52,6 +57,11 @@ class PreparationPolicy(WireModel):
     def valid_exit_policy(self):
         if self.enabled and self.workspace == 'live' and not (self.allow_live and self.overnight_ack):
             raise ValueError('Live preparation requires live execution and overnight-protection acknowledgements')
+        for symbols in (self.reviewed_etfs, self.comparison_symbols):
+            if len(symbols) > 50 or len(set(symbols)) != len(symbols) or any(not re.fullmatch(r'[A-Z][A-Z0-9.\-]{0,11}', v) for v in symbols):
+                raise ValueError('Use up to 50 unique uppercase symbols')
+        if self.comparison_symbols and not self.comparison_source.strip():
+            raise ValueError('Comparison watchlist requires a dated source or rationale')
         ExitCampaign.for_profile(self.exit_profile, [1., 2.], september_fractions=self.september_fractions)
         return self
 

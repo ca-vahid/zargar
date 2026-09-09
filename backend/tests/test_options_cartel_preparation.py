@@ -42,7 +42,7 @@ def inputs():
             rows = data['history'] if symbol == 'TEST' else data['indices'][symbol]
             return [Bar(symbol, tf, session_bounds(b.session.isoformat())[0], b.open, b.high, b.low, b.close, b.volume) for b in rows]
         return [Bar(symbol, '1m', session_bounds(b.session.isoformat())[0]+i*60_000, 145, 146, 144, 145, 100)
-                for b in data['history'][-5:] for i in range(15)]
+                for b in data['history'][-5:] for i in range(390)]
     async def choose(engine, plan, policy):
         assert policy.max_ask <= 1  # 1% of the fixture's 10K equity, full-debit risk
         return {'selected': {'symbol': Occ('TEST', plan.first_session+dt.timedelta(days=45), 'C', 150).symbol},

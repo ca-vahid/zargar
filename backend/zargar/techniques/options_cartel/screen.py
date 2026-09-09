@@ -24,6 +24,7 @@ class ListingFacts(BaseModel):
     cap_data_as_of_ms: int | None = Field(default=None, ge=0)
     cap_source: str | None = None
     fundamentals_snapshot_id: str | None = None
+    security_type: Literal["stock", "dr", "etf"] = "stock"
     industry: str | None = None
     membership_observed_at: int | None = Field(default=None, ge=0)
     membership_source: str | None = None
@@ -137,9 +138,13 @@ def screen_listing(bars: list[DailyBar], facts: ListingFacts, indices: dict[str,
          if regime["direction"] != "unknown" else None, regime["direction"])
     gate("DATA", "Latest completed exchange session present", last.session == _latest_session(at) if last else None)
     gate("M2", "Price above minimum", last.close > rules.min_price if last else None, last.close if last else None)
-    gate("M2", "Source-dated market capitalization above minimum",
-         facts.market_cap > rules.min_market_cap if valid_cap and facts.market_cap is not None else None,
-         facts.market_cap if valid_cap else None)
+    if facts.security_type == 'etf':
+        gate("M2", "Explicitly reviewed ETF with current classification (stock market cap not applicable)",
+             facts.symbol in rules.reviewed_etfs and valid_facts, facts.symbol)
+    else:
+        gate("M2", "Source-dated market capitalization above minimum",
+             facts.market_cap > rules.min_market_cap if valid_cap and facts.market_cap is not None else None,
+             facts.market_cap if valid_cap else None)
     liquidity_volume = (sum(b.volume for b in history[-rules.volume_period:])/rules.volume_period
                         if len(history) >= rules.volume_period else None) if rules.volume_basis == "average" \
                         else last.volume if last else None
@@ -165,7 +170,7 @@ def screen_listing(bars: list[DailyBar], facts: ListingFacts, indices: dict[str,
     if rules.require_positive_change:
         gate("M2", "Daily change agrees with direction", (history[-1].close - history[-2].close)
              * (1 if direction == "long" else -1) > 0 if len(history) >= 2 else None)
-    if rules.require_industry_rank:
+    if rules.require_industry_rank and facts.security_type != 'etf':
         known = valid_ranks and facts.industry and facts.rank_direction == direction
         periods = []
         for best, worst in ((facts.week_rank_best, facts.week_rank), (facts.month_rank_best, facts.month_rank)):

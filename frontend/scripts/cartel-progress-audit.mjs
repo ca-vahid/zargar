@@ -50,7 +50,7 @@ try {
     await page.getByRole("progressbar", {name:"Stock evaluation progress", exact:true}).waitFor();
     assert.equal(resumeId, "progress-fixture");
     await page.getByRole("tab", {name:"Settings", exact:true}).click();
-    const all = page.getByLabel("Evaluate all eligible stocks", {exact:true});
+    const all = page.getByLabel("Evaluate all eligible stocks and reviewed ETFs", {exact:true});
     await all.waitFor(); assert(await all.isChecked());
     assert.equal(await page.getByLabel("Optional symbol cap", {exact:true}).count(), 0);
     await all.uncheck(); await page.getByLabel("Optional symbol cap", {exact:true}).waitFor();

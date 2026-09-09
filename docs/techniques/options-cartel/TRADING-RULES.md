@@ -143,3 +143,20 @@ gates, and requires reviewed targets. Its trigger/invalidation are the base
 high/low; actual initial stop still follows the selected entry policy. It does
 not silently replace generic base candidates or change already-saved plans.
 Synthetic geometry/composition tests establish mechanics, not author calibration.
+
+
+## 2026-09-08: Coverage interpretation and entry readiness (v0.7.12)
+
+New preparation defaults to industry ranks as context, with explicit strict ranking
+still available. This expands analysis without certifying theme/catalyst discretion.
+Reviewed ETFs have their own classification/liquidity path; DRAM is the initial
+reviewed symbol. A dated comparison list reports exclusions without overriding them.
+Existing saved plans retain their rules; legacy scans require fresh preparation.
+
+Every new automatically prepared plan requires full same-time volume-baseline
+coverage. Pending activation requires complete current session history and checks
+whether the first target/invalidation is already reached. Historical recovery is
+bounded and never submits a missed historical crossing. Entry decisions and numeric
+rejection evidence persist through recovery. Original 15m/1.5x/0.70 entry defaults
+remain; 5m/15m breakout/retest comparisons are research-only and never auto-promoted.
+See FIDELITY-REVIEW-2026-09-08.md for sources, limitations and the next-session checklist.

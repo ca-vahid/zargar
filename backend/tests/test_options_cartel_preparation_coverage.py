@@ -124,21 +124,24 @@ async def test_provider_timeout_cancels_and_awaits_owned_request():
     assert stopped.is_set()
 
 
-async def test_definite_industry_failure_is_counted_without_history_requests(engine):
+@pytest.mark.parametrize('industry_policy', ['strict', 'context'])
+async def test_industry_policy_controls_exclusion_before_history_requests(engine, industry_policy):
     at, providers, calls = providers_for(['TEST'])
     async def industries(*, clock):
         return IndustrySnapshot(source='fixture', observed_at=at, freshness_basis='publisher_observation',
             expected_count=12, week_definition='fixture', month_definition='fixture',
             rows=[{'industry': f'Group{i}', 'weekPct': i+1, 'monthPct': i+1} for i in range(11)] +
                  [{'industry':'Semiconductors', 'weekPct':-1, 'monthPct':-1}]), {}
-    policy = PreparationPolicy(enabled=True, request_interval_seconds=0)
+    policy = PreparationPolicy(enabled=True, request_interval_seconds=0, industry_policy=industry_policy)
     await engine.settings.set(setting_key('practice'), policy.model_dump(mode='json'))
     runtime = engine.cartel_observer = CartelRuntime(engine); runtime.clock = lambda: at
     try:
         result = (await run_preparation(engine, policy, clock=lambda: at, **{**providers, 'industries': industries}))['result']
-        assert result['coverageComplete'] and result['prefiltered'] == 1
-        assert result['processed'] == 1 and result['evaluated'] == 0
-        assert ('TEST', '1d') not in calls and result['rows'][0]['status'] == 'prefiltered'
+        assert result['coverageComplete']
+        assert result['prefiltered'] == (1 if industry_policy == 'strict' else 0)
+        assert result['processed'] == 1 and result['evaluated'] == (0 if industry_policy == 'strict' else 1)
+        assert (('TEST', '1d') in calls) == (industry_policy == 'context')
+        assert result['rows'][0]['industryContext']['status'] == 'fail'
     finally:
         await runtime.stop()
 

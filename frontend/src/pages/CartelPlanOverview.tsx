@@ -37,6 +37,11 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
     {!active && decision?.selection?.pendingReason && <p className="cartel-notice">At preparation: {decision.selection.pendingReason}</p>}
     {!active && decision?.selection?.errors?.map((e: string, i: number) => <p key={i}>{e}</p>)}
     {active && <p>Execution mode: {active.config?.mode || active.mode}. {active.summary} {!mismatch && <button className="link-btn" onClick={() => openArmedPlan(run.runId)}>Open execution monitor</button>}</p>}
+    {!!active?.decisionHistory?.length && <details open><summary>Entry decisions (preserved through recovery)</summary>
+      {active.decisionHistory.map((d:any, i:number) => <div key={i}><p><b>{new Date(d.at).toLocaleString()}</b> · {label(d.decision)} · {d.reason}</p>
+        {d.measurements && <p className="muted">Close {price(d.measurements.close)} · volume {d.measurements.volumeRatio?.toFixed(2) ?? "unknown"}× (required {d.measurements.requiredVolumeMultiple}×) · close location {(d.measurements.closeLocation*100).toFixed(1)}% (required {(d.measurements.requiredCloseLocation*100).toFixed(1)}%)</p>}
+      </div>)}
+    </details>}
     <div className="cartel-fields">
       <div><span className="muted">Selected setup</span><p><strong>{label(plan.direction)} · {label(plan.setup)}</strong></p></div>
       <div><span className="muted">Entry trigger</span><p><strong>{price(plan.trigger)}</strong></p></div>
