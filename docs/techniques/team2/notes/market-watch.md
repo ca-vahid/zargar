@@ -3036,3 +3036,67 @@ data and original research records. Keep target_replan off until the clean datas
   strategy question**, **F74**, **F76's rule question**, **F81**, **F82** (now with a third
   measurement), **F83**, F67's two shared-side halves, and the F30-family question of which premium
   series is authoritative.
+
+## 2026-09-09 16:20 ET (run 46 — post-close: the ninth session closed clean at 0 trades, v0.7.33 deployed, and F85 says the desk went blind for two minutes at 15:15 and nothing but the journal remembers)
+
+- **Alive and current.** The queued deploy went out: `ZargarRestart` at 16:09 ET, back in 25 s on
+  **v0.7.33** (`1853ace`, F84's prose fix). The script's own restore check passed on every count —
+  `armed 12/12, openTrades 0/0, workingEntries 0/0, pendingExits 0/0, restingOrders 10/10,
+  inflightOrders 0/0, managedPositions 3/3, managedOpen 3/3`. `restart-check` was `safe: true`
+  beforehand and Team2's book was empty, so nothing of ours was at risk. No traceback since the boot.
+- **The session closed correctly.** All three plans took `TechniquePlanScored` + `TechniquePlanDisarmed`
+  at **16:00:00 ET** with `reason: "session closed"`, `flatten: false`, `openLeft: 0`,
+  `stopReason: null` — the 15:45 flatten had nothing to flatten, as expected. `/api/team2/status` now
+  shows `armed: []` (the correct post-close state) and `/team2` renders all three as **DISARMED**.
+  `team2_plan_nightly at 17:00 ET` and `team2_preopen at 09:25 ET` are both registered on the new
+  boot, so tomorrow's plans are covered.
+- **Final tape for the day — ninth session, still zero.** 0 fires, 0 trades, 0 open positions on all
+  three. Day totals: **20 `same_pullback`, 18 `skip_target_behind`, 7 `late_touch`, 5
+  `skip_no_trade_zone`, 5 `scenario`, 3 `skip_last_entry`, 2 `skip_engulfing`, 2 `pm_break`**
+  (SPY 13 events, QQQ 11, IWM 38). Nothing new after the 15:32 `skip_last_entry` on each. **QQQ never
+  left 713.50–720.67**, so its scenario 3 — the only symbol with a live target all afternoon — was
+  never takeable, closing the day exactly as run 45 predicted.
+- **Replay parity exact on all three, on the new build**: SPY 13/13, QQQ 11/11, IWM 38/38, zero
+  trades both ways.
+- **Bar provenance clean through the close.** **390/390** RTH 1m rows per symbol 09:30–16:00, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps**, first 09:30 last 15:59 on all three. F75/F79/F80 stay closed.
+- **F84 verified on 0.7.33.** IWM's seven watch-only contacts now read **"contact #13 … #19 of
+  pm_break_down@10:30 — past the first 2 pullbacks, watch-only (D9/P6)"** — seven distinct,
+  monotonic labels where 0.7.32 printed "touch #3" seven times — while the event's `touch` payload
+  still carries the frozen index 3 (contract unchanged). Note for future runs: `/api/team2/runs/{id}/read`
+  **recomputes** the read from bars (`source: "live"`), so a prose fix applies retroactively to what
+  the endpoint shows; the journalled `TechniquePlanRead` rows keep the wording they were written with.
+- **F85 — NEW, NOT FIXED, and the most important thing in this run.** At **15:15:02 ET** the runner
+  journaled `TechniquePlanError {stage: "data", error: "stale bars", lastBarTs: 15:12}` on all three
+  Team2 plans — and with the identical `lastBarTs` on **36 `enhanced_market` and 10 `tip` plans**.
+  Four seconds later: `alpaca stream dropped: no close frame received or sent` (15:15:06),
+  reconnected 15:15:08. The runner eats **1m** bars, so a healthy newest-bar age tops out ~65 s;
+  **182 s means the 15:13 and 15:14 closes never reached it** — a desk-wide ~2-minute blind window,
+  15 minutes before the 15:30 last-entry gate. **It is invisible after the fact:** `ap.stale` clears
+  on the next bar, `needsAttention` reports staleness only while a position is open (nothing was
+  held), `readError` stayed null, quotes are a different path and stayed fresh, and the tape is the
+  perfect 390/390 all-exchange record above because the missing minutes were backfilled behind the
+  outage. **Run 44 of this watch ran at exactly 15:15 ET and reported everything green.** Cost today:
+  nothing (no setup was live). But this is exactly how a fire gets dropped silently.
+  **Working rule adopted for every future run: query the journal for `TechniquePlanError` — a healed
+  stall leaves no other trace.**
+- **Proposed for the user (F85, not built — both halves are shared code, `zargar/execution/planrunner.py`
+  and `zargar/brokers/alpaca.py`):** (a) record a healed stall durably on the session read as a
+  "blind window HH:MM–HH:MM" line, so a day's record states where it was blind; (b) add a
+  data-liveness watchdog on the stream (no bar for N seconds → force reconnect) — the reconnect took
+  2 s, so the dark window was nearly all detection latency; (c) leave it.
+- **Still noise, not breakage:** `persist_bars: dropped N non-bucket-aligned stub bar(s)` continues at
+  roughly two warnings a minute (the shared F75 guard doing its job; Team2's tape is complete). The
+  empty-reason `OPRA quotes failed:` line proposed in run 45 is unchanged.
+- **Next run (pre-open tomorrow, 2026-09-10) should:** (1) confirm the **17:00 ET tonight**
+  `team2_plan_nightly` job minted three plans for 2026-09-10 and that they carry sheets/levels;
+  (2) run the **09:25 pre-open** check — `pmh`/`pml`/`dayType`/`sizingAtOpen`/`complete: true` on all
+  three, and `POST /api/team2/preopen-now` if it was missed; (3) **query the journal for
+  `TechniquePlanError` (F85)** as a standing item, not only the snapshot's `needsAttention`;
+  (4) confirm the desk is serving **v0.7.33** and bar provenance stays `exchange`. Still open for the
+  user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
+  **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question**,
+  **F74**, **F76's rule question**, **F81**, **F82** (three measurements, option (c) now best
+  supported), **F83**, **F85**, F67's two shared-side halves, and the F30-family question of which
+  premium series is authoritative.

@@ -1597,6 +1597,37 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   contract" once theta has eaten the chain. Still the user's call.
 
 
+- **F85 (2026-09-09 15:15 ET, NOT FIXED — the desk went blind on bars for ~2 minutes inside the
+  0DTE session and nothing but the journal remembers it).** At **15:15:02–15:15:04 ET** the plan
+  runner journaled `TechniquePlanError {stage: "data", error: "stale bars", lastBarTs: 15:12}` on
+  **all three** Team2 plans — and, with the identical `lastBarTs`, on **36 `enhanced_market` plans
+  and 10 `tip` plans**. Four seconds later the feed log shows
+  `alpaca stream dropped: no close frame received or sent — reconnecting in 1s` (15:15:06),
+  reconnected and authenticated by **15:15:08**. The runner consumes **1m** bars, so in health the
+  newest closed bar is at most ~65 s old; **182 s means the 15:13 and 15:14 closes never reached
+  it**. Team2's first in-session stale event ever (over the last 10 days stale-bar errors appear on
+  five days; 2026-09-07 produced 1,504 of them on `tip`).
+  **What makes this a finding is that it is invisible afterwards.** `ap.stale` clears on the next
+  bar; `needsAttention` lists staleness *only while a position is open* (correct — nothing was at
+  risk); `readError` stayed null; quotes are a different path and stayed fresh (0.1–0.3 s); and the
+  `bars` tape is **complete and 100 % `source='exchange'` across 15:08–15:22 on all three symbols**,
+  because the missing minutes were filled in behind the outage. An audit of the tape, the snapshot or
+  the read therefore shows a **perfect day** — run 44 of this watch ran at exactly 15:15 ET and
+  reported everything green. The only durable trace is the `TechniquePlanError` row.
+  **Cost today: none** — no setup was live, the day ended 0 fires — but this is precisely the failure
+  mode that silently drops a trade: for those ~2 minutes no 2m close was evaluated, no trigger could
+  fire and no bar-close exit could run (the ~2 s quote stop watch does keep working), 15 minutes
+  before the 15:30 last-entry gate.
+  **Working rule for every future watch run: query the journal for `TechniquePlanError` — a healed
+  stall leaves no other trace.** Not fixed here: both halves live in shared code
+  (`zargar/execution/planrunner.py` staleness reporting, `zargar/brokers/alpaca.py` stream
+  liveness), so this is for the user / platform owners. Options: **(a)** record a healed stall
+  durably on the session read as a "blind window HH:MM–HH:MM" line, so a day's record states where
+  it was blind; **(b)** add a data-liveness watchdog on the stream (no bar for N seconds → force
+  reconnect) — the socket's own keepalive only noticed ~2 minutes after data stopped, and the
+  reconnect itself took 2 s, so the dark window is nearly all detection latency; **(c)** leave it.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
