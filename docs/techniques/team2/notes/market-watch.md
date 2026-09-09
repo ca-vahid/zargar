@@ -1814,7 +1814,7 @@ Appended by the scheduled task `team2-market-watch` (every 30 min, 09:00-16:30 E
   QQQ above 721.82 / below 717.03, SPY below 769.00, IWM above the PDH zone top 296.18 (its own PM
   break is exhausted, F65). Check the `contract` event first on any fire (F59) and re-measure **F50**
   close-vs-target slippage. Desk loss tally still **1 of 2** on the book basis (F37). Still open for
-  the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
+  the user: **F72 (live today)**, **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
   **F63**, **F64**, **F65**, and the F30-family question of which premium series is authoritative.
 
 ## 2026-09-08 15:33 ET (run 30 — the 15:30 cutoff held; F66 fixed: the headline was still promising a pullback entry that had closed)
@@ -2011,3 +2011,316 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   on Team2 Practice and set back to auto at $2,000 / 6 % (per-plan halt $1,192); `sigma`/`complete` stay empty until the
   09:25 pre-open and the first 2m read. Zero `httpx` INFO lines since boot (F69). EM's known
   `technique_outcomes` truncation error is still in the log — not ours.
+
+## 2026-09-09 09:00 ET (run 33 — first of the day, pre-open; everything green, F70 logged)
+
+- **Alive and current.** `/api/health` ok, **v0.7.22** (the desk moved 0.7.13 → 0.7.22 overnight on
+  other teams' merges — EM run-cap, Cartel moderate alignment, tips intake reviews, `restart.ps1`
+  watchdog-lock and ASCII fixes). Engine up since **02:59 ET** (pid 14092); the app log shows nine
+  boots between 20:27 and 23:59 PDT last night, all the evening desk session and its watchdog, and
+  eleven `TechniquePlanRestored` events on each Team2 plan to match. Nothing armed or open was lost.
+- **F41 clean — plans minted once, from the journal not the UI.** Exactly **one**
+  `ScheduledJobRan team2_plan_nightly` at **2026-09-08 17:00:26 ET**, and exactly **three**
+  `technique_runs` rows for it (SPY `e4d39d00` 17:00:25, QQQ `9a1094ed` 17:00:25, IWM `e87e4ad2`
+  17:00:26), all `armed` for `planFor 2026-09-09`. No duplicate despite the nine restarts.
+- **Mode is `auto` on all three, as the evening session left it** (`TechniquePlanModeChanged
+  alert → auto` at 21:16 ET yesterday, journaled): Team2 Practice, premium budget **$2,000**,
+  risk **6 %**, per-plan daily loss halt **$1,192.10**, `maxOpenTrades 1`, `allowLive false`.
+  Not touched by this watch.
+- **Data is real-time.** 1m bars for SPY/QQQ/IWM banking to **09:02 ET** (92 s old, pre-market);
+  quotes `quoteAgeSeconds 0–2`, `session: "pre"`; `alpaca stream: connected` + `authenticated` at
+  boot with no reconnects since. `dayHigh/dayLow/volume` are 0 pre-open, which is F19 behaving.
+  **0DTE chains exist for all three** (`/api/options/{sym}/expiries` → `2026-09-09 dte 0 is0dte`),
+  so the contract pick has something to hit today: SPY spot 763.57 iv30 12.6, QQQ 715.06 / 18.4,
+  IWM 293.12 / 17.3.
+- **F44 confirmed closed:** the expired `QQQ260908P00714000` appears **1,339 times** in the log
+  history and **zero** times since the 23:59 boot — it dropped out of the OPRA batch on the first
+  refresh after expiry, exactly as written.
+- **Tonight's sheet (gap-down day on all three, plan `complete` in replay, `openPrice` from the
+  pre-market print):** SPY PDH 767.46–769.70 / PDL 765.14–765.99, PM 762.49–767.13, last close
+  765.99, open 763.70. QQQ PDH 717.47–721.89 / PDL 715.57–716.50, PM 713.50–720.67, close 718.38,
+  open 715.09. IWM PDH 295.86–296.10 / PDL 294.26–294.81, PM 292.62–294.82, close 294.70, open
+  293.31. QQQ sits **0.05 %** under its PDL trigger and IWM **0.33 %** — a 15m close below either
+  starts a put day. No scenario, no bias, no regime yet: correct at 09:12 ET, before the open.
+- **Yesterday's History row renders right** (F67 + F68 verified live through the API): QQQ
+  *"2 trade(s) · -65.84 book · read +65.6%"*, IWM *"no trade · 5 refused"*, SPY *"no trade ·
+  1 refused"*, each with `notes: ["skip_last_entry"]` kept out of the refusal tally. **Book flat:**
+  Team2 Practice cash **and** equity **$9,934.16**, zero positions.
+- **Tests green on the new version:** 66 passed (`tests/test_team2_*.py
+  tests/test_marketstructure_extended.py`, own DB `zargar_test_team2_watch`) — the 0.7.13 → 0.7.22
+  merges broke nothing of ours.
+- **F70 (new, PROPOSED, not built — shared feed).** `Quote.prev_close` is **one session stale in
+  pre-market**: `/api/quotes` gave SPY `prevClose 770.19` (the **09-04** close, confirmed against the
+  1d `bars` table) with `regPrice 765.96` (the real prior close, which CBOE also reports via
+  `/api/options/SPY/expiries`). `brokers/yahoo.py:287` reads `chartPreviousClose`, and before the
+  open Yahoo's 1d chart is still yesterday's session. So the desk shows SPY at about **-0.86 %**
+  pre-market where the truth is **-0.29 %**; it self-corrects on the 09:30 bar, which is why it has
+  never been caught in-session. **Team2 is unaffected** — the gap rule and `dayType` come from the
+  plan's `lastClose` and the 1m bars, and `techniques/team2/` never reads `quote.prev_close`.
+  One clause in the shared Yahoo poll would fix it → **user's call**. Written up in TRADING-RULES.
+- **Log clean, one piece of shared noise.** Zero Team2 errors, zero Tracebacks since boot; the
+  scheduler re-registered `team2_plan_nightly 17:00 ET` and `team2_preopen 09:25 ET`. The only two
+  ERRORs in the file are EM's (an httpx connect failure at 21:40 ET yesterday, twice). Worth a
+  mention for whoever owns marketdata: **~1,100 `persist_bars: dropped N non-bucket-aligned stub
+  bar(s)` WARNINGs in six hours**, N climbing 1 → 15 — the EM #5 guard doing its job, but it is now
+  the loudest thing in the log and F69's rotation fix is what makes it visible. Not ours, not fixed.
+- **Nothing deployed this run** — no defect found in Team2 code, and the window was inside the
+  09:25–09:35 no-restart guard by the end of it.
+- **Next run (09:30 ET) owns the pre-open check:** the 09:25 job fires 13 minutes after this run
+  ended, so confirm `pmh`/`pml`/`dayType`/`sizingAtOpen`/`complete: true` on all three and call
+  `POST /api/team2/preopen-now` if any is missing; then watch the first 2m closes against the PDL
+  zones (QQQ and IWM are the near ones) and check that `bias`/`regimeLast` start advancing.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, F67's two shared-side halves, and
+  the F30-family question of which premium series is authoritative.
+
+## 2026-09-09 09:30 ET (run 34 — the pre-open check; all green, F71 found and fixed)
+
+- **Alive, plans intact, no restarts today.** `/api/health` ok, v0.7.22, 82 armed. The last
+  `TechniquePlanRestored` on all three Team2 plans is **02:59 ET** (the evening session's watchdog
+  boot) — nothing has restarted since, and the watchdog has ticked cleanly every 3 minutes all
+  morning (`logs/watchdog.log`, rc=0 through 09:34). Mode still **auto** on Team2 Practice, $2,000
+  premium / 6 % risk, per-plan halt $1,192.10, `maxOpenTrades 1`, `allowLive false`. Not touched.
+- **The 09:25 pre-open completed on all three, and this run owns that check: PASS.**
+  `ScheduledJobRan team2_preopen` at **09:25:10 ET (0.8 s)**, `TechniquePlanPreopen` journaled on
+  each plan at 09:25:54, and every plan now carries `complete: true` with `pmh`/`pml`/`dayType`/
+  `sizingAtOpen`. SPY PM 762.49–767.13, QQQ 713.50–720.67, IWM 292.62–294.82. `sizingAtOpen` is
+  **`none` on all three** — correct, not a miss: every open printed *inside* its own pre-market
+  range, which F15 calls chop. No `preopen-now` call was needed.
+- **F49 fired and did its job.** At 09:31:00 each plan finalized the day type on the real 09:30
+  open: SPY 764.08 `gap_down → gap_down`, IWM 293.46 `gap_down → gap_down`, and **QQQ 716.40
+  `gap_down → normal`** — the 09:25 estimate off the last pre-market print was wrong on QQQ and the
+  RTH open corrected it, which is exactly what F49 was built for. **F51 fired too**: sigma locked at
+  09:32 from the 0DTE ATM chain (SPY 0.1212, QQQ 0.1748, IWM 0.1610) and is stamped on the run, so
+  the replay reproduces the same premiums.
+- **Data is real-time, all three legs.** 1m bars banking to within ~60 s (SPY/QQQ/IWM 09:34 read at
+  09:35); underlying quotes `quoteAgeSeconds 0`, `session: "regular"`, `dayHigh/dayLow/volume`
+  session-to-date (SPY 1.34 M by 09:33). **Option quotes are OPRA, not the delayed chain**: the
+  0DTE ATM contracts came back `source: "opra"`, `provider: "alpaca"`, `delayed: false`, `sourceTs`
+  the same second (SPY 765C 0.72/0.73, QQQ 717C 1.84/1.85, IWM 293P 0.45/0.46 — the ~$0.50 band the
+  method wants is populated). Alpaca stream `connected` + `authenticated` at the 02:59 boot with **no
+  reconnects since**. F70's stale `prevClose` self-corrected at the open as predicted (SPY
+  `prevClose 766.00`), confirming it is a pre-market-only defect.
+- **The read is advancing and correct.** 2m closes stepping every two minutes (bars2m 1 → 7 across
+  the run), `regimeLast` EMAs present on every one, `bias` still null at 09:45 with
+  `fifteenMinBars: 0` — **right**, because the first 15m bar of the session does not close until
+  09:45. SPY (763.6) and IWM (293.2) have been *through* their PDL zones since the open and QQQ sits
+  between its zones; the next 15m close is the decision. Replay parity: `POST /runs/{id}/replay`
+  reproduced the live read on all three (same sigma, same zero events/setups/trades). No
+  `read_error`, no `needsAttention`, zero Team2 ERRORs or Tracebacks in the log since boot.
+- **F71 (new, FIXED and live this run).** The plan panel's "Now:" line showed **SPY's PDL as
+  "+0.20 % away"** while SPY was 1.50 *through* it, and **QQQ's PDL — which really did have 1.35 left
+  to fall — as "−0.19 % away"**: the broken level read as nearer-than-nothing and the unbroken one
+  read as negative. Cause: `distancePct = (level − price)/price` is direction-blind, so on a short row
+  a positive number means *already through*. Fixed with a direction-aware `team2Distance()` in the
+  **Team2 branch only** of `ArmedDayPanel.tsx` — a break row already through now says *"price is
+  already through, waiting on the 15m close"*. The signed field itself is untouched, so the shared
+  Armed page and the phone keep their correct "level X % above/below" wording. **Reporting only — no
+  rule, threshold, gate, size or money path changed.** 66 Team2 tests pass; `npm run build`
+  (typecheck + check-release) passes. Verified at the data level (both signs measured live off the
+  API) and in the served bundle; I did **not** get a clean visual confirmation — the in-app browser
+  would not keep the Team2 Armed tab selected after a re-render, so the on-screen check is owed to
+  the next run.
+- **Deployed without a restart, and one restart is queued.** The change is frontend-only and
+  `start.ps1` had already been given a fresh `dist` by my build, which the running server serves off
+  disk — the new bundle (`index--9Q1rk2u.js`) is live now. Version bumped to **v0.7.23** in all four
+  files + the lockfile, so the **UI chip reads 0.7.23 while `/api/health` still reports 0.7.22**
+  until the backend restarts. I did **not** restart: at 09:45 the first 15m close of the session was
+  landing on two symbols sitting through their PDL, and that is the worst possible moment to bounce
+  the engine. **Next run: `scripts\start.ps1 -Detach` if nothing is open or working**, which
+  re-aligns the health version.
+- **Not ours, worth repeating for whoever owns marketdata:** `persist_bars: dropped N
+  non-bucket-aligned stub bar(s)` is still the loudest line in the log (~1–9 per minute all morning),
+  plus a `calendar fetch failed for SPX: 404` from the Yahoo quoteSummary endpoint. Both are outside
+  Team2.
+- **09:46 ET, after the fix landed — the 09:45 15m close armed all three, every one SHORT.** SPY
+  `scenario 4 break PDL` (level 765.14, target 764.75), IWM `scenario 4 break PDL` (294.26 → 293.56),
+  QQQ `scenario 2 reject PDH` (717.47 → 716.50, `rangeDay: true`). All three read
+  *"waiting for the 1st/2nd 2m pullback into the EMA13 (touches 0) · EMA stack mixed, trend — no
+  entry until the stack turns bear (E3/B9/E4)"* — method-correct: the scenarios are right for a
+  gap-down open (two straight through the PDL, one rejecting the PDH from inside), and the desk is
+  correctly refusing to buy puts into a mixed stack. This also settles the queued-restart call:
+  **do not restart while these are live.**
+- **F72 (new, PROPOSED, NOT built — a rules question, and it is LIVE today).** SPY's and IWM's
+  planned targets are **already behind price**: SPY's target is 764.75 with SPY at 763.7, IWM's is
+  293.56 with IWM at 293.2. Because `techniques.team2.hod_target` is **`reentry`**, the X3b running-LOD
+  retarget does not apply to the day's *first* entry (`session.py:556` needs `s.entries >= 1` or a
+  prior trade), so a first entry keeps that stale target — and `session.py:313`'s short exit test
+  `b2.low <= target` is **already true**, so the position would close on the very next 2m bar. Worse,
+  for a short a target *above* the entry is a **loss** booked under a "target reached" label, so the
+  day's grade would score a stop-out as a win. Only the EMA-stack gate is holding it off right now.
+  Three options written up in TRADING-RULES F72 — refuse the setup for lack of room, set
+  `hod_target=always`, or re-derive the target below *current* price. **Not built: user's call.**
+- **Next run (10:00 ET) should:** (1) run the queued `start.ps1 -Detach` if flat, and confirm
+  `/api/health` reads 0.7.23; (2) get the visual confirmation of F71 on the Team2 plan panel;
+  (3) check what the 09:45 and 10:00 15m closes did — SPY and IWM were through their PDL zones, so a
+  put scenario is the live possibility, and if one arms, verify the EMA13 pullback entries, the
+  `contract` pick (strike + ask near $0.60) and replay parity against the live fire. Still open for
+  the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
+  **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, F67's two shared-side halves,
+  and the F30-family question of which premium series is authoritative.
+
+## 2026-09-09 10:15 ET (run 34b — F72's safety guard built and deployed, v0.7.24)
+
+- **Built to the user's scope: a guard, not a strategy change.** `scenario.target_is_ahead()` —
+  strictly above for a long, strictly below for a short; `None` (no target) and an unjudgeable spot
+  stay allowed; **equality is refused**. Applied at BOTH money-path entrances: the read refuses the
+  entry (`skip_target_behind`, `session.py`) and the runner **drops** a stale fallback target
+  (`target_dropped`, `runner.py`). The runner half is the one that closes the **quote-watch**
+  exposure — `target_breach` runs on the ~2s watch, so a wrong-side target would have sold the whole
+  position on the FIRST live print, before any 2m bar closed.
+- **Explicitly not relied on, per the instruction:** the EMA-stack gate (it was only incidentally
+  holding this off today) and a global `hod_target` flip (that is the strategy decision, kept
+  separate). **Existing-position protection untouched** — an open position keeps its target exit,
+  premium stop, candle stop, trims and flatten; two tests pin it, including one proving a *valid*
+  target still exits on the live print.
+- **Placement detail worth keeping:** the target resolution was hoisted above the strike pick, so a
+  refusal costs no `pick_strike` call and — like the other structural refusals (F18) — **does not
+  spend the D9 pullback allowance**; only a priced fire does (F61). Location gates still run first,
+  which is why IWM's pullbacks today are refused by the no-trade zone before the target is ever
+  judged.
+- **Surfaced, per the F57/F59 lesson** (a refusal the desk cannot see is a refusal that does not
+  exist): journalled as a trigger skip, stated in the Armed/phone headline via `skip_why`, and given
+  timeline icons in `ArmedDayPanel`.
+- **Tests: 28 new in `tests/test_team2_target_guard.py`, every case mirrored long/short** — the
+  predicate (ahead / wrong-side / equal / `None` / no spot), end-to-end refusal on a new synthetic
+  `down_day` and its long mirror, the boundary a ten-thousandth on the wrong side, controls proving
+  the guard does not over-fire, the D9 allowance, note-once behaviour, and the quote watch (a
+  wrong-side target *would* fire on the first print; a dropped one does not; a valid one still does).
+  **94 Team2 tests pass**; frontend build green. One test had to be rewritten honestly: an EXACT
+  price tie is unreachable end-to-end because the trade dict rounds the entry spot to 4 dp, so
+  equality is pinned at the predicate level and the integration test proves the boundary a hair off.
+- **Deployed at 10:15 ET with the desk flat** (no trades, no open positions, touches 0 on all three
+  — the one moment it was safe). `start.ps1 -Detach`, v0.7.24 live, `/api/health` agrees, all three
+  Team2 plans restored with their scenarios intact (tips 18, managed positions 9, no errors).
+- **Honest live status: deployed, NOT yet exercised by the tape.** SPY (target 764.75 at 763.8) and
+  IWM (293.56 at 292.8) would both be refused, but no qualifying pullback has reached the guard yet.
+  QQQ is correctly unaffected — its 716.50 target is genuinely ahead of 718.75 for a short, which is
+  the selectivity check. Next run should look for a real `skip_target_behind` in the read.
+- **The strategy question is deliberately still open** — the guard stops the bad trade, it does not
+  recover a good one. Three replacement options are written up in TRADING-RULES F72 (refuse and move
+  on / `hod_target=always` / re-derive the target below current price) with the cost of each. Also
+  still open: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**,
+  **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, F67's two shared-side
+  halves, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-09 10:30 ET (run 35 — F72's guard fires for real; F71 turned out to be dead code, fixed as F73, v0.7.25)
+
+- **Alive and clean.** `/api/health` ok, v0.7.24, armed 77 — the queued restart from run 34 was
+  already taken at 10:15, so the health version and the UI chip agreed on arrival. Three Team2 plans
+  armed for 2026-09-09 (SPY, QQQ, IWM), all `complete: true`, no `read_error`, `needsAttention`
+  false on all three, and **zero Team2 errors or Tracebacks since the 10:15 boot**. Alpaca stream
+  `connected` + `authenticated` at 07:15:19 PT with no reconnects since.
+- **Mode is `auto`, and that is the user's own setting, not drift** — `techniques.team2.mode` was set
+  to `auto` on **2026-09-04**, five days ago, and every plan carries `allowLive: false` on the sim
+  book **Team2 Practice**. Recording it because the watch recipe still says "alert unless the user
+  changed it": the user changed it, and the desk has been trading Practice on auto since.
+- **Data is real-time on all three legs.** 1m bars banking to 10:32 read at 10:34 (SPY/QQQ/IWM all
+  the same ts); underlying quotes `quoteAgeSeconds 0`, `session: "regular"`, volumes session-to-date
+  (SPY 5.96 M). **Option quotes are OPRA**: the three 0DTE ATM puts came back `provider: "alpaca"`,
+  `delayed: false`, `asOf` the same second (SPY 763P 0.78/0.79, QQQ 717P 1.00/1.01, IWM 292P
+  0.39/0.41 — the ~$0.50 band the method wants is populated and tight).
+- **F72's guard fired live at 10:32 on IWM — its first real instance, and it was right.** The read
+  journalled `skip_target_behind`: *"target 293.56 is above the 292.58 entry — price has already run
+  through it"*. Worth noting exactly why this one reached the guard when SPY's did not: IWM's
+  pullback at 292.58 fell just **below** the pre-market low 292.62, so it escaped the no-trade zone
+  that has been refusing SPY all morning (SPY 10:28, entry 763.57 inside PM 762.49–767.13) — the
+  guard was the only thing standing between the desk and a short whose target sat $0.98 *above* the
+  entry. QQQ is correctly unaffected (target 716.50 genuinely below spot), which is the selectivity
+  check.
+- **The read is advancing and matches the tape.** I rebuilt the 15m bars from the DB's 1m rows and
+  checked every scenario call against them: SPY 09:30 close **763.75** body-below 765.14 ✓, IWM
+  **293.30** body-below 294.26 ✓, QQQ **716.96** body-below 717.47 ✓ — all three match the read's own
+  `scenario` events to the cent. 31 → 33 2m bars, 4 fifteen-minute bars, `regimeLast` EMAs present
+  everywhere. **Replay parity holds on all three**: same sigma, same scenarios, same skips, zero
+  trades — and IWM's replay reproduced `skip_target_behind`, so the new guard is deterministic.
+- **F73 (new, FIXED and deployed this run, v0.7.25) — yesterday's F71 fix never fired once.** F71
+  (v0.7.23) added the direction-aware wording so a break row already through its level would say
+  *"price is already through, waiting on the 15m close"*. It is gated on
+  `t.kind === "break PDH" || t.kind === "break PDL"` — the human labels — but the pseudo-trigger the
+  API serves carries `Setup.kind`, which is `scenario_1..4` / `pm_break_up` / `pm_break_down`
+  (`session.py:37`). Measured live at 10:38: SPY's trigger is
+  `{"kind": "scenario_4", "direction": "short", "distancePct": 0.211}` — 1.61 already through its
+  PDL — and the panel rendered the generic fallback *"— 0.24% from the level"*, the exact wording
+  F71 was written to replace. Fixed by matching the kinds the desk emits (`TEAM2_BREAK_KINDS`); the
+  `through` test itself was correct and untouched. **Reporting only — no rule, threshold, gate, size
+  or money path changed.** 94 Team2 tests pass, `npm run build` green.
+- **This one is a lesson about verification, not about the code.** Run 34 verified F71 at the data
+  level and in the bundle but explicitly could not get a clean on-screen check, and owed one to this
+  run. A predicate that never matches is invisible to both of those checks and visible instantly on
+  screen. **This time it is confirmed on screen**: SPY's plan panel now reads *"— price is already
+  through, waiting on the 15m close"*, and QQQ — a *reject* row, not a break — correctly still reads
+  *"— 0.09% from the level"*.
+- **Deployed without a restart, deliberately.** v0.7.25 touches no backend logic at all (the panel
+  plus four version strings and the lockfile), and `start.ps1`'s `dist` was rebuilt, which the running
+  server serves off disk — the new bundle is live and the chip reads 0.7.25. `/api/health` will read
+  0.7.24 until the next restart. I did **not** bounce an AUTO-mode desk with three armed plans for a
+  cosmetic version number; **queue the restart for the post-close run**, not for a mid-session one.
+- **F74 (new, PROPOSED, NOT built — a rules question).** QQQ's 09:30 15m close set
+  `scenario_2 reject PDH → puts` at 717.47, and **every 15m bar since has closed above it** (718.86,
+  718.95, 718.29, 717.89) — but D10 flips a scenario 2/3 only on a close through the *far* side
+  (721.89 / 715.57), so the short is still live, still owns the headline, and `bias.history` still
+  has one entry. The narrow, useful version: the level-retest entry (T2) **is** side-gated and so is
+  break-and-base (T7); it is the **EMA13/EMA48 touch entries (T1/E5) that have no anchor-side test**,
+  so in the 4.42-point band between a reclaimed anchor and the flip level the desk would buy puts on
+  a rejection sitting *below* price. **F72's guard does not catch this** (QQQ's target is genuinely
+  below spot). Nothing was at risk today — QQQ is double-gated by a bull stack (strength 3) and by
+  the PM no-trade zone — which is why it has not surfaced before. Sibling of **F65**. Three options
+  in TRADING-RULES F74. **User's call.**
+- **Not ours, unchanged:** `persist_bars: dropped N non-bucket-aligned stub bar(s)` still dominates
+  the log, plus `calendar fetch failed for SPX/USO: 404` from Yahoo's quoteSummary endpoint. Both
+  outside Team2.
+- **Next run (11:00 ET) should:** (1) watch for the first EMA13 touch that clears both the no-trade
+  zone and the stack gate — no fire has been priced yet today, so the `contract` pick (strike, ask
+  near $0.60) and live-vs-replay fire parity are still unexercised; (2) check whether QQQ's 15m
+  closes ever reach 721.89 (which would flip the bias and settle F74 on its own for today); (3) keep
+  the restart queued for post-close. Still open for the user: **F47**, **F49**, **F50**, **F51**,
+  **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**,
+  **F71's shared half**, **F72's strategy question**, **F74**, F67's two shared-side halves, and the
+  F30-family question of which premium series is authoritative.
+
+## 2026-09-09 10:48 ET (run 34c — F72 revised on the user's three corrections; v0.7.25)
+
+- **The runner fallback was a real hole and is closed.** My first cut set an invalid target to
+  `None`, which meant the trade entered with `targets=[]` — **an invalid target silently became
+  permission for a targetless entry**, a *weaker* outcome than the refusal the read applies to the
+  identical condition. `Team2Runner.resolve_fire_target(e, setup, spot, direction)` now returns
+  `(target, refusal)` and `_fire` returns on a refusal, journalling `skip_target_behind`. Invalid
+  means refused at **both** layers, wherever the fire came from — restored, replayed, or a plan
+  rewritten under a running session. A genuinely **absent** target (none on the fire, none on the
+  setup) is a different shape and stays allowed; that one the read validated.
+- **The `hod_target="always"` claim was wrong — withdrawn.** X3b's guard is
+  `nearer = (ext < target) if long else (ext > target)`: it only ever pulls a target **closer**. For
+  a short it needs the running LOD *above* the planned target, but once price has run **through**
+  that target the LOD is below it, so `nearer` is False and X3b declines. The knob changes nothing
+  here; recovering the case that way would need the `nearer` comparison itself rewritten. Now pinned
+  by a mirrored test (`test_hod_target_always_does_not_recover_a_target_price_has_run_through`) so
+  the claim cannot quietly come back into the doc.
+- **Structural re-planning built as a VARIANT, default off.** `techniques.team2.target_replan` =
+  `off` | `entry`. When a planned target is not ahead of the entry, the target is re-derived from the
+  next structural level beyond **current price** — the same 15m pivots the plan was built on, now
+  carried as `plan.levelLadder` (`levels.level_ladder` + `next_structural_level`) — and then
+  **re-validated by the same predicate**. A re-plan is a candidate, never an exemption: with no
+  qualifying level the baseline refusal stands. **Validated at ENTRY, not only at arming**, per the
+  instruction: price moves between the 15m confirmation and each pullback, so the "next" level at
+  09:46 is not the one at 11:20, and only the entry knows which.
+- **How to measure it** (nothing about the default changes until this exists):
+  `python -m zargar.tools.team2_sweep sweep --start A --end B --set target_replan=entry` against the
+  same range with the knob off, then `sweep-compare`. The override rides the existing alias map, so
+  no sweep-tool change was needed.
+- **Invalid-candidate refusal remains the baseline and the default** — confirmed live after the
+  deploy: `techniques.team2.target_replan = off`, `hod_target = reentry` (untouched).
+- **Tests: 20 new (48 in the file, 114 Team2 total), every case mirrored long/short** — the
+  resolver's five shapes (invalid on the fire / invalid via the setup fallback / genuinely absent /
+  valid / unparseable), the withdrawn `hod_target` claim, ladder ordering and price-relative
+  selection, plan construction against a real multi-session history, the variant recovering a trade
+  the baseline refuses, entry-time validation of *every* re-planned fire, re-validation against an
+  empty ladder, and byte-identical event streams with the knob off. One harness note worth keeping:
+  the synthetic day has a SINGLE prior session and `level_ladder` excludes the zone's own date, so a
+  plan built there has no pivots at all (its `targets` are `None` for the same reason) — the variant
+  tests inject a ladder and construction is covered separately against a 4-session history.
+- **Deployed 10:48 ET with the desk flat** (no trades, no open positions on any of the three).
+  v0.7.25 live, `/api/health` agrees, 3 Team2 plans restored, no Team2 errors or Tracebacks.
+- **Still not exercised by the tape**, same as this morning: SPY and IWM targets remain behind price
+  and would be refused, but no qualifying pullback has reached the guard. IWM now shows 2 setups.
+  Next run should still look for a real `skip_target_behind` in the read.

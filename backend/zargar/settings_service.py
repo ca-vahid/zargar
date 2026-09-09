@@ -149,6 +149,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.losses_desk_wide": True,       # F29: max_losses_per_day counts the whole desk (SPY+QQQ+IWM)
     "techniques.team2.hod_target": "reentry",        # off | reentry | always (X3b running HOD/LOD as the target)
     "techniques.team2.hod_target_min_atr": 1.0,
+    "techniques.team2.target_replan": "off",         # F72 variant: off | entry (re-derive a stale target at entry)
     "techniques.team2.add_on_retest": True,          # X5 trim-and-add
     "techniques.team2.max_adds": 1,
     "techniques.team2.first_entry_min": "09:45",     # D6 (first 15m close)
