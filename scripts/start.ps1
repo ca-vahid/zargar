@@ -50,7 +50,9 @@ function Fail($msg, $code) { Write-Host "x $msg" -ForegroundColor Red; exit $cod
 function Stop-DiscordIntake {
   try {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -match "discord_gateway|discord-intake\.ps1") } |
+      Where-Object { $_.CommandLine -and (
+          ($_.Name -match '^python' -and $_.CommandLine -match "discord_gateway") -or
+          ($_.Name -match '^(pwsh|powershell)' -and $_.CommandLine -match "discord-intake\.ps1" -and $_.CommandLine -match '-File')) } |
       ForEach-Object {
         Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue
       }
@@ -75,7 +77,9 @@ function Start-DiscordIntake {
 function Stop-EmIngest {
   try {
     Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object { $_.CommandLine -and ($_.CommandLine -match "em_ingest|em-ingest\.ps1") } |
+      Where-Object { $_.CommandLine -and (
+          ($_.Name -match '^python' -and $_.CommandLine -match "em_ingest") -or
+          ($_.Name -match '^(pwsh|powershell)' -and $_.CommandLine -match "em-ingest\.ps1" -and $_.CommandLine -match '-File')) } |
       ForEach-Object { Stop-Process -Id $_.ProcessId -Force -Confirm:$false -ErrorAction SilentlyContinue }
   } catch { }
 }
