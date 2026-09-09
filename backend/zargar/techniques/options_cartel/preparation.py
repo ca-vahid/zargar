@@ -129,12 +129,17 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
         on_started(service._view(record, detail=True))
 
     last_persisted = 0.
-    async def checkpoint(phase, *, terminal=False, error=None, force=False):
+    checkpoint_lock = asyncio.Lock()
+    async def _checkpoint(phase, *, terminal=False, error=None, force=False):
         nonlocal last_persisted
         result['phase'] = phase
         result['updatedAt'] = clock()
         result['cacheHits'] = history_reader.cache_hits
         result['historyRequests'] = history_reader.requests
+        result['activeHistoryRequests'] = history_reader.active_requests
+        result['prefetchedHistories'] = history_reader.prefetched
+        result['historyConcurrency'] = policy.history_concurrency
+        result['historyBatchSize'] = policy.history_batch_size
         if terminal:
             result['finishedAt'] = clock()
         if not terminal and not force and time.monotonic()-last_persisted < 1:
@@ -156,6 +161,10 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                  'phase': phase, 'armed': result['armed'], 'error': error},
                 aggregate_type='technique_run', aggregate_id=run_id)
         return view
+
+    async def checkpoint(phase, **kwargs):
+        async with checkpoint_lock:
+            return await _checkpoint(phase, **kwargs)
 
     async def report(*, symbol=None, message=None, phase=None):
         if symbol is not None:
@@ -253,75 +262,86 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
             industry_reads = {}
             await report(message='Evaluating all eligible listings' if policy.scan_all else 'Evaluating the explicitly capped universe', phase='evaluating')
             for listing in selected_listings:
-                if runtime.stopping:
-                    raise asyncio.CancelledError()
-                symbol = listing['symbol']
-                result['currentSymbol'] = symbol
-                try:
-                    group = listing.get('industry') or ''
-                    if group not in industry_reads:
-                        industry_reads[group] = read_industry(industry, group, at=at, direction=direction,
-                            top_n=rules.industry_top_n, max_age_days=rules.max_metadata_age_days)
-                    if rules.require_industry_rank and listing.get('securityType') != 'etf' and industry_reads[group]['status'] == 'fail':
-                        result['rows'].append({'symbol': symbol, 'status': 'prefiltered',
-                            'reasons': ['Industry fails the required weekly/monthly ranking gate; history is unnecessary'],
-                            'industrySnapshotId': captured['runId'], 'industryContext': industry_reads[group]})
-                        result['prefiltered'] += 1; result['processed'] += 1
-                        result['notEvaluated'] = len(eligible)-result['processed']
-                        await checkpoint('evaluating')
-                        continue
-                    if symbol in reused:
-                        saved = service._view(await service._load(reused[symbol]), detail=True)
-                        if saved['config']['inputs']['as_of_ms'] != at:
-                            raise ValueError('Resumed analysis cutoff differs from the saved preparation')
+                group = listing.get('industry') or ''
+                if group not in industry_reads:
+                    industry_reads[group] = read_industry(industry, group, at=at, direction=direction,
+                        top_n=rules.industry_top_n, max_age_days=rules.max_metadata_age_days)
+            def skip_history(listing):
+                return listing['symbol'] in reused or (rules.require_industry_rank and listing.get('securityType') != 'etf'
+                    and industry_reads[listing.get('industry') or '']['status'] == 'fail')
+            async with history_reader.prefetch(selected_listings, at, client, skip=skip_history) as histories:
+                async for listing, prefetched_history in histories:
+                    if runtime.stopping:
+                        raise asyncio.CancelledError()
+                    symbol = listing['symbol']
+                    result['currentSymbol'] = symbol
+                    try:
+                        group = listing.get('industry') or ''
+                        if group not in industry_reads:
+                            industry_reads[group] = read_industry(industry, group, at=at, direction=direction,
+                                top_n=rules.industry_top_n, max_age_days=rules.max_metadata_age_days)
+                        if rules.require_industry_rank and listing.get('securityType') != 'etf' and industry_reads[group]['status'] == 'fail':
+                            result['rows'].append({'symbol': symbol, 'status': 'prefiltered',
+                                'reasons': ['Industry fails the required weekly/monthly ranking gate; history is unnecessary'],
+                                'industrySnapshotId': captured['runId'], 'industryContext': industry_reads[group]})
+                            result['prefiltered'] += 1; result['processed'] += 1
+                            result['notEvaluated'] = len(eligible)-result['processed']
+                            await checkpoint('evaluating')
+                            continue
+                        if symbol in reused:
+                            saved = service._view(await service._load(reused[symbol]), detail=True)
+                            if saved['config']['inputs']['as_of_ms'] != at:
+                                raise ValueError('Resumed analysis cutoff differs from the saved preparation')
+                            review = review_saved(saved)
+                            result['resumedAnalyses'] += 1
+                            entry = evaluation_row(saved, review)
+                            if market_blocked and review:
+                                entry.update(status='research_only', reasons=['Stock/setup checks pass; market alignment blocks arming.'])
+                            if review:
+                                result['researchCandidates' if market_blocked else 'qualifying'] += 1
+                                pool.append((saved['runId'], review))
+                            result['rows'].append(entry); result['evaluated'] += 1; result['processed'] += 1
+                            result['notEvaluated'] = len(eligible)-result['processed']
+                            await checkpoint('evaluating')
+                            continue
+                        if isinstance(prefetched_history, Exception):
+                            raise prefetched_history
+                        history, provenance = prefetched_history
+                        facts = FactsInput(symbol=symbol, observed_at=listing['observedAt'], source=listing['source'],
+                            market_cap=listing['marketCap'], security_type=listing.get('securityType', 'stock'), cap_observed_at=listing['observedAt'],
+                            cap_data_as_of_ms=listing['sourceBarOpenAt'], fundamentals_snapshot_id=run_id, industry=listing['industry'],
+                            membership_observed_at=listing['observedAt'], membership_source='TradingView primary listing classification')
+                        research = ResearchInput(history=history, indices=indices, facts=facts, rules=rules,
+                            parameters=policy.setups, as_of_ms=at, direction=direction, data_source=listing['source'],
+                            industry_snapshot_id=captured['runId'])
+                        saved = await service.analyze(research, collection=provenance, parent_run_id=run_id)
                         review = review_saved(saved)
-                        result['resumedAnalyses'] += 1
                         entry = evaluation_row(saved, review)
                         if market_blocked and review:
                             entry.update(status='research_only', reasons=['Stock/setup checks pass; market alignment blocks arming.'])
                         if review:
                             result['researchCandidates' if market_blocked else 'qualifying'] += 1
                             pool.append((saved['runId'], review))
-                        result['rows'].append(entry); result['evaluated'] += 1; result['processed'] += 1
-                        result['notEvaluated'] = len(eligible)-result['processed']
-                        await checkpoint('evaluating')
-                        continue
-                    history, provenance = await history_reader.daily(symbol, at, client)
-                    facts = FactsInput(symbol=symbol, observed_at=listing['observedAt'], source=listing['source'],
-                        market_cap=listing['marketCap'], security_type=listing.get('securityType', 'stock'), cap_observed_at=listing['observedAt'],
-                        cap_data_as_of_ms=listing['sourceBarOpenAt'], fundamentals_snapshot_id=run_id, industry=listing['industry'],
-                        membership_observed_at=listing['observedAt'], membership_source='TradingView primary listing classification')
-                    research = ResearchInput(history=history, indices=indices, facts=facts, rules=rules,
-                        parameters=policy.setups, as_of_ms=at, direction=direction, data_source=listing['source'],
-                        industry_snapshot_id=captured['runId'])
-                    saved = await service.analyze(research, collection=provenance, parent_run_id=run_id)
-                    review = review_saved(saved)
-                    entry = evaluation_row(saved, review)
-                    if market_blocked and review:
-                        entry.update(status='research_only', reasons=['Stock/setup checks pass; market alignment blocks arming.'])
-                    if review:
-                        result['researchCandidates' if market_blocked else 'qualifying'] += 1
-                        pool.append((saved['runId'], review))
-                    result['evaluated'] += 1
-                    consecutive_transport_errors = 0
-                except (*DATA_ERRORS, httpx.HTTPError) as exc:
-                    result['dataErrors'] += 1
-                    if rate_limited(exc):
-                        result['message'] = 'Provider rate limit reached after bounded retries. Resume to continue saved work.'
-                        raise
-                    transport_error = isinstance(exc, (TimeoutError, httpx.TimeoutException, httpx.NetworkError)) or 'HTTP 5' in str(exc)
-                    consecutive_transport_errors = consecutive_transport_errors+1 if transport_error else 0
-                    if consecutive_transport_errors >= 3:
-                        result['message'] = 'Provider unavailable after three consecutive transport failures. Saved work can be resumed.'
-                        raise
-                    entry = {'symbol': symbol, 'status': 'data_error', 'reason': str(exc)[:600]}
-                entry['industryContext'] = industry_reads[group]
-                entry['industryPolicy'] = policy.industry_policy
-                result['rows'].append(entry); result['processed'] += 1
-                result['notEvaluated'] = len(eligible)-result['processed']
-                result['cacheHits'] = history_reader.cache_hits
-                result['historyRequests'] = history_reader.requests
-                await checkpoint('evaluating')
+                        result['evaluated'] += 1
+                        consecutive_transport_errors = 0
+                    except (*DATA_ERRORS, httpx.HTTPError) as exc:
+                        result['dataErrors'] += 1
+                        if rate_limited(exc):
+                            result['message'] = 'Provider rate limit reached after bounded retries. Resume to continue saved work.'
+                            raise
+                        transport_error = isinstance(exc, (TimeoutError, httpx.TimeoutException, httpx.NetworkError)) or 'HTTP 5' in str(exc)
+                        consecutive_transport_errors = consecutive_transport_errors+1 if transport_error else 0
+                        if consecutive_transport_errors >= 3:
+                            result['message'] = 'Provider unavailable after three consecutive transport failures. Saved work can be resumed.'
+                            raise
+                        entry = {'symbol': symbol, 'status': 'data_error', 'reason': str(exc)[:600]}
+                    entry['industryContext'] = industry_reads[group]
+                    entry['industryPolicy'] = policy.industry_policy
+                    result['rows'].append(entry); result['processed'] += 1
+                    result['notEvaluated'] = len(eligible)-result['processed']
+                    result['cacheHits'] = history_reader.cache_hits
+                    result['historyRequests'] = history_reader.requests
+                    await checkpoint('evaluating')
             evaluated_by_symbol = {r['symbol']: r for r in result['rows']}
             result['watchlistComparison'] = {'source': policy.comparison_source, 'rows': [
                 {'symbol': sym, **evaluated_by_symbol.get(sym, {'status': 'outside_universe', 'reasons': ['Not returned by the eligible discovery universe; not assumed to fail setup checks.']})}

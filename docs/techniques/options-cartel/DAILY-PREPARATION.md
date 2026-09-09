@@ -180,3 +180,26 @@ counts. A complete research run with a trading restriction is not an incomplete
 scan; genuine data failures and optional-cap gaps remain visible. Historical runs
 that skipped evaluation on a market block are no longer labeled as download failures.
 A coverage-version change requires fresh preparation rather than resuming old scans.
+
+
+## Bounded parallel history loading (0.7.16)
+
+Settings expose a history batch window (default 25, range 1–50) and parallel fetches
+(default 6, range 1–12). The batch window bounds queued/completed history buffers;
+it is not a provider bulk endpoint or permission to send every request at once.
+The shared provider's existing concurrency cap remains authoritative. Cartel's
+request spacing is serialized across fetches (default 0.25 seconds, approximately
+four request starts per second), so overlap removes response-wait serialization
+without removing pacing. Cache hits bypass provider requests.
+
+Only history reads overlap. The coordinator evaluates/persists in discovery order,
+keeping shortlist ranking reproducible. Definite strict-industry exclusions and
+resumed analyses do not prefetch. Checkpoint writes serialize to avoid stale progress
+commits. Progress reports active fetches, prefetch completions and configured bounds.
+Rate-limit exhaustion blocks new request starts; interruption cancels and awaits all
+owned prefetch work. Already committed analyses remain resumable. At most the bounded
+window of uncommitted histories needs fetching again after interruption.
+
+An in-progress run is not hot-upgraded. Let it finish; deploy outside an active run
+and use fresh preparation with the new version. Larger batches alone cannot bypass
+the provider rate cap, and higher concurrency does not guarantee faster scans.
