@@ -1267,6 +1267,44 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   build mid-session on an auto desk. **User's call.**
 
 
+- **F76 (2026-09-09 11:35 ET, NOT fixed — proposal; on a gap day a `pm_break` setup is born with a
+  target the gap has already consumed, so it can never trade).** Both PM-break setups minted today
+  were **dead on arrival**: SPY `pm_break_down@11:00` (anchor = PM low 762.49, target **764.75** —
+  2.26 points *above* its own anchor) and IWM `pm_break_down@10:30` (anchor 292.62, target
+  **293.56** — 0.94 above its anchor). A `pm_break_down` entry is by construction the retest of the
+  PM low with the 2m close *below* it (L2.6/L2.7), so every possible entry price is at or under the
+  anchor, and every one of them is therefore under a target that sits above it. F72's guard then
+  refuses each qualifying pullback — correctly (IWM 11:00 and 11:32, SPY 11:32) — but the setup
+  could have been known unable to trade at the moment it was created. The mechanism is in
+  `session.py`: `tgt = zones["pdl"].top if pml > zones["pdl"].top else targets.get("below")`. The
+  branch validates the *first* candidate against the PDL zone but never validates the **fallback**
+  against the setup's own anchor, and on a gap-down day price gapped through the PDL zone before
+  the open, so both candidates sit above the PM low. This is deterministic, not tape-dependent:
+  **any** gap-down day whose PM low is below the plan's `targets.below` mints a dead
+  `pm_break_down`, and the mirror holds for `pm_break_up` on gap-ups. Today it cost the L2.5/V7
+  trade on 2 of 3 symbols. QQQ is the control: PM low 713.50 vs `targets.below` 710.81, target
+  genuinely ahead — and QQQ never printed a PM break today, so the healthy branch is untested by
+  this tape. Note also that the journalled reason says *"→ puts down to the PDL zone (L2.5/V7)"*
+  regardless of which candidate was actually chosen, so on a gap day the read states a target the
+  setup does not hold — **misleading prose, worth fixing whichever way the rule goes**. Context:
+  the setup exists at all on a gap day because **F15** deliberately lifted the inside-day guard of
+  L2.5 ("on a GAP day the PM range is the first thing watched", L2.4) — that decision is not being
+  re-litigated here; what F15 did not settle is what the target should then be. The method's own
+  **V7** says *below PDL → puts to the next support (the last pivot below)*, which reads as a level
+  relative to **where price is**, while the plan freezes that number at 09:25. Options, user's call:
+  **(a)** leave it — the setup refuses, and the desk simply does not take the PM-break trade on gap
+  days (today's behaviour, and it is at least safe); **(b)** validate the candidate against the
+  anchor at construction and mint **no setup** with a stated reason instead of a dead one — no
+  change to any trade the desk would have taken, it only stops advertising a setup that cannot
+  fire and removes the misleading note; **(c)** derive the PM-break target from V7's "next support
+  below" relative to the anchor rather than from the plan's frozen level. **(c) is a rule change
+  and must be measured first** — note it is *not* the same experiment as F72's `target_replan`,
+  which re-derived at **entry** for **all** setups and lost (5 trades, −23.8 pnl%-sum); this one
+  would apply at **construction** for **`pm_break` setups only**, and F75 means any such sweep must
+  exclude the synthetic SPY block. Recommendation: **(b)** now as the honest interim, **(c)** only
+  behind a measured variant. Nothing was built — mid-session, on an auto desk, this touches setup
+  creation and therefore opportunity counting and grading.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1278,6 +1316,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Change log
 
+- **2026-09-09 (market watch, run 37, 11:35 ET — no code change)** — **F76 logged as a proposal**
+  (rule-adjacent, user's call): on a gap day a `pm_break` setup inherits the plan's frozen room
+  target, which the gap has already consumed, so it is born unable to trade — SPY
+  `pm_break_down@11:00` target 764.75 against a 762.49 anchor, IWM `pm_break_down@10:30` target
+  293.56 against 292.62; F72's guard refused every qualifying pullback on both, correctly. The
+  journalled reason also says "down to the PDL zone" regardless of the target actually chosen.
+  Desk healthy otherwise: three plans armed and complete, zero trades, bars and OPRA option
+  quotes real-time, replay parity holds on all three. No rule, threshold, gate, size or money
+  path changed; nothing deployed.
 - **2026-09-09 (market watch, run 36, 11:20 ET — no code change)** — **F72's re-planning variant
   measured and rejected for now**: on clean data (QQQ+IWM, 2026-08-25..09-08) `target_replan=entry`
   adds 5 trades, 0 wins, −53.0 pnl%-sum, net −23.8 vs baseline; `target_replan` stays **off**, which

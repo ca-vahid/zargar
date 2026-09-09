@@ -2397,3 +2397,71 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   strategy question** (now with a measurement attached — the recommendation is "leave it off"),
   **F74**, **F75**, F67's two shared-side halves, and the F30-family question of which premium series
   is authoritative.
+
+
+## 2026-09-09 11:35 ET (run 37 — desk healthy, still flat; F76: gap-day PM-break setups are born untradeable)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.27** — the app was restarted at **11:26 ET by another
+  desk** (the tips team), not by me; all three Team2 plans restored with their scenarios, bias and
+  touches intact, `armedAt` 11:26, no Team2 errors or Tracebacks since the boot. Recording the
+  0.7.26 → 0.7.27 jump so it is not read as drift on this desk. Three plans armed for 2026-09-09
+  (SPY `e4d39d00`, QQQ `9a1094ed`, IWM `e87e4ad2`), `complete: true`, `needsAttention` false, mode
+  **auto** on Team2 Practice `b9dcd8db…`, **zero trades and zero open positions** all day.
+- **Data is real-time.** 1m bars banking to **11:33** read at 11:35; underlying quotes seconds old,
+  session `regular`; **option quotes are OPRA** — the three 0DTE ATM puts came back
+  `provider: "alpaca"`, `delayed: false`, `source: "opra"`, priced to the second (SPY 762P 0.89/0.90,
+  QQQ 715P 0.85/0.86, IWM 291P 0.33/0.34). RTH bars in the DB are **clean**: 124/123/123 rows for
+  09:30–11:33, **zero flat bars, zero zero-volume bars** on all three — so F75's stub-bar corruption
+  is not touching today's session (the flat rows today are all pre-market, which is normal).
+- **Replay parity holds on all three.** The only difference was one extra 2m bar (62 vs 61) that
+  arrived between the live read and the replay, producing one extra `same_pullback` on QQQ and IWM —
+  a fetch-timing artifact, not a parity break. Same sigma, same scenarios, same skips, zero trades.
+- **What the read saw since 11:20:** SPY printed a **15m close below the PM low 762.49 at 11:15**
+  (`pm_break`), minting `pm_break_down@11:00`, then refused its first qualifying pullback at 11:32
+  (`skip_target_behind`, target 764.75 above a 761.84 short entry) — SPY's **first** F72 refusal of
+  the day. QQQ **flipped scenario 2 → scenario 4 at 11:15** on a 15m close below 715.57, and its new
+  setup carries a genuinely valid target (710.81); its 11:32 pullback was refused by the *no-trade
+  zone* instead (entry 715.39 inside the 713.50–720.67 PM range), which is correct — QQQ's PM range
+  is 7.2 points wide and swallows the whole PDL break, so V6/B5 will keep blocking it until price
+  leaves that range. IWM refused once more at 11:32 (target 293.56 vs a 291.28 entry). Net: **all
+  three symbols short-biased, none able to trade.**
+- **F76 (new, NOT fixed — proposal, the finding of this run).** Both PM-break setups minted today
+  were **dead on arrival**: SPY's target 764.75 sits 2.26 *above* its own anchor (PM low 762.49),
+  IWM's 293.56 sits 0.94 above its 292.62 anchor. Since a `pm_break_down` entry is by construction
+  the retest of the PM low with the close below it, **every possible entry is under a target above
+  it**, so F72 must refuse all of them. Mechanism:
+  `tgt = zones["pdl"].top if pml > zones["pdl"].top else targets.get("below")` validates the first
+  candidate against the PDL zone but never validates the **fallback** against the setup's own anchor,
+  and on a gap-down day the gap already carried price through both. Deterministic, not tape-dependent
+  — any gap-down day with the PM low below `targets.below` mints a dead `pm_break_down`; mirror for
+  gap-ups. QQQ is the control (target genuinely ahead) but never printed a PM break today. Also
+  **misleading prose**: the note says *"→ puts down to the PDL zone (L2.5/V7)"* whatever target was
+  actually chosen. Not re-litigating **F15**, which deliberately lets PM breaks exist on gap days;
+  what F15 left open is what the target should then be. Options in TRADING-RULES F76 — (a) leave it,
+  (b) validate at construction and mint no setup with a stated reason (no trade changes, kills the
+  dead setup and the wrong note), (c) derive the target from V7's "next support below" relative to
+  the anchor, which is a **rule change needing its own sweep** and is *not* the same experiment as
+  F72's `target_replan` (that one re-derived at entry for all setups and lost). **Recommend (b) now,
+  (c) only behind a measurement. Nothing built** — it touches setup creation, hence opportunity
+  counting and grading, which is not a mid-session change on an auto desk.
+- **Checked and found nothing wrong:** `note_once`'s dedupe looked broken (IWM logged
+  `skip_target_behind` at 10:32, 10:36 and 10:42 for one setup) — it is not: `s._skipped` is cleared
+  by every genuinely tradeable touch, so each row is a distinct refused opportunity, which is the
+  information F72 wants. `regimeLast` EMAs present on all three, 200 EMA sane vs price, scenario
+  calls match the tape.
+- **Not ours, unchanged:** `persist_bars: dropped N non-bucket-aligned stub bar(s)` still dominates
+  the log; two `ConnectionResetError` tracebacks today are client-disconnect socket noise; the two
+  `technique run failed` errors are EM's, from yesterday 21:40.
+- **One check I could not complete:** the `/team2` UI. `?token=` does not authenticate the SPA route
+  (it lands on the login shell), so this run verified the page only as far as the served shell and
+  version chip 0.7.27. The API layer the page reads was verified in full, and the last full-page
+  check was run 36 at 11:20 with no Team2 UI change deployed since.
+- **Next run (12:00–12:30 ET) should:** (1) still hunt the **first priced fire of the day** — no
+  `contract` pick has been exercised, so strike selection (~$0.60) and live-vs-replay fire parity
+  stay untested today; (2) watch QQQ, which is now the only symbol with a valid target — it needs
+  price to leave the 713.50–720.67 PM range for V6/B5 to release it; (3) expect continued refusals on
+  SPY and IWM and note them once, not per row. No restart queued. Still open for the user: **F47**,
+  **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**,
+  **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question** (measured; the
+  recommendation is "leave it off"), **F74**, **F75**, **F76**, F67's two shared-side halves, and the
+  F30-family question of which premium series is authoritative.
