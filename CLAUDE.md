@@ -167,6 +167,8 @@ Thresholds got their FIRST calibration 2026-08-29 (`tools/flow_calibrate.py`, fl
 dte_min=3, premium_min 250k, vol_oi_min 2.0, premium-weighted score) — PRELIMINARY on one
 day-pair; re-run the sweep at ≥5 day-pairs before flipping `techniques.flow.calibrated`
 (which upgrades confirmed high-score flow tips to explicit_call).
+**Another session may switch YOUR worktree's branch** (happened twice on 2026-09-09; two commits landed on other desks'
+branches): run `git branch --show-current` before every commit and check a PR's file list before merging it.
 **Parallel Claude sessions:** the shared test DB (`zargar_test`) is dropped/recreated per test —
 concurrent sessions corrupt each other's runs (phantom FK errors, DROP deadlocks). When another
 session may be testing, create your own DB on :5433 and set

@@ -1281,6 +1281,21 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   lookback counted in VALID sessions, `plan.history = {sessionsUsed, excluded, datasetVersion}`, sweeps stamped with
   `datasetVersion`. Shared side (PLATFORM-RULES 2026-09-09): provenance column + precedence upsert + calendar gate +
   sim isolation + `bars_repair` tool + content-hash dataset versions + F78. Tests: `tests/test_team2_history.py`.
+- **F75 repair record (2026-09-09 12:38–13:18 ET, DONE).** Quarantined with the originals preserved: 316,603 closed-day
+  rows (batch `7f6269da4e71`), the SPY sim block (`bfa00d50b550`, 4,424 rows) and the other seven sim-era symbols
+  (`a9116e809b6e`, 30,969 rows); SPY/QQQ/IWM backfilled from Alpaca SIP for 2026-08-14..09-09 (SPY 08-14..19 now real:
+  775–779 → 766–772, exchange source), print-less minutes' volumes zeroed (SPY 644 / IWM 107 / QQQ 51). Dataset identity:
+  pre `0155fbe4247ee049…` (67,780 rows) → FINAL `a00ecad1ef7fddd3…` (55,219 rows); Team2 audit after the repair: no flags.
+  Full shared record in PLATFORM-RULES 2026-09-09.
+- **F72 addendum 2 — re-measured on the clean, versioned dataset (2026-09-09 13:20 ET; sweep dataset
+  `96129c00accdf882…`, 52,877 rows = SPY/QQQ/IWM history through 09-08; 39 sessions, 2026-08-20..09-08, SPY included
+  for the first time).** Baseline: 37 trades, 15 wins, wr 0.405, +247.7 pnl%-sum (avg win +39.0 / avg loss −15.3);
+  `target_replan=entry`: 45 trades, 16 wins, wr 0.356, +207.0 (avg loss −14.4). The variant adds 8 trades and 1 win for
+  −40.7 net; by setup it helps `pm_break_down` (+181.6 → +221.2 on 16 → 17 trades) and hurts `pm_break_up` (+102.5 →
+  +33.0 on 9 → 14) and `scenario_1` (−55.0 → −74.4 on 7 → 10). **Verdict unchanged: `target_replan` stays off.** Note
+  the asymmetry the watch job's F81 counterfactual reports (the variant +85.6% on 09-09 alone; +188 vs +125.8 over
+  08-26→09-09) is measured on the pre-repair tape plus today's gap day, where every baseline entry was refused; the
+  gap-day question is F81's (a pre-open target re-derivation), not a case for re-planning targets after every miss.
 - **F78 (2026-09-09, FIXED — shared; bar volume was the difference of a re-seeded counter; numbered after the watch job's F77 of 12:05 ET).** Not a Team2 input (the
   read is price-only), logged here because the desk found it: SPY 2026-09-08 carried a 43,496,831-share minute and a
   352M-share day. Cause, fix and the per-technique consumer assessment are in PLATFORM-RULES 2026-09-09.
@@ -1466,6 +1481,10 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   green** — the workaround is to set the `zargar_session` cookie in the browser (`?token=` does not
   authenticate the SPA route); Plans and Armed tabs both render all three plans with correct
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
+- **2026-09-09 (12:26–13:20 ET — F75 repair executed, v0.7.28 → v0.7.29, five scheduler restarts)** — repair record and
+  the clean-set F72 rerun above (baseline +247.7 vs variant +207.0 on `96129c00…`; `target_replan` stays off); F79/F80
+  (Yahoo provisional minutes, the lost boot minute) fixed in v0.7.29 and verified by the 13:05 watch; nothing in the
+  method, sizes, gates or money path changed. F81 (gap-day targets) is open for the user.
 - **2026-09-09 (evening — F75 repair, v0.7.28, one deploy after the close)** — **Read inputs validated:** every prior
   session the desk plans, warms up, replays or sweeps on passes `validate_sessions` (closed days, one-price, outlier
   and thin sessions excluded and recorded on the plan); the ten-session lookback counts valid sessions. **Data
