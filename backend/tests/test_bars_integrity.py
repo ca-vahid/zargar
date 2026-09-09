@@ -211,3 +211,20 @@ async def test_f80_boot_seed_lands_todays_exchange_minutes_in_memory_and_storage
         assert {b.ts for b in stored} >= {now - 3 * MINUTE_MS, now - MINUTE_MS} and all(b.source == "exchange" for b in stored)
     finally:
         await eng.stop()
+
+
+def test_history_clip_applies_yahoo_depth_to_yahoo_only():
+    """F75 repair: a backfill of 2026-08-14..19 silently started at 08-20 because Yahoo's 20-day depth
+    clamped the Alpaca request too."""
+    import time
+    from zargar.marketstructure.history import MAX_LOOKBACK, clip_request_window
+    now = time.time()
+    start = int(now - 40 * 86400)
+    end = int(now - 30 * 86400)
+    a0, a1 = clip_request_window("1m", start, end, now, provider="alpaca")
+    assert (a0, a1) == (start, end)
+    y0, y1 = clip_request_window("1m", start, end, now, provider="yahoo")
+    assert y0 == int(now - MAX_LOOKBACK["1m"]) and y1 == end
+    # never into the future, for anyone
+    f0, f1 = clip_request_window("1m", int(now + 3600), int(now + 7200), now, provider="alpaca")
+    assert f1 <= int(now) + 60

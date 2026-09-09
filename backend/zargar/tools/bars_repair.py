@@ -109,7 +109,13 @@ def audit_sessions(rows: list[BarRow]) -> list[dict]:
             elif ref and rng > OUTLIER_RANGE * ref:
                 flags.append("outlier_range")
         vol = sum(int(r.volume or 0) for r in rs)
-        vmax = max((int(r.volume or 0) for r in rs), default=0)
+        # the opening/closing auctions legitimately carry a big share of a thin name's day: judge the
+        # spike on the other minutes only, and only on rows that are NOT a venue's own bar
+        def _hhmm(ts_ms):
+            t_ = dt.datetime.fromtimestamp(ts_ms / 1000, ET)
+            return t_.hour * 60 + t_.minute
+        cand = [r for r in rs if _hhmm(r.ts) not in (9 * 60 + 30, 16 * 60) and (r.source or "unknown") != "exchange"]
+        vmax = max((int(r.volume or 0) for r in cand), default=0)
         if vol and vmax > 1_000_000 and vmax > 0.25 * vol:
             flags.append("volume_spike")
         out.append({"symbol": rs[0].symbol, "kind": ("option" if is_option else "stock"), "date": d,

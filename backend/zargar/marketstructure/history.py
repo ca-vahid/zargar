@@ -89,13 +89,18 @@ class HistoryError(RuntimeError):
     pass
 
 
-def clip_request_window(tf: str, start_s: int, end_s: int, now: float | None = None) -> tuple[int, int]:
-    """Clamp a request to what Yahoo will actually serve: no older than the
-    interval's lookback, and **no later than now** — a chunk that lies wholly in
-    the future (e.g. the week after the last planned session) comes back as
-    HTTP 400 "Data doesn't exist", which used to fail the whole symbol."""
+def clip_request_window(tf: str, start_s: int, end_s: int, now: float | None = None, *,
+                        provider: str = "yahoo") -> tuple[int, int]:
+    """Clamp a request to what the provider will actually serve: **no later than now** for
+    everyone — a chunk that lies wholly in the future (e.g. the week after the last planned
+    session) comes back as HTTP 400 "Data doesn't exist", which used to fail the whole symbol —
+    and, for Yahoo only, no older than the interval's lookback. F75 repair (2026-09-09): the
+    Yahoo depth used to clamp Alpaca requests too, so a backfill of 2026-08-14..19 silently
+    started at 08-20 and the quarantined block had no replacement."""
     now = time.time() if now is None else now
-    start_s = max(int(start_s), int(now - MAX_LOOKBACK[tf]))
+    start_s = int(start_s)
+    if provider == "yahoo":
+        start_s = max(start_s, int(now - MAX_LOOKBACK[tf]))
     end_s = min(int(end_s), int(now) + 60)
     return start_s, end_s
 
@@ -207,7 +212,7 @@ async def fetch_window(
     if hit and now - hit[0] < (_LIVE_TTL if end_ms / 1000 > now - 120 else _HIST_TTL):
         return list(hit[1])
 
-    start_s, end_s = clip_request_window(tf, start_ms // 1000, end_ms // 1000, now)
+    start_s, end_s = clip_request_window(tf, start_ms // 1000, end_ms // 1000, now, provider="alpaca")
     if end_s <= start_s:
         return []
 
@@ -222,6 +227,9 @@ async def fetch_window(
             bars = []
     try:
       if not bars:
+        start_s, end_s = clip_request_window(tf, start_s, end_s, now, provider="yahoo")
+        if end_s <= start_s:
+            return []
         span = MAX_REQUEST_SPAN[tf]
         chunks: list[tuple[int, int]] = []
         cursor = start_s
