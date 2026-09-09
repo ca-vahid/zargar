@@ -565,6 +565,10 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
   and breakouts are the weakest in BOTH configs (negative even fully confirmed);
   prime_open carries all the edge, prime_close was net negative in all three
   variants (more T-1 evidence).
+  **2026-09-09 exit-tempo half measured (FLOW-CONFIRMATION-PLAN phase 1b, `flow_variant --tempo`):**
+  our 19 replay fires exited on premium percent (his tempo) lose in every grid cell (best
+  -14.8% mean); the underlying ladder is better on the same fires. The continuation ENTRY
+  archetype (backlog 9) is still unmeasured on a parameterised ladder; the exit half is closed.
 - **T-7 Gap-fill targets:** an unfilled overnight gap in the trade's path is a target
   magnet in the author's practice (IWM/QQQ longs "into the gap", AMD short "gap to
   fill below"), not only a hazard. Experiment: add gap edges to the target-anchor set
@@ -597,7 +601,8 @@ actually needed: the morning board build's 3-session window (09-02..09-04) no lo
 09-01 high; the evening build's window did, and the detector found 969.44 there only with the knob.
 Next test: `lookback_sessions=5` as its own variant, and the gap-through continuation (T-6/T-7).
 
-### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08)
+### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08) - REJECTED on history 2026-09-09
+**Status: both forms (confirm gate, sweeps as trigger) measured and rejected; no rule change; the detector stays as research tooling. The paragraphs below are the dated record in the order it happened.**
 Every win he posted (TSLA +240% Aug 31, GPRO Aug 31, NVDA +115% Sep 4, Sep 8 OTM prints) names
 a SWEEP: contracts bought at the ask, many times the open interest, in a near-the-money 0DTE or
 weekly strike, minutes after the open; exit the same day on premium percent. Our level says
@@ -611,6 +616,36 @@ bar +0.3R/fire; measure exits in premium percent to compare with him (T-6). Evid
 GPRO at 14:22, NVDA's put flow at 09:42, and nothing on NVDA's liquid calls - see
 FLOW-CONFIRMATION-PLAN phase 0 for the calibrated definition. Next: backfill the universe's
 near-the-money contracts for the last 20 sessions and run the `flow_confirm` variant.
+**Phase 1a verdict, 2026-09-08 late (the confirm-gate is REJECTED on history):** of the 30 valid
+replay fires over ten sessions (08-27..09-08), 19 had a chain snapshot to rebuild the contract;
+sweeps printed inside [-15, +10] minutes of the touch on **1 of 19** (META k1 09-08, a -1.03R
+loser). All 19 unfilled by the gate would have made +2.61R. A gate that keeps 1 fire in 19 and
+picks a loser is not a gate; the finding is that the author's sweeps do not sit on OUR levels
+(GPRO had no level at all). D4 ("confirm, never create") is the wrong premise for his edge.
+Next test (phase 1b): sweeps as the TRIGGER - every sweep in the universe's near-the-money
+contracts, entered at the sweep minute and exited on his tempo (+100% / -50% / 15:45), scored
+in premium percent from the contract's own 1-minute bars. `tools/flow_sweep_universe.py`.
+**Phase 1b verdict, 2026-09-09 00:30 ET (sweeps as the trigger: REJECTED on our data).** 923 sweeps
+across the core universe's near-the-money contracts over 8 sessions (08-27..09-08; the detector
+that finds his TSLA/GPRO/NVDA trades). Every sweep taken as a trade on his tempo (+100% / -50% /
+flat 15:45), net of $1.04 fees and a 5% slippage haircut: **847 trades, 30% win rate, mean -13.0%
+of premium, median -55%** (439 stops, 188 takes, 218 flats). No slice survives: first sweep per
+name -12.1%; first 90 minutes -5.0%; the best exit in a 5-point grid (take 30% / stop 30%, first
+90 minutes, first per name) reaches a 56% win rate and still averages **-2.4%** per trade. AAPL is
+the only name positive (+2.3% on 50). Conclusion: the mechanism he names, as observable from
+public prints, has no standalone edge on our data. What we cannot observe from history is his
+ask-side classification (our history uses the tick test) and his selection; what we cannot
+verify is survivorship in what he posts. T-12 stays as a LOGGED signal only: phase 2 collects
+NBBO-classified sweeps live at zero cost and the question reopens after 10 sessions of live
+data, not before. No rule changes.
+**T-6 measured the same night (our fires on HIS tempo): also negative.** The 19 replay fires with a
+chain, entered in the contract our pick would buy at the fire minute and exited on premium
+(grid of take 30-100% / stop 30-50% / flat 15:45), net of fees and slippage: best cell take 30% /
+stop 30% = 32% win rate, **mean -14.8%**; the default +100/-50 = 21% win, -18%. The three
+winners are the plan winners (HOOD +94%, DELL +95%, CVNA +38%); the losers include every
+illiquid contract (HYG $0.05, LQD $0.11: the round trip eats them). The plan-level ladder on the
+underlying (+0.08R/fire on the same 19) beats his tempo on our fires. T-6 is not adopted; exit
+tempo is not where our edge is hiding either.
 
 ## 4. Optimization backlog (ranked)
 
@@ -628,7 +663,8 @@ near-the-money contracts for the last 20 sessions and run the `flow_confirm` var
    exists); persist critic veto counts across restarts.
 9. **T-6 continuation-breakout walk-forward** (2026-08-29): sweep the archetype over
    60 days on the universe + SPY/QQQ/IWM before any live arming — deterministic,
-   free, and it directly answers "are we too strict or missing a lane".
+   free, and it directly answers "are we too strict or missing a lane". (Exit-tempo half
+   closed 2026-09-09, negative; only the entry archetype remains.)
 
 ---
 

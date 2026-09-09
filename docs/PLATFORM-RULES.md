@@ -58,6 +58,26 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### technique_outcomes.plan_source widened 24 → 48 — 2026-09-08
+
+`score_run` on a tip-triggered plan writes `plan_source="trigger:tip-<12hex>-<n>"`
+(26+ chars) and every insert failed StringDataRightTruncation, retrying at each
+startup (user-visible startup error, run b1ddda0b). Column widened in models.py
+AND `ALTER TABLE technique_outcomes ALTER COLUMN plan_source TYPE varchar(48)`
+applied manually to the live DB (create_all never widens). Any desk creating a
+fresh DB gets 48 from the model.
+
+### Deploys must wait for health: scripts\restart.ps1 — 2026-09-08
+
+Three market-hours outages in three sessions (09-04 ×2, 09-08 14:24–14:35 ET)
+were deploys that stopped the app and walked away before it answered again; a
+dead app manages no exits. Separately, intake windows stacked 9 deep because an
+unelevated restart cannot stop elevated windows (silent access-denied).
+`scripts\restart.ps1` is the one deploy path for EVERY desk: stop (reporting
+what it could not kill), start.ps1 -Detach, then BLOCK on /api/health (exit 4
+if it never answers, exit 5 on version mismatch with -Expect). Do not hand-roll
+stop/start in session recipes any more.
+
 ### Cartel dedicated Practice-book compatibility — 2026-09-08 reset
 
 Cartel consumes `techniques.options_cartel.default_portfolio` as its authoritative

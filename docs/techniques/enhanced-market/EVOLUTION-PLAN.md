@@ -226,3 +226,4 @@ directly answers week 1's "are we too strict" with numbers.
   detector (Alpaca options trades) feeding a `flow_sweeps` table; then a variant sweep on the days we
   hold chain snapshots, then a shadow instance. Pairs with T-6 (exit tempo, measured in premium %).
 - 2026-09-08 · T-12 build plan written: `FLOW-CONFIRMATION-PLAN.md` (phases 0-4, decisions D1-D7). Alpaca option trades verified available.
+- 2026-09-09 · T-12 phases 1a/1b and T-6 measured on history: confirm-gate 1/19 fires (a loser); sweeps-as-trigger 847 trades mean -13% premium; our fires on his tempo -14.8%. Both NOT adopted. Live log-mode sweeps (NBBO) are the only open thread; EM's structure gates stay.

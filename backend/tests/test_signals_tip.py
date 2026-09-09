@@ -97,6 +97,37 @@ class FakeSettings:
         return self.values.get(key, default)
 
 
+async def test_option_premium_targets_skip_underlying_checks():
+    """Codex audit 2026-09-08 finding 1 (CRWV 105C): premium targets 1.40→1.75
+    were compared with the UNDERLYING's 98.87 and 'not_past_target' failed.
+    Explicit premium domain — and the ambiguity heuristic — now skip the
+    underlying target checks on the record instead of guessing."""
+    quotes = FakeQuotes()
+    quotes.set("CRWV", 98.87)
+    # explicit premium domain
+    s = sig(ticker="CRWV", instrument="call", strike=105.0, premium=1.40,
+            price_domain="premium", target_price=1.75, stop_price=0.90,
+            evidence_quotes=["CRWV 105C 1.40, target 1.75, stop 0.90"])
+    v = await verify_signal(s, quotes, FakeSettings(), grounding={"passed": True})
+    names = {c["name"] for c in v["checks"]}
+    assert "not_past_target" not in names
+    units = next(c for c in v["checks"] if c["name"] == "price_units")
+    assert units["passed"] and "premium" in units["detail"]
+    # ambiguous units, same shape (no price_domain): the 0.25x heuristic skips
+    s2 = sig(ticker="CRWV", instrument="call", strike=105.0, premium=1.40,
+             target_price=1.75, stop_price=0.90,
+             evidence_quotes=["CRWV 105C 1.40, target 1.75, stop 0.90"])
+    v2 = await verify_signal(s2, quotes, FakeSettings(), grounding={"passed": True})
+    assert "not_past_target" not in {c["name"] for c in v2["checks"]}
+    # underlying-denominated option tip: the check still runs (and passes here)
+    s3 = sig(ticker="CRWV", instrument="call", strike=105.0, premium=1.40,
+             price_domain="underlying", target_price=110.0,
+             evidence_quotes=["CRWV 105C, stock target 110"])
+    v3 = await verify_signal(s3, quotes, FakeSettings(), grounding={"passed": True})
+    npt = next(c for c in v3["checks"] if c["name"] == "not_past_target")
+    assert npt["passed"]        # 98.87 < 110 — genuinely not past target
+
+
 async def test_price_deviation_parks_not_kills():
     quotes = FakeQuotes()
     quotes.set("NVDA", 190.0)   # far from claimed entry

@@ -950,6 +950,24 @@ class SignalService:
                 return {"contentId": content_id, "status": "error", "error": str(exc),
                         "signals": [], "intakeRunId": intake.id}
 
+        # typed extraction outcomes (Codex audit 2026-09-08 finding 3): a
+        # malformed reply is a FAILURE, not a quiet "no signal" — mark the
+        # content error so the recovery sweep retries it once; a refusal is
+        # terminal but distinctly visible, never counted as commentary.
+        if getattr(result, "outcome", "ok") == "invalid_output":
+            await self._set_content_status(content_id, "error")
+            await intake.finish("failed",
+                                f"Extraction produced unparseable output — will retry once "
+                                f"({(result.outcome_detail or '')[:200]})", failed=True)
+            return {"contentId": content_id, "status": "error",
+                    "error": f"invalid_output: {result.outcome_detail}",
+                    "signals": [], "intakeRunId": intake.id}
+        if getattr(result, "outcome", "ok") == "refused":
+            await self._set_content_status(content_id, "refused")
+            await intake.finish("done", "Extraction refused by the safety classifier — "
+                                        "terminal, distinctly recorded (not commentary).")
+            return {"contentId": content_id, "status": "refused",
+                    "signals": [], "intakeRunId": intake.id}
         if stated_at:
             # the caller KNOWS when the content was posted (the mirror's
             # posted_at) — that beats anything the model inferred from the text
@@ -1966,6 +1984,11 @@ class SignalService:
         if not ref:
             raise ValueError(f"no price for {row.ticker}")
         extraction_sig = (row.extraction or {}).get("signal") or {}
+        try:
+            from .schemas import TradeSignal as _TS, underlying_price_checks_ok as _upc
+            _units_ok, _ = _upc(_TS(**extraction_sig), float(ref))
+        except Exception:
+            _units_ok = True                 # unparseable extraction: old behavior
         # scale-in / zone entries (ARM-PLAN P3): an explicit ladder from the
         # caller (the analyst) wins; else the tip's own stated ladder; else a
         # stated entry ZONE becomes a 2-rung ladder (near edge first)
@@ -1989,9 +2012,13 @@ class SignalService:
             as_of_ms=now_ms,
             entry_mode="level_touch" if force_level_touch else policy.entry,
             tip_entry=(float(entry_override) if entry_override else row.entry_price),
-            tip_stop=row.stop_price,
-            tip_targets=extraction_sig.get("target_prices")
-            or ([row.target_price] if row.target_price else []),
+            # units guard (Codex audit 2026-09-08 finding 1): premium-denominated
+            # targets/stop must never become UNDERLYING plan levels — the plan
+            # falls back to its ATR/R-based levels instead
+            tip_stop=(row.stop_price if _units_ok else None),
+            tip_targets=((extraction_sig.get("target_prices")
+                          or ([row.target_price] if row.target_price else []))
+                         if _units_ok else []),
             horizon_sessions=wait,
             stop_atr_mult=float(eng.settings.get("techniques.tip.stop_atr_mult", 1.0)),
             target_r=tuple(eng.settings.get("techniques.tip.target_r") or (1.5, 3.0)),

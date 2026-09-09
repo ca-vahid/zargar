@@ -404,7 +404,7 @@ class TechniqueOutcome(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("technique_runs.id"), index=True)
     setup_id: Mapped[str | None] = mapped_column(String(64))
-    plan_source: Mapped[str] = mapped_column(String(24))          # analysis | candidate
+    plan_source: Mapped[str] = mapped_column(String(48))          # analysis | candidate | trigger:<id> (tip trigger ids overflow 24 — 2026-09-08)
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     # pending | partial | scored | unscorable
     horizon_bars: Mapped[int] = mapped_column(Integer, default=60)
