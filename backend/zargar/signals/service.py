@@ -2560,8 +2560,11 @@ async def attach_signal_layer(engine) -> None:
     engine.signals_service.start_media_catchup()
     # POST-SOAK 4.1/4.3: cold parks re-verify, error content retries once
     engine.signals_service.start_recovery()
-    # Codex finding 4: runs a restart/cancel left "running" are failed on the record
+    # Codex finding 4 (+ v0.7.20 review gap 2): runs a restart/cancel left
+    # "running" are failed on the record. At BOOT nothing can legitimately be
+    # running — sweep ALL of them, however young (a hard kill delivers no
+    # CancelledError, and the age gate skipped freshly-killed runs).
     import contextlib as _ctx
     with _ctx.suppress(Exception):
         from ..techniques.tip.analyst import reconcile_stale_runs
-        await reconcile_stale_runs(engine)
+        await reconcile_stale_runs(engine, older_than_s=0)

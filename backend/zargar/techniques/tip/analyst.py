@@ -810,6 +810,17 @@ API_RETRIES = {"n": 0}            # since-boot 529-retry tally (POST-SOAK 4.4, m
 MUTATING_TOOLS = ("save_note", "update_exit_plan", "close_position", "disarm_plan")
 
 
+def _fail_meta(state: dict | None, tool_ctx: dict | None) -> dict:
+    """What a FAILED run still owes the record (Codex v0.7.20 review gap 1):
+    the usage it consumed and the side effects it performed."""
+    out: dict = {}
+    if state and state.get("usage"):
+        out["usage"] = state["usage"]
+    if tool_ctx and tool_ctx.get("receipts"):
+        out["receipts"] = tool_ctx["receipts"]
+    return out
+
+
 async def reconcile_stale_runs(eng, *, older_than_s: float | None = None) -> int:
     """Boot reconciliation (Codex audit finding 4): a restart or cancellation
     used to leave analyst runs labeled "running" forever (a Sep-7 intake was
@@ -907,7 +918,10 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
                 except Exception as exc:
                     out = {"error": str(exc)[:300]}
                 tools_used.append({"tool": c.name, "args": args})
-                if c.name in MUTATING_TOOLS and not out.get("error"):
+                acted = not out.get("error") and not any(
+                    out.get(k) is False for k in ("disarmed", "closed", "ok",
+                                                  "saved", "updated"))
+                if c.name in MUTATING_TOOLS and acted:
                     # ACTION RECEIPT (Codex finding 4): tools can act before the
                     # final JSON validates — a failed run is not free of side
                     # effects, and the aftermath must render from receipts
@@ -1102,16 +1116,19 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
         import contextlib as _ctx
         with _ctx.suppress(Exception):
             await _persist_run(eng, run_id, status="failed", rec=rec,
-                               error="cancelled: shutdown/restart")
+                               error="cancelled: shutdown/restart",
+                               opinion=_fail_meta(loop_state, tool_ctx))
         raise
     except Exception as exc:
         log.warning("tip analyst failed for %s: %s", signal_row.id, exc)
         rec.step("error", f"Analyst failed: {exc}")
-        await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500])
+        await _persist_run(eng, run_id, status="failed", rec=rec, error=str(exc)[:500],
+                           opinion=_fail_meta(loop_state, tool_ctx))
         return None
     if opinion is None:
         rec.step("error", "No opinion produced (loop exhausted).")
-        await _persist_run(eng, run_id, status="failed", rec=rec, error="no opinion")
+        await _persist_run(eng, run_id, status="failed", rec=rec, error="no opinion",
+                           opinion=_fail_meta(loop_state, tool_ctx))
         return None
     result = {**opinion.model_dump(), "model": model, "toolsUsed": tools_used,
               "runId": run_id, "at": dt.datetime.now(dt.timezone.utc).isoformat(),
@@ -1302,25 +1319,45 @@ class IntakeRun:
         tools_used: list[dict] = []
         tool_ctx = {"ticker": (outcomes[0].get("ticker") if outcomes else ""),
                     "source": source, "signal_id": None, "run_id": self.id}
+        review_state: dict = {}
         try:
             text = await asyncio.wait_for(run_agent_loop(
                 eng, client, model=model, system=system, header=header,
                 rec=self.rec, run_id=self.id, max_tools=max_tools,
-                tool_ctx=tool_ctx, tools_used=tools_used), timeout=TIMEOUT_S)
+                tool_ctx=tool_ctx, tools_used=tools_used,
+                state=review_state), timeout=TIMEOUT_S)
             if text is None:
                 raise ValueError("no review produced (loop exhausted)")
             op = ReviewOpinion.model_validate_json(
                 text[text.find("{"):text.rfind("}") + 1])
+        except asyncio.CancelledError:
+            # Codex v0.7.20 review gap 2: a cancelled intake review stayed
+            # "running" and boot reconciliation's age gate skipped it — make
+            # it terminal HERE, immediately, then propagate
+            self.step("error", "Cancelled (shutdown/restart) — reconciled as failed.")
+            import contextlib as _ctx
+            with _ctx.suppress(Exception):
+                await _persist_run(eng, self.id, status="failed", rec=self.rec,
+                                   error="cancelled: shutdown/restart",
+                                   opinion=_fail_meta(review_state, tool_ctx))
+            raise
         except Exception as exc:
             log.warning("intake review failed: %s", exc)
             self.step("error", f"Review failed: {exc}")
+            import contextlib as _ctx
+            with _ctx.suppress(Exception):
+                await _persist_run(eng, self.id, status="failed", rec=self.rec,
+                                   error=str(exc)[:500],
+                                   opinion=_fail_meta(review_state, tool_ctx))
             await self.finish("review", f"Review failed: {exc}", failed=True)
             return None
         result = {"verdict": "review", "rationale": op.headline
                   + (f" {op.details}" if op.details else ""),
                   "watch": op.watch, "missedTip": op.missed_tip,
                   "confidence": op.confidence, "model": model,
-                  "toolsUsed": tools_used}
+                  "toolsUsed": tools_used, "usage": review_state.get("usage"),
+                  **({"receipts": tool_ctx["receipts"]}
+                     if tool_ctx.get("receipts") else {})}
         await self.finish("review", f"Review: {op.headline}"
                           + (f" Watch: {', '.join(op.watch)}." if op.watch else "")
                           + (f" POSSIBLE MISSED TIP: {op.missed_tip}" if op.missed_tip else ""),

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.20";
+export const APP_VERSION = "0.7.21";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.21",
+    date: "2026-09-09",
+    title: "Failure records complete",
+    items: [
+      { tag: "fixed", text: "Failed analyst runs and intake reviews now record the tokens they consumed and any side effects they performed - failure no longer erases the bill or the actions." },
+      { tag: "fixed", text: "An intake review cancelled by a restart is marked failed immediately, and startup now reconciles every leftover running run regardless of how recently it died." },
+      { tag: "fixed", text: "A disarm (or any management action) that reports it did NOT act no longer counts as a side effect on the run's record." },
+    ],
+  },
   {
     version: "0.7.20",
     date: "2026-09-09",
