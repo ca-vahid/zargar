@@ -219,6 +219,10 @@ class Engine:
         await self.feed.start()
 
         self._bar_persister = BarPersister(self.bus, self.sf, allow_sim=bool(self.config.persist_sim_bars))
+        from .brokers.alpaca import HybridQuoteFeed as _Hybrid
+        if isinstance(self.feed, _Hybrid):
+            startup = [s for s in await self._startup_symbols()]
+            asyncio.create_task(self.seed_today_exchange_bars(startup), name="f80-seed-today")
         self._tasks = [
             asyncio.create_task(self._quote_consumer(), name="quote-consumer"),
             asyncio.create_task(self._bar_persister.run(), name="bar-persister"),
@@ -371,21 +375,9 @@ class Engine:
                 merged = {b.ts: b for b in existing}
                 merged.update({b.ts: b for b in day})
                 existing = [merged[k] for k in sorted(merged)][-3000:]
-        else:
-            from .brokers.alpaca import HybridQuoteFeed
-            if isinstance(self.feed, HybridQuoteFeed) and not is_option:
-                # F80 (2026-09-09): the minute that was forming when the old process died never reached the
-                # table (QQQ/IWM 11:25 ET had no bar after the 11:26 boot); seed today's completed minutes from
-                # the venue's history so a restart leaves no silent hole in the 2m tape
-                day = await self._today_exchange_bars(symbol)
-                if day:
-                    await persist_bars(self.sf, day)
-                    merged = {b.ts: b for b in existing}
-                    merged.update({b.ts: b for b in day})
-                    existing = [merged[k] for k in sorted(merged)][-3000:]
         self.bars.seed(symbol, existing)
 
-    async def _today_exchange_bars(self, symbol: str) -> list:
+    async def _today_exchange_bars(self, symbol: str, fetch=None) -> list:
         """Today's completed 1m exchange bars (extended hours) from the history provider, up to the
         minute before now — empty outside a market day or when history is unavailable."""
         try:
@@ -400,13 +392,42 @@ class Engine:
             t = _dt.datetime.fromtimestamp(now / 1000, et)
             start = int(_dt.datetime.combine(t.date(), _dt.time(4, 0), et).timestamp() * 1000)
             end = (now // 60_000) * 60_000 - 1                 # never the still-forming minute
-            bars = await fetch_window(symbol, "1m", start, end, session="ext")
+            bars = await (fetch or fetch_window)(symbol, "1m", start, end, session="ext")
             for b in bars:
                 b.source = "exchange"
             return [b for b in bars if b.ts < (now // 60_000) * 60_000]
         except Exception:  # noqa: BLE001 - seeding is best effort; the stream corrects what it can
             log.debug("today's exchange bars unavailable for %s", symbol, exc_info=True)
             return []
+
+    async def seed_today_exchange_bars(self, symbols: list[str], *, fetch=None, concurrency: int = 4,
+                                       pace_s: float = 0.05) -> dict:
+        """F80 (2026-09-09): after a restart, re-read today's completed minutes from the venue for the
+        streamed symbols so the minute that was forming when the old process died (QQQ/IWM 11:25 ET)
+        is not a silent hole in the 2m tape. Runs AFTER start, in the background, paced — never inside
+        the boot (400 symbols of history inside `start()` would stretch the boot past the watchdog's
+        window). Bars go through `ingest_exchange_bar`, i.e. memory + the persister, by provenance."""
+        from .options import occ
+        sem = asyncio.Semaphore(max(1, concurrency))
+        out = {"symbols": 0, "bars": 0, "failed": 0}
+        syms = [s for s in symbols if not occ.is_occ(s) and "." not in s and "=" not in s and not s.startswith("^")]
+
+        async def one(sym: str) -> None:
+            async with sem:
+                bars = await self._today_exchange_bars(sym, fetch=fetch)
+                if bars:
+                    for b in bars:
+                        self.bars.ingest_exchange_bar(b)
+                    out["bars"] += len(bars)
+                else:
+                    out["failed"] += 1
+                out["symbols"] += 1
+                await asyncio.sleep(pace_s)
+
+        await asyncio.gather(*(one(s) for s in syms), return_exceptions=True)
+        log.info("F80 boot seed: today's exchange minutes re-read for %d symbol(s), %d bar(s), %d without data",
+                 out["symbols"], out["bars"], out["failed"])
+        return out
 
     # ------------------------------------------------------------- routing
     def executor_for(self, portfolio: dict | None):
