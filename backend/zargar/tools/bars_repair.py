@@ -12,12 +12,14 @@ Principles (from the review that found F75):
     the original id, a reason and a batch id), VERIFIES the copy row-for-row, and only then deletes;
     nothing ever deletes from the quarantine table;
   * flatness alone flags, it does not classify — `audit` reports `closed_day`, `degenerate_flat`,
-    `outlier_range`, `thin_rth` and `volume_spike`, and only `closed_day` (no US equity session
-    exists on that date) is quarantined by reason; a synthetic block is quarantined by an EXPLICIT
-    symbol + date range the operator names (`--reason sim_feed`);
+    `outlier_range`, `thin_rth` and `volume_spike` (range/flat flags for STOCKS only: an expiring
+    option contract is flat and a 150 % intraday range is normal for one), and only `closed_day`
+    (no US equity session exists on that date) is quarantined by reason; a synthetic block is
+    quarantined by an EXPLICIT symbol + date range the operator names (`--reason sim_feed`);
   * corrections are authoritative by provenance — `backfill` writes exchange bars with
     `source="exchange"`, which the precedence upsert lets overwrite `sampled`/`unknown` rows and
-    never lets a later sampled bar undo;
+    never lets a later sampled bar undo; a sampled row in a minute the venue has no bar for keeps its
+    price track and gets volume 0 (no bar = no prints);
   * a dataset is identified by CONTENT — `version` hashes every timestamped OHLCV + source row in
     scope together with the data-processing rules, so a volume fix with the same row count is a
     different version.
@@ -91,13 +93,15 @@ def audit_sessions(rows: list[BarRow]) -> list[dict]:
         rs = by_day[d]
         rth = [r for r in rs if _rth(r.ts)]
         flags = []
+        from ..options import occ
+        is_option = occ.is_occ(rs[0].symbol)
         if not is_trading_day(dt.date.fromisoformat(d)):
             flags.append("closed_day")
         hi = max(r.high for r in rth) if rth else None
         lo = min(r.low for r in rth) if rth else None
         rng = (hi - lo) if rth else None
         ref = rth[-1].close if rth else (rs[-1].close if rs else 0)
-        if not flags:
+        if not flags and not is_option:
             if len(rth) < MIN_RTH_BARS:
                 flags.append("thin_rth")
             elif ref and rng <= FLAT_TOL * ref:
@@ -108,7 +112,8 @@ def audit_sessions(rows: list[BarRow]) -> list[dict]:
         vmax = max((int(r.volume or 0) for r in rs), default=0)
         if vol and vmax > 1_000_000 and vmax > 0.25 * vol:
             flags.append("volume_spike")
-        out.append({"symbol": rs[0].symbol, "date": d, "weekday": dt.date.fromisoformat(d).strftime("%a"),
+        out.append({"symbol": rs[0].symbol, "kind": ("option" if is_option else "stock"), "date": d,
+                    "weekday": dt.date.fromisoformat(d).strftime("%a"),
                     "rows": len(rs), "rthRows": len(rth), "flatRows": sum(1 for r in rs if r.low == r.high),
                     "rthLow": round(lo, 4) if lo is not None else None, "rthHigh": round(hi, 4) if hi is not None else None,
                     "rthRangePct": round(100 * rng / ref, 3) if (rth and ref) else None,
@@ -215,6 +220,12 @@ async def cmd_backfill(sf, *, symbols: list[str] | None, all_symbols: bool, date
         set_alpaca_credentials(cfg.alpaca_key_id, cfg.alpaca_secret)
         fetch = fetch_window
     syms = await _symbols(sf, None if all_symbols else symbols)
+    if all_symbols:
+        from ..options import occ
+        skipped = [x for x in syms if occ.is_occ(x) or "." in x or "=" in x or x.startswith("^")]
+        syms = [x for x in syms if x not in skipped]
+        if skipped:
+            print(f"--all: skipping {len(skipped)} symbol(s) Alpaca's stock bars cannot serve (option contracts, non-US listings, indices)")
     if not syms:
         raise SystemExit("backfill: no symbols (use --symbols A,B or --all)")
     start_ms = _day_bounds_ms(date_from)[0]
@@ -233,12 +244,27 @@ async def cmd_backfill(sf, *, symbols: list[str] | None, all_symbols: bool, date
         before = await _rows(sf, sym, start_ms, end_ms)
         before_by = {r.ts: (r.open, r.high, r.low, r.close, r.volume, r.source) for r in before}
         await persist_bars(sf, bars)
+        # a minute the venue has NO bar for had no prints: a surviving quote-sampled row there keeps its
+        # price track but its volume was a counter artefact (SPY 2026-08-20 pre-market: 39.8M in one
+        # minute) - it is zero by definition (F78)
+        zeroed = 0
+        if bars:
+            have = {b.ts for b in bars}
+            lo_ts, hi_ts = min(have), max(have)
+            async with sf() as s:
+                res = await s.execute(
+                    text("UPDATE bars SET volume = 0 WHERE symbol = :sym AND tf = '1m' AND ts >= :lo AND ts <= :hi "
+                         "AND source <> 'exchange' AND volume <> 0"),
+                    {"sym": sym, "lo": lo_ts, "hi": hi_ts})
+                zeroed = int(res.rowcount or 0)
+                await s.commit()
         after = await _rows(sf, sym, start_ms, end_ms)
         changed = sum(1 for r in after if r.ts in before_by and before_by[r.ts] != (r.open, r.high, r.low, r.close, r.volume, r.source))
         added = sum(1 for r in after if r.ts not in before_by)
         srcs = Counter((r.source or "unknown") for r in after)
-        out["symbols"][sym] = {"fetched": len(bars), "changed": changed, "added": added, "rowsAfter": len(after), "sources": dict(srcs)}
-        print(f"{sym:<6} fetched={len(bars):<6} changed={changed:<6} added={added:<6} rows={len(after):<6} {dict(srcs)}")
+        out["symbols"][sym] = {"fetched": len(bars), "changed": changed, "added": added, "rowsAfter": len(after),
+                               "volumeZeroed": zeroed, "sources": dict(srcs)}
+        print(f"{sym:<6} fetched={len(bars):<6} changed={changed:<6} added={added:<6} zeroed={zeroed:<6} rows={len(after):<6} {dict(srcs)}")
         if pace and i + 1 < len(syms):
             await asyncio.sleep(pace)
     return out
