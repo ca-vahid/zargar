@@ -309,7 +309,7 @@ def _compact_bars(bars: list, *, sessions_requested: int | None = None) -> dict:
     if not bars:
         return {"note": "no bars", "complete": False}
     rows = [[dt.datetime.fromtimestamp(b.ts / 1000, dt.timezone.utc)
-             .strftime("%m-%d %H:%M"),
+             .strftime("%Y-%m-%d %H:%M"),      # year included (Codex review, 2026-09-09)
              round(float(b.open), 4), round(float(b.high), 4),
              round(float(b.low), 4), round(float(b.close), 4),
              int(getattr(b, "volume", 0) or 0)]
@@ -737,13 +737,38 @@ async def _run_tool(eng, name: str, args: dict, ctx: dict | None = None) -> dict
                                "this is NOT proof it is unlisted or illiquid; "
                                "check get_expiries and the exact expiry")
             # live reprice when a real-time source serves it (never inferred
-            # from the delayed chain's spot)
+            # from the delayed chain's spot). FRESHNESS IS PART OF THE EVIDENCE
+            # (Codex review E1, 2026-09-09): the service accepts any cached
+            # OPRA quote, so the tool ages it itself — an old quote is labeled
+            # a last-known quote, never presented as live.
             import contextlib as _ctx
+            import time as _time
+            live_max_age_s = 120            # OPRA NBBO older than this is not "live"
+            got_live = False
             with _ctx.suppress(Exception):
                 live = await eng.options.reprice({"symbol": occ_sym})
                 if live and live.get("priced") == "opra":
-                    out["live"] = {k: live.get(k) for k in
-                                   ("bid", "ask", "mid", "spreadPct", "last", "priced")}
+                    fields = {k: live.get(k) for k in
+                              ("bid", "ask", "mid", "spreadPct", "last", "priced")}
+                    fields["source"] = "opra"
+                    q = eng.quotes.get(occ_sym)
+                    ts = getattr(q, "source_ts", None) if q is not None else None
+                    age_s = (max(0.0, _time.time() - float(ts) / 1000.0)
+                             if ts else None)
+                    fields["ageSeconds"] = round(age_s) if age_s is not None else None
+                    if age_s is not None and age_s <= live_max_age_s:
+                        out["live"] = fields
+                    else:
+                        out["lastQuote"] = {**fields, "stale": True}
+                        out["liveNote"] = (
+                            f"real-time source served this contract but the quote is "
+                            f"{'of unknown age' if age_s is None else f'~{age_s / 60:.0f} min old'} "
+                            f"— treat as last-known, NOT current pricing")
+                    got_live = True
+            if not got_live:
+                out["liveNote"] = ("no fresh real-time quote for this contract — the "
+                                   "row above is the ~15-min delayed chain snapshot; "
+                                   "that gap is part of the evidence")
             return out
         want = float(args.get("strike")) if args.get("strike") else None
         chain = await eng.options.chain(sym, str(args.get("expiry")))
