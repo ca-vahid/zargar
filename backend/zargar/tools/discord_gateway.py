@@ -270,7 +270,12 @@ class GatewayStore:
             except ValueError:
                 self.io_errors += 1          # corrupt line: counted, not silent
                 continue
-            k = self.key(rec)
+            # canonical identity travels IN the record (Codex review B1,
+            # 2026-09-09): a done tombstone has no msg body, so recomputing the
+            # revision-bearing key from it resurrected acknowledged edits —
+            # replay by the persisted ledgerKey, falling back to key() for
+            # records written before it existed
+            k = rec.get("ledgerKey") or self.key(rec)
             if rec.get("state") == "done":
                 self._entries.pop(k, None)   # tombstone from a completed delivery
             else:
@@ -308,26 +313,32 @@ class GatewayStore:
             except OSError:
                 pass
 
-    def accept(self, env: dict) -> None:
+    def accept(self, env: dict) -> bool:
         """Write-ahead: persist an accepted envelope BEFORE processing and
         lease it (it is about to sit in the in-memory queue). A DUPLICATE
         delivery of an entry already in the ledger preserves the existing
-        retry count and destination ACKs (Codex A1) — a re-delivery never
-        resets a pending retry to a fresh state."""
+        retry count and destination ACKs (Codex A1) — merged INTO THE CALLER'S
+        ENVELOPE, not just the stored copy, so the object the worker actually
+        processes carries them (Codex review B2, 2026-09-09). Returns True
+        when the key was already leased (an owner is queued or in flight):
+        the caller must not queue a second concurrent logical owner."""
         k = self.key(env)
-        rec = dict(env)
-        rec.setdefault("attempts", 0)
+        env.setdefault("attempts", 0)
         prev = self._entries.get(k)
         if prev is not None:
-            rec["attempts"] = max(int(rec.get("attempts") or 0),
+            env["attempts"] = max(int(env.get("attempts") or 0),
                                   int(prev.get("attempts") or 0))
             if prev.get("emDone"):
-                rec["emDone"] = True
+                env["emDone"] = True
+        rec = dict(env)
         rec["state"] = "pending"
+        rec["ledgerKey"] = k
         rec["acceptedAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        already = k in self._leased
         self._entries[k] = rec
         self._leased.add(k)
         self._append(rec)
+        return already
 
     def release(self, env: dict) -> None:
         """Drop the lease without judging the attempt (queue overflow, worker
@@ -347,6 +358,7 @@ class GatewayStore:
         rec["error"] = str(error)[:300]
         rec["spooledAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
         rec["state"] = "pending"
+        rec["ledgerKey"] = k
         if rec["attempts"] >= self.MAX_ATTEMPTS:
             rec["dead"] = True
         self._entries[k] = rec
@@ -354,12 +366,14 @@ class GatewayStore:
         self._append(rec)
 
     def ack(self, env: dict) -> None:
-        """Destination(s) confirmed: the entry may leave the ledger."""
+        """Destination(s) confirmed: the entry may leave the ledger. The
+        tombstone carries the EXACT ledger identity (Codex B1) — a done record
+        recomputed without the revision resurrected acknowledged edits."""
         k = self.key(env)
         self._leased.discard(k)
         if self._entries.pop(k, None) is not None:
             self._append({"kind": env.get("kind") or "create", "cid": env.get("cid"),
-                          "mid": env.get("mid"), "state": "done"})
+                          "mid": env.get("mid"), "ledgerKey": k, "state": "done"})
             self._acks_since_compact += 1
             if self._acks_since_compact >= 200:
                 self._compact()
@@ -906,8 +920,11 @@ class Gateway:
                "em": bool(em_entry) and kind == "create", "matched": bool(matched),
                "attempts": 0}
         # write-ahead ACCEPTANCE (Codex G2): durable before RAM — a hard kill
-        # between here and delivery loses nothing
-        self._store.accept(env)
+        # between here and delivery loses nothing. A duplicate of a key that
+        # already has an owner queued/in flight updates the ledger but does
+        # NOT queue a second concurrent owner (Codex B2).
+        if self._store.accept(env):
+            return
         if self._queue is None:
             self._store.release(env)     # the retry loop offers it once running
             return
