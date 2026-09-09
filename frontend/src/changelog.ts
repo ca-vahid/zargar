@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.23";
+export const APP_VERSION = "0.7.24";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.24",
+    date: "2026-09-09",
+    title: "A target you have already passed is not a target",
+    items: [
+      { tag: "fixed", text: "Team2 no longer takes an entry whose profit target sits at or behind the entry price. A gap that opens straight through the zone leaves the planned level behind price, and because both target checks are touched checks, that trade would have closed on its first bar or its first live quote - booking a loss under a target reached label. The setup now says so instead of trading." },
+    ],
+  },
   {
     version: "0.7.23",
     date: "2026-09-09",

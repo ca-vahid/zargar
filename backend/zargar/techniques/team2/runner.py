@@ -41,6 +41,7 @@ from ...marketstructure.aggregate import bar_session, bucket_start_ms, minute_of
 from ...marketstructure.sessions import ET, session_bounds, session_date
 from ...models import TechniqueRun
 from .rules import Team2Rules, rules_from_settings
+from .scenario import target_is_ahead
 from .session import simulate_session
 
 log = logging.getLogger("zargar.techniques.team2")
@@ -446,7 +447,8 @@ class Team2Runner(PlanRunner):
                                                           if k not in ("event", "why", "regime")})
                 if journal and what in ("scenario", "pm_break", "late_touch", "pm_retest", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
-                                        "skip_reentries", "skip_last_entry", "skip_loss_cap"):
+                                        "skip_reentries", "skip_last_entry", "skip_loss_cap",
+                                        "skip_target_behind"):
                     # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
                     # they get their own journal kind so skip counts mean skips
                     kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
@@ -524,6 +526,19 @@ class Team2Runner(PlanRunner):
         else:
             stop = guard_f - atr if direction == "long" else guard_f + atr
         target = e.get("target") if e.get("target") is not None else setup.get("target")
+        # F72 (2026-09-09): the read refuses an entry whose target is not ahead of it, but this line
+        # FALLS BACK to the setup's own target when the fire carried none — which puts the stale planned
+        # level back on the live trade. `target_breach` runs on the ~2s quote watch (planrunner 2b), so a
+        # target at or behind the fill sells the whole position on the FIRST live print, before a single
+        # 2m bar closes. Drop it instead: no target is safe (the candle stop, the premium stop, the trims
+        # and the 15:45 flatten all still manage the trade), a wrong one is not. Entry-side only — a
+        # target already on an OPEN trade is never rewritten here.
+        if target is not None and not target_is_ahead(float(target), spot, direction):
+            self._log(ap, "target_dropped",
+                      f"{tid}: planned target {float(target):.2f} is not ahead of the {spot:.2f} entry — "
+                      f"dropped, the trade is managed by its stops and the flatten (F72)",
+                      trigger=tid, spot=spot, target=round(float(target), 4))
+            target = None
         trade = Trade(trigger_id=tid, kind=str(setup.get("kind") or "team2"), direction=direction, fired_ts=e["ts"],
                       window="team2", entry=spot, stop=stop, targets=[float(target)] if target else [],
                       fire_bar_index=ap.bar_index - 1, last_price=bar.close, instrument=ap.config.instrument,
@@ -1054,7 +1069,12 @@ class Team2Runner(PlanRunner):
             skip_why = {"skip_no_trade_zone": "the last pullback sat inside the pre-market range — no-trade zone (V6/B5)",
                         "skip_range_confirmation": "range day: price has not cleared the PM level (B3/A4)",
                         "skip_no_contract": f"the last pullback found no strike MODELLING ${floor_s:.2f}–${targ_s:.2f} (V1) — "
-                                            "modelled premium, not the live chain"}
+                                            "modelled premium, not the live chain",
+                        # F72 (2026-09-09): the same F57/F59 lesson — a refusal the headline never
+                        # states is a refusal the desk cannot see. This one holds for the rest of the
+                        # session unless price comes back through the level.
+                        "skip_target_behind": "the planned target is already behind price — no room left "
+                                              "on this setup, so an entry would exit on its next bar (F72)"}
             refused = skip_why.get(str((picked or {}).get("skipped") or ""), "")
             refused_s = f" · {refused}" if refused else ""
             # F60 (2026-09-08): once a setup has spent its D9 allowance every further touch is watch-only,

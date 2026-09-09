@@ -24,7 +24,7 @@ from .premium import Fill, PremiumModel, pnl_pct
 from .regime import RegimeRead, RegimeReader
 from .rules import Team2Rules
 from .scenario import (
-    SCENARIO_LABEL, TREND_SCENARIOS, ScenarioTracker, body_closed_beyond, sizing_bucket,
+    SCENARIO_LABEL, TREND_SCENARIOS, ScenarioTracker, body_closed_beyond, sizing_bucket, target_is_ahead,
 )
 
 TRACE_VERSION = 1
@@ -532,6 +532,36 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             continue
         if rules.shrink_after_win and day_pnl_pct > 0:
             mult = round(mult * 0.5, 4)                # P7/D14: protect the day after a win
+        # X3b: "high of day resistance is the main target for longs until it breaks" — a re-entry (this setup
+        # already fired, or the day already has a trade) sells at the running HOD/LOD when it is nearer than
+        # the planned level and leaves room; `hod_target=always` applies it to first entries too
+        target, target_kind = s.target, "plan"
+        if rules.hod_target != "off" and atr > 0 and (rules.hod_target == "always" or s.entries >= 1 or trades):
+            prior = session_bars_2m[:-1]
+            if prior:
+                ext = max(x.high for x in prior) if long else min(x.low for x in prior)
+                room = (ext - entry_spot) if long else (entry_spot - ext)
+                nearer = target is None or ((ext < target) if long else (ext > target))
+                if room >= rules.hod_target_min_atr * atr and nearer:
+                    target, target_kind = ext, "hod"
+        # F72 (2026-09-09): resolved BEFORE the strike pick, because a target that is not ahead of the
+        # entry makes this a trade with no upside, not a mispriced one. A gap that opens THROUGH the zone
+        # leaves the planned level behind price (SPY 2026-09-09 09:46: scenario_4 armed with target 764.75
+        # while SPY traded 763.7, IWM 293.56 at 293.2). The target exit below tests `b2.low <= target` for
+        # a short, which is ALREADY TRUE, so the position would close on its very next 2m close — and for a
+        # short a target ABOVE the entry is a LOSS booked under a "target reached" label, so the day's grade
+        # would score a stop-out as a win. Refuse the ENTRY only: an open position keeps every one of its
+        # own exits (target, premium stop, candle stop, trims, flatten), which are judged above.
+        # Like the other structural refusals (F18) this is about the PLAN, not the quality of the pullback,
+        # so it does not spend the D9 allowance — `s.touches` is still only incremented for a priced fire.
+        if not target_is_ahead(target, entry_spot, s.direction):
+            side = "above" if s.direction == "short" else "below"
+            note_once(s, end_ts, "skip_target_behind",
+                      f"{s.id}: target {target:.2f} is {side} the {entry_spot:.2f} entry — price has already run "
+                      f"through it, so there is no room left on this setup and the exit would trigger on the "
+                      f"next bar (F72)", setup=s.id, touch=idx, spot=round(entry_spot, 4),
+                      target=round(float(target), 4), targetKind=target_kind)
+            continue
         pick = model.pick_strike(entry_spot, end_ts, s.direction, target_premium=rules.target_premium,
                                  premium_floor=rules.premium_floor, step=rules.strike_step, mode=rules.premium_pick)
         if pick is None:
@@ -549,18 +579,6 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         s.touches += 1                                      # F61: only a PRICED pullback spends the D9 allowance
         s.attempts += 1
         fill = model.buy(mark)
-        # X3b: "high of day resistance is the main target for longs until it breaks" — a re-entry (this setup
-        # already fired, or the day already has a trade) sells at the running HOD/LOD when it is nearer than
-        # the planned level and leaves room; `hod_target=always` applies it to first entries too
-        target, target_kind = s.target, "plan"
-        if rules.hod_target != "off" and atr > 0 and (rules.hod_target == "always" or s.entries >= 1 or trades):
-            prior = session_bars_2m[:-1]
-            if prior:
-                ext = max(x.high for x in prior) if long else min(x.low for x in prior)
-                room = (ext - entry_spot) if long else (entry_spot - ext)
-                nearer = target is None or ((ext < target) if long else (ext > target))
-                if room >= rules.hod_target_min_atr * atr and nearer:
-                    target, target_kind = ext, "hod"
         s.entries += 1
         pos = Position(setup=s, direction=s.direction, entry_ts=end_ts, entry_spot=entry_spot, strike=strike,
                        call=long, entry_mark=mark, entry_fill=fill, touch_index=idx,
