@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.25";
+export const APP_VERSION = "0.7.26";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,18 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.26",
+    date: "2026-09-09",
+    title: "Tips intake that survives crashes, and honest evidence",
+    items: [
+      { tag: "major", text: "Discord intake is now crash-proof end to end: every message is written to a durable ledger BEFORE processing and leaves it only after the app confirms it — a hard kill, restart, queue overflow or app outage no longer loses a tip. Edits, EM forwards and retries each confirm separately, in order." },
+      { tag: "fixed", text: "A repeated delivery can never pay for a second extraction (atomic claim), and a message abandoned mid-processing by a crash is resumed instead of silently dropped." },
+      { tag: "improved", text: "The analyst's evidence got honest: an exact contract's real-time quote carries its age and is labeled stale when old; bar timestamps carry the year; historical experiment runs are locked to what existed at the tip's moment (no future rules, no current-book management, closed bars only)." },
+      { tag: "new", text: "Per-stage LLM cost/latency measurement (extraction, appraisals, reviews, retros, digests, audits) rolls up nightly — with retries, malformed outputs and failures counted for what they actually were." },
+      { tag: "fixed", text: "Source trust ages holdings by when they actually FILLED, not when the order was placed." },
+    ],
+  },
   {
     version: "0.7.25",
     date: "2026-09-09",
