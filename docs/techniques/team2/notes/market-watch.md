@@ -2806,3 +2806,67 @@ data and original research records. Keep target_replan off until the clean datas
   **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy
   question**, **F74**, **F76's rule question**, **F81**, F67's two shared-side halves, and the
   F30-family question of which premium series is authoritative.
+
+## 2026-09-09 14:40 ET (run 43 — desk healthy on v0.7.30; the contract picker exercised read-only for the first time → F82)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.30**, armed 74. SPY `e4d39d00`, QQQ `9a1094ed`, IWM
+  `e87e4ad2` all `armed`, `complete: true` (pmh/pml/dayType/sizingAtOpen present), `needsAttention`
+  false, mode **auto** on Team2 Practice `b9dcd8db…`, **zero trades, zero open positions**, ninth
+  session. Quote age 0.1–0.4 s, session `regular`, bar age 67 s. **No restart this run**; the engine
+  log has exactly **one** timestamped warning since the 14:12 ET boot — a transient EM restore-check
+  mismatch on one plan (another desk's, resolved). No Team2 log line, no traceback after the boot.
+- **Data real-time and provenance-clean.** 303/303 RTH 1m rows per symbol 09:30–14:32, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps** on all three. Option quotes `source: "opra"`, `provider: alpaca`, `delayed: false`,
+  sub-second, and the chain row matched the nested OPRA quote exactly — **F77 did not reproduce for a
+  fourth consecutive run**. F75/F79/F80 stay closed.
+- **Replay parity exact on all three** (SPY 12/12, QQQ 10/10, IWM 33/33, zero trades both ways).
+  Run 42's IWM `same_pullback` discrepancy was the predicted bar-boundary race and did not recur.
+- **What the read saw since 14:14.** IWM: `late_touch` at **14:16** (touch #4 of
+  `pm_break_down@10:30`, watch-only past the first two — D9/P6) and `same_pullback` at 14:20. QQQ:
+  nothing since the 14:02 `same_pullback` on its scenario 3 (bounce PDL, calls, target 717.47). SPY:
+  nothing since 12:28. Prices at 14:38: SPY 762.82, QQQ 716.43, IWM 291.08. **Day totals: 18
+  `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`, 4 `late_touch`, 0 fires.**
+- **Method sanity checked against the tape, not just the log.** Recomputed 2m bars and the 2m EMA13
+  from the DB: IWM's 14:12/14:16/14:20 touches are **real** (bar 14:16 O290.94 H291.13 L290.93
+  C291.11 straddles EMA13 291.01; 14:24 onward genuinely stops touching, and the read correctly
+  stops logging). QQQ's 13:15 flip to scenario 3 is **correct**: the 13:00–13:15 15m bar closed
+  **716.89**, above the 716.50 PDL-zone top, with `flip_body_ratio=0` so a close (not a body) is the
+  rule. EMA200 values are sane against price on all three (SPY 763.06 vs 762.70).
+- **F82 — NEW, the day's one real finding.** With no fire in nine sessions the contract picker had
+  never run, so this run exercised it **read-only** (live CBOE chain + `select_by_premium` + an OPRA
+  reprice; **no order, no plan touched**). Good news: the **mechanism works end-to-end** — same-day
+  expiry found, strike chosen, live tight OPRA quote returned (SPY 762P 0.20/0.21 · QQQ 717C
+  0.28/0.29 · IWM 291P 0.19/0.20). The finding is what it *chose*: at 14:38 ET, 81 minutes to
+  expiry, **exactly one OTM strike on each symbol still sits inside the `[0.20, 0.90]` premium band
+  — the first OTM strike, at ~$0.27, less than half the $0.60 target** (next strike out: $0.02–0.12,
+  under the floor). The premium rule has quietly become "buy the nearest OTM strike", with **no
+  delta guard** — IWM's pick priced **delta −0.51**, effectively ATM, a far faster instrument than
+  the morning ~$0.50 contract the calibration (B3) is built on. On the same decay the last in-band
+  strike drops under the floor around **15:10–15:25 ET**, *before* the 15:30 `last_entry_min` gate,
+  so late fires would start refusing with `skip_no_contract`. Also confirmed (F14's known mechanism,
+  quantified): selection reads the **delayed** CBOE ask while the fill reads OPRA, and today the
+  delayed asks were one-directionally ~$0.05 / ~20% high on all three.
+- **Proposed for the user (F82 — rules/thresholds, not built):** (a) leave it; (b) make
+  `target_premium` time-aware (scale with √time-to-expiry so the band tracks the author's morning
+  *moneyness*); (c) add a **delta band** beside the premium band (e.g. refuse |delta| > 0.45); or
+  (d) an explicit late-session entry cutoff instead of the accidental one at the $0.20 floor. The
+  honest fix for F14's half is to run **selection** on live OPRA, not only the reprice.
+- **The day's two blockers are unchanged** and already written up: SPY and IWM (which left their
+  pre-market range) are dead on the frozen target — **F76**/**F81**; QQQ (which never left it) is
+  blocked by V6's no-trade zone — **F56**. Both are rules questions for the user.
+- **UI:** `/team2` and `/api/team2/status` both 200. The full page render was **not** re-verified
+  this run — the browser cookie handoff was blocked by the sandbox — but run 42 verified it green on
+  this identical build 25 minutes earlier and nothing has deployed since. `restart-check` reports
+  `safe: true`.
+- **Next run (15:00–15:30 ET) should:** (1) watch the **14:45 prime-close window**, the day's last
+  real chance, and **QQQ's scenario 3** (the only symbol with a live target — it needs price out of
+  713.50–720.67 to be takeable at all); (2) **test F82's prediction directly** — re-measure the
+  in-band strike count around 15:10–15:25 and record whether the band empties before the 15:30
+  last-entry gate; (3) mind the **15:30 last-entry / 15:45 flatten** 0DTE gates; (4) confirm bar
+  provenance stays `exchange` and the 15:45 flatten runs clean on an empty book. **No restart
+  queued** — the desk is current at v0.7.30. Still open for the user: **F47**, **F49**, **F50**,
+  **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**,
+  **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**,
+  **F81**, **F82**, F67's two shared-side halves, and the F30-family question of which premium
+  series is authoritative.

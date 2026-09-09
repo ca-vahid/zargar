@@ -1476,6 +1476,39 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   09:25 pre-open rather than at entry, which fixes the cause rather than the symptom. Nothing
   built and no setting changed — this watch does not move thresholds.
 
+- **F82 (2026-09-09 14:38 ET, NOT fixed — proposal; the $0.50–0.60 premium target silently
+  degrades to "the first OTM strike" as the day burns down, with no delta or time guard).**
+  `runner.pick_contract` → `options/pick.select_by_premium` selects, of the OTM contracts whose ask
+  lies in `[premium_floor 0.20, 1.5 × target_premium 0.60] = [0.20, 0.90]`, the one closest to
+  $0.60 (`premium_pick="closest"`, F36). That band is a *price* band with no reference to the time
+  left, so the strike it names drifts inward all session. **Measured read-only on today's live CBOE
+  chain at 14:38 ET (81 minutes to the 16:00 expiry), for each symbol's own live direction:** on
+  **all three**, exactly **one** OTM strike is inside the band — the *first* OTM strike — and its
+  ask is **~$0.27**, less than half the target; the next strike out is $0.04–$0.12, under the floor.
+  SPY puts 762/761/760 = 0.27/0.12/0.06 · QQQ calls 717/718/719 = 0.28/0.10/0.04 · IWM puts
+  291/290/289 = 0.27/0.04/0.02. So for the rest of the session the premium rule is not selecting a
+  ~$0.50 contract at all; it is buying the nearest OTM strike at whatever it costs, and the
+  **delta** it lands on is uncontrolled — IWM's pick priced **delta −0.51 on OPRA** (bid/ask
+  0.19/0.20), i.e. effectively at-the-money, a much faster instrument than the morning $0.50 pick
+  the method is calibrated on (B3). Extrapolating the same square-root-of-time decay, the last
+  in-band strike falls under the $0.20 floor at roughly **15:10–15:25 ET**, i.e. before the
+  `last_entry_min` 15:30 gate — after which every late fire would be a `skip_no_contract` refusal
+  the desk has never yet seen in the wild. **Also confirmed here (not new, this is F14's mechanism):**
+  selection reads the delayed CBOE ask while the fill reads OPRA — today the delayed asks ran
+  consistently ~$0.05 / ~20% high (SPY 0.26 vs 0.21, QQQ 0.33 vs 0.29, IWM 0.25 vs 0.20), a
+  one-directional bias, so the band is applied to numbers that are systematically stale-high.
+  **Why it has never been seen:** nine sessions, zero fires — the picker has never run in anger.
+  This check exercised it read-only (chain fetch + `select_by_premium` + an OPRA reprice, no order,
+  no plan touched) and the **mechanism works end-to-end**: same-day expiry found, a strike chosen,
+  a live tight OPRA quote returned on all three. **Proposed, for the user (a rules/threshold
+  question, not built):** (a) leave it — accept that a late entry is a nearer-the-money, cheaper
+  contract; (b) make the target time-aware (scale `target_premium` with √(time-to-expiry) so the
+  band tracks the same *moneyness* the author's morning $0.50 describes); (c) add a **delta band**
+  beside the premium band (e.g. refuse |delta| > 0.45) so a late pick cannot silently become ATM;
+  or (d) stop taking new entries once no strike remains inside the band with a margin — an explicit
+  cutoff rather than an accidental one at the floor. Whichever is chosen, the honest fix for F14's
+  half is to run the **selection** on the live OPRA quotes, not only the reprice.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
