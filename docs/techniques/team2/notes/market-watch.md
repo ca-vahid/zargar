@@ -2278,3 +2278,49 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**,
   **F71's shared half**, **F72's strategy question**, **F74**, F67's two shared-side halves, and the
   F30-family question of which premium series is authoritative.
+
+## 2026-09-09 10:48 ET (run 34c — F72 revised on the user's three corrections; v0.7.25)
+
+- **The runner fallback was a real hole and is closed.** My first cut set an invalid target to
+  `None`, which meant the trade entered with `targets=[]` — **an invalid target silently became
+  permission for a targetless entry**, a *weaker* outcome than the refusal the read applies to the
+  identical condition. `Team2Runner.resolve_fire_target(e, setup, spot, direction)` now returns
+  `(target, refusal)` and `_fire` returns on a refusal, journalling `skip_target_behind`. Invalid
+  means refused at **both** layers, wherever the fire came from — restored, replayed, or a plan
+  rewritten under a running session. A genuinely **absent** target (none on the fire, none on the
+  setup) is a different shape and stays allowed; that one the read validated.
+- **The `hod_target="always"` claim was wrong — withdrawn.** X3b's guard is
+  `nearer = (ext < target) if long else (ext > target)`: it only ever pulls a target **closer**. For
+  a short it needs the running LOD *above* the planned target, but once price has run **through**
+  that target the LOD is below it, so `nearer` is False and X3b declines. The knob changes nothing
+  here; recovering the case that way would need the `nearer` comparison itself rewritten. Now pinned
+  by a mirrored test (`test_hod_target_always_does_not_recover_a_target_price_has_run_through`) so
+  the claim cannot quietly come back into the doc.
+- **Structural re-planning built as a VARIANT, default off.** `techniques.team2.target_replan` =
+  `off` | `entry`. When a planned target is not ahead of the entry, the target is re-derived from the
+  next structural level beyond **current price** — the same 15m pivots the plan was built on, now
+  carried as `plan.levelLadder` (`levels.level_ladder` + `next_structural_level`) — and then
+  **re-validated by the same predicate**. A re-plan is a candidate, never an exemption: with no
+  qualifying level the baseline refusal stands. **Validated at ENTRY, not only at arming**, per the
+  instruction: price moves between the 15m confirmation and each pullback, so the "next" level at
+  09:46 is not the one at 11:20, and only the entry knows which.
+- **How to measure it** (nothing about the default changes until this exists):
+  `python -m zargar.tools.team2_sweep sweep --start A --end B --set target_replan=entry` against the
+  same range with the knob off, then `sweep-compare`. The override rides the existing alias map, so
+  no sweep-tool change was needed.
+- **Invalid-candidate refusal remains the baseline and the default** — confirmed live after the
+  deploy: `techniques.team2.target_replan = off`, `hod_target = reentry` (untouched).
+- **Tests: 20 new (48 in the file, 114 Team2 total), every case mirrored long/short** — the
+  resolver's five shapes (invalid on the fire / invalid via the setup fallback / genuinely absent /
+  valid / unparseable), the withdrawn `hod_target` claim, ladder ordering and price-relative
+  selection, plan construction against a real multi-session history, the variant recovering a trade
+  the baseline refuses, entry-time validation of *every* re-planned fire, re-validation against an
+  empty ladder, and byte-identical event streams with the knob off. One harness note worth keeping:
+  the synthetic day has a SINGLE prior session and `level_ladder` excludes the zone's own date, so a
+  plan built there has no pivots at all (its `targets` are `None` for the same reason) — the variant
+  tests inject a ladder and construction is covered separately against a 4-session history.
+- **Deployed 10:48 ET with the desk flat** (no trades, no open positions on any of the three).
+  v0.7.25 live, `/api/health` agrees, 3 Team2 plans restored, no Team2 errors or Tracebacks.
+- **Still not exercised by the tape**, same as this morning: SPY and IWM targets remain behind price
+  and would be refused, but no qualifying pullback has reached the guard. IWM now shows 2 setups.
+  Next run should still look for a real `skip_target_behind` in the read.
