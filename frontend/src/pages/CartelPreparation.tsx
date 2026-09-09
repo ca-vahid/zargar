@@ -95,14 +95,35 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           <option value="" disabled>Choose an account</option>{books.map(p => <option key={p.id} value={p.id}>{p.name}{p.kind === "paper" ? " (broker paper)" : ""}</option>)}
         </select></label>
         <label>Shortlist size<input required type="number" min={1} max={20} value={config.focusCount} onChange={e => setConfig({...config, focusCount:Number(e.target.value)})}/></label>
-        <label className="cartel-check"><input type="checkbox" checked={config.scanAll ?? true} onChange={e => setConfig({...config, scanAll:e.target.checked})}/>Evaluate all eligible stocks</label>
+        <label className="cartel-check"><input type="checkbox" checked={config.scanAll ?? true} onChange={e => setConfig({...config, scanAll:e.target.checked})}/>Evaluate all eligible stocks and reviewed ETFs</label>
         {config.scanAll === false && <label>Optional symbol cap<input required type="number" min={1} max={10000} value={config.historyLimit} onChange={e => setConfig({...config, historyLimit:Number(e.target.value)})}/></label>}
         <label>Premium limit (account currency)<input required type="number" min={1} max={100000} value={config.budget} onChange={e => setConfig({...config, budget:Number(e.target.value)})}/></label>
         <label>Equity at risk (%)<input required type="number" min={0.01} max={10} step={0.01} value={config.riskPct} onChange={e => setConfig({...config, riskPct:Number(e.target.value)})}/></label>
       </div>
-      <p>All eligible listings are checked by default. Stocks that clearly fail the required industry gate are ruled out before requesting history. The shortlist size limits final selection, not coverage. History requests are paced and cached. Full option premium counts toward risk. The risk percentage uses this account’s equity, not the combined Practice total.</p>
+      <p>All eligible listings are checked by default. Industry context mode records ranks without excluding a stock solely on its industry. Strict mode requires weekly/monthly top-list agreement. The shortlist size limits final selection, not coverage. History requests are paced and cached. Full option premium counts toward risk. The risk percentage uses this account’s equity, not the combined Practice total.</p>
       <p>Allowed range: above 0% through 10% per setup. The lower of this equity allowance and the premium limit controls spending; a $500 premium limit still caps purchases at $500. Practice and Live values are saved independently. Existing saved values are preserved.</p>
       {live && <p className="cartel-notice">10% permits up to one-tenth of this account’s equity in option premium per setup. Increasing the limit does not enable Live execution or bypass its permissions.</p>}
+      <details open><summary>Market coverage and method choices</summary>
+        <p>Sean describes theme leadership, volume-supported breakouts, 5m/15m confirmation and retests. Exact volume, candle-quality and ranking thresholds below are our measurable interpretations, not prescribed author numbers. Saved plans keep their original settings.</p>
+        <div className="cartel-fields">
+          <label>Industry policy<select value={config.industryPolicy || "context"} onChange={e => setConfig({...config, industryPolicy:e.target.value})}>
+            <option value="context">Context — evaluate strong stocks across industries</option><option value="strict">Strict — require both top-ten industry ranks</option>
+          </select></label>
+          <label>Reviewed ETF symbols<input defaultValue={(config.reviewedEtfs || []).join(", ")} onBlur={e => setConfig({...config, reviewedEtfs:e.target.value.toUpperCase().split(/[ ,]+/).filter(Boolean)})}/></label>
+          <label>Confirmation timeframe<select value={config.entry.timeframe_minutes} onChange={e => setConfig({...config, entry:{...config.entry, timeframe_minutes:Number(e.target.value)}})}>
+            <option value={5}>5 minutes</option><option value={15}>15 minutes</option><option value={30}>30 minutes (research variant)</option>
+          </select></label>
+          <label>Entry approach<select value={config.entry.mode} onChange={e => setConfig({...config, entry:{...config.entry, mode:e.target.value}})}><option value="breakout">Breakout confirmation</option><option value="retest">Confirmed retest</option></select></label>
+          {config.entry.mode === "retest" && <label className="cartel-check"><input type="checkbox" checked={!!config.entry.allow_gap_retest} onChange={e => setConfig({...config, entry:{...config.entry, allow_gap_retest:e.target.checked}})}/>Allow a completed retest after an opening gap</label>}
+          <label>Required volume multiple<input type="number" min={0.01} max={100} step="any" value={config.entry.volume_multiple} onChange={e => setConfig({...config, entry:{...config.entry, volume_multiple:Number(e.target.value)}})}/></label>
+          <label>Minimum close location (0–1)<input type="number" min={0} max={1} step="any" value={config.entry.min_close_location} onChange={e => setConfig({...config, entry:{...config.entry, min_close_location:Number(e.target.value)}})}/></label>
+        </div>
+        <p>Reviewed ETFs must be classified as ETFs by the provider. They use the same price, liquidity, trend and setup checks; stock market capitalization and stock-industry membership do not apply. Add only funds whose structure you have reviewed; leveraged or inverse funds need a separate method review.</p>
+        <p>New preparation requires volume baselines for every confirmation period. Pending plans also need complete opening history, current data, and an unreached first target before automatic arming.</p>
+        <label>Comparison watchlist (optional)<input defaultValue={(config.comparisonSymbols || []).join(", ")} onBlur={e => setConfig({...config, comparisonSymbols:e.target.value.toUpperCase().split(/[ ,]+/).filter(Boolean)})}/></label>
+        <label>Dated watchlist source or rationale<input maxLength={2000} value={config.comparisonSource || ""} onChange={e => setConfig({...config, comparisonSource:e.target.value})}/></label>
+        <p>This comparison explains inclusion and exclusion; it does not bypass entry checks or copy another trader’s orders.</p>
+      </details>
       <details><summary>Plan policy and exit allocations</summary>
         <p>Screen: {label(config.profile)}. Exit profile: {label(config.exitProfile)}. Entry window: {config.horizonSessions} session(s); held positions may continue longer.</p>
         <p>September allocations: {config.septemberFractions.map((v: number) => `${v * 100}%`).join(" / ")}. Automatic Fibonacci targets: {config.allowFibonacciTargets ? "enabled when historical pivots are unavailable" : "disabled"}.</p>
@@ -150,11 +171,16 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
             </td><td>{r.planId && <CartelRunLink id={r.planId} onOpen={onOpen}>Open {r.symbol}</CartelRunLink>}</td>
           </tr>)}
         </tbody></table></div> : <EmptyState art={false} title={running ? label(result.phase || "Starting preparation") : "No qualifying shortlist"} hint={running ? "Progress and provider activity are shown above." : "Missing evidence or a market without alignment can produce no setups."}/>}
+        {!!result.watchlistComparison?.rows?.length && <details className="cartel-inset" open><summary>Watchlist coverage comparison</summary>
+          <p>{result.watchlistComparison.source}</p>
+          {result.watchlistComparison.rows.map((r:any) => <p key={r.symbol}><b>{r.symbol}</b> · {label(r.status)} · {r.reason || r.reasons?.join("; ") || "Passed setup checks; selection and execution checks remain"}</p>)}
+        </details>}
         <details className="cartel-inset"><summary>Evidence and exclusions · {result.rows?.length || 0} records</summary>
           {result.warnings?.map((w: string, i: number) => <p key={i}>{w}</p>)}
           <div className="scroll-x"><table className="tbl cartel-table"><thead><tr><th>Symbol</th><th>Result</th><th>Reason</th><th>Evidence</th></tr></thead><tbody>
             {result.rows?.slice(0, evidenceLimit).map((r: any, i: number) => <tr key={i}><td>{r.symbol}</td><td>{label(r.status)}</td>
-              <td className="cartel-wrap">{r.reason || r.reasons?.join("; ") || "Checks passed"}</td>
+              <td className="cartel-wrap">{r.reason || r.reasons?.join("; ") || "Checks passed"}
+                {r.industryContext && <details><summary>Industry context ({r.industryPolicy || "strict"})</summary><p>{r.industryContext.industry || "Unclassified"} · weekly rank {r.industryContext.weekRank?.best ?? "unknown"}–{r.industryContext.weekRank?.worst ?? "unknown"} · monthly rank {r.industryContext.monthRank?.best ?? "unknown"}–{r.industryContext.monthRank?.worst ?? "unknown"}</p><p>{r.industryContext.reason}</p></details>}</td>
               <td>{r.analysisId && <CartelRunLink id={r.analysisId} onOpen={onOpen}>Open evidence</CartelRunLink>}</td>
             </tr>)}
           </tbody></table></div>

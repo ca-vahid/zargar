@@ -37,6 +37,7 @@ class CartelRules(BaseModel):
     require_positive_change: bool = False
     industry_top_n: int = Field(default=10, ge=1)
     require_industry_rank: bool = True
+    reviewed_etfs: tuple[str, ...] = ()
     focus_count: int = Field(default=5, ge=1, le=50)
     # Explicit engineering definitions, NOT numbers attributed to Sean.
     adr_period: int = Field(default=20, ge=2, le=252)

@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.11";
+export const APP_VERSION = "0.7.12";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.12",
+    date: "2026-09-08",
+    title: "Cartel coverage and entry explanations",
+    items: [
+      { tag: "improved", text: "Cartel preparation can evaluate leaders across industries with ranks as context, retains a strict-rank option, and includes explicitly reviewed ETFs such as DRAM. A sourced comparison watchlist shows why names were included or excluded." },
+      { tag: "fixed", text: "New automatic plans require complete confirmation-volume baselines. Pending contracts need complete opening history and an unreached target before arming; recovered history never turns a missed crossing into a live entry." },
+      { tag: "improved", text: "Entry rejections retain timestamps and measured thresholds through recovery. Practice and Live settings expose the entry timeframe, breakout/retest approach, volume and close-quality choices." },
+      { tag: "new", text: "Research replay comparisons support 5m and 15m breakout/retest variants with separately rebuilt historical volume baselines. Comparisons place no orders and never change the active strategy automatically." },
+    ],
+  },
   {
     version: "0.7.11",
     date: "2026-09-08",

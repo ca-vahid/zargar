@@ -37,7 +37,8 @@ class ArmRepository:
     async def _journal(self, row, action):
         await self.engine.journal.append(ev.OPTIONS_CARTEL_STATE_CHANGED,
                                         {"runId": row["runId"], "symbol": row["symbol"], "action": action,
-                                         "status": row["status"], "phase": row["state"]["phase"]},
+                                         "status": row["status"], "phase": row["state"]["phase"],
+                                         "lastDecision": (row["state"].get("decisionHistory") or [None])[-1]},
                                         aggregate_type="technique_run", aggregate_id=row["runId"],
                                         portfolio_id=row["portfolioId"])
 
