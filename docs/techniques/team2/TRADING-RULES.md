@@ -1073,6 +1073,31 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `regularMarketPrice` as the day-change basis) — `backend/zargar/brokers/yahoo.py`, shared engine,
   **user's call**.
 
+- **F71 (2026-09-09 09:30 ET, FIXED same run — reporting; a level price had already broken through
+  still read as a percentage "away" from it, with the sign inverted).** The Team2 plan panel's "Now:"
+  line renders each pseudo-trigger as `${label} ${sign}${distancePct}% away`, and `distancePct` is
+  `(level − price) / price` — direction-blind (`techniques/team2/runner.py:941`, the same formula the
+  shared `PlanRunner` uses). On a **short** row that sign is backwards: price *below* the level, i.e.
+  the level **already broken**, yields a **positive** number. Measured live at 09:36 ET on a morning
+  when two of three symbols gapped straight through their PDL: SPY at 763.64 with its PDL zone bottom
+  at **765.14** — 1.50 (0.20 %) *through* the level, waiting only on the 09:45 15m close — read
+  **"+0.20 % away"**, while QQQ at 716.92 with its PDL bottom at **715.57**, which genuinely had 1.35
+  still to fall, read **"−0.19 % away"**. The broken level looked *further off* than the unbroken one.
+  Descriptive only — no rule, gate, size or money path reads `distancePct`; the trigger itself is
+  correct (`ArmedTab`/`ArmedPage`/`DashboardPage` sort on `Math.abs`, so ordering was never wrong).
+  **Fixed** in the Team2 branch of `frontend/src/components/technique/ArmedDayPanel.tsx` with a
+  direction-aware `team2Distance()`: a break row whose price is already through says *"price is
+  already through, waiting on the 15m close"*, one that is not says *"X.XX % away"*, and a setup row
+  says *"X.XX % from the level"* (magnitude only — the sign carried no meaning there either).
+  **The signed field is unchanged**, so the shared Armed page and the phone's Now view keep rendering
+  it as "level X % above/below" / "needs to rise/fall X %", which is factually right for any
+  direction. v0.7.23.
+  - **Shared half, NOT fixed (proposal).** `execution/planrunner.py:318` and `:789` compute the same
+    direction-blind number for EM's real triggers, and `ArmedPage`'s `DistanceCell` turns it into
+    *"needs to rise 0.20 %"*. For a **breakdown/breakout** trigger whose price is already through the
+    level, "needs to rise" is wrong in the same way — the trigger is satisfied on price and waiting
+    on its confirmation. Shared engine + EM surface → **user's call**.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

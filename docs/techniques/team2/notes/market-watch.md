@@ -2073,3 +2073,71 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
   Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
   **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, F67's two shared-side halves, and
   the F30-family question of which premium series is authoritative.
+
+## 2026-09-09 09:30 ET (run 34 — the pre-open check; all green, F71 found and fixed)
+
+- **Alive, plans intact, no restarts today.** `/api/health` ok, v0.7.22, 82 armed. The last
+  `TechniquePlanRestored` on all three Team2 plans is **02:59 ET** (the evening session's watchdog
+  boot) — nothing has restarted since, and the watchdog has ticked cleanly every 3 minutes all
+  morning (`logs/watchdog.log`, rc=0 through 09:34). Mode still **auto** on Team2 Practice, $2,000
+  premium / 6 % risk, per-plan halt $1,192.10, `maxOpenTrades 1`, `allowLive false`. Not touched.
+- **The 09:25 pre-open completed on all three, and this run owns that check: PASS.**
+  `ScheduledJobRan team2_preopen` at **09:25:10 ET (0.8 s)**, `TechniquePlanPreopen` journaled on
+  each plan at 09:25:54, and every plan now carries `complete: true` with `pmh`/`pml`/`dayType`/
+  `sizingAtOpen`. SPY PM 762.49–767.13, QQQ 713.50–720.67, IWM 292.62–294.82. `sizingAtOpen` is
+  **`none` on all three** — correct, not a miss: every open printed *inside* its own pre-market
+  range, which F15 calls chop. No `preopen-now` call was needed.
+- **F49 fired and did its job.** At 09:31:00 each plan finalized the day type on the real 09:30
+  open: SPY 764.08 `gap_down → gap_down`, IWM 293.46 `gap_down → gap_down`, and **QQQ 716.40
+  `gap_down → normal`** — the 09:25 estimate off the last pre-market print was wrong on QQQ and the
+  RTH open corrected it, which is exactly what F49 was built for. **F51 fired too**: sigma locked at
+  09:32 from the 0DTE ATM chain (SPY 0.1212, QQQ 0.1748, IWM 0.1610) and is stamped on the run, so
+  the replay reproduces the same premiums.
+- **Data is real-time, all three legs.** 1m bars banking to within ~60 s (SPY/QQQ/IWM 09:34 read at
+  09:35); underlying quotes `quoteAgeSeconds 0`, `session: "regular"`, `dayHigh/dayLow/volume`
+  session-to-date (SPY 1.34 M by 09:33). **Option quotes are OPRA, not the delayed chain**: the
+  0DTE ATM contracts came back `source: "opra"`, `provider: "alpaca"`, `delayed: false`, `sourceTs`
+  the same second (SPY 765C 0.72/0.73, QQQ 717C 1.84/1.85, IWM 293P 0.45/0.46 — the ~$0.50 band the
+  method wants is populated). Alpaca stream `connected` + `authenticated` at the 02:59 boot with **no
+  reconnects since**. F70's stale `prevClose` self-corrected at the open as predicted (SPY
+  `prevClose 766.00`), confirming it is a pre-market-only defect.
+- **The read is advancing and correct.** 2m closes stepping every two minutes (bars2m 1 → 7 across
+  the run), `regimeLast` EMAs present on every one, `bias` still null at 09:45 with
+  `fifteenMinBars: 0` — **right**, because the first 15m bar of the session does not close until
+  09:45. SPY (763.6) and IWM (293.2) have been *through* their PDL zones since the open and QQQ sits
+  between its zones; the next 15m close is the decision. Replay parity: `POST /runs/{id}/replay`
+  reproduced the live read on all three (same sigma, same zero events/setups/trades). No
+  `read_error`, no `needsAttention`, zero Team2 ERRORs or Tracebacks in the log since boot.
+- **F71 (new, FIXED and live this run).** The plan panel's "Now:" line showed **SPY's PDL as
+  "+0.20 % away"** while SPY was 1.50 *through* it, and **QQQ's PDL — which really did have 1.35 left
+  to fall — as "−0.19 % away"**: the broken level read as nearer-than-nothing and the unbroken one
+  read as negative. Cause: `distancePct = (level − price)/price` is direction-blind, so on a short row
+  a positive number means *already through*. Fixed with a direction-aware `team2Distance()` in the
+  **Team2 branch only** of `ArmedDayPanel.tsx` — a break row already through now says *"price is
+  already through, waiting on the 15m close"*. The signed field itself is untouched, so the shared
+  Armed page and the phone keep their correct "level X % above/below" wording. **Reporting only — no
+  rule, threshold, gate, size or money path changed.** 66 Team2 tests pass; `npm run build`
+  (typecheck + check-release) passes. Verified at the data level (both signs measured live off the
+  API) and in the served bundle; I did **not** get a clean visual confirmation — the in-app browser
+  would not keep the Team2 Armed tab selected after a re-render, so the on-screen check is owed to
+  the next run.
+- **Deployed without a restart, and one restart is queued.** The change is frontend-only and
+  `start.ps1` had already been given a fresh `dist` by my build, which the running server serves off
+  disk — the new bundle (`index--9Q1rk2u.js`) is live now. Version bumped to **v0.7.23** in all four
+  files + the lockfile, so the **UI chip reads 0.7.23 while `/api/health` still reports 0.7.22**
+  until the backend restarts. I did **not** restart: at 09:45 the first 15m close of the session was
+  landing on two symbols sitting through their PDL, and that is the worst possible moment to bounce
+  the engine. **Next run: `scripts\start.ps1 -Detach` if nothing is open or working**, which
+  re-aligns the health version.
+- **Not ours, worth repeating for whoever owns marketdata:** `persist_bars: dropped N
+  non-bucket-aligned stub bar(s)` is still the loudest line in the log (~1–9 per minute all morning),
+  plus a `calendar fetch failed for SPX: 404` from the Yahoo quoteSummary endpoint. Both are outside
+  Team2.
+- **Next run (10:00 ET) should:** (1) run the queued `start.ps1 -Detach` if flat, and confirm
+  `/api/health` reads 0.7.23; (2) get the visual confirmation of F71 on the Team2 plan panel;
+  (3) check what the 09:45 and 10:00 15m closes did — SPY and IWM were through their PDL zones, so a
+  put scenario is the live possibility, and if one arms, verify the EMA13 pullback entries, the
+  `contract` pick (strike + ask near $0.60) and replay parity against the live fire. Still open for
+  the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**,
+  **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, F67's two shared-side halves,
+  and the F30-family question of which premium series is authoritative.

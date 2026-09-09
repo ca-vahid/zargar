@@ -76,6 +76,21 @@ function buildTimeline(a: ArmedPlan): TimelineRow[] {
   return rows;
 }
 
+/** F71 (2026-09-09): a pseudo-trigger's `distancePct` is (level - price), so on a SHORT row a
+ * POSITIVE number means price is already BELOW the level — the exact opposite of "away". On
+ * 2026-09-09 SPY opened 1.50 through its PDL and this line still read "+0.20% away" while QQQ,
+ * which genuinely had 1.35 left to fall, read "-0.19% away". Say it in words instead of leaning
+ * on the sign; the shared Armed page keeps the signed field (it renders "above/below"). */
+function team2Distance(t: any): string {
+  if (t.distancePct == null) return "";
+  const pct = Math.abs(t.distancePct).toFixed(2);
+  const through = t.direction === "short" ? t.distancePct > 0 : t.distancePct < 0;
+  if (t.kind === "break PDH" || t.kind === "break PDL") {
+    return through ? " — price is already through, waiting on the 15m close" : ` — ${pct}% away`;
+  }
+  return ` — ${pct}% from the level`;
+}
+
 /** What each still-waiting trigger needs before it can fire, in one sentence. */
 function waitingFor(t: any, windowNow: string | null | undefined): string {
   if (t.waitingText) return `${t.waitingText}${windowNow === "extended" ? " — market closed" : ""}`;
@@ -412,7 +427,7 @@ export function ArmedDayPanel({ a }: { a: ArmedPlan }) {
       <div className="tq-armed-day-now">
         <b>Now:</b>{" "}
         {team2
-          ? <span>{a.summary}{waiting.map((t: any) => <span key={t.id}> <span className="tq-chip" title={t.id}>{t.label}</span>{t.distancePct != null ? ` ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>)}</span>
+          ? <span>{a.summary}{waiting.map((t: any) => <span key={t.id}> <span className="tq-chip" title={t.id}>{t.label}</span>{team2Distance(t)}</span>)}</span>
           : waiting.length
           ? waiting.map((t: any) => <span key={t.id}><span className="tq-chip" title={t.id}>{t.label ?? `${trigWord(t)} @ ${fmt(t.entry)}`}</span> {waitingFor(t, a.sessionWindowNow)}{t.distancePct != null ? ` · ${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}. </span>)
           : <span>{a.summary}</span>}
