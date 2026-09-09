@@ -26,18 +26,41 @@ instead of blocking — receive never waits on downstream.
 in-order per channel, parallel across channels). All downstream I/O (JSONL
 log, mirror, EM forward, ingest) happens in workers.
 
-**Durable delivery.** Mirror and ingest responses are STATUS-CHECKED. A failed
-delivery appends the envelope to `gateway_spool.jsonl` with an attempt count;
-a retry loop replays the spool every 60s (max 5 attempts, then it stays in the
-file as evidence with `dead: true`). The spool is loaded at startup — a crash
-mid-delivery replays after restart. Downstream is idempotent: the mirror
-upserts by message id; ingest dedupes by `messageId` BEFORE extraction.
+**Durable delivery (hardened per Codex review G2/G3/G5, 2026-09-09).**
+`gateway_spool.jsonl` is a write-ahead LEDGER, not a failure dump:
+
+- **accept before RAM** — `_enqueue` persists every accepted envelope before
+  putting it on the queue; a hard kill between receive and delivery loses
+  nothing, including on first-seen channels with no cursor yet.
+- **lease, then ACK** — `drain_spool()` leases retryable entries (in-process
+  only) instead of erasing them; an entry leaves the file only on `ack()`
+  after the destination confirmed. Restart re-offers everything undelivered.
+  Worker cancellation `release()`s (stays pending); queue overflow defers to
+  the ledger instead of spooling a fake attempt.
+- **ordered retry** — deliveries never overtake an older undelivered create in
+  their channel (`pending_min` defers; the retry loop replays sorted per
+  channel and stops a channel at its first still-failing entry). A "close"
+  cannot beat its failed "open"; live events cannot run ahead of recovery.
+- **per-destination ACK** — an envelope feeding both EM and tips carries
+  `emDone` once EM confirmed; a tips-side failure retries only the tips half.
+  EM forward failures RAISE (a 503 is never acknowledged) and EM-only
+  channels participate in gap recovery.
+- **backoff + visibility** — attempt n re-offers after ~60·(2^(n−1)−1)s, max
+  5 attempts then `dead: true` (kept on disk); pending/dead/overflow/IO-error
+  counts print in the proof-of-life status line.
+
+Mirror and ingest responses are STATUS-CHECKED. Downstream is idempotent: the
+mirror upserts by message id; ingest CLAIMS `messageId` atomically BEFORE
+extraction (advisory-locked check+insert; a row abandoned mid-processing is
+resumed, a fresh in-flight claim is a duplicate).
 
 **Forward cursors + gap recovery.** `gateway_cursors.json` records the last
-processed message id per channel. On READY (fresh connect or reconnect) the
-gateway REST-fetches `?after=<cursor>` per watched channel (≤3 pages) and
-enqueues what it missed, oldest first. Cursor advances only after successful
-processing.
+delivered message id per channel — advanced only after ACK and CONTIGUOUSLY
+(never past the oldest undelivered create, so a later success can't hide an
+earlier failure). On READY (fresh connect or reconnect) the gateway
+REST-fetches `?after=<cursor>` per watched or EM-forwarded channel (≤3 pages,
+capped-recovery prints and self-continues next reconnect) and enqueues what
+it missed, oldest first.
 
 **Edits are revisions, with an explicit re-review policy.** MESSAGE_UPDATE on
 a watched channel: (1) mirror upsert — the row's text/images/edited_at update
@@ -59,7 +82,8 @@ model inference); all three land in `RawContent.meta`.
 - Discord session-resume (op 6): reconnect+gap-recovery covers the loss window
   with far less protocol surface; revisit if reconnect frequency grows.
 - EM-side identity/dedupe changes: EM forwarding moves off the receive path
-  (worker) but its payload is unchanged — EM's desk owns that contract.
+  (worker) and failures now retry durably, but the payload is unchanged —
+  EM's desk owns that contract.
 - Automatic re-review of edits (see policy above).
 
 ## Validation (the audit's cases)

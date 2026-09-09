@@ -212,83 +212,227 @@ def describe_author(msg: dict) -> str:
 
 
 class GatewayStore:
-    """Durable envelope state next to the DM log (gateway envelope, 2026-09-09;
-    GATEWAY-PLAN.md): per-channel forward CURSORS (gap recovery on reconnect)
-    and a delivery SPOOL that survives restarts (failed/overflow deliveries are
-    replayed; after MAX_ATTEMPTS they stay in the file marked dead=true)."""
+    """Durable envelope LEDGER next to the DM log (gateway envelope 2026-09-09;
+    hardened per Codex review G2/G3, 2026-09-09). Guarantees:
+
+    - accept() persists an envelope BEFORE any processing (write-ahead) — a
+      hard kill between receive and delivery loses nothing;
+    - drain_spool() LEASES retryable entries instead of erasing them; an entry
+      leaves the file only on ack() after the destination confirmed. Leases are
+      in-process only, so a restart re-offers everything undelivered;
+    - per-entry backoff (attempt n waits ~60*2^(n-1)s before re-lease) so five
+      quick failures during one app outage don't burn the whole budget;
+    - entries dead after MAX_ATTEMPTS stay in the file marked dead=true
+      (visible in the status line, never replayed);
+    - pending_min() lets the cursor stay CONTIGUOUS: it never advances past
+      the oldest undelivered create in a channel, so gap recovery can always
+      reconstruct a failure. Persistence failures count in io_errors."""
     MAX_ATTEMPTS = 5
 
     def __init__(self, root: Path) -> None:
         root.mkdir(parents=True, exist_ok=True)
         self.cursors_path = root / "gateway_cursors.json"
         self.spool_path = root / "gateway_spool.jsonl"
+        self.io_errors = 0
+        self._leased: set[str] = set()
+        self._acks_since_compact = 0
         try:
             self.cursors: dict[str, str] = json.loads(
                 self.cursors_path.read_text(encoding="utf-8"))
         except Exception:
             self.cursors = {}
+        self._entries: dict[str, dict] = {}
+        self._load_spool()
 
-    def advance(self, cid: str, mid: str) -> None:
-        """Move a channel's cursor forward (never backward — snowflakes sort)."""
-        if not mid:
-            return
-        cur = self.cursors.get(cid)
+    @staticmethod
+    def key(env: dict) -> str:
+        return f"{env.get('kind') or 'create'}:{env.get('cid')}:{env.get('mid')}"
+
+    def _load_spool(self) -> None:
         try:
-            if cur is None or int(mid) > int(cur):
-                self.cursors[cid] = str(mid)
-                self.cursors_path.write_text(json.dumps(self.cursors), encoding="utf-8")
-        except (ValueError, OSError):
-            pass
+            lines = self.spool_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return
+        for ln in lines:
+            if not ln.strip():
+                continue
+            try:
+                rec = json.loads(ln)
+            except ValueError:
+                self.io_errors += 1          # corrupt line: counted, not silent
+                continue
+            k = self.key(rec)
+            if rec.get("state") == "done":
+                self._entries.pop(k, None)   # tombstone from a completed delivery
+            else:
+                self._entries[k] = rec
+        self._compact()
 
-    def spool(self, env: dict, error: str) -> None:
-        rec = {k: v for k, v in env.items()}
-        rec["attempts"] = int(env.get("attempts") or 0) + 1
-        rec["error"] = str(error)[:300]
-        rec["spooledAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
-        if rec["attempts"] >= self.MAX_ATTEMPTS:
-            rec["dead"] = True
+    def _append(self, rec: dict) -> None:
         try:
             with self.spool_path.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, default=str) + "\n")
         except OSError:
-            pass
+            self.io_errors += 1
+            print(f"[gateway] ! spool write FAILED ({self.io_errors} so far) — "
+                  f"delivery is only as durable as RAM until this clears")
 
-    def drain_spool(self) -> list[dict]:
-        """Pop every retryable entry; dead ones are rewritten back untouched."""
-        try:
-            lines = self.spool_path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return []
-        keep, retry = [], []
-        for ln in lines:
-            try:
-                rec = json.loads(ln)
-            except ValueError:
-                continue
-            (keep if rec.get("dead") else retry).append(rec)
+    def _compact(self) -> None:
+        """Rewrite the journal to live entries only (drops done tombstones)."""
         try:
             self.spool_path.write_text(
-                "".join(json.dumps(r, default=str) + "\n" for r in keep),
-                encoding="utf-8")
+                "".join(json.dumps(r, default=str) + "\n"
+                        for r in self._entries.values()), encoding="utf-8")
+            self._acks_since_compact = 0
         except OSError:
+            self.io_errors += 1
+
+    def accept(self, env: dict) -> None:
+        """Write-ahead: persist an accepted envelope BEFORE processing and
+        lease it (it is about to sit in the in-memory queue)."""
+        k = self.key(env)
+        rec = dict(env)
+        rec.setdefault("attempts", 0)
+        rec["state"] = "pending"
+        rec["acceptedAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        self._entries[k] = rec
+        self._leased.add(k)
+        self._append(rec)
+
+    def release(self, env: dict) -> None:
+        """Drop the lease without judging the attempt (queue overflow, worker
+        cancellation, deliberate ordering deferral) — the entry stays pending
+        and the retry loop re-offers it."""
+        self._leased.discard(self.key(env))
+
+    def release_all(self) -> None:
+        self._leased.clear()
+
+    def spool(self, env: dict, error: str) -> None:
+        """Record one FAILED attempt; the entry stays durable for retry (or is
+        marked dead=true at MAX_ATTEMPTS — kept on disk, never replayed)."""
+        k = self.key(env)
+        rec = dict(env)
+        rec["attempts"] = int(env.get("attempts") or 0) + 1
+        rec["error"] = str(error)[:300]
+        rec["spooledAt"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        rec["state"] = "pending"
+        if rec["attempts"] >= self.MAX_ATTEMPTS:
+            rec["dead"] = True
+        self._entries[k] = rec
+        self._leased.discard(k)
+        self._append(rec)
+
+    def ack(self, env: dict) -> None:
+        """Destination(s) confirmed: the entry may leave the ledger."""
+        k = self.key(env)
+        self._leased.discard(k)
+        if self._entries.pop(k, None) is not None:
+            self._append({"kind": env.get("kind") or "create", "cid": env.get("cid"),
+                          "mid": env.get("mid"), "state": "done"})
+            self._acks_since_compact += 1
+            if self._acks_since_compact >= 200:
+                self._compact()
+
+    @staticmethod
+    def _due(rec: dict) -> bool:
+        """Backoff: attempt n re-offers ~60*(2^(n-1)-1)s after its failure
+        (attempt 1 is due immediately — a fresh failure retries on the next
+        drain)."""
+        attempts = int(rec.get("attempts") or 0)
+        if attempts <= 1 or not rec.get("spooledAt"):
+            return True
+        try:
+            at = dt.datetime.fromisoformat(str(rec["spooledAt"]))
+        except ValueError:
+            return True
+        wait = 60.0 * (2 ** (attempts - 1) - 1)
+        return (dt.datetime.now(dt.timezone.utc) - at).total_seconds() >= wait
+
+    def drain_spool(self) -> list[dict]:
+        """LEASE every due retryable entry, oldest mid first per channel.
+        Entries stay on disk until ack(); a restart re-offers everything."""
+        out: list[dict] = []
+        for k, rec in self._entries.items():
+            if rec.get("dead") or k in self._leased or not self._due(rec):
+                continue
+            out.append(dict(rec))
+        for r in out:
+            self._leased.add(self.key(r))
+
+        def _mid(r: dict) -> int:
+            try:
+                return int(r.get("mid") or 0)
+            except (TypeError, ValueError):
+                return 0
+        out.sort(key=lambda r: (str(r.get("cid") or ""), _mid(r)))
+        return out
+
+    def pending_min(self, cid: str) -> int | None:
+        """Smallest undelivered (non-dead) CREATE mid in a channel — the
+        cursor containment bound and the ordered-delivery check."""
+        vals: list[int] = []
+        for rec in self._entries.values():
+            if str(rec.get("cid")) != str(cid) or rec.get("dead"):
+                continue
+            if (rec.get("kind") or "create") != "create":
+                continue
+            try:
+                vals.append(int(rec.get("mid") or ""))
+            except (TypeError, ValueError):
+                continue
+        return min(vals) if vals else None
+
+    def counts(self) -> tuple[int, int]:
+        """(pending, dead) — the status line's visibility numbers."""
+        dead = sum(1 for r in self._entries.values() if r.get("dead"))
+        return len(self._entries) - dead, dead
+
+    def advance(self, cid: str, mid: str) -> None:
+        """Move a channel's cursor forward (never backward — snowflakes sort),
+        CONTIGUOUSLY: never past the oldest still-undelivered create, so a
+        later success cannot hide an earlier failure from gap recovery."""
+        if not mid:
+            return
+        try:
+            m = int(mid)
+        except (TypeError, ValueError):
+            return
+        pm = self.pending_min(cid)
+        if pm is not None and pm <= m:
+            m = pm - 1
+        cur = self.cursors.get(cid)
+        try:
+            if cur is None or m > int(cur):
+                self.cursors[cid] = str(m)
+                self.cursors_path.write_text(json.dumps(self.cursors), encoding="utf-8")
+        except ValueError:
             pass
-        return retry
+        except OSError:
+            self.io_errors += 1
 
 
 def mirror_record(msg: dict, source_name: str | None,
                   guild_name: str | None = None) -> dict:
     """One message -> the mirror row the app stores (full text + image URLs) —
     the source's own history the analyst can search ('bought NVDA' in the
-    morning, 'sold 40%' in the afternoon are one story)."""
+    morning, 'sold 40%' in the afternoon are one story).
+
+    Field PRESENCE is preserved (Codex review G4, 2026-09-09): a partial
+    MESSAGE_UPDATE that omits `content`/`attachments` sends text/images as
+    None ("absent — keep what you have"), which is different from an explicit
+    empty string/list ("the source cleared it")."""
     author = msg.get("author") or {}
+    has_text = ("content" in msg) or bool(msg.get("embeds"))
+    has_media = ("attachments" in msg) or bool(msg.get("embeds"))
     return {"id": str(msg.get("id") or ""),
             "channelId": str(msg.get("channel_id") or ""),
             "source": source_name, "guild": guild_name,
             "author": describe_author(msg),
             "authorId": str(author.get("id") or "") or None,
             "isBot": bool(author.get("bot")),
-            "text": flatten_message(msg),
-            "images": collect_images(msg),
+            "text": flatten_message(msg) if has_text else None,
+            "images": collect_images(msg) if has_media else None,
             "postedAt": str(msg.get("timestamp") or ""),
             "editedAt": str(msg.get("edited_timestamp") or "")}
 
@@ -383,6 +527,10 @@ class Gateway:
                 w.cancel()
             if locals().get("retry"):
                 retry.cancel()
+            # queued-but-undelivered envelopes are still pending in the ledger
+            # (write-ahead accept); release their leases so the NEXT session's
+            # retry loop re-offers them instead of leaking them with the queue
+            self._store.release_all()
 
     async def _peek_loop(self, http, headers) -> None:
         """Serve the UI's 'show last message' tests: poll the app for pending
@@ -533,20 +681,24 @@ class Gateway:
                   f"{len(self._watch)} watched channel(s)")
 
     async def _recover_gaps(self, http, headers) -> None:
-        """Forward-cursor gap check: for every watched channel with a cursor,
-        enqueue the messages Discord holds AFTER it (<=3 pages), oldest first."""
-        # the watchlist may not be loaded yet on the very first READY
+        """Forward-cursor gap check: for every watched OR EM-forwarded channel
+        with a cursor (Codex G3 — EM-only channels recover too), enqueue the
+        messages Discord holds AFTER it (<=3 pages), oldest first. A capped
+        recovery is safe AND visible: the cursor only advances contiguously as
+        those messages deliver, so the next reconnect continues where this one
+        stopped."""
+        # the watch/EM lists may not be loaded yet on the very first READY
         for _ in range(20):
-            if self._watch_loaded:
+            if self._watch_loaded and self._em_loaded:
                 break
             await asyncio.sleep(1.0)
         recovered = 0
-        for cid in list(self._watch):
+        for cid in sorted(set(self._watch) | set(self._em)):
             cur = self._store.cursors.get(cid)
             if not cur:
                 continue
             after = cur
-            for _page in range(3):
+            for page in range(3):
                 msgs = await self._fetch_messages(http, cid, limit=100, after=after)
                 if not msgs:
                     break
@@ -558,6 +710,9 @@ class Gateway:
                 after = str(msgs[-1].get("id") or "")
                 if len(msgs) < 100 or not after:
                     break
+                if page == 2:
+                    print(f"[gateway] gap recovery CAPPED at 3 pages for {cid} — "
+                          f"the contiguous cursor continues it next reconnect")
                 await asyncio.sleep(0.7)
         if recovered:
             print(f"[gateway] gap recovery: {recovered} message(s) enqueued "
@@ -617,8 +772,14 @@ class Gateway:
         while True:
             await asyncio.sleep(self.status_minutes * 60)
             mins = (time.time() - self._started) / 60
+            pending, dead = self._store.counts()
+            extra = ""
+            if pending or dead or self._dropped or self._store.io_errors:
+                extra = (f"; ledger: {pending} pending, {dead} dead"
+                         f"{f', {self._dropped} overflow deferral(s)' if self._dropped else ''}"
+                         f"{f', {self._store.io_errors} spool IO error(s)' if self._store.io_errors else ''}")
             print(f"[{dt.datetime.now():%H:%M:%S}] listening ({mins:.0f} min up, "
-                  f"{self.seen_count} matching DM(s) so far)")
+                  f"{self.seen_count} matching DM(s) so far{extra})")
 
     async def _heartbeat(self, ws) -> None:
         # jittered first beat per the docs, then every interval; drop the link
@@ -714,47 +875,87 @@ class Gateway:
                "self": is_self, "source": source_name, "msg": msg,
                "em": bool(em_entry) and kind == "create", "matched": bool(matched),
                "attempts": 0}
+        # write-ahead ACCEPTANCE (Codex G2): durable before RAM — a hard kill
+        # between here and delivery loses nothing
+        self._store.accept(env)
         if self._queue is None:
-            self._store.spool(env, "queue not ready")
+            self._store.release(env)     # the retry loop offers it once running
             return
         try:
             self._queue.put_nowait(env)
         except asyncio.QueueFull:
             self._dropped += 1
-            self._store.spool(env, "queue full")
+            self._store.release(env)     # stays pending on disk; retry loop delivers
+            print(f"[gateway] ! queue full — envelope {env['cid']}:{env['mid']} "
+                  f"deferred to the durable spool ({self._dropped} deferral(s) so far)")
 
     async def _worker(self, http, headers) -> None:
-        """Drain the queue; a per-channel lock keeps in-channel ORDER while
-        channels process in parallel. Failures go to the durable spool."""
+        """Drain the queue through _deliver (lease/ack lifecycle inside)."""
         while True:
             env = await self._queue.get()
-            lock = self._chan_locks.setdefault(env["cid"], asyncio.Lock())
             try:
-                async with lock:
-                    await self._process_envelope(http, headers, env)
+                await self._deliver(http, headers, env)
+            finally:
+                self._queue.task_done()
+
+    async def _deliver(self, http, headers, env: dict) -> bool:
+        """One delivery attempt with the full ledger lifecycle: in-channel
+        ORDER held (an older undelivered create defers this one), ACK only
+        after the destination(s) succeeded, cursor advanced contiguously,
+        failure spooled, cancellation released (stays pending). Returns True
+        only when the envelope was acknowledged."""
+        cid = str(env.get("cid") or "")
+        lock = self._chan_locks.setdefault(cid, asyncio.Lock())
+        async with lock:
+            # ordering: never let this envelope overtake an older undelivered
+            # create in its channel (a close must not beat its failed open)
+            try:
+                own = int(env.get("mid") or 0)
+            except (TypeError, ValueError):
+                own = 0
+            pm = self._store.pending_min(cid)
+            older_pending = pm is not None and own and (
+                pm < own or ((env.get("kind") or "create") == "update" and pm <= own))
+            if older_pending:
+                self._store.release(env)     # retry loop replays in (cid, mid) order
+                return False
+            try:
+                await self._process_envelope(http, headers, env)
+            except asyncio.CancelledError:
+                self._store.release(env)     # still pending: restart re-offers it
+                raise
             except Exception as exc:
                 self._store.spool(env, str(exc))
                 print(f"    ! delivery failed (spooled, attempt "
                       f"{int(env.get('attempts') or 0) + 1}): {str(exc)[:120]}")
-            finally:
-                self._queue.task_done()
+                return False
+            self._store.ack(env)
+            if (env.get("kind") or "create") != "update":
+                self._store.advance(cid, str(env.get("mid") or ""))
+            return True
 
     async def _retry_loop(self, http, headers) -> None:
-        """Replay the durable spool every 60s (app-unavailable case): each entry
-        retries up to GatewayStore.MAX_ATTEMPTS, then stays on disk dead=true."""
+        """Replay the durable ledger every 60s (app-unavailable case), oldest
+        first per channel; a channel stops at its first still-failing entry so
+        order is preserved. Entries dead after GatewayStore.MAX_ATTEMPTS stay
+        on disk marked dead=true (counted in the status line)."""
+        await asyncio.sleep(5)               # pick up a previous run's backlog fast
         while True:
-            await asyncio.sleep(60)
+            failed: set[str] = set()
             for env in self._store.drain_spool():
-                try:
-                    lock = self._chan_locks.setdefault(env["cid"], asyncio.Lock())
-                    async with lock:
-                        await self._process_envelope(http, headers, env)
-                except Exception as exc:
-                    self._store.spool(env, str(exc))
+                if env.get("cid") in failed:
+                    self._store.release(env)     # keep order behind the failure
+                    continue
+                ok = await self._deliver(http, headers, env)
+                if not ok:
+                    failed.add(env.get("cid"))
+            await asyncio.sleep(60)
 
     async def _process_envelope(self, http, headers, env: dict) -> None:
         """Worker half: everything the old receive path did inline, plus
-        revisions. Raises on delivery failure (the caller spools)."""
+        revisions. Raises on delivery failure (the caller spools); returning
+        normally means every destination succeeded — the caller ACKs and
+        advances the cursor (Codex G2/G3: no state changes on failure here)."""
         msg, cid, mid = env["msg"], env["cid"], env["mid"]
         entry = self._watch.get(cid) or {}
         source_name = env.get("source") or entry.get("sourceName") or "auto"
@@ -774,10 +975,13 @@ class Gateway:
             print(f"[{dt.datetime.now():%H:%M:%S}] EDIT in {source_name}: mirror revised "
                   f"(policy: never auto re-extracted)")
             return
-        if env.get("em"):                       # EM method inbox (independent of tips)
+        if env.get("em") and not env.get("emDone"):
+            # EM method inbox (independent of tips). RAISES on failure (Codex
+            # G3 — a 503 must not be acknowledged); emDone persists with the
+            # spooled envelope so a tips-side retry never re-delivers to EM.
             await self._em_forward(http, headers, msg, self._em.get(cid) or {})
+            env["emDone"] = True
         if not env.get("matched"):
-            self._store.advance(cid, mid)
             return
         text = flatten_message(msg)
         images = collect_images(msg)
@@ -800,19 +1004,17 @@ class Gateway:
         # context channels (KNOWLEDGE plan C1): mirrored, never auto-intake
         if (entry.get("mode") or "tips") == "context":
             print("    -> context channel: mirrored only (no tip intake)")
-            self._store.advance(cid, mid)
             return
         if not self.ingest:
-            self._store.advance(cid, mid)
             return
         out = await self._ingest_message(http, headers, msg, source_name)
         if not out.get("ok"):
             raise RuntimeError(str(out.get("error") or out.get("note") or "ingest failed")[:200])
-        self._store.advance(cid, mid)
 
     async def _em_forward(self, http, headers, msg: dict, entry: dict) -> None:
         """EM method ingestion: post the message to EM's own inbox. Read-only
-        toward Discord; never touches the tip mirror/intake. Failures print."""
+        toward Discord; never touches the tip mirror/intake. Failures RAISE
+        (Codex G3) so the caller spools + retries instead of acknowledging."""
         rec = mirror_record(msg, None, entry.get("guildName") or None)
         rec["channelName"] = entry.get("label") or ""
         # the video link often lives in an embed card or a video attachment, not the
@@ -828,16 +1030,17 @@ class Gateway:
                 extra.append(str(u))
         if extra:
             rec["text"] = (rec["text"] + "\n" + "\n".join(extra)).strip()
-        try:
-            r = await http.post(f"{self.api}/api/technique/ingest/message", headers=headers,
-                                json=rec, timeout=60)
-            out = r.json() if r.status_code == 200 else {}
-            tag = "dup" if out.get("duplicate") else f"{out.get('kind')}->{out.get('status')}"
-            print(f"[{dt.datetime.now():%H:%M:%S}] EM #{rec['channelName'] or rec['channelId']}: "
-                  f"{tag if r.status_code == 200 else 'HTTP ' + str(r.status_code)} "
-                  f"{flatten_message(msg)[:80]!r}")
-        except Exception as exc:
-            print(f"    ! EM forward failed: {exc}")
+        rec["text"] = rec.get("text") or ""       # EM inbox wants a string, not absence
+        rec["images"] = rec.get("images") or []
+        r = await http.post(f"{self.api}/api/technique/ingest/message", headers=headers,
+                            json=rec, timeout=60)
+        if r.status_code != 200:
+            print(f"    ! EM forward HTTP {r.status_code} — spooled for retry")
+            raise RuntimeError(f"EM forward HTTP {r.status_code}")
+        out = r.json() or {}
+        tag = "dup" if out.get("duplicate") else f"{out.get('kind')}->{out.get('status')}"
+        print(f"[{dt.datetime.now():%H:%M:%S}] EM #{rec['channelName'] or rec['channelId']}: "
+              f"{tag} {flatten_message(msg)[:80]!r}")
 
     async def _ingest_message(self, http, headers, msg: dict, source_name: str) -> dict:
         """Post one message (text + first image, if any) to /api/ingest/manual —

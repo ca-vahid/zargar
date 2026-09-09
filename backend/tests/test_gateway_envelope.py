@@ -2,7 +2,6 @@
 identity, hot receive path, per-channel ordering, cursors/spool, revisions."""
 import asyncio
 import datetime as dt
-import json
 from pathlib import Path
 
 import pytest
@@ -26,15 +25,29 @@ def test_cursor_advances_monotonically_and_persists(tmp_path):
     assert GatewayStore(tmp_path).cursors == {"c1": "200"}
 
 
-def test_spool_drain_keeps_dead_entries(tmp_path):
+def test_spool_drain_leases_until_acked_and_keeps_dead(tmp_path):
     st = GatewayStore(tmp_path)
     st.spool({"cid": "c1", "mid": "1", "attempts": 0}, "app down")
     st.spool({"cid": "c1", "mid": "2", "attempts": GatewayStore.MAX_ATTEMPTS - 1}, "app down")
     retry = st.drain_spool()
-    assert [r["mid"] for r in retry] == ["1"]          # the dead one stays on disk
-    left = [json.loads(x) for x in st.spool_path.read_text(encoding="utf-8").splitlines()]
-    assert len(left) == 1 and left[0]["mid"] == "2" and left[0]["dead"] is True
-    assert st.drain_spool() == []                       # dead entries never replay
+    assert [r["mid"] for r in retry] == ["1"]          # dead entries never replay
+    assert st.drain_spool() == []                       # leased, NOT erased
+    # restart before delivery: the entry is still there (Codex G2)
+    assert [r["mid"] for r in GatewayStore(tmp_path).drain_spool()] == ["1"]
+    st.ack({"cid": "c1", "mid": "1"})                   # destination confirmed
+    fresh = GatewayStore(tmp_path)
+    assert fresh.drain_spool() == []                    # only the ACK removes it
+    assert fresh.counts() == (0, 1)                     # the dead one stays visible
+
+
+def test_cursor_never_passes_an_undelivered_message(tmp_path):
+    st = GatewayStore(tmp_path)
+    st.spool({"kind": "create", "cid": "c1", "mid": "100", "attempts": 0}, "app down")
+    st.advance("c1", "101")            # a later success may not hide the failure
+    assert st.cursors.get("c1") == "99"
+    st.ack({"kind": "create", "cid": "c1", "mid": "100"})
+    st.advance("c1", "101")
+    assert st.cursors.get("c1") == "101"
 
 
 # ---------------------------------------------------------------- enqueue
@@ -102,6 +115,53 @@ async def test_per_channel_ordering_across_workers(tmp_path):
     assert done.index("c2:3") < done.index("c1:2")      # other channels not blocked
 
 
+async def test_cancelled_worker_leaves_delivery_pending(tmp_path):
+    import contextlib
+    gw = _gateway(tmp_path)
+    started = asyncio.Event()
+
+    async def slow(http, headers, env):
+        started.set()
+        await asyncio.sleep(30)
+    gw._process_envelope = slow
+    gw._enqueue("create", _msg())
+    w = asyncio.create_task(gw._worker(None, {}))
+    await asyncio.wait_for(started.wait(), 5)
+    w.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await w
+    # a hard stop mid-delivery: the accepted envelope survives for the restart
+    assert [r["mid"] for r in GatewayStore(tmp_path).drain_spool()] == ["111"]
+
+
+async def test_em_ack_is_separate_from_tips_failure(tmp_path):
+    from types import SimpleNamespace as NS
+    gw = _gateway(tmp_path)
+    gw._em = {"c1": {"channelId": "c1"}}
+    gw.ingest = False
+    calls = {"em": 0, "mirror": 0}
+    fail_mirror = {"on": True}
+
+    class _Http:
+        async def post(self, url, **kw):
+            if "technique/ingest" in url:
+                calls["em"] += 1
+                return NS(status_code=200, json=lambda: {})
+            calls["mirror"] += 1
+            return NS(status_code=500 if fail_mirror["on"] else 200, json=lambda: {})
+    http = _Http()
+    gw._enqueue("create", _msg())
+    env = gw._queue.get_nowait()
+    assert not await gw._deliver(http, {}, env)     # EM ok, tips mirror failed
+    assert calls == {"em": 1, "mirror": 1}
+    fail_mirror["on"] = False
+    [env2] = gw._store.drain_spool()
+    assert env2.get("emDone") is True               # EM delivery already confirmed
+    assert await gw._deliver(http, {}, env2)
+    assert calls["em"] == 1                         # one healthy consumer never
+    assert calls["mirror"] == 2                     # hides — or repeats — the other
+
+
 # ---------------------------------------------------------------- app side
 class _CountingExtractor:
     available = True
@@ -138,6 +198,38 @@ async def test_message_id_dedupes_before_extraction(rig):
         row = await session.get(RawContent, out1["contentId"])
     assert row.meta.get("messageId") == "m-777"
     assert row.meta.get("postedAt") == "2026-09-09T10:00:00+00:00"
+
+
+async def test_abandoned_new_row_is_resumed_not_dropped(rig):
+    """Crash after storing raw content, before processing: a repeat delivery
+    RESUMES that row instead of calling it a duplicate (Codex G5)."""
+    svc = rig.signals_service
+    svc.extractor = _CountingExtractor()
+    row = RawContent(id=new_id(), source_type="manual", source_name="src1",
+                     body_text="BUY TEST", meta={"messageId": "m-999"})
+    async with rig.sf() as session:
+        session.add(row)
+        await session.commit()
+    out = await svc.ingest_manual("BUY TEST", source_name="src1", message_id="m-999")
+    assert not out.get("duplicate")
+    assert out["contentId"] == row.id           # the abandoned row, processed
+    assert svc.extractor.calls == 1
+
+
+async def test_in_flight_claim_is_a_duplicate_not_a_second_extraction(rig):
+    """A FRESH claim (claimedAt seconds old, status new) is in flight — a
+    concurrent repeat delivery must not extract again (Codex G5)."""
+    svc = rig.signals_service
+    svc.extractor = _CountingExtractor()
+    now = dt.datetime.now(dt.timezone.utc).isoformat()
+    row = RawContent(id=new_id(), source_type="manual", source_name="src1",
+                     body_text="BUY TEST",
+                     meta={"messageId": "m-1000", "claimedAt": now})
+    async with rig.sf() as session:
+        session.add(row)
+        await session.commit()
+    out = await svc.ingest_manual("BUY TEST", source_name="src1", message_id="m-1000")
+    assert out["duplicate"] is True and svc.extractor.calls == 0
 
 
 async def test_mirror_upserts_newer_revisions_only(rig):
