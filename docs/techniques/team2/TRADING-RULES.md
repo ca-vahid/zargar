@@ -1126,36 +1126,58 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
     **(1) The read** (`session.py`) refuses the ENTRY with `skip_target_behind`. The target
     resolution was hoisted above the strike pick, so the refusal costs no `pick_strike` call and —
     like the other structural refusals (F18) — **does not spend the D9 pullback allowance**; only a
-    priced fire does (F61). **(2) The runner** (`runner.py`) falls back to the SETUP's target when a
-    fire carries none, which could put the stale level back on a live trade; it is now **dropped**
-    (`target_dropped`). That is what closes the **quote-watch** exposure — `target_breach` runs on
-    the ~2s watch (planrunner 2b), so a wrong-side target would have sold the whole position on the
-    FIRST live print, before any 2m bar closed. No target is safe (candle stop, premium stop, trims
-    and the 15:45 flatten still manage the trade); a wrong one is not. Surfaced per the F57/F59
+    priced fire does (F61). **(2) The runner** (`runner.resolve_fire_target`) falls back to the
+    SETUP's target when a fire carries none — the one path by which a target the read never judged
+    can reach a live trade (a restored or replayed fire, a plan rewritten under a running session).
+    An invalid target there is **REFUSED**. *Corrected 2026-09-09 (user):* the first cut silently set
+    it to `None`, which turned "this trade has no room" into **permission to enter with no target at
+    all** — a weaker outcome than the refusal the read applies to the identical condition, and a
+    silent one. Invalid now means refused at **both** layers, so the baseline holds wherever the fire
+    came from. A genuinely ABSENT target (none on the fire, none on the setup) is a different shape
+    and stays allowed: the read validated it, and the candle stop, premium stop, trims and the 15:45
+    flatten manage the trade. This is what closes the **quote-watch** exposure — `target_breach` runs
+    on the ~2s watch (planrunner 2b), so a wrong-side target would have sold the whole position on
+    the FIRST live print, before any 2m bar closed. Surfaced per the F57/F59
     lesson: journalled as a trigger skip, stated in the Armed/phone headline, given timeline icons.
     **Existing-position protection is unchanged** — an open position keeps its target exit, premium
-    stop, candle stop, trims and flatten, pinned by tests. 28 new tests in
-    `tests/test_team2_target_guard.py`, every case mirrored long/short; 94 Team2 tests pass.
+    stop, candle stop, trims and flatten, pinned by tests. 48 tests in
+    `tests/test_team2_target_guard.py`, every case mirrored long/short; 114 Team2 tests pass.
     **Deliberately NOT done:** the EMA-stack gate is not relied on (it was only incidentally holding
-    this off), and `hod_target` was **not** switched globally.
+    this off), and `hod_target` was **not** switched globally — see (b) below for why that would not
+    have worked anyway.
   - **Live status 2026-09-09 10:20 ET: deployed, not yet exercised by the tape.** SPY's target
     (764.75 at 763.8) and IWM's (293.56 at 292.8) are still behind price, so both would be refused,
     but no qualifying pullback has reached the guard yet — IWM's are being turned away earlier by the
     no-trade zone (V6/B5) and SPY/QQQ have not produced one with a bear stack. QQQ is unaffected
     (target 716.50 below price 718.75 — correctly ahead for a short), which is the selectivity check.
-  - **STILL OPEN — the strategy decision (the guard only stops the bad trade; it does not recover a
-    good one).** Three replacement options, none built:
-    **(a) Refuse and move on** — what the guard does today, made permanent policy: no room means no
-    trade on that setup for the session. Safest, zero new knobs; the cost is that a genuine gap-down
-    trend day produces *no* Team2 trade at all, which is the F72 morning itself.
-    **(b) `hod_target=always`** — one settings change, so the running LOD/HOD retargets first entries
-    too, with the existing `hod_target_min_atr=1.0` room test as the guard. Recovers the trade and
-    reuses machinery already proven on re-entries; the cost is that every first entry now targets an
-    intraday extreme instead of a planned level, which is a real change to how the method exits and
-    should be swept before it is trusted.
-    **(c) Re-derive the target at arming** from the next prior-day level *below current price*
-    (rather than below the zone). Keeps targets structural and planned; the cost is new code in the
-    level sheet and the risk of reaching for a level far away on a big gap. **User's call.**
+  - **The strategy decision, revised 2026-09-09 (user).**
+    **(a) Refuse the invalid candidate — THE BASELINE, and it stays the default.** No room means no
+    trade on that setup. Zero new knobs; the cost is that a gap-down trend day can produce *no* Team2
+    trade at all, which is the F72 morning itself.
+    **(b) `hod_target="always"` — WITHDRAWN. It cannot recover this case, and the earlier claim that
+    it could was wrong.** X3b's guard is
+    `nearer = (ext < target) if long else (ext > target)`: it only ever pulls the target **CLOSER**.
+    For a short it requires the running LOD to be *above* the planned target — but when price has
+    already run THROUGH that target the LOD is *below* it, so `nearer` is False and X3b declines.
+    Flipping the knob changes nothing here; recovering the case that way would need the `nearer`
+    comparison itself rewritten, which is a different and larger change. Pinned by
+    `test_hod_target_always_does_not_recover_a_target_price_has_run_through` (mirrored long/short) so
+    the claim cannot quietly come back.
+    **(c) Structural re-planning — BUILT AS A MEASURABLE VARIANT, default off.**
+    `techniques.team2.target_replan` = `off` (baseline) | `entry`. When a planned target is not ahead
+    of the entry, the target is re-derived from the next structural level beyond **current price**,
+    taken from the same 15m pivots the plan was built on (`levels.level_ladder` → `plan.levelLadder`,
+    `levels.next_structural_level`), then **re-validated by the same predicate**: a re-plan is a
+    candidate, never an exemption. If no level qualifies, the baseline refusal still stands.
+    **Validated at ENTRY, not only at arming** (user's requirement): price moves between the 15m
+    confirmation and each pullback, so the "next" level at 09:46 is not the one at 11:20, and only
+    the entry knows which — the re-plan and its validation both run at the entry gate, per fire.
+    Journalled as `target_replanned`; the exit names it ("re-planned structural level").
+    **Measure it before adopting it:**
+    `python -m zargar.tools.team2_sweep sweep --start A --end B --set target_replan=entry`
+    against the same range with the knob off, then `sweep-compare`. Nothing about the default changes
+    until that comparison exists — the open question is whether the recovered trades earn more than
+    they lose on a target that is, by construction, further away than the plan's.
 
 - **F73 (2026-09-09 10:40 ET, FIXED and deployed, v0.7.25 — F71's fix shipped as dead code).**
   F71 (v0.7.23, yesterday's 09:45 run) added a direction-aware `team2Distance()` to `ArmedDayPanel`

@@ -20,6 +20,15 @@ export const CHANGELOG: Release[] = [
   {
     version: "0.7.25",
     date: "2026-09-09",
+    title: "No room means no trade, at both gates",
+    items: [
+      { tag: "fixed", text: "A Team2 entry whose profit target had no room left is now refused by the live runner too, not quietly entered without any target at all. An invalid target and no target are different things, and only the second one was ever allowed." },
+      { tag: "new", text: "Team2 can optionally re-plan a stale target instead of refusing the trade: it picks the next structural level beyond current price and re-checks it at the entry itself. Off by default - it is there to be measured against the refusal, not adopted yet." },
+    ],
+  },
+  {
+    version: "0.7.25",
+    date: "2026-09-09",
     title: "Saying \"already through\" out loud",
     items: [
       { tag: "fixed", text: "The Team2 plan line that was supposed to say a level is already broken never actually said it: the wording was keyed to a label the desk does not use, so every break setup fell back to a bare percentage. Break rows now read \"price is already through, waiting on the 15m close\"." },
