@@ -170,6 +170,18 @@ a number** (p. 72).
   kills, right 14 (-22.0R avoided) vs wrong 6 (+13.0R forgone), net +9.0R in the critic's
   favour.** The critic is now clearly earning its keep; the "momentum into the level" kills
   were right on 5 of 6 today. Prompt stays. Question 1.4b is closed unless the tally flips.
+- **Day 10 (2026-09-09): the tally flipped back.** 5 scored kills: right 2 (MU r1 -1.08R, WDC r1
+  -1.25R), **wrong 3 (APLD r1 +2.88R, OKLO r1 +3.34R, SNDK r2 +4.58R, all rejects killed as
+  "momentum through the level")**, 3 moot (LITE, RDDT invalidated on the plan; IREN unscorable).
+  **Tally: 25 scored kills, right 16 (-24.3R avoided) vs wrong 9 (+23.8R forgone), net +0.5R.**
+  Of the 9 wrong kills, 5 are the same shape (MUU, SOLS on day 5; APLD, OKLO, SNDK today): a
+  T4.2 reject at the level, killed because the fire bar looked like a thrust. The threshold in
+  the REVISED candidate above (net of kills below -3R) is not crossed, so the prompt stays
+  tonight - but 1.4b is REOPENED, and the next step is cheap and offline: re-judge the 25
+  recorded kills under the candidate rule (kill on structure or volume contradiction only,
+  never on momentum alone) and count how many of the 9 wrong ones it would have let through
+  versus how many of the 16 right ones it would have released. If that reads better than
+  +0.5R, propose the prompt change in §5 with the 25-kill evidence.
 
 ### 1.5 Blue-sky ladder R:R (T4.4 2/4/6%) — optimistic by construction
 - A breakout with no resistance overhead gets targets at +2/4/6% and often a huge R:R;
@@ -297,11 +309,39 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
   **-2.59R (-0.65R/fire)**. Ten fires is not proof, but the direction is the right one and the
   cost fell to ~5 minutes at 16-wide. Decision: keep it, re-measure at ten sessions (~09-19);
   cut it only if the accepted/rejected gap closes. The FIRE-time critic is a different question
-  and is proven (+9.0R over 20 kills, 1.4b).
+  and is proven (+9.0R over 20 kills, 1.4b). *Update 2026-09-09: day 10 pulled the critic back
+  to +0.5R over 25 kills (1.4b reopened); the review's own tally after four sessions: accepted
+  12 fires -1.07R (-0.09R/fire), rejected 7 fires -3.34R (-0.48R/fire) - still the right
+  direction, still not proof; decision at ten sessions stands.*
 - **2026-09-08 · Option trade prints are available to us.** Alpaca's options data on our
   subscription returns historical option TRADES: the author's TSLA $360C (08-31) shows 10,000+
   prints and 37,874 contracts in the first 40 minutes. T-12 can be tested on history, not only
   live. Plan: `FLOW-CONFIRMATION-PLAN.md`.
+- **2026-09-09 · Day 10 (Wed, gap-down open, SPX under 7700): zero fills, 18 fires, 17 critic
+  kills, and the one survivor was skipped on the option spread.** 50 plans armed from the
+  evening batch (run by the desk through the API after the run-cap incident, see PLATFORM-RULES
+  2026-09-09) + 7 auto-armed from the author's 09:02 video / 09:23 gap-down post (GS, META,
+  MSTR, NVDA, NBIS, GOOGL, CVNA - none fired). Gap rules voided 27 triggers and 33 more were
+  invalidated at the open: correct behaviour on a gap day. Fires (unique setups, app-scored on
+  the live plan geometry): MU r1 stopped -1.08R (RIGHT kill), WDC r1 stopped -1.25R (RIGHT),
+  **APLD r1 -> TP3 +2.88R (WRONG), OKLO r1 -> TP1 +3.34R (WRONG), SNDK r2 -> TP2 +4.58R
+  (WRONG)**; LITE r2 and RDDT b2 invalidated on the plan (moot), IREN b1 unscorable (moot). All
+  three wrong kills are the 1.4b shape again: a REJECT short killed as "a short into a live,
+  volume-confirmed thrust" that then reversed and paid. OKLO fired five times; the fifth (09:57)
+  survived only because the critic timed out (fail-open, 1/3 budget) and was then skipped by
+  T5.4 (13.2% NBBO spread on a $1.2 contract) - 1.6 evidence: the underlying made +3.3R.
+  Deterministic replay (sweep `ea7001abaa`, plans at the 09-08 close): 9 valid fires, **net
+  -4.92R** (RDDT b2 +0.73 the only winner; MU/LITE/VRT stopped), 6 of 9 on armed names
+  (coverage 67%; the three uncovered were review-rejected AXP/SOXX/EEM, all small losers). The
+  replay does not contain APLD/OKLO/SNDK as valid fires: those were pre-open RE-PLANS on the
+  gap (the static sweep cannot see re-plans, 2026-09-05 finding), so the day reads two ways -
+  on the deterministic book the method lost -4.9R and the critic saved it all; on the plans we
+  actually held the critic forgave +10.8R and saved -2.3R. Gate audit: 99 invalid fires (R2 <
+  3) net +3.72R = +0.04R/fire before costs - R2 stays (1.8). Books: EM flat at $10,000.
+  Platform: TWELVE engine restarts during the session (10:14-16:09 ET, other desks' PR merges
+  #33-#47, versions 0.7.22 -> 0.7.33), each re-arming 54 plans, and a bar-delivery stall at
+  15:07 ET that idled 49 plans through the close window (PLATFORM-RULES 2026-09-09) - the
+  prime_close window was effectively not traded today.
 - **2026-09-08 · Day 9 (Tue, first day on the per-technique books): zero fills, nine fires, the
   critic right eight times.** 64 EM plans in EM Practice (45 armed: 42 from the evening batch +
   3 auto-armed from his 09:23 watchlist post - MU, GOOGL, META - the first morning the board
