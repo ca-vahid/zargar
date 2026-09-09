@@ -2544,3 +2544,69 @@ data and original research records. Keep target_replan off until the clean datas
   (3) + the Team2 / halt / arming / API / Cartel / flow suites.
 - **Repair record:** appended below once the tool has run (pre-repair dataset hashes, quarantine batches, backfill
   counts, post-repair hashes).
+
+
+## 2026-09-09 12:40 ET (run 39 — desk healthy and still flat; four restarts in 11 minutes; F79/F80 on bar provenance)
+
+- **Alive, three plans armed, nothing traded.** `/api/health` ok, **v0.7.28**. SPY `e4d39d00`,
+  QQQ `9a1094ed`, IWM `e87e4ad2` all `armed`, `complete: true`, `needsAttention` false, mode
+  **auto** on Team2 Practice `b9dcd8db…`, **zero trades and zero open positions** all day. Quote age
+  0–1 s, bar age ~76 s after the last boot. Option quotes on the three 0DTE ATM puts are **OPRA**
+  (`source: "opra"`, `provider: alpaca`, `delayed: false`, sub-second) and this time the chain row
+  and the nested real-time quote **agreed exactly on all three** (SPY 762P 0.76/0.78, QQQ 716P
+  1.07/1.08, IWM 291P 0.35/0.37) — **F77 did not reproduce** on this sample.
+- **Four restarts inside eleven minutes, all from another desk iterating on the restart scripts:**
+  12:26, 12:31, 12:33 and 12:36 ET. The 12:26 one hit the array-splat bug and ran the engine in the
+  **foreground**, so the desk was dark from ~12:26 until the 12:32 recovery — I found `/api/health`
+  refused on my first call of this run, and the app went down under me again mid-check at ~12:37.
+  The bug is already fixed in `5b8e4cb` (committed 12:28 ET, after that restart was launched), and
+  the 12:36 restart came back clean with `Restore check OK: armed 74/74, openTrades 0/0,
+  pendingExits 0/0, restingOrders 10/10, inflightOrders 0/0`. **No Team2 trade was live or working
+  at any point**, so nothing was lost — but the desk was unattended-auto and dark for ~6 minutes of
+  RTH, which is the exact scenario the run-book warns about. **I queued no restart of my own.**
+- **What the read saw since 11:35 ET — still nothing but refusals, no fire.** SPY: `same_pullback`
+  12:06 and 12:28, `skip_target_behind` at 12:08 (762.17), 12:14 (761.98) and 12:26 (761.70) against
+  its 764.75 target. IWM: `skip_target_behind` 12:08 (291.15), 12:10 (291.11), 12:30 (290.85) against
+  293.56. QQQ: one `same_pullback`, no new opportunity, still blocked by the no-trade zone. All three
+  remain short-biased scenario 4 (break PDL); **QQQ is still the only symbol with a valid target**
+  (710.81) and still needs price out of its 713.50–720.67 PM range. Prices at 12:38: SPY 762.00,
+  QQQ 715.74, IWM 291.00. **F76 keeps confirming** — SPY and IWM have now refused 5 and 7
+  opportunities respectively on targets that sit above their own short entries.
+- **Replay parity holds on substance.** Identical event counts and identical sigma on SPY
+  (12/12, 0.1212) and QQQ (6/6, 0.1748); IWM 20 live vs 19 replay (0.1610). Zero trades both ways on
+  all three. Every difference is a single late-window bookkeeping event (QQQ 12:14 vs 12:38
+  `same_pullback`; IWM a 12:28/12:30 `skip_target_behind` + `same_pullback` reshuffle) and tracks the
+  known effect that the replay fetches one more 2m bar than the live read had (94 vs 93). No
+  fire/trim/exit divergence.
+- **F79 (new, NOT fixed — proposal, shared engine).** Today's RTH 1m bars are `source='unknown'` for
+  **09:30–11:57 ET on all three symbols** and flip to `'exchange'` at 11:58 simultaneously (SPY
+  148/36, QQQ and IWM 147/36) — even though v0.7.28 booted at 11:26 and a quote-built bar is supposed
+  to be stamped `sampled`. Worse, the **first nine `exchange` bars (11:58–12:06) carry volume 0 on
+  all three symbols** (plus 12:19/12:20 on SPY and IWM) where neighbouring minutes run 8k–60k, and
+  the 12:05 ET watch had read those same minutes as non-zero *before* they were rewritten — so the
+  exchange correction **destroyed real volume**, and since `exchange` outranks everything nothing can
+  repair it in place. Contributing mechanism: `unknown` ties with `sampled` at rank 1 and the upsert
+  takes the new row on `>=`, so an `unknown` re-seed overwrites a live sampled bar. **No Team2
+  decision is affected** — the method has no volume rule (`volume_floor_mult = 0.0`) and OHLC is
+  intact (zero flat bars all session) — but it is direct counter-evidence to the provenance and
+  print-volume guarantees that shipped this morning. `bars_dataset_versions` still holds only the
+  pre-repair row and `bars_quarantine` is empty, i.e. `bars_repair` has not run over today.
+- **F80 (new, NOT fixed — proposal, shared engine).** **QQQ and IWM have no 11:25 ET 1m bar at all**,
+  any tf, any source; SPY's exists. The engine booted at 11:26:17, so 11:25 was the minute forming in
+  the dying process and was never re-fetched for two of three symbols. The 2m bucket 11:24–11:26 is
+  therefore built from half the tape on those two, silently — the read still reports 91–93 `bars2m`
+  and nothing raises `needsAttention`. The later restarts left no holes because the exchange-bar
+  correction back-filled their minutes, so the exposure is a restart while only the quote-sampled
+  path is live — which per F79 was most of today. **This corrects run 38**, which saw QQQ/IWM one bar
+  short of SPY and put it down to "the in-flight minute": the missing row is 11:25 and it is
+  permanent.
+- **Nothing built this run, no restart queued.** Both new findings land in shared engine code
+  (`zargar/marketdata.py`, the boot backfill), which this watch is not allowed to change.
+- **Next run (13:00–13:30 ET) should:** (1) still hunt the **first priced fire of the day** — strike
+  selection near $0.60 and live-vs-replay fire parity remain untested; (2) watch **QQQ**, the only
+  symbol that can still trade; (3) re-check bar provenance and whether the zero-volume band grew, and
+  whether any further restart left a 1m hole (F79/F80); (4) expect continued SPY/IWM refusals (F76).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F75**, **F76**, **F77**, **F79**, **F80**, F67's two shared-side
+  halves, and the F30-family question of which premium series is authoritative.

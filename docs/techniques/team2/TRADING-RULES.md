@@ -1341,6 +1341,51 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   the user wants one, is to reprice (or re-rank) *before* `select_by_premium` rather than after.
   Nothing built — it touches the shared `options/pick` path.
 
+- **F79 — today's RTH 1m bars carry the wrong provenance for the first 2.5 hours, and the exchange
+  corrections that follow arrive with volume 0** (2026-09-09 12:40 ET watch, NOT fixed — shared
+  engine, proposal). v0.7.28 (F75/F78) booted at 11:26 ET and stamps `bars.source`. Measured on the
+  runtime DB for 2026-09-09 RTH 1m: **all three symbols are `source='unknown'` for 09:30–11:57 ET and
+  flip to `'exchange'` at 11:58 ET simultaneously** (SPY 148 unknown / 36 exchange; QQQ and IWM
+  147/36). Two things are wrong with that. (1) A quote-built bar is supposed to be stamped
+  `sampled` — `BarAggregator._sampled_source` defaults to `"sampled"` and `on_quote` sets it on the
+  forming bar — so a session that is 80% `unknown` means the rows being persisted are *not* the
+  aggregator's sampled bars but something that reaches `persist_bars` with `source=None` (the
+  `or "unknown"` fallback at `marketdata.py:325`); the Yahoo session re-seed on every context poll
+  (F19) is the obvious candidate, and because the precedence upsert takes the new row when
+  `new_rank >= old_rank` and `unknown` ties with `sampled` at rank 1, an `unknown` re-seed
+  **overwrites** a sampled bar rather than losing to it. (2) The first nine `exchange` bars —
+  11:58 through 12:06 — carry **volume 0 on all three symbols**, and SPY and IWM carry another zero
+  at 12:20/12:19, while the neighbouring minutes run 8k–60k. The 12:05 ET watch read the same
+  minutes as non-zero *before* they were rewritten, so the exchange correction **destroyed real
+  volume** on those rows; `exchange` outranks everything, so nothing can repair it in place.
+  **No Team2 decision is affected** — the method has no volume rule (`Team2Rules.volume_floor_mult
+  = 0.0`, "the C-modules never mention it") and the EMA/structure path reads OHLC only, which is
+  intact (zero flat bars all session). It matters because it is direct counter-evidence to the
+  provenance and print-volume guarantees shipped this morning, and because a `sampled`/`unknown`
+  session defeats the point of stamping provenance at all. Suggested next step for the user: run
+  `python -m zargar.tools.bars_repair` over today and see whether the audit even flags these (the
+  only `bars_dataset_versions` row is still the pre-repair one, `quarantine` is empty), and decide
+  whether `unknown` should rank *below* `sampled` so a re-seed can never overwrite a live bar.
+  Nothing built — `zargar/marketdata.py` is shared engine.
+
+- **F80 — a mid-session restart drops the in-flight 1m bar and nothing backfills it** (2026-09-09
+  12:40 ET watch, NOT fixed — shared engine, proposal). The engine booted at 11:26:17 ET; **QQQ and
+  IWM have no 11:25 ET 1m bar at all** (any tf, any source), while SPY's exists. The 11:25 minute
+  closes at 11:26:00, i.e. it was still forming in the dying process, and the new process never
+  re-fetched it for two of the three symbols. Consequence for the method: the 2m bucket 11:24–11:26
+  is built from a single minute on QQQ and IWM, so its high/low/close — and therefore the EMA13/48
+  values and any pullback-touch test on that bar — are computed on half the tape. Small today
+  (no setup was live in that bucket on either symbol) but it is a silent, unflagged hole: the read
+  reports 91–93 `bars2m` either way and nothing raises `needsAttention`. Note the later restarts
+  (12:26, 12:31, 12:33, 12:36 ET) did **not** leave holes, because their minutes fell inside the
+  window where the exchange-bar correction was flowing and it back-filled them; the exposure is
+  therefore restarts during a stretch when only the quote-sampled path is live — which, per **F79**,
+  was most of today. **This also corrects the 12:05 ET watch entry**, which recorded QQQ/IWM as
+  one bar short of SPY and attributed it to "the in-flight minute"; the missing row is 11:25, and it
+  is permanent, not in flight. Suggested fix, for the user to decide: have the boot backfill
+  explicitly re-fetch the minute that was forming at shutdown, or have `validate_sessions` report
+  interior 1m gaps in an RTH window instead of only session validity. Nothing built.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
