@@ -33,15 +33,22 @@ def _day() -> str:
 def record(stage: str, *, model: str = "", input_tokens: int = 0,
            output_tokens: int = 0, stop_reason: str | None = None,
            latency_ms: float | None = None, retried: bool = False,
-           invalid_output: bool = False, technique: str = "tip") -> None:
-    """One provider response (or one failed attempt). `retried` marks attempts
-    after the first within the same logical request."""
+           invalid_output: bool = False, annotation: bool = False,
+           technique: str = "tip") -> None:
+    """One provider response (or one failed attempt). Semantics (Codex review
+    M1, 2026-09-09): `requests` counts FIRST attempts of a logical request,
+    `retries` counts subsequent attempts of the same logical request (provider
+    errors / malformed-output re-asks — an ordinary tool-use turn is neither),
+    and `annotation=True` marks an outcome (e.g. final invalid_output) on
+    attempts ALREADY counted — it increments no request/retry."""
     key = (technique, _day())
     st = _ACC.setdefault(key, {}).setdefault(stage, {
         "requests": 0, "retries": 0, "inputTokens": 0, "outputTokens": 0,
         "invalidOutputs": 0, "stops": {}, "totalMs": 0.0, "maxMs": 0.0,
         "models": {}})
-    if retried:
+    if annotation:
+        pass
+    elif retried:
         st["retries"] += 1
     else:
         st["requests"] += 1
@@ -56,6 +63,20 @@ def record(stage: str, *, model: str = "", input_tokens: int = 0,
     if latency_ms is not None:
         st["totalMs"] = round(st["totalMs"] + float(latency_ms), 1)
         st["maxMs"] = round(max(st["maxMs"], float(latency_ms)), 1)
+
+
+def record_response(stage: str, resp, *, model: str = "",
+                    latency_ms: float | None = None, retried: bool = False,
+                    technique: str = "tip") -> None:
+    """Convenience for standalone call sites (digest, audits, experiment
+    review — Codex review M1): record one provider response object."""
+    u = getattr(resp, "usage", None)
+    stop = getattr(resp, "stop_reason", None)
+    record(stage, model=model,
+           input_tokens=int(getattr(u, "input_tokens", 0) or 0) if u else 0,
+           output_tokens=int(getattr(u, "output_tokens", 0) or 0) if u else 0,
+           stop_reason=str(stop) if stop else None,
+           latency_ms=latency_ms, retried=retried, technique=technique)
 
 
 class timed:
@@ -74,22 +95,47 @@ class timed:
         return (time.perf_counter() - self._t0) * 1000.0
 
 
+def _merge_back(key: tuple[str, str], stages: dict) -> None:
+    """A failed flush returns its batch to the accumulator, SUMMED into
+    whatever was recorded concurrently — nothing lost, nothing doubled."""
+    acc = _ACC.setdefault(key, {})
+    for stage, st in stages.items():
+        cur = acc.setdefault(stage, {
+            "requests": 0, "retries": 0, "inputTokens": 0, "outputTokens": 0,
+            "invalidOutputs": 0, "stops": {}, "totalMs": 0.0, "maxMs": 0.0,
+            "models": {}})
+        for k in ("requests", "retries", "inputTokens", "outputTokens",
+                  "invalidOutputs"):
+            cur[k] += st.get(k, 0)
+        cur["totalMs"] = round(cur["totalMs"] + st.get("totalMs", 0.0), 1)
+        cur["maxMs"] = round(max(cur["maxMs"], st.get("maxMs", 0.0)), 1)
+        for d in ("stops", "models"):
+            for name, n in (st.get(d) or {}).items():
+                cur[d][name] = cur[d].get(name, 0) + n
+
+
 async def flush(eng, *, technique: str = "tip") -> int:
     """Journal + clear every accumulated day for `technique` (the current day
-    included — the nightly job runs after the close; a restart mid-day flushes
-    a partial row and the consumer sums rows per day)."""
+    included — the nightly job runs after the close; a restart mid-day loses
+    only what was recorded since the last flush — disclosed, the collector is
+    memory-only by design). A FAILED journal write returns the batch to the
+    accumulator for the next flush (Codex review M2, 2026-09-09), merged with
+    concurrently recorded counts; `batchId` gives consumers an idempotency key
+    for ambiguous journal outcomes."""
+    from ..domain import new_id
     from .. import events as ev
     flushed = 0
     for key in [k for k in list(_ACC) if k[0] == technique]:
-        stages = _ACC.pop(key, None)
+        stages = _ACC.pop(key, None)   # swap out: concurrent records start fresh
         if not stages:
             continue
         try:
             await eng.journal.append(ev.TECHNIQUE_HOOK_STATS, {
-                "technique": key[0], "date": key[1],
+                "technique": key[0], "date": key[1], "batchId": new_id(),
                 "hooks": {},                    # runner hooks journal their own row
                 "llm": stages})
             flushed += 1
         except Exception:
-            log.exception("llm stats flush failed for %s", key)
+            log.exception("llm stats flush failed for %s — batch retained", key)
+            _merge_back(key, stages)
     return flushed

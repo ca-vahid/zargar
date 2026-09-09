@@ -127,7 +127,7 @@ async def retro_position(eng, row: dict, *, client=None) -> dict | None:
     system = RETRO_SYSTEM + json.dumps(RetroOpinion.model_json_schema(), separators=(",", ":"))
     tools_used: list[dict] = []
     tool_ctx = {"ticker": row.get("symbol"), "source": source,
-                "signal_id": signal_id, "run_id": run_id}
+                "signal_id": signal_id, "run_id": run_id, "stage": "retro"}
     try:
         text = await asyncio.wait_for(run_agent_loop(
             eng, client, model=model, system=system, header=header, rec=rec,
@@ -403,7 +403,8 @@ async def run_unfilled_retros(eng, *, client=None, limit: int = 3) -> dict:
                 eng, client, model=model, system=system, header=header, rec=rec,
                 run_id=run_id, max_tools=max_tools,
                 tool_ctx={"ticker": sigs[0].ticker, "source": source,
-                          "signal_id": sigs[0].id, "run_id": run_id},
+                          "signal_id": sigs[0].id, "run_id": run_id,
+                          "stage": "retro"},
                 tools_used=tools_used), timeout=TIMEOUT_S)
             if text is None:
                 raise ValueError("no retro produced (loop exhausted)")

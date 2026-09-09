@@ -106,10 +106,13 @@ async def _run(eng, run_id: str, *, source: str, day: str, msgs, client, model) 
     system = (SYSTEM.replace("{maxp}", str(MAX_PROMOTIONS))
               + json.dumps(DigestOpinion.model_json_schema(), separators=(",", ":")))
     try:
-        resp = await asyncio.wait_for(
-            client.messages.create(model=model, max_tokens=2000, system=system,
-                                   messages=[{"role": "user", "content": header}]),
-            timeout=DIGEST_TIMEOUT_S)
+        from ...research import llm_stats
+        with llm_stats.timed() as _t:
+            resp = await asyncio.wait_for(
+                client.messages.create(model=model, max_tokens=2000, system=system,
+                                       messages=[{"role": "user", "content": header}]),
+                timeout=DIGEST_TIMEOUT_S)
+        llm_stats.record_response("digest", resp, model=model, latency_ms=_t.ms)
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         i, j = text.find("{"), text.rfind("}")
         op = DigestOpinion.model_validate_json(text[i:j + 1])

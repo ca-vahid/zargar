@@ -99,10 +99,13 @@ class Extractor:
         return self._client
 
     async def extract(self, text: str, *, subject: str = "", source_name: str = "",
-                      received_at: str = "", image: bytes | None = None) -> ExtractionResult:
+                      received_at: str = "", image: bytes | None = None,
+                      is_retry: bool = False) -> ExtractionResult:
         """Text extraction, or screenshot extraction when `image` is given (the
         model transcribes the visible text into `source_transcript`, and the
-        evidence quotes are grounded against that transcript downstream)."""
+        evidence quotes are grounded against that transcript downstream).
+        `is_retry`: the caller re-invoking the SAME logical request after a
+        transient failure — counted as a retry, not a new request (Codex M1)."""
         if not self.available:
             raise RuntimeError("extraction unavailable: ZARGAR_ANTHROPIC_API_KEY not configured")
         client = self._get_client()
@@ -139,17 +142,31 @@ class Extractor:
         for attempt in range(2):
             import time as _time
             _t0 = _time.perf_counter()
-            response = await client.messages.create(
-                model=self.model, max_tokens=16000, system=system, messages=messages)
+            try:
+                response = await client.messages.create(
+                    model=self.model, max_tokens=16000, system=system, messages=messages)
+            except Exception as exc:
+                # a FAILED attempt is measured too (Codex M1) — the caller's
+                # transient-retry loop re-enters with is_retry=True
+                try:
+                    from ..research import llm_stats
+                    llm_stats.record("extraction", model=self.model,
+                                     stop_reason=f"exception:{type(exc).__name__}"[:48],
+                                     latency_ms=(_time.perf_counter() - _t0) * 1000.0,
+                                     retried=attempt > 0 or is_retry)
+                except Exception:
+                    pass
+                raise
             try:
                 from ..research import llm_stats
                 _u = getattr(response, "usage", None)
+                _stop = getattr(response, "stop_reason", None)
                 llm_stats.record("extraction", model=self.model,
                                  input_tokens=int(getattr(_u, "input_tokens", 0) or 0) if _u else 0,
                                  output_tokens=int(getattr(_u, "output_tokens", 0) or 0) if _u else 0,
-                                 stop_reason=str(getattr(response, "stop_reason", None)),
+                                 stop_reason=str(_stop) if _stop else None,
                                  latency_ms=(_time.perf_counter() - _t0) * 1000.0,
-                                 retried=attempt > 0)
+                                 retried=attempt > 0 or is_retry)
             except Exception:
                 pass
             if response.stop_reason == "refusal":
@@ -175,7 +192,10 @@ class Extractor:
                         "Reply again with ONLY the corrected JSON object."}]
         try:
             from ..research import llm_stats
-            llm_stats.record("extraction", model=self.model, invalid_output=True)
+            # ANNOTATION only (Codex M1): both attempts were already counted
+            # above — this marks their outcome, it is not a third request
+            llm_stats.record("extraction", model=self.model, invalid_output=True,
+                             annotation=True)
         except Exception:
             pass
         log.warning("extraction returned unparseable output: %s", last_err)

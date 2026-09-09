@@ -969,7 +969,8 @@ class SignalService:
                     subject=content.subject or "",
                     source_name=content.source_name or "",
                     received_at=content.received_at.isoformat() if content.received_at else "",
-                    image=image)
+                    image=image,
+                    is_retry=attempt > 1)   # same logical request (Codex M1)
                 break
             except Exception as exc:
                 # a transient API failure must not eat the tip (529 Overloaded
@@ -2403,23 +2404,28 @@ class SignalService:
                    and p.get("sourceName") == source), None)
         if pf is not None:
             cutoff = _dt.datetime.now(_dt.timezone.utc) - _dt.timedelta(hours=20)
+            from ..models import Execution
             async with eng.sf() as session:
-                filled = (await session.execute(select(Order).where(
-                    Order.portfolio_id == pf["id"],
-                    Order.status == "FILLED")
-                    .order_by(Order.created_at.asc()))).scalars().all()
-            # EPISODE start (Codex finding 10, confirmed): the earliest-ever
-            # BUY made a re-entry inherit an old holding's age — reconstruct
-            # the running quantity and take the first BUY after it last hit 0
+                execs = (await session.execute(select(Execution).where(
+                    Execution.portfolio_id == pf["id"])
+                    .order_by(Execution.ts.asc(), Execution.id.asc()))).scalars().all()
+            # EPISODE start (Codex finding 10; corrected per review M3,
+            # 2026-09-09): episodes are reconstructed from EXECUTIONS in
+            # execution chronology — Order.created_at is when an order was
+            # PLACED, not when it filled (a 10-day-old order filled this
+            # morning is a 30-minute holding). Executions also carry partial
+            # fills that a FILLED-orders-only query missed. A symbol with no
+            # execution history simply never grades — unknown history must
+            # not graduate a source.
             episode_start: dict[str, _dt.datetime] = {}
             running: dict[str, float] = {}
-            for o in filled:
-                sym = o.symbol
-                q = float(o.filled_qty or 0)
+            for e in execs:
+                sym = e.symbol
+                q = float(e.qty or 0)
                 prev = running.get(sym, 0.0)
-                if o.side == "BUY":
-                    if prev <= 1e-9 and o.created_at is not None:
-                        episode_start[sym] = o.created_at   # a NEW holding episode
+                if str(e.side).upper() == "BUY":
+                    if prev <= 1e-9 and e.ts is not None:
+                        episode_start[sym] = e.ts           # a NEW holding episode
                     running[sym] = prev + q
                 else:
                     running[sym] = max(0.0, prev - q)
