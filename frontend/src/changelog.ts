@@ -24,6 +24,7 @@ export const CHANGELOG: Release[] = [
     items: [
       { tag: "fixed", text: "Yahoo's poll re-sends its last 30 minutes with volume still empty for the freshest ones; with source precedence those overwrote Alpaca's true bars with volume 0 (F79). A minute without volume is provisional and is no longer handed on as an exchange bar; an exchange re-fetch never lowers a bar's volume; legacy rows with no provenance rank below live sampled bars." },
       { tag: "fixed", text: "On the Alpaca+Yahoo feed a restart seeds today's completed minutes from the venue's history at boot, so the minute that was forming when the old process died is no longer a silent hole in the 2-minute tape (F80)." },
+      { tag: "fixed", text: "History requests to Alpaca are no longer clamped to Yahoo's 20-day depth (a backfill of mid-August silently started on August 20); the bars audit no longer calls an opening or closing auction print a volume spike." },
     ],
   },
   {

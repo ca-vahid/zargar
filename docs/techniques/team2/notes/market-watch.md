@@ -2678,3 +2678,23 @@ data and original research records. Keep target_replan off until the clean datas
   **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**,
   **F76**, **F81**, F67's two shared-side halves, and the F30-family question of which premium
   series is authoritative. **F75, F79 and F80 are now closed.**
+
+## Desk record 2026-09-09 12:26–13:20 ET — F75 repair executed (v0.7.28 → v0.7.29)
+
+- **Deploys (all via `schtasks /Run /TN ZargarRestart` → `restart.ps1`):** 12:26 ET v0.7.28 (the first attempt at
+  12:14 exited 1 on a stray CR in a comment; the 12:26 run's array splat left the engine in the task console's
+  foreground); 12:31 / 12:33 / 12:36 ET clean restarts after `schtasks /End` (readiness answered, `Restore check OK:
+  armed 74/74 … restingOrders 10/10` in `logs/restart-*.log`; the 12:36 one restored the helper workers I had wrongly
+  "deduplicated"); 12:54 ET v0.7.29 (F79/F80). Zero technique trades were open at any restart; the F80 seed re-read
+  13,389 minutes for 31 symbols at the 12:54 boot. Version clashes: none this time (checked origin/main before each bump).
+- **Repair on the runtime DB:** quarantine `7f6269da4e71` (closed days, 316,603 rows / 439 symbol-sessions),
+  `bfa00d50b550` (SPY sim 08-14..19, 4,424), `a9116e809b6e` (AAPL/AMD/MSFT/NVDA/TSLA/SHOP.TO/TD.TO sim 08-14..19, 30,969);
+  Alpaca backfill 214 symbols in two passes (1,605,836 + 742,162 bars fetched; 1,240,400 + 555,684 added; 42,109 + 6
+  volumes zeroed on print-less minutes); pass 1 had silently started at 08-20 because the history clip applied
+  Yahoo's depth to Alpaca — fixed and re-run. Identities: Team2 pre `0155fbe4…` (67,780) → FINAL `a00ecad1…` (55,219);
+  all symbols FINAL `532d7932…` (2,880,732). Team2 audit: clean.
+- **F72 rerun on the clean set** (sweep dataset `96129c00…`, SPY/QQQ/IWM, 39 sessions 08-20..09-08): baseline 37 / wr
+  .405 / +247.7 vs `target_replan=entry` 45 / .356 / +207.0 → stays off (TRADING-RULES F72 addendum 2).
+- **Open for the user:** F81 (pre-open never re-derives the plan targets; today's gap day was born dead — a rules
+  change, the watch job's counterfactual is on the pre-repair tape); the residual audit flags on other symbols
+  (`outlier_range` 20 real large-move days, `volume_spike` 10) are reports for their desks, not defects.

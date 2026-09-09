@@ -577,6 +577,27 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-09-09 · **F75 repair EXECUTED on the runtime DB (12:38–13:18 ET) — the record.** Pre-repair identity (Team2
+  symbols, 2026-08-14..09-09): `0155fbe4247ee049…`, 67,780 rows. Quarantine batches in `bars_quarantine` (copied, verified
+  row-for-row, then deleted; never deleted from): `7f6269da4e71` = 316,603 rows / 439 symbol-sessions on non-trading days
+  (weekends 08-15/16, 08-22/23, 08-29/30, 09-05/06, Labor Day 09-07; up to 128 symbols on 09-07); `bfa00d50b550` = SPY
+  08-14..08-19 sim block, 4,424 rows; `a9116e809b6e` = the rest of the sim-era watchlist (AAPL, AMD, MSFT, NVDA, TSLA,
+  SHOP.TO, TD.TO) 08-14..08-19, 30,969 rows — identified by their 720 overnight (00:00–03:59 ET) rows per day, which no
+  real feed writes; QQQ/IWM 08-17..19 have none and were kept. Backfill from Alpaca SIP (`bars_repair backfill`, 214
+  servable symbols; 192 option contracts / .TO / index symbols skipped): pass 1 (08-14..09-09) fetched 1,605,836 bars,
+  changed 373,675, ADDED 1,240,400 (the table only ever held RTH-ish samples; the venue tape is 04:00–20:00), zeroed
+  42,109 volumes on quote-sampled rows in minutes the venue has no bar for (no bar = no prints); pass 2 (08-14..08-21,
+  after the clip defect below) fetched 742,162, added 555,684. FINAL identities: Team2 symbols `a00ecad1ef7fddd3…`
+  (55,219 rows), all symbols `532d793203dfd9b2…` (2,880,732 rows), both in `bars_dataset_versions`. Team2 audit after:
+  no flags; whole table: `thin_rth` 2, `outlier_range` 20 (real large-move days — CRDO/HPE/MRNA/DKS earnings-type
+  sessions; flags, not classifications), `volume_spike` 10. Two defects found by running it: (a) `clip_request_window`
+  applied Yahoo's 20-day 1m depth to Alpaca requests, so pass 1 silently started at 08-20 (fixed: the clamp is
+  Yahoo-only; Alpaca is clamped to now); (b) `volume_spike` flagged 253 venue-only sessions whose 09:30/16:00 auction
+  minute is legitimately a quarter of a thin name's day (fixed: auction minutes and venue bars are not spikes).
+  Limitation kept on record: the calendar gate is NYSE; a `.TO` symbol on a Canadian-only holiday still forms flat
+  bars and loses real bars on a US-only holiday — those symbols are portfolio context, not technique inputs. **For
+  the EM and Cartel desks:** every stored-bar calibration since 08-14 should be re-derived on `532d793203dfd9b2…`;
+  the table also now carries the full extended-hours tape, which RTH consumers must keep clipping.
 - 2026-09-09 · **F75 repair — the shared `bars` table was partly synthetic, and its writers were live code.** Facts, from
   the runtime DB (406 symbols, 1.42M 1m rows): (1) SPY 2026-08-14 22:15 → 08-19 (7,300 rows, 24-hour bars, RTH ranges up
   to 769–1459) is the SIM quote feed's random walk, persisted by the bar persister while the app ran on the sim feed
@@ -595,6 +616,36 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   row — a volume fix with the same row count is a new version). Volume: F78 below. Tests: `tests/test_bars_integrity.py`,
   `tests/test_bars_repair.py`. Repair record (what was quarantined/backfilled, hashes before/after): the Team2 desk
   section in `docs/techniques/team2/notes/market-watch.md` 2026-09-09 evening.
+- 2026-09-09 · **F79/F80 (Team2 watch 12:40 ET, shared) — FIXED v0.7.29 (deployed 12:54 ET), verified by the watch at
+  13:05 ET.** F79: Yahoo's poll re-emits its last 30 completed minutes as exchange bars; the freshest ones carry
+  volume `null` until Yahoo fills it in, `_parse_completed_bars` turned that into 0, and with source precedence the
+  zero-volume "correction" overwrote Alpaca's true bar (SPY 12:08/12:09 ET; every streamed symbol 11:58–12:09). Now a
+  minute without volume is provisional and never emitted; exchange-over-exchange keeps the newer OHLC but never lowers
+  volume (`GREATEST`); legacy `unknown` ranks BELOW `sampled` (no provenance loses to a live bar). F80: the minute
+  forming when a process dies never reached the table (QQQ/IWM 11:25 ET after the 11:26 boot) — the hybrid feed had no
+  day seeding at all (only the Yahoo-only feed fetched today's bars); now `Engine.seed_today_exchange_bars` re-reads
+  today's completed minutes from Alpaca history for the streamed symbols AFTER start, paced (semaphore 4), through
+  `ingest_exchange_bar` (memory + persister by provenance) — 31 symbols / 13,389 bars / 0 failures at the 12:54 boot.
+  It runs after start on purpose: 400 symbols of history inside `start()` would outlast the watchdog's 180 s lock.
+- 2026-09-09 · **Deploy-day findings on the restart door (five restarts, all through `ZargarRestart`).** (1) A stray
+  carriage return in a comment made Windows PowerShell 5.1 treat the rest of the line as a command: `restart.ps1` exited
+  1 before its first step and nothing restarted — task scripts are ASCII AND CRLF-clean (write them with explicit
+  newlines). (2) `& start.ps1 @args2` with an ARRAY passed `-Detach` positionally under 5.1: the engine ran in the task
+  console's foreground, `restart.ps1` never reached its health wait or restoration check, and the task stayed
+  "Running" (267009) so a second `schtasks /Run` was silently ignored — a hashtable splat fixes it; a stuck instance
+  needs `schtasks /End` (which kills the engine) before the door works again. (3) The stop step matched processes by
+  COMMAND LINE alone and killed an assistant's PowerShell session whose command text merely mentioned the engine
+  module (twice); it matches process name + command line now, and pwsh windows only when running the two helper
+  scripts with `-File`. (4) Helper workers are launcher/child PAIRS (`python -m …` spawns the worker) — two rows per
+  helper are normal; "deduping" them kills both (done once, restored by the next restart). (5) Evidence lines now in
+  every transcript (`logs/restart-<ts>.log`): `Restore check OK: armed 74/74, openTrades 0/0, pendingExits 0/0,
+  restingOrders 10/10, inflightOrders 0/0`. (6) An unknown `/api/*` path used to fall through to the SPA index (200
+  HTML), which the scripts read as an unsafe answer on an older engine — now a 404, and the scripts treat a non-JSON
+  answer as "check unavailable".
+- 2026-09-09 · **Worktree hazard.** Another session switched THIS desk's worktree onto its own branch twice while a
+  batch was in progress; two commits landed on other desks' branches and PR #43 shipped only docs under a code title.
+  Rule: `git branch --show-current` before every commit, and verify a PR's file list (`gh pr view N --json files`)
+  before merging it.
 - 2026-09-09 · **F78 (shared; the Team2 watch job's F77 of 12:05 ET is a different finding) — bar volume was the difference of a re-seeded counter.** `BarAggregator.on_quote`
   differenced `Quote.volume`, which since F19 (09-04) is Yahoo's session total re-seeded every context poll plus prints
   since the seed; a re-seed jump landed in one bar (SPY 2026-09-08 09:3x: 43,496,831 shares in a minute; the day summed to
