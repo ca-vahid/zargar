@@ -1204,3 +1204,27 @@ Two engine-hosting findings from the first `schtasks /Run /TN ZargarRestart` dep
 
 Also observed: the Task Scheduler reports `ZargarRestart` as still running (267009) for as
 long as the detached engine it started lives - that is the job object, not a hung script.
+
+
+### Twelve market-hours restarts and a bar-delivery stall — 2026-09-09 (EM desk, EOD)
+
+Evidence from `backend/zargar-8420.log` and the events table. The engine restarted at 10:14,
+10:47, 11:06, 11:26, 12:26, 12:31, 12:33, 12:36, 12:54, 14:11, 15:33 and 16:09 ET - every one a
+desk deploy (PR merges #33-#47, 0.7.22 -> 0.7.33), four of them inside ten minutes at 15:26-15:36
+ET. Each restart re-armed 54 EM plans plus Tips/Team2/Cartel, re-read opening bars, reset entry
+windows and dropped whatever fire -> critic -> order chain was in flight; the 15:35 ET restore
+check reported an armed-list MISMATCH. Separately, at 15:10 ET **49 EM plans journaled "stale
+bars"** (no closed bar for 180 s) while the `bars` table shows 180 symbols persisting 1-minute bars
+straight through the close - the bars were written but stopped reaching the plan runner around
+15:07 ET (the Alpaca stream dropped at 15:15 ET and reconnected; the 14:11 ET deploy was 0.7.29,
+F79/F80 bar provenance). Between the stall and the restart burst, EM's prime_close window
+(14:45-16:00) was effectively not traded.
+
+Rules proposed for every desk (the user decides):
+1. **No deploys between 09:25 and 16:05 ET** unless the deploy fixes a live-money defect. Batch
+   the merges; `ZargarRestart` once after the close.
+2. **A restart is a journaled event with a reason** (`ScheduledRestart` payload: version, desk,
+   why) so the review can attribute lost state.
+3. **Bars written are bars delivered**: the feed desk should add a watchdog line when persisted
+   1-minute bars advance while `PlanRunner.last_bar_ts` does not (the "stale bars" journal is the
+   symptom, 49 at once is the signature).
