@@ -32,7 +32,7 @@ async def test_idle_desk_is_safe_and_an_open_trade_or_pending_exit_blocks(rig):
     eng, sim = rig
     ap = await _armed(eng)
     st = await restart_state(eng)
-    assert any(x.endswith(ap.run_id) for x in st["armed"]) and st["openTrades"] == [] and st["workingOrders"] == []
+    assert any(x.endswith(ap.run_id) for x in st["armed"]) and st["openTrades"] == [] and st["inflightOrders"] == []
     assert readiness_from_state(st)["safe"]
     # an open trade in a money mode
     await eng.team2_runner.set_mode(ap.run_id, "auto")
@@ -53,11 +53,14 @@ async def test_idle_desk_is_safe_and_an_open_trade_or_pending_exit_blocks(rig):
 
 
 async def test_restore_check_compares_ids_not_counts():
-    before = {"armed": ["team2:a", "team2:b"], "openTrades": ["team2:SPY:x"], "pendingExits": [], "workingOrders": ["o1"]}
-    same = compare_states(before, {"armed": ["team2:b", "team2:a"], "openTrades": ["team2:SPY:x"], "pendingExits": [], "workingOrders": ["o1"]})
-    assert same["ok"] and same["counts"]["armed"] == "2/2"
-    swapped = compare_states(before, {"armed": ["team2:a", "team2:c"], "openTrades": [], "pendingExits": [], "workingOrders": ["o1"]})
-    assert not swapped["ok"] and swapped["missing"] == {"armed": ["team2:b"], "openTrades": ["team2:SPY:x"]}
+    before = {"armed": ["team2:a", "team2:b"], "openTrades": ["team2:SPY:x"], "pendingExits": [], "restingOrders": ["o1:GOOGL"], "inflightOrders": []}
+    same = compare_states(before, {"armed": ["team2:b", "team2:a"], "openTrades": ["team2:SPY:x"], "pendingExits": [], "restingOrders": ["o1:GOOGL"], "inflightOrders": []})
+    assert same["ok"] and same["counts"]["armed"] == "2/2" and same["counts"]["restingOrders"] == "1/1"
+    swapped = compare_states(before, {"armed": ["team2:a", "team2:c"], "openTrades": [], "pendingExits": [], "restingOrders": [], "inflightOrders": []})
+    assert not swapped["ok"] and swapped["missing"] == {"armed": ["team2:b"], "openTrades": ["team2:SPY:x"], "restingOrders": ["o1:GOOGL"]}
+    # a resting venue order never blocks; an in-flight one does
+    assert readiness_from_state({"restingOrders": ["o1:GOOGL"], "inflightOrders": []})["safe"]
+    assert not readiness_from_state({"restingOrders": [], "inflightOrders": ["o2:AMZN"]})["safe"]
 
 
 async def test_the_endpoints_answer_local_callers_only(rig):
