@@ -400,6 +400,10 @@ def test_no_trade_zone_skip_is_said_once_per_setup():
     per_setup = collections.Counter(e["setup"] for e in skips)
     assert max(per_setup.values()) == 1, per_setup
     assert not [e for e in res.events if e["event"] == "fire"]
+    # F57 (2026-09-08): the read must expose the setup's CURRENT refusal, so the Armed page's one line can
+    # say why "touches 0" is not going to move. A real touch clears it (`_skipped = None`).
+    refused = [x for x in res.to_dict()["setups"] if x.get("skipped") == "skip_no_trade_zone"]
+    assert refused, res.to_dict()["setups"]
 
 
 def test_event_day_gate_blocks_entries_when_enabled():

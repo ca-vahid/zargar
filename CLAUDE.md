@@ -197,6 +197,7 @@ gitignored; sign-in is enforced, so pass `ZARGAR_SESSION=$(python -m zargar.tool
 `backend/` or every route screenshots the login page); `scripts/start.ps1` rebuilds dist when sources are newer — don't run `npm run build` in
 parallel with it.
 **Bug-missed trades (2026-09-02):** replay them AFTER the fix into the counterfactual ledger (`execution/counterfactual.py`, `technique_review counterfactual <run> --trigger r1 --reason ...`, Armed > History "Missed by a bug") - NEVER book a synthetic fill into a portfolio (PLATFORM-RULES invariant).
+**EM flow confirmation (T-12, phase 0 built 2026-09-08):** `docs/techniques/enhanced-market/FLOW-CONFIRMATION-PLAN.md`; `research/optiontrades.py` (Alpaca option trades -> sweeps; history uses the tick test, live the NBBO), `flow_sweeps` table, `tools/optiontrades_backfill.py`. Sweeps CONFIRM fires, never create them.
 **One Practice book per technique (2026-09-08):** `techniques.<id>.default_portfolio` routes each technique's fills (EM also `technique.arm.default_portfolio`); the old shared book is archived, never a fallback (PLATFORM-RULES invariant 15).
 **New technique? Start at `docs/BUILDING-A-TECHNIQUE.md`** — the engine's capabilities (marketstructure,
 PlanRunner hooks, settings resolver `techniques.<id>.<key>` → `execution.<key>`, scheduler, calendar,

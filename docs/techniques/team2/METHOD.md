@@ -29,6 +29,19 @@ file in brackets after a rule when it matters which post said it.*
   rules, entry, stop, exit and sizing *principles*. **What we drop**: chart-reading prose
   ("study this chart"), mindset, promo.
 
+## 0b. Corrections from the 2026-09-08 author study (`notes/research/2026-09-08-author-study-evidence.md`)
+
+1. Read §0 with §7b/§7c: the early "no contract/expiry evidence" caveat predates the image and video reads.
+2. "0DTE and 1–2 strikes OTM" overstates the sample — expiry examples support 0DTE, but several pictured strikes are
+   much farther OTM. The premium-targeted pick (~$0.60, floor $0.20) is OUR expression of that, not a quoted rule.
+3. Full / small / no-trade sizing is, in the author's own words, a loose guide; the fixed multipliers, overlap handling
+   and the exception bans (F15/F20/F56) are implementation choices.
+4. The one-candle stop, the one-or-two-candle wording, the historical 20 % discipline and the reported 20–40 % losses are
+   different statements — none of them is a guaranteed loss cap; the engine's premium stop is the cap, and it is ours.
+5. The early-pullback preference is explicit; every exact touch-counter behaviour (two pullbacks, the episode reset,
+   what "spends" one) is ours — see TRADING-RULES D9, F61, F62.
+6. The shrink-after-win half-size example has an auto-transcript speaker ambiguity; the fixed half-profit formula is ours.
+
 ## 1. The method in one paragraph
 
 Before the open, mark four prices on SPY/QQQ/IWM: the previous regular session's high and

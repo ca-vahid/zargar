@@ -36,6 +36,34 @@ log = logging.getLogger("zargar.techniques.team2.service")
 
 CODE_VERSION = "team2-0.1"
 
+#: once-per-session state notes (`session.py` mints each at most once) — the day said what it was
+#: doing, it did not refuse a setup. Kept out of the refusal tally the History tab shows (F68).
+DAY_NOTES = ("skip_last_entry", "skip_event_day", "skip_loss_cap")
+
+
+def _day_result(arm) -> dict | None:
+    """F67: the day's own grade, from the scorecard the runner writes at disarm (F43).
+
+    The shared Armed > History table cannot show it — that list is ordered by BUILD time and
+    capped, and Team2's plans are always built the previous session, so they fall off the
+    window; its Realized column also reads the plan's GROSS p&l. The desk's own History tab
+    therefore carries the net number and the model-vs-book comparison."""
+    sc = (getattr(arm, "state", None) or {}).get("scorecard") if arm is not None else None
+    if not sc:
+        return None
+    skips = sc.get("skips") or {}
+    # F68 (2026-09-08): DAY_NOTES are minted once per session by `session.py` to say what state the
+    # day is in — they are not setups the method turned down, so counting them as refusals inflated
+    # the tally (2026-09-08 read "SPY no trade - 2 refused" for one real refusal plus the 15:30
+    # cutoff note). Same principle as F28: skip counts must mean skips. The raw `skips` map stays
+    # untouched; `refused` is the number a human should read, `notes` names the day-state rows.
+    refused = sum(n for k, n in skips.items() if k not in DAY_NOTES and n > 0)
+    return {"fires": sc.get("actualFires"), "matched": sc.get("matched"),
+            "theoreticalFires": sc.get("theoreticalFires"),
+            "modelPct": sc.get("modelPnlPctSum"), "net": sc.get("realizedPnl"),
+            "gross": sc.get("realizedPnlGross"), "skips": skips, "refused": refused,
+            "notes": [k for k in DAY_NOTES if skips.get(k)]}
+
 
 class Team2Service:
     def __init__(self, engine, runner) -> None:
@@ -273,6 +301,7 @@ class Team2Service:
                         "complete": plan.get("complete"), "dayType": plan.get("dayType"),
                         "createdAt": r.created_at.isoformat() if getattr(r, "created_at", None) else None,
                         "armed": live,
+                        "result": _day_result(arm),
                         "status": ("armed" if live else (arm.status if arm is not None else None)),
                         "stopReason": ((getattr(self.runner.get(r.id), "stop_reason", None) if (live and self.runner is not None) else None)
                                        if live else ((arm.state or {}).get("stopReason") or None)
@@ -291,7 +320,8 @@ class Team2Service:
             rules = Team2Rules.from_dict({**rules.to_dict(), **overrides})
         if not plan.get("complete"):
             plan = complete_plan(plan, today)
-        sigma = await self._sigma_for(str(run.get("planFor") or run.get("date") or dt.datetime.now(ET).strftime("%Y-%m-%d")))   # R11: that day's IV, not today's
+        stamped = (plan.get("sigma") or {}).get("value") if isinstance(plan.get("sigma"), dict) else None
+        sigma = float(stamped) if stamped else await self._sigma_for(str(run.get("planFor") or run.get("date") or dt.datetime.now(ET).strftime("%Y-%m-%d")))   # F51: the IV the desk ran on, else that day's proxy
         res = simulate_session({**plan, "date": date}, today, rules, sigma=sigma, warmup_1m=prior)
         return {"runId": run_id, "plan": plan, "result": res.to_dict(), "overrides": overrides or {}}
 
