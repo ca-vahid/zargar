@@ -77,7 +77,7 @@ def market_regime(indices: dict[str, list[DailyBar]], rules: CartelRules, at: in
         bars = _history(indices.get(symbol, []), at)
         if bars and bars[-1].symbol != symbol:
             raise ValueError(f"{symbol} input contains a different symbol")
-        emas = _emas(bars, rules.market_ema_periods)
+        emas = _emas(bars, (8, 21, 50) if rules.market_alignment == "moderate" else rules.market_ema_periods)
         state = "unknown"
         if bars and bars[-1].session == _latest_session(at) and all(v is not None for v in emas.values()):
             above = all(bars[-1].close > v for v in emas.values())
@@ -89,9 +89,16 @@ def market_regime(indices: dict[str, list[DailyBar]], rules: CartelRules, at: in
                          "aboveEmas": {str(p): (bars[-1].close > value if bars and value is not None else None) for p, value in emas.items()}}
     directions = {v["direction"] for v in reads.values()}
     direction = "unknown" if "unknown" in directions else next(iter(directions)) if len(directions) == 1 else "mixed"
-    return {"direction": direction, "indices": reads, "asOfMs": at,
+    strict_direction = direction
+    if (rules.market_alignment == 'moderate' and direction == 'mixed'
+            and any(r['direction'] == 'long' for r in reads.values())
+            and all(r['aboveEmas'].get('50') is True for r in reads.values())):
+        direction = 'long'
+    return {"direction": direction, "strictDirection": strict_direction, "alignmentMode": rules.market_alignment,
+            "indices": reads, "asOfMs": at,
             "sourceRules": ["M1", "S02", "S06"],
-            "reason": "Require both indices on the same side of every selected EMA; otherwise watch-only."}
+            "reason": ("Moderate Practice experiment: for bullish alignment, one index must close above its 8/21/50 EMAs and both must close above their 50 EMA. Missing/stale evidence blocks alignment; bearish alignment remains strict."
+                       if rules.market_alignment == 'moderate' else "Require both indices on the same side of every selected EMA; otherwise watch-only.")}
 
 
 def screen_listing(bars: list[DailyBar], facts: ListingFacts, indices: dict[str, list[DailyBar]],

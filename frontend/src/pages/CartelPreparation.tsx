@@ -108,6 +108,10 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
       <details open><summary>Market coverage and method choices</summary>
         <p>Sean describes theme leadership, volume-supported breakouts, 5m/15m confirmation and retests. Exact volume, candle-quality and ranking thresholds below are our measurable interpretations, not prescribed author numbers. Saved plans keep their original settings.</p>
         <div className="cartel-fields">
+          <label>Market alignment<select aria-label="Market alignment" value={config.marketAlignment || "strict"} disabled={live} onChange={e => setConfig({...config, marketAlignment:e.target.value})}>
+            <option value="strict">Strict — both indices aligned</option>{!live && <option value="moderate">Moderate — Practice experiment</option>}
+          </select></label>
+          <p>{live ? "Live requires strict alignment." : "Moderate allows bullish preparation when one index closes above its 8/21/50 EMAs and both close above their 50 EMA. This is a Practice experiment, not an author-verified rule. Save and prepare again; existing research records are not promoted."}</p>
           <label>Industry policy<select value={config.industryPolicy || "context"} onChange={e => setConfig({...config, industryPolicy:e.target.value})}>
             <option value="context">Context — evaluate strong stocks across industries</option><option value="strict">Strict — require both top-ten industry ranks</option>
           </select></label>
@@ -141,7 +145,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
       {result ? <>
         {result.market && <section className="cartel-inset" aria-label="Market alignment">
           <strong>{result.armingBlocked || result.phase === "no_market_alignment" ? "Automatic arming blocked — research does not grant trading permission" : "Market alignment permits plan evaluation"}</strong>
-          <p>{result.market.reason}</p>
+          <p>Alignment mode: <b>{label(result.market.alignmentMode || "strict")}</b>. {result.market.reason}</p>
           {Object.entries(result.market.indices || {}).map(([symbol, value]) => { const read = value as any; return <p key={symbol}>
             <b>{symbol}</b> · {read.session || "session unavailable"} · {label(read.direction)} · close {read.close?.toFixed(2) ?? "not recorded"}
             {Object.entries(read.emas || {}).map(([period, value]) => <span key={period}> · EMA {period}: {typeof value === "number" ? value.toFixed(2) : "unavailable"}{read.aboveEmas?.[period] != null ? (read.aboveEmas[period] ? " (price above)" : " (price at/below)") : ""}</span>)}
