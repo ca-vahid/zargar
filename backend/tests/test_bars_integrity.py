@@ -1,4 +1,4 @@
-"""F75/F77 (2026-09-09): the shared `bars` table holds market data with provenance.
+"""F75/F78 (2026-09-09): the shared `bars` table holds market data with provenance.
 
 - an exchange correction to a quote-sampled bar reaches memory, storage, a fresh load (restart) and a
   Team2 replay read — and a later sampled bar cannot undo it (explicit source precedence);

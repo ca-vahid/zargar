@@ -215,7 +215,7 @@ class AlpacaQuoteFeed(QuoteFeed):
             # session total Yahoo reported when we last seeded, `vol_seed_live` = vol_live
             # at that moment, so volume = seed + (live since the seed).
             "day": "", "vol_live": 0, "vol_seed": 0, "vol_seed_live": 0,
-            "pending_size": 0,            # F77: print shares not yet handed to a quote (all sessions)
+            "pending_size": 0,            # F78: print shares not yet handed to a quote (all sessions)
         })
 
     @staticmethod

@@ -171,7 +171,7 @@ class Engine:
                         hold_seconds=lambda: (float(self.settings.get("feed.exchange_bar_hold_seconds", 5))
                                               if bool(self.settings.get("feed.exchange_bars", True)) else 0.0),
                         expects_exchange=lambda sym: alpaca.connected and sym.upper() in alpaca.symbols,
-                        # F75/F77: real feeds form bars only in market minutes; Alpaca-streamed symbols
+                        # F75/F78: real feeds form bars only in market minutes; Alpaca-streamed symbols
                         # take their sampled volume from print sizes, not a re-seeded counter
                         sampled_source="sampled", calendar_gated=True,
                         volume_from_prints=lambda sym: alpaca.connected and sym.upper() in alpaca.symbols)

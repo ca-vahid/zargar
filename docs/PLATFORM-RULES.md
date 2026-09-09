@@ -591,10 +591,10 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   closes) in BOTH the aggregator (real feeds) and `persist_bars`, sim isolation (`AppConfig.persist_sim_bars`, tests on,
   runtime off), `bars_quarantine` + `bars_dataset_versions` tables, `zargar.tools.bars_repair` (audit / quarantine /
   backfill / version), `marketdata.dataset_version` (sha256 over scope + rules + every (symbol, ts, OHLCV, source)
-  row — a volume fix with the same row count is a new version). Tests: `tests/test_bars_integrity.py`,
+  row — a volume fix with the same row count is a new version). Volume: F78 below. Tests: `tests/test_bars_integrity.py`,
   `tests/test_bars_repair.py`. Repair record (what was quarantined/backfilled, hashes before/after): the Team2 desk
   section in `docs/techniques/team2/notes/market-watch.md` 2026-09-09 evening.
-- 2026-09-09 · **F77 (shared) — bar volume was the difference of a re-seeded counter.** `BarAggregator.on_quote`
+- 2026-09-09 · **F78 (shared; the Team2 watch job's F77 of 12:05 ET is a different finding) — bar volume was the difference of a re-seeded counter.** `BarAggregator.on_quote`
   differenced `Quote.volume`, which since F19 (09-04) is Yahoo's session total re-seeded every context poll plus prints
   since the seed; a re-seed jump landed in one bar (SPY 2026-09-08 09:3x: 43,496,831 shares in a minute; the day summed to
   352M vs ~40M real) and the first quote after a `seed()` painted Friday's 33M onto Saturday's flat bar. Now: Alpaca
@@ -607,7 +607,7 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   `replay.py`, `preparation_readiness.py`: AFFECTED for anything computed from stored bars in that window; PR 13's
   "complete confirmation-volume baselines" should be re-derived after the backfill); Flow — option-chain volume and
   quote-level stock volume (NOT bar rows; the quote-level session volume carries F19's re-seed semantics but is a
-  session total, not a per-minute delta — unaffected by F77); Tips, Team2 — no bar-volume reads. The desks that own
+  session total, not a per-minute delta — unaffected by F78); Tips, Team2 — no bar-volume reads. The desks that own
   EM/Cartel decide whether to re-run their calibrations on the post-backfill dataset version.
 - 2026-09-09 · **Restart coordination is app-wide now** (Invariant 18). `zargar/ops.py` (`restart_state`,
   `readiness_from_state`, `compare_states`) + `api/routes_ops.py` (`GET /api/ops/restart-check`, `GET /api/ops/state`,

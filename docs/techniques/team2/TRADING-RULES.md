@@ -1280,8 +1280,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   a session's OWN bars decide), applied in `history_for` (plans, replay, sweep) and the runner's warm-up, the
   lookback counted in VALID sessions, `plan.history = {sessionsUsed, excluded, datasetVersion}`, sweeps stamped with
   `datasetVersion`. Shared side (PLATFORM-RULES 2026-09-09): provenance column + precedence upsert + calendar gate +
-  sim isolation + `bars_repair` tool + content-hash dataset versions + F77. Tests: `tests/test_team2_history.py`.
-- **F77 (2026-09-09, FIXED — shared; bar volume was the difference of a re-seeded counter).** Not a Team2 input (the
+  sim isolation + `bars_repair` tool + content-hash dataset versions + F78. Tests: `tests/test_team2_history.py`.
+- **F78 (2026-09-09, FIXED — shared; bar volume was the difference of a re-seeded counter; numbered after the watch job's F77 of 12:05 ET).** Not a Team2 input (the
   read is price-only), logged here because the desk found it: SPY 2026-09-08 carried a 43,496,831-share minute and a
   352M-share day. Cause, fix and the per-technique consumer assessment are in PLATFORM-RULES 2026-09-09.
 - **F76 (2026-09-09 11:35 ET, NOT fixed — proposal; on a gap day a `pm_break` setup is born with a
@@ -1368,7 +1368,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 - **2026-09-09 (evening — F75 repair, v0.7.28, one deploy after the close)** — **Read inputs validated:** every prior
   session the desk plans, warms up, replays or sweeps on passes `validate_sessions` (closed days, one-price, outlier
   and thin sessions excluded and recorded on the plan); the ten-session lookback counts valid sessions. **Data
-  repaired (shared):** provenance + precedence upsert + calendar gate + sim isolation + F77 print-based volume;
+  repaired (shared):** provenance + precedence upsert + calendar gate + sim isolation + F78 print-based volume;
   closed-day sessions and the SPY sim block quarantined with the originals preserved; SPY/QQQ/IWM backfilled from
   Alpaca exchange bars; dataset versions recorded before and after (hashes in the market-watch desk section).
   **Restarts:** app-wide readiness + restoration check on every restart path. **Unchanged:** `target_replan` off;

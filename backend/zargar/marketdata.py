@@ -148,7 +148,7 @@ class BarAggregator:
         self._expects_exchange = None        # (symbol) -> bool
         self._pending: dict[str, tuple[Bar, object]] = {}   # held sampled bar + timer handle
         self._early: dict[str, Bar] = {}     # exchange bar that arrived before the sampled minute rolled
-        # F75/F77 (2026-09-09): what a quote-built bar is (sampled | sim), whether quotes outside a
+        # F75/F78 (2026-09-09): what a quote-built bar is (sampled | sim), whether quotes outside a
         # market minute may form bars at all (never for a real feed), and which symbols' volume comes
         # from print sizes instead of a cumulative counter
         self._sampled_source = "sampled"
@@ -223,7 +223,7 @@ class BarAggregator:
             except Exception:  # noqa: BLE001
                 prints = False
         if prints:
-            vol_delta = max(0, int(q.trade_size or 0))       # F77: a sum of prints
+            vol_delta = max(0, int(q.trade_size or 0))       # F78: a sum of prints
         else:
             last = self._last_volume.get(q.symbol)
             # first sight, or the counter went DOWN (a session roll / a re-seed): never a fake spike

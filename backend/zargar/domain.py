@@ -89,7 +89,7 @@ class Quote:
     volume: int = 0
     halted: bool = False
     ts: int = field(default_factory=now_ms)
-    # F77 (2026-09-09): shares printed since this symbol's previous emission — a feed that sees
+    # F78 (2026-09-09): shares printed since this symbol's previous emission — a feed that sees
     # prints (Alpaca) fills it so bar volume is a SUM of prints, never the difference of a
     # session-to-date counter that gets re-seeded (that difference painted a 43M-share minute)
     trade_size: int = 0

@@ -2534,7 +2534,7 @@ data and original research records. Keep target_replan off until the clean datas
   effect on the values checked" replaces "the live plans are clean".
 - **Built (shared):** `bars.source` provenance, precedence upsert (the sampled bar no longer survives its exchange
   correction on disk — a sampled bar + its correction in one flush was also a cardinality error in the first cut,
-  caught by the new test), calendar gate in the aggregator and the persister, sim isolation, F77 print-based
+  caught by the new test), calendar gate in the aggregator and the persister, sim isolation, F78 print-based
   volume, `bars_quarantine` / `bars_dataset_versions`, `zargar.tools.bars_repair`, `marketdata.dataset_version`.
 - **Built (Team2):** `history.validate_sessions` in plans / warm-up / replay / sweep; lookback in valid sessions;
   `plan.history` provenance; sweeps stamped with the dataset hash.
