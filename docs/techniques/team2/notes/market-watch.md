@@ -2699,6 +2699,247 @@ data and original research records. Keep target_replan off until the clean datas
   change, the watch job's counterfactual is on the pre-repair tape); the residual audit flags on other symbols
   (`outlier_range` 20 real large-move days, `volume_spike` 10) are reports for their desks, not defects.
 
+
+## 2026-09-09 13:45 ET (run 41 — desk healthy, data clean, still zero fires; the two blockers now account for the whole day)
+
+- **Alive, three plans armed, nothing traded.** `/api/health` ok, **v0.7.29**, armed 75. SPY
+  `e4d39d00`, QQQ `9a1094ed`, IWM `e87e4ad2` all `armed`, `complete: true` (pmh/pml/dayType/
+  sizingAtOpen present), `needsAttention` false, mode **auto** on Team2 Practice `b9dcd8db…`,
+  **zero trades, zero open positions**, ninth session. Quote age 0 s, session `regular`, bar age
+  73–96 s. **No restart this run and none by another desk since 12:54 ET**; the engine log has not
+  logged a single warning or traceback since 12:56 ET.
+- **Bars stay clean under v0.7.29.** 244/244 RTH 1m rows per symbol 09:30–13:33, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, no interior gaps**
+  on any of the three. F79 and F80 remain closed after a full session on the fixed build.
+- **Option quotes real-time, F77 did not reproduce (second consecutive run).** SPY 763P, QQQ 717C,
+  IWM 291P all `source: "opra"`, `provider: alpaca`, `delayed: false`, and the top-level chain row
+  matched the nested quote **exactly** on all three (QQQ 0.43/0.44, delta .44, 0 DTE).
+- **What the read saw since 13:05 — one genuinely new thing.** QQQ's bias **flipped a third time**: at
+  **13:15 ET** a 15m body closed above 716.50 → **scenario 3 (bounce PDL) → calls**, target 717.47,
+  its two earlier setups now `dead`. Its first pullback was refused **13:34 `skip_no_trade_zone`**
+  (entry 716.28). IWM added `skip_target_behind` at 13:00/13:04/13:10 (290.98–291.04 against 293.56),
+  `same_pullback` at 13:08/13:16, and its **second `skip_engulfing` of the day at 13:32** (touch #2,
+  body 0.20 > 2.0× avg 0.05 — a correct A6/F4 refusal). SPY quiet since 12:28. Prices at 13:37:
+  SPY 762.90, QQQ 716.35, IWM 290.91.
+- **The whole day now has exactly two causes, one per symbol group.** Day totals across the three:
+  **18 `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`, 0 fires**. The symbols that
+  *left* their pre-market range (SPY, IWM) were killed by the frozen target (**F76**/**F81**); the
+  symbol that never left it (QQQ) was killed by V6's no-trade zone (**F56**). Measured: QQQ spent
+  **246 of 246 RTH minutes inside its own PM range** (713.50–720.67 = **21.8× its 2m ATR**), SPY 61%
+  (17.6×), IWM 20% (17.6×). QQQ printed no PM break, so F20's carve-out never applied — the symbol
+  was untradeable by construction for a full session. This is F56's mechanism at its extreme; logged
+  as a confirmation, not a new finding.
+- **F76's reporting half FIXED (commit `05fb2b2`, deploy queued).** The `pm_break` note said *"→ puts down
+  to the PDL zone (L2.5/V7)"* whichever candidate the target resolved to, so on a gap day it
+  advertised a level the setup does not hold. It now states the setup's own number and flags when
+  that number is behind the break — *"→ puts down to 764.75 — already behind the break, so this setup
+  has no room (F76)"* — and carries `target` in the event payload. New helper
+  `_pm_break_target_says()` (mirrored long/short), new test
+  `test_pm_break_note_states_the_setups_own_target`; **118 Team2 tests pass**. **Reporting only** —
+  no target, size, gate, rule or money path changed. **Deploy queued for the next restart**, not
+  taken mid-session: the desk is in auto mode and the fix changes no decision.
+- **Replay parity holds.** SPY 12/12 and IWM 26/26 events identical, zero trades both ways on all
+  three. QQQ's replay still emits one extra 12:14 `same_pullback` — the known artifact of this
+  morning's live reads running on the pre-repair tape; it should disappear for a session run entirely
+  on v0.7.29.
+- **UI:** `/team2` and `/api/team2/status` both return 200. The full page render was **not**
+  re-verified this run (no deploy since run 40's green check on the same version, and the browser
+  cookie handoff was unavailable).
+- **Next run (14:00–14:30 ET) should:** (1) still hunt the **first priced fire of the day** — strike
+  selection near $0.60 and live-vs-replay fire parity remain untested after nine sessions; (2) watch
+  **QQQ's new scenario 3**, which needs price out of 713.50–720.67 to be takeable at all, and the
+  14:45 prime-close window on all three; (3) **deploy the queued F76 prose fix** if no trade is open;
+  (4) re-check bar provenance stays `exchange`. Still open for the user: **F47**, **F49**, **F50**,
+  **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**,
+  **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**,
+  **F81**, F67's two shared-side halves, and the F30-family question of which premium series is
+  authoritative.
+
+## 2026-09-09 14:15 ET (run 42 — the queued F76 fix is deployed as v0.7.30; desk healthy, still zero fires)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.30** after this run's deploy, armed 74. SPY
+  `e4d39d00`, QQQ `9a1094ed`, IWM `e87e4ad2` all `armed`, `complete: true` (pmh/pml/dayType/
+  sizingAtOpen present), `needsAttention` false, mode **auto** on Team2 Practice `b9dcd8db…`,
+  **zero trades, zero open positions**, ninth session. Quote age 0 s, session `regular`, bar age
+  85–118 s. The engine log carries **no warning or traceback since the 12:55 ET boot**; everything
+  above that line pre-dates it.
+- **Data is real-time and provenance-clean.** 274/274 RTH 1m rows per symbol 09:30–14:03, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps** on all three. Option quotes: SPY 763P 0.51/0.52, QQQ 717C 0.50/0.51, IWM 291P 0.23/0.24 —
+  all `source: "opra"`, `provider: alpaca`, `delayed: false`, 0 DTE. F77 did not reproduce for a
+  third consecutive run. F79/F80 stay closed.
+- **F76's reporting half is DEPLOYED (v0.7.30, commit `73495eb`).** Run 41 committed the fix
+  (`05fb2b2`) but **without a release bump**, and the versioning rule requires APP_VERSION,
+  package.json, the lockfile, `backend/zargar/__init__.py` and pyproject to move together — so the
+  fix could not ship. `73495eb` bumps all five to **0.7.30** with the changelog entry
+  ("A setup's note states its own target"); `npm run check-release` green, **118 Team2 tests pass**,
+  frontend build green. Deployed at 14:10–14:12 ET through the scheduler task **ZargarRestart**
+  (`/api/ops/restart-check` returned `safe: true` first; restore check **OK 71/71, openTrades 0/0,
+  pendingExits 0/0, restingOrders 10/10, inflightOrders 0/0**). Verified live: SPY 11:15 now reads
+  *"→ puts down to 764.75 — already behind the break, so this setup has no room (F76)"* with
+  `target: 764.75` in the payload; IWM 10:45 the same at 293.56. **Reporting only** — no target,
+  size, gate, rule or money path changed.
+- **Replay parity is now exact on all three.** SPY 12/12, QQQ 10/10, IWM 30/30, zero trades both
+  ways. **QQQ's extra 12:14 `same_pullback` is gone** — the restart recomputed the live read on the
+  repaired tape, exactly as run 41 predicted, so that artifact is closed. (IWM briefly showed one
+  extra 14:14 `same_pullback` in the replay: a race, the 2m bar closed between the live read and the
+  replay call, not a divergence.)
+- **What the read saw since 13:37.** IWM: `late_touch` at **13:38, 13:42 and 14:12** — touch #3 of
+  `pm_break_down@10:30`, watch-only past the first two (D9/P6), the first appearance of that event
+  kind today and the correct behaviour; plus `same_pullback` 13:44. QQQ: `same_pullback` 14:02 on
+  its new scenario 3 (bounce PDL, calls, target 717.47), which flipped at 13:15. SPY: nothing since
+  12:28. Prices at 14:14: SPY 763.12, QQQ 716.71, IWM 291.04. **Day totals unchanged in cause: 18
+  `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`, 3 `late_touch`, 0 fires.**
+- **The day's two blockers still stand.** SPY and IWM (the symbols that left their pre-market range)
+  are killed by the frozen target — **F76**/**F81**; QQQ (which never left it) by V6's no-trade zone
+  — **F56**. Nothing new to add: both mechanisms are already written up with evidence, and both are
+  rules questions for the user, not defects to fix here.
+- **UI green.** `/team2` renders on 0.7.30 with all three plans, right sheets, ARMED status, and the
+  "74" armed count (cookie recipe: set `zargar_session` via `document.cookie`, then navigate;
+  `?token=` still does not authenticate the SPA route).
+- **Next run (14:30–15:00 ET) should:** (1) still hunt the **first priced fire** — strike selection
+  near $0.60 and live-vs-replay fire parity remain untested after nine sessions; (2) watch the
+  **14:45 prime-close window**, the day's last real chance, and **QQQ's scenario 3**, the only symbol
+  with a live target, which needs price out of 713.50–720.67; (3) remember the **15:30 last-entry /
+  15:45 flatten** 0DTE gates; (4) **no restart is queued** — the desk is current at v0.7.30. Still
+  open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**,
+  **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy
+  question**, **F74**, **F76's rule question**, **F81**, F67's two shared-side halves, and the
+  F30-family question of which premium series is authoritative.
+
+## 2026-09-09 14:40 ET (run 43 — desk healthy on v0.7.30; the contract picker exercised read-only for the first time → F82)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.30**, armed 74. SPY `e4d39d00`, QQQ `9a1094ed`, IWM
+  `e87e4ad2` all `armed`, `complete: true` (pmh/pml/dayType/sizingAtOpen present), `needsAttention`
+  false, mode **auto** on Team2 Practice `b9dcd8db…`, **zero trades, zero open positions**, ninth
+  session. Quote age 0.1–0.4 s, session `regular`, bar age 67 s. **No restart this run**; the engine
+  log has exactly **one** timestamped warning since the 14:12 ET boot — a transient EM restore-check
+  mismatch on one plan (another desk's, resolved). No Team2 log line, no traceback after the boot.
+- **Data real-time and provenance-clean.** 303/303 RTH 1m rows per symbol 09:30–14:32, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps** on all three. Option quotes `source: "opra"`, `provider: alpaca`, `delayed: false`,
+  sub-second, and the chain row matched the nested OPRA quote exactly — **F77 did not reproduce for a
+  fourth consecutive run**. F75/F79/F80 stay closed.
+- **Replay parity exact on all three** (SPY 12/12, QQQ 10/10, IWM 33/33, zero trades both ways).
+  Run 42's IWM `same_pullback` discrepancy was the predicted bar-boundary race and did not recur.
+- **What the read saw since 14:14.** IWM: `late_touch` at **14:16** (touch #4 of
+  `pm_break_down@10:30`, watch-only past the first two — D9/P6) and `same_pullback` at 14:20. QQQ:
+  nothing since the 14:02 `same_pullback` on its scenario 3 (bounce PDL, calls, target 717.47). SPY:
+  nothing since 12:28. Prices at 14:38: SPY 762.82, QQQ 716.43, IWM 291.08. **Day totals: 18
+  `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`, 4 `late_touch`, 0 fires.**
+- **Method sanity checked against the tape, not just the log.** Recomputed 2m bars and the 2m EMA13
+  from the DB: IWM's 14:12/14:16/14:20 touches are **real** (bar 14:16 O290.94 H291.13 L290.93
+  C291.11 straddles EMA13 291.01; 14:24 onward genuinely stops touching, and the read correctly
+  stops logging). QQQ's 13:15 flip to scenario 3 is **correct**: the 13:00–13:15 15m bar closed
+  **716.89**, above the 716.50 PDL-zone top, with `flip_body_ratio=0` so a close (not a body) is the
+  rule. EMA200 values are sane against price on all three (SPY 763.06 vs 762.70).
+- **F82 — NEW, the day's one real finding.** With no fire in nine sessions the contract picker had
+  never run, so this run exercised it **read-only** (live CBOE chain + `select_by_premium` + an OPRA
+  reprice; **no order, no plan touched**). Good news: the **mechanism works end-to-end** — same-day
+  expiry found, strike chosen, live tight OPRA quote returned (SPY 762P 0.20/0.21 · QQQ 717C
+  0.28/0.29 · IWM 291P 0.19/0.20). The finding is what it *chose*: at 14:38 ET, 81 minutes to
+  expiry, **exactly one OTM strike on each symbol still sits inside the `[0.20, 0.90]` premium band
+  — the first OTM strike, at ~$0.27, less than half the $0.60 target** (next strike out: $0.02–0.12,
+  under the floor). The premium rule has quietly become "buy the nearest OTM strike", with **no
+  delta guard** — IWM's pick priced **delta −0.51**, effectively ATM, a far faster instrument than
+  the morning ~$0.50 contract the calibration (B3) is built on. On the same decay the last in-band
+  strike drops under the floor around **15:10–15:25 ET**, *before* the 15:30 `last_entry_min` gate,
+  so late fires would start refusing with `skip_no_contract`. Also confirmed (F14's known mechanism,
+  quantified): selection reads the **delayed** CBOE ask while the fill reads OPRA, and today the
+  delayed asks were one-directionally ~$0.05 / ~20% high on all three.
+- **Proposed for the user (F82 — rules/thresholds, not built):** (a) leave it; (b) make
+  `target_premium` time-aware (scale with √time-to-expiry so the band tracks the author's morning
+  *moneyness*); (c) add a **delta band** beside the premium band (e.g. refuse |delta| > 0.45); or
+  (d) an explicit late-session entry cutoff instead of the accidental one at the $0.20 floor. The
+  honest fix for F14's half is to run **selection** on live OPRA, not only the reprice.
+- **The day's two blockers are unchanged** and already written up: SPY and IWM (which left their
+  pre-market range) are dead on the frozen target — **F76**/**F81**; QQQ (which never left it) is
+  blocked by V6's no-trade zone — **F56**. Both are rules questions for the user.
+- **UI:** `/team2` and `/api/team2/status` both 200. The full page render was **not** re-verified
+  this run — the browser cookie handoff was blocked by the sandbox — but run 42 verified it green on
+  this identical build 25 minutes earlier and nothing has deployed since. `restart-check` reports
+  `safe: true`.
+- **Next run (15:00–15:30 ET) should:** (1) watch the **14:45 prime-close window**, the day's last
+  real chance, and **QQQ's scenario 3** (the only symbol with a live target — it needs price out of
+  713.50–720.67 to be takeable at all); (2) **test F82's prediction directly** — re-measure the
+  in-band strike count around 15:10–15:25 and record whether the band empties before the 15:30
+  last-entry gate; (3) mind the **15:30 last-entry / 15:45 flatten** 0DTE gates; (4) confirm bar
+  provenance stays `exchange` and the 15:45 flatten runs clean on an empty book. **No restart
+  queued** — the desk is current at v0.7.30. Still open for the user: **F47**, **F49**, **F50**,
+  **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**,
+  **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**,
+  **F81**, **F82**, F67's two shared-side halves, and the F30-family question of which premium
+  series is authoritative.
+
+## 2026-09-09 15:15 ET (run 44 — F82's decay prediction CONFIRMED on the live chain; its reporting half fixed as v0.7.31; new F83)
+
+- **Alive and clean.** `/api/health` ok, **v0.7.30** running, armed 73. SPY `e4d39d00`, QQQ
+  `9a1094ed`, IWM `e87e4ad2` all `armed`, `complete: true` (pmh/pml/dayType/sizingAtOpen present),
+  `needsAttention` false, mode **auto** on Team2 Practice `b9dcd8db…`, **zero trades, zero open
+  positions**, ninth session. Quote age 0.1–0.3 s, session `regular`, bar age 92 s, window
+  `prime_close`. `restart-check` `safe: true`.
+- **Data real-time and provenance-clean.** 334/334 RTH 1m rows per symbol 09:30–15:03, **all
+  `source='exchange'`**, zero `sampled`/`unknown`/`sim`, **zero zero-volume rows, zero interior
+  gaps** on all three.
+- **Replay parity exact on all three**: SPY 12/12, QQQ 10/10, IWM 34/34, zero trades both ways.
+- **What the read saw since 14:38.** IWM only: `late_touch` at **15:02** (touch #4 of
+  `pm_break_down@10:30`, watch-only past the first two — D9/P6). QQQ nothing since its 14:02
+  `same_pullback` on scenario 3; SPY nothing since 12:28. Prices at 15:16: SPY 763.16, QQQ 716.48,
+  IWM 290.79. **Day totals: 18 `skip_target_behind`, 5 `skip_no_trade_zone`, 2 `skip_engulfing`,
+  5 `late_touch`, 0 fires.**
+- **F82 CONFIRMED, and the band empties 25 minutes EARLIER than the gate.** Run 43 predicted from
+  decay that the last in-band strike would drop under the $0.20 floor around 15:10–15:25 ET.
+  Re-measured **read-only at 15:05 ET** (54 min to expiry) on the live CBOE chain, each symbol on its
+  own live direction — **no order, no plan touched**: **SPY 0 in-band strikes, IWM 0 in-band strikes**,
+  `select_by_premium` returns `None` on both, so any fire from ~15:05 on is a `skip_no_contract`
+  refusal. (SPY puts 762/761/760 = 0.15/0.06/0.04 · IWM puts 290/289/288 = 0.04/0.02/0.01.) The
+  desk's **effective** last-entry on a quiet day is ~15:00, not the configured 15:30, and nothing in
+  the plan, the headline or the gate says so. **QQQ sharpens the delta half:** 2 in band (716 @ 0.77,
+  717 @ 0.26) and "closest to $0.60" picked **716 @ 0.77 — delta 0.63**, drifting from run 43's
+  −0.51 to +0.63 in 27 minutes. A fixed *price* band on a decaying chain can only be met by moving
+  toward the money. Options (a)–(d) in F82 remain the user's call; (d) now has a measured cost.
+- **Fixed and released: F82's reporting half (v0.7.31, commit `4fa1cab`).** Both refusal strings —
+  the live runner's error and the modelled read's `skip_no_contract` note — said no strike priced
+  *"between $0.20 and $0.60"*, while **both** pickers accept `[floor, 1.5 × target] = [0.20, 0.90]`:
+  a note understating the accepted band by 50%, the same class of defect as F76. The edge is now a
+  named constant on each side (`options.pick.MAX_OVER_TARGET`, `team2.premium.MAX_OVER_TARGET` —
+  previously a hard-coded 1.5 in the model), both strings quote it and name the target beside it, and
+  a new test pins the two constants equal and the prose to the band. **119 Team2 tests pass**;
+  `npm run check-release` and the frontend build green. **Reporting only** — no band, threshold, gate,
+  size or money path changed.
+- **DEPLOY QUEUED, deliberately not taken.** The commit is on the branch at v0.7.31 but the desk is
+  still serving 0.7.30. A prose-only fix is worth nothing in the last 40 minutes of the session, and
+  a restart spanning the **15:30 last-entry** and **15:45 flatten** gates with 73 armed plans (mostly
+  another desk's EM) is risk for no gain. **Deploy on the next run, after the 16:00 close.**
+- **F83 — NEW (labelling, not money).** The same 2m bar carries two different times: the read's
+  **events** are stamped with the bar's **close**, the snapshot's **`regime` block** with its
+  **start**. Proof: IWM's `late_touch` `time 15:02` `spot 290.8233` vs regime `ts` **15:00**
+  `ema13 290.8233` — one bar, two labels. It has now cost two watch runs a false alarm: this run's
+  first tape check evaluated IWM's touches under start-labelling and got **two phantom failures**;
+  re-checked under close-labelling, **all three of IWM's 14:12/14:16/15:02 touches satisfy the coded
+  rule** (`high >= ema13 − pm_tol_atr × atr and close < ema13`, tol ≈ 0.025). The touches are
+  correct — the labels are not. Written up with the three options in TRADING-RULES; **not built**
+  (it changes the read/snapshot contract and the UI, so it is the user's call).
+  **Working rule for future runs: an event's time is the 2m bar's CLOSE; the regime block's `ts` is
+  that bar's START.**
+- **Method sanity otherwise green.** QQQ's scenario 3 (bounce PDL, calls, target 717.47) still the
+  only symbol with a live target. EMA200 sane vs price on all three. The engine log has **no
+  traceback** and one non-Team2 warning kind since the 14:12 ET boot: 274 × `persist_bars: dropped N
+  non-bucket-aligned stub bar(s)`. **Not new (first seen 2026-09-08 16:26) and not Team2** — it is the
+  shared F75 guard refusing stub bars, and Team2's own tape is complete (334/334, zero gaps), so
+  nothing is being lost here. Noted for the platform owners as **noise, not breakage**: ~2 warnings a
+  minute is enough to bury a real one.
+- **UI green.** `/team2` renders on 0.7.30 with all three plans, correct sheets, ARMED status, the
+  0DTE line ("entries until 15:30, flat by 15:45") and the armed count 73.
+- **Next run (15:45–16:15 ET, after the close) should:** (1) **deploy v0.7.31** (`4fa1cab`) via the
+  scheduler task `ZargarRestart` once the book is flat — check `restart-check` first; (2) confirm the
+  **15:45 flatten** ran clean on an empty book and the session closed with 0 trades on the tenth
+  session; (3) record the day's final totals and whether QQQ's scenario 3 ever left 713.50–720.67;
+  (4) re-confirm bar provenance stays `exchange` through the close. Still open for the user: **F47**,
+  **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**,
+  **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's
+  rule question**, **F81**, **F82** (now with confirmed evidence), **F83**, F67's two shared-side
+  halves, and the F30-family question of which premium series is authoritative.
 ## Desk record 2026-09-09 14:00–14:40 ET — Codex review of PRs 33–45 (v0.7.30)
 
 - The reviewer reproduced ten gaps with twelve regressions at a3885a9. All fixed; the regression file is now

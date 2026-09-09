@@ -1,6 +1,7 @@
 {
   "name": "zargar-frontend",
   "private": true,
+  "version": "0.7.31",
   "version": "0.7.30",
   "type": "module",
   "scripts": {
