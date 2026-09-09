@@ -23,6 +23,7 @@ def _gw(tmp_path, em: dict, tip_watch: dict):
 
     async def fake_mirror(http, headers, records):
         mirrored.extend(records)
+        return True
 
     async def fake_ingest(http, headers, msg, source_name):
         ingested.append(source_name)
@@ -34,6 +35,16 @@ def _gw(tmp_path, em: dict, tip_watch: dict):
     return gw, fwd, mirrored, ingested
 
 
+def _deliver(gw, msg):
+    """Drive one message through the gateway-envelope path (2026-09-09: the
+    old inline _on_message became enqueue -> worker _process_envelope)."""
+    gw._queue = asyncio.Queue(10)
+    gw._enqueue("create", msg)
+    if not gw._queue.empty():
+        env = gw._queue.get_nowait()
+        asyncio.run(gw._process_envelope(None, {}, env))
+
+
 def _msg(cid: str, text: str = "watch NVDA below 216.21") -> dict:
     return {"id": "555", "channel_id": cid, "guild_id": "836435995854897193",
             "author": {"id": "1", "username": "em", "bot": False}, "content": text,
@@ -43,7 +54,7 @@ def _msg(cid: str, text: str = "watch NVDA below 216.21") -> dict:
 def test_em_channel_forwards_to_em_inbox_and_never_touches_tips(tmp_path):
     em = {"em1": {"channelId": "em1", "label": "em-alerts"}}
     gw, fwd, mirrored, ingested = _gw(tmp_path, em, tip_watch={})
-    asyncio.run(gw._on_message(_msg("em1"), None, {}))
+    _deliver(gw, _msg("em1"))
     assert fwd == [("555", "em-alerts")]
     assert mirrored == [] and ingested == []          # not a tip channel: tip path untouched
 
@@ -52,13 +63,13 @@ def test_channel_in_both_sets_feeds_both_independently(tmp_path):
     em = {"c9": {"channelId": "c9", "label": "watchlists"}}
     tip = {"c9": {"channelId": "c9", "sourceName": "eva", "enabled": True}}
     gw, fwd, mirrored, ingested = _gw(tmp_path, em, tip)
-    asyncio.run(gw._on_message(_msg("c9"), None, {}))
+    _deliver(gw, _msg("c9"))
     assert len(fwd) == 1 and len(mirrored) == 1 and ingested == ["eva"]
 
 
 def test_non_em_channel_is_not_forwarded(tmp_path):
     gw, fwd, _, _ = _gw(tmp_path, {"em1": {"channelId": "em1"}}, {})
-    asyncio.run(gw._on_message(_msg("other"), None, {}))
+    _deliver(gw, _msg("other"))
     assert fwd == []
 
 

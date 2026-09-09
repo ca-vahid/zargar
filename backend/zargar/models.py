@@ -643,6 +643,7 @@ class DiscordMessage(Base):
     images: Mapped[list] = mapped_column(JSONVariant, default=list)          # original CDN URLs
     local_images: Mapped[list] = mapped_column(JSONVariant, default=list)    # filenames in discord_media/
     posted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), index=True)
+    edited_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))  # newest revision seen (gateway envelope, 2026-09-09)
     received_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

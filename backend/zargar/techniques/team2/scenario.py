@@ -51,6 +51,26 @@ def body_closed_beyond(bar: Bar, level: float, direction: str) -> bool:
     return bar.close > level if direction == "long" else bar.close < level
 
 
+def target_is_ahead(target: float | None, spot: float | None, direction: str) -> bool:
+    """F72 (2026-09-09): a profit target is only a target if it sits AHEAD of the entry in the
+    trade's own direction — strictly above for a long, strictly below for a short.
+
+    A gap that opens THROUGH the zone leaves the planned level behind price before the 15m
+    confirmation even arrives (SPY 2026-09-09: `scenario_4 break PDL` armed with target 764.75
+    while SPY traded 763.7). Both target tests are "touched" tests — `b2.low <= target` on the
+    2m close, `last <= target` on the live quote watch — so a target at or behind the entry is
+    hit by definition, closing the position on its first bar or its first print. For a SHORT a
+    target ABOVE the entry is a LOSS, and it would be booked under a "target reached" label.
+
+    `None` means "no target": stops, trims and the flatten still manage the trade, so it is
+    allowed and returns True. A missing spot cannot be judged, so it is allowed too — the
+    caller's other gates own that case.
+    """
+    if target is None or spot is None:
+        return True
+    return target > spot if direction == "long" else target < spot
+
+
 @dataclass
 class Bias:
     scenario: int | None = None          # 1..4 or None
@@ -138,6 +158,6 @@ def confirmed_break(bars15m: list[Bar], level: float, direction: str) -> Bar | N
     return None
 
 
-__all__ = ["classify_day", "sizing_bucket", "body_closed_beyond", "Bias", "ScenarioTracker", "confirmed_break",
+__all__ = ["classify_day", "sizing_bucket", "body_closed_beyond", "target_is_ahead", "Bias", "ScenarioTracker", "confirmed_break",
            "SCENARIO_LABEL", "SCENARIO_DIRECTION", "TREND_SCENARIOS", "DAY_GAP_UP", "DAY_GAP_DOWN", "DAY_INSIDE",
            "DAY_NORMAL"]
