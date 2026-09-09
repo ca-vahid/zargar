@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.22";
+export const APP_VERSION = "0.7.25";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,39 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.25",
+    date: "2026-09-09",
+    title: "No room means no trade, at both gates",
+    items: [
+      { tag: "fixed", text: "A Team2 entry whose profit target had no room left is now refused by the live runner too, not quietly entered without any target at all. An invalid target and no target are different things, and only the second one was ever allowed." },
+      { tag: "new", text: "Team2 can optionally re-plan a stale target instead of refusing the trade: it picks the next structural level beyond current price and re-checks it at the entry itself. Off by default - it is there to be measured against the refusal, not adopted yet." },
+    ],
+  },
+  {
+    version: "0.7.25",
+    date: "2026-09-09",
+    title: "Saying \"already through\" out loud",
+    items: [
+      { tag: "fixed", text: "The Team2 plan line that was supposed to say a level is already broken never actually said it: the wording was keyed to a label the desk does not use, so every break setup fell back to a bare percentage. Break rows now read \"price is already through, waiting on the 15m close\"." },
+    ],
+  },
+  {
+    version: "0.7.24",
+    date: "2026-09-09",
+    title: "A target you have already passed is not a target",
+    items: [
+      { tag: "fixed", text: "Team2 no longer takes an entry whose profit target sits at or behind the entry price. A gap that opens straight through the zone leaves the planned level behind price, and because both target checks are touched checks, that trade would have closed on its first bar or its first live quote - booking a loss under a target reached label. The setup now says so instead of trading." },
+    ],
+  },
+  {
+    version: "0.7.23",
+    date: "2026-09-09",
+    title: "Through the level, not away from it",
+    items: [
+      { tag: "fixed", text: "A Team2 plan whose price had already broken through its PDH/PDL zone still read as a percentage \"away\" from it - and with the sign inverted, so a level already broken looked further off than one not reached yet. It now says the price is already through and the desk is waiting on the 15m close." },
+    ],
+  },
   {
     version: "0.7.22",
     date: "2026-09-09",

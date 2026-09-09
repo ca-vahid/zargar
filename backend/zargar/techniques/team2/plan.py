@@ -24,7 +24,7 @@ from ...marketstructure.aggregate import aggregate, bar_session, filter_session
 from ...marketstructure.dailylevels import premarket_range, prior_day_zones
 from ...marketstructure.market_calendar import previous_trading_day
 from ...marketstructure.sessions import session_date
-from .levels import level_sheet, targets_beyond
+from .levels import level_ladder, level_sheet, targets_beyond
 from .rules import Team2Rules
 from .scenario import classify_day, sizing_bucket
 
@@ -48,11 +48,15 @@ def build_skeleton(symbol: str, date: str, prev_bars_15m: list[Bar], rules: Team
     if zones is None:
         return None
     targets = targets_beyond(rth, zones, lookback_sessions=rules.target_lookback_sessions)
+    # F72: the same pivots, unfiltered by the zone, so `target_replan` can pick the next structural
+    # level beyond CURRENT PRICE at entry time. Data only — nothing reads it unless the knob is on.
+    ladder = level_ladder(rth, zones, lookback_sessions=rules.target_lookback_sessions)
     return {
         "technique": "team2", "symbol": symbol.upper(), "date": date, "version": PLAN_VERSION,
         "prevSession": prev,
         "zones": {"pdh": zones["pdh"].to_dict(), "pdl": zones["pdl"].to_dict()},
         "targets": {"above": targets["above"], "below": targets["below"]},
+        "levelLadder": ladder,
         "pmh": None, "pml": None, "dayType": None, "openPrice": None, "sizingAtOpen": None,
         "sheet": level_sheet(symbol.upper(), zones, None, None, targets),
         "complete": False, "thresholds": rules.to_dict(),

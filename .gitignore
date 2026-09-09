@@ -33,3 +33,6 @@ backend/discord_toasts.jsonl
 docs/techniques/team2/notes/x/images/*.jpg
 backend/finpages.txt
 /logs/
+
+# launcher log written when scripts/run-hidden.vbs is run from a checkout (normally lives in C:/ProgramData/Zargar)
+scripts/run-hidden.log

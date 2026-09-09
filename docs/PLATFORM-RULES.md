@@ -570,6 +570,14 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
   from their own shell; never `Stop-Process` :8420. Verified 2026-09-08 16:54 ET: engine pid's parent chain ends in the
   scheduler, not `claude.exe`; a full restart took 30 s; the tick that landed during it exited 0.
   Log: `backend/zargar-8420.log` rotates 50 MB × 10, `httpx` at WARNING, start/stop lines with pid (F69).
+  **Windowless tick (2026-09-08 evening):** the plain `powershell -File` task action allocated a visible console every
+  3 minutes (a cmd window flashing on the desktop — unusable). `ZargarWatchdog`/`ZargarWatchdogLogon` now run through
+  `wscript.exe //B //Nologo C:\ProgramData\Zargar\run-hidden.vbs <watchdog.ps1>` (source `scripts/run-hidden.vbs`,
+  copied by the installer; `install-watchdog.ps1 -ScriptsDir` registers against another checkout; the installer
+  no longer re-creates an existing `ZargarRestart`, which desks re-point at `restart.ps1 -Expect`). `ZargarRestart`
+  stays visible on purpose. Re-run the installer after changing either script. Lesson: an assistant's shell sees a
+  VIRTUALIZED user profile (`%LOCALAPPDATA%` writes never reach the real disk — a task pointed there fails with
+  result 1 and no output) and cannot launch `schtasks.exe`; use the `*-ScheduledTask` cmdlets and machine-wide paths.
 - 2026-09-08 · **Invariant 16 — a recomputed read never re-acts.** A technique that recomputes its whole session read
   every bar (Team2 `simulate_session`) must recognise acted-on events by a content fingerprint (ts · event · setup ·
   touch · why), never by list position, and must log once (`read_rewritten`) when earlier fingerprints disappear. Any
