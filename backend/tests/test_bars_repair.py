@@ -77,7 +77,7 @@ async def test_audit_quarantine_and_backfill(fresh_db, monkeypatch):
     dry = await cmd_quarantine(sf, reason="closed_day", symbols=["TST"], date_from=None, date_to=None, apply=False, note="")
     assert dry["applied"] is False and len(await load_bars(sf, "TST", "1m", limit=100000)) == len(db_rows)
     done = await cmd_quarantine(sf, reason="closed_day", symbols=["TST"], date_from=None, date_to=None, apply=True, note="test")
-    assert done["applied"] and done["rows"] == len(sat) + len(labor) == done["deleted"]
+    assert done["applied"] and done["rows"] == len(sat) + len(labor) == done["deleted"] and done["missingAtApply"] == []
     left = await load_bars(sf, "TST", "1m", limit=100000)
     assert {b.ts for b in left} == {r["ts"] for r in real + walk + flat_trading + spike + auction}
     async with sf() as s:
@@ -113,9 +113,22 @@ async def test_audit_quarantine_and_backfill(fresh_db, monkeypatch):
     res = await cmd_backfill(sf, symbols=["TST"], all_symbols=False, date_from="2026-09-08", date_to="2026-09-08", pace=0, fetch=fake_fetch)
     st = res["symbols"]["TST"]
     assert st["changed"] == len(spike) + 1 and st["added"] == 1 and st["sources"] == {"exchange": len(spike) + 1, "sampled": 1}   # +1: the zeroed orphan
-    assert st["volumeZeroed"] == 1
+    assert st["volumeZeroed"] == 1 and st["provider"] == "alpaca" and st["coveredDays"] == ["2026-09-08"]
     orphan_row = [b for b in await load_bars(sf, "TST", "1m", limit=100000) if b.ts == orphan_ts][0]
     assert orphan_row.volume == 0 and orphan_row.source == "sampled"
+    # a PARTIAL venue answer (a handful of bars) covers nothing and zeroes nothing (R5)
+    async with sf() as s_:
+        await s_.execute(update(BarRow).where(BarRow.symbol == "TST", BarRow.ts == orphan_ts).values(volume=7_000_000, source="sampled"))
+        await s_.commit()
+
+    async def partial_fetch(symbol, tf, start_ms, end_ms, *, session="ext", **kw):
+        return [Bar(symbol=symbol, tf="1m", ts=r_["ts"], open=r_["open"], high=r_["high"], low=r_["low"], close=r_["close"], volume=812)
+                for r_ in spike[:5]]
+
+    res2 = await cmd_backfill(sf, symbols=["TST"], all_symbols=False, date_from="2026-09-08", date_to="2026-09-08", pace=0, fetch=partial_fetch)
+    st2 = res2["symbols"]["TST"]
+    assert st2["volumeZeroed"] == 0 and st2["uncoveredDays"] == ["2026-09-08"]
+    assert [b for b in await load_bars(sf, "TST", "1m", limit=100000) if b.ts == orphan_ts][0].volume == 7_000_000
     fixed = [b for b in await load_bars(sf, "TST", "1m", limit=100000) if b.ts == spike[400]["ts"]][0]
     assert fixed.volume == 812 and fixed.source == "exchange"
     v_after = await dataset_version(sf, ["TST"], start="2026-09-08", end="2026-09-08", record=False)

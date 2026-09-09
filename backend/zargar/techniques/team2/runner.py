@@ -40,6 +40,7 @@ from ...execution.planrunner import ArmedPlan, FireJudgement, PlanRunner, Trade
 from ...marketstructure.aggregate import bar_session, bucket_start_ms, minute_of_day
 from ...marketstructure.sessions import ET, session_bounds, session_date
 from ...models import TechniqueRun
+from ...options.pick import MAX_OVER_TARGET
 from .rules import Team2Rules, rules_from_settings
 from .scenario import target_is_ahead
 from .session import simulate_session
@@ -188,7 +189,8 @@ class Team2Runner(PlanRunner):
                                      is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick)
             if pick is None:
                 trade.errors.append(f"no {'call' if trade.direction == 'long' else 'put'} between "
-                                    f"${rules.premium_floor:.2f} and ${rules.target_premium:.2f} at {expiry}")
+                                    f"${rules.premium_floor:.2f} and ${rules.target_premium * MAX_OVER_TARGET:.2f} "
+                                    f"(target ${rules.target_premium:.2f}) at {expiry}")
                 return None
             c = pick.to_dict()
             with contextlib.suppress(Exception):
@@ -1108,10 +1110,13 @@ class Team2Runner(PlanRunner):
             # $0.20 floor) while the real 296C was 0.24/0.25, and the headline said only "touches 1".
             floor_s = getattr(rules_now, "premium_floor", 0.20)
             targ_s = getattr(rules_now, "target_premium", 0.60)
+            # F82 (2026-09-09): the band's upper edge is 1.5x the target, not the target — saying
+            # "$0.20–$0.60" understated the accepted range by 50%.
+            band_s = targ_s * MAX_OVER_TARGET
             skip_why = {"skip_no_trade_zone": "the last pullback sat inside the pre-market range — no-trade zone (V6/B5)",
                         "skip_range_confirmation": "range day: price has not cleared the PM level (B3/A4)",
-                        "skip_no_contract": f"the last pullback found no strike MODELLING ${floor_s:.2f}–${targ_s:.2f} (V1) — "
-                                            "modelled premium, not the live chain",
+                        "skip_no_contract": f"the last pullback found no strike MODELLING ${floor_s:.2f}–${band_s:.2f} "
+                                            f"(target ${targ_s:.2f}, V1) — modelled premium, not the live chain",
                         # F72 (2026-09-09): the same F57/F59 lesson — a refusal the headline never
                         # states is a refusal the desk cannot see. This one holds for the rest of the
                         # session unless price comes back through the level.

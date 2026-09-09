@@ -43,6 +43,8 @@ $stateBefore = $null
 $engineUp = $false
 try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $engineUp = $true } catch { $engineUp = $false }
 if ($engineUp) {
+  # R1: suspend NEW entries (self-expiring, 5 min) before the inventory is captured, so nothing starts between the check and the stop
+  try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { }
   try { $stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $stateBefore = $null }
   # an older engine answers the SPA shell (or nothing): no state, no restoration check
   if (-not ($stateBefore -is [System.Management.Automation.PSCustomObject]) -or -not ($stateBefore.PSObject.Properties.Name -contains "armed")) { $stateBefore = $null }
@@ -53,10 +55,14 @@ if ($engineUp) {
     }
     if (-not $rc.safe) {
       foreach ($r in $rc.reasons) { Warn ("in flight: " + $r) }
-      if (-not $Force) { Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; exit 2 }
+      if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; exit 2 }
       Warn "-Force: restarting over the work listed above (override)"
     }
-  } catch { Warn ("restart-check unavailable (" + $_.Exception.Message + ") - proceeding on the health check alone") }
+  } catch {
+    Warn ("readiness unavailable (" + $_.Exception.Message + ") - missing evidence is not a safe inventory")
+    if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Fail "Not safe to restart: the engine could not report what is in flight. Wait, or run again with -Force (an override, journaled)." 2 }
+    Warn "-Force: restarting without a readiness answer (override)"
+  }
 }
 
 # --- 0. hold the watchdog off ---------------------------------------------------

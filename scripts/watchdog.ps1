@@ -33,6 +33,8 @@ if (Test-Path $lock) {
 # --- readiness + the state to compare against after the restart (only when something is running)
 $before = $null
 if ($up) {
+  # R1: suspend NEW entries (self-expiring, 5 min) before the inventory is captured, so nothing starts between the check and the stop
+  try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { }
   try { $before = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $before = $null }
   # an older engine answers the SPA shell (or nothing): no state, no restoration check
   if (-not ($before -is [System.Management.Automation.PSCustomObject]) -or -not ($before.PSObject.Properties.Name -contains "armed")) { $before = $null }
@@ -44,9 +46,12 @@ if ($up) {
     if (-not $rc.safe) {
       $why = ($rc.reasons -join "; ")
       if ($Override) { Log ("OVERRIDE: restarting over in-flight work: " + $why) }
-      else { Log ("REFUSED restart: " + $why + "  (use ZargarRestartOverride / -Override for an emergency)"); exit 2 }
+      else { Log ("REFUSED restart: " + $why + "  (use ZargarRestartOverride / -Override for an emergency)"); try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; exit 2 }
     }
-  } catch { Log ("restart-check unavailable (" + $_.Exception.Message + ") - proceeding on the health check alone") }
+  } catch {
+    if ($Override) { Log ("OVERRIDE: readiness unavailable (" + $_.Exception.Message + ") - restarting anyway") }
+    else { Log ("REFUSED restart: readiness unavailable (" + $_.Exception.Message + ") - missing evidence is not a safe inventory; use -Override"); try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; exit 2 }
+  }
 }
 Set-Content -Path $lock -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 Log ("engine " + $(if ($Force) { "restart requested" } else { "DOWN - no answer on :8420" }) + " -> start.ps1 -Detach" + $(if ($Override) { " -Force" } else { "" }))

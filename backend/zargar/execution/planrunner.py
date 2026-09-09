@@ -36,7 +36,7 @@ from sqlalchemy import select
 
 from .. import bus as topics
 from .. import events as ev
-from ..domain import Bar, new_id  # noqa: F401
+from ..domain import now_ms, Bar, new_id  # noqa: F401
 from ..marketstructure.rules import DEFAULT_MARKET_RULES, MarketRules
 from ..marketstructure.sessions import (
     ET,
@@ -2202,6 +2202,13 @@ class PlanRunner(SessionListener):
     async def _fire_rest(self, ap: ArmedPlan, tid: str, tr: TriggerTracker, bar: Bar, idx: int, trade: Trade,
                          *, journal: bool) -> None:
         window, cfg = trade.window, ap.config
+        # R1 (2026-09-09): a restart is pending — no NEW money-mode entry starts its chain (contract pick,
+        # review, order); exits and alert-only reads are untouched. Self-expiring on the engine side.
+        if journal and cfg.mode in ("proposal", "auto") and int(getattr(self.engine, "quiesce_until_ms", 0) or 0) > now_ms():
+            trade.status = "skipped"
+            trade.reason = "restart quiesce: no new entries while a restart is pending"
+            self._log(ap, "quiesced_skip", f"{tid}: {trade.reason}", trigger=tid)
+            return
         # A8 — pick the contract BEFORE the judge, so it judges the vehicle
         # (spread / IV / delta / DTE) and not just the chart; the order path reuses it
         if journal and cfg.instrument == "options" and cfg.mode in ("proposal", "auto"):

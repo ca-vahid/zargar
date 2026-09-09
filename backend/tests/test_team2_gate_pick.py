@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from types import SimpleNamespace
 
 from zargar.options.pick import select_by_premium
 from zargar.techniques.base import all_techniques, get_technique
@@ -97,3 +98,28 @@ def test_registry_lists_team2():
     info = get_technique("team2")
     assert info is not None and info.settings_prefix == "techniques.team2." and info.page == "team2"
     assert "team2" in {t.id for t in all_techniques()}
+
+
+def test_the_stated_premium_band_matches_the_band_the_pickers_accept():
+    """F82 (2026-09-09): the refusal prose said "between $0.20 and $0.60" while both pickers accept
+    up to 1.5x the target ($0.90) — a note that understated the accepted range by 50%. The two
+    pickers' edges must also stay equal, or the modelled and live paths take different strikes."""
+    from zargar.options.pick import MAX_OVER_TARGET as LIVE_EDGE
+    from zargar.techniques.team2.premium import MAX_OVER_TARGET as MODEL_EDGE
+
+    assert LIVE_EDGE == MODEL_EDGE == 1.5
+
+    today = dt.date(2026, 9, 3)
+    # An ask ABOVE the target but inside 1.5x is accepted — so prose naming $0.60 as the edge is wrong.
+    chain = _chain(768.4, {769: 0.85, 770: 0.12, 771: 0.05})
+    pick = select_by_premium(chain, 768.4, "long", target_premium=0.60, premium_floor=0.20,
+                             expiry="2026-09-03", today=today, is_0dte=True)
+    assert pick is not None and pick.ask == 0.85 and pick.ask > 0.60 * 1.0
+    assert pick.ask <= 0.60 * LIVE_EDGE
+
+    # And the two refusal strings quote the real edge, not the target.
+    rules = SimpleNamespace(premium_floor=0.20, target_premium=0.60)
+    band = rules.target_premium * MODEL_EDGE
+    stated = (f"no strike MODELS between ${rules.premium_floor:.2f} and ${band:.2f} "
+              f"(target ${rules.target_premium:.2f}, V1)")
+    assert "$0.90" in stated and "$0.20" in stated and "target $0.60" in stated

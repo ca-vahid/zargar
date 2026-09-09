@@ -694,7 +694,18 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
   The V6 ladder has three rungs — `full` beyond the prior-day zones, `small` between a prior-day zone
   and the PM level, `none` inside the PM range — but when the PM range **contains** yesterday's zones
-  the middle rung is geometrically empty and everything collapses to `none`. **Proposed** (same shape
+  the middle rung is geometrically empty and everything collapses to `none`. **Confirmed again, at the
+  extreme, on 2026-09-09 (watch run 41, 13:45 ET): QQQ spent 246 of 246 RTH minutes — 100% — inside
+  its own pre-market range** (713.50–720.67, width 7.18 = **21.8× the 2m ATR** of 0.329), with its PDL
+  zone 715.57–716.50 wholly inside it and its PDH zone 717.47–721.89 straddling the top. All three
+  scenarios the tape produced were refused on arrival — scenario 2 at 11:10 (entry 716.03), scenario 4
+  at 11:32 (715.41) and the fresh scenario 3 at 13:34 (716.28), each `skip_no_trade_zone`. QQQ printed
+  no PM break, so F20's carve-out — the only thing that rescued 2026-09-08 — never applied and the
+  symbol was untradeable by construction for a whole session. SPY (17.6× ATR, 61% of closes inside)
+  and IWM (17.6×, 20%) did escape their ranges, and were then blocked by the frozen-target arithmetic
+  instead (**F76**/**F81**). Between the two mechanisms they account for 23 of today's 25 refusals
+  (18 `skip_target_behind`, 5 `skip_no_trade_zone`); the remaining 2 are genuine method refusals
+  (`skip_engulfing`, A6/F4). **Proposed** (same shape
   as F20, Team2-local, one function): when the entry sits within the touch tolerance of a **prior-day
   zone edge**, bucket it `small` rather than `none` — a tested structural line is not the middle of
   the chop, whichever side of the overnight range it happens to fall on. Optionally gate the whole
@@ -1287,6 +1298,18 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   775–779 → 766–772, exchange source), print-less minutes' volumes zeroed (SPY 644 / IWM 107 / QQQ 51). Dataset identity:
   pre `0155fbe4247ee049…` (67,780 rows) → FINAL `a00ecad1ef7fddd3…` (55,219 rows); Team2 audit after the repair: no flags.
   Full shared record in PLATFORM-RULES 2026-09-09.
+- **F72 addendum 3 — re-measured on FROZEN clean inputs with the review-fixed sweep (2026-09-09 14:30 ET, in-process,
+  the running desk untouched; dataset `600a8d75294d47d4…` = the validated tapes actually consumed, 52,877 rows; 13
+  trading dates 2026-08-20..09-08 × 3 symbols = 39 SYMBOL-sessions, not 39 sessions — the review's correction).**
+  Same numbers as addendum 2 (the repair had already removed every closed-day row, so validation excluded nothing):
+  baseline 37 trades / 15 wins / wr 0.405 / +247.7 pnl%-sum; `target_replan=entry` 45 / 16 / 0.356 / +207.0 — a
+  −40.7 difference in SUMMED MODELLED TRADE PERCENTAGES, not a dollar or equity return. **Matched comparison:** 30
+  trades are shared (one changed outcome: IWM 08-28 scenario_4 −3.0 → −4.3 on the re-planned target); 6 exist only
+  in the variant (SPY 08-27 pm_break_up −2.1, SPY 08-28 scenario_1 −6.1, SPY 09-03 pm_break_up −40.4, QQQ 08-27
+  pm_break_up −11.8, QQQ 08-28 scenario_1 −6.3, QQQ 09-01 pm_break_down +39.5) and 1 only in the baseline (QQQ 08-28
+  scenario_2 −10.0). Verdict unchanged: `target_replan` stays off. Thirteen dates do not meet any twenty-session
+  milestone. F81's pre-open re-derivation is a separate candidate, to be tested on these frozen inputs with the
+  invalid-target guard kept; the pre-repair counterfactual is not performance evidence.
 - **F72 addendum 2 — re-measured on the clean, versioned dataset (2026-09-09 13:20 ET; sweep dataset
   `96129c00accdf882…`, 52,877 rows = SPY/QQQ/IWM history through 09-08; 39 sessions, 2026-08-20..09-08, SPY included
   for the first time).** Baseline: 37 trades, 15 wins, wr 0.405, +247.7 pnl%-sum (avg win +39.0 / avg loss −15.3);
@@ -1336,6 +1359,23 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   exclude the synthetic SPY block. Recommendation: **(b)** now as the honest interim, **(c)** only
   behind a measured variant. Nothing was built — mid-session, on an auto desk, this touches setup
   creation and therefore opportunity counting and grading.
+
+- **F76 addendum — the reporting half IS fixed (2026-09-09 13:45 ET watch, commit `05fb2b2`, deploy queued).**
+  The rule question above stays entirely open; only the misleading prose is gone. `session.py`'s
+  `pm_break` note said *"→ puts down to the PDL zone (L2.5/V7)"* whichever candidate the target
+  actually resolved to, so on a gap day it advertised a level the setup does not hold. It now states
+  the setup's own number and, when that number sits on the wrong side of the break, says so:
+  *"→ puts down to 764.75 — already behind the break, so this setup has no room (F76)"*. The note also
+  carries `target` in its payload, so the claim is machine-checkable against the setup rather than
+  read out of prose. Helper `_pm_break_target_says()`, mirrored long/short, `None` renders as
+  *"the next level (none on the plan)"*. **No target, size, gate, rule or money path changed** — a
+  dead setup is still minted and still refused by F72's entry guard. Test:
+  `test_pm_break_note_states_the_setups_own_target` (118 Team2 tests pass). Deploy queued for the next
+  restart rather than taken mid-session: it is reporting-only and the desk is in auto mode.
+  **DEPLOYED 2026-09-09 14:12 ET in v0.7.30** (run 42; the code commit `05fb2b2` carried no release
+  bump, so it could not ship under the versioning rule until `73495eb` bumped all five files).
+  Verified live on the tape: SPY 11:15 now reads *"→ puts down to 764.75 — already behind the break,
+  so this setup has no room (F76)"* with `target: 764.75` in the payload, IWM 10:45 the same at 293.56.
 
 - **F77 (2026-09-09 12:05 ET, NOT fixed — measured, low severity; the strike *pick* reads a chain
   row that can lag OPRA by one refresh cycle).** Sampling `GET /api/options/quote/<occ>` for the
@@ -1448,6 +1488,84 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   09:25 pre-open rather than at entry, which fixes the cause rather than the symptom. Nothing
   built and no setting changed — this watch does not move thresholds.
 
+- **F82 (2026-09-09 14:38 ET, NOT fixed — proposal; the $0.50–0.60 premium target silently
+  degrades to "the first OTM strike" as the day burns down, with no delta or time guard).**
+  `runner.pick_contract` → `options/pick.select_by_premium` selects, of the OTM contracts whose ask
+  lies in `[premium_floor 0.20, 1.5 × target_premium 0.60] = [0.20, 0.90]`, the one closest to
+  $0.60 (`premium_pick="closest"`, F36). That band is a *price* band with no reference to the time
+  left, so the strike it names drifts inward all session. **Measured read-only on today's live CBOE
+  chain at 14:38 ET (81 minutes to the 16:00 expiry), for each symbol's own live direction:** on
+  **all three**, exactly **one** OTM strike is inside the band — the *first* OTM strike — and its
+  ask is **~$0.27**, less than half the target; the next strike out is $0.04–$0.12, under the floor.
+  SPY puts 762/761/760 = 0.27/0.12/0.06 · QQQ calls 717/718/719 = 0.28/0.10/0.04 · IWM puts
+  291/290/289 = 0.27/0.04/0.02. So for the rest of the session the premium rule is not selecting a
+  ~$0.50 contract at all; it is buying the nearest OTM strike at whatever it costs, and the
+  **delta** it lands on is uncontrolled — IWM's pick priced **delta −0.51 on OPRA** (bid/ask
+  0.19/0.20), i.e. effectively at-the-money, a much faster instrument than the morning $0.50 pick
+  the method is calibrated on (B3). Extrapolating the same square-root-of-time decay, the last
+  in-band strike falls under the $0.20 floor at roughly **15:10–15:25 ET**, i.e. before the
+  `last_entry_min` 15:30 gate — after which every late fire would be a `skip_no_contract` refusal
+  the desk has never yet seen in the wild. **Also confirmed here (not new, this is F14's mechanism):**
+  selection reads the delayed CBOE ask while the fill reads OPRA — today the delayed asks ran
+  consistently ~$0.05 / ~20% high (SPY 0.26 vs 0.21, QQQ 0.33 vs 0.29, IWM 0.25 vs 0.20), a
+  one-directional bias, so the band is applied to numbers that are systematically stale-high.
+  **Why it has never been seen:** nine sessions, zero fires — the picker has never run in anger.
+  This check exercised it read-only (chain fetch + `select_by_premium` + an OPRA reprice, no order,
+  no plan touched) and the **mechanism works end-to-end**: same-day expiry found, a strike chosen,
+  a live tight OPRA quote returned on all three. **Proposed, for the user (a rules/threshold
+  question, not built):** (a) leave it — accept that a late entry is a nearer-the-money, cheaper
+  contract; (b) make the target time-aware (scale `target_premium` with √(time-to-expiry) so the
+  band tracks the same *moneyness* the author's morning $0.50 describes); (c) add a **delta band**
+  beside the premium band (e.g. refuse |delta| > 0.45) so a late pick cannot silently become ATM;
+  or (d) stop taking new entries once no strike remains inside the band with a margin — an explicit
+  cutoff rather than an accidental one at the floor. Whichever is chosen, the honest fix for F14's
+  half is to run the **selection** on the live OPRA quotes, not only the reprice.
+
+- **F82a (2026-09-09 15:05 ET, CONFIRMED on the live chain — the band empties 25 minutes BEFORE the
+  15:30 last-entry gate; the reporting half is FIXED in v0.7.31).** Run 43 predicted from decay that
+  the last in-band strike would fall under the $0.20 floor around 15:10–15:25 ET. Re-measured
+  read-only at **15:05 ET (54 minutes to expiry)** on the live CBOE chain, each symbol on its own live
+  direction: **SPY 0 in-band strikes, IWM 0 in-band strikes** — `select_by_premium` returns `None` on
+  both, i.e. any fire from 15:05 onward is a `skip_no_contract` refusal. (SPY puts 762/761/760 =
+  0.15/0.06/0.04 · IWM puts 290/289/288 = 0.04/0.02/0.01 — every OTM ask is already under the floor.)
+  So the prediction holds and is if anything **early**: the desk's effective last-entry time on a
+  quiet day is ~15:00, not the configured 15:30, and nothing in the plan, the headline or the gate
+  says so. **QQQ went the other way and sharpens the delta half of F82:** 2 strikes in band (716 @
+  0.77, 717 @ 0.26), and "closest to $0.60" picked **716 @ 0.77 — delta 0.63**, i.e. the pick drifted
+  from run 43's −0.51 to +0.63 in 27 minutes. The drift is monotone with time-to-expiry, because a
+  fixed *price* band on a decaying chain can only be met by moving toward the money. **Nothing about
+  the rule was changed** — options (a)–(d) in F82 remain the user's call, and (d) now has a measured
+  cost: the accidental cutoff arrives ~25 minutes before the deliberate one. **What was fixed** is
+  the reporting: both refusal strings said no strike priced "between $0.20 and $0.60" while both the
+  modelled (`premium.pick_strike`) and live (`options.pick.select_by_premium`) pickers accept
+  `[floor, 1.5 × target] = [0.20, 0.90]` — a note understating the accepted band by 50%, the same
+  class of defect as F76. Both now state the real edge and name the target beside it, the 1.5 is a
+  named constant on each side (`MAX_OVER_TARGET`), and a test pins the two constants equal and the
+  prose to the band. Reporting only — no band, gate, size or money path moved.
+
+
+- **F83 (2026-09-09 15:10 ET, NOT fixed — proposal; the same 2m bar carries two different times
+  depending on where you read it, and it has now cost two watch runs a false alarm).** The read's
+  **events** are timestamped with the bar's **close** (`note(end_ts, ...)` in `session.py`), while the
+  snapshot's **`team2.regime` block** timestamps the same bar by its **start**. Proof from today's
+  tape: IWM's `late_touch` event carries `time 15:02` with `spot 290.8233`, and the regime block
+  carries `ts 1788980400000` = **15:00** with `ema13 290.8233` — the identical EMA to four decimals,
+  i.e. one bar under two labels two minutes apart. **Why it matters beyond cosmetics:** anyone
+  checking a read against the tape — which is this watch's job every run — reconstructs 2m bars and
+  has no way to know which convention applies. Verified today: under **close**-labelling all three of
+  IWM's `late_touch` events (14:12, 14:16, 15:02) satisfy the coded rule
+  (`high >= ema13 - pm_tol_atr x atr and close < ema13`, tol ~0.025 on IWM); under start-labelling
+  two of the three evaluate **False**, which reads as a phantom touch. Run 43 checked 14:16 with a
+  looser straddle test and got the right answer for the wrong reason; this run got a false negative
+  and had to chase it. **The touches themselves are correct — this is a labelling defect, not a rule
+  defect, and no money path is affected.** **Proposed, for the user:** (a) label both by the bar's
+  close (matches how a trader speaks — "the 15:02 bar" is the one that just closed) and state the
+  convention in the API contract; (b) label both by the start; or (c) leave the values and add an
+  explicit `barStart`/`barClose` pair to each event and to the regime block so neither reader has to
+  guess. **Until it is decided, the rule for checking a Team2 read against the tape is: an event's
+  time is the 2m bar's CLOSE (bucket `[t-2m, t)`), the regime block's `ts` is that bar's START.**
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1458,6 +1576,39 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-09 (market watch, run 44, 15:15 ET — release v0.7.31, reporting only)** — **F82a**:
+  the `skip_no_contract` refusal (both the live runner's error and the modelled read's note) said no
+  strike priced "between $0.20 and $0.60", but both pickers accept up to **1.5× the target = $0.90**.
+  The band's upper edge is now a named constant on each side (`options.pick.MAX_OVER_TARGET` and
+  `techniques.team2.premium.MAX_OVER_TARGET`, previously a hard-coded 1.5 in the model), both strings
+  quote it and name the target beside it, and `test_the_stated_premium_band_matches_the_band_the_
+  pickers_accept` pins the two constants equal. 119 Team2 tests pass; frontend build and
+  `check-release` green. **No band, threshold, gate, size or money path changed.** Same run confirmed
+  F82's decay prediction on the live chain (SPY and IWM had **zero** in-band strikes at 15:05 ET,
+  25 minutes before the 15:30 gate) — that remains a rules question for the user, not a fix.
+
+- **2026-09-09 (market watch, run 42, 14:12 ET — release v0.7.30, reporting only)** — **F76's
+  reporting half DEPLOYED.** `05fb2b2` had been committed without a version bump, so the versioning
+  rule blocked it from shipping; `73495eb` bumps APP_VERSION/package.json/lockfile/`__init__`/
+  pyproject to **0.7.30** with the changelog entry, and the restart (scheduler task `ZargarRestart`,
+  restart-check `safe: true`, restore check **OK 71/71, openTrades 0/0, restingOrders 10/10**) put it
+  live at 14:12 ET with zero Team2 trades open. Both `pm_break` notes on today's tape now state their
+  own target and flag it as behind the break. **Replay parity is now exact on all three** — QQQ's
+  extra 12:14 `same_pullback` disappeared once the live read was recomputed on the repaired tape after
+  the restart, which is exactly what run 41 predicted, so that artifact is closed. No rule, threshold,
+  gate, size or money path changed.
+- **2026-09-09 (market watch, run 41, 13:45 ET — code change, reporting only; deploy queued)** —
+  **F76's reporting half fixed**: the `pm_break` note now states the setup's own target (and says when
+  that target is already behind the break) instead of always claiming "the PDH/PDL zone", and carries
+  `target` in its payload; new test `test_pm_break_note_states_the_setups_own_target`, 118 Team2 tests
+  pass. No rule, threshold, gate, size or money path changed; F76's rule question and F81 stay open for
+  the user. **F56 confirmed at its extreme**: QQQ spent 100% of the session inside a pre-market range
+  21.8× its 2m ATR and refused all three of its scenarios on `skip_no_trade_zone`. **F77 did not
+  reproduce** for a second consecutive run (chain row = nested OPRA quote exactly on all three 0DTE
+  ATM contracts). **F79/F80 stay closed** — 244/244 RTH minutes per symbol are `exchange`, zero
+  zero-volume rows, no gaps. Replay parity holds (SPY 12/12, IWM 26/26; QQQ's one extra 12:14
+  `same_pullback` is the known pre-repair-tape artifact). Ninth session, still zero fires.
 
 - **2026-09-09 (market watch, run 40, 13:05 ET — no code change, no setting change)** — **F79 and
   **F80 verified fixed** on today's live tape under v0.7.29 (214/214 RTH minutes `exchange`, no
@@ -1481,6 +1632,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   green** — the workaround is to set the `zargar_session` cookie in the browser (`?token=` does not
   authenticate the SPA route); Plans and Armed tabs both render all three plans with correct
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
+- **2026-09-09 (14:00–14:40 ET — Codex review of the repair, v0.7.30)** — ten findings / twelve regressions fixed
+  (PLATFORM-RULES 2026-09-09: readiness blocks on unknown inventory and in-flight fire chains, quiesce before the
+  capture, managed positions reconciled by id, interior-minute recovery, one venue-merge policy, provider-named
+  backfill with per-day coverage, transactional quarantine, sweeps validate warm-up and hash what they consume,
+  seed baseline, empty-history guard); the reviewer's regression file is in the suite. F72 re-measured on frozen
+  inputs with a matched comparison (addendum 3); wording corrected to 13 dates × 3 symbols. No method, size or gate
+  knob changed; `target_replan` stays off.
 - **2026-09-09 (12:26–13:20 ET — F75 repair executed, v0.7.28 → v0.7.29, five scheduler restarts)** — repair record and
   the clean-set F72 rerun above (baseline +247.7 vs variant +207.0 on `96129c00…`; `target_replan` stays off); F79/F80
   (Yahoo provisional minutes, the lost boot minute) fixed in v0.7.29 and verified by the 13:05 watch; nothing in the

@@ -123,10 +123,11 @@ def _parse(symbol: str, tf: str, data: dict) -> list[Bar]:
         c = closes[i] if i < len(closes) else None
         if o is None or h is None or lo is None or c is None:
             continue
-        v = vols[i] if i < len(vols) and vols[i] is not None else 0
+        if i >= len(vols) or vols[i] is None:
+            continue                                 # R5/F79: a minute without volume is provisional, not a bar
         out.append(Bar(symbol=symbol.upper(), tf=tf, ts=int(ts) * 1000, source="exchange",
                        open=float(o), high=float(h), low=float(lo), close=float(c),
-                       volume=int(v)))
+                       volume=int(vols[i])))
     return out
 
 
@@ -136,6 +137,7 @@ def _parse(symbol: str, tf: str, data: dict) -> list[Bar]:
 # silently reshape 1h structure detection. 1h/1d stay on Yahoo.
 _ALPACA = {"key": "", "secret": ""}
 ALPACA_TF = {"1m": "1Min", "5m": "5Min", "15m": "15Min", "30m": "30Min"}
+_cache_provider: dict = {}        # which provider filled each cache key (review R5)
 ALPACA_BARS_URL = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
 _ET = ZoneInfo("America/New_York")
 
@@ -194,6 +196,21 @@ async def fetch_window(
     client: httpx.AsyncClient | None = None,
     session: str = "rth",
 ) -> list[Bar]:
+    bars, _provider = await fetch_window_ex(symbol, tf, start_ms, end_ms, client=client, session=session)
+    return bars
+
+
+async def fetch_window_ex(
+    symbol: str,
+    tf: str,
+    start_ms: int,
+    end_ms: int,
+    *,
+    client: httpx.AsyncClient | None = None,
+    session: str = "rth",
+) -> tuple[list[Bar], str | None]:
+    """`fetch_window` plus WHICH provider answered ("alpaca" | "yahoo" | None when nothing did) —
+    a repair that zeroes history may only do so on a venue response it can name (review R5)."""
     """Bars in [start_ms, end_ms] at `tf` — Alpaca SIP first for US symbols
     when keys are configured (no 429s, true volume), Yahoo as the fallback.
 
@@ -210,11 +227,12 @@ async def fetch_window(
     key = (symbol.upper(), tf, start_ms // 60000, end_ms // 60000, session)
     hit = _cache.get(key)
     if hit and now - hit[0] < (_LIVE_TTL if end_ms / 1000 > now - 120 else _HIST_TTL):
-        return list(hit[1])
+        return list(hit[1]), _cache_provider.get(key)
 
     start_s, end_s = clip_request_window(tf, start_ms // 1000, end_ms // 1000, now, provider="alpaca")
     if end_s <= start_s:
-        return []
+        return [], None
+    provider: str | None = None
 
     own = False                                  # the shared client is never closed here
     http = client or _client_shared()
@@ -222,6 +240,7 @@ async def fetch_window(
     if _ALPACA["key"] and tf in ALPACA_TF and "." not in symbol and "=" not in symbol:
         try:
             bars = await _alpaca_window(symbol, tf, start_s, end_s, http, session=session)
+            provider = "alpaca" if bars else None
         except Exception as exc:
             log.warning("alpaca history failed for %s %s (%s) — falling back to Yahoo", symbol, tf, exc)
             bars = []
@@ -229,7 +248,8 @@ async def fetch_window(
       if not bars:
         start_s, end_s = clip_request_window(tf, start_s, end_s, now, provider="yahoo")
         if end_s <= start_s:
-            return []
+            return [], None
+        provider = "yahoo"
         span = MAX_REQUEST_SPAN[tf]
         chunks: list[tuple[int, int]] = []
         cursor = start_s
@@ -274,7 +294,8 @@ async def fetch_window(
     if session == "rth":
         clean = clip_to_rth(clean, tf)
     _cache_put(key, now, clean)
-    return list(clean)
+    _cache_provider[key] = provider if clean else None
+    return list(clean), (provider if clean else None)
 
 
 def clip_to_rth(bars: list[Bar], tf: str) -> list[Bar]:

@@ -189,6 +189,22 @@ def test_pm_break_retest_of_its_own_level_enters_small():
     assert res.trades and res.trades[0]["direction"] == "short"
 
 
+def test_pm_break_note_states_the_setups_own_target():
+    """F76 (reporting half): the pm_break note used to say "down to the PDL zone" whichever candidate
+    won, so on a gap day it advertised a target the setup does not hold. It must now state the number
+    the setup actually carries, and say so plainly when that number is already behind the break."""
+    res = run(pm_retest_day)
+    pm = [s for s in res.setups if s["kind"] == "pm_break_down"]
+    assert pm
+    note = next(e for e in res.events if e["event"] == "pm_break")
+    assert note.get("target") == pm[0]["target"], (note, pm[0])
+    if pm[0]["target"] is not None:
+        assert f"{pm[0]['target']:.2f}" in note["why"], note["why"]
+        behind = pm[0]["target"] >= pm[0]["anchor"]
+        assert ("already behind the break" in note["why"]) is behind, note["why"]
+    assert "the PDL zone" not in note["why"], note["why"]
+
+
 def test_gap_day_pm_range_is_chop_and_pm_levels_are_the_setup():
     """F15: on a gap-up day the PM range above the PDH zone is the no-trade zone, and a 15m close
     beyond the PM level arms a pm_break setup even though price is outside yesterday's range."""

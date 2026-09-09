@@ -39,8 +39,20 @@ INTRADAY_TF_MS.update({k: v for k, v in TF_MS.items() if k != "1d"})
 # too) whose volume never goes down.
 SOURCE_RANK = {"sim": 0, "": 1, "unknown": 1, "sampled": 2, "exchange": 3}   # F79: no provenance < sampled
 # the data-processing rules a dataset version is hashed together with — bump when write rules change
-DATA_RULES_VERSION = ("bars-rules/2026-09-09: bucket-aligned writes; source precedence exchange>sampled|unknown>sim; "
-                      "calendar-gated 04:00-20:00 ET trading days; sim bars isolated")
+DATA_RULES_VERSION = ("bars-rules/2026-09-09b: bucket-aligned writes; source precedence exchange>sampled|unknown>sim; "
+                      "exchange-over-exchange merge (newer OHLC, zero volume = incomplete); calendar-gated 04:00-20:00 ET "
+                      "trading days; sim bars isolated")
+
+
+def merge_exchange(old: Bar, new: Bar) -> Bar:
+    """The one policy for two venue bars of the same minute (review R4, 2026-09-09), applied identically
+    in memory, in a persist batch and in the database upsert: OHLC follows the NEWER observation; a newer
+    volume of 0 is an INCOMPLETE observation (a venue bar exists only where trades happened, and Yahoo
+    fills volume with a lag), so the known volume stands; any other newer volume — a lower one
+    included — is a correction and stands."""
+    vol = old.volume if (int(new.volume or 0) == 0 and int(old.volume or 0) > 0) else new.volume
+    return Bar(symbol=new.symbol, tf=new.tf, ts=new.ts, open=new.open, high=new.high, low=new.low,
+               close=new.close, volume=vol, source="exchange")
 
 
 class QuoteCache:
@@ -249,8 +261,9 @@ class BarAggregator:
         dq = self._bars[symbol]
         for b in bars:
             dq.append(b)
-        if bars:
-            self._last_volume.setdefault(symbol, 0)
+        # R9 (2026-09-09): never pretend the cumulative counter was 0 — the first quote after a seed
+        # establishes the baseline (delta 0), otherwise a 10M session total became one minute's volume
+        self._last_volume.pop(symbol, None)
 
     def ingest_exchange_bar(self, bar: Bar) -> None:
         """An authoritative completed 1-minute exchange bar (from the data feed's
@@ -275,18 +288,31 @@ class BarAggregator:
             self._pending.pop(bar.symbol, None)
         for i in range(len(dq) - 1, -1, -1):
             if dq[i].ts == bar.ts:
+                # R4: two venue observations of one minute merge by the one policy (memory == storage)
+                merged = merge_exchange(dq[i], bar) if (dq[i].source or "") == "exchange" else bar
                 same = (dq[i].open, dq[i].high, dq[i].low, dq[i].close, dq[i].volume) == \
-                       (bar.open, bar.high, bar.low, bar.close, bar.volume)
+                       (merged.open, merged.high, merged.low, merged.close, merged.volume)
                 if same and not held:
                     return                           # already accurate and already published
-                dq[i] = bar
-                self._publish(bar, "exchange")
+                dq[i] = merged
+                self._publish(merged, "exchange")
                 return
             if dq[i].ts < bar.ts:
-                break
-        if not dq or bar.ts > dq[-1].ts:
+                # R3: a minute we never had that falls BETWEEN existing bars (the boot seed after later
+                # stream bars have arrived) is inserted in order — it used to be dropped silently
+                if len(dq) == dq.maxlen:
+                    dq.popleft()
+                    i -= 1
+                dq.insert(i + 1, bar)
+                self._publish(bar, "exchange")
+                return
+        if not dq:
             dq.append(bar)
-            self._publish(bar, "exchange")
+        else:
+            if len(dq) == dq.maxlen:
+                return                               # older than everything we keep: nothing to correct
+            dq.appendleft(bar)                       # older than the first bar we hold
+        self._publish(bar, "exchange")
 
     def bars(self, symbol: str, tf: str = "1m", limit: int = 500, include_forming: bool = True) -> list[Bar]:
         base = list(self._bars.get(symbol, ()))
@@ -354,8 +380,14 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar], *, 
     for b in bars:
         k = (b.symbol, b.tf, b.ts)
         cur = best.get(k)
-        if cur is None or SOURCE_RANK.get(b.source or "unknown", 1) >= SOURCE_RANK.get(cur.source or "unknown", 1):
+        if cur is None:
             best[k] = b
+            continue
+        r_new, r_cur = SOURCE_RANK.get(b.source or "unknown", 1), SOURCE_RANK.get(cur.source or "unknown", 1)
+        if r_new > r_cur:
+            best[k] = b
+        elif r_new == r_cur:
+            best[k] = merge_exchange(cur, b) if (b.source or "") == "exchange" else b   # R4: one policy, any grouping
     bars = list(best.values())
     rows = [
         {"symbol": b.symbol, "tf": b.tf, "ts": b.ts, "open": b.open,
@@ -384,10 +416,11 @@ async def persist_bars(session_factory: async_sessionmaker, bars: list[Bar], *, 
             old_rank = case((BarRow.source == "exchange", 3), (BarRow.source == "sampled", 2), (BarRow.source == "sim", 0), else_=1)
             both_exchange = (exc_src == "exchange") & (BarRow.source == "exchange")
             better = (new_rank > old_rank) | both_exchange
-            # F79: two exchange sources (Alpaca SIP stream/history, Yahoo consolidated) may both correct a
-            # minute; OHLC follows the newer bar, volume is never LOWERED by a re-fetch to a lesser total
-            from sqlalchemy import func as _f
-            volume_expr = case((both_exchange, _f.greatest(BarRow.volume, ins.excluded.volume)), else_=ins.excluded.volume)
+            # F79/R4: two venue observations of one minute merge by the ONE policy (`merge_exchange`): OHLC
+            # follows the newer bar; a newer volume of 0 is incomplete and the known volume stands; any
+            # other newer volume — lower included — is a correction
+            volume_expr = case((both_exchange & (ins.excluded.volume == 0) & (BarRow.volume > 0), BarRow.volume),
+                               else_=ins.excluded.volume)
             set_ = {"open": ins.excluded.open, "high": ins.excluded.high, "low": ins.excluded.low,
                     "close": ins.excluded.close, "volume": volume_expr, "source": exc_src}
             if dialect == "postgresql":
@@ -459,6 +492,58 @@ class BarPersister:
         self._last_flush = now_ms()
 
 
+def _scope_bounds(start: str | None, end: str | None) -> tuple[int | None, int | None]:
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    et = ZoneInfo("America/New_York")
+    start_ms = int(_dt.datetime.combine(_dt.date.fromisoformat(start), _dt.time(0, 0), et).timestamp() * 1000) if start else None
+    end_ms = int((_dt.datetime.combine(_dt.date.fromisoformat(end), _dt.time(0, 0), et) + _dt.timedelta(days=1)).timestamp() * 1000) if end else None
+    return start_ms, end_ms
+
+
+def _scope_hasher(syms: list[str], tf: str, start: str | None, end: str | None):
+    import hashlib
+    import json
+    h = hashlib.sha256()
+    # the scope is part of the identity: the same rows asked for as "SPY" and as "SPY+QQQ" are two datasets
+    h.update(json.dumps({"symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION},
+                        sort_keys=True).encode("utf-8"))
+    return h
+
+
+def _row_line(sym: str, ts: int, o, hi, lo, c, v, src) -> bytes:
+    return f"{sym}|{ts}|{o!r}|{hi!r}|{lo!r}|{c!r}|{int(v or 0)}|{src or 'unknown'}\n".encode("utf-8")
+
+
+def hash_bars(bars_by_symbol: dict[str, list[Bar]], *, tf: str = "1m", start: str | None = None,
+              end: str | None = None) -> dict:
+    """R8 (2026-09-09): the identity of the bars a consumer ACTUALLY HOLDS — the same bytes as
+    `dataset_version` computes from the table, so a sweep stamps what it consumed, not what the table
+    held a moment earlier. Returns {hash, rows, symbols, tf, start, end, rules}."""
+    syms = sorted({s.upper() for s in bars_by_symbol})
+    start_ms, end_ms = _scope_bounds(start, end)
+    h = _scope_hasher(syms, tf, start, end)
+    n = 0
+    for sym in syms:
+        rows = sorted((b for b in bars_by_symbol.get(sym, bars_by_symbol.get(sym.lower(), [])) if b.tf == tf), key=lambda b: b.ts)
+        for b in rows:
+            if start_ms is not None and b.ts < start_ms:
+                continue
+            if end_ms is not None and b.ts >= end_ms:
+                continue
+            h.update(_row_line(sym, b.ts, b.open, b.high, b.low, b.close, b.volume, b.source))
+            n += 1
+    return {"hash": h.hexdigest(), "rows": n, "symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION}
+
+
+async def record_dataset_version(session_factory: async_sessionmaker, identity: dict, *, note: str = "") -> None:
+    async with session_factory() as session:
+        if (await session.get(BarsDatasetVersion, identity["hash"])) is None:
+            scope = {k: identity.get(k) for k in ("symbols", "tf", "start", "end", "rules")}
+            session.add(BarsDatasetVersion(id=identity["hash"], scope=scope, rows=int(identity.get("rows") or 0), note=note[:200]))
+            await session.commit()
+
+
 async def dataset_version(session_factory: async_sessionmaker, symbols: list[str], *, tf: str = "1m",
                           start: str | None = None, end: str | None = None, note: str = "",
                           record: bool = True) -> dict:
@@ -467,18 +552,9 @@ async def dataset_version(session_factory: async_sessionmaker, symbols: list[str
     rules (`DATA_RULES_VERSION`). A volume repair with the same row count is a different version;
     the same bytes hash the same on any machine. `start`/`end` are ET session dates (inclusive).
     Recorded in `bars_dataset_versions` so a sweep / plan can cite it."""
-    import datetime as _dt
-    import hashlib
-    import json
-    from zoneinfo import ZoneInfo
-    et = ZoneInfo("America/New_York")
     syms = sorted({s.upper() for s in symbols})
-    start_ms = int(_dt.datetime.combine(_dt.date.fromisoformat(start), _dt.time(0, 0), et).timestamp() * 1000) if start else None
-    end_ms = int((_dt.datetime.combine(_dt.date.fromisoformat(end), _dt.time(0, 0), et) + _dt.timedelta(days=1)).timestamp() * 1000) if end else None
-    h = hashlib.sha256()
-    # the scope is part of the identity: the same rows asked for as "SPY" and as "SPY+QQQ" are two datasets
-    h.update(json.dumps({"symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION},
-                        sort_keys=True).encode("utf-8"))
+    start_ms, end_ms = _scope_bounds(start, end)
+    h = _scope_hasher(syms, tf, start, end)
     n = 0
     async with session_factory() as session:
         for sym in syms:
@@ -490,7 +566,7 @@ async def dataset_version(session_factory: async_sessionmaker, symbols: list[str
                 stmt = stmt.where(BarRow.ts < end_ms)
             res = await session.execute(stmt.order_by(BarRow.ts))
             for ts, o, hi, lo, c, v, src in res:
-                h.update(f"{sym}|{ts}|{o!r}|{hi!r}|{lo!r}|{c!r}|{int(v or 0)}|{src or 'unknown'}\n".encode("utf-8"))
+                h.update(_row_line(sym, ts, o, hi, lo, c, v, src))
                 n += 1
     digest = h.hexdigest()
     scope = {"symbols": syms, "tf": tf, "start": start, "end": end, "rules": DATA_RULES_VERSION}

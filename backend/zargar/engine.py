@@ -59,6 +59,7 @@ class Engine:
         self.feed = None
         self.orders: OrderManager | None = None
         self.proposals = None        # attached by signal layer
+        self.quiesce_until_ms = 0    # R1 (2026-09-09): while > now, no NEW entries — a restart is pending
         self.signals_service = None  # attached by signal layer
         self.technique = None        # TechniqueService (attached by technique layer)
         self.chat = None             # ChatService

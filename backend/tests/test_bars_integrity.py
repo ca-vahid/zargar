@@ -79,14 +79,27 @@ async def test_an_exchange_correction_reaches_storage_and_a_sampled_bar_cannot_u
     await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 3, 3, 3, 3, 7, "exchange")])
     rows = await load_bars(sf, "TST", "1m")
     assert rows[-1].volume == 7 and rows[-1].source == "exchange"
-    # exchange over exchange: OHLC follows the newer bar, volume is never lowered (Yahoo's provisional
-    # zero must not erase Alpaca's true count — F79)
+    # exchange over exchange (one policy, R4): OHLC follows the newer bar; a newer volume of 0 is an
+    # incomplete observation and the known volume stands (F79); any other newer volume — lower included —
+    # is a correction and stands
     await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 4, 4, 4, 4, 0, "exchange")])
     rows = await load_bars(sf, "TST", "1m")
     assert rows[-1].close == 4 and rows[-1].volume == 7
     await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 4, 4, 4, 4, 9, "exchange")])
     rows = await load_bars(sf, "TST", "1m")
     assert rows[-1].volume == 9
+    await persist_bars(sf, [bar("TST", TUE_1000 + MINUTE_MS, 4, 4, 4, 4, 5, "exchange")])
+    rows = await load_bars(sf, "TST", "1m")
+    assert rows[-1].volume == 5                                                   # a lower correction is accepted
+    # the same policy in memory: ingesting 9 then 0 leaves 9; 9 then 5 leaves 5
+    from zargar.marketdata import BarAggregator as _A
+    from zargar.bus import Bus as _B
+    a = _A(_B())
+    a.ingest_exchange_bar(bar("MEM", TUE_1000, 1, 1, 1, 1, 9, "exchange"))
+    a.ingest_exchange_bar(bar("MEM", TUE_1000, 2, 2, 2, 2, 0, "exchange"))
+    assert a.bars("MEM", include_forming=False)[0].volume == 9 and a.bars("MEM", include_forming=False)[0].close == 2
+    a.ingest_exchange_bar(bar("MEM", TUE_1000, 3, 3, 3, 3, 5, "exchange"))
+    assert a.bars("MEM", include_forming=False)[0].volume == 5
 
 
 async def test_sim_bars_are_refused_and_closed_day_bars_are_dropped(fresh_db):
@@ -228,3 +241,36 @@ def test_history_clip_applies_yahoo_depth_to_yahoo_only():
     # never into the future, for anyone
     f0, f1 = clip_request_window("1m", int(now + 3600), int(now + 7200), now, provider="alpaca")
     assert f1 <= int(now) + 60
+
+
+async def test_restart_readiness_blocks_on_unknown_inventory_and_fire_chains_and_quiesce_gates_new_entries(fresh_db):
+    """R1: an order-book failure is a blocker, a fire chain awaiting its contract is a blocker, and a
+    quiesced engine refuses to start a new money-mode fire chain (exits untouched)."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from zargar.ops import is_quiesced, quiesce, readiness_from_state, release_quiesce, restart_state
+    eng = SimpleNamespace(plan_runners={}, orders=SimpleNamespace(list_orders=AsyncMock(side_effect=RuntimeError("db down"))))
+    st = await restart_state(eng)
+    assert st["inventoryError"] and not readiness_from_state(st)["safe"]
+    plan = SimpleNamespace(status="armed", run_id="r1", symbol="SPY", config=SimpleNamespace(mode="auto"),
+                           trades={"t1": SimpleNamespace(status="fired", trigger_id="t1", pending_exit_qty=0)}, fire_tasks={"t1": object()})
+    eng2 = SimpleNamespace(plan_runners={"team2": SimpleNamespace(_armed={"r1": plan})})
+    st2 = await restart_state(eng2)
+    assert st2["firing"] == ["team2:SPY:t1"] and not readiness_from_state(st2)["safe"]
+    eng3 = SimpleNamespace(quiesce_until_ms=0)
+    assert not is_quiesced(eng3)
+    quiesce(eng3, 1)
+    assert is_quiesced(eng3) and (await restart_state(SimpleNamespace(plan_runners={}, quiesce_until_ms=eng3.quiesce_until_ms)))["quiesced"]
+    release_quiesce(eng3)
+    assert not is_quiesced(eng3)
+
+
+def test_restore_check_explains_a_closed_position_and_flags_a_vanished_one():
+    from zargar.ops import compare_states
+    before = {"armed": [], "managedPositions": ["p1:SPY", "p2:QQQ"], "managedOpen": 2}
+    after_ok = {"armed": [], "managedPositions": ["p2:QQQ"], "managedClosed": ["p1:SPY"], "managedOpen": 1}
+    r = compare_states(before, after_ok)
+    assert r["ok"] and r["explained"] == {"managedPositions": ["p1:SPY"]}
+    after_bad = {"armed": [], "managedPositions": ["p2:QQQ"], "managedClosed": [], "managedOpen": 1}
+    r = compare_states(before, after_bad)
+    assert not r["ok"] and r["missing"] == {"managedPositions": ["p1:SPY"]}
