@@ -3155,3 +3155,19 @@ estart.ps1` at 15:33:37 ET**,
   question**, **F74**, **F76's rule question**, **F81**, **F82** (three measurements, option (c) best
   supported), **F83**, **F85**, **F86**, F67's two shared-side halves, and the F30-family question of
   which premium series is authoritative.
+
+## Desk EOD 2026-09-09 — the author's day vs ours (read from x.com/Team2Trading via the user's browser)
+
+- **What he did (his own account, unverified):** a pre-market plan on IWM only — "IWM broke 3 days of support this
+  morning at our 293.43 zone. As long as we hold below that I'll be focusing on puts. Under the PML I have 291.19,
+  then 289.98." 09:41 ET alert: the 293.43 support zone flipping to resistance, watching the IWM 293P. 10:20 ET:
+  "PML break and everyone is up well over 100% on these puts" — screenshot +141.77% on the 293P; a later post rolled
+  profits into a lower strike on the intraday S/R flip at the PML. No SPY or QQQ posts today.
+- **What we did:** zero fires on all three symbols (nine sessions running). IWM: 13 `skip_target_behind` (F72 guard)
+  + 2 engulfing + 1 no-trade-zone; SPY: 5 `skip_target_behind`; QQQ: 3 no-trade-zone. Our IWM read saw the same
+  break (gap_down, pm_break_down setup at 10:45) and refused every pullback because the plan's down-target (293.56,
+  fixed at 17:00 the night before from prior-day pivots) sat ABOVE the price after the gap — F81. His targets were
+  the PML (291.19) and the next level (289.98), i.e. re-derived from the morning's structure; IWM printed 290.58.
+- **Verdict:** same read, wrong arithmetic. The refusals were right about direction and wrong about the target; the
+  gap-day target re-derivation (F81, pre-open, on the frozen inputs, guard kept) is the decision that separates
+  our zero from his +141%. Not a re-plan-at-every-entry question (F72 stays off).
