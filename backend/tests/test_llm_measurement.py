@@ -14,6 +14,13 @@ from zargar.signals.service import attach_signal_layer
 from .conftest import make_test_config
 
 
+@pytest.fixture(autouse=True)
+def clean_metrics(monkeypatch):
+    # the collector is module-global and now WIRED into the analyst loop —
+    # other test modules' runs would leak into these exact-count assertions
+    monkeypatch.setattr(llm_stats, "_ACC", {})
+
+
 @pytest.fixture
 async def rig(fresh_db):
     eng = Engine(make_test_config())
@@ -28,7 +35,7 @@ async def test_collector_rolls_up_into_hook_stats(rig):
                      stop_reason="end_turn", latency_ms=500)
     llm_stats.record("extraction", model="m1", input_tokens=50, output_tokens=10,
                      stop_reason="end_turn", latency_ms=200, retried=True)
-    llm_stats.record("extraction", model="m1", invalid_output=True)
+    llm_stats.record("extraction", model="m1", invalid_output=True, annotation=True)
     llm_stats.record("appraise", model="m2", input_tokens=900, output_tokens=300,
                      stop_reason="max_tokens", latency_ms=1500)
     assert await llm_stats.flush(rig) == 1
@@ -38,8 +45,9 @@ async def test_collector_rolls_up_into_hook_stats(rig):
             .order_by(Event.id.desc()))).scalars().first()
     llm = row.payload["llm"]
     ext = llm["extraction"]
-    # retries are attempts, never double-counted as requests
-    assert ext["requests"] == 2 and ext["retries"] == 1
+    # one logical request: attempt 2 is a retry, the invalid-output mark is an
+    # ANNOTATION on attempts already counted (Codex M1) — never a third request
+    assert ext["requests"] == 1 and ext["retries"] == 1
     assert ext["inputTokens"] == 150 and ext["invalidOutputs"] == 1
     assert llm["appraise"]["stops"] == {"max_tokens": 1}
     assert row.payload["technique"] == "tip" and row.payload["date"]
