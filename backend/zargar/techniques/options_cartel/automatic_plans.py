@@ -24,6 +24,7 @@ class PreparationPolicy(WireModel):
     overnight_ack: bool = False
     portfolio_id: str | None = Field(default=None, max_length=64)
     profile: ScreenProfile = 'september_2026'
+    research_direction: Literal['long', 'short'] = 'long'
     industry_policy: Literal['context', 'strict'] = 'context'
     reviewed_etfs: tuple[str, ...] = ('DRAM',)
     comparison_symbols: tuple[str, ...] = ('MU', 'SNDK', 'NVDA', 'INTC', 'SMCI', 'AMD', 'ALAB', 'TEM', 'MRNA', 'DELL', 'HPE', 'NTAP', 'DRAM')
@@ -66,13 +67,13 @@ class PreparationPolicy(WireModel):
         return self
 
 
-def automatic_review(research, analysis, policy: PreparationPolicy):
+def automatic_review(research, analysis, policy: PreparationPolicy, *, research_only=False):
     history = completed_daily([DailyBar.model_validate(b) for b in research['history']], research['as_of_ms'])
     direction = research['direction']
     sign = 1 if direction == 'long' else -1
     choices = []
     for candidate in analysis['candidates']:
-        if not candidate['contextPassed']:
+        if not candidate.get('researchContextPassed' if research_only else 'contextPassed', False):
             continue
         trigger, stop = candidate['trigger'], candidate['invalidation']
         if not math.isfinite(trigger) or not math.isfinite(stop) or (trigger-stop)*sign <= 0:
@@ -107,6 +108,8 @@ def automatic_review(research, analysis, policy: PreparationPolicy):
     note = (f'Automatic rule-based Cartel review: all market, listing, weekly/daily structure and relative-strength '
             f'checks passed. Selected {candidate["setup"]}; first target / structural risk {ratio:.2f}. '
             'Live entry and risk checks remain mandatory. Exit allocations and geometry thresholds are configured engineering choices.')
+    if research_only:
+        note = 'Research candidate only: market alignment blocks arming. Rebuild with fresh aligned market evidence before execution.'
     return PlanInput(setup=candidate['setup'], horizon_sessions=policy.horizon_sessions,
         entry_policy=policy.entry, reviewed_targets=tuple(targets), review_note=note,
         target_source=source, exit_campaign=campaign)

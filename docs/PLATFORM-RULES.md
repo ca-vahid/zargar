@@ -987,3 +987,12 @@ Decision explanations survive recovery and are journaled as Cartel state changes
 ETF coverage, industry interpretation and research variants are Cartel-owned;
 other techniques, book routing, loss guards and protective exits are unchanged.
 Details: techniques/options-cartel/FIDELITY-REVIEW-2026-09-08.md.
+
+
+### Cartel market-blocked research — 2026-09-08 (0.7.14)
+
+Preparation may retain research candidates while its market gate blocks trading.
+Their screen/plan context remains failed: research eligibility is a separate field,
+not an override of the trading gate. They are stored as analysis records, never
+submitted to contract selection, plan arming or the pending-contract activator.
+Fresh aligned preparation is required. No common risk or execution rule is relaxed.
