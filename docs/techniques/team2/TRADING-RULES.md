@@ -1348,7 +1348,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   behind a measured variant. Nothing was built — mid-session, on an auto desk, this touches setup
   creation and therefore opportunity counting and grading.
 
-- **F76 addendum — the reporting half IS fixed (2026-09-09 13:45 ET watch, committed, deploy queued).**
+- **F76 addendum — the reporting half IS fixed (2026-09-09 13:45 ET watch, commit `05fb2b2`, deploy queued).**
   The rule question above stays entirely open; only the misleading prose is gone. `session.py`'s
   `pm_break` note said *"→ puts down to the PDL zone (L2.5/V7)"* whichever candidate the target
   actually resolved to, so on a gap day it advertised a level the setup does not hold. It now states

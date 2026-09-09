@@ -2729,7 +2729,7 @@ data and original research records. Keep target_replan off until the clean datas
   (17.6×), IWM 20% (17.6×). QQQ printed no PM break, so F20's carve-out never applied — the symbol
   was untradeable by construction for a full session. This is F56's mechanism at its extreme; logged
   as a confirmation, not a new finding.
-- **F76's reporting half FIXED (committed, deploy queued).** The `pm_break` note said *"→ puts down
+- **F76's reporting half FIXED (commit `05fb2b2`, deploy queued).** The `pm_break` note said *"→ puts down
   to the PDL zone (L2.5/V7)"* whichever candidate the target resolved to, so on a gap day it
   advertised a level the setup does not hold. It now states the setup's own number and flags when
   that number is behind the break — *"→ puts down to 764.75 — already behind the break, so this setup
