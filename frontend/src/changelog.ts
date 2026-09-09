@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.21";
+export const APP_VERSION = "0.7.22";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.22",
+    date: "2026-09-09",
+    title: "One finalization, not two",
+    items: [
+      { tag: "fixed", text: "A failed intake review finalized twice - the second write erased the run's recorded token usage and side-effect receipts. It finalizes once now, metadata intact." },
+    ],
+  },
   {
     version: "0.7.21",
     date: "2026-09-09",
