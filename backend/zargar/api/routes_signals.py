@@ -39,6 +39,9 @@ def build_signal_routes(app, eng, auth, config) -> None:
         source_name: str = "manual"
         subject: str = ""
         imageDataUrl: str | None = None   # screenshot of the user's own client
+        messageId: str | None = None      # gateway envelope: Discord identity (pre-extraction dedupe)
+        postedAt: str | None = None       # authoritative posting time (feeds stated_at)
+        editedAt: str | None = None
 
     @app.post("/api/ingest/manual", dependencies=[auth])
     async def ingest_manual(body: ManualIngest):
@@ -54,7 +57,9 @@ def build_signal_routes(app, eng, auth, config) -> None:
             raise HTTPException(status_code=400, detail="text or imageDataUrl required")
         return await eng.signals_service.ingest_manual(
             body.text, source_name=body.source_name, subject=body.subject,
-            image=image, image_media_type=media_type)
+            image=image, image_media_type=media_type,
+            message_id=body.messageId, posted_at=body.postedAt,
+            edited_at=body.editedAt)
 
     @app.get("/api/signals/sources", dependencies=[auth])
     async def source_scorecards():
@@ -232,6 +237,19 @@ def build_signal_routes(app, eng, auth, config) -> None:
         """The gateway mirrors every message it sees in a monitored channel."""
         stored = await eng.signals_service.discord_store_messages(body.messages)
         return {"stored": stored}
+
+    class MessageEdited(BaseModel):
+        messageId: str
+        editedAt: str = ""
+        text: str = ""
+
+    @app.post("/api/tip/discord/message-edited", dependencies=[auth])
+    async def discord_message_edited(body: MessageEdited):
+        """Gateway envelope: a watched message was edited. Journal + stamp the
+        ingested content; the mirror upsert happens via /messages. NEVER
+        auto re-extracted (policy in GATEWAY-PLAN.md)."""
+        return await eng.signals_service.discord_message_edited(
+            body.messageId, edited_at=body.editedAt, text=body.text)
 
     @app.get("/api/tip/discord/messages", dependencies=[auth])
     async def discord_messages(source: str = "", channelId: str = "",

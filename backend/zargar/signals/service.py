@@ -577,15 +577,38 @@ class SignalService:
                 mid = str(m.get("id") or "").strip()
                 if not mid:
                     continue
+
+                def _ts(key: str) -> dt.datetime | None:
+                    try:
+                        s = str(m.get(key) or "")
+                        return dt.datetime.fromisoformat(s.replace("Z", "+00:00")) if s else None
+                    except ValueError:
+                        return None
                 row = await session.get(DiscordMessage, mid)
                 if row is not None:
+                    # revision upsert (gateway envelope 2026-09-09): an EDITED
+                    # message updates the mirror row when the revision is
+                    # newer. Field PRESENCE matters (Codex G4): text/images
+                    # arriving as None mean "not in this partial payload —
+                    # keep the original evidence", never "cleared".
+                    edited = _ts("editedAt")
+                    if edited is not None and (row.edited_at is None or edited > row.edited_at):
+                        if m.get("text") is not None:
+                            row.text = str(m.get("text"))[:8000]
+                        if m.get("images") is not None:
+                            urls = [str(u) for u in (m.get("images") or [])][:6]
+                            if urls != list(row.images or []):
+                                row.images = urls
+                                # local copies belong to the OLD attachment set —
+                                # invalidate and re-fetch so view_image never
+                                # serves a superseded chart as current evidence
+                                row.local_images = []
+                                if urls:
+                                    to_fetch.append((mid, urls))
+                        row.edited_at = edited
+                        stored += 1
                     continue
-                posted = None
-                try:
-                    ts = str(m.get("postedAt") or "")
-                    posted = dt.datetime.fromisoformat(ts.replace("Z", "+00:00")) if ts else None
-                except ValueError:
-                    posted = None
+                posted = _ts("postedAt")
                 urls = [str(u) for u in (m.get("images") or [])][:6]
                 session.add(DiscordMessage(
                     id=mid, channel_id=str(m.get("channelId") or ""),
@@ -596,8 +619,9 @@ class SignalService:
                     is_bot=bool(m.get("isBot")),
                     text=str(m.get("text") or "")[:8000],
                     images=urls,
-                    posted_at=posted))
-                stored += 1
+                    posted_at=posted,
+                    edited_at=_ts("editedAt")))   # a first-seen already-edited
+                stored += 1                        # message keeps its revision time
                 if urls:
                     to_fetch.append((mid, urls))
             await session.commit()
@@ -787,15 +811,93 @@ class SignalService:
             {"id": row.id, "source": source_name, "subject": row.subject,
              "sourceType": "email"},
             aggregate_type="content", aggregate_id=row.id)
+        # emails carry no authoritative posting time (the webhook has headers,
+        # not a trusted dateline) — the extractor's stated_at stands. (Codex
+        # G1 2026-09-09: a stray posted_at passthrough here broke ALL email
+        # intake with a NameError; the passthrough belongs in ingest_manual.)
         return await self.process_content(row.id)
 
     async def ingest_manual(self, text: str, *, source_name: str = "manual",
                             subject: str = "", image: bytes | None = None,
-                            image_media_type: str = "image/png") -> dict:
+                            image_media_type: str = "image/png",
+                            message_id: str | None = None,
+                            posted_at: str | None = None,
+                            edited_at: str | None = None) -> dict:
         """Paste-in path — text, or a screenshot of the user's own client (the
-        model transcribes it; the image is kept as evidence in chat_assets)."""
+        model transcribes it; the image is kept as evidence in chat_assets).
+        `message_id`/`posted_at` (gateway envelope 2026-09-09): the Discord
+        identity dedupes BEFORE extraction — a repeat delivery costs no LLM
+        call — and the authoritative posting time feeds stated_at.
+
+        The dedupe is an ATOMIC CLAIM (Codex review G5, 2026-09-09): check +
+        write-ahead insert run in ONE transaction serialized by a pg advisory
+        lock on the message id, so concurrent deliveries (two listeners, a
+        retry race) cannot both extract. An existing row is a duplicate only
+        when its processing finished or is freshly in flight; a row abandoned
+        mid-processing (status "new", stale claim) is RESUMED, not dropped.
+        Claim failures raise — the gateway spools and retries; a broken dedupe
+        check must never silently proceed to a paid extraction."""
         eng = self.engine
         meta: dict = {}
+        if message_id:
+            meta["messageId"] = str(message_id)
+        if posted_at:
+            meta["postedAt"] = str(posted_at)
+        if edited_at:
+            meta["editedAt"] = str(edited_at)
+        row = RawContent(id=new_id(), source_type="manual", source_name=source_name,
+                         subject=subject, body_text=text, meta=meta)
+        resume_id: str | None = None
+        if message_id:
+            from sqlalchemy import text as sql_text
+            now = dt.datetime.now(dt.timezone.utc)
+            async with eng.sf() as session:
+                # one advisory xact lock per message id: the claim's check and
+                # insert are atomic across processes (released at commit)
+                await session.execute(
+                    sql_text("SELECT pg_advisory_xact_lock(hashtext(:k))"),
+                    {"k": f"tip-msg:{message_id}"})
+                dup = (await session.execute(select(RawContent).where(
+                    RawContent.meta.op('->>')('messageId') == str(message_id))
+                    .limit(1))).scalars().first()
+                if dup is None:
+                    meta["claimedAt"] = now.isoformat()
+                    row.meta = meta
+                    session.add(row)              # write-ahead claim
+                    await session.commit()
+                else:
+                    stale = True
+                    claimed = (dup.meta or {}).get("claimedAt")
+                    if claimed:
+                        with contextlib.suppress(ValueError):
+                            age = (now - dt.datetime.fromisoformat(str(claimed))).total_seconds()
+                            stale = age > 600
+                    if dup.status == "new" and stale:
+                        # crash after storing raw content, before processing
+                        # completed — resume THAT row instead of dropping work
+                        dup.meta = {**(dup.meta or {}), "claimedAt": now.isoformat()}
+                        await session.commit()
+                        resume_id = dup.id
+                    elif dup.status == "new":
+                        # FRESH claim: possibly still in flight, possibly a
+                        # worker that died seconds ago — indistinguishable from
+                        # here (Codex review A3, 2026-09-09). Say so explicitly:
+                        # the caller must NOT acknowledge this as completed —
+                        # the gateway keeps it pending and retries; once the
+                        # claim goes stale a retry RESUMES it above.
+                        return {"contentId": dup.id, "status": dup.status,
+                                "duplicate": True, "inFlight": True, "signals": [],
+                                "note": f"message {message_id} is claimed and "
+                                        f"processing (content {dup.id[:8]}) — "
+                                        "not yet complete, retry to confirm"}
+                    else:
+                        return {"contentId": dup.id, "status": dup.status,
+                                "duplicate": True, "signals": [],
+                                "note": f"message {message_id} already ingested "
+                                        f"(content {dup.id[:8]}) — no re-extraction"}
+            if resume_id:
+                return await self.process_content(resume_id,
+                                                  stated_at=posted_at or None)
         if image is not None:
             asset = ChatAsset(id=new_id(), thread_id=None, media_type=image_media_type,
                               data=image, meta={"kind": "tip_screenshot"})
@@ -803,16 +905,57 @@ class SignalService:
                 session.add(asset)
                 await session.commit()
             meta["imageAssetId"] = asset.id
-        row = RawContent(id=new_id(), source_type="manual", source_name=source_name,
-                         subject=subject, body_text=text, meta=meta)
         async with eng.sf() as session:
-            session.add(row)
-            await session.commit()
+            if message_id:
+                # row was committed by the claim; stamp the image asset on it
+                db_row = await session.get(RawContent, row.id)
+                if db_row is not None and db_row.meta != meta:
+                    db_row.meta = dict(meta)
+                    await session.commit()
+            else:
+                row.meta = meta
+                session.add(row)
+                await session.commit()
         await eng.journal.append(
             ev.CONTENT_RECEIVED, {"id": row.id, "source": source_name, "sourceType": "manual",
                                   "hasImage": image is not None},
             aggregate_type="content", aggregate_id=row.id)
-        return await self.process_content(row.id)
+        # the authoritative posting time reaches processing (Codex G1): a
+        # recovered old message keeps its original age → replay/expiry apply
+        return await self.process_content(row.id, stated_at=posted_at or None)
+
+    async def discord_message_edited(self, message_id: str, *, edited_at: str = "",
+                                     text: str = "") -> dict:
+        """A source EDITED a message we may have ingested. POLICY (gateway
+        envelope 2026-09-09, GATEWAY-PLAN.md): the mirror row is upserted by
+        the gateway; here the edit is JOURNALED against the ingested content
+        and stamped on its meta — NEVER auto re-extracted and never traded on.
+        The analyst sees revised text through the mirror it already searches."""
+        eng = self.engine
+        found = None
+        with contextlib.suppress(Exception):
+            async with eng.sf() as session:
+                found = (await session.execute(select(RawContent).where(
+                    RawContent.meta.op('->>')('messageId') == str(message_id))
+                    .limit(1))).scalars().first()
+                if found is not None:
+                    prev = str((found.meta or {}).get("revisedAt") or "")
+                    if edited_at and prev and prev >= str(edited_at):
+                        # duplicate or out-of-order revision delivery (Codex
+                        # G4): already recorded — idempotent, no second journal
+                        return {"ok": True, "ingested": True, "duplicate": True}
+                    found.meta = {**(found.meta or {}),
+                                  "revisedAt": edited_at or dt.datetime.now(dt.timezone.utc).isoformat(),
+                                  "revisionPreview": (text or "")[:400]}
+                    await session.commit()
+        await eng.journal.append(
+            ev.TIP_MESSAGE_REVISED,
+            {"messageId": str(message_id), "editedAt": edited_at,
+             "ingestedContentId": found.id if found is not None else None,
+             "preview": (text or "")[:200]},
+            aggregate_type="content",
+            aggregate_id=(found.id if found is not None else str(message_id)))
+        return {"ok": True, "ingested": found is not None}
 
     def _match_source(self, sender: str) -> str | None:
         registry = self.engine.settings.get("sources.registry") or []
