@@ -61,10 +61,44 @@ async def test_disputed_rules_are_labeled_and_snapshotted(rig):
     r1 = await svc.add_tip_note("rule", "RULE (alpha family): do the thing.")
     await svc.add_tip_note("rule", "RULE (beta family): do the other thing.")
     await svc.flag_tip_notes([r1["id"]], needs_human=True)
-    text, n = await _rules_text(rig)
+    text, n, snap = await _rules_text(rig)
     assert n == 2 and "[DISPUTED" in text
-    snap = _rules_text.last_snapshot
+    assert snap is _rules_text.last_snapshot        # explicit return, mirrored
     assert snap and len(snap["ruleIds"]) == 2 and len(snap["rulesHash"]) == 12
+    # the snapshot carries the exact supplied content + flags (Codex K3):
+    assert snap["rules"][0]["text"].startswith("RULE (alpha")
+    assert snap["rules"][0]["disputed"] is True
+    # editing a rule's TEXT in place changes the hash even with the same id
+    from zargar.models import TipNote
+    async with rig.sf() as session:
+        row = await session.get(TipNote, r1["id"])
+        row.text = "RULE (alpha family): do the OPPOSITE thing."
+        await session.commit()
+    _, _, snap2 = await _rules_text(rig)
+    assert snap2["rulesHash"] != snap["rulesHash"]
+
+
+async def test_historical_allowlist_blocks_every_management_tool(rig):
+    """Codex K1: historical mode is an ALLOWLIST at dispatch — every tool that
+    reads or mutates TODAY's state refuses, not just the six read tools."""
+    ctx = {"experiment": "x", "asOfMs": 1750000000000}
+    for tool in ("close_position", "update_exit_plan", "disarm_plan",
+                 "get_positions", "get_open_tips", "get_quote", "get_chain",
+                 "get_expiries", "get_flow", "get_earnings", "get_source_stats"):
+        out = await _run_tool(rig, tool, {"symbol": "TEST", "position_id": "p",
+                                          "run_id": "r"}, ctx=ctx)
+        assert out.get("error") and "historical" in out["error"], (tool, out)
+
+
+async def test_notes_respect_the_event_time_boundary(rig):
+    """Codex K2: knowledge created after the tip's moment never reaches a
+    historical run — notes_for_tip and tip_notes take as_of."""
+    svc = rig.signals_service
+    await svc.add_tip_note("general", "learned long after the event")
+    as_of = dt.datetime(2026, 6, 1, tzinfo=dt.timezone.utc)
+    assert await svc.notes_for_tip("NVDA", "Src", as_of=as_of) == []
+    assert await svc.tip_notes(["general"], as_of=as_of) == []
+    assert len(await svc.notes_for_tip("NVDA", "Src")) == 1   # live view unchanged
 
 
 async def test_experiment_search_filters_before_the_limit(rig):
