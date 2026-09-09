@@ -160,3 +160,23 @@ The separate premium budget still applies: on a hypothetical 10,000-equity book,
 10% allows 1,000, but a 500 premium budget still caps the purchase at 500. Existing
 contract-price/quantity limits, cash requirements, exposure and loss gates remain
 in force. No change to Live acknowledgements or permission requirements.
+
+
+## Mixed-market research (0.7.14)
+
+Market alignment controls automatic arming separately from research coverage. If
+SPY/QQQ are mixed or unknown, preparation still evaluates stock/setup evidence in
+the configured research direction (bullish by default). Other stock, history,
+industry and setup checks remain unchanged. Qualifying research candidates are
+saved as analysis records with a market-blocked label, not executable plans.
+No contract is selected and no arm/order is created. Pending activation explicitly
+ignores these preparation snapshots; fresh preparation with aligned market evidence
+is required before execution. Normal plan construction still rejects their failed
+market screen, so manual plan creation cannot promote the saved research snapshot.
+
+The Plans tab displays the completed-session date, close, EMA levels and alignment
+for each index. Research-only candidate counts are distinct from executable setup
+counts. A complete research run with a trading restriction is not an incomplete
+scan; genuine data failures and optional-cap gaps remain visible. Historical runs
+that skipped evaluation on a market block are no longer labeled as download failures.
+A coverage-version change requires fresh preparation rather than resuming old scans.
