@@ -198,6 +198,17 @@ Scope shipped (post-R1–R4 acceptance, same night):
   opinion; the UI's failed-run line now says "failed AFTER acting: N side
   effects (…)" instead of "nothing was asked or ordered" when receipts exist.
 
+**Addendum 3b — the v0.7.20 review's three gaps, closed:**
+(1) usage (+ receipts) now persist on FAILED appraisals via `_fail_meta`
+(`opinion.usage` on the failed row) and on successful intake reviews
+(`review()` carries `state`; `result.usage`); (2) a cancelled intake review is
+made terminal IN PLACE (CancelledError persist-then-raise), and the BOOT sweep
+now takes every "running" run regardless of age (`older_than_s=0` at attach —
+a hard kill delivers no CancelledError; the age-gated default remains for any
+other caller); (3) a mutating tool that reports it did NOT act
+(`disarmed/closed/ok/saved/updated: false`) no longer leaves a receipt.
+Your `test_tip_loop_followup.py` is in the main tree verbatim — all 5 green.
+
 **Not in this ship** (still open under finding 4's umbrella): one shared
 repair policy for digest/retro paths beyond the shared loop's own gains, and
 idempotent re-run protection keyed on receipts (receipts are recorded and
