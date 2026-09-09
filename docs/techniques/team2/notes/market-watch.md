@@ -2961,7 +2961,8 @@ data and original research records. Keep target_replan off until the clean datas
 
 - **The desk went down and came back inside this run — not a crash.** Health was green on v0.7.30 at
   15:31; five minutes later `:8420` refused connections. Cause found in
-  `logs/restart-20260909-123337.log`: **another desk ran `scriptsestart.ps1` at 15:33:37 ET**,
+  `logs/restart-20260909-123337.log`: **another desk ran `scripts
+estart.ps1` at 15:33:37 ET**,
   deploying **v0.7.32** (which carries our queued v0.7.31 F82a fix). The app is up on **v0.7.32**,
   armed 73, and the script's own restore check passed: `armed 70/70, openTrades 0/0, workingEntries
   0/0, pendingExits 0/0, restingOrders 10/10, inflightOrders 0/0`. **This is a mid-session restart
@@ -3100,3 +3101,57 @@ data and original research records. Keep target_replan off until the clean datas
   **F74**, **F76's rule question**, **F81**, **F82** (three measurements, option (c) now best
   supported), **F83**, **F85**, F67's two shared-side halves, and the F30-family question of which
   premium series is authoritative.
+
+
+## 2026-09-09 16:35 ET (run 47 — last run of the day: nothing broke after the close, and a measurement says the pre-market high/low is computed over bars of any provenance — F86)
+
+- **Alive, current, quiet.** `/api/health` ok on **v0.7.33** (`1853ace`, deployed by run 46 at
+  16:09 ET), armed 12 desk-wide. `/api/team2/status` → `armed: []`, mode `auto`, the 0DTE policy
+  intact (last entry 15:30, flatten 15:45, cap 40 contracts / $2,000) — the correct post-close state
+  for a session that closed at 16:00. **No traceback since the 16:09 boot**; the only warnings are
+  the known `persist_bars: dropped N non-bucket-aligned stub bar(s)` noise.
+- **Tomorrow is scheduled.** Both jobs are registered on the new boot —
+  `team2_plan_nightly at 17:00 ET` and `team2_preopen at 09:25 ET` (log 16:09:55). The 17:00 job had
+  not run yet at the time of this check (16:35), so **run 1 of 2026-09-10 must confirm three plans
+  for 09-10 exist and carry sheets/levels** before the pre-open check.
+- **F85 standing check, clean.** Queried the journal directly (the new working rule): the only
+  `TechniquePlanError {error: "stale bars"}` cluster in 30 hours is the **49 rows at 15:15 ET**
+  already written up as F85 — 44 distinct symbols, 3 of them Team2's. **Nothing new since 15:15**,
+  and nothing at all after the close. The other `TechniquePlanError` rows today are tip-technique
+  follow-ups (GS/AMZN/AVGO), not ours.
+- **Tape final and clean.** RTH 09:30–15:59: **390/390 1m rows per symbol, 100 % `source='exchange'`,
+  zero zero-volume rows** on SPY, QQQ and IWM. F75/F79/F80 stay closed. Day totals unchanged from
+  run 46 (0 fires, 0 trades; 20 `same_pullback`, 18 `skip_target_behind`, 7 `late_touch`, 5
+  `skip_no_trade_zone`, 5 `scenario`, 3 `skip_last_entry`, 2 `skip_engulfing`, 2 `pm_break`).
+- **F86 — NEW, NOT FIXED, found by looking at the pre-market half of the tape (which no run had
+  checked before; every previous provenance check stopped at 09:30).** `premarket_range()` is a plain
+  `max(high)/min(low)` over whatever bars it is handed, and Team2 hands it `load_bars(...)` — every
+  row of the bars table, any provenance, any volume. F75's `validate_sessions` guard covers the
+  **warm-up** only, not today's pre-market. Over 20 sessions × 3 symbols (38 symbol-days with
+  non-exchange pre-market rows) **one row actually moved a decision input**: `IWM 2026-08-25 07:01 ET`,
+  `H 299.81 / L 297.97, volume 0, source 'unknown'`, set **PML 297.97 against a real traded low of
+  298.26 — 0.29 too wide (0.10 %)**. pmh/pml are not cosmetic: they drive `classify_day`,
+  `sizing_bucket` and the **`pm_break_up`/`pm_break_down` trigger levels** themselves. All 1,888
+  non-exchange pre-market rows are `unknown` and the newest is **09:12 ET today**, consistent with
+  pre-F75 writes — but quote-`sampled` rows outrank `unknown`, are still written in thin
+  extended-hours minutes (IWM banked two at 16:30/16:31 ET today) and take their price from a quote,
+  so the hole is open under a new label.
+- **Proposed for the user (F86, deliberately not built — it changes a live trigger level, and the
+  natural home is shared `marketstructure/dailylevels.py`):** **(a)** Team2-local, filter the bars
+  passed to `premarket_range` to `source == 'exchange'` with a fallback when a day has none;
+  **(b)** require `volume > 0` — cheapest, provenance-agnostic, and it is the rule the house already
+  applies to history (F79: "a minute without volume is provisional, not a bar"); **(c)** fix it
+  inside shared `premarket_range` for every technique, plus a PLATFORM-RULES row; **(d)** leave it
+  and trust F75 to have ended the `unknown` writes. Recommendation if the user wants one: **(b)**.
+- **Nothing deployed this run** — the only change is documentation (F86 in TRADING-RULES.md and this
+  entry), so the desk keeps running v0.7.33 untouched into tonight's 17:00 plan job.
+- **Next run (pre-open 2026-09-10) should:** (1) confirm the **17:00 ET** nightly job minted three
+  plans for 09-10 with sheets/levels; (2) run the **09:25 pre-open** check — `pmh`/`pml`/`dayType`/
+  `sizingAtOpen`/`complete: true` on all three, `POST /api/team2/preopen-now` if missed, and
+  **spot-check the pre-market rows behind pmh/pml for provenance (F86)**; (3) query the journal for
+  `TechniquePlanError` (F85); (4) confirm v0.7.33 is serving and RTH bars stay `exchange`. Still open
+  for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**,
+  **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy
+  question**, **F74**, **F76's rule question**, **F81**, **F82** (three measurements, option (c) best
+  supported), **F83**, **F85**, **F86**, F67's two shared-side halves, and the F30-family question of
+  which premium series is authoritative.

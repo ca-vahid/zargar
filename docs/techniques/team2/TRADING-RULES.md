@@ -1628,6 +1628,42 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   reconnect itself took 2 s, so the dark window is nearly all detection latency; **(c)** leave it.
 
 
+- **F86 (2026-09-09 post-close, NOT FIXED — the pre-market high/low that sets day type, sizing and
+  the `pm_break` trigger levels is computed over bars of ANY provenance, and a zero-volume bar has
+  already moved it).** `premarket_range()` (`zargar/marketstructure/dailylevels.py:82`) is a plain
+  `max(high)/min(low)` over every 04:00–09:30 ET bar it is handed, and Team2 hands it everything the
+  bars table holds: `complete_plan` (`techniques/team2/plan.py:74`) reads `runner._today_bars` →
+  `load_bars(..., "1m", limit=6000)`, which is source-blind. F75's `validate_sessions` guard runs on
+  the **warm-up** (prior sessions) only — today's pre-market rows go in unfiltered.
+  **Measured, 20 sessions × SPY/QQQ/IWM (38 symbol-days that contain non-exchange pre-market rows):
+  one case where a non-exchange row set the extreme.** `IWM 2026-08-25 07:01 ET` —
+  `O 299.81 H 299.81 L 297.97 C 297.97, volume 0, source 'unknown'` — put **PML at 297.97 against a
+  real traded pre-market low of 298.26**, i.e. **0.29 (0.10 % of price) too wide**, on the one symbol
+  whose zone widths are smallest. Every other symbol-day agreed to the cent.
+  **Why it matters:** pmh/pml are not cosmetic. They feed `classify_day` (gap vs inside-day),
+  `sizing_bucket` (inside the PM range → half size) and the **`pm_break_up` / `pm_break_down` setups**,
+  whose trigger level is literally `float(pmh)` / `float(pml)` and whose confirmation is a 15m body
+  close beyond it (session.py:288 ff). A PML 0.29 too low delays or cancels a `pm_break_down`
+  confirmation; a too-wide range also enlarges the "inside the PM range" half-size bucket.
+  **Provenance status:** all 1,888 non-exchange pre-market rows for the three symbols are
+  `source='unknown'`, dated 2026-08-17 → 2026-09-09, and the newest is **09:12 ET today** — i.e. they
+  are consistent with pre-F75 writes (before today the column had no writer and defaulted to
+  `unknown`); no `unknown` row has been written since this morning's F75 build. That does **not**
+  close the hole going forward: quote-`sampled` bars still rank above `unknown` and are still written
+  in thin extended-hours minutes (IWM banked two `sampled` 1m rows at 16:30/16:31 ET today), and a
+  sampled bar takes its price from a quote, so it can print outside the traded range exactly as the
+  08-25 row did.
+  **Not fixed here** — the natural filter sits either in shared `dailylevels.premarket_range` or on
+  Team2's call site, and it changes a live trigger level, so it is the user's call. Options:
+  **(a)** filter the pre-market bars Team2 passes to `premarket_range` to `source == 'exchange'`
+  (Team2-local, one line in `complete_plan`'s caller, falls back to unfiltered when the day has no
+  exchange pre-market rows); **(b)** require `volume > 0` (provenance-agnostic, and the same rule
+  F79 already applies to history: "a minute without volume is provisional, not a bar");
+  **(c)** filter inside shared `premarket_range` so every technique gets it, plus a PLATFORM-RULES
+  row; **(d)** leave it and rely on F75 having ended the `unknown` writes. (b) is the cheapest and
+  matches the existing house rule; (a) is the most conservative for Team2 alone.
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
