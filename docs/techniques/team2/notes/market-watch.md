@@ -2324,3 +2324,76 @@ automatic promotion. Continue Practice with existing risk limits once recovery a
 - **Still not exercised by the tape**, same as this morning: SPY and IWM targets remain behind price
   and would be refused, but no qualifying pullback has reached the guard. IWM now shows 2 setups.
   Next run should still look for a real `skip_target_behind` in the read.
+
+## 2026-09-09 11:20 ET (run 36 — F72's variant measured and rejected; F75: the sweep's data is partly synthetic)
+
+- **Alive, clean, and all three plans healthy.** `/api/health` ok. Three Team2 plans armed for
+  2026-09-09 (SPY, QQQ, IWM), `complete: true`, `needsAttention` false, no `read_error`, zero trades
+  and zero open positions all morning. 1m bars banking to 11:03 read at 11:04; underlying quotes
+  `quoteAgeSeconds 0`, session `regular`; **option quotes are OPRA** — the three 0DTE ATM puts came
+  back `provider: "alpaca"`, `delayed: false`, priced to the second (SPY 762P 0.67/0.68, QQQ 717P
+  1.19/1.20, IWM 291P 0.29/0.30). **Replay parity holds on all three** (same sigma, same scenarios,
+  same skips, zero trades).
+- **The app was restarted at 11:07 ET by another desk, not by me.** A `/api/technique/armed/...`
+  call mid-run came back "connection actively refused"; the app was back seconds later on
+  **v0.7.26** with the tips desk's merge (`33f4165`, PR #28 measurement work) as HEAD. Same branch,
+  my Team2 commits are all still ancestors of HEAD, all 3 Team2 plans restored with their scenarios,
+  touches and bias intact, no Team2 errors or Tracebacks since the boot. Recording it so the version
+  jump 0.7.25 → 0.7.26 is not read as drift on this desk. The UI chip and `/api/health` now agree.
+- **F72's guard fired four more times on IWM and was right every time.** `skip_target_behind` at
+  10:32 (292.58), 10:36 (292.52), 10:42 (292.42) and 11:00 (292.12) — all refusing a short whose
+  planned target 293.56 sits *above* the entry. The 11:00 one matters most: it hit the **new**
+  `pm_break_down@10:30` setup, born at 10:45 off a 15m close below the PM low, which **inherited the
+  same stale plan target**. So this is not a first-entry-only problem — every setup the session
+  mints mid-day carries the plan's target, and on a gap-through day that target is behind price for
+  all of them. SPY is still gated earlier by the pre-market no-trade zone; QQQ is correctly
+  unaffected (target 716.50 genuinely below spot).
+- **F72's strategy question is now MEASURED — and the answer is to keep the refusal (F72 addendum).**
+  Ran the sweep both ways as the plan specified. On clean data (QQQ+IWM, 2026-08-25..09-08)
+  `target_replan=entry` adds **5 trades, 0 wins, −53.0 pnl%-sum**, drops 3 baseline losers (−29.2),
+  changes no existing trade, **net −23.8**. Two of the five peaked at +15% and +18% and still
+  finished red — exactly the predicted mechanism, a further target lets the stop or the premium stop
+  resolve the trade first. `target_replan` stays **off**, which is already the default, so **nothing
+  was changed and nothing was deployed this run**. Small sample (5 trades), so this is "no evidence
+  for it", not "proven worthless" — re-measure when SPY can be included (see F75).
+- **The counterweight, honestly:** the four refused IWM shorts all ran the right way immediately —
+  **+0.20% to +0.35% MFE against a maximum 0.09% adverse excursion** on the underlying by 11:04
+  (IWM 292.58 → 291.55 low). I am not claiming a P&L: whether the premium cleared the +50% trim is
+  not reconstructable without the option tape. But the refusal is not free, and today it was
+  expensive four times.
+- **F75 (new, NOT fixed — the biggest finding of the run, and it undermines earlier calibration).**
+  The first sweep pass produced re-planned SPY targets of **592.62** and **908.54** for a SPY
+  trading at 765. Chasing those down: the shared `bars` table this desk sweeps on is **partly
+  synthetic**. SPY's 1m history starts 2026-08-15 and its **first five days are a random walk, not
+  SPY** — RTH ranges 508–523, 542–570, 632–744, 826–909, **1249–1424** — going real only on 08-20;
+  6,487 SPY 1m rows lie outside a 700–850 band. Separately, **flat stub sessions fill days the app
+  was not running**: 08-22 (Sat), 08-23 (Sun), **09-05 (a real trading Friday)** and 09-06 each carry
+  70–150 RTH rows at one constant price, low == high. Two consequences: sweep rows on or near that
+  SPY block are scored on fiction, and `targets_beyond`/`level_ladder` take the last N *dates present
+  in the bars* rather than the last N **trading** days, so weekends and not-running days silently eat
+  lookback slots. **Today's live plans are clean** — all three are built off 2026-09-08 real data and
+  their zones match the tape to the cent — so there is no live exposure. Root cause is shared
+  marketdata (stub-bar persistence + whatever seeded SPY in mid-August), which this desk does not
+  own. **Not built; options (a) backfill+delete and re-run every affected calibration, (b) make the
+  sweep skip degenerate/non-trading sessions, (c) both — written up in TRADING-RULES F75. User's
+  call.** Note (b) moves targets, so it is rules-adjacent and not something to ship mid-session on an
+  auto desk.
+- **Checked and found nothing wrong:** the read matches the tape (SPY/IWM 09:30 15m bodies below
+  their PDL zones, QQQ below its PDH zone bottom — all three scenario calls correct); `regimeLast`
+  EMAs present everywhere; `level_ladder` and `targets_beyond` use the *same* pivot window (2), so
+  the ladder is not mis-tuned relative to the targets it replaces — I checked because it looked like
+  a defect and it is not. UI renders correctly at 1440×900, version chip 0.7.26, only benign
+  service-worker fetch noise in the console.
+- **Not ours, unchanged:** `persist_bars: dropped N non-bucket-aligned stub bar(s)` still dominates
+  the log (and is very likely the same mechanism as F75's flat sessions), plus
+  `calendar fetch failed for USO/DRAM: 404` from Yahoo's quoteSummary endpoint.
+- **Next run (11:30–12:00 ET) should:** (1) still hunt the first priced fire of the day — no
+  `contract` pick has been exercised yet, so strike selection (~$0.60 ask) and live-vs-replay fire
+  parity remain untested today; (2) watch whether IWM's `pm_break_down` setup ever clears the F72
+  guard (it will not while the target stays 293.56 — so expect refusals to continue and note them
+  once, not four times); (3) no restart is queued — the 11:07 boot already put the desk on 0.7.26.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question** (now with a measurement attached — the recommendation is "leave it off"),
+  **F74**, **F75**, F67's two shared-side halves, and the F30-family question of which premium series
+  is authoritative.

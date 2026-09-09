@@ -1179,6 +1179,27 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
     until that comparison exists — the open question is whether the recovered trades earn more than
     they lose on a target that is, by construction, further away than the plan's.
 
+  - **MEASURED 2026-09-09 11:20 ET — the comparison exists now, and it does not support turning the
+    variant on.** Ran the sweep both ways. A first pass over 2026-08-12..09-08 (all three symbols)
+    gave baseline 45 trades / 16 wins / +843.0 pnl%-sum vs variant 55 / 17 / +706.6, i.e. **13 new
+    trades worth −165.6** — but four of those re-planned onto SPY targets of **592.62** and
+    **908.54**, which is F75's corrupt SPY block, so that pass is void for SPY. Re-ran on **clean
+    data only (QQQ + IWM, 2026-08-25..09-08)**: the variant adds **5 trades, 0 wins, −53.0 pnl%-sum**
+    (−4.3, −19.8, −11.8, −10.7, −6.3), drops 3 baseline losers worth −29.2, and changes no existing
+    trade's outcome — **net −23.8 pnl%-sum**. Two of the five reached a decent peak (+15%, +18%) and
+    still finished red, which is the mechanism the plan predicted: a target further away means the
+    stop or the premium stop resolves the trade first. **Verdict: keep `target_replan=off`.** The
+    sample is small (5 recovered trades) so this is not proof the idea is worthless, but there is no
+    evidence for it, and the burden was on the variant. Re-measure once F75's data is repaired and
+    the window can include SPY — SPY is where the F72 condition actually keeps showing up.
+  - **Live cost of the baseline refusal, same morning, for the other side of the ledger:** IWM
+    refused four shorts (10:32 @ 292.58, 10:36 @ 292.52, 10:42 @ 292.42, 11:00 @ 292.12). By 11:04
+    IWM was 291.64 and had traded 291.55, so all four ran **+0.20% to +0.35% in the trade's favour
+    with a maximum adverse excursion of 0.09%** on the underlying. That is the honest counterweight:
+    the refusal is protecting against a booked-loss-labelled-a-win, but on this particular day it
+    also stood aside from four moves that went the right way immediately. Whether the *premium* would
+    have cleared the +50% trim is not reconstructable without the option tape, so no P&L is claimed.
+
 - **F73 (2026-09-09 10:40 ET, FIXED and deployed, v0.7.25 — F71's fix shipped as dead code).**
   F71 (v0.7.23, yesterday's 09:45 run) added a direction-aware `team2Distance()` to `ArmedDayPanel`
   so a break row already through its level would read *"price is already through, waiting on the 15m
@@ -1219,6 +1240,33 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   rules payload and still unused by `session.py`, per F65); (c) leave it — D10's stickiness is the
   method's own choice and the other gates cover it. **A rule change either way, so: user's call.**
 
+- **F75 (2026-09-09 11:20 ET, NOT fixed — the bars table this desk sweeps on is partly synthetic).**
+  Every Team2 sweep, calibration and variant measurement reads `service.bars_1m()` = the shared
+  `bars` table, and that table is **not all real market data**. Measured this run, RTH rows only:
+  **SPY 2026-08-15 → 08-19 is a random walk, not SPY** — session ranges 508–523, 542–570, 632–744,
+  826–909, **1249–1424** — and SPY only becomes real on 2026-08-20 (765.26–768.12). SPY's 1m history
+  begins 2026-08-15, so the corrupt block is the *first five days of everything the DB knows about
+  SPY*. 6,487 SPY 1m rows sit outside a 700–850 band. QQQ and IWM start 2026-08-17 and look real
+  throughout. Separately, **flat stub sessions fill gaps where the app was not running**: 2026-08-22
+  (Sat), 08-23 (Sun), **09-05 (a real trading Friday)** and 09-06 (Sun) each carry 70–150 RTH rows at
+  a single constant price (SPY 765.72 / 770.19, QQQ 718.96, IWM 296.01, low == high all session).
+  Two consequences for this desk, both demonstrated below in F72's measurement: (1) sweep rows for
+  SPY dated in or within `target_lookback_sessions` of 08-15..08-19 are scored on fiction — the
+  re-planning variant picked targets of **592.62** and **908.54** for a SPY trading at 765, both
+  traceable to that block; (2) `targets_beyond` and `level_ladder` take the last N *dates present in
+  the bars*, not the last N **trading** days, so a weekend or a not-running Friday silently eats
+  lookback slots and can contribute a flat pivot. **Today's live plans are clean** — all three are
+  built off 2026-09-08, which is real data, and their zones match the tape to the cent — so there is
+  no live exposure right now; this is a research-integrity finding, not a trading one. Root cause is
+  in shared marketdata (stub-bar persistence + whatever seeded SPY in mid-August), which this desk
+  does not own, so **nothing was changed**. Options: (a) backfill SPY 1m from 2026-08-15..08-19 from
+  the real provider and delete the stub sessions, then re-run every Team2 calibration that touched
+  them; (b) have the sweep skip sessions whose RTH range is degenerate (low == high) or whose date is
+  not a trading day, which makes the desk robust without fixing the table; (c) both — (b) is the
+  Team2-side half and is a *rules-adjacent* change (it moves targets), so it is **not** something to
+  build mid-session on an auto desk. **User's call.**
+
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -1229,6 +1277,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-09 (market watch, run 36, 11:20 ET — no code change)** — **F72's re-planning variant
+  measured and rejected for now**: on clean data (QQQ+IWM, 2026-08-25..09-08) `target_replan=entry`
+  adds 5 trades, 0 wins, −53.0 pnl%-sum, net −23.8 vs baseline; `target_replan` stays **off**, which
+  is already the default, so nothing was changed. **F75 logged**: the shared `bars` table this desk
+  sweeps on contains a synthetic SPY block (2026-08-15..08-19, ranges up to 1249–1424) and flat stub
+  sessions on non-running days (08-22, 08-23, 09-05, 09-06), which voided the first pass of that
+  measurement and silently consumes `target_lookback_sessions` slots — root cause is shared
+  marketdata, not built, user's call. Live plans verified clean and unaffected.
 
 - **2026-09-09 (market watch, run 35, 10:40 ET — v0.7.25)** — **F73 fixed** (reporting only): F71's "price is already through" wording was keyed to the labels `break PDH`/`break PDL` while the served pseudo-trigger carries `Setup.kind` (`scenario_4`, `pm_break_down`, …), so the branch never matched a single live row and every Team2 break setup fell back to a bare percentage; break rows now match on the kinds the desk emits, verified on screen. **F74 logged as a proposal** (rule change, user's call): a scenario 2/3 anchor reclaimed by later 15m closes keeps its setup live, and the EMA13/EMA48 touch entries — unlike T2 and T7 — have no anchor-side test. **F72's guard fired live for the first time** (IWM 10:32, `skip_target_behind`, target 293.56 above a 292.58 short entry) and replayed identically. Tests: 94 Team2 tests pass; frontend build green. No rule, threshold, gate, size or money path changed.
 - **2026-09-08 (evening, after the Codex review — v0.7.13, one deploy; stamped 0.7.12 at first, renumbered because the Cartel desk's PR 13 took 0.7.12 on origin/main the same evening)** — **Hosting:** the 14:24 outage was the Claude
