@@ -3348,3 +3348,9 @@ unreported for a session.
 - **Checked, no crash risk:** the F81b branch formats `{target:.2f}` and calls `float(target)`, which
   would raise on a `None` target — but `target_is_ahead(None, …) == True` makes that branch unreachable
   for a null target. Verified in code, not just by absence of errors in the log.
+- **09:53 ET, F90 confirmed live within three minutes of being written:** SPY traded **757.43, below its
+  PM low 757.69** — out of the no-trade zone and into the only region where a `scenario_4` short can
+  enter. Its plan target is **757.90**, now ABOVE price, i.e. behind the trade by construction exactly as
+  F90 predicts. The next SPY pullback contact will land in the F81b `target_replanned` branch (or, on the
+  baseline, in `skip_target_behind`). QQQ 708.07 and IWM 288.17 are still inside their ranges. Run 50
+  should look for SPY's first `target_replanned` event and report it against the standing F81b tally.
