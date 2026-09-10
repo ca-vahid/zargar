@@ -1812,6 +1812,22 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   the rule was switched on but could not reach the book. The twenty-session review should start counting
   from the first session that runs v0.7.38.
 
+- **F92 (2026-09-10 10:06 ET, OBSERVATION, no fix proposed — live and replay can read a 15m close two
+  cents apart).** Today's SPY `pm_break` event carries `close: 756.78` on the LIVE read and
+  `close: 756.76` on the replay of the same bar. The bars table's 09:59 1m close is 756.76
+  (`source: exchange`), so the live read used the SAMPLED close that stood when the event was journaled
+  at 10:00:00 and the exchange bar corrected it a moment later — the documented
+  `feed.exchange_bar_hold_seconds` behaviour, not a Team2 defect. The 09:45 `scenario` close matches
+  (758.135 / 758.14, rounding only), and the 2m regime series matches exactly (regime `ts` is the bar's
+  START; read-event `ts` is its CLOSE — start + tf, verified against the 1m table at 10:04→757.16).
+  **Why it is worth writing down:** a decision taken within a couple of cents of a level — a 15m body
+  close against a zone edge, a PM-low break — can go one way live and the other in replay, and the
+  parity check would report a divergence that is really a bar correction. It changed nothing today
+  (756.78 and 756.76 are both far below the 757.69 PM low). No fix is proposed: the live read cannot
+  wait for the correction without delaying every decision by the hold window, which is the trade-off
+  the engine already made deliberately. Diagnostic value only — check the bar source before calling a
+  future parity mismatch a rule bug.
+
 
 ## Theories to test
 

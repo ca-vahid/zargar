@@ -3354,3 +3354,89 @@ unreported for a session.
   F90 predicts. The next SPY pullback contact will land in the F81b `target_replanned` branch (or, on the
   baseline, in `skip_target_behind`). QQQ 708.07 and IWM 288.17 are still inside their ranges. Run 50
   should look for SPY's first `target_replanned` event and report it against the standing F81b tally.
+
+
+## 2026-09-10 10:15 ET (run 50 - the desk fired its first Team2 trade of the day and REFUSED it: F91, the runner disagreed with its own read; fixed + committed, still undeployable)
+
+- **Alive on v0.7.36**, armed 60 desk-wide, `needsAttention` false on all three, zero Team2 errors in
+  the engine log. **The user has not restarted** - F88's v0.7.37 is still not live, and now F91's
+  v0.7.38 queues behind it. `/api/ops/restart-check` flipped to `safe: true` at 10:13 (the EM fire
+  chain that held it at 10:05 cleared), but **F89 still closes the door**: the running engine (the
+  01:29 ET boot) is elevated and `Stop-Process` returns Access denied from any Limited task. Per run
+  49's standing instruction I did **not** attempt another restart.
+- **Data real-time and clean.** SPY/QQQ/IWM quotes sub-second old, session `regular`, SPY 757.33/757.36
+  (3c spread); 1m bars banking every minute, **45/45 RTH minutes today `source='exchange'`** with
+  non-zero volume on all three, last bar 10:12 at 10:13. Alpaca stream authenticated since the 01:29
+  boot with no drop; the 09:00 ET pre-open feed self-test passed. `prevClose` correct (762.40 /
+  716.31 / 290.64).
+- **THE FINDING - F91: the live runner refused the entry its own read fired.** At **10:06 ET on SPY**
+  the read applied F81b (`target_replanned`: "planned target 757.90 is behind the 757.59 entry - no
+  structure left ahead: no target") and **fired**: touch #2, EMA13 757.59 held on a 757.16 close in a
+  bear stack, buy the **756 put at $0.53**, size full x1. In the same second the runner journaled
+  `TechniquePlanTriggerSkipped / skip_target_behind` - "target 757.90 (from the setup) is above the
+  757.59 entry ... refusing the entry rather than entering with no target at all (F72)". Replay
+  reproduces the read exactly, so **live and replay disagree on the only decision of the day**.
+- **Root cause, one line.** `runner.resolve_fire_target` read `e["target"]` and, on `None`, fell back to
+  `setup["target"]`. F81b's entire point is a `None` target on the fire - and the **setup keeps its
+  stale planned target** (confirmed live: setup `pm_break_down@09:45` still carries `target 757.9`). So
+  the fallback resurrected exactly the number the read had just replanned away from, and F72's guard
+  refused it. The fire already carried the discriminator, `targetKind: "none"`, stamped in **exactly
+  one place** (`session.py`'s F81b structure branch, nowhere else); the gate only looked at the value.
+- **Scope, and it is the big one: F81b has been unreachable in live trading on EVERY entry since it was
+  switched on at 20:30 ET on 09-09.** Not a mistuned threshold - the rule could not reach the book at
+  all. With **F90** (on a gap day a `scenario_4` short can only enter below the PML, which is exactly
+  where F81 puts its target) F81b is the *only* path to a gap-day entry, so this silently zeroed the
+  gap-day book. **Every "F81b had no opportunity" reading in runs 46-49 is unreliable**; the
+  twenty-session review should start counting from the first session that runs v0.7.38.
+- **Fixed, tested, committed as `db73398` (v0.7.38), NOT deployed.** `resolve_fire_target` skips the
+  setup fallback when the fire is stamped `targetKind == "none"`, honouring the read's verdict - the
+  trims, the candle stop, the premium stop and the 15:45 flatten manage the trade, the same targetless
+  shape the function's own docstring already blesses. **F72's hole stays closed:** an *unstamped*
+  targetless fire (`targetKind` absent, empty, `plan`, `hod`, `replan`) still falls back and still
+  refuses a stale target, so a restored or replayed event cannot smuggle in a targetless entry. F88's
+  genuinely-null-target case (IWM today, `targetKind: "plan"`) is untouched. **No threshold, gate,
+  band, size or money path changed.** 3 new regressions replay today's SPY sequence and both mirrored
+  sides - verified failing when the one-line condition is reverted; **133 Team2 tests green**, frontend
+  build + `check-release` green.
+- **What the refused trade actually did, reported straight: it would have LOST.** The model trade
+  entered $0.5277, ran to **+39.5% peak** (no trim - the first rung is +50%) and stopped out at
+  **-12.21%** at 10:14 on the S1 one-candle stop (2m close 757.64 back through the EMA13 757.42), 4
+  bars held. So today's refusal happened to save a small loser - but it was a **bug, not a decision**,
+  and the same bug refuses the winners.
+- **The open, and the rest of the tape.** All three gapped down, opened below their PDL zones and
+  confirmed **`scenario_4` break PDL -> puts** on the 09:45 close (SPY 758.135 < 760.94, QQQ 708.77 <
+  714.02, IWM 288.40 < 290.31). SPY then broke its PM low: `skip_no_trade_zone` at 09:50 (entry 759.01
+  inside the PM range), `pm_break` at 10:00 arming `pm_break_down@09:45` at 757.69 - whose target the
+  read itself flagged "already behind the break, so this setup has no room (F76)" - `skip_engulfing`
+  at 10:02 (body 0.79 > 2.0x avg 0.21), `same_pullback` at 10:04, then the 10:06 fire. **QQQ**: three
+  `same_pullback` notices (F62), still inside its PM range, 0 fires. **IWM**: one
+  `skip_no_trade_zone` at 09:52, still carrying **`target: null`** from F88, 0 fires. **Book: 0 trades,
+  0 open positions, $0.00 realized on all three.** Mode is **`auto`** and that is the user's own
+  setting (`techniques.team2.mode` last written 09-04 10:22 ET, no change since - verified in the
+  journal, not drift).
+- **F92 - NEW (observation, no fix proposed).** Today's SPY `pm_break` carries `close: 756.78` live and
+  `close: 756.76` in replay; the bars table's 09:59 exchange close is 756.76. The live read used the
+  SAMPLED close that stood when the event was journaled at 10:00:00, corrected a moment later - the
+  documented `feed.exchange_bar_hold_seconds` trade-off, not a Team2 defect. Changed nothing today
+  (both far below the 757.69 PM low), but a decision taken within a couple of cents of a level can
+  diverge between live and replay, and the parity check would report it as a rule bug. Also verified
+  while checking: `regime.ts` is the bar's **START**, read-event `ts` is its **CLOSE** (start + tf) -
+  reconciled against the 1m table at 10:04 -> 757.16.
+- **F85 standing check: zero Team2 rows.** 7 `TechniquePlanError` rows in the last 4h, all **tip** - six
+  09:31 never-chase gap notices (RDDT/BBAI/FRVO/GOOGL/AAOI x2) and one 09:26 source follow-up on AMZN.
+  Other desks, reported not touched: the two `cartel-observer bar handling failed` tracebacks from
+  09:37/09:42 ET are unchanged since run 49, none new.
+- **F81b live tally: 1 read fire, 0 live entries, book net $0.00** - and per F91 that zero is the bug,
+  not the rule. F87 is unchanged and now secondary: today's plans still record `target_replan: "off"`
+  while the runner runs `structure`.
+- **Next run (~10:45 ET) should:** (1) check `/api/health` - if it reads **0.7.38** the user restarted,
+  so immediately confirm SPY/QQQ fires now reach the book (a `target_replanned` fire should produce a
+  `contract` event and a trade, not `skip_target_behind`) and that IWM's null target re-derived; if it
+  still reads **0.7.36**, do NOT attempt a restart and repeat the F89 ask; (2) keep the F81b tally,
+  counting read fires and live entries **separately** until v0.7.38 is live; (3) watch QQQ's and IWM's
+  first pullback contacts out of their PM ranges (706.50 / 287.83); (4) the F85 journal query. Still
+  open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**,
+  **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy
+  question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**, **F87**,
+  **F89**, **F90**, **F92**, F67's two shared-side halves, and the F30-family question of which premium
+  series is authoritative.
