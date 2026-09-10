@@ -2047,6 +2047,45 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   setup) so a reader can see 11 refusals without re-deriving them from the counter? That changes what
   the read emits, so it is a method-reporting decision, not a defect fix.
 
+- **F101 (2026-09-10, run 58) — the premium band is checked against a synthetic $1 strike ladder,
+  not the venue's listed strikes; today that refused IWM's only nine tradeable pullbacks.** IWM was
+  the one symbol all day to clear both binding gates — it closed below its 287.83 pre-market low and
+  held a bear stack — and between **13:40 and 14:02 ET it produced nine `pm_retest` entries and lost
+  every one to `skip_no_contract`** (`opportunities` 9, `touches` 0, trades 0). The refusal blames the
+  modelled premium, and F59 (the model's *price* drifting from the chain's) was the obvious suspect.
+  **It is not F59. The model's price is excellent today** — measured against the live CBOE chain at
+  14:04 ET, spot 287.76: it marks the 287 put at **$0.099 vs a real $0.09/$0.10**, and the 287.5 put
+  at **$0.2154 vs a real $0.20/$0.21**. The defect is the **ladder**: `rules.strike_step = 1.0`, so
+  `PremiumModel.pick_strike` walks 287, 286, 285 … and **never tests the listed 287.5 strike**, which
+  today was the only OTM put inside the $0.20–$0.90 band — bid 0.20 / ask 0.21, **33,008 contracts
+  traded**, 717 OI, delta −0.385, a one-cent spread. The walk breaks at the first sub-floor strike
+  (287 at $0.10), so it returns None having tested exactly one strike. IWM lists half-dollar strikes
+  on a sparse ~$5 grid (277.5, 282.5, **287.5**, 312.5); SPY and QQQ were confirmed pure $1 ladders
+  today, so this bites IWM specifically, and only when price parks on a half-strike — which is exactly
+  where it parked, because 287.5 sits under the 287.83 pre-market low the setup was built on.
+  **This is not narrative-only — it blocks real money.** `runner.py:460-479` drives the live desk off
+  the read's events: only a `fire` event reaches `_fire_from_event` → `pick_contract` → the live chain.
+  Because the read emitted `skip_no_contract`, **the live picker was never consulted**, and four of the
+  nine refusals reached the journal as live `TechniquePlanTriggerSkipped` rows (13:54, 13:56, 13:58,
+  14:02 — the rest suppressed by `note_once`, F100). Run `select_by_premium` over today's real chain at
+  the read's own 287.83 entry spot and it returns **287.5P @ $0.21, a fire**. So the modelled ladder is
+  a hard gate standing in front of the real chain, and today it converted a tradeable setup into nine
+  refusals.
+  **Fixed this run (v0.7.40, queued for deploy) — reporting only.** The refusal now names the nearest
+  OTM strike it modelled, that strike's mark and the ladder step ("nearest OTM on the $1 ladder is 287
+  at $0.11"), via a new `PremiumModel.nearest_otm` diagnostic. No entry, exit, sizing or gate behaviour
+  changed; 133 Team2 tests pass.
+  **NOT fixed, and needing the user's decision — two candidate fixes, and the obvious one is wrong.**
+  (a) Setting `strike_step = 0.5` for IWM is tempting and **unsafe**: IWM's half strikes exist only on
+  that sparse $5 grid, so a 0.5 ladder would price and pick strikes that are *not listed* (286.5,
+  288.5 …) — trading a contract that does not exist is worse than missing one. It also silently
+  rewrites every historical sweep. (b) The structural fix is to let the **listed** strikes drive the
+  ladder — pass the real strike list (or the day's chain snapshot) into `simulate_session`, falling
+  back to the `strike_step` grid only when unknown — or, narrower, to reorder the live path so the read
+  emits the fire and the live picker's real-chain answer is authoritative, with the model kept for
+  simulation only. Both change the read→runner contract and (b)'s first half changes what every
+  backtest scores, so neither is a market-watch change. **Consequence for queued work:** any sweep or
+  calibration that turns on premium-band refusals is measuring this ladder, not the venue's.
 
 ## Theories to test
 
@@ -2203,6 +2242,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
+| 2026-09-10 | **F101 fixed (v0.7.40, queued for deploy)**: a `skip_no_contract` refusal now names the nearest OTM strike it modelled, that strike's mark and the ladder step (new `PremiumModel.nearest_otm`), so a refusal is diagnosable without a chain fetch. Reporting only — no entry, exit, sizing or gate changed. The underlying defect is NOT fixed: the band is judged on a synthetic `strike_step` ladder that misses listed strikes, and because the runner fires only on a read `fire` event, the live picker never sees the real chain | market watch run 58; IWM 9 refused `pm_retest` entries 13:40–14:02 ET, the listed 287.5P bid 0.20/ask 0.21 with 33,008 traded never tested by the $1 ladder; `select_by_premium` on the live chain returns 287.5P @ $0.21; model prices verified accurate (287.5 modelled $0.2154 vs real $0.21); 133 Team2 tests pass | Team2 desk |
 | 2026-09-10 | **F100 fixed (v0.7.39, queued for deploy)**: a pullback refused for its LOCATION — inside the pre-market no-trade zone (V6/B5) or on a range day that has not cleared its level (B3/A4) — no longer says "not counted as a pullback" (the read had already counted it in `pullbacks`); it now says "does not spend the two-pullback allowance (D9)", which is what F18 actually does. `session.py:497` documents the three-counter contract (`pullbacks` = every episode, `opportunities` = tradeable locations, `touches` = the D9 allowance). Reporting only — no entry, exit, sizing or gate changed | market watch run 57; QQQ scenario_4 at pullbacks 11 / opportunities 0 behind a single 09:52 `skip_no_trade_zone` note; 133 Team2 tests pass | Team2 desk |
 | 2026-09-04 | **F41 + F42 fixed** (post-close): the nightly never mints/arms a second plan for a session that already has one (`skipped`, with `force` on plan-now as the manual rebuild), and the 09:25 completion leaves a plan whose session has not started alone. Both are the same root cause — the two Team2 jobs are weekday-gated, not trading-day-gated, so **Labor Day 2026-09-07** would have double-armed 2026-09-08 and blanked its plans that morning. No sizing, entry or exit rule changed | market watch 16:05 ET; `next_trading_day(2026-09-04) == next_trading_day(2026-09-07) == 2026-09-08` | Team2 desk |
 | 2026-09-03 | Method codified v0.1 from 49 public posts; desk opened | `SOURCES.md` | Team2 desk |

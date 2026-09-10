@@ -3975,3 +3975,90 @@ unreported for a session.
   **F86**, **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**, **F94**, **F95**,
   **F97 (qualified by F98)**, **F98**, **F99**, **F100's reporting question**, F67's two shared-side
   halves, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-10 14:05 ET (run 58 — healthy; IWM finally cleared both gates and lost nine entries to a strike ladder that cannot see the strike — F101, half-fixed)
+
+- **Alive on v0.7.36** (`/api/health`: ok, started, armed 59 desk-wide), `needsAttention: false`, no
+  `readError` on any of the three. The user has **still not restarted**, so F88's v0.7.37, F91's
+  v0.7.38, F100's v0.7.39 and now F101's **v0.7.40** are all queued. Per the standing F89 instruction
+  I did **not** attempt a restart and did **not** rebuild `dist`.
+- **Data real-time and clean.** Quotes `quoteAge 0 s` on all three, session `regular` — SPY 757.96,
+  QQQ 709.52, IWM 287.63. Bars: **276/276 RTH 1m bars 09:30→14:05 on all three, every one
+  `source='exchange'`, zero zero-volume minutes.** Plan `barAge` 85–103 s, `regimeLast.ts` = 14:00.
+  Pre-open still `complete: true` (PM SPY 757.69–764.60 / QQQ 706.50–717.60 / IWM 287.83–291.74,
+  `dayType: gap_down`, `sizingAtOpen: none`).
+- **The stack flipped back to bear on all three** — SPY strength 3 (ema13 758.335 < ema48 758.550 <
+  ema200 759.359), QQQ 3 (710.014 / 710.282 / 710.927), IWM 3 (287.799 / 288.014 / 288.744). Run 57's
+  mixed-stack stand-down on SPY and QQQ is gone; **the zone is again the single binding gate** on those
+  two, and both are still above their PM lows (SPY 757.96 vs 757.69, QQQ 709.52 vs 706.50).
+- **IWM broke through and became the day's real test.** It closed below its 287.83 PM low, held a bear
+  stack, and between **13:40 and 14:02 ET produced nine `pm_retest` entries — every one refused
+  `skip_no_contract`**. Setup `pm_break_down@10:00` now reads **pullbacks 25 / opportunities 9 /
+  touches 0**: nine tradeable locations, zero priced. Book still **0 trades, 0 open, $0.00** on all
+  three; SPY's single read fire (10:06, 756P, −12.21%) remains the day's only one.
+- **F101 — NEW, and it is not the F59 it looks like.** The refusal blames the modelled premium, so F59
+  (model price drifting from the chain) was the obvious suspect. **The model's price is excellent
+  today.** Against the live CBOE chain at 14:04 (spot 287.76) it marks the **287 put at $0.099 vs a
+  real $0.09/$0.10** and the **287.5 put at $0.2154 vs a real $0.20/$0.21**. The defect is the
+  **ladder**: `rules.strike_step = 1.0`, so `pick_strike` walks 287, 286, 285 … and **never tests the
+  listed 287.5 strike** — the only OTM put in the $0.20–$0.90 band today, bid 0.20 / ask 0.21,
+  **33,008 contracts traded**, delta −0.385, one-cent spread. The walk breaks at the first sub-floor
+  strike (287 at $0.10) having tested exactly one. IWM lists half strikes on a sparse ~$5 grid (277.5,
+  282.5, **287.5**, 312.5); SPY and QQQ were confirmed pure $1 ladders today. Price parked on 287.5
+  precisely because it sits under the 287.83 PM low the setup was built on.
+- **It blocks real money, not just the narrative.** `runner.py:460-479` drives the live desk off the
+  read's events — only a `fire` reaches `_fire_from_event` → `pick_contract` → the live chain. The read
+  emitted `skip_no_contract`, so **the live picker was never consulted**; four refusals reached the
+  journal as live `TechniquePlanTriggerSkipped` (13:54, 13:56, 13:58, 14:02 — the rest suppressed by
+  `note_once`, F100). Running `select_by_premium` over today's real chain at the read's own 287.83 entry
+  spot returns **287.5P @ $0.21 — a fire.** The modelled ladder is a hard gate standing in front of the
+  real chain.
+- **Fixed as v0.7.40 (`dff429d`, not deployed) — reporting only.** The refusal now names the nearest
+  OTM strike it modelled, its mark and the ladder step (new `PremiumModel.nearest_otm`); today's would
+  have read *"nearest OTM on the $1 ladder is 287 at $0.11"*, making the cause visible without a chain
+  fetch. No entry, exit, sizing or gate touched. **133 Team2 tests pass** (own DB
+  `zargar_test_team2_watch`), typecheck clean, `check-release` agrees on 0.7.40 across all four files
+  plus the lockfile.
+- **Proposed (NOT built — needs the user, and the obvious fix is the wrong one).** (a) `strike_step =
+  0.5` for IWM is **unsafe**: its half strikes exist only on that sparse $5 grid, so a 0.5 ladder would
+  price and pick **unlisted** strikes (286.5, 288.5 …) — trading a contract that does not exist is worse
+  than missing one — and it silently rewrites every historical sweep. (b) The structural fix is to let
+  the **listed** strikes drive the ladder (pass the real strike list / the day's chain snapshot into
+  `simulate_session`, falling back to the grid only when unknown), or — narrower — reorder the live path
+  so the read emits the fire and the live picker's real-chain answer is authoritative, with the model
+  kept for simulation only. Both change the read→runner contract; (b)'s first half changes what every
+  backtest scores. **Consequence for queued work: any sweep or calibration that turns on premium-band
+  refusals is measuring this ladder, not the venue's** — same caution as F99's warm-up depth.
+- **Replay parity: no new disagreement.** SPY and IWM replays match the live read on every shared row
+  and add only the next bar the live read had not yet written (SPY 13:58 `same_pullback`, IWM 14:04
+  `skip_engulfing`) — currency, not conflict. **QQQ reproduces F99 exactly for the third run running**
+  (live ends `same_pullback` 12:38, replay 12:40, no 12:38 row) — same two bars as runs 56 and 57, so a
+  fixed warm-up-depth difference, not a race. **No `fire`, `trim` or `exit` row disagrees anywhere.**
+  SPY's replay still reproduces the 10:06 `target_replanned` + fire and the 10:14 −12.21% stop, 1 trade.
+- **F85 standing check: zero Team2 error rows.** Journal last 40 min: 50 `TechniqueOutcomeScored`, 14
+  `TipMessageRevised`, 11 `TechniquePlanTriggerSkipped` (of which IWM's four `skip_no_contract` above),
+  7 `TipNoteAdded`, 6 `TechniquePlanRead`, 6 `ContentReceived`, 5 `SignalExtracted`, 5 `BrokerSync`,
+  4 `SignalVerificationFailed` (all tip-side). **F91 unchanged** — SPY's 10:06 `skip_target_behind` on
+  the 757.90 still stands against the read's fire; **F81b live tally: 1 read fire, 0 live entries, book
+  $0.00**. **F88 unchanged** (IWM's two setups still carry null targets — visible again as
+  `"target": null` on both). **F94 unchanged**, with a fresh data point: the login page footer serves
+  **v0.7.38** while `/api/health` reports **0.7.36** — the served `dist` and the running backend are
+  already two releases apart, so the chip is doubly not the authority.
+- **UI not re-verified this run:** `/team2` redirected to the sign-in screen and the `?token=` handoff
+  did not take in the in-app browser. No UI change shipped this run (v0.7.40 is backend-only plus the
+  changelog), so nothing new is at risk; worth one retry next run.
+- **Next run (≈14:35 ET) should:** (1) `/api/health` — if **0.7.40** (or .37/.38/.39) the user restarted,
+  so immediately confirm a `target_replanned` fire reaches the book (a `contract` event and a trade),
+  that IWM's two null targets re-derived, and that a `skip_no_contract` now names its tested strike;
+  if still **0.7.36**, do not attempt a restart and repeat the F89 ask; (2) **IWM is the live symbol** —
+  it is through the zone with a bear stack, so every further contact is an F101 refusal until the ladder
+  question is decided; count them and quote `opportunities` vs `touches` (F100); (3) SPY and QQQ are back
+  to a single gate (the zone) and need a close below 757.69 / 706.50; (4) cite F99 for a QQQ tail-row
+  replay difference, but treat any `fire`/`trim`/`exit` disagreement as a serious escalation;
+  (5) the F85 journal query; (6) retry the `/team2` UI check. Still open for the user: **F47**, **F49**,
+  **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**,
+  **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**,
+  **F81**, **F82**, **F83**, **F85**, **F86**, **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**,
+  **F93**, **F94**, **F95**, **F97 (qualified by F98)**, **F98**, **F99**, **F100's reporting question**,
+  **F101's ladder decision**, F67's two shared-side halves, and the F30-family question of which premium
+  series is authoritative.
