@@ -1989,6 +1989,41 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   F90(c) sweep F97 proposes must be run off the warm-up reconstruction, or its "released" tally will
   inherit the same drift.
 
+- **F99 (2026-09-10, run 56) — replay does not read the same tape as the live runner: three code
+  paths seed the indicator series from three different warm-up depths.** First live-vs-replay
+  disagreement of the day, on QQQ: the stored live read ends with `same_pullback` at **12:38**, a
+  replay of the same run ends with `same_pullback` at **12:40** and does not contain 12:38. The
+  replay is deterministic (run twice, identical), every 1m bar in the window is `source='exchange'`
+  with no stub or zero-volume minute, and the engine logged **no `read_rewritten`** row — so this is
+  not a corrected bar moving under the read. `same_pullback` is emitted **once per pullback episode**
+  (`session.py:490-496`, `_same_said` clears only when `_departed` flips), so the two runs disagree
+  about *which* 2m bar counted as the new pullback: a one-bar shift in the episode boundary.
+  **Root cause, verified by reading the three call sites:** the read's EMA/ATR series is built from
+  `warmup_1m + today` (F98), and the warm-up is loaded with a different `limit` in each path —
+  live runner `_load_warmup` uses `load_bars(..., limit=6000)` (`runner.py:270`), `service.replay`
+  goes through `history_for` → `bars_1m(limit=20000)` (`service.py:74,83,351`), and `service.sweep`
+  uses `bars_1m(sym, limit=60000)` (`service.py:377`). `load_bars` returns the **most recent** N rows
+  (`marketdata.py:452-467`, `order_by ts desc … reversed`), and the table holds SPY 22,091 / QQQ 18,843 /
+  IWM 17,123 1m bars, so the three depths really do resolve to three different tapes: live seeds the
+  SMA-13 and the EMA200/ATR history from ~6,000 bars (~6 extended sessions), replay from ~20,000
+  (QQQ's entire bank), the sweep from everything. Because `pullback_reset_atr` is measured in ATRs,
+  a small ATR difference is enough to move an episode boundary by one bar — which is exactly what
+  today shows.
+  **Why it matters more than today's symptom:** the divergent event is a `same_pullback` note, which
+  gates nothing. But replay is *the* audit instrument this watch uses to certify the live read (step 5
+  of the job), and the sweep is what any threshold decision is judged on. Neither reproduces the series
+  the desk actually trades. Every earlier run's "replay parity holds exactly" was the difference being
+  too small to change an event, not the two paths agreeing by construction. It also means the F90(c)
+  variant sweep proposed in F97/F98 would be scored on a tape the live desk never saw.
+  **Not fixed — deliberately.** The one-line fix (make the three limits equal) is small in diff and
+  large in consequence: raising the live runner's warm-up changes the EMA200/ATR the desk trades on,
+  and lowering replay/sweep shortens every audit and backtest. Which depth is correct is a method
+  decision, so it is the user's. **Proposed:** pick ONE warm-up depth, define it as a named rule
+  (a session count, not a bar count — 6,000 bars is ~6 sessions for SPY but ~6.3 for IWM, so today the
+  three symbols do not even warm up over the same span), resolve it through settings, and have all
+  three paths read it. Until then, treat "replay parity" in this log as evidence about the *method*,
+  not proof the runner and the replay agree.
+
 
 ## Theories to test
 

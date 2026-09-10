@@ -3815,3 +3815,81 @@ unreported for a session.
   question**, **F81**, **F82**, **F83**, **F85**, **F86**, **F87 (narrowed — see F96)**, **F89**, **F90**,
   **F92**, **F93**, **F94**, **F95**, **F97 (now qualified by F98)**, **F98**, F67's two shared-side
   halves, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-10 13:05 ET (run 56 — healthy and quiet; but replay and the live runner turn out not to read the same tape — F99)
+
+- **Alive on v0.7.36** (`/api/health`: ok, started, armed 59 desk-wide), `needsAttention: false` and no
+  `readError` on all three plans. The user has **still not restarted**, so F88's v0.7.37 and F91's
+  v0.7.38 remain queued. Per the standing instruction from runs 49–55 (F89) I did **not** attempt a
+  restart. Nothing deployed this run.
+- **Data real-time and clean (measured this run).** Quotes at 13:03:17 ET sub-second old, session
+  `regular` — SPY 759.03/759.04, QQQ 710.86/710.87, IWM 288.19/288.20, `prevClose` 762.40 / 716.31 /
+  290.64. Bars: **213/213 RTH 1m bars 09:30→13:02 on all three, every one `source='exchange'`, zero
+  zero-volume minutes.** Plan `barAge` 87–95 s, quote age 0 s. Pre-open still `complete: true`,
+  PM ranges SPY 757.69–764.60 / QQQ 706.50–717.60 / IWM 287.83–291.74, `dayType: gap_down`,
+  `sizingAtOpen: none`.
+- **What the read saw since run 55 (12:35 → 13:05): three events, all the same one.** SPY 12:38, QQQ
+  12:38, IWM 12:42 — every one a `same_pullback` (F62). **No fires, no trims, no exits. Book still
+  0 trades, 0 open positions, $0.00 realized on all three.** Run 55's three watch levels are still
+  unbroken — SPY has not traded below 757.69, QQQ below 706.50, IWM below 287.83 — and price has in
+  fact drifted *up* and away from them (SPY 759.4, QQQ 711.3, IWM 288.4 at 13:03), so the pre-market
+  zone keeps refusing every contact by construction, exactly as F97/F98 described.
+- **F99 — NEW, and it undercuts an instrument this watch has leaned on for 55 runs.** QQQ is the first
+  live-vs-replay disagreement of the day: the stored live read ends `same_pullback` at **12:38**, the
+  replay ends at **12:40** and has no 12:38 row. I chased it rather than filing it as noise, because
+  every prior run recorded "parity holds exactly". It is **not** a corrected bar (all 1m bars in the
+  window are `exchange`, no stubs, no `read_rewritten` audit row) and **not** flaky (replayed twice,
+  byte-identical). `same_pullback` fires once per pullback episode, so the two runs disagree about
+  which 2m bar *counted* as the new pullback. **Cause, read off the three call sites:** the read's
+  EMA/ATR series is `warmup_1m + today` (F98) and the warm-up depth differs per path — live runner
+  `load_bars(limit=6000)` (`runner.py:270`), replay `bars_1m(limit=20000)` (`service.py:74,83,351`),
+  sweep `bars_1m(limit=60000)` (`service.py:377`); `load_bars` returns the most recent N
+  (`marketdata.py:452-467`) and the bank holds SPY 22,091 / QQQ 18,843 / IWM 17,123 1m bars, so the
+  three limits resolve to three genuinely different tapes. `pullback_reset_atr` is measured in ATRs,
+  so a small ATR difference moves an episode boundary by a bar. Today's casualty is a note that gates
+  nothing — but **replay is what this watch uses to certify the live read, and the sweep is what
+  threshold decisions are judged on**, and neither reproduces the series the desk trades.
+- **F99 not fixed, deliberately, and this is the one thing worth the user's decision this run.** The
+  diff is one line per call site; the consequence is not. Raising the live warm-up changes the
+  EMA200/ATR the desk trades on; lowering replay/sweep shortens every audit and backtest. **Proposed:**
+  pick ONE warm-up depth, express it as a **session count rather than a bar count** (6,000 bars is
+  ~6 sessions of SPY's ext tape but ~6.3 of IWM's, so today the three symbols do not even warm up over
+  the same span), resolve it through settings, and have all three paths read it. Consequence for work
+  already queued: the **F90(c) variant sweep proposed in F97/F98 should not be run until this is
+  settled**, or it scores a tape the live desk never saw.
+- **Replay parity elsewhere still exact: SPY 14/14, IWM 9/9** — same events, same order, same kinds,
+  and SPY's replay still reproduces the 10:06 `target_replanned` + fire and the 10:14 −12.21% stop
+  (1 replay trade). QQQ is 8 events either way; only the tail row differs.
+- **Re-measured F-statuses this run (F96's lesson — queries, not copied lines).** **F88 unchanged:**
+  IWM's `scenario_4@09:30` and `pm_break_down@10:00` both still carry an empty `targets` list, while
+  QQQ's `scenario_4@09:30` reads 706.50 and SPY's two read 757.90. **F94 unchanged** — health reports
+  0.7.36; the chip is not the authority. **F81b live tally unchanged: 1 read fire, 0 live entries,
+  book net $0.00** — per F91 that zero is the bug, not the rule. **F95:** no new stack-gate stand-down
+  to observe, the stack agrees on all three; note that today's `skip_no_trade_zone` rows say in their
+  own text "not counted as a pullback", which is worth reconciling against run 54's claim that the
+  12:02 refusal incremented `pullbacks` — flagged, not chased.
+- **F85 standing check: zero Team2 error rows.** Journal last 45 min: 50 `TechniqueOutcomeScored`,
+  13 `TipMessageRevised`, 6 `ContentReceived`, 5 `BrokerSync`, 4 `TipNoteAdded`, 3 `FlowContextServed`,
+  3 `SignalExtracted`, and single order/proposal rows — all tip-side. The only Team2-owned journal rows
+  all day remain the 13:25 UTC `team2_preopen` job, the reads, and the trigger-skips. Engine log:
+  **no new ERRORs since run 55** — today's remain the two 09:37 / 09:42 ET `cartel-observer bar handling
+  failed` tracebacks (unchanged since run 50) plus benign `_ProactorBasePipeTransport._call_connection_lost`
+  asyncio callbacks at 11:40 and 12:05 ET.
+- **UI checked:** `/team2` renders correctly — Plans tab lists all three armed plans with sheets, PM
+  ranges and `gap down` day type, header reads `auto mode · plans 17:00 ET, pre-open 09:25 · 0DTE:
+  entries until 15:30, flat by 15:45`, thresholds panel read-only as intended, no breakage.
+- **Next run (≈13:35 ET) should:** (1) `/api/health` — if **0.7.38**, the user restarted, so immediately
+  confirm a `target_replanned` fire reaches the book (a `contract` event and a trade, not
+  `skip_target_behind`) and that IWM's two null targets re-derived; if still **0.7.36**, do not attempt
+  a restart and repeat the F89 ask; (2) **when you check replay parity, cite F99** — a tail-row
+  disagreement is now an expected consequence of the warm-up mismatch, not a fresh finding; a
+  disagreement on a `fire`, `trim` or `exit` row would be a serious escalation and should be chased
+  immediately; (3) the binding constraint is still the zone, not the stack — the only path to a fire
+  is price closing back below SPY 757.69 / QQQ 706.50 / IWM 287.83, and price is drifting away from
+  all three; (4) keep counting F81b read fires and live entries **separately** until v0.7.38 is live;
+  (5) the F85 journal query. Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**,
+  **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's
+  shared half**, **F72's strategy question**, **F74**, **F76's rule question**, **F81**, **F82**,
+  **F83**, **F85**, **F86**, **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**, **F94**,
+  **F95**, **F97 (qualified by F98)**, **F98**, **F99**, F67's two shared-side halves, and the
+  F30-family question of which premium series is authoritative.
