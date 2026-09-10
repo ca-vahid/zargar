@@ -640,11 +640,17 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             # on the setup like the other "not tradeable" refusals so the Armed/phone headline can
             # state it (the runner already lists this kind; `_skipped` was never set, so it never showed).
             # F82 (2026-09-09): state the band's real upper edge (1.5x the target), not the target.
+            # F101 (2026-09-10): name the strike it actually tried. The ladder is a synthetic
+            # `strike_step` grid, NOT the venue's listed strikes — IWM refused nine entries today
+            # because the $1 grid never tested the listed 287.5 put (real ask $0.21, in band).
+            near_k, near_m = model.nearest_otm(entry_spot, end_ts, s.direction, step=rules.strike_step)
             note_once(s, end_ts, "skip_no_contract",
                       f"no strike MODELS between ${rules.premium_floor:.2f} and "
                       f"${rules.target_premium * MAX_OVER_TARGET:.2f} (target ${rules.target_premium:.2f}, V1) — "
+                      f"nearest OTM on the ${rules.strike_step:g} ladder is {near_k:g} at ${near_m:.2f}; "
                       f"modelled premium at sigma {sigma:.4f}, not the live chain",
-                      setup=s.id, touch=idx)
+                      setup=s.id, touch=idx, nearestStrike=round(float(near_k), 4),
+                      nearestMark=round(float(near_m), 4), strikeStep=float(rules.strike_step))
             continue
         strike, mark = pick
         s.touches += 1                                      # F61: only a PRICED pullback spends the D9 allowance

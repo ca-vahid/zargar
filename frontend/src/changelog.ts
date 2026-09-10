@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.39";
+export const APP_VERSION = "0.7.40";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.40",date:"2026-09-10",title:"A refused strike names the strike it tried",items:[
+    {tag:"improved",text:"Team2 F101: when no contract prices inside the $0.20-$0.90 band, the refusal now names the nearest out-of-the-money strike it modelled and that strike's price. The band is checked against a synthetic $1 strike ladder, not the venue's listed strikes, so the reason a refusal happened is now readable without pulling the chain. Today IWM refused nine entries between 13:40 and 14:02 ET on a ladder that tested the 287 put at $0.11 and never the listed 287.5 put, which was bid $0.20 / ask $0.21 with 33,000 contracts traded."},
+  ]},
   {version:"0.7.39",date:"2026-09-10",title:"A refused pullback says what it really costs",items:[
     {tag:"fixed",text:"Team2 F100: a pullback refused for its location - inside the pre-market no-trade zone, or on a range day that has not cleared its level - used to say “not counted as a pullback” while the read's own pullbacks counter had already counted it. It now says what is true: the refusal does not spend the two-pullback allowance. Today QQQ reached 11 pullbacks with 0 tradeable ones, and the two numbers looked like a contradiction."},
   ]},
