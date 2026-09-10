@@ -654,6 +654,16 @@ machinery (volume surge, decisive candle, follow-through, R6 windows), targets 1
 30/40/15 ladder. Nothing changes live. Test: `sweep --set gap_through_continuation=true` vs
 baseline over 2026-08-24..09-09 (`evo-T13-*`), adopt bar D7 (+0.3R/fire over baseline, fires
 <= 2x). Related: T-6/T-7 (gap-through was already named as their territory on day 8).
+**Verdict 2026-09-09 21:30 ET (sweeps `2b86fd5b7d` baseline, `3188f2fc69` confirmed, `b4faf2700d`
+loose; 1,287 sessions, 08-24..09-09): NOT adopted.** 37 gapped levels converted per sweep. With
+OUR break confirmation (surge + decisive candle + follow-through) only 2 continuations fired,
+both losers, net **-1.28R** vs baseline. With his tempo (`gap_continuation_confirm=false`: first
+close through the opening extreme, volume floor only) 16 fired: breakdowns (gap down through
+support, short) 11 fires, 6 wins, **+0.95R**; breakouts (gap up through resistance, long) 5
+fires, 2 wins, -0.23R; net **+0.72R = +0.05R/fire**, all in prime_open, before option costs.
+Below the D7 bar (+0.3R/fire). The gap-down/short half is the only slice with a pulse (55% win,
++0.09R/fire); twelve sessions is thin. Both knobs stay in the code, off; re-sweep at 25 sessions.
+His SPY trade is reproducible by the loose rule, but on the universe the rule does not pay.
 
 ### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08) - REJECTED on history 2026-09-09
 **Status: both forms (confirm gate, sweeps as trigger) measured and rejected; no rule change; the detector stays as research tooling. The paragraphs below are the dated record in the order it happened.**
