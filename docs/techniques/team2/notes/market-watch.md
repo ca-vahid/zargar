@@ -4331,3 +4331,80 @@ unreported for a session.
   (sized by F104)**, **F102's band question**, **F103's UI-check decision**, **F104's ladder/chain
   decision**, **F105's "which series is authoritative" decision (F104 cannot be decided without
   it)**, F67's two shared-side halves, and the F30-family question this now sharpens.
+
+## 2026-09-10 16:05 ET (run 62 — post-close; the day closed clean, and F106: the 15:45 flatten left no record — FIXED, v0.7.41)
+
+- **Alive on v0.7.36** (`/api/health`: ok, started; desk-wide armed **59 → 9**, the 16:00 disarm).
+  The user has **still not restarted**, so v0.7.37 (F88), .38 (F91), .39 (F100), .40 (F101) and now
+  **.41 (F106)** are **five** queued releases. Per the standing F89 instruction I did not restart and
+  did not rebuild `dist`.
+- **All three plans closed the session correctly.** `TechniquePlanScored` then `TechniquePlanDisarmed`
+  at exactly 16:00:00 ET on SPY, QQQ and IWM — `reason: "session closed"`, `fired: 0`,
+  `flatten: false`, `openLeft: 0`, `statuses: {}`. `/api/team2/status` now shows `armed: []`. Clean.
+- **The scorecard wrote the day, and it named the unmatched row (F67/F68's half).** SPY's
+  `TechniquePlanScored`: `theoreticalFires 1, actualFires 0, matched 0, realizedPnl 0,
+  modelPnlPctSum -12.21`, `basis "session-read vs book"`, and the row itself reads
+  `status: "not taken"`, `note: "model trade not taken by the book (see skips)"`, with the model's
+  side kept in full (`modelStrike 756`, `modelPremium 0.5277`, `entryKind ema`, `modelExit "2m close
+  757.64 through the EMA13 757.42 (S1 one-candle stop)"`) and every book field `null`. That is
+  exactly the case the unmatched-row half exists to name, and it is legible.
+- **Final day tallies.** SPY: 0 fires, 1 model trade (756P, 10:06, −12.21%), 7 refused —
+  `skip_no_trade_zone` 5, `skip_engulfing` 1, `skip_target_behind` 1, `skip_last_entry` 1.
+  QQQ: 0 fires, 0 model trades, `skip_no_trade_zone` 1 + `skip_last_entry` 1 — its D9 allowance
+  ends the day **untouched** and it never got its close below 706.50. IWM: 0 fires, 0 model trades,
+  **`skip_no_contract` 14** (F104's final number, read and audit agree on all fourteen timestamps),
+  `skip_no_trade_zone` 3, `skip_engulfing` 2, `skip_last_entry` 1. Book **$0.00, 0 fills** on all
+  three. **F81b live tally for the day: 1 read fire, 0 live entries.**
+- **A textbook tape: 390/390 RTH 1m bars 09:30→15:59 on all three, every one `source='exchange'`,
+  zero gaps, zero zero-volume minutes** (min vol SPY 12,098 / QQQ 9,610 / IWM 4,609). No stale-data
+  or wrong-session issue anywhere today. `needsAttention` false and no `readError` all session.
+- **F106 — NEW, and FIXED this run (v0.7.41).** `_clock_flatten` runs from `on_bar` on every RTH bar
+  from 15:45, but it logged **only inside its per-trade loop**. With the book flat that loop body
+  never executes, so today's 15:45 flatten emitted **nothing** — the audits jump straight from the
+  15:32 `skip_last_entry` to the 16:00 Scored/Disarmed pair. C3/D-1 is the method's hardest money
+  rule and this watch has been asked to "confirm the 15:45 flatten logs cleanly" every day since the
+  technique shipped; none of those runs could, because a correct silent pass and a flatten that never
+  fired leave the identical empty record. (The 16:00 `TechniquePlanDisarmed` payload's
+  `flatten: false` is the *shared* close, not the 15:45 clock pass, so it does not substitute.)
+  **Fix:** one `clock_flatten` event the first time the clock reaches `flatten_min` for a run —
+  *"flatten time 15:45 ET reached — closing N open and cancelling M working (C3/D-1)"* or
+  *"… — the book is already flat — nothing to close"* — with `openTrades`/`workingTrades` counts and a
+  per-run `_flatten_noted` guard so the repeated per-bar calls note once. **Observability only: no
+  rule, threshold, gate, size, order or money path changed**; the per-trade lines and the `_exit`
+  calls are untouched. `pytest tests/test_team2_*.py tests/test_marketstructure_extended.py` →
+  **133 passed**; `npm run check-release` → 0.7.41 agrees across all four files + the lockfile.
+  **Deploy queued behind F89.**
+- **Full-day replay parity: no money row disagrees.** SPY **36/36 events identical** and the same
+  trade (756P, 10:06, −12.21%); IWM **43/43 identical**, zero trades. QQQ shows **F99** once more
+  (live 12:38/14:50/15:26 vs replay 12:40/14:48 `same_pullback`) — the episode-scoped warm-up-depth
+  class, three live rows against two replayed. No `fire`, `exit`, `trim`, `contract`, `add`,
+  `skip_no_contract` or `target_replanned` row differs on any symbol.
+- **F85 standing check: zero Team2 error rows, no halt rows.** Every error-ish row in the last 10 h
+  is tip-side by ticker — `SignalVerificationFailed` ×39, `ProposalRejected` ×12,
+  `TechniquePlanError` ×10 (GS, AMZN ×2, RDDT ×2, BBAI, FRVO, GOOGL, AAOI ×2 — none SPY/QQQ/IWM),
+  `OrderRejected` ×2, `RiskCheckFailed` ×2. Engine log: **no new Team2 ERRORs** — today's remain the
+  two 09:37/09:42 ET `cartel-observer bar handling failed` tracebacks (unchanged since run 50) and
+  four benign asyncio `_ProactorBasePipeTransport._call_connection_lost` callbacks, the last at
+  13:48 ET; everything since is the benign `persist_bars: dropped N non-bucket-aligned stub bar(s)`
+  family. **UI not checked — per F103 it cannot be**; that recipe item stays retired.
+- **Next run (tomorrow 09:00 ET, or the 17:00 nightly if this watch is still running) should:**
+  (1) `/api/health` — if **0.7.41** (or .37/.38/.39/.40) the user restarted, so confirm in order:
+  a `target_replanned` fire reaches the book (F91), IWM's two empty `targets` re-derive (F88), a
+  `skip_no_contract` names its tested strike (F101 — which would have made F104 self-evident from
+  the message alone), and **the 15:45 flatten writes its new line** (F106); if still **0.7.36**,
+  do not restart and repeat the F89 ask; (2) the **17:00 ET nightly `team2 nightly plans` job**
+  should mint three plans for the next session (last night: `runs 3, failed 0, armed 3, skipped 0`);
+  (3) at 09:25 confirm the pre-open completes all three (`pmh`/`pml`, `dayType`, `sizingAtOpen`,
+  `complete: true`); (4) today's two carry-forward numbers are **IWM 14 `skip_no_contract`** and
+  **F102's 1/3/0 in-band close** — a fresh session should re-measure the band count early, since
+  F102's per-symbol disagreement was stable across all of today; (5) cite F99 for a QQQ tail-row
+  replay difference but escalate any `fire`/`trim`/`exit` disagreement; (6) the F85 journal query;
+  (7) **do not attempt the `/team2` UI check** (F103).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F89 (now five releases deep)**, **F90**, **F92**, **F93**, **F94**,
+  **F95**, **F97 (qualified by F98)**, **F98**, **F99**, **F100's reporting question**, **F101's
+  ladder decision (sized by F104)**, **F102's band question**, **F103's UI-check decision**,
+  **F104's ladder/chain decision**, **F105's "which series is authoritative" decision (F104 cannot
+  be decided without it)**, F67's two shared-side halves, and the F30-family question F105 sharpens.

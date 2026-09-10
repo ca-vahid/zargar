@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.40";
+export const APP_VERSION = "0.7.41";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.41",date:"2026-09-10",title:"The 15:45 flatten says it ran",items:[
+    {tag:"improved",text:"Team2 F106: the 15:45 flatten now writes one line when the clock reaches it, saying what it found - how many open trades it is closing, how many working entries it is cancelling, or that the book is already flat. Before this it logged only per trade, so on a day the desk ended flat, a flatten that ran correctly and a flatten that never ran left exactly the same record: nothing. Today all three symbols finished flat and the 15:45 pass was invisible."},
+  ]},
   {version:"0.7.40",date:"2026-09-10",title:"A refused strike names the strike it tried",items:[
     {tag:"improved",text:"Team2 F101: when no contract prices inside the $0.20-$0.90 band, the refusal now names the nearest out-of-the-money strike it modelled and that strike's price. The band is checked against a synthetic $1 strike ladder, not the venue's listed strikes, so the reason a refusal happened is now readable without pulling the chain. Today IWM refused nine entries between 13:40 and 14:02 ET on a ladder that tested the 287 put at $0.11 and never the listed 287.5 put, which was bid $0.20 / ask $0.21 with 33,000 contracts traded."},
   ]},

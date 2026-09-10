@@ -2206,6 +2206,28 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   model kept for the read/replay/sweep so history stays reproducible, and the refusal line naming
   which series spoke. Related: F30, F36, F59, F101, F102, F104.
 
+- **F106 (2026-09-10, run 62, post-close - FIXED in v0.7.41) - a 15:45 flatten that found an empty
+  book left no record at all, so "it ran and found nothing" and "it never ran" were indistinguishable.**
+  `Team2Runner._clock_flatten` is called from `on_bar` on every RTH bar from `flatten_min` (15:45)
+  onward, and it logged **only inside its per-trade loop** - one line per open trade sold, one per
+  working entry cancelled. On a day the desk ends flat that loop body never executes, so the flatten
+  emitted nothing: no plan event, no journal row, no note. Today all three symbols finished flat
+  (SPY's single 10:06 model trade was never taken by the book) and the audits jump straight from the
+  15:32 `skip_last_entry` to the 16:00 `TechniquePlanScored`/`TechniquePlanDisarmed` pair, with
+  **nothing between them**. C3/D-1 - "nothing of a 0DTE book survives 15:45" - is the method's single
+  hardest money rule, and until today the desk had no positive evidence it had ever executed;
+  every market-watch run since the technique shipped has been asked to "confirm the 15:45 flatten
+  logs cleanly" and none could, because a correct silent pass and a flatten that never fired produce
+  the same empty record. The 16:00 `TechniquePlanDisarmed` payload's `flatten: false, openLeft: 0` is
+  the *shared* close, not the 15:45 clock pass, so it does not substitute.
+  **Fixed** (v0.7.41): `_clock_flatten` now writes one `clock_flatten` plan event the first time the
+  clock reaches `flatten_min` for a run - *"flatten time 15:45 ET reached - closing N open and
+  cancelling M working (C3/D-1)"*, or *"... - the book is already flat - nothing to close"* - carrying
+  `openTrades`/`workingTrades` counts, guarded by a per-run `_flatten_noted` set so the repeated
+  per-bar calls after 15:45 note once. Observability only: **no rule, threshold, gate, size, order or
+  money path changed**, and the per-trade lines and the `_exit` calls are untouched. 133 Team2 tests
+  pass. Deploy queued behind F89 (fifth release waiting on the user's restart). Related: F26, F66, F89.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
@@ -2216,6 +2238,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-10 (market watch, run 62, 16:05 ET post-close - release v0.7.41)** - **F106**: the 15:45
+  clock flatten now records that it ran. `_clock_flatten` writes one per-run `clock_flatten` event
+  when the flatten time is reached, naming how many open trades it is closing and how many working
+  entries it is cancelling, or saying the book was already flat. Evidence: all three plans finished
+  today flat and the flatten pass left no trace anywhere in the audit or the read, so C3/D-1 could
+  not be verified. Observability only - no rule, threshold, gate, size or money path changed.
+  Committed; **deploy blocked by F89** (the running engine is elevated) - queued behind the user's
+  `scripts\stop.ps1`, fifth in line after v0.7.37/.38/.39/.40.
 
 - **2026-09-10 (market watch, run 50, 10:06 ET — release v0.7.38)** — **F91**: the live runner no longer
   refuses a fire the read deliberately made targetless. `resolve_fire_target` honours an explicit

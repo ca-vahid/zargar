@@ -84,6 +84,7 @@ class Team2Runner(PlanRunner):
         self._seen_fp: dict[str, set[str]] = {}
         self._rewrite_noted: dict[str, int] = {}
         self._small_noted: set[tuple[str, str]] = set()
+        self._flatten_noted: set[str] = set()          # F106: the flatten's once-per-run note
         self._loss_tally: dict[str, dict[str, tuple[int, str]]] = {}   # day -> run_id -> (losers, basis) (F37/F38)
 
     async def stop(self) -> None:
@@ -649,7 +650,22 @@ class Team2Runner(PlanRunner):
         await super()._end_session(ap, journal=journal, reason=reason)
 
     async def _clock_flatten(self, ap: ArmedPlan, rules: Team2Rules) -> None:
-        """Flatten every open Team2 trade and cancel every working entry at flatten_min, once."""
+        """Flatten every open Team2 trade and cancel every working entry at flatten_min, once.
+
+        F106 (2026-09-10): the flatten used to log ONLY per trade, so on a day the desk ended flat
+        it left no trace at all — "the flatten ran and found nothing" and "the flatten never ran"
+        looked identical in the record. It runs on every bar from flatten_min, so the note is
+        once per run, and it says what it found.
+        """
+        flat_hhmm = f"{rules.flatten_min // 60:02d}:{rules.flatten_min % 60:02d}"
+        if ap.run_id not in self._flatten_noted:
+            self._flatten_noted.add(ap.run_id)
+            n_open = sum(1 for t in ap.trades.values() if t.status == "open" and t.remaining > 0)
+            n_work = sum(1 for t in ap.trades.values() if t.status == "working" and t.entry_order_id)
+            what = (f"closing {n_open} open and cancelling {n_work} working" if (n_open or n_work)
+                    else "the book is already flat — nothing to close")
+            self._log(ap, "clock_flatten", f"flatten time {flat_hhmm} ET reached — {what} (C3/D-1)",
+                      openTrades=n_open, workingTrades=n_work)
         for tr in list(ap.trades.values()):
             if tr.status == "working" and tr.entry_order_id:
                 with contextlib.suppress(Exception):
@@ -658,7 +674,7 @@ class Team2Runner(PlanRunner):
                 tr.reason = "flatten time — working entry cancelled (C3)"
                 self._log(ap, "clock_flatten", f"{tr.trigger_id}: working entry cancelled at the flatten time", trigger=tr.trigger_id)
             elif tr.status == "open" and tr.remaining > 0 and tr.pending_exit_qty <= 1e-9:
-                self._log(ap, "clock_flatten", f"{tr.trigger_id}: flatten time {rules.flatten_min // 60:02d}:{rules.flatten_min % 60:02d} ET — "
+                self._log(ap, "clock_flatten", f"{tr.trigger_id}: flatten time {flat_hhmm} ET — "
                           f"selling {tr.remaining:g} at market whatever the read says (C3/D-1)", trigger=tr.trigger_id)
                 await self._exit(ap, tr, "flatten", tr.remaining, journal=True, force_market=True,
                                  reason="flatten: 0DTE flatten time reached on the clock (C3/D-1)")
