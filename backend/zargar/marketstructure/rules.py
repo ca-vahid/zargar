@@ -50,6 +50,7 @@ class MarketRules:
     respect_mult: float = 3.0
     gap_void_r: float = 1.0
     gap_through_continuation: bool = False   # T-13: a level the open gapped through arms a continuation break in the gap direction (SPY 2026-09-09)
+    gap_continuation_confirm: bool = True    # T-13b: False = fire on the first close through the opening bar's extreme (the author's tempo), no surge/decisive/follow-through
     plan_entry_window_bars: int = 12
     max_false_breaks: int = 2
     stop_on_close: bool = True

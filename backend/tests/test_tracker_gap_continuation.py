@@ -59,3 +59,15 @@ def test_reclaim_of_the_gapped_level_invalidates_the_continuation():
     for i, b in enumerate(bars):
         tr.on_bar(b, i)
     assert tr.status == "invalidated"
+
+
+def test_loose_continuation_fires_on_the_first_close_through_the_opening_extreme():
+    t = Thresholds(gap_through_continuation=True, gap_continuation_confirm=False)
+    tr = TriggerTracker(_trigger(), thresholds=t, prev_close=100.4)
+    bars = _session()
+    for i, b in enumerate(bars):
+        tr.on_bar(b, i)
+        if tr.status == "fired":
+            break
+    assert tr.status == "fired" and tr.fired_ts == bars[7].ts     # the 09:37 break bar itself, no follow-through wait
+    assert tr.fill_price == 98.5 and tr.entry == 98.5

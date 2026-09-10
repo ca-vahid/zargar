@@ -164,6 +164,7 @@ class Thresholds:
     respect_mult: float = 3.0          # reversal >= respect_mult * tol counts as "respected"
     gap_void_r: float = 1.0            # |open - prevClose| > gap_void_r * risk voids the plan
     gap_through_continuation: bool = False   # T-13 (2026-09-09): gapped-through bounce/reject -> continuation break in the gap direction
+    gap_continuation_confirm: bool = True    # T-13b (2026-09-09): False = loose entry, first close through the opening extreme
     plan_entry_window_bars: int = 12   # bars a bounce trigger has to fill after the touch
     # R3.2 — false breakouts of one level in a session before the level is done
     # ("more than two false breakouts" = poor price action, p. 64)
@@ -226,6 +227,7 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.plan.respect_mult": t.respect_mult,
         "technique.plan.gap_void_r": t.gap_void_r,
         "technique.plan.gap_through_continuation": t.gap_through_continuation,
+        "technique.plan.gap_continuation_confirm": t.gap_continuation_confirm,
         "technique.plan.entry_window_bars": t.plan_entry_window_bars,
     }
 
@@ -292,5 +294,6 @@ def thresholds_from_settings(get) -> Thresholds:
         respect_mult=float(get("technique.plan.respect_mult", d.respect_mult)),
         gap_void_r=float(get("technique.plan.gap_void_r", d.gap_void_r)),
         gap_through_continuation=bool(get("technique.plan.gap_through_continuation", d.gap_through_continuation)),
+        gap_continuation_confirm=bool(get("technique.plan.gap_continuation_confirm", d.gap_continuation_confirm)),
         plan_entry_window_bars=int(get("technique.plan.entry_window_bars", d.plan_entry_window_bars)),
     )

@@ -324,6 +324,21 @@ class TriggerTracker:
                 self._note(bar, "break_outside_window", window=w)
                 return self.status
             rel = self._rel_volume(bar)
+            if self.trigger.get("continuation") and not getattr(t, "gap_continuation_confirm", True):
+                # T-13b: the author's tempo - the first close through the opening extreme IS the
+                # entry (volume floor only, no surge / decisive candle / follow-through)
+                if rel is None:
+                    return self._volume_unknown(bar, "break_skipped_volume_unknown")
+                if t.volume_floor_mult > 0 and rel < t.volume_floor_mult:
+                    self.skipped.append({"ts": bar.ts, "reason": f"R3.1 volume {rel:.2f}x below floor"})
+                    self._note(bar, "break_skipped_volume", rel=round(rel, 3))
+                    return self.status
+                self.status = "fired"
+                self.fired_index, self.fired_ts, self.fired_window = index, bar.ts, w
+                self.fill_price = float(bar.close)
+                self.trigger["entry"] = {"price": float(bar.close), "basis": "on_break"}
+                self._note(bar, "fired", window=w, rel=rel, fill=self.fill_price, loose=True)
+                return self.status
             decisive, _ = is_decisive(bar, self._bars[:-1], direction=self.direction, thresholds=t)
             if rel is None:
                 return self._volume_unknown(bar, "break_skipped_volume_unknown")
