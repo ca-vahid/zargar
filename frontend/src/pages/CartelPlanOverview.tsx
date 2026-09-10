@@ -37,6 +37,11 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
     {!active && decision?.selection?.pendingReason && <p className="cartel-notice">At preparation: {decision.selection.pendingReason}</p>}
     {!active && decision?.selection?.errors?.map((e: string, i: number) => <p key={i}>{e}</p>)}
     {active && <p>Execution mode: {active.config?.mode || active.mode}. {active.summary} {!mismatch && <button className="link-btn" onClick={() => openArmedPlan(run.runId)}>Open execution monitor</button>}</p>}
+    {active?.observationHealth && <section aria-label="Observation health"><h3>Observation health</h3>
+      <p>{active.observationHealth.recordedMinutes}/{active.observationHealth.expectedMinutes} completed minutes · {active.observationHealth.overdueMissingMinutes} overdue gaps · {active.observationHealth.recoveries} recoveries during this session.</p>
+      {active.observationHealth.lastRecovery && <p>Latest recovery: {new Date(active.observationHealth.lastRecovery.at).toLocaleString()} · {label(active.observationHealth.lastRecovery.reason)}</p>}
+      <p>{active.observationHealth.note}</p>{active.observationHealth.repairError && <p className="cartel-notice">{active.observationHealth.repairError}</p>}
+    </section>}
     {!!active?.decisionHistory?.length && <details open><summary>Entry decisions (preserved through recovery)</summary>
       {active.decisionHistory.map((d:any, i:number) => <div key={i}><p><b>{new Date(d.at).toLocaleString()}</b> · {label(d.decision)} · {d.reason}</p>
         {d.measurements && <p className="muted">Close {price(d.measurements.close)} · volume {d.measurements.volumeRatio?.toFixed(2) ?? "unknown"}× (required {d.measurements.requiredVolumeMultiple}×) · close location {(d.measurements.closeLocation*100).toFixed(1)}% (required {(d.measurements.requiredCloseLocation*100).toFixed(1)}%)</p>}

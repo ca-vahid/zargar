@@ -84,7 +84,8 @@ def replay_campaign(plan: CartelPlan, campaign: ExitCampaign, minutes: list[Bar]
     price = first.open*(1+sign*slippage_bps/10_000)
     if (price-plan.trigger)*sign > abs(plan.trigger-plan.invalidation)*plan.entry.max_chase_r \
             or (price-plan.trigger)*sign < 0 \
-            or (price-signal["stop"])*sign <= 0 or (plan.targets[0]-price)*sign <= 0:
+            or (price-signal["stop"])*sign <= 0 or (plan.targets[0]-price)*sign <= 0 \
+            or (plan.targets[0]-price)*sign < abs(price-signal["stop"])*plan.entry.min_target_r:
         output.update(status="entry_price_rejected")
         return output
     risk = abs(price-signal["stop"])

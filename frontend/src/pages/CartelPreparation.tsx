@@ -112,6 +112,10 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
             <option value="strict">Strict — both indices aligned</option>{!live && <option value="moderate">Moderate — Practice experiment</option>}
           </select></label>
           <p>{live ? "Live requires strict alignment." : "Moderate allows bullish preparation when one index closes above its 8/21/50 EMAs and both close above their 50 EMA. This is a Practice experiment, not an author-verified rule. Save and prepare again; existing research records are not promoted."}</p>
+          <label>Shortlist ranking<select aria-label="Shortlist ranking" value={config.shortlistRanking || "quality"} onChange={e => setConfig({...config, shortlistRanking:e.target.value})}><option value="quality">Target room, relative strength, then volume</option><option value="volume">Discovery volume order</option></select></label>
+          <label>Minimum first-target distance (%)<input type="number" min={0} max={10} step="any" value={config.minTargetDistancePct ?? .5} onChange={e => setConfig({...config, minTargetDistancePct:Number(e.target.value)})}/></label>
+          <label>Minimum first-target reward/risk at entry<input type="number" min={0} max={10} step="any" value={config.minEntryTargetR ?? .25} onChange={e => setConfig({...config, minEntryTargetR:Number(e.target.value)})}/></label>
+          <p>These are engineering target-room checks, not Sean's published numbers. Nearby resistance is never skipped to invent a better reward/risk ratio. The entry ratio uses the actual initial stop and is rechecked at execution.</p>
           <label>Industry policy<select value={config.industryPolicy || "context"} onChange={e => setConfig({...config, industryPolicy:e.target.value})}>
             <option value="context">Context — evaluate strong stocks across industries</option><option value="strict">Strict — require both top-ten industry ranks</option>
           </select></label>
@@ -150,6 +154,11 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
             <b>{symbol}</b> · {read.session || "session unavailable"} · {label(read.direction)} · close {read.close?.toFixed(2) ?? "not recorded"}
             {Object.entries(read.emas || {}).map(([period, value]) => <span key={period}> · EMA {period}: {typeof value === "number" ? value.toFixed(2) : "unavailable"}{read.aboveEmas?.[period] != null ? (read.aboveEmas[period] ? " (price above)" : " (price at/below)") : ""}</span>)}
           </p>; })}
+          {result.breadthContext && <details><summary>Market breadth context (advisory)</summary>
+            <p>{result.breadthContext.interpretation}</p>
+            {Object.entries(result.breadthContext.indices || {}).map(([sym,raw]) => {const r=raw as any;return <p key={sym}><b>{sym}</b>: {r.available ? `${r.session} · ${r.changePct.toFixed(2)}% · ${r.aboveEma21 ? "above" : "at/below"} EMA21` : "unavailable"}</p>;})}
+            <p>NYMO: {result.breadthContext.nymo?.reason || "unavailable"}</p>
+          </details>}
           {result.armingBlocked && <p>{label(result.researchDirection || "long")} candidates are research only. Run fresh preparation after market alignment changes; these records cannot auto-arm.</p>}
         </section>}
         <div className="cartel-inset" role="status" aria-live="polite">
@@ -176,6 +185,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
             <td><SymIcon sym={r.symbol} size={18}/> <b>{r.symbol}</b></td><td>{label(r.setup || "existing plan")}</td>
             <td className="num">{r.trigger?.toFixed(2) || "—"}</td><td className="num">{r.invalidation?.toFixed(2) || "—"}</td>
             <td className="cartel-wrap"><span className={`status-pill ${r.status === "armed" ? "ok" : r.status === "awaiting_contract" ? "wait" : "dim"}`}>{label(r.status)}</span>
+              {r.ranking && <p className="small">Target room {r.ranking.firstTargetPct.toFixed(2)}% · structural target {r.ranking.structuralTargetR.toFixed(2)}R · relative strength {r.ranking.directionalRelativeStrength.toFixed(2)} percentage points. Ranking: {result.shortlistRanking || "volume"}.</p>}
               {r.reason && <p className="small">{r.reason}</p>}
               {r.status === "awaiting_contract" && <p className="small">{r.selection?.pendingReason || "Waiting for a contract within the selection limits."}</p>}
               {r.selection?.audit && <details><summary>Contract selection details</summary>

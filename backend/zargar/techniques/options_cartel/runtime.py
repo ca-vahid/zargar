@@ -365,6 +365,10 @@ class CartelRuntime(CartelObserver):
             self._publish(rid)
 
     async def on_quote_watch(self):
+        from .observation_health import repair_gaps
+        task = getattr(self, 'history_repair_task', None)
+        if not self.stopping and (task is None or task.done()):
+            self.history_repair_task = asyncio.create_task(repair_gaps(self), name='cartel-history-repair')
         self.quote_recorder.observe(list(self.rows.values()))
         from .preparation_scope import active_workspace, setting_key
         scope = active_workspace(self.engine)
@@ -426,6 +430,10 @@ class CartelRuntime(CartelObserver):
 
     async def stop(self):
         self.stopping = True
+        task = getattr(self, 'history_repair_task', None)
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
         from .preparation import stop_preparation
         await stop_preparation(self.engine)
         if self.preparation_activation_task is not None and not self.preparation_activation_task.done():
@@ -511,6 +519,12 @@ class CartelRuntime(CartelObserver):
                       awaitingApproval=row["mode"] == "proposal" and row["status"] == "armed" and state["phase"] == "signalled"
                       and not state.get("attemptTag") and 0 <= self.clock()-signal.get("at", -1) <= 120_000)
         reasons = [state[k] for k in ("runtimeError", "observationError") if state.get(k)]
+        health = result.get('observationHealth') or {}
+        if row['status'] == 'armed' and state['phase'] == 'waiting':
+            if health.get('overdueMissingMinutes'):
+                reasons.append(f"Observation has {health['overdueMissingMinutes']} overdue minute gaps; bounded repair is pending.")
+            if health.get('repairError'):
+                reasons.append(health['repairError'])
         reasons.extend(message for p in positions for message in p["attention"])
         result.update(needsAttention=bool(reasons), attentionReasons=reasons,
                       summary=reasons[0] if reasons else "Managing confirmed Cartel exposure." if positions else

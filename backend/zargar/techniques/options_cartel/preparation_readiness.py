@@ -64,7 +64,8 @@ async def load_session_context(engine, plan, now, *, fetch=None):
             BarRow.tf == '1m', BarRow.ts >= opens, BarRow.ts+60_000 <= now))).all()
     tape = {r.ts: Bar(r.symbol, '1m', r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows}
     expected = range(opens, now//60_000*60_000, 60_000)
-    if any(t not in tape for t in expected):
+    simulated = getattr(getattr(engine, 'config', None), 'quote_source', None) == 'sim'
+    if any(t not in tape for t in expected) and (fetch is not None or not simulated):
         async with httpx.AsyncClient(headers={'User-Agent': UA}, timeout=20.) as client:
             recovered = await asyncio.wait_for((fetch or fetch_window)(plan.symbol, '1m', opens, now, client=client), 25.)
         for b in recovered:

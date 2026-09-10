@@ -222,3 +222,47 @@ contract constraints and entry checks are unchanged. Old research-only records
 cannot be promoted; prepare new plans. Scheduled deduplication now compares policy
 as well as session and age, so a changed policy is not skipped as already prepared.
 Review results across sessions before considering further changes.
+
+
+## Target quality and continuity (0.7.35)
+
+New automatic plans require their existing first target to be at least 0.5% from
+trigger by default. Nearby resistance is never skipped or moved to manufacture
+room. Minimum target distance is configurable (0 disables the distance floor).
+New automatic entry policies also require at least 0.25R to the first target from
+the confirmation price and actual initial stop. The controller rechecks this at the
+current execution price, and replay checks the modeled next-minute fill. The field
+is frozen in each plan; legacy plans default to 0 and keep their original behavior.
+These are engineering guardrails, not author-prescribed numeric rules.
+
+Shortlist ranking defaults to structural first-target R, directional relative
+strength versus the benchmark, then volume, with stable symbol ties. Select the
+legacy volume ordering if required. Displayed ranking evidence is not a prediction
+of option profit. Candidate-pattern selection now prefers better target room before
+pattern specificity. All market, liquidity, contract and cash/order gates remain.
+
+Observation health shows completed-minute coverage, overdue gaps, session recovery
+counts and the last recovery. New missing minutes have a two-minute delivery grace.
+A single owned background task attempts at most five waiting plans per pass, at most
+once per five minutes per plan. Recovery uses bounded historical reads, fills only
+missing context, never overwrites live bars/signals, and advances the observation
+cutoff when context is repaired. It cannot submit a missed historical signal.
+Stopping the runtime cancels and awaits the task. Simulated quote feeds do not pull
+real historical data implicitly during this repair. Protective exits are unchanged.
+
+Equal-weight breadth (SPY/RSP, QQQ/QQQE) is completed-session advisory context only.
+Missing sources are shown unavailable. NYMO is explicitly unavailable until a verified
+source is integrated; no substitute or automatic risk multiplier is invented.
+This follows the questions in Sean's September 9 environment post:
+https://x.com/SRxTrades/status/2097792161466962380
+
+September 9 DRAM/VG paired replays did not justify promoting looser confirmation
+thresholds: modeled DRAM positions remained underwater at the session close, and VG
+still encountered entry-price/target constraints with slippage. Open modeled returns
+are not realized option P&L. Keep 15m, 1.5x and 0.70 as the baseline while collecting
+multiple sessions. A healthy replay cannot establish uninterrupted live observation.
+
+Operating rule: finish routine deployment before the open or after close. Recovery
+can repair data context but cannot restore observation time lost to server restarts.
+Prepare a fresh session after deploying; old scans cannot resume under changed
+ranking/target criteria. Do not manually promote yesterday's research records.

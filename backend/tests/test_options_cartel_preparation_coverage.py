@@ -54,7 +54,7 @@ async def test_full_coverage_is_independent_of_optional_cap_and_shortlist(engine
         assert result['coverageComplete'] is all_stocks
         assert result['notEvaluated'] == 201-expected
         assert result['phase'] == ('complete' if all_stocks else 'partial')
-        assert len([c for c in calls if c[1] == '1d' and c[0] not in ('SPY', 'QQQ')]) == expected
+        assert len([c for c in calls if c[1] == '1d' and c[0] not in ('SPY', 'QQQ', 'RSP', 'QQQE')]) == expected
         async with engine.sf() as session:
             events = (await session.scalars(select(Event).where(Event.type.in_(('TechniqueRunStarted', 'TechniqueRunCompleted'))))).all()
             preparation_events = [e for e in events if e.payload.get('mode') == 'preparation']

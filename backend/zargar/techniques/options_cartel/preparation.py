@@ -19,6 +19,7 @@ from ...marketstructure.sessions import ET, next_session_date, session_bounds
 from ...models import ManagedPositionRow, Portfolio, TechniqueArmed, TechniqueRun
 from .accounts import default_practice_book, is_archived, validate_account
 from .automatic_plans import PreparationPolicy, automatic_review, planning_contract
+from .breadth import read_breadth
 from .discovery import discover_market
 from .execution import ExecutionInput
 from .industry import IndustrySnapshot, read_industry, save_snapshot
@@ -33,6 +34,7 @@ from .preparation_scope import (
     workspace_filter,
 )
 from .prepare import build_volume_baseline
+from .quality import quality_key, ranking_evidence, target_room
 from .rules import CartelRules
 from .screen import market_regime
 from .service import CartelService, FactsInput, MinuteInput, ResearchInput
@@ -77,7 +79,7 @@ async def practice_portfolio(engine, requested=None):
 
 def resumable(row, policy, now):
     return bool(row.technique == 'options_cartel' and row.mode == 'preparation'
-        and row.config.get('coverageVersion') == 3
+        and row.config.get('coverageVersion') == 4
         and row.status in ('done', 'failed') and row.result.get('resumeReady')
         and (row.status == 'failed' or row.result.get('dataErrors', 0) > 0 or row.result.get('planErrors', 0) > 0)
         and row.config.get('workspace', 'practice') == policy.workspace
@@ -85,11 +87,17 @@ def resumable(row, policy, now):
         and 0 <= now-row.as_of < 86_400_000 and row.config.get('session') == next_session_date(now))
 
 
-def evaluation_row(saved, review):
+def evaluation_row(saved, review, policy=None):
     checks = [*saved['result']['screen']['gates'], *saved['result']['analysis'].get('checks', [])]
     reasons = list(dict.fromkeys(g.get('label') or g.get('name') or 'Unspecified check' for g in checks if g['status'] != 'pass'))
+    if not review and policy:
+        for c in saved['result']['analysis'].get('candidates', []):
+            if c.get('targets') and (c.get('contextPassed') or c.get('researchContextPassed')):
+                room = target_room(c['trigger'], c['invalidation'], c['targets'][0])
+                if room['firstTargetPct'] < policy.min_target_distance_pct:
+                    reasons.append(f"{c['setup']}: first target distance {room['firstTargetPct']:.3f}% is below the configured {policy.min_target_distance_pct:g}% minimum; nearby resistance retained.")
     if not review and not reasons:
-        reasons = ['No qualifying measured setup with valid automatic target geometry']
+        reasons = ['No qualifying measured setup with valid targets and sufficient configured target distance']
     return {'symbol': saved['symbol'], 'analysisId': saved['runId'],
             'status': 'candidate' if review else 'filtered', 'reasons': reasons}
 
@@ -121,7 +129,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
               'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
         parent_run_id=resume_run_id, primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
-        config={'coverageVersion': 3, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
+        config={'coverageVersion': 4, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
         result=result, tags=['cartel:preparation'])
     async with engine.sf() as session:
         session.add(record); await session.commit()
@@ -231,6 +239,15 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                 indices[symbol], _ = await history_reader.daily(symbol, at, client)
             regime = market_regime(indices, rules, at)
             result['market'] = regime
+            breadth_histories = dict(indices)
+            breadth_errors = {}
+            for benchmark in ('RSP', 'QQQE'):
+                try:
+                    breadth_histories[benchmark], _ = await history_reader.daily(benchmark, at, client)
+                except Exception as exc:  # noqa: BLE001 - optional context remains explicitly unavailable
+                    breadth_errors[benchmark] = type(exc).__name__
+            result['breadthContext'] = {**read_breadth(breadth_histories, at), 'errors': breadth_errors}
+
             market_blocked = regime['direction'] not in ('long', 'short')
             direction = policy.research_direction if market_blocked else regime['direction']
             result['armingBlocked'] = market_blocked
@@ -294,7 +311,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                                 raise ValueError('Resumed analysis cutoff differs from the saved preparation')
                             review = review_saved(saved)
                             result['resumedAnalyses'] += 1
-                            entry = evaluation_row(saved, review)
+                            entry = evaluation_row(saved, review, policy)
                             if market_blocked and review:
                                 entry.update(status='research_only', reasons=['Stock/setup checks pass; market alignment blocks arming.'])
                             if review:
@@ -316,7 +333,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                             industry_snapshot_id=captured['runId'])
                         saved = await service.analyze(research, collection=provenance, parent_run_id=run_id)
                         review = review_saved(saved)
-                        entry = evaluation_row(saved, review)
+                        entry = evaluation_row(saved, review, policy)
                         if market_blocked and review:
                             entry.update(status='research_only', reasons=['Stock/setup checks pass; market alignment blocks arming.'])
                         if review:
@@ -346,7 +363,14 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
             result['watchlistComparison'] = {'source': policy.comparison_source, 'rows': [
                 {'symbol': sym, **evaluated_by_symbol.get(sym, {'status': 'outside_universe', 'reasons': ['Not returned by the eligible discovery universe; not assumed to fail setup checks.']})}
                 for sym in policy.comparison_symbols]}
-            # Discovery volume order is retained; choose one measured setup per name.
+            rank_evidence = {}
+            for saved_id, review in pool:
+                saved = service._view(await service._load(saved_id), detail=True)
+                rank_evidence[saved_id] = ranking_evidence(saved, review)
+            if policy.shortlist_ranking == 'quality':
+                pool.sort(key=lambda item: quality_key(rank_evidence[item[0]], rank_evidence[item[0]]['symbol']))
+            result['shortlistRanking'] = policy.shortlist_ranking
+            # Ranking affects new candidates only, never existing positions.
             for saved_id, review in pool:
                 saved = service._view(await service._load(saved_id), detail=True)
                 await report(symbol=saved['symbol'], message=f"Preparing {saved['symbol']} plan and option expression", phase='preparing_plans')
@@ -356,7 +380,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                 if market_blocked:
                     candidate = next(c for c in saved['result']['analysis']['candidates'] if c['setup'] == review.setup)
                     result['shortlist'].append({'symbol': symbol, 'analysisId': saved['runId'], 'status': 'market_blocked',
-                        'setup': review.setup, 'direction': direction, 'trigger': candidate['trigger'],
+                        'ranking': rank_evidence[saved_id], 'setup': review.setup, 'direction': direction, 'trigger': candidate['trigger'],
                         'invalidation': candidate['invalidation'], 'targets': list(review.reviewed_targets or []),
                         'reason': 'Research only. Market alignment prevents arming; prepare again with fresh aligned evidence.'})
                     await checkpoint('saving_research')
@@ -398,7 +422,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                     selected = await observed_work(choose(engine, plan, selection_policy), report, message=f'Selecting {symbol} option contract')
                     row = {'symbol': symbol, 'planId': plan.id, 'setup': plan.setup, 'trigger': plan.trigger,
                            'invalidation': plan.invalidation, 'targets': list(plan.targets), 'selection': selected,
-                           'status': 'awaiting_contract'}
+                           'status': 'awaiting_contract', 'ranking': rank_evidence[saved_id]}
                     if selected['selected']:
                         current = read_policy(engine, policy.workspace)
                         if current != policy or not current.enabled:

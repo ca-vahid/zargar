@@ -93,6 +93,8 @@ class CartelEntryController:
             raise ValueError("current price no longer holds the entry/stop geometry")
         if (price-plan.trigger)*sign > abs(plan.trigger-plan.invalidation)*plan.entry.max_chase_r:
             raise ValueError("current underlying price exceeds the reviewed chase limit")
+        if (plan.targets[0]-price)*sign < abs(price-stop)*plan.entry.min_target_r:
+            raise ValueError("first-target room is below the saved entry R minimum at current price")
         if (plan.targets[0]-price)*sign <= 0:
             raise ValueError("first target has already been reached")
         if self.engine.trading_halted(spec.portfolio_id) or self.engine.settings.get("techniques.options_cartel.paused", False) \

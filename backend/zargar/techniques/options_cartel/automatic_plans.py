@@ -12,6 +12,7 @@ from .contracts import ContractSelectionInput
 from .data import DailyBar, completed_daily
 from .exits import ExitCampaign
 from .plans import EntryPolicy
+from .quality import target_room
 from .rules import ScreenProfile
 from .service import PlanInput, WireModel
 from .setups import SetupParameters
@@ -35,6 +36,9 @@ class PreparationPolicy(WireModel):
     history_batch_size: int = Field(default=25, ge=1, le=50)
     history_limit: int = Field(default=200, ge=1, le=10000)
     request_interval_seconds: float = Field(default=.25, ge=0, le=5)
+    shortlist_ranking: Literal['quality', 'volume'] = 'quality'
+    min_target_distance_pct: float = Field(default=0.5, ge=0, le=10)
+    min_entry_target_r: float = Field(default=0.25, ge=0, le=10)
     focus_count: int = Field(default=5, ge=1, le=20)
     horizon_sessions: int = Field(default=1, ge=1, le=20)
     budget: float = Field(default=500, gt=0, le=100000)
@@ -99,6 +103,8 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
                       'the measured base, to its trigger; extensions 1.272/1.618/2.0. Not an author-specified anchor algorithm.')
         if not targets:
             continue
+        if target_room(trigger, stop, targets[0])['firstTargetPct'] < policy.min_target_distance_pct:
+            continue
         try:
             campaign = ExitCampaign.for_profile(policy.exit_profile, targets,
                 september_fractions=policy.september_fractions)
@@ -106,17 +112,17 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
             continue
         ratio = abs(targets[0]-trigger)/abs(trigger-stop)
         specificity = candidate['setup'] != 'base'
-        choices.append((specificity, ratio, candidate['setup'], candidate, targets, source, campaign))
+        choices.append((ratio, specificity, candidate['setup'], candidate, targets, source, campaign))
     if not choices:
         return None
-    _, ratio, _, candidate, targets, source, campaign = max(choices, key=lambda c: c[:3])
+    ratio, _, _, candidate, targets, source, campaign = max(choices, key=lambda c: c[:3])
     note = (f'Automatic rule-based Cartel review: all market, listing, weekly/daily structure and relative-strength '
             f'checks passed. Selected {candidate["setup"]}; first target / structural risk {ratio:.2f}. '
-            'Live entry and risk checks remain mandatory. Exit allocations and geometry thresholds are configured engineering choices.')
+            f'Minimum target distance {policy.min_target_distance_pct:g}%; minimum entry-to-target R {policy.min_entry_target_r:g}. Live entry and risk checks remain mandatory. Exit allocations and geometry thresholds are configured engineering choices.')
     if research_only:
         note = 'Research candidate only: market alignment blocks arming. Rebuild with fresh aligned market evidence before execution.'
     return PlanInput(setup=candidate['setup'], horizon_sessions=policy.horizon_sessions,
-        entry_policy=policy.entry, reviewed_targets=tuple(targets), review_note=note,
+        entry_policy=policy.entry.model_copy(update={"min_target_r": policy.min_entry_target_r}), reviewed_targets=tuple(targets), review_note=note,
         target_source=source, exit_campaign=campaign)
 
 
