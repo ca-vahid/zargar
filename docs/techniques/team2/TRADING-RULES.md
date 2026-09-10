@@ -1716,6 +1716,11 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   **(c)** journal a `rules_drift` note whenever live settings differ from the snapshot and leave
   both paths alone; **(d)** leave it. Recommendation: **(a) plus (c)'s note** — it keeps a mid-day
   knob change effective *and* makes the day's record true.
+  **CORRECTED 2026-09-10 11:35 ET — see F96.** Option (a) was *already built* (`stamp_run` at the 09:25
+  pre-open, `service.py:310`), so today's plans have read `target_replan: 'structure'` since 09:25 and
+  replay ≡ live. The "Live today" paragraph above holds only for the 09:12–09:25 window. What survives
+  is drift *after* the pre-open stamp, or on a day the stamp does not run — i.e. only option (c)'s
+  `rules_drift` note is still outstanding.
 
 - **F88 (2026-09-10 09:38 ET, FIXED in v0.7.37 — the gap-day target re-derivation ratcheted off its
   own output, so a target it wiped at 09:25 could never come back at the 09:30 open).**
@@ -1897,6 +1902,32 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   auditable, and it touches no gate, threshold, size or money path. Optionally also count these
   contacts into a separate `refused_by_regime` counter rather than `opportunities`, so the review can
   price the gate without polluting the executable-opportunity count.
+
+- **F96 (2026-09-10 11:35 ET, CORRECTION to F87 — F87's live instance self-healed at 09:25 and three
+  consecutive watch runs kept reporting it as live; the residual exposure is far narrower than logged).**
+  Runs 50, 51 and 52 each repeated *"F87 unchanged: today's plans still record `target_replan: off`
+  while the runner runs `structure`"* — carried forward from F87's 09:12 ET observation without being
+  re-read. **Checked against the database this run: all three 2026-09-10 plans record
+  `config.thresholds.target_replan = 'structure'`**, plus `target_replan_gap_only: true` and
+  `preopen_target_rederive: true` — i.e. exactly what the live runner runs. The mechanism was already
+  built: `Team2Service.preopen_complete()` calls `stamp_run(ap)` for **every** armed plan at the 09:25
+  pre-open, and `stamp_run` writes `cfg["thresholds"] = rules_from_settings(...)` (`service.py:310`) —
+  F87's own recommended option **(a)**, shipped as F-1/F-2 and documented in that method's docstring.
+  Timeline: the plans were minted 17:00 ET 09-09 under the old snapshot; `SettingChanged
+  techniques.team2.target_replan off → structure` is journalled at **23:43 ET 09-09** (not 20:30, as
+  F87's "Live today" paragraph says); the 09:25 ET pre-open stamp then re-froze the thresholds from
+  live settings. F87 was accurate when written at 09:12 and stopped being true 13 minutes later.
+  **Corroborated by the parity check itself:** replay reads the frozen snapshot only
+  (`service.py:352`), and SPY's replay reproduces the 10:06 `target_replanned` + fire — which is
+  impossible under `off`. Every run since 50 has therefore reported a contradiction (parity holds AND
+  the snapshot disagrees with the runner) without resolving it.
+  **What is left of F87** — real, but small: the stamp is a *one-shot at 09:25*, so drift survives
+  (a) a knob changed **after** the pre-open stamp and before the session's trades, (b) any day the
+  09:25 job is missed or `preopen_complete` raises (it swallows per-symbol exceptions), and (c) plans
+  minted-but-never-pre-opened. F87's option **(c)** — a `rules_drift` note when live settings differ
+  from the snapshot — is the only part still worth building, and it is now a *detector*, not a fix.
+  **Lesson for this watch job:** a status carried forward across runs must be re-measured, not
+  re-typed; every F-status this log repeats should cite the query that produced it in that run.
 
 
 ## Theories to test
