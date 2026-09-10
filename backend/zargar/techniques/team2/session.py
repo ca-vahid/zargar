@@ -596,6 +596,27 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                          f"target_replan=entry)", setup=s.id, touch=idx, spot=round(entry_spot, 4),
                          was=round(float(target), 4), target=round(float(cand), 4))
                     target, target_kind = cand, "replan"
+            elif rules.target_replan == "structure" and (not rules.target_replan_gap_only
+                                                        or str(plan.get("dayType") or "") in ("gap_up", "gap_down")):
+                # F81b (2026-09-10): the morning's structure, in the author's order - the pre-market extreme
+                # on the trade's side if it is still ahead, else the next ladder level, else NO target: on a
+                # day that has run through every level (IWM 2026-09-09) the trade rides on the trims, the
+                # one-candle stop and the flatten, which is what the author did (he rolled strikes at each break)
+                pm = plan.get("pml") if s.direction == "short" else plan.get("pmh")
+                cand, src = None, "none"
+                if pm is not None and target_is_ahead(float(pm), entry_spot, s.direction):
+                    cand, src = float(pm), ("pml" if s.direction == "short" else "pmh")
+                else:
+                    nxt = next_structural_level(plan.get("levelLadder"), entry_spot, s.direction)
+                    if nxt is not None and target_is_ahead(nxt, entry_spot, s.direction):
+                        cand, src = float(nxt), "ladder"
+                what = (f"re-derived to the {src} {cand:.2f}" if cand is not None
+                        else "no structure left ahead: no target, the trims, the stop and the flatten manage it")
+                note(end_ts, "target_replanned",
+                     f"{s.id}: planned target {target:.2f} is behind the {entry_spot:.2f} entry - {what} "
+                     f"(F81b target_replan=structure)", setup=s.id, touch=idx, spot=round(entry_spot, 4),
+                     was=round(float(target), 4), target=(round(float(cand), 4) if cand is not None else None), source=src)
+                target, target_kind = cand, ("replan" if cand is not None else "none")
         if not target_is_ahead(target, entry_spot, s.direction):
             side = "above" if s.direction == "short" else "below"
             note_once(s, end_ts, "skip_target_behind",

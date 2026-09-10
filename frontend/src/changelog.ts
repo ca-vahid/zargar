@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.33";
+export const APP_VERSION = "0.7.34";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.34",
+    date: "2026-09-10",
+    title: "A gap day re-derives its targets at the open",
+    items: [
+      { tag: "new", text: "Team2 F81: when the morning's price has already run through a target the plan fixed the night before, the pre-open (09:25) and the 09:30 open re-derive it from the morning's structure - the pre-market low/high if still ahead, else the next level of the ladder, else no target - and the plan keeps what 17:00 said next to what the morning decided (journaled as targets_rederived). Yesterday every IWM and SPY pullback was refused against a stale target while the author took the pre-market-low break for +141%." },
+      { tag: "improved", text: "An experimental entry-time fallback (target_replan=structure, gap days only) reproduces the author's IWM day (+114.5% modelled) but loses on the other gap days of the 14-date sample (+220 vs +248 summed); it stays off until the twenty-session review." },
+    ],
+  },
   {
     version: "0.7.33",
     date: "2026-09-09",

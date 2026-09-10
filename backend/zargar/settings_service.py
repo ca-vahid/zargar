@@ -150,6 +150,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.hod_target": "reentry",        # off | reentry | always (X3b running HOD/LOD as the target)
     "techniques.team2.hod_target_min_atr": 1.0,
     "techniques.team2.target_replan": "off",         # F72 variant: off | entry (re-derive a stale target at entry)
+    "techniques.team2.target_replan_gap_only": True,   # F81b: structure fallback on gap days only
+    "techniques.team2.preopen_target_rederive": True, # F81: re-derive a target the gap ran through from the morning's structure (pre-open/open)
     "techniques.team2.add_on_retest": True,          # X5 trim-and-add
     "techniques.team2.max_adds": 1,
     "techniques.team2.first_entry_min": "09:45",     # D6 (first 15m close)

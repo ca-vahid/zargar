@@ -1457,6 +1457,21 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   fire/trim/exit ever diverged, and this should disappear for sessions that run entirely on
   v0.7.29.
 
+- **F81 addendum (2026-09-10 — BUILT as v0.7.34, user decision after reading the author's 2026-09-09 IWM day).** `plan.py::
+  rederive_targets` runs inside `complete_plan` (09:25 pre-open AND the 09:30 finalize): a planned target the reference
+  price has already run through is re-derived, in the author's order, to the pre-market extreme on that side if it is
+  still ahead, else the next ladder level, else no target; a target still ahead is untouched; `targetsPlanned` keeps
+  what 17:00 said, `targetsRederived` records the change, the runner journals `targets_rederived`. Knob
+  `techniques.team2.preopen_target_rederive` (default ON). **Measured on frozen inputs** (`5476f02e…`, 14 dates × 3
+  symbols, 08-20..09-09): identical to the baseline — 37 / wr .405 / +247.7 — because on 2026-09-09 the pre-market low
+  the target moved to (IWM 292.62) was itself run through by 10:32 and the ladder holds no prior-day pivot below the
+  gap; the pre-open fix is correct and free, but not what made the author's day. **F81b (experimental, OFF):**
+  `target_replan=structure` applies the same order AT THE ENTRY and, when nothing is ahead, trades with NO target (the
+  trims, the one-candle stop and the flatten manage it — what the author did, rolling strikes at each break). It
+  reproduces his day (IWM 09-09: +67.8 and +46.6 modelled, +114.5 for the day) but over the 14-date sample it adds 22
+  trades for −64 net (59 / .339 / +183.6); restricted to gap days (`target_replan_gap_only`, default on) it adds 11 for
+  −27.5 net (53 / .358 / +220.2; 3 winners +152.6, 8 losers −171.9, three of them 14:00 pm_break_down entries with no
+  target). One day cannot be tuned to; it goes to the twenty-session review with the other variants (PLAN §3d).
 - **F81 (2026-09-09 13:05 ET, NOT fixed — proposal; the pre-open completion never re-derives the
   plan's targets, so a gap day is born dead).** `plan.complete_preopen()`
   (`zargar/techniques/team2/plan.py:74–90`) updates `pmh`, `pml`, `dayType`, `sizingAtOpen` and the
@@ -1730,6 +1745,10 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   green** — the workaround is to set the `zargar_session` cookie in the browser (`?token=` does not
   authenticate the SPA route); Plans and Armed tabs both render all three plans with correct
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
+- **2026-09-10 (F81 built, v0.7.34; user decision)** — pre-open/open target re-derivation ON (measured neutral on the
+  frozen sample, correct on its own terms); the entry-time structure fallback that reproduces the author's IWM day
+  is EXPERIMENTAL and OFF (loses on the other gap days of the sample). Knobs: `preopen_target_rederive`,
+  `target_replan=structure`, `target_replan_gap_only`.
 - **2026-09-09 (14:00–14:40 ET — Codex review of the repair, v0.7.32)** — ten findings / twelve regressions fixed
   (PLATFORM-RULES 2026-09-09: readiness blocks on unknown inventory and in-flight fire chains, quiesce before the
   capture, managed positions reconciled by id, interior-minute recovery, one venue-merge policy, provider-named

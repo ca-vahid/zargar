@@ -3171,3 +3171,11 @@ estart.ps1` at 15:33:37 ET**,
 - **Verdict:** same read, wrong arithmetic. The refusals were right about direction and wrong about the target; the
   gap-day target re-derivation (F81, pre-open, on the frozen inputs, guard kept) is the decision that separates
   our zero from his +141%. Not a re-plan-at-every-entry question (F72 stays off).
+
+## Desk 2026-09-10 (evening of 09-09) — F81 built (v0.7.34)
+
+- Pre-open/open target re-derivation is live (default on): tomorrow's 09:25 completion and 09:30 finalize journal
+  `targets_rederived` when the morning has run through a planned target. Measured neutral on the frozen 14-date
+  sample; it removes the "born dead" gap plan.
+- The entry-time structure fallback (F81b) reproduces the author's IWM day (+114.5 modelled) and loses on the sample's
+  other gap days (−27.5 net gap-only, −64 net everywhere). Off, experimental, on the twenty-session review list.

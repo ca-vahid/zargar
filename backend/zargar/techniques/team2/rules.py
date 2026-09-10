@@ -69,7 +69,11 @@ class Team2Rules(MarketRules):
                                             #   when it is nearer than the planned level ("HOD resistance is the main
                                             #   target for longs until it breaks"); re-entries only by default
     hod_target_min_atr: float = 1.0         # X3b: the HOD/LOD must leave at least this much room (2m ATRs)
-    target_replan: str = "off"              # F72 VARIANT: "off" | "entry". When a planned target is not ahead of
+    target_replan_gap_only: bool = True     # F81b: the structure fallback applies on gap days only (the author's play is the gap/flip day)
+    preopen_target_rederive: bool = True    # F81: at the pre-open/open, a planned target the gap has already run through is
+                                            # re-derived from the MORNING's structure (PML/PMH, then the level ladder), the
+                                            # author's own practice ("under the PML I have 291.19, then 289.98")
+    target_replan: str = "off"              # F72 VARIANT: "off" | "entry" | "structure" (F81b: PM extreme -> ladder -> none). When a planned target is not ahead of
                                             #   the entry (a gap opened THROUGH the zone), re-derive it from the
                                             #   next structural level beyond CURRENT PRICE and re-validate it at
                                             #   the entry gate. "off" = the baseline: refuse the candidate.
@@ -133,7 +137,7 @@ SETTINGS_MAP: dict[str, str] = {
     "premium_stop_pct": "premium_stop_pct", "trim_1_pct": "trim_1_pct", "trim_1_frac": "trim_1_frac",
     "trim_2_pct": "trim_2_pct", "trim_2_frac": "trim_2_frac", "runner_exit": "runner_exit",
     "target_exit": "target_exit", "hod_target": "hod_target", "hod_target_min_atr": "hod_target_min_atr",
-    "target_replan": "target_replan",
+    "target_replan": "target_replan", "preopen_target_rederive": "preopen_target_rederive", "target_replan_gap_only": "target_replan_gap_only",
     "add_on_retest": "add_on_retest", "max_adds": "max_adds",
     "dte_policy": "dte_policy", "target_premium": "target_premium",
     "premium_floor": "premium_floor", "chase_cap_mult": "chase_cap_mult", "premium_pick": "premium_pick",
