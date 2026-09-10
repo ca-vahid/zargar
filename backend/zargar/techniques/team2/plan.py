@@ -110,7 +110,20 @@ def rederive_targets(plan: dict, reference: float, pmh: float | None, pml: float
     Returns (targets, record) where record is {} when nothing changed."""
     from .levels import next_structural_level
     from .scenario import target_is_ahead
-    planned = dict(plan.get("targetsPlanned") or plan.get("targets") or {})
+    planned = dict(plan.get("targetsPlanned") or {})
+    if not planned:
+        # F88 (2026-09-10): plans minted before v0.7.34 carry no `targetsPlanned`, so this used to fall
+        # back to `targets` — which an earlier pass of this function has already overwritten. The
+        # re-derive then ratchets off its own output: a side re-derived to None on the 09:25 pre-market
+        # estimate can never be restored by the 09:30 open, even when the real open leaves a valid level
+        # ahead (IWM 2026-09-10: below 290.17 -> none at 09:25, still none after the 288.48 open with the
+        # 287.83 PML ahead of it). Recover what 17:00 said from the record the first pass left behind and
+        # pin it, so every later pass re-derives from the plan's own inputs.
+        planned = dict(plan.get("targets") or {})
+        for side, rec in (plan.get("targetsRederived") or {}).items():
+            if isinstance(rec, dict) and "was" in rec:
+                planned[side] = rec.get("was")
+        plan["targetsPlanned"] = dict(planned)
     cur = dict(plan.get("targets") or {})
     out = dict(cur)
     changed: dict = {}

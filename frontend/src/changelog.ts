@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.36";
+export const APP_VERSION = "0.7.37";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.37",date:"2026-09-10",title:"A re-derived target can come back",items:[
+    {tag:"fixed",text:"Team2 F88: the gap-day target re-derivation now always measures against what the 17:00 plan said, never against its own earlier output. On plans built before the feature shipped it recovers the original target from the record the first pass left behind, so a side the 09:25 pre-market estimate wiped is restored by the 09:30 open when the real open leaves a level ahead of it. This morning IWM opened 288.48 with the 287.83 pre-market low ahead and was left with no down-target at all."},
+  ]},
   {version:"0.7.36",date:"2026-09-09",title:"Cartel volume-supported entry windows",items:[
     {tag:"fixed",text:"New Practice preparation can watch only confirmation periods with valid historical volume baselines instead of requiring all 26 periods. Each usable period still needs five complete samples; missing bars are never fabricated."},
     {tag:"improved",text:"Plans show baseline coverage and supported entry windows. Unsupported periods and closing-bell confirmations cannot trigger entries. Legacy plans and Live defaults retain full-session readiness."},

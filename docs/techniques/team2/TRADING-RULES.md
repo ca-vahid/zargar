@@ -1717,6 +1717,32 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   both paths alone; **(d)** leave it. Recommendation: **(a) plus (c)'s note** — it keeps a mid-day
   knob change effective *and* makes the day's record true.
 
+- **F88 (2026-09-10 09:38 ET, FIXED in v0.7.37 — the gap-day target re-derivation ratcheted off its
+  own output, so a target it wiped at 09:25 could never come back at the 09:30 open).**
+  `rederive_targets` (`plan.py`) read what the 17:00 plan said as
+  `plan["targetsPlanned"] or plan["targets"]`. `targetsPlanned` is written by `build_skeleton`, which
+  only shipped with F81 (v0.7.34) at ~20:30 ET on 09-09 — **after** the 17:00 mint. So all three of
+  today's plans fell through to `targets`, which `complete_plan`'s **first** pass (09:25) had already
+  overwritten. The second pass (the 09:30 `_finalize_open`) then measured the morning against the
+  09:25 output instead of the plan's own target, and `_log_rederived` de-duped the identical record,
+  so nothing in the event log said so.
+  **Cost today, live and on the symbol F81 was built for.** IWM: at 09:25 the pre-market last (288.09)
+  *was* the pre-market low, so nothing was ahead and `below: 290.165 -> none`. At 09:30 IWM opened
+  **288.48** with the finalized PML **287.83** ahead of it — a valid target — but the pass read
+  `planned["below"] = None`, took the `tgt is None` branch and kept None. IWM traded the whole morning
+  with **no down-target**: a short fire would have had no `target_exit`, managed by trims/premium
+  stop/15:45 flatten only. SPY kept **757.90** (the 09:25 PML) instead of re-deriving to the finalized
+  **757.69** — 21 cents stale, same direction, harmless. QQQ's two PMLs coincided at 706.50, no effect.
+  **Fix (Team2-local, one function).** `rederive_targets` now reads `targetsPlanned` only; when it is
+  absent it recovers the original from `targetsRederived[side]["was"]` — the record the first pass
+  leaves behind — falling back to `targets`, and **pins** the result as `targetsPlanned` so every later
+  pass re-derives from the plan's own inputs. Idempotent by construction: re-running it on any plan,
+  at any reference, gives the same answer as running it once. Two regression tests
+  (`tests/test_team2_f81.py::test_f88_*`) replay today's IWM and SPY sequences; 127 Team2 tests pass,
+  frontend build and `check-release` green. **No threshold, gate, band, size or money path changed** —
+  only which number the existing F81 rule measures against. Tomorrow's 17:00 plans carry
+  `targetsPlanned` natively and never take the recovery path.
+
 
 ## Theories to test
 
@@ -1728,6 +1754,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-10 (market watch, run 49, 09:38 ET — release v0.7.37)** — **F88**: the F81 gap-day target
+  re-derivation is now idempotent. It reads only `targetsPlanned` (recovering it from
+  `targetsRederived[...]["was"]`, then pinning it, on plans minted before v0.7.34) instead of falling
+  back to a `targets` field its own earlier pass had overwritten. Deployed mid-session and today's
+  three plans were re-completed through `POST /api/team2/preopen-now`, restoring IWM's down-target to
+  the 287.83 PML and moving SPY's to 757.69. **No rule, threshold or knob changed.**
 
 - **2026-09-09 (market watch, run 44, 15:15 ET — release v0.7.31, reporting only)** — **F82a**:
   the `skip_no_contract` refusal (both the live runner's error and the modelled read's note) said no
