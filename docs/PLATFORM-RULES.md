@@ -577,6 +577,21 @@ and `test_options_cartel_preparation.py` for lifecycle evidence.
 
 ## 4. Change log of shared knobs (date · change · why · evidence)
 
+- 2026-09-10 · **A verification `npm run build` is also a UI deploy — the version chip can report a release the
+  engine is not running** (Team2 watch run 51, finding F94; nothing changed, this is a policy question for
+  whoever owns `scripts/start.ps1`). Facts: the running engine is the 01:29 ET boot on **v0.7.36** (F89 — it is
+  elevated, so no assistant task can restart it), `frontend/dist` was rebuilt at 10:12 ET while verifying an
+  unrelated backend fix, and the running server serves `dist` off disk — so the login page and top-bar chip
+  read **v0.7.38** against a 0.7.36 API. The frontend half of a change deployed itself with no restart, no
+  `/api/ops/restart-check`, and no journal entry, while the backend half stayed queued. Harmless today (both
+  commits are backend-only, so there is no contract mismatch), but a frontend change that needs a new endpoint
+  would go live against an engine that does not serve it, and the version chip would say the deploy succeeded.
+  Two consequences worth adopting: (1) **`/api/health` is the only truth about what the engine is running** —
+  desk logs and watch runs should cite it, never the chip; (2) verification builds should write to a scratch
+  dist, or `dist` should be published as part of the restart rather than as a side effect of `npm run build`.
+  Evidence: `/api/health` 0.7.36 vs the served bundle's 0.7.38 and `frontend/dist/index.html` mtime 10:12 ET,
+  2026-09-10; detail in `docs/techniques/team2/TRADING-RULES.md` F94.
+
 - 2026-09-09 · **Codex review of PRs 33–45 (a3885a9): ten findings, twelve reproducible regressions — all fixed in
   v0.7.32 (the Team2 watch job released 0.7.30 and 0.7.31 in between), the regression file adopted verbatim as `tests/test_codex_f75_regressions.py`** (packet:
   `docs/techniques/team2/notes/research/2026-09-09-pr33-45-review.md` in the Codex checkout). R1 readiness: an

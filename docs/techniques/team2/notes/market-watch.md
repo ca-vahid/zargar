@@ -3440,3 +3440,73 @@ unreported for a session.
   question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**, **F87**,
   **F89**, **F90**, **F92**, F67's two shared-side halves, and the F30-family question of which premium
   series is authoritative.
+
+
+## 2026-09-10 10:40 ET (run 51 — a quiet half hour: no fires, no live entries; two NEW findings, both reporting-level; still undeployable)
+
+- **Alive on v0.7.36, armed 60 desk-wide, `needsAttention` false on all three, zero Team2 errors.**
+  The user has **not** restarted, so F88's v0.7.37 and F91's v0.7.38 are both still queued.
+  `/api/ops/restart-check` reads `safe: true` (no open trades, no working entries, nothing in flight),
+  but **F89 still closes the door** — the running engine is the 01:29 ET boot and it is elevated, so a
+  Limited task's `Stop-Process` is refused. Per run 50's standing instruction I did **not** attempt a
+  restart. Nothing was deployed this run; the two queued commits are unchanged.
+- **Data real-time and clean.** SPY/QQQ/IWM quotes sub-second old, session `regular` (SPY 758.97,
+  QQQ 710.81, IWM 289.10 at 10:34); **64/64 RTH 1m bars today `source='exchange'`** on all three with
+  zero zero-volume minutes, last bar 10:33 banked at 10:34; the Alpaca stream has been authenticated
+  since the 01:29 ET boot with no reconnect. `prevClose` correct (762.40 / 716.31 / 290.64).
+- **What the read saw since run 50 (10:15 → 10:40): no fires, no entries, no orders.**
+  **SPY** — 10:16 `pm_retest` at the PM low 757.69 itself (the F20 small-size rung) but the same bar is
+  contact **#3**, so `late_touch` made it watch-only (D9/P6); 10:18 `same_pullback` (F62). Nothing since.
+  **IWM** — 10:15 `pm_break`: the 15m body closed **287.82** against the PM low **287.83**, a **one-cent**
+  break, minting `pm_break_down@10:00`; its first pullback was refused at 10:16 `skip_no_trade_zone`
+  (entry 288.05). Checked the F20 retest exception by hand and it correctly did **not** apply: the entry
+  is 0.22 off the 287.83 anchor against a tolerance of 0.09 (0.25 × ATR 0.3598), and the 2m close 287.97
+  is back **above** the PM low — no rejection, so no small-size rung. **QQQ** — three more `same_pullback`
+  notices (09:54 / 09:58 / 10:06), never broke its PM low 706.50, 0 setups fired.
+  **Book: 0 trades, 0 open positions, $0.00 realized on all three.**
+- **Replay parity holds.** SPY replays 11 events identical to the live read, including run 50's 10:06
+  `target_replanned` + fire and the 10:14 stop (−12.21% model). IWM replays 5 events identical, the
+  `pm_break` close 287.82 on both sides. The one-cent margin is worth naming as a live instance of F92's
+  hazard, but the bar is exchange-sourced and final, so there is nothing to correct.
+- **F93 — NEW (observation + a rule question, nothing built).** A setup's `confirmed_ts` is the 15m bar's
+  **START**, not its close — hence today's `pm_break_down@09:45` (SPY, confirmed by the 10:00 close) and
+  `pm_break_down@10:00` (IWM, confirmed by the 10:15 close). Two of the three readers do not care; the
+  third does: the **T7 "break & base"** trigger guards itself with `all(x.ts > s.confirmed_ts …)`
+  (`session.py:477`), so on the first 2m bar after a break a `based` entry can fire off a base built
+  **entirely from bars inside the confirming 15m bar**. Whether that is wrong is a method question, not a
+  code question — the author says "break & base over pre market high" *at* the break — so per the watch's
+  own limits I wrote it up instead of changing it. Options (a) leave it / (b) tighten the T7 guard alone
+  by one 15m bar / (c) move `confirmed_ts` to the close. **Live cost so far: zero** — every Team2 fire on
+  record is `entryKind: "ema"`, no `based` entry has ever reached the book. Recommendation: **(b)** if the
+  guard should mean what it says, else (a); decide before T7 ever fires live.
+- **F94 — NEW (platform, and it matters for how these logs are read).** The login page and top-bar chip
+  read **v0.7.38** right now while `/api/health` reads **v0.7.36**: `frontend/dist` was rebuilt at 10:12 ET
+  as part of run 50's F91 *verification*, and the running server serves that directory off disk — so the
+  UI half deployed itself with no restart while the backend half stayed queued. Harmless today (both
+  commits are backend-only, no contract mismatch), but a frontend change needing a new endpoint would go
+  live against an engine that does not serve it, with no readiness check and no journal entry. **`/api/health`
+  is the only truth about what is running — never the chip.** Not fixed: the remedy is a build/deploy
+  policy on `scripts/start.ps1`, which is not this desk's to change. Logged in `docs/PLATFORM-RULES.md` too.
+- **F81b live tally unchanged: 1 read fire, 0 live entries, book net $0.00** — and per F91 that zero is the
+  bug, not the rule. F87 unchanged: today's plans still record `target_replan: "off"` while the runner runs
+  `structure`. **F88 unchanged and visible again:** IWM's brand-new `pm_break_down@10:00` also carries
+  `target: null` ("puts down to the next level (none on the plan)"), so both IWM setups are targetless.
+- **F85 standing check: zero Team2 rows.** 7 `TechniquePlanError` rows in the last 4h, all **tip**, and all
+  the same ones run 50 reported (six 09:31 never-chase gap notices, one 09:26 AMZN source follow-up) — none
+  new. Other desks, reported not touched: the two `cartel-observer bar handling failed` tracebacks (09:37 /
+  09:42 ET) are unchanged, none new.
+- **UI checked:** `/team2` renders correctly — Plans tab lists all three armed plans with their sheets and
+  day type, the thresholds panel is read-only as intended, no console-visible breakage. Two notes for future
+  runs: the browser pane is narrow enough to render the phone layout (expected, not a defect), and the
+  recipe's `?token=…` does **not** sign in — the handoff parameter is the **hash**, `#token=…` (`lib/api.ts:8`).
+- **Next run (≈11:15 ET) should:** (1) check `/api/health` — **not the version chip** (F94) — and if it reads
+  **0.7.38** the user restarted, so immediately confirm a `target_replanned` fire now reaches the book
+  (a `contract` event and a trade, not `skip_target_behind`) and that IWM's two null targets re-derived;
+  if it still reads **0.7.36**, do not attempt a restart and repeat the F89 ask; (2) keep counting read fires
+  and live entries **separately** for F81b until v0.7.38 is live; (3) watch QQQ's PM low 706.50 and IWM's
+  next pullback now that its PM break is armed — SPY is the only one of the three that has traded outside
+  its PM range so far; (4) the F85 journal query. Still open for the user: **F47**, **F49**, **F50**, **F51**,
+  **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's
+  shared half**, **F72's strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**,
+  **F85**, **F86**, **F87**, **F89**, **F90**, **F92**, **F93**, **F94**, F67's two shared-side halves, and
+  the F30-family question of which premium series is authoritative.

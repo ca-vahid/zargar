@@ -1828,6 +1828,47 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   the engine already made deliberately. Diagnostic value only — check the bar source before calling a
   future parity mismatch a rule bug.
 
+- **F93 (2026-09-10 10:40 ET, OBSERVATION + a rule question for the user — the "break & base" entry can
+  be built entirely from bars that predate the break's confirmation).** A setup's `confirmed_ts` is the
+  15m bar's **START**, not its close: `setup_for(..., f15.ts, ...)` in `session.py`, which is why today's
+  setups are named `pm_break_down@09:45` (SPY, confirmed by the 10:00 close) and `pm_break_down@10:00`
+  (IWM, confirmed by the 10:15 close). Two of the three places that read `confirmed_ts` do not care —
+  a setup only exists once its 15m close is processed, so "live" (`confirmed_ts <= b2.ts`) and "newest
+  setup wins" both order correctly, and both symbols use the same convention. The third does care:
+  the T7 break-&-base trigger guards itself with `all(x.ts > s.confirmed_ts for x in recent)`
+  (`session.py:477`), whose plain reading is "the base formed after the setup was confirmed". With
+  `confirmed_ts` 15 minutes early, the three 2m bars inside the confirming 15m window satisfy it — so on
+  the very first 2m bar after a break is confirmed, a `based` entry can fire off a base that formed
+  **before** the break was confirmed. **The rule question (the user's, not the desk's — this changes
+  which trades are taken, so nothing was built):** is that wrong, or is it the method? The author says
+  "that break & base over pre market high is so nice" *at* the break, and the bars inside the confirming
+  15m bar are bars that held beyond the level — arguably the base he means. Options: (a) leave it —
+  the base inside the breaking bar is part of the break; (b) tighten the T7 guard alone to
+  `x.ts > s.confirmed_ts + confirm_tf_min * 60_000`, a one-line change that costs at most the first
+  bar or two after each break and never loosens anything; (c) move `confirmed_ts` to the close and keep
+  bar-start naming for the setup id — larger, touches ordering and every recorded setup id.
+  **Live impact so far: none measurable.** Every live Team2 fire on record carries `entryKind: "ema"`;
+  no `based` entry has ever reached the book, so this has cost nothing yet. Recommendation: **(b)** if
+  the user wants the guard to mean what it says, otherwise (a); either way it should be decided before
+  the T7 path ever fires live.
+
+- **F94 (2026-09-10 10:38 ET, PLATFORM — the version chip lies about what is running, and a
+  verification build silently swaps the live UI under the running engine).** The desk's own login page
+  and top-bar chip read **v0.7.38** right now while `/api/health` reads **v0.7.36**: the engine is the
+  01:29 ET boot (F89 — it is elevated and cannot be restarted), but `frontend/dist` was rebuilt at
+  10:12 ET as part of run 50's F91 verification (`npm run build`), and the running server serves that
+  directory off disk. So the *frontend* deployed itself without a restart while the *backend* did not.
+  **Two consequences.** (1) Reporting: anyone looking at the chip — the user, or a future watch run —
+  would conclude F88 and F91 are live. They are not; `/api/health` is the only truth about the engine,
+  and this file's runs should cite it, never the chip. (2) Risk, and this one is shared, not Team2's:
+  a build run purely to *verify* a change is also a deploy of the UI half of that change. Today's
+  commits are backend-only so the 0.7.38 bundle talks to the 0.7.36 API without a contract mismatch,
+  but a frontend change that needs a new endpoint would have gone live against an engine that does not
+  serve it — instantly, with no restart, no readiness check and no journal entry. Nothing was changed:
+  the fix is a build/deploy policy (build to a scratch dist when verifying, or gate `dist` on the
+  restart), which is the user's call and belongs to whoever owns `scripts/start.ps1`. Also logged in
+  `docs/PLATFORM-RULES.md`.
+
 
 ## Theories to test
 
