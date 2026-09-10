@@ -1929,6 +1929,46 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   **Lesson for this watch job:** a status carried forward across runs must be re-measured, not
   re-typed; every F-status this log repeats should cite the query that produced it in that run.
 
+- **F97 (2026-09-10 12:05 ET, MEASUREMENT for F56/F90 — on a gap day that reverses back into its own
+  pre-market range the V6/B5 no-trade zone refuses ~95% of the day's EMA13 contacts; today it left a
+  six-minute window on one symbol).** F56 and F90 both ask whether a wide pre-market range swallows the
+  session. This run put a number on it. Independent reconstruction from the `bars` table (RTH 1m -> 2m
+  buckets, EMA13 recomputed from the session's own closes; the reconstruction lands within 0.001 of the
+  engine's own `regimeLast.ema13` on SPY at 12:00, 758.864 vs 758.865, so it is measuring the same
+  series), counting every 2m bar whose range contains the EMA13 — i.e. every candidate pullback the
+  method could take — and asking only whether the entry (the EMA13 itself) sits inside that symbol's
+  pre-market range:
+  - **SPY: 30 contacts, 26 inside the zone, 4 outside** (10:12, 10:14, 10:16, 10:18 — EMA13 757.53–757.60,
+    just under the 757.69 PM low).
+  - **QQQ: 31 contacts, 31 inside, 0 outside.**
+  - **IWM: 24 contacts, 24 inside, 0 outside.**
+  - **Desk total: 85 candidate pullbacks, 81 refused by the zone alone (95.3%), 4 tradable — all on one
+    symbol, inside one six-minute window.** The day's only trade (SPY 10:06, the F81b fire) came out of
+    exactly that window, which is not a coincidence: it is the only moment all session that any of the
+    three traded outside its pre-market range.
+  **The zone, not the stack, is today's binding constraint.** F95 read the 10:18–11:30 silence as an
+  `ema_stack = mixed` stand-down, and that was right for that window. But the stack has since resolved
+  in the method's favour on all three — IWM bear since 11:18, QQQ re-stacked bear ~11:48, SPY ~11:50
+  (engine `regimeLast` at 12:00: SPY bear strength 3, IWM bear strength 3, QQQ mixed→bear) — and the
+  result was **not** a fire. It was contacts at SPY 11:52 / 12:00 / 12:02, QQQ 11:52 / 12:00 / 12:02 and
+  IWM 11:30 / 11:32 / 11:34 / 11:38 / 11:42 / 11:44 / 11:46 / 11:52 / 11:58 / 12:00, every one with its
+  entry inside the pre-market range. The single event the read minted out of all of them is SPY's 12:02
+  `skip_no_trade_zone` ("entry 758.87 sits inside the pre-market range — V6/B5"), which is correct, and
+  correctly re-said because `note_once` is per setup and this setup had not said it before. So: when the
+  stack finally agreed, the zone refused anyway.
+  **Why this sharpens F90 rather than repeating it.** F90 reasoned from the gate order that the two rules
+  are mutually exclusive on a gap day; F97 is the count. It also isolates which of F90's options is
+  actually load-bearing. Option **(b)** (small size inside the range when near the broken edge) would
+  have released almost nothing today — the contacts sat 1.0–1.2 points above the PM low on SPY, far
+  outside `pm_tol_atr` 0.25 × ATR 0.43 = 0.11. Option **(c)** (a gap-through day's PM range stops being a
+  no-trade zone once the 15m confirmation closes beyond it) is the one that would have changed the day:
+  all three confirmed `scenario_4 break PDL` on the **09:45** close, so under (c) the zone would have
+  lifted at 09:45 and the 81 refusals would have been judged on their merits instead.
+  **Not changed here** — this is the sweep input F90 asked for, not a defect and not a rule change. What
+  it argues for is running the F90(c) variant over the gap days in the sweep set before the twenty-session
+  F81b review, so the review is not reading a sample where 95% of the opportunity was gated away by a
+  rule nobody has measured. Recording the count is the point; the decision stays the user's.
+
 
 ## Theories to test
 

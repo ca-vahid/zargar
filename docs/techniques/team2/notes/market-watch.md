@@ -3663,3 +3663,80 @@ unreported for a session.
   **F72's strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**,
   **F86**, **F87 (now narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**, **F94**, **F95**,
   F67's two shared-side halves, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-10 12:05 ET (run 54 — healthy; the stack finally turned bear on all three and the pre-market no-trade zone refused every pullback anyway — F97 counts it)
+
+- **Alive on v0.7.36** (`/api/health`, not the version chip — F94), armed 59 desk-wide, `needsAttention:
+  false` on all three, **zero Team2 rows** in the journal. The user has **not** restarted, so F88's
+  v0.7.37 and F91's v0.7.38 are both still queued. `/api/ops/restart-check` reads `safe: true`
+  (`reasons: []`, market open, nothing working or in flight), but **F89 still closes the door** — per
+  the standing instruction from runs 49–53 I did **not** attempt a restart. Nothing deployed this run.
+- **Data real-time and clean** (measured this run, not carried forward). SPY/QQQ/IWM quotes sub-second
+  old at 12:03:21, session `regular` — SPY 758.615, QQQ 710.39, IWM 288.255; `prevClose` correct
+  (762.40 / 716.31 / 290.64). Bars: **154/154 RTH 1m bars today `source='exchange'` on all three, zero
+  zero-volume minutes, last bar 12:03**. Pre-open completion still `complete: true` on all three with
+  their PM ranges and `dayType: gap_down`.
+- **What the read saw since run 53 (11:35 → 12:05): two events.** IWM 11:42 `same_pullback` (F62), and
+  SPY **12:02 `skip_no_trade_zone`** — touch #3 on `pm_break_down@09:45`, "entry 758.87 sits inside the
+  pre-market range (V6/B5)". **Book still 0 trades, 0 open positions, $0.00 realized on all three.**
+- **The watch item from run 53 resolved — and resolved into a refusal.** Run 53 asked to watch for the
+  EMA13 to re-cross below the EMA48 and re-open the short side. It did, on all three: IWM bear since
+  11:18, QQQ re-stacked ~11:48, SPY ~11:50 (engine `regimeLast` at 12:00 — SPY bear strength 3,
+  ema13 758.865 / ema48 758.939 / ema200 760.042; IWM bear strength 3; QQQ still `mixed` at the 12:00
+  stamp but crossing). The stack agreed and the method **still did not fire**, because every contact's
+  entry sat inside the pre-market range.
+- **F97 — NEW (measurement for F56/F90, documentation only, nothing built).** Recomputed the 2m series
+  from the bars table (reconstruction matches the engine's own `regimeLast.ema13` to 0.001 on SPY at
+  12:00, so it is the same series) and counted every 2m bar whose range contains the EMA13 — every
+  candidate pullback the method could take — then asked only whether the entry sits inside that
+  symbol's PM range: **SPY 30 contacts, 26 refused / 4 tradable** (10:12–10:18, EMA13 757.53–757.60,
+  just under the 757.69 PM low); **QQQ 31 / 31 refused / 0**; **IWM 24 / 24 refused / 0**. **Desk total:
+  85 candidate pullbacks, 81 refused by the zone alone (95.3%), 4 tradable — one symbol, one six-minute
+  window.** The day's only trade (SPY 10:06, the F81b fire) came out of exactly that window. This is the
+  count F90 reasoned toward from the gate order, and it isolates which of F90's options matters: **(b)**
+  would have released nothing today (contacts sat 1.0–1.2 pts above the PM low vs a `pm_tol_atr`
+  0.25 × ATR 0.43 = 0.11 tolerance); **(c)** — the PM range stops being a no-trade zone once the 15m
+  confirmation closes beyond it — would have lifted the zone at the **09:45** confirmation on all three
+  and put all 81 refusals back on their merits. **Proposed, not built:** run the F90(c) variant over the
+  gap days in the sweep set *before* the twenty-session F81b review, so that review is not reading a
+  sample where 95% of the opportunity was gated away by an unmeasured rule. User's call.
+- **Replay parity holds.** SPY live 12 events / replay 13, IWM 7/7, QQQ 5/5 — all live events reproduced
+  identically in order and kind; SPY's extra replay row is the **12:04** `same_pullback`, one 2m bar past
+  the live read I had already fetched at 12:03, i.e. the replay being *ahead*, not disagreeing. SPY's
+  replay still reproduces the 10:06 `target_replanned` + fire and the 10:14 −12.21% stop.
+- **F95 seen again, and correctly this time.** The 12:02 SPY refusal **did** emit and **did** count
+  (`pullbacks` 3 → 4, `touches` held at 2) — `note_once` is per setup and this setup had not said
+  `skip_no_trade_zone` before. The silent ones remain the ones the stack gate drops before counting.
+  Nuance worth keeping: F95's "`pullbacks`/`opportunities` never increment" is true **only** of the
+  stack-gate `continue`; no-trade-zone refusals are counted (IWM's `pm_break_down@10:00` now reads
+  `pullbacks: 8, touches: 0`).
+- **Re-measured F-statuses this run** (F96's lesson — queries, not copied lines): **F87** stays
+  CORRECTED — all three plans read `target_replan: 'structure'`. **F88 unchanged** — IWM's
+  `scenario_4@09:30` and `pm_break_down@10:00` both still `target: null`; today IWM is out of the F81b
+  experiment. **F94 unchanged.** **F81b live tally unchanged: 1 read fire, 0 live entries, book net
+  $0.00** — per F91 that zero is the bug, not the rule.
+- **F85 standing check: zero Team2 rows.** Journal last 80 min: 8 `SignalVerificationFailed` (tip
+  intake, routine), 1 `RiskCheckFailed` (10:53 `quote_fresh`, tip — Team2 has placed no orders today),
+  1 `TechniquePlanError` (10:58 RDDT, tip). Engine log (`backend/zargar-8420.log`): **no new ERRORs** —
+  today's only two remain the 09:37 / 09:42 ET `cartel-observer bar handling failed` tracebacks,
+  unchanged since run 50. **Other desks, reported not touched:** run 53's two critical 09:05
+  `ManagedPositionAttention` rows have **half-resolved on their own** — LULU closed at 11:45 ET on its
+  stop (`ManagedPositionClosed`, "bar closed through the stop 97.7924"), so only **TSLA** (we hold 7,
+  broker shows −4) is still open and unexplained, with new TSLA entries halted. Worth the user's eye.
+- **UI checked:** `/team2` renders correctly — Plans tab lists all three armed plans with sheets, PM
+  ranges and `gap down` day type, header reads `auto mode · plans 17:00 ET, pre-open 09:25 · 0DTE:
+  entries until 15:30, flat by 15:45`, thresholds panel read-only as intended, no breakage.
+- **Next run (≈12:35 ET) should:** (1) `/api/health` — if **0.7.38**, the user restarted, so immediately
+  confirm a `target_replanned` fire reaches the book (a `contract` event and a trade, not
+  `skip_target_behind`) and that IWM's two null targets re-derived; if still **0.7.36**, do not attempt
+  a restart and repeat the F89 ask; (2) **re-measure every F-status you repeat** and cite the query;
+  (3) the live question is now the zone, not the stack (F97) — all three are bear-stacked, so the only
+  path to a fire is price breaking back **below** a PM low: SPY < 757.69, QQQ < 706.50, IWM < 287.83.
+  Watch those three numbers; anything above them is a refusal by construction; (4) keep counting F81b
+  read fires and live entries separately until v0.7.38 is live; (5) the F85 journal query, and whether
+  TSLA's reconcile gap gets resolved. Still open for the user: **F47**, **F49**, **F50**, **F51**,
+  **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**,
+  **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**, **F81**,
+  **F82**, **F83**, **F85**, **F86**, **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**,
+  **F94**, **F95**, **F97**, F67's two shared-side halves, and the F30-family question of which premium
+  series is authoritative.
