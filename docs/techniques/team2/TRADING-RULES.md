@@ -7,6 +7,15 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Rules under observation
 
+- **F81b `target_replan=structure` (gap days only) — ON in Practice since 2026-09-09 20:30 ET, user decision, UNDER
+  OBSERVATION.** Turned on so it is measured live rather than forgotten: on a gap day an entry whose planned target
+  has been run through takes the pre-market extreme, else the next ladder level, else NO target (trims, one-candle
+  stop and 15:45 flatten manage it). Frozen-sample prior: reproduces the author's 2026-09-09 IWM day (+114.5
+  modelled) but −27.5 net over the other gap days of 14 dates. **Review trigger: the earlier of 10 live gap-day
+  entries under this rule or the twenty-session review (PLAN §3d).** The watch job tallies every `target_replanned`
+  fire and its book result separately in each run; the decision threshold is the live book, not the model:
+  keep if the rule's own trades are net positive after fees over that sample, else back to `off`.
+
 | Rule | Current value | Question | Decides it | Status |
 |---|---|---|---|---|
 | Q1 contract | **0DTE, strike by premium ≈ $0.50–0.60 (decided, D3)** | Would 1DTE survive as a variant? Does the $0.50 strike beat the first-OTM strike? | sweep with the premium-path scorer (E8): 0DTE-$0.50 vs 0DTE-first-OTM vs 1DTE | decided 2026-09-03; variants open |
@@ -1745,6 +1754,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   green** — the workaround is to set the `zargar_session` cookie in the browser (`?token=` does not
   authenticate the SPA route); Plans and Armed tabs both render all three plans with correct
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
+- **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
+  only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
 - **2026-09-10 (F81 built, v0.7.34; user decision)** — pre-open/open target re-derivation ON (measured neutral on the
   frozen sample, correct on its own terms); the entry-time structure fallback that reproduces the author's IWM day
   is EXPERIMENTAL and OFF (loses on the other gap days of the sample). Knobs: `preopen_target_rederive`,
