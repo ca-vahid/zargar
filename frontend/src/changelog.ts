@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.37";
+export const APP_VERSION = "0.7.38";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.38",date:"2026-09-10",title:"The desk enters the trade its read fired",items:[
+    {tag:"fixed",text:"Team2 F91: when the read drops a target because no structure is left ahead of the entry, the live runner now enters that trade instead of refusing it against the old target the setup still carries. The trims, the candle stop, the premium stop and the 15:45 flatten manage it, exactly as the read simulated. Today SPY fired a 756 put at 10:06 ET and the runner refused it on a 757.90 the read had already replanned away, so the experimental gap-day target rule could never actually trade."},
+  ]},
   {version:"0.7.37",date:"2026-09-10",title:"A re-derived target can come back",items:[
     {tag:"fixed",text:"Team2 F88: the gap-day target re-derivation now always measures against what the 17:00 plan said, never against its own earlier output. On plans built before the feature shipped it recovers the original target from the record the first pass left behind, so a side the 09:25 pre-market estimate wiped is restored by the 09:30 open when the real open leaves a level ahead of it. This morning IWM opened 288.48 with the 287.83 pre-market low ahead and was left with no down-target at all."},
   ]},

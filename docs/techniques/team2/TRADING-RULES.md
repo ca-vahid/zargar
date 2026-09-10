@@ -1774,6 +1774,44 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   re-read this after the twenty-session F81b review - (c) is the most faithful to the author's own
   gap-day behaviour but it changes a documented rule, so it wants the sweep first.
 
+- **F91 (2026-09-10 10:06 ET, FIXED in v0.7.38 — the live runner refused the entry its own read fired,
+  so F81b could never trade).** SPY, 10:06 ET, on the tape: the session read applied F81b, logged
+  `target_replanned` ("planned target 757.90 is behind the 757.59 entry - no structure left ahead: no
+  target"), and **fired** — touch #2, EMA13 757.59 held on a 757.16 close in a bear stack, buy the 756
+  put at $0.53, size full. The **runner refused the same fire** in the same second:
+  `TechniquePlanTriggerSkipped / skip_target_behind`, "target 757.90 (from the setup) is above the
+  757.59 entry — no room left … refusing the entry rather than entering with no target at all (F72)".
+  Replay reproduces the read exactly (fire + `target_replanned`), so live and replay disagree on the
+  only decision of the day.
+  **Root cause, one line.** `runner.resolve_fire_target` read `e["target"]`, and on `None` fell back to
+  `setup["target"]`. F81b's whole point is to set the fire's target to `None`; the **setup keeps its
+  stale planned target** (the read never rewrites it — confirmed on the live read: setup
+  `pm_break_down@09:45` still carries `target 757.9`). So the fallback resurrected precisely the number
+  the read had just replanned away from, and F72's guard then refused it. The fire already carried the
+  discriminator — `targetKind: "none"`, stamped in exactly ONE place (`session.py` line ~619, the F81b
+  structure branch, and nowhere else) — but the gate only looked at the target value, which cannot tell
+  "the read decided no target" apart from "no target anywhere".
+  **Scope: F81b was unreachable in live trading, on every entry, since it was switched on at 20:30 ET on
+  09-09.** Not a threshold being wrong — the rule could not fire at all. Combined with F90 (on a gap day
+  a `scenario_4` short can only enter below the PML, which is exactly where F81 puts its target), F81b
+  is the *only* path to an entry on a gap day, so this silently zeroed the gap-day book. It also breaks
+  the replay-parity check the desk relies on: replay says "traded", the book says "refused".
+  **Fix (v0.7.38):** `resolve_fire_target` skips the setup fallback when the fire is stamped
+  `targetKind == "none"`, honouring the read's verdict; the trade is then managed by the trims, the
+  candle stop, the premium stop and the 15:45 flatten — the same targetless shape the function's own
+  docstring already blesses. **F72's hole stays closed:** an unstamped targetless fire (`targetKind`
+  absent, `""`, `plan`, `hod`, `replan`) still falls back and still refuses a stale target, so a
+  restored or replayed event cannot smuggle in a targetless entry. F88's genuinely-null-target case
+  (IWM today) is unaffected — it fires with `targetKind: "plan"` and was already allowed.
+  **No threshold, gate, band, size, sizing bucket or money path changed** — this makes the runner agree
+  with the read, which is the documented authority (`session.py` = the one pure read).
+  Three regressions in `tests/test_team2_target_guard.py` replay today's SPY sequence and both mirrored
+  sides; they fail without the fix (verified by reverting the one-line condition). 133 Team2 tests green.
+  **Consequence for the measurement the user asked for:** today's F81b tally is **0 live entries against
+  1 read fire**, and every prior "F81b had no opportunity" reading since 09-09 20:30 ET is unreliable —
+  the rule was switched on but could not reach the book. The twenty-session review should start counting
+  from the first session that runs v0.7.38.
+
 
 ## Theories to test
 
@@ -1785,6 +1823,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-10 (market watch, run 50, 10:06 ET — release v0.7.38)** — **F91**: the live runner no longer
+  refuses a fire the read deliberately made targetless. `resolve_fire_target` honours an explicit
+  `targetKind == "none"` instead of falling back to the setup's stale planned target. Evidence: SPY
+  10:06 ET fired the 756 put in the read and logged `skip_target_behind` on the 757.90 in the book, the
+  same second. F72's refusal of an *unstamped* stale target is unchanged, as is F88's genuinely-absent
+  case. No rule, threshold, gate, size or money path changed. Committed; **deploy blocked by F89** (the
+  running engine is elevated) — queued behind the user's `scripts\stop.ps1`.
 
 - **2026-09-10 (market watch, run 49, 09:38 ET — release v0.7.37)** — **F88**: the F81 gap-day target
   re-derivation is now idempotent. It reads only `targetsPlanned` (recovering it from

@@ -684,9 +684,19 @@ class Team2Runner(PlanRunner):
         thing and stays allowed: the read validated that shape, and the candle stop, premium stop,
         trims and the 15:45 flatten manage the trade. Entry-side only — a target already on an
         OPEN trade is never rewritten here.
+
+        F91 (2026-09-10): a fire stamped `targetKind == "none"` is a THIRD shape, and it is not an
+        absent target — it is the read's F81b decision that no structure is left ahead of this entry
+        (`session.py`, the one place that stamps it). The setup keeps its stale planned target, so
+        without this the fallback resurrects exactly the number the read just replanned away from and
+        refuses the entry the read authorised. Live SPY 2026-09-10 10:06 ET: the read fired a 756 put
+        and the runner logged `skip_target_behind` on the 757.90 the read had already dropped, which
+        made F81b unreachable in live trading and unmeasurable against replay. Honour the read's
+        verdict; the trims, the candle stop, the premium stop and the 15:45 flatten manage the trade,
+        which is the same shape the branch above already blesses.
         """
         target, src = e.get("target"), "fire"
-        if target is None:
+        if target is None and str(e.get("targetKind") or "") != "none":
             target, src = setup.get("target"), "setup"
         if target is None:
             return None, None                    # no target anywhere: the shape the read allowed
