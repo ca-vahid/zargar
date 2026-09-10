@@ -1743,6 +1743,37 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   only which number the existing F81 rule measures against. Tomorrow's 17:00 plans carry
   `targetsPlanned` natively and never take the recovery path.
 
+- **F90 (2026-09-10 10:00 ET, OBSERVATION + a rule question for the user — on a gap day the V6/B5
+  no-trade zone and F81's PML target are mutually exclusive for a `scenario_4` short, so F81b is
+  load-bearing, not marginal).** Order of gates in `session.py`: `sizing_bucket` runs FIRST and returns
+  `none` for any entry inside the pre-market range -> `skip_no_trade_zone` (V6/B5); the target gates
+  (F81b re-derive, then F72 `skip_target_behind`) run after. The F20 small-size exception applies only
+  to `s.kind.startswith("pm_break")`, so a `scenario_4` setup gets no relief.
+  **Consequence on a gap-down day:** the short can only take an entry **below the PML** - and F81 has
+  just set that setup's target **to the PML**. So at every entry the plan target is behind by
+  construction, and the entry-time F81b re-derive (`target_replan=structure`, live since 09-09) is the
+  only thing that can supply a target at all. On the baseline (`off`) the same entry is refused
+  `skip_target_behind`. This is the precise mechanism behind 2026-09-09's 18 refusals, and it says the
+  two rules were designed against each other rather than together.
+  **Live today, all three:** SPY, QQQ and IWM all confirmed `scenario_4 break PDL` on the 09:45 close
+  and all three were trading INSIDE their pre-market ranges (PM 757.69-764.60 / 706.50-717.60 /
+  287.83-291.74). SPY logged the first refusal at 09:50 - `skip_no_trade_zone`, entry 759.01 inside the
+  range. On a 7-point gap-down PM range that zone covers essentially the whole session's likely pullback
+  area, so entries are gated on a break of the PM low, exactly where the author entered IWM on 09-09.
+  **Interaction with F88 (same day):** `target_is_ahead(None, ...)` returns **True** by design ("no
+  target" is allowed), so IWM's null target does not merely lose its target exit - it never reaches the
+  F81b branch at all. **F88 silently removed IWM from today's F81b experiment**; SPY and QQQ are in it,
+  IWM is not. Worth knowing before reading the tally.
+  **Not changed here** - this is a method question, not a defect. Options for the user: **(a)** leave it
+  and let F81b own the gap-day target (what is running now); **(b)** let a `scenario_4` entry inside the
+  PM range trade at SMALL size when it is within tolerance of the broken zone edge, the way F20 already
+  allows for `pm_break` (widens the no-trade zone exception from one setup kind to two); **(c)** treat a
+  gap-through day's PM range as no longer a no-trade zone once the 15m confirmation closes beyond it,
+  since the range is then history rather than an undecided balance area; **(d)** leave both and accept
+  that gap days trade only on PM-level breaks. Recommendation if one is wanted: **(a) for now**, and
+  re-read this after the twenty-session F81b review - (c) is the most faithful to the author's own
+  gap-day behaviour but it changes a documented rule, so it wants the sweep first.
+
 
 ## Theories to test
 

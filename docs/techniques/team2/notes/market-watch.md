@@ -3255,3 +3255,96 @@ unreported for a session.
   half**, **F72's strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**,
   **F85**, **F86**, **F87**, F67's two shared-side halves, and the F30-family question of which
   premium series is authoritative.
+
+## 2026-09-10 09:52 ET (run 49 — the open confirmed a short bias on all three; F88 found and FIXED but NOT DEPLOYED: the restart door is closed because the running engine is elevated)
+
+- **Alive, but undeployable.** `/api/health` ok on **v0.7.36**, armed 62 desk-wide, `/api/ops/restart-check`
+  `safe: true`, zero Team2 errors in the engine log. The **09:25 pre-open job ran at 09:25:10 and 09:25:52**
+  and completed all three plans: `pmh`/`pml`/`dayType: gap_down`/`sizingAtOpen: none`/`complete: true`,
+  each followed by a `targets_rederived` event and an `open_finalized` at 09:31 on the real 09:30 open
+  (SPY 758.02, QQQ 707.56, IWM 288.48). Run 48's open item is closed: the live snapshot does carry it all.
+- **Data is real-time.** SPY/QQQ/IWM quotes **sub-second** old, session `regular`; 1m bars banking every
+  minute, the 09:45 bar present at 09:46, **16/16 RTH minutes today all `source='exchange'`** with non-zero
+  volume on all three. `prevClose` now reads 09-09's close (762.45 / 716.31 / 290.65) — run 48's pre-market
+  `prevClose` oddity resolved itself at the open exactly as predicted, nothing to chase.
+- **The open (09:30–09:45) — one 15m close, short bias on all three.** Every symbol gapped down and opened
+  below its PDL zone, and the first 15m body closed below it: SPY 758.135 < 760.94, QQQ 708.77 < 714.02,
+  IWM 288.40 < 290.31 → **`scenario_4` break PDL, puts (B1/C1)** on all three, `setups=1`, **0 fires, 0
+  trades**. Verified against the bars table to the cent (the 15m close = each symbol's 09:44 1m close).
+  EMAs sane and stacked bear everywhere; QQQ is the one trading back **above** its 13/48 EMA (709.5 vs
+  707.36/708.82), i.e. the first pullback entry is setting up there, SPY sits just under its EMA13.
+- **F88 — NEW, root-caused, fixed, tested, committed as `ef4fb89` (v0.7.37), and NOT LIVE.** The F81 gap-day
+  re-derivation read what the 17:00 plan said as `targetsPlanned or targets`. `targetsPlanned` only ships
+  with F81 itself (v0.7.34, deployed **20:30 ET on 09-09** — *after* the 17:00 mint), so all three of
+  today's plans fell through to `targets`, which the 09:25 pass had already overwritten; the 09:30 finalize
+  then measured the open against the 09:25 output instead of the plan's target, and `_log_rederived`
+  de-duped the identical record so nothing said so. **Live cost, on the symbol F81 was built for:** IWM's
+  09:25 pre-market last (288.09) *was* the pre-market low, so `below: 290.165 -> none`; at the 288.48 open
+  the finalized PML **287.83 was ahead again** but the pass read `planned["below"] = None` and kept it.
+  **IWM's active short setup right now carries `target: null`** (SPY 757.90, QQQ 706.50) — a fire there
+  would have no `target_exit`, managed only by trims / premium stop / 15:45 flatten. SPY separately kept
+  the 09:25 PML 757.90 instead of the finalized 757.69 (21c stale, same side, harmless). Fix: read
+  `targetsPlanned` only, recover it from `targetsRederived[side]["was"]` when absent, and **pin** it, so
+  the re-derive is idempotent by construction. 127 Team2 tests pass (2 new regressions replay today's IWM
+  and SPY sequences), frontend build + `check-release` green. **No threshold, gate, band, size or money
+  path changed.** Tomorrow's 17:00 plans carry `targetsPlanned` natively and never take the recovery path.
+- **F89 — NEW, the reason F88 is not live, and it blocks EVERY desk.** `ZargarRestart` fired cleanly at
+  09:40 ET (`restart-check safe: true`, no open trades, no working entries) and `restart.ps1` **aborted at
+  `start.ps1:152` with `Stop-Process ... Access is denied`** on pid 29812. That process — the 01:29 ET boot,
+  owner `LENOVO-INTEL\vispe` — is **elevated**: its `CommandLine` is unreadable from a Limited process, and
+  all four Zargar tasks (`ZargarRestart`, `ZargarRestartOverride`, `ZargarUnelevatedStart`, `ZargarWatchdog`)
+  run `RunLevel = Limited`. So `-Force` does not help either: this is an elevation refusal, not a readiness
+  refusal. **Nothing was killed — there was no outage** — but no assistant on any desk can deploy today.
+  This is precisely what the 2026-09-05 "the server must run UNELEVATED" decision exists to prevent.
+  Deliberately **not worked around**: registering a `RunLevel Highest` task would deploy v0.7.37 but leave
+  the next engine elevated and re-close the door for everyone. Logged in `docs/PLATFORM-RULES.md`.
+  **Needs the user:** `scripts\stop.ps1` from the elevated terminal that owns the process, then any desk's
+  `ZargarRestart` picks up v0.7.37 (armed plans restore automatically, as they did 4× overnight).
+- **F81b live tally: 0 trades, book net $0.00.** Zero `target_replanned` events today — no entry has been
+  attempted, so the rule has not had an opportunity. **F87 still stands and is unchanged:** today's plans
+  record `target_replan: "off"` while the runner runs `structure`, so if an F81b entry does occur today the
+  replay parity check will disagree and the day will be scored under a rule it did not trade.
+- **F85 standing check: not clean, but not ours.** 20 `TechniquePlanError` rows in the last 20h — a burst of
+  19 at **09:31 ET**, every one a **tip** never-chase notice ("X opened gapped through the N level - not
+  chasing; the plan stays armed"), which is correct gap-day tip behaviour surfacing through the error
+  channel, plus one 09-09 19:15 EM `stale bars` on CRWD. **Zero Team2 rows.**
+- **Other desks, reported not touched:** two `cartel-observer bar handling failed` tracebacks (06:37 and
+  06:42 PT, `ValueError: entry read requires symbol-matched, minute-aligned 1m bars`) in
+  `backend/zargar-8420.log`. Cartel is another desk's technique; flagging only.
+- **Next run (≈10:15 ET) should:** (1) check whether the user has restarted — if `/api/health` reads
+  **0.7.37**, immediately re-verify IWM's setup target is no longer null (it should re-derive to the PML on
+  the next `complete_plan`; if the plans were not re-completed, `POST /api/team2/preopen-now` does it);
+  if it still reads 0.7.36, **do not attempt another restart** and repeat the F89 ask; (2) watch the first
+  EMA13 pullback entries on the three short setups — QQQ is closest — and check every fire carries a
+  `contract` event with an ask near $0.60, not `skip_no_contract`; (3) report `target_replanned` per the
+  standing F81b instruction and keep the tally; (4) F85 journal query; (5) run the replay-vs-live parity
+  check once a fire exists, remembering F87 makes it unreliable today. Still open for the user: **F47**,
+  **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**,
+  **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**, **F76's rule question**,
+  **F81**, **F82**, **F83**, **F85**, **F86**, **F87**, **F89**, F67's two shared-side halves, and the
+  F30-family question of which premium series is authoritative.
+
+### Run 49 addendum (10:00 ET) — the first live refusal, and why today's F81b tally may read empty
+
+- **09:50 ET, SPY: `skip_no_trade_zone`** — "entry 759.01 sits inside the pre-market range — no-trade
+  zone (V6/B5)". Correct against the tape (SPY PM range 757.69–764.60). First and only trigger decision
+  of the day so far; QQQ and IWM have not produced a pullback contact yet.
+- **F90 — NEW (observation + rule question, nothing changed).** The gate order in `session.py` is
+  `sizing_bucket` (V6/B5 no-trade zone) **first**, target gates second, and F20's small-size exception
+  only covers `pm_break` setups — not `scenario_4`. So on a gap-down day a `scenario_4` short can only
+  enter **below the PML**, and F81 has just set that setup's target **to the PML**: at every reachable
+  entry the plan target is behind by construction. The entry-time F81b re-derive is therefore the ONLY
+  thing that can hand these setups a target today; on the baseline (`off`) the identical entry is refused
+  `skip_target_behind`. That is the mechanism behind 09-09's 18 refusals — the two rules were built
+  against each other rather than together. All three symbols are inside their PM ranges right now, so all
+  three are gated on a PM-low break (757.69 / 706.50 / 287.83) — exactly where the author entered IWM
+  yesterday. Four options written up in TRADING-RULES F90; recommendation is **(a) leave it** pending the
+  twenty-session F81b review.
+- **F88 ∩ F90, and it distorts the measurement the user asked for.** `target_is_ahead(None, …)` returns
+  **True** by design ("no target" is a legal state), so IWM's null target never reaches the F81b branch
+  at all. **F88 silently removed IWM from today's F81b experiment** — SPY and QQQ are in it, IWM is not.
+  Combined with F87 (today's plans record `target_replan: "off"` while the runner runs `structure`), a
+  zero or thin F81b tally today should NOT be read as evidence about the rule.
+- **Checked, no crash risk:** the F81b branch formats `{target:.2f}` and calls `float(target)`, which
+  would raise on a `None` target — but `target_is_ahead(None, …) == True` makes that branch unreachable
+  for a null target. Verified in code, not just by absence of errors in the log.
