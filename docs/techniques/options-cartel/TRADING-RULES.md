@@ -160,3 +160,14 @@ bounded and never submits a missed historical crossing. Entry decisions and nume
 rejection evidence persist through recovery. Original 15m/1.5x/0.70 entry defaults
 remain; 5m/15m breakout/retest comparisons are research-only and never auto-promoted.
 See FIDELITY-REVIEW-2026-09-08.md for sources, limitations and the next-session checklist.
+
+
+## 2026-09-09 review: target room and observation continuity
+
+The paired DRAM/VG study does not support automatically lowering volume or candle
+quality. New preparation instead applies configurable target-distance and actual
+entry-R floors, preserves nearest targets, and ranks with disclosed target-room/RS
+criteria. Existing plans are immutable. Recovery repairs context without firing
+missed signals; live signal/position state retains priority. Equal-weight breadth
+is advisory and NYMO remains explicitly unavailable. See DAILY-PREPARATION.md for
+0.7.35 defaults, limits, and the operating rule against routine intraday deployment.

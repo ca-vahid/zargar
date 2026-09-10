@@ -142,12 +142,16 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                     stop = min(b.low for b in seen) if sign == 1 else max(b.high for b in seen)
             if (close - stop) * sign <= 0:
                 reasons.append("No positive entry-to-stop risk.")
+            actual_risk = (close-stop)*sign
+            target_r = (plan.targets[0]-close)*sign/actual_risk if actual_risk > 0 else 0
+            if target_r < plan.entry.min_target_r:
+                reasons.append(f"First target offers {target_r:.3f}R from confirmation; requires {plan.entry.min_target_r:g}R.")
             if reasons:
                 trace.append({"at": end, "rule": "M4/M3", "decision": "watch_only", "reason": " ".join(reasons),
                               "measurements": {"close": close, "trigger": plan.trigger, "volume": volume,
                                   "baselineVolume": baseline, "requiredVolumeMultiple": plan.entry.volume_multiple,
                                   "volumeRatio": volume/baseline if baseline else None,
-                                  "closeLocation": location, "requiredCloseLocation": plan.entry.min_close_location}})
+                                  "closeLocation": location, "requiredCloseLocation": plan.entry.min_close_location, "firstTargetR": target_r, "requiredTargetR": plan.entry.min_target_r}})
                 continue
             event_id = f"{plan.id}:entry:{end}"
             trace.append({"at": end, "rule": "M4", "decision": "triggered",

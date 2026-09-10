@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.34";
+export const APP_VERSION = "0.7.35";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.35",date:"2026-09-09",title:"Cartel target quality and observation health",items:[
+    {tag:"improved",text:"New Cartel plans apply configurable minimum target distance and entry reward/risk checks. Shortlists can rank by target room and relative strength instead of volume alone; original nearby resistance is preserved."},
+    {tag:"fixed",text:"Cartel repairs overdue minute gaps with bounded history reads while preserving live decisions and suppressing missed historical entries. Records show session coverage and recovery events."},
+    {tag:"new",text:"Preparation includes advisory SPY/RSP and QQQ/QQQE breadth context. Missing NYMO evidence is explicitly unavailable and never substituted or used to increase risk."},
+  ]},
   {
     version: "0.7.34",
     date: "2026-09-10",
