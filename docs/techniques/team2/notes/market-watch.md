@@ -3188,3 +3188,70 @@ running tally in this log — "F81b live trades: N, book net $X after fees" — 
 the tenth live entry under the rule, or at the twenty-session review, write the verdict in TRADING-RULES (keep if the
 rule's own trades are net positive on the BOOK after fees, else set it back to `off`). Never let this rule go
 unreported for a session.
+
+## 2026-09-10 09:15 ET (run 48 — pre-open on a three-way gap-down: plans are correct and F81 re-derived all three targets; one NEW finding, F87, says today's live rule is not the rule replay will score)
+
+- **Alive and current.** `/api/health` ok on **v0.7.36** (`c408f99`, the other desks' Cartel merges),
+  armed 58 desk-wide, `/api/ops/restart-check` `safe: true`. Four restarts overnight by other desks
+  (`TechniquePlanRestored` at 20:14, 23:22, 00:26, **01:29 ET** — the live boot); all three Team2
+  plans restored each time. **No traceback since 09-09 08:11 PT**; the only warnings are the known
+  `persist_bars: dropped N non-bucket-aligned stub bar(s)` noise.
+- **Tonight's job ran.** `team2_plan_nightly` minted three plans at **17:00:04–17:00:07 ET on 09-09**
+  (`TechniquePlanArmed`), all `planFor 2026-09-10`, status `armed`, mode `auto`, portfolio
+  Team2 Practice, sheets/levels present. **Plan levels verified against the bars table to the cent:**
+  SPY PDH 764.47 / PDL 760.94, QQQ 719.70 / 714.02, IWM 294.155 / 290.31 = the 09-09 RTH extremes
+  exactly. Both jobs re-registered on the 01:29 boot (`team2_preopen at 09:25 ET`).
+- **Data is real-time.** Quotes for all three seconds old, session `pre`; newest 1m bars 09:02–09:03 ET,
+  `source='exchange'`, non-zero volume; `barAgeSeconds` 31–88 (pre-market minutes are thin, so a
+  1–2 minute age is normal here); the engine logged **"pre-open feed self-test passed (REST bars +
+  stream auth)" at 09:00:04 ET**, and the Alpaca stream has been connected+authenticated since the
+  01:29 boot with **no drop since**.
+- **F85 standing check (journal, not the snapshot): CLEAN.** Zero `TechniquePlanError` rows desk-wide
+  since 09-09 16:00 ET. The 15:15 ET cluster remains the only one on record.
+- **Today is a gap-down day on all three** — SPY 758.7 vs a 762.39 prior close (−0.48 %), QQQ 707.4 vs
+  716.28 (−1.24 %), IWM 288.6 vs 290.68 (−0.72 %); every one classified `gap_down`, EMAs stacked
+  **bear** on 2m with `fan: trend` (SPY strength 2, QQQ/IWM 3). **All three plans' down-targets were
+  born behind price** (SPY 760.58 > 758.7; QQQ 710.75 > 707.4; IWM 290.17 > 288.6) — precisely the
+  F81 "born dead" case from yesterday's IWM post-mortem.
+- **F81 works, first live gap day.** The pre-open read re-derives every one of them to the pre-market
+  low: **SPY 760.58 → 757.90, QQQ 710.75 → 706.50, IWM 290.165 → 288.35** (`targetsRederived`,
+  `source: pml`, reference = the pre-market last). Day types, pmh/pml, `sizingAtOpen: none` and
+  `complete: true` all present in the read. NOTE these come from the on-demand replay preview — the
+  **live** plan still shows `complete: false` and will be completed by the 09:25 job; **run 49 must
+  confirm the live snapshot carries the same pmh/pml/dayType/targets and journals `targets_rederived`.**
+- **F86 measured on today's tape: no distortion.** Today's 04:00–09:30 pre-market rows give the
+  **identical** pmh/pml under all four filters (all rows / `volume>0` / `source='exchange'` /
+  both) on all three symbols — SPY 764.60/757.90, QQQ 717.52/706.50, IWM 291.74/288.35. The
+  `sampled` rows exist (SPY 67, IWM 63, QQQ 5) but every one of them sits **inside** the exchange
+  range today. F86 stays open as a latent hole, not a live one.
+- **F87 — NEW, NOT FIXED, and it matters for the F81b measurement the user asked for.** The live
+  runner reads `rules_from_settings(engine.settings)` **every bar**, while replay/outcome scoring
+  reads the thresholds frozen into the plan at mint. Today's plans were minted at 17:00 ET **before**
+  `target_replan` was flipped to `structure` at 20:30 ET, so every plan records
+  `target_replan: "off"` while the runner is running **`structure`**. If F81b re-plans a target today,
+  live will enter where replay writes `skip_target_behind` — the parity check disagrees and the day is
+  **scored under a rule it did not trade**. Nothing lost today (0 setups, 0 trades so far).
+  Recommendation to the user: re-snapshot `config.thresholds` at the 09:25 completion **and** journal a
+  `rules_drift` note; full options in TRADING-RULES F87. **Queued, not deployed** — found at 09:12 ET,
+  inside the 09:25–09:35 restart freeze.
+- **F81b live tally: 0 trades, book net $0.00** (no setup has formed yet today; see F87 for the caveat
+  that today's replay cannot reproduce an F81b entry even if one occurs).
+- **Checked and dismissed, so nobody re-chases it:** the quote feed's `prevClose` for all three reads
+  **09-08's** close (765.96/718.36/294.67), not 09-09's — that is Yahoo's documented pre-market
+  behaviour (the last completed session's change) and **no Team2 input touches it**; the plans'
+  `referencePrice` is 762.39/716.28/290.68, i.e. the prior RTH close taken from the bars table, and
+  `classify_day` / `sizing_bucket` use `openPrice` + zones + pmh/pml only.
+- **Nothing deployed this run** — documentation only (F87 in TRADING-RULES.md and this entry); the desk
+  keeps running v0.7.36 untouched into the 09:25 pre-open.
+- **Next run (≈09:30–09:45 ET) should:** (1) confirm the **live** snapshot completed at 09:25 —
+  `pmh`/`pml`/`dayType`/`sizingAtOpen`/`complete: true` on all three, plus a `targets_rederived` read
+  event, and `POST /api/team2/preopen-now` if it was missed; (2) watch the first 15m close against the
+  PDL zones (SPY 760.94, QQQ 714.02, IWM 290.31 — price opened **below** all three, so the live
+  question is `pm_break_down` at the PM lows 757.90 / 706.50 / 288.35, not the PDL break);
+  (3) report every `target_replanned` event per the standing F81b instruction and keep the tally;
+  (4) the F85 journal query; (5) decide whether to deploy the F87 fix once the open settles and no
+  trade is working. Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**,
+  **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared
+  half**, **F72's strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**,
+  **F85**, **F86**, **F87**, F67's two shared-side halves, and the F30-family question of which
+  premium series is authoritative.

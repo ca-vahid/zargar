@@ -1687,6 +1687,36 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   row; **(d)** leave it and rely on F75 having ended the `unknown` writes. (b) is the cheapest and
   matches the existing house rule; (a) is the most conservative for Team2 alone.
 
+- **F87 (2026-09-10 09:12 ET, NOT FIXED — a knob flipped after the 17:00 mint runs LIVE but is not
+  in the plan's record, so replay and outcome scoring judge the session under the OLD rule).**
+  `Team2Runner.rules()` (`runner.py:96`) returns `rules_from_settings(self.engine.settings)` — it
+  re-reads **live settings on every bar**. The replay/score path (`service.py:352`) builds
+  `Team2Rules.from_dict(run.config["thresholds"])` — the snapshot frozen when the plan was minted,
+  which `rules.py`'s own docstring says exists "so replay/outcome scoring use the numbers the plan
+  was armed with". Nothing keeps the two in step: a settings change between the 17:00 ET mint and
+  the session silently makes the live rule ≠ the recorded rule.
+  **Live today.** The three 2026-09-10 plans were minted at **17:00 ET on 09-09 under v0.7.33**
+  (pre-F81); `techniques.team2.target_replan` was set to `structure` at **20:30 ET**, after the
+  mint. Every plan's `config.thresholds.target_replan` still reads **`off`**, and the snapshot
+  carries no `preopen_target_rederive` / `target_replan_gap_only` keys at all (they did not exist
+  when it was written — `from_dict` fills them from the class defaults, both `True`, which is why
+  the replay read *does* show `targetsRederived`). So **today the runner runs F81b and replay runs
+  `off`**: on a pullback whose planned target is behind the entry, live re-derives to the PM extreme
+  and enters while replay writes `skip_target_behind`. The parity check this watch runs every day
+  (step 5) would disagree, and — worse — the day's outcome scoring would grade the session under a
+  rule it did not trade, which is exactly the F81b measurement the standing instruction asks for.
+  **Cost today: nothing yet** (0 setups at 09:15 ET, 0 trades); the exposure is a mis-graded F81b
+  verdict, not money.
+  **Not fixed here** — found at 09:12 ET, inside the pre-open freeze (no restart 09:25–09:35), so it
+  is queued rather than deployed. Options: **(a)** re-snapshot `config.thresholds` from live
+  settings at the 09:25 pre-open completion, so the record matches what will actually run that
+  session (Team2-local, one write where `complete_plan` persists); **(b)** make the live runner
+  honour the frozen snapshot — arming freezes the rules and a knob change takes effect at the next
+  mint (best for reproducibility, but a deliberate mid-day knob change then does nothing);
+  **(c)** journal a `rules_drift` note whenever live settings differ from the snapshot and leave
+  both paths alone; **(d)** leave it. Recommendation: **(a) plus (c)'s note** — it keeps a mid-day
+  knob change effective *and* makes the day's record true.
+
 
 ## Theories to test
 
