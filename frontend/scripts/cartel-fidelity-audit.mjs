@@ -28,7 +28,7 @@ try {
       let saved;
       const config={enabled:false,workspace,allowLive:false,overnightAck:false,portfolioId:workspace,
         profile:'september_2026',scanAll:true,historyLimit:200,focusCount:5,budget:500,riskPct:10,
-        shortlistRanking:'quality',minTargetDistancePct:.5,minEntryTargetR:.25,marketAlignment:'strict',industryPolicy:'context',reviewedEtfs:['DRAM'],comparisonSymbols:['MU'],comparisonSource:'Synthetic dated watchlist',
+        baselineReadiness:workspace==='practice'?'covered_periods':'full_session',shortlistRanking:'quality',minTargetDistancePct:.5,minEntryTargetR:.25,marketAlignment:'strict',industryPolicy:'context',reviewedEtfs:['DRAM'],comparisonSymbols:['MU'],comparisonSource:'Synthetic dated watchlist',
         entry:{timeframe_minutes:15,mode:'breakout',allow_gap_retest:true,volume_multiple:1.5,min_close_location:.7},
         exitProfile:'september_2026',horizonSessions:1,septemberFractions:[.25,.25,.2,.2,.1],allowFibonacciTargets:true};
       await page.routeWebSocket('**/ws**',socket=>socket.send(JSON.stringify({t:'snapshot',d:{
@@ -49,6 +49,7 @@ try {
       });
       await page.goto(`${base}/techniques/options-cartel/settings`);
       await page.locator('.splash').waitFor({state:'detached'});
+      await page.getByRole('combobox',{name:'Volume baseline readiness',exact:true}).selectOption('covered_periods');
       const alignment = page.getByRole('combobox',{name:'Market alignment',exact:true});
       if(workspace==='practice') await alignment.selectOption('moderate');
       else { assert(await alignment.isDisabled()); assert.equal(await alignment.locator('option[value=moderate]').count(),0); }
@@ -64,6 +65,7 @@ try {
       await page.getByRole('button',{name:'Save preparation settings',exact:true}).click();
       await page.getByText('Cartel preparation settings saved',{exact:true}).waitFor();
       assert.equal(saved.workspace,workspace);
+      assert.equal(saved.baselineReadiness,'covered_periods');
       assert.equal(saved.marketAlignment,workspace==='practice'?'moderate':'strict');
       assert.equal(saved.industryPolicy,'strict');
       assert.equal(saved.shortlistRanking,'quality'); assert.equal(saved.minTargetDistancePct,.5); assert.equal(saved.minEntryTargetR,.25);

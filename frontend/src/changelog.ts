@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.35";
+export const APP_VERSION = "0.7.36";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.36",date:"2026-09-09",title:"Cartel volume-supported entry windows",items:[
+    {tag:"fixed",text:"New Practice preparation can watch only confirmation periods with valid historical volume baselines instead of requiring all 26 periods. Each usable period still needs five complete samples; missing bars are never fabricated."},
+    {tag:"improved",text:"Plans show baseline coverage and supported entry windows. Unsupported periods and closing-bell confirmations cannot trigger entries. Legacy plans and Live defaults retain full-session readiness."},
+  ]},
   {version:"0.7.35",date:"2026-09-09",title:"Cartel target quality and observation health",items:[
     {tag:"improved",text:"New Cartel plans apply configurable minimum target distance and entry reward/risk checks. Shortlists can rank by target room and relative strength instead of volume alone; original nearby resistance is preserved."},
     {tag:"fixed",text:"Cartel repairs overdue minute gaps with bounded history reads while preserving live decisions and suppressing missed historical entries. Records show session coverage and recovery events."},

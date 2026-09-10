@@ -79,7 +79,7 @@ async def practice_portfolio(engine, requested=None):
 
 def resumable(row, policy, now):
     return bool(row.technique == 'options_cartel' and row.mode == 'preparation'
-        and row.config.get('coverageVersion') == 4
+        and row.config.get('coverageVersion') == 5
         and row.status in ('done', 'failed') and row.result.get('resumeReady')
         and (row.status == 'failed' or row.result.get('dataErrors', 0) > 0 or row.result.get('planErrors', 0) > 0)
         and row.config.get('workspace', 'practice') == policy.workspace
@@ -129,7 +129,7 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
               'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
         parent_run_id=resume_run_id, primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
-        config={'coverageVersion': 4, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
+        config={'coverageVersion': 5, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
         result=result, tags=['cartel:preparation'])
     async with engine.sf() as session:
         session.add(record); await session.commit()
@@ -415,14 +415,14 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                         plan_record = await service.prepare(enriched['runId'], review, plan_id=key,
                             preparation={'runId': run_id, 'workspace': policy.workspace, 'session': target_session, 'portfolioId': portfolio_id, 'reviewer': 'automatic_rules'})
                     plan = CartelPlan.model_validate(plan_record['result']['plan']['plan'])
-                    coverage = baseline_coverage(plan)
+                    coverage = {**baseline_coverage(plan), 'sampleCounts': baseline['sampleCounts'], 'minSamples': baseline['minSamples'], 'historicalSessions': len(baseline['sourceSessions'])}
                     if not coverage['ready']:
-                        raise ValueError(f"Volume baseline covers {coverage['available']}/{coverage['expected']} periods; plan saved but not armed. Rebuild with complete history.")
+                        raise ValueError(f"Volume baseline covers {coverage['available']}/{coverage['expected']} periods; no usable entry window under {coverage['policy']} policy. Plan saved but not armed.")
                     selection_policy = await affordable_contract_policy(engine, portfolio_id, policy)
                     selected = await observed_work(choose(engine, plan, selection_policy), report, message=f'Selecting {symbol} option contract')
                     row = {'symbol': symbol, 'planId': plan.id, 'setup': plan.setup, 'trigger': plan.trigger,
                            'invalidation': plan.invalidation, 'targets': list(plan.targets), 'selection': selected,
-                           'status': 'awaiting_contract', 'ranking': rank_evidence[saved_id]}
+                           'status': 'awaiting_contract', 'volumeCoverage': coverage, 'ranking': rank_evidence[saved_id]}
                     if selected['selected']:
                         current = read_policy(engine, policy.workspace)
                         if current != policy or not current.enabled:

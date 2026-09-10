@@ -95,6 +95,13 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                               "reason": "Opened beyond the planned level; require a completed retest, never chase the gap."})
             crossed = (before - plan.trigger) * sign <= 0 < (close - plan.trigger) * sign
             baseline = plan.volume_baseline.get((start - opens) // (step * MINUTE))
+            if plan.entry.baseline_policy == 'covered_periods' and end >= closes:
+                trace.append({'at': end, 'rule': 'SESSION', 'decision': 'entry_window_closed', 'reason': 'Confirmation at the closing bell cannot start a new entry.'})
+                continue
+            if plan.entry.baseline_policy == 'covered_periods' and (baseline is None or baseline <= 0):
+                trace.append({"at": end, "rule": "DATA", "decision": "unsupported_volume_period",
+                              "reason": "No supported historical volume baseline for this confirmation period; entry is disabled here."})
+                continue
             volume = sum(b.volume for b in bucket)
             location = ((close - low) if sign == 1 else (high - close)) / (high - low) if high > low else 0
             if crossed and baseline is not None and volume >= baseline * plan.entry.volume_multiple \

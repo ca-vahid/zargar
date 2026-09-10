@@ -37,6 +37,10 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
     {!active && decision?.selection?.pendingReason && <p className="cartel-notice">At preparation: {decision.selection.pendingReason}</p>}
     {!active && decision?.selection?.errors?.map((e: string, i: number) => <p key={i}>{e}</p>)}
     {active && <p>Execution mode: {active.config?.mode || active.mode}. {active.summary} {!mismatch && <button className="link-btn" onClick={() => openArmedPlan(run.runId)}>Open execution monitor</button>}</p>}
+    {active?.volumeCoverage && <details open={active.volumeCoverage.limited}><summary>Supported entry windows</summary>
+      <p>Volume baseline: {active.volumeCoverage.available}/{active.volumeCoverage.expected} periods. Policy: {label(active.volumeCoverage.policy)}.</p>
+      <p>Confirmation windows (ET): {active.volumeCoverage.entryWindows?.map((w:any)=>`${w.startET}–${w.confirmationET}`).join(", ") || "none"}. Unsupported periods cannot trigger an entry; current session data and risk checks remain mandatory.</p>
+    </details>}
     {active?.observationHealth && <section aria-label="Observation health"><h3>Observation health</h3>
       <p>{active.observationHealth.recordedMinutes}/{active.observationHealth.expectedMinutes} completed minutes · {active.observationHealth.overdueMissingMinutes} overdue gaps · {active.observationHealth.recoveries} recoveries during this session.</p>
       {active.observationHealth.lastRecovery && <p>Latest recovery: {new Date(active.observationHealth.lastRecovery.at).toLocaleString()} · {label(active.observationHealth.lastRecovery.reason)}</p>}

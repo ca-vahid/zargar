@@ -36,6 +36,7 @@ class PreparationPolicy(WireModel):
     history_batch_size: int = Field(default=25, ge=1, le=50)
     history_limit: int = Field(default=200, ge=1, le=10000)
     request_interval_seconds: float = Field(default=.25, ge=0, le=5)
+    baseline_readiness: Literal['full_session', 'covered_periods'] = 'covered_periods'
     shortlist_ranking: Literal['quality', 'volume'] = 'quality'
     min_target_distance_pct: float = Field(default=0.5, ge=0, le=10)
     min_entry_target_r: float = Field(default=0.25, ge=0, le=10)
@@ -57,8 +58,12 @@ class PreparationPolicy(WireModel):
     @model_validator(mode='before')
     @classmethod
     def workspace_risk_default(cls, values):
-        if isinstance(values, dict) and values.get('workspace') == 'live' and 'risk_pct' not in values and 'riskPct' not in values:
-            return {**values, 'risk_pct': 1}
+        if isinstance(values, dict) and values.get('workspace') == 'live':
+            values = dict(values)
+            if 'risk_pct' not in values and 'riskPct' not in values:
+                values['risk_pct'] = 1
+            if 'baseline_readiness' not in values and 'baselineReadiness' not in values:
+                values['baseline_readiness'] = 'full_session'
         return values
 
     @model_validator(mode='after')
@@ -122,7 +127,7 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
     if research_only:
         note = 'Research candidate only: market alignment blocks arming. Rebuild with fresh aligned market evidence before execution.'
     return PlanInput(setup=candidate['setup'], horizon_sessions=policy.horizon_sessions,
-        entry_policy=policy.entry.model_copy(update={"min_target_r": policy.min_entry_target_r}), reviewed_targets=tuple(targets), review_note=note,
+        entry_policy=policy.entry.model_copy(update={"min_target_r": policy.min_entry_target_r, "baseline_policy": policy.baseline_readiness}), reviewed_targets=tuple(targets), review_note=note,
         target_source=source, exit_campaign=campaign)
 
 
