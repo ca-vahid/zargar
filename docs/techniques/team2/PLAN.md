@@ -325,6 +325,8 @@ and are now part of the plan; each carries the phase it belongs to.
   book vs read per session, every refusal class counted, the sweep of each EXPERIMENTAL variant (F47 target floor,
   F56a edge-reversal small-size, F56b six-ATR bypass) against the banked tape, and a recommendation. The user decides.
 - Experimental variants live in `tools/team2_sweep.py --set …` overlays only; the live rules never carry them.
+  Current list for the review: F47 target floor, F56a/F56b no-trade-zone variants, F72 `target_replan=entry`, F81b
+  `target_replan=structure` (+ `target_replan_gap_only`).
 - Practice continues at the existing risk limits ($2,000 premium / 6 % risk / 10 % technique pause / 15 % book
   breaker / desk-wide two losses) while recovery (watchdog) and exit protection (F50 + premium stop + failed-exit
   watchdog) hold; any of those failing on a live day pauses the desk to alert mode.

@@ -375,6 +375,9 @@ The book's "set alerts above and below key levels" (p. 117), done by the machine
 3. On fire: the deterministic checks run on the live bar; optionally the vision critic
    (PASS 4) reviews the live chart before a setup is emitted; the setup then follows the
    existing practice-proposal → approval → RiskGate path. **No new order path.**
+   *(2026-09-09: the critic's verdict is a knob, `execution.critic_mode`; EM runs
+   `momentum_only`, so a "no" on an at-level bounce/reject no longer blocks the entry -
+   it is journaled as advisory. TRADING-RULES §5.)*
 4. Every fire / skip / void is journaled against the plan run, so the evening review is
    plan-vs-reality, not memory.
 
@@ -515,6 +518,14 @@ past sessions. Also: sweeps can be **named** before start and **renamed** after 
 /api/technique/walkforward/{id}`, `rename_sweep`), the running/selected sweep sits above
 the history table, the Validate button's spinner is inline, and Advanced is one line with
 structure timeframes as toggle chips (1d/1h/30m/15m/5m) instead of a free-text field.
+
+**The evening ritual as run since 2026-09-08 (per-technique books).** `technique.sheet.auto=build`
+builds the next session's sheet at 16:15 ET (`Auto sheet for <date>`, no LLM). The review + arm
+step is then run by the EM desk through the API - `POST /walkforward/{sheet}/promote` per setup
+row (with vision, `wait=false`, ~25 min for ~100 rows), then `POST /runs/{id}/arm` into EM Practice
+for every `analysis.verdict == setup` - or by the user from the Technique page ("Check & arm").
+The morning board ingest auto-arms the author's names on top (INGESTION-PLAN). Whether the LLM
+review earns its time is measured in TRADING-RULES §2 (decision at ten sessions, ~09-19).
 
 **Plan sheet — "Prepare the next session" (2026-08-23).** The user's real question was
 "which of these 70 are a good setup for Monday's open?" — forward, not backward. The

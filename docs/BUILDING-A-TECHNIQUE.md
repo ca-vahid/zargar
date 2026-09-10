@@ -36,7 +36,7 @@ class MyTechnique(PlanRunner):
                                                   # is runner-core — you cannot opt into it)
     async def analyze_fire(...) -> FireJudgement  # deterministic read of a fire; no I/O
     def reviewer_available(self) -> bool          # optional model reviewer
-    async def review_fire(...) -> (verdict, confidence, critic)
+    async def review_fire(...) -> (verdict, confidence, critic)   # whether a 'no' blocks is the runner's `critic_mode` knob (veto | momentum_only | advisory)
                                                   # you own prompt + verdict; the RUNNER owns timeout,
                                                   # fail-open budget, veto cooldown, kill cap, re-arming
     async def record_fire(...); emit_proposal(...); after_fire(...)

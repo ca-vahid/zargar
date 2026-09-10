@@ -184,7 +184,7 @@ Author's board card (`GET /api/technique/ingest/board`).
 
 Boundary update: `ingest.auto_arm` is now **true**. The board check arms the plans it
 builds for the author's names when they pass the pipeline's own gates (valid trigger,
-R2, grade >= `ingest.auto_arm_min_grade` (B), critic on at fire, loss halt, Practice).
+R2, grade >= `ingest.auto_arm_min_grade` (B), critic at fire - advisory on at-level bounces/rejects since 2026-09-09 (TRADING-RULES §5) - loss halt, Practice).
 It still never touches an existing armed plan, a rule or a threshold, and it never arms a
 plan our gate rejected. Auto-armed runs carry the tag `ingest` (board row `autoArmed: true`) so the
 weekly review can compare them with the evening batch. Turn it off with one setting.

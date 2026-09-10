@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.33";
+export const APP_VERSION = "0.7.34";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -18,6 +18,15 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
+    version: "0.7.34",
+    date: "2026-09-10",
+    title: "A gap day re-derives its targets at the open",
+    items: [
+      { tag: "new", text: "Team2 F81: when the morning's price has already run through a target the plan fixed the night before, the pre-open (09:25) and the 09:30 open re-derive it from the morning's structure - the pre-market low/high if still ahead, else the next level of the ladder, else no target - and the plan keeps what 17:00 said next to what the morning decided (journaled as targets_rederived). Yesterday every IWM and SPY pullback was refused against a stale target while the author took the pre-market-low break for +141%." },
+      { tag: "improved", text: "An experimental entry-time fallback (target_replan=structure, gap days only) reproduces the author's IWM day (+114.5% modelled) but loses on the other gap days of the 14-date sample (+220 vs +248 summed); it stays off until the twenty-session review." },
+    ],
+  },
+  {
     version: "0.7.33",
     date: "2026-09-09",
     title: "A watch-only pullback says which contact it is",
@@ -30,6 +39,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-09",
     title: "Review fixes: restart evidence, one merge policy",
     items: [
+      { tag: "improved", text: "EM: the fire-time critic is advisory on at-level bounces and rejects (new knob execution.critic_mode = veto | momentum_only | advisory; EM uses momentum_only). Its verdict is still recorded on every fire; breakouts and breakdowns are still vetoed. Ten sessions with zero fills and a 25-kill tally at +0.5R made the veto not worth its cost." },
       { tag: "fixed", text: "Restart readiness now blocks on what it cannot see: an order-book failure, a fire chain still choosing its contract or awaiting review, and a missing readiness answer all refuse the restart unless overridden. The scripts suspend new entries (self-expiring) before they capture the state they compare afterwards, and the restoration check reconciles managed positions by id (a position that closed is explained, one that vanished fails)." },
       { tag: "fixed", text: "One merge policy for two venue observations of the same minute, applied identically in memory, in a flush and in the database: the newer OHLC wins, a zero volume is an incomplete observation and the known volume stands, any other newer volume (lower included) is a correction. A recovered minute that falls between existing bars is inserted, not dropped; seeding history never turns a session total into one minute's volume." },
       { tag: "fixed", text: "The bars repair names its provider and only zeroes a day's print-less minutes when Alpaca covered that day; a Yahoo fallback or a partial answer writes what it got and zeroes nothing. Quarantine locks, archives the CURRENT rows column-for-column and deletes in one transaction, so a correction that lands after selection is archived, never lost." },

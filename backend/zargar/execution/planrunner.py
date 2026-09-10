@@ -158,6 +158,7 @@ class Trade:
     last_price: float | None = None
     errors: list[str] = field(default_factory=list)
     retries: int = 0
+    critic_advisory: bool = False   # the critic said no and critic_mode let the entry proceed anyway
     opened_ts: int | None = None
     closed_ts: int | None = None
     fire_bar_index: int | None = None
@@ -225,7 +226,7 @@ class Trade:
                                 if self.instrument == "options" and self.filled_qty else None),
                 "lastPrice": self.last_price, "errors": list(self.errors),
                 "retries": self.retries, "openedTs": self.opened_ts, "closedTs": self.closed_ts,
-                "critic": self.critic}
+                "critic": self.critic, "criticAdvisory": self.critic_advisory}
 
 
 @dataclass
@@ -2251,7 +2252,20 @@ class PlanRunner(SessionListener):
                 "verdictAfterCritic": j.verdict, "confidence": round(float(j.confidence), 3), "critic": trade.critic,
                 "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
-        if j.verdict != "setup":
+        # 2026-09-09 user decision (TRADING-RULES 1.4b, 25 kills net +0.5R): the critic's veto is a knob.
+        #   veto           every "no" kills the fire (the behaviour until day 10)
+        #   momentum_only  a "no" on an at-level bounce/reject is ADVISORY (recorded, the entry proceeds);
+        #                  breakouts/breakdowns/wedge breaks are still vetoed
+        #   advisory       never blocks; every verdict is recorded on the trade
+        critic_mode = str(self.rt("critic_mode", "veto") or "veto").lower()
+        advisory = j.verdict != "setup" and (
+            critic_mode == "advisory" or (critic_mode == "momentum_only" and tr.kind in ("bounce", "reject")))
+        if advisory:
+            trade.critic_advisory = True
+            self._log(ap, "critic_advisory",
+                      f"{tid}: critic said no - advisory for a {tr.kind} under critic_mode={critic_mode}, "
+                      f"proceeding: {(critic or {}).get('summary') or 'no summary'}", trigger=tid)
+        elif j.verdict != "setup":
             trade.status = "critic_killed"
             trade.reason = (critic or {}).get("summary") or "critic killed"
             self._log(ap, "critic_killed", f"{tid}: {trade.reason}", trigger=tid)

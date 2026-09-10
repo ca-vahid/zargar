@@ -72,7 +72,11 @@ a number** (p. 72).
   different things. Scorecards for 08-26 are the first real test of which read is right
   (feeds 1.2 as well).
 
-### 1.4 Fire-time critic — net saver or net cost? ⚠ watching closely
+### 1.4 Fire-time critic — net saver or net cost? → DEMOTED to advisory on at-level triggers (2026-09-09, §5)
+**Status:** the decision threshold below was applied on day 10: 25 scored kills, net +0.5R, five of the nine
+wrong ones the same at-level-reject shape (1.4b). `critic_mode=momentum_only`: bounces/rejects proceed with
+the verdict recorded (`criticAdvisory`), breakouts/breakdowns are still vetoed. The question is now the
+mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally at 10 sessions of fills.
 - 2 kills on day one, **both wrong** (ZS: data artifact + missing plan provenance;
   SNOW: "fabricated targets" prompt gap). Both causes fixed (plan provenance + data-quality
   + ladder clauses in the prompt; veto now re-arms the trigger, cap 3/day).
@@ -641,6 +645,30 @@ actually needed: the morning board build's 3-session window (09-02..09-04) no lo
 09-01 high; the evening build's window did, and the detector found 969.44 there only with the knob.
 Next test: `lookback_sessions=5` as its own variant, and the gap-through continuation (T-6/T-7).
 
+### T-13 · Gap-through continuation (the author's SPY trade of 2026-09-09) - sweeping
+His one posted trade on day 10: SPY puts on "the breakdown of PLOD" - SPY closed 09-08 with a
+low of 765.14, opened 09-09 at 764.08 (through it) and drifted to 760.94 by 11:25; $0.70 ->
+$1.58, +126%. Our SPY trigger was voided at 09:31 as `gapped_through`, Tips said "not chasing",
+Team2 read "scenario 4, focus on puts" and did not enter. Theory: a bounce/reject level the open
+gaps THROUGH is not dead - it is a continuation setup in the gap direction. Built 2026-09-09
+evening as a sweepable knob (`gap_through_continuation`, default off, MarketRules + Thresholds):
+the trigger is re-aimed as a break the other way - stop at the gapped level (a reclaim
+invalidates), entry on a confirmed break of the opening bar's extreme through the EXISTING break
+machinery (volume surge, decisive candle, follow-through, R6 windows), targets 1R/2R/3R on the
+30/40/15 ladder. Nothing changes live. Test: `sweep --set gap_through_continuation=true` vs
+baseline over 2026-08-24..09-09 (`evo-T13-*`), adopt bar D7 (+0.3R/fire over baseline, fires
+<= 2x). Related: T-6/T-7 (gap-through was already named as their territory on day 8).
+**Verdict 2026-09-09 21:30 ET (sweeps `2b86fd5b7d` baseline, `3188f2fc69` confirmed, `b4faf2700d`
+loose; 1,287 sessions, 08-24..09-09): NOT adopted.** 37 gapped levels converted per sweep. With
+OUR break confirmation (surge + decisive candle + follow-through) only 2 continuations fired,
+both losers, net **-1.28R** vs baseline. With his tempo (`gap_continuation_confirm=false`: first
+close through the opening extreme, volume floor only) 16 fired: breakdowns (gap down through
+support, short) 11 fires, 6 wins, **+0.95R**; breakouts (gap up through resistance, long) 5
+fires, 2 wins, -0.23R; net **+0.72R = +0.05R/fire**, all in prime_open, before option costs.
+Below the D7 bar (+0.3R/fire). The gap-down/short half is the only slice with a pulse (55% win,
++0.09R/fire); twelve sessions is thin. Both knobs stay in the code, off; re-sweep at 25 sessions.
+His SPY trade is reproducible by the loose rule, but on the universe the rule does not pay.
+
 ### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08) - REJECTED on history 2026-09-09
 **Status: both forms (confirm gate, sweeps as trigger) measured and rejected; no rule change; the detector stays as research tooling. The paragraphs below are the dated record in the order it happened.**
 Every win he posted (TSLA +240% Aug 31, GPRO Aug 31, NVDA +115% Sep 4, Sep 8 OTM prints) names
@@ -693,7 +721,8 @@ tempo is not where our edge is hiding either.
    vs captured R (realized), with the friction reason for every gap. This is THE metric;
    the daily scorecards already contain the raw material.
 2. **Gap rule decision** (1.1) once ≥20 voided samples exist.
-3. **Critic scorecard** (1.4) — auto-tally kill counterfactuals.
+3. **Critic scorecard** (1.4) — auto-tally kill counterfactuals AND, since 2026-09-09, advisory-"no"
+   fills vs "yes" fills (the `criticAdvisory` flag on the trade is the join key).
 4. **Grade/analyst calibration** (1.2/1.3) at the 100-fire mark.
 5. **IBKR activation** — execution + second data source; retire the sim-only options fills
    with real paper fills.
@@ -710,6 +739,19 @@ tempo is not where our edge is hiding either.
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
+- 2026-09-09 · **Critic veto -> advisory on at-level bounces and rejects**
+  (`techniques.enhanced_market.critic_mode = momentum_only`; new runner knob
+  `execution.critic_mode` = veto | momentum_only | advisory, default veto for every other technique;
+  user decision 20:45 ET). The critic still runs on every fire, its verdict is journaled on the
+  TriggerFired event and on the trade (`criticAdvisory: true` when it said no and the entry went
+  ahead); it still VETOES breakouts, breakdowns and wedge breaks. Why: ten sessions, zero fills;
+  25 scored kills net +0.5R in the critic's favour (16 right -24.3R, 9 wrong +23.8R), and 5 of the
+  9 wrong kills were the same shape - a T4.2 reject at the level killed as "momentum through the
+  level" (MUU, SOLS day 5; APLD, OKLO, SNDK day 10). A filter that is a coin flip on R and turns
+  a breakeven method into no trades has no place in front of Practice money; the Practice books
+  exist to accumulate fills. Review date: after 10 sessions of advisory fills, re-tally
+  kills-vs-advisory-outcomes (1.4b). Evidence: 1.4b tallies days 5-10, §2 day-10 entry, tests
+  `test_critic_mode_momentum_only_lets_an_at_level_bounce_proceed` / `_veto_still_kills`.
 - 2026-09-04 · **Author-board auto-arm ON** (`techniques.enhanced_market.ingest.auto_arm=true`,
   user decision 10:55 ET). The morning board check now arms the "new" plans it builds for the
   author's names the moment they pass OUR gates (valid trigger, R:R >= 3, grade A/B via

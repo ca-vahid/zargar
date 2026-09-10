@@ -381,7 +381,10 @@ frontend production build runs this check automatically.
   `referencePrice` is the tracker's prev_close for the gap rule.
 - Auto mode never arms without a loss halt (`_ensure_loss_halt`, fallback
   `technique.arm.daily_loss_fallback`); the critic fails OPEN with a timeout + per-day
-  budget (`technique.arm.critic_fail_budget`) that pauses the plan.
+  budget (`technique.arm.critic_fail_budget`) that pauses the plan. **The critic's veto is a knob**
+  (`execution.critic_mode` = veto | momentum_only | advisory; EM runs `momentum_only` since
+  2026-09-09: a "no" on an at-level bounce/reject is recorded and the entry proceeds; breakouts,
+  breakdowns and wedge breaks are still vetoed - TRADING-RULES §5).
 - Armed plans also run a ~2s **quote stop watch** (`technique.arm.quote_exit*`):
   exit-only, fires when the underlying's live quote is decisively through the stop
   (excess_r × risk beyond, N consecutive polls). Never add an entry path to

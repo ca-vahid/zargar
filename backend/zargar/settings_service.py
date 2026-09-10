@@ -150,6 +150,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.hod_target": "reentry",        # off | reentry | always (X3b running HOD/LOD as the target)
     "techniques.team2.hod_target_min_atr": 1.0,
     "techniques.team2.target_replan": "off",         # F72 variant: off | entry (re-derive a stale target at entry)
+    "techniques.team2.target_replan_gap_only": True,   # F81b: structure fallback on gap days only
+    "techniques.team2.preopen_target_rederive": True, # F81: re-derive a target the gap ran through from the morning's structure (pre-open/open)
     "techniques.team2.add_on_retest": True,          # X5 trim-and-add
     "techniques.team2.max_adds": 1,
     "techniques.team2.first_entry_min": "09:45",     # D6 (first 15m close)
@@ -411,6 +413,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.enhanced_market.ingest.live_max_wait_minutes": 45,  # then take whatever replay exists (partial) rather than wait forever
                                                # (fires carry window="midday" so outcomes are separable)
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
+    "technique.arm.critic_mode": "veto",       # veto | momentum_only (bounce/reject "no" is advisory) | advisory (never blocks)
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
     "technique.arm.mode": "proposal",          # default execution mode: alert | proposal | auto
@@ -423,6 +426,7 @@ DEFAULTS: dict[str, Any] = {
 
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
+    "techniques.enhanced_market.critic_mode": "momentum_only",   # 2026-09-09 user decision: 25 kills net +0.5R, 5 of 9 wrong ones were at-level rejects (TRADING-RULES 1.4b / 5)
     "techniques.enhanced_market.default_portfolio": "",   # EM's own Practice book (2026-09-08); the runner resolves this before execution.*
     "technique.arm.risk_pct": 2.0,             # R1: % of equity risked per entry (practice: 2%; the book's live range is 0.5-1%)
     "technique.arm.max_qty": 100,              # hard cap on shares per entry

@@ -223,7 +223,19 @@ class Team2Runner(PlanRunner):
         gap = ((ref - prev_close) / prev_close * 100.0) if ref and prev_close else 0.0
         self._log(ap, "preopen", f"{ap.plan.get('sheet')}", pmh=ap.plan.get("pmh"), pml=ap.plan.get("pml"),
                   dayType=ap.plan.get("dayType"), sizing=ap.plan.get("sizingAtOpen"))
+        self._log_rederived(ap, "pre-open")
         return {"rows": [], "reference": ref, "gapPct": round(gap, 3), "replan": False}
+
+    def _log_rederived(self, ap: ArmedPlan, when: str) -> None:
+        red = (ap.plan or {}).get("targetsRederived") or {}
+        if not red or ap.plan.get("_rederivedLogged") == red:
+            return
+        ap.plan["_rederivedLogged"] = red
+        parts = [f"{side}: {v['was']:.2f} -> {v['now']:.2f} ({v['source']})" if v.get("now") is not None
+                 else f"{side}: {v['was']:.2f} -> none" for side, v in red.items()]
+        self._log(ap, "targets_rederived", f"the {when} reference {next(iter(red.values()))['reference']:.2f} had run "
+                  f"through the planned target — re-derived from the morning's structure: " + "; ".join(parts) + " (F81)",
+                  targets=ap.plan.get("targets"), planned=ap.plan.get("targetsPlanned"), rederived=red)
 
     async def _finalize_open(self, ap: ArmedPlan, bars: list[Bar]) -> None:
         from .plan import complete_plan
@@ -238,6 +250,7 @@ class Team2Runner(PlanRunner):
         ap.plan["preopenSnapshot"] = before
         ap.plan.update(done)
         ap.plan["openFinalizedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+        self._log_rederived(ap, "09:30 open")
         self._log(ap, "open_finalized", f"day type finalized on the 09:30 open {done.get('openPrice')}: "
                   f"{before.get('dayType')} (09:25 estimate) -> {done.get('dayType')}, sizing at open {done.get('sizingAtOpen')} (F49)",
                   before=before, openPrice=done.get("openPrice"), dayType=done.get("dayType"))
