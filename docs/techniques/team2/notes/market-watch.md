@@ -3179,3 +3179,12 @@ estart.ps1` at 15:33:37 ET**,
   sample; it removes the "born dead" gap plan.
 - The entry-time structure fallback (F81b) reproduces the author's IWM day (+114.5 modelled) and loses on the sample's
   other gap days (−27.5 net gap-only, −64 net everywhere). Off, experimental, on the twenty-session review list.
+
+## Standing instruction for the watch job from 2026-09-10 — F81b is LIVE and under observation
+
+`techniques.team2.target_replan = structure` (gap days only) was switched on at 20:30 ET on 2026-09-09. Every run must:
+(1) list each `target_replanned` event of the day (symbol, time, was → now/none) and whether it fired; (2) keep a
+running tally in this log — "F81b live trades: N, book net $X after fees" — separate from the day's other trades; (3) on
+the tenth live entry under the rule, or at the twenty-session review, write the verdict in TRADING-RULES (keep if the
+rule's own trades are net positive on the BOOK after fees, else set it back to `off`). Never let this rule go
+unreported for a session.
