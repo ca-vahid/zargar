@@ -164,6 +164,25 @@ class TriggerTracker:
     def direction(self) -> str:
         return "short" if self.trigger.get("direction") == "short" else "long"
 
+    def _to_continuation(self, bar: Bar, how: str) -> None:
+        level = self.entry
+        short = self.direction == "long"          # support gapped through -> short; resistance -> long
+        edge = float(bar.low if short else bar.high)
+        risk = max(abs(edge - level), 1e-9)
+        self.trigger["continuation"] = {"from": how, "level": level, "originalKind": self.kind,
+                                        "originalDirection": self.direction,
+                                        "openingBar": {"open": bar.open, "high": bar.high, "low": bar.low}}
+        self.trigger["direction"] = "short" if short else "long"
+        self.trigger["kind"] = "breakdown" if short else "breakout"
+        self.trigger["stop"] = {"price": level, "reference": "gapped level reclaimed"}
+        self.trigger["entry"] = {"price": edge, "basis": "on_break"}
+        self.trigger["targets"] = [{"price": round(edge - k * risk if short else edge + k * risk, 4),
+                                    "basis": "r_multiple", "trimPct": pct}
+                                   for k, pct in ((1, 30.0), (2, 40.0), (3, 15.0))]
+        self.trigger["riskReward"] = 2.0
+        self._note(bar, "gap_continuation_armed", **{"from": how}, level=level, entry=edge, stop=level,
+                   direction=self.trigger["direction"])
+
     def _note(self, bar: Bar, what: str, **detail) -> None:
         self.events.append({"ts": bar.ts, "event": what, **detail})
 
@@ -215,6 +234,15 @@ class TriggerTracker:
                 if self.kind in ("bounce", "reject"):
                     through = (bar.open > self.stop) if short else (bar.open < self.stop)
                     past = (bar.open >= self.entry) if short else (bar.open <= self.entry)
+                    if (through or past) and getattr(t, "gap_through_continuation", False):
+                        # T-13 (2026-09-09): the level did not hold at the open - the author trades
+                        # that as a CONTINUATION in the gap direction (SPY puts on the break of the
+                        # prior-day low). The trigger becomes a break trigger the other way: stop at
+                        # the gapped level, entry on a confirmed break of the opening bar's extreme,
+                        # targets in R. The break machinery below (volume surge, decisive candle,
+                        # follow-through, windows) is unchanged - this only re-aims the trigger.
+                        self._to_continuation(bar, "gapped_through" if through else "gapped_past")
+                        return self.status
                     if through:
                         self.status = "gapped_through"
                         self._note(bar, "gapped_through", open=bar.open, stop=self.stop)
