@@ -411,6 +411,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.enhanced_market.ingest.live_max_wait_minutes": 45,  # then take whatever replay exists (partial) rather than wait forever
                                                # (fires carry window="midday" so outcomes are separable)
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
+    "technique.arm.critic_mode": "veto",       # veto | momentum_only (bounce/reject "no" is advisory) | advisory (never blocks)
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
     "technique.arm.mode": "proposal",          # default execution mode: alert | proposal | auto
@@ -423,6 +424,7 @@ DEFAULTS: dict[str, Any] = {
 
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
+    "techniques.enhanced_market.critic_mode": "momentum_only",   # 2026-09-09 user decision: 25 kills net +0.5R, 5 of 9 wrong ones were at-level rejects (TRADING-RULES 1.4b / 5)
     "techniques.enhanced_market.default_portfolio": "",   # EM's own Practice book (2026-09-08); the runner resolves this before execution.*
     "technique.arm.risk_pct": 2.0,             # R1: % of equity risked per entry (practice: 2%; the book's live range is 0.5-1%)
     "technique.arm.max_qty": 100,              # hard cap on shares per entry

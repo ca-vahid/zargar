@@ -1228,3 +1228,13 @@ Rules proposed for every desk (the user decides):
 3. **Bars written are bars delivered**: the feed desk should add a watchdog line when persisted
    1-minute bars advance while `PlanRunner.last_bar_ts` does not (the "stale bars" journal is the
    symptom, 49 at once is the signature).
+
+
+### Shared knob: `execution.critic_mode` — 2026-09-09 (EM desk)
+
+`PlanRunner._fire_rest` reads `critic_mode` through `rt()`: `veto` (default, unchanged behaviour
+for every technique), `momentum_only` (a reviewer "no" on a `bounce`/`reject` trigger is advisory:
+logged as `critic_advisory`, `Trade.critic_advisory=True`, the entry proceeds; breakout/breakdown/
+wedge_break are still vetoed), `advisory` (never blocks). The verdict is journaled on the
+TriggerFired event either way. EM sets `techniques.enhanced_market.critic_mode=momentum_only`
+(TRADING-RULES §5 2026-09-09); Tips/Team2/Cartel are untouched.

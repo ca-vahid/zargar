@@ -710,6 +710,19 @@ tempo is not where our edge is hiding either.
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
+- 2026-09-09 · **Critic veto -> advisory on at-level bounces and rejects**
+  (`techniques.enhanced_market.critic_mode = momentum_only`; new runner knob
+  `execution.critic_mode` = veto | momentum_only | advisory, default veto for every other technique;
+  user decision 20:45 ET). The critic still runs on every fire, its verdict is journaled on the
+  TriggerFired event and on the trade (`criticAdvisory: true` when it said no and the entry went
+  ahead); it still VETOES breakouts, breakdowns and wedge breaks. Why: ten sessions, zero fills;
+  25 scored kills net +0.5R in the critic's favour (16 right -24.3R, 9 wrong +23.8R), and 5 of the
+  9 wrong kills were the same shape - a T4.2 reject at the level killed as "momentum through the
+  level" (MUU, SOLS day 5; APLD, OKLO, SNDK day 10). A filter that is a coin flip on R and turns
+  a breakeven method into no trades has no place in front of Practice money; the Practice books
+  exist to accumulate fills. Review date: after 10 sessions of advisory fills, re-tally
+  kills-vs-advisory-outcomes (1.4b). Evidence: 1.4b tallies days 5-10, §2 day-10 entry, tests
+  `test_critic_mode_momentum_only_lets_an_at_level_bounce_proceed` / `_veto_still_kills`.
 - 2026-09-04 · **Author-board auto-arm ON** (`techniques.enhanced_market.ingest.auto_arm=true`,
   user decision 10:55 ET). The morning board check now arms the "new" plans it builds for the
   author's names the moment they pass OUR gates (valid trigger, R:R >= 3, grade A/B via

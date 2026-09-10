@@ -866,3 +866,47 @@ async def test_timed_trigger_enters_at_the_bar_close(rig):
     assert tr.status == "fired" and tr.fired_ts == bar.ts
     assert tr.entry == float(bar.close) and tr.fill_price == float(bar.close)
     assert not any("AttributeError" in str(e.get("text", "")) for e in snap["events"])
+
+
+async def _critic_says_no(rig, monkeypatch):
+    """Stub the reviewer: available, and it kills every fire."""
+    armer = rig.svc.armer
+    monkeypatch.setattr(armer, "reviewer_available", lambda: True)
+
+    async def review_fire(ap, tid, tr, trade, judgement):
+        return "no_setup", 0.9, {"kill": True, "summary": "test critic: no", "violations": []}
+    monkeypatch.setattr(armer, "review_fire", review_fire)
+    await rig.eng.settings.set("technique.arm.use_critic", True, journal=False)
+
+
+async def _arm_alert_and_fire(rig):
+    run = await _plan_run(rig)
+    armed = (await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
+                                   json={"mode": "alert", "instrument": "shares", "portfolioId": rig.sim["id"]})).json()
+    assert armed["status"] == "armed"
+    bars = rig.sessions[armed["planFor"]]
+    async def q(bar):
+        await _quote(rig, bar.close)
+    snap, _ = await _feed_until(rig, run["id"], bars, lambda s: any(s["trades"]), quote_fn=q)
+    assert snap and snap["trades"], snap and snap["events"][-5:]
+    return run, next(t for t in snap["trades"] if t["kind"] == "bounce")
+
+
+async def test_critic_mode_momentum_only_lets_an_at_level_bounce_proceed(rig, monkeypatch):
+    """2026-09-09 user decision (TRADING-RULES 1.4b / 5): under `critic_mode=momentum_only` a
+    critic "no" on a bounce/reject is advisory - recorded on the trade, the entry proceeds."""
+    await _critic_says_no(rig, monkeypatch)
+    await rig.eng.settings.set("techniques.enhanced_market.critic_mode", "momentum_only", journal=False)
+    run, tr = await _arm_alert_and_fire(rig)
+    assert tr["status"] == "alert", (tr["status"], tr["reason"])
+    assert tr["criticAdvisory"] is True and tr["critic"]["kill"] is True
+    audit = (await rig.client.get(f"/api/technique/armed/{run['id']}/audit")).json()
+    fired = [e for e in audit if e["type"] == "TechniquePlanTriggerFired"]
+    assert fired and fired[-1]["payload"]["verdictAfterCritic"] == "no_setup"   # the opinion is still on the record
+
+
+async def test_critic_mode_veto_still_kills(rig, monkeypatch):
+    await _critic_says_no(rig, monkeypatch)
+    await rig.eng.settings.set("techniques.enhanced_market.critic_mode", "veto", journal=False)
+    run, tr = await _arm_alert_and_fire(rig)
+    assert tr["status"] == "critic_killed" and tr["criticAdvisory"] is False
