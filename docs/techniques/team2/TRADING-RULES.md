@@ -1969,6 +1969,26 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   F81b review, so the review is not reading a sample where 95% of the opportunity was gated away by a
   rule nobody has measured. Recording the count is the point; the decision stays the user's.
 
+- **F98 (2026-09-10 12:35 ET, METHODOLOGY — F97's contact count is not reproducible as written; its
+  ratio is. Documentation only, nothing built.)** Re-measuring F97 this run (F96's lesson: re-measure,
+  don't copy) produced **SPY 43 contacts / QQQ 36 / IWM 47** for 09:30–12:34, against F97's
+  **30 / 31 / 24** for 09:30–12:04. Fifteen extra 2m bars cannot add 41 contacts, so the two runs
+  counted different things. The cause is the EMA13 series: Team2 aggregates **warm-up bars from prior
+  sessions plus today's pre/RTH/post 1m bars** (`session.py:198-200`, `all_1m = warmup_1m + bars1m`),
+  seeds the EMA with the **SMA of the first 13 values** (`indicators.ema_series`), and buckets 2m on
+  the ET wall-clock grid. A reconstruction seeded at the 09:30 open reproduces the engine's `ema13`
+  only to ~0.09; the warm-up reconstruction reproduces it to **0.003 (QQQ) / 0.012 (IWM) / 0.022 (SPY)**
+  at the 12:32 stamp. **The recipe any future run must use:** pull 1m bars from at least the prior
+  session's 04:00 ET through now, `aggregate(bars, 2)`, drop the still-forming bucket, `ema_series(closes, 13)`,
+  then count only today's RTH buckets whose `[low, high]` contains the EMA13.
+  **What survives F97 unchanged is the finding, because it is a ratio, not a count:** on the faithful
+  series **120 of 126 EMA13 contacts (95.2%) sit inside their symbol's pre-market range** and are refused
+  by V6/B5 — QQQ 36/36 and IWM 47/47 refused, SPY 37/43, with the only six tradable contacts on SPY
+  between **10:02 and 10:18**, the window that produced the day's single fire. F97's 95.3% and this
+  run's 95.2% agree to a tenth of a point. **Use the ratio, re-derive the count.** This also means the
+  F90(c) sweep F97 proposes must be run off the warm-up reconstruction, or its "released" tally will
+  inherit the same drift.
+
 
 ## Theories to test
 
