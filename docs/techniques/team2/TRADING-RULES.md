@@ -2228,6 +2228,38 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   money path changed**, and the per-trade lines and the `_exit` calls are untouched. 133 Team2 tests
   pass. Deploy queued behind F89 (fifth release waiting on the user's restart). Related: F26, F66, F89.
 
+- **F107 (2026-09-10, run 63, post-close) - EM's outcome scorer adopts every Team2 plan run and
+  files it under `technique='enhanced_market'`. NOT FIXED - the fix is one line in EM's file, which
+  this watch may not edit.** `TechniqueService.score_pending()`
+  (`backend/zargar/technique/service.py:1946`) selects *every* finished run in mode `full`/`plan`
+  from the last 25 days with **no technique filter at all**, so the three plan runs Team2 mints each
+  night are swept into EM's outcome loop. `_score_plan_run` then looks for EM's plan shape - a
+  `result.plan` carrying `triggers`/`levels` - finds neither on a Team2 sheet, and writes a terminal
+  `technique_outcomes` row: `plan_source 'levels'`, `status 'unscorable'`,
+  `note 'plan has no levels or triggers'`. `TechniqueOutcome.technique` is never set from the run, and
+  its column default is `"enhanced_market"` (`models.py:438`), so the row is **stamped as EM's own**.
+  **Scope, measured tonight: all 15 Team2 runs ever created have exactly one such row - 15/15,
+  every one `unscorable`, every one labelled `enhanced_market`** - and the pool grows by 3 per
+  trading day for as long as Team2 arms nightly. Today's three (SPY `d15b5ef4`, QQQ `011a6de6`,
+  IWM `91295c8b`) were written at 2026-09-09 21:10 UTC, before the session they plan had even opened.
+  Consequences: (a) another technique's review surface silently owns Team2's runs - EM's outcomes
+  tab, the `technique_review` CLI's unreviewed/unscorable lists and any per-technique outcome count
+  read them as EM rows; (b) EM's `unscorable` tally (4,296 rows) carries a small, permanently growing
+  foreign contamination that no EM change can explain; (c) the reverse risk is the real one - if EM
+  ever tightens its scorer, Team2 runs are inside the blast radius of a change made for another
+  technique. **Nothing about Team2's own reads, entries, exits, sizing, scorecard or money path is
+  affected** - Team2 scores itself in `TechniquePlanScored` (F67/F68), which is unrelated to this
+  table - so this is a provenance and separation defect, not a trading one.
+  **This is the same bug family as the 2026-09-08 `runs_today()` fix one function earlier in the same
+  file**, whose docstring records the Options Cartel desk's 5,557 nightly rows exhausting EM's
+  per-day LLM cap; that fix added `TechniqueRun.technique == "enhanced_market"` to its query and
+  `score_pending` never got the same treatment. **Proposed fix (EM's file - the user or the EM desk
+  to apply):** add `TechniqueRun.technique == "enhanced_market"` to `score_pending`'s `select`, and,
+  if outcome rows for other techniques are wanted later, set `TechniqueOutcome.technique` from the
+  run rather than leaving the column default. The 15 existing rows are harmless to leave in place;
+  deleting them would be an append-only-table exception the user should decide. Related: F67, F68,
+  PLATFORM-RULES invariant 15 (a technique's rows belong to that technique).
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

@@ -4408,3 +4408,70 @@ unreported for a session.
   ladder decision (sized by F104)**, **F102's band question**, **F103's UI-check decision**,
   **F104's ladder/chain decision**, **F105's "which series is authoritative" decision (F104 cannot
   be decided without it)**, F67's two shared-side halves, and the F30-family question F105 sharpens.
+
+## 2026-09-10 16:35 ET (run 63 — post-close, quiet; F107: EM's outcome scorer has been adopting every Team2 run)
+
+- **Alive on v0.7.36** (`/api/health`: ok, started, armed 9 desk-wide — the 16:00 disarm holds).
+  The user has **still not restarted**, so v0.7.37 (F88), .38 (F91), .39 (F100), .40 (F101) and
+  .41 (F106) remain **five** queued releases. Per the standing F89 instruction I did not restart and
+  did not rebuild `dist`. **No code shipped this run** — the one new finding is in EM's file, which
+  this watch is not allowed to edit, so it is written up as a proposal.
+- **The session is closed and correct.** `/api/team2/status` → `armed: []`, mode `auto`, all three
+  plans `TechniquePlanScored` + `TechniquePlanDisarmed` at exactly 16:00:00 ET (`reason "session
+  closed"`, `fired 0`, `flatten false`, `openLeft 0`). Day totals unchanged from run 62: book
+  **$0.00, 0 fills** on all three; SPY's 10:06 model trade (756P, −12.21%) is the day's only one and
+  its scorecard row still reads `status "not taken"`. **F81b day tally: 1 read fire, 0 live entries.**
+- **The tape banked the full day and is still banking after hours.** SPY/QQQ/IWM each hold **390/390
+  RTH 1m bars 09:30→16:00**, and each is now at 754/754/753 bars for the whole 04:00→16:33 ET span,
+  sources `exchange` + `sampled` (the ext-hours half), latest bar ~2 min old. No gaps, no wrong-session
+  rows, `needsAttention` false and no `readError` all session.
+- **F107 — NEW, not fixed (EM's file).** EM's `TechniqueService.score_pending()`
+  (`zargar/technique/service.py:1946`) selects every finished `full`/`plan` run of the last 25 days
+  **with no technique filter**, so Team2's nightly plan runs are swept into EM's outcome loop.
+  `_score_plan_run` looks for EM's `triggers`/`levels` plan shape, finds neither on a Team2 sheet, and
+  writes a terminal `technique_outcomes` row — `plan_source 'levels'`, `status 'unscorable'`,
+  `note 'plan has no levels or triggers'` — stamped `technique='enhanced_market'`, because
+  `TechniqueOutcome.technique` is never set from the run and its column default is EM
+  (`models.py:438`). **Measured: 15 of 15 Team2 runs ever created carry exactly one such row**, all
+  unscorable, all labelled EM; today's three were written 2026-09-09 21:10 UTC, before the session
+  they plan had opened. The pool grows 3/trading-day. **No Team2 read, entry, exit, size, scorecard or
+  money path is affected** — Team2 scores itself through `TechniquePlanScored` (F67/F68), a different
+  table — so this is provenance/separation, not trading. It is the **same bug family as the
+  2026-09-08 `runs_today()` fix one function earlier in the same file** (the Options Cartel desk's
+  5,557 nightly rows exhausting EM's LLM cap); that query got
+  `TechniqueRun.technique == "enhanced_market"`, `score_pending` did not.
+  **Proposed (user / EM desk):** add the same one-line technique filter to `score_pending`, and set
+  `TechniqueOutcome.technique` from the run if other techniques should ever be scored there. Leave the
+  15 existing rows (deleting them is an append-only exception the user should decide).
+- **F85 standing check: zero Team2 error rows, no halt rows.** Every error-ish journal row in the
+  last 3 h is tip-side by ticker — `SignalVerificationFailed` ×8, `ProposalRejected` ×4 (AMD, META,
+  NBIS ×2, MU), one `TechniquePlanError` on **GS** ("source follow-up: 'update_stop' … still
+  waiting"). None on SPY/QQQ/IWM. Engine log: **no new Team2 ERRORs** — today's remain the two
+  09:37/09:42 ET `cartel-observer bar handling failed` tracebacks (unchanged since run 50) and the
+  benign asyncio `_ProactorBasePipeTransport._call_connection_lost` callbacks, the last at 13:48 ET;
+  everything since is the benign `persist_bars: dropped N non-bucket-aligned stub bar(s)` family plus
+  a run of `CBOE HTTP 429` "enrich skipped" lines on the tip-side universe (not Team2).
+- **Post-close activity that is NOT Team2, noted so a later run does not mistake it:** a
+  `TechniquePlanRolled` at 16:00 (SPY, 2026-09-10 → 2026-09-11) belongs to a **tip** plan — tip plans
+  stay armed across sessions, Team2's do not — and `TechniqueSweepStarted` at 16:15 ("Auto sheet for
+  2026-09-11", kind `next`) is EM's plan sheet. Team2's own nightly job is `team2_plan_nightly` at
+  **17:00 ET** and had not run at 16:35.
+- **Next run (≈17:05 ET) should:** (1) `/api/health` — if **0.7.41** (or .37/.38/.39/.40) the user
+  restarted, confirm in order: a `target_replanned` fire reaches the book (F91), IWM's two empty
+  `targets` re-derive (F88), a `skip_no_contract` names its tested strike (F101/F104), and the 15:45
+  flatten writes its new line (F106, first testable at tomorrow's 15:45); if still **0.7.36**, do not
+  restart and repeat the F89 ask; (2) **the 17:00 `team2_plan_nightly` job falls in that run** —
+  expect three plans for **2026-09-11** (`runs 3, failed 0, armed 3, skipped 0`, as last night) and
+  check each has levels, a day type and a target before the pre-open; (3) if the three new runs
+  appear, **re-check F107's count — it should go 15 → 18** within half an hour of the nightly, which
+  is the cheapest confirmation that the leak is ongoing rather than historical; (4) today's
+  carry-forward numbers are **IWM 14 `skip_no_contract`** and **F102's 1/3/0 in-band close**;
+  (5) the F85 journal query; (6) **do not attempt the `/team2` UI check** (F103).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F89 (five releases deep)**, **F90**, **F92**, **F93**, **F94**,
+  **F95**, **F97 (qualified by F98)**, **F98**, **F99**, **F100's reporting question**, **F101's
+  ladder decision (sized by F104)**, **F102's band question**, **F103's UI-check decision**,
+  **F104's ladder/chain decision**, **F105's "which series is authoritative" decision**, **F107's
+  one-line EM fix**, F67's two shared-side halves, and the F30-family question F105 sharpens.
