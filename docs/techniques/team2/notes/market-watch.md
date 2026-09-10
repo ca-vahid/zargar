@@ -3510,3 +3510,83 @@ unreported for a session.
   shared half**, **F72's strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**,
   **F85**, **F86**, **F87**, **F89**, **F90**, **F92**, **F93**, **F94**, F67's two shared-side halves, and
   the F30-family question of which premium series is authoritative.
+
+
+## 2026-09-10 11:05 ET (run 52 — 44 minutes of total silence, explained: the stack un-stacked; F95 is that the silence leaves no record)
+
+- **Alive on v0.7.36, armed 59 desk-wide, `needsAttention: false` on all three, zero Team2 errors.**
+  The user has **not** restarted, so F88's v0.7.37 and F91's v0.7.38 are both still queued.
+  `/api/ops/restart-check` reads `safe: true` (no open trades, nothing working, nothing in flight),
+  but **F89 still closes the door** and there is now a fresh receipt for it in the repo:
+  `logs/restart-20260910-064016.log` is a 06:40 ET `restart.ps1` run that died on
+  `Stop-Process ... python (29812): Access is denied`. Per the standing instruction from runs 49–51 I
+  did **not** attempt another restart. Nothing was deployed this run.
+- **Data real-time and clean.** SPY/QQQ/IWM quotes sub-second old, session `regular` (SPY 759.11,
+  QQQ 711.19, IWM 288.72 at 11:05); **93/93 RTH 1m bars today `source='exchange'`** on all three with
+  **zero** zero-volume minutes, last bar 11:02 banked at 11:03; `prevClose` correct (762.40 / 716.31 /
+  290.64). Alpaca stream authenticated since the 01:29 ET boot with **no reconnect**, and the 09:00 ET
+  pre-open feed self-test passed. Pre-open completion verified on all three: `complete: true`, PM
+  ranges 757.69–764.60 / 706.50–717.60 / 287.83–291.74, `dayType: gap_down`, `sizingAtOpen: none`.
+- **What the read saw since run 51 (10:40 → 11:05): nothing. Literally no events on any symbol since
+  10:18.** Book still **0 trades, 0 open positions, $0.00 realized** on all three. That 44-minute gap
+  is the whole story of this run, and it took recomputing the EMAs from the bars table to prove it was
+  correct rather than a hang — see F95.
+- **Why it is correct (checked, not assumed).** SPY's rally off 757.62 carried the **EMA13 back above
+  the EMA48** (13 758.98 / 48 758.68 / 200 760.38 at 11:00), so `ema_stack` returns **`mixed`**;
+  E3/B9 needs a full `bear` stack for a short, so every setup is skipped at `session.py:449` by a bare
+  `continue` marked *"(silent — happens every bar)"*. Same on QQQ and IWM — **all three have been
+  `mixed` on every 2m close since 10:16, zero bear-and-touch bars.** Both SPY setups are still alive
+  (`dead: false`): `scenario_4@09:30` (touches 0) and `pm_break_down@09:45` (touches 2, past its D9
+  allowance so further contacts are watch-only anyway).
+- **Replay parity holds exactly, and it is the proof the read is not stalled.** SPY replays **11/11**
+  events identical to live (including run 50's 10:06 `target_replanned` + fire and the 10:14 −12.21%
+  stop), QQQ **5/5**, IWM **5/5** — and the replay, which recomputes from the bars table right up to
+  11:02, **also** stops at 10:18. The regime meanwhile kept advancing every 2m close (last 11:00).
+  Also verified: the F62 departure state machine is judged **before** the stack gate can `continue`
+  (`session.py:309`), so the silence corrupts no state.
+- **F95 — NEW (observation + a small proposal, nothing built).** The stand-down is right; the **record**
+  is not. Recomputing the 2m series by hand, price made **six real EMA13 contacts** in that quiet
+  window — SPY 10:42 / 10:44 / 10:46 / 11:00 / 11:02 / 11:04, IWM 10:40–10:54 and 11:00, QQQ 10:46 /
+  11:00 / 11:02 — every one refused by E3, and **none of them appears anywhere**: no event, and
+  `s.pullbacks` / `s.opportunities` never increment, so the setups under-report what the day offered.
+  Two costs: the method review cannot measure what the stack gate refuses (exactly the question "does
+  E3/B9 cost us money?"), and operationally a healthy quiet read is indistinguishable from a hung one.
+  **Proposed, not built** (a new event kind is consumed by the scorer, the review loop and the parity
+  check, so it is the user's call): a `stack_disagrees` note said **once per setup per stack flip**
+  using the read's existing say-it-once idiom (`s._stalled` / `s._same_said` / `s._skipped`), plus the
+  mirror note when it re-stacks — two events per regime change, not per bar; no gate, threshold, size
+  or money path touched. Optionally count these into a separate `refused_by_regime` counter so the
+  review can price the gate without polluting the executable-opportunity count.
+- **F81b live tally unchanged: 1 read fire, 0 live entries, book net $0.00** — and per F91 that zero is
+  the bug, not the rule. F87 unchanged: today's plans still record `target_replan: "off"` while the
+  runner runs `structure`. **F88 unchanged:** IWM's `scenario_4@09:30` and `pm_break_down@10:00` both
+  still carry `target: null`. **F94 unchanged:** the chip still reads 0.7.38 against a 0.7.36 engine —
+  every version claim in this run is from `/api/health`.
+- **F85 standing check: zero Team2 rows.** In the last 5 h the journal holds 34 error-ish rows, **none**
+  Team2: 8 `TechniquePlanError` (all **tip** — six 09:31 never-chase gap notices plus 09:26 AMZN and a
+  **new** 10:58 RDDT `update_stop` source follow-up), 22 `SignalVerificationFailed` (tip intake), 2
+  `RiskCheckFailed` (one 10:53 `quote_fresh` 10.5 s, not Team2 — Team2 placed no orders today), and two
+  **critical `ManagedPositionAttention` at 09:05** — TSLA (we hold 7, broker shows −4) and LULU (we hold
+  49, broker shows 0), both unexplained with new entries halted on those symbols. **Other desks —
+  reported, not touched, but the user should see the TSLA/LULU pair.** Engine log today: the only
+  `ERROR`s are the two 09:37 / 09:42 ET `cartel-observer bar handling failed` tracebacks, unchanged
+  since run 50; 1,735 warnings, all the benign `persist_bars: dropped N non-bucket-aligned stub bar(s)`
+  / outside-a-market-minute pair plus two `shadow arm failed for SPX` and two Yahoo calendar 404s.
+- **UI checked:** `/team2` renders correctly — Plans tab lists all three armed plans with their sheets,
+  PM ranges and `gap down` day type, the thresholds panel is read-only as intended, no visible
+  breakage. (The browser pane is narrow enough to render the phone layout — expected, not a defect.
+  Sign-in handoff is the **hash**, `#token=…`, per run 51.)
+- **Next run (≈11:45 ET) should:** (1) check `/api/health` — **not the version chip** (F94) — and if it
+  reads **0.7.38** the user restarted, so immediately confirm a `target_replanned` fire now reaches the
+  book (a `contract` event and a trade, not `skip_target_behind`) and that IWM's two null targets
+  re-derived; if it still reads **0.7.36**, do not attempt a restart and repeat the F89 ask; (2) the
+  first thing to check when the read looks quiet is **the stack, not the feed** — F95: `mixed` means a
+  silent stand-down, and the tell that it is healthy is that `regimeLast.ts` is still advancing;
+  (3) watch for the EMA13 to re-cross **below** the EMA48 on any of the three, which re-opens the short
+  side — SPY's two live setups and IWM's two are all still armed; (4) keep counting F81b read fires and
+  live entries **separately** until v0.7.38 is live; (5) the F85 journal query. Still open for the user:
+  **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**, **F61**, **F62**, **F63**,
+  **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy question**, **F74**,
+  **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**, **F87**, **F89**, **F90**,
+  **F92**, **F93**, **F94**, **F95**, F67's two shared-side halves, and the F30-family question of
+  which premium series is authoritative.

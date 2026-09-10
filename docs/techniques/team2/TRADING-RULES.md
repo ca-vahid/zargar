@@ -1869,6 +1869,35 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   restart), which is the user's call and belongs to whoever owns `scripts/start.ps1`. Also logged in
   `docs/PLATFORM-RULES.md`.
 
+- **F95 (2026-09-10 11:05 ET, OBSERVATION + a small proposal — the read stands down *silently* when the
+  EMA stack disagrees, so a refused opportunity leaves no record and "quiet" is indistinguishable from
+  "stalled").** Between **10:16 and 11:05 ET today the read emitted nothing at all** on any of the three
+  symbols — 44 minutes of complete silence — while the tape was busy. The cause is correct and
+  method-faithful: SPY's pullback carried the EMA13 back **above** the EMA48 (13 758.98 / 48 758.68 at
+  11:00), so `ema_stack` returns **`mixed`**, and E3/B9 requires a full `bear` stack for a short. Every
+  setup is therefore skipped at `session.py:449` by a bare `continue` whose own comment says
+  *"(silent — happens every bar)"*. Verified end to end: replay reproduces the live event list exactly
+  (SPY 11/11, QQQ 5/5, IWM 5/5) and also stops at 10:18, the regime kept advancing every 2m close
+  (last 11:00, bars 93/93 `source='exchange'`), and the F62 departure state machine is judged *before*
+  the gate (`session.py:309`) so nothing is corrupted. **The problem is not the decision, it is the
+  record.** Recomputing the 2m series by hand, price made **six real EMA13 contacts** in that window
+  (SPY 10:42 / 10:44 / 10:46 / 11:00 / 11:02 / 11:04; IWM 10:40–10:54 and 11:00; QQQ 10:46 / 11:00 /
+  11:02) that E3 refused — and **none of them appears anywhere**: no event, and `s.pullbacks` /
+  `s.opportunities` never increment, so the setup's own counters under-report what the day actually
+  offered. Two costs: (1) the method review cannot measure what E3/B9 refuses, which is exactly the
+  question "does the stack gate cost us money?"; (2) operationally a healthy quiet read and a hung
+  runner look identical from the outside — this run had to recompute the EMAs from the bars table to
+  tell them apart. **Not built** — a new event kind changes the read's event stream, which the scorer,
+  the review loop and the live-vs-replay parity check all consume, so it is the user's call.
+  **Proposal (one note, idiomatic, no behaviour change):** the read already has the "say it once"
+  pattern for exactly this (`s._stalled`, `s._same_said`, `s._skipped`). Add a `stack_disagrees` note
+  emitted **once per setup per stack flip** — "SPY: the 13 crossed back above the 48, the stack is
+  `mixed`, not `bear` — every pullback is watch-only until it re-stacks (E3/B9)" — and a matching note
+  when it re-stacks. Cheap (two events per regime change, not per bar), it makes the stand-down
+  auditable, and it touches no gate, threshold, size or money path. Optionally also count these
+  contacts into a separate `refused_by_regime` counter rather than `opportunities`, so the review can
+  price the gate without polluting the executable-opportunity count.
+
 
 ## Theories to test
 
