@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.38";
+export const APP_VERSION = "0.7.39";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.39",date:"2026-09-10",title:"A refused pullback says what it really costs",items:[
+    {tag:"fixed",text:"Team2 F100: a pullback refused for its location - inside the pre-market no-trade zone, or on a range day that has not cleared its level - used to say “not counted as a pullback” while the read's own pullbacks counter had already counted it. It now says what is true: the refusal does not spend the two-pullback allowance. Today QQQ reached 11 pullbacks with 0 tradeable ones, and the two numbers looked like a contradiction."},
+  ]},
   {version:"0.7.38",date:"2026-09-10",title:"The desk enters the trade its read fired",items:[
     {tag:"fixed",text:"Team2 F91: when the read drops a target because no structure is left ahead of the entry, the live runner now enters that trade instead of refusing it against the old target the setup still carries. The trims, the candle stop, the premium stop and the 15:45 flatten manage it, exactly as the read simulated. Today SPY fired a 756 put at 10:06 ET and the runner refused it on a 757.90 the read had already replanned away, so the experimental gap-day target rule could never actually trade."},
   ]},

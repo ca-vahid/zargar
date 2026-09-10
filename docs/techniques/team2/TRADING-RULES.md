@@ -2024,6 +2024,29 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   three paths read it. Until then, treat "replay parity" in this log as evidence about the *method*,
   not proof the runner and the replay agree.
 
+- **F100 (2026-09-10, run 57) — the read's `pullbacks` counter and the refusal that follows it
+  contradict each other, and `note_once` hides how often the refusal fired.** Run 56 flagged the
+  wording; this run resolved it against the code. `session.py` increments `s.pullbacks` on **every**
+  structural episode (line 497, after F62's `same_pullback` gate) and only *then* runs the location
+  refusals — the pre-market no-trade zone (V6/B5) and the range-day confirmation (B3/A4) — each of
+  which said *"not counted as a pullback"*. The sentence was about the **D9 allowance** (`s.touches`,
+  which is correctly left alone, F18) but it sat next to a field literally named `pullbacks` that had
+  already counted the contact. Today's numbers make the gap plain: QQQ `scenario_4` finished the
+  window at **pullbacks 11 / opportunities 0 / touches 0**, IWM `pm_break_down` at **15 / 0 / 0**,
+  SPY `pm_break_down` at **13 / 3 / 2**. Second half, and the more useful one: those refusals are
+  written with `note_once`, which suppresses a repeat until the reason changes or a real touch clears
+  it (`session.py:187-194`, F23), so QQQ's eleven refused episodes left **one** `skip_no_trade_zone`
+  row (09:52) in the read and one in the journal. The read therefore understates today's refusals by
+  ~10x, and the only counter that does see them denied in prose that it had counted them. Same family
+  as F95 (a stack stand-down leaves no record) and it is the counting hazard F97/F98 ran into.
+  **Fixed (v0.7.39, this run, queued for deploy):** both refusals now say *"does not spend the
+  two-pullback allowance (D9)"*, which is what is true, and `session.py:497` carries the three-counter
+  contract in a comment. Reporting only — no entry, exit, sizing or gate changed; 133 Team2 tests pass.
+  **Still open for the user (not built):** should a long run of identical refusals be summarised
+  (e.g. re-state the refusal with its running count every N episodes, or emit one closing tally per
+  setup) so a reader can see 11 refusals without re-deriving them from the counter? That changes what
+  the read emits, so it is a method-reporting decision, not a defect fix.
+
 
 ## Theories to test
 
@@ -2180,6 +2203,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
+| 2026-09-10 | **F100 fixed (v0.7.39, queued for deploy)**: a pullback refused for its LOCATION — inside the pre-market no-trade zone (V6/B5) or on a range day that has not cleared its level (B3/A4) — no longer says "not counted as a pullback" (the read had already counted it in `pullbacks`); it now says "does not spend the two-pullback allowance (D9)", which is what F18 actually does. `session.py:497` documents the three-counter contract (`pullbacks` = every episode, `opportunities` = tradeable locations, `touches` = the D9 allowance). Reporting only — no entry, exit, sizing or gate changed | market watch run 57; QQQ scenario_4 at pullbacks 11 / opportunities 0 behind a single 09:52 `skip_no_trade_zone` note; 133 Team2 tests pass | Team2 desk |
 | 2026-09-04 | **F41 + F42 fixed** (post-close): the nightly never mints/arms a second plan for a session that already has one (`skipped`, with `force` on plan-now as the manual rebuild), and the 09:25 completion leaves a plan whose session has not started alone. Both are the same root cause — the two Team2 jobs are weekday-gated, not trading-day-gated, so **Labor Day 2026-09-07** would have double-armed 2026-09-08 and blanked its plans that morning. No sizing, entry or exit rule changed | market watch 16:05 ET; `next_trading_day(2026-09-04) == next_trading_day(2026-09-07) == 2026-09-08` | Team2 desk |
 | 2026-09-03 | Method codified v0.1 from 49 public posts; desk opened | `SOURCES.md` | Team2 desk |
 | 2026-09-03 | D3 decided by the user: Team2 is a 0DTE technique; RiskGate gets a per-technique 0DTE policy (E6) instead of the hard-coded EM/tip ids. Engine is ENRICHED, not forked (PLAN §3b, E1–E12) | METHOD §7b/§7c, images INDEX | Team2 desk |

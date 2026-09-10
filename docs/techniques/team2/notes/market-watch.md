@@ -3893,3 +3893,85 @@ unreported for a session.
   **F83**, **F85**, **F86**, **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**, **F94**,
   **F95**, **F97 (qualified by F98)**, **F98**, **F99**, F67's two shared-side halves, and the
   F30-family question of which premium series is authoritative.
+
+## 2026-09-10 13:35 ET (run 57 — healthy, still no trade; the read's own pullback counter contradicted the note beside it — F100, fixed)
+
+- **Alive on v0.7.36** (`/api/health`: ok, started, armed 59 desk-wide), `needsAttention: false` and no
+  `readError` on all three plans. The user has **still not restarted**, so F88's v0.7.37, F91's v0.7.38 and
+  now F100's **v0.7.39** are all queued. Per the standing instruction from runs 49–56 (F89) I did **not**
+  attempt a restart, and did **not** rebuild `dist` (a rebuild would put new UI text in front of a 0.7.36
+  backend; `start.ps1` rebuilds at deploy).
+- **Data real-time and clean (measured this run).** Quotes at 13:33:11 ET, **7.6 s old**, session `regular`,
+  with real bid/ask sizes — SPY 758.47/758.48, QQQ 710.30/710.32, IWM 287.91/287.92, `prevClose` 762.40 /
+  716.31 / 290.64. Bars: **244/244 RTH 1m bars 09:30→13:33 on all three, every one `source='exchange'`,
+  zero zero-volume minutes.** Plan `barAge` 79–100 s, `quoteAge` 0 s, `regimeLast.ts` = 13:30 on all three.
+  Pre-open still `complete: true` — PM SPY 757.69–764.60, QQQ 706.50–717.60, IWM 287.83–291.74,
+  `dayType: gap_down`, `sizingAtOpen: none`.
+- **What the read saw since run 56 (13:05 → 13:35): two events, both the same one.** IWM 13:06 and 13:12,
+  each a `same_pullback` (F62). SPY and QQQ have emitted nothing since 12:38. **No fires, no trims, no
+  exits. Book still 0 trades, 0 open positions, $0.00 realized on all three.**
+- **The stack changed under us and now refuses alongside the zone.** SPY and QQQ have flipped from bear
+  (strength 2 at run 55) to **mixed, strength 0** — SPY 13:30 ema13 758.779 vs ema48 758.755 (13 back above
+  48), QQQ 710.602 vs 710.521; both summaries now read *"EMA stack mixed, trend — no entry until the stack
+  turns bear (E3/B9/E4)"*. IWM is still bear, strength 3 (288.098 / 288.214 / 288.898). SPY and QQQ now need
+  **two** things to change, not one. Run 56's watch levels are still unbroken and price has drifted further
+  away: SPY 758.5 vs the 757.69 PM low, QQQ 710.3 vs 706.50, IWM 287.94 vs 287.83 (IWM is the one within
+  reach — 0.04%).
+- **F100 — NEW, and it answers the question run 56 flagged rather than leaving it.** Run 56 noticed that
+  today's `skip_no_trade_zone` rows say *"not counted as a pullback"* while run 54 claimed the 12:02
+  refusal incremented `pullbacks`. Both are right, and that is the defect. `session.py:497` increments
+  `s.pullbacks` on **every** structural episode and the location refusals (no-trade zone V6/B5, range
+  confirmation B3/A4) run *after* it; the sentence was about the D9 allowance (`s.touches`, correctly left
+  alone per F18) but stood next to a field named `pullbacks` that had already counted the contact. Today:
+  QQQ `scenario_4` **pullbacks 11 / opportunities 0 / touches 0**, IWM `pm_break_down` **15 / 0 / 0**, SPY
+  `pm_break_down` **13 / 3 / 2**. The second half matters more: those refusals use `note_once`
+  (`session.py:187-194`, F23), which suppresses repeats until the reason changes — so QQQ's **eleven**
+  refused episodes left exactly **one** `skip_no_trade_zone` row (09:52) in the read and one in the journal.
+  The read understates today's refusals by ~10x, and the only counter that saw them denied in prose that it
+  had. Same family as F95, and it is precisely the counting hazard F97/F98 hit.
+- **Fixed and committed as v0.7.39 (not deployed).** Both refusals now say *"does not spend the two-pullback
+  allowance (D9)"*; `session.py:497` carries the three-counter contract in a comment. Reporting only — no
+  entry, exit, sizing or gate touched. **133 Team2 tests pass** (`tests/test_team2_*.py`
+  `tests/test_marketstructure_extended.py`, own DB `zargar_test_team2_watch`), `npm run typecheck` clean,
+  `npm run check-release` agrees on 0.7.39 across all four files plus the lockfile.
+  **Left for the user (not built):** should a long run of identical refusals be summarised — a running count
+  every N episodes, or one closing tally per setup — so a reader sees 11 refusals without re-deriving them?
+  That changes what the read emits, so it is a reporting decision, not a defect.
+- **F99 reproduces exactly, and reproduces *stably* — which strengthens it.** QQQ live ends `same_pullback`
+  12:38, replay ends 12:40, no 12:38 row: the identical disagreement run 56 found 30 minutes ago, on the same
+  two bars, not a drifting one. A race would have moved; a fixed warm-up-depth difference would not. **SPY
+  14/14 and IWM 11/11 match exactly** (same events, same order, same kinds), and SPY's replay still
+  reproduces the 10:06 `target_replanned` + fire and the 10:14 −12.21% stop, 1 replay trade. F99's proposal
+  stands unchanged and is the one item here needing a user decision before the F90(c) sweep runs.
+- **F91 re-measured in the journal, unchanged.** SPY's `d15b5ef4…` still shows `TechniquePlanTriggerSkipped`
+  at 10:06:00 with *"target 757.90 (from the setup) is above the 757.59 entry — no room left"*, while the
+  read at that same 2m close recorded `target_replanned` then `fire` (put 756 ≈ $0.53). No
+  `TechniquePlanTriggerFired`, no `TechniquePlanOrderIntent`, no exit row for Team2 all day. **F81b live
+  tally unchanged: 1 read fire, 0 live entries, book net $0.00** — the zero is F91's bug, not the method.
+- **F88 unchanged** (re-queried): IWM's `scenario_4@09:30` and `pm_break_down@10:00` both still carry an
+  empty target list; QQQ's `scenario_4@09:30` reads 706.50 and SPY's two read 757.90. **F94 unchanged**
+  (health reports 0.7.36). **F95 unchanged** — with SPY and QQQ now mixed-stack, the next contact on either
+  will be a stack stand-down with no record, exactly the case F95 asks to be made visible; worth watching
+  for in the next hour.
+- **F85 standing check: zero Team2 error rows.** Journal last 40 min: 50 `TechniqueOutcomeScored`,
+  13 `TipMessageRevised`, 4 `BrokerSync`, 4 `ContentReceived`, 3 `TipNoteAdded`, 3 `FlowContextServed`,
+  3 `SignalVerificationFailed`, 3 `SignalExtracted` — every error-ish row tip-side (the newest, 13:33:30, a
+  tip `opens_position` check). The only Team2-owned journal rows all day remain the 09:25 pre-open, the
+  reads and the trigger-skips. Engine log: **no new ERRORs since run 56** — today's are still the two
+  09:37 / 09:42 ET `cartel-observer bar handling failed` tracebacks (unchanged since run 50) and two benign
+  `_ProactorBasePipeTransport._call_connection_lost` asyncio callbacks (11:40, 12:05 ET). All warnings since
+  13:00 are the benign `persist_bars: dropped N non-bucket-aligned stub bar(s)` family.
+- **Next run (≈14:05 ET) should:** (1) `/api/health` — if **0.7.39** (or 0.7.37/0.7.38) the user restarted,
+  so immediately confirm a `target_replanned` fire reaches the book (a `contract` event and a trade, not
+  `skip_target_behind`) and that IWM's two empty targets re-derived; if still **0.7.36**, do not attempt a
+  restart and repeat the F89 ask; (2) **two gates now bind on SPY and QQQ** — the zone AND the mixed stack;
+  IWM (bear stack, 0.04% above its PM low) is the only symbol one condition away from a fire, so watch it
+  first; (3) cite F99 for any tail-row replay disagreement — a disagreement on a `fire`, `trim` or `exit`
+  row would be a serious escalation and must be chased at once; (4) when quoting a pullback count, read
+  `pullbacks` / `opportunities` / `touches` together (F100) and remember `note_once` hides repeats;
+  (5) the F85 journal query. Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**,
+  **F58**, **F59**, **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**,
+  **F72's strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**,
+  **F86**, **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**, **F94**, **F95**,
+  **F97 (qualified by F98)**, **F98**, **F99**, **F100's reporting question**, F67's two shared-side
+  halves, and the F30-family question of which premium series is authoritative.
