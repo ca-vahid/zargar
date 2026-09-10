@@ -343,6 +343,21 @@ def test_third_touch_is_watch_only_and_engulfing_touch_is_skipped():
     assert [e for e in res2.events if e["event"] == "skip_engulfing"]
 
 
+def test_late_touch_prose_counts_up_so_seven_contacts_do_not_all_read_the_same():
+    """F84 (2026-09-09): a watch-only contact must not spend the D9 allowance, so the touch index is
+    frozen at the cap — the message must therefore NOT claim a fixed "touch #N", or a setup with one
+    late contact reads exactly like one with seven (it misled two market-watch runs)."""
+    prev = prev_day_bars()
+    today, _ = trend_day(prev)
+    _, res = run(prev, today, pullback_max_touches=0)        # every touch is "late"
+    late = [e for e in res.events if e["event"] == "late_touch"]
+    assert len(late) >= 2, late
+    assert all(e["touch"] == 1 for e in late)                # the index really is frozen (unchanged contract)
+    counts = [int(e["why"].split("#", 1)[1].split()[0]) for e in late]
+    assert counts == sorted(counts) and len(set(counts)) == len(counts), counts   # strictly increasing
+    assert "watch-only (D9/P6)" in late[0]["why"]
+
+
 def test_flatten_time_closes_the_position():
     prev = prev_day_bars()
     z = zones_of(prev)
