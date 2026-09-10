@@ -4159,3 +4159,87 @@ unreported for a session.
   by F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's
   band question**, **F103's UI-check decision**, F67's two shared-side halves, and the F30-family
   question of which premium series is authoritative.
+
+## 2026-09-10 15:10 ET (run 60 — healthy; IWM's whole day was refused by a synthetic strike ladder, not by the market — F104)
+
+- **Alive on v0.7.36** (`/api/health`: ok, started, armed 59 desk-wide), `needsAttention: false`, no
+  `readError` on any of the three, mode `auto`, all three `armed` for 2026-09-10, pre-open still
+  `complete: true`. The user has **still not restarted**, so v0.7.37 (F88), v0.7.38 (F91), v0.7.39
+  (F100) and v0.7.40 (F101) are **all four** queued. Per the standing F89 instruction I did not
+  restart and did not rebuild `dist`. **No code shipped this run either** — today's finding is a
+  measurement plus a design choice that is the user's, and a fifth undeployed release would not help.
+- **Data real-time and clean.** Bars: **334/334 RTH 1m bars 09:30→15:03 on all three, every one
+  `source='exchange'`, zero gaps, zero zero-volume minutes** (min vol SPY 12,098 / QQQ 9,610 /
+  IWM 4,609). Underlying quotes `quoteAge 0 s`, session `regular`. Plan `barAge` 85 s,
+  `regimeLast.ts` 14:30. **Option quotes are OPRA**: `SPY260910P00756000`, `QQQ260910P00708000`
+  and `IWM260910P00287500` all returned `source: "opra"`, `provider: "alpaca"`, `delayed: false`,
+  `sourceTs` = the same second, session `regular`.
+- **Bear stack on all three, strength 3, fan `trend`** — SPY 757.80/758.00/758.95 (close 757.49),
+  QQQ 709.54/709.69/710.54 (709.21), IWM 287.51/287.65/288.42 (287.43). Book **0 trades, 0 open,
+  $0.00** on all three; SPY's 10:06 read fire (756P, −12.21% at the 10:14 candle stop) is still the
+  day's only one. QQQ remains untouched (touches 0, allowance intact) and is the only symbol that
+  can still take a first entry; it needs a close below 706.50.
+- **F104 — NEW, and it is the day's headline.** IWM's armed-plan audit carries **13 live
+  `TechniquePlanTriggerSkipped` / `skip_no_contract` rows** (13:40, 13:42, 13:44, 13:48, 13:52,
+  13:54, 13:56, 13:58, 14:02, 14:22, 14:34, 14:48, 15:02 ET), each reading *"no strike MODELS
+  between $0.20 and $0.90 … modelled premium at sigma 0.2111, not the live chain"*. So the **live
+  runner declines entries on the model**, and `options/pick.py::select_by_premium` — the picker that
+  walks the venue's real listed strikes — is never reached. **At the first ten of those refusals the
+  IWM close was above 287.5** (287.76, 287.745, 287.855, 287.70, 287.76, 287.80, 287.70, 287.81,
+  287.66, 287.53), so the listed **287.5 put was OTM**, and the model's own price for it was
+  **$0.234–$0.315 — inside the band on every one**. The two strikes the $1 ladder did test were 287
+  ($0.096–$0.130, under the floor) and 288 (ITM). The 287.5P's live OPRA quote at 15:07 was
+  **0.41/0.42, volume 45,434, OI 717, spread 2.4%** — the most active contract near the money, so no
+  liquidity rule would have refused it. **IWM traded 0 times today and ten of its thirteen refusals
+  were the L2.6/L2.7 pre-market retest the method names explicitly.** This is F101 promoted from a
+  read/replay artefact to a live-money one; not fixed, because the ladder change touches the runner,
+  the read, replay, the sweep and the B3 calibration together. Proposals (a)/(b)/(c) are in
+  TRADING-RULES F104 — and **do not** globally set `strike_step=0.5`, it would invent unlisted
+  strikes on SPY/QQQ.
+- **F102 re-measured at 15:05 ET, the exact time F82a measured on 09-09: SPY 2 in-band OTM puts,
+  QQQ 3, IWM 0** — identical to the 14:36 counts, so the per-symbol disagreement is stable, not a
+  momentary artefact. SPY 757 @ $0.55 and 756 @ $0.24 (755 @ $0.13 under the floor); QQQ 709 @ $0.70,
+  708 @ $0.38, 707 @ $0.20; IWM nearest OTM 287 @ $0.15 then 286 @ $0.03 — and its in-band 287.5
+  ($0.39) is now ITM. IWM's last three refusals (14:34/14:48/15:02, spot under 287.5) are therefore
+  genuine F102 emptiness, not F104. Also noted for the delayed-vs-OPRA question (F30 family): the
+  CBOE chain quoted SPY 756P at $0.24 while OPRA had 0.19/0.20 at the same minute.
+- **SPY's D9 tally grew again**: `pm_break_down@09:45` now reads pullbacks 30 / opportunities 7 /
+  touches 2 / entries 1 / losses 1, with **seven `late_touch` refusals** (10:16, 14:12, 14:18, 14:20,
+  14:32 as `pm_retest`, plus the earlier two). Allowance spent by 10:06 — one engulfing skip plus one
+  8-minute loser — closing SPY for 4.5 hours while it printed five more PM-level retests. Unchanged
+  as evidence, still feeding the open 1/2/3 sweep question.
+- **Replay parity: no money row disagrees.** SPY reproduces all 29 events and the identical trade
+  (756P, entry 10:06, −12.21%). IWM matches on all 36 and adds only the newer 15:04 row. QQQ shows
+  **F99 again, now twice in one run** (live 12:38 / replay 12:40 and live 14:50 / replay 14:48) — the
+  warm-up-depth class, an episode-scoped `note_once` row shifting by a bar in either direction. No
+  `fire`, `trim` or `exit` row differs anywhere. Replay `bars2m` 168 vs live 166 is just the newer tape.
+- **F85 standing check: zero Team2 error rows.** Journal last 35 min: 5 `PositionUpdated`,
+  5 `RiskCheckPassed`, 4 each `TipLaneDecided`/`FlowContextServed`/`SignalAnalyzed`/`BrokerSync`/
+  `SignalVerified`/`ProposalCreated`, 3 `ProposalRejected`, 2 `TechniquePlanRead`, plus single
+  approval/adoption rows. Every error-ish row in the last six hours is tip-side
+  (`SignalVerificationFailed` ×13, one `TechniquePlanError` on an AMZN **tip** plan). No halt rows.
+  Engine log: **no new Team2 ERRORs** — today's remain the two 09:37/09:42 ET `cartel-observer bar
+  handling failed` tracebacks (unchanged since run 50) and six benign asyncio
+  `_ProactorBasePipeTransport._call_connection_lost` callbacks; all warnings are the benign
+  `persist_bars: dropped N non-bucket-aligned stub bar(s)` family. **F91 unchanged**; **F81b live
+  tally: 1 read fire, 0 live entries, book $0.00**; **F88 unchanged** (IWM's two setups still carry
+  `target: null`). **UI not checked — per F103 it cannot be**, and that item should be treated as
+  retired until the user decides (a) or (b).
+- **Next run (≈15:35 ET) should:** (1) `/api/health` — if **0.7.40** (or .37/.38/.39) the user
+  restarted, so immediately confirm a `target_replanned` fire reaches the book, that IWM's two null
+  targets re-derived, and that a `skip_no_contract` now names its tested strike (which would have made
+  F104 self-evident from the message alone); if still **0.7.36**, do not restart and repeat the F89 ask;
+  (2) **15:30 `last_entry_min` and 15:45 flatten both fall in that run** — with nothing open, expect no
+  flatten activity, but check for a `skip_last_entry` refusal on any post-15:30 contact and confirm the
+  15:45 flatten path logs cleanly on an empty book; (3) count IWM's `skip_no_contract` total for the
+  full day (13 as of 15:02) — it is the number that sizes F104; (4) QQQ is the only symbol with an
+  unspent allowance and needs a close below 706.50; SPY and IWM are both spent; (5) cite F99 for a
+  QQQ tail-row replay difference but escalate any `fire`/`trim`/`exit` disagreement; (6) the F85
+  journal query; (7) **do not attempt the `/team2` UI check** (F103).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified
+  by F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision (now sized by
+  F104)**, **F102's band question**, **F103's UI-check decision**, **F104's ladder/chain decision**,
+  F67's two shared-side halves, and the F30-family question of which premium series is authoritative.

@@ -2141,6 +2141,43 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   short-TTL dev bootstrap gated behind an explicit env flag. Until one is chosen, treat every
   "UI not verified" line in this log as expected, not as a transient failure.
 
+- **F104 (2026-09-10, run 60) — the LIVE entry gate refuses on the modelled premium and never
+  consults the real chain: IWM lost 10 tradable entries today to a strike that was listed, in the
+  band, and one of the most heavily traded contracts on the board.**
+  F101 established that `PremiumModel.pick_strike` walks a synthetic `step=1.0` ladder and therefore
+  cannot test IWM's listed 287.5 strike. Two facts measured this run make that a live-money problem
+  rather than a read/replay artefact.
+  **(1) The refusal is journaled on the live path.** IWM's armed-plan audit
+  (`GET /api/technique/armed/91295c8bdc6045379866cc7518bc4d1f/audit`) carries **13
+  `TechniquePlanTriggerSkipped` / `skip_no_contract` rows today** - 13:40, 13:42, 13:44, 13:48,
+  13:52, 13:54, 13:56, 13:58, 14:02, 14:22, 14:34, 14:48, 15:02 ET - every one with the reason
+  *"no strike MODELS between $0.20 and $0.90 (target $0.60, V1) - modelled premium at sigma 0.2111,
+  not the live chain"*. The runner in `auto` mode therefore declines entries on the **model**. The
+  platform's chain-walking picker `options/pick.py::select_by_premium`, which iterates the venue's
+  actual listed strikes and would have seen 287.5, is never reached when the model refuses first.
+  **(2) The strike the ladder skipped was both in-band and liquid.** At each of the ten refusals
+  before 14:34 the IWM 1m close was **above 287.5**, so the 287.5 put was OTM: 287.76, 287.745,
+  287.855, 287.70, 287.76, 287.80, 287.70, 287.81, 287.66, 287.53. The model's own price for it at
+  those bars is **$0.234-$0.315** - inside the $0.20-$0.90 band on every one - while the two strikes
+  the $1 ladder did test were 287 ($0.096-$0.130, under the floor) and 288 (ITM, excluded). The live
+  OPRA quote for `IWM260910P00287500` at 15:07 ET was **bid 0.41 / ask 0.42, volume 45,434,
+  open interest 717, spread 2.4%** - so this is not a thin half strike that a liquidity rule would
+  have rejected anyway; it is the most active contract near the money.
+  **Cost, stated plainly: IWM traded 0 times today and every refusal was the L2.6/L2.7 pre-market
+  retest the method names explicitly.** Ten of the thirteen were refused by the ladder, not by the
+  market. (The remaining three, 14:34-15:02, are genuine F102 emptiness: spot was under 287.5, so
+  even a half-strike ladder finds nothing OTM in band.)
+  **Not fixed - deliberately, and this is not a small change.** Making the ladder the venue's listed
+  strike set touches the premium path shared by the live runner, the read, replay, the sweep and the
+  B3 calibration test, and v0.7.40 (F101's clearer refusal message) is still one of five undeployed
+  releases. **Proposed, for the user, in preference order:** (a) feed `pick_strike` the real listed
+  strike set for the symbol (from the chain snapshot) instead of a `step` grid - the model keeps
+  pricing, the venue supplies the ladder; (b) on the live path only, let a model refusal fall through
+  to `select_by_premium` against the live chain, and journal which path decided; (c) a per-symbol
+  `strike_step` (0.5 for IWM) - cheapest, but it hard-codes a venue fact into settings and F102
+  already argues `strike_step` should not become a free-form knob. Do **not** globally set
+  `strike_step=0.5`: on SPY/QQQ it would invent strikes that are not listed.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
