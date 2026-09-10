@@ -2087,6 +2087,60 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   backtest scores, so neither is a market-watch change. **Consequence for queued work:** any sweep or
   calibration that turns on premium-band refusals is measuring this ladder, not the venue's.
 
+- **F102 (2026-09-10, run 59) — the premium band is ONE dollar band applied to three underlyings
+  whose prices differ 2.6x, so it does not mean the same contract on each; IWM is structurally the
+  worst-served and goes dark first. Measured, not fixed — a rules/threshold question for the user.**
+  `Team2Rules.target_premium` ($0.60), `premium_floor` ($0.20) and `chase_cap_mult` (1.5, so the
+  accepted band is **[$0.20, $0.90]**) are single global values in `rules.py:87-91`, shared by SPY,
+  QQQ and IWM. A dollar band cannot describe the same *moneyness* on underlyings priced $287 and
+  $758. Expressed as a fraction of spot, the same band asks for very different contracts:
+  **SPY 0.026%-0.119% of spot - QQQ 0.028%-0.127% - IWM 0.070%-0.313%.** The $0.60 target alone is
+  **0.079% of SPY's price and 0.209% of IWM's - 2.6x more relative premium demanded of IWM**, and the
+  $1 strike ladder is likewise 2.6x coarser on IWM in percentage terms (0.348% of spot per step vs
+  0.132% on SPY, 0.141% on QQQ). Both effects push the same way, so IWM's band spans the fewest
+  listed strikes of the three, and today it spanned none.
+  **Measured read-only on the live CBOE chains at 14:36 ET (84 minutes to the 16:00 expiry), each
+  symbol on its own live direction (all three short today):** in-band OTM puts - **SPY 2** (757 @
+  $0.45 d-0.34, 756 @ $0.24 d-0.20; 755 @ $0.13 under the floor), **QQQ 3** (709 @ $0.65, 708 @ $0.37,
+  707 @ $0.21), **IWM 0** (nearest OTM 287 @ $0.11, then 286 @ $0.04, 285 @ $0.02 - every OTM ask
+  under the $0.20 floor; the only in-band strikes, 287.5 @ $0.29 and 288 @ $0.60, are both ITM).
+  IWM last held an in-band OTM strike at about **14:24 ET** (spot 287.53, the 287.5 put OTM by $0.03);
+  from 14:26 spot has stayed under 287.5 and the chain has had **zero** - so IWM's effective
+  last-entry time today was ~14:24, **66 minutes before the configured 15:30 `last_entry_min` gate**,
+  and nothing in the plan, the headline or the gate says so.
+  **This extends F82a rather than repeating it.** F82a measured the band emptying at 15:05 ET on
+  2026-09-09 (SPY 0, IWM 0, QQQ 2) and read it as pure time decay. Today separates the two causes:
+  at 14:36 SPY still had 2 and QQQ 3 while IWM had 0, so the emptying is **not** uniform across
+  symbols and is not decay alone - it is decay acting on a per-symbol strike/premium granularity that
+  the single global band ignores. It is also the reason F101's missing **287.5** half strike mattered
+  so much: on IWM a single half strike is the difference between an in-band pick and none.
+  **Proposed, for the user (nothing built, no threshold moved).** (a) Express the band as a fraction
+  of spot (e.g. target 0.08% of price) so one setting means the same contract on all three symbols;
+  (b) make `target_premium`/`premium_floor` per-symbol keys; (c) F82(c)'s **delta band** instead of a
+  price band, which is the moneyness statement the method actually makes and is price-independent;
+  or (d) accept it and publish a per-symbol effective last-entry time so the desk stops pretending
+  15:30 applies to IWM. Note also that **`strike_step` is the only premium-path parameter with no
+  settings key at all** - it is not in `rules.py`'s `SETTINGS_MAP` and not in `settings_service.DEFAULTS`
+  - so the user cannot even inspect it from the UI; exposing it as a plain number would however make
+  F101's unsafe 0.5 value one click away, so it should become the listed-strike set, not a knob.
+
+- **F103 (2026-09-10, run 59) — the market-watch job's documented UI check is not implementable:
+  the SPA has no `?token=` handoff, so `/team2` can only ever be reached by a real Google sign-in.**
+  The watch recipe says "sign-in may be needed - use the token: `?token=$TOK`". The backend does
+  accept `?token=` (`require_auth`), but the **frontend never reads a token from the page URL**:
+  `api.ts:21` returns an in-memory `authToken` module variable set only by the sign-in flow (not
+  localStorage, not the query string), and the only `?token=` producers are `ws.ts:58` (the WebSocket
+  URL) and two download links (`api.ts:257`, `:278`) - all of which *write* the stored token, none of
+  which read one in. So navigating to `http://127.0.0.1:8420/team2?token=...` renders the login page,
+  which is exactly what run 58 saw and recorded as a one-off. It is not a one-off: **no market-watch
+  run has ever been able to verify the UI**, and the "UI issues on /team2" item of the recipe has
+  silently never run. **Not fixed - deliberately.** Adding a URL-token bootstrap would put a
+  30-day session credential in the address bar, browser history and any proxy log, which is the wrong
+  trade for a convenience. **Proposed, for the user:** either (a) drop the UI item from the watch
+  recipe and verify `/team2` yourself when a UI change ships, or (b) add a localhost-only,
+  short-TTL dev bootstrap gated behind an explicit env flag. Until one is chosen, treat every
+  "UI not verified" line in this log as expected, not as a transient failure.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after
