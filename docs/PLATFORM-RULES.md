@@ -1220,9 +1220,24 @@ straight through the close - the bars were written but stopped reaching the plan
 F79/F80 bar provenance). Between the stall and the restart burst, EM's prime_close window
 (14:45-16:00) was effectively not traded.
 
-Rules proposed for every desk (the user decides):
-1. **No deploys between 09:25 and 16:05 ET** unless the deploy fixes a live-money defect. Batch
-   the merges; `ZargarRestart` once after the close.
+User decision (2026-09-09 20:50 ET): **deploys during market hours are allowed - this is an
+active app - but a deploy must lose nothing except the restart seconds, and the count should be
+3-4 a day, not twelve.** What already delivers that (0.7.30, deployed 15:26 ET the same day, so
+most of today's twelve restarts ran without it): `restart.ps1`/`start.ps1` call
+`POST /api/ops/quiesce` (no NEW fire chains for 5 min), `GET /api/ops/restart-check` (refuses
+while a fire chain, an in-flight order or an unknown inventory is pending, unless `-Force`),
+capture `GET /api/ops/state`, and after the start `POST /api/ops/restore-check` compares armed
+plans, open trades, working entries, pending exits, resting orders and managed positions by id.
+On the EM side a restored plan re-reads today's bars (interior minutes recovered from history),
+replays them into the trackers with `journal=False`, then applies the live-persisted record
+over the replay (statuses, fired timestamps, critic kills, refire cooldowns, trades); the sim
+book and managed positions are restored separately. The one residual loss is by design: a level
+touch that happens INSIDE the restart gap is not fired late (acting on it a minute later would
+be chasing) - the trigger keeps waiting for the next touch. Rule for every desk: deploy through
+`ZargarRestart`, never `-Force` during the session unless the readiness reasons are understood,
+batch merges into as few restarts as possible, and treat a `restore check MISMATCH` line as an
+incident to explain the same day (15:35 ET today is unexplained).
+Still proposed:
 2. **A restart is a journaled event with a reason** (`ScheduledRestart` payload: version, desk,
    why) so the review can attribute lost state.
 3. **Bars written are bars delivered**: the feed desk should add a watchdog line when persisted

@@ -641,6 +641,20 @@ actually needed: the morning board build's 3-session window (09-02..09-04) no lo
 09-01 high; the evening build's window did, and the detector found 969.44 there only with the knob.
 Next test: `lookback_sessions=5` as its own variant, and the gap-through continuation (T-6/T-7).
 
+### T-13 · Gap-through continuation (the author's SPY trade of 2026-09-09) - sweeping
+His one posted trade on day 10: SPY puts on "the breakdown of PLOD" - SPY closed 09-08 with a
+low of 765.14, opened 09-09 at 764.08 (through it) and drifted to 760.94 by 11:25; $0.70 ->
+$1.58, +126%. Our SPY trigger was voided at 09:31 as `gapped_through`, Tips said "not chasing",
+Team2 read "scenario 4, focus on puts" and did not enter. Theory: a bounce/reject level the open
+gaps THROUGH is not dead - it is a continuation setup in the gap direction. Built 2026-09-09
+evening as a sweepable knob (`gap_through_continuation`, default off, MarketRules + Thresholds):
+the trigger is re-aimed as a break the other way - stop at the gapped level (a reclaim
+invalidates), entry on a confirmed break of the opening bar's extreme through the EXISTING break
+machinery (volume surge, decisive candle, follow-through, R6 windows), targets 1R/2R/3R on the
+30/40/15 ladder. Nothing changes live. Test: `sweep --set gap_through_continuation=true` vs
+baseline over 2026-08-24..09-09 (`evo-T13-*`), adopt bar D7 (+0.3R/fire over baseline, fires
+<= 2x). Related: T-6/T-7 (gap-through was already named as their territory on day 8).
+
 ### T-12 · Flow-confirmed entries (the author's actual trigger, read 2026-09-08) - REJECTED on history 2026-09-09
 **Status: both forms (confirm gate, sweeps as trigger) measured and rejected; no rule change; the detector stays as research tooling. The paragraphs below are the dated record in the order it happened.**
 Every win he posted (TSLA +240% Aug 31, GPRO Aug 31, NVDA +115% Sep 4, Sep 8 OTM prints) names
