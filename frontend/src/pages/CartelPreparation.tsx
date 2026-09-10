@@ -112,6 +112,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
             <option value="strict">Strict — both indices aligned</option>{!live && <option value="moderate">Moderate — Practice experiment</option>}
           </select></label>
           <p>{live ? "Live requires strict alignment." : "Moderate allows bullish preparation when one index closes above its 8/21/50 EMAs and both close above their 50 EMA. This is a Practice experiment, not an author-verified rule. Save and prepare again; existing research records are not promoted."}</p>
+          <label>Volume baseline readiness<select aria-label="Volume baseline readiness" value={config.baselineReadiness || (live ? "full_session" : "covered_periods")} onChange={e => setConfig({...config, baselineReadiness:e.target.value})}><option value="covered_periods">Watch only periods with supported history</option><option value="full_session">Require every period (legacy strict)</option></select></label>
           <label>Shortlist ranking<select aria-label="Shortlist ranking" value={config.shortlistRanking || "quality"} onChange={e => setConfig({...config, shortlistRanking:e.target.value})}><option value="quality">Target room, relative strength, then volume</option><option value="volume">Discovery volume order</option></select></label>
           <label>Minimum first-target distance (%)<input type="number" min={0} max={10} step="any" value={config.minTargetDistancePct ?? .5} onChange={e => setConfig({...config, minTargetDistancePct:Number(e.target.value)})}/></label>
           <label>Minimum first-target reward/risk at entry<input type="number" min={0} max={10} step="any" value={config.minEntryTargetR ?? .25} onChange={e => setConfig({...config, minEntryTargetR:Number(e.target.value)})}/></label>
@@ -130,7 +131,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
           <label>Minimum close location (0–1)<input type="number" min={0} max={1} step="any" value={config.entry.min_close_location} onChange={e => setConfig({...config, entry:{...config.entry, min_close_location:Number(e.target.value)}})}/></label>
         </div>
         <p>Reviewed ETFs must be classified as ETFs by the provider. They use the same price, liquidity, trend and setup checks; stock market capitalization and stock-industry membership do not apply. Add only funds whose structure you have reviewed; leveraged or inverse funds need a separate method review.</p>
-        <p>New preparation requires volume baselines for every confirmation period. Pending plans also need complete opening history, current data, and an unreached first target before automatic arming.</p>
+        <p>Each usable confirmation period still requires five complete historical samples. Unsupported periods cannot trigger an entry. Strict baseline mode requires every period; covered-period mode needs at least one usable period before the closing bell. Pending plans also need complete opening history, current data, and an unreached first target before automatic arming.</p>
         <label>Comparison watchlist (optional)<input defaultValue={(config.comparisonSymbols || []).join(", ")} onBlur={e => setConfig({...config, comparisonSymbols:e.target.value.toUpperCase().split(/[ ,]+/).filter(Boolean)})}/></label>
         <label>Dated watchlist source or rationale<input maxLength={2000} value={config.comparisonSource || ""} onChange={e => setConfig({...config, comparisonSource:e.target.value})}/></label>
         <p>This comparison explains inclusion and exclusion; it does not bypass entry checks or copy another trader’s orders.</p>
@@ -185,6 +186,10 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
             <td><SymIcon sym={r.symbol} size={18}/> <b>{r.symbol}</b></td><td>{label(r.setup || "existing plan")}</td>
             <td className="num">{r.trigger?.toFixed(2) || "—"}</td><td className="num">{r.invalidation?.toFixed(2) || "—"}</td>
             <td className="cartel-wrap"><span className={`status-pill ${r.status === "armed" ? "ok" : r.status === "awaiting_contract" ? "wait" : "dim"}`}>{label(r.status)}</span>
+              {r.volumeCoverage && <details><summary>Volume coverage: {r.volumeCoverage.available}/{r.volumeCoverage.expected} periods{r.volumeCoverage.limited ? " — limited entry windows" : ""}</summary>
+                <p>{r.volumeCoverage.historicalSessions} historical sessions · minimum {r.volumeCoverage.minSamples} complete samples per period. Missing minutes are not filled with zeros.</p>
+                <p>Supported confirmation windows (ET): {r.volumeCoverage.entryWindows?.map((w:any)=>`${w.startET}–${w.confirmationET}`).join(", ") || "none"}. The trigger, live data and all execution checks must still pass.</p>
+              </details>}
               {r.ranking && <p className="small">Target room {r.ranking.firstTargetPct.toFixed(2)}% · structural target {r.ranking.structuralTargetR.toFixed(2)}R · relative strength {r.ranking.directionalRelativeStrength.toFixed(2)} percentage points. Ranking: {result.shortlistRanking || "volume"}.</p>}
               {r.reason && <p className="small">{r.reason}</p>}
               {r.status === "awaiting_contract" && <p className="small">{r.selection?.pendingReason || "Waiting for a contract within the selection limits."}</p>}

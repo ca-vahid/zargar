@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from ... import events as ev
 from ...marketstructure.aggregate import bar_session
+from ...marketstructure.sessions import session_bounds, session_date
 from ...models import TechniqueRun
 from ...orders import OrderIntent
 from .data import DailyBar
@@ -79,6 +80,13 @@ class CartelEntryController:
             raise ValueError("entry requires an open regular exchange session within the plan horizon")
         if signal.get("id") != f"{plan.id}:entry:{signal.get('at')}" or not 0 <= now-signal.get("at", -1) <= 120_000:
             raise ValueError("entry signal is missing, stale, future-dated or mismatched")
+        if plan.entry.baseline_policy == 'covered_periods':
+            opens, closes = session_bounds(session_date(signal['at']-1))
+            step = plan.entry.timeframe_minutes*60000
+            start = signal['at']-step
+            slot = (start-opens)//step
+            if start < opens or (start-opens) % step or signal['at'] >= closes or plan.volume_baseline.get(slot, 0) <= 0:
+                raise ValueError('Signal is outside the saved supported volume-baseline periods')
         if signal.get("direction") != plan.direction or signal.get("targets") != list(plan.targets):
             raise ValueError("signal direction/targets differ from the reviewed plan")
         quote = self.engine.quotes.get(plan.symbol)

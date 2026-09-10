@@ -53,6 +53,7 @@ def build_volume_baseline(minutes: list[Bar], symbol: str, timeframe_minutes: in
             "sessions": sessions, "minSamples": min_samples, "aggregation": "median",
             "baselines": usable, "sampleCounts": {k: len(v) for k, v in samples.items()},
             "sourceSessions": [d.isoformat() for d in sorted(days)[-sessions:]],
+            "minuteCoverage": {d.isoformat(): {"present": len(days[d]), "expected": (session_bounds(d.isoformat())[1]-session_bounds(d.isoformat())[0])//MINUTE} for d in sorted(days)[-sessions:]},
             "definition": "Engineering: median of complete same-time buckets; excludes unfinished sessions."}
 
 

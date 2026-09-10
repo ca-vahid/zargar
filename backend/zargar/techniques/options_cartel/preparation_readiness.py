@@ -9,19 +9,29 @@ def baseline_coverage(plan):
     opens, closes = session_bounds(plan.first_session.isoformat())
     expected = (closes-opens)//(plan.entry.timeframe_minutes*60_000)
     missing = [i for i in range(expected) if plan.volume_baseline.get(i, 0) <= 0]
+    usable = [i for i in range(max(0, expected-1)) if i not in missing]
+    def clock_label(slot, offset=0):
+        minutes = 9*60+30+(slot+offset)*plan.entry.timeframe_minutes
+        return f'{minutes//60:02d}:{minutes%60:02d}'
     return {"expected": expected, "available": expected-len(missing), "missing": missing,
-            "ready": not missing}
+            "policy": plan.entry.baseline_policy, "limited": bool(missing), "usableEntryPeriods": usable,
+            "entryWindows": [{'slot': i, 'startET': clock_label(i), 'confirmationET': clock_label(i, 1)} for i in usable],
+            "ready": not missing if plan.entry.baseline_policy == 'full_session' else bool(usable)}
+
 
 
 def entry_readiness(plan, minutes: list[Bar], now: int):
     coverage = baseline_coverage(plan)
     reasons = []
     if not coverage['ready']:
-        reasons.append(f"Volume baseline covers {coverage['available']}/{coverage['expected']} confirmation periods; rebuild with complete history.")
+        reasons.append(f"Volume baseline covers {coverage['available']}/{coverage['expected']} periods; no usable entry window under {coverage['policy']} policy. Rebuild the plan.")
     if now >= session_bounds(plan.last_session.isoformat())[1]:
         reasons.append('Entry window expired; prepare a new plan.')
     opens, closes = session_bounds(session_date(now))
     if opens <= now < closes and plan.first_session.isoformat() <= session_date(now) <= plan.last_session.isoformat():
+        if (plan.entry.baseline_policy == 'covered_periods' and session_date(now) == plan.last_session.isoformat()
+                and not any(opens+i*plan.entry.timeframe_minutes*60000 >= now for i in coverage['usableEntryPeriods'])):
+            reasons.append('No supported confirmation period remains for a newly armed plan today.')
         tape = {b.ts: b for b in minutes if b.symbol == plan.symbol and b.tf == '1m' and opens <= b.ts and b.ts+60_000 <= now}
         end = now//60_000*60_000
         missing = sum(t not in tape for t in range(opens, end, 60_000))

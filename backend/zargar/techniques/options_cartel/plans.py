@@ -23,6 +23,7 @@ class EntryPolicy(BaseModel):
     volume_multiple: float = Field(default=1.5, gt=0)
     min_close_location: float = Field(default=0.7, ge=0, le=1)
     retest_tolerance_pct: float = Field(default=0.25, ge=0, le=5)
+    baseline_policy: Literal['full_session', 'covered_periods'] = 'full_session'
     min_target_r: float = Field(default=0, ge=0, le=10)  # legacy snapshots retain their old behavior
     max_chase_r: float = Field(default=0.5, ge=0, le=10)
 

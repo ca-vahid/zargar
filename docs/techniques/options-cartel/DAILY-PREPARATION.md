@@ -266,3 +266,34 @@ Operating rule: finish routine deployment before the open or after close. Recove
 can repair data context but cannot restore observation time lost to server restarts.
 Prepare a fresh session after deploying; old scans cannot resume under changed
 ranking/target criteria. Do not manually promote yesterday's research records.
+
+## Supported volume periods (0.7.36)
+
+Diagnosis of the September 10 preparation: all nine baseline-blocked names had
+12 historical sessions. Scattered missing minute timestamps caused incomplete
+15-minute samples; fewer than five complete samples remained for many periods.
+The stored inputs do not identify every absent minute as an outage or zero volume.
+Providers may legitimately omit minute bars without eligible trades:
+https://alpaca.markets/learn/stock-minute-bars
+
+New Practice preparation defaults to `covered_periods` baseline readiness. A plan
+may arm if at least one usable confirmation period exists before the closing period.
+Each supported period still requires five fully observed historical samples and a
+positive median volume. Missing periods never receive imputed zeros or averages from
+another period. The shared entry kernel and submission controller refuse unsupported
+periods. Current complete candles, session-low/high evidence, target room, quotes and
+all risk checks remain required. A crossing in an unsupported period is not replayed
+later as a fresh crossing.
+
+The previous `full_session` rule remains selectable. Existing plans retain that
+legacy default; new Live settings also default to it. Details list supported
+confirmation windows in ET. The first session determines displayed windows; the
+entry kernel always uses the actual session close. Pending plans without a remaining
+supported start in their final session stay unarmed. A closing-only baseline is
+insufficient because the closing bell cannot initiate a new entry.
+
+This corrects the earlier all-or-nothing 26/26 preparation rule without reducing
+confirmation-volume requirements. Existing arms are not mutated. Fresh preparation
+is required to adopt the new policy; old scans cannot resume across the interpretation
+change. Limited entry windows do not guarantee a trade, particularly when current
+session history is incomplete.
