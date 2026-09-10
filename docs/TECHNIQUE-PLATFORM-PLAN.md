@@ -120,7 +120,7 @@ class PlanRunner(SessionListener):
     def reviewer_available(self) -> bool
     async def review_fire(self, ap, tid, tr, trade, j) -> (verdict, confidence, critic)
                                                           # EM: prompt assembly + verdict; the RUNNER
-                                                          # owns timeout, fail-open budget, veto
+                                                          # owns timeout, fail-open budget, veto (execution.critic_mode: veto | momentum_only | advisory, 2026-09-09)
                                                           # cooldown, kill cap, re-arming
     async def record_fire(...); async def emit_proposal(...); async def after_fire(...)
     async def pick_contract(self, ap, trade) -> dict | None   # expression (T5 pick for EM)

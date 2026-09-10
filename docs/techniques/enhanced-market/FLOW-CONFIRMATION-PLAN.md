@@ -139,8 +139,10 @@ log mode at no cost, revisited after 10 sessions. Phases 2-4 below are re-scoped
 
 ## 5. What this does NOT change
 
-- R2, the critic, the gap rules and the windows stay. The critic's tally is +9.0R in its favour
-  and the day-9 replay had 100% coverage; the missing piece is timing, not filtering.
+- R2, the gap rules and the windows stay. *(The critic line written here on 09-08 - "+9.0R in its
+  favour" - did not survive day 10: the tally fell to +0.5R over 25 kills and the veto was demoted
+  to advisory on at-level triggers on 2026-09-09, TRADING-RULES §5. The flow theory itself was
+  rejected the same night, see the status banner above.)*
 - The nightly LLM plan review stays while it is measured (2026-09-08: accepted plans +0.52R per
   valid fire, rejected -0.65R, ten fires over three sessions - promising, not proven; decision
   at ten sessions, TRADING-RULES 2).

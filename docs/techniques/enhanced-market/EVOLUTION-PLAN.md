@@ -210,9 +210,13 @@ Everything below is deterministic and free (no LLM calls). First run:
 | 5 | Capture-rate weekly report | 1 | ~1 day |
 | 6 | Swing lane | platform §2.4 + chaos suite | later |
 
-First concrete step: **Phase-1 variant harness with the T-6 continuation
-sweep as the pilot** — it exercises rules-as-data, the compare report, and
-directly answers week 1's "are we too strict" with numbers.
+Where this stands (2026-09-09): phases 1-2 are built and in daily use; the variant harness has
+run T-11 (window extremes), T-12 (flow confirmation, two forms) and T-13 (gap-through
+continuation, two forms) - all NOT adopted on their sweeps, all logged below and in
+TRADING-RULES §3. The fire-time critic was demoted to advisory on at-level triggers (§5) so
+Practice fills can finally accumulate; the next evolution question is the mirror one (advisory
+"no" fills vs "yes" fills) and the LLM plan-review decision at ten sessions. Phases 3-5 wait
+for a variant that survives its sweep.
 
 ## Experiment log
 
@@ -220,7 +224,7 @@ directly answers week 1's "are we too strict" with numbers.
   baseline sweep `evo-T11-baseline` 2026-08-24..09-03 (1,053 sessions, 26 fires, +0.79R);
   first variant run was invalid (the 2-touch floor still dropped single-touch extremes);
   v2 re-run after the fix: 26 fires / -0.12R vs baseline +0.79R -> NOT adopted (TRADING-RULES §3 T-11).
-  Next variants: `lookback_sessions=5`; gap-through continuation.
+  Next variants: `lookback_sessions=5` (still open); gap-through continuation (done 09-09 as T-13, not adopted).
 - 2026-09-08 · **T-12 flow-confirmed entries** queued (author's X feed: sweeps on the ask time his
   entries; `notes/2026-09-08-author-x-feed.md`). Engine piece first: intraday option-print sweep
   detector (Alpaca options trades) feeding a `flow_sweeps` table; then a variant sweep on the days we

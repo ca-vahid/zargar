@@ -72,7 +72,11 @@ a number** (p. 72).
   different things. Scorecards for 08-26 are the first real test of which read is right
   (feeds 1.2 as well).
 
-### 1.4 Fire-time critic — net saver or net cost? ⚠ watching closely
+### 1.4 Fire-time critic — net saver or net cost? → DEMOTED to advisory on at-level triggers (2026-09-09, §5)
+**Status:** the decision threshold below was applied on day 10: 25 scored kills, net +0.5R, five of the nine
+wrong ones the same at-level-reject shape (1.4b). `critic_mode=momentum_only`: bounces/rejects proceed with
+the verdict recorded (`criticAdvisory`), breakouts/breakdowns are still vetoed. The question is now the
+mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally at 10 sessions of fills.
 - 2 kills on day one, **both wrong** (ZS: data artifact + missing plan provenance;
   SNOW: "fabricated targets" prompt gap). Both causes fixed (plan provenance + data-quality
   + ladder clauses in the prompt; veto now re-arms the trigger, cap 3/day).
@@ -717,7 +721,8 @@ tempo is not where our edge is hiding either.
    vs captured R (realized), with the friction reason for every gap. This is THE metric;
    the daily scorecards already contain the raw material.
 2. **Gap rule decision** (1.1) once ≥20 voided samples exist.
-3. **Critic scorecard** (1.4) — auto-tally kill counterfactuals.
+3. **Critic scorecard** (1.4) — auto-tally kill counterfactuals AND, since 2026-09-09, advisory-"no"
+   fills vs "yes" fills (the `criticAdvisory` flag on the trade is the join key).
 4. **Grade/analyst calibration** (1.2/1.3) at the 100-fire mark.
 5. **IBKR activation** — execution + second data source; retire the sim-only options fills
    with real paper fills.
