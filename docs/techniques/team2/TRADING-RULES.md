@@ -2178,6 +2178,34 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   already argues `strike_step` should not become a free-form knob. Do **not** globally set
   `strike_step=0.5`: on SPY/QQQ it would invent strikes that are not listed.
 
+- **F105 (2026-09-10, run 61) - THREE premium series price the same contract, and at the close they
+  disagree by exactly enough to flip an in-band/out-of-band decision.**
+  This does not add a new mechanism; it puts a decisive number on the open F30-family question
+  (*which premium series is authoritative*) that F59, F101 and F104 all defer to. Three series are
+  live in the money path at once:
+  **(1) the Black-Scholes model at the session sigma**, which is what actually gates an entry -
+  F104 showed the live runner refuses on it and never reaches the chain;
+  **(2) the CBOE delayed chain**, which is what `GET /api/options/{sym}/chain` and the UI serve
+  (`provider: cboe`, `delayed: true`);
+  **(3) the live OPRA NBBO** from Alpaca, which is what would actually fill
+  (`GET /api/options/quote/{occ}`: `source: opra`, `provider: alpaca`, `delayed: false`).
+  **Measured at 15:35 ET on `IWM260910P00287500`, the only near-money strike IWM had all afternoon:
+  CBOE quoted ask $0.19 - one cent BELOW the $0.20 `premium_floor`, so out of band - while OPRA at
+  the same minute quoted bid 0.19 / ask 0.20, exactly AT the floor, so in band.** Same contract,
+  same minute, opposite verdicts. The two sources also disagreed on spot (chain 287.34 vs live
+  287.57) and, an hour earlier, on SPY's 756P (CBOE $0.24 vs OPRA 0.19/0.20).
+  **No money was at stake in this particular instance** - 15:35 is past the 15:30 `last_entry_min`
+  gate, so no entry could have been taken either way. The point is the size of the disagreement
+  relative to the decision: the band's floor is $0.20 and the sources differ by $0.01, so at the
+  edge of the band the pick/refuse verdict is **source-dependent, not market-dependent**. Any fix to
+  F104 that routes the decision to "the chain" must therefore also say WHICH chain: taking F104's
+  proposal (a) or (b) against the CBOE snapshot would have refused this strike, and against OPRA
+  would have taken it.
+  **Not fixed - it is a money-path decision reserved to the user.** Recommendation, for when F104 is
+  decided: the series that decides an entry should be the series that fills it (OPRA), with the
+  model kept for the read/replay/sweep so history stays reproducible, and the refusal line naming
+  which series spoke. Related: F30, F36, F59, F101, F102, F104.
+
 ## Theories to test
 
 - T1 The 15m-close confirmation is the load-bearing rule (added by the author only in 2026 after

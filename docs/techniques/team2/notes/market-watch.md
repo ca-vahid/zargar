@@ -4243,3 +4243,91 @@ unreported for a session.
   by F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision (now sized by
   F104)**, **F102's band question**, **F103's UI-check decision**, **F104's ladder/chain decision**,
   F67's two shared-side halves, and the F30-family question of which premium series is authoritative.
+
+## 2026-09-10 15:35 ET (run 61 — healthy; the 15:30 gate closed the day cleanly on all three; F105)
+
+- **Alive on v0.7.36** (`/api/health`: ok, started, armed 59 desk-wide), `needsAttention: false`, no
+  `readError`, mode `auto`, all three `armed` for 2026-09-10, pre-open `complete: true`. The user has
+  **still not restarted**, so v0.7.37 (F88), .38 (F91), .39 (F100) and .40 (F101) remain **all four**
+  queued. Per the standing F89 instruction I did not restart and did not rebuild `dist`. **No code
+  shipped this run** — the one new finding is a money-path decision reserved to the user.
+- **The 15:30 last-entry gate worked, and this is the first run that has actually watched it cross.**
+  All three symbols emitted exactly one `skip_last_entry` at **15:32** — *"past 15:30 — no new
+  entries, managing what is open until the 15:45 flatten (D6/C3)"* — on the live audit
+  (`TechniquePlanTriggerSkipped`) **and** in the read, one event each, no duplicates. The plan
+  summaries now read *"past 15:30 — no new entries today, flat by 15:45 (D6/C3)"* and
+  `sessionWindowNow` is `prime_close`. D6/C3 and F26/F66 verified end to end.
+- **Data real-time and clean.** Bars: **364/364 RTH 1m bars 09:30→15:33 on all three, every one
+  `source='exchange'`, zero gaps, zero zero-volume minutes** (min vol SPY 12,098 / QQQ 9,610 /
+  IWM 4,609), latest bar 106 s old. Underlying quotes `quoteAge 0 s`, session `regular`. Plan
+  `barAge` 82 s. **Option quotes are OPRA**: `SPY260910P00756000`, `QQQ260910P00708000`,
+  `IWM260910P00287500` all `source: "opra"`, `provider: "alpaca"`, `delayed: false`, session
+  `regular`, `sourceTs` = the same second.
+- **Day closed with no Team2 trade beyond SPY's one loser.** Book **0 trades, 0 open, $0.00** on all
+  three; SPY's 10:06 read fire (756P, −12.21% at the 10:14 candle stop) is still the day's only one.
+  Bear stack on all three at the last regime read — SPY 757.62/757.81/758.76 (close 757.69, strength
+  2), QQQ 709.08/709.38/710.33 (709.07, strength 3), IWM 287.41/287.51/288.27 (287.56, strength 1).
+  QQQ never got its close below 706.50 and its allowance ends the day untouched (touches 0).
+- **F104 final day count: 14.** IWM's live audit carries **14** `skip_no_contract` rows — 13:40,
+  13:42, 13:44, 13:48, 13:52, 13:54, 13:56, 13:58, 14:02, 14:22, 14:34, 14:48, 15:02, 15:04 ET — and
+  the read agrees on all fourteen timestamps exactly. That is the number that sizes F104: **ten of
+  them were the L2.6/L2.7 pre-market retest refused by a synthetic $1 ladder that cannot see the
+  listed 287.5 strike**, four are genuine F102 emptiness. IWM traded zero times today.
+- **F102 closing series: SPY 1 / QQQ 3 / IWM 0 in-band OTM puts at 15:35**, against 2/3/0 at both
+  14:36 and 15:05. So SPY only began emptying in the last half hour, QQQ held three all afternoon,
+  and IWM held zero for over two hours — the per-symbol disagreement is stable across the whole
+  session, not a momentary artefact. Nearest OTM at 15:35: SPY 757 @ $0.46 then 756 @ $0.12; QQQ
+  709 @ $0.81, 708 @ $0.21, 707 @ $0.20; IWM 287.5 @ $0.19 then 287 @ $0.06.
+- **F105 — NEW.** Three premium series price the same contract and at the close they disagree by
+  exactly enough to flip a band verdict. On `IWM260910P00287500` at 15:35: **CBOE (delayed, what the
+  chain endpoint and UI serve) ask $0.19 — one cent under the $0.20 floor, out of band; OPRA (live,
+  what would fill) bid 0.19 / ask 0.20 — at the floor, in band.** Same contract, same minute,
+  opposite verdicts; the sources also disagreed on spot (287.34 vs 287.57) and on SPY's 756P an hour
+  earlier ($0.24 vs 0.19/0.20). The third series, the **model**, is the one that actually gates the
+  entry (F104). No money rode on this instance — 15:35 is past the entry cutoff — but it means any
+  F104 fix that routes the decision to "the chain" must first say **which** chain: proposal (a)/(b)
+  against the CBOE snapshot refuses this strike, against OPRA takes it. Not fixed: money path, the
+  user's call. Recommendation recorded in TRADING-RULES F105 — the series that decides an entry
+  should be the series that fills it (OPRA), the model kept for read/replay/sweep reproducibility,
+  and the refusal line naming which series spoke.
+- **Replay parity: no money row disagrees anywhere.** SPY **36/36 events identical** and the same
+  trade (756P, entry 10:06, −12.21%); IWM **43/43 identical**, zero trades. QQQ shows **F99 again**
+  (live 12:38/14:50/15:26 vs replay 12:40/14:48 `same_pullback`) — the episode-scoped `note_once`
+  warm-up-depth class, this time with one row dropped rather than shifted. No `fire`, `trim`,
+  `exit`, `contract` or `add` row differs on any symbol. Replay `bars2m` 182 vs live 181 is the
+  newer tape.
+- **F85 standing check: zero Team2 error rows.** Journal last 40 min: 50 `TechniqueOutcomeScored`,
+  11 `TipMessageRevised`, 8 `ContentReceived`, 7 each `TipNoteAdded`/`SignalExtracted`,
+  6 `TechniquePlanTriggerSkipped`, 5 `TechniquePlanRead`, plus tip-side order/proposal rows. Every
+  error-ish row in the last 9 h is **tip-side**: 37 `SignalVerificationFailed`, 11
+  `ProposalRejected`, 9 `TechniquePlanError` (AMZN, AAOI ×2, GOOGL, FRVO, BBAI, RDDT ×2 — all tip
+  tickers, none SPY/QQQ/IWM), 2 `OrderRejected` + 2 `RiskCheckFailed` (wide spread 22.2%, quote age
+  10.5 s — also tip-side). **No halt rows.** Engine log: **no new Team2 ERRORs** — today's remain the
+  two 09:37/09:42 ET `cartel-observer bar handling failed` tracebacks (unchanged since run 50) and
+  four benign asyncio `_ProactorBasePipeTransport._call_connection_lost` callbacks, the last at
+  13:48 ET; every warning since is the benign `persist_bars: dropped N non-bucket-aligned stub
+  bar(s)` family. **F91 unchanged**; **F81b live tally: 1 read fire, 0 live entries, book $0.00**;
+  **F88 unchanged** — IWM's two triggers still carry empty `targets` while SPY has `[757.9]` and QQQ
+  `[706.5]`. **UI not checked — per F103 it cannot be**, and that recipe item stays retired until
+  the user decides.
+- **Next run (≈16:05 ET, post-close) should:** (1) `/api/health` — if **0.7.40** (or .37/.38/.39)
+  the user restarted, so confirm a `target_replanned` fire reaches the book, that IWM's two empty
+  targets re-derived, and that a `skip_no_contract` now names its tested strike (which would make
+  F104 self-evident from the message alone); if still **0.7.36**, do not restart and repeat the F89
+  ask; (2) **the 15:45 flatten falls in that run** — the book is empty on all three, so expect the
+  flatten path to log cleanly with nothing to close; escalate any flatten error on an empty book;
+  (3) confirm the three plans disarm at 16:00 and check the **execution scorecard / History tab**
+  writes the day (F67/F68) — SPY 1 model trade vs 0 book fills is exactly the unmatched-row case
+  that half exists to name; (4) the nightly `team2 nightly plans` job at 17:00 ET should mint three
+  plans for the next session (last night: `runs 3, failed 0, armed 3, skipped 0`); (5) IWM's day
+  total of **14** `skip_no_contract` and F102's **1/3/0** close are the two numbers a post-close
+  review should carry; (6) the F85 journal query; (7) **do not attempt the `/team2` UI check**
+  (F103).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F89**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97
+  (qualified by F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision
+  (sized by F104)**, **F102's band question**, **F103's UI-check decision**, **F104's ladder/chain
+  decision**, **F105's "which series is authoritative" decision (F104 cannot be decided without
+  it)**, F67's two shared-side halves, and the F30-family question this now sharpens.
