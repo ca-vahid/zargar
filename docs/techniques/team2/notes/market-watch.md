@@ -4844,3 +4844,82 @@ setup, that is a gap to report, not a refusal.
   is authoritative" decision**, **F112's window/rule decision - now sharpened by F113: the window
   knob is not the answer, B5's conjunction is the live candidate**, F67's two shared-side halves, and
   the F30-family question F105 sharpens.
+
+## 2026-09-11 11:05 ET (run 68 — IWM flips to puts and is refused on the new side too; F114)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed 61 desk-wide. Three Team2 plans armed for
+  **2026-09-11**, mode `auto`, book **Team2 Practice** (sim): SPY `87634a53`, QQQ `36a3cab1`,
+  IWM `72949add`. `needsAttention false`, `attentionReasons []`, `trailGaps []`, no `readError`.
+  **0 fires, 0 trades, 0 open, P&L $0.00** at 11:05 — hour three, still nothing at the contract picker.
+- **What the read saw since run 67 (10:36).** SPY: nothing new (4 events, unchanged). QQQ: nothing new
+  beyond the 10:34 `same_pullback` run 67 had already caught. **IWM is the whole story:** the 10:45
+  15m close **flipped the bias to scenario 2 (reject PDH) → puts** — verified against the tape, the
+  10:30–10:45 15m bar ran 289.40 → **289.05**, a body close below the PDH zone low **289.28** by 0.23
+  = **0.87 ATR** (a decisive flip, not one of F27's sub-0.1-ATR noise flips). `scenario_1@09:30` was
+  correctly killed (`deadReason: bias flipped to reject PDH (D10)`), `rangeDay` turned **true**, and a
+  fresh `scenario_2@10:30` (anchor 289.28, target 287.345) was minted. Its **first pullback on the new
+  side** — an EMA48 touch at **10:52, entry 289.72** (tape: the 10:48–10:50 2m bars rallied to 289.76
+  against an EMA48 ≈ 289.7, EMA13 289.31) — was refused **`skip_no_trade_zone`** just like the long had
+  been at 09:52. `touches` still **0** everywhere; `pullbacks` 6 / 4 / 1+1.
+- **F114 — NEW, MEASURED, NOT FIXED.** The zone is **direction-blind**, so a bias flip is not an escape
+  hatch and F112 option (a) is finished as a candidate. Re-running IWM's *short* refusal (289.72)
+  against every PM window: refused at 04:00, 07:00, 08:00 **and 08:30** — identical to the long's fate
+  in F113. Trimming the window only lifts the **floor**; a gap-up long is blocked by the **ceiling**,
+  and the reverse short, entered on a rally back into the EMA13/EMA48, sits in the **middle** — neither
+  edge moves toward it. Only a 09:00 start frees either (IWM PM range 290.49–291.30), and a 30-minute
+  "pre-market range" is noise. On F112's option **(b)** (B5's conjunction) *both* IWM entries would have
+  been released: at 09:52 price was above the PDH zone, at 10:52 below it — on the conjunction reading
+  neither was ever in a no-trade zone. Full table in TRADING-RULES **F114**. Still the user's call.
+- **Verified rather than trusted.** Re-aggregated today's 1m bars to 2m/15m and recomputed EMA13
+  independently: my EMA13 lands within ~0.02 of the engine's `regimeLast` on all three, the 15m bar that
+  flipped IWM is real, and the 10:52 EMA48 contact is real. **Replay parity exact on all three** —
+  SPY 4 = 4, QQQ 5 = 5, IWM 4 = 4, same kinds at the same minutes, and the replayed setup counters
+  (`touches` / `pullbacks` / `dead`) match the live read row for row, including IWM's dead scenario 1.
+- **Cohort v2 tally, session-to-date (09:30–11:05):** `warmup` 3/3 · `listing` 3/3 from the real chain ·
+  `model_out_of_band` 0 · **`contract_deferred` 0 + `skip_no_contract` 0** · fills 0, `priced` 0 ·
+  `target_replanned` 0 · `trail_gap` 0 · `scenario` **4** (IWM twice — the D10 flip) ·
+  `skip_no_trade_zone` **4** (IWM twice, one per setup — `note_once` is per setup, working as designed) ·
+  `same_pullback` 5. F104/F105's live picker path is armed but still unexercised today.
+- **Data is real-time.** Quotes sub-second (`ageS 0.2`), `session regular`, tight books (SPY
+  764.36/764.39, QQQ 714.84/714.86, IWM 289.19/289.20), session ranges sane (SPY 763.60–766.38,
+  QQQ 713.63–717.05, IWM 288.77–**291.44**). 1m bars banking with **`source exchange`**, 93 RTH rows
+  each, last bar 11:02 ET (94 s old); `barAgeSeconds` 114, `stale false`, `quoteAgeSeconds` 0 on all
+  three plans. Spot-checked the real-time 0DTE quotes the picker would use **on the new put side** —
+  IWM 289P 0.46/0.47 (IV 0.215, delta −0.41), IWM 288P 0.19/0.20, SPY 765C 0.80/0.81, QQQ 716C
+  0.84/0.85 — all `available true`, `asOf` = now, near the $0.60 premium target. Not delayed rows.
+- **Only IWM has left its PM range all session** (291.44 vs PM high 291.30, early, before the flip);
+  SPY's 766.38 and QQQ's 717.05 are still short of 766.53 / 717.69.
+- **The 09:25 pre-open + 09:30 finalize held** (`complete true`, `pmh`/`pml`/`dayType gap_up`/
+  `sizingAtOpen none` on all three, `replan false`). The audit still shows **no `targets_rederived`**
+  row — F110 exactly, fixed in v0.7.49, deploy still queued. IWM's flip did journal correctly: a second
+  `TechniquePlanRead` and a second `TechniquePlanTriggerSkipped` landed in its audit.
+- **F85 standing check: clean for Team2.** No Team2 ERROR and no Team2 traceback in
+  `backend/zargar-8420.log`; **zero** Team2 rows among the 34 error/failure journal entries in 6 h (all
+  EM/tip-side: 16 `SignalVerificationFailed`, 12 `TechniquePlanError` — gap-roll warnings, tip follow-ups,
+  two critic timeouts, an MU share-short never-list refusal — 5 `RiskCheckFailed`, 1 `TechniqueRunFailed`
+  on a Yahoo 404). **Not ours and now clearly escalating:** `cartel-observer bar handling failed`
+  (`options_cartel/entry.py`, "entry read requires symbol-matched, minute-aligned 1m bars") fired
+  **12 times in the 10:00–11:00 ET hour**, up from 7 in run 67 and 2 in run 66. Team2's own bar loop is
+  unaffected (`SessionListener._bar_loop` catches per listener) and it is another desk's technique, so
+  untouched — but the rate has ~6×'d in two hours and the owner should see it.
+- **F107 standing check: count still 18** (`technique_runs where technique='team2'`).
+- **No code shipped this run** (TRADING-RULES F114 is the only edit). **No restart** — v0.7.49 stays
+  queued for after 16:00 ET.
+- **Next run (≈11:30 ET) should:** (1) watch whether SPY (766.53) or QQQ (717.69) finally leaves its PM
+  range, and whether IWM's new scenario 2 gets a second pullback — record the first `bucket full` fire
+  with its `contract` pick if one comes; (2) continue the cohort-v2 tally, especially the first
+  `contract_deferred` / `skip_no_contract` / `priced` series; (3) watch for `target_replanned` (F81b
+  structure fallback is live on this gap day) rather than `skip_target_behind`; (4) re-run the F85
+  journal query **and re-count the cartel-observer tracebacks** — if the rate keeps climbing, say so
+  plainly again; (5) **do not attempt the `/team2` UI check** (F103); (6) after 16:00 ET deploy
+  **v0.7.49** via `ZargarRestart`; (7) at ~17:05 re-check F107 stays at **18** and the nightly mints
+  three plans for Monday 2026-09-14.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by F98)**,
+  **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's band question**,
+  **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's "which series is
+  authoritative" decision**, and **F112's zone decision — now with both F113 and F114 saying the window
+  knob (option a) cannot work and B5's conjunction (option b) is the only live candidate**, F67's two
+  shared-side halves, and the F30-family question F105 sharpens.

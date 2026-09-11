@@ -2343,6 +2343,37 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F114 (2026-09-11, run 68 — MEASURED, NOT FIXED; the no-trade zone is direction-blind, so a D10
+  bias flip is not an escape hatch either. Closes the last hope for F112 option (a) — USER'S CALL).**
+  At the 10:45 15m close IWM flipped scenario 1 → **scenario 2 (reject PDH) → puts** (close 289.05 vs
+  the zone low 289.28, a **0.23 = 0.87 ATR** margin — a decisive flip, not one of F27's noise flips),
+  `scenario_1@09:30` was correctly marked dead (`bias flipped to reject PDH (D10)`), `range_day`
+  turned true and a fresh `scenario_2@10:30` was minted. The very first pullback on the **new, opposite
+  side** — an EMA48 touch at 10:52, `entry 289.72` — was refused `skip_no_trade_zone` exactly like the
+  long had been at 09:52. Re-running that short refusal against every candidate PM window:
+
+  | PM window | IWM PM range | long refusal (289.83) | short refusal (289.72) |
+  |---|---|---|---|
+  | **04:00–09:30 (code)** | 287.68–291.30 | refused | refused |
+  | 07:00–09:30 | 288.32–291.30 | refused | refused |
+  | 08:00–09:30 | 288.32–291.30 | refused | refused |
+  | 08:30–09:30 | 288.32–291.30 | refused | refused |
+  | 09:00–09:30 | 290.49–291.30 | freed | freed |
+
+  **The mechanism, and why it matters more than F113's:** trimming the window only ever lifts the
+  **floor** of the zone. A gap-up long is blocked by the **ceiling** (F113), and the reverse short,
+  entered on a rally back into the EMA13/EMA48, sits in the **middle** — neither edge moves toward it.
+  So `techniques.team2.pm_window_start` (F112 option (a)) is not merely weak on gap days, it is
+  **blind to direction**: it cannot free a setup that enters anywhere but the extreme low of the
+  pre-market range, which is the one place this method never enters. Both of today's IWM refusals,
+  on opposite sides of the same tape four hours apart, survive every window down to 08:30.
+  This leaves F112 option **(b)** (B5's conjunction — risk-off only inside **both** the PM range and
+  the PDH–PDL range) as the only reading that acts, and it would have released both IWM entries: at
+  09:52 price was above the PDH zone (scenario 1 confirmed), at 10:52 it was below it (scenario 2
+  confirmed), so on the conjunction reading neither sat in a no-trade zone at all. Measured from
+  `bars` + the live read; no rule, knob, gate or money path touched, nothing deployed.
+  Related: **F112** (parent), **F113** (sibling), F27 (flip margins), F15, F18, F20.
+
 - **F113 (2026-09-11, run 67 — MEASURED, NOT FIXED; narrowing the pre-market window does NOT rescue
   a gap day. Sharpens F112 option (a) — USER'S CALL).** Run 66 measured the no-trade zone's coverage
   across 13 sessions and found the window length was the biggest lever (04:00 → 59 % of RTH minutes
