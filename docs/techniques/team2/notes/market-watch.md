@@ -5587,3 +5587,81 @@ setup, that is a gap to report, not a refusal.
   bars for streamed symbols**, and **F117's — should a dead option quote source raise itself, and
   should it announce its recovery**, F67's two shared-side halves, and the F30-family question F105
   sharpens.
+
+## 2026-09-11 15:10 ET (run 76 — quiet prime-close hour; containment holds 1002/1002, IWM's pullback counter is the only thing moving)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed 58 desk-wide. Three Team2 plans armed for
+  **2026-09-11**, mode `auto`, book **Team2 Practice** (sim): SPY `87634a53`, QQQ `36a3cab1`,
+  IWM `72949add`. `needsAttention false`, `attentionReasons []`, `trailGaps []`, no `readError`,
+  `sessionWindowNow prime_close` with `windowOpenNow true` on all three. **0 fires, 0 trades, 0 open,
+  P&L $0.00** — the contract picker has still not been reached once today, at the 5h40m mark.
+- **What the read saw since run 75 (14:35): two new refusals, both IWM.** SPY 9 events (unchanged,
+  last 13:38), QQQ 10 (unchanged, last 13:36), IWM **7** — `same_pullback` at **14:36** and
+  **14:50**. Counters: SPY `pullbacks` **18** / `opportunities` **0**, QQQ **11** / **0**, IWM 1
+  (dead, D10 bias flip) + **16** / **0** — IWM's scenario-2 counter has now moved **+11 in 75
+  minutes** as price rides the EMA13 down, and `touches` is still **0/0/0+0**. Session total:
+  **46 structural pullback episodes, 0 tradeable locations.**
+- **F112 run-76 evidence: containment unbroken with 50 minutes of the session left.** Re-measured on
+  the persisted tape (334 1m bars/symbol, 09:30–15:03): **1002 of 1002 RTH closes inside the
+  pre-market range**, RTH extremes unmoved since run 75 (SPY 763.60–766.38 vs PM 758.17–766.53;
+  QQQ 713.65–717.62 vs 706.58–717.69; IWM 288.77–291.44 vs 287.68–291.30). IWM stays the clean
+  single-cause case (stack `bear`/`strength 3`, aligned with its short bias — zone is the only
+  refusal); SPY and QQQ still refuse on E3/B9/E4 **and** the zone, both `mixed`/`strength 0` since
+  14:31 and not recovered. Both plan summaries state their own reason correctly.
+- **IWM's bias keeps fading from the flip.** 15m closes since run 75: 289.48 / 289.34 / 289.285
+  (in-progress 289.255) against the **289.83** body threshold — now **0.545 short (0.19%)**, versus
+  0.022% at its 13:15 closest. Bias stays **scenario 2 / puts** for an eighth consecutive run.
+  Margin recorded against F27.
+- **F117 stayed up — still one outage this session.** `grep -c "OPRA quotes"` **unchanged at 54**
+  (last warning 13:04:40 ET, four hours stale); all three 0DTE contracts read `provider alpaca`,
+  `delayed false`, `quote.source opra`, `sourceTs == ts`: SPY 765C **0.47/0.48**, QQQ 716C
+  **0.38/0.39**, IWM 289P **0.11/0.12**. Incident shape unchanged: **~49 min, 12:15:45–13:04:40 ET**.
+- **F119 (recorded, not re-investigated): the IWM offset reversed sign.** SPY matched **exactly** for
+  a third run (9/9 events, 18/18 pullbacks); QQQ 10/10 with both splits held (11:48-vs-11:50 seventh
+  run, 13:36-vs-13:34 third) at 11/11; IWM 7/7 events, 14:36-vs-14:34 split, `scenario_2` pullbacks
+  **16 live / 15 replay** — the **+1** replay offset of run 75 is now **−1**, which kills the
+  "replay systematically counts one extra" reading and leaves vendor bar-boundary noise. EMA-stack
+  `strength` agreed on all three for a second run; ATR lower in replay on all three for a seventh.
+  No new decision surface — still the user's (a)/(b)/(c) call.
+- **Data is real-time on both sides.** Underlying quotes sub-second (`quoteAgeSeconds` 0 on all
+  three, `session regular`) — SPY 765.10, QQQ 715.97, IWM 289.21; `barAgeSeconds` 117/117/117,
+  `stale false`; reads advance every 2m close (`regimeLast` ts 15:00). 1m bars banking:
+  **334/334 RTH rows `source exchange`** on all three symbols, last row **15:03 ET**.
+- **Cohort v2 tally, session-to-date (09:30–15:10):** `warmup` 3/3 and `listing` 3/3 unchanged from
+  the open (no restart since) · `model_out_of_band` 0 · **`contract_deferred` 0 + `skip_no_contract`
+  0** · fills 0, `priced` 0 · `target_replanned` 0 · `skip_target_behind` 0 · `trail_gap` 0 ·
+  `scenario` 4 · `skip_no_trade_zone` 4 · `same_pullback` **18** (SPY 7, QQQ 8, **IWM 3**).
+- **F85 standing check: clean for Team2.** Journal rows for today's three run ids:
+  `TechniquePlanRead` 10, `TechniquePlanTriggerSkipped` 4, `TechniquePlanPreopen` 3 — **no error,
+  failure or alert row**. Desk-wide error-ish in 3 h = 2 `SignalVerificationFailed` + 1
+  `TechniquePlanError`, all other desks. 116 Team2 log lines, none at error level, no Team2
+  traceback. **Cartel-observer:** `cartel-observer bar handling failed` now **38** (was 36), by ET
+  hour 09:2 · 10:12 · 11:4 · 12:7 · 13:8 · 14:3 — flat; still `options_cartel`, another desk's
+  technique, harmless to Team2's bar loop.
+- **F107 standing check: count still 18** (`technique_runs where technique='team2'`). Pre-open holds
+  on all three (`complete true`, `pmh`/`pml`, `dayType gap_up`, `sizingAtOpen none`). Audit mix
+  SPY/QQQ 12 rows each, IWM 14; still **no `targets_rederived` row** — F110 exactly, fixed on disk in
+  **v0.7.49**, runtime **0.7.48**, deploy still queued.
+- **No code shipped this run** (the F112/F119/F117 run-76 notes in TRADING-RULES are the only edits).
+  **No restart** — v0.7.49 stays queued for after 16:00 ET.
+- **Next run (~15:40 ET) should:** (1) note that **15:30 is `last_entry_min` and 15:45 the flatten**,
+  so the day's last chance for a `contract_deferred` / `skip_no_contract` closes inside that run;
+  (2) re-check F117 with one contract read plus the warning count (54 at 15:10); (3) for F119 record
+  only new decision surfaces; (4) track IWM's 15m body against **289.83** (now 0.545 short) and
+  whether SPY/QQQ regain their bull stack; (5) continue the cohort-v2 tally; (6) re-run the F85
+  journal query and re-count the cartel tracebacks; (7) **do not attempt the `/team2` UI check**
+  (F103); (8) **after 16:00 ET deploy v0.7.49** via `ZargarRestart`; (9) at ~17:05 re-check F107
+  stays at **18** and that the nightly mints three plans for Monday 2026-09-14; (10) at the close,
+  record the day's final three-counter tally and the full-session containment number — a whole RTH
+  inside the pre-market range is the F112 datapoint to put in front of the user.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by
+  F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's band
+  question**, **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's "which series
+  is authoritative" decision**, **F112's zone decision (1002/1002 containment: (b) the conjunction or
+  (c) accept no-trade gap days — (a) the window knob is dead)**, **F119's venue-precedence decision —
+  (a) rank the venues / (b) stamp and accept / (c) drop Yahoo's bars for streamed symbols**, and
+  **F117's — should a dead option quote source raise itself, and should it announce its recovery**,
+  F67's two shared-side halves, and the F30-family question F105 sharpens.
