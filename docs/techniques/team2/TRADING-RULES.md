@@ -2343,6 +2343,45 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F112 (2026-09-11, run 66 — MEASURED, NOT FIXED; the V6/B5 no-trade zone, fed by a 04:00 ET
+  pre-market window, blocks most of the trading day. Rule + shared-engine question — USER'S CALL).**
+  The code is a faithful reading of the book: V6/V7 draw `PMH→PML` as the **no-trade zone** and B5
+  says inside both ranges is risk-off, so `scenario.sizing_bucket()` returns `"none"` for any entry
+  with `pml <= price <= pmh` and `session.py` refuses it `skip_no_trade_zone`. What was never
+  measured is how much of the session that zone actually covers, because the PM range comes from the
+  shared `marketstructure.dailylevels.premarket_range()`, whose window is **04:00–09:30 ET** — it
+  includes the whole European overnight, not the pre-market chart the author draws at 08:45.
+  **Measured over the last 13 sessions × 3 symbols (39 symbol-days, 1m bars from our own `bars`
+  table, RTH 2m-equivalent closes):**
+
+  | PM window | RTH minutes inside the PM range | sessions ≥90 % blocked |
+  |---|---|---|
+  | **04:00–09:30 (today's code)** | **59 %** | **13 / 39** |
+  | 07:00–09:30 | 51 % | 9 / 39 |
+  | 08:00–09:30 | 44 % | 7 / 39 |
+  | 08:30–09:30 | 35 % | 2 / 39 |
+
+  Per symbol on the 04:00 window: SPY 55 %, **QQQ 74 %**, IWM 47 %. QQQ was **100 % blocked** on
+  2026-08-25, 08-31, 09-09 and 09-10 — four whole sessions in which no entry of any kind could ever
+  have been priced, whatever the tape did. **2026-09-11 is the same shape, live:** all three gapped
+  up ~1 %, all three set `scenario 1 (break PDH)` on the 09:45 15m close, and all three then refused
+  their first EMA13 pullback `skip_no_trade_zone` (SPY 09:56 @765.22, QQQ 09:46 @715.63, IWM 09:52
+  @289.83) because the RTH session is sitting inside PM ranges of 8.36 (SPY, **14.9 ATR**), 11.11
+  (QQQ, 13.6 ATR) and 3.62 (IWM, 9.7 ATR). Worse, on a gap day the PDH zone the scenario is *anchored
+  on* lies inside the PM range (SPY zone 758.85–760.11 vs PM 758.17–766.53), so the confirmation the
+  method just gave can never produce an entry near its own level.
+  **This is not a defect and nothing was changed.** The open question is which of three readings the
+  desk wants: (a) the window is wrong — the author's pre-market range is the 08:00/08:30 chart, and a
+  Team2-scoped `techniques.team2.pm_window_start` knob resolved in `plan.py` would keep the shared
+  primitive untouched (the smallest diff, and the only one this watch could build if asked); (b) the
+  **rule** is B5's conjunction, not V6's picture — risk-off only when price is inside **both** the
+  PM range and the PDH–PDL range, which on a gap day frees the side that has broken out; (c) it is
+  correct as written and Team2 is a technique that trades ~40 % of sessions by design, in which case
+  the empty days stop being a symptom. Deciding (a) or (b) is a rule change and (a) touches a shared
+  `marketstructure` primitive, so both are **out of this watch's remit** — written up for the user.
+  Evidence is reproducible from `bars` alone; no LLM, no orders, no settings touched. Related: F15
+  (the PM range is chop wherever it sits), F18, F20, F100.
+
 - **F111 (2026-09-11, run 65 — FIXED with F110, v0.7.49).** Every plan-level `TechniquePlanRead`
   row Team2 journals (`warmup`, `listing`, `listing_unavailable`, and now `open_finalized` /
   `targets_rederived`) logged `event contract: TechniquePlanRead v1: missing required field
