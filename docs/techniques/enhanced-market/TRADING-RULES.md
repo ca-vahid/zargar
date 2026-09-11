@@ -321,6 +321,25 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
   subscription returns historical option TRADES: the author's TSLA $360C (08-31) shows 10,000+
   prints and 37,874 contracts in the first 40 minutes. T-12 can be tested on history, not only
   live. Plan: `FLOW-CONFIRMATION-PLAN.md`.
+- **2026-09-10 · Day 11 (Thu, PPI gap-down; first session with the critic advisory): the first
+  EM fill in eleven sessions, and it lost -$66 on a stop that a +2.5R move had already paid for.**
+  42 plans from the evening batch + board auto-arms. 6 fires, the critic said no to all 6 (advisory
+  now), 5 of the 6 were then skipped by the T5.4 spread gate (11-64% NBBO spreads on $0.9-$2.5
+  contracts at the open: TQQQ 13.9%, IREN 11%, SHOP 35%, HPE 42%, KLAC 64%). HOOD r1 passed:
+  2 x HOOD 09/11 $114P at $1.73 (09:47, `criticAdvisory: true`), HOOD dropped 115.09 -> 113.64 by
+  09:51 (**+2.5R on the underlying in four minutes**, the put ~+40%), then rallied; the 10:01 bar
+  closed 116.18 through the 115.67 stop and the quote brake sold at $1.399: **-$66.20**. HOOD then
+  fell to +8R by the close. Under the stop-on-close rule every fire but IREN stopped first: TQQQ
+  (10:24, MFE 0.7R), SHOP (09:38), HOOD (10:01, MFE 2.8R), HPE (10:41), KLAC (11:33, MFE 2.0R);
+  IREN b1 - the one the spread gate blocked - hit TP1 at 09:33 (MFE 3.2R). So the critic's "no" was
+  right 5 of 6 on outcome, the spread gate saved four stops and cost the one winner (net ~+1R for
+  the gate, 1.6), and the lesson is not the filter, it is the EXIT: three of six fires reached
+  +2R and gave it all back to the stop because TP1 sat 3-7R away. Replay (sweep `<see api_sweep
+  09-10>`, plans at the 09-09 close): 2 valid fires, both review-rejected close breakdowns, -0.02R -
+  nothing missed on the deterministic book; gate audit 69 sub-R2 fires **+6.07R** (+0.09R/fire, the
+  second positive day in a row, 1.8 - R2 stays by user decision, noted). Platform: two restarts,
+  both overnight, none in the session. Books: EM $9,929.64. The author posted no trade today
+  (Alertsify marketing and a leaderboard only).
 - **2026-09-09 · Day 10 (Wed, gap-down open, SPX under 7700): zero fills, 18 fires, 17 critic
   kills, and the one survivor was skipped on the option spread.** 50 plans armed from the
   evening batch (run by the desk through the API after the run-cap incident, see PLATFORM-RULES
@@ -644,6 +663,19 @@ produced losing breakdown shorts). -0.035R/fire: **NOT adopted**, knob stays off
 actually needed: the morning board build's 3-session window (09-02..09-04) no longer contained the
 09-01 high; the evening build's window did, and the detector found 969.44 there only with the knob.
 Next test: `lookback_sessions=5` as its own variant, and the gap-through continuation (T-6/T-7).
+
+### T-14 · Scratch rule: stop to breakeven after +0.75R (exit tempo as management, not as a target)
+Day 11's HOOD (+2.5R MFE in four minutes, stopped -1R) and KLAC (+2R, stopped), day 10's LITE and
+WDC, are one shape: the book's ladder puts TP1 at the next zone (3-7R away on re-planned levels),
+so a fast +2R move has nowhere to bank and the full risk stays on until the stop. Measured on the
+12-session baseline (`evo-T13-baseline`, 36 valid fires, net -1.82R): 19 of 36 reached +0.5R, 12
+reached +1R, 8 reached +2R; of the 16 stops, 8 had first been +0.5R. A crude hybrid (half off at
++0.75R, stop to breakeven on the rest) turns -1.82R into **+5.3R**; the same at +1.0R gives -2.7R
+and at +1.5R -0.4R - the result is fragile (seven fires sit between +0.75R and +1R), which is
+exactly why it needs the real simulator, not this arithmetic. Test: `breakeven_after_r` and
+`first_trim_r` knobs in `simulate_plan` + the live exit policy, swept over 08-24..09-10 against
+baseline; adopt bar D7. This is T-6's exit-tempo question asked the right way: as management of
+the fire we already took, not as a replacement for the ladder.
 
 ### T-13 · Gap-through continuation (the author's SPY trade of 2026-09-09) - sweeping
 His one posted trade on day 10: SPY puts on "the breakdown of PLOD" - SPY closed 09-08 with a
