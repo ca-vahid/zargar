@@ -1285,3 +1285,13 @@ logged as `critic_advisory`, `Trade.critic_advisory=True`, the entry proceeds; b
 wedge_break are still vetoed), `advisory` (never blocks). The verdict is journaled on the
 TriggerFired event either way. EM sets `techniques.enhanced_market.critic_mode=momentum_only`
 (TRADING-RULES §5 2026-09-09); Tips/Team2/Cartel are untouched.
+
+
+### Cartel preparation and history provenance — 2026-09-10
+
+Shared history accepts an optional `refresh=True` to bypass its response cache;
+existing callers retain their current cache behavior. Cartel uses it only for
+one stale SPY/QQQ retry. Preparation preserves existing campaigns and counts
+armed, paused, closing and held campaigns before adding automatic arms. This
+changes no shared execution or risk thresholds. Regression coverage is in
+`test_options_cartel_preparation_safety.py`.

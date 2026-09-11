@@ -50,7 +50,8 @@ async def test_full_coverage_is_independent_of_optional_cap_and_shortlist(engine
     try:
         result = (await run_preparation(engine, policy, clock=lambda: at, **providers))['result']
         assert result['evaluated'] == result['processed'] == expected
-        assert len(result['shortlist']) == 1
+        assert len(result['shortlist']) == min(expected, 5)
+        assert result['candidatesChecked'] == min(expected, 5)
         assert result['coverageComplete'] is all_stocks
         assert result['notEvaluated'] == 201-expected
         assert result['phase'] == ('complete' if all_stocks else 'partial')

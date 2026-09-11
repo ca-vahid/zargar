@@ -195,8 +195,9 @@ async def fetch_window(
     *,
     client: httpx.AsyncClient | None = None,
     session: str = "rth",
+    refresh: bool = False,
 ) -> list[Bar]:
-    bars, _provider = await fetch_window_ex(symbol, tf, start_ms, end_ms, client=client, session=session)
+    bars, _provider = await fetch_window_ex(symbol, tf, start_ms, end_ms, client=client, session=session, refresh=refresh)
     return bars
 
 
@@ -208,6 +209,7 @@ async def fetch_window_ex(
     *,
     client: httpx.AsyncClient | None = None,
     session: str = "rth",
+    refresh: bool = False,
 ) -> tuple[list[Bar], str | None]:
     """`fetch_window` plus WHICH provider answered ("alpaca" | "yahoo" | None when nothing did) —
     a repair that zeroes history may only do so on a venue response it can name (review R5)."""
@@ -226,7 +228,7 @@ async def fetch_window_ex(
     now = time.time()
     key = (symbol.upper(), tf, start_ms // 60000, end_ms // 60000, session)
     hit = _cache.get(key)
-    if hit and now - hit[0] < (_LIVE_TTL if end_ms / 1000 > now - 120 else _HIST_TTL):
+    if not refresh and hit and now - hit[0] < (_LIVE_TTL if end_ms / 1000 > now - 120 else _HIST_TTL):
         return list(hit[1]), _cache_provider.get(key)
 
     start_s, end_s = clip_request_window(tf, start_ms // 1000, end_ms // 1000, now, provider="alpaca")

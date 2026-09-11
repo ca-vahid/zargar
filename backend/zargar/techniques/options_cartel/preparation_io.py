@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from sqlalchemy import BigInteger, cast, select
 
-from ...marketstructure.history import HistoryError
+from ...marketstructure.history import HistoryError, fetch_window
 from ...models import TechniqueRun
 from .collect import normalize_daily
 from .data import DailyBar, completed_daily
@@ -111,11 +111,17 @@ class PreparationHistory:
                 self.cache_hits += 1
                 return bars, {**cached.result['collection'], 'historyReusedFrom': cached.id}
         bars = normalize_daily(await self.window(symbol, '1d', at-550*86_400_000, at, client), symbol, at)
-        return bars, {'historyCacheVersion': 1, 'historyThrough': expected,
+        actual = bars[-1].session.isoformat() if bars else None
+        if symbol in ('SPY', 'QQQ') and actual != expected:
+            await self.report(symbol=symbol, message=f'{symbol} history ends {actual or "without bars"}; retrying for {expected}')
+            bars = normalize_daily(await self.window(symbol, '1d', at-550*86_400_000, at, client, refresh=True), symbol, at)
+            actual = bars[-1].session.isoformat() if bars else None
+        return bars, {'historyCacheVersion': 1, 'historyThrough': actual,
+                      'historyExpectedThrough': expected, 'historyFresh': actual == expected,
                       'historyObservedAt': self.clock(), 'historyReusedFrom': None,
                       'historySource': 'Shared historical provider; completed daily bars only'}
 
-    async def window(self, symbol, timeframe, start, end, client):
+    async def window(self, symbol, timeframe, start, end, client, *, refresh=False):
         await self.report(symbol=symbol, message=f'Loading {symbol} {timeframe} history')
         async with self.request_lock:
             delay = max(0, self.policy.request_interval_seconds-(time.monotonic()-self.last_request))
@@ -127,7 +133,8 @@ class PreparationHistory:
             self.requests += 1
         self.active_requests += 1
         try:
-            return await observed_work(self.fetch(symbol, timeframe, start, end, client=client), self.report,
+            kwargs = {'refresh': True} if refresh and self.fetch is fetch_window else {}
+            return await observed_work(self.fetch(symbol, timeframe, start, end, client=client, **kwargs), self.report,
                                        message=f'Loading {symbol} {timeframe} history')
         except Exception as exc:
             if rate_limited(exc):
