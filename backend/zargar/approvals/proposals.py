@@ -96,6 +96,7 @@ class ProposalService:
         self.engine = engine
         self._task: asyncio.Task | None = None
         self._adopt_tasks: dict[str, asyncio.Task] = {}   # proposalId -> adopt-on-fill waiter
+        self._entry_studies: set[asyncio.Task] = set()    # journal-only NBBO samplers (P3)
 
     def _cap_contracts(self, qty: int) -> int:
         """Safety net on option quantity: budget sizing on lotto premium is
@@ -606,9 +607,130 @@ class ProposalService:
                                  aggregate_type="proposal", aggregate_id=row.id,
                                  portfolio_id=pid)
         eng.bus.publish(topics.PROPOSALS, pdict)
+        self._start_entry_study(pdict)
         return pdict
 
+    def _start_entry_study(self, pdict: dict) -> None:
+        """Entry-quality DATA COLLECTION, never behavior (Codex consolidated
+        recommendation P3, 2026-09-10): the 1.05x source-cap and delayed-entry
+        variants need time-stamped NBBO for EVERY eligible idea — takes, skips,
+        rejects and would-be runners alike — not a loser-only sample. For each
+        option proposal this journals one TipEntryStudy event with the stated
+        premium and the contract's NBBO at alert time and again after
+        `techniques.tip.entry_study_delay_seconds` (180). Journal-only; no
+        sizing, gating or execution reads it."""
+        eng = self.engine
+        if pdict.get("secType") != "OPT":
+            return
+        if not bool(eng.settings.get("techniques.tip.entry_study_enabled", True)):
+            return
+        delay = float(eng.settings.get("techniques.tip.entry_study_delay_seconds", 180) or 180)
+        sym = pdict["symbol"]
+
+        def snap() -> dict | None:
+            q = eng.quotes.get(sym)
+            if q is None:
+                return None
+            ts = getattr(q, "source_ts", None) or getattr(q, "ts", None)
+            return {"bid": q.bid, "ask": q.ask, "last": q.last,
+                    "source": getattr(q, "source", None), "sourceTs": ts,
+                    "delayed": bool(getattr(q, "delayed", False))}
+
+        async def study() -> None:
+            try:
+                with contextlib.suppress(Exception):
+                    await eng.options.reprice({"symbol": sym})
+                at_alert = snap()
+                await asyncio.sleep(delay)
+                with contextlib.suppress(Exception):
+                    await eng.options.reprice({"symbol": sym})
+                later = snap()
+                await eng.journal.append(
+                    "TipEntryStudy",
+                    {"proposalId": pdict["id"], "symbol": sym,
+                     "verdict": ((pdict.get("context") or {}).get("analyst") or {}).get("verdict"),
+                     "statedPremium": ((pdict.get("context") or {}).get("sizing") or {}).get("refPrice"),
+                     "delaySeconds": delay, "atAlert": at_alert, "afterDelay": later},
+                    aggregate_type="proposal", aggregate_id=pdict["id"],
+                    portfolio_id=pdict.get("portfolioId"))
+            except Exception:
+                log.debug("entry study failed for %s", pdict.get("id"), exc_info=True)
+        task = asyncio.create_task(study(), name=f"entry-study-{pdict['id'][:8]}")
+        self._entry_studies.add(task)
+        task.add_done_callback(self._entry_studies.discard)
+
     # ------------------------------------------------------------- decide
+    async def _maybe_retry_stale_quote(self, pdict: dict, intent: OrderIntent,
+                                       order: dict) -> dict:
+        """Bounded ONE-shot recovery for a pre-submission quote-staleness
+        rejection (Codex consolidated recommendation 1A, 2026-09-10): the
+        10:53 AAPL take died on 'quote age 10.5s (max 10s)' with no retry.
+
+        Scope: Tips proposals on NON-LIVE books only. Fires only when the
+        rejection is definitively pre-submission (REJECTED_RISK) and the ONLY
+        failing gate was quote freshness. The retry refreshes the exact
+        contract's quote once, keeps the never-raise limit rule (a fresh ask
+        may only IMPROVE the limit — the source-price band never widens), and
+        re-runs the COMPLETE risk gate on a new order. Once-only durably: the
+        attempt is stamped on the proposal BEFORE the retry order exists, so
+        duplicates and restarts can never chase twice. Any still-failing gate
+        terminates visibly on the retry order's own record."""
+        eng = self.engine
+        if order.get("status") != "REJECTED_RISK":
+            return order
+        ctx = pdict.get("context") or {}
+        if (ctx.get("techniqueId") or "") != "tip":
+            return order
+        pf = eng.positions.portfolio(pdict["portfolioId"]) or {}
+        if pf.get("kind") == "live":
+            return order                # live books: a human decides, never a retry
+        reason = str(order.get("rejectReason") or "")
+        if "quote age" not in reason or ";" in reason:
+            return order                # not a pure freshness rejection
+        if ctx.get("freshRetry"):
+            return order                # once only
+        stamp = {"at": dt.datetime.now(dt.timezone.utc).isoformat(),
+                 "firstOrderId": order.get("id"), "reason": reason[:200]}
+        async with eng.sf() as session:  # write-ahead: stamp BEFORE the retry
+            row = await session.get(Proposal, pdict["id"])
+            if row is None or (row.context or {}).get("freshRetry"):
+                return order
+            row.context = {**(row.context or {}), "freshRetry": stamp}
+            await session.commit()
+        fresh_ask = None
+        with contextlib.suppress(Exception):
+            if intent.sec_type == "OPT":
+                await eng.options.reprice({"symbol": intent.symbol})
+                fresh_ask = await _live_ask(eng, intent.symbol)
+            else:
+                q = eng.quotes.get(intent.symbol)
+                fresh_ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
+        limit = intent.limit_price
+        if fresh_ask and limit and fresh_ask < float(limit):
+            limit = round(fresh_ask, 2)
+        retry = await eng.orders.place(OrderIntent(
+            portfolio_id=intent.portfolio_id, symbol=intent.symbol,
+            sec_type=intent.sec_type, side=intent.side, qty=intent.qty,
+            order_type=intent.order_type, limit_price=limit,
+            bracket=intent.bracket, source="signal",
+            signal_id=intent.signal_id, proposal_id=pdict["id"]))
+        stamp = {**stamp, "retryOrderId": retry.get("id"),
+                 "retryStatus": retry.get("status"),
+                 "retryLimit": limit,
+                 "retryReject": str(retry.get("rejectReason") or "")[:200] or None}
+        async with eng.sf() as session:
+            row = await session.get(Proposal, pdict["id"])
+            if row is not None:
+                row.context = {**(row.context or {}), "freshRetry": stamp}
+                await session.commit()
+        await eng.journal.append(
+            ev.PROPOSAL_RETRIED, {"proposalId": pdict["id"], **stamp},
+            aggregate_type="proposal", aggregate_id=pdict["id"],
+            portfolio_id=pdict["portfolioId"])
+        log.info("proposal %s: quote-freshness retry -> %s", pdict["id"],
+                 retry.get("status"))
+        return retry
+
     async def approve(self, proposal_id: str, *, via: str = "app",
                       half: bool = False) -> dict:
         eng = self.engine
@@ -692,6 +814,7 @@ class ProposalService:
             bracket=bracket, source="signal",
             signal_id=pdict["signalId"], proposal_id=proposal_id)
         order = await eng.orders.place(intent)
+        order = await self._maybe_retry_stale_quote(pdict, intent, order)
 
         status = "executed" if order.get("status") not in ("REJECTED_RISK", "REJECTED") else "failed"
         async with eng.sf() as session:
