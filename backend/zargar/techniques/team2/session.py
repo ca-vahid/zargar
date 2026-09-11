@@ -175,6 +175,12 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     targets = plan.get("targets") or {}
     model = PremiumModel(sigma=float(sigma), fee_per_contract=rules.fee_per_contract,
                          slippage_ticks=rules.slippage_ticks, tick=rules.tick)
+    # F104/F108: the strike ladder is the venue's listing when the plan carries one (the runner stamps
+    # today's chain listing at the first bar; replay reads the stamp), else the synthetic grid — and the
+    # read SAYS which, so a sweep on history is never mistaken for a walk of the listed contracts
+    listing = plan.get("listedStrikes") if isinstance(plan.get("listedStrikes"), dict) else None
+    listed_strikes = [float(k) for k in (listing or {}).get("strikes") or []] or None
+    strike_source = "listed" if listed_strikes else "grid"
     events: list[dict] = []
 
     def note(ts: int, what: str, why: str, **detail) -> None:
@@ -632,7 +638,8 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                       target=round(float(target), 4), targetKind=target_kind)
             continue
         pick = model.pick_strike(entry_spot, end_ts, s.direction, target_premium=rules.target_premium,
-                                 premium_floor=rules.premium_floor, step=rules.strike_step, mode=rules.premium_pick)
+                                 premium_floor=rules.premium_floor, step=rules.strike_step, mode=rules.premium_pick,
+                                 strikes=listed_strikes)
         if pick is None:
             # F59 (2026-09-08): say whose price this is. The band is checked against the MODELLED
             # premium (BS at the day's VIX1D sigma), not the chain — IWM 13:30 was refused with the
@@ -643,14 +650,19 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             # F101 (2026-09-10): name the strike it actually tried. The ladder is a synthetic
             # `strike_step` grid, NOT the venue's listed strikes — IWM refused nine entries today
             # because the $1 grid never tested the listed 287.5 put (real ask $0.21, in band).
-            near_k, near_m = model.nearest_otm(entry_spot, end_ts, s.direction, step=rules.strike_step)
+            near = model.nearest_otm(entry_spot, end_ts, s.direction, step=rules.strike_step, strikes=listed_strikes)
+            near_k, near_m = near if near is not None else (None, None)
+            ladder_s = (f"the listed strikes ({len(listed_strikes)} on the chain)" if listed_strikes
+                        else f"the synthetic ${rules.strike_step:g} grid (no listing on this plan)")
+            near_s = (f"nearest OTM on {ladder_s} is {near_k:g} at ${near_m:.2f}" if near_k is not None
+                      else f"no OTM strike at all on {ladder_s}")
             note_once(s, end_ts, "skip_no_contract",
                       f"no strike MODELS between ${rules.premium_floor:.2f} and "
                       f"${rules.target_premium * MAX_OVER_TARGET:.2f} (target ${rules.target_premium:.2f}, V1) — "
-                      f"nearest OTM on the ${rules.strike_step:g} ladder is {near_k:g} at ${near_m:.2f}; "
-                      f"modelled premium at sigma {sigma:.4f}, not the live chain",
-                      setup=s.id, touch=idx, nearestStrike=round(float(near_k), 4),
-                      nearestMark=round(float(near_m), 4), strikeStep=float(rules.strike_step))
+                      f"{near_s}; modelled premium at sigma {sigma:.4f}, not the live chain",
+                      setup=s.id, touch=idx, nearestStrike=(round(float(near_k), 4) if near_k is not None else None),
+                      nearestMark=(round(float(near_m), 4) if near_m is not None else None),
+                      strikeStep=float(rules.strike_step), strikeSource=strike_source)
             continue
         strike, mark = pick
         s.touches += 1                                      # F61: only a PRICED pullback spends the D9 allowance
@@ -667,7 +679,9 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
              f"held (close {b2.close:.2f}) in a {r.stack} stack — buy {'call' if long else 'put'} {strike:g} "
              f"≈ ${fill.premium:.2f} (T1/T2/V1); size {bucket} ×{mult:g}"
              + (f" — target the {'high' if long else 'low'} of day {target:.2f} (X3b)" if target_kind == "hod" else "")
-             + (" — early (before 10:00, P2)" if m < rules.early_flag_before_min else ""),
+             + (" — early (before 10:00, P2)" if m < rules.early_flag_before_min else "")
+             + ("" if listed_strikes else " — strike from the synthetic grid, not a listing"),
+             strikeSource=strike_source,
              target=None if target is None else round(target, 4), targetKind=target_kind,
              setup=s.id, touch=idx, spot=round(entry_spot, 4), strike=strike, premium=fill.premium, bucket=bucket,
              sizeMult=mult, early=m < rules.early_flag_before_min, entryKind=entry_kind, regime=r.to_dict())
