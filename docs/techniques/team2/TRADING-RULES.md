@@ -2343,6 +2343,55 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F116 (2026-09-11, run 70 — MEASURED, NOT FIXED; live and replay do NOT see the same bar values,
+  so replay parity is an approximation, not an identity — USER'S CALL on the shared-engine half).**
+  Runs 66–69 all reported "replay parity exact". Run 70 found the first deviation and, chasing it,
+  the mechanism — which matters far more than today's harmless symptom.
+  **The symptom.** QQQ's live read and its replay agree on every counter (`touches` 0,
+  `pullbacks` 7, `opportunities` 0), on every refusal (`scenario` 09:45, `skip_no_trade_zone`
+  09:46) and on the event *count* (7 = 7), but disagree on the minute of the 5th `same_pullback`:
+  **live 11:48, replay 11:50**. Replay is deterministic (two consecutive calls returned 11:50
+  both times); the live read is stable too (two fetches, 11:48 both times). SPY (6 = 6) and IWM
+  (4 = 4) matched exactly, including IWM's dead scenario 1.
+  **The mechanism.** Comparing `regimeLast` on the SAME 2m bar (ts 1789142640000, 12:04 ET):
+
+  | | live | replay | delta |
+  |---|---|---|---|
+  | QQQ close | 717.20 | 717.2100219726562 | **1 cent** |
+  | QQQ ema13 | 716.7728 | 716.7780 | 0.005 |
+  | QQQ atr | 0.4227 | 0.4159 | **1.6 %** |
+  | QQQ fanWidth | 5.202 | 5.297 | 1.8 % |
+  | SPY close | 766.11 | 766.1099853515625 | float32 noise |
+  | SPY atr | 0.3275 | 0.3243 | **1.0 %** |
+
+  The persisted 1m bars are **float32-quantised** (`bars` rows read back as 717.2100219726562,
+  716.8400268554688, … — float32 images of 717.21 / 716.84, all `source exchange`), while the live
+  path decides on the aggregator's own values. So the replay re-derives EMAs and ATR from numbers
+  that differ from the ones the live decision used. Every Team2 gate that is a *fraction of ATR* —
+  the 0.25 ATR touch tolerance (`pm_tol_atr`), the **0.5 ATR pullback reset** (`pullback_reset_atr`,
+  F62), the 0.6 ATR fan test, the 1.0 ATR base band — therefore sits on a slightly different line in
+  replay than it did live. A 1.6 % ATR difference is enough to move one bar across the 0.5 ATR
+  departure test, which is exactly what happened: independently re-aggregating today's persisted 1m
+  bars to 2m and recomputing EMA13 by hand puts QQQ's re-contact at **11:48** (11:42 close 717.17 is
+  0.38 off an EMA13 of 716.79 → departed; 11:46 is the fresh contact; 11:48 is "still the same
+  pullback") — i.e. **the hand check agrees with live, and the replay is the path that drifted.**
+  **Why it matters.** Replay parity is this desk's acceptance tool: every run since 66 has used
+  "live events == replay events" as the evidence that the read is trustworthy. Today the drift moved
+  a cosmetic note by one bar and changed nothing — no fire, no trim, no exit was on the line, because
+  the no-trade zone (F112–F115) had already refused everything. But the same one-cent quantisation on
+  a bar that carries an entry would make the audit trail disagree with the live decision, and the
+  disagreement would be invisible unless someone compared minute by minute. It also means "exact
+  parity" in runs 66–69 was luck of the threshold, not proof of identity.
+  **Not fixed, and deliberately not fixed by this desk.** The candidate fixes are all shared-engine:
+  (a) persist bars as the exact decimal the live path used (the quantisation is in the feed/`persist_bars`
+  write, `bars.open/high/low/close` are already `double precision` — the float32 arrives from upstream);
+  (b) have the live read consume the persisted row rather than the aggregator's in-memory bar, so one
+  set of numbers serves both; (c) accept the drift and change the parity check from equality to a
+  tolerance, stating the tolerance. (a) and (b) touch `zargar/marketstructure/` and the feed; (c) is a
+  Team2-local reporting change but weakens the tool. Proposal written up in the run log; the user
+  decides. Related: **F62** (the 0.5 ATR reset this tripped), **F75** (bar provenance), F12/F13 (the
+  stamp that made replay reproduce the live session in the first place), **F100** (reporting).
+
 - **F115 (2026-09-11, run 69 — MEASURED, NOT FIXED; the no-trade zone binds the **EMA13**, not the
   price, so "wait for price to clear the pre-market range" is not a fourth option. Sharpens F112 —
   USER'S CALL).** Runs 66–68 established that the zone blocks 100 % of today's session, that

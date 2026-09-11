@@ -4999,3 +4999,100 @@ setup, that is a gap to report, not a refusal.
   **F112's zone decision — F113, F114 and now F115 all say the window knob cannot work and that waiting
   for price to escape the range cannot either; (b) the conjunction or (c) accept no-trade gap days**,
   F67's two shared-side halves, and the F30-family question F105 sharpens.
+
+
+## 2026-09-11 12:10 ET (run 70 — the first replay-parity break of the watch, and its cause: live and replay see different bar values; F116)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed 59 desk-wide. Three Team2 plans armed for
+  **2026-09-11**, mode `auto`, book **Team2 Practice** (sim): SPY `87634a53`, QQQ `36a3cab1`,
+  IWM `72949add`. `needsAttention false`, `attentionReasons []`, `trailGaps []`, no `readError`.
+  **0 fires, 0 trades, 0 open, P&L $0.00** at 12:10 — nothing has reached the contract picker all day.
+- **What the read saw since run 69 (11:35).** No new *refusals* and no new setups on any symbol; the
+  movement is all `same_pullback` bookkeeping as all three chop on their EMA13s. SPY gained notes at
+  **11:38 and 11:50** (`pullbacks` 6 → **10**); QQQ gained **11:42 and 11:48** (`pullbacks` 4 → **7**);
+  **IWM is unchanged** (4 events, `pullbacks` 1 dead + 3). `touches` remains **0 / 0 / 0+0** — the D9
+  allowance is still completely unspent at the five-hour mark. IWM's put bias from 10:45 continues to
+  be run over: last 289.64 against a 289.28 anchor, and **IWM 289P has decayed 0.46 → 0.22 → 0.15**
+  across runs 68/69/70. A 15m body close above **289.83** would flip it back to scenario 1 (D10);
+  the highest 2m close since was 289.76 (11:48), so it has not.
+- **F116 — NEW, MEASURED, NOT FIXED. The first parity break of this watch, and the cause is worse than
+  the symptom.** QQQ live and replay agree on every counter and every refusal and on the event count
+  (7 = 7) but put the 5th `same_pullback` on **different bars — live 11:48, replay 11:50**. Both sides
+  are deterministic (two calls each, same answer). Chasing it found the mechanism: **live and replay do
+  not decide on the same numbers.** On the identical 2m bar (12:04 ET) QQQ's live close is `717.20` and
+  the replay's is `717.2100219726562`; ATR is `0.4227` live vs `0.4159` replay (**1.6 %**), SPY's
+  `0.3275` vs `0.3243` (1.0 %). The persisted 1m bars are **float32-quantised** (717.2100219726562,
+  716.8400268554688 — float32 images of 717.21 / 716.84, all `source exchange`), while the live path
+  decides on the aggregator's in-memory bar. Every Team2 gate expressed as a *fraction of ATR* — the
+  0.25 ATR touch tolerance, the **0.5 ATR pullback reset** (F62), the 0.6 ATR fan test — therefore
+  lands on a slightly different line in replay. **I re-derived it by hand** from the persisted 1m bars
+  (aggregate to 2m, recompute EMA13/EMA48): 11:42 close 717.17 is 0.38 off an EMA13 of 716.79 →
+  departed; 11:46 is the fresh contact; 11:48 is "still the same pullback" — **the hand check agrees
+  with live, so the replay is the path that drifted.** SPY (6 = 6) and IWM (4 = 4) still matched
+  exactly, including IWM's dead scenario 1. Full write-up in TRADING-RULES **F116**.
+- **Why F116 matters even though today it changed nothing.** Replay parity is this watch's acceptance
+  tool — runs 66–69 all cited "live == replay" as the evidence the read is trustworthy. Today the drift
+  moved a cosmetic note by one bar, because the no-trade zone had already refused everything and no
+  fire, trim or exit was on the line. The same one-cent quantisation on a bar carrying an **entry**
+  would make the audit trail disagree with the live decision, invisibly. It also means the "exact
+  parity" of runs 66–69 was the thresholds being far from the line, not proof of identity.
+- **Proposed (shared engine — NOT built, user's call).** Three candidates, in my order of preference:
+  **(a)** persist the exact decimal the live path used — the columns are already `double precision`,
+  the float32 arrives from upstream through the feed/`persist_bars` write; **(b)** have the live read
+  consume the persisted row instead of its in-memory bar, so one set of numbers serves both paths;
+  **(c)** accept the drift and restate the parity check as a stated tolerance rather than equality.
+  (a) and (b) touch `zargar/marketstructure/` and the feed — outside this desk's remit. (c) is
+  Team2-local but weakens the only tool that has been catching read bugs.
+- **Supporting observation for F100's reporting question (not a new finding).** QQQ's last price
+  **716.90 is already above its scenario-1 target 716.80** — run 69 predicted this would be the day's
+  first `skip_target_behind` or structure re-plan. It was neither, and cannot be: `session.py:551`'s
+  `skip_no_trade_zone` does `continue`, and the target logic lives at lines 610/632/639, **after** it.
+  On a day the zone refuses everything, the target/re-plan path is not merely unexercised — it is
+  unreachable, so F81b's structure fallback gets no evidence from today either.
+- **Cohort v2 tally, session-to-date (09:30–12:10):** `warmup` 3/3 · `listing` 3/3 from the real chain ·
+  `model_out_of_band` 0 · **`contract_deferred` 0 + `skip_no_contract` 0** · fills 0, `priced` 0 ·
+  `target_replanned` 0 · `skip_target_behind` 0 · `trail_gap` 0 · `scenario` 4 · `skip_no_trade_zone` 4 ·
+  `same_pullback` **10** (SPY 4, QQQ 5, IWM 0). F104/F105's live picker path is armed and still unexercised.
+- **Data is real-time.** Quotes sub-second (`ts` 12:02:27 ET at fetch), `session regular`, penny books —
+  SPY 766.02/766.04, QQQ 716.91/716.92, IWM 289.63/289.65; session ranges SPY 763.60–766.38, QQQ
+  713.63–717.63, IWM 288.77–291.44. 1m bars banking with **`source exchange` on 154/154 RTH rows** for
+  all three, last bar **12:03 ET (65 s old)**; `barAgeSeconds` 108, `stale false`, `quoteAgeSeconds` 0
+  on all three plans. Real-time 0DTE quotes the picker would use: SPY 767C **0.41/0.42** (spread 2.4 %,
+  IV 0.118, delta 0.29), QQQ 718C **0.60/0.61** (spread 1.7 %, delta 0.33 — dead on the $0.60 target),
+  IWM 289P **0.15/0.16** (spread 6.5 %); all `available true`, `asOf` = now. My independently recomputed
+  EMA13 lands within **0.01** of the engine's `regimeLast` on all three — see F116 for the ATR gap.
+- **F85 standing check: clean for Team2.** Zero Team2 rows among the journal's error/failure events in
+  8 h; last 2 h desk-wide = 7 `SignalVerificationFailed` + 4 `TechniquePlanError`, all other desks. No
+  Team2 ERROR and no Team2 traceback in `backend/zargar-8420.log` (116 Team2 log lines, none at error
+  level). **Cartel-observer update — run 69's correction holds and the trend is now clearly down:**
+  `cartel-observer bar handling failed` fired **2 in the 09 ET hour, 12 in the 10 ET hour, 4 in the
+  11 ET hour, 1 so far in the 12 ET hour** (21 total in the log). Peak was the 10 ET hour; it is
+  decelerating, not accelerating. Still `options_cartel`, another desk's technique, harmless to
+  Team2's own bar loop — worth the owner's attention, no longer worth alarm.
+- **F107 standing check: count still 18** (`technique_runs where technique='team2'`). The 09:25 pre-open
+  + 09:30 finalize hold (`complete true`, `pmh`/`pml`/`dayType gap_up`/`sizingAtOpen none`, `replan false`
+  on all three). Audit mix per plan: SPY/QQQ 12 events (1 armed, 6 restored, 3 read, 1 preopen, 1 skip),
+  IWM 14 (4 read, 2 skip — the D10 flip). Still **no `targets_rederived` row** — F110 exactly, fixed in
+  v0.7.49, deploy still queued (disk is 0.7.49, runtime 0.7.48).
+- **No code shipped this run** (TRADING-RULES F116 is the only edit). **No restart** — v0.7.49 stays
+  queued for after 16:00 ET.
+- **Next run (≈12:40 ET) should:** (1) re-check the QQQ live-vs-replay `same_pullback` minute — if the
+  drift persists or appears on SPY/IWM too, F116 is systematic rather than a single knife-edge bar;
+  (2) check whether IWM's 15m close flips the bias back to scenario 1 (needs a body above 289.83) and
+  record the flip margin against F27; (3) continue the cohort-v2 tally, especially any first
+  `contract_deferred` / `skip_no_contract` / `priced`; (4) note that `skip_target_behind` cannot fire
+  while the zone refuses first (see above) — do not report its absence as evidence about F81b;
+  (5) re-run the F85 journal query and re-count the cartel tracebacks; (6) **do not attempt the
+  `/team2` UI check** (F103); (7) after 16:00 ET deploy **v0.7.49** via `ZargarRestart`; (8) at ~17:05
+  re-check F107 stays at **18** and the nightly mints three plans for Monday 2026-09-14.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy
+  question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**, **F87
+  (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by F98)**,
+  **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's band question**,
+  **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's "which series is
+  authoritative" decision**, **F112's zone decision — F113/F114/F115 all say the window knob cannot work
+  and that waiting for price to escape the range cannot either; (b) the conjunction or (c) accept
+  no-trade gap days**, and **F116's new shared-engine question — should the live path and the replay
+  decide on the same persisted bar values**, F67's two shared-side halves, and the F30-family question
+  F105 sharpens.
