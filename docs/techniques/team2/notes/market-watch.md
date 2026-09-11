@@ -4522,3 +4522,75 @@ A plan whose snapshot carries `trailGaps` (or whose audit shows a `trail_gap` ev
 session: report it as such, never as a quiet day. If nothing fills, the journal must establish why — cite the
 `TechniquePlanContract` verdicts (with `stage` for early exits) and the read's refusals; if neither exists for a fired
 setup, that is a gap to report, not a refusal.
+
+## 2026-09-11 09:05 ET (run 64 — pre-open; THE RESTART LANDED: v0.7.48 is running, cohort v2 starts today)
+
+- **Alive on v0.7.48** (`/api/health`: ok, started, armed 57 desk-wide). **The user restarted** —
+  boot at 22:00:42 PT 09-10 = **01:00 ET today**, the last of six evening boots (18:21, 21:25, 21:37,
+  21:47, 21:48, 22:00 PT). **F89's five-release queue is CLEARED**: v0.7.37 (F88), .38 (F91), .39
+  (F100), .40 (F101), .41 (F106) plus .42–.48 are all now in the running process. **Today is
+  session 1 of evaluation cohort v2** — the corrected picker path (F104 listed strikes, F105 fresh
+  quotes before refusal, F99 stamped warm-up) is live in a market session for the first time.
+- **Three plans armed for 2026-09-11**, all `status armed`, mode `auto`, book **Team2 Practice**
+  (sim): SPY `87634a53`, QQQ `36a3cab1`, IWM `72949add`. `needsAttention false`, `attentionReasons
+  []`, **`trailGaps []`** and `readError` absent on all three. 0 fires, 0 trades, 0 open, P&L $0.00 —
+  correct at 09:05. The 17:00 ET nightly ran clean (`runs 3, failed 0, armed 3, skipped 0`).
+- **Data is real-time and banking.** The engine logged **`pre-open feed self-test passed (REST bars +
+  stream auth)` at 09:00 ET** — the paid Alpaca stream is authenticated. 1m bars are landing with
+  `source exchange` (SPY 313, QQQ 359, IWM 249 rows since 19:04 ET last night), latest bar **09:02
+  ET, ~60 s old**; the ext-hours half is `sampled` as designed. Quotes are **sub-second** with tight
+  books (SPY 766.13/766.15 ×16000/4000, QQQ 717.17/717.19, IWM 291.02/291.06), `session "pre"`,
+  `halted false`. `dayHigh/dayLow/volume 0` is correct pre-open (F19 session-to-date reset).
+- **All three gapped UP, and price sits INSIDE the pre-market range on all three.** Replayed reads:
+  SPY `gap_up`, PM 758.17–766.53, spot 766.15 (PDH zone 758.85–760.11 is already ~6 pts below);
+  QQQ `gap_up`, PM 706.56–717.69, spot 717.14; IWM `gap_up`, PM 287.68–291.30, spot 291.03.
+  `sizingAtOpen "none"` on all three is **correct, not a defect** — F15's rule that the PM range is
+  the no-trade zone wherever it sits. It is **not** a day-long gate: `sizing_bucket` is evaluated
+  per entry at the entry spot (`session.py:538`), so a break beyond the PM level still sizes `full`,
+  and a `pm_break` retest on the level itself sizes `small` via F20. Today's actionable levels are
+  effectively the **PM highs/lows**, not the PDH zones.
+- **Pre-open (09:25) had not run yet**, as expected at 09:05: the stored plans still read
+  `complete false`, `pmh/pml/dayType/sizingAtOpen null`. Only the `/read` endpoint's live replay
+  (`source "replay"`) previews them. **Two things for the 09:30 run to verify**, both expected to be
+  resolved by the 09:25 re-derive and neither a finding yet: (a) SPY's and IWM's `pdl` triggers carry
+  **empty `targets []`** (the nightly's `targets.below` is `null` — "room down to open" on a gap-up
+  day, F88's genuinely-null-target branch, which is F81b's to fill at entry time); (b) SPY's stored
+  `pdh` target **763.41** disagrees with the replay's **766.53**, because the nightly did not yet know
+  the PM high. Expect `target_replanned` on the 09:25 pass (F81) — the cohort-v2 tally starts there.
+- **F107 is CONFIRMED FIXED IN THE RUNNING BUILD.** `TechniqueRun.technique == "enhanced_market"` is
+  present in `zargar/technique/service.py` (line ~1955, `score_pending`). The row count did go
+  **15 → 18**, but all three new rows were written **09-10 17:31 ET**, i.e. by the old v0.7.36 process
+  hours before the 0.7.43+ boots — historical, not ongoing. **Cheapest confirmation for tonight: after
+  the 17:00 ET nightly mints three more Team2 runs on 0.7.48, the count must STAY at 18.**
+- **F109 — NEW, fixed (doc only).** The cohort-v2 standing instruction tells every run to tally
+  **`contract_refused`**, an event name that **exists nowhere in the code or docs**. The real
+  vocabulary is **`contract_deferred`** (operational: no live quote / quote bound hit) and
+  **`skip_no_contract`** (nothing tradeable in band), supported by `listing`,
+  `listing_unavailable`, `model_out_of_band`, `warmup`, `priced`, `target_replanned` and
+  `trail_gap` — all nine verified present in `zargar/techniques/team2/`. Uncorrected, a later run
+  reporting "0 `contract_refused`" would call a refused day clean. **All cohort-v2 runs should tally
+  `contract_deferred` + `skip_no_contract`.** Written up in TRADING-RULES as F109.
+- **Also fixed this run (doc only):** the **F107 addendum paragraph was duplicated verbatim** in
+  TRADING-RULES.md (two identical four-line blocks); removed one copy.
+- **F85 standing check: clean.** The engine log since the 22:00 PT boot contains **no Team2 ERROR and
+  no traceback at all** — yesterday's two `cartel-observer` tracebacks died with the old process. Zero
+  Team2 journal error rows and no halt rows in 13 h; the 21 `TechniqueGroundingFailed` +1
+  `TechniqueRunFailed` (22:16–22:19 ET) are EM/tip-side `bounce_not_chased` grounding checks, not
+  Team2 (Team2 has no `bounce` trigger kind).
+- **No code shipped this run** (both edits are documentation). No restart needed or performed.
+- **Next run (≈09:30 ET) should:** (1) verify the **09:25 pre-open finalize** — `complete true`,
+  `pmh`/`pml`/`dayType`/`sizingAtOpen` stamped on all three, and the F88 09:30 re-read agreeing with
+  the 09:25 estimate; (2) open the **cohort-v2 per-plan tally** — `listing`/`listing_unavailable`,
+  `model_out_of_band`, `contract_deferred`/`skip_no_contract` with `examined`, fills with their
+  `priced` series, and every `target_replanned` (expect some at 09:25, see (a)/(b) above); (3) confirm
+  SPY's and IWM's `pdl` targets either re-derive or stay deliberately null; (4) re-run the F85 journal
+  query; (5) **do not attempt the `/team2` UI check** (F103); (6) tonight at ~17:05, re-check the F107
+  count stays at **18**.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by
+  F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision (sized by F104)**,
+  **F102's band question**, **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's
+  "which series is authoritative" decision**, F67's two shared-side halves, and the F30-family
+  question F105 sharpens. **F89 is now CLOSED** (the restart happened).

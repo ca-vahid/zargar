@@ -2309,10 +2309,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `technique == "enhanced_market"` only (one line in EM's `zargar/technique/service.py`, logged in PLATFORM-RULES as a
   shared boundary fix, not a method change). Historical attribution of the rows it already wrote is EM's call.
   Regression: `test_em_outcome_scorer_ignores_other_techniques_runs`.
-- **F107 addendum (2026-09-10 evening — FIXED in v0.7.43).** `TechniqueService.score_pending` selects
-  `technique == "enhanced_market"` only (one line in EM's `zargar/technique/service.py`, logged in PLATFORM-RULES as a
-  shared boundary fix, not a method change). Historical attribution of the rows it already wrote is EM's call.
-  Regression: `test_em_outcome_scorer_ignores_other_techniques_runs`.
+- **F109 (2026-09-11, run 64, pre-open — DOC FIX, no code).** The cohort-v2 standing instruction
+  (market-watch, 2026-09-10 late) tells every later run to tally **`contract_refused` with its
+  `examined` list**. That event name **does not exist** — `grep -rn "contract_refused" zargar/
+  docs/techniques/team2/` returns nothing. The picker's actual refusal vocabulary is
+  **`contract_deferred`** (early exit: no live quote, or the quote bound hit — an operational
+  limitation) and **`skip_no_contract`** (the runner found nothing tradeable in band); the
+  supporting events are `listing` / `listing_unavailable`, `model_out_of_band`, `warmup` and
+  `priced`, all nine of which ARE in the build (verified in `zargar/techniques/team2/`). Left
+  uncorrected, a future run counting "0 `contract_refused`" would report a clean session when the
+  day was in fact refused — the exact misreading the addendum about `trailGaps` was written to
+  prevent. **Correction for all cohort-v2 runs: tally `contract_deferred` + `skip_no_contract`.**
+  No rule, threshold, gate or money path is involved. Related: F101, F104, F105.
+
 - **F107 (2026-09-10, run 63, post-close) - EM's outcome scorer adopts every Team2 plan run and
   files it under `technique='enhanced_market'`. NOT FIXED - the fix is one line in EM's file, which
   this watch may not edit.** `TechniqueService.score_pending()`
