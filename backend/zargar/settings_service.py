@@ -413,6 +413,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.enhanced_market.ingest.live_max_wait_minutes": 45,  # then take whatever replay exists (partial) rather than wait forever
                                                # (fires carry window="midday" so outcomes are separable)
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
+    "technique.scratch_r": 0.0,                # T-14: trim at +N R and move the stop to breakeven (0 = off; sweep first)
+    "technique.scratch_trim": 0.5,
     "technique.arm.critic_mode": "veto",       # veto | momentum_only (bounce/reject "no" is advisory) | advisory (never blocks)
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols

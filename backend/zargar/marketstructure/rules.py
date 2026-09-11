@@ -54,6 +54,8 @@ class MarketRules:
     plan_entry_window_bars: int = 12
     max_false_breaks: int = 2
     stop_on_close: bool = True
+    scratch_r: float = 0.0        # T-14: after the trade is this many R in favour, trim `scratch_trim` and move the stop to breakeven (0 = off)
+    scratch_trim: float = 0.5     # fraction sold at the scratch point
     # the windows an entry may fire in (a technique with no schedule rule passes SESSION_WINDOWS)
     windows: tuple[str, ...] = PRIME_WINDOWS
 

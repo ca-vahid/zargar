@@ -181,6 +181,8 @@ class Thresholds:
     # test, not a break); the intra-minute quote breach (0.25 R beyond, exits.py)
     # stays as the disaster brake either way. False = the old touch-of-the-low.
     stop_on_close: bool = True
+    scratch_r: float = 0.0        # T-14 (2026-09-10): scratch rule - trim at +scratch_r R and stop to breakeven; 0 = off
+    scratch_trim: float = 0.5
     # Q10 — the book is long-biased; the short side (rejection at resistance /
     # breakdown through support, expressed with puts) is the mirror of its two
     # setups. The dataclass default is the book's; the app's setting
@@ -216,6 +218,8 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.max_false_breaks": t.max_false_breaks,
         "technique.rr_gate_target": "auto",
         "technique.stop_on_close": t.stop_on_close,
+        "technique.scratch_r": t.scratch_r,
+        "technique.scratch_trim": t.scratch_trim,
         "technique.decisive_body_ratio": t.decisive_body_ratio,
         "technique.min_risk_reward": t.min_risk_reward,
         "technique.default_risk_pct": t.default_risk_pct,
@@ -261,6 +265,8 @@ def thresholds_from_settings(get) -> Thresholds:
         max_false_breaks=int(get("technique.max_false_breaks", d.max_false_breaks)),
         rr_gate_target=rr_gate_target_from_settings(get),
         stop_on_close=bool(get("technique.stop_on_close", d.stop_on_close)),
+        scratch_r=float(get("technique.scratch_r", d.scratch_r)),
+        scratch_trim=float(get("technique.scratch_trim", d.scratch_trim)),
         long_only=bool(get("technique.long_only", d.long_only)),
         level_tolerance_pct=float(get("technique.level_tolerance_pct",
                                       d.level_tolerance_pct * 100)) / 100,

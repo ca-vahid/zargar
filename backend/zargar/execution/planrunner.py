@@ -159,6 +159,7 @@ class Trade:
     errors: list[str] = field(default_factory=list)
     retries: int = 0
     critic_advisory: bool = False   # the critic said no and critic_mode let the entry proceed anyway
+    scratched: bool = False         # T-14: the scratch rule fired (stop moved to breakeven)
     opened_ts: int | None = None
     closed_ts: int | None = None
     fire_bar_index: int | None = None
@@ -226,7 +227,7 @@ class Trade:
                                 if self.instrument == "options" and self.filled_qty else None),
                 "lastPrice": self.last_price, "errors": list(self.errors),
                 "retries": self.retries, "openedTs": self.opened_ts, "closedTs": self.closed_ts,
-                "critic": self.critic, "criticAdvisory": self.critic_advisory}
+                "critic": self.critic, "criticAdvisory": self.critic_advisory, "scratched": self.scratched}
 
 
 @dataclass
@@ -1392,6 +1393,7 @@ class PlanRunner(SessionListener):
                 multiplier=float(td.get("multiplier") or 1.0), opened_ts=td.get("openedTs"),
                 closed_ts=td.get("closedTs"), fire_bar_index=None)
             tr.single_exit = ap.config.single_contract_exit
+            tr.scratched = bool(td.get("scratched", False))
             ap.trades[tid] = tr
             # re-index working entry/exit orders so their updates route back here
             if tr.entry_order_id and tr.status in ("working", "submitting", "open"):
@@ -2694,13 +2696,25 @@ class PlanRunner(SessionListener):
                              flatten_minutes=ap.config.flatten_minutes_before_close,
                              ladder=EXIT_LADDER, single_exit=ap.config.single_contract_exit,
                              stop_on="close" if self.rules().stop_on_close else "low",
-                             direction=tr.direction)
+                             direction=tr.direction,
+                             scratch_r=float(getattr(self.rules(), "scratch_r", 0.0) or 0.0),
+                             scratch_trim=float(getattr(self.rules(), "scratch_trim", 0.5)))
         if decision is None:
             # a single-contract position may need to advance its trim counter without an order
             hit = ((bar.low <= tr.targets[tr.trims_done]) if tr.direction == "short"
                    else (bar.high >= tr.targets[tr.trims_done])) if tr.trims_done < len(tr.targets) else False
             if hit and tr.instrument == "options" and tr.filled_qty < 3:
                 tr.trims_done += 1
+            return
+        if decision.kind == "scratch":
+            old_stop = tr.stop
+            tr.scratched = True
+            tr.stop = float(tr.entry)
+            self._log(ap, "scratch", f"{tr.trigger_id}: {decision.reason} (stop {old_stop:.4f} -> {tr.stop:.4f})",
+                      trigger=tr.trigger_id)
+            if decision.qty >= 1:
+                await self._exit(ap, tr, "scratch", decision.qty, journal=True, reason=decision.reason)
+            await self._persist(ap)
             return
         tr.trims_done = decision.new_trims_done
         if decision.qty >= 1:

@@ -411,7 +411,8 @@ def score_trigger(tracker: TriggerTracker, bars: list[Bar], *, thresholds: Thres
             "targets": tracker.trigger["targets"]}
     # simulate from the fire bar (on_break fills at bars[start]); horizon = rest of session
     sim = simulate_plan(bars, i, plan, entry_window=1, horizon=len(bars),
-                        stop_on="close" if t.stop_on_close else "low")
+                        stop_on="close" if t.stop_on_close else "low",
+                        scratch_r=float(getattr(t, "scratch_r", 0.0) or 0.0), scratch_trim=float(getattr(t, "scratch_trim", 0.5)))
     res["sim"] = {k: sim.get(k) for k in ("filled", "outcome", "rMultiple", "mfeR", "maeR", "barsHeld", "hits", "resolved")}
     res["closedByEod"] = True
     return res

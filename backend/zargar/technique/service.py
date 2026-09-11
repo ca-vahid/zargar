@@ -1220,7 +1220,8 @@ class TechniqueService:
                                  note="no plan to score (no setup and no candidate); path only")
             else:
                 sim = simulate_plan(series, 0, plan, entry_window=entry_window, horizon=horizon,
-                                    stop_on="close" if self.thresholds().stop_on_close else "low")
+                                    stop_on="close" if self.thresholds().stop_on_close else "low",
+                                    scratch_r=self.thresholds().scratch_r, scratch_trim=self.thresholds().scratch_trim)
                 o = await upsert(src, status="scored" if sim["resolved"] else "partial",
                                  plan={**plan, "entryWindow": entry_window}, outcome=sim["outcome"],
                                  r_multiple=sim["rMultiple"], mfe_r=sim["mfeR"], mae_r=sim["maeR"],

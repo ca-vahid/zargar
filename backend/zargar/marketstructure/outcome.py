@@ -76,7 +76,8 @@ def same_plan(a: dict | None, b: dict | None, tol: float = 1e-6) -> bool:
 
 
 def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int = 12,
-                  horizon: int = 60, stop_on: str = "close", breach_r: float = 0.25) -> dict:
+                  horizon: int = 60, stop_on: str = "close", breach_r: float = 0.25,
+                  scratch_r: float = 0.0, scratch_trim: float = 0.5) -> dict:
     """Walk `bars` forward from index `start` (the bar the decision was made on)
     and score `plan`. Returns a plain dict (see keys below). `bars` must be
     sorted by ts and include the start bar; bars after `start` are the future.
@@ -84,6 +85,9 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     Keys: filled, fillTs, fillIndex, outcome (not_filled|stopped|tp1|tp2|tp3|
     horizon), rMultiple, mfeR, maeR, barsHeld, barsAvailable, resolved (the
     outcome can no longer change with more bars), hits [ts per target hit].
+
+    `scratch_r` > 0 (T-14): the first bar that trades `scratch_r` R in favour sells `scratch_trim`
+    of the position at that level and moves the stop to the entry; mirrors `exits.plan_exit`.
 
     `stop_on` mirrors the live exit rule (`execution.exits.plan_exit`): "close" =
     stopped when a bar closes through the stop, filled at that close; "low" = the
@@ -179,6 +183,8 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     mae = 0.0
     i = fill_i + 1
     last_i = fill_i
+    scratched = False
+    scratch_px = (entry - scratch_r * risk) if short else (entry + scratch_r * risk)
     while i <= end_i and remaining > 1e-9:
         b = bars[i]
         last_i = i
@@ -189,16 +195,22 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
         if (b.high >= brake) if short else (b.low <= brake):    # crash through: the quote brake
             realized += remaining * sgn * (brake - entry)
             remaining = 0.0
-            outcome = "stopped" if hit == 0 else f"tp{hit}"
+            outcome = ("scratched" if scratched else "stopped") if hit == 0 else f"tp{hit}"
             resolved = True
             break
         ref = b.close if stop_on == "close" else (b.high if short else b.low)
         if (ref >= stop) if short else (ref <= stop):
             realized += remaining * sgn * ((b.close if stop_on == "close" else stop) - entry)
             remaining = 0.0
-            outcome = "stopped" if hit == 0 else f"tp{hit}"
+            outcome = ("scratched" if scratched else "stopped") if hit == 0 else f"tp{hit}"
             resolved = True
             break
+        if scratch_r > 0 and not scratched and hit == 0 and ((b.low <= scratch_px) if short else (b.high >= scratch_px)):
+            part = min(remaining, max(0.0, min(1.0, scratch_trim)))
+            realized += part * sgn * (scratch_px - entry)
+            remaining -= part
+            stop = entry
+            scratched = True
         while hit < len(targets) and ((b.low <= targets[hit]) if short else (b.high >= targets[hit])):
             part = trims[hit] if hit < len(trims) else remaining
             part = min(part, remaining)
@@ -207,6 +219,9 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
             hit += 1
             hits.append(b.ts)
         i += 1
+    if remaining <= 1e-9 and outcome == "horizon" and hit > 0:
+        outcome = f"tp{hit}"          # the ladder consumed the whole position (a scratched trade runs out at TP2)
+        resolved = True
     if remaining > 1e-9:
         last = bars[last_i]
         realized += remaining * sgn * (last.close - entry)
@@ -217,7 +232,7 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     r_mult = realized / risk
     return {**base, "filled": True, "fillTs": bars[fill_i].ts, "fillIndex": fill_i, "outcome": outcome,
             "rMultiple": round(r_mult, 4), "mfeR": round(mfe / risk, 4), "maeR": round(mae / risk, 4),
-            "barsHeld": last_i - fill_i, "resolved": resolved, "hits": hits,
+            "barsHeld": last_i - fill_i, "resolved": resolved, "hits": hits, "scratched": scratched,
             "note": "" if resolved else "horizon not reached yet"}
 
 

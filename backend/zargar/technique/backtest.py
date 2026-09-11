@@ -60,7 +60,8 @@ def _simulate(bars: list[Bar], start: int, setup: dict, *, entry_window: int,
     ts0 = bars[start].ts
     session = time.strftime("%Y-%m-%d", time.gmtime(ts0 / 1000))
     sim = simulate_plan(bars, start, setup, entry_window=entry_window, horizon=horizon,
-                        stop_on="close" if (thresholds or DEFAULT_THRESHOLDS).stop_on_close else "low")
+                        stop_on="close" if (thresholds or DEFAULT_THRESHOLDS).stop_on_close else "low",
+                        scratch_r=(thresholds or DEFAULT_THRESHOLDS).scratch_r, scratch_trim=(thresholds or DEFAULT_THRESHOLDS).scratch_trim)
     return TradeResult(
         ts=ts0, session=session, setup_type=setup["setupType"], entry=sim["entry"], stop=sim["stop"],
         targets=sim["targets"], filled=sim["filled"], fill_ts=sim["fillTs"], outcome=sim["outcome"],

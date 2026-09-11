@@ -18,7 +18,7 @@ _SINGLE_EXIT_INDEX = {"tp1": 0, "tp2": 1, "tp3": 2}
 
 @dataclass
 class ExitDecision:
-    kind: str                 # tp1 | tp2 | tp3 | stop | flatten
+    kind: str                 # tp1 | tp2 | tp3 | stop | flatten | scratch
     qty: float
     new_trims_done: int       # what the caller should set trade.trims_done to
     reason: str = ""
@@ -26,7 +26,8 @@ class ExitDecision:
 
 def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
               ladder: tuple[float, ...] = EXIT_LADDER, single_exit: str = "tp2",
-              stop_on: str = "low", direction: str | None = None) -> ExitDecision | None:
+              stop_on: str = "low", direction: str | None = None,
+              scratch_r: float = 0.0, scratch_trim: float = 0.5) -> ExitDecision | None:
     """Decide the next exit on a *closed* bar. One exit per bar. Returns None when
     nothing should be sent (nothing hit, or a working exit is still pending).
 
@@ -51,8 +52,24 @@ def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
     flatten_at = close_ms - flatten_minutes * 60_000
     if bar.ts >= flatten_at:
         return ExitDecision("flatten", trade.remaining, len(trade.targets), "flatten before the close")
-    # 3) the 30/40/15 scale-out ladder at the targets
+    # 2b) T-14 scratch: the first bar `scratch_r` R in favour trims `scratch_trim` and moves the
+    #     stop to breakeven (the CALLER sets trade.stop = entry and trade.scratched = True when the
+    #     decision is applied). Only before the first target; a position that cannot be split keeps
+    #     everything and just earns the breakeven stop.
     k = trade.trims_done
+    if scratch_r > 0 and k == 0 and not getattr(trade, "scratched", False):
+        entry = float(getattr(trade, "entry", 0) or 0)
+        risk = abs(entry - float(trade.stop))
+        if entry and risk > 0:
+            line = entry - scratch_r * risk if short else entry + scratch_r * risk
+            if (bar.low <= line) if short else (bar.high >= line):
+                qty = float(int(trade.filled_qty * max(0.0, min(1.0, scratch_trim))))
+                qty = min(qty, trade.remaining)
+                if trade.remaining - qty < 1:
+                    qty = 0.0                              # never leave a fraction; keep the position, take the BE stop
+                what = f"trim {int(qty)} and " if qty else ""
+                return ExitDecision("scratch", qty, 0, f"+{scratch_r:g}R reached: {what}stop to breakeven")
+    # 3) the 30/40/15 scale-out ladder at the targets
     if k < len(trade.targets) and ((bar.low <= trade.targets[k]) if short else (bar.high >= trade.targets[k])):
         single_contract = trade.sec_type == "OPT" and trade.filled_qty < 3
         if single_contract:
