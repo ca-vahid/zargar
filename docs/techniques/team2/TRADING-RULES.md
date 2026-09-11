@@ -2343,6 +2343,39 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F113 (2026-09-11, run 67 — MEASURED, NOT FIXED; narrowing the pre-market window does NOT rescue
+  a gap day. Sharpens F112 option (a) — USER'S CALL).** Run 66 measured the no-trade zone's coverage
+  across 13 sessions and found the window length was the biggest lever (04:00 → 59 % of RTH minutes
+  blocked, 08:30 → 35 %). Today's live session says that lever is **the wrong one on exactly the days
+  Team2 is built for**. Re-running today's three refusals (SPY 09:56 @765.22, QQQ 09:46 @715.63,
+  IWM 09:52 @289.83) against each candidate window, with the real `pm_tol_atr=0.25` band:
+
+  | PM window | SPY zone / refused? | QQQ zone / refused? | IWM zone / refused? | RTH minutes blocked (S/Q/I) |
+  |---|---|---|---|---|
+  | **04:00–09:30 (code)** | 758.17–766.53 · yes | 706.58–717.69 · yes | 287.68–291.30 · yes | 100 / 100 / 100 % |
+  | 07:00–09:30 | 760.39–766.53 · yes | 710.40–717.69 · yes | 288.32–291.30 · yes | 100 / 100 / 100 % |
+  | 08:00–09:30 | 760.39–766.53 · yes | 710.40–717.69 · yes | 288.32–291.30 · yes | 100 / 100 / 100 % |
+  | 08:30–09:30 | 760.39–766.53 · yes | 710.40–717.69 · yes | 288.32–291.30 · yes | 100 / 100 / 100 % |
+  | 09:00–09:30 | 764.67–766.53 · yes | 715.44–717.69 · yes | 290.49–291.30 · **no** | 98 / 71 / 21 % |
+
+  **The mechanism:** on a gap-up day the binding edge is the pre-market **high**, and it is printed in
+  the last half hour before the open — all three symbols' PM highs (766.53 / 717.69 / 291.30) are
+  identical across the 08:30, 08:00 and 07:00 windows. Trimming the window only lifts the **floor**,
+  which is the side price never revisits on a trend day. So option (a) (`techniques.team2.pm_window_start`)
+  would have changed **nothing** today: 0 of 3 refusals freed at 08:30, and the session stays 100 %
+  blocked on all three. Only a 09:00 start frees anything, and only IWM — and a 30-minute "pre-market
+  range" is no longer the author's chart, it is noise (IWM's 09:00 range is 0.81 = 2.8 ATR).
+  **What this does to the three readings in F112:** (a) is now measurably the weakest — it helps the
+  range/chop days the zone was arguably right about and does nothing for the gap days it is eating;
+  (b) (B5's conjunction — risk-off only inside **both** the PM range and the PDH–PDL range) is the
+  only candidate that acts today, because all three symbols closed a 15m body **above** their PDH
+  zones at 09:45 and are therefore outside the PDH–PDL range while still inside the PM range — it
+  would have released exactly the entries the method's own confirmation had just called for; (c)
+  (correct as written) now costs more than F112 estimated, since gap days are both the most common
+  Team2 setup and the ones most completely blocked. Measured from `bars` alone (66 RTH minutes,
+  09:30–10:36 ET); no rule, knob, gate or money path touched, nothing deployed. Related: **F112**
+  (parent), F15, F18, F20.
+
 - **F112 (2026-09-11, run 66 — MEASURED, NOT FIXED; the V6/B5 no-trade zone, fed by a 04:00 ET
   pre-market window, blocks most of the trading day. Rule + shared-engine question — USER'S CALL).**
   The code is a faithful reading of the book: V6/V7 draw `PMH→PML` as the **no-trade zone** and B5

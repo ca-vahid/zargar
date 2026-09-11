@@ -4769,3 +4769,78 @@ setup, that is a gap to report, not a refusal.
   "which series is authoritative" decision**, **F112's window/rule decision (new, and the largest
   single lever on how often this technique trades)**, F67's two shared-side halves, and the
   F30-family question F105 sharpens.
+
+## 2026-09-11 10:36 ET (run 67 - still zero fires; F113 kills the "narrow the window" fix)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed 61 desk-wide. Three Team2 plans armed for
+  **2026-09-11**, mode `auto`, book **Team2 Practice** (sim): SPY `87634a53`, QQQ `36a3cab1`,
+  IWM `72949add`. `needsAttention false`, `attentionReasons []`, `trailGaps []`, no `readError`.
+  **0 fires, 0 trades, 0 open, P&L $0.00** at 10:36 - hour two of the session and nothing has yet
+  reached the contract picker.
+- **What the read saw since run 66 (10:07):** nothing new was *allowed*, only noted. SPY added
+  `same_pullback` at **10:10** and **10:32**, QQQ at **10:34**; IWM added nothing. Verified against
+  the tape rather than taken on trust: I re-aggregated today's 1m bars to 2m and recomputed the
+  EMA13 independently - SPY's 10:30 bar (h765.78 l765.07 c765.07) really does straddle EMA13 765.49,
+  QQQ's 10:30 and 10:32 bars really do touch 715.89/715.87, and my EMA13 lands within ~0.06 of the
+  engine's `regimeLast`. The F62 bookkeeping is self-consistent too: SPY closed 0.38-0.42 above the
+  EMA13 at 10:22-10:26 (0.5 ATR = 0.26) so `_departed` flipped, the 10:30 contact counted as an
+  episode and the 10:32 re-contact was correctly the *same* pullback. `touches` stays **0/0/0** - the
+  zone refusals still do not spend the D9 allowance (F100) - while `pullbacks` is now **6/4/1**.
+- **F113 - NEW, MEASURED, NOT FIXED. The fix everyone expected for F112 does not work on a gap day.**
+  Run 66's sweep made the PM *window* look like the lever (04:00 -> 59 % of RTH blocked, 08:30 -> 35 %).
+  Re-running **today's three actual refusals** against every candidate window shows all three stay
+  refused at 08:30, 08:00 and 07:00, and the session stays **100 % blocked on all three symbols**
+  down to an 08:30 start. Reason: on a gap-up the binding edge is the pre-market **high**, printed in
+  the last 30 minutes before the open - 766.53 / 717.69 / 291.30 are identical across the 08:30,
+  08:00 and 07:00 windows. Trimming the window only lifts the floor, the side a trend day never
+  revisits. Only a 09:00 start frees anything (IWM alone; SPY still 98 % blocked, QQQ 71 %), and a
+  30-minute "pre-market range" is noise (IWM 0.81 = 2.8 ATR). **Consequence for the user's F112
+  decision: option (a), the `pm_window_start` knob, is now the weakest of the three - option (b),
+  B5's conjunction (risk-off only inside BOTH the PM range and the PDH-PDL range), is the only
+  reading that acts today**, and it would release exactly the entries the method's own 09:45
+  confirmation called for, since all three closed 15m bodies above their PDH zones. Full table in
+  TRADING-RULES **F113**. Nothing changed; this is still the user's call.
+- **Cohort v2 tally, session-to-date (09:30-10:36):** `warmup` 3/3 - **`listing` 3/3 from the real
+  chain** (SPY 195 strikes, QQQ 212, IWM 138), no `listing_unavailable` - `model_out_of_band` 0 -
+  **`contract_deferred` 0 + `skip_no_contract` 0** - fills 0, `priced` 0 - `target_replanned` 0 -
+  `trail_gap` 0 - `scenario` 3/3 - `skip_no_trade_zone` 3/3 (unchanged - `note_once`) -
+  `same_pullback` 5 total. F104/F105's live picker path remains armed but unexercised today.
+- **Data is real-time and the option side would price fine if we ever got there.** Quotes sub-second,
+  `session regular`, tight books (SPY 764.94/764.97, QQQ 715.58/715.61, IWM 289.31/289.32); 1m bars
+  banking with **`source exchange`**, 63 RTH rows each, last bar 69 s old; `barAgeSeconds` 61-108,
+  `stale false`, `quoteAgeSeconds` 0 on all three plans. Spot-checked the real-time 0DTE option
+  quotes the picker would use - SPY 766C 0.75/0.76 (spread 1.3 %, IV 0.152, delta 0.34), QQQ 717C
+  0.90/0.91, IWM 290C 0.31/0.32 - all `available true`, `asOf` = now, all near the $0.60 premium
+  target. Not a delayed chain row.
+- **Replay parity holds** - SPY live 4 events = replay 4, IWM 2 = 2, QQQ live 4 vs replay 5 where the
+  extra row is the 10:34 `same_pullback` printed after I fetched the live read; same kinds at the
+  same minutes otherwise.
+- **F85 standing check: clean for Team2.** No Team2 ERROR and no Team2 traceback in
+  `backend/zargar-8420.log`. **Not ours but escalating:** the `cartel-observer bar handling failed`
+  traceback (`options_cartel`, "entry read requires symbol-matched, minute-aligned 1m bars") now
+  fires roughly every 5 minutes - **7 occurrences in the last hour** vs 2 in run 66. Team2's own bar
+  loop is unaffected (`SessionListener._bar_loop` catches per listener), and it is another desk's
+  technique, so left alone - but the rate is climbing and the owner should see it.
+- **F107 standing check: count still 18.** The 09:25 pre-open + 09:30 finalize held (`complete true`,
+  `pmh`/`pml`/`dayType gap_up`/`sizingAtOpen none` on all three; `replan false`). The audit still
+  shows **no `targets_rederived` row** - F110 exactly, fixed in v0.7.49, deploy still queued.
+- **No code shipped this run** (TRADING-RULES F113 is the only edit). **No restart** - v0.7.49 stays
+  queued for after 16:00 ET.
+- **Next run (~11:00 ET) should:** (1) check whether any symbol finally **leaves its PM range** -
+  SPY needs 766.53, QQQ 717.69, IWM 291.30 (IWM traded 291.44 early, so it is the likeliest) - and
+  record the first `bucket full` fire with its `contract` pick; (2) continue the cohort-v2 tally,
+  especially the first `contract_deferred`/`skip_no_contract`/`priced` series; (3) watch for
+  `target_replanned` (F81b structure fallback is live on this gap day) rather than
+  `skip_target_behind`; (4) re-run the F85 journal query **and re-count the cartel-observer
+  tracebacks** - if the rate keeps climbing it is worth telling the user plainly; (5) **do not
+  attempt the `/team2` UI check** (F103); (6) after 16:00 ET deploy **v0.7.49** via `ZargarRestart`;
+  (7) at ~17:05 re-check F107 stays at **18** and the nightly mints three plans for Monday 2026-09-14.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed - see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by
+  F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's band
+  question**, **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's "which series
+  is authoritative" decision**, **F112's window/rule decision - now sharpened by F113: the window
+  knob is not the answer, B5's conjunction is the live candidate**, F67's two shared-side halves, and
+  the F30-family question F105 sharpens.
