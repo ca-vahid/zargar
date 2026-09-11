@@ -77,6 +77,8 @@ class Team2Runner(PlanRunner):
         self._warm_loaded: set[str] = set()
         self._listing_tried: dict[str, int] = {}       # F104: last listing fetch attempt per plan (ms)
         self._listing_warned: dict[str, bool] = {}
+        self._trail_gaps: dict[str, list[dict]] = {}   # run_id -> journal writes that failed (evidence gaps)
+        self._trail_gaps: dict[str, list[dict]] = {}   # run_id -> journal writes that failed (evidence gaps)
         self._seen: dict[str, int] = {}                # run_id -> events already acted on
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
         self._sigma_cache: dict[str, tuple[str, float]] = {}
@@ -165,9 +167,23 @@ class Team2Runner(PlanRunner):
         run_id = getattr(ap, "run_id", None)
         if journal is None or not run_id:
             return
-        with contextlib.suppress(Exception):
+        try:
             await journal.append(kind, {"runId": run_id, "symbol": ap.symbol, "event": event, "reason": reason, **detail},
                                  aggregate_type="technique_run", aggregate_id=run_id)
+        except Exception as exc:  # noqa: BLE001 - a hole in the record is itself evidence (Codex, 2026-09-10)
+            gaps = self._trail_gaps.setdefault(run_id, [])
+            gaps.append({"event": event, "kind": kind, "error": str(exc)[:200], "at": int(time.time() * 1000)})
+            self._log(ap, "trail_gap", f"the audit record for '{event}' was NOT written ({exc}) — this session's trail is "
+                      f"incomplete: {len(gaps)} gap(s) so far", event_=event, error=str(exc)[:200], gaps=len(gaps))
+            log.error("team2 trail gap on %s: %s not journaled (%s)", run_id, event, exc)
+            if len(gaps) == 1:
+                with contextlib.suppress(Exception):
+                    await self._alert(ap, f"Team2 {ap.symbol}: audit trail gap — '{event}' was not journaled ({exc}); "
+                                          f"treat today's record as incomplete", level="warning", stage="trail")
+
+    def trail_gaps(self, run_id: str) -> list[dict]:
+        """The journal writes that FAILED for this plan run (empty = every trail step is on the record)."""
+        return list(self._trail_gaps.get(run_id, []))
 
     async def _expiry_for(self, provider, symbol: str, rules: Team2Rules, today: dt.date) -> tuple[str | None, str | None]:
         exps = await provider.expirations(symbol)
@@ -236,6 +252,8 @@ class Team2Runner(PlanRunner):
         opts = getattr(self.engine, "options", None)
         if opts is None:
             trade.errors.append("options service not attached")
+            await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", "options service not attached",
+                              trigger=trade.trigger_id, verdict="deferred", stage="service", examined=[], direction=trade.direction)
             return None
         rules = self.rules()
         try:
@@ -245,6 +263,8 @@ class Team2Runner(PlanRunner):
             expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
             if expiry is None:
                 trade.errors.append(why or "no expiry")
+                await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", why or "no expiry",
+                                  trigger=trade.trigger_id, verdict="deferred", stage="expiry", examined=[], direction=trade.direction)
                 return None
             chain = await provider.chain(ap.symbol, expiry)
             spot = float(trade.entry)
@@ -334,6 +354,9 @@ class Team2Runner(PlanRunner):
         except Exception as exc:  # noqa: BLE001 - reported on the trade, never raised into the bar loop
             trade.errors.append(f"contract pick failed: {exc}")
             log.exception("team2 pick_contract failed")
+            await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", f"contract pick failed: {exc}",
+                              trigger=trade.trigger_id, verdict="deferred", stage="error", error=str(exc)[:200], examined=[],
+                              direction=trade.direction)
             return None
 
     def preopen_due(self, now: dt.datetime) -> bool:
@@ -1159,6 +1182,7 @@ class Team2Runner(PlanRunner):
         so no UI special-casing (user 2026-09-04: 'tell me how it works' inside the Armed section)."""
         d = super()._snapshot(ap)
         rules_now = self.rules()
+        d["trailGaps"] = self.trail_gaps(ap.run_id)      # cohort v2: failed audit writes are shown, never hidden
         plan = ap.plan or {}
         read = self._last_sim.get(ap.run_id) or {}
         q = self.engine.quotes.get(ap.symbol)

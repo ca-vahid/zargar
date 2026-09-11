@@ -2437,6 +2437,11 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-10 late (Codex on v0.7.47: trail gaps must be evidence; v0.7.48)** — a failed journal write in `_trail`
+  is no longer suppressed: `trail_gap` plan event, one `_alert` per plan, `trailGaps` on the snapshot,
+  `Team2Runner.trail_gaps(run_id)`; the picker's early exits (service missing, no expiry, exception) journal a
+  `deferred` verdict with `stage`. A session whose snapshot shows `trailGaps` is NOT a fully observed session for
+  cohort v2; the watch job must say so. Rules unchanged.
 - **2026-09-10 late (user decision after Codex accepted v0.7.45; v0.7.46)** — "Proceed with cohort v2, keep fresh
   quotes mandatory, capture the complete candidate → quote → order → fill → exit trail, keep near-ITM eligibility
   unchanged for now." `require_fresh_quote` stays True (runtime verified). The trail is now journaled under the plan

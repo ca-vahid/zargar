@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.47";
+export const APP_VERSION = "0.7.48";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.48",date:"2026-09-10",title:"A hole in the audit record is itself recorded",items:[
+    {tag:"fixed",text:"Team2: when an audit-trail write fails, the plan now logs a trail gap, raises one warning per plan and shows the gaps on its snapshot, so an incomplete record can never pass for a quiet session. The trade itself is not blocked by the record. The contract picker's early exits (options service missing, no expiry listed, an unexpected error) now write a deferred verdict instead of returning silently."},
+  ]},
   {
     version: "0.7.47",
     date: "2026-09-10",
