@@ -611,14 +611,18 @@ class ProposalService:
         return pdict
 
     def _start_entry_study(self, pdict: dict) -> None:
-        """Entry-quality DATA COLLECTION, never behavior (Codex consolidated
-        recommendation P3, 2026-09-10): the 1.05x source-cap and delayed-entry
-        variants need time-stamped NBBO for EVERY eligible idea — takes, skips,
-        rejects and would-be runners alike — not a loser-only sample. For each
-        option proposal this journals one TipEntryStudy event with the stated
-        premium and the contract's NBBO at alert time and again after
-        `techniques.tip.entry_study_delay_seconds` (180). Journal-only; no
-        sizing, gating or execution reads it."""
+        """PROPOSAL-TIME diagnostics, never behavior (Codex consolidated
+        recommendation P3 + v0.7.44 review corrections, 2026-09-10). Honest
+        semantics: these are quotes at DECISION time (proposal creation, which
+        follows extraction/appraisal), not recovered alert-time history; the
+        delayed sample is measured from the decision sample. Fields keep the
+        source's stated premium (the signal's), the proposal limit and — later,
+        from fills — execution price SEPARATE; refPrice is the proposal limit,
+        never the source quote. Coverage is proposal-path only: ideas that
+        never become an option proposal are NOT in this cohort — this data is
+        diagnostics, not yet the all-idea study the 1.05x/delay variants need.
+        Two journal rows (phase created / delayed) so a restart between them
+        loses only the delayed sample, visibly."""
         eng = self.engine
         if pdict.get("secType") != "OPT":
             return
@@ -638,19 +642,37 @@ class ProposalService:
 
         async def study() -> None:
             try:
+                signal_premium = None
+                sig_id = pdict.get("signalId")
+                if sig_id:
+                    with contextlib.suppress(Exception):
+                        async with eng.sf() as session:
+                            sig = await session.get(Signal, sig_id)
+                        signal_premium = getattr(sig, "premium", None) if sig else None
+                base = {"proposalId": pdict["id"], "symbol": sym,
+                        "verdict": ((pdict.get("context") or {}).get("analyst") or {}).get("verdict"),
+                        "signalStatedPremium": signal_premium,
+                        "proposalLimit": pdict.get("limitPrice"),
+                        "proposalCreatedAt": pdict.get("createdAt"),
+                        "delaySeconds": delay}
                 with contextlib.suppress(Exception):
-                    await eng.options.reprice({"symbol": sym})
-                at_alert = snap()
+                    await eng.options.refresh_now(sym)
+                at_decision = snap()
+                await eng.journal.append(
+                    "TipEntryStudy",
+                    {**base, "phase": "created", "atDecision": at_decision,
+                     "sampledAt": dt.datetime.now(dt.timezone.utc).isoformat()},
+                    aggregate_type="proposal", aggregate_id=pdict["id"],
+                    portfolio_id=pdict.get("portfolioId"))
                 await asyncio.sleep(delay)
                 with contextlib.suppress(Exception):
-                    await eng.options.reprice({"symbol": sym})
+                    await eng.options.refresh_now(sym)
                 later = snap()
                 await eng.journal.append(
                     "TipEntryStudy",
-                    {"proposalId": pdict["id"], "symbol": sym,
-                     "verdict": ((pdict.get("context") or {}).get("analyst") or {}).get("verdict"),
-                     "statedPremium": ((pdict.get("context") or {}).get("sizing") or {}).get("refPrice"),
-                     "delaySeconds": delay, "atAlert": at_alert, "afterDelay": later},
+                    {**base, "phase": "delayed", "atDecision": at_decision,
+                     "afterDelay": later,
+                     "sampledAt": dt.datetime.now(dt.timezone.utc).isoformat()},
                     aggregate_type="proposal", aggregate_id=pdict["id"],
                     portfolio_id=pdict.get("portfolioId"))
             except Exception:
@@ -661,7 +683,7 @@ class ProposalService:
 
     # ------------------------------------------------------------- decide
     async def _maybe_retry_stale_quote(self, pdict: dict, intent: OrderIntent,
-                                       order: dict) -> dict:
+                                       order: dict, *, via: str = "") -> dict:
         """Bounded ONE-shot recovery for a pre-submission quote-staleness
         rejection (Codex consolidated recommendation 1A, 2026-09-10): the
         10:53 AAPL take died on 'quote age 10.5s (max 10s)' with no retry.
@@ -678,12 +700,16 @@ class ProposalService:
         eng = self.engine
         if order.get("status") != "REJECTED_RISK":
             return order
+        if via != "auto":
+            return order                # AUTO entries only (Codex v0.7.44 1A-P2):
+                                        # a human's click is the human's decision
         ctx = pdict.get("context") or {}
         if (ctx.get("techniqueId") or "") != "tip":
             return order
         pf = eng.positions.portfolio(pdict["portfolioId"]) or {}
-        if pf.get("kind") == "live":
-            return order                # live books: a human decides, never a retry
+        if pf.get("kind") != "sim":
+            return order                # Practice books only — live/paper/unknown
+                                        # kinds never retry
         reason = str(order.get("rejectReason") or "")
         if "quote age" not in reason or ";" in reason:
             return order                # not a pure freshness rejection
@@ -691,20 +717,27 @@ class ProposalService:
             return order                # once only
         stamp = {"at": dt.datetime.now(dt.timezone.utc).isoformat(),
                  "firstOrderId": order.get("id"), "reason": reason[:200]}
-        async with eng.sf() as session:  # write-ahead: stamp BEFORE the retry
-            row = await session.get(Proposal, pdict["id"])
+        async with eng.sf() as session:  # write-ahead: stamp BEFORE the retry,
+            # row-locked so two concurrent approvals cannot both claim it
+            row = await session.get(Proposal, pdict["id"], with_for_update=True)
             if row is None or (row.context or {}).get("freshRetry"):
                 return order
             row.context = {**(row.context or {}), "freshRetry": stamp}
             await session.commit()
+        # a REAL fresh observation for the exact contract (Codex v0.7.44 1A-P1:
+        # reprice()'s already-served path re-reads the cache — the retry must
+        # request new data and verify the source timestamp actually advanced)
         fresh_ask = None
+        fresh_ts = None
         with contextlib.suppress(Exception):
             if intent.sec_type == "OPT":
-                await eng.options.reprice({"symbol": intent.symbol})
-                fresh_ask = await _live_ask(eng, intent.symbol)
+                q = await eng.options.refresh_now(intent.symbol)
             else:
                 q = eng.quotes.get(intent.symbol)
-                fresh_ask = float(q.ask) if q is not None and q.ask and q.ask > 0 else None
+            if q is not None:
+                fresh_ts = getattr(q, "source_ts", None) or getattr(q, "ts", None)
+                fresh_ask = float(q.ask) if q.ask and q.ask > 0 else None
+        stamp["freshSourceTs"] = fresh_ts
         limit = intent.limit_price
         if fresh_ask and limit and fresh_ask < float(limit):
             limit = round(fresh_ask, 2)
@@ -814,7 +847,7 @@ class ProposalService:
             bracket=bracket, source="signal",
             signal_id=pdict["signalId"], proposal_id=proposal_id)
         order = await eng.orders.place(intent)
-        order = await self._maybe_retry_stale_quote(pdict, intent, order)
+        order = await self._maybe_retry_stale_quote(pdict, intent, order, via=via)
 
         status = "executed" if order.get("status") not in ("REJECTED_RISK", "REJECTED") else "failed"
         async with eng.sf() as session:

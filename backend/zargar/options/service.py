@@ -95,6 +95,19 @@ class OptionsService:
         """The last chain row seen for a contract (greeks/IV/OI), no fetch."""
         return self._snapshots.get(symbol.upper())
 
+    async def refresh_now(self, symbol: str):
+        """Force ONE fresh observation for a contract (Codex v0.7.44 review
+        1A, 2026-09-10): reprice()'s already-served path returns the cached
+        quote, so a staleness RETRY that calls it can resubmit against the
+        very quote that was rejected. This always requests new data for the
+        tracked set and returns the (possibly updated) quote — the caller
+        verifies the source timestamp actually advanced."""
+        sym = symbol.upper()
+        await self.track(sym)
+        with contextlib.suppress(Exception):
+            await self._refresh_live()
+        return self.engine.quotes.get(sym)
+
     async def reprice(self, contract: dict | None) -> dict | None:
         """A picked contract (chain row: bid/ask/mid/spreadPct from the ~15-min
         delayed chain) re-priced on the real-time NBBO after track(). Sizing,

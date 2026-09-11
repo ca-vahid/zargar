@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.46";
+export const APP_VERSION = "0.7.47";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.47",
+    date: "2026-09-10",
+    title: "A retry that actually looks again",
+    items: [
+      { tag: "fixed", text: "The stale-quote entry retry now requests a genuinely fresh observation for the exact contract (the cached reprice path could resubmit against the very quote that was rejected), and it fires only for automatic Practice entries - a human's click is a human's decision." },
+      { tag: "fixed", text: "The tick-path premium stop now judges the quote's SOURCE age, like the bar path - an hour-old bid re-received a second ago can no longer force a market exit - and tick exits carry their mark evidence too." },
+      { tag: "fixed", text: "The Ledger no longer borrows an exit explanation from another book: reasons attach only within the same portfolio, and a cross-book match says 'reason unmatched' instead of guessing." },
+      { tag: "improved", text: "The entry-quality study labels its data honestly: the source's stated premium and the proposal limit are separate fields, samples are decision-time (not alert-time), and each study writes durable created/delayed records." },
+    ],
+  },
   {version:"0.7.46",date:"2026-09-10",title:"Every step from candidate to fill is on the record",items:[
     {tag:"improved",text:"Team2 cohort v2: the chain listing, the warm-up identity, a model-out-of-band read and every contract verdict (picked, deferred, refused) with the full list of contracts quoted are now written to the plan's append-only audit, joining the order, fill and exit records already there. Before this they lived only in the plan's in-memory event list, which is capped and lost on a crash."},
     {tag:"improved",text:"User decisions recorded: fresh quotes stay mandatory for a contract, near-ITM eligibility stays unchanged, the twenty-session review counts cohort v2 sessions only."},

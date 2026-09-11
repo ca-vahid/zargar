@@ -265,15 +265,22 @@ class DeskService:
         # opened it — pulled from the journal, never guessed
         order_ids = {r[0].order_id for r in rows}
         reasons: dict[str, str] = {}
-        exits: list[tuple[str, dt.datetime, str]] = []      # (leg symbol, ts, text)
+        # (leg symbol, ts, text, portfolio) — the PORTFOLIO is part of the
+        # identity (Codex v0.7.44 review, 2026-09-10): symbol/time matching
+        # without it attached a shadow share plan's "TP1 11.3617 reached" to
+        # the Practice option loss on the same underlying. A reason may only
+        # explain a fill in ITS OWN book; anything else says so.
+        exits: list[tuple[str, dt.datetime, str, str | None]] = []
         if order_ids:
             async with eng.sf() as session:
                 evs = (await session.execute(
-                    select(Event.type, Event.aggregate_id, Event.payload, Event.ts).where(
+                    select(Event.type, Event.aggregate_id, Event.payload, Event.ts,
+                           Event.portfolio_id).where(
                         Event.type.in_(("ManagedPositionExit", "TechniquePlanExit",
                                         "OrderIntentCreated"))))).all()
-            for etype, agg, payload, ts in evs:
+            for etype, agg, payload, ts, ev_pid in evs:
                 p = payload or {}
+                pid = str(p.get("portfolioId") or ev_pid or "") or None
                 if etype == "OrderIntentCreated" and agg in order_ids:
                     src = p.get("source")
                     reasons[agg] = ("opened from an approved proposal" if src == "signal" else
@@ -282,12 +289,13 @@ class DeskService:
                                     "placed by hand" if src == "manual" else f"opened · {src}")
                 elif etype == "ManagedPositionExit":
                     exits.append((str(p.get("leg") or p.get("symbol") or "").upper(), ts,
-                                  f"exit · {p.get('kind')}: {p.get('reason')}"))
+                                  f"exit · {p.get('kind')}: {p.get('reason')}", pid))
                 elif etype == "TechniquePlanExit":
                     exits.append((str(p.get("optionSymbol") or p.get("symbol") or "").upper(), ts,
-                                  f"exit · {p.get('kind')}: {p.get('reason')}"))
+                                  f"exit · {p.get('kind')}: {p.get('reason')}", pid))
             # exit decisions don't carry order ids: the SELL fill on the same leg
-            # within 10 minutes AFTER the decision is that decision's order
+            # within 10 minutes AFTER the decision, IN THE SAME BOOK, is that
+            # decision's order; a candidate in another book is never borrowed
             import re as _re
             for e, *_ in rows:
                 if e.side != "SELL":
@@ -295,13 +303,20 @@ class DeskService:
                 sym = e.symbol.upper()
                 und = (_re.match(r"^[A-Z]{1,6}", sym) or [sym])[0] if len(sym) > 10 else sym
                 best = None
-                for leg, ts, txt in exits:
+                cross_only = False
+                for leg, ts, txt, pid in exits:
                     # armed-plan exits log the underlying; the manager logs the leg
                     if leg in (sym, und) and 0 <= (e.ts - ts).total_seconds() <= 600:
+                        if pid and pid != e.portfolio_id:
+                            cross_only = True
+                            continue
                         if best is None or ts > best[0]:
                             best = (ts, txt)
                 if best:
                     reasons[e.order_id] = best[1]
+                elif cross_only:
+                    reasons[e.order_id] = ("exit · reason unmatched (a same-time decision "
+                                           "exists only in another book — not borrowed)")
 
         def reason_of(oid: str | None) -> str | None:
             return reasons.get(oid or "")
