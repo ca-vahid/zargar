@@ -1323,16 +1323,13 @@ class PositionManager:
             if p.policy.get("premium_watch") and p.entry_mark and \
                     not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
                             for x in p.exits if x.get("orderId")):
-                mark = p.net_mark(self.engine.quotes.get)
-                # a ~15-min-delayed chain quote is not a tick: a stuck-high bid
-                # would trim on a gain that already evaporated and floor the rest
-                # (audit 2026-09-02) — the bar path keeps judging the premium
-                # stop on closes; the tick path needs a real-time print
-                legs_fresh = all(
-                    (lq := self.engine.quotes.get(l.symbol)) is not None and (now - lq.ts) <= stale_ms
-                    and not getattr(lq, "delayed", False)
-                    for l in p.open_legs)
-                if legs_fresh:
+                # SOURCE-age-aware mark, same evaluator as the bar path (Codex
+                # v0.7.44 review 1B, 2026-09-10): receipt time is not evidence —
+                # an hour-old OPRA bid re-received a second ago must not fire a
+                # market exit. Delayed/chain sources are refused outright; the
+                # mark's provenance lands on the exit record.
+                mark = self._fresh_net_mark(p)
+                if mark is not None:
                     today = dt.datetime.fromtimestamp(now / 1000, ET).date()
                     uq = self.engine.quotes.get(p.symbol)
                     und_move = ((float(uq.last) / p.entry - 1) * 100
@@ -1354,8 +1351,10 @@ class PositionManager:
                         p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
                         p.state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
                                                         dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
-                        self._log(p, d.kind, f"{d.reason} (quote watch)")
-                        await self.close(p.id, fraction=d.fraction, reason=d.reason, kind=d.kind,
+                        wreason = (f"{d.reason} (quote watch) "
+                                   f"[mark: {self._mark_evidence.get(p.id, '?')}]")
+                        self._log(p, d.kind, wreason)
+                        await self.close(p.id, fraction=d.fraction, reason=wreason, kind=d.kind,
                                          force_market=d.kind == "premium_stop")
                         continue
                     new_state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
