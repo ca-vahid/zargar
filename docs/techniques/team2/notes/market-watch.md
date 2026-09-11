@@ -5665,3 +5665,89 @@ setup, that is a gap to report, not a refusal.
   (a) rank the venues / (b) stamp and accept / (c) drop Yahoo's bars for streamed symbols**, and
   **F117's — should a dead option quote source raise itself, and should it announce its recovery**,
   F67's two shared-side halves, and the F30-family question F105 sharpens.
+
+
+## 2026-09-11 15:35 ET (run 77 — the entry window closed with 0 fires; last-entry gate verified, containment final at 1092/1092)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed 58 desk-wide. Three Team2 plans armed for
+  **2026-09-11**, mode `auto`, book **Team2 Practice** (sim): SPY `87634a53`, QQQ `36a3cab1`,
+  IWM `72949add`. `needsAttention false`, `attentionReasons []`, `trailGaps []`, no `readError`,
+  `sessionWindowNow prime_close`. **0 fires, 0 trades, 0 open, P&L $0.00** — the contract picker was
+  never reached today.
+- **The day's entries are over and the gate that closed them worked (F120, new).** All three reads
+  emitted one `skip_last_entry` at **15:32** — the first 2m bucket past the 15:30 `last_entry_min` —
+  in the method's own words ("past 15:30 — no new entries, managing what is open until the 15:45
+  flatten (D6/C3)"). Journalled: `TechniquePlanTriggerSkipped` **4 → 7** across today's three run
+  ids. One-shot per plan, no `needsAttention`, reproduced by replay at the same timestamp. This is
+  the first time this watch has seen the cutoff cross with plans still waiting — verified correct,
+  nothing to fix.
+- **What the read saw since run 76 (15:10): four new events, and IWM kept grinding.** SPY 10 events
+  (9 + the 15:32 gate), QQQ 11 (10 + gate), IWM 9 (a `same_pullback` at **15:18** + gate). Counters:
+  SPY `pullbacks` **18** / `opportunities` **0**, QQQ **11** / **0**, IWM 1 (dead, D10 bias flip) +
+  **21** / **0** — IWM's scenario-2 counter added **+5** in 25 minutes riding the EMA13 down.
+  `touches` **0/0/0+0** all day: the D9 two-pullback allowance went completely unspent for a full
+  session. **Day's final tally: 51 structural pullback episodes, 0 tradeable locations, 0 fires.**
+- **F112 final evidence for the session: 1092/1092.** Re-measured on the persisted tape (**364 1m
+  bars per symbol**, 09:30–15:33): every RTH 1m close on all three symbols sat inside its own
+  pre-market range — SPY 763.70–766.31 vs PM 758.17–766.53; QQQ 713.82–717.45 vs 706.58–717.69; IWM
+  288.82–291.28 vs 287.68–291.30. IWM stays the clean single-cause case (stack `bear`, aligned with
+  its short bias — the zone is the only refusal); SPY and QQQ refuse on E3/B9/E4 **and** the zone,
+  `mixed`/`strength 0` since 14:31 and never recovered. **A whole RTH session inside the pre-market
+  range is the F112 datapoint to put in front of the user.**
+- **IWM's bias never came back to the flip.** 15m closes since run 76: 289.27 / 289.165 / 289.08
+  against the **289.83** body threshold — now **0.75 short (0.26%)**, versus 0.022% at its 13:15
+  closest. Bias ended the day **scenario 2 / puts**, ninth consecutive run. Margin recorded (F27).
+- **F117: one outage for the entire session.** `grep -c "OPRA quotes"` **unchanged at 54** (last
+  warning 13:04:40 ET); all three 0DTE contracts `provider alpaca`, `delayed false`, `quote.source
+  opra`, `sourceTs == ts`: SPY 765C **0.30/0.31**, QQQ 716C **0.17/0.18**, IWM 289P **0.09/0.10**.
+  Final incident shape: **~49 min, 12:15:45–13:04:40 ET**, silent both ways.
+- **F119: the IWM offset closed and the "strength divergence" was a stale snapshot, not the code.**
+  SPY matched **exactly** for a fourth run (10/10 events, 18/18 pullbacks); QQQ 11/11 with both
+  splits held (11:48-vs-11:50 eighth run, 13:36-vs-13:34 fourth); IWM 9/9 with its 14:36-vs-14:34
+  split and `scenario_2` pullbacks **21 live / 21 replay** — after +1 then −1, now **0**, which
+  settles it as bar-boundary noise. An apparent IWM strength gap (live 3 / replay 2) **vanished on a
+  same-moment re-read** (2/2) — the 3 came from an older `/api/team2/status` snapshot. Method note
+  recorded: for F119 always compare reads taken in the same minute. ATR lower in replay on all three
+  for an eighth run. No new decision surface.
+- **Data real-time on both sides.** Underlying quotes sub-second (`quoteAgeSeconds` 0, `session
+  regular`) — SPY 764.98, QQQ 715.66, IWM 289.15; `barAgeSeconds` 109/109/109, `stale false`; reads
+  advanced every 2m close through the cutoff. 1m bars banking: **364/364 RTH rows `source exchange`**
+  on all three, last row **15:33 ET**.
+- **Cohort v2 tally, session-to-date (09:30–15:35):** `warmup` 3/3 and `listing` 3/3 unchanged from
+  the open (no restart since) · `model_out_of_band` 0 · **`contract_deferred` 0 + `skip_no_contract`
+  0 for the whole day** · fills 0, `priced` 0 · `target_replanned` 0 · `skip_target_behind` 0 ·
+  `trail_gap` 0 · `scenario` 4 · `skip_no_trade_zone` 4 · `same_pullback` **19** (SPY 7, QQQ 8,
+  IWM 4) · **`skip_last_entry` 3 (new)**.
+- **F85 standing check: clean for Team2.** Journal for today's three run ids: `TechniquePlanRestored`
+  18, `TechniquePlanRead` 10, `TechniquePlanTriggerSkipped` **7**, `TechniquePlanArmed` 3,
+  `TechniquePlanPreopen` 3 — **no error, failure or alert row**. Desk-wide error-ish in 3 h = 2
+  `SignalVerificationFailed` + 1 `TechniquePlanError`, all other desks. 116 Team2 log lines, none at
+  error level, no Team2 traceback. **Cartel-observer:** `cartel-observer bar handling failed` now
+  **40** (was 38) — flat; still `options_cartel`, another desk's technique, harmless to Team2.
+- **F107 standing check: count still 18** (`technique_runs where technique='team2'`). Pre-open holds
+  on all three (`complete true`, `pmh`/`pml`, `dayType gap_up`, `sizingAtOpen none`). Audit mix
+  SPY/QQQ 13 rows each, IWM 15; still **no `targets_rederived` row** — F110 exactly, fixed on disk in
+  **v0.7.49**, runtime **0.7.48**, deploy still queued.
+- **No code shipped this run** (F120 + the F112/F119/F117 run-77 notes in TRADING-RULES are the only
+  edits). **No restart** — v0.7.49 stays queued for after 16:00 ET.
+- **Next run (~16:05 ET) should:** (1) confirm the 15:45 flatten passed with nothing to flatten and
+  the plans closed out cleanly at 16:00 (status leaves `armed`, grade/scorecard written); (2) record
+  the **final full-RTH containment number** (09:30–16:00, expect ~1170/1170) as the closing F112
+  datapoint; (3) **deploy v0.7.49 via the `ZargarRestart` scheduled task** (never `start.ps1` from
+  the assistant's own shell) and verify `/api/health` reports 0.7.49; (4) re-check F117's warning
+  count (54 at 15:35) one last time for the day; (5) at ~17:05 confirm F107 goes 18 → 21 as the
+  nightly mints three plans for **Monday 2026-09-14** and that each carries a `targets_rederived`
+  row now that v0.7.49 is live (that is F110's acceptance test); (6) **do not attempt the `/team2` UI
+  check** (F103).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by
+  F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's band
+  question**, **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's "which series
+  is authoritative" decision**, **F112's zone decision (a full session, 1092/1092 closes, 51
+  pullbacks and 0 trades: (b) the conjunction or (c) accept no-trade gap days — (a) the window knob
+  is dead)**, **F119's venue-precedence decision — (a) rank the venues / (b) stamp and accept /
+  (c) drop Yahoo's bars for streamed symbols**, and **F117's — should a dead option quote source
+  raise itself, and should it announce its recovery**, F67's two shared-side halves, and the
+  F30-family question F105 sharpens.

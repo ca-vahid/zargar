@@ -2343,6 +2343,49 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F120 (2026-09-11, run 77 — VERIFIED CORRECT, no defect; the D6/C3 last-entry gate fired on all
+  three plans at 15:32 ET and is on the durable record).** 15:30 is `last_entry_min` (930) and today
+  was the first session this watch has observed the cutoff cross with plans still waiting. All three
+  reads emitted a single `skip_last_entry` event at **15:32** — the first 2m bucket at/after the
+  cutoff — with the method's own wording ("past 15:30 — no new entries, managing what is open until
+  the 15:45 flatten (D6/C3)"), and the desk journalled them: `TechniquePlanTriggerSkipped` went
+  **4 → 7** across today's three run ids. The gate is one-shot (one event per plan, not per bar), it
+  did not disturb `needsAttention` (still `false` on all three) and the replay reproduced all three
+  events at the identical timestamp. **No code, rule, knob or money path touched** — recorded so the
+  behaviour is not re-investigated. Consequence: **2026-09-11 ends with 0 fires and 0 contract picks
+  on all three symbols** — the picker was never reached, for the sixth gap-up session running.
+  Related: **F112** (the reason nothing reached the cutoff), F110, F107.
+- **F112 run 77 evidence (15:35 ET) — 1092/1092, and the entry window is now closed.**
+  Re-measured on the persisted tape (09:30–15:33 ET, **364 1m bars per symbol**): **1092 of 1092 RTH
+  1m closes inside their own pre-market range** — SPY 763.70–766.31 vs PM 758.17–766.53, QQQ
+  713.82–717.45 vs 706.58–717.69, IWM 288.82–291.28 vs 287.68–291.30. With `skip_last_entry` now
+  fired (**F120**), the containment number is final for entries: **a whole RTH session inside the
+  pre-market range, 51 structural pullback episodes (SPY 18 · QQQ 11 · IWM 1+21), 0 opportunities,
+  0 touches, 0 fires.** IWM remains the clean single-cause case (stack `bear`, aligned with its
+  scenario-2 short bias — the zone is the only refusal); SPY and QQQ refuse on E3/B9/E4 **and** the
+  zone (`mixed`/`strength 0` since 14:31, never recovered). Measurement only. Related: **F112**
+  (parent), F113, F114, F115, **F120**, F27.
+- **F119 run 77 note (15:35 ET): the IWM pullback offset closed, and the apparent EMA-stack
+  divergence was a timing artifact.** Live-vs-replay: **SPY 10/10 events at identical timestamps and
+  `pullbacks` 18/18 — an exact match for the fourth consecutive run**; QQQ 11/11 events with **both**
+  splits still held (11:48-vs-11:50 for an eighth run, 13:36-vs-13:34 for a fourth) at `pullbacks`
+  11/11; IWM 9/9 events with its 14:36-vs-14:34 split and `scenario_2` `pullbacks` **21 live / 21
+  replay** — after +1 (run 75) and −1 (run 76) the offset is now **0**, confirming run 76's reading
+  that it is bar-boundary noise and not a systematic miscount. The run's one apparent strength
+  divergence (IWM live 3 vs replay 2) **did not survive a same-moment re-read**: the `3` came from a
+  `/api/team2/status` snapshot minutes older than the replay; re-reading the live regime alongside
+  the replay gave **2/2**. Record that as the method for checking F119 strength: compare reads taken
+  in the same minute, never a cached snapshot against a fresh replay. ATR still lower in replay on
+  all three (SPY 0.1728 vs 0.1759, QQQ 0.1921 vs 0.1959, IWM 0.0860 vs 0.0868) — eighth run. No new
+  decision surface; still the user's (a)/(b)/(c) call.
+- **F117 run 77 stability check (15:35 ET): one outage for the whole session.** `grep -c "OPRA
+  quotes"` is **unchanged at 54** (last warning 13:04:40 ET, 2.5 h before the entry cutoff), and all
+  three 0DTE contracts read `provider alpaca` / `delayed false` / `quote.source opra` with
+  `sourceTs == ts`: SPY 765C **0.30/0.31** (delta 0.451, vol 491.6k), QQQ 716C **0.17/0.18** (delta
+  0.356, vol 448.6k), IWM 289P **0.09/0.10** (delta −0.379, vol 107.2k). Final incident shape for the
+  day: **~49 minutes, 12:15:45–13:04:40 ET, silent in both directions.** The open question is
+  unchanged — should a dead option-quote source raise itself, and should it announce its recovery.
+
 - **F112 run 76 evidence (15:10 ET) — containment holds at 1002/1002 with 50 minutes left.**
   Re-measured against the persisted tape (09:30–15:03 ET, 334 1m bars per symbol): **1002 of 1002
   RTH 1m closes still sit inside their own pre-market range**, and the RTH extremes have not moved
