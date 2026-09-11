@@ -4507,3 +4507,11 @@ unreported for a session.
 - For the watch job: from the first session on 0.7.43, count `listing` / `listing_unavailable`, `contract_refused`
   (with `examined`) and `warmup` events per plan; the 20-session review clock restarts on this execution path.
   Near-ITM eligibility remains a user decision — report any refusal where the only in-band contract was at/through spot.
+
+## Standing instruction from 2026-09-10 late — evaluation cohort v2 (v0.7.45)
+
+The twenty-session review restarts with the first session on v0.7.45 or later. Keep the tally in two labelled cohorts:
+v1 = sessions 1–11 (read evidence; grid ladder, delayed/model vetoes, elevated boots) and v2 = corrected path. Per
+session in v2 record per plan: `listing`/`listing_unavailable`, every `model_out_of_band`, every `contract_deferred` /
+`contract_refused` with its `examined` list, fills and their `priced` series, and F81b `target_replanned`. A deferral
+(no live quote, or the quote bound hit) is an operational limitation to fix, not a method refusal — say so.

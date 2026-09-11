@@ -7,6 +7,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 ## Rules under observation
 
+- **Evaluation cohort v2 (from the first session on ≥ v0.7.45, Codex PR #57 review, 2026-09-10).** The twenty-session
+  review counts only sessions run on the corrected execution path (listed strikes, live quotes the only contract
+  authority, one warm-up rule). Sessions 1–11 (2026-08-26..2026-09-10) are PRESERVED as cohort v1 with their
+  operational limitations classified (grid ladder, delayed-chain veto, model veto, elevated boots, F75 history) —
+  they are read evidence, not execution evidence. Codex: "twenty calendar/session observations are not sufficient
+  regardless of usable fills and candidate coverage" — the review also needs the candidate-to-fill/exit traces
+  (`listing`, `model_out_of_band`, `contract_deferred|refused` with `examined`, fills) per session.
+
 - **F81b `target_replan=structure` (gap days only) — ON in Practice since 2026-09-09 20:30 ET, user decision, UNDER
   OBSERVATION.** Turned on so it is measured live rather than forgotten: on a gap day an entry whose planned target
   has been run through takes the pre-market extreme, else the next ladder level, else NO target (trims, one-candle
@@ -2155,6 +2163,21 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   short-TTL dev bootstrap gated behind an explicit env flag. Until one is chosen, treat every
   "UI not verified" line in this log as expected, not as a transient failure.
 
+- **F108 (2026-09-10 late evening — Codex review of PR #57 / v0.7.43; FIXED in v0.7.45).** The reviewer ran the
+  v0.7.43 suite (15 passed) and wrote three regressions that failed, adopted verbatim as
+  `tests/test_codex_pr57_review.py`: (1) the MODEL still held the first veto — a listed strike that models under
+  the floor but quotes in band never reached the live picker, because `_act` routes only `fire` events; (2) the
+  picker still filtered and ranked on DELAYED asks before choosing what to quote (delayed $0.05 / fresh $0.21:
+  refused with zero quote requests); (3) a failed re-price returned the delayed contract as eligible; (4) the
+  warm-up stamp was taken before the fallback history fetch (stamp 0 rows, read consumed 960). **Fixes:**
+  `plan.contractAuthority = quotes` on the live path (stamped by the runner, read by replay): the read never
+  refuses on the model — when nothing models in band it fires on the nearest listed OTM strike as its proxy and
+  emits `model_out_of_band` (`fire.modelBand: out`); sweeps stay `model`. `pick_contract` reads NO delayed price:
+  it walks the listed OTM contracts nearest spot, quotes each live (`quote_candidates` 8), stops early only on a
+  FRESH ask under the floor, and a contract without a live NBBO is never eligible (`require_fresh_quote`, default
+  on) — the verdict is `contract_deferred` (unpriced or unexamined candidates remain) or `contract_refused` (every
+  candidate quoted live and none in band), each with `examined`. The warm-up is re-sliced and hashed AFTER the
+  fallback fetch. **Still open, deliberately:** near-ITM/ATM eligibility (user decision). Related: F104, F105, F99.
 - **F104 addendum (2026-09-10 evening — FIXED in v0.7.43 by option (a), Codex follow-up).** The runner reads
   today's chain listing at the first bar of the session (`_ensure_listing`: expirations → today's expiry under
   `dte_policy` → the chain's strike set) and stamps it on the plan as `listedStrikes` {expiry, strikes, count,
@@ -2414,6 +2437,10 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-10 late evening (Codex PR #57 review → v0.7.45)** — F108: quotes are the ONLY contract authority on
+  the live path (model proxy, no delayed-price selection, fresh-or-deferred), warm-up hashed after fallback.
+  Knobs: `quote_candidates` 4 → 8, `require_fresh_quote` (True). Evaluation cohort v2 starts on this release;
+  cohort v1 preserved and classified (Rules under observation).
 - **2026-09-10 evening (Codex Thursday follow-up, v0.7.43)** — F104 listed-strike ladder (option a), F105 fresh
   quotes before any refusal (the series that fills decides), F99 one warm-up rule with stamped identity, F107 EM
   scorer boundary. Knobs added: `quote_candidates` (4), `warmup_sessions` (12). `strike_step` is now only the

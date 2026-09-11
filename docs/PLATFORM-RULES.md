@@ -1335,3 +1335,12 @@ inconsistencies; all four are fixed in this release, Team2-only except one line:
   `schtasks /Run /TN ZargarRestart`. Codex is right that `stop.ps1`'s own check is narrower than the restart door —
   run `GET /api/ops/restart-check` first and do not stop with open managed positions in a money mode.
 
+### Team2 contract authority — 2026-09-10 late (v0.7.45, Codex PR #57 review)
+
+Codex reviewed v0.7.43 and showed the model and the delayed chain still vetoed ahead of fresh pricing. On the Team2
+live path the contract authority is now the live NBBO alone: the read fires on a model proxy when nothing models in
+band (`plan.contractAuthority = quotes`), `Team2Runner.pick_contract` selects on NO delayed price (listed OTM contracts
+nearest spot, quoted live one by one, early stop on a fresh ask under the floor), and a contract without a live quote
+is never eligible — `contract_deferred` vs `contract_refused` are distinct verdicts with `examined`. Sweeps and history
+keep the model gate and state it. Nothing shared changed: `options/pick.select_by_premium` and `OptionsService.reprice`
+are unmodified; EM's picker untouched. `test_codex_pr57_review.py` is Codex's regression file verbatim.

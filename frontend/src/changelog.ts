@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.44";
+export const APP_VERSION = "0.7.45";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.45",date:"2026-09-10",title:"Live quotes are the only authority on a contract",items:[
+    {tag:"fixed",text:"Team2 F108: on the live path the premium model no longer vetoes a contract. When nothing models inside the band the read still fires, carries the nearest listed out-of-the-money strike as its proxy and says 'model out of band'; the live picker then decides on fresh executable quotes. Sweeps and history keep the model as their gate and say so."},
+    {tag:"fixed",text:"Team2 F108: the picker reads no delayed price at all. It walks the listed out-of-the-money contracts nearest the underlying, quotes each one live, and stops early only when a live ask is already under the floor. A contract with no live quote is never eligible: the entry is deferred, not priced off the delayed chain (opt-out knob require_fresh_quote). When the quote bound is reached with contracts unexamined the entry is deferred, never declared 'no contract'."},
+    {tag:"fixed",text:"Team2 F99: the warm-up identity is now stamped after the fallback history fetch, so it describes the bars the read actually consumed."},
+  ]},
   {
     version: "0.7.44",
     date: "2026-09-10",

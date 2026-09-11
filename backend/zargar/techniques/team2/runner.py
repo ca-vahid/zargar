@@ -243,31 +243,61 @@ class Team2Runner(PlanRunner):
                     and c.get("strike") is not None and c.get("symbol")]
             otm = [c for c in side if (float(c["strike"]) > spot if want == "call" else float(c["strike"]) < spot)]
             otm.sort(key=lambda c: abs(float(c["strike"]) - spot))
-            # the delayed prefilter is WIDE (half the floor .. twice the band, or no quote at all): it bounds the
-            # quote requests, it never decides
-            near = [c for c in otm if not float(c.get("ask") or 0) or floor * 0.5 <= float(c.get("ask") or 0) <= band_hi * 2]
-            near.sort(key=lambda c: abs((float(c.get("ask") or rules.target_premium)) - float(rules.target_premium)))
-            cands = [dict(c) for c in near[:max(1, int(rules.quote_candidates))]]
+            # F108: NO delayed price is read for selection. Candidates are the listed OTM contracts nearest spot,
+            # quoted live one by one (bounded by `quote_candidates`); the walk stops early only on a FRESH ask
+            # under the floor (further out is only cheaper). Whatever was not examined is reported as unexamined —
+            # a deferral, never a "no contract" verdict.
+            limit = max(1, int(rules.quote_candidates))
             examined: list[dict] = []
-            for c in cands:
+            eligible: list[dict] = []
+            unpriced = 0
+            stopped_under_floor = False
+            for raw in otm[:limit]:
+                c = dict(raw)
                 delayed_ask = float(c.get("ask") or 0)
-                c["priced"] = "chain"
-                with contextlib.suppress(Exception):
-                    await opts.reprice(c)          # R2/F105: the series that fills decides; `priced` says which spoke
+                c["priced"] = "none"
+                c["bid"], c["ask"] = 0.0, 0.0                 # the delayed quote is never the price
+                try:
+                    await opts.reprice(c)                      # `priced: opra` when the live NBBO is served
+                except Exception as exc:  # noqa: BLE001
+                    c["priced"] = "none"
+                    c["_error"] = str(exc)
+                live = c.get("priced") == "opra" or c.get("source") == "opra" or c.get("delayed") is False
+                fresh = live and float(c.get("ask") or 0) > 0
+                if fresh:
+                    c["priced"] = "opra"
+                if not fresh and not rules.require_fresh_quote and delayed_ask > 0:
+                    c["ask"], c["bid"], c["priced"] = delayed_ask, float(raw.get("bid") or 0), "chain"
+                    fresh = True
                 examined.append({"strike": float(c["strike"]), "symbol": c.get("symbol"), "delayedAsk": delayed_ask,
-                                 "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced")})
-            pick = select_by_premium(cands, spot, trade.direction, target_premium=rules.target_premium,
+                                 "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced"),
+                                 "eligible": bool(fresh)})
+                if not fresh:
+                    unpriced += 1
+                    continue
+                eligible.append(c)
+                if float(c["ask"]) < floor:
+                    stopped_under_floor = True
+                    break
+            unexamined = max(0, len(otm) - len(examined)) if not stopped_under_floor else 0
+            pick = select_by_premium(eligible, spot, trade.direction, target_premium=rules.target_premium,
                                      premium_floor=rules.premium_floor, expiry=expiry, today=today,
-                                     is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick)
+                                     is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick) if eligible else None
             if pick is None:
-                seen = ", ".join(f"{x['strike']:g} ask {x['ask']:.2f} ({x['priced']}" + (f", chain {x['delayedAsk']:.2f})" if x['priced'] == 'opra' else ")")
+                seen = ", ".join(f"{x['strike']:g} " + (f"ask {x['ask']:.2f} ({x['priced']}, chain {x['delayedAsk']:.2f})" if x['eligible']
+                                                          else f"no live quote ({x['priced']}; chain {x['delayedAsk']:.2f})")
                                  for x in examined) or "no OTM contract listed"
-                trade.errors.append(f"no {want} between ${floor:.2f} and ${band_hi:.2f} (target ${rules.target_premium:.2f}) "
-                                    f"at {expiry} on the live quotes — examined {seen}")
-                self._log(ap, "contract_refused", f"{trade.trigger_id}: " + trade.errors[-1], trigger=trade.trigger_id,
-                          examined=examined, spot=round(spot, 4), listed=len(otm), expiry=expiry)
+                deferred = bool(unpriced) or unexamined > 0
+                verdict = "deferred" if deferred else "refused"
+                why = (f"{'entry deferred' if deferred else 'no ' + want} — nothing eligible between ${floor:.2f} and ${band_hi:.2f} "
+                       f"(target ${rules.target_premium:.2f}) at {expiry} on the live quotes; examined {seen}"
+                       + (f"; {unpriced} candidate(s) had no live quote" if unpriced else "")
+                       + (f"; {unexamined} listed contract(s) further out not examined (quote bound {limit})" if unexamined else ""))
+                trade.errors.append(why)
+                self._log(ap, f"contract_{verdict}", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id, examined=examined,
+                          spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced, expiry=expiry)
                 return None
-            c = next(x for x in cands if x.get("symbol") == pick.symbol)
+            c = next(x for x in eligible if x.get("symbol") == pick.symbol)
             priced = c.get("priced")
             c = {**pick.to_dict(), "priced": priced}
             c["_sizeMult"] = float(getattr(trade, "_size_mult", 1.0) or 1.0)
@@ -356,10 +386,7 @@ class Team2Runner(PlanRunner):
             self._log(ap, "history_excluded", f"warm-up skipped {len(rep['excluded'])} session(s) that are not market data: "
                       + ", ".join(f"{x['date']} ({x['reason']})" for x in rep["excluded"][:6]) + " (F75)",
                       excluded=rep["excluded"], used=rep["sessionsUsed"][-12:])
-        ap.plan["warmup"] = {k: rep.get(k) for k in ("sessions", "sessionsUsed", "hash", "rows")}
-        self._log(ap, "warmup", f"EMA warm-up: {rep['rows']} bars over {len(rep['sessionsUsed'])} valid session(s) "
-                  f"(rule: last {rules.warmup_sessions}); identity {str(rep.get('hash') or '')[:12]} (F99)",
-                  warmup=ap.plan["warmup"])
+        ap.plan["contractAuthority"] = "quotes"      # F108: on the live path the model never vetoes a contract
         if len(warm) < 400:
             # day one: nothing banked yet — the 200 EMA on 2m needs ~400 minutes of history, so
             # fetch the last sessions' extended-hours tape once (Yahoo keeps ~20 days)
@@ -373,6 +400,12 @@ class Team2Runner(PlanRunner):
                 warm.sort(key=lambda b: b.ts)
             except Exception:  # noqa: BLE001 - a failed warm-up only delays the first reads
                 log.warning("team2 warm-up fetch failed for %s", ap.symbol)
+            # the fetched tape goes through the same rule — the stamp below describes what the read consumes
+            warm, rep = Team2Service.warmup_slice(warm, sessions=rules.warmup_sessions)
+        ap.plan["warmup"] = {k: rep.get(k) for k in ("sessions", "sessionsUsed", "hash", "rows")}
+        self._log(ap, "warmup", f"EMA warm-up: {rep['rows']} bars over {len(rep['sessionsUsed'])} valid session(s) "
+                  f"(rule: last {rules.warmup_sessions}); identity {str(rep.get('hash') or '')[:12]} (F99)",
+                  warmup=ap.plan["warmup"])
         self._warm[ap.run_id] = warm
         # today's bars already banked (pre-market) join the live list
         todays = [b for b in rows if session_date(b.ts) == ap.plan_for]
@@ -651,7 +684,7 @@ class Team2Runner(PlanRunner):
         trade.target_kind = str(e.get("targetKind") or "plan")
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid}: {e.get('why', '')}", trigger=tid, spot=spot, premiumModel=e.get("premium"),
-                  strikeModel=e.get("strike"), bucket=trade._bucket, early=e.get("early"), target=target,
+                  strikeModel=e.get("strike"), modelBand=e.get("modelBand"), bucket=trade._bucket, early=e.get("early"), target=target,
                   targetKind=trade.target_kind, haltedAtFire=halted or None)
         stub = SimpleNamespace(kind=trade.kind, direction=direction, fill_price=spot, entry=spot, stop=stop,
                                fire_event=e, trigger={"targets": [{"price": target}] if target else []},
