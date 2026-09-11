@@ -52,6 +52,7 @@ DEFAULTS: dict[str, Any] = {
     "execution.min_dte": 1,                     # NEVER hold an option to expiry: platform floor for dte_close (techniques may only raise it)
     "execution.reconcile_at": "09:05",          # daily pre-open reconciliation pass (positions vs the broker)
     "execution.exit_inflight_ttl_seconds": 900, # an unfilled exit order older than this stops suppressing new exits (zombie guard)
+    "execution.premium_mark_max_age_seconds": 90,  # a premium exit needs a mark this fresh (Codex 1B 2026-09-10: SPCX stopped on an hour-stale 0.97 while trading 2.02)
     # --- the morning desk surface (POST-SOAK Phase 1) ---
     "desk.morning_at": "08:25",             # ET; the one-glance morning report (push + Telegram + Dashboard)
     "desk.morning_push": True,              # off = compose on demand only (GET /api/desk/morning)
@@ -201,6 +202,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.allow_live_auto": False, # auto mode may self-approve into a LIVE portfolio
     "techniques.tip.max_contracts_per_tip": 25,  # hard cap on option qty per proposal — budget sizing on lotto premium is nonsense (277 × $0.09, 2026-08-31)
     "techniques.tip.max_premium_per_tip": 750.0,  # $ option premium cap per tip (BBAI 2026-09-04: one 25x $0.51 loser ate the day; 1 contract always fits)
+    "techniques.tip.entry_study_enabled": True,   # journal-only NBBO sampling at alert and +delay for every option proposal (entry-quality study, P3 2026-09-10)
+    "techniques.tip.entry_study_delay_seconds": 180.0,
     "techniques.tip.reserve_slots": 3,            # glide sizing (2026-09-07): budget = min(budget_per_tip, free cash / this) — always room for ~N more tips (0 = off)
     "techniques.tip.min_budget": 500.0,           # the glide's floor: a late tip still gets a minimum expression while any cash lasts
     # --- the lotto lane (0–3 DTE tips; user decision 2026-09-01) ---

@@ -70,6 +70,7 @@ PROPOSAL_CREATED = "ProposalCreated"
 PROPOSAL_APPROVED = "ProposalApproved"
 PROPOSAL_REJECTED = "ProposalRejected"
 PROPOSAL_EXPIRED = "ProposalExpired"
+PROPOSAL_RETRIED = "ProposalRetried"   # bounded quote-refresh recovery (1A, 2026-09-10)
 BROKER_CONNECTED = "BrokerConnected"
 BROKER_DISCONNECTED = "BrokerDisconnected"
 BROKER_SYNC = "BrokerSync"
