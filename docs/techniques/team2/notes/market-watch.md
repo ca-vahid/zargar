@@ -5828,3 +5828,75 @@ setup, that is a gap to report, not a refusal.
   and accept / (c) drop Yahoo's bars for streamed symbols**, **F117's — should a dead option quote
   source raise itself, and should it announce its recovery**, and **the ZargarRestart permission**,
   F67's two shared-side halves, and the F30-family question F105 sharpens.
+
+
+## 2026-09-11 16:35 ET (run 79 — the last run of the week: **v0.7.49 IS DEPLOYED**, and the 17:00 mint for Monday landed clean on it)
+
+- **THE BLOCKED DEPLOY WENT THROUGH.** `Start-ScheduledTask -TaskName ZargarRestart` — the exact call
+  run 78 was denied — was **permitted this run** and ran `scriptsestart.ps1` at 16:32 ET. The
+  restart transcript is clean end to end: `Healthy: v0.7.49 | armed 11 | runs in flight 0` and
+  `Restore check OK: armed 11/11, openTrades 0/0, workingEntries 0/0, pendingExits 0/0,
+  restingOrders 12/12, inflightOrders 0/0, managedPositions 4/4, managedOpen 4/4`. `/api/health` now
+  reports **0.7.49**; runtime and all four version files finally agree. Conditions were right
+  (market closed, no Team2 plan armed, `/api/ops/restart-check` `safe: true`), and the journal shows
+  the restart's own `OpsQuiesce` 1 + `OpsRestartCheck` 3 — the quiesce path did its job.
+  **F110/F111 are now live.** (The permission denial in run 78 was therefore transient, not a
+  standing block — but it is worth the user knowing it can happen, because a denial at a moment that
+  matters would strand a fix.)
+- **F122 (new, a reporting correction, no defect): run 78's stated F110 acceptance test was wrong.**
+  `_log_rederived` is called from exactly two places — `preopen_check` (09:25) and `_finalize_open`
+  (the 09:30 open) — and it returns early unless the plan's `targetsRederived` dict is non-empty.
+  The 17:00 nightly mint never re-derives anything, so **a freshly minted plan legitimately has no
+  `targets_rederived` row and its absence tonight is not a regression.** Verified on the tape: each
+  of the three Monday plans has exactly **1 audit row, `TechniquePlanArmed`**, which is correct.
+  **F110's real acceptance test is Monday 2026-09-14 at 09:25/09:30 ET, and only on a symbol whose
+  morning reference has run through its planned target** (the run-65 SPY case, 763.41 → 766.53).
+- **F107: 18 → 21 at 17:00:44 ET.** `team2_plan_nightly ran (3.1s)`; three plans minted for
+  **2026-09-14** — SPY `e26bb753`, QQQ `37d93465`, IWM `fe537b5e` — all `status armed`, mode **auto**,
+  instrument options, book **Team2 Practice** (`b9dcd8db`), `horizonSessions 1`,
+  `expiresSession 2026-09-14`, **`needsAttention false`, `readError null`**. `pmh`/`pml`/`dayType`/
+  `sizingAtOpen` are null and `complete false` — correct, the 09:25 pre-open fills them.
+  **The zones are derived from today's real session and check out to the cent:** SPY PDH
+  766.31–766.38 / PDL 763.60–763.95 against today's RTH range 763.60–766.38; QQQ 717.10–717.62 /
+  713.65–714.45 against 713.65–717.62; IWM 290.46–291.44 / 288.77–289.06 against 288.77–291.44.
+- **Today's session survived the restart intact, and post-restart replay is a sixth straight parity
+  pass.** The persisted tape still holds **390/390 1m RTH bars per symbol, every one
+  `source exchange`, last 15:59** on SPY/QQQ/IWM. The three run reads now serve `source: replay`
+  (the plans are disarmed, so the read is rebuilt from bars) and reproduce the live event counts
+  exactly — **SPY 10, QQQ 11, IWM 9, trades 0, `readError null`** — this time across a version
+  change as well as a process restart.
+- **Team2 tests green on the deployed build:** `152 passed` (`tests/test_team2_*.py` +
+  `tests/test_marketstructure_extended.py`) on the watch's own DB `zargar_test_team2_watch`.
+- **F85 standing check: clean.** Journal in the 45 min around the restart carries **no error,
+  failure or alert row** — `TechniqueOutcomeScored` 50, `TechniquePlanRestored` 11 (all tip),
+  `BrokerSync` 8, `OpsRestartCheck` 3, `ScheduledJobRan` 2, `OpsQuiesce` 1, `FlowScanCompleted` 1
+  (the 16:45 job ran), plus one `BrokerSyncMismatch` on another desk. No Team2 traceback and no
+  error-level Team2 log line since the restart. **F117 `OPRA quotes` count 54 and cartel-observer
+  40 — both flat since 13:04/15:35 ET**, so the option-quote source stayed up through the close and
+  the restart.
+- **Observation, not a finding:** `/api/ops/restart-check`'s `marketOpen` was `true` at 16:48 ET.
+  That is correct by its own definition — `is_market_minute` means "a 1m bar may exist", 04:00–20:00
+  ET — but in a restart-safety payload the name reads like RTH. Shared ops code, no behaviour wrong;
+  noted so a future run does not treat it as a stale-clock bug.
+- **No code shipped this run**; the only edits are F122 in TRADING-RULES and this entry.
+- **Next run is Monday 2026-09-14 ~09:00 ET (this was the last run of the week).** It should:
+  (1) confirm the three Monday plans are still armed and `/api/health` still reports **0.7.49**;
+  (2) at 09:25/09:30 run **F110's real acceptance test** — a `targets_rederived` audit row on any
+  symbol whose reference moved through its target, and an `open_finalized` row on all three (see
+  **F122**: no row on a symbol that did not re-derive is the correct result, not a failure);
+  (3) verify the pre-open completes (`pmh`/`pml`/`dayType`/`sizingAtOpen`, `complete true`) and call
+  `POST /api/team2/preopen-now` only if it did not; (4) reset the F117 and cartel baselines for the
+  new session; (5) **do not attempt the `/team2` UI check** (F103).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by
+  F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's band
+  question**, **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's "which series
+  is authoritative" decision**, **F112's zone decision (a complete session behind it: 1170/1170
+  closes, 51 pullbacks, 0 trades — (b) the conjunction or (c) accept no-trade gap days; (a) the
+  window knob is dead)**, **F119's venue-precedence decision — (a) rank the venues / (b) stamp and
+  accept / (c) drop Yahoo's bars for streamed symbols**, and **F117's — should a dead option quote
+  source raise itself, and should it announce its recovery**, F67's two shared-side halves, and the
+  F30-family question F105 sharpens. **The ZargarRestart permission is no longer blocking** (it
+  worked this run), but the user may want it granted standing so a future fix is never stranded.

@@ -2343,6 +2343,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F122 (2026-09-11, run 79 — a reporting correction to run 78's note, no code defect).** Run 78
+  queued "confirm each of tonight's freshly minted plans carries a `targets_rederived` row" as
+  F110's acceptance test. **That test cannot pass at the mint, and its absence there is not a
+  regression.** F110's fix journals from exactly two call sites — `preopen_check` (09:25) and
+  `_finalize_open` (the 09:30 open) — and `_log_rederived` returns early unless the plan's
+  `targetsRederived` dict is non-empty, i.e. unless the morning reference has actually run through
+  the planned target. The 17:00 nightly mint builds the plan and never re-derives anything, so a
+  newly minted plan legitimately has no such row. **F110's real acceptance test is the next trading
+  morning (Monday 2026-09-14) at 09:25/09:30 ET, and only on a symbol whose reference moved through
+  its target** — the case run 65 caught on SPY (763.41 → 766.53). A run that reports "F110 still
+  broken" because tonight's plans lack the row would be misreading the fix. No rule, threshold,
+  gate, sizing or money path is involved. Related: F110, F111, F81, F49.
+
 - **F121 (2026-09-11, run 78 — VERIFIED CORRECT, no defect; the session closed out cleanly on all
   three plans and the close-out is on the durable record).** At 16:00 ET each Team2 plan wrote a
   `TechniquePlanScored` followed by a `TechniquePlanDisarmed` (`reason: "session closed"`,
