@@ -1332,3 +1332,12 @@ nearest spot, quoted live one by one, early stop on a fresh ask under the floor)
 is never eligible — `contract_deferred` vs `contract_refused` are distinct verdicts with `examined`. Sweeps and history
 keep the model gate and state it. Nothing shared changed: `options/pick.select_by_premium` and `OptionsService.reprice`
 are unmodified; EM's picker untouched. `test_codex_pr57_review.py` is Codex's regression file verbatim.
+
+### Journal kind `TechniquePlanContract` — 2026-09-10 late (Team2 desk, v0.7.46)
+
+One new event kind in `events.py`: a technique's contract verdict (`picked | deferred | refused`) with every contract it
+quoted (`examined`: strike, delayed ask, live bid/ask, series, eligibility), journaled under the plan run. Team2 writes it
+from `pick_contract`; other techniques may adopt it, none is changed. Team2 also journals `listing`, `warmup`,
+`model_out_of_band` and `target_replanned` as `TechniquePlanRead`. Rationale: the user's cohort-v2 instruction — the
+candidate → quote → order → fill → exit trail must be on the append-only record, not only in the plan's capped
+in-memory events.

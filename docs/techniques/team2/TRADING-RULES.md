@@ -2437,6 +2437,12 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-10 late (user decision after Codex accepted v0.7.45; v0.7.46)** — "Proceed with cohort v2, keep fresh
+  quotes mandatory, capture the complete candidate → quote → order → fill → exit trail, keep near-ITM eligibility
+  unchanged for now." `require_fresh_quote` stays True (runtime verified). The trail is now journaled under the plan
+  run (`TechniquePlanContract` picked|deferred|refused with `examined`; `TechniquePlanRead` listing / warmup /
+  model_out_of_band / target_replanned) so `GET /api/technique/armed/{id}/audit` shows every step next to the
+  PlanRunner's order/fill/exit records. Near-ITM: unchanged, no experiment started.
 - **2026-09-10 late evening (Codex PR #57 review → v0.7.45)** — F108: quotes are the ONLY contract authority on
   the live path (model proxy, no delayed-price selection, fresh-or-deferred), warm-up hashed after fallback.
   Knobs: `quote_candidates` 4 → 8, `require_fresh_quote` (True). Evaluation cohort v2 starts on this release;

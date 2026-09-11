@@ -157,6 +157,18 @@ class Team2Runner(PlanRunner):
             return band
         return round(min(ask + rules.tick, band), 2)
 
+    async def _trail(self, ap: ArmedPlan, kind: str, event: str, reason: str, **detail) -> None:
+        """Cohort v2 (2026-09-10, user decision): the candidate -> quote -> order -> fill -> exit trail is journaled under
+        the plan run, not only kept in the plan's in-memory events. Orders, fills and exits are journaled by the
+        PlanRunner already; this writes the steps before the order."""
+        journal = getattr(getattr(self, "engine", None), "journal", None)
+        run_id = getattr(ap, "run_id", None)
+        if journal is None or not run_id:
+            return
+        with contextlib.suppress(Exception):
+            await journal.append(kind, {"runId": run_id, "symbol": ap.symbol, "event": event, "reason": reason, **detail},
+                                 aggregate_type="technique_run", aggregate_id=run_id)
+
     async def _expiry_for(self, provider, symbol: str, rules: Team2Rules, today: dt.date) -> tuple[str | None, str | None]:
         exps = await provider.expirations(symbol)
         exps_d = sorted(e for e in (exps or []) if e)
@@ -199,6 +211,8 @@ class Team2Runner(PlanRunner):
             self._log(ap, "listing", f"{len(strikes)} listed strikes for {expiry} ({lo:g}..{hi:g}) from the chain — the "
                       f"premium gate walks these, not the ${rules.strike_step:g} grid (F104)",
                       expiry=expiry, count=len(strikes), low=lo, high=hi)
+            await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "listing", f"{len(strikes)} listed strikes for {expiry} ({lo:g}..{hi:g})",
+                              expiry=expiry, count=len(strikes), low=lo, high=hi, provider=plan["listedStrikes"]["provider"])
             with contextlib.suppress(Exception):
                 await self._persist(ap)
         except Exception as exc:  # noqa: BLE001 - the read keeps working on the grid and says so
@@ -206,6 +220,7 @@ class Team2Runner(PlanRunner):
                 self._listing_warned[ap.run_id] = True
                 self._log(ap, "listing_unavailable", f"could not read today's listed strikes from the chain ({exc}); the "
                           f"premium gate runs on the synthetic ${rules.strike_step:g} grid until it can (F104)", error=str(exc))
+                await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "listing_unavailable", f"no chain listing: {exc}", error=str(exc))
 
     async def pick_contract(self, ap: ArmedPlan, trade: Trade) -> dict | None:
         """The premium-targeted 0DTE contract (V1/F5): structural candidate -> the venue's LISTED contracts ->
@@ -296,6 +311,9 @@ class Team2Runner(PlanRunner):
                 trade.errors.append(why)
                 self._log(ap, f"contract_{verdict}", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id, examined=examined,
                           spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced, expiry=expiry)
+                await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, f"contract_{verdict}", why, trigger=trade.trigger_id, verdict=verdict,
+                                  examined=examined, spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced,
+                                  expiry=expiry, direction=trade.direction)
                 return None
             c = next(x for x in eligible if x.get("symbol") == pick.symbol)
             priced = c.get("priced")
@@ -307,6 +325,11 @@ class Team2Runner(PlanRunner):
             self._log(ap, "contract", f"{trade.trigger_id}: {c.get('display') or c.get('symbol')} ask {c.get('ask')} "
                       f"({priced}; target ${rules.target_premium:.2f}, {expiry}; {len(examined)} candidate(s) quoted)",
                       trigger=trade.trigger_id, examined=examined, priced=priced)
+            await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_picked",
+                              f"{c.get('symbol')} ask {c.get('ask')} bid {c.get('bid')} ({priced})", trigger=trade.trigger_id,
+                              verdict="picked", contract=c.get("symbol"), strike=c.get("strike"), ask=c.get("ask"), bid=c.get("bid"),
+                              priced=priced, examined=examined, spot=round(spot, 4), listed=len(otm), expiry=expiry,
+                              direction=trade.direction)
             return c
         except Exception as exc:  # noqa: BLE001 - reported on the trade, never raised into the bar loop
             trade.errors.append(f"contract pick failed: {exc}")
@@ -406,6 +429,8 @@ class Team2Runner(PlanRunner):
         self._log(ap, "warmup", f"EMA warm-up: {rep['rows']} bars over {len(rep['sessionsUsed'])} valid session(s) "
                   f"(rule: last {rules.warmup_sessions}); identity {str(rep.get('hash') or '')[:12]} (F99)",
                   warmup=ap.plan["warmup"])
+        await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "warmup", f"{rep['rows']} bars, {len(rep['sessionsUsed'])} valid session(s)",
+                          warmup=ap.plan["warmup"])
         self._warm[ap.run_id] = warm
         # today's bars already banked (pre-market) join the live list
         todays = [b for b in rows if session_date(b.ts) == ap.plan_for]
@@ -587,10 +612,11 @@ class Team2Runner(PlanRunner):
                 if journal and what in ("scenario", "pm_break", "late_touch", "pm_retest", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
                                         "skip_reentries", "skip_last_entry", "skip_loss_cap",
-                                        "skip_target_behind"):
+                                        "skip_target_behind", "model_out_of_band", "target_replanned"):
                     # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
                     # they get their own journal kind so skip counts mean skips
-                    kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
+                    kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest",
+                                                              "model_out_of_band", "target_replanned") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
                     await self.engine.journal.append(kind, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": str(e.get("setup") or e.get("scenario") or what),
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},
