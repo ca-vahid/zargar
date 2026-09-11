@@ -108,30 +108,33 @@ class PremiumModel:
 
     def pick_strike(self, spot: float, ts_ms: int, direction: str, *, target_premium: float,
                     premium_floor: float, step: float = 1.0, expiry: dt.date | None = None,
-                    max_steps: int = 40, mode: str = "closest") -> tuple[float, float] | None:
+                    max_steps: int = 40, mode: str = "closest",
+                    strikes: list[float] | None = None) -> tuple[float, float] | None:
         """V1/F5: the "~$0.50 contract". `mode="closest"` (F36, default): of the OTM strikes whose
         mark lies in [floor, 1.5 x target], the one CLOSEST to the target — the same rule the live
         picker applies to real asks, so a contract priced within a cent of the target no longer
         sends the model one strike further out than the book (QQQ 2026-09-04 14:14: 716 @ 0.26 vs
-        717 @ 0.59). `mode="first_under"` is the legacy walk. Returns (strike, mark) or None."""
+        717 @ 0.59). `mode="first_under"` is the legacy walk. Returns (strike, mark) or None.
+
+        F104/F108 (2026-09-10): the ladder walked is the venue's LISTED strikes when `strikes` is
+        given (the runner captures today's listing from the chain and stamps it on the plan), and
+        only otherwise the synthetic `step` grid — which cannot test IWM's 287.5 half strike and
+        refused ten in-band entries on 2026-09-10. A grid walk is a stated limitation, not a listing."""
         call = direction == "long"
-        k = math.ceil(spot / step) * step if call else math.floor(spot / step) * step
-        if (call and k <= spot) or (not call and k >= spot):
-            k = k + step if call else k - step
+        ladder = otm_ladder(spot, call, step=step, strikes=strikes, max_steps=max_steps)
         if mode == "closest":
             cands: list[tuple[float, float]] = []
-            for _ in range(max_steps):
+            for k in ladder:
                 m = self.mark(spot, k, ts_ms, call=call, expiry=expiry)
                 if premium_floor <= m <= target_premium * MAX_OVER_TARGET:
                     cands.append((k, m))
                 if m < premium_floor:
                     break
-                k = k + step if call else k - step
             if not cands:
                 return None
             return min(cands, key=lambda km: (abs(km[1] - target_premium), km[1]))
         best = None
-        for _ in range(max_steps):
+        for k in ladder:
             m = self.mark(spot, k, ts_ms, call=call, expiry=expiry)
             if m <= target_premium:
                 if m >= premium_floor:
@@ -142,12 +145,11 @@ class PremiumModel:
                     return best
                 return None
             best = (k, m)
-            k = k + step if call else k - step
         return None
 
 
     def nearest_otm(self, spot: float, ts_ms: int, direction: str, *, step: float = 1.0,
-                    expiry: dt.date | None = None) -> tuple[float, float]:
+                    expiry: dt.date | None = None, strikes: list[float] | None = None) -> tuple[float, float] | None:
         """The first OTM strike ON THIS LADDER and its modelled mark — diagnostic only (F101).
 
         `pick_strike` returning None says nothing about WHICH strikes it tried, and the ladder is
@@ -156,10 +158,29 @@ class PremiumModel:
         the band). Quoting this strike in the refusal makes that visible without a chain fetch.
         """
         call = direction == "long"
-        k = math.ceil(spot / step) * step if call else math.floor(spot / step) * step
-        if (call and k <= spot) or (not call and k >= spot):
-            k = k + step if call else k - step
-        return (k, self.mark(spot, k, ts_ms, call=call, expiry=expiry))
+        first = next(iter(otm_ladder(spot, call, step=step, strikes=strikes, max_steps=1)), None)
+        if first is None:
+            return None
+        return (first, self.mark(spot, first, ts_ms, call=call, expiry=expiry))
+
+
+def otm_ladder(spot: float, call: bool, *, step: float = 1.0, strikes: list[float] | None = None,
+               max_steps: int = 40) -> list[float]:
+    """The strikes an OTM walk visits, nearest first: the LISTED strikes strictly beyond spot when
+    `strikes` is given (F104: the venue supplies the ladder, the model prices it), else the synthetic
+    `step` grid (a limitation the read states as `strikeSource: grid`)."""
+    if strikes:
+        ks = sorted({float(k) for k in strikes if k is not None})
+        otm = [k for k in ks if k > spot] if call else [k for k in reversed(ks) if k < spot]
+        return otm[:max_steps]
+    k = math.ceil(spot / step) * step if call else math.floor(spot / step) * step
+    if (call and k <= spot) or (not call and k >= spot):
+        k = k + step if call else k - step
+    out = []
+    for _ in range(max_steps):
+        out.append(k)
+        k = k + step if call else k - step
+    return out
 
 
 def pnl_pct(entry_fill: Fill, exit_fill: Fill) -> float:

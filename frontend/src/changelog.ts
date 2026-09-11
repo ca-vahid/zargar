@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.42";
+export const APP_VERSION = "0.7.44";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,30 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.44",
+    date: "2026-09-10",
+    title: "Exits on real evidence, entries with one honest retry",
+    items: [
+      { tag: "fixed", text: "A premium stop can no longer fire on a stale or delayed option mark: SPCX was closed for a phantom 54% bleed while the exit itself filled 4% under entry. Premium exits now require a fresh real-time quote and name their evidence." },
+      { tag: "new", text: "A Tips entry rejected only for quote staleness gets exactly one recovery: refresh the contract's quote, never raise the limit, re-run every risk gate. The 10:53 AAPL take died on a 10.5-second-old quote with no second look." },
+      { tag: "fixed", text: "A filled-but-venue-rounded exit (2.5 contracts filled as 2) no longer strands a phantom remainder that blocks the position from ever getting flat." },
+      { tag: "fixed", text: "The nightly 'unfilled tips' retro no longer teaches lessons from trades that actually filled and lost - an expired signal with a real fill in any book now goes to the closed-position retro instead." },
+      { tag: "new", text: "Entry-quality study: every option proposal records the contract's real quotes at alert time and three minutes later (journal only) - the dataset for deciding source-premium caps and delayed entries on evidence, not anecdotes." },
+    ],
+  },
+  {version:"0.7.43",date:"2026-09-10",title:"The desk prices the contracts that are listed, on the quotes that fill",items:[
+    {tag:"fixed",text:"Team2 F104: the premium gate now walks the venue's LISTED strikes. At the first bar of the session the desk reads today's chain listing and stamps it on the plan; the read prices those contracts instead of a synthetic $1 grid, and every fire or refusal says which ladder it walked. On 2026-09-10 the grid tested IWM's 287 put at $0.11 and never the listed 287.5 put at $0.21, refusing ten in-band pullbacks. History still walks the grid and says so - there is no as-of listing for past sessions."},
+    {tag:"fixed",text:"Team2 F105: a delayed chain ask never refuses a contract on its own. The nearest listed contracts are re-priced on the live NBBO before the premium band is judged, the band is judged on what would fill, and a refusal names every contract it examined with both prices and which series spoke. Same minute, same contract, CBOE said $0.19 and OPRA said $0.20 at a $0.20 floor."},
+    {tag:"fixed",text:"Team2 F99: live, replay and the sweep now seed their EMAs from the same warm-up - the last twelve valid sessions - and the plan carries that slice's content hash, so a replay states whether it matched the desk's warm-up instead of silently running on a different depth (live took ~6 sessions, replay 12, sweep 12 dates)."},
+    {tag:"fixed",text:"F107: the EM outcome scorer scores EM's own runs only; it had been adopting every Team2 and Tip plan run into EM's scorecard."},
+  ]},
+  {version:"0.7.43",date:"2026-09-10",title:"The desk prices the contracts that are listed, on the quotes that fill",items:[
+    {tag:"fixed",text:"Team2 F104: the premium gate now walks the venue's LISTED strikes. At the first bar of the session the desk reads today's chain listing and stamps it on the plan; the read prices those contracts instead of a synthetic $1 grid, and every fire or refusal says which ladder it walked. On 2026-09-10 the grid tested IWM's 287 put at $0.11 and never the listed 287.5 put at $0.21, refusing ten in-band pullbacks. History still walks the grid and says so - there is no as-of listing for past sessions."},
+    {tag:"fixed",text:"Team2 F105: a delayed chain ask never refuses a contract on its own. The nearest listed contracts are re-priced on the live NBBO before the premium band is judged, the band is judged on what would fill, and a refusal names every contract it examined with both prices and which series spoke. Same minute, same contract, CBOE said $0.19 and OPRA said $0.20 at a $0.20 floor."},
+    {tag:"fixed",text:"Team2 F99: live, replay and the sweep now seed their EMAs from the same warm-up - the last twelve valid sessions - and the plan carries that slice's content hash, so a replay states whether it matched the desk's warm-up instead of silently running on a different depth (live took ~6 sessions, replay 12, sweep 12 dates)."},
+    {tag:"fixed",text:"F107: the EM outcome scorer scores EM's own runs only; it had been adopting every Team2 and Tip plan run into EM's scorecard."},
+  ]},
   {version:"0.7.42",date:"2026-09-10",title:"Safer Cartel preparation and executable reserves",items:[
     {tag:"new",text:"EM scratch rule (T-14, off until its sweep passes): once a trade is scratch_r R in favour, half is sold and the stop moves to breakeven, in the simulator and in the live exits alike (technique.scratch_r / scratch_trim). HOOD today: +2.5R in four minutes, then stopped for a full loss."},
     {tag:"fixed",text:"Refreshing preparation preserves existing arms and positions, including when research fails. Pending contracts no longer consume the final armed shortlist; additional ranked candidates are checked within a bounded reserve."},

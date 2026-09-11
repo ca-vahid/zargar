@@ -1297,6 +1297,7 @@ changes no shared execution or risk thresholds. Regression coverage is in
 `test_options_cartel_preparation_safety.py`.
 
 
+
 ### Shared exit knob: scratch rule — 2026-09-10 (EM desk, T-14)
 
 `MarketRules.scratch_r` / `scratch_trim` (default 0 = off). When a filled trade is `scratch_r` R in
@@ -1306,3 +1307,31 @@ size and only earns the breakeven stop), moves `trade.stop` to the entry and per
 `trade.scratched`. `outcome.simulate_plan` mirrors it (`scratch_r=`, outcome `scratched`), so
 sweeps and live behave the same - change one, change both. Every technique reads it through its
 `rules()`; only EM plans to turn it on, after its sweep (TRADING-RULES T-14).
+
+### Team2 picker gates and the EM scorer boundary — 2026-09-10 (Team2 desk, evening; v0.7.43)
+
+Codex's Thursday investigation (`C:/Cursor/zargar-codex/docs/techniques/team2/notes/research/2026-09-10-thursday-investigation.md`,
+probes adopted verbatim as `backend/tests/test_codex_thursday_picker.py`) confirmed two entry-path defects and two
+inconsistencies; all four are fixed in this release, Team2-only except one line:
+
+- **Listed contracts are the ladder.** `techniques/team2/premium.otm_ladder` walks the venue's listed strikes when the
+  plan carries `listedStrikes` (the runner stamps today's chain listing at the first bar); the synthetic grid is the
+  stated fallback (`strikeSource: grid`). History has no as-of listings, so sweeps say `grid`.
+- **The series that fills decides.** `Team2Runner.pick_contract` re-prices the nearest `quote_candidates` listed
+  contracts on the live NBBO (`OptionsService.reprice`) BEFORE the premium band is judged; the delayed chain only
+  bounds the quote requests. Refusals name every candidate examined and which series spoke. No change to
+  `options/pick.select_by_premium` or to EM's picker.
+- **One warm-up rule** (`Team2Service.warmup_slice`, last `warmup_sessions` valid sessions) for live/replay/sweep,
+  stamped by content hash on the plan (`plan.warmup`); replay reports `warmup.match`.
+- **EM's outcome scorer scores EM's runs only** — `TechniqueService.score_pending` gained
+  `TechniqueRun.technique == "enhanced_market"` (one line in `zargar/technique/service.py`). It had been adopting
+  every `team2` and `tip` plan run (F107). EM's owner decides what to do with the rows already written; this desk
+  changed nothing else in EM.
+- **Not changed:** near-ITM/ATM eligibility (OTM-only stands until the user decides), the model band, `strike_step`
+  as a knob (now fallback-only), any shared risk threshold.
+- **Operational (F89, still open):** the engine serving 0.7.42 was started ELEVATED at 18:21 PT on 2026-09-10 with five
+  managed positions and ten resting orders app-wide; the Limited `ZargarRestart` task cannot own it. The handoff is
+  the user's: `scripts\stop.ps1` from the elevated terminal after the readiness check says clear, then
+  `schtasks /Run /TN ZargarRestart`. Codex is right that `stop.ps1`'s own check is narrower than the restart door —
+  run `GET /api/ops/restart-check` first and do not stop with open managed positions in a money mode.
+

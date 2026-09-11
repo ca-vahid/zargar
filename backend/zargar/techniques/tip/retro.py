@@ -364,9 +364,27 @@ async def run_unfilled_retros(eng, *, client=None, limit: int = 3) -> dict:
             _sel(Signal).where(Signal.status == "expired",
                                Signal.created_at >= cutoff)
             .order_by(Signal.created_at.asc()).limit(100))).scalars().all()
+    # an EXPIRED signal is not necessarily an UNFILLED idea (Codex audit 1D,
+    # 2026-09-10): CCXI's Practice fill lost $505 while its signal row read
+    # "expired", and retro 1f692543 taught an entry rule from "the level never
+    # came". Any FILLED order referencing the signal — any lane, any book —
+    # disqualifies it from the unfilled batch; that trade's lesson belongs to
+    # the closed-position retro, which sees the real fill and exit.
+    sig_ids = [r.id for r in rows]
+    filled_ids: set[str] = set()
+    if sig_ids:
+        from ...models import Order as _Order
+        async with eng.sf() as session:
+            filled = (await session.execute(
+                _sel(_Order.signal_id).where(
+                    _Order.signal_id.in_(sig_ids),
+                    _Order.filled_qty > 0))).scalars().all()
+        filled_ids = {s for s in filled if s}
     by_source: dict[str, list] = {}
     for r in rows:
         if (r.extraction or {}).get("unfilledRetro"):
+            continue
+        if r.id in filled_ids:
             continue
         by_source.setdefault(r.source_name or "unknown", []).append(r)
     ran = 0
