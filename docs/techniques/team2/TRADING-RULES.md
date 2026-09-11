@@ -2343,6 +2343,56 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F117 (2026-09-11, run 71 — MEASURED, NOT FIXED; the real-time option quote source (Alpaca OPRA)
+  has been down for ~25 minutes and NOTHING on the desk says so — USER'S CALL on the shared half).**
+  **What happened.** From **12:15:45 ET** to at least **12:35 ET** today, every 60-second
+  `OptionsService._refresh_live()` pass failed with `Alpaca options quotes HTTP 504` — 21 consecutive
+  warnings in `backend/zargar-8420.log`, one per backoff cycle, still failing at the end of the run.
+  I reproduced it **out of process** from a fresh interpreter (`AlpacaOptionsData.latest()` on the
+  three 0DTE contracts Team2 would pick): three attempts, three `HTTP 504`, ~3.1 s each. It is an
+  upstream Alpaca outage, not our client: the **equity** side of the same vendor is healthy
+  (SPY/QQQ/IWM 1m bars banking `source exchange`, 183/183 RTH rows, last bar 65 s old).
+  **What it does to Team2.** `require_fresh_quote` is ON (F108), so during the outage
+  `pick_contract`'s candidate walk gets `priced: "none"` on every listed strike, `eligible` is empty,
+  `unpriced == quote_candidates`, and the verdict is **`contract_deferred`** — no order, no fill, no
+  delayed-chain price ever reaching sizing or the entry limit. **That is exactly the designed
+  fail-closed behaviour and it is correct.** The defect is not the refusal; it is that the refusal
+  would be the FIRST time anyone learns the quote source is down, and only if a setup happened to
+  fire during the window. Today's zone (F112–F115) refused everything before the picker was ever
+  reached, so the outage cost nothing and left no trace on any Team2 surface: `needsAttention` false,
+  `attentionReasons []`, no read event, no journal row, no toast. The only record is a `WARNING` line
+  in a 5 MB log file.
+  **Why it deserves a finding rather than a shrug.** A silent loss of the option quote source is a
+  silent loss of the desk's ability to enter, for as long as it lasts — and, on a day the zone were
+  not already refusing, it would convert a valid EMA13 pullback into a deferral whose stated reason
+  ("no live quote") names the symptom and not the cause. It also degrades what other desks can see:
+  two tips-desk option positions were open at the time (`T270115C00029000` ×6, `APLD261016C00030000`
+  ×3) whose premium watch, premium stop and monetize floors all mark off contract quotes; during the
+  outage those marks fall back to the ~15-minute-delayed CBOE row (badged `priced: "chain"`, so they
+  are honest about it, but they are 15 minutes stale). **Not acted on — other desks' money.**
+  **One correction to runs 68–70.** Those runs reported the 0DTE contracts the picker "would use" as
+  **real-time**, citing `available: true` and `asOf` = now from `GET /api/options/quote/<occ>`. That
+  reading is wrong and would have masked this outage. That route calls `svc.contract()`, which never
+  calls `track()`; `asOf` is the **CBOE chain snapshot's** merge timestamp (always now, because the
+  snapshot was just fetched), and the embedded quote carries `source: "chain"` with `sourceTs` a full
+  900 s behind `ts`. The route's own honest fields are **`provider`** and **`delayed`** — `"alpaca"` /
+  `false` when `served_live(sym)` is true, `"cboe"` / `true` otherwise. **The correct real-time check
+  for future runs is `delayed == false` (or `quote.source == "opra"`), never `asOf`.** On every
+  sample this run, all three read `provider: "cboe", delayed: true, source: "chain", lag 900 s`.
+  **Proposed (NOT built — the fix is in shared `zargar/options/service.py`, outside this desk).**
+  In preference order: **(a)** surface the state — when `quote_source()` is configured but
+  `_refresh_live()` has failed for more than N consecutive passes (say 3, ~3 min), raise it the way
+  every other outage is raised (journal + `needsAttention` + toast) and clear it on the first
+  success; a technique that cannot price a contract should not have to discover that by failing to
+  trade. **(b)** expose it read-only — a field on `/api/team2/status` and the armed snapshot
+  (`optionQuotes: "opra" | "delayed"`), so a watch run can check it in one call instead of grepping
+  a log. **(c)** do nothing and rely on `contract_deferred` naming it after the fact — today's
+  behaviour, which this finding argues is not enough. **No rule, threshold, gate, sizing or money
+  path is being changed either way**: (a) and (b) are reporting. Related: **F108** (the fresh-quote
+  requirement this outage exercises), **F105** (delayed vs live disagreement), **F100** (the standing
+  "refusals are silent" reporting question — this is the same question with an external cause),
+  **F85**.
+
 - **F116 (2026-09-11, run 70 — MEASURED, NOT FIXED; live and replay do NOT see the same bar values,
   so replay parity is an approximation, not an identity — USER'S CALL on the shared-engine half).**
   Runs 66–69 all reported "replay parity exact". Run 70 found the first deviation and, chasing it,

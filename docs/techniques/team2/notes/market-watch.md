@@ -5096,3 +5096,103 @@ setup, that is a gap to report, not a refusal.
   no-trade gap days**, and **F116's new shared-engine question — should the live path and the replay
   decide on the same persisted bar values**, F67's two shared-side halves, and the F30-family question
   F105 sharpens.
+
+
+## 2026-09-11 12:40 ET (run 71 — the option quote source has been down for 23 minutes and nothing says so; F117)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed 59 desk-wide. Three Team2 plans armed for
+  **2026-09-11**, mode `auto`, book **Team2 Practice** (sim): SPY `87634a53`, QQQ `36a3cab1`,
+  IWM `72949add`. `needsAttention false`, `attentionReasons []`, `trailGaps []`, no `readError`.
+  **0 fires, 0 trades, 0 open, P&L $0.00** at 12:40 — nothing has reached the contract picker all day.
+- **F117 — NEW, MEASURED, NOT FIXED, and the headline of this run. Alpaca's real-time OPRA option
+  quotes have been returning HTTP 504 continuously since 12:15:45 ET** — 25 warnings in
+  `backend/zargar-8420.log`, one per 60 s backoff, still failing at 12:38:18 ET when I stopped
+  counting. I reproduced it **out of process** (fresh interpreter, `AlpacaOptionsData.latest()` on
+  the three 0DTE contracts Team2 would pick): 3 attempts, 3 × `HTTP 504`, ~3.1 s each. Upstream
+  vendor outage, not our client — the **equity** side of the same vendor is perfectly healthy.
+  **Consequence for Team2: with `require_fresh_quote` ON (F108) every candidate prices `none`, so a
+  fire right now would emit `contract_deferred` and place no order.** That is the designed
+  fail-closed behaviour and it is correct; what F117 argues is that a silent loss of the desk's
+  ability to price a contract should not be discoverable only by failing to trade. Today it cost
+  nothing — the no-trade zone refused everything long before the picker — so there is no Team2 trace
+  of it at all: `needsAttention` false, no read event, no journal row, one WARNING in a 5 MB log.
+- **Correction to runs 68, 69 and 70 (mine to own — it would have masked exactly this).** Those runs
+  reported the picker's 0DTE quotes as *real-time* on the strength of `available: true` and
+  `asOf` = now from `GET /api/options/quote/<occ>`. That reading is wrong: the route calls
+  `svc.contract()`, which never calls `track()`, and `asOf` is the **CBOE chain snapshot's** merge
+  time (always now). The honest fields are `provider` and `delayed`. Every sample this run read
+  `provider: "cboe", delayed: true, quote.source: "chain"`, with `sourceTs` a full **900 s** behind
+  `ts`. **Future runs: check `delayed == false` / `source == "opra"`, never `asOf`.** The picker's
+  own path (`opts.reprice()` → `track()` → `_refresh_live()`) is the only thing that fetches OPRA,
+  and it is what is 504-ing.
+- **What the read saw since run 70 (12:10).** Still no fires, no new setups and no new *refusals* —
+  the only movement is `same_pullback` bookkeeping while all three chop on their EMA13s, and all
+  three drifted **down** over the half hour. SPY added **12:10** (5 same_pullbacks, `pullbacks` 11)
+  and is 765.30 (was 766.02); its EMA stack has slipped **bull → mixed** (close 765.07, EMA13
+  765.402, EMA48 765.432 — the 13 is now *under* the 48 by 3 cents). QQQ added **12:08**
+  (6 same_pullbacks, `pullbacks` 8) at 715.66, down 1.25 from run 70 and now well below its
+  scenario-1 target 716.80 again. **IWM is unchanged for the third run running** (4 events).
+  `touches` remains **0 / 0 / 0+0** — the D9 two-pullback allowance is completely unspent at the
+  five-and-a-half-hour mark.
+- **IWM's bias did not flip** (run 70's item 2): still scenario 2 / puts since 10:45, anchor 289.28,
+  last 289.67. A flip back to scenario 1 needs a 15m **body** close above **289.83**; the highest 2m
+  close since remains 289.76 (11:48), so it has not come within 7 cents. IWM's EMAs are braided to a
+  fan width of **0.22** on an ATR of 0.16 — `chop`, so E3/B9/E4 would refuse an entry even if the
+  zone did not. The 289P is 0.175/0.185 (0.46 → 0.22 → 0.15 → 0.18 across runs 68–71).
+- **F116 persists, unchanged in shape — one bar, QQQ only.** Re-ran all three replays: **SPY 7 = 7
+  exact** (09:45, 09:56, 10:10, 10:32, 11:38, 11:50, 12:10) and **IWM 4 = 4 exact**, including IWM's
+  dead scenario 1. QQQ is 8 = 8 with the same single divergence run 70 found: the 5th `same_pullback`
+  is **live 11:48 / replay 11:50**, every other minute identical and all counters equal
+  (`pullbacks` 8 = 8). So the float32-quantisation drift is **reproducible and stable, not spreading**
+  — it moved one cosmetic note on one knife-edge bar and has not touched a second symbol in two runs.
+  The shared-engine proposal in F116 (persist the exact decimal, or have the live read consume the
+  persisted row) is unchanged and still the user's call.
+- **Cohort v2 tally, session-to-date (09:30–12:40):** `warmup` 3/3 · `listing` 3/3 from the real chain
+  (SPY 195 strikes, 500–930, `CboeClient`) · `model_out_of_band` 0 · **`contract_deferred` 0 +
+  `skip_no_contract` 0** (the picker has not been reached, so F117's outage has not yet produced
+  one) · fills 0, `priced` 0 · `target_replanned` 0 · `skip_target_behind` 0 · `trail_gap` 0 ·
+  `scenario` 4 · `skip_no_trade_zone` 4 · `same_pullback` **11** (SPY 5, QQQ 6, IWM 0).
+- **Underlying data is real-time; option data is not (F117).** Quotes sub-second (`ts` 12:32:57 ET at
+  fetch), `session regular`, penny books — SPY 765.30/765.32, QQQ 715.66/715.69, IWM 289.67/289.69;
+  session ranges SPY 763.60–766.38, QQQ 713.63–717.63, IWM 288.77–291.44. 1m bars banking with
+  **`source exchange` on 183/183 RTH rows** for all three, last bar **12:32 ET**; `barAgeSeconds` 114,
+  `stale false`, `quoteAgeSeconds` 0 on all three plans.
+- **F85 standing check: clean for Team2.** Zero Team2 rows among the journal's error/failure events in
+  9 h; last 3 h desk-wide = 17 `SignalVerificationFailed` + 8 `TechniquePlanError`, all other desks.
+  No Team2 ERROR and no Team2 traceback in the log. **Cartel-observer:** `cartel-observer bar handling
+  failed` fired **2 in the 09 ET hour, 12 in the 10 ET hour, 4 in the 11 ET hour, 4 so far in the
+  12 ET hour**. Peak was 10 ET; it is flat-to-down, not accelerating. Still `options_cartel`, another
+  desk's technique, harmless to Team2's bar loop.
+- **F107 standing check: count still 18** (`technique_runs where technique='team2'`). The 09:25
+  pre-open + 09:30 finalize hold on all three (`complete true`, `pmh`/`pml`, `dayType gap_up`,
+  `sizingAtOpen none`, `replan false`; SPY gap +0.93 %, premarket 764.76). Audit mix unchanged —
+  SPY/QQQ 12 events, IWM 14 — and still **no `targets_rederived` row**, which is F110 exactly: fixed
+  on disk in **v0.7.49**, runtime is **0.7.48**, deploy still queued.
+- **No code shipped this run** (TRADING-RULES F117 is the only edit). **No restart** — v0.7.49 stays
+  queued for after 16:00 ET.
+- **Next run (≈13:10 ET) should:** (1) **re-check F117 first** — `grep "OPRA quotes" backend/zargar-8420.log | tail`
+  and one `GET /api/options/quote/<occ>` read for `delayed`/`provider`; if it has recovered, record
+  when and how long the outage ran; if it has not, that is now a multi-hour loss of the desk's
+  ability to enter and worth saying so plainly to the user; (2) watch for the day's first
+  `contract_deferred` if any setup reaches the picker while the outage lasts — it would be F117's
+  first live consequence; (3) re-check the QQQ live-vs-replay minute (F116) for a third data point,
+  and whether SPY/IWM stay exact; (4) check whether IWM's 15m close finally flips the bias back to
+  scenario 1 (needs a body above 289.83) and record the margin against F27; (5) note SPY's EMA stack
+  slipping bull → mixed — if it turns bear with QQQ, all three are chop/mixed and E3/B9/E4 would
+  refuse independently of the zone, which is worth separating from F112's zone evidence;
+  (6) continue the cohort-v2 tally; (7) re-run the F85 journal query and re-count the cartel
+  tracebacks; (8) **do not attempt the `/team2` UI check** (F103); (9) after 16:00 ET deploy
+  **v0.7.49** via `ZargarRestart`; (10) at ~17:05 re-check F107 stays at **18** and the nightly mints
+  three plans for Monday 2026-09-14.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by
+  F98)**, **F98**, **F99**, **F100's reporting question — F117 is the same question with an external
+  cause**, **F101's ladder decision**, **F102's band question**, **F103's UI-check decision**,
+  **F104's ladder/chain decision**, **F105's "which series is authoritative" decision**, **F112's zone
+  decision (F113/F114/F115: the window knob cannot work and waiting for price to escape the range
+  cannot either — (b) the conjunction or (c) accept no-trade gap days)**, **F116's shared-engine
+  question**, and **F117's new one — should a dead option quote source raise itself, or keep being
+  discoverable only by failing to trade**, F67's two shared-side halves, and the F30-family question
+  F105 sharpens.
