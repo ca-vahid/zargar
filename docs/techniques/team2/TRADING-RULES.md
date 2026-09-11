@@ -2343,6 +2343,16 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F119 run 74 note (14:05 ET): the gap is not monotonic and it is not symmetric.** SPY's
+  live-vs-replay split **closed completely** this run (9/9 events, `pullbacks` 18/18, EMA-stack
+  `strength` 3/3) after being 18/19 and 2-vs-3 one run earlier, while **QQQ gained a second
+  timestamp split** (11:48-vs-11:50 for a fifth run, now joined by 13:36-vs-13:34) and IWM's
+  `scenario_2` `pullbacks` stayed 5 live / 6 replay. ATR stayed lower in replay on all three
+  (SPY 0.1892/0.1848, QQQ 0.2233/0.2134, IWM 0.0950/0.0934) — a fifth consecutive run. That is
+  exactly what F119's mechanism predicts: QQQ is the symbol where the two vendors' 1m bars disagree
+  on 40% of minutes, SPY on 4/246, so SPY's paths can coincide on a quiet stretch and QQQ's cannot.
+  No new decision surface beyond the EMA-stack `strength` already recorded in run 73. Still the
+  user's (a)/(b)/(c) call.
 - **F119 (2026-09-11, run 73 — MEASURED AND LOCATED; this CLOSES the F116/F118 investigation and
   REVERSES F118's recommendation — USER'S CALL, shared engine).** The live desk and the persisted
   tape are **two different vendors' bars, both stamped `source: exchange`**. Measured out of process
@@ -2462,6 +2472,11 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 - **F117 (2026-09-11, run 71 — MEASURED, NOT FIXED; the real-time option quote source (Alpaca OPRA)
   has been down for ~25 minutes and NOTHING on the desk says so — USER'S CALL on the shared half).**
+  **Run 74 update (14:05 ET): still up, no second outage.** The warning count in
+  `backend/zargar-8420.log` is **unchanged at 54** (last one still 13:04:40 ET) and all three 0DTE
+  contracts read `provider: "alpaca"`, `delayed: false`, `quote.source: "opra"`, `sourceTs == ts`
+  (SPY 766C 0.44/0.45, QQQ 717C 0.39/0.40, IWM 289P 0.09/0.10). One outage, ~49 minutes, this
+  session. The picker still has not been reached, so `contract_deferred` remains **0** for the day.
   **Run 73 update (13:40 ET): RECOVERED, and the recovery was as silent as the outage.** The
   out-of-process probe now returns **3/3 OK in 0.17–0.42 s** with sub-second OPRA timestamps, and
   the app's own `/api/options/quote/<occ>` reads `provider: "alpaca"`, `delayed: false`,
