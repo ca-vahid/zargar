@@ -676,6 +676,17 @@ exactly why it needs the real simulator, not this arithmetic. Test: `breakeven_a
 `first_trim_r` knobs in `simulate_plan` + the live exit policy, swept over 08-24..09-10 against
 baseline; adopt bar D7. This is T-6's exit-tempo question asked the right way: as management of
 the fire we already took, not as a replacement for the ladder.
+**Verdict 2026-09-10 22:20 ET: NOT adopted - the real simulator says the opposite of the arithmetic.**
+Sweeps over 08-24..09-10 (1,400 sessions, 37 valid fires each; baseline `b48db0763a`): baseline
+**+3.98R**; scratch at 0.5R `de5cf24a45` **-0.09R**; at 0.75R `2e1b5600ac` **+1.21R**; at 1.0R
+`80711f4d88` **-4.07R**. The rule does what it says - bounce win rate 57% -> 79%, reject 42% -> 83% -
+but it pays for it by halving the position on every winner before the ladder, and this method's
+whole edge is the few runners (5 TP3 exits carry the book). Losers avoided are small; winners
+capped are large. The crude MFE arithmetic in the theory counted the trimmed half as if it still
+rode the ladder; it does not. Both knobs stay in the code at 0. What the evidence does say: the
+ladder's first rung is the problem only on RE-PLANNED gap-day levels (HOOD, KLAC, LITE, WDC), not on
+the book's normal geometry - a targeted version (scratch only when TP1 > 3R away) is the next
+variant, cheap to sweep, not built tonight.
 
 ### T-13 · Gap-through continuation (the author's SPY trade of 2026-09-09) - sweeping
 His one posted trade on day 10: SPY puts on "the breakdown of PLOD" - SPY closed 09-08 with a
