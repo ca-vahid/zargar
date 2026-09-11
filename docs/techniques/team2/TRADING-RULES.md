@@ -2343,6 +2343,39 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F112 run 75 evidence (14:35 ET) — the pre-market range contained the WHOLE regular session.**
+  Measured out of process against today's persisted 1m tape (09:30–14:35 ET, 306 bars per symbol):
+  **918 of 918 RTH 1m closes on SPY, QQQ and IWM sat inside their own pre-market range** — not one
+  close, on any symbol, all day. The ranges are not close either: pre-market **SPY 758.17–766.53
+  (8.36 pts, 1.09%)** vs an RTH range of **763.60–766.38 (2.78)**; **QQQ 706.58–717.69 (11.11,
+  1.57%)** vs **713.65–717.62 (3.97)**; **IWM 287.68–291.30 (3.62, 1.26%)** vs **288.77–291.44
+  (2.67)**. The pre-market range is **~3x the day's range** on all three, so V6/B5 as implemented
+  does not merely refuse the marginal locations on a gap day — on this day it forbids **every**
+  location a 0DTE entry could ever have, and no amount of patience inside the session changes that
+  (F114/F115 already proved waiting and the bias flip are not escapes). Paired with the session's
+  other counter — **40 structural pullback episodes, 0 opportunities, 0 touches** — this is the
+  cleanest statement of F112 the desk will get: the method found its pullbacks all day and the zone
+  rule vetoed all of them. Also worth recording for the (b) reading: at 14:31 SPY and QQQ lost their
+  bull EMA stack (both `mixed`, `strength 0`), so those two now refuse on E3/B9/E4 **and** the zone,
+  while **IWM is the clean single-cause case** — its stack is `bear/strength 3`, aligned with its
+  scenario-2 short bias, and the no-trade zone is the only thing refusing it. Measurement only; no
+  rule, knob or money path touched. Related: **F112** (parent), F113, F114, F115, F27.
+- **F119 run 75 note (14:35 ET): SPY matched exactly for a second consecutive run and the EMA-stack
+  divergence did not reproduce.** Live-vs-replay (replay one-to-three 2m buckets ahead, so
+  directional): **SPY 9/9 events and `pullbacks` 18/18 — an exact match again**; QQQ 10/10 events but
+  **both** timestamp splits held (11:48-vs-11:50 for a sixth run, 13:36-vs-13:34 for a second) with
+  `pullbacks` 11/11; IWM 5/5 events with its own split (14:30-vs-14:36) and `scenario_2` `pullbacks`
+  **10 live / 11 replay** — the same +1 offset it carried at 5/6. EMA-stack `strength` **agreed on
+  all three this run** (SPY 0/0, QQQ 0/0, IWM 3/3), i.e. run 73's strength divergence has not
+  recurred; ATR stayed lower in replay on all three for a sixth consecutive run. No new decision
+  surface. Still the user's (a)/(b)/(c) call.
+- **F117 run 75 stability check (14:35 ET): still one outage, not a pattern.** `grep -c "OPRA quotes"`
+  is **unchanged at 54** (last warning 13:04:40 ET) three and a half hours on, and all three 0DTE
+  contracts read `provider alpaca` / `delayed false` / `quote.source opra`: SPY 766C 0.17/0.18,
+  QQQ 717C 0.195/0.205, IWM 289P 0.075/0.085. The incident's shape stands at **~49 minutes,
+  12:15:45–13:04:40 ET, silent in both directions** — the open question (should a dead option quote
+  source raise itself, and should it announce its recovery) is unchanged.
+
 - **F119 run 74 note (14:05 ET): the gap is not monotonic and it is not symmetric.** SPY's
   live-vs-replay split **closed completely** this run (9/9 events, `pullbacks` 18/18, EMA-stack
   `strength` 3/3) after being 18/19 and 2-vs-3 one run earlier, while **QQQ gained a second
