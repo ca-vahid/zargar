@@ -203,6 +203,40 @@ async def test_the_contract_verdict_is_journaled_with_every_candidate():
         assert calls[0].kwargs == {"aggregate_type": "technique_run", "aggregate_id": "run-1"}
 
 
+async def test_a_failed_journal_write_is_recorded_as_a_trail_gap():
+    runner, trade, options = _runner([(287.5, 0.19)], {287.5: (0.20, 0.21)})
+    runner._trail_gaps = {}
+    runner.engine.journal = SimpleNamespace(append=AsyncMock(side_effect=RuntimeError("db down")))
+    alerts = []
+
+    async def _alert(ap, text, **kw):
+        alerts.append(text)
+    runner._alert = _alert
+    ap = SimpleNamespace(symbol="IWM", run_id="run-2")
+    c = await runner.pick_contract(ap, trade)
+    assert c is not None                                              # the trade is not blocked by the record
+    gaps = runner.trail_gaps("run-2")
+    assert len(gaps) == 1 and gaps[0]["event"] == "contract_picked" and "db down" in gaps[0]["error"]
+    assert [k for k, m, kw in runner._logged if k == "trail_gap"] and len(alerts) == 1
+    assert runner.trail_gaps("run-9") == []
+
+
+async def test_early_picker_exits_still_record_a_verdict():
+    runner, trade, options = _runner([(287.5, 0.19)], {287.5: (0.20, 0.21)})
+    runner.engine.journal = SimpleNamespace(append=AsyncMock())
+    ap = SimpleNamespace(symbol="IWM", run_id="run-3")
+    options.provider().expirations = AsyncMock(return_value=[])              # no same-day expiry listed
+    assert await runner.pick_contract(ap, trade) is None
+    p = [c.args[1] for c in runner.engine.journal.append.await_args_list if c.args[0] == "TechniquePlanContract"]
+    assert len(p) == 1 and p[0]["verdict"] == "deferred" and p[0]["stage"] == "expiry"
+    runner.engine.options = None
+    runner.engine.journal.append.reset_mock()
+    trade.errors.clear()
+    assert await runner.pick_contract(ap, trade) is None
+    p = [c.args[1] for c in runner.engine.journal.append.await_args_list if c.args[0] == "TechniquePlanContract"]
+    assert len(p) == 1 and p[0]["stage"] == "service"
+
+
 # ---------------------------------------------------------------- the runner stamps the listing on the plan
 async def test_the_runner_stamps_todays_listing_and_the_read_walks_it(rig, monkeypatch):
     eng, sim = rig

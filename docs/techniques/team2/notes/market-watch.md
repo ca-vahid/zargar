@@ -4515,3 +4515,10 @@ v1 = sessions 1–11 (read evidence; grid ladder, delayed/model vetoes, elevated
 session in v2 record per plan: `listing`/`listing_unavailable`, every `model_out_of_band`, every `contract_deferred` /
 `contract_refused` with its `examined` list, fills and their `priced` series, and F81b `target_replanned`. A deferral
 (no live quote, or the quote bound hit) is an operational limitation to fix, not a method refusal — say so.
+
+## Addendum to the cohort v2 instruction (v0.7.48)
+
+A plan whose snapshot carries `trailGaps` (or whose audit shows a `trail_gap` event) is an INCOMPLETELY OBSERVED
+session: report it as such, never as a quiet day. If nothing fills, the journal must establish why — cite the
+`TechniquePlanContract` verdicts (with `stage` for early exits) and the read's refusals; if neither exists for a fired
+setup, that is a gap to report, not a refusal.
