@@ -181,6 +181,11 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     listing = plan.get("listedStrikes") if isinstance(plan.get("listedStrikes"), dict) else None
     listed_strikes = [float(k) for k in (listing or {}).get("strikes") or []] or None
     strike_source = "listed" if listed_strikes else "grid"
+    # F108 (2026-09-10, Codex PR #57 review): who decides the contract. `model` (sweeps, history) — the modelled
+    # premium band is the gate. `quotes` (the live runner stamps it, replay reads the stamp) — the model NEVER
+    # vetoes: when nothing models in band the read fires anyway on the nearest OTM strike as its proxy and says
+    # `modelBand: out`; the live picker decides on fresh executable quotes (`pick_contract`).
+    authority = str(plan.get("contractAuthority") or "model")
     events: list[dict] = []
 
     def note(ts: int, what: str, why: str, **detail) -> None:
@@ -640,6 +645,17 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         pick = model.pick_strike(entry_spot, end_ts, s.direction, target_premium=rules.target_premium,
                                  premium_floor=rules.premium_floor, step=rules.strike_step, mode=rules.premium_pick,
                                  strikes=listed_strikes)
+        model_band = "in"
+        if pick is None and authority == "quotes":
+            near = model.nearest_otm(entry_spot, end_ts, s.direction, step=rules.strike_step, strikes=listed_strikes)
+            if near is not None:
+                pick, model_band = near, "out"
+                note(end_ts, "model_out_of_band",
+                     f"{s.id}: no strike MODELS between ${rules.premium_floor:.2f} and "
+                     f"${rules.target_premium * MAX_OVER_TARGET:.2f} at sigma {sigma:.4f} — not a refusal: the live "
+                     f"quotes decide (F108); the read carries the nearest OTM {near[0]:g} at ${near[1]:.2f} as its proxy",
+                     setup=s.id, touch=idx, spot=round(entry_spot, 4), strike=near[0], mark=round(near[1], 4),
+                     strikeSource=strike_source)
         if pick is None:
             # F59 (2026-09-08): say whose price this is. The band is checked against the MODELLED
             # premium (BS at the day's VIX1D sigma), not the chain — IWM 13:30 was refused with the
@@ -680,8 +696,9 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
              f"≈ ${fill.premium:.2f} (T1/T2/V1); size {bucket} ×{mult:g}"
              + (f" — target the {'high' if long else 'low'} of day {target:.2f} (X3b)" if target_kind == "hod" else "")
              + (" — early (before 10:00, P2)" if m < rules.early_flag_before_min else "")
-             + ("" if listed_strikes else " — strike from the synthetic grid, not a listing"),
-             strikeSource=strike_source,
+             + ("" if listed_strikes else " — strike from the synthetic grid, not a listing")
+             + (" — model out of band: the live quotes decide (F108)" if model_band == "out" else ""),
+             strikeSource=strike_source, modelBand=model_band, contractAuthority=authority,
              target=None if target is None else round(target, 4), targetKind=target_kind,
              setup=s.id, touch=idx, spot=round(entry_spot, 4), strike=strike, premium=fill.premium, bucket=bucket,
              sizeMult=mult, early=m < rules.early_flag_before_min, entryKind=entry_kind, regime=r.to_dict())

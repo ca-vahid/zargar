@@ -74,6 +74,25 @@ def test_the_read_says_which_ladder_it_walked():
     assert skips and all(e.get("strikeSource") == "listed" and "listed strikes" in e["why"] for e in skips)
 
 
+def test_under_quotes_authority_the_model_is_a_proxy_not_a_veto():
+    ks = [k / 2 for k in range(2 * 540, 2 * 600)]
+    listing = {"expiry": DAY.isoformat(), "strikes": ks, "source": "chain"}
+    # a band nothing models in: the model path refuses, the quotes path fires on the nearest OTM proxy and says so
+    grid = _read(listing, target_premium=0.10, premium_floor=0.20)
+    assert not [e for e in grid.events if e["event"] == "fire"]
+    assert [e for e in grid.events if e["event"] == "skip_no_contract"]
+    prev = prev_day_bars()
+    today = path_1m(DAY, (4, 0), (20, 0), drift_day)
+    rules = make_rules(target_premium=0.10, premium_floor=0.20)
+    plan = complete_plan(build_skeleton("SPY", DAY.isoformat(), aggregate(prev, 15), rules), today)
+    plan["listedStrikes"], plan["contractAuthority"] = listing, "quotes"
+    res = simulate_session(plan, today, rules, sigma=0.2, warmup_1m=prev)
+    fires = [e for e in res.events if e["event"] == "fire"]
+    assert fires and all(e["modelBand"] == "out" and e["contractAuthority"] == "quotes" and e["strike"] in ks for e in fires)
+    assert [e for e in res.events if e["event"] == "model_out_of_band"]
+    assert not [e for e in res.events if e["event"] == "skip_no_contract"]
+
+
 # ---------------------------------------------------------------- gate 2: fresh quotes before any refusal
 def row(strike, ask, *, expiry, kind="put"):
     return {"symbol": f"IWM{expiry:%y%m%d}{'P' if kind == 'put' else 'C'}{int(strike * 1000):08d}",
@@ -121,17 +140,46 @@ async def test_a_live_quote_under_the_floor_refuses_even_when_the_chain_was_in_b
     assert c is None
     assert "examined 287.5 ask 0.16 (opra, chain 0.24)" in trade.errors[-1], trade.errors
     kind, msg, kw = runner._logged[-1]
-    assert kind == "contract_refused" and len(kw["examined"]) == 2 and kw["listed"] == 2
+    assert kind == "contract_refused" and len(kw["examined"]) == 1 and kw["listed"] == 2   # the walk stops on a fresh ask under the floor
 
 
-async def test_quote_requests_are_bounded_and_the_nearest_to_target_go_first():
-    chain = [(287.5, 0.21), (287.0, 0.12), (286.5, 0.11), (286.0, 0.10), (285.5, 0.10), (285.0, 0.10), (284.5, 0.10), (284.0, 0.10)]
-    runner, trade, options = _runner(chain, None, quote_candidates=3)
+async def test_no_delayed_price_is_read_and_the_walk_is_nearest_spot_first():
+    # F108: a delayed ask of $0.05 (far under the floor) must not keep the contract from a live quote
+    runner, trade, options = _runner([(287.5, 0.05), (287.0, 0.04)], {287.5: (0.20, 0.21), 287.0: (0.09, 0.10)})
     c = await runner.pick_contract(SimpleNamespace(symbol="IWM"), trade)
-    assert c is not None and c["strike"] == 287.5 and c["priced"] == "chain"      # no live quote served: the chain spoke, and says so
-    assert options.reprice.await_count == 3
+    assert c is not None and c["strike"] == 287.5 and c["priced"] == "opra", trade.errors
     kind, msg, kw = runner._logged[-1]
-    assert [x["strike"] for x in kw["examined"]][0] == 287.5
+    assert [x["strike"] for x in kw["examined"]] == [287.5, 287.0]         # nearest spot first, not delayed-ask order
+
+
+async def test_the_quote_bound_defers_instead_of_refusing_the_unexamined():
+    chain = [(287.5, 1.5), (287.0, 1.2), (286.5, 1.0), (286.0, 0.9), (285.5, 0.7), (285.0, 0.6), (284.5, 0.5), (284.0, 0.4)]
+    fresh = {k: (a + 0.9, a + 1.0) for k, a in chain}                        # everything quoted live ABOVE the band
+    runner, trade, options = _runner(chain, fresh, quote_candidates=3)
+    assert await runner.pick_contract(SimpleNamespace(symbol="IWM"), trade) is None
+    kind, msg, kw = runner._logged[-1]
+    assert kind == "contract_deferred" and kw["unexamined"] == 5 and options.reprice.await_count == 3
+    assert "5 listed contract(s) further out not examined" in trade.errors[-1]
+
+
+async def test_a_fresh_ask_under_the_floor_ends_the_walk_as_a_refusal():
+    chain = [(287.5, 0.30), (287.0, 0.20), (286.5, 0.10), (286.0, 0.05)]
+    fresh = {287.5: (0.14, 0.15), 287.0: (0.08, 0.09), 286.5: (0.04, 0.05), 286.0: (0.02, 0.03)}
+    runner, trade, options = _runner(chain, fresh)
+    assert await runner.pick_contract(SimpleNamespace(symbol="IWM"), trade) is None
+    kind, msg, kw = runner._logged[-1]
+    assert kind == "contract_refused" and options.reprice.await_count == 1 and kw["unexamined"] == 0
+
+
+async def test_no_live_quote_means_deferred_never_a_chain_priced_fill():
+    runner, trade, options = _runner([(287.5, 0.60)], None)                   # reprice never serves OPRA
+    assert await runner.pick_contract(SimpleNamespace(symbol="IWM"), trade) is None
+    kind, msg, kw = runner._logged[-1]
+    assert kind == "contract_deferred" and kw["unpriced"] == 1 and "no live quote" in trade.errors[-1]
+    # the explicit opt-out (require_fresh_quote=False) is the only way the delayed chain prices a fill, and it says so
+    runner, trade, options = _runner([(287.5, 0.60)], None, require_fresh_quote=False)
+    c = await runner.pick_contract(SimpleNamespace(symbol="IWM"), trade)
+    assert c is not None and c["priced"] == "chain" and c["ask"] == 0.60
 
 
 async def test_nothing_listed_otm_is_a_named_refusal_not_a_crash():
@@ -168,6 +216,7 @@ async def test_the_runner_stamps_todays_listing_and_the_read_walks_it(rig, monke
     # the stamped plan replays on the same listing
     rep = await eng.team2.replay(ap.run_id)
     assert rep["strikeSource"] == "listed"
+    assert ap.plan.get("contractAuthority") == "quotes"
 
 
 async def test_a_failed_listing_fetch_is_said_once_and_the_read_runs_on_the_grid(rig):
