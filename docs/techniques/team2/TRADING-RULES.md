@@ -1687,6 +1687,578 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   row; **(d)** leave it and rely on F75 having ended the `unknown` writes. (b) is the cheapest and
   matches the existing house rule; (a) is the most conservative for Team2 alone.
 
+- **F87 (2026-09-10 09:12 ET, NOT FIXED — a knob flipped after the 17:00 mint runs LIVE but is not
+  in the plan's record, so replay and outcome scoring judge the session under the OLD rule).**
+  `Team2Runner.rules()` (`runner.py:96`) returns `rules_from_settings(self.engine.settings)` — it
+  re-reads **live settings on every bar**. The replay/score path (`service.py:352`) builds
+  `Team2Rules.from_dict(run.config["thresholds"])` — the snapshot frozen when the plan was minted,
+  which `rules.py`'s own docstring says exists "so replay/outcome scoring use the numbers the plan
+  was armed with". Nothing keeps the two in step: a settings change between the 17:00 ET mint and
+  the session silently makes the live rule ≠ the recorded rule.
+  **Live today.** The three 2026-09-10 plans were minted at **17:00 ET on 09-09 under v0.7.33**
+  (pre-F81); `techniques.team2.target_replan` was set to `structure` at **20:30 ET**, after the
+  mint. Every plan's `config.thresholds.target_replan` still reads **`off`**, and the snapshot
+  carries no `preopen_target_rederive` / `target_replan_gap_only` keys at all (they did not exist
+  when it was written — `from_dict` fills them from the class defaults, both `True`, which is why
+  the replay read *does* show `targetsRederived`). So **today the runner runs F81b and replay runs
+  `off`**: on a pullback whose planned target is behind the entry, live re-derives to the PM extreme
+  and enters while replay writes `skip_target_behind`. The parity check this watch runs every day
+  (step 5) would disagree, and — worse — the day's outcome scoring would grade the session under a
+  rule it did not trade, which is exactly the F81b measurement the standing instruction asks for.
+  **Cost today: nothing yet** (0 setups at 09:15 ET, 0 trades); the exposure is a mis-graded F81b
+  verdict, not money.
+  **Not fixed here** — found at 09:12 ET, inside the pre-open freeze (no restart 09:25–09:35), so it
+  is queued rather than deployed. Options: **(a)** re-snapshot `config.thresholds` from live
+  settings at the 09:25 pre-open completion, so the record matches what will actually run that
+  session (Team2-local, one write where `complete_plan` persists); **(b)** make the live runner
+  honour the frozen snapshot — arming freezes the rules and a knob change takes effect at the next
+  mint (best for reproducibility, but a deliberate mid-day knob change then does nothing);
+  **(c)** journal a `rules_drift` note whenever live settings differ from the snapshot and leave
+  both paths alone; **(d)** leave it. Recommendation: **(a) plus (c)'s note** — it keeps a mid-day
+  knob change effective *and* makes the day's record true.
+  **CORRECTED 2026-09-10 11:35 ET — see F96.** Option (a) was *already built* (`stamp_run` at the 09:25
+  pre-open, `service.py:310`), so today's plans have read `target_replan: 'structure'` since 09:25 and
+  replay ≡ live. The "Live today" paragraph above holds only for the 09:12–09:25 window. What survives
+  is drift *after* the pre-open stamp, or on a day the stamp does not run — i.e. only option (c)'s
+  `rules_drift` note is still outstanding.
+
+- **F88 (2026-09-10 09:38 ET, FIXED in v0.7.37 — the gap-day target re-derivation ratcheted off its
+  own output, so a target it wiped at 09:25 could never come back at the 09:30 open).**
+  `rederive_targets` (`plan.py`) read what the 17:00 plan said as
+  `plan["targetsPlanned"] or plan["targets"]`. `targetsPlanned` is written by `build_skeleton`, which
+  only shipped with F81 (v0.7.34) at ~20:30 ET on 09-09 — **after** the 17:00 mint. So all three of
+  today's plans fell through to `targets`, which `complete_plan`'s **first** pass (09:25) had already
+  overwritten. The second pass (the 09:30 `_finalize_open`) then measured the morning against the
+  09:25 output instead of the plan's own target, and `_log_rederived` de-duped the identical record,
+  so nothing in the event log said so.
+  **Cost today, live and on the symbol F81 was built for.** IWM: at 09:25 the pre-market last (288.09)
+  *was* the pre-market low, so nothing was ahead and `below: 290.165 -> none`. At 09:30 IWM opened
+  **288.48** with the finalized PML **287.83** ahead of it — a valid target — but the pass read
+  `planned["below"] = None`, took the `tgt is None` branch and kept None. IWM traded the whole morning
+  with **no down-target**: a short fire would have had no `target_exit`, managed by trims/premium
+  stop/15:45 flatten only. SPY kept **757.90** (the 09:25 PML) instead of re-deriving to the finalized
+  **757.69** — 21 cents stale, same direction, harmless. QQQ's two PMLs coincided at 706.50, no effect.
+  **Fix (Team2-local, one function).** `rederive_targets` now reads `targetsPlanned` only; when it is
+  absent it recovers the original from `targetsRederived[side]["was"]` — the record the first pass
+  leaves behind — falling back to `targets`, and **pins** the result as `targetsPlanned` so every later
+  pass re-derives from the plan's own inputs. Idempotent by construction: re-running it on any plan,
+  at any reference, gives the same answer as running it once. Two regression tests
+  (`tests/test_team2_f81.py::test_f88_*`) replay today's IWM and SPY sequences; 127 Team2 tests pass,
+  frontend build and `check-release` green. **No threshold, gate, band, size or money path changed** —
+  only which number the existing F81 rule measures against. Tomorrow's 17:00 plans carry
+  `targetsPlanned` natively and never take the recovery path.
+
+- **F90 (2026-09-10 10:00 ET, OBSERVATION + a rule question for the user — on a gap day the V6/B5
+  no-trade zone and F81's PML target are mutually exclusive for a `scenario_4` short, so F81b is
+  load-bearing, not marginal).** Order of gates in `session.py`: `sizing_bucket` runs FIRST and returns
+  `none` for any entry inside the pre-market range -> `skip_no_trade_zone` (V6/B5); the target gates
+  (F81b re-derive, then F72 `skip_target_behind`) run after. The F20 small-size exception applies only
+  to `s.kind.startswith("pm_break")`, so a `scenario_4` setup gets no relief.
+  **Consequence on a gap-down day:** the short can only take an entry **below the PML** - and F81 has
+  just set that setup's target **to the PML**. So at every entry the plan target is behind by
+  construction, and the entry-time F81b re-derive (`target_replan=structure`, live since 09-09) is the
+  only thing that can supply a target at all. On the baseline (`off`) the same entry is refused
+  `skip_target_behind`. This is the precise mechanism behind 2026-09-09's 18 refusals, and it says the
+  two rules were designed against each other rather than together.
+  **Live today, all three:** SPY, QQQ and IWM all confirmed `scenario_4 break PDL` on the 09:45 close
+  and all three were trading INSIDE their pre-market ranges (PM 757.69-764.60 / 706.50-717.60 /
+  287.83-291.74). SPY logged the first refusal at 09:50 - `skip_no_trade_zone`, entry 759.01 inside the
+  range. On a 7-point gap-down PM range that zone covers essentially the whole session's likely pullback
+  area, so entries are gated on a break of the PM low, exactly where the author entered IWM on 09-09.
+  **Interaction with F88 (same day):** `target_is_ahead(None, ...)` returns **True** by design ("no
+  target" is allowed), so IWM's null target does not merely lose its target exit - it never reaches the
+  F81b branch at all. **F88 silently removed IWM from today's F81b experiment**; SPY and QQQ are in it,
+  IWM is not. Worth knowing before reading the tally.
+  **Not changed here** - this is a method question, not a defect. Options for the user: **(a)** leave it
+  and let F81b own the gap-day target (what is running now); **(b)** let a `scenario_4` entry inside the
+  PM range trade at SMALL size when it is within tolerance of the broken zone edge, the way F20 already
+  allows for `pm_break` (widens the no-trade zone exception from one setup kind to two); **(c)** treat a
+  gap-through day's PM range as no longer a no-trade zone once the 15m confirmation closes beyond it,
+  since the range is then history rather than an undecided balance area; **(d)** leave both and accept
+  that gap days trade only on PM-level breaks. Recommendation if one is wanted: **(a) for now**, and
+  re-read this after the twenty-session F81b review - (c) is the most faithful to the author's own
+  gap-day behaviour but it changes a documented rule, so it wants the sweep first.
+
+- **F91 (2026-09-10 10:06 ET, FIXED in v0.7.38 — the live runner refused the entry its own read fired,
+  so F81b could never trade).** SPY, 10:06 ET, on the tape: the session read applied F81b, logged
+  `target_replanned` ("planned target 757.90 is behind the 757.59 entry - no structure left ahead: no
+  target"), and **fired** — touch #2, EMA13 757.59 held on a 757.16 close in a bear stack, buy the 756
+  put at $0.53, size full. The **runner refused the same fire** in the same second:
+  `TechniquePlanTriggerSkipped / skip_target_behind`, "target 757.90 (from the setup) is above the
+  757.59 entry — no room left … refusing the entry rather than entering with no target at all (F72)".
+  Replay reproduces the read exactly (fire + `target_replanned`), so live and replay disagree on the
+  only decision of the day.
+  **Root cause, one line.** `runner.resolve_fire_target` read `e["target"]`, and on `None` fell back to
+  `setup["target"]`. F81b's whole point is to set the fire's target to `None`; the **setup keeps its
+  stale planned target** (the read never rewrites it — confirmed on the live read: setup
+  `pm_break_down@09:45` still carries `target 757.9`). So the fallback resurrected precisely the number
+  the read had just replanned away from, and F72's guard then refused it. The fire already carried the
+  discriminator — `targetKind: "none"`, stamped in exactly ONE place (`session.py` line ~619, the F81b
+  structure branch, and nowhere else) — but the gate only looked at the target value, which cannot tell
+  "the read decided no target" apart from "no target anywhere".
+  **Scope: F81b was unreachable in live trading, on every entry, since it was switched on at 20:30 ET on
+  09-09.** Not a threshold being wrong — the rule could not fire at all. Combined with F90 (on a gap day
+  a `scenario_4` short can only enter below the PML, which is exactly where F81 puts its target), F81b
+  is the *only* path to an entry on a gap day, so this silently zeroed the gap-day book. It also breaks
+  the replay-parity check the desk relies on: replay says "traded", the book says "refused".
+  **Fix (v0.7.38):** `resolve_fire_target` skips the setup fallback when the fire is stamped
+  `targetKind == "none"`, honouring the read's verdict; the trade is then managed by the trims, the
+  candle stop, the premium stop and the 15:45 flatten — the same targetless shape the function's own
+  docstring already blesses. **F72's hole stays closed:** an unstamped targetless fire (`targetKind`
+  absent, `""`, `plan`, `hod`, `replan`) still falls back and still refuses a stale target, so a
+  restored or replayed event cannot smuggle in a targetless entry. F88's genuinely-null-target case
+  (IWM today) is unaffected — it fires with `targetKind: "plan"` and was already allowed.
+  **No threshold, gate, band, size, sizing bucket or money path changed** — this makes the runner agree
+  with the read, which is the documented authority (`session.py` = the one pure read).
+  Three regressions in `tests/test_team2_target_guard.py` replay today's SPY sequence and both mirrored
+  sides; they fail without the fix (verified by reverting the one-line condition). 133 Team2 tests green.
+  **Consequence for the measurement the user asked for:** today's F81b tally is **0 live entries against
+  1 read fire**, and every prior "F81b had no opportunity" reading since 09-09 20:30 ET is unreliable —
+  the rule was switched on but could not reach the book. The twenty-session review should start counting
+  from the first session that runs v0.7.38.
+
+- **F92 (2026-09-10 10:06 ET, OBSERVATION, no fix proposed — live and replay can read a 15m close two
+  cents apart).** Today's SPY `pm_break` event carries `close: 756.78` on the LIVE read and
+  `close: 756.76` on the replay of the same bar. The bars table's 09:59 1m close is 756.76
+  (`source: exchange`), so the live read used the SAMPLED close that stood when the event was journaled
+  at 10:00:00 and the exchange bar corrected it a moment later — the documented
+  `feed.exchange_bar_hold_seconds` behaviour, not a Team2 defect. The 09:45 `scenario` close matches
+  (758.135 / 758.14, rounding only), and the 2m regime series matches exactly (regime `ts` is the bar's
+  START; read-event `ts` is its CLOSE — start + tf, verified against the 1m table at 10:04→757.16).
+  **Why it is worth writing down:** a decision taken within a couple of cents of a level — a 15m body
+  close against a zone edge, a PM-low break — can go one way live and the other in replay, and the
+  parity check would report a divergence that is really a bar correction. It changed nothing today
+  (756.78 and 756.76 are both far below the 757.69 PM low). No fix is proposed: the live read cannot
+  wait for the correction without delaying every decision by the hold window, which is the trade-off
+  the engine already made deliberately. Diagnostic value only — check the bar source before calling a
+  future parity mismatch a rule bug.
+
+- **F93 (2026-09-10 10:40 ET, OBSERVATION + a rule question for the user — the "break & base" entry can
+  be built entirely from bars that predate the break's confirmation).** A setup's `confirmed_ts` is the
+  15m bar's **START**, not its close: `setup_for(..., f15.ts, ...)` in `session.py`, which is why today's
+  setups are named `pm_break_down@09:45` (SPY, confirmed by the 10:00 close) and `pm_break_down@10:00`
+  (IWM, confirmed by the 10:15 close). Two of the three places that read `confirmed_ts` do not care —
+  a setup only exists once its 15m close is processed, so "live" (`confirmed_ts <= b2.ts`) and "newest
+  setup wins" both order correctly, and both symbols use the same convention. The third does care:
+  the T7 break-&-base trigger guards itself with `all(x.ts > s.confirmed_ts for x in recent)`
+  (`session.py:477`), whose plain reading is "the base formed after the setup was confirmed". With
+  `confirmed_ts` 15 minutes early, the three 2m bars inside the confirming 15m window satisfy it — so on
+  the very first 2m bar after a break is confirmed, a `based` entry can fire off a base that formed
+  **before** the break was confirmed. **The rule question (the user's, not the desk's — this changes
+  which trades are taken, so nothing was built):** is that wrong, or is it the method? The author says
+  "that break & base over pre market high is so nice" *at* the break, and the bars inside the confirming
+  15m bar are bars that held beyond the level — arguably the base he means. Options: (a) leave it —
+  the base inside the breaking bar is part of the break; (b) tighten the T7 guard alone to
+  `x.ts > s.confirmed_ts + confirm_tf_min * 60_000`, a one-line change that costs at most the first
+  bar or two after each break and never loosens anything; (c) move `confirmed_ts` to the close and keep
+  bar-start naming for the setup id — larger, touches ordering and every recorded setup id.
+  **Live impact so far: none measurable.** Every live Team2 fire on record carries `entryKind: "ema"`;
+  no `based` entry has ever reached the book, so this has cost nothing yet. Recommendation: **(b)** if
+  the user wants the guard to mean what it says, otherwise (a); either way it should be decided before
+  the T7 path ever fires live.
+
+- **F94 (2026-09-10 10:38 ET, PLATFORM — the version chip lies about what is running, and a
+  verification build silently swaps the live UI under the running engine).** The desk's own login page
+  and top-bar chip read **v0.7.38** right now while `/api/health` reads **v0.7.36**: the engine is the
+  01:29 ET boot (F89 — it is elevated and cannot be restarted), but `frontend/dist` was rebuilt at
+  10:12 ET as part of run 50's F91 verification (`npm run build`), and the running server serves that
+  directory off disk. So the *frontend* deployed itself without a restart while the *backend* did not.
+  **Two consequences.** (1) Reporting: anyone looking at the chip — the user, or a future watch run —
+  would conclude F88 and F91 are live. They are not; `/api/health` is the only truth about the engine,
+  and this file's runs should cite it, never the chip. (2) Risk, and this one is shared, not Team2's:
+  a build run purely to *verify* a change is also a deploy of the UI half of that change. Today's
+  commits are backend-only so the 0.7.38 bundle talks to the 0.7.36 API without a contract mismatch,
+  but a frontend change that needs a new endpoint would have gone live against an engine that does not
+  serve it — instantly, with no restart, no readiness check and no journal entry. Nothing was changed:
+  the fix is a build/deploy policy (build to a scratch dist when verifying, or gate `dist` on the
+  restart), which is the user's call and belongs to whoever owns `scripts/start.ps1`. Also logged in
+  `docs/PLATFORM-RULES.md`.
+
+- **F95 (2026-09-10 11:05 ET, OBSERVATION + a small proposal — the read stands down *silently* when the
+  EMA stack disagrees, so a refused opportunity leaves no record and "quiet" is indistinguishable from
+  "stalled").** Between **10:16 and 11:05 ET today the read emitted nothing at all** on any of the three
+  symbols — 44 minutes of complete silence — while the tape was busy. The cause is correct and
+  method-faithful: SPY's pullback carried the EMA13 back **above** the EMA48 (13 758.98 / 48 758.68 at
+  11:00), so `ema_stack` returns **`mixed`**, and E3/B9 requires a full `bear` stack for a short. Every
+  setup is therefore skipped at `session.py:449` by a bare `continue` whose own comment says
+  *"(silent — happens every bar)"*. Verified end to end: replay reproduces the live event list exactly
+  (SPY 11/11, QQQ 5/5, IWM 5/5) and also stops at 10:18, the regime kept advancing every 2m close
+  (last 11:00, bars 93/93 `source='exchange'`), and the F62 departure state machine is judged *before*
+  the gate (`session.py:309`) so nothing is corrupted. **The problem is not the decision, it is the
+  record.** Recomputing the 2m series by hand, price made **six real EMA13 contacts** in that window
+  (SPY 10:42 / 10:44 / 10:46 / 11:00 / 11:02 / 11:04; IWM 10:40–10:54 and 11:00; QQQ 10:46 / 11:00 /
+  11:02) that E3 refused — and **none of them appears anywhere**: no event, and `s.pullbacks` /
+  `s.opportunities` never increment, so the setup's own counters under-report what the day actually
+  offered. Two costs: (1) the method review cannot measure what E3/B9 refuses, which is exactly the
+  question "does the stack gate cost us money?"; (2) operationally a healthy quiet read and a hung
+  runner look identical from the outside — this run had to recompute the EMAs from the bars table to
+  tell them apart. **Not built** — a new event kind changes the read's event stream, which the scorer,
+  the review loop and the live-vs-replay parity check all consume, so it is the user's call.
+  **Proposal (one note, idiomatic, no behaviour change):** the read already has the "say it once"
+  pattern for exactly this (`s._stalled`, `s._same_said`, `s._skipped`). Add a `stack_disagrees` note
+  emitted **once per setup per stack flip** — "SPY: the 13 crossed back above the 48, the stack is
+  `mixed`, not `bear` — every pullback is watch-only until it re-stacks (E3/B9)" — and a matching note
+  when it re-stacks. Cheap (two events per regime change, not per bar), it makes the stand-down
+  auditable, and it touches no gate, threshold, size or money path. Optionally also count these
+  contacts into a separate `refused_by_regime` counter rather than `opportunities`, so the review can
+  price the gate without polluting the executable-opportunity count.
+
+- **F96 (2026-09-10 11:35 ET, CORRECTION to F87 — F87's live instance self-healed at 09:25 and three
+  consecutive watch runs kept reporting it as live; the residual exposure is far narrower than logged).**
+  Runs 50, 51 and 52 each repeated *"F87 unchanged: today's plans still record `target_replan: off`
+  while the runner runs `structure`"* — carried forward from F87's 09:12 ET observation without being
+  re-read. **Checked against the database this run: all three 2026-09-10 plans record
+  `config.thresholds.target_replan = 'structure'`**, plus `target_replan_gap_only: true` and
+  `preopen_target_rederive: true` — i.e. exactly what the live runner runs. The mechanism was already
+  built: `Team2Service.preopen_complete()` calls `stamp_run(ap)` for **every** armed plan at the 09:25
+  pre-open, and `stamp_run` writes `cfg["thresholds"] = rules_from_settings(...)` (`service.py:310`) —
+  F87's own recommended option **(a)**, shipped as F-1/F-2 and documented in that method's docstring.
+  Timeline: the plans were minted 17:00 ET 09-09 under the old snapshot; `SettingChanged
+  techniques.team2.target_replan off → structure` is journalled at **23:43 ET 09-09** (not 20:30, as
+  F87's "Live today" paragraph says); the 09:25 ET pre-open stamp then re-froze the thresholds from
+  live settings. F87 was accurate when written at 09:12 and stopped being true 13 minutes later.
+  **Corroborated by the parity check itself:** replay reads the frozen snapshot only
+  (`service.py:352`), and SPY's replay reproduces the 10:06 `target_replanned` + fire — which is
+  impossible under `off`. Every run since 50 has therefore reported a contradiction (parity holds AND
+  the snapshot disagrees with the runner) without resolving it.
+  **What is left of F87** — real, but small: the stamp is a *one-shot at 09:25*, so drift survives
+  (a) a knob changed **after** the pre-open stamp and before the session's trades, (b) any day the
+  09:25 job is missed or `preopen_complete` raises (it swallows per-symbol exceptions), and (c) plans
+  minted-but-never-pre-opened. F87's option **(c)** — a `rules_drift` note when live settings differ
+  from the snapshot — is the only part still worth building, and it is now a *detector*, not a fix.
+  **Lesson for this watch job:** a status carried forward across runs must be re-measured, not
+  re-typed; every F-status this log repeats should cite the query that produced it in that run.
+
+- **F97 (2026-09-10 12:05 ET, MEASUREMENT for F56/F90 — on a gap day that reverses back into its own
+  pre-market range the V6/B5 no-trade zone refuses ~95% of the day's EMA13 contacts; today it left a
+  six-minute window on one symbol).** F56 and F90 both ask whether a wide pre-market range swallows the
+  session. This run put a number on it. Independent reconstruction from the `bars` table (RTH 1m -> 2m
+  buckets, EMA13 recomputed from the session's own closes; the reconstruction lands within 0.001 of the
+  engine's own `regimeLast.ema13` on SPY at 12:00, 758.864 vs 758.865, so it is measuring the same
+  series), counting every 2m bar whose range contains the EMA13 — i.e. every candidate pullback the
+  method could take — and asking only whether the entry (the EMA13 itself) sits inside that symbol's
+  pre-market range:
+  - **SPY: 30 contacts, 26 inside the zone, 4 outside** (10:12, 10:14, 10:16, 10:18 — EMA13 757.53–757.60,
+    just under the 757.69 PM low).
+  - **QQQ: 31 contacts, 31 inside, 0 outside.**
+  - **IWM: 24 contacts, 24 inside, 0 outside.**
+  - **Desk total: 85 candidate pullbacks, 81 refused by the zone alone (95.3%), 4 tradable — all on one
+    symbol, inside one six-minute window.** The day's only trade (SPY 10:06, the F81b fire) came out of
+    exactly that window, which is not a coincidence: it is the only moment all session that any of the
+    three traded outside its pre-market range.
+  **The zone, not the stack, is today's binding constraint.** F95 read the 10:18–11:30 silence as an
+  `ema_stack = mixed` stand-down, and that was right for that window. But the stack has since resolved
+  in the method's favour on all three — IWM bear since 11:18, QQQ re-stacked bear ~11:48, SPY ~11:50
+  (engine `regimeLast` at 12:00: SPY bear strength 3, IWM bear strength 3, QQQ mixed→bear) — and the
+  result was **not** a fire. It was contacts at SPY 11:52 / 12:00 / 12:02, QQQ 11:52 / 12:00 / 12:02 and
+  IWM 11:30 / 11:32 / 11:34 / 11:38 / 11:42 / 11:44 / 11:46 / 11:52 / 11:58 / 12:00, every one with its
+  entry inside the pre-market range. The single event the read minted out of all of them is SPY's 12:02
+  `skip_no_trade_zone` ("entry 758.87 sits inside the pre-market range — V6/B5"), which is correct, and
+  correctly re-said because `note_once` is per setup and this setup had not said it before. So: when the
+  stack finally agreed, the zone refused anyway.
+  **Why this sharpens F90 rather than repeating it.** F90 reasoned from the gate order that the two rules
+  are mutually exclusive on a gap day; F97 is the count. It also isolates which of F90's options is
+  actually load-bearing. Option **(b)** (small size inside the range when near the broken edge) would
+  have released almost nothing today — the contacts sat 1.0–1.2 points above the PM low on SPY, far
+  outside `pm_tol_atr` 0.25 × ATR 0.43 = 0.11. Option **(c)** (a gap-through day's PM range stops being a
+  no-trade zone once the 15m confirmation closes beyond it) is the one that would have changed the day:
+  all three confirmed `scenario_4 break PDL` on the **09:45** close, so under (c) the zone would have
+  lifted at 09:45 and the 81 refusals would have been judged on their merits instead.
+  **Not changed here** — this is the sweep input F90 asked for, not a defect and not a rule change. What
+  it argues for is running the F90(c) variant over the gap days in the sweep set before the twenty-session
+  F81b review, so the review is not reading a sample where 95% of the opportunity was gated away by a
+  rule nobody has measured. Recording the count is the point; the decision stays the user's.
+
+- **F98 (2026-09-10 12:35 ET, METHODOLOGY — F97's contact count is not reproducible as written; its
+  ratio is. Documentation only, nothing built.)** Re-measuring F97 this run (F96's lesson: re-measure,
+  don't copy) produced **SPY 43 contacts / QQQ 36 / IWM 47** for 09:30–12:34, against F97's
+  **30 / 31 / 24** for 09:30–12:04. Fifteen extra 2m bars cannot add 41 contacts, so the two runs
+  counted different things. The cause is the EMA13 series: Team2 aggregates **warm-up bars from prior
+  sessions plus today's pre/RTH/post 1m bars** (`session.py:198-200`, `all_1m = warmup_1m + bars1m`),
+  seeds the EMA with the **SMA of the first 13 values** (`indicators.ema_series`), and buckets 2m on
+  the ET wall-clock grid. A reconstruction seeded at the 09:30 open reproduces the engine's `ema13`
+  only to ~0.09; the warm-up reconstruction reproduces it to **0.003 (QQQ) / 0.012 (IWM) / 0.022 (SPY)**
+  at the 12:32 stamp. **The recipe any future run must use:** pull 1m bars from at least the prior
+  session's 04:00 ET through now, `aggregate(bars, 2)`, drop the still-forming bucket, `ema_series(closes, 13)`,
+  then count only today's RTH buckets whose `[low, high]` contains the EMA13.
+  **What survives F97 unchanged is the finding, because it is a ratio, not a count:** on the faithful
+  series **120 of 126 EMA13 contacts (95.2%) sit inside their symbol's pre-market range** and are refused
+  by V6/B5 — QQQ 36/36 and IWM 47/47 refused, SPY 37/43, with the only six tradable contacts on SPY
+  between **10:02 and 10:18**, the window that produced the day's single fire. F97's 95.3% and this
+  run's 95.2% agree to a tenth of a point. **Use the ratio, re-derive the count.** This also means the
+  F90(c) sweep F97 proposes must be run off the warm-up reconstruction, or its "released" tally will
+  inherit the same drift.
+
+- **F99 (2026-09-10, run 56) — replay does not read the same tape as the live runner: three code
+  paths seed the indicator series from three different warm-up depths.** First live-vs-replay
+  disagreement of the day, on QQQ: the stored live read ends with `same_pullback` at **12:38**, a
+  replay of the same run ends with `same_pullback` at **12:40** and does not contain 12:38. The
+  replay is deterministic (run twice, identical), every 1m bar in the window is `source='exchange'`
+  with no stub or zero-volume minute, and the engine logged **no `read_rewritten`** row — so this is
+  not a corrected bar moving under the read. `same_pullback` is emitted **once per pullback episode**
+  (`session.py:490-496`, `_same_said` clears only when `_departed` flips), so the two runs disagree
+  about *which* 2m bar counted as the new pullback: a one-bar shift in the episode boundary.
+  **Root cause, verified by reading the three call sites:** the read's EMA/ATR series is built from
+  `warmup_1m + today` (F98), and the warm-up is loaded with a different `limit` in each path —
+  live runner `_load_warmup` uses `load_bars(..., limit=6000)` (`runner.py:270`), `service.replay`
+  goes through `history_for` → `bars_1m(limit=20000)` (`service.py:74,83,351`), and `service.sweep`
+  uses `bars_1m(sym, limit=60000)` (`service.py:377`). `load_bars` returns the **most recent** N rows
+  (`marketdata.py:452-467`, `order_by ts desc … reversed`), and the table holds SPY 22,091 / QQQ 18,843 /
+  IWM 17,123 1m bars, so the three depths really do resolve to three different tapes: live seeds the
+  SMA-13 and the EMA200/ATR history from ~6,000 bars (~6 extended sessions), replay from ~20,000
+  (QQQ's entire bank), the sweep from everything. Because `pullback_reset_atr` is measured in ATRs,
+  a small ATR difference is enough to move an episode boundary by one bar — which is exactly what
+  today shows.
+  **Why it matters more than today's symptom:** the divergent event is a `same_pullback` note, which
+  gates nothing. But replay is *the* audit instrument this watch uses to certify the live read (step 5
+  of the job), and the sweep is what any threshold decision is judged on. Neither reproduces the series
+  the desk actually trades. Every earlier run's "replay parity holds exactly" was the difference being
+  too small to change an event, not the two paths agreeing by construction. It also means the F90(c)
+  variant sweep proposed in F97/F98 would be scored on a tape the live desk never saw.
+  **Not fixed — deliberately.** The one-line fix (make the three limits equal) is small in diff and
+  large in consequence: raising the live runner's warm-up changes the EMA200/ATR the desk trades on,
+  and lowering replay/sweep shortens every audit and backtest. Which depth is correct is a method
+  decision, so it is the user's. **Proposed:** pick ONE warm-up depth, define it as a named rule
+  (a session count, not a bar count — 6,000 bars is ~6 sessions for SPY but ~6.3 for IWM, so today the
+  three symbols do not even warm up over the same span), resolve it through settings, and have all
+  three paths read it. Until then, treat "replay parity" in this log as evidence about the *method*,
+  not proof the runner and the replay agree.
+
+- **F100 (2026-09-10, run 57) — the read's `pullbacks` counter and the refusal that follows it
+  contradict each other, and `note_once` hides how often the refusal fired.** Run 56 flagged the
+  wording; this run resolved it against the code. `session.py` increments `s.pullbacks` on **every**
+  structural episode (line 497, after F62's `same_pullback` gate) and only *then* runs the location
+  refusals — the pre-market no-trade zone (V6/B5) and the range-day confirmation (B3/A4) — each of
+  which said *"not counted as a pullback"*. The sentence was about the **D9 allowance** (`s.touches`,
+  which is correctly left alone, F18) but it sat next to a field literally named `pullbacks` that had
+  already counted the contact. Today's numbers make the gap plain: QQQ `scenario_4` finished the
+  window at **pullbacks 11 / opportunities 0 / touches 0**, IWM `pm_break_down` at **15 / 0 / 0**,
+  SPY `pm_break_down` at **13 / 3 / 2**. Second half, and the more useful one: those refusals are
+  written with `note_once`, which suppresses a repeat until the reason changes or a real touch clears
+  it (`session.py:187-194`, F23), so QQQ's eleven refused episodes left **one** `skip_no_trade_zone`
+  row (09:52) in the read and one in the journal. The read therefore understates today's refusals by
+  ~10x, and the only counter that does see them denied in prose that it had counted them. Same family
+  as F95 (a stack stand-down leaves no record) and it is the counting hazard F97/F98 ran into.
+  **Fixed (v0.7.39, this run, queued for deploy):** both refusals now say *"does not spend the
+  two-pullback allowance (D9)"*, which is what is true, and `session.py:497` carries the three-counter
+  contract in a comment. Reporting only — no entry, exit, sizing or gate changed; 133 Team2 tests pass.
+  **Still open for the user (not built):** should a long run of identical refusals be summarised
+  (e.g. re-state the refusal with its running count every N episodes, or emit one closing tally per
+  setup) so a reader can see 11 refusals without re-deriving them from the counter? That changes what
+  the read emits, so it is a method-reporting decision, not a defect fix.
+
+- **F101 (2026-09-10, run 58) — the premium band is checked against a synthetic $1 strike ladder,
+  not the venue's listed strikes; today that refused IWM's only nine tradeable pullbacks.** IWM was
+  the one symbol all day to clear both binding gates — it closed below its 287.83 pre-market low and
+  held a bear stack — and between **13:40 and 14:02 ET it produced nine `pm_retest` entries and lost
+  every one to `skip_no_contract`** (`opportunities` 9, `touches` 0, trades 0). The refusal blames the
+  modelled premium, and F59 (the model's *price* drifting from the chain's) was the obvious suspect.
+  **It is not F59. The model's price is excellent today** — measured against the live CBOE chain at
+  14:04 ET, spot 287.76: it marks the 287 put at **$0.099 vs a real $0.09/$0.10**, and the 287.5 put
+  at **$0.2154 vs a real $0.20/$0.21**. The defect is the **ladder**: `rules.strike_step = 1.0`, so
+  `PremiumModel.pick_strike` walks 287, 286, 285 … and **never tests the listed 287.5 strike**, which
+  today was the only OTM put inside the $0.20–$0.90 band — bid 0.20 / ask 0.21, **33,008 contracts
+  traded**, 717 OI, delta −0.385, a one-cent spread. The walk breaks at the first sub-floor strike
+  (287 at $0.10), so it returns None having tested exactly one strike. IWM lists half-dollar strikes
+  on a sparse ~$5 grid (277.5, 282.5, **287.5**, 312.5); SPY and QQQ were confirmed pure $1 ladders
+  today, so this bites IWM specifically, and only when price parks on a half-strike — which is exactly
+  where it parked, because 287.5 sits under the 287.83 pre-market low the setup was built on.
+  **This is not narrative-only — it blocks real money.** `runner.py:460-479` drives the live desk off
+  the read's events: only a `fire` event reaches `_fire_from_event` → `pick_contract` → the live chain.
+  Because the read emitted `skip_no_contract`, **the live picker was never consulted**, and four of the
+  nine refusals reached the journal as live `TechniquePlanTriggerSkipped` rows (13:54, 13:56, 13:58,
+  14:02 — the rest suppressed by `note_once`, F100). Run `select_by_premium` over today's real chain at
+  the read's own 287.83 entry spot and it returns **287.5P @ $0.21, a fire**. So the modelled ladder is
+  a hard gate standing in front of the real chain, and today it converted a tradeable setup into nine
+  refusals.
+  **Fixed this run (v0.7.40, queued for deploy) — reporting only.** The refusal now names the nearest
+  OTM strike it modelled, that strike's mark and the ladder step ("nearest OTM on the $1 ladder is 287
+  at $0.11"), via a new `PremiumModel.nearest_otm` diagnostic. No entry, exit, sizing or gate behaviour
+  changed; 133 Team2 tests pass.
+  **NOT fixed, and needing the user's decision — two candidate fixes, and the obvious one is wrong.**
+  (a) Setting `strike_step = 0.5` for IWM is tempting and **unsafe**: IWM's half strikes exist only on
+  that sparse $5 grid, so a 0.5 ladder would price and pick strikes that are *not listed* (286.5,
+  288.5 …) — trading a contract that does not exist is worse than missing one. It also silently
+  rewrites every historical sweep. (b) The structural fix is to let the **listed** strikes drive the
+  ladder — pass the real strike list (or the day's chain snapshot) into `simulate_session`, falling
+  back to the `strike_step` grid only when unknown — or, narrower, to reorder the live path so the read
+  emits the fire and the live picker's real-chain answer is authoritative, with the model kept for
+  simulation only. Both change the read→runner contract and (b)'s first half changes what every
+  backtest scores, so neither is a market-watch change. **Consequence for queued work:** any sweep or
+  calibration that turns on premium-band refusals is measuring this ladder, not the venue's.
+
+- **F102 (2026-09-10, run 59) — the premium band is ONE dollar band applied to three underlyings
+  whose prices differ 2.6x, so it does not mean the same contract on each; IWM is structurally the
+  worst-served and goes dark first. Measured, not fixed — a rules/threshold question for the user.**
+  `Team2Rules.target_premium` ($0.60), `premium_floor` ($0.20) and `chase_cap_mult` (1.5, so the
+  accepted band is **[$0.20, $0.90]**) are single global values in `rules.py:87-91`, shared by SPY,
+  QQQ and IWM. A dollar band cannot describe the same *moneyness* on underlyings priced $287 and
+  $758. Expressed as a fraction of spot, the same band asks for very different contracts:
+  **SPY 0.026%-0.119% of spot - QQQ 0.028%-0.127% - IWM 0.070%-0.313%.** The $0.60 target alone is
+  **0.079% of SPY's price and 0.209% of IWM's - 2.6x more relative premium demanded of IWM**, and the
+  $1 strike ladder is likewise 2.6x coarser on IWM in percentage terms (0.348% of spot per step vs
+  0.132% on SPY, 0.141% on QQQ). Both effects push the same way, so IWM's band spans the fewest
+  listed strikes of the three, and today it spanned none.
+  **Measured read-only on the live CBOE chains at 14:36 ET (84 minutes to the 16:00 expiry), each
+  symbol on its own live direction (all three short today):** in-band OTM puts - **SPY 2** (757 @
+  $0.45 d-0.34, 756 @ $0.24 d-0.20; 755 @ $0.13 under the floor), **QQQ 3** (709 @ $0.65, 708 @ $0.37,
+  707 @ $0.21), **IWM 0** (nearest OTM 287 @ $0.11, then 286 @ $0.04, 285 @ $0.02 - every OTM ask
+  under the $0.20 floor; the only in-band strikes, 287.5 @ $0.29 and 288 @ $0.60, are both ITM).
+  IWM last held an in-band OTM strike at about **14:24 ET** (spot 287.53, the 287.5 put OTM by $0.03);
+  from 14:26 spot has stayed under 287.5 and the chain has had **zero** - so IWM's effective
+  last-entry time today was ~14:24, **66 minutes before the configured 15:30 `last_entry_min` gate**,
+  and nothing in the plan, the headline or the gate says so.
+  **This extends F82a rather than repeating it.** F82a measured the band emptying at 15:05 ET on
+  2026-09-09 (SPY 0, IWM 0, QQQ 2) and read it as pure time decay. Today separates the two causes:
+  at 14:36 SPY still had 2 and QQQ 3 while IWM had 0, so the emptying is **not** uniform across
+  symbols and is not decay alone - it is decay acting on a per-symbol strike/premium granularity that
+  the single global band ignores. It is also the reason F101's missing **287.5** half strike mattered
+  so much: on IWM a single half strike is the difference between an in-band pick and none.
+  **Proposed, for the user (nothing built, no threshold moved).** (a) Express the band as a fraction
+  of spot (e.g. target 0.08% of price) so one setting means the same contract on all three symbols;
+  (b) make `target_premium`/`premium_floor` per-symbol keys; (c) F82(c)'s **delta band** instead of a
+  price band, which is the moneyness statement the method actually makes and is price-independent;
+  or (d) accept it and publish a per-symbol effective last-entry time so the desk stops pretending
+  15:30 applies to IWM. Note also that **`strike_step` is the only premium-path parameter with no
+  settings key at all** - it is not in `rules.py`'s `SETTINGS_MAP` and not in `settings_service.DEFAULTS`
+  - so the user cannot even inspect it from the UI; exposing it as a plain number would however make
+  F101's unsafe 0.5 value one click away, so it should become the listed-strike set, not a knob.
+
+- **F103 (2026-09-10, run 59) — the market-watch job's documented UI check is not implementable:
+  the SPA has no `?token=` handoff, so `/team2` can only ever be reached by a real Google sign-in.**
+  The watch recipe says "sign-in may be needed - use the token: `?token=$TOK`". The backend does
+  accept `?token=` (`require_auth`), but the **frontend never reads a token from the page URL**:
+  `api.ts:21` returns an in-memory `authToken` module variable set only by the sign-in flow (not
+  localStorage, not the query string), and the only `?token=` producers are `ws.ts:58` (the WebSocket
+  URL) and two download links (`api.ts:257`, `:278`) - all of which *write* the stored token, none of
+  which read one in. So navigating to `http://127.0.0.1:8420/team2?token=...` renders the login page,
+  which is exactly what run 58 saw and recorded as a one-off. It is not a one-off: **no market-watch
+  run has ever been able to verify the UI**, and the "UI issues on /team2" item of the recipe has
+  silently never run. **Not fixed - deliberately.** Adding a URL-token bootstrap would put a
+  30-day session credential in the address bar, browser history and any proxy log, which is the wrong
+  trade for a convenience. **Proposed, for the user:** either (a) drop the UI item from the watch
+  recipe and verify `/team2` yourself when a UI change ships, or (b) add a localhost-only,
+  short-TTL dev bootstrap gated behind an explicit env flag. Until one is chosen, treat every
+  "UI not verified" line in this log as expected, not as a transient failure.
+
+- **F104 (2026-09-10, run 60) — the LIVE entry gate refuses on the modelled premium and never
+  consults the real chain: IWM lost 10 tradable entries today to a strike that was listed, in the
+  band, and one of the most heavily traded contracts on the board.**
+  F101 established that `PremiumModel.pick_strike` walks a synthetic `step=1.0` ladder and therefore
+  cannot test IWM's listed 287.5 strike. Two facts measured this run make that a live-money problem
+  rather than a read/replay artefact.
+  **(1) The refusal is journaled on the live path.** IWM's armed-plan audit
+  (`GET /api/technique/armed/91295c8bdc6045379866cc7518bc4d1f/audit`) carries **13
+  `TechniquePlanTriggerSkipped` / `skip_no_contract` rows today** - 13:40, 13:42, 13:44, 13:48,
+  13:52, 13:54, 13:56, 13:58, 14:02, 14:22, 14:34, 14:48, 15:02 ET - every one with the reason
+  *"no strike MODELS between $0.20 and $0.90 (target $0.60, V1) - modelled premium at sigma 0.2111,
+  not the live chain"*. The runner in `auto` mode therefore declines entries on the **model**. The
+  platform's chain-walking picker `options/pick.py::select_by_premium`, which iterates the venue's
+  actual listed strikes and would have seen 287.5, is never reached when the model refuses first.
+  **(2) The strike the ladder skipped was both in-band and liquid.** At each of the ten refusals
+  before 14:34 the IWM 1m close was **above 287.5**, so the 287.5 put was OTM: 287.76, 287.745,
+  287.855, 287.70, 287.76, 287.80, 287.70, 287.81, 287.66, 287.53. The model's own price for it at
+  those bars is **$0.234-$0.315** - inside the $0.20-$0.90 band on every one - while the two strikes
+  the $1 ladder did test were 287 ($0.096-$0.130, under the floor) and 288 (ITM, excluded). The live
+  OPRA quote for `IWM260910P00287500` at 15:07 ET was **bid 0.41 / ask 0.42, volume 45,434,
+  open interest 717, spread 2.4%** - so this is not a thin half strike that a liquidity rule would
+  have rejected anyway; it is the most active contract near the money.
+  **Cost, stated plainly: IWM traded 0 times today and every refusal was the L2.6/L2.7 pre-market
+  retest the method names explicitly.** Ten of the thirteen were refused by the ladder, not by the
+  market. (The remaining three, 14:34-15:02, are genuine F102 emptiness: spot was under 287.5, so
+  even a half-strike ladder finds nothing OTM in band.)
+  **Not fixed - deliberately, and this is not a small change.** Making the ladder the venue's listed
+  strike set touches the premium path shared by the live runner, the read, replay, the sweep and the
+  B3 calibration test, and v0.7.40 (F101's clearer refusal message) is still one of five undeployed
+  releases. **Proposed, for the user, in preference order:** (a) feed `pick_strike` the real listed
+  strike set for the symbol (from the chain snapshot) instead of a `step` grid - the model keeps
+  pricing, the venue supplies the ladder; (b) on the live path only, let a model refusal fall through
+  to `select_by_premium` against the live chain, and journal which path decided; (c) a per-symbol
+  `strike_step` (0.5 for IWM) - cheapest, but it hard-codes a venue fact into settings and F102
+  already argues `strike_step` should not become a free-form knob. Do **not** globally set
+  `strike_step=0.5`: on SPY/QQQ it would invent strikes that are not listed.
+
+- **F105 (2026-09-10, run 61) - THREE premium series price the same contract, and at the close they
+  disagree by exactly enough to flip an in-band/out-of-band decision.**
+  This does not add a new mechanism; it puts a decisive number on the open F30-family question
+  (*which premium series is authoritative*) that F59, F101 and F104 all defer to. Three series are
+  live in the money path at once:
+  **(1) the Black-Scholes model at the session sigma**, which is what actually gates an entry -
+  F104 showed the live runner refuses on it and never reaches the chain;
+  **(2) the CBOE delayed chain**, which is what `GET /api/options/{sym}/chain` and the UI serve
+  (`provider: cboe`, `delayed: true`);
+  **(3) the live OPRA NBBO** from Alpaca, which is what would actually fill
+  (`GET /api/options/quote/{occ}`: `source: opra`, `provider: alpaca`, `delayed: false`).
+  **Measured at 15:35 ET on `IWM260910P00287500`, the only near-money strike IWM had all afternoon:
+  CBOE quoted ask $0.19 - one cent BELOW the $0.20 `premium_floor`, so out of band - while OPRA at
+  the same minute quoted bid 0.19 / ask 0.20, exactly AT the floor, so in band.** Same contract,
+  same minute, opposite verdicts. The two sources also disagreed on spot (chain 287.34 vs live
+  287.57) and, an hour earlier, on SPY's 756P (CBOE $0.24 vs OPRA 0.19/0.20).
+  **No money was at stake in this particular instance** - 15:35 is past the 15:30 `last_entry_min`
+  gate, so no entry could have been taken either way. The point is the size of the disagreement
+  relative to the decision: the band's floor is $0.20 and the sources differ by $0.01, so at the
+  edge of the band the pick/refuse verdict is **source-dependent, not market-dependent**. Any fix to
+  F104 that routes the decision to "the chain" must therefore also say WHICH chain: taking F104's
+  proposal (a) or (b) against the CBOE snapshot would have refused this strike, and against OPRA
+  would have taken it.
+  **Not fixed - it is a money-path decision reserved to the user.** Recommendation, for when F104 is
+  decided: the series that decides an entry should be the series that fills it (OPRA), with the
+  model kept for the read/replay/sweep so history stays reproducible, and the refusal line naming
+  which series spoke. Related: F30, F36, F59, F101, F102, F104.
+
+- **F106 (2026-09-10, run 62, post-close - FIXED in v0.7.41) - a 15:45 flatten that found an empty
+  book left no record at all, so "it ran and found nothing" and "it never ran" were indistinguishable.**
+  `Team2Runner._clock_flatten` is called from `on_bar` on every RTH bar from `flatten_min` (15:45)
+  onward, and it logged **only inside its per-trade loop** - one line per open trade sold, one per
+  working entry cancelled. On a day the desk ends flat that loop body never executes, so the flatten
+  emitted nothing: no plan event, no journal row, no note. Today all three symbols finished flat
+  (SPY's single 10:06 model trade was never taken by the book) and the audits jump straight from the
+  15:32 `skip_last_entry` to the 16:00 `TechniquePlanScored`/`TechniquePlanDisarmed` pair, with
+  **nothing between them**. C3/D-1 - "nothing of a 0DTE book survives 15:45" - is the method's single
+  hardest money rule, and until today the desk had no positive evidence it had ever executed;
+  every market-watch run since the technique shipped has been asked to "confirm the 15:45 flatten
+  logs cleanly" and none could, because a correct silent pass and a flatten that never fired produce
+  the same empty record. The 16:00 `TechniquePlanDisarmed` payload's `flatten: false, openLeft: 0` is
+  the *shared* close, not the 15:45 clock pass, so it does not substitute.
+  **Fixed** (v0.7.41): `_clock_flatten` now writes one `clock_flatten` plan event the first time the
+  clock reaches `flatten_min` for a run - *"flatten time 15:45 ET reached - closing N open and
+  cancelling M working (C3/D-1)"*, or *"... - the book is already flat - nothing to close"* - carrying
+  `openTrades`/`workingTrades` counts, guarded by a per-run `_flatten_noted` set so the repeated
+  per-bar calls after 15:45 note once. Observability only: **no rule, threshold, gate, size, order or
+  money path changed**, and the per-trade lines and the `_exit` calls are untouched. 133 Team2 tests
+  pass. Deploy queued behind F89 (fifth release waiting on the user's restart). Related: F26, F66, F89.
+
+- **F107 (2026-09-10, run 63, post-close) - EM's outcome scorer adopts every Team2 plan run and
+  files it under `technique='enhanced_market'`. NOT FIXED - the fix is one line in EM's file, which
+  this watch may not edit.** `TechniqueService.score_pending()`
+  (`backend/zargar/technique/service.py:1946`) selects *every* finished run in mode `full`/`plan`
+  from the last 25 days with **no technique filter at all**, so the three plan runs Team2 mints each
+  night are swept into EM's outcome loop. `_score_plan_run` then looks for EM's plan shape - a
+  `result.plan` carrying `triggers`/`levels` - finds neither on a Team2 sheet, and writes a terminal
+  `technique_outcomes` row: `plan_source 'levels'`, `status 'unscorable'`,
+  `note 'plan has no levels or triggers'`. `TechniqueOutcome.technique` is never set from the run, and
+  its column default is `"enhanced_market"` (`models.py:438`), so the row is **stamped as EM's own**.
+  **Scope, measured tonight: all 15 Team2 runs ever created have exactly one such row - 15/15,
+  every one `unscorable`, every one labelled `enhanced_market`** - and the pool grows by 3 per
+  trading day for as long as Team2 arms nightly. Today's three (SPY `d15b5ef4`, QQQ `011a6de6`,
+  IWM `91295c8b`) were written at 2026-09-09 21:10 UTC, before the session they plan had even opened.
+  Consequences: (a) another technique's review surface silently owns Team2's runs - EM's outcomes
+  tab, the `technique_review` CLI's unreviewed/unscorable lists and any per-technique outcome count
+  read them as EM rows; (b) EM's `unscorable` tally (4,296 rows) carries a small, permanently growing
+  foreign contamination that no EM change can explain; (c) the reverse risk is the real one - if EM
+  ever tightens its scorer, Team2 runs are inside the blast radius of a change made for another
+  technique. **Nothing about Team2's own reads, entries, exits, sizing, scorecard or money path is
+  affected** - Team2 scores itself in `TechniquePlanScored` (F67/F68), which is unrelated to this
+  table - so this is a provenance and separation defect, not a trading one.
+  **This is the same bug family as the 2026-09-08 `runs_today()` fix one function earlier in the same
+  file**, whose docstring records the Options Cartel desk's 5,557 nightly rows exhausting EM's
+  per-day LLM cap; that fix added `TechniqueRun.technique == "enhanced_market"` to its query and
+  `score_pending` never got the same treatment. **Proposed fix (EM's file - the user or the EM desk
+  to apply):** add `TechniqueRun.technique == "enhanced_market"` to `score_pending`'s `select`, and,
+  if outcome rows for other techniques are wanted later, set `TechniqueOutcome.technique` from the
+  run rather than leaving the column default. The 15 existing rows are harmless to leave in place;
+  deleting them would be an append-only-table exception the user should decide. Related: F67, F68,
+  PLATFORM-RULES invariant 15 (a technique's rows belong to that technique).
 
 ## Theories to test
 
@@ -1698,6 +2270,30 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   history at 09:30); after ~11:00 RTH-only EMAs converge.
 
 ## Change log
+
+- **2026-09-10 (market watch, run 62, 16:05 ET post-close - release v0.7.41)** - **F106**: the 15:45
+  clock flatten now records that it ran. `_clock_flatten` writes one per-run `clock_flatten` event
+  when the flatten time is reached, naming how many open trades it is closing and how many working
+  entries it is cancelling, or saying the book was already flat. Evidence: all three plans finished
+  today flat and the flatten pass left no trace anywhere in the audit or the read, so C3/D-1 could
+  not be verified. Observability only - no rule, threshold, gate, size or money path changed.
+  Committed; **deploy blocked by F89** (the running engine is elevated) - queued behind the user's
+  `scripts\stop.ps1`, fifth in line after v0.7.37/.38/.39/.40.
+
+- **2026-09-10 (market watch, run 50, 10:06 ET — release v0.7.38)** — **F91**: the live runner no longer
+  refuses a fire the read deliberately made targetless. `resolve_fire_target` honours an explicit
+  `targetKind == "none"` instead of falling back to the setup's stale planned target. Evidence: SPY
+  10:06 ET fired the 756 put in the read and logged `skip_target_behind` on the 757.90 in the book, the
+  same second. F72's refusal of an *unstamped* stale target is unchanged, as is F88's genuinely-absent
+  case. No rule, threshold, gate, size or money path changed. Committed; **deploy blocked by F89** (the
+  running engine is elevated) — queued behind the user's `scripts\stop.ps1`.
+
+- **2026-09-10 (market watch, run 49, 09:38 ET — release v0.7.37)** — **F88**: the F81 gap-day target
+  re-derivation is now idempotent. It reads only `targetsPlanned` (recovering it from
+  `targetsRederived[...]["was"]`, then pinning it, on plans minted before v0.7.34) instead of falling
+  back to a `targets` field its own earlier pass had overwritten. Deployed mid-session and today's
+  three plans were re-completed through `POST /api/team2/preopen-now`, restoring IWM's down-target to
+  the 287.83 PML and moving SPY's to 757.69. **No rule, threshold or knob changed.**
 
 - **2026-09-09 (market watch, run 44, 15:15 ET — release v0.7.31, reporting only)** — **F82a**:
   the `skip_no_contract` refusal (both the live runner's error and the modelled read's note) said no
@@ -1828,6 +2424,8 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
+| 2026-09-10 | **F101 fixed (v0.7.40, queued for deploy)**: a `skip_no_contract` refusal now names the nearest OTM strike it modelled, that strike's mark and the ladder step (new `PremiumModel.nearest_otm`), so a refusal is diagnosable without a chain fetch. Reporting only — no entry, exit, sizing or gate changed. The underlying defect is NOT fixed: the band is judged on a synthetic `strike_step` ladder that misses listed strikes, and because the runner fires only on a read `fire` event, the live picker never sees the real chain | market watch run 58; IWM 9 refused `pm_retest` entries 13:40–14:02 ET, the listed 287.5P bid 0.20/ask 0.21 with 33,008 traded never tested by the $1 ladder; `select_by_premium` on the live chain returns 287.5P @ $0.21; model prices verified accurate (287.5 modelled $0.2154 vs real $0.21); 133 Team2 tests pass | Team2 desk |
+| 2026-09-10 | **F100 fixed (v0.7.39, queued for deploy)**: a pullback refused for its LOCATION — inside the pre-market no-trade zone (V6/B5) or on a range day that has not cleared its level (B3/A4) — no longer says "not counted as a pullback" (the read had already counted it in `pullbacks`); it now says "does not spend the two-pullback allowance (D9)", which is what F18 actually does. `session.py:497` documents the three-counter contract (`pullbacks` = every episode, `opportunities` = tradeable locations, `touches` = the D9 allowance). Reporting only — no entry, exit, sizing or gate changed | market watch run 57; QQQ scenario_4 at pullbacks 11 / opportunities 0 behind a single 09:52 `skip_no_trade_zone` note; 133 Team2 tests pass | Team2 desk |
 | 2026-09-04 | **F41 + F42 fixed** (post-close): the nightly never mints/arms a second plan for a session that already has one (`skipped`, with `force` on plan-now as the manual rebuild), and the 09:25 completion leaves a plan whose session has not started alone. Both are the same root cause — the two Team2 jobs are weekday-gated, not trading-day-gated, so **Labor Day 2026-09-07** would have double-armed 2026-09-08 and blanked its plans that morning. No sizing, entry or exit rule changed | market watch 16:05 ET; `next_trading_day(2026-09-04) == next_trading_day(2026-09-07) == 2026-09-08` | Team2 desk |
 | 2026-09-03 | Method codified v0.1 from 49 public posts; desk opened | `SOURCES.md` | Team2 desk |
 | 2026-09-03 | D3 decided by the user: Team2 is a 0DTE technique; RiskGate gets a per-technique 0DTE policy (E6) instead of the hard-coded EM/tip ids. Engine is ENRICHED, not forked (PLAN §3b, E1–E12) | METHOD §7b/§7c, images INDEX | Team2 desk |

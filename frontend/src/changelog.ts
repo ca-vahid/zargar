@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.39";
+export const APP_VERSION = "0.7.42";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,10 +17,24 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.7.39",date:"2026-09-10",title:"Safer Cartel preparation and executable reserves",items:[
+  {version:"0.7.42",date:"2026-09-10",title:"Safer Cartel preparation and executable reserves",items:[
     {tag:"fixed",text:"Refreshing preparation preserves existing arms and positions, including when research fails. Pending contracts no longer consume the final armed shortlist; additional ranked candidates are checked within a bounded reserve."},
     {tag:"fixed",text:"Stale benchmark history is retried once and reports its actual completed session. Fresh preparation is required when benchmark data remains stale; trading checks are unchanged."},
   ]},
+  {version:"0.7.41",date:"2026-09-10",title:"The 15:45 flatten says it ran",items:[
+    {tag:"improved",text:"Team2 F106: the 15:45 flatten now writes one line when the clock reaches it, saying what it found - how many open trades it is closing, how many working entries it is cancelling, or that the book is already flat. Before this it logged only per trade, so on a day the desk ended flat, a flatten that ran correctly and a flatten that never ran left exactly the same record: nothing. Today all three symbols finished flat and the 15:45 pass was invisible."},
+  ]},
+  {version:"0.7.40",date:"2026-09-10",title:"A refused strike names the strike it tried",items:[
+    {tag:"improved",text:"Team2 F101: when no contract prices inside the $0.20-$0.90 band, the refusal now names the nearest out-of-the-money strike it modelled and that strike's price. The band is checked against a synthetic $1 strike ladder, not the venue's listed strikes, so the reason a refusal happened is now readable without pulling the chain. Today IWM refused nine entries between 13:40 and 14:02 ET on a ladder that tested the 287 put at $0.11 and never the listed 287.5 put, which was bid $0.20 / ask $0.21 with 33,000 contracts traded."},
+  ]},
+  {version:"0.7.39",date:"2026-09-10",title:"A refused pullback says what it really costs",items:[
+    {tag:"fixed",text:"Team2 F100: a pullback refused for its location - inside the pre-market no-trade zone, or on a range day that has not cleared its level - used to say “not counted as a pullback” while the read's own pullbacks counter had already counted it. It now says what is true: the refusal does not spend the two-pullback allowance. Today QQQ reached 11 pullbacks with 0 tradeable ones, and the two numbers looked like a contradiction."},
+  ]},
+  {version:"0.7.38",date:"2026-09-10",title:"The desk enters the trade its read fired",items:[
+    {tag:"fixed",text:"Team2 F91: when the read drops a target because no structure is left ahead of the entry, the live runner now enters that trade instead of refusing it against the old target the setup still carries. The trims, the candle stop, the premium stop and the 15:45 flatten manage it, exactly as the read simulated. Today SPY fired a 756 put at 10:06 ET and the runner refused it on a 757.90 the read had already replanned away, so the experimental gap-day target rule could never actually trade."},
+  ]},
+  {version:"0.7.37",date:"2026-09-10",title:"A re-derived target can come back",items:[
+    {tag:"fixed",text:"Team2 F88: the gap-day target re-derivation now always measures against what the 17:00 plan said, never against its own earlier output. On plans built before the feature shipped it recovers the original target from the record the first pass left behind, so a side the 09:25 pre-market estimate wiped is restored by the 09:30 open when the real open leaves a level ahead of it. This morning IWM opened 288.48 with the 287.83 pre-market low ahead and was left with no down-target at all."},
   {version:"0.7.36",date:"2026-09-09",title:"Cartel volume-supported entry windows",items:[
     {tag:"fixed",text:"New Practice preparation can watch only confirmation periods with valid historical volume baselines instead of requiring all 26 periods. Each usable period still needs five complete samples; missing bars are never fabricated."},
     {tag:"improved",text:"Plans show baseline coverage and supported entry windows. Unsupported periods and closing-bell confirmations cannot trigger entries. Legacy plans and Live defaults retain full-session readiness."},

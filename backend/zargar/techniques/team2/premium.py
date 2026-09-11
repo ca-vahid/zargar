@@ -146,6 +146,22 @@ class PremiumModel:
         return None
 
 
+    def nearest_otm(self, spot: float, ts_ms: int, direction: str, *, step: float = 1.0,
+                    expiry: dt.date | None = None) -> tuple[float, float]:
+        """The first OTM strike ON THIS LADDER and its modelled mark — diagnostic only (F101).
+
+        `pick_strike` returning None says nothing about WHICH strikes it tried, and the ladder is
+        a synthetic `step` grid, not the venue's listed strikes: IWM 2026-09-10 refused nine
+        entries because the $1 ladder never tested the listed 287.5 put (real ask $0.21, inside
+        the band). Quoting this strike in the refusal makes that visible without a chain fetch.
+        """
+        call = direction == "long"
+        k = math.ceil(spot / step) * step if call else math.floor(spot / step) * step
+        if (call and k <= spot) or (not call and k >= spot):
+            k = k + step if call else k - step
+        return (k, self.mark(spot, k, ts_ms, call=call, expiry=expiry))
+
+
 def pnl_pct(entry_fill: Fill, exit_fill: Fill) -> float:
     """Premium % gain/loss after fees, per contract."""
     cost = entry_fill.premium * 100.0 + entry_fill.fee_per_contract

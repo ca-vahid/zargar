@@ -289,6 +289,35 @@ def test_an_unparseable_target_refuses_rather_than_falling_through(resolve):
     assert target is None and refusal is not None
 
 
+# =============================================================== F91: the read's own "no target" verdict
+# `targetKind == "none"` is stamped in exactly one place (session.py's F81b structure branch) and means
+# "no structure left ahead of THIS entry". The setup keeps its stale planned target, so the fallback
+# used to resurrect it and refuse the very fire the read had authorised.
+@pytest.mark.parametrize("direction,spot,stale", [("short", 757.5906, 757.9), ("long", 764.75, 763.7)])
+def test_a_read_replanned_targetless_fire_is_not_refused_by_the_stale_setup_target(resolve, direction, spot, stale):
+    """Live SPY 2026-09-10 10:06 ET: read fired the 756 put with targetKind=none after F81b dropped the
+    757.90; the runner fell back to the setup's 757.90 and logged skip_target_behind."""
+    target, refusal = resolve({"target": None, "targetKind": "none"}, {"target": stale}, spot, direction)
+    assert refusal is None, refusal
+    assert target is None
+
+
+@pytest.mark.parametrize("direction,spot,stale", [("short", 763.7, 764.75), ("long", 764.75, 763.7)])
+def test_an_unstamped_targetless_fire_still_refuses_on_a_stale_setup_target(resolve, direction, spot, stale):
+    """The F72 hole stays closed: without the read's explicit verdict the stale target is still judged."""
+    for kind in (None, "", "plan", "hod", "replan"):
+        fire = {"target": None} if kind is None else {"target": None, "targetKind": kind}
+        target, refusal = resolve(fire, {"target": stale}, spot, direction)
+        assert target is None
+        assert refusal is not None and "no target at all" in refusal, (kind, refusal)
+
+
+@pytest.mark.parametrize("direction,spot,good", [("short", 763.7, 760.0), ("long", 764.75, 768.0)])
+def test_a_replanned_fire_that_kept_a_target_still_carries_it(resolve, direction, spot, good):
+    target, refusal = resolve({"target": good, "targetKind": "replan"}, {"target": None}, spot, direction)
+    assert refusal is None and target == pytest.approx(good)
+
+
 # =============================================================== hod_target=always cannot recover this
 def test_hod_target_always_does_not_recover_a_target_price_has_run_through():
     """X3b's `nearer` test only ever pulls the target CLOSER: for a short it requires the running LOD

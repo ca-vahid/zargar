@@ -51,3 +51,30 @@ def test_complete_plan_records_the_rederivation_and_can_be_switched_off():
     assert done["targetsPlanned"]["below"] == low - 0.5                          # what 17:00 said is kept
     off = complete_plan({**sk, "planFor": DAY.isoformat(), "preopenTargetRederive": False}, today)
     assert off["targets"]["below"] == low - 0.5 and "targetsRederived" not in off
+
+
+def test_f88_a_legacy_plan_without_targetsplanned_does_not_ratchet_off_its_own_output():
+    """F88 (2026-09-10): plans minted before v0.7.34 have no `targetsPlanned`. The 09:25 estimate can
+    re-derive a side to None; the 09:30 open must still be able to restore it from what 17:00 said,
+    not read the None back as "the plan's target"."""
+    legacy = {"targets": {"below": 290.165, "above": 296.04},
+              "levelLadder": {"highs": [296.04], "lows": []}}          # nothing on the ladder below
+    # 09:25: the pre-market last IS the pre-market low -> nothing ahead -> no target
+    tg, red = rederive_targets(legacy, reference=288.09, pmh=291.74, pml=288.09)
+    assert tg["below"] is None and red["below"]["was"] == 290.165 and red["below"]["source"] == "none"
+    assert legacy["targetsPlanned"]["below"] == 290.165               # pinned on the way through
+    legacy["targets"], legacy["targetsRederived"] = tg, red
+    # 09:30: the real open is 288.48, the finalized PML 287.83 is ahead again -> the target comes back
+    tg2, red2 = rederive_targets(legacy, reference=288.48, pmh=291.74, pml=287.83)
+    assert tg2["below"] == 287.83 and red2["below"]["was"] == 290.165 and red2["below"]["source"] == "pml"
+
+
+def test_f88_recovery_works_from_the_rederived_record_alone():
+    """Same, for a plan already persisted mid-degradation: `targets` holds the re-derived value and
+    only `targetsRederived[side]["was"]` still remembers the original."""
+    mid = {"targets": {"below": 757.90, "above": 767.89},
+           "targetsRederived": {"below": {"was": 760.58, "now": 757.90, "source": "pml", "reference": 758.01}},
+           "levelLadder": {"highs": [], "lows": []}}
+    tg, red = rederive_targets(mid, reference=758.02, pmh=764.60, pml=757.69)
+    assert mid["targetsPlanned"]["below"] == 760.58                   # the original, not the 757.90 it had drifted to
+    assert tg["below"] == 757.69 and red["below"]["was"] == 760.58    # re-derived off the FINAL pml
