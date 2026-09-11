@@ -2343,6 +2343,47 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F115 (2026-09-11, run 69 — MEASURED, NOT FIXED; the no-trade zone binds the **EMA13**, not the
+  price, so "wait for price to clear the pre-market range" is not a fourth option. Sharpens F112 —
+  USER'S CALL).** Runs 66–68 established that the zone blocks 100 % of today's session, that
+  trimming the PM window cannot rescue a gap day (F113) and that the zone is direction-blind (F114).
+  The obvious remaining hope — *just be patient, price will leave the range and the gate will open*
+  — is measurably false, and today is a clean demonstration.
+
+  The gate is applied to `entry_spot`, not to the bar
+  (`session.py:536`, `bucket = sizing_bucket(entry_spot, zones, pmh, pml)`), and on this method's
+  primary entry `entry_spot` **is the EMA13** (or the EMA48, which is further inside still). A
+  pullback is by construction a move *back into* the range, so the breakout price and the entry price
+  sit on opposite sides of the question. For an EMA13 pullback to be legal on a gap-up day the
+  **13 EMA itself** must climb above the pre-market high — which needs price to hold roughly a full
+  ATR band above that high for many bars, not merely to poke through it.
+
+  Measured at 11:32 ET today:
+
+  | | session high / last | vs PM edge | EMA13 vs the same edge | EMA48 |
+  |---|---|---|---|---|
+  | SPY (long) | 766.38 / 766.01 | **−0.15** — essentially at 766.53 | 765.39 = **2.5 ATR inside** | 3.4 ATR inside |
+  | QQQ (long) | 717.63 / 717.34 | **−0.06** — six cents from 717.69 | 716.22 = **2.5 ATR inside** | 3.6 ATR inside |
+  | IWM (short) | traded 291.44 > PMH 291.30 | cleared, hours ago | 289.46 = **8.8 ATR** from the PM low | 9.3 ATR |
+
+  Counting the whole session on 2m bars (09:30–11:32, 63 bars, EMA13 seeded from 2026-09-08):
+  **bars whose PRICE left the PM range — SPY 0, QQQ 0, IWM 4 (6 %); bars whose EMA13 left it —
+  SPY 0, QQQ 0, IWM 0.** IWM is the proof by example: price was *outside* the range at 09:35–09:40
+  and the 09:52 entry the method called for was `289.83`, **inside** it, and was refused. The two
+  never coincide on a trend day.
+
+  **Consequence for F112.** There is no waiting-it-out option. The three candidates remain (a) the
+  `pm_window_start` knob — dead by F113 + F114, (b) B5's conjunction (risk-off only inside **both**
+  the PM range and the PDH–PDL range), (c) leave the rule as written and accept that gap days do not
+  trade. This finding costs (a) its last defence and adds nothing to (b): on the conjunction reading
+  all of today's refusals were outside the PDH zone and would have been released. A fourth idea worth
+  the user's consideration only if (b) is rejected: **apply the zone to the confirming close, not to
+  the pullback entry** — i.e. ask "did the move that confirmed the scenario happen outside the
+  pre-market range?" rather than "is the dip inside it?". That is a rule change, not a knob, and is
+  not built. Measured from `bars` + the live read and the code path above; **no rule, knob, gate,
+  sizing or money path touched, nothing deployed.**
+  Related: **F112** (parent), **F113**, **F114** (siblings), F18, F20, F100.
+
 - **F114 (2026-09-11, run 68 — MEASURED, NOT FIXED; the no-trade zone is direction-blind, so a D10
   bias flip is not an escape hatch either. Closes the last hope for F112 option (a) — USER'S CALL).**
   At the 10:45 15m close IWM flipped scenario 1 → **scenario 2 (reject PDH) → puts** (close 289.05 vs
