@@ -2343,6 +2343,29 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F121 (2026-09-11, run 78 — VERIFIED CORRECT, no defect; the session closed out cleanly on all
+  three plans and the close-out is on the durable record).** At 16:00 ET each Team2 plan wrote a
+  `TechniquePlanScored` followed by a `TechniquePlanDisarmed` (`reason: "session closed"`,
+  `flatten: false`, `openLeft: 0`, `fired: 0`) — the 15:45 flatten had nothing to flatten, which
+  `flatten: false` states explicitly rather than leaving to inference. The scorecards carry
+  `actualFires 0 / theoreticalFires 0 / matched 0 / realizedPnl 0` and the day's skip census
+  (SPY `skip_last_entry` 1 + `skip_no_trade_zone` 1; QQQ the same; IWM `skip_last_entry` 1 +
+  `skip_no_trade_zone` 2). Journal for today's three run ids ends at `TechniquePlanRestored` 18,
+  `TechniquePlanRead` 10, `TechniquePlanTriggerSkipped` 7, `TechniquePlanPreopen` 3,
+  `TechniquePlanArmed` 3, `TechniquePlanDisarmed` 3, `TechniquePlanScored` 3 — **no error, failure or
+  alert row for the whole session**. The reads ran the complete RTH (`bars2m` 195 = 390 minutes,
+  `fifteenMinBars` 26, last regime bar 15:58) and `/api/team2/status` correctly reports `armed: []`
+  afterwards; the per-plan `/api/technique/armed/{id}` snapshot 404s once disarmed, which is the
+  normal teardown and not a data loss (the run rows, reads and scorecards all persist). First clean
+  full-session close-out this watch has audited end to end. Related: **F120** (the gate that closed
+  entries), F112 (why nothing fired), F107, F34/F35 (post-disarm reporting).
+
+  *Operational note for this watch (not a defect):* `/api/technique/armed/{id}` and
+  `/api/team2/runs/{id}/read` require the **full 32-character run id** — the 8-character prefixes the
+  run log records for readability 404 against both. Resolve prefixes against
+  `technique_runs where technique='team2'` first. Also note the session read arrives under a
+  `result` envelope (`{runId, source, result:{...}}`), not at the top level.
+
 - **F120 (2026-09-11, run 77 — VERIFIED CORRECT, no defect; the D6/C3 last-entry gate fired on all
   three plans at 15:32 ET and is on the durable record).** 15:30 is `last_entry_min` (930) and today
   was the first session this watch has observed the cutoff cross with plans still waiting. All three
@@ -2365,6 +2388,34 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   scenario-2 short bias — the zone is the only refusal); SPY and QQQ refuse on E3/B9/E4 **and** the
   zone (`mixed`/`strength 0` since 14:31, never recovered). Measurement only. Related: **F112**
   (parent), F113, F114, F115, **F120**, F27.
+- **F112 CLOSING evidence (2026-09-11, run 78, full session measured after the bell) — 1170/1170.**
+  Re-measured on the persisted tape over the complete RTH (09:30–15:59, **390 1m bars per symbol, all
+  `source exchange`, no gaps**): **every single regular-session 1m close on all three symbols sat
+  inside its own pre-market range.** SPY closes spanned 763.60–766.38 inside PM 758.17–766.53; QQQ
+  713.65–717.62 inside 706.58–717.69; IWM 288.77–291.44 inside 287.68–291.30. Only IWM's *high*
+  (291.44) poked 0.14 above its PMH, and it never closed there — so the zone was never broken on a
+  close by any symbol for 6.5 hours. The day's cost of that: **51 structural pullback episodes, 0
+  tradeable locations, 0 fires, 0 trades, $0.00** (SPY 18 pullbacks, QQQ 11, IWM 1 + 21; `touches`
+  0/0/0+0 — the D9 two-pullback allowance went entirely unspent). IWM remains the clean single-cause
+  case (stack `bear`, aligned with its short bias, the zone the only refusal); SPY and QQQ refused on
+  E3/B9/E4 *and* the zone (`mixed` / `strength 0` from 14:31 to the close). **A gap-open day whose
+  entire regular session prints inside the pre-market range is the decision datapoint for the user:
+  the V6/B5 no-trade zone is not mis-measuring anything — it is correctly describing a day the method
+  has no business trading. The open question is only whether that is acceptable (option c) or whether
+  the zone should be conjoined with a second condition (option b); the window-knob idea (option a) is
+  dead.** Measurement only, no code or threshold changed. Related: **F112** (parent), F120, F121.
+- **F119 CLOSING note (2026-09-11, run 78, full-session replay after the bell): parity holds over the
+  complete session and the residue is exactly three bar-boundary splits.** Replaying all three runs
+  against the banked tape reproduced the live read event-for-event: SPY **10/10 identical on time and
+  kind** (fifth consecutive exact match) with pullbacks 18/18; QQQ **11/11** with its two known
+  ±1-bucket splits (11:48-vs-11:50 for a ninth run, 13:36-vs-13:34 for a fifth) and pullbacks 11/11;
+  IWM **9/9** with its 14:36-vs-14:34 split and pullbacks **22/22** (1 + 21) — the offset that
+  wandered +1 then −1 across runs 75–77 ends the session at **0**, settling it as bar-boundary noise
+  rather than a code difference. Trades 0/0 and setups 1/1/2 everywhere. ATR came in lower in replay
+  on all three for a ninth consecutive run (SPY 0.2246 live vs 0.2018, QQQ 0.2949 vs 0.2525, IWM
+  0.1277 vs 0.1145) — the one systematic live-vs-replay difference, and still the venue question
+  F119 asks the user to rule on, unchanged in shape by a full session of evidence. **No new decision
+  surface.** Related: **F119** (parent), F104, F105, F75.
 - **F119 run 77 note (15:35 ET): the IWM pullback offset closed, and the apparent EMA-stack
   divergence was a timing artifact.** Live-vs-replay: **SPY 10/10 events at identical timestamps and
   `pullbacks` 18/18 — an exact match for the fourth consecutive run**; QQQ 11/11 events with **both**

@@ -5751,3 +5751,80 @@ setup, that is a gap to report, not a refusal.
   (c) drop Yahoo's bars for streamed symbols**, and **F117's — should a dead option quote source
   raise itself, and should it announce its recovery**, F67's two shared-side halves, and the
   F30-family question F105 sharpens.
+
+
+## 2026-09-11 16:05 ET (run 78 — the close: clean teardown on all three, final containment 1170/1170, v0.7.49 deploy BLOCKED)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed **11** desk-wide (all `tip:` — Team2's three are
+  correctly gone). `/api/team2/status` reports `armed: []`, mode still `auto`, book **Team2 Practice**.
+  Today's runs SPY `87634a53`, QQQ `36a3cab1`, IWM `72949add` persist with their reads and scorecards.
+- **The session closed out cleanly on all three plans (F121, new — verified correct, no defect).** At
+  16:00 ET each wrote `TechniquePlanScored` then `TechniquePlanDisarmed` (`reason "session closed"`,
+  **`flatten: false`**, `openLeft 0`, `fired 0`) — the 15:45 flatten had nothing to flatten and says so
+  explicitly. Scorecards: `actualFires 0 / theoreticalFires 0 / matched 0 / realizedPnl 0` plus the
+  skip census (SPY and QQQ `skip_last_entry` 1 + `skip_no_trade_zone` 1; IWM 1 + 2). The reads ran the
+  **complete RTH** — `bars2m` **195** (= 390 minutes), `fifteenMinBars` 26, last regime bar **15:58**.
+  First full-session close-out this watch has audited end to end.
+- **Nothing happened after run 77's 15:32 cutoff, exactly as designed.** Event counts are unchanged
+  from 15:35 (SPY 10, QQQ 11, IWM 9); the last event on every plan is still the 15:32 `skip_last_entry`.
+  **Day's final tally: 51 structural pullback episodes (SPY 18, QQQ 11, IWM 1 + 21), 0 tradeable
+  locations, 0 fires, 0 trades, P&L $0.00.** `touches` **0/0/0+0** — the D9 two-pullback allowance was
+  never spent once, all session.
+- **F112 CLOSING datapoint: 1170/1170.** Measured on the persisted tape over the full 09:30–15:59
+  session — **390 1m bars per symbol, every one `source exchange`, no gaps** — and **every single RTH
+  close on all three symbols sat inside its own pre-market range**. SPY closes 763.60–766.38 vs PM
+  758.17–766.53; QQQ 713.65–717.62 vs 706.58–717.69; IWM 288.77–291.44 vs 287.68–291.30. Only IWM's
+  *high* poked 0.14 above its PMH and it never closed there. **A gap-open day whose entire regular
+  session prints inside the pre-market range — 1170 closes, 51 pullbacks, 0 trades — is the F112
+  decision datapoint to put in front of the user.**
+- **F119 CLOSING parity: identical, with exactly three known bar-boundary splits.** Full-session
+  replay reproduced the live read event-for-event — SPY **10/10 exact** (fifth consecutive) pullbacks
+  18/18; QQQ **11/11** with the 11:48-vs-11:50 (ninth run) and 13:36-vs-13:34 (fifth) splits, pullbacks
+  11/11; IWM **9/9** with its 14:36-vs-14:34 split and pullbacks **22/22** — the offset that went +1
+  then −1 across runs 75–77 **ends at 0**, settling it as bar-boundary noise. ATR lower in replay on
+  all three for a ninth run (0.2246/0.2018, 0.2949/0.2525, 0.1277/0.1145) — still the only systematic
+  difference, still F119's open venue question. No new decision surface.
+- **F117: one outage for the whole session, and it stayed closed.** `grep -c "OPRA quotes"` **54**,
+  unchanged since 13:04 ET; final incident shape **~49 min, 12:15:45–13:04:40 ET**, silent both ways.
+  Underlying quotes current post-bell (`session post`, SPY 764.35, QQQ 714.95, IWM 289.07) and the
+  quote `dayHigh`/`dayLow` agree to the cent with the bars I measured (F19 holds).
+- **F85 standing check: clean.** Journal for today's three run ids ends `TechniquePlanRestored` 18,
+  `TechniquePlanRead` 10, `TechniquePlanTriggerSkipped` 7, `TechniquePlanPreopen` 3,
+  `TechniquePlanArmed` 3, **`TechniquePlanDisarmed` 3, `TechniquePlanScored` 3** — **no error, failure
+  or alert row all session**. Desk-wide error-ish in 3 h = 4 `SignalVerificationFailed` + 5
+  `TechniquePlanError`, and I checked the latter: **all are tip-technique source follow-ups** (T, AMZN,
+  GOOGL "follow-up while this plan is still waiting"), none Team2. 116 Team2 log lines, no error level,
+  no Team2 traceback. **Cartel-observer:** `cartel-observer bar handling failed` **40**, flat since
+  15:35; still `options_cartel`, another desk's technique.
+- **F107 standing check: count still 18** (`technique_runs where technique='team2'`), runs intact.
+  Runtime **0.7.48**, disk **0.7.49** — F110's `targets_rederived` fix is still not live.
+- **⚠ THE v0.7.49 DEPLOY DID NOT HAPPEN — I am blocked from triggering it.** Conditions were right
+  (16:06 ET, market closed, no Team2 plan armed, `/api/ops/restart-check` returns **`safe: true`** with
+  `openTrades []`, `inflightOrders []`, `firing []`, `proposalsPending 0`; all four version files agree
+  at 0.7.49 and the tree is clean of code changes). `Start-ScheduledTask -TaskName ZargarRestart` was
+  **denied by this session's permission classifier**. There is no API-side restart trigger
+  (`routes_ops.py` exposes readiness/state/quiesce only), and CLAUDE.md forbids the assistant running
+  `scripts\start.ps1` from its own shell (PLATFORM-RULES invariants 17–18), so I did not work around it.
+  **The user needs to run the restart, or grant the permission.** Consequence: tonight's 17:00 mint for
+  Monday 2026-09-14 will run on 0.7.48 and its three plans will again lack a `targets_rederived` row
+  (F110) — cosmetic/observability only, no rule, sizing or money path is affected.
+- **No code shipped this run** (F121 + the F112/F119 closing notes in TRADING-RULES are the only edits).
+- **Next run should:** (1) **check whether the user deployed v0.7.49** — `/api/health` version — and if
+  it is still 0.7.48, say so again and leave it to the user; (2) at ~17:05 confirm **F107 goes 18 → 21**
+  as the nightly mints three plans for **Monday 2026-09-14**, and record whether each carries a
+  `targets_rederived` row (that is F110's acceptance test — it will FAIL on 0.7.48, which is expected
+  and not a new defect); (3) confirm the three Monday plans arm with `pmh`/`pml` pending and no
+  `readError`; (4) re-check F117's warning count (54) and the cartel count (40); (5) **do not attempt
+  the `/team2` UI check** (F103).
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's
+  strategy question**, **F74**, **F76's rule question**, **F81**, **F82**, **F83**, **F85**, **F86**,
+  **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**, **F97 (qualified by
+  F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision**, **F102's band
+  question**, **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's "which series is
+  authoritative" decision**, **F112's zone decision (now with a complete session behind it:
+  1170/1170 closes, 51 pullbacks, 0 trades — (b) the conjunction or (c) accept no-trade gap days;
+  (a) the window knob is dead)**, **F119's venue-precedence decision — (a) rank the venues / (b) stamp
+  and accept / (c) drop Yahoo's bars for streamed symbols**, **F117's — should a dead option quote
+  source raise itself, and should it announce its recovery**, and **the ZargarRestart permission**,
+  F67's two shared-side halves, and the F30-family question F105 sharpens.
