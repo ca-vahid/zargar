@@ -150,6 +150,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
       {result ? <>
         {result.market && <section className="cartel-inset" aria-label="Market alignment">
           <strong>{result.armingBlocked || result.phase === "no_market_alignment" ? "Automatic arming blocked — research does not grant trading permission" : "Market alignment permits plan evaluation"}</strong>
+          {Object.entries(result.marketDataErrors || {}).map(([symbol, reason]) => <p className="cartel-warning" key={symbol}><b>{symbol} data unavailable:</b> {String(reason)}. Automatic arming remains blocked. Use Prepare now to refresh the evidence.</p>)}
           <p>Alignment mode: <b>{label(result.market.alignmentMode || "strict")}</b>. {result.market.reason}</p>
           {Object.entries(result.market.indices || {}).map(([symbol, value]) => { const read = value as any; return <p key={symbol}>
             <b>{symbol}</b> · {read.session || "session unavailable"} · {label(read.direction)} · close {read.close?.toFixed(2) ?? "not recorded"}
@@ -181,6 +182,8 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         <div className="cartel-inset cartel-row"><strong>{result.session} · {label(result.phase || "pending")}</strong>
           <span className="muted">{result.discovered} discovered · {result.prefiltered || 0} ruled out by industry · {result.evaluated} histories evaluated · {result.dataErrors || 0} data errors · {result.qualifying} qualifying · {result.researchCandidates || 0} research-only candidates · {result.armed} armed</span></div>
         {status.latest.error && <ErrorState message={status.latest.error}/>}
+        {!!result.retainedPlans?.length && <p className="cartel-inset">{result.retainedPlans.length} existing campaigns preserved. Armed, paused and held campaigns reserve shortlist capacity.</p>}
+        {result.candidatesChecked != null && <p className="cartel-inset">{result.candidatesChecked} candidates checked for history and contracts (up to {result.candidateCheckLimit}). Pending contracts are reserves and do not consume an armed slot; activation still requires available capacity.</p>}
         {result.shortlist?.length ? <div className="scroll-x"><table className="tbl cartel-table"><thead><tr><th>Symbol</th><th>Setup</th><th className="num">Trigger</th><th className="num">Invalidation</th><th>Status</th><th>Plan</th></tr></thead><tbody>
           {result.shortlist.map((r: any, i: number) => <tr key={r.planId || i}>
             <td><SymIcon sym={r.symbol} size={18}/> <b>{r.symbol}</b></td><td>{label(r.setup || "existing plan")}</td>

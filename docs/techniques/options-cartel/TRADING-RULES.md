@@ -171,3 +171,25 @@ criteria. Existing plans are immutable. Recovery repairs context without firing
 missed signals; live signal/position state retains priority. Equal-weight breadth
 is advisory and NYMO remains explicitly unavailable. See DAILY-PREPARATION.md for
 0.7.35 defaults, limits, and the operating rule against routine intraday deployment.
+
+
+## 2026-09-10: preparation preserves existing campaigns
+
+EOD evidence: preparation 57aab3537ef2425a8d6c8ddf2673eac8 retired four
+unused arms before finding only one executable replacement. Preparation now
+preserves existing armed, paused, working and held campaigns. Normal expiry,
+invalidation and position management remain authoritative; refreshing is not a
+request to disarm. These campaigns reserve focus-count capacity. A smaller new
+focus count does not forcibly retire existing campaigns.
+
+Ranked candidates with missing contracts do not consume available arm slots.
+Check up to five times the focus count for baseline and contract readiness;
+show pending candidates as reserves. Pending activation rechecks capacity before
+arming. No entry volume, target, quote, risk or current-session completeness
+threshold was relaxed, and no missing minute bars are fabricated.
+
+Benchmark daily reads retry stale SPY/QQQ once, bypassing the shared response
+cache for that retry. Provenance reports the actual final completed session.
+If it remains stale, arming stays blocked and the UI requests fresh preparation.
+Resume retains the original cutoff; scheduled preparation is not suppressed by
+a prior stale-benchmark result. The current runtime was not restarted by this change.

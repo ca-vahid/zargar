@@ -69,9 +69,10 @@ async def test_full_preparation_builds_and_arms_automatic_practice_plan_without_
             assert await session.scalar(select(func.count()).select_from(Order)) == 0
         runtime.clock = lambda: at+1
         refreshed = await run_preparation(engine, policy, clock=lambda: at+1, **providers)
-        assert refreshed['result']['armed'] == 1, refreshed
-        assert refreshed['result']['replacedPlans'] == [row['planId']]
-        assert runtime.rows[row['planId']]['status'] == 'disarmed'
+        assert refreshed['result']['armed'] == 0, refreshed
+        assert refreshed['result']['replacedPlans'] == []
+        assert refreshed['result']['retainedPlans'][0]['planId'] == row['planId']
+        assert runtime.rows[row['planId']]['status'] == 'armed'
         new_id = refreshed['result']['shortlist'][0]['planId']
         await runtime.pause(new_id)
         runtime.clock = lambda: at+2
