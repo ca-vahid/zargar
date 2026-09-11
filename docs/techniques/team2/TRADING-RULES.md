@@ -2343,6 +2343,67 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F119 (2026-09-11, run 73 — MEASURED AND LOCATED; this CLOSES the F116/F118 investigation and
+  REVERSES F118's recommendation — USER'S CALL, shared engine).** The live desk and the persisted
+  tape are **two different vendors' bars, both stamped `source: exchange`**. Measured out of process
+  against today's 09:30–16:00 ET minutes (246 per symbol), comparing the `bars` rows to each vendor's
+  own 1m bars fetched directly:
+
+  | symbol | minutes | rows matching **Alpaca** (high+low) | rows matching **Yahoo** (high+low) | mean 1m range: db / Alpaca / Yahoo |
+  |---|---|---|---|---|
+  | SPY | 246 | 242 | **245** | 0.2739 / 0.2743 / 0.2739 |
+  | QQQ | 246 | **149** | **245** | 0.3690 / 0.3780 / 0.3689 |
+  | IWM | 246 | 243 | **245** | 0.1462 / 0.1464 / 0.1462 |
+
+  The `bars` table **is Yahoo**, to the cent, on every symbol. On QQQ it disagrees with Alpaca on
+  **98 of 246 minutes (40%)**, and Alpaca's ranges are systematically **wider** (mean 1m range
+  +2.5% on QQQ). First divergence on QQQ is the **09:30 bar itself**: db/Yahoo `o 715.44 h 715.44
+  l 714.1801 c 714.66` vs Alpaca `o 715.66 h 715.68 l 714.1801 c 714.68`.
+  **Mechanism (read in code, consistent with every measurement).** Both feeds route into the same
+  ingest: `engine.py:148/166/183` wires **`AlpacaQuoteFeed(on_bars=self._ingest_exchange_bars)`** and
+  **`YahooQuoteFeed(on_bars=self._ingest_exchange_bars)`**, and `BarAggregator.ingest_exchange_bar`
+  (`marketdata.py:268`) stamps `bar.source = "exchange"` unconditionally, then merges with
+  `merge_exchange` — whose one policy is **"OHLC follows the NEWER observation"**. Yahoo's poll lands
+  after Alpaca's stream, so **Yahoo wins the merge**, the merged bar is re-published, and
+  `BarPersister` writes Yahoo. The live decision, however, never sees that second publish: Team2's
+  `runner._on_bar` opens with `if ap.last_bar_ts is not None and bar.ts <= ap.last_bar_ts: return`
+  (`runner.py:574`) — the very "armer's per-minute dedupe" the aggregator's own docstring
+  (`marketdata.py:150-152`) names as the reason the hold exists. So **memory keeps Alpaca's bar and
+  the database keeps Yahoo's**, and because both are labelled `exchange`, **F75's provenance column
+  cannot tell them apart** and F99's warm-up hash matches (the warm-up is a single-vendor history
+  read).
+  **This explains every observation F116/F118 collected** and nothing else needed to: closes agree
+  (both vendors' close is the minute's last print) while highs/lows do not; replay's ATR is lower
+  **every** time (Yahoo's ranges are the narrower ones); the relative size tracks 1/ATR (a fixed
+  sub-cent-to-2-cent absolute disagreement is 1.1% of SPY's 0.25 ATR and 3.7% of IWM's 0.126);
+  and 220/220 today's rows read `source: exchange` while the two paths still disagree.
+  **Run 73's live-vs-replay sample (replay one 2m bucket ahead, so read directionally):** ATR live/replay
+  SPY 0.2507/0.2387, QQQ 0.2973/0.2773, IWM 0.1210/0.1143 — replay lower on all three for the **fourth**
+  consecutive run. `pullbacks` SPY 18/19, IWM scenario_2 5/6, and — new — SPY's EMA stack **`strength`
+  read 2 live vs 3 replay**. QQQ's 11:48-vs-11:50 `same_pullback` split held for a fourth run.
+  **Why this reverses F118's recommendation.** F118 proposed option (b): have the live read consume
+  the persisted row so one set of numbers serves both paths. On this evidence that would **downgrade
+  the live desk to Yahoo's free 1m bars** and throw away the paid Alpaca SIP feed the desk pays for —
+  the opposite of what it should do. The defect is not that the two paths read different stores; it
+  is that **two vendors are allowed to overwrite each other under one provenance label, with the
+  winner decided by arrival order**. Options for the user, in the order I would rank them:
+  **(a) rank the venues.** Extend F75's precedence so an Alpaca (SIP) bar is not overwritten by a
+  Yahoo bar for a streamed symbol — Yahoo fills only minutes Alpaca has not supplied. One set of
+  numbers, and it is the better set. Needs a per-venue provenance value (`exchange:alpaca` vs
+  `exchange:yahoo`, or a `venue` column) so the precedence is expressible and auditable at all —
+  which is worth having regardless of which option is chosen.
+  **(b) stamp the venue and accept the split**, i.e. fix only the reporting: the tape stays
+  last-writer-wins but a replay/sweep can at least say which vendor it scored.
+  **(c) stop Yahoo's `on_bars` for Alpaca-streamed symbols entirely** — smallest diff, but it gives
+  up Yahoo's gap-filling on a stream dropout.
+  **What is at stake beyond parity:** every Team2 **sweep**, every **replay**, every walk-forward row
+  and every parity check runs on Yahoo's tape, while the **live desk trades Alpaca's**. Calibration
+  measured on one tape is being applied to the other. On QQQ that is a 40%-of-minutes disagreement,
+  not a rounding question.
+  **Not built — `zargar/engine.py` + `zargar/marketdata.py` are shared engine, and the choice between
+  (a)/(b)/(c) is a data-policy decision, not a defect fix.** Supersedes F116's option list and F118's
+  option (b). Related: F75 (provenance), F99 (warm-up hash — unaffected), F116, F118.
+
 - **F118 (2026-09-11, run 72 — MEASURED, NOT FIXED; F116's stated mechanism is INSUFFICIENT by two
   orders of magnitude, and the drift now reaches a DECISION COUNTER — USER'S CALL, shared engine).**
   **This finding corrects run 70's diagnosis of F116 and escalates it.** Run 70 attributed the
@@ -2401,7 +2462,20 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 - **F117 (2026-09-11, run 71 — MEASURED, NOT FIXED; the real-time option quote source (Alpaca OPRA)
   has been down for ~25 minutes and NOTHING on the desk says so — USER'S CALL on the shared half).**
-  **Run 72 update (13:10 ET): still down, now ~46 minutes unbroken.** The warning count in
+  **Run 73 update (13:40 ET): RECOVERED, and the recovery was as silent as the outage.** The
+  out-of-process probe now returns **3/3 OK in 0.17–0.42 s** with sub-second OPRA timestamps, and
+  the app's own `/api/options/quote/<occ>` reads `provider: "alpaca"`, `delayed: false`,
+  `quote.source: "opra"`, `sourceTs == ts` on all three 0DTE contracts (SPY 766C 0.62/0.63,
+  QQQ 717C 0.60/0.61, IWM 289P 0.07/0.08). Final tally: **54** warnings, **first 12:15:45 ET, last
+  13:04:40 ET — a ~49-minute unbroken outage** during the middle of an RTH session. The exact
+  recovery minute **cannot be pinned**, because nothing logs a recovery either: the warning stops
+  when the source comes back and also when nothing asks, and the two are indistinguishable from the
+  log. That sharpens the finding — the ask is not only "should a dead option quote source raise
+  itself", but "should it say when it comes back", since otherwise a post-hoc reader cannot bound
+  the window in which the desk could not enter. No `contract_deferred` was ever emitted: the picker
+  was not reached once today, so the fail-closed path stayed armed and unexercised through the whole
+  outage.
+  **Run 72 update (13:10 ET): still down, ~46 minutes unbroken.** The warning count in
   `backend/zargar-8420.log` reached **51** (first 12:15:45 ET, last 13:01:21 ET at the time of
   check), and the out-of-process reproduction still returns `HTTP 504` on all three 0DTE
   contracts (~3.1 s each). The equity side of the same vendor stayed healthy throughout
