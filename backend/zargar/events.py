@@ -108,6 +108,7 @@ TECHNIQUE_PLAN_POSITION_CLOSED = "TechniquePlanPositionClosed"
 TECHNIQUE_PLAN_ERROR = "TechniquePlanError"
 TECHNIQUE_PLAN_SCORED = "TechniquePlanScored"          # execution scorecard vs the walk-forward replay
 TECHNIQUE_PLAN_PREFLIGHT = "TechniquePlanPreflight"    # dry-run risk check at arm time
+TECHNIQUE_PLAN_CONTRACT = "TechniquePlanContract"      # Team2 F108: candidate -> live quotes -> verdict (picked | deferred | refused), with every contract examined
 OPTIONS_CARTEL_PREFLIGHT = "TechniqueCartelPreflight"
 OPTIONS_CARTEL_LOSS_HALT = "TechniqueCartelLossHalt"
 OPTIONS_CARTEL_MARKS_RECOVERED = "TechniqueCartelRiskMarksRecovered"
