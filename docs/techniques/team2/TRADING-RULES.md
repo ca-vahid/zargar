@@ -2322,6 +2322,37 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   prevent. **Correction for all cohort-v2 runs: tally `contract_deferred` + `skip_no_contract`.**
   No rule, threshold, gate or money path is involved. Related: F101, F104, F105.
 
+- **F110 (2026-09-11, run 65, 09:45 ET — FIXED, v0.7.49).** The F81 target re-derive and the F49 open
+  finalize were `_log`-only: they landed in the plan's **in-memory** `ap.events` and nowhere else.
+  `PlanRunner._log` appends to a 400-entry list that a restart wipes; only `_trail` writes the
+  append-only journal. Today's evidence: SPY's planned upside target moved **763.41 → 766.53 (pmh)**
+  at 09:25 and again on the 09:30 open reference 764.69, and the day type was finalized on the real
+  open — the plan row records all of it (`targetsRederived`, `openFinalizedAt 13:31:00Z`), but
+  `GET /api/technique/armed/<id>/audit` showed only `TechniquePlanArmed/Restored/Read/Preopen`.
+  The re-derive **moves the target every later entry is judged against** (and F72's
+  `skip_target_behind` refuses on it), so on a desk that restarts mid-session the record of why an
+  entry was refused could vanish while the refusal stayed. Cohort v2's standing instruction requires
+  every target re-derive to be reported; before this fix a post-restart run could not honour it.
+  Fix: `_log_rederived` is now async and journals `TechniquePlanRead` / `targets_rederived` (with
+  `targets`, `targetsPlanned`, `rederived` and the reference), `_finalize_open` journals
+  `TechniquePlanRead` / `open_finalized`, and `Team2Service.preopen_complete` — the 09:25 scheduler
+  job, which re-runs `complete_plan` on fresher bars **after** the bar-loop `preopen_check` — now
+  calls `_log_rederived` too (idempotent on the plan's own `_rederivedLogged` marker, so the common
+  case writes nothing). **Reporting/observability only — no rule, threshold, gate, sizing or money
+  path changed.** Regression:
+  `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
+  (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
+
+- **F111 (2026-09-11, run 65 — FIXED with F110, v0.7.49).** Every plan-level `TechniquePlanRead`
+  row Team2 journals (`warmup`, `listing`, `listing_unavailable`, and now `open_finalized` /
+  `targets_rederived`) logged `event contract: TechniquePlanRead v1: missing required field
+  'trigger'` — the contract registered in F52 requires `trigger`, and a plan-level read has none.
+  The rows were written regardless (`events_contract.check` is advisory and never raises), so
+  nothing was lost; the warning was noise that would mask a real drift. Fix: Team2's `_trail`
+  defaults `trigger` to `None` for `TECHNIQUE_PLAN_READ` at the single choke point — the absence is
+  now **stated** rather than omitted. The F110 regression asserts `validate()` returns `[]` for
+  every row a plan writes. No rule, threshold, gate or money path changed. Related: F52, F110.
+
 - **F107 (2026-09-10, run 63, post-close) - EM's outcome scorer adopts every Team2 plan run and
   files it under `technique='enhanced_market'`. NOT FIXED - the fix is one line in EM's file, which
   this watch may not edit.** `TechniqueService.score_pending()`
@@ -2547,6 +2578,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
+| 2026-09-11 | **F110 + F111 fixed (v0.7.49)**: the morning target re-derive (F81) and the 09:30 open finalize (F49) are journaled under the plan run instead of living only in the plan's in-memory event list, and plan-level `TechniquePlanRead` rows state `trigger: null` instead of tripping the event contract on every write. Reporting/observability only — no rule, threshold, gate, sizing or money path changed | market watch run 65; SPY's target moved 763.41 → 766.53 at 09:25 and the audit had no record of it; 152 Team2 + marketstructure tests pass, the new regression fails without the fix | Team2 desk |
 | 2026-09-10 | **F101 fixed (v0.7.40, queued for deploy)**: a `skip_no_contract` refusal now names the nearest OTM strike it modelled, that strike's mark and the ladder step (new `PremiumModel.nearest_otm`), so a refusal is diagnosable without a chain fetch. Reporting only — no entry, exit, sizing or gate changed. The underlying defect is NOT fixed: the band is judged on a synthetic `strike_step` ladder that misses listed strikes, and because the runner fires only on a read `fire` event, the live picker never sees the real chain | market watch run 58; IWM 9 refused `pm_retest` entries 13:40–14:02 ET, the listed 287.5P bid 0.20/ask 0.21 with 33,008 traded never tested by the $1 ladder; `select_by_premium` on the live chain returns 287.5P @ $0.21; model prices verified accurate (287.5 modelled $0.2154 vs real $0.21); 133 Team2 tests pass | Team2 desk |
 | 2026-09-10 | **F100 fixed (v0.7.39, queued for deploy)**: a pullback refused for its LOCATION — inside the pre-market no-trade zone (V6/B5) or on a range day that has not cleared its level (B3/A4) — no longer says "not counted as a pullback" (the read had already counted it in `pullbacks`); it now says "does not spend the two-pullback allowance (D9)", which is what F18 actually does. `session.py:497` documents the three-counter contract (`pullbacks` = every episode, `opportunities` = tradeable locations, `touches` = the D9 allowance). Reporting only — no entry, exit, sizing or gate changed | market watch run 57; QQQ scenario_4 at pullbacks 11 / opportunities 0 behind a single 09:52 `skip_no_trade_zone` note; 133 Team2 tests pass | Team2 desk |
 | 2026-09-04 | **F41 + F42 fixed** (post-close): the nightly never mints/arms a second plan for a session that already has one (`skipped`, with `force` on plan-now as the manual rebuild), and the 09:25 completion leaves a plan whose session has not started alone. Both are the same root cause — the two Team2 jobs are weekday-gated, not trading-day-gated, so **Labor Day 2026-09-07** would have double-armed 2026-09-08 and blanked its plans that morning. No sizing, entry or exit rule changed | market watch 16:05 ET; `next_trading_day(2026-09-04) == next_trading_day(2026-09-07) == 2026-09-08` | Team2 desk |

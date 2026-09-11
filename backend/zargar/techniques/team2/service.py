@@ -286,6 +286,10 @@ class Team2Service:
                 self.runner._log(ap, "preopen", str(ap.plan.get("sheet")), pmh=ap.plan.get("pmh"),
                                  pml=ap.plan.get("pml"), dayType=ap.plan.get("dayType"),
                                  sizing=ap.plan.get("sizingAtOpen"))
+                # F110: this job re-runs `complete_plan`, so it can move the target the 09:25 bar-loop pass
+                # already judged (fresher pre-market bars). Log/journal it here too; `_log_rederived` is
+                # idempotent on the plan's own `_rederivedLogged` marker, so the common case writes nothing.
+                await self.runner._log_rederived(ap, "pre-open")
                 await self.runner._persist(ap)
                 await self.stamp_run(ap)
                 done.append(ap.run_id)

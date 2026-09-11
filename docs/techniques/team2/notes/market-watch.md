@@ -4594,3 +4594,97 @@ setup, that is a gap to report, not a refusal.
   **F102's band question**, **F103's UI-check decision**, **F104's ladder/chain decision**, **F105's
   "which series is authoritative" decision**, F67's two shared-side halves, and the F30-family
   question F105 sharpens. **F89 is now CLOSED** (the restart happened).
+
+## 2026-09-11 09:46 ET (run 65 — the open; cohort v2 session 1 is underway, two audit-trail fixes shipped)
+
+- **Alive on v0.7.48**, `/api/health` ok, armed 64 desk-wide. Three Team2 plans armed for **2026-09-11**,
+  mode `auto`, book **Team2 Practice** (sim): SPY `87634a53`, QQQ `36a3cab1`, IWM `72949add`.
+  `needsAttention false`, `attentionReasons []`, **`trailGaps []`**, no `readError` on any of them.
+  0 fires, 0 trades, 0 open, P&L $0.00 at 09:46.
+- **The 09:25 pre-open completed on all three** — `complete true`, `pmh`/`pml`/`dayType gap_up`/
+  `sizingAtOpen none` stamped, and the **09:30 open finalize also ran** (`openSource rth_open`,
+  `openFinalizedAt 13:31:00Z`; opens SPY 764.69, QQQ 715.66, IWM 290.71). **F88 is confirmed fixed in a
+  live session**: the 09:30 re-read agreed with the 09:25 estimate (gap_up → gap_up) and re-derived
+  targets from the REAL open, not the pre-market estimate.
+- **F81 worked twice on SPY**, exactly as last night's run predicted: the nightly's 763.41 upside target
+  was already behind the morning, so it was re-derived to the **PM high 766.53** at 09:25 (reference
+  764.93) and confirmed on the 09:30 open (reference 764.69). QQQ kept 716.80 and IWM kept 291.17 — both
+  still ahead of their opens, which is the rule. SPY's and IWM's `pdl` targets stay **null** ("room down
+  to open" on a gap-up day, F88's genuinely-null branch).
+- **Cohort v2 tally, session 1 (09:30–09:46):** `warmup` 3/3 with stamped identities (SPY
+  `eae94c2425f1` over 14,816 bars / 12 sessions, QQQ `2ee613a35cb5`, IWM `b0ad0f6fbd18`; SPY also logged
+  `history_excluded` for 2026-08-18 thin_rth) · **`listing` 3/3 from the real chain** — SPY 195 strikes
+  (500–930), QQQ 212 (400–950), IWM 138 (150–400), so **F104's listed-strike path is live**, no
+  `listing_unavailable` · `model_out_of_band` 0 · `contract_deferred` 0 · `skip_no_contract` 0 ·
+  fills 0, `priced` 0 · `target_replanned` 0 (F81's re-derive fired instead; see F110) · `trail_gap` 0.
+  `sigma_locked` 3/3 from `chain_atm` (SPY 0.1679, QQQ 0.2335, IWM 0.3240).
+- **Data is real-time.** Pre-open feed self-test passed at 09:00 ET (REST bars + stream auth). Quotes
+  **sub-second**, `session regular`, tight books, session-to-date day range and volume all sane
+  (SPY 765.86/765.87, QQQ 715.50/715.56, IWM 291.17/291.18). 1m bars banking with `source exchange`
+  (SPY 303, QQQ 336, IWM 259 rows today), latest bar ~70–110 s old throughout. Replay parity holds
+  (SPY live 0 events = replay 0 events).
+- **The tape, and why the desk is quiet:** all three **gapped up ~1%** (SPY +0.93%, QQQ +1.04%,
+  IWM +1.02%) and **opened above their PDH zones**, then chopped **inside the pre-market range** for the
+  first 15 minutes (SPY 764.2–766.0 in PM 758.17–766.53; QQQ 713.9–716.0 in 706.58–717.69; IWM
+  290.0–291.4 in 287.68–291.30). No 15m bar had closed yet at 09:46, so `bias` is still null on all
+  three — correct, not a defect. `sizingAtOpen none` is F15's rule, and it is not a day-long gate: the
+  bucket is judged per entry, so a break beyond a PM extreme still sizes `full`. **Today's actionable
+  levels are the PM highs/lows, not the PDH zones.**
+- **F110 — NEW, FIXED and committed (v0.7.49).** The F81 **target re-derive** and the F49 **open
+  finalize** were written with `_log` only: they live in the plan's **in-memory** `ap.events` (a
+  400-entry list a restart wipes) and never reached the journal — `GET /api/technique/armed/<id>/audit`
+  showed only Armed/Restored/Read/Preopen while the plan row already carried `targetsRederived` and
+  `openFinalizedAt`. The re-derive moves the target every later entry is judged against (F72's
+  `skip_target_behind` refuses on it), so after a mid-session restart — routine on this desk — the
+  reason for a refusal could survive while the evidence that the target had moved did not; cohort v2's
+  standing instruction to report every re-derive was literally unmeetable post-restart. Fix:
+  `_log_rederived` is async and journals `TechniquePlanRead`/`targets_rederived`, `_finalize_open`
+  journals `TechniquePlanRead`/`open_finalized`, and the 09:25 **scheduler** job
+  (`Team2Service.preopen_complete`, which re-runs `complete_plan` on fresher bars ~19 s AFTER the
+  bar-loop `preopen_check`) now calls `_log_rederived` too — idempotent, so the common case writes
+  nothing. Reporting only; no rule, threshold, gate, sizing or money path touched.
+- **F111 — NEW, FIXED with it.** Every plan-level `TechniquePlanRead` row Team2 writes (`warmup`,
+  `listing`, `listing_unavailable`, and now the two above) logged `event contract: TechniquePlanRead v1:
+  missing required field 'trigger'`. The rows were written anyway (the check is advisory), but the noise
+  would mask a real drift. Team2's `_trail` now defaults `trigger: None` for that kind at the single
+  choke point — the absence is stated, not omitted.
+- **Tests + release:** `pytest tests/test_team2_*.py tests/test_marketstructure_extended.py` → **152
+  passed**; the new regression
+  (`test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`) **fails without the fix**
+  (verified by reverting it). `npm run build` clean, `npm run check-release` green at **0.7.49** (all
+  four files + lockfile bumped).
+- **Deploy: QUEUED, not performed.** Today is **cohort v2 session 1** and the market is open; a restart
+  would wipe the in-memory `ap.events` this very fix is about and interrupt the first clean session on
+  the corrected picker path. Deploy after the 16:00 close via the scheduler's `ZargarRestart` task
+  (PLATFORM-RULES invariants 17–18) — the running process is the user's 01:00 ET elevated boot.
+- **F85 standing check: clean for Team2.** No Team2 ERROR and no Team2 traceback in the engine log since
+  the 22:00 PT boot; the only traceback today is EM-side (`no bars available for ML — Yahoo HTTP 404`).
+  The 5 `RiskCheckFailed` / 6 `TechniquePlanError` rows in the last 14 h are all **tip**-side
+  (MU share-short never-list, four gap-roll warnings, a GOOGL follow-up) — none Team2.
+- **F107 standing check: count still 18**, and all 18 rows were written 09-10 17:31 ET by the old
+  v0.7.36 process. Re-check tonight after the 17:00 ET nightly mints three more Team2 runs on 0.7.48:
+  **it must stay at 18**.
+- **Watch item for the next runs (no finding yet):** IWM's `pdh` target **291.17** is only ~$1 above the
+  open and price has already traded through it (291.44 high). `target_replan` is `off`, so if a bullish
+  entry comes with spot above 291.17 the runner will refuse it `skip_target_behind` — the same shape as
+  the 2026-09-09 18-refusal day that F81 was written for, except F81 only re-derives at the pre-open and
+  the open, never at entry. SPY (766.53, $1.3 of room) is one push away from the same state. **This is
+  live evidence for the open F72/F81b decision: should the structure fallback also run at entry time?**
+- **Next run (≈10:00 ET) should:** (1) check whether the 09:45 and 10:00 **15m closes set `bias`** on any
+  symbol (all three closed the open range above their PDH zones, so a bull `pm_break_up`/scenario is
+  likely) and whether any pullback entry is refused `skip_no_trade_zone` for sitting inside the PM range;
+  (2) continue the **cohort-v2 per-plan tally** — `listing`/`listing_unavailable`, `model_out_of_band`,
+  `contract_deferred`/`skip_no_contract` with `examined`, fills with their `priced` series, plus
+  `targets_rederived`; (3) watch the **IWM/SPY `skip_target_behind`** risk above and count any occurrence;
+  (4) re-run the F85 journal query; (5) **do not attempt the `/team2` UI check** (F103); (6) after 16:00
+  ET, deploy **v0.7.49** via `ZargarRestart` and confirm `targets_rederived`/`open_finalized` appear in
+  the audit tomorrow morning; (7) at ~17:05 re-check the F107 count stays at **18** and the nightly mints
+  three plans for 2026-09-12.
+  Still open for the user: **F47**, **F49**, **F50**, **F51**, **F54**, **F56**, **F58**, **F59**,
+  **F61**, **F62**, **F63**, **F64**, **F65**, **F69**, **F70**, **F71's shared half**, **F72's strategy
+  question (sharpened today — see the watch item)**, **F74**, **F76's rule question**, **F81**, **F82**,
+  **F83**, **F85**, **F86**, **F87 (narrowed — see F96)**, **F90**, **F92**, **F93**, **F94**, **F95**,
+  **F97 (qualified by F98)**, **F98**, **F99**, **F100's reporting question**, **F101's ladder decision
+  (sized by F104)**, **F102's band question**, **F103's UI-check decision**, **F104's ladder/chain
+  decision**, **F105's "which series is authoritative" decision**, F67's two shared-side halves, and the
+  F30-family question F105 sharpens.
