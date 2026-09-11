@@ -18,6 +18,7 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {version:"0.7.42",date:"2026-09-10",title:"Safer Cartel preparation and executable reserves",items:[
+    {tag:"new",text:"EM scratch rule (T-14, off until its sweep passes): once a trade is scratch_r R in favour, half is sold and the stop moves to breakeven, in the simulator and in the live exits alike (technique.scratch_r / scratch_trim). HOOD today: +2.5R in four minutes, then stopped for a full loss."},
     {tag:"fixed",text:"Refreshing preparation preserves existing arms and positions, including when research fails. Pending contracts no longer consume the final armed shortlist; additional ranked candidates are checked within a bounded reserve."},
     {tag:"fixed",text:"Stale benchmark history is retried once and reports its actual completed session. Fresh preparation is required when benchmark data remains stale; trading checks are unchanged."},
   ]},

@@ -1295,3 +1295,14 @@ one stale SPY/QQQ retry. Preparation preserves existing campaigns and counts
 armed, paused, closing and held campaigns before adding automatic arms. This
 changes no shared execution or risk thresholds. Regression coverage is in
 `test_options_cartel_preparation_safety.py`.
+
+
+### Shared exit knob: scratch rule — 2026-09-10 (EM desk, T-14)
+
+`MarketRules.scratch_r` / `scratch_trim` (default 0 = off). When a filled trade is `scratch_r` R in
+favour and no target has been hit, `exits.plan_exit` returns a `scratch` decision: the runner sells
+`scratch_trim` of the position (0 when the position cannot be split - a single contract keeps its
+size and only earns the breakeven stop), moves `trade.stop` to the entry and persists
+`trade.scratched`. `outcome.simulate_plan` mirrors it (`scratch_r=`, outcome `scratched`), so
+sweeps and live behave the same - change one, change both. Every technique reads it through its
+`rules()`; only EM plans to turn it on, after its sweep (TRADING-RULES T-14).
