@@ -188,6 +188,21 @@ async def test_nothing_listed_otm_is_a_named_refusal_not_a_crash():
     assert "no OTM contract listed" in trade.errors[-1] and options.reprice.await_count == 0
 
 
+async def test_the_contract_verdict_is_journaled_with_every_candidate():
+    # cohort v2 trail: the verdict and its examined list go to the append-only journal under the plan run
+    for chain, fresh, verdict in (([(287.5, 0.19)], {287.5: (0.20, 0.21)}, "picked"),
+                                  ([(287.5, 0.60)], None, "deferred"),
+                                  ([(287.5, 0.30)], {287.5: (0.14, 0.15)}, "refused")):
+        runner, trade, options = _runner(chain, fresh)
+        runner.engine.journal = SimpleNamespace(append=AsyncMock())
+        await runner.pick_contract(SimpleNamespace(symbol="IWM", run_id="run-1"), trade)
+        calls = [c for c in runner.engine.journal.append.await_args_list if c.args[0] == "TechniquePlanContract"]
+        assert len(calls) == 1, verdict
+        payload = calls[0].args[1]
+        assert payload["verdict"] == verdict and payload["runId"] == "run-1" and payload["examined"][0]["strike"] == 287.5
+        assert calls[0].kwargs == {"aggregate_type": "technique_run", "aggregate_id": "run-1"}
+
+
 # ---------------------------------------------------------------- the runner stamps the listing on the plan
 async def test_the_runner_stamps_todays_listing_and_the_read_walks_it(rig, monkeypatch):
     eng, sim = rig
@@ -213,6 +228,9 @@ async def test_the_runner_stamps_todays_listing_and_the_read_walks_it(rig, monke
     listing = ap.plan.get("listedStrikes") or {}
     assert listing.get("expiry") == today_iso and listing.get("count") == len(ks) and listing["strikes"][0] == 540.0
     assert [e for e in ap.events if e["event"] == "listing"]
+    audit = await eng.team2_runner.audit(ap.run_id)
+    kinds = {(a["type"], a["payload"].get("event")) for a in audit}
+    assert ("TechniquePlanRead", "listing") in kinds and ("TechniquePlanRead", "warmup") in kinds
     # the stamped plan replays on the same listing
     rep = await eng.team2.replay(ap.run_id)
     assert rep["strikeSource"] == "listed"
