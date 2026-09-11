@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.36";
+export const APP_VERSION = "0.7.39";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.39",date:"2026-09-10",title:"Safer Cartel preparation and executable reserves",items:[
+    {tag:"fixed",text:"Refreshing preparation preserves existing arms and positions, including when research fails. Pending contracts no longer consume the final armed shortlist; additional ranked candidates are checked within a bounded reserve."},
+    {tag:"fixed",text:"Stale benchmark history is retried once and reports its actual completed session. Fresh preparation is required when benchmark data remains stale; trading checks are unchanged."},
+  ]},
   {version:"0.7.36",date:"2026-09-09",title:"Cartel volume-supported entry windows",items:[
     {tag:"fixed",text:"New Practice preparation can watch only confirmation periods with valid historical volume baselines instead of requiring all 26 periods. Each usable period still needs five complete samples; missing bars are never fabricated."},
     {tag:"improved",text:"Plans show baseline coverage and supported entry windows. Unsupported periods and closing-bell confirmations cannot trigger entries. Legacy plans and Live defaults retain full-session readiness."},

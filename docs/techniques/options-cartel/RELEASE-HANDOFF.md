@@ -1,5 +1,24 @@
 # Options Cartel release handoff
 
+## 2026-09-10 — v0.7.39
+
+Preparation preserves existing campaigns and checks ranked reserves for contract
+and volume readiness before adding arms. Pending activation respects occupied
+capacity. Benchmark retries report the actual completed session; stale evidence
+still blocks arming. No trading thresholds were loosened.
+
+Verified on an isolated origin/main worktree: production frontend build; 30
+preparation regression tests; 16 safety/fidelity/prefetch checks; 9 safety/shared
+history checks (groups overlap). Desktop and phone Practice/Live audit covers
+settings, stale-data messages, retained campaigns and reserve counts. These are
+focused checks, not a full backend suite or a profitability claim.
+
+Deploy/restart through the existing desk workflow, then use Practice > Options
+Cartel > Plans > Prepare now. This refreshes evidence; Resume preserves its old
+cutoff. Existing arms are retained until normal expiry/invalidation or an
+explicit user action. No runtime restart, orders, account settings or data edits
+were performed by this release. Historical checkpoints below remain historical.
+
 ## Release candidate
 
 Version 0.7.2, prepared in `C:\Cursor\zargar-codex` on
