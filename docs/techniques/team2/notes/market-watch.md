@@ -4475,3 +4475,24 @@ unreported for a session.
   ladder decision (sized by F104)**, **F102's band question**, **F103's UI-check decision**,
   **F104's ladder/chain decision**, **F105's "which series is authoritative" decision**, **F107's
   one-line EM fix**, F67's two shared-side halves, and the F30-family question F105 sharpens.
+
+## Desk EOD 2026-09-10 — the author's day vs ours (x.com/Team2Trading via the user's browser)
+
+- **What he did (his account):** one IWM trade, entered ~13:40–14:00 ET after "waiting almost 5 hours": 1:39 PM
+  "IWM is testing our 287.83 level again and this break is my main watch for the afternoon"; the 15m candle closed
+  under it; "I'm taking IWM 288p"; 3:07 PM "more new lows on IWM and we're up over 100% on these last runners";
+  screenshot +85.37%. His lesson post: the 15-minute momentum candle directly after the break of the level is
+  where he secures most of the profit.
+- **What we did:** zero fills, tenth session. Same level (287.83 = our PML), same read (pm_break_down setup, bear
+  stack), same window: IWM produced nine `pm_retest` entries 13:40–14:02 and the live gate refused every one
+  `skip_no_contract` — the model's $1 strike ladder never tested the listed 287.5 put ($0.20/$0.21, 33k contracts),
+  and the OTM-only walk would not have considered his 288p (F101/F104). SPY: the read's only fire (10:06, 756P,
+  −12.2% modelled) was refused by the runner because it resurrected the stale setup target F81b had just replanned
+  away (F91). All three gapped down; F81 re-derived every target at 09:25 (worked), the 09:30 finalize mis-read it
+  (F88).
+- **Why none of the five fixes reached the book:** the 01:29 ET boot by another desk runs ELEVATED, so the Limited
+  restart task cannot stop it (F89) — v0.7.37 (F88), .38 (F91), .39 (F100), .40 (F101), .41 (F106) are queued.
+  **Needs the user:** `scripts\stop.ps1` from the elevated terminal that owns the process, then `schtasks /Run /TN
+  ZargarRestart`.
+- **Verdict:** the method read the day like the author did, twice (yesterday's flip, today's PML retest); the desk
+  lost both to its own plumbing — a stale target, a synthetic strike ladder, a runner fallback — not to the market.
