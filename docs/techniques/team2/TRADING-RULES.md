@@ -2343,8 +2343,72 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F118 (2026-09-11, run 72 — MEASURED, NOT FIXED; F116's stated mechanism is INSUFFICIENT by two
+  orders of magnitude, and the drift now reaches a DECISION COUNTER — USER'S CALL, shared engine).**
+  **This finding corrects run 70's diagnosis of F116 and escalates it.** Run 70 attributed the
+  live-vs-replay divergence to **float32 quantisation** of the persisted bars (`717.2100219726562`
+  being the float32 image of `717.21`). The quantisation is real — this run reconfirmed it, and also
+  established **which side is which**: at bucket `1789146360000` SPY's live close is `765.64` (clean)
+  and the replay's is `765.6400146484375` (float32), i.e. **the live path decides on clean in-memory
+  bar values and the replay decides on the float32 rows read back from `bars`.** But float32 cannot
+  be the cause of the ATR gap. Float32 relative precision is ~1.2e-7; on a 765 print that is ~3e-5
+  absolute, so a 14-period ATR built from those highs/lows carries a relative error of order
+  **0.014 %**. The gap actually measured is **1.1–1.8 %** — roughly **100x larger than the proposed
+  mechanism can produce**. Something else is also differing.
+  **The measurement.** Live read and replay were called back-to-back at one instant, three symbols,
+  two independent samples. Both sides reported the **same window** (`bars2m` 107 = 107, then 109 = 109;
+  identical `regimeLast.ts`) and the **same close to float32** — yet ATR differed every time, and the
+  replay was **lower in every one of six symbol-samples**:
+
+  | symbol | live ATR | replay ATR | gap | close live / replay |
+  |---|---|---|---|---|
+  | SPY | 0.2906 | 0.2874 | 1.1 % | 765.64 / 765.6400146484375 |
+  | QQQ | 0.3542 | 0.3481 | 1.8 % | 716.434 / 716.4340209960938 |
+  | IWM | 0.1434 | 0.1383 | 3.7 % | 289.47 / 289.4700012207031 |
+
+  A consistent one-directional bias across six samples and three symbols is **not rounding noise** —
+  rounding errors go both ways. Since ATR here is a plain SMA of 14 true ranges
+  (`marketstructure/levels.py::atr`) and the closes agree, the two paths must be seeing **different
+  highs/lows on today's 2m bars**.
+  **What it is NOT.** The warm-up is identical and provably so: F99's hash check returns
+  `match: true` on all three plans, same 12 sessions, same row counts (SPY 14816, QQQ 12630,
+  IWM 11757). So the divergence is confined to **today's intraday bars** — the live path's in-memory
+  aggregate versus the rows `replay` re-reads from `bars`. Every one of today's 220 RTH 1m rows is
+  stamped `source: exchange` on all three symbols, so the persisted side *claims* to be the
+  authoritative exchange bar; F75's provenance column does not currently detect this disagreement.
+  **Why this is now worse than a cosmetic note.** Run 70 could say the drift moved one prose note by
+  one bar. This run it moved a **counter the method reads**: SPY's `scenario_1@09:30` reported
+  `pullbacks` **14 live vs 13 replay** (and 13 vs 12 one sample earlier) — same window, same closes,
+  same warm-up. `pullbacks` is one of the three counters F100 tells a reader to judge a setup by, and
+  the 0.5-ATR **pullback reset** (F62) and the 0.25-ATR **touch tolerance** are both expressed as
+  fractions of the very ATR that differs, so the drift feeds directly back into which contacts count
+  as episodes. QQQ's 11:48-vs-11:50 `same_pullback` divergence from run 70 also persisted into a
+  **third** consecutive run, unchanged in shape; IWM stayed exact on events.
+  **Why it still cost nothing today.** The no-trade zone refused every contact long before the picker,
+  so no fire, trim or exit was ever on the line. That is luck, not safety: the same 1–4 % ATR gap on a
+  bar carrying an entry would put the audit trail's reconstruction on a different side of a threshold
+  from the live decision, silently.
+  **Proposed (shared engine — NOT built, outside this desk's remit).** F116's options stand and this
+  finding sharpens them: fixing the float32 persistence alone (**option (a)**) would close ~1 % of the
+  gap and leave ~99 % of it open, so it is **not sufficient on its own**. **Option (b) — have the live
+  read consume the persisted row, so one set of numbers serves both paths — is the only one of the
+  three that closes the whole gap**, and it is now the recommendation. Before either, the open
+  question is empirical: *why* do the in-memory and persisted highs/lows differ on bars both sides
+  call `source: exchange`? That is a `zargar/marketstructure/` + feed question.
+  **How to reproduce:** call `/api/team2/runs/<id>/read` and `POST /api/team2/runs/<id>/replay`
+  back-to-back and compare `result.regimeLast.atr` and `result.setups[].pullbacks` at equal
+  `regimeLast.ts` and `summary.bars2m`.
+
 - **F117 (2026-09-11, run 71 — MEASURED, NOT FIXED; the real-time option quote source (Alpaca OPRA)
   has been down for ~25 minutes and NOTHING on the desk says so — USER'S CALL on the shared half).**
+  **Run 72 update (13:10 ET): still down, now ~46 minutes unbroken.** The warning count in
+  `backend/zargar-8420.log` reached **51** (first 12:15:45 ET, last 13:01:21 ET at the time of
+  check), and the out-of-process reproduction still returns `HTTP 504` on all three 0DTE
+  contracts (~3.1 s each). The equity side of the same vendor stayed healthy throughout
+  (underlying quotes sub-second, 220/220 RTH 1m bars banked `source: exchange`). Still zero
+  Team2-visible trace: `needsAttention` false, no read event, no journal row. The picker was
+  never reached today, so the outage has produced **no `contract_deferred` yet** — the
+  fail-closed path is armed and still unexercised.
   **What happened.** From **12:15:45 ET** to at least **12:35 ET** today, every 60-second
   `OptionsService._refresh_live()` pass failed with `Alpaca options quotes HTTP 504` — 21 consecutive
   warnings in `backend/zargar-8420.log`, one per backoff cycle, still failing at the end of the run.
