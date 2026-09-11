@@ -75,6 +75,8 @@ class Team2Runner(PlanRunner):
         self._bars: dict[str, list[Bar]] = {}          # run_id -> today's 1m bars (ext hours) seen so far
         self._warm: dict[str, list[Bar]] = {}          # run_id -> prior days' 1m bars (EMA warm-up)
         self._warm_loaded: set[str] = set()
+        self._listing_tried: dict[str, int] = {}       # F104: last listing fetch attempt per plan (ms)
+        self._listing_warned: dict[str, bool] = {}
         self._seen: dict[str, int] = {}                # run_id -> events already acted on
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
         self._sigma_cache: dict[str, tuple[str, float]] = {}
@@ -155,8 +157,66 @@ class Team2Runner(PlanRunner):
             return band
         return round(min(ask + rules.tick, band), 2)
 
+    async def _expiry_for(self, provider, symbol: str, rules: Team2Rules, today: dt.date) -> tuple[str | None, str | None]:
+        exps = await provider.expirations(symbol)
+        exps_d = sorted(e for e in (exps or []) if e)
+        if rules.dte_policy == "0dte":
+            expiry = next((e for e in exps_d if e == today.isoformat()), None)
+            return expiry, (None if expiry else "no same-day expiry listed (dte_policy=0dte)")
+        expiry = next((e for e in exps_d if e > today.isoformat()), None)
+        return expiry, (None if expiry else "no expiry after today")
+
+    async def _ensure_listing(self, ap: ArmedPlan, now_ms: int) -> None:
+        """F104/F108 (2026-09-10): stamp today's LISTED strikes (the venue's, from the chain) on the plan so the
+        read's premium gate walks real contracts instead of a synthetic grid. Once per plan per expiry; a failed
+        fetch is retried every 5 minutes and the read runs on the grid (and says so) until it lands."""
+        plan = ap.plan or {}
+        have = plan.get("listedStrikes") if isinstance(plan.get("listedStrikes"), dict) else None
+        if have and have.get("strikes"):
+            return
+        tried = self._listing_tried.get(ap.run_id, 0)
+        if now_ms - tried < 5 * 60_000:
+            return
+        self._listing_tried[ap.run_id] = now_ms
+        opts = getattr(self.engine, "options", None)
+        if opts is None:
+            return
+        rules = self.rules()
+        try:
+            provider = opts.provider()
+            today = dt.datetime.now(ET).date()
+            expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
+            if expiry is None:
+                raise RuntimeError(why or "no expiry")
+            chain = await provider.chain(ap.symbol, expiry)
+            strikes = sorted({float(c.get("strike")) for c in (chain or []) if c.get("strike") is not None})
+            if not strikes:
+                raise RuntimeError("chain returned no strikes")
+            plan["listedStrikes"] = {"expiry": expiry, "strikes": strikes, "count": len(strikes),
+                                     "source": "chain", "provider": type(provider).__name__,
+                                     "capturedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+            lo, hi = strikes[0], strikes[-1]
+            self._log(ap, "listing", f"{len(strikes)} listed strikes for {expiry} ({lo:g}..{hi:g}) from the chain — the "
+                      f"premium gate walks these, not the ${rules.strike_step:g} grid (F104)",
+                      expiry=expiry, count=len(strikes), low=lo, high=hi)
+            with contextlib.suppress(Exception):
+                await self._persist(ap)
+        except Exception as exc:  # noqa: BLE001 - the read keeps working on the grid and says so
+            if not self._listing_warned.get(ap.run_id):
+                self._listing_warned[ap.run_id] = True
+                self._log(ap, "listing_unavailable", f"could not read today's listed strikes from the chain ({exc}); the "
+                          f"premium gate runs on the synthetic ${rules.strike_step:g} grid until it can (F104)", error=str(exc))
+
     async def pick_contract(self, ap: ArmedPlan, trade: Trade) -> dict | None:
-        """The premium-targeted 0DTE contract (V1/F5) from the live chain."""
+        """The premium-targeted 0DTE contract (V1/F5): structural candidate -> the venue's LISTED contracts ->
+        FRESH executable quotes -> the premium band -> the order.
+
+        F105/F108 (2026-09-10): the chain the provider serves is ~15 min delayed and its ask disagreed with the
+        live NBBO by exactly the cent that decides in-band/out-of-band (IWM 287.5P: CBOE $0.19 vs OPRA $0.20 at
+        the $0.20 floor). A delayed ask therefore never conclusively vetoes a candidate: the nearest
+        `quote_candidates` listed contracts whose delayed ask is anywhere near the band (or unquoted) are
+        re-priced on the live NBBO first, and the band is judged on what would fill. The refusal names every
+        candidate examined with its ask and which series spoke."""
         trade.contract_attempted = True
         opts = getattr(self.engine, "options", None)
         if opts is None:
@@ -166,42 +226,57 @@ class Team2Runner(PlanRunner):
         try:
             from ...options.pick import select_by_premium
             provider = opts.provider()
-            exps = await provider.expirations(ap.symbol)
             today = dt.datetime.now(ET).date()
-            exps_d = sorted(e for e in exps if e)
-            expiry = None
-            if rules.dte_policy == "0dte":
-                expiry = next((e for e in exps_d if e == today.isoformat()), None)
-                if expiry is None:
-                    trade.errors.append("no same-day expiry listed (dte_policy=0dte)")
-                    return None
-            else:
-                expiry = next((e for e in exps_d if e > today.isoformat()), None)
-                if expiry is None:
-                    trade.errors.append("no expiry after today")
-                    return None
+            expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
+            if expiry is None:
+                trade.errors.append(why or "no expiry")
+                return None
             chain = await provider.chain(ap.symbol, expiry)
             spot = float(trade.entry)
             q = self.engine.quotes.get(ap.symbol)
             if q is not None and q.last and q.last > 0:
                 spot = float(q.last)
-            pick = select_by_premium(chain, spot, trade.direction, target_premium=rules.target_premium,
+            want = "call" if trade.direction == "long" else "put"
+            band_hi = float(rules.target_premium) * MAX_OVER_TARGET
+            floor = float(rules.premium_floor)
+            side = [c for c in (chain or []) if (c.get("option_type") or "").lower() == want
+                    and c.get("strike") is not None and c.get("symbol")]
+            otm = [c for c in side if (float(c["strike"]) > spot if want == "call" else float(c["strike"]) < spot)]
+            otm.sort(key=lambda c: abs(float(c["strike"]) - spot))
+            # the delayed prefilter is WIDE (half the floor .. twice the band, or no quote at all): it bounds the
+            # quote requests, it never decides
+            near = [c for c in otm if not float(c.get("ask") or 0) or floor * 0.5 <= float(c.get("ask") or 0) <= band_hi * 2]
+            near.sort(key=lambda c: abs((float(c.get("ask") or rules.target_premium)) - float(rules.target_premium)))
+            cands = [dict(c) for c in near[:max(1, int(rules.quote_candidates))]]
+            examined: list[dict] = []
+            for c in cands:
+                delayed_ask = float(c.get("ask") or 0)
+                c["priced"] = "chain"
+                with contextlib.suppress(Exception):
+                    await opts.reprice(c)          # R2/F105: the series that fills decides; `priced` says which spoke
+                examined.append({"strike": float(c["strike"]), "symbol": c.get("symbol"), "delayedAsk": delayed_ask,
+                                 "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced")})
+            pick = select_by_premium(cands, spot, trade.direction, target_premium=rules.target_premium,
                                      premium_floor=rules.premium_floor, expiry=expiry, today=today,
                                      is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick)
             if pick is None:
-                trade.errors.append(f"no {'call' if trade.direction == 'long' else 'put'} between "
-                                    f"${rules.premium_floor:.2f} and ${rules.target_premium * MAX_OVER_TARGET:.2f} "
-                                    f"(target ${rules.target_premium:.2f}) at {expiry}")
+                seen = ", ".join(f"{x['strike']:g} ask {x['ask']:.2f} ({x['priced']}" + (f", chain {x['delayedAsk']:.2f})" if x['priced'] == 'opra' else ")")
+                                 for x in examined) or "no OTM contract listed"
+                trade.errors.append(f"no {want} between ${floor:.2f} and ${band_hi:.2f} (target ${rules.target_premium:.2f}) "
+                                    f"at {expiry} on the live quotes — examined {seen}")
+                self._log(ap, "contract_refused", f"{trade.trigger_id}: " + trade.errors[-1], trigger=trade.trigger_id,
+                          examined=examined, spot=round(spot, 4), listed=len(otm), expiry=expiry)
                 return None
-            c = pick.to_dict()
-            with contextlib.suppress(Exception):
-                await opts.reprice(c)          # R2: size, pre-checks and the cap read the live NBBO, not the delayed chain
+            c = next(x for x in cands if x.get("symbol") == pick.symbol)
+            priced = c.get("priced")
+            c = {**pick.to_dict(), "priced": priced}
             c["_sizeMult"] = float(getattr(trade, "_size_mult", 1.0) or 1.0)
             c["_bucket"] = getattr(trade, "_bucket", "?")
             trade.contract = c
             trade.order_symbol = c.get("symbol")
             self._log(ap, "contract", f"{trade.trigger_id}: {c.get('display') or c.get('symbol')} ask {c.get('ask')} "
-                      f"(target ${rules.target_premium:.2f}, {expiry})", trigger=trade.trigger_id)
+                      f"({priced}; target ${rules.target_premium:.2f}, {expiry}; {len(examined)} candidate(s) quoted)",
+                      trigger=trade.trigger_id, examined=examined, priced=priced)
             return c
         except Exception as exc:  # noqa: BLE001 - reported on the trade, never raised into the bar loop
             trade.errors.append(f"contract pick failed: {exc}")
@@ -265,18 +340,26 @@ class Team2Runner(PlanRunner):
         if ap.run_id in self._warm_loaded:
             return
         self._warm_loaded.add(ap.run_id)
+        rules = self.rules()
         try:
             from ...marketdata import load_bars
-            rows = await load_bars(self.engine.sf, ap.symbol, "1m", limit=6000)
+            rows = await load_bars(self.engine.sf, ap.symbol, "1m", limit=max(20000, int(rules.warmup_sessions) * 1200))
         except Exception:  # noqa: BLE001
             rows = []
-        warm = [b for b in rows if session_date(b.ts) < ap.plan_for]
-        from .history import validate_sessions
-        warm, rep = validate_sessions(warm)                  # F75: no closed-day / one-price sessions in the EMA seed
+        # F99 (2026-09-10): ONE warm-up rule for live, replay and sweep — the last `warmup_sessions` valid
+        # sessions (F75 validation inside), stamped on the plan by content hash so replay can prove parity.
+        # Before this the live path took the last 6,000 rows (~6 sessions), replay 12 and the sweep 12 dates.
+        from .service import Team2Service
+        prior = [b for b in rows if session_date(b.ts) < ap.plan_for]
+        warm, rep = Team2Service.warmup_slice(prior, sessions=rules.warmup_sessions)
         if rep["excluded"]:
             self._log(ap, "history_excluded", f"warm-up skipped {len(rep['excluded'])} session(s) that are not market data: "
                       + ", ".join(f"{x['date']} ({x['reason']})" for x in rep["excluded"][:6]) + " (F75)",
-                      excluded=rep["excluded"], used=rep["used"][-12:])
+                      excluded=rep["excluded"], used=rep["sessionsUsed"][-12:])
+        ap.plan["warmup"] = {k: rep.get(k) for k in ("sessions", "sessionsUsed", "hash", "rows")}
+        self._log(ap, "warmup", f"EMA warm-up: {rep['rows']} bars over {len(rep['sessionsUsed'])} valid session(s) "
+                  f"(rule: last {rules.warmup_sessions}); identity {str(rep.get('hash') or '')[:12]} (F99)",
+                  warmup=ap.plan["warmup"])
         if len(warm) < 400:
             # day one: nothing banked yet — the 200 EMA on 2m needs ~400 minutes of history, so
             # fetch the last sessions' extended-hours tape once (Yahoo keeps ~20 days)
@@ -394,6 +477,7 @@ class Team2Runner(PlanRunner):
         ap.stale = False
         ap.bar_index += 1
         await self._load_warmup(ap)
+        await self._ensure_listing(ap, bar.ts)
         bars = self._bars.setdefault(ap.run_id, [])
         if not bars or bars[-1].ts < bar.ts:
             bars.append(bar)

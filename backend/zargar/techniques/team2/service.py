@@ -78,8 +78,36 @@ class Team2Service:
             return []
         return rows
 
-    async def history_for(self, symbol: str, date: str, *, sessions: int = 12) -> tuple[list[Bar], list[Bar], list[Bar]]:
+    @staticmethod
+    def warmup_slice(prior: list[Bar], *, sessions: int) -> tuple[list[Bar], dict]:
+        """F99 (2026-09-10): THE warm-up rule, shared by the live runner, `history_for` (replay) and the
+        sweep — the last `sessions` VALID prior sessions (F75 validation), identified by content hash so
+        a replay can prove it seeded the same EMAs the desk ran on (`warmupMatch`)."""
+        from .history import validate_sessions
+        from ...marketdata import hash_bars
+        valid, rep = validate_sessions(prior)
+        dates = list(rep["used"])[-int(sessions):]
+        warm = [b for b in valid if session_date(b.ts) in dates]
+        sym = warm[0].symbol if warm else ""
+        ident: dict = {}
+        try:
+            ident = hash_bars({str(sym).upper(): warm}, start=(dates[0] if dates else None), end=(dates[-1] if dates else None))
+        except Exception:  # noqa: BLE001
+            log.warning("team2 warm-up identity not computed", exc_info=True)
+        return warm, {"sessions": int(sessions), "sessionsUsed": dates, "excluded": list(rep["excluded"]),
+                      "hash": ident.get("hash"), "rows": len(warm)}
+
+    async def warmup_for(self, symbol: str, plan_for: str, *, sessions: int | None = None) -> tuple[list[Bar], dict]:
+        """The warm-up bars for `plan_for` from the bank (F99): one loader for every path."""
+        n = int(sessions if sessions is not None else rules_from_settings(self.engine.settings).warmup_sessions)
+        rows = await self.bars_1m(symbol, limit=max(20000, n * 1200))
+        prior = [b for b in rows if session_date(b.ts) < plan_for]
+        return self.warmup_slice(prior, sessions=n)
+
+    async def history_for(self, symbol: str, date: str, *, sessions: int | None = None) -> tuple[list[Bar], list[Bar], list[Bar]]:
         """(prior-sessions 1m bars, previous-session 15m RTH bars incl. lookback, today's 1m bars)."""
+        if sessions is None:
+            sessions = rules_from_settings(self.engine.settings).warmup_sessions
         rows = await self.bars_1m(symbol)
         prior = [b for b in rows if session_date(b.ts) < date]
         today = [b for b in rows if session_date(b.ts) == date]
@@ -356,8 +384,14 @@ class Team2Service:
             plan = complete_plan(plan, today)
         stamped = (plan.get("sigma") or {}).get("value") if isinstance(plan.get("sigma"), dict) else None
         sigma = float(stamped) if stamped else await self._sigma_for(str(run.get("planFor") or run.get("date") or dt.datetime.now(ET).strftime("%Y-%m-%d")))   # F51: the IV the desk ran on, else that day's proxy
-        res = simulate_session({**plan, "date": date}, today, rules, sigma=sigma, warmup_1m=prior)
-        return {"runId": run_id, "plan": plan, "result": res.to_dict(), "overrides": overrides or {}}
+        # F99: the replay seeds from the SAME warm-up rule the desk ran on and says whether it matched
+        warm, wrep = self.warmup_slice(prior, sessions=rules.warmup_sessions)
+        stamped = (plan.get("warmup") or {}) if isinstance(plan.get("warmup"), dict) else {}
+        wrep["stamped"] = stamped.get("hash")
+        wrep["match"] = (stamped.get("hash") == wrep.get("hash")) if stamped.get("hash") else None
+        res = simulate_session({**plan, "date": date}, today, rules, sigma=sigma, warmup_1m=warm)
+        return {"runId": run_id, "plan": plan, "result": res.to_dict(), "overrides": overrides or {},
+                "warmup": wrep, "strikeSource": "listed" if (plan.get("listedStrikes") or {}).get("strikes") else "grid"}
 
     async def sweep(self, start: str, end: str, *, symbols: list[str] | None = None,
                     overrides: dict | None = None, sigma: float | None = None) -> dict:
@@ -398,8 +432,10 @@ class Team2Service:
                 if not today or not filter_session(today, "rth"):
                     rows.append({"symbol": sym, "date": date, "status": "no_bars"})
                     continue
-                prior_dates = sorted(k for k in by_day if k < date)[-(rules.target_lookback_sessions + 2):]
+                # F99: the same warm-up rule as live and replay (the tape is already validated)
+                prior_dates = sorted(k for k in by_day if k < date)[-max(rules.warmup_sessions, rules.target_lookback_sessions + 2):]
                 prior = [b for k in prior_dates for b in by_day[k]]
+                warm, wrep = self.warmup_slice(prior, sessions=rules.warmup_sessions)
                 fifteen = [b for b in aggregate(prior, 15) if bar_session(b.ts) == "rth"] if prior else []
                 sk = build_skeleton(sym, date, fifteen, rules)
                 if sk is None:
@@ -407,11 +443,13 @@ class Team2Service:
                     continue
                 plan = complete_plan({**sk, "planFor": date}, today)
                 sg = sigma if sigma is not None else await self._sigma_for(date)
-                res = simulate_session(plan, today, rules, sigma=sg, warmup_1m=prior)
+                res = simulate_session(plan, today, rules, sigma=sg, warmup_1m=warm)
                 d_ = res.to_dict()
                 rows.append({"symbol": sym, "date": date, "status": "ok", "dayType": plan.get("dayType"),
                              "scenario": d_["bias"].get("scenario"), "trades": d_["trades"],
-                             "summary": d_["summary"], "setups": len(d_["setups"]), "sigma": sg})
+                             "summary": d_["summary"], "setups": len(d_["setups"]), "sigma": sg,
+                             "warmup": {"hash": wrep.get("hash"), "sessionsUsed": wrep.get("sessionsUsed")},
+                             "strikeSource": "grid"})      # F104: history carries no as-of listing — a stated limitation
         trades = [t for r in rows for t in (r.get("trades") or [])]
         wins = [t for t in trades if t["win"]]
         summary = {
@@ -424,6 +462,8 @@ class Team2Service:
             "byScenario": _group(trades, rows, "scenario"), "byKind": _group_field(trades, "entryKind"),
             "byBucket": _group_field(trades, "bucket"), "early": _group_field(trades, "early"),
             "overrides": overrides or {}, "codeVersion": CODE_VERSION,
+            "strikeSource": "grid", "strikeSourceNote": "the sweep walks the synthetic strike grid: no as-of listing "
+                                                        "evidence exists for past sessions (F104)",
         }
         return {"start": start, "end": end, "symbols": symbols, "rows": rows, "summary": summary,
                 "datasetVersion": (dataset or {}).get("hash"), "datasetRows": (dataset or {}).get("rows"),

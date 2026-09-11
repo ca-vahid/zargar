@@ -4496,3 +4496,14 @@ unreported for a session.
   ZargarRestart`.
 - **Verdict:** the method read the day like the author did, twice (yesterday's flip, today's PML retest); the desk
   lost both to its own plumbing — a stale target, a synthetic strike ladder, a runner fallback — not to the market.
+
+## Desk 2026-09-10 evening — Codex Thursday follow-up landed (v0.7.43)
+
+- Both picker gates fixed (F104 listed strikes, F105 fresh quotes before refusal), F99 one warm-up rule with a stamped
+  hash, F107 EM scorer boundary. Codex's probe file is in the suite verbatim. 171 Team2/bars tests + 32 EM tests green.
+- NOT deployed by this desk: the running 0.7.42 process is elevated (18:21 PT boot, five managed positions, ten resting
+  orders app-wide). The user runs `scripts\stop.ps1` from the elevated terminal after `/api/ops/restart-check` is clear,
+  then `ZargarRestart`. Until then the live path still refuses on the grid and the delayed chain.
+- For the watch job: from the first session on 0.7.43, count `listing` / `listing_unavailable`, `contract_refused`
+  (with `examined`) and `warmup` events per plan; the 20-session review clock restarts on this execution path.
+  Near-ITM eligibility remains a user decision — report any refusal where the only in-band contract was at/through spot.

@@ -142,6 +142,8 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.trim_cue": "premium",          # premium | new_extreme (X1 "new high/low of day")
     "techniques.team2.chase_cap_mult": 1.5,          # F14: entry limit <= target_premium x this (the premium band)
     "techniques.team2.premium_pick": "closest",      # F36: model and live pick the strike CLOSEST to the target
+    "techniques.team2.quote_candidates": 4,          # F105/F108: listed contracts re-priced on the live NBBO before a refusal
+    "techniques.team2.warmup_sessions": 12,          # F99: valid prior sessions the EMA warm-up uses, same for live/replay/sweep
     "techniques.team2.zone_tol_atr": 0.0,            # F27: scenario needs a close beyond the zone by this x ATR (off)
     "techniques.team2.flip_body_ratio": 0.0,         # F27: body/range a scenario candle must have (off)
     "techniques.team2.premium_stop_basis": "mid",    # F30: the live premium stop measures mid vs paid (EM keeps bid)
