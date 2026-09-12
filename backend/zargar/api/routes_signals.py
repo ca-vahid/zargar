@@ -42,6 +42,7 @@ def build_signal_routes(app, eng, auth, config) -> None:
         messageId: str | None = None      # gateway envelope: Discord identity (pre-extraction dedupe)
         postedAt: str | None = None       # authoritative posting time (feeds stated_at)
         editedAt: str | None = None
+        imageCount: int | None = None
 
     @app.post("/api/ingest/manual", dependencies=[auth])
     async def ingest_manual(body: ManualIngest):
@@ -59,7 +60,7 @@ def build_signal_routes(app, eng, auth, config) -> None:
             body.text, source_name=body.source_name, subject=body.subject,
             image=image, image_media_type=media_type,
             message_id=body.messageId, posted_at=body.postedAt,
-            edited_at=body.editedAt)
+            edited_at=body.editedAt, image_count=body.imageCount)
 
     @app.get("/api/signals/sources", dependencies=[auth])
     async def source_scorecards():

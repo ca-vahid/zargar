@@ -1033,13 +1033,23 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
     usage = st.setdefault("usage", {"in": 0, "out": 0, "calls": 0, "stops": []})
     from ...research import llm_stats
     stage = str(tool_ctx.get("stage") or "appraise")
+    _settings = getattr(eng, "settings", None)
+    base_cap = int((_settings.get("techniques.tip.analyst_max_output_tokens", 3000)
+                    if _settings is not None else 3000) or 3000)
     for _ in range(max_tools + 2):
+        # truncation-aware headroom (RKLB run abd015d4, 2026-09-11: stops were
+        # [tool_use, max_tokens, max_tokens] — the JSON never finished printing
+        # and the repair was starved at the SAME cap). After a max_tokens stop,
+        # the next turn gets double the room, up to a hard ceiling.
+        turn_cap = base_cap
+        if usage["stops"] and usage["stops"][-1] == "max_tokens":
+            turn_cap = min(base_cap * 2, 8192)
         resp = None
         for attempt in (1, 2, 3):
             _t0 = time.perf_counter()
             try:
                 resp = await client.messages.create(
-                    model=model, max_tokens=2000, system=system,
+                    model=model, max_tokens=turn_cap, system=system,
                     messages=messages, tools=TOOLS)
                 break
             except Exception as exc:
@@ -1311,7 +1321,18 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                 eng, client, model=model, system=system, header=header,
                 rec=rec, run_id=run_id, max_tools=max_tools, tool_ctx=tool_ctx,
                 tools_used=tools_used, state=loop_state)
-            return _parse_opinion(text) if text is not None else None
+            try:
+                return _parse_opinion(text) if text is not None else None
+            except ValueError as exc2:
+                # explicit terminal reason (Codex 2026-09-11 critique 5): a
+                # truncated reply is a different failure than a malformed one
+                stops = (loop_state.get("usage") or {}).get("stops") or []
+                if "max_tokens" in stops[-2:]:
+                    raise ValueError(
+                        f"{exc2} — reply truncated at max_tokens "
+                        f"(out={loop_state.get('usage', {}).get('out')} tokens; "
+                        "repair attempt was also truncated)") from exc2
+                raise
 
     try:
         opinion = await asyncio.wait_for(loop(), timeout=TIMEOUT_S)
