@@ -321,6 +321,24 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
   subscription returns historical option TRADES: the author's TSLA $360C (08-31) shows 10,000+
   prints and 37,874 contracts in the first 40 minutes. T-12 can be tested on history, not only
   live. Plan: `FLOW-CONFIRMATION-PLAN.md`.
+- **2026-09-11 · Day 12 (Fri, CPI gap-up) and the two-week review.** 3 fires (AVAV, MUU, BSX -
+  the critic timed out on two, said no to one), ALL three blocked by the spread gate (67 / 36 /
+  80% NBBO spreads); MUU and BSX went on to TP1, AVAV stopped. Book unchanged at $9,929.64.
+  Thu+Fri together: 9 fires, 8 spread-gated (4 later TP1, 4 stopped - the gate was net zero), 1
+  fill (HOOD -$66). The author sat Friday out ("everything gapping up, moves exhausted, no
+  risk/reward"). Deterministic replay (plans at the 09-10 close): 5 valid fires **+7.41R** -
+  IBIT r2 +4.83R (TP2), CRWD b2 +2.28R, BSX b1 +1.30R, AAPL k1 +0.01R, INTU r2 -1.02R; the
+  three review-rejected ones net +1.27R. **IBIT was armed and is one of the 16 option-liquid
+  names, and it never fired live: the 09:25 pre-open re-plan on a +0.68% pre-market print
+  "killed every trigger" and re-armed a plan whose only trigger was invalidated at 09:31.** The
+  static plan's reject at the original level paid +4.8R. Pre-open re-plans now have two
+  documented losses (this, and the HOOD/KLAC far-TP1 geometry) against no documented save -
+  they go into the change plan as C3b. The chain snapshots say only 16 of 135 universe names have a median
+  near-money option spread <= 10% and 83 are above 20%: EM plans setups on names it cannot
+  trade in options. The twelve-session review and the proposed changes (tradeable-vehicle
+  universe, shares fallback in Practice, gap-day policy, targeted scratch, consolidation-break
+  trigger) are in `METHOD-CHANGE-PLAN-2026-09-12.md` for the other desks' review before any
+  build.
 - **2026-09-10 · Day 11 (Thu, PPI gap-down; first session with the critic advisory): the first
   EM fill in eleven sessions, and it lost -$66 on a stop that a +2.5R move had already paid for.**
   42 plans from the evening batch + board auto-arms. 6 fires, the critic said no to all 6 (advisory
