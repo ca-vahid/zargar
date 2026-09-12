@@ -88,7 +88,10 @@ class Team2Rules(MarketRules):
     premium_floor: float = 0.20             # never buy below this (the $0.05 lottery)
     premium_pick: str = "closest"           # F36: "closest" to target_premium (model AND live) | "first_under" (legacy)
     chase_cap_mult: float = 1.5             # F14: never pay more than target_premium x this for the contract (live ask)
-    strike_step: float = 1.0                # SPY/QQQ/IWM $1 strikes
+    strike_step: float = 1.0                # synthetic grid, used ONLY when the plan carries no chain listing (F104)
+    quote_candidates: int = 8               # F105/F108: listed OTM contracts (nearest spot first) quoted live before a verdict
+    require_fresh_quote: bool = True        # F108: a contract without a live NBBO is not eligible — defer, never fill on the delayed chain
+    warmup_sessions: int = 12               # F99: valid prior sessions every path (live, replay, sweep) seeds the EMAs from
 
     # --- Z: sizing (V6/D4) and daily discipline (D14/D-3)
     size_full: float = 1.0
@@ -145,6 +148,7 @@ SETTINGS_MAP: dict[str, str] = {
     "max_reentries": "max_reentries", "max_losses_per_day": "max_losses_per_day", "losses_desk_wide": "losses_desk_wide",
     "max_concurrent_positions": "max_concurrent_positions", "shrink_after_win": "shrink_after_win",
     "avoid_event_days": "avoid_event_days", "fee_per_contract": "fee_per_contract",
+    "quote_candidates": "quote_candidates", "warmup_sessions": "warmup_sessions", "require_fresh_quote": "require_fresh_quote",
 }
 
 

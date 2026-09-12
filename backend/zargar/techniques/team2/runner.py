@@ -75,6 +75,10 @@ class Team2Runner(PlanRunner):
         self._bars: dict[str, list[Bar]] = {}          # run_id -> today's 1m bars (ext hours) seen so far
         self._warm: dict[str, list[Bar]] = {}          # run_id -> prior days' 1m bars (EMA warm-up)
         self._warm_loaded: set[str] = set()
+        self._listing_tried: dict[str, int] = {}       # F104: last listing fetch attempt per plan (ms)
+        self._listing_warned: dict[str, bool] = {}
+        self._trail_gaps: dict[str, list[dict]] = {}   # run_id -> journal writes that failed (evidence gaps)
+        self._trail_gaps: dict[str, list[dict]] = {}   # run_id -> journal writes that failed (evidence gaps)
         self._seen: dict[str, int] = {}                # run_id -> events already acted on
         self._last_sim: dict[str, dict] = {}           # run_id -> last SessionResult.to_dict()
         self._sigma_cache: dict[str, tuple[str, float]] = {}
@@ -155,57 +159,204 @@ class Team2Runner(PlanRunner):
             return band
         return round(min(ask + rules.tick, band), 2)
 
+    async def _trail(self, ap: ArmedPlan, kind: str, event: str, reason: str, **detail) -> None:
+        """Cohort v2 (2026-09-10, user decision): the candidate -> quote -> order -> fill -> exit trail is journaled under
+        the plan run, not only kept in the plan's in-memory events. Orders, fills and exits are journaled by the
+        PlanRunner already; this writes the steps before the order."""
+        journal = getattr(getattr(self, "engine", None), "journal", None)
+        run_id = getattr(ap, "run_id", None)
+        if journal is None or not run_id:
+            return
+        try:
+            await journal.append(kind, {"runId": run_id, "symbol": ap.symbol, "event": event, "reason": reason, **detail},
+                                 aggregate_type="technique_run", aggregate_id=run_id)
+        except Exception as exc:  # noqa: BLE001 - a hole in the record is itself evidence (Codex, 2026-09-10)
+            gaps = self._trail_gaps.setdefault(run_id, [])
+            gaps.append({"event": event, "kind": kind, "error": str(exc)[:200], "at": int(time.time() * 1000)})
+            self._log(ap, "trail_gap", f"the audit record for '{event}' was NOT written ({exc}) — this session's trail is "
+                      f"incomplete: {len(gaps)} gap(s) so far", event_=event, error=str(exc)[:200], gaps=len(gaps))
+            log.error("team2 trail gap on %s: %s not journaled (%s)", run_id, event, exc)
+            if len(gaps) == 1:
+                with contextlib.suppress(Exception):
+                    await self._alert(ap, f"Team2 {ap.symbol}: audit trail gap — '{event}' was not journaled ({exc}); "
+                                          f"treat today's record as incomplete", level="warning", stage="trail")
+
+    def trail_gaps(self, run_id: str) -> list[dict]:
+        """The journal writes that FAILED for this plan run (empty = every trail step is on the record)."""
+        return list(self._trail_gaps.get(run_id, []))
+
+    async def _expiry_for(self, provider, symbol: str, rules: Team2Rules, today: dt.date) -> tuple[str | None, str | None]:
+        exps = await provider.expirations(symbol)
+        exps_d = sorted(e for e in (exps or []) if e)
+        if rules.dte_policy == "0dte":
+            expiry = next((e for e in exps_d if e == today.isoformat()), None)
+            return expiry, (None if expiry else "no same-day expiry listed (dte_policy=0dte)")
+        expiry = next((e for e in exps_d if e > today.isoformat()), None)
+        return expiry, (None if expiry else "no expiry after today")
+
+    async def _ensure_listing(self, ap: ArmedPlan, now_ms: int) -> None:
+        """F104/F108 (2026-09-10): stamp today's LISTED strikes (the venue's, from the chain) on the plan so the
+        read's premium gate walks real contracts instead of a synthetic grid. Once per plan per expiry; a failed
+        fetch is retried every 5 minutes and the read runs on the grid (and says so) until it lands."""
+        plan = ap.plan or {}
+        have = plan.get("listedStrikes") if isinstance(plan.get("listedStrikes"), dict) else None
+        if have and have.get("strikes"):
+            return
+        tried = self._listing_tried.get(ap.run_id, 0)
+        if now_ms - tried < 5 * 60_000:
+            return
+        self._listing_tried[ap.run_id] = now_ms
+        opts = getattr(self.engine, "options", None)
+        if opts is None:
+            return
+        rules = self.rules()
+        try:
+            provider = opts.provider()
+            today = dt.datetime.now(ET).date()
+            expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
+            if expiry is None:
+                raise RuntimeError(why or "no expiry")
+            chain = await provider.chain(ap.symbol, expiry)
+            strikes = sorted({float(c.get("strike")) for c in (chain or []) if c.get("strike") is not None})
+            if not strikes:
+                raise RuntimeError("chain returned no strikes")
+            plan["listedStrikes"] = {"expiry": expiry, "strikes": strikes, "count": len(strikes),
+                                     "source": "chain", "provider": type(provider).__name__,
+                                     "capturedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")}
+            lo, hi = strikes[0], strikes[-1]
+            self._log(ap, "listing", f"{len(strikes)} listed strikes for {expiry} ({lo:g}..{hi:g}) from the chain — the "
+                      f"premium gate walks these, not the ${rules.strike_step:g} grid (F104)",
+                      expiry=expiry, count=len(strikes), low=lo, high=hi)
+            await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "listing", f"{len(strikes)} listed strikes for {expiry} ({lo:g}..{hi:g})",
+                              expiry=expiry, count=len(strikes), low=lo, high=hi, provider=plan["listedStrikes"]["provider"])
+            with contextlib.suppress(Exception):
+                await self._persist(ap)
+        except Exception as exc:  # noqa: BLE001 - the read keeps working on the grid and says so
+            if not self._listing_warned.get(ap.run_id):
+                self._listing_warned[ap.run_id] = True
+                self._log(ap, "listing_unavailable", f"could not read today's listed strikes from the chain ({exc}); the "
+                          f"premium gate runs on the synthetic ${rules.strike_step:g} grid until it can (F104)", error=str(exc))
+                await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "listing_unavailable", f"no chain listing: {exc}", error=str(exc))
+
     async def pick_contract(self, ap: ArmedPlan, trade: Trade) -> dict | None:
-        """The premium-targeted 0DTE contract (V1/F5) from the live chain."""
+        """The premium-targeted 0DTE contract (V1/F5): structural candidate -> the venue's LISTED contracts ->
+        FRESH executable quotes -> the premium band -> the order.
+
+        F105/F108 (2026-09-10): the chain the provider serves is ~15 min delayed and its ask disagreed with the
+        live NBBO by exactly the cent that decides in-band/out-of-band (IWM 287.5P: CBOE $0.19 vs OPRA $0.20 at
+        the $0.20 floor). A delayed ask therefore never conclusively vetoes a candidate: the nearest
+        `quote_candidates` listed contracts whose delayed ask is anywhere near the band (or unquoted) are
+        re-priced on the live NBBO first, and the band is judged on what would fill. The refusal names every
+        candidate examined with its ask and which series spoke."""
         trade.contract_attempted = True
         opts = getattr(self.engine, "options", None)
         if opts is None:
             trade.errors.append("options service not attached")
+            await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", "options service not attached",
+                              trigger=trade.trigger_id, verdict="deferred", stage="service", examined=[], direction=trade.direction)
             return None
         rules = self.rules()
         try:
             from ...options.pick import select_by_premium
             provider = opts.provider()
-            exps = await provider.expirations(ap.symbol)
             today = dt.datetime.now(ET).date()
-            exps_d = sorted(e for e in exps if e)
-            expiry = None
-            if rules.dte_policy == "0dte":
-                expiry = next((e for e in exps_d if e == today.isoformat()), None)
-                if expiry is None:
-                    trade.errors.append("no same-day expiry listed (dte_policy=0dte)")
-                    return None
-            else:
-                expiry = next((e for e in exps_d if e > today.isoformat()), None)
-                if expiry is None:
-                    trade.errors.append("no expiry after today")
-                    return None
+            expiry, why = await self._expiry_for(provider, ap.symbol, rules, today)
+            if expiry is None:
+                trade.errors.append(why or "no expiry")
+                await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", why or "no expiry",
+                                  trigger=trade.trigger_id, verdict="deferred", stage="expiry", examined=[], direction=trade.direction)
+                return None
             chain = await provider.chain(ap.symbol, expiry)
             spot = float(trade.entry)
             q = self.engine.quotes.get(ap.symbol)
             if q is not None and q.last and q.last > 0:
                 spot = float(q.last)
-            pick = select_by_premium(chain, spot, trade.direction, target_premium=rules.target_premium,
+            want = "call" if trade.direction == "long" else "put"
+            band_hi = float(rules.target_premium) * MAX_OVER_TARGET
+            floor = float(rules.premium_floor)
+            side = [c for c in (chain or []) if (c.get("option_type") or "").lower() == want
+                    and c.get("strike") is not None and c.get("symbol")]
+            otm = [c for c in side if (float(c["strike"]) > spot if want == "call" else float(c["strike"]) < spot)]
+            otm.sort(key=lambda c: abs(float(c["strike"]) - spot))
+            # F108: NO delayed price is read for selection. Candidates are the listed OTM contracts nearest spot,
+            # quoted live one by one (bounded by `quote_candidates`); the walk stops early only on a FRESH ask
+            # under the floor (further out is only cheaper). Whatever was not examined is reported as unexamined —
+            # a deferral, never a "no contract" verdict.
+            limit = max(1, int(rules.quote_candidates))
+            examined: list[dict] = []
+            eligible: list[dict] = []
+            unpriced = 0
+            stopped_under_floor = False
+            for raw in otm[:limit]:
+                c = dict(raw)
+                delayed_ask = float(c.get("ask") or 0)
+                c["priced"] = "none"
+                c["bid"], c["ask"] = 0.0, 0.0                 # the delayed quote is never the price
+                try:
+                    await opts.reprice(c)                      # `priced: opra` when the live NBBO is served
+                except Exception as exc:  # noqa: BLE001
+                    c["priced"] = "none"
+                    c["_error"] = str(exc)
+                live = c.get("priced") == "opra" or c.get("source") == "opra" or c.get("delayed") is False
+                fresh = live and float(c.get("ask") or 0) > 0
+                if fresh:
+                    c["priced"] = "opra"
+                if not fresh and not rules.require_fresh_quote and delayed_ask > 0:
+                    c["ask"], c["bid"], c["priced"] = delayed_ask, float(raw.get("bid") or 0), "chain"
+                    fresh = True
+                examined.append({"strike": float(c["strike"]), "symbol": c.get("symbol"), "delayedAsk": delayed_ask,
+                                 "ask": float(c.get("ask") or 0), "bid": float(c.get("bid") or 0), "priced": c.get("priced"),
+                                 "eligible": bool(fresh)})
+                if not fresh:
+                    unpriced += 1
+                    continue
+                eligible.append(c)
+                if float(c["ask"]) < floor:
+                    stopped_under_floor = True
+                    break
+            unexamined = max(0, len(otm) - len(examined)) if not stopped_under_floor else 0
+            pick = select_by_premium(eligible, spot, trade.direction, target_premium=rules.target_premium,
                                      premium_floor=rules.premium_floor, expiry=expiry, today=today,
-                                     is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick)
+                                     is_0dte=(expiry == today.isoformat()), mode=rules.premium_pick) if eligible else None
             if pick is None:
-                trade.errors.append(f"no {'call' if trade.direction == 'long' else 'put'} between "
-                                    f"${rules.premium_floor:.2f} and ${rules.target_premium * MAX_OVER_TARGET:.2f} "
-                                    f"(target ${rules.target_premium:.2f}) at {expiry}")
+                seen = ", ".join(f"{x['strike']:g} " + (f"ask {x['ask']:.2f} ({x['priced']}, chain {x['delayedAsk']:.2f})" if x['eligible']
+                                                          else f"no live quote ({x['priced']}; chain {x['delayedAsk']:.2f})")
+                                 for x in examined) or "no OTM contract listed"
+                deferred = bool(unpriced) or unexamined > 0
+                verdict = "deferred" if deferred else "refused"
+                why = (f"{'entry deferred' if deferred else 'no ' + want} — nothing eligible between ${floor:.2f} and ${band_hi:.2f} "
+                       f"(target ${rules.target_premium:.2f}) at {expiry} on the live quotes; examined {seen}"
+                       + (f"; {unpriced} candidate(s) had no live quote" if unpriced else "")
+                       + (f"; {unexamined} listed contract(s) further out not examined (quote bound {limit})" if unexamined else ""))
+                trade.errors.append(why)
+                self._log(ap, f"contract_{verdict}", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id, examined=examined,
+                          spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced, expiry=expiry)
+                await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, f"contract_{verdict}", why, trigger=trade.trigger_id, verdict=verdict,
+                                  examined=examined, spot=round(spot, 4), listed=len(otm), unexamined=unexamined, unpriced=unpriced,
+                                  expiry=expiry, direction=trade.direction)
                 return None
-            c = pick.to_dict()
-            with contextlib.suppress(Exception):
-                await opts.reprice(c)          # R2: size, pre-checks and the cap read the live NBBO, not the delayed chain
+            c = next(x for x in eligible if x.get("symbol") == pick.symbol)
+            priced = c.get("priced")
+            c = {**pick.to_dict(), "priced": priced}
             c["_sizeMult"] = float(getattr(trade, "_size_mult", 1.0) or 1.0)
             c["_bucket"] = getattr(trade, "_bucket", "?")
             trade.contract = c
             trade.order_symbol = c.get("symbol")
             self._log(ap, "contract", f"{trade.trigger_id}: {c.get('display') or c.get('symbol')} ask {c.get('ask')} "
-                      f"(target ${rules.target_premium:.2f}, {expiry})", trigger=trade.trigger_id)
+                      f"({priced}; target ${rules.target_premium:.2f}, {expiry}; {len(examined)} candidate(s) quoted)",
+                      trigger=trade.trigger_id, examined=examined, priced=priced)
+            await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_picked",
+                              f"{c.get('symbol')} ask {c.get('ask')} bid {c.get('bid')} ({priced})", trigger=trade.trigger_id,
+                              verdict="picked", contract=c.get("symbol"), strike=c.get("strike"), ask=c.get("ask"), bid=c.get("bid"),
+                              priced=priced, examined=examined, spot=round(spot, 4), listed=len(otm), expiry=expiry,
+                              direction=trade.direction)
             return c
         except Exception as exc:  # noqa: BLE001 - reported on the trade, never raised into the bar loop
             trade.errors.append(f"contract pick failed: {exc}")
             log.exception("team2 pick_contract failed")
+            await self._trail(ap, ev.TECHNIQUE_PLAN_CONTRACT, "contract_deferred", f"contract pick failed: {exc}",
+                              trigger=trade.trigger_id, verdict="deferred", stage="error", error=str(exc)[:200], examined=[],
+                              direction=trade.direction)
             return None
 
     def preopen_due(self, now: dt.datetime) -> bool:
@@ -265,18 +416,23 @@ class Team2Runner(PlanRunner):
         if ap.run_id in self._warm_loaded:
             return
         self._warm_loaded.add(ap.run_id)
+        rules = self.rules()
         try:
             from ...marketdata import load_bars
-            rows = await load_bars(self.engine.sf, ap.symbol, "1m", limit=6000)
+            rows = await load_bars(self.engine.sf, ap.symbol, "1m", limit=max(20000, int(rules.warmup_sessions) * 1200))
         except Exception:  # noqa: BLE001
             rows = []
-        warm = [b for b in rows if session_date(b.ts) < ap.plan_for]
-        from .history import validate_sessions
-        warm, rep = validate_sessions(warm)                  # F75: no closed-day / one-price sessions in the EMA seed
+        # F99 (2026-09-10): ONE warm-up rule for live, replay and sweep — the last `warmup_sessions` valid
+        # sessions (F75 validation inside), stamped on the plan by content hash so replay can prove parity.
+        # Before this the live path took the last 6,000 rows (~6 sessions), replay 12 and the sweep 12 dates.
+        from .service import Team2Service
+        prior = [b for b in rows if session_date(b.ts) < ap.plan_for]
+        warm, rep = Team2Service.warmup_slice(prior, sessions=rules.warmup_sessions)
         if rep["excluded"]:
             self._log(ap, "history_excluded", f"warm-up skipped {len(rep['excluded'])} session(s) that are not market data: "
                       + ", ".join(f"{x['date']} ({x['reason']})" for x in rep["excluded"][:6]) + " (F75)",
-                      excluded=rep["excluded"], used=rep["used"][-12:])
+                      excluded=rep["excluded"], used=rep["sessionsUsed"][-12:])
+        ap.plan["contractAuthority"] = "quotes"      # F108: on the live path the model never vetoes a contract
         if len(warm) < 400:
             # day one: nothing banked yet — the 200 EMA on 2m needs ~400 minutes of history, so
             # fetch the last sessions' extended-hours tape once (Yahoo keeps ~20 days)
@@ -290,6 +446,14 @@ class Team2Runner(PlanRunner):
                 warm.sort(key=lambda b: b.ts)
             except Exception:  # noqa: BLE001 - a failed warm-up only delays the first reads
                 log.warning("team2 warm-up fetch failed for %s", ap.symbol)
+            # the fetched tape goes through the same rule — the stamp below describes what the read consumes
+            warm, rep = Team2Service.warmup_slice(warm, sessions=rules.warmup_sessions)
+        ap.plan["warmup"] = {k: rep.get(k) for k in ("sessions", "sessionsUsed", "hash", "rows")}
+        self._log(ap, "warmup", f"EMA warm-up: {rep['rows']} bars over {len(rep['sessionsUsed'])} valid session(s) "
+                  f"(rule: last {rules.warmup_sessions}); identity {str(rep.get('hash') or '')[:12]} (F99)",
+                  warmup=ap.plan["warmup"])
+        await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "warmup", f"{rep['rows']} bars, {len(rep['sessionsUsed'])} valid session(s)",
+                          warmup=ap.plan["warmup"])
         self._warm[ap.run_id] = warm
         # today's bars already banked (pre-market) join the live list
         todays = [b for b in rows if session_date(b.ts) == ap.plan_for]
@@ -394,6 +558,7 @@ class Team2Runner(PlanRunner):
         ap.stale = False
         ap.bar_index += 1
         await self._load_warmup(ap)
+        await self._ensure_listing(ap, bar.ts)
         bars = self._bars.setdefault(ap.run_id, [])
         if not bars or bars[-1].ts < bar.ts:
             bars.append(bar)
@@ -470,10 +635,11 @@ class Team2Runner(PlanRunner):
                 if journal and what in ("scenario", "pm_break", "late_touch", "pm_retest", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
                                         "skip_reentries", "skip_last_entry", "skip_loss_cap",
-                                        "skip_target_behind"):
+                                        "skip_target_behind", "model_out_of_band", "target_replanned"):
                     # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
                     # they get their own journal kind so skip counts mean skips
-                    kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
+                    kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest",
+                                                              "model_out_of_band", "target_replanned") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
                     await self.engine.journal.append(kind, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": str(e.get("setup") or e.get("scenario") or what),
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},
@@ -567,7 +733,7 @@ class Team2Runner(PlanRunner):
         trade.target_kind = str(e.get("targetKind") or "plan")
         ap.trades[tid] = trade
         self._log(ap, "fired", f"{tid}: {e.get('why', '')}", trigger=tid, spot=spot, premiumModel=e.get("premium"),
-                  strikeModel=e.get("strike"), bucket=trade._bucket, early=e.get("early"), target=target,
+                  strikeModel=e.get("strike"), modelBand=e.get("modelBand"), bucket=trade._bucket, early=e.get("early"), target=target,
                   targetKind=trade.target_kind, haltedAtFire=halted or None)
         stub = SimpleNamespace(kind=trade.kind, direction=direction, fill_price=spot, entry=spot, stop=stop,
                                fire_event=e, trigger={"targets": [{"price": target}] if target else []},
@@ -1016,6 +1182,7 @@ class Team2Runner(PlanRunner):
         so no UI special-casing (user 2026-09-04: 'tell me how it works' inside the Armed section)."""
         d = super()._snapshot(ap)
         rules_now = self.rules()
+        d["trailGaps"] = self.trail_gaps(ap.run_id)      # cohort v2: failed audit writes are shown, never hidden
         plan = ap.plan or {}
         read = self._last_sim.get(ap.run_id) or {}
         q = self.engine.quotes.get(ap.symbol)

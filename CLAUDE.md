@@ -412,7 +412,9 @@ frontend production build runs this check automatically.
   run is what makes replay possible after that.
 - **Bars have provenance (F75, 2026-09-09):** `Bar.source` / `bars.source` (exchange | sampled | sim | unknown); write only
   through `persist_bars` (precedence upsert, calendar gate, sim refused unless `persist_sim_bars`); a decision that reads
-  history validates sessions and cites `marketdata.dataset_version`. Repair/audit: `python -m zargar.tools.bars_repair`.
+  history validates sessions and cites `marketdata.dataset_version`. Repair/audit: `python -m zargar.tools.bars_repair`. **Team2 contracts (F104/F105, 2026-09-10):** the read walks the plan's
+  `listedStrikes` (stamped from the chain at the first bar; sweeps walk the grid and say so) and the live picker re-prices
+  candidates on the NBBO before any refusal — never re-introduce a delayed-ask veto or a synthetic strike grid on the live path.
   **Restarts go through `scripts/start.ps1`'s readiness check** (`/api/ops/restart-check`); assistants use the scheduler's
   `ZargarRestart` task, never `start.ps1` from their own shell (PLATFORM-RULES invariants 17–18).
 - Patching files from scripts on Windows: open with `encoding="utf-8"`

@@ -4496,3 +4496,29 @@ unreported for a session.
   ZargarRestart`.
 - **Verdict:** the method read the day like the author did, twice (yesterday's flip, today's PML retest); the desk
   lost both to its own plumbing — a stale target, a synthetic strike ladder, a runner fallback — not to the market.
+
+## Desk 2026-09-10 evening — Codex Thursday follow-up landed (v0.7.43)
+
+- Both picker gates fixed (F104 listed strikes, F105 fresh quotes before refusal), F99 one warm-up rule with a stamped
+  hash, F107 EM scorer boundary. Codex's probe file is in the suite verbatim. 171 Team2/bars tests + 32 EM tests green.
+- NOT deployed by this desk: the running 0.7.42 process is elevated (18:21 PT boot, five managed positions, ten resting
+  orders app-wide). The user runs `scripts\stop.ps1` from the elevated terminal after `/api/ops/restart-check` is clear,
+  then `ZargarRestart`. Until then the live path still refuses on the grid and the delayed chain.
+- For the watch job: from the first session on 0.7.43, count `listing` / `listing_unavailable`, `contract_refused`
+  (with `examined`) and `warmup` events per plan; the 20-session review clock restarts on this execution path.
+  Near-ITM eligibility remains a user decision — report any refusal where the only in-band contract was at/through spot.
+
+## Standing instruction from 2026-09-10 late — evaluation cohort v2 (v0.7.45)
+
+The twenty-session review restarts with the first session on v0.7.45 or later. Keep the tally in two labelled cohorts:
+v1 = sessions 1–11 (read evidence; grid ladder, delayed/model vetoes, elevated boots) and v2 = corrected path. Per
+session in v2 record per plan: `listing`/`listing_unavailable`, every `model_out_of_band`, every `contract_deferred` /
+`contract_refused` with its `examined` list, fills and their `priced` series, and F81b `target_replanned`. A deferral
+(no live quote, or the quote bound hit) is an operational limitation to fix, not a method refusal — say so.
+
+## Addendum to the cohort v2 instruction (v0.7.48)
+
+A plan whose snapshot carries `trailGaps` (or whose audit shows a `trail_gap` event) is an INCOMPLETELY OBSERVED
+session: report it as such, never as a quiet day. If nothing fills, the journal must establish why — cite the
+`TechniquePlanContract` verdicts (with `stage` for early exits) and the read's refusals; if neither exists for a fired
+setup, that is a gap to report, not a refusal.

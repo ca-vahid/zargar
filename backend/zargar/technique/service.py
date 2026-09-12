@@ -1952,6 +1952,7 @@ class TechniqueService:
             runs = (await session.execute(
                 select(TechniqueRun.id, TechniqueRun.as_of, TechniqueRun.created_at)
                 .where(TechniqueRun.status == "done", TechniqueRun.mode.in_(("full", "plan")),
+                       TechniqueRun.technique == "enhanced_market",     # F107 (2026-09-10): EM scores EM's runs only
                        TechniqueRun.created_at >= cutoff)
                 .order_by(TechniqueRun.created_at.desc()).limit(400))).all()
             ids = [x.id for x in runs]

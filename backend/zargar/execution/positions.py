@@ -224,6 +224,7 @@ class PositionManager:
         self._roll_ticks: dict[str, int] = {}
         self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
         self._last_decide: dict[str, int] = {}   # position id -> raw-bar ts last decided on
+        self._mark_evidence: dict[str, str] = {}  # position id -> last mark provenance (1B)
         self._entry_halted: set[str] = set()           # symbols where reconciliation found drift
         self._now = time.time                          # injectable clock (chaos tests)
         self._policy_adapters: dict[str, object] = {}
@@ -245,6 +246,40 @@ class PositionManager:
 
     def _setting(self, key: str, default):
         return self.engine.settings.get(key, default)
+
+    def _fresh_net_mark(self, p: Managed) -> float | None:
+        """net_mark judged only on FRESH, non-delayed option quotes (Codex
+        performance audit 1B, 2026-09-10): SPCX's premium stop fired on a
+        0.97 mark roughly an hour stale while the contract traded ~2.02. A
+        delayed chain row or an old print is not evidence for a market exit —
+        with no usable mark the premium rules stand down this bar, while the
+        underlying stop, expiry/DTE and reduce-only protections keep running.
+        The mark's provenance is kept for the exit decision's log line."""
+        stale_ms = int(float(self._setting(
+            "execution.premium_mark_max_age_seconds", 90) or 90) * 1000)
+        now = self.now_ms()
+        evidence: list[str] = []
+
+        def fresh(sym: str):
+            q = self.engine.quotes.get(sym)
+            if q is None:
+                evidence.append(f"{sym}: no quote")
+                return None
+            if getattr(q, "delayed", False) or getattr(q, "source", "") == "chain":
+                evidence.append(f"{sym}: delayed source {getattr(q, 'source', '?')} — refused")
+                return None
+            ts = getattr(q, "source_ts", None) or getattr(q, "ts", None)
+            age_s = (now - int(ts)) / 1000 if ts else None
+            if age_s is None or age_s > stale_ms / 1000:
+                evidence.append(
+                    f"{sym}: {getattr(q, 'source', '?')} quote "
+                    f"{'of unknown age' if age_s is None else f'{age_s:.0f}s old'} — refused")
+                return None
+            evidence.append(f"{sym}: {getattr(q, 'source', '?')} {age_s:.0f}s old bid={q.bid}")
+            return q
+        mark = p.net_mark(fresh)
+        self._mark_evidence[p.id] = "; ".join(evidence) or "no option legs"
+        return mark
 
     def min_dte_floor(self) -> int:
         return max(0, int(self._setting("execution.min_dte", 1) or 0))
@@ -652,6 +687,11 @@ class PositionManager:
         for rec in p.exits:
             if rec.get("leg") != leg_symbol or rec.get("status") in self._EXIT_DEAD:
                 continue
+            if rec.get("status") == "FILLED":
+                # TERMINAL (Codex audit 1C, 2026-09-10): a venue-normalized
+                # fractional request (2.5 -> filled 2) is done — its phantom
+                # 0.5 remainder must never block the real residual's exit
+                continue
             if (float(rec.get("filledQty") or 0) <= 0
                     and rec.get("ts") and now - rec["ts"] > ttl_ms):
                 continue
@@ -838,6 +878,11 @@ class PositionManager:
                         p.realized_pnl += per_unit * delta * leg.multiplier
                     leg.qty += signed_delta
                 rec["status"] = status
+                if status == "FILLED" and fq < float(rec.get("qty") or 0):
+                    # venue normalized the request (2.5 -> 2): persist the real
+                    # size so the record never claims a phantom remainder (1C)
+                    rec["requestedQty"] = rec.get("qty")
+                    rec["qty"] = fq
                 self._exit_retries.pop((p.id, "exit"), None)      # a fill resets the watchdog
                 self._log(p, "exit_fill", f"{rec['kind']} {rec.get('leg')}: {fq:g} @ {rec.get('price')}")
                 adapter = self._policy_adapter(p)
@@ -979,7 +1024,7 @@ class PositionManager:
                     days_to_event = await self.engine.calendar.days_to_ex_dividend(p.symbol)
         view = PositionView(
             direction=p.direction, entry=p.entry, risk=p.risk, bar=bar, bars=bars,
-            net_mark=p.net_mark(self.engine.quotes.get), entry_mark=p.entry_mark,
+            net_mark=self._fresh_net_mark(p), entry_mark=p.entry_mark,
             dte_min=p.dte_min(dt.datetime.fromtimestamp(self.now_ms() / 1000, ET).date()),
             sessions_held=p.sessions_held(), days_to_event=days_to_event,
             min_dte_floor=self.min_dte_floor(),
@@ -991,8 +1036,13 @@ class PositionManager:
             self._log(p, "stop_moved", f"stop -> {p.state.stop:.4f}")
             await self._ensure_venue_stop(p)
         for d in decisions:
-            self._log(p, d.kind, d.reason)
-            await self.close(p.id, fraction=d.fraction, reason=d.reason, kind=d.kind,
+            reason = d.reason
+            if "premium" in d.kind:
+                # a premium exit names its evidence (Codex 1B): which quote,
+                # from where, how old — never a bare number of unknown origin
+                reason = f"{d.reason} [mark: {self._mark_evidence.get(p.id, '?')}]"
+            self._log(p, d.kind, reason)
+            await self.close(p.id, fraction=d.fraction, reason=reason, kind=d.kind,
                              force_market=d.kind in ("stop", "premium_stop"))
         if not decisions:
             await self._persist(p)
@@ -1273,16 +1323,13 @@ class PositionManager:
             if p.policy.get("premium_watch") and p.entry_mark and \
                     not any(x.get("status") not in self._EXIT_DEAD + ("FILLED",)
                             for x in p.exits if x.get("orderId")):
-                mark = p.net_mark(self.engine.quotes.get)
-                # a ~15-min-delayed chain quote is not a tick: a stuck-high bid
-                # would trim on a gain that already evaporated and floor the rest
-                # (audit 2026-09-02) — the bar path keeps judging the premium
-                # stop on closes; the tick path needs a real-time print
-                legs_fresh = all(
-                    (lq := self.engine.quotes.get(l.symbol)) is not None and (now - lq.ts) <= stale_ms
-                    and not getattr(lq, "delayed", False)
-                    for l in p.open_legs)
-                if legs_fresh:
+                # SOURCE-age-aware mark, same evaluator as the bar path (Codex
+                # v0.7.44 review 1B, 2026-09-10): receipt time is not evidence —
+                # an hour-old OPRA bid re-received a second ago must not fire a
+                # market exit. Delayed/chain sources are refused outright; the
+                # mark's provenance lands on the exit record.
+                mark = self._fresh_net_mark(p)
+                if mark is not None:
                     today = dt.datetime.fromtimestamp(now / 1000, ET).date()
                     uq = self.engine.quotes.get(p.symbol)
                     und_move = ((float(uq.last) / p.entry - 1) * 100
@@ -1304,8 +1351,10 @@ class PositionManager:
                         p.state = apply_premium_decision(p.policy, p.state, d, p.entry_mark)
                         p.state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
                                                         dte=p.dte_min(today), iv_ratio=self._iv_ratio(p))
-                        self._log(p, d.kind, f"{d.reason} (quote watch)")
-                        await self.close(p.id, fraction=d.fraction, reason=d.reason, kind=d.kind,
+                        wreason = (f"{d.reason} (quote watch) "
+                                   f"[mark: {self._mark_evidence.get(p.id, '?')}]")
+                        self._log(p, d.kind, wreason)
+                        await self.close(p.id, fraction=d.fraction, reason=wreason, kind=d.kind,
                                          force_market=d.kind == "premium_stop")
                         continue
                     new_state = advance_premium_state(p.policy, p.state, mark, p.entry_mark,
