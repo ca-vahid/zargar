@@ -83,6 +83,17 @@ Each item names the knob, the test that decides it, and the adopt bar. D7 applie
   sessions separately. Adopt only if the gap-day slice improves AND non-gap days are untouched.
 - Owner: EM (arming pre-open hook + one MarketRules knob).
 
+### C3b · The pre-open re-plan itself (added after Friday's replay)
+- Friday's replay found +7.4R on 5 valid fires; the best, IBIT r2 (+4.8R, an option-liquid
+  name, armed), never fired live because the 09:25 re-plan on a +0.68% pre-market print
+  discarded the original triggers and re-armed a plan that was invalidated at 09:31. The
+  re-plan has now cost IBIT (Fri), HOOD and KLAC (Thu, far-TP1 geometry) with no documented
+  save. Proposal: the re-plan KEEPS the original triggers alongside the re-derived ones (both
+  tracked, whichever the tape reaches), or is limited to gaps beyond `gap_void_r`.
+- Test: sweep is not possible (the static sweep cannot see re-plans, 2026-09-05 finding);
+  measure live with both trigger sets journaled for ten sessions, then decide.
+- Owner: EM (`_preopen_check`, `build_session_plan(reference_price=)`).
+
 ### C4 · Exit geometry on re-planned levels
 - The far first target is the problem only when the pre-open re-plan pushed TP1 > 3R away
   (HOOD, KLAC, LITE, WDC). Variant: scratch rule (T-14, built) applied ONLY when TP1 > 3R.
@@ -117,6 +128,7 @@ Each item names the knob, the test that decides it, and the adopt bar. D7 applie
 | C1 liquidity screen + pick retry | universe.py, arming.py, one nightly job | 1 day | which names EM may trade in options |
 | C1 test: baseline on the tradeable set | sweep | 1 hour | how much R the method keeps on liquid names |
 | C3 gap-day policy | pre-open hook + knob + sweep | 1 day | gap days |
+| C3b keep original triggers through the re-plan | pre-open hook, journal both sets | half a day | whether the re-plan is a net loss |
 | C4 targeted scratch | knob + sweep | 2 hours | re-planned levels |
 | C5 consolidation break | tracker kind + plans + sweep | 3 days | a new lane |
 

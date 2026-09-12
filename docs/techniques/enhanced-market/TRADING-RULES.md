@@ -326,7 +326,14 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
   80% NBBO spreads); MUU and BSX went on to TP1, AVAV stopped. Book unchanged at $9,929.64.
   Thu+Fri together: 9 fires, 8 spread-gated (4 later TP1, 4 stopped - the gate was net zero), 1
   fill (HOOD -$66). The author sat Friday out ("everything gapping up, moves exhausted, no
-  risk/reward"). The chain snapshots say only 16 of 135 universe names have a median
+  risk/reward"). Deterministic replay (plans at the 09-10 close): 5 valid fires **+7.41R** -
+  IBIT r2 +4.83R (TP2), CRWD b2 +2.28R, BSX b1 +1.30R, AAPL k1 +0.01R, INTU r2 -1.02R; the
+  three review-rejected ones net +1.27R. **IBIT was armed and is one of the 16 option-liquid
+  names, and it never fired live: the 09:25 pre-open re-plan on a +0.68% pre-market print
+  "killed every trigger" and re-armed a plan whose only trigger was invalidated at 09:31.** The
+  static plan's reject at the original level paid +4.8R. Pre-open re-plans now have two
+  documented losses (this, and the HOOD/KLAC far-TP1 geometry) against no documented save -
+  they go into the change plan as C3b. The chain snapshots say only 16 of 135 universe names have a median
   near-money option spread <= 10% and 83 are above 20%: EM plans setups on names it cannot
   trade in options. The twelve-session review and the proposed changes (tradeable-vehicle
   universe, shares fallback in Practice, gap-day policy, targeted scratch, consolidation-break
