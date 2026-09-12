@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.49";
+export const APP_VERSION = "0.7.50";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -18,7 +18,7 @@ export interface Release {
 
 export const CHANGELOG: Release[] = [
   {
-    version: "0.7.49",
+    version: "0.7.50",
     date: "2026-09-12",
     title: "Captions count as evidence, and truncated answers get room to finish",
     items: [
