@@ -4,7 +4,9 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
+export const APP_VERSION = "0.7.50";
 export const APP_VERSION = "0.7.49";
+
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,10 +19,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
-  {version:"0.7.49",date:"2026-09-11",title:"The morning's target change is on the record",items:[
-    {tag:"fixed",text:"Team2: when the morning re-derives a plan target the gap has already run through, and when the day type is finalized on the real 09:30 open, both are now written to the plan's append-only audit. Until now they existed only in the plan's in-memory event list, so a mid-session restart erased the evidence that the target had moved before any entry was judged."},
-    {tag:"fixed",text:"Team2: plan-level audit rows (chain listing, warm-up identity, open finalize, target re-derive) now state that they belong to no single trigger instead of omitting the field, which was logging a contract warning on every one."},
-  ]},
+  {
+    version: "0.7.50",
+    date: "2026-09-12",
+    title: "Captions count as evidence, and truncated answers get room to finish",
+    items: [
+      { tag: "fixed", text: "A tip whose message has both a caption and a screenshot no longer loses the caption from the evidence: grounding now checks quotes against BOTH, clearly sectioned, with an honest note when only the first of several images was read. Meet Kevin's first tips died on exactly this." },
+      { tag: "fixed", text: "When the analyst's answer is cut off at the output-token limit, the retry now gets double the room instead of being cut off at the same place - and a still-truncated failure says 'truncated', not just 'no JSON'. The RKLB no-verdict case was this." },
+      { tag: "improved", text: "Ingest records how many attachments a message carried so partially-read messages are visible instead of silently incomplete." },
+    ],
+  },
   {version:"0.7.48",date:"2026-09-10",title:"A hole in the audit record is itself recorded",items:[
     {tag:"fixed",text:"Team2: when an audit-trail write fails, the plan now logs a trail gap, raises one warning per plan and shows the gaps on its snapshot, so an incomplete record can never pass for a quiet session. The trade itself is not blocked by the record. The contract picker's early exits (options service missing, no expiry listed, an unexpected error) now write a deferred verdict instead of returning silently."},
   ]},
