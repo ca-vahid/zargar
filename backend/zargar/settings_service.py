@@ -53,6 +53,7 @@ DEFAULTS: dict[str, Any] = {
     "execution.reconcile_at": "09:05",          # daily pre-open reconciliation pass (positions vs the broker)
     "execution.exit_inflight_ttl_seconds": 900, # an unfilled exit order older than this stops suppressing new exits (zombie guard)
     "execution.premium_mark_max_age_seconds": 90,  # a premium exit needs a mark this fresh (Codex 1B 2026-09-10: SPCX stopped on an hour-stale 0.97 while trading 2.02)
+    "execution.premium_stop_confirm_window_seconds": 45,  # tick premium stop needs 2 DISTINCT fresh observations inside this window (DAL flash print, 2026-09-11)
     # --- the morning desk surface (POST-SOAK Phase 1) ---
     "desk.morning_at": "08:25",             # ET; the one-glance morning report (push + Telegram + Dashboard)
     "desk.morning_push": True,              # off = compose on demand only (GET /api/desk/morning)
