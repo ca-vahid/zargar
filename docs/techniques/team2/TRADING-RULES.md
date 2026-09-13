@@ -2439,6 +2439,12 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-13 build review fixes (C2, still OFF; v0.7.59)** — the other team reproduced two defects in the enabled
+  path: same-bar key-level breaks overwrote one setup (id was `kind@HH:MM`), and the running-median cluster test
+  chained 2.5 ATR. Fixed: setup id carries the level price, explicit nearest-anchor precedence among same-bar
+  setups, a hard 0.5 × atr_build cluster DIAMETER, no ATR fallback (insufficient data instead), and the disabled-
+  path test now compares full event/setup/trade dicts. Their regressions adopted verbatim
+  (`tests/test_codex_c2_review.py`). Clarifications accepted as research conventions; flip state is intraday only.
 - **2026-09-13 build (C2 definitions BUILT behind `key_levels`, OFF; v0.7.58)** — D1/D2/D3, the flip/expiry state
   machine, zone + PM masks, key-level confirmations/retests/target rungs, sweep funnel, 13 causal fixtures; the read
   is byte-identical with the knob off (test). Two clarifications recorded in the spec: the D2 wick extreme must lie

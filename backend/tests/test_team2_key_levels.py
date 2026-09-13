@@ -214,9 +214,82 @@ def test_knob_off_by_default_no_key_levels_on_the_plan_and_the_read_is_unchanged
     plan_on, on = _read(key_levels="D1")
     assert isinstance(plan_on.get("keyLevels"), dict) and plan_on["keyLevels"]["definition"] == "D1"
     assert plan_on["keyLevels"]["atrBuildSource"] == "2m" and plan_on["keyLevels"]["atrBuild"] > 0
-    # the one-session synthetic history yields no multi-day level, so the read must be identical with the knob on
-    assert [e["event"] for e in base.events] == [e["event"] for e in on.events]
+    # the one-session synthetic history yields no multi-day level, so the FULL read (every event field, every setup,
+    # every trade) must be identical with the knob on — not only the event names
+    assert base.to_dict()["events"] == on.to_dict()["events"]
+    assert base.to_dict()["setups"] == on.to_dict()["setups"] and base.to_dict()["trades"] == on.to_dict()["trades"]
     assert not [e for e in on.events if e["event"].startswith("key_level_")]
+    # and with the knob on but an empty level set on the plan, the read is again the full-dict equal of the off read
+    plan_empty, empty = _read(key_levels="D1")
+    plan_empty["keyLevels"] = {"definition": "D1", "atrBuild": 0.5, "candidates": [], "above": [], "below": []}
+    empty2 = simulate_session(plan_empty, path_1m(DAY, (4, 0), (20, 0), drift_day), make_rules(key_levels="D1"), sigma=0.2, warmup_1m=prev_day_bars())
+    assert base.to_dict()["events"] == empty2.to_dict()["events"]
+
+
+def test_no_2m_bars_means_insufficient_data_not_a_scaled_fallback():
+    rules = make_rules(key_levels="D1")
+    prev = prev_day_bars()
+    plan = build_skeleton("SPY", DAY.isoformat(), aggregate(prev, 15), rules)      # no 1m bars supplied
+    kl = plan["keyLevels"]
+    assert kl["atrBuildSource"] == "none" and kl["atrBuild"] == 0.0 and kl["insufficientData"]
+    assert kl["above"] == [] and kl["below"] == [] and kl["candidates"] == []
+
+
+def test_cluster_diameter_is_a_hard_bound():
+    import statistics
+    from zargar.techniques.team2.levels import _cluster
+    prices = [100.0]
+    for _ in range(31):
+        prices.append(statistics.median(prices) + 0.5)                       # the reviewers' chaining fixture
+    cands = [{"price": p, "kind": "high", "origin_date": "2026-09-10", "available_at": 0, "last_reaction_at": 0, "episode_ids": []} for p in prices]
+    spans = [max(c["members"]) - min(c["members"]) for c in _cluster(cands, 0.5)]
+    assert max(spans) <= 0.5 + 1e-9
+
+
+def _two_levels_plan(confirm_first: bool, reject_second: bool):
+    """Two resistance levels breaking on the same 09:45 bar; the second's fate is set by the 10:00 bar."""
+    level_a, level_b = TOP + 1.0, TOP + 1.5
+    def fn(i):
+        m = 4 * 60 + i
+        if m < 9 * 60 + 30:
+            return level_a - 0.6 + 0.4 * (i / 330)
+        x = m - 9 * 60 - 30
+        if x < 15:
+            return level_a - 0.2 + 2.2 * (x / 14)                             # through both levels by 09:44
+        if x < 30:
+            return (level_b + 0.6) if not reject_second else (level_b - 0.2)   # 10:00 close: above both / between them
+        return (level_b + 0.6 if not reject_second else level_b - 0.2) + 0.01 * (x % 7)
+    rules = make_rules(key_levels="D1")
+    today = path_1m(DAY, (4, 0), (20, 0), fn)
+    plan = complete_plan(build_skeleton("SPY", DAY.isoformat(), aggregate(PREV, 15), rules, prev_bars_1m=PREV), today)
+    def lv(i, p):
+        return {"levelId": f"level-{i}", "definition": "D1", "originKind": "high", "originDate": "2026-09-02", "availableAt": 0,
+                "price": p, "role": "resistance", "score": 2.55, "reactions": 3, "lastReactionAt": 0, "members": [p],
+                "episodes": [], "maskedBy": "none", "flips": 0, "flipPending": False, "breakAt": None, "flipConfirmedAt": None, "retired": False}
+    plan["keyLevels"] = {"definition": "D1", "atrBuild": 0.5, "candidates": [lv(0, level_a), lv(1, level_b)],
+                         "above": [lv(0, level_a), lv(1, level_b)], "below": []}
+    return simulate_session(plan, today, rules, sigma=0.2, warmup_1m=PREV), level_a, level_b
+
+
+def test_two_levels_breaking_on_one_bar_are_two_setups_and_rejecting_one_leaves_the_other():
+    res, a, b = _two_levels_plan(confirm_first=True, reject_second=True)
+    setups = [s for s in res.setups if s["kind"] == "key_break_up"]
+    assert len(setups) == 2 and len({s["id"] for s in setups}) == 2
+    by_anchor = {s["anchor"]: s for s in setups}
+    assert not by_anchor[round(a, 4)]["dead"]                                  # the lower level confirmed (10:00 close above it)
+    assert by_anchor[round(b, 4)]["dead"] and "rejected" in by_anchor[round(b, 4)]["deadReason"]
+    flips = [e for e in res.events if e["event"] == "key_level_flip"]
+    rejected = [e for e in res.events if e["event"] == "key_level_rejected"]
+    assert [e["levelId"] for e in flips] == ["level-0"] and [e["levelId"] for e in rejected] == ["level-1"]
+
+
+def test_precedence_among_same_bar_setups_is_the_nearest_confirmed_anchor():
+    res, a, b = _two_levels_plan(confirm_first=True, reject_second=False)
+    setups = [s for s in res.setups if s["kind"] == "key_break_up"]
+    assert len(setups) == 2 and all(not s["dead"] for s in setups)
+    # price sits above both after 10:00; the nearer anchor below price is level b — every pullback event names it
+    ev = [e for e in res.events if e.get("setup") and e["event"] in ("fire", "same_pullback", "skip_no_trade_zone", "skip_no_contract", "key_level_pending", "pullback_stalled")]
+    assert ev and all(e["setup"].endswith(f":{b:.2f}") for e in ev), [(e["event"], e["setup"]) for e in ev][:5]
 
 
 # ---------------------------------------------------------------- the read: break -> pending -> confirm / reject, causally
