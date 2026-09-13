@@ -3039,6 +3039,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-13 (other team's verdict on the week-37 plan; v0.7.53, knobs OFF)** — GO for research and C6, NO-GO for
+  activating C1. Their two findings accepted: pure conjunction does NOT keep F15's case (721.44 is outside yesterday's
+  range), and the gain is concentrated in the motivating week. Done: C1's ordered truth table (in the PM range but
+  beyond yesterday's zone = SMALL, never full), F15's case as an explicit `pm_room_atr` condition, C3 as
+  `min_target_atr`; all three knobs built and OFF; canonical sweep reproduces 82 / 358.6; chronological split and a
+  book-level simulation (size multipliers, one position, two losses) in the note's addendum: summed-% earlier
+  portion −39.4 confirmed, book-level earlier +$374 (all added trades are small size) — unsettled, for a labelled
+  Practice experiment after C6. The room rule and C3 measured NEGATIVE and stay off. C6 requested in PLATFORM-RULES.
 - **2026-09-12 (weekend review of week 37 — PLAN FOR REVIEW, nothing changed)** —
   `notes/research/2026-09-12-week37-review-and-change-plan.md`: the author 3/3 (Wed IWM +141 %, Thu IWM +85/+100 %,
   Fri SPY +50 %; no trade Tue) vs our one filled day (Tue QQQ −$66). All three of his entries were retests of a

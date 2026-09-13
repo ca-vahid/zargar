@@ -53,6 +53,7 @@ DEFAULTS: dict[str, Any] = {
     "execution.reconcile_at": "09:05",          # daily pre-open reconciliation pass (positions vs the broker)
     "execution.exit_inflight_ttl_seconds": 900, # an unfilled exit order older than this stops suppressing new exits (zombie guard)
     "execution.premium_mark_max_age_seconds": 90,  # a premium exit needs a mark this fresh (Codex 1B 2026-09-10: SPCX stopped on an hour-stale 0.97 while trading 2.02)
+    "execution.premium_stop_confirm_window_seconds": 45,  # tick premium stop needs 2 DISTINCT fresh observations inside this window (DAL flash print, 2026-09-11)
     # --- the morning desk surface (POST-SOAK Phase 1) ---
     "desk.morning_at": "08:25",             # ET; the one-glance morning report (push + Telegram + Dashboard)
     "desk.morning_push": True,              # off = compose on demand only (GET /api/desk/morning)
@@ -145,6 +146,9 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.premium_pick": "closest",      # F36: model and live pick the strike CLOSEST to the target
     "techniques.team2.quote_candidates": 8,          # F105/F108: listed OTM contracts (nearest spot first) quoted live before a verdict
     "techniques.team2.require_fresh_quote": True,    # F108: no live NBBO -> the entry is DEFERRED, never priced off the delayed chain
+    "techniques.team2.no_trade_zone": "pm_range",    # C1 (2026-09-13, research): pm_range | conjunction — DISABLED pending the other team's approval
+    "techniques.team2.pm_room_atr": 0.0,             # C1 obstacle rule, 0 = off (research)
+    "techniques.team2.min_target_atr": 0.0,          # C3 minimum target room, 0 = off (research)
     "techniques.team2.warmup_sessions": 12,          # F99: valid prior sessions the EMA warm-up uses, same for live/replay/sweep
     "techniques.team2.zone_tol_atr": 0.0,            # F27: scenario needs a close beyond the zone by this x ATR (off)
     "techniques.team2.flip_body_ratio": 0.0,         # F27: body/range a scenario candle must have (off)

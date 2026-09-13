@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.50";
+export const APP_VERSION = "0.7.54";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,26 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.54",
+    date: "2026-09-13",
+    title: "One flash print is not a reason to sell",
+    items: [
+      { tag: "fixed", text: "A tick-path premium stop (bleed stop or ratchet floor) now needs two DISTINCT fresh quotes inside a 45-second window before it market-exits - re-reading the same cached quote never counts, recovery resets the count, and a real fast decline still confirms within seconds. DAL was dumped on a single anomalous print that vanished one second later." },
+      { tag: "improved", text: "Analyst runs record each turn's input-token contribution, so context-size decisions rest on the per-turn shape rather than a summed total." },
+    ],
+  },
+  {version:"0.7.53",date:"2026-09-13",title:"Research knobs for the no-trade zone, all off",items:[
+    {tag:"improved",text:"Team2 research (other team's review of the week-37 plan): three knobs exist and are OFF - no_trade_zone (pm_range today | conjunction: risk off only inside both the pre-market and prior-day ranges), pm_room_atr (refuse an in-range entry with too little room to the pre-market edge) and min_target_atr (refuse a target too near to pay for the trade). Nothing in the live read changes until the user flips one; the sweep can now run the variants with the same code the desk runs. The read journals skip_pm_room and skip_target_near when they are on."},
+  ]},
+  {version:"0.7.52",date:"2026-09-12",title:"Keep developing ignition setups in focus",items:[
+    {tag:"fixed",text:"Ignition research now hides retired theses by default, prioritizes ready setups, and explains developing, invalidated and expired states accurately. The watchlist is collapsed below preparation progress and displays 25 rows at a time."},
+  ]},
+  {version:"0.7.51",date:"2026-09-12",title:"Cartel ignition research and reliable preparation",items:[
+    {tag:"new",text:"A persistent ignition watchlist follows strong volume events into quiet consolidation. A separately selectable Practice pilot evaluates post-ignition setups using fresh closed-bar execution plans."},
+    {tag:"fixed",text:"New plans can require verified exchange bars. Recovery preserves source information, upgrades sampled context and never replays missed entries. Daily history is cached durably with native batch collection where configured."},
+    {tag:"improved",text:"Preparation can recover interrupted work automatically. Settings expose coverage policy, data quality and the pilot; plans show rejected contracts and whole-contract exit allocations. Existing positions remain managed."},
+  ]},
   {
     version: "0.7.50",
     date: "2026-09-12",

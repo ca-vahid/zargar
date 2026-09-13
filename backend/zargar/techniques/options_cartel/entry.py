@@ -13,6 +13,7 @@ from collections import defaultdict
 from ...domain import Bar
 from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import ET, session_bounds
+from .data_quality import trusted
 from .plans import CartelPlan
 
 MINUTE = 60_000
@@ -79,6 +80,11 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
             close, opening = bucket[-1].close, bucket[0].open
             before = previous_close if previous_close is not None else opening
             previous_close = close
+            if plan.entry.require_exchange_bars and not all(trusted(b, simulation=plan.entry.allow_simulated_bars) for b in bucket):
+                previous_close = broke_at = gap_at = None
+                trace.append({'at': end, 'rule': 'DATA', 'decision': 'untrusted_confirmation',
+                              'reason': 'Confirmation contains sampled or unknown bars; recover verified data before a new entry.'})
+                continue
             if start < plan.created_at:
                 continue  # an old/partly elapsed bucket cannot become a newly armed entry
             if (close - plan.invalidation) * sign <= 0:
@@ -142,7 +148,7 @@ def read_entry(plan: CartelPlan, minutes: list[Bar], as_of_ms: int, *, entry_aft
                 stop = low if sign == 1 else high
             elif plan.entry.stop_mode == "session_extreme":
                 session_minutes = list(range(opens, end, MINUTE))
-                if not all(ts in day_bars for ts in session_minutes):
+                if not all(ts in day_bars and (not plan.entry.require_exchange_bars or trusted(day_bars[ts], simulation=plan.entry.allow_simulated_bars)) for ts in session_minutes):
                     reasons.append("Cannot determine the session extreme with missing minutes since the open.")
                 else:
                     seen = [day_bars[ts] for ts in session_minutes]

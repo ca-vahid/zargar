@@ -107,7 +107,7 @@ async def test_completed_history_cache_keeps_original_observation(engine):
         await run_preparation(engine, policy, clock=lambda: at, **providers)
         calls.clear(); runtime.clock = lambda: at+1
         second = await run_preparation(engine, policy, clock=lambda: at+1, **providers)
-        assert second['result']['cacheHits'] == 1 and ('TEST', '1d') not in calls
+        assert second['result']['cacheHits'] == 6 and not calls  # five daily series plus the baseline reuse
         async with engine.sf() as session:
             row = await session.get(TechniqueRun, second['result']['rows'][0]['analysisId'])
             assert row.result['collection']['historyObservedAt'] == at

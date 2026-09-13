@@ -80,6 +80,14 @@ class CartelEntryController:
             raise ValueError("entry requires an open regular exchange session within the plan horizon")
         if signal.get("id") != f"{plan.id}:entry:{signal.get('at')}" or not 0 <= now-signal.get("at", -1) <= 120_000:
             raise ValueError("entry signal is missing, stale, future-dated or mismatched")
+        if plan.entry.require_exchange_bars:
+            from .data_quality import trusted, unpack
+            opens, _ = session_bounds(session_date(signal['at']-1))
+            start = opens if plan.entry.stop_mode == 'session_extreme' else signal['at']-plan.entry.timeframe_minutes*60000
+            candles = row['state'].get('minutes', {})
+            if any(str(t) not in candles or not trusted(unpack(plan.symbol, candles[str(t)]), simulation=plan.entry.allow_simulated_bars)
+                   for t in range(start, signal['at'], 60000)):
+                raise ValueError('Execution confirmation/stop contains missing or untrusted source bars')
         if plan.entry.baseline_policy == 'covered_periods':
             opens, closes = session_bounds(session_date(signal['at']-1))
             step = plan.entry.timeframe_minutes*60000

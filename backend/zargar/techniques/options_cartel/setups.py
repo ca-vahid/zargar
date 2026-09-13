@@ -15,6 +15,7 @@ from .data import DailyBar, complete_weeks, completed_daily, require_contiguous
 
 class SetupParameters(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, allow_inf_nan=False)
+    family: Literal['general', 'post_ignition'] = 'general'
     base_sessions: int = Field(default=10, ge=3, le=60)
     weekly_context_weeks: int = Field(default=8, ge=2, le=52)
     relative_strength_sessions: int = Field(default=20, ge=2, le=252)
@@ -78,6 +79,22 @@ def analyze_setups(history: list[DailyBar], benchmark: list[DailyBar], screen: d
                               "value": value})
 
     check("Market/universe screen", screen.get("screenPassed") is True)
+    if parameters.family == 'post_ignition':
+        from .ignition import detect
+        check('Market/universe screen', screen.get('screenPassed'))
+        matches = [r for r in detect(bars, as_of_ms) if r['stage'] == 'setup_ready'] if direction == 'long' else []
+        check('Post-ignition continuation sequence', bool(matches))
+        out['sources'] = ['S30']
+        for item in matches[-1:]:
+            event_index = next(i for i,b in enumerate(bars) if b.session.isoformat() == item['eventSession'])
+            targets = _targets(bars[:event_index], item['trigger'], direction, parameters.touch_tolerance_pct)
+            out['candidates'].append({'setup':'post_ignition', 'trigger':item['trigger'],
+                'invalidation':item['invalidation'], 'targets':targets, 'evidence':item,
+                'contextPassed':screen.get('screenPassed') is True,
+                'researchContextPassed':screen.get('researchPassed') is True,
+                'reviewRequired':True, 'needsTargets':not targets,
+                'reason':'Post-ignition research profile; engineering geometry, closed-bar execution.'})
+        return out
     n = parameters.base_sessions
     lookback = parameters.relative_strength_sessions
     if len(bars) < max(2*n+1, lookback+1, 50):
