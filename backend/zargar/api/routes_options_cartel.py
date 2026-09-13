@@ -49,6 +49,25 @@ def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
 
+    @app.get('/api/options-cartel/session-review', dependencies=[auth])
+    async def cartel_session_review(day: str = Query(pattern=r'^\d{4}-\d{2}-\d{2}$'), workspace: Workspace | None = None):
+        import datetime as dt
+
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        from ..techniques.options_cartel.session_review import report
+        try:
+            dt.date.fromisoformat(day)
+            policy = read_policy(eng, workspace)
+            portfolio = await preparation_portfolio(eng, policy.portfolio_id, policy.workspace)
+            return await report(eng, portfolio, day)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get('/api/options-cartel/ignition', dependencies=[auth])
+    async def cartel_ignition_watchlist():
+        from ..techniques.options_cartel.ignition import watchlist
+        return await watchlist(eng)
+
     @app.get('/api/options-cartel/preparation', dependencies=[auth])
     async def cartel_preparation_status(workspace: Workspace | None = None):
         return await preparation_status(eng, workspace)
@@ -68,6 +87,20 @@ def build_options_cartel_routes(app, eng, auth, config):
                 await stop_preparation(eng, scope)
             return await preparation_status(eng, scope)
         return await respond(save())
+
+    @app.post('/api/options-cartel/preparation/cancel', dependencies=[auth])
+    async def cartel_cancel_preparation(workspace: Workspace | None = None):
+        from ..models import TechniqueRun
+        from ..techniques.options_cartel.preparation_scope import workspace_filter
+        scope = workspace or active_workspace(eng)
+        if not hasattr(eng, '_cartel_cancelled_runs'):
+            eng._cartel_cancelled_runs = set()
+        async with eng.sf() as session:
+            rows = (await session.scalars(select(TechniqueRun).where(TechniqueRun.technique=='options_cartel',
+                TechniqueRun.mode=='preparation', TechniqueRun.status=='running', workspace_filter(scope)))).all()
+        eng._cartel_cancelled_runs.update(r.id for r in rows)
+        await stop_preparation(eng, scope)
+        return await preparation_status(eng, scope)
 
     @app.post('/api/options-cartel/preparation/run', dependencies=[auth], status_code=202)
     async def cartel_prepare_daily(request: Request, workspace: Workspace | None = None,

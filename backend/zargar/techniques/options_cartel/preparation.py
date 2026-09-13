@@ -20,13 +20,20 @@ from ...models import ManagedPositionRow, Portfolio, TechniqueArmed, TechniqueRu
 from .accounts import default_practice_book, is_archived, validate_account
 from .automatic_plans import PreparationPolicy, automatic_review, planning_contract
 from .breadth import read_breadth
+from .data_quality import pack
 from .discovery import discover_market
 from .execution import ExecutionInput
+from .ignition import record as record_ignition
 from .industry import IndustrySnapshot, read_industry, save_snapshot
 from .industry_feed import capture_industries
 from .plans import CartelPlan
 from .preparation_io import DATA_ERRORS, PreparationHistory, observed_work, rate_limited
-from .preparation_readiness import baseline_coverage, entry_readiness, load_session_context
+from .preparation_readiness import (
+    automatic_valid_until,
+    baseline_coverage,
+    entry_readiness,
+    load_session_context,
+)
 from .preparation_scope import SETTING as SETTING  # noqa: PLC0414 - preserve the existing public constant
 from .preparation_scope import (
     read_policy,
@@ -36,7 +43,7 @@ from .preparation_scope import (
 from .prepare import build_volume_baseline
 from .quality import quality_key, ranking_evidence, target_room
 from .rules import CartelRules
-from .screen import market_regime
+from .screen import _latest_session, market_regime
 from .service import CartelService, FactsInput, MinuteInput, ResearchInput
 
 
@@ -110,12 +117,13 @@ async def practice_portfolio(engine, requested=None):
 
 def resumable(row, policy, now):
     return bool(row.technique == 'options_cartel' and row.mode == 'preparation'
-        and row.config.get('coverageVersion') == 5
-        and row.status in ('done', 'failed') and row.result.get('resumeReady')
+        and row.config.get('coverageVersion') == 6
+        and row.status in ('done', 'failed') and row.result.get('resumeReady') and not row.result.get('userCancelled')
         and (row.status == 'failed' or row.result.get('dataErrors', 0) > 0 or row.result.get('planErrors', 0) > 0)
         and row.config.get('workspace', 'practice') == policy.workspace
         and PreparationPolicy.model_validate(row.config.get('policy', {})) == policy
-        and 0 <= now-row.as_of < 86_400_000 and row.config.get('session') == next_session_date(now))
+        and 0 <= now-row.as_of < 4*86_400_000 and _latest_session(now) == _latest_session(row.as_of)
+        and row.config.get('session') == next_session_date(now))
 
 
 def evaluation_row(saved, review, policy=None):
@@ -133,8 +141,19 @@ def evaluation_row(saved, review, policy=None):
             'status': 'candidate' if review else 'filtered', 'reasons': reasons}
 
 
-async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, discover=discover_market,
-                          industries=capture_industries, fetch=fetch_window, choose=planning_contract, on_started=None, resume_run_id=None):
+async def run_preparation(engine, policy: PreparationPolicy, **kwargs):
+    from .preparation_lease import claim, release
+    owner = new_id()
+    clock = kwargs.get('clock', now_ms)
+    await claim(engine, policy.workspace, owner, clock())
+    try:
+        return await _run_preparation(engine, policy, lease_owner=owner, **kwargs)
+    finally:
+        await release(engine, policy.workspace, owner)
+
+
+async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, discover=discover_market,
+                          industries=capture_industries, fetch=fetch_window, choose=planning_contract, on_started=None, resume_run_id=None, lease_owner=None):
     started = clock()
     if not policy.enabled:
         raise ValueError('Enable automatic preparation before starting a run')
@@ -156,11 +175,12 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
     result = {'phase': 'discovering', 'session': target_session, 'portfolioId': portfolio_id,
               'mode': 'auto', 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'rows': [], 'shortlist': [], 'warnings': [],
               'discovered': 0, 'evaluated': 0, 'qualifying': 0, 'armed': 0, 'processed': 0, 'dataErrors': 0,
-              'startedAt': started, 'updatedAt': started, 'message': 'Starting market discovery', 'currentSymbol': None,
+              'logicalStartedAt': prior.result.get('logicalStartedAt', prior.result.get('startedAt', started)) if prior else started,
+              'savedAnalysesAvailable': prior.result.get('evaluated', 0) if prior else 0, 'startedAt': started, 'updatedAt': started, 'message': 'Starting market discovery', 'currentSymbol': None,
               'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
         parent_run_id=resume_run_id, primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
-        config={'coverageVersion': 5, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
+        config={'coverageVersion': 6, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
         result=result, tags=['cartel:preparation'])
     async with engine.sf() as session:
         session.add(record); await session.commit()
@@ -171,10 +191,13 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
     checkpoint_lock = asyncio.Lock()
     async def _checkpoint(phase, *, terminal=False, error=None, force=False):
         nonlocal last_persisted
-        result['phase'] = phase
+        result['userCancelled'] = run_id in getattr(engine, '_cartel_cancelled_runs', set())
+        result['phase'] = 'cancelled' if result['userCancelled'] else phase
         result['updatedAt'] = clock()
         result['cacheHits'] = history_reader.cache_hits
         result['historyRequests'] = history_reader.requests
+        result['historyProvider'] = 'Alpaca SIP provider-day' if history_reader.native_batch else 'Existing daily provider'
+        result['nativeDailyBatch'] = history_reader.native_batch
         result['activeHistoryRequests'] = history_reader.active_requests
         result['prefetchedHistories'] = history_reader.prefetched
         result['historyConcurrency'] = policy.history_concurrency
@@ -184,6 +207,9 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
         if not terminal and not force and time.monotonic()-last_persisted < 1:
             return None
         last_persisted = time.monotonic()
+        if lease_owner:
+            from .preparation_lease import renew
+            await renew(engine, policy.workspace, lease_owner, clock())
         async with engine.sf() as session:
             row = await session.get(TechniqueRun, run_id)
             row.result = json.loads(json.dumps(result))
@@ -262,6 +288,12 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                 if provenance.get('historyFresh') is False:
                     result['marketDataErrors'][symbol] = f"Expected {provenance['historyExpectedThrough']}; provider history ends {provenance['historyThrough'] or 'without bars'}"
 
+            if result['marketDataErrors']:
+                result['armingBlocked'] = True
+                result['notEvaluated'] = len(universe['rows'])
+                result['message'] = 'Waiting for completed benchmark session; saved work is preserved. Fresh preparation will retry.'
+                result['market'] = market_regime(indices, rules, at)
+                return await checkpoint('waiting_for_benchmark', terminal=True)
             regime = market_regime(indices, rules, at)
             result['market'] = regime
             breadth_histories = dict(indices)
@@ -334,6 +366,9 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                             saved = service._view(await service._load(reused[symbol]), detail=True)
                             if saved['config']['inputs']['as_of_ms'] != at:
                                 raise ValueError('Resumed analysis cutoff differs from the saved preparation')
+                            if policy.ignition_research:
+                                from .data import DailyBar
+                                await record_ignition(engine, [DailyBar.model_validate(b) for b in saved['config']['inputs']['history']], at)
                             review = review_saved(saved)
                             result['resumedAnalyses'] += 1
                             entry = evaluation_row(saved, review, policy)
@@ -349,12 +384,14 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                         if isinstance(prefetched_history, Exception):
                             raise prefetched_history
                         history, provenance = prefetched_history
+                        if policy.ignition_research:
+                            await record_ignition(engine, history, at)
                         facts = FactsInput(symbol=symbol, observed_at=listing['observedAt'], source=listing['source'],
                             market_cap=listing['marketCap'], security_type=listing.get('securityType', 'stock'), cap_observed_at=listing['observedAt'],
                             cap_data_as_of_ms=listing['sourceBarOpenAt'], fundamentals_snapshot_id=run_id, industry=listing['industry'],
                             membership_observed_at=listing['observedAt'], membership_source='TradingView primary listing classification')
                         research = ResearchInput(history=history, indices=indices, facts=facts, rules=rules,
-                            parameters=policy.setups, as_of_ms=at, direction=direction, data_source=listing['source'],
+                            parameters=policy.setups.model_copy(update={'family': 'post_ignition' if policy.profile == 'post_ignition_2026_09_11' else policy.setups.family}), as_of_ms=at, direction=direction, data_source=listing['source'],
                             industry_snapshot_id=captured['runId'])
                         saved = await service.analyze(research, collection=provenance, parent_run_id=run_id)
                         review = review_saved(saved)
@@ -421,19 +458,19 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                         TechniqueArmed.symbol == symbol, TechniqueArmed.status.in_(('armed', 'paused', 'closing'))))
                     held = await session.scalar(select(ManagedPositionRow).where(ManagedPositionRow.technique == 'options_cartel',
                         ManagedPositionRow.portfolio_id == portfolio_id, ManagedPositionRow.symbol == symbol,
-                        ManagedPositionRow.status != 'closed'))
+                        ManagedPositionRow.status.notin_(('closed', 'archived'))))
                 if existing or held:
                     result['shortlist'].append({'symbol': symbol, 'status': 'already_managed', 'planId': existing.run_id if existing else held.run_id})
                     continue
                 try:
                     result['candidatesChecked'] += 1
-                    minutes = await history_reader.window(symbol, '1m', at-19*86_400_000, at, client)
-                    baseline = build_volume_baseline(minutes, symbol, review.entry_policy.timeframe_minutes, at)
+                    minutes = await history_reader.baseline(symbol, at, client)
+                    baseline = build_volume_baseline(minutes, symbol, review.entry_policy.timeframe_minutes, at, require_exchange=policy.require_exchange_history)
                     if not baseline['baselines']:
                         raise ValueError('No supported same-time volume baseline; plan cannot be armed')
                     inputs = ResearchInput.model_validate(saved['config']['inputs']).model_copy(update={
                         'minute_history': [MinuteInput(symbol=b.symbol, ts=b.ts, open=b.open, high=b.high,
-                            low=b.low, close=b.close, volume=b.volume) for b in minutes if b.ts+60_000 <= at]})
+                            low=b.low, close=b.close, volume=b.volume, source=b.source) for b in minutes if b.ts+60_000 <= at]})
                     enriched = await service.analyze(inputs, parent_run_id=run_id)
                     key = hashlib.sha256(f'{target_session}:{portfolio_id}:{symbol}:{at}'.encode()).hexdigest()[:32]
                     async with engine.sf() as session:
@@ -447,6 +484,11 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                             preparation={'runId': run_id, 'workspace': policy.workspace, 'session': target_session, 'portfolioId': portfolio_id, 'reviewer': 'automatic_rules'})
                     plan = CartelPlan.model_validate(plan_record['result']['plan']['plan'])
                     coverage = {**baseline_coverage(plan), 'sampleCounts': baseline['sampleCounts'], 'minSamples': baseline['minSamples'], 'historicalSessions': len(baseline['sourceSessions'])}
+                    slots = coverage['usableEntryPeriods']
+                    if policy.coverage_policy == 'full_session' and coverage['available'] != coverage['expected']:
+                        raise ValueError('Declared full-session coverage is incomplete; baseline recovery required')
+                    if policy.coverage_policy == 'opening_and_broad' and (not all(i in slots for i in range(60//plan.entry.timeframe_minutes)) or len(slots) < max(1, math.ceil((coverage['expected']-1)*.8))):
+                        raise ValueError('Opening and broad coverage requires the first hour and 80% of pre-close windows')
                     if not coverage['ready']:
                         raise ValueError(f"Volume baseline covers {coverage['available']}/{coverage['expected']} periods; no usable entry window under {coverage['policy']} policy. Plan saved but not armed.")
                     selection_policy = await affordable_contract_policy(engine, portfolio_id, policy)
@@ -464,8 +506,8 @@ async def run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, di
                             contract_symbol=selected['selected']['symbol'], budget=policy.budget, risk_pct=policy.risk_pct,
                             max_units=policy.max_contracts, overnight_ack=policy.workspace == 'practice' or policy.overnight_ack, allow_live=policy.workspace == 'live' and policy.allow_live)
                         await arm_with_capacity(engine, runtime, policy, plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
-                            'clientKind': 'desktop', 'preparation': {'runId': run_id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice',
-                                'validUntil': min(at+86_400_000, session_bounds(plan.last_session.isoformat())[1])}})
+                            'clientKind': 'desktop', 'preparation': {'runId': run_id, 'leaseOwner': lease_owner, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice',
+                                'validUntil': automatic_valid_until(plan)}})
                         row['status'] = 'armed'; result['armed'] += 1
                     result['shortlist'].append(row)
                 except (*DATA_ERRORS, httpx.HTTPError) as exc:
@@ -516,6 +558,7 @@ async def preparation_status(engine, workspace=None):
     return {'configuration': policy.model_dump(mode='json', by_alias=True), 'latest': latest, 'liveAutoAllowed': bool(engine.settings.get('techniques.options_cartel.allow_live_auto', False)),
             'canResume': bool(row and resumable(row, policy, now_ms())), 'serverNow': now_ms(),
             'quoteRefresh': {**refresh, 'errors': {k: v for k, v in refresh.get('errors', {}).items() if k in contracts}},
+            'automaticRecoveryError': getattr(engine, '_cartel_auto_recovery_error', None),
             'activation': getattr(engine, '_cartel_preparation_activations', {}).get(policy.workspace, {})}
 
 
@@ -542,7 +585,8 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
     service = CartelService(engine)
     portfolio_id = await preparation_portfolio(engine, row.config['portfolioId'], policy.workspace)
     statuses = {}
-    for item in row.result.get('shortlist', []):
+    updated_items = json.loads(json.dumps(row.result.get('shortlist', [])))
+    for item in updated_items:
         if item.get('status') != 'awaiting_contract' or not item.get('planId'):
             continue
         if len(await occupied_plans(engine, portfolio_id)) >= policy.focus_count:
@@ -554,13 +598,13 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
                 TechniqueArmed.status.in_(('armed', 'paused', 'closing'))))
             held = await session.scalar(select(ManagedPositionRow).where(
                 ManagedPositionRow.technique == 'options_cartel', ManagedPositionRow.portfolio_id == portfolio_id,
-                ManagedPositionRow.symbol == item['symbol'], ManagedPositionRow.status != 'closed'))
+                ManagedPositionRow.symbol == item['symbol'], ManagedPositionRow.status.notin_(('closed', 'archived'))))
         if existing or held:
             continue
         try:
             record = await service._load(item['planId'])
             plan = CartelPlan.model_validate(record.result['plan']['plan'])
-            valid_until = min(row.as_of+86_400_000, session_bounds(plan.last_session.isoformat())[1])
+            valid_until = automatic_valid_until(plan)
             if now >= valid_until:
                 statuses[plan.id] = 'Preparation evidence expired; next preparation run must rebuild the plan'
                 continue
@@ -568,8 +612,12 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
             readiness = entry_readiness(plan, context, now)
             if not readiness['ready']:
                 statuses[plan.id] = '; '.join(readiness['reasons'])
+                item['lastReadiness'] = readiness
+                if readiness.get('terminal'):
+                    item['status'] = readiness['terminalStatus']
                 continue
             selection = await choose(engine, plan, await affordable_contract_policy(engine, portfolio_id, policy))
+            item['selection'] = selection
             if not selection['selected']:
                 statuses[plan.id] = 'Waiting for an option contract meeting the configured DTE, delta, liquidity and premium limits'
                 continue
@@ -583,10 +631,14 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
                 max_units=policy.max_contracts, overnight_ack=policy.workspace == 'practice' or policy.overnight_ack, allow_live=policy.workspace == 'live' and policy.allow_live)
             await arm_with_capacity(engine, runtime, policy, plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
                 'clientKind': 'desktop', 'preparation': {'runId': row.id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'validUntil': valid_until,
-                    'contextMinutes': [b.to_row() for b in context]}})
+                    'contextMinutes': [pack(b) for b in context]}})
             statuses[plan.id] = 'armed'
+            item['status'] = 'armed'
         except Exception as exc:  # noqa: BLE001 - expose retry state without interrupting execution
             statuses[item['planId']] = f'{type(exc).__name__}: option preparation remains pending'
+    async with engine.sf() as session, session.begin():
+        saved = await session.get(TechniqueRun, row.id, with_for_update=True)
+        saved.result = {**saved.result, 'shortlist': updated_items}
     if not hasattr(engine, '_cartel_preparation_activations'):
         engine._cartel_preparation_activations = {}
     engine._cartel_preparation_activations[policy.workspace] = {'at': now, 'plans': statuses}
@@ -668,3 +720,29 @@ async def recover_interrupted_preparations(engine):
             row.finished_at = dt.datetime.now(dt.UTC)
             row.result = {**row.result, 'phase': 'interrupted', 'updatedAt': now_ms(), 'finishedAt': now_ms(),
                           'message': 'Runtime restarted; completed work is saved'}
+
+
+async def automatic_recovery(engine, *, clock=now_ms):
+    """Bounded retry on the owning runtime; never resumes a cancelled/disabled job."""
+    now = clock()
+    if now-getattr(engine, '_cartel_auto_recovery_at', 0) < 300_000:
+        return
+    engine._cartel_auto_recovery_at = now
+    if getattr(engine, '_cartel_preparation_task', None) and not engine._cartel_preparation_task.done():
+        return
+    day = dt.datetime.fromtimestamp(now/1000, ET).date()
+    opens, closes = session_bounds(day.isoformat())
+    if is_trading_day(day) and opens <= now < closes:
+        return
+    policy = read_policy(engine)
+    if not policy.enabled or not policy.auto_resume:
+        return
+    async with engine.sf() as session:
+        row = await session.scalar(select(TechniqueRun).where(TechniqueRun.technique == 'options_cartel',
+            TechniqueRun.mode == 'preparation', workspace_filter(policy.workspace)).order_by(TechniqueRun.created_at.desc()).limit(1))
+    if row is None or row.result.get('userCancelled'):
+        return
+    if row.result.get('phase') == 'waiting_for_benchmark' and row.config.get('session') == next_session_date(now):
+        await submit_preparation(engine, workspace=policy.workspace, clock=clock)
+    elif resumable(row, policy, now) and row.status == 'failed' and row.result.get('phase') == 'interrupted':
+        await submit_preparation(engine, workspace=policy.workspace, resume_run_id=row.id, clock=clock)

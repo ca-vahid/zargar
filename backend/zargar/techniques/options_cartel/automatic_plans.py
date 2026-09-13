@@ -31,6 +31,11 @@ class PreparationPolicy(WireModel):
     reviewed_etfs: tuple[str, ...] = ('DRAM',)
     comparison_symbols: tuple[str, ...] = ('MU', 'SNDK', 'NVDA', 'INTC', 'SMCI', 'AMD', 'ALAB', 'TEM', 'MRNA', 'DELL', 'HPE', 'NTAP', 'DRAM')
     comparison_source: str = Field(default='Historical reference: Sean weekly watchlist, 2026-09-07, https://x.com/SRxTrades/status/2097097587828707793 (comparison only; not a live signal)', max_length=2000)
+    native_daily_batch: bool = False  # explicit provider/session switch, not a silent speed optimization
+    require_exchange_history: bool = True
+    coverage_policy: Literal['legacy', 'opening_and_broad', 'full_session'] = 'opening_and_broad'
+    ignition_research: bool = True
+    auto_resume: bool = True
     scan_all: bool = True
     history_concurrency: int = Field(default=6, ge=1, le=12)
     history_batch_size: int = Field(default=25, ge=1, le=50)
@@ -60,6 +65,8 @@ class PreparationPolicy(WireModel):
     def workspace_risk_default(cls, values):
         if isinstance(values, dict) and values.get('workspace') == 'live':
             values = dict(values)
+            if 'coverage_policy' not in values and 'coveragePolicy' not in values:
+                values['coverage_policy'] = 'full_session'
             if 'risk_pct' not in values and 'riskPct' not in values:
                 values['risk_pct'] = 1
             if 'baseline_readiness' not in values and 'baselineReadiness' not in values:
@@ -68,6 +75,11 @@ class PreparationPolicy(WireModel):
 
     @model_validator(mode='after')
     def valid_exit_policy(self):
+        if self.workspace == 'live' and not self.require_exchange_history:
+            raise ValueError('New Live preparation requires verified exchange history')
+        if self.profile == 'post_ignition_2026_09_11' and self.workspace != 'practice':
+            raise ValueError('Post-ignition pilot is Practice-only; Live retains established profiles')
+
         if self.workspace == 'live' and self.market_alignment != 'strict':
             raise ValueError('Moderate market alignment is a Practice-only experiment; Live requires strict alignment')
         if self.enabled and self.workspace == 'live' and not (self.allow_live and self.overnight_ack):
@@ -124,10 +136,12 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
     note = (f'Automatic rule-based Cartel review: all market, listing, weekly/daily structure and relative-strength '
             f'checks passed. Selected {candidate["setup"]}; first target / structural risk {ratio:.2f}. '
             f'Minimum target distance {policy.min_target_distance_pct:g}%; minimum entry-to-target R {policy.min_entry_target_r:g}. Live entry and risk checks remain mandatory. Exit allocations and geometry thresholds are configured engineering choices.')
+    if candidate['setup'] == 'post_ignition':
+        note = 'Practice post-ignition pilot: verified event, quiet consolidation and prospective breakout. Geometry is experimental; closed-bar, data, contract and risk gates remain mandatory.'
     if research_only:
         note = 'Research candidate only: market alignment blocks arming. Rebuild with fresh aligned market evidence before execution.'
     return PlanInput(setup=candidate['setup'], horizon_sessions=policy.horizon_sessions,
-        entry_policy=policy.entry.model_copy(update={"min_target_r": policy.min_entry_target_r, "baseline_policy": policy.baseline_readiness}), reviewed_targets=tuple(targets), review_note=note,
+        entry_policy=policy.entry.model_copy(update={"min_target_r": policy.min_entry_target_r, "baseline_policy": policy.baseline_readiness, "require_exchange_bars": policy.require_exchange_history}), reviewed_targets=tuple(targets), review_note=note,
         target_source=source, exit_campaign=campaign)
 
 
@@ -147,6 +161,7 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
                 if policy.dte_min <= (dt.date.fromisoformat(e)-plan.first_session).days <= policy.dte_max]
     expiries.sort(key=lambda e: (abs((dt.date.fromisoformat(e)-plan.first_session).days-policy.target_dte), e))
     candidates, errors = [], []
+    rejected_details = []
     rejected = {k: 0 for k in ('identity', 'quotes', 'delta', 'spread', 'open_interest', 'premium')}
     examined = checked = 0
     lowest_ask = None
@@ -170,6 +185,17 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
             bid, ask, delta = row.get('bid'), row.get('ask'), (row.get('greeks') or {}).get('delta')
             oi = row.get('open_interest')
             numeric = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+            failures = []
+            valid_quotes = numeric(bid) and numeric(ask) and 0 < bid <= ask
+            if not valid_quotes: failures.append('quotes')
+            if not numeric(delta) or not policy.min_abs_delta <= abs(delta) <= 1 or delta*(1 if plan.direction == 'long' else -1) <= 0: failures.append('delta')
+            if valid_quotes and (ask-bid)/((ask+bid)/2)*100 > policy.max_spread_pct: failures.append('spread')
+            if policy.min_open_interest and (not numeric(oi) or oi < policy.min_open_interest): failures.append('open_interest')
+            if numeric(ask) and ask > policy.max_ask: failures.append('premium')
+            if failures:
+                rejected_details.append({'symbol':option.symbol,'expiry':expiry,'ask':ask if numeric(ask) else None,'reasons':failures})
+                rejected_details.sort(key=lambda c:(len(c['reasons']), abs((dt.date.fromisoformat(c['expiry'])-plan.first_session).days-policy.target_dte), abs((c['ask'] if c['ask'] is not None else 1e9)-policy.max_ask), c['symbol']))
+                del rejected_details[30:]
             if not numeric(bid) or not numeric(ask) or not 0 < bid <= ask:
                 rejected['quotes'] += 1
                 continue
@@ -193,9 +219,10 @@ async def planning_contract(engine, plan, policy: ContractSelectionInput):
             best_distance = distance
     candidates.sort(key=lambda c: (abs(c['dte']-policy.target_dte), abs(abs(c['delta'])-policy.target_abs_delta), c['spreadPct'], c['symbol']))
     audit = {'expiriesInRange': len(expiries), 'expiriesChecked': checked, 'rowsExamined': examined,
-             'eligible': len(candidates), 'rejections': rejected, 'effectiveMaxAsk': policy.max_ask,
+             'rejectedCandidates': rejected_details, 'eligible': len(candidates), 'rejections': rejected, 'effectiveMaxAsk': policy.max_ask,
              'maxDebitUsd': round(100*policy.max_ask, 2), 'lowestOtherwiseEligibleAsk': lowest_ask,
-             'searchComplete': not errors and (bool(candidates) or checked == len(expiries)),
+             'searchComplete': not errors and checked == len(expiries),
+             'selectionComplete': not errors and (bool(candidates) or checked == len(expiries)),
              'note': 'Rejection counts use the first failing filter for each inspected contract. Provider failures remain separate.'}
     reason = None if candidates else ('No expiries fall inside the configured DTE range.' if not expiries else
         f'No eligible contract in {checked} checked expiry dates. Maximum ask ${policy.max_ask:.2f} (${100*policy.max_ask:.2f} per contract before fees).')

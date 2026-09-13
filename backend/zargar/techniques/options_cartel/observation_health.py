@@ -6,6 +6,7 @@ import datetime as dt
 from ...marketstructure.aggregate import bar_session
 from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import session_bounds, session_date
+from .data_quality import evidence, merge
 from .preparation_readiness import load_session_context
 
 
@@ -23,7 +24,9 @@ def coverage(state, now, *, day=None):
     expected = max(0, (end-opens)//60_000)
     present = {int(k) for k in state.get('minutes', {}) if opens <= int(k) < end}
     recoveries = [r for r in state.get('observationRecoveries', []) if r.get('day') == day and r.get('inSession')]
-    return {'session': day, 'expectedMinutes': expected, 'recordedMinutes': len(present),
+    quality = evidence({k:v for k,v in state.get('minutes', {}).items() if int(k) in present})
+    degraded = sum(v for k,v in quality['sourceCounts'].items() if k != 'exchange')
+    return {'dataEvidence': quality, 'untrustedMinutes': degraded, 'session': day, 'expectedMinutes': expected, 'recordedMinutes': len(present),
             'missingMinutes': max(0, expected-len(present)),
             'overdueMissingMinutes': sum(t not in present for t in range(opens, min(end, now//60000*60000-120000), 60000)), 'recoveries': len(recoveries),
             'lastRecovery': recoveries[-1] if recoveries else None,
@@ -49,7 +52,7 @@ async def repair_gaps(runtime, *, load=load_session_context):
         if cached['status'] != 'armed' or cached['state']['phase'] != 'waiting':
             continue
         health = coverage(cached['state'], now, day=session_date(now))
-        if not health['overdueMissingMinutes'] or now-cached['state'].get('lastGapRepairAt', 0) < 300_000:
+        if not (health['overdueMissingMinutes'] or (runtime.plans[rid].entry.require_exchange_bars and health['untrustedMinutes'])) or now-cached['state'].get('lastGapRepairAt', 0) < 300_000:
             continue
         attempted += 1
         async with runtime.engine.sf() as session, session.begin():
@@ -65,11 +68,11 @@ async def repair_gaps(runtime, *, load=load_session_context):
                     continue
                 state = row.state
                 minutes = dict(state.get('minutes', {}))
-                before = len(minutes)
+                changed = 0
                 for b in bars:
                     if b.symbol == row.symbol and b.tf == '1m' and b.ts+60_000 <= now:
-                        minutes.setdefault(str(b.ts), b.to_row())
-                added = len(minutes)-before
+                        changed += int(merge(minutes, b))
+                added = changed
                 recovered_at = runtime.clock()
                 row.state = {**state, 'minutes': minutes, 'gapRepairError': None}
                 if added:

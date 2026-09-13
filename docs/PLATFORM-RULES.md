@@ -1370,3 +1370,16 @@ chain snapshots; `max_spread_pct` 12, `min_oi` 500), `technique.universe.untrade
 skip | ignore, applied in `TechniqueService.arm_plan`), `techniques.enhanced_market.entry_fallback
 = shares`, `technique.arm.preopen_keep_triggers` (the re-plan carries the evening triggers as
 `e_<id>`). Tips/Team2/Cartel are untouched.
+
+### Cartel source quality and preparation ownership — 2026-09-12
+
+Cartel uses an additive, source-bearing minute representation; shared Bar.to_row()
+remains six values. New Cartel plans can require exchange-quality entry/stop
+history; legacy unknown source is not relabelled. Corrections are context-only
+and cannot revive a consumed entry. Existing positions retain protective exits.
+Additive cartel_history_cache, cartel_ignition_theses and cartel_preparation_leases
+tables are created through the existing schema path. Capacity uses a portfolio-keyed
+advisory lock; preparation has a renewable lease checked before new arming.
+Native daily batching is opt-in with its provider-day completion semantics and a
+separate cache. No other desk switches provider or loses its shared API behavior.
+See options-cartel/RELIABILITY-RELEASE-2026-09-12.md for scope and limits.

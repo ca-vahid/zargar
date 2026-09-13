@@ -12,6 +12,7 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
   const preparation = run.config?.preparation;
   const workspace = useWorkspace();
   const mismatch = preparation && (preparation.workspace || "practice") !== workspace;
+  const [previewQty,setPreviewQty] = useState(1);
   const [decision, setDecision] = useState<any>(null);
   const [loading, setLoading] = useState(!!preparation);
   const [error, setError] = useState("");
@@ -43,6 +44,7 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
     </details>}
     {active?.observationHealth && <section aria-label="Observation health"><h3>Observation health</h3>
       <p>{active.observationHealth.recordedMinutes}/{active.observationHealth.expectedMinutes} completed minutes · {active.observationHealth.overdueMissingMinutes} overdue gaps · {active.observationHealth.recoveries} recoveries during this session.</p>
+      <p>{active.observationHealth.untrustedMinutes ?? "Unknown"} minutes lack exchange provenance. Timestamp coverage alone does not certify volume quality.</p>
       {active.observationHealth.lastRecovery && <p>Latest recovery: {new Date(active.observationHealth.lastRecovery.at).toLocaleString()} · {label(active.observationHealth.lastRecovery.reason)}</p>}
       <p>{active.observationHealth.note}</p>{active.observationHealth.repairError && <p className="cartel-notice">{active.observationHealth.repairError}</p>}
     </section>}
@@ -67,6 +69,9 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
         r.kind === "target" ? `Target reached at ${price(r.target)}` : r.kind === "extension" ? `${r.atr_multiple}× ATR extension from EMA ${r.ema_period}` : `Daily close ${plan.direction === "long" ? "below" : "above"} EMA ${r.ema_period}`
       }</td><td className="num">{Math.round(r.fraction*100)}%</td></tr>)}
     </tbody></table></div>
+    <details><summary>Whole-contract exit preview</summary><label>Modeled contracts<input aria-label="Modeled exit contracts" type="number" min="1" max="1000" value={previewQty} onChange={e=>setPreviewQty(Math.max(1,Math.min(1000,Math.floor(Number(e.target.value)||1))))}/></label>
+    {(()=>{let cumulative=0,allocated=0;return run.result.exitCampaign?.rungs.map((r:any)=>{cumulative+=r.fraction;const total=Math.min(previewQty,Math.floor(previewQty*cumulative+1e-9)),qty=total-allocated;allocated=total;return <p key={r.id}>{label(r.id)}: {qty} contracts{qty===0?" · skipped at this quantity":""}</p>;});})()}
+    <p>Only actual fills advance exits. A zero-sized first trim does not move the stop to entry. Protective exits can close the remaining position.</p></details>
     <p className="muted">Actual trims depend on filled quantity. Chart reference targets are not automatically separate sell orders; this exit schedule controls the campaign. Allocations and automatic geometry choices are recorded engineering settings.</p>
     {plan.rationale && <details><summary>Saved review rationale</summary><p>{plan.rationale}</p></details>}
   </section>;

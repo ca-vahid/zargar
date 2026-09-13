@@ -50,6 +50,10 @@ try {
       await page.goto(`${base}/techniques/options-cartel/settings`);
       await page.locator('.splash').waitFor({state:'detached'});
       await page.getByRole('combobox',{name:'Volume baseline readiness',exact:true}).selectOption('covered_periods');
+      const profile = page.getByRole('combobox',{name:'Method profile',exact:true});
+      if(workspace==='practice') await profile.selectOption('post_ignition_2026_09_11');
+      else assert.equal(await profile.locator('option[value=post_ignition_2026_09_11]').count(),0);
+      await page.getByRole('combobox',{name:'Entry-window readiness',exact:true}).selectOption('opening_and_broad');
       const alignment = page.getByRole('combobox',{name:'Market alignment',exact:true});
       if(workspace==='practice') await alignment.selectOption('moderate');
       else { assert(await alignment.isDisabled()); assert.equal(await alignment.locator('option[value=moderate]').count(),0); }
@@ -80,6 +84,8 @@ try {
       assert.equal(await page.getByText(/Coverage incomplete:/).count(),0);
       assert((await page.getByRole('link',{name:'Open TEST',exact:true}).getAttribute('href')).endsWith('/run/research-analysis'));
       await page.screenshot({path:resolve(output,`cartel-fidelity-${device}-${workspace}.png`),fullPage:true});
+      assert(await page.getByRole('region',{name:'Ignition watchlist',exact:true}).isVisible());
+      assert(await page.getByText('Session review · as-observed evidence',{exact:true}).isVisible());
       assert(await page.getByText('SPY data unavailable:',{exact:true}).isVisible());
       assert(await page.getByText(/1 existing campaigns preserved/).isVisible());
       assert(await page.getByText(/2 candidates checked for history and contracts/).isVisible());

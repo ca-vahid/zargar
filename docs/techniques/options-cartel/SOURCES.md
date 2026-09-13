@@ -241,3 +241,13 @@ the dated notes below retain the inspection trail.
 - S29: [Cartel DRAM swing highlight, September 8](https://x.com/TheOptionCartel/status/2097414673662718231): public text reports over 200%; not a complete realized daily account return or independently verified Sean execution.
 
 See [the implementation review](FIDELITY-REVIEW-2026-09-08.md) for the exact changes and remaining limitations.
+
+
+## S30 — September 11 continuation video (reviewed September 12)
+
+[Original video](https://www.youtube.com/watch?v=7xSMgmLoqM8), 20:20.
+Full auto-generated English transcript read; scanner near 14:13, CRCL entry near
+17:34 and developing SCCO near 19:11 visually checked. See IMPLEMENTATION-PLAN-2026-09-12.md
+for timestamped paraphrases, engineering definitions and caption limitations.
+Ignition discovery and later consolidation/entry are separate stages. The
+initial 3–5x volume examples do not define an intraday confirmation multiplier.
