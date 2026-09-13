@@ -231,3 +231,31 @@ by the analyst, digestible into the knowledge base) but **never auto-intakes**
 content stays allowed, user-token automation beyond reading stays banned.
 `onboardDays` history backfill is capped at 90 days (was 17) for the
 historical-tips experiment; the mirror cap is 50k messages.
+
+## Update 2026-09-12 — the evidence corpus, atomic claims, and Meet Kevin
+
+**Grounding corpus = caption AND transcript** (Codex-reproduced bug, fixed
+v0.7.50): when a message carries both text and an image, the transcript used
+to REPLACE the caption downstream, so a perfectly valid caption quote failed
+deterministic grounding (Meet Kevin's first tips died here). The corpus is
+now the sectioned union, with a coverage manifest line ("attachment 1 of N
+processed" — the gateway reports `imageCount`). Known limitation, queued:
+only the FIRST image is transcribed; quotes that live in image 2+ still
+cannot ground. Multi-image processing and per-source quote attribution are
+the agreed follow-up design.
+
+**Pre-extraction dedupe is an atomic CLAIM** (v0.7.26): check + write-ahead
+insert in one advisory-locked transaction. Completed row → duplicate; fresh
+claim (≤10 min) → `duplicate + inFlight` and the gateway keeps the envelope
+pending (never acknowledged as done); stale claim → RESUMED, so a crash after
+storing raw content no longer strands work.
+
+**Meet Kevin (onboarded 2026-09-11):** `MK-alpha-trades` is tips-mode (Kevin's
+own @everyone buy alerts — long-horizon, dollar-sized, own-book style);
+`MK-stocks` / `MK-options` / `MK-macro` are context-mode. A source-profile
+note teaches the analyst his format. His self-disclosed trades ("Added $200k")
+are recognized as actionable by the prompt; own-book MIRRORING remains OFF
+until the shadow-first classification build lands with labeled fixtures
+(fresh execution vs recap vs holding snapshot vs hypothetical vs trim) and
+PREDEFINED promotion criteria. Ungrounded messages quarantine — they never
+feed scorecards or trust.

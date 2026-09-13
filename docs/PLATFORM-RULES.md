@@ -1406,3 +1406,36 @@ until one tape exists. Requested, as F119 option (a): a per-venue provenance val
 `exchange:yahoo`, or a `venue` column) and Alpaca-over-Yahoo precedence in `marketdata.merge_exchange` /
 `persist_bars` for streamed symbols, Yahoo filling only minutes Alpaca did not supply. Shared engine, platform's call;
 Team2 will re-run the frozen-input sweeps on the canonical tape once it lands and record the new dataset hash.
+
+### Shared execution changes from the Tips desk — 2026-09-10 → 09-13 (v0.7.44–0.7.54)
+
+These live in `zargar/execution/positions.py` and affect EVERY technique's
+managed positions; per-technique overrides resolve via `rt()` as usual.
+
+- **Premium exits demand fresh, sane evidence.** Bar-path premium decisions
+  use `_fresh_net_mark`: delayed/chain sources refused, quotes older than
+  `execution.premium_mark_max_age_seconds` (90) refused, provenance appended
+  to the exit reason (`[mark: opra 1s old bid=…]`). Tick-path premium stops
+  (bleed AND ratchet floor) additionally need TWO DISTINCT fresh
+  observations (source-timestamp identity — a re-polled cached quote never
+  confirms) within `execution.premium_stop_confirm_window_seconds` (45);
+  recovery resets, window expiry restarts. Underlying stop / expiry / DTE /
+  reduce-only paths are untouched. Why: SPCX market-exited on an hour-stale
+  0.97 mark while trading 2.02 (2026-09-10); DAL on a 1-second flash print
+  that vanished before the fill (2026-09-11). Chaos-suite ratchet-floor
+  cases now encode the two-observation contract.
+- **FILLED exits are terminal in `_inflight_exit_qty`** — a venue-normalized
+  fractional request (2.5 → filled 2) no longer strands a phantom remainder
+  that blocks a position from going flat; terminal fills persist their
+  normalized qty (`requestedQty` keeps the original).
+- **`desk.ledger` exit reasons join by portfolio identity** — a same-time
+  decision in another book renders "reason unmatched", never borrowed (a
+  shadow plan's TP1 had been displayed beside a Practice option loss).
+- **Tip-scoped, listed for awareness:** one bounded quote-freshness retry on
+  REJECTED_RISK "quote age" for AUTO tip proposals on sim books only
+  (`ProposalRetried` journaled; never manual, never live);
+  `OptionsService.refresh_now()` (public, forces a real observation —
+  `reprice()` re-reads the cache for served contracts); journal-only
+  `TipEntryStudy` NBBO sampler; analyst per-turn output cap
+  `techniques.tip.analyst_max_output_tokens` with doubled-room truncation
+  repair.

@@ -95,6 +95,20 @@ are enforced in `_tip_budget` — before that they were dead knobs), and earned-
 PLUS the immediate shadow book's aged marks (2026-09-04 user decision — armed-only trust never
 graduates momentum sources). Closed tip
 positions get a nightly **retro** (`tip_retro`, `techniques.tip.retro_*`).
+**Tips evidence + reliability line (2026-09-09→13, Codex-reviewed; details in
+docs/techniques/tip/reviews/):** the Discord gateway is a durable write-ahead LEDGER
+(accept→lease→ACK, revision-keyed, contiguous cursors, per-destination EM ack — a hard
+kill loses nothing); intake dedupe is an atomic advisory-locked CLAIM (fresh=inFlight
+non-ack, stale=resumed); the grounding corpus is caption+transcript UNION with an
+attachment-coverage manifest (first image only — multi-image queued); premium exits
+need fresh marks with provenance on the record AND tick stops need two DISTINCT fresh
+observations (`execution.premium_mark_max_age_seconds`,
+`execution.premium_stop_confirm_window_seconds`); a pure quote-age REJECTED_RISK on an
+AUTO sim-book tip proposal gets ONE durable retry (`freshRetry`, `ProposalRetried`);
+unfilled retros disqualify signals with fills in ANY lane; `TipEntryStudy` journals
+proposal-time+delayed NBBO (diagnostics only — no entry-rule change without a
+cost-aware validated cohort). Meet Kevin: MK-alpha-trades tips-mode, own-book
+MIRRORING OFF until the shadow-first build with predefined promotion criteria.
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries
@@ -227,6 +241,11 @@ top-bar `v…` chip shows), mirrored in `frontend/package.json`, `backend/zargar
 and `backend/pyproject.toml` — bump all four together. Every user-visible change adds a
 CONCISE entry (tag: major/new/improved/fixed/security) to the current release's block;
 start a new block when the user calls a release. `/api/health` reports the version.
+**Version races are real (three collisions on one weekend):** four desks bump
+concurrently — ALWAYS re-read main at release time, take the next FREE number, and on
+a collision renumber YOUR block (never rewrite another desk's released block). Run
+`npm run build` BEFORE committing any changelog merge: a bad union once shipped two
+`APP_VERSION` consts and dropped a desk's release notes.
 `npm run check-release` verifies these values and the package lockfile; the
 frontend production build runs this check automatically.
 
@@ -433,4 +452,4 @@ frontend production build runs this check automatically.
 - Async predicate waits use `tests/conftest.wait_for` — no bare sleeps.
 - UI verification: build, then Playwright against the served app
   (`/opt/pw-browsers` chromium in the dev container).
-**Team2 technique (BUILT v0.1 2026-09-03; the Team2 desk = this session's group):** `docs/techniques/team2/` — Casey/@Team2Trading's SPY/QQQ/IWM 0DTE method (4 levels + 13/48/200 EMA on 2m + 15m-close confirmation, EMA13 pullback entries, ~$0.50 premium-targeted contracts, +50/+100% trims, flatten 15:45). `README.md` (doc map, capture recipe), `METHOD.md` (numbered rules, §7b/§7c from images + videos), `PLAN.md` (decisions D1–D14, engine list §3b, review §3c, phases with checkboxes), `TRADING-RULES.md`, `SOURCES.md` + `notes/` (49 posts, 2 transcripts, 145 images — jpg local only). Code: `zargar/techniques/team2/` (rules/regime/scenario/levels/plan/premium/**session.py = the one pure read**/runner/service), `api/routes_team2.py`, `frontend/src/pages/Team2Page.tsx`, `tools/team2_sweep.py`. **Built completely separately from EM** — shared engine additions (ext-hours bars, `marketstructure/aggregate|indicators|dailylevels|market_calendar`, `options/pick`, `research/macro_calendar`, per-technique 0DTE RiskGate policy `techniques.<id>.zero_dte`) are logged in PLATFORM-RULES; never edit EM's `zargar/technique/` for Team2. User decision 2026-09-03: **Team2 IS a 0DTE technique** (its own gated policy). Tests: `pytest tests/test_team2_*.py tests/test_marketstructure_extended.py` (own DB `zargar_test_team2` on :5433). Status: alert mode; proposal/auto, mobile-audit, morning-report line, the generic review CLI and the calibration of the remaining 8 documented trades are open (PLAN §3c).
+**Team2 technique (BUILT v0.1 2026-09-03; the Team2 desk = this session's group):** `docs/techniques/team2/` — Casey/@Team2Trading's SPY/QQQ/IWM 0DTE method (4 levels + 13/48/200 EMA on 2m + 15m-close confirmation, EMA13 pullback entries, ~$0.50 premium-targeted contracts, +50/+100% trims, flatten 15:45). `README.md` (doc map, capture recipe), `METHOD.md` (numbered rules, §7b/§7c from images + videos), `PLAN.md` (decisions D1–D14, engine list §3b, review §3c, phases with checkboxes), `TRADING-RULES.md`, `SOURCES.md` + `notes/` (49 posts, 2 transcripts, 145 images — jpg local only). Code: `zargar/techniques/team2/` (rules/regime/scenario/levels/plan/premium/**session.py = the one pure read**/runner/service), `api/routes_team2.py`, `frontend/src/pages/Team2Page.tsx`, `tools/team2_sweep.py`. **Built completely separately from EM** — shared engine additions (ext-hours bars, `marketstructure/aggregate|indicators|dailylevels|market_calendar`, `options/pick`, `research/macro_calendar`, per-technique 0DTE RiskGate policy `techniques.<id>.zero_dte`) are logged in PLATFORM-RULES; never edit EM's `zargar/technique/` for Team2. User decision 2026-09-03: **Team2 IS a 0DTE technique** (its own gated policy). Tests: `pytest tests/test_team2_*.py tests/test_codex_*.py tests/test_marketstructure_extended.py` (own DB `zargar_test_team2` on :5433; `test_codex_*` = reviewers' regressions adopted verbatim). **Status 2026-09-13:** AUTO on the `Team2 Practice` book ($10k) since 2026-09-08; cohort v2 (from 2026-09-11) is the evaluation set — listed strikes, live NBBO the only contract authority (`require_fresh_quote`), one warm-up rule, the full candidate→quote→order→fill→exit trail journaled (`TechniquePlanContract`); twenty sessions trigger a review, never a promotion (PLAN §3d). F81b (`target_replan=structure`, gap days) ON under observation. Research knobs OFF: `no_trade_zone` (C1 conjunction), `pm_room_atr`, `min_target_atr` — activation needs C6 (one tape, F119) + an approved Practice experiment; C2/C4/C5 undefined; near-ITM eligibility = user decision. Deploys only via the `ZargarRestart` task after `/api/ops/restart-check`. Watch job: `team2-market-watch` (30 min) → `notes/market-watch.md`, findings F13–F122 in TRADING-RULES. State of play: PLAN §3e; the week-37 plan: `notes/research/2026-09-12-week37-review-and-change-plan.md`.
