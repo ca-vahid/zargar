@@ -354,7 +354,12 @@ async def test_premium_watch_takes_lotto_profit_on_the_quote_loop(engine):
     await pm._watch_once()
     assert len(fo.placed) == 1
     # the remainder is floored at entry: a give-back to 0.13 closes it, not -50%
+    # — after a SECOND distinct fresh observation (premium-stop debounce,
+    # 2026-09-13: one flash print through the floor is not evidence)
     quotes[occ] = Quote(symbol=occ, bid=0.12, ask=0.14, last=0.13, ts=now_ms())
+    await pm._watch_once()
+    assert len(fo.placed) == 1, "first sighting is pending, not an exit"
+    quotes[occ] = Quote(symbol=occ, bid=0.12, ask=0.14, last=0.125, ts=now_ms() + 1)
     await pm._watch_once()
     assert len(fo.placed) == 2 and fo.placed[1].qty == 10
     assert any("floor" in str(e) for e in p.events)
@@ -392,7 +397,10 @@ async def test_monetize_take_and_ratchet_floor_on_the_quote_loop(engine):
     assert p.state.premium_take_done and p.state.premium_floor == 3.55
     assert p.state.premium_floor_gain == 50.0                  # the +100 rung locked +50
     quotes[occ] = Quote(symbol=occ, bid=4.9, ask=5.2, last=5.0, ts=now_ms())    # +38% < floor
-    await pm._watch_once()
+    await pm._watch_once()                                     # first sighting: pending
+    assert len(fo.placed) == 1
+    quotes[occ] = Quote(symbol=occ, bid=4.85, ask=5.15, last=4.95, ts=now_ms() + 1)
+    await pm._watch_once()                                     # distinct observation confirms
     assert len(fo.placed) == 2 and fo.placed[1].qty == 7       # the rest banked at the floor
     assert any("ratchet floor" in str(e) for e in p.events)
 

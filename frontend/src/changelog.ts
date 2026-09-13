@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.52";
+export const APP_VERSION = "0.7.53";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.53",
+    date: "2026-09-13",
+    title: "One flash print is not a reason to sell",
+    items: [
+      { tag: "fixed", text: "A tick-path premium stop (bleed stop or ratchet floor) now needs two DISTINCT fresh quotes inside a 45-second window before it market-exits - re-reading the same cached quote never counts, recovery resets the count, and a real fast decline still confirms within seconds. DAL was dumped on a single anomalous print that vanished one second later." },
+      { tag: "improved", text: "Analyst runs record each turn's input-token contribution, so context-size decisions rest on the per-turn shape rather than a summed total." },
+    ],
+  },
   {version:"0.7.52",date:"2026-09-12",title:"Keep developing ignition setups in focus",items:[
     {tag:"fixed",text:"Ignition research now hides retired theses by default, prioritizes ready setups, and explains developing, invalidated and expired states accurately. The watchlist is collapsed below preparation progress and displays 25 rows at a time."},
   ]},

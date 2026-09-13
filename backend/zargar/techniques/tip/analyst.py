@@ -1078,6 +1078,9 @@ async def run_agent_loop(eng, client, *, model: str, system: str, header: str,
         if _u is not None:
             usage["in"] += int(getattr(_u, "input_tokens", 0) or 0)
             usage["out"] += int(getattr(_u, "output_tokens", 0) or 0)
+            # per-turn contribution (Codex 2026-09-12: run totals are summed
+            # across calls — consolidation decisions need the per-turn shape)
+            usage.setdefault("inPerCall", []).append(int(getattr(_u, "input_tokens", 0) or 0))
         # shared collector (Codex finding 10, corrected per review M1): the
         # stage comes from the CALLER (appraise/review/retro), a successful
         # tool-use turn is a new model turn — `retried` only marks provider
