@@ -75,56 +75,82 @@ async def main() -> None:
         ex_by_order[e["order_id"]].append(e)
         ex_by_book_symbol[(e["portfolio_id"], e["symbol"])].append(e)
 
+    # ---------------- FIFO LOT ENGINE (Codex 2026-09-13 follow-up: a sale
+    # must be consumed exactly once across ideas, and a re-entry must never
+    # rewrite an earlier episode's basis). Each BUY execution becomes a LOT
+    # owned by its idea, carrying its own price and per-unit fee; each SELL
+    # in the same (book, symbol) consumes open lots (lot.ts <= sell.ts) in
+    # FIFO order, realizing against the LOT's basis and allocating the sell
+    # fee per unit. Whatever remains open keeps its own cost + fees.
+    buys_by_idea: dict[str, list] = defaultdict(list)
+    for sg in sigs:
+        for o in orders_by_sig.get(sg["id"], []):
+            for e in ex_by_order.get(o["id"], []):
+                if e["side"] == "BUY":
+                    buys_by_idea[sg["id"]].append(e)
+    lots_by_key: dict[tuple, list] = defaultdict(list)
+    for sid_, blist in buys_by_idea.items():
+        for e in blist:
+            q = float(e["qty"])
+            lots_by_key[(e["portfolio_id"], e["symbol"])].append({
+                "idea": sid_, "ts": e["ts"], "qty": q, "px": float(e["price"]),
+                "fee_unit": float(e["commission"] or 0) / q if q else 0.0})
+    acct: dict[str, dict] = defaultdict(lambda: {
+        "realized": 0.0, "sold": 0.0, "fees_alloc": 0.0})
+    unallocated_sells = 0
+    for key, lots in lots_by_key.items():
+        lots.sort(key=lambda l: l["ts"])
+        lmult = 100.0 if OCC.match(key[1]) else 1.0
+        sells_here = sorted((e for e in ex_by_book_symbol.get(key, [])
+                             if e["side"] == "SELL"), key=lambda e: e["ts"])
+        for se in sells_here:
+            sq = float(se["qty"])
+            sfee_unit = float(se["commission"] or 0) / sq if sq else 0.0
+            for lot in lots:
+                if sq <= 1e-9:
+                    break
+                if lot["qty"] <= 1e-9 or lot["ts"] > se["ts"]:
+                    continue
+                take = min(sq, lot["qty"])
+                acc_i = acct[lot["idea"]]
+                acc_i["realized"] += (take * (float(se["price"]) - lot["px"]) * lmult
+                                      - take * sfee_unit - take * lot["fee_unit"])
+                acc_i["fees_alloc"] += take * (sfee_unit + lot["fee_unit"])
+                acc_i["sold"] += take
+                lot["qty"] -= take
+                sq -= take
+            if sq > 1e-9:
+                unallocated_sells += 1   # oversold / pre-lot sell: reported, never invented
+    open_by_idea: dict[str, dict] = defaultdict(lambda: {"cost": 0.0, "fees": 0.0, "qty": 0.0})
+    for key, lots in lots_by_key.items():
+        lmult = 100.0 if OCC.match(key[1]) else 1.0
+        for lot in lots:
+            if lot["qty"] > 1e-9:
+                ob_i = open_by_idea[lot["idea"]]
+                ob_i["cost"] += lot["qty"] * lot["px"] * lmult
+                ob_i["fees"] += lot["qty"] * lot["fee_unit"]
+                ob_i["qty"] += lot["qty"]
+
     rows = []
     for s in sigs:
         sid = s["id"]
         sp = props_by_sig.get(sid, [])
         so = orders_by_sig.get(sid, [])
         verdicts = []
-        for p in sp:
-            ctx = p["context"] if isinstance(p["context"], dict) else json.loads(p["context"] or "{}")
+        for p2 in sp:
+            ctx = p2["context"] if isinstance(p2["context"], dict) else json.loads(p2["context"] or "{}")
             verdicts.append(((ctx.get("analyst") or {}) or {}).get("verdict"))
         took = any(v == "take" for v in verdicts)
-        fills = [e for o in so for e in ex_by_order.get(o["id"], [])]
-        buys = [e for e in fills if e["side"] == "BUY"]
-        # EXIT orders come from the position manager and carry no signal_id —
-        # attribute sells by PORTFOLIO + contract + holding EPISODE (Codex
-        # 2026-09-13: symbol-only matching borrowed another book's sale and
-        # could reuse one sale across re-entries): same book, ts >= first
-        # buy, cumulative sold never exceeding this idea's bought quantity.
-        sells = []
-        if buys:
-            fb = min(buys, key=lambda e: e["ts"])
-            cap = sum(float(e["qty"]) for e in buys)
-            acc = 0.0
-            for e in sorted(ex_by_book_symbol.get(
-                    (fb["portfolio_id"], fb["symbol"]), []), key=lambda e: e["ts"]):
-                if e["side"] != "SELL" or e["ts"] < fb["ts"] or acc >= cap - 1e-9:
-                    continue
-                sells.append(e)
-                acc += float(e["qty"])
-        fills = buys + sells
+        buys = buys_by_idea.get(sid, [])
         first_buy = min(buys, key=lambda e: e["ts"]) if buys else None
         sym = (so[0]["symbol"] if so else (sp[0]["symbol"] if sp else "")) or ""
-        mult = 100.0 if OCC.match(sym) else 1.0
-        cost = sum(float(e["qty"]) * float(e["price"]) for e in buys) * mult
-        proceeds = sum(float(e["qty"]) * float(e["price"]) for e in sells) * mult
-        fees = sum(float(e["commission"] or 0) for e in fills)
         bought = sum(float(e["qty"]) for e in buys)
-        sold = sum(float(e["qty"]) for e in sells)
-        open_qty = max(0.0, bought - sold)
-        # realized on the closed PORTION, with entry fees allocated
-        # proportionally (Codex 2026-09-13: partial realizations were omitted
-        # and full entry fees were deducted early — T's +27.68 became 17.28)
-        buy_fees = sum(float(e["commission"] or 0) for e in buys)
-        sell_fees = sum(float(e["commission"] or 0) for e in sells)
-        if bought and sold:
-            frac = sold / bought
-            realized = proceeds - frac * cost - sell_fees - buy_fees * frac
-            unalloc_fees = buy_fees * (1 - frac)
-        else:
-            realized = 0.0
-            unalloc_fees = buy_fees
+        a_i = acct.get(sid) or {"realized": 0.0, "sold": 0.0, "fees_alloc": 0.0}
+        ob = open_by_idea.get(sid) or {"cost": 0.0, "fees": 0.0, "qty": 0.0}
+        realized = a_i["realized"]
+        fees = a_i["fees_alloc"]
+        unalloc_fees = ob["fees"]
+        open_qty = ob["qty"]
         completed = bool(bought) and open_qty <= 1e-9
         missed = any(p["status"] in ("failed", "expired") for p in sp) and took and not buys
         # disposition
@@ -155,7 +181,7 @@ async def main() -> None:
             "source": s["source_name"] or "unknown", "signal": sid[:8],
             "bucket": bucket(sym, first_buy["ts"].date() if first_buy else None) if sym else "none",
             "disp": disp, "completed": completed, "realized": realized,
-            "cost": cost, "open_cost": (open_qty / bought * cost) if bought else 0.0,
+            "open_cost": ob["cost"],
             "fees": fees, "unalloc_fees": unalloc_fees, "latency_s": lat_s, "slip": slip,
         })
 
@@ -195,7 +221,9 @@ async def main() -> None:
         print("| " + " | ".join(cells) + " |")
     ncomp = sum(1 for r in rows if r["completed"])
     print(f"\nCompleted-idea cohort n={ncomp}; every expectancy above carries that group's "
-          "sample size — none is a validated edge claim.\n")
+          "sample size — none is a validated edge claim."
+          + (f" Unallocated sells (oversold/pre-lot): {unallocated_sells}." if unallocated_sells else "")
+          + "\n")
 
     # entry-study coverage
     st = await conn.fetch("""SELECT payload FROM events WHERE type='TipEntryStudy' AND ts >= $1""", since)
