@@ -23,6 +23,7 @@ export const CHANGELOG: Release[] = [
     date: "2026-09-12",
     title: "Captions count as evidence, and truncated answers get room to finish",
     items: [
+    {tag:"new",text:"EM method change plan C1-C5 (2026-09-12): a nightly option-liquidity screen decides which names EM may trade in options (the rest fall back to shares in Practice - C2 makes shares the EM Practice default); a wide spread on the just-OTM strike now tries the next strike and the next expiry; a pre-open re-plan keeps the evening triggers alongside the new ones (IBIT +4.8R was lost to a re-plan on 09-11); gap-day policy, targeted scratch and consolidation-break entries ship as knobs, off until their sweeps pass."},
       { tag: "fixed", text: "A tip whose message has both a caption and a screenshot no longer loses the caption from the evidence: grounding now checks quotes against BOTH, clearly sectioned, with an honest note when only the first of several images was read. Meet Kevin's first tips died on exactly this." },
       { tag: "fixed", text: "When the analyst's answer is cut off at the output-token limit, the retry now gets double the room instead of being cut off at the same place - and a still-truncated failure says 'truncated', not just 'no JSON'. The RKLB no-verdict case was this." },
       { tag: "improved", text: "Ingest records how many attachments a message carried so partially-read messages are visible instead of silently incomplete." },

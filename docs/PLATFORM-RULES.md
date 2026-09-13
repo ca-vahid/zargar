@@ -1353,3 +1353,20 @@ from `pick_contract`; other techniques may adopt it, none is changed. Team2 also
 `model_out_of_band` and `target_replanned` as `TechniquePlanRead`. Rationale: the user's cohort-v2 instruction — the
 candidate → quote → order → fill → exit trail must be on the append-only record, not only in the plan's capped
 in-memory events.
+
+
+### Shared knobs from EM's C1-C5 (2026-09-12) — all default off / EM-only
+
+`MarketRules`: `gap_day_pct` / `gap_day_wait_minutes` / `gap_day_continuation` (the tracker judges a
+gap day on the symbol's own open vs previous close and holds entries for N minutes; a gapped
+bounce/reject may re-aim as a continuation break), `scratch_only_far_tp1` / `far_tp1_r` (the scratch
+rule only when TP1 is far), `range_break` / `range_break_bars` / `range_break_max_range_mult` (a
+break out of an N-bar squeeze fires on the break close, volume floor only). `exits.plan_exit` and
+`outcome.simulate_plan` take the scratch knobs - change one, change both. `technique/options.py::
+pick_for_setup(retry_wide=, max_spread_pct=)` tries the next strike out and the next expiry when
+the just-OTM strike's spread is wide and keeps the tightest (`pickRetry` on the pick). EM-only:
+`technique.universe.option_liquidity` (nightly `em_option_liquidity` job at 16:40 ET from the
+chain snapshots; `max_spread_pct` 12, `min_oi` 500), `technique.universe.untradeable` (shares |
+skip | ignore, applied in `TechniqueService.arm_plan`), `techniques.enhanced_market.entry_fallback
+= shares`, `technique.arm.preopen_keep_triggers` (the re-plan carries the evening triggers as
+`e_<id>`). Tips/Team2/Cartel are untouched.
