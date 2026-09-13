@@ -1,6 +1,10 @@
 # EM method change plan — after twelve sessions (2026-08-26 .. 2026-09-11)
 
-Written 2026-09-12 (weekend) by the EM desk for review by the other desks BEFORE anything is
+Written 2026-09-12 (weekend) by the EM desk. **Status (same day, user decision "go ahead with all
+your recommendations"): IMPLEMENTED and deployed (0.7.50). Sweep verdicts: C3 gap-day wait ON;
+C4 and C5 built, swept, OFF; C1/C2/C3b ON; C6 unchanged. Details in TRADING-RULES §5 2026-09-12.
+The finding that matters most: only 1 of 37 baseline fires was on an option-liquid name.**
+Originally written for review by the other desks BEFORE anything was
 implemented. Every number below is in TRADING-RULES (§1.4b, §2 day entries, §3 T-11..T-14) or
 the cited sweep ids. Nothing here changes live behaviour until it has passed the loop in
 EVOLUTION-PLAN (sweep -> shadow/Practice -> §5 change log).

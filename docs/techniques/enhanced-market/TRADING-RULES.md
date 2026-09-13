@@ -800,6 +800,28 @@ tempo is not where our edge is hiding either.
 
 ## 5. Change log (parameter/rule changes — date · change · why · evidence)
 
+- 2026-09-12 · **Gap-day wait ON** (`technique.gap_day_pct = 0.5`, `gap_day_wait_minutes = 30`; C3 of
+  METHOD-CHANGE-PLAN-2026-09-12, user decision to implement the plan). On a session the symbol
+  itself opens >= 0.5% from its previous close, no entry fires in the first 30 minutes ("give the
+  open time", the author's own rule on gap days). Sweep 08-24..09-11 (`evo-C-baseline 793512a5b5`
+  vs `evo-C3-gap0.5 e032e96d98`, 1,500 sessions): baseline 39 fires **+6.28R**, gap-wait 33 fires
+  **+11.38R** (+5.1R, +0.18R/fire - below the D7 +0.3R/fire bar in per-fire terms, but it works by
+  REMOVING six losing gap-open fires and touches nothing on non-gap days). Adopted on that basis;
+  the continuation add-on (`gap_day_continuation`) added only +0.3R more and stays off. Review after
+  ten sessions with fills.
+- 2026-09-12 · **Shares fallback ON in EM Practice** (`techniques.enhanced_market.entry_fallback =
+  shares`; C2) and **option-liquidity routing** (C1: nightly screen `technique.universe.option_liquidity`,
+  24 of 135 names tradeable at spread <= 12% / OI >= 500 on the 09-11 snapshot; an untradeable name
+  arms with the shares fallback; the pick retries the next strike / next expiry on a wide spread).
+  Why: 8 of 9 fires in the week of 09-08 died on option spreads, and on the 12-session baseline only
+  **1 of 37 valid fires was on an option-liquid name** (-1.03R) - EM's edge, such as it is, lives on
+  names whose options we cannot trade. Shares are the vehicle in Practice until that changes;
+  shorts (puts only) still skip when the put is untradeable.
+- 2026-09-12 · **Pre-open re-plan keeps the evening triggers** (`technique.arm.preopen_keep_triggers`;
+  C3b). IBIT r2 +4.8R on 09-11 was discarded by the re-plan. Not sweepable; judged live at ten sessions.
+- 2026-09-12 · NOT adopted after their sweeps (knobs stay off): **C4 targeted scratch** (scratch only
+  when TP1 >= 3R away: -2.5R at 1.0R, -2.6R at 0.75R vs baseline), **C5 consolidation break**
+  (`range_break`: 43 fires, -0.8R vs baseline). C3+C5 together +4.8R = C3 alone minus C5's drag.
 - 2026-09-09 · **Critic veto -> advisory on at-level bounces and rejects**
   (`techniques.enhanced_market.critic_mode = momentum_only`; new runner knob
   `execution.critic_mode` = veto | momentum_only | advisory, default veto for every other technique;

@@ -429,7 +429,7 @@ DEFAULTS: dict[str, Any] = {
     "technique.scratch_trim": 0.5,
     "technique.scratch_only_far_tp1": False,   # C4 (2026-09-12): scratch only when TP1 >= far_tp1_r R away
     "technique.far_tp1_r": 3.0,
-    "technique.gap_day_pct": 0.0,              # C3 (2026-09-12): gap-day policy (0 = off; sweep first)
+    "technique.gap_day_pct": 0.5,              # C3 (2026-09-12): gap-day policy - ON after sweep evo-C3-gap0.5 (+5.1R over baseline, 6 fewer fires)
     "technique.gap_day_wait_minutes": 30,
     "technique.gap_day_continuation": False,
     "technique.range_break": False,            # C5 (2026-09-12): consolidation break fires on the break close
