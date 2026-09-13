@@ -126,6 +126,9 @@ export const api = {
   tipNotes: (scope = "", limit = 100, includeSuperseded = false) =>
     request<import("../types").TipNote[]>(
       "GET", `/api/tip/notes?limit=${limit}${scope ? `&scope=${encodeURIComponent(scope)}` : ""}${includeSuperseded ? "&superseded=true" : ""}`),
+  searchTipNotes: (q = "", offset = 0, limit = 200, includeHistory = false) =>
+    request<{ items: import("../types").TipNote[]; total: number; offset: number; limit: number }>(
+      "GET", `/api/tip/notes/search?q=${encodeURIComponent(q)}&offset=${offset}&limit=${limit}${includeHistory ? "&history=true" : ""}`),
   addTipNote: (scope: string, text: string) =>
     request<import("../types").TipNote>("POST", "/api/tip/notes", { scope, text }),
   deleteTipNote: (id: string) =>

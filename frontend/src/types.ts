@@ -363,6 +363,9 @@ export interface AnalystRun extends AnalystRunSummary {
 /** Shared tips knowledge: a durable note the analyst (or the user) saved.
     Scope: "general" | "source:<name>" | "ticker:<SYM>" | "signal:<id>". */
 export interface TipNote {
+  suppliedCount?: number;
+  core?: boolean;
+  revisionNo?: number;
   id: string; scope: string; text: string; author: string;
   signalId?: string | null; runId?: string | null; createdAt?: string | null;
   // rule lifecycle (NEXT-GAPS A8): superseded rules are hidden history; a

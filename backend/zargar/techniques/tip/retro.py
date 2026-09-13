@@ -470,14 +470,7 @@ async def nightly_tip_review(eng, *, client=None) -> dict:
             out["digests"] = await digest_all_context_channels(eng, client=client)
     except Exception:
         log.exception("nightly digests failed")
-    try:
-        from .rule_audit import audit_due_today, run_knowledge_audit, run_rule_audit
-        if audit_due_today(eng.settings):
-            out["ruleAudit"] = await run_rule_audit(eng, client=client)
-            # KNOWLEDGE B4: the same weekly pass over ticker:/source:/general
-            # knowledge groups (merge dupes, expire unsupported, flag
-            # contradictions) — daily:* expire on TTL, experiment:* never audited
-            out["knowledgeAudit"] = await run_knowledge_audit(eng, client=client)
-    except Exception:
-        log.exception("rule audit failed")
+    # the weekly rule/knowledge audit is NO LONGER chained here (KB-01,
+    # 2026-09-13): this job is weekday-only, so its Saturday default never
+    # ran. It has its own scheduler job, tip_knowledge_maintenance.
     return out

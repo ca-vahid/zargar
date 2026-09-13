@@ -158,6 +158,11 @@ class SignalService:
                 "validUntil": vu.isoformat() if vu else None,
                 "lastCitedAt": lc.isoformat() if lc else None,
                 "citedCount": int(getattr(n, "cited_count", 0) or 0),
+                "suppliedCount": int(getattr(n, "supplied_count", 0) or 0),
+                "core": bool(getattr(n, "core", False)),
+                "revisionNo": int(getattr(n, "revision_no", 1) or 1),
+                "revisedAt": (getattr(n, "revised_at", None).isoformat()
+                              if getattr(n, "revised_at", None) else None),
                 "createdAt": n.created_at.isoformat() if n.created_at else None}
 
     def _note_ttl_days(self, scope: str) -> float | None:
@@ -173,43 +178,182 @@ class SignalService:
             return float(s.get("techniques.tip.note_ttl_scoped_days", 90))
         return None
 
+    _SCOPE_PREFIXES = ("ticker:", "source:", "signal:", "experiment:", "daily:")
+    NOTE_TEXT_MAX = 20000     # a hard ceiling, refused visibly — never sliced
+
+    @classmethod
+    def normalize_scope(cls, scope: str | None) -> str:
+        """The ONE scope validator for every writer (KB-07): analyst tool, API,
+        digest, retro, experiment, edit. `ticker:`/`source:`/... need a real
+        entity after the colon (eleven orphan 'ticker:' rows were live and
+        unreachable by any ticker query); unknown prefixes refuse."""
+        sc = (scope or "").strip()
+        if not sc:
+            return "general"
+        if sc in ("general", "rule"):
+            return sc
+        low = sc.lower()
+        for pfx in cls._SCOPE_PREFIXES:
+            if low.startswith(pfx):
+                tail = sc[len(pfx):].strip()
+                if not tail:
+                    raise ValueError(f"scope '{pfx}' needs an entity after the colon "
+                                     f"(e.g. {pfx}NVDA) — refused, not stored as an orphan")
+                if pfx == "ticker:":
+                    tail = tail.upper()
+                out = pfx + tail
+                if len(out) > 160:
+                    raise ValueError("scope too long (160)")
+                return out
+        raise ValueError(f"unknown scope '{sc}' — use general, rule, ticker:<SYM>, "
+                         "source:<name>, signal:<id>, daily:<date>, experiment:<batch>")
+
+    @staticmethod
+    def _snapshot(session, row, now, reason: str) -> None:
+        """KB-03: persist the PRIOR state as an immutable revision before any
+        mutation; advance the row's revision identity."""
+        from ..models import TipNoteRevision
+        session.add(TipNoteRevision(
+            id=new_id(), note_id=row.id,
+            revision_no=int(getattr(row, "revision_no", 1) or 1),
+            known_from=(getattr(row, "revised_at", None) or row.created_at or now),
+            known_until=now, scope=row.scope, text=row.text,
+            valid_until=row.valid_until, superseded_by=row.superseded_by,
+            needs_human=bool(row.needs_human), reason=reason[:40]))
+        row.revised_at = now
+        row.revision_no = int(getattr(row, "revision_no", 1) or 1) + 1
+
     async def tip_notes(self, scopes: list[str] | None = None,
                         limit: int = 100, *, include_superseded: bool = False,
                         include_expired: bool = False,
-                        as_of: dt.datetime | None = None) -> list[dict]:
-        from ..models import TipNote
+                        as_of: dt.datetime | None = None,
+                        offset: int = 0) -> list[dict]:
+        from ..models import TipNote, TipNoteRevision
+        if as_of is None:
+            async with self.engine.sf() as session:
+                q = (select(TipNote).order_by(TipNote.created_at.desc(), TipNote.id.desc())
+                     .offset(max(0, int(offset))).limit(limit))
+                if scopes:
+                    q = q.where(TipNote.scope.in_(scopes))
+                if not include_expired:
+                    # QUERY-TIME expiry (B1): an expired note stops being served —
+                    # no sweep, no mutation, deterministic and restart-proof.
+                    now = dt.datetime.now(dt.timezone.utc)
+                    q = q.where((TipNote.valid_until.is_(None)) | (TipNote.valid_until > now))
+                if not include_superseded:
+                    # superseded rules are history, not live knowledge (A8.2)
+                    q = q.where(TipNote.superseded_by.is_(None))
+                rows = (await session.execute(q)).scalars().all()
+            return [self.note_dict(r) for r in rows]
+        # ---- historical (as_of) view, revision-aware (KB-03, 2026-09-13):
+        # a note is what was KNOWN at as_of — the revision in force then, never
+        # today's edited text. Legacy mutations (before revisions existed) are
+        # unrecoverable: such notes are EXCLUDED and counted, never backdated.
         async with self.engine.sf() as session:
-            q = select(TipNote).order_by(TipNote.created_at.desc()).limit(limit)
+            cand = (await session.execute(
+                select(TipNote).where(TipNote.created_at <= as_of)
+                .order_by(TipNote.created_at.desc(), TipNote.id.desc()))).scalars().all()
+            ids = [r.id for r in cand]
+            revs: dict[str, TipNoteRevision] = {}
+            if ids:
+                for rv in (await session.execute(
+                        select(TipNoteRevision).where(
+                            TipNoteRevision.note_id.in_(ids),
+                            TipNoteRevision.known_from <= as_of,
+                            TipNoteRevision.known_until > as_of))).scalars().all():
+                    revs[rv.note_id] = rv
+        out: list[dict] = []
+        unavailable = 0
+        for r in cand:
+            revised_at = getattr(r, "revised_at", None)
+            if revised_at is not None and revised_at > as_of:
+                rv = revs.get(r.id)
+                if rv is None:
+                    unavailable += 1           # legacy history: unavailable
+                    continue
+                scope, text = rv.scope, rv.text
+                valid_until, superseded_by, needs_human = rv.valid_until, rv.superseded_by, rv.needs_human
+            else:
+                scope, text = r.scope, r.text
+                valid_until, superseded_by, needs_human = r.valid_until, r.superseded_by, r.needs_human
+            if scopes and scope not in scopes:
+                continue
+            if not include_expired and valid_until is not None and valid_until <= as_of:
+                continue
+            if not include_superseded and superseded_by is not None:
+                continue
+            d = self.note_dict(r)
+            d.update({"scope": scope, "text": text,
+                      "supersededBy": superseded_by, "needsHuman": bool(needs_human),
+                      "validUntil": valid_until.isoformat() if valid_until else None,
+                      "asOf": as_of.isoformat()})
+            out.append(d)
+        self._last_as_of_unavailable = unavailable
+        return out[max(0, int(offset)):max(0, int(offset)) + limit]
+
+    async def search_tip_notes(self, q: str = "", scopes: list[str] | None = None, *,
+                               offset: int = 0, limit: int = 100,
+                               include_history: bool = False) -> dict:
+        """KB-04: server-side paginated search with a TOTAL — the Knowledge tab
+        used to filter a silent newest-300 slice (550 active notes unfetched)."""
+        from sqlalchemy import func, or_
+        from ..models import TipNote
+        limit = max(1, min(int(limit), 500))
+        async with self.engine.sf() as session:
+            base = select(TipNote)
+            cnt = select(func.count()).select_from(TipNote)
+            conds = []
             if scopes:
-                q = q.where(TipNote.scope.in_(scopes))
-            if not include_expired:
-                # QUERY-TIME expiry (B1): an expired note stops being served —
-                # no sweep, no mutation, deterministic and restart-proof.
-                # With as_of, expiry is judged at THAT moment.
-                now = as_of or dt.datetime.now(dt.timezone.utc)
-                q = q.where((TipNote.valid_until.is_(None)) | (TipNote.valid_until > now))
-            if not include_superseded:
-                # superseded rules are history, not live knowledge (A8.2)
-                q = q.where(TipNote.superseded_by.is_(None))
-            if as_of is not None:
-                # event-time boundary (Codex review K2, 2026-09-09): knowledge
-                # created after the tip's moment never reaches a historical
-                # appraisal. (Supersession has no timestamp, so a rule
-                # superseded later is conservatively ABSENT rather than
-                # resurrected — never a future leak.)
-                q = q.where(TipNote.created_at <= as_of)
-            rows = (await session.execute(q)).scalars().all()
-        return [self.note_dict(r) for r in rows]
+                conds.append(TipNote.scope.in_(scopes))
+            if not include_history:
+                now = dt.datetime.now(dt.timezone.utc)
+                conds.append((TipNote.valid_until.is_(None)) | (TipNote.valid_until > now))
+                conds.append(TipNote.superseded_by.is_(None))
+            needle = (q or "").strip()
+            if needle:
+                like = f"%{needle}%"
+                conds.append(or_(TipNote.text.ilike(like), TipNote.scope.ilike(like),
+                                 TipNote.author.ilike(like)))
+            for c in conds:
+                base = base.where(c)
+                cnt = cnt.where(c)
+            total = (await session.execute(cnt)).scalar() or 0
+            rows = (await session.execute(
+                base.order_by(TipNote.created_at.desc(), TipNote.id.desc())
+                .offset(max(0, int(offset))).limit(limit))).scalars().all()
+        return {"items": [self.note_dict(r) for r in rows], "total": int(total),
+                "offset": max(0, int(offset)), "limit": limit}
+
+    async def note_scope_counts(self, *, prefixes: tuple[str, ...] = ("ticker:", "source:"),
+                                include_general: bool = True) -> dict[str, int]:
+        """KB-04: ACTIVE note count per auditable scope, over the WHOLE store —
+        the audit's grouping used to see only the newest 300 rows."""
+        from sqlalchemy import func, or_
+        from ..models import TipNote
+        now = dt.datetime.now(dt.timezone.utc)
+        async with self.engine.sf() as session:
+            q = (select(TipNote.scope, func.count()).where(
+                    (TipNote.valid_until.is_(None)) | (TipNote.valid_until > now),
+                    TipNote.superseded_by.is_(None))
+                 .group_by(TipNote.scope))
+            conds = [TipNote.scope.like(f"{p}%") for p in prefixes]
+            if include_general:
+                conds.append(TipNote.scope == "general")
+            q = q.where(or_(*conds))
+            rows = (await session.execute(q)).all()
+        return {str(sc): int(n) for sc, n in rows}
 
     async def supersede_tip_notes(self, note_ids: list[str], by: str) -> int:
         """Rule lifecycle (A8.2): mark rules superseded — never delete. `by` is
         the refined rule's id, or 'expired:<run8>'."""
         from ..models import TipNote
         n = 0
+        now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             for nid in note_ids:
                 row = await session.get(TipNote, nid)
                 if row is not None and row.superseded_by is None:
+                    self._snapshot(session, row, now, "supersede")
                     row.superseded_by = str(by)[:80]
                     n += 1
             await session.commit()
@@ -220,10 +364,12 @@ class SignalService:
         needs-your-call flag on notes. Journaled by the caller."""
         from ..models import TipNote
         n = 0
+        now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             for nid in note_ids:
                 row = await session.get(TipNote, nid)
                 if row is not None and bool(row.needs_human) != needs_human:
+                    self._snapshot(session, row, now, "flag" if needs_human else "resolve")
                     row.needs_human = needs_human
                     n += 1
             await session.commit()
@@ -231,16 +377,22 @@ class SignalService:
 
     async def add_tip_note(self, scope: str, text: str, *, author: str = "user",
                            signal_id: str | None = None,
-                           run_id: str | None = None) -> dict:
+                           run_id: str | None = None,
+                           family_dedupe: bool = True) -> dict:
         from ..models import TipNote
-        scope = (scope or "general").strip() or "general"
+        scope = self.normalize_scope(scope)          # KB-07: every writer, one gate
         text = (text or "").strip()
         if not text:
             raise ValueError("empty note")
+        if len(text) > self.NOTE_TEXT_MAX:
+            # KB-07: evidence is never silently sliced (22 rows sat at the old
+            # 2,000 cut); an oversized note is refused visibly
+            raise ValueError(f"note text is {len(text)} chars — over the {self.NOTE_TEXT_MAX} "
+                             "ceiling; split the evidence rather than truncating it")
         ttl = self._note_ttl_days(scope)
         valid_until = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=ttl)
                        if ttl else None)
-        row = TipNote(id=new_id(), scope=scope[:160], text=text[:2000],
+        row = TipNote(id=new_id(), scope=scope, text=text,
                       author=author[:80], signal_id=signal_id, run_id=run_id,
                       valid_until=valid_until)
         async with self.engine.sf() as session:
@@ -254,7 +406,9 @@ class SignalService:
         # geometry" rule were all injected into every run because supersession
         # was only ever CLAIMED in prose): a new rule whose family matches an
         # existing live rule supersedes it automatically, journaled.
-        if scope == "rule":
+        # (KB-02: the audit's transactional batch is the ONLY apply path for
+        # audit-authored rules — it passes family_dedupe=False)
+        if scope == "rule" and family_dedupe:
             with contextlib.suppress(Exception):
                 await self._supersede_rule_family(row)
         return note
@@ -304,14 +458,19 @@ class SignalService:
         from ..models import TipNote
         if text is not None and not text.strip():
             raise ValueError("empty note")
+        if text is not None and len(text.strip()) > self.NOTE_TEXT_MAX:
+            raise ValueError(f"note text over the {self.NOTE_TEXT_MAX} ceiling — refused, not truncated")
+        new_scope = self.normalize_scope(scope) if (scope is not None and scope.strip()) else None
+        now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             row = await session.get(TipNote, note_id)
             if row is None:
                 return None
+            self._snapshot(session, row, now, "edit")     # KB-03: prior state kept
             if text is not None:
-                row.text = text.strip()[:2000]
-            if scope is not None and scope.strip():
-                row.scope = scope.strip()[:160]
+                row.text = text.strip()
+            if new_scope is not None:
+                row.scope = new_scope
             await session.commit()
             note = self.note_dict(row)
         await self.engine.journal.append(ev.TIP_NOTE_EDITED, note,
@@ -346,6 +505,7 @@ class SignalService:
                 row.last_cited_at = now
                 ttl = self._note_ttl_days(row.scope)
                 if ttl and row.valid_until is not None:
+                    self._snapshot(session, row, now, "refresh")  # KB-03: the old expiry was the known one
                     row.valid_until = now + dt.timedelta(days=ttl)
                 n += 1
             await session.commit()
@@ -354,11 +514,15 @@ class SignalService:
     async def pin_tip_note(self, note_id: str) -> dict | None:
         """User pin: clear the expiry — this note is durable now (journaled)."""
         from ..models import TipNote
+        now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             row = await session.get(TipNote, note_id)
             if row is None:
                 return None
+            self._snapshot(session, row, now, "pin")
             row.valid_until = None
+            if row.scope == "rule":
+                row.core = True          # KB-04: a pinned rule is CORE — always supplied
             await session.commit()
             note = self.note_dict(row)
         await self.engine.journal.append(ev.TIP_NOTE_EDITED, {**note, "pinned": True},
@@ -374,6 +538,109 @@ class SignalService:
             await session.delete(row)
             await session.commit()
         return True
+
+    async def apply_knowledge_batch(self, *, scope: str, merges: list, expires: list,
+                                    contradictions: list, author: str, run_id: str,
+                                    live_ids: set[str], batch_id: str) -> dict:
+        """KB-02: the audit's ONE apply path — validate the whole proposed batch
+        before any write, then apply in a single transaction with row locks
+        and version checks; durable idempotency by `batch_id` (a retry after a
+        commit-with-lost-ACK finds the journaled batch and does nothing).
+
+        Validation: any id involved in a contradiction is CONFLICT-LOCKED —
+        it can be flagged, never merged or expired (the LLM once proposed
+        merging the two rules it had just called contradictory). Invalid /
+        non-live ids are rejected with a reason, never silently dropped."""
+        from sqlalchemy import select as _sel
+        from ..models import Event, TipNote
+        # idempotency: an accepted batch applies exactly once
+        async with self.engine.sf() as session:
+            prior = (await session.execute(_sel(Event.payload).where(
+                Event.type == ev.TIP_RULE_AUDITED).order_by(Event.id.desc()).limit(500))).scalars().all()
+        for pl in prior:
+            if (pl or {}).get("batchId") == batch_id:
+                return {**(pl.get("applied") or {}), "alreadyApplied": True}
+        conflict: set[str] = set()
+        flag_sets: list[list[str]] = []
+        rejected: list[dict] = []
+        for c in contradictions:
+            ids = [i for i in (getattr(c, "ids", None) or c.get("ids") or []) if i in live_ids]
+            if len(ids) >= 2:
+                conflict.update(ids)
+                flag_sets.append(ids)
+            else:
+                rejected.append({"kind": "contradiction", "ids": list(getattr(c, "ids", None) or c.get("ids") or []),
+                                 "reason": "fewer than two live ids"})
+        acc_merges: list[tuple[list[str], str]] = []
+        for m in merges:
+            sup = getattr(m, "supersedes", None) or m.get("supersedes") or []
+            new_rule = (getattr(m, "new_rule", None) or m.get("new_rule") or "").strip()
+            ids = [i for i in sup if i in live_ids]
+            if not ids or not new_rule:
+                rejected.append({"kind": "merge", "ids": list(sup), "reason": "no live ids or empty text"})
+                continue
+            if conflict & set(ids):
+                rejected.append({"kind": "merge", "ids": ids,
+                                 "reason": "conflict-locked: involved in a contradiction this batch"})
+                continue
+            acc_merges.append((ids, new_rule))
+        acc_expires: list[str] = []
+        taken = {i for ids, _ in acc_merges for i in ids}
+        for e in expires:
+            eid = getattr(e, "id", None) or e.get("id")
+            if eid not in live_ids:
+                rejected.append({"kind": "expire", "ids": [eid], "reason": "not a live id"})
+            elif eid in conflict:
+                rejected.append({"kind": "expire", "ids": [eid], "reason": "conflict-locked"})
+            elif eid in taken:
+                rejected.append({"kind": "expire", "ids": [eid], "reason": "already merged this batch"})
+            else:
+                acc_expires.append(eid)
+        # ---- apply: ONE transaction, locked rows, version check
+        now = dt.datetime.now(dt.timezone.utc)
+        applied = {"merged": 0, "expired": 0, "contradictions": 0, "newRules": [],
+                   "newNotes": [], "flagged": [], "rejected": rejected}
+        touched = sorted({i for ids, _ in acc_merges for i in ids} | set(acc_expires) | conflict)
+        async with self.engine.sf() as session:
+            rows: dict[str, TipNote] = {}
+            for nid in touched:
+                row = await session.get(TipNote, nid, with_for_update=True)
+                if row is None:
+                    raise ValueError(f"batch aborted: {nid} vanished")
+                if row.superseded_by is not None and nid not in conflict:
+                    raise ValueError(f"batch aborted: {nid} was superseded concurrently")
+                rows[nid] = row
+            ttl = self._note_ttl_days(scope)
+            for ids, new_rule in acc_merges:
+                new = TipNote(id=new_id(), scope=scope, text=new_rule, author=author[:80],
+                              run_id=run_id,
+                              valid_until=(now + dt.timedelta(days=ttl)) if ttl else None)
+                session.add(new)
+                for nid in ids:
+                    self._snapshot(session, rows[nid], now, "supersede")
+                    rows[nid].superseded_by = new.id
+                applied["merged"] += len(ids)
+                (applied["newRules"] if scope == "rule" else applied["newNotes"]).append(new.id)
+            for eid in acc_expires:
+                self._snapshot(session, rows[eid], now, "supersede")
+                rows[eid].superseded_by = f"expired:{run_id[:8]}"
+                applied["expired"] += 1
+            for ids in flag_sets:
+                for nid in ids:
+                    if not rows[nid].needs_human:
+                        self._snapshot(session, rows[nid], now, "flag")
+                        rows[nid].needs_human = True
+                    if nid not in applied["flagged"]:
+                        applied["flagged"].append(nid)
+            applied["contradictions"] = len(applied["flagged"])
+            await session.commit()
+        await self.engine.journal.append(
+            ev.TIP_RULE_AUDITED,
+            {"batchId": batch_id, "runId": run_id, "scope": scope, "applied": applied,
+             "proposed": {"merges": len(merges), "expires": len(expires),
+                          "contradictions": len(contradictions)}},
+            aggregate_type="technique_run", aggregate_id=run_id)
+        return applied
 
     async def notes_for_tip(self, ticker: str | None, source: str | None,
                             signal_id: str | None = None,

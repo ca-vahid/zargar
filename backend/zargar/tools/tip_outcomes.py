@@ -38,6 +38,8 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default="postgresql://zargar:zargar@127.0.0.1:5433/zargar")
     ap.add_argument("--since", default="2026-09-08")   # the Practice-book reset
+    ap.add_argument("--portfolio", default="",
+                    help="Tips Practice book id (default: techniques.tip.default_portfolio)")
     a = ap.parse_args()
     conn = await asyncpg.connect(a.db)
     since = dt.datetime.fromisoformat(a.since).replace(tzinfo=dt.timezone.utc)
@@ -54,10 +56,30 @@ async def main() -> None:
            FROM orders o JOIN portfolios pf ON pf.id = o.portfolio_id
            WHERE o.created_at >= $1 AND pf.kind = 'sim' AND pf.archived IS NOT TRUE""", since)
     execs = await conn.fetch(
-        """SELECT e.order_id, e.portfolio_id, e.symbol, e.side, e.qty, e.price,
+        """SELECT e.id, e.order_id, e.portfolio_id, e.symbol, e.side, e.qty, e.price,
                   e.commission, e.ts
            FROM executions e JOIN portfolios pf ON pf.id = e.portfolio_id
            WHERE e.ts >= $1 AND pf.kind = 'sim' AND pf.archived IS NOT TRUE""", since)
+    # explicit Practice-book scope (C59-02): the intended book, never "every
+    # sim portfolio" by accident. --portfolio wins; else the tips default
+    # setting; else (offline/unknown) all active sim books, stated below.
+    pf_scope = str(getattr(a, "portfolio", "") or "")
+    if not pf_scope:
+        try:
+            srow = await conn.fetchrow(
+                """SELECT value FROM settings WHERE key = 'techniques.tip.default_portfolio'""")
+            v = srow["value"] if srow else None
+            if isinstance(v, str) and v.strip().startswith("{"):
+                v = json.loads(v)                      # json column returned as text
+            if isinstance(v, dict):                    # settings rows are {"v": <value>}
+                v = v.get("v", v.get("value"))
+            if isinstance(v, str):
+                pf_scope = v.strip().strip('"')
+        except Exception:
+            pf_scope = ""
+    if pf_scope:
+        orders = [o for o in orders if o["portfolio_id"] == pf_scope]
+        execs = [e for e in execs if e["portfolio_id"] == pf_scope]
 
     props_by_sig: dict[str, list] = defaultdict(list)
     for p in props:
@@ -94,15 +116,29 @@ async def main() -> None:
             q = float(e["qty"])
             lots_by_key[(e["portfolio_id"], e["symbol"])].append({
                 "idea": sid_, "ts": e["ts"], "qty": q, "px": float(e["price"]),
-                "fee_unit": float(e["commission"] or 0) / q if q else 0.0})
+                "fee_unit": float(e["commission"] or 0) / q if q else 0.0,
+                "order_id": str(e.get("order_id") or ""),
+                "exec_id": str(e.get("id") or e.get("order_id") or "")})
     acct: dict[str, dict] = defaultdict(lambda: {
         "realized": 0.0, "sold": 0.0, "fees_alloc": 0.0})
-    unallocated_sells = 0
-    for key, lots in lots_by_key.items():
-        lots.sort(key=lambda l: l["ts"])
+    unallocated: list[dict] = []       # every sell quantity that found no lot (C59-02)
+
+    def _oid(e) -> str:
+        return str(e.get("id") or e.get("order_id") or "")
+
+    def _order_key(e):
+        return (e["ts"], str(e.get("order_id") or ""), _oid(e))
+
+    for key in lots_by_key:
+        lots_by_key[key].sort(key=lambda l: (l["ts"], l["order_id"], l["exec_id"]))
+    # iterate the SELL keys (all in-scope sells), not just the keys with lots —
+    # a pre-window holding's sale must surface as an exception, never vanish
+    sell_keys = {k for k, es in ex_by_book_symbol.items() if any(e["side"] == "SELL" for e in es)}
+    for key in sorted(sell_keys):
+        lots = lots_by_key.get(key, [])
         lmult = 100.0 if OCC.match(key[1]) else 1.0
         sells_here = sorted((e for e in ex_by_book_symbol.get(key, [])
-                             if e["side"] == "SELL"), key=lambda e: e["ts"])
+                             if e["side"] == "SELL"), key=_order_key)
         for se in sells_here:
             sq = float(se["qty"])
             sfee_unit = float(se["commission"] or 0) / sq if sq else 0.0
@@ -120,7 +156,13 @@ async def main() -> None:
                 lot["qty"] -= take
                 sq -= take
             if sq > 1e-9:
-                unallocated_sells += 1   # oversold / pre-lot sell: reported, never invented
+                unallocated.append({
+                    "exec": _oid(se), "symbol": key[1], "book": key[0], "qty": sq,
+                    "proceeds": sq * float(se["price"]) * lmult,
+                    "fee": sq * sfee_unit,
+                    "reason": ("no recognized lot in window (opening inventory unknown)"
+                               if not lots else "oversold beyond recognized lots")})
+    unallocated_sells = len(unallocated)
     open_by_idea: dict[str, dict] = defaultdict(lambda: {"cost": 0.0, "fees": 0.0, "qty": 0.0})
     for key, lots in lots_by_key.items():
         lmult = 100.0 if OCC.match(key[1]) else 1.0
@@ -148,8 +190,9 @@ async def main() -> None:
         a_i = acct.get(sid) or {"realized": 0.0, "sold": 0.0, "fees_alloc": 0.0}
         ob = open_by_idea.get(sid) or {"cost": 0.0, "fees": 0.0, "qty": 0.0}
         realized = a_i["realized"]
-        fees = a_i["fees_alloc"]
-        unalloc_fees = ob["fees"]
+        fees_alloc = a_i["fees_alloc"]           # attributable to the realized portion
+        unalloc_fees = ob["fees"]                # entry fees riding on open lots
+        fees = fees_alloc + unalloc_fees         # PAID (matched inventory); C59-01
         open_qty = ob["qty"]
         completed = bool(bought) and open_qty <= 1e-9
         missed = any(p["status"] in ("failed", "expired") for p in sp) and took and not buys
@@ -182,7 +225,8 @@ async def main() -> None:
             "bucket": bucket(sym, first_buy["ts"].date() if first_buy else None) if sym else "none",
             "disp": disp, "completed": completed, "realized": realized,
             "open_cost": ob["cost"],
-            "fees": fees, "unalloc_fees": unalloc_fees, "latency_s": lat_s, "slip": slip,
+            "fees": fees, "fees_alloc": fees_alloc, "unalloc_fees": unalloc_fees,
+            "latency_s": lat_s, "slip": slip,
         })
 
     print(f"# Tips outcome table — ideas since {a.since} (generated {dt.date.today()})\n")
@@ -192,8 +236,8 @@ async def main() -> None:
     groups: dict[tuple, list] = defaultdict(list)
     for r in rows:
         groups[(r["source"], r["bucket"])].append(r)
-    print("| source | setup | ideas | taken | filled | closed | open($cost) | skipped | no-fill/missed | net realized (incl. partials) | fees paid | mean win | mean loss | expectancy/completed idea | med latency s | med slip | unalloc entry fees |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print("| source | setup | ideas | taken | filled | closed | open($cost) | skipped | no-fill/missed | net realized (incl. partials) | fees paid | mean win | mean loss | expectancy/completed idea | med latency s | med slip | open-lot entry fees | fees allocated to realized |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for (src, bkt), g in sorted(groups.items()):
         comp = [r for r in g if r["completed"]]
         wins = [r["realized"] for r in comp if r["realized"] > 0]
@@ -217,6 +261,7 @@ async def main() -> None:
             (f"{statistics.median(lat):.0f}" if lat else "—"),
             (f"{statistics.median(slips):+.3f}" if slips else "—"),
             f"{sum(r['unalloc_fees'] for r in g):.2f}",
+            f"{sum(r['fees_alloc'] for r in g):.2f}",
         ]
         print("| " + " | ".join(cells) + " |")
     ncomp = sum(1 for r in rows if r["completed"])
@@ -224,6 +269,17 @@ async def main() -> None:
           "sample size — none is a validated edge claim."
           + (f" Unallocated sells (oversold/pre-lot): {unallocated_sells}." if unallocated_sells else "")
           + "\n")
+    if unallocated:
+        print("### Reconciliation exceptions (no P&L invented for these)\n")
+        print("| execution | book | symbol | qty | proceeds | fee | reason |")
+        print("|---|---|---|---|---|---|---|")
+        for u in unallocated:
+            print(f"| {u['exec'][:8]} | {u['book'][:8]} | {u['symbol']} | {u['qty']:g} "
+                  f"| {u['proceeds']:.2f} | {u['fee']:.2f} | {u['reason']} |")
+        print()
+    print(f"Scope: {'portfolio ' + pf_scope if pf_scope else 'ALL active sim books (no default portfolio resolved)'}."
+          " Fees: paid = allocated-to-realized + open-lot entry fees; unallocated-sell fees"
+          " are listed in exceptions only.\n")
 
     # entry-study coverage
     st = await conn.fetch("""SELECT payload FROM events WHERE type='TipEntryStudy' AND ts >= $1""", since)
