@@ -146,6 +146,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.team2.premium_pick": "closest",      # F36: model and live pick the strike CLOSEST to the target
     "techniques.team2.quote_candidates": 8,          # F105/F108: listed OTM contracts (nearest spot first) quoted live before a verdict
     "techniques.team2.require_fresh_quote": True,    # F108: no live NBBO -> the entry is DEFERRED, never priced off the delayed chain
+    "techniques.team2.key_levels": "off",            # C2 (2026-09-13, research): off | D1 | D2 | D3 — sweeps only, gated on C6
     "techniques.team2.no_trade_zone": "pm_range",    # C1 (2026-09-13, research): pm_range | conjunction — DISABLED pending the other team's approval
     "techniques.team2.pm_room_atr": 0.0,             # C1 obstacle rule, 0 = off (research)
     "techniques.team2.min_target_atr": 0.0,          # C3 minimum target room, 0 = off (research)

@@ -3041,6 +3041,11 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-13 build (C2 definitions BUILT behind `key_levels`, OFF; v0.7.58)** — D1/D2/D3, the flip/expiry state
+  machine, zone + PM masks, key-level confirmations/retests/target rungs, sweep funnel, 13 causal fixtures; the read
+  is byte-identical with the knob off (test). Two clarifications recorded in the spec: the D2 wick extreme must lie
+  INSIDE the band (else one reaction counts at every grid point below it), and traversal expiry is judged on the
+  level's origin side. Sweeps wait for C6; the register stays empty. C1 / room / C3 unchanged.
 - **2026-09-13 latest (C2 spec v2 after the other team's review; GO for the research plan, NO-GO for measurement
   under v1's wording)** — validation moved to genuinely unseen dates (development = 08-20..09-11 incl. week 37;
   validation FIXED at 2026-09-14 → 2026-10-09, read once); one causal flip/expiry state machine (break → next-bar

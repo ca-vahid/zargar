@@ -76,9 +76,10 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
 - **Retire:** on the second confirmed flip (`flips == 2`) the level leaves the set at that instant. No score decay, no
   halving, no 0.25 threshold (v1's contradictions removed).
 - **Expiry (nightly, at rebuild):** a level older than `L` sessions (by `originDate`) is dropped; a level that two
-  consecutive completed sessions closed beyond by more than `1.0 x atr_build` without any reaction (no wick into its
-  tolerance band on either session) is dropped — knowable only at the second session's close, so it applies from the
-  next plan, never intraday.
+  consecutive completed sessions closed THROUGH by more than `1.0 x atr_build` — below a low-born level, above a
+  high-born one, i.e. judged on the level's ORIGIN side (build clarification 2026-09-13: a support price merely
+  moved away from, still above it, is kept) — without any reaction (no wick into its tolerance band on either
+  session) is dropped; knowable only at the second session's close, so it applies from the next plan, never intraday.
 - **Interaction with entry confirmation:** a scenario confirmation is ONE 15m body close (C1, unchanged); a flip
   needs TWO. On a key-level break beyond the PDH/PDL zone, the scenario may therefore confirm at the first close
   (§0.6) while the broken level itself is `flipPending`; the entry that follows is the EMA13 pullback (T1) — a
@@ -130,11 +131,12 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
 ### D2 — repeated-reaction levels ("7 candles wick'd off this level")
 
 - **Candle predicates (15m RTH bar `b`, band `[p - tol, p + tol]`, `tol = 0.25 x atr_build`):**
-  - *support reaction at p*: `b.low <= p + tol` (the wick entered the band from above) AND `b.close > p + tol`
-    (the body closed back ABOVE the band). In words: price came down into the level and closed back above it. The
-    bar's colour and open are irrelevant.
-  - *resistance reaction at p*: `b.high >= p - tol` AND `b.close < p - tol` — price came up into the level and
-    closed back below it.
+  - *support reaction at p*: `p - tol <= b.low <= p + tol` (the wick's LOW lies inside the band: it came down into
+    the level, not through it) AND `b.close > p + tol` (the body closed back ABOVE the band). In words: price came
+    down into the level and closed back above it. The bar's colour and open are irrelevant. Localising the wick's
+    extreme to the band (build fix 2026-09-13) is what keeps one reaction from counting at every grid point below it.
+  - *resistance reaction at p*: `p - tol <= b.high <= p + tol` AND `b.close < p - tol` — price came up into the
+    level and closed back below it.
   - *body cross* (`b.close` on the far side) is not a reaction; it is a break candidate for §0.4 and ends any episode.
 - **Episodes:** consecutive reacting bars (no intervening non-reacting bar) at the same grid price are ONE episode.
   A new episode at that price requires at least 4 consecutive CLOSED 15m bars whose entire range lies outside the
@@ -231,7 +233,20 @@ rungs on the target ladder. (iii) can change the exit of a trade that C2 did not
 therefore separates new, displaced, changed-exit and lost trades, and the write-up states how much of the result comes
 from exits alone. The entry anchor rule (§0.6) prevents a nearer, unconfirmed level from taking over a setup.
 
-## 6. Build plan (only after this v2 is accepted; sweeps still gated on C6)
+## 6. Build plan — BUILT 2026-09-13 (v0.7.58, knob OFF; sweeps still gated on C6)
+
+Built as specified: `techniques/team2/levels.py` (`key_levels`, `advance_flip`, `mask_pm`, `active_key_levels`,
+`ladder_with_key_levels`), `plan.py` (`keyLevels` on the skeleton with `atrBuild`/`atrBuildSource`; PM mask at
+completion), `session.py` (flip state machine on 15m closes, `key_break_up|down` setups with a fixed anchor and
+`key_level_id`, retest only after a confirmed flip, active key levels as ladder rungs), `service.py` (`keyLevels`
+funnel per sweep row; 1m bars passed to the builder), runner journal kinds. Fixtures: `tests/test_team2_key_levels.py`
+(13 tests: D1 median/ranking/lone-old drop, zone mask kept in the record, D2 episodes once while lingering and again
+after four clean bars, D2 three-episodes-two-sessions minimum with de-duplicated grid points, D3 availability and
+retests after it, break→reject, break→confirm→role swap→second flip retires, pending/retired levels are not rungs,
+two-session traversal expiry, PM mask re-applied without refill, knob-off identity, and the read minting /
+confirming / rejecting a key-level setup causally). Two build clarifications folded into §1 D2 and §0.4 above.
+
+Original build plan:
 
 - `techniques/team2/levels.py`: `key_levels(bars15m, *, definition, atr_build, prev_close, L, K) -> list[KeyLevel]`
   (pure) with the state machine as a small pure `advance_flip(level, bar15m)`; causal regression fixtures on

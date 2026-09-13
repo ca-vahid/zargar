@@ -23,7 +23,7 @@ from ...marketstructure.sessions import ET, session_date
 from .premium import MAX_OVER_TARGET, Fill, PremiumModel, pnl_pct
 from .regime import RegimeRead, RegimeReader
 from .rules import Team2Rules
-from .levels import next_structural_level
+from .levels import active_key_levels, advance_flip, ladder_with_key_levels, next_structural_level
 from .scenario import (
     pm_room,
     SCENARIO_LABEL, TREND_SCENARIOS, ScenarioTracker, body_closed_beyond, sizing_bucket, target_is_ahead,
@@ -50,6 +50,7 @@ class Setup:
     losses: int = 0
     dead: bool = False
     dead_reason: str | None = None
+    key_level_id: str | None = None   # C2: the key level this setup is anchored on (None for zone / PM setups)
     _stalled: bool = False
     _skipped: str | None = None   # last "not a tradeable location" skip already said out loud (F23)
     _departed: bool = True        # F62: price has moved off the EMA13 band since the last counted contact
@@ -174,6 +175,14 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     pmh = plan.get("pmh")
     pml = plan.get("pml")
     targets = plan.get("targets") or {}
+    # C2 (research, OFF by default): the plan's key levels, with their flip state advanced causally on 15m closes.
+    # `ladder_now()` is the L3 ladder plus the ACTIVE key levels (unmasked, not pending, not retired) — package part iii.
+    key_on = str(getattr(rules, "key_levels", "off") or "off").lower() != "off" and isinstance(plan.get("keyLevels"), dict)
+    key_set = {k: ([dict(x) for x in v] if isinstance(v, list) else v) for k, v in (plan.get("keyLevels") or {}).items()} if key_on else None
+    key_rows = [lv for side in ("above", "below") for lv in (key_set or {}).get(side, [])] if key_on else []
+
+    def ladder_now() -> dict | None:
+        return ladder_with_key_levels(plan.get("levelLadder"), key_set) if key_on else plan.get("levelLadder")
     model = PremiumModel(sigma=float(sigma), fee_per_contract=rules.fee_per_contract,
                          slippage_ticks=rules.slippage_ticks, tick=rules.tick)
     # F104/F108: the strike ladder is the venue's listing when the plan carries one (the runner stamps
@@ -231,9 +240,10 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
     last_entry_noted = loss_cap_noted = False
     session_bars_2m: list[Bar] = []
 
-    def setup_for(kind: str, direction: str, anchor: float, target: float | None, ts: int, range_day: bool) -> Setup:
+    def setup_for(kind: str, direction: str, anchor: float, target: float | None, ts: int, range_day: bool,
+                  key_level_id: str | None = None) -> Setup:
         s = Setup(id=f"{kind}@{_hhmm(ts)}", kind=kind, direction=direction, anchor=anchor, target=target,
-                  confirmed_ts=ts, range_day=range_day)
+                  confirmed_ts=ts, range_day=range_day, key_level_id=key_level_id)
         setups[s.id] = s
         return s
 
@@ -313,6 +323,53 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                      f"15m close below the pre-market low {pml:.2f} → puts down to {_pm_break_target_says(tgt, float(pml), 'short')} (L2.5/V7)",
                      level=round(float(pml), 4), close=round(f15.close, 4),
                      target=(round(float(tgt), 4) if tgt is not None else None))
+            # C2 (research): key levels — flip state machine, then the key-level break as a confirmation (§0.4/§0.6)
+            if key_on:
+                f15_end = f15.ts + rules.confirm_tf_min * 60_000
+                for lv in key_rows:
+                    if lv.get("maskedBy", "none") != "none" or f15_end < int(lv.get("availableAt") or 0):
+                        continue
+                    role_before = lv["role"]
+                    ev_ = advance_flip(lv, f15)
+                    if ev_ is None:
+                        continue
+                    lid = lv["levelId"]; lp = float(lv["price"])
+                    if ev_ == "break":
+                        d_ = "short" if role_before == "support" else "long"
+                        beyond = (lp > zones["pdh"].top) if d_ == "long" else (lp < zones["pdl"].bottom)
+                        note(f15_end, "key_level_break", f"15m body close {'below' if d_ == 'short' else 'above'} the key level "
+                             f"{lp:.2f} ({lv['definition']}, score {float(lv['score']):.2f}) — flip pending until the next 15m close (C2)",
+                             levelId=lid, definition=lv["definition"], score=lv["score"], role=role_before, level=round(lp, 4),
+                             close=round(f15.close, 4), beyondZone=beyond)
+                        if not beyond:
+                            continue                                           # inside the day's structure: targets only
+                        if scen.bias.direction is not None and scen.bias.direction != d_:
+                            note(f15_end, "key_level_overruled", f"the key-level close at {lp:.2f} points {d_} but the zone read says "
+                                 f"{scen.bias.direction} — the zone wins (C2)", levelId=lid, direction=d_, bias=scen.bias.direction)
+                            continue
+                        if any(not s_.dead and s_.key_level_id == lid for s_ in setups.values()):
+                            continue
+                        tgt_ = next_structural_level(ladder_now(), lp, d_)
+                        s_new = setup_for("key_break_up" if d_ == "long" else "key_break_down", d_, lp, tgt_, f15.ts,
+                                          range_day=False, key_level_id=lid)
+                        note(f15_end, "key_level_setup", f"{s_new.id}: {'calls' if d_ == 'long' else 'puts'} off the key level "
+                             f"{lp:.2f}; target {tgt_:.2f} (C2)" if tgt_ is not None else
+                             f"{s_new.id}: {'calls' if d_ == 'long' else 'puts'} off the key level {lp:.2f}; no target ahead (C2)",
+                             setup=s_new.id, levelId=lid, target=(round(tgt_, 4) if tgt_ is not None else None))
+                    elif ev_ == "confirm":
+                        note(f15_end, "key_level_flip", f"key level {lp:.2f} flipped to {lv['role']} (confirmed on the second 15m close; C2)",
+                             levelId=lid, role=lv["role"], flips=lv["flips"])
+                    elif ev_ == "reject":
+                        note(f15_end, "key_level_rejected", f"the break of {lp:.2f} failed — the next 15m bar closed back; the level held (C2)",
+                             levelId=lid, role=lv["role"])
+                        for s_ in setups.values():
+                            if not s_.dead and s_.key_level_id == lid:
+                                s_.dead, s_.dead_reason = True, "key level held: the break was rejected (C2)"
+                    elif ev_ == "retire":
+                        note(f15_end, "key_level_retired", f"key level {lp:.2f} retired after its second confirmed flip (C2)", levelId=lid)
+                        for s_ in setups.values():
+                            if not s_.dead and s_.key_level_id == lid:
+                                s_.dead, s_.dead_reason = True, "key level retired (C2)"
 
         # F62 (2026-09-08): a pullback is an EVENT — price leaves the EMA13 band and comes back — not a state.
         # Judged on EVERY 2m close, for every live setup, before anything below can `continue`: a close at least
@@ -476,6 +533,15 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                       and ((b2.low <= ema48 + tol and b2.close > ema48) if long else (b2.high >= ema48 - tol and b2.close < ema48)))
         # T2: the retest of the broken level itself
         touched_lvl = want_lvl and ((b2.low <= s.anchor + tol and b2.close > s.anchor) if long else (b2.high >= s.anchor - tol and b2.close < s.anchor))
+        if touched_lvl and s.key_level_id:
+            # C2 §0.4: the retest ON a key level is an entry only once its flip is confirmed; while pending, the level
+            # is inert (the T1 EMA13 pullback of the same setup is unaffected)
+            lv_ = next((x for x in key_rows if x["levelId"] == s.key_level_id), None)
+            if lv_ is None or lv_.get("flipPending") or int(lv_.get("flips") or 0) < 1:
+                touched_lvl = False
+                if lv_ is not None and lv_.get("flipPending"):
+                    note_once(s, end_ts, "key_level_pending", f"{s.id}: price is back at the key level {s.anchor:.2f} but its flip is "
+                              f"not confirmed yet — no retest entry until the second 15m close (C2)", setup=s.id, levelId=s.key_level_id)
         # T7: "break & base" — the last N 2m bars all held just beyond the level (within base_tol_atr) without
         # printing a touch: the base itself is the entry ("that break & base over pre market high is so nice")
         based = False
@@ -617,7 +683,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             # target CLOSER, and a target price has already run through is closer than the running
             # HOD/LOD — so X3b declines it and the case stays unrecovered.
             if rules.target_replan == "entry":
-                cand = next_structural_level(plan.get("levelLadder"), entry_spot, s.direction)
+                cand = next_structural_level(ladder_now(), entry_spot, s.direction)
                 # re-validated by the same predicate: a re-plan is a candidate, not an exemption
                 if cand is not None and target_is_ahead(cand, entry_spot, s.direction):
                     note(end_ts, "target_replanned",
@@ -637,7 +703,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                 if pm is not None and target_is_ahead(float(pm), entry_spot, s.direction):
                     cand, src = float(pm), ("pml" if s.direction == "short" else "pmh")
                 else:
-                    nxt = next_structural_level(plan.get("levelLadder"), entry_spot, s.direction)
+                    nxt = next_structural_level(ladder_now(), entry_spot, s.direction)
                     if nxt is not None and target_is_ahead(nxt, entry_spot, s.direction):
                         cand, src = float(nxt), "ladder"
                 what = (f"re-derived to the {src} {cand:.2f}" if cand is not None
@@ -724,7 +790,11 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
              strikeSource=strike_source, modelBand=model_band, contractAuthority=authority,
              target=None if target is None else round(target, 4), targetKind=target_kind,
              setup=s.id, touch=idx, spot=round(entry_spot, 4), strike=strike, premium=fill.premium, bucket=bucket,
-             sizeMult=mult, early=m < rules.early_flag_before_min, entryKind=entry_kind, regime=r.to_dict())
+             sizeMult=mult, early=m < rules.early_flag_before_min, entryKind=entry_kind, regime=r.to_dict(),
+             keyLevel=s.key_level_id)
+        if s.key_level_id and entry_kind == "level":
+            note(end_ts, "key_level_retest", f"{s.id}: retest entry on the key level {s.anchor:.2f} (C2)", setup=s.id,
+                 levelId=s.key_level_id, touch=idx)
 
     summary = {
         "trades": len(trades), "wins": sum(1 for t in trades if t.pnl_pct_weighted > 0),

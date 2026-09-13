@@ -651,11 +651,13 @@ class Team2Runner(PlanRunner):
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
                                         "skip_reentries", "skip_last_entry", "skip_loss_cap",
                                         "skip_target_behind", "model_out_of_band", "target_replanned",
-                                        "skip_pm_room", "skip_target_near"):
+                                        "skip_pm_room", "skip_target_near", "key_level_break", "key_level_setup",
+                                        "key_level_flip", "key_level_rejected", "key_level_retired", "key_level_overruled",
+                                        "key_level_pending", "key_level_retest"):
                     # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
                     # they get their own journal kind so skip counts mean skips
-                    kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest",
-                                                              "model_out_of_band", "target_replanned") else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
+                    kind = ev.TECHNIQUE_PLAN_READ if (what in ("scenario", "pm_break", "late_touch", "pm_retest",
+                                                               "model_out_of_band", "target_replanned") or what.startswith("key_level_")) else ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED
                     await self.engine.journal.append(kind, {
                         "runId": ap.run_id, "symbol": ap.symbol, "trigger": str(e.get("setup") or e.get("scenario") or what),
                         "event": what, "ts": e.get("ts"), "reason": e.get("why", "")},
