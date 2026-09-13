@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.56";
+export const APP_VERSION = "0.7.57";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.57",
+    date: "2026-09-13",
+    title: "A healthy print clears the alarm, and the books balance",
+    items: [
+      { tag: "fixed", text: "A healthy fresh quote seen by the bar path now clears a pending premium-stop sighting from the tick path - two isolated bad prints separated by a healthy one can no longer pair into an exit." },
+      { tag: "fixed", text: "The outcome census attributes sales by book and holding episode (another portfolio's sale can no longer mark an open position as closed-profitable), includes partial realizations with proportionally allocated entry fees, and reconciles to the ledger to the penny." },
+    ],
+  },
   {version:"0.7.56",date:"2026-09-13",title:"Cartel documentation brought current",items:[
     {tag:"improved",text:"The Method library now explains current preparation, recovery, data quality, ignition research and the optional Practice pilot. Superseded milestones are archived, and implemented features are separated from remaining validation work."},
   ]},
