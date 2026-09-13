@@ -2,9 +2,9 @@
 
 > Execution update, 2026-09-12: the user subsequently authorized implementation, commit, push and deployment while the other team was busy. The proposal text below is the original review baseline, not a continuing approval block. See RELIABILITY-RELEASE-2026-09-12.md for shipped scope and remaining validation.
 
-**Revision 1 — 2026-09-12 — PROPOSED; independent team review required before implementation.**
+**Historical proposal, revised 2026-09-13 for status accuracy.** The user authorized execution on September 12. See [current work status](PLAN.md) for implemented, partial and open items.
 
-This is the implementation companion to [the weekend evidence review](WEEKEND-REVIEW-2026-09-12.md). No code, settings, risk limits, arms or runtime processes were changed. Earlier auto-merge permission does not bypass the user's current review-before-implementation request. The baseline for the audit is origin/main c0eb5c3; rebase and re-audit any intervening shared changes before starting work. Do not reserve a release number until integration.
+This records the proposed design associated with [the weekend evidence review](WEEKEND-REVIEW-2026-09-12.md), originally audited against c0eb5c3. Its acceptance criteria are not claims that every item shipped. The active backlog and release evidence take precedence; re-audit current main before future changes.
 
 ## 1. Outcome and scope
 
@@ -177,7 +177,8 @@ For the overall programme: trusted input provenance survives restart; benchmark 
 - [x] Full transcript recovered and read; scanner/entry/developing-setup chart spot checks complete.
 - [x] Existing weekend findings mapped to W0–W8 with dependencies and acceptance tests.
 - [x] Source facts separated from engineering proposals and unresolved interpretation.
-- [ ] Reviewer approval, implementation, tests and rollout.
+- [x] User subsequently authorized implementation and deployment; shipped scope and actual checks are recorded in RELIABILITY-RELEASE-2026-09-12.md and DEPLOYMENT-2026-09-12.md.
+- [ ] Remaining proposed work and validation are tracked in PLAN.md.
 - [ ] Full statistical/option-fill validation and prospective profitability evidence.
 
-No user assistance is currently needed for transcript access. No implementation has started.
+Transcript access was resolved. Implementation and deployment followed; consult PLAN.md for remaining work.

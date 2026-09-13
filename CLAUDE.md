@@ -59,8 +59,8 @@ intake/mirror; `ingest.auto_arm` is ON since 2026-09-04 (board-built plans that 
 (`technique/plans.py`, `walkforward.py`, `arming.py`; UI Validation tab).
 **Multi-technique platform (BUILT through phase 5, 2026-08-27):** `docs/TECHNIQUE-PLATFORM-PLAN.md`;
 **start any new technique at `docs/BUILDING-A-TECHNIQUE.md`**. The registry
-(`zargar/techniques/base.py`, `GET /api/techniques`) lists THREE techniques: `enhanced_market`
-("EM Options"), `tip` ("Tips") and `flow` ("Flow") — the nav renders it; never hard-code a
+(`zargar/techniques/base.py`, `GET /api/techniques`) lists five techniques (as of 2026-09-13): `enhanced_market`
+("EM Options"), `tip` ("Tips"), `team2` ("Team2"), `flow` ("Flow") and `options_cartel` ("Options Cartel") — the nav renders it; never hard-code a
 technique name into the UI. Rules for new code: pure bar analysis (levels, touches, distance %,
 volume, candles, structure, the `TriggerTracker` state machine, `simulate_plan`) lives in
 `zargar/marketstructure/` — parameterised by a `MarketRules` value, never by reading a technique's
@@ -430,3 +430,6 @@ frontend production build runs this check automatically.
 - UI verification: build, then Playwright against the served app
   (`/opt/pw-browsers` chromium in the dev container).
 **Team2 technique (BUILT v0.1 2026-09-03; the Team2 desk = this session's group):** `docs/techniques/team2/` — Casey/@Team2Trading's SPY/QQQ/IWM 0DTE method (4 levels + 13/48/200 EMA on 2m + 15m-close confirmation, EMA13 pullback entries, ~$0.50 premium-targeted contracts, +50/+100% trims, flatten 15:45). `README.md` (doc map, capture recipe), `METHOD.md` (numbered rules, §7b/§7c from images + videos), `PLAN.md` (decisions D1–D14, engine list §3b, review §3c, phases with checkboxes), `TRADING-RULES.md`, `SOURCES.md` + `notes/` (49 posts, 2 transcripts, 145 images — jpg local only). Code: `zargar/techniques/team2/` (rules/regime/scenario/levels/plan/premium/**session.py = the one pure read**/runner/service), `api/routes_team2.py`, `frontend/src/pages/Team2Page.tsx`, `tools/team2_sweep.py`. **Built completely separately from EM** — shared engine additions (ext-hours bars, `marketstructure/aggregate|indicators|dailylevels|market_calendar`, `options/pick`, `research/macro_calendar`, per-technique 0DTE RiskGate policy `techniques.<id>.zero_dte`) are logged in PLATFORM-RULES; never edit EM's `zargar/technique/` for Team2. User decision 2026-09-03: **Team2 IS a 0DTE technique** (its own gated policy). Tests: `pytest tests/test_team2_*.py tests/test_marketstructure_extended.py` (own DB `zargar_test_team2` on :5433). Status: alert mode; proposal/auto, mobile-audit, morning-report line, the generic review CLI and the calibration of the remaining 8 documented trades are open (PLAN §3c).
+
+
+**Options Cartel documentation:** current guide in `docs/techniques/options-cartel/README.md`; operating policy in `DAILY-PREPARATION.md`, source/pilot distinction in `IGNITION.md`, current implementation limits in `DELIVERY-STATUS.md`. Historical plan/test/deployment records are not live state.

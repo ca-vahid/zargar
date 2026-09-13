@@ -1,5 +1,7 @@
 # Cartel desk consistency review — 0.7.3
 
+> Historical change/verification record. Current operation and limits are in [DAILY-PREPARATION.md](DAILY-PREPARATION.md) and [DELIVERY-STATUS.md](DELIVERY-STATUS.md). Test counts and runtime observations below apply only to their recorded checkpoints.
+
 Reviewed against CLAUDE.md (versioning, mobile rules, testing), ARCHITECTURE.md,
 BUILDING-A-TECHNIQUE.md, MOBILE-PLAN.md, Team2 PLAN.md G-2, Team2Page.tsx,
 the shared design tokens/components, routing and Cartel's existing controls.

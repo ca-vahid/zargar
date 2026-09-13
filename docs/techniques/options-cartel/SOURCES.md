@@ -1,6 +1,6 @@
 # Source ledger and research coverage
 
-Reviewed 2026-09-06 through 2026-09-07 using the user's browser and public sources.
+Research conducted September 6–12, 2026; coverage index updated September 13. Initial archive coverage and later public-post/video checks are distinguished below.
 Primary author is Sean Trades. Thread Reader is an archive of his posts, not
 an independent authority. Read the original X thread where accessible and
 cross-check the archive. Do not use affiliate reviews as trading-rule evidence.

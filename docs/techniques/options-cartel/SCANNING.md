@@ -1,105 +1,21 @@
-# Focus-list scanning
+# Research scans and scheduled work
 
-For the broader market-to-armed-shortlist workflow, see
-[Automatic daily preparation](DAILY-PREPARATION.md). The selected-symbol scans
-described below remain separate research-only tools.
+Reviewed 2026-09-13. Selected-symbol research scans and [automatic daily preparation](DAILY-PREPARATION.md) are separate workflows. Only the latter discovers the broader market and can arm plans automatically.
 
-The Cartel desk accepts up to 20 unique US equity symbols. A scan applies one
-source profile, direction and fixed data cutoff to the whole list, using the
-same collection and analysis functions as single-symbol research. At most two
-symbol collections run concurrently. Each successful analysis is saved and can
-be opened to review gates, candidates and targets before preparing a plan.
+## Selected-symbol scans
 
-The parent scan record is created before collection and preserves the requested
-universe, cutoff, supplied evidence and pending symbols. Each completed symbol
-updates its analysis ID, failure or qualifying result under a row lock. Child
-analyses also retain the parent ID, including when interruption happens between
-analysis persistence and the parent progress update.
-A provider failure leaves that symbol explicitly unavailable and preserves
-successful siblings. No scan creates a plan, arms a signal or places orders.
+Validation accepts up to 20 unique US equity symbols with one profile, direction and fixed cutoff. Collections run with bounded concurrency; successful analyses and per-symbol errors are saved under a parent scan. Requests may select owned evidence snapshots. A source version, historical ranking or membership is not fabricated when unavailable.
 
-The desk's candidate evidence applies only to its matching symbol. The API can
-accept separate facts for every requested symbol. Missing facts are never
-borrowed from another symbol or inferred from price bars. September industry
-qualification still requires source-dated weekly and monthly ranks.
+Submission returns a background job. Poll its saved progress; completed children survive interruption. Retry unresolved symbols preserves successful analyses and targets pending/failed names. Shutdown owns/cancels its workers; three concurrent research jobs are the service limit. A cancelled scan does not retroactively erase saved research.
 
-This is a user-selected universe. Broad universe discovery, historical industry
-snapshots and walk-forward plan construction remain unfinished. Normal request
-cancellation cancels and awaits outstanding symbol tasks, preserves completed
-results and marks the parent interrupted. Startup reconciles running Cartel scan
-rows without live local task handles, recovering uniquely matching completed
-child analyses at the original cutoff. Complete result sets can finish; unresolved
-symbols remain pending in an interrupted record. Other techniques and finished
-scans are untouched. This uses the platform's single-engine-per-database invariant.
-Finished/interrupted records offer Retry unresolved symbols: pending and failed
-data collections run again at the original cutoff with the original evidence.
-Completed analyses are retained and labeled; the retry is a new scan linked to
-the original. The earlier record is unchanged. Missing old provider history can
-still fail visibly. Running scans and scans with no unresolved symbols cannot
-be retried. Manual scan/retry submissions now return HTTP 202 after the running
-record is persisted. The selected scan polls progress until terminal status;
-leaving the page does not cancel its worker. At most three manual background
-scans run concurrently. Runtime shutdown cancels and awaits only those tracked
-workers, preserving interrupted progress; it does not cancel the shared scheduler
-task. Scheduled scans continue to await their results through the scheduler.
-Browser submission and mobile acceptance of the new scan form remain pending.
+These tools do not select the entire-market universe, arm positions or create orders. Opening a successful analysis is not execution approval. Universe-wide, unbiased walk-forward evaluation remains separate work.
 
-Verification update (2026-09-07): the isolated preview was refreshed only after
-verifying its owned process, sim configuration, blank integration credentials
-and empty execution state. A Chrome submission for MU and HOOD completed via
-the shared historical provider and saved scan `ccd63254d60243d79c71c88dd86bc65d`.
-Both child analyses were watch-only with explicit missing market-cap/industry
-evidence. Post-submission checks found zero orders, managed positions and active
-arms. Provider retrieval is verified for this request, not all symbols/dates.
+## Schedules and held-position recovery
 
-The desk passed all five mobile audit profiles after increasing the industry
-source link's touch target to 44px in mobile.css. Production build passed. The
-preview launcher PID is recorded in `.cache/cartel-preview.pid`; verify listener
-ownership again before future restarts. No shared-runtime process was stopped.
+`jobs.py` registers Cartel's research scan, position-data recovery and daily-preparation callbacks. The scan/recovery settings are separate from the preparation enable switch. Check the current Settings schedule panel for actual saved enable flags and dispatch times; the default preparation dispatches are 08:45/20:20 ET on trading days.
 
-## Scheduled work
+Research scanning is non-executing. Recovery for existing Cartel managed positions is different: validated missed-close catch-up may lead the position manager to execute exits at current eligible prices. It must preserve actual fills, existing protection, cancellation state and ownership. Historical prices are not executable fills. Stopping a research scan is not a request to close a held position.
 
-Cartel runtime attachment registers three names on the shared scheduler:
-`options_cartel_preopen_recovery` at 09:05 ET, `options_cartel_close_recovery`
-at 20:10 ET and `options_cartel_nightly_scan` at 20:15 ET. Recovery and scanning
-are separately opt-in and default off. The desk's schedule form saves the owned
-symbol universe, profile/direction and switches through a validated endpoint.
+Schedule dispatch success, a completed research run, a saved plan and a filled order are separate evidence. Persisted job outcomes can contain partial failures. Restart behavior for automatic preparation is documented in DAILY-PREPARATION.md; do not apply its lease/auto-resume rules indiscriminately to selected-symbol research jobs.
 
-The shared scheduler supplies its existing once-per-ET-day journal markers and
-weekday behavior. A scan additionally skips exchange holidays. Disabled or empty
-jobs return a status; enabling one after its daily tick does not rerun it that
-day. Late startup uses the shared scheduler's existing catch-up timing. Jobs
-report individual collection/recovery failures in their recorded results.
-
-Runtime shutdown unregisters only these three Cartel jobs. Retained callbacks
-return a stopping status, and recovery checks again after history-fetch I/O
-before applying data. This does not cancel an unknown order outcome or stop
-another technique's scheduled work.
-
-Recovery considers only open Cartel positions using its own adapter, skips
-residual positions and fetches completed underlying daily history. Conflicts
-are rejected rather than overwriting persisted candles. Validated recovery may
-prepare a catch-up batch which the position watch loop executes at current
-prices. This can close held positions across accounts; it is not research-only.
-
-Scheduled scans do not yet collect fundamental/industry snapshots, select an
-entire-market universe or arm plans. Job progress and retry behavior follow the
-shared scheduler; durable resumable per-symbol scan jobs remain unfinished.
-The schedule form and its runtime attachment still need browser/mobile acceptance.
-
-Schedule status now loads each Cartel job's latest persisted success/failure
-event, including partial per-position recovery outcomes. The desk displays these
-results instead of relying only on resettable in-memory failure counters. A
-completed scheduler invocation can therefore visibly retain unavailable data or
-catch-up review requirements after restart. API tests and frontend builds must
-run sequentially when test app construction uses frontend/dist: Vite replaces
-its assets directory during a build.
-
-Schedule UI acceptance (2026-09-07): after verifying sim configuration, blank
-integration keys and zero orders/positions/active arms, only the owned Codex
-preview was refreshed. Chrome displayed all three registered jobs; Save schedule
-preserved `scanEnabled=false`, `recoveryEnabled=false` and an empty symbol list.
-The expanded schedule form passed all five mobile audit profiles. Actual timed
-execution with enabled jobs and populated outcomes remains an operational gate;
-the verification did not enable recovery or scans. Current preview launcher
-identity remains recorded in `.cache/cartel-preview.pid`.
+Implementation: `scans.py`, `scan_tasks.py`, `jobs.py`, `preparation.py`, `position_adapter.py`, `catchup.py`. Verification examples live in the scan/recovery/API and position tests. Historical UI and preview observations are not current runtime health checks.

@@ -1,90 +1,34 @@
-# The Options Cartel — independent technique desk
+# Options Cartel — current guide
 
-Owner: Codex new-technique team. Working id: `options_cartel`.
-Source author: Sean Trades (`@SRxTrades`), founder of `@TheOptionCartel`.
-Started 2026-09-06. **Research and implementation in progress; not a shipped technique.**
+Updated 2026-09-13 against integrated main. Technique id: `options_cartel`.
+Sean Trades (`@SRxTrades`) is the source author; the app's numerical interpretations and Practice experiments are identified separately.
 
-Research preview: `http://127.0.0.1:8421/techniques/options-cartel` (isolated
-`zargar_dev_codex`, sim broker/quotes, no integration credentials). Desk, Plans,
-History and Method are connected to the persisted research APIs. Browser plan
-and review workflows and phone/tablet audit passed in earlier verification.
-The running desk supports alert, proposal and auto arming with reviewed execution
-settings, live updates, approval, pause/resume, disarm and position closure.
-Recovery restores available session bars and requires a fresh post-resume entry;
-recorded invalidations remain effective. Feed recovery failures persist a visible
-pause with a retry reason. Observation and signal consumption commit together.
-Browser verification covered future-session synthetic auto/proposal arms and
-retired them without placing preview orders. Complete replay/sweep UI, source
-validation, broker normalization and rollout evidence remain unfinished.
+The desk is implemented and deployed. The latest Cartel-specific functional releases were v0.7.51–0.7.52; other desks can advance the app-wide version independently. A dated deployment report is evidence for that checkpoint, not a live health or account report.
 
-Execution work now includes provisional management of confirmed partial fills,
-same-position cumulative fill reconciliation, and serialized entry/exit updates.
-Profit-taking waits for terminal entry settlement while stops remain active.
-Residual fills after closure are separately reconciled and flattened. The entry
-controller now submits through OrderManager/RiskGate and hands real sim fills
-to management, including options, through the public runtime. Primary campaign cancellation has verified-order
-reconciliation and restart tests. Persisted execution-readiness checks now block
-new exposure when earlier orders, fills or restored positions are unresolved,
-without disabling protective exits. Daily price/fee P&L and an optional persisted
-day-loss latch now have a Desk card and authenticated report API. FX translation
-is excluded and missing marks remain unknown. The card can recover compatible
-missing prior closes through shared history without overwriting existing rows.
-Scheduled scan/recovery integration, daily-history catch-up and broker time/fee
-normalization remain rollout work (PLAN.md).
+## Start here
 
-Independent screening primitives now exist in
-`backend/zargar/techniques/options_cartel/` (rules, completed-session data,
-market/universe screening, measured setup candidates, reviewed plan preparation
-and causal entry/exit reading). An authenticated research API persists analyses,
-reviewed plans, entry replays and reviews. The collection endpoint fetches daily
-and intraday history through the shared provider and reports missing fundamental/
-industry metadata. An earlier Cartel suite passed 131 cases (including 6 PostgreSQL
-API tests); a live read-only history probe also succeeded. Full source research,
-setup/entry/exit logic, runtime integration and the app page remain in progress.
+1. Read [Automatic daily preparation](DAILY-PREPARATION.md) for account routing, settings, preparation, recovery and arming.
+2. Read [Post-ignition workflow](IGNITION.md) before selecting the optional Practice pilot. Its research watchlist does not itself trade.
+3. Use [Current capabilities and limits](DELIVERY-STATUS.md) to distinguish shipped behavior from open validation work.
+4. Open Plans for preparation, Armed for actual monitored campaigns, History/Validation for research and Method for source documentation. Records have dedicated `/techniques/options-cartel/run/<runId>` URLs.
 
-The requested end state is a complete independent technique with its own
-navigation page, method details, scanning/focus list, plans, arming controls,
-execution/position management, history, review, and verification. Research alone
-or a static page does not complete this task.
+Practice uses the configured Options Cartel Practice book. Live has separate settings and permissions. Preparation builds plans and may arm them; entry orders still require the engine's closed-bar, data, quote, cash/risk and execution checks. An armed plan is not a filled position. Held positions retain their protective management when preparation is stopped or a new plan expires.
 
-## Documents
+## Documentation map
 
-The in-app Method library bundles the method, rules, source reviews, examples,
-ledger, industry, replay and scanning chapters directly from these files.
-Rebuild the frontend after documentation updates to refresh the shipped library.
+| Purpose | Documents |
+|---|---|
+| Operating instructions | [Preparation](DAILY-PREPARATION.md), [record details](RECORD-PAGE.md), [selected-symbol scans](SCANNING.md), [replays/comparisons](REPLAY.md) |
+| Method and policy | [Method](METHOD.md), [ignition](IGNITION.md), [trading decisions](TRADING-RULES.md), [traceability](TRACEABILITY.md) |
+| Source evidence | [Source ledger](SOURCES.md), [source-version review](SOURCE-REVIEW.md), [video evidence](VIDEO-REVIEW.md), [examples](EXAMPLES.md), [public ledger audit](LEDGER-REVIEW.md), [industry evidence](INDUSTRY-DATA.md) |
+| Developer work | [Work status/backlog](PLAN.md), [release handoff](RELEASE-HANDOFF.md), [September 12 release scope](RELIABILITY-RELEASE-2026-09-12.md) |
+| Historical evidence | [September 12 deployment](DEPLOYMENT-2026-09-12.md), [weekend review](WEEKEND-REVIEW-2026-09-12.md), [original proposal](IMPLEMENTATION-PLAN-2026-09-12.md), [archived milestones](archive/PLAN-PRE-2026-09-13.md) |
+| Documentation changes | [Change record](DOCUMENTATION-CHANGES.md) |
 
-- [DELIVERY-STATUS.md](DELIVERY-STATUS.md): current implementation, evidence and remaining work.
+The in-app Method library bundles selected Markdown chapters. A frontend rebuild is needed to display updated text. Git documentation updates do not themselves restart the app or change account settings.
 
-- [METHOD.md](METHOD.md): source-backed rules, version differences, unresolved details.
-- [SOURCES.md](SOURCES.md): sources actually inspected and the remaining research queue.
-- [PLAN.md](PLAN.md): complete implementation and acceptance worklist.
-- [TRADING-RULES.md](TRADING-RULES.md): this method's own decisions and evidence.
-- [REPLAY.md](REPLAY.md): campaign simulation, input provenance and outcome limits.
-- [INDUSTRY-DATA.md](INDUSTRY-DATA.md): ranking workflow and historical evidence requirements.
-- [SCANNING.md](SCANNING.md): multi-symbol focus-list scans and remaining automation work.
-- [EXAMPLES.md](EXAMPLES.md): inspected trade examples, actor attribution and calibration limits.
-- [LEDGER-REVIEW.md](LEDGER-REVIEW.md): full retrieved Sean-tab structural audit and return limitations.
-- [RELATED-SOURCES.md](RELATED-SOURCES.md): related-account discovery and author ownership boundaries.
+## Collaboration and evidence boundaries
 
-Do not edit EM, Tips, Flow, or Team2 method documents or rules for this technique.
-Reuse technique-agnostic engine capabilities; any required shared additions must
-preserve other techniques' behavior and be logged in PLATFORM-RULES.
-Use only the Codex worktree and `zargar_test_codex`; never attach an additional
-engine to the existing runtime database. See root AGENTS.md.
+Follow root [AGENTS.md](../../../AGENTS.md) and [COLLABORATION.md](../../COLLABORATION.md). Preserve Claude worktrees and the shared runtime. Codex tests use only `zargar_test_codex`, sequentially. Never start a second engine against a runtime or test database. Keep other techniques' knowledge/rules separate.
 
-## Current findings
-
-This is a momentum swing method, not Team2's intraday 0DTE method. It selects
-leaders in strong markets/themes, waits for consolidation and volume-supported
-breakouts, and manages partial exits over days or weeks. The September thread
-and June thread agree on the central process but differ in some timeframe and
-exit details. Those differences remain explicit in METHOD.md.
-
-No claim is made that every public post has been captured. SOURCES.md records
-coverage; media inspection, related-account posts, historical examples, and
-the linked videos remain part of the research requirement.
-
-
-## September 12 reliability release
-
-See [release scope and operating steps](RELIABILITY-RELEASE-2026-09-12.md) for verified-source entries, durable history, automatic recovery, the ignition watchlist and the optional Practice pilot. Native batching is an explicit alternate provider-day source and is off by default.
+No full public-feed coverage, exact author replication, broker-verified author return or profitable strategy has been established. Test success verifies the tested mechanics; source examples and replay R are not realized option P&L. Active plans, balances, versions and provider availability must be checked live when needed.

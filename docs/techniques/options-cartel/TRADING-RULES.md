@@ -1,9 +1,19 @@
 # Options Cartel — method decisions and open questions
 
-2026-09-06: research started. No calibrated thresholds, enabled trading, or
-performance claims. Findings must cite SOURCES.md or an identified replay/run.
+Current policy index updated 2026-09-13. This file also preserves dated engineering decisions. Later entries supersede earlier implementation choices; source statements remain versioned. Use DAILY-PREPARATION.md for current operations and DELIVERY-STATUS.md for limits. No profitable strategy or calibrated author replication is claimed.
 
-## Decisions
+## Current policy update — 2026-09-13
+
+- New automatically prepared plans default to verified exchange-class confirmation/stop data; Live preparation cannot disable this requirement. Manual/legacy snapshots retain their saved policy. Source classification is not a complete provider-revision ledger.
+- New Practice readiness defaults to the first hour plus 80% of pre-close baseline slots, and Live to full-session coverage. Explicit legacy coverage remains selectable. This supersedes the earlier blanket full-session rule and the later any-usable-slot default.
+- Preparation preserves existing campaigns and account capacity. Evidence expires at the first intended entry-session close, superseding the former 24-hour wall-clock rule. Verified pending invalidation is terminal.
+- Durable caches, ownership leases, eligible automatic resume and explicit cancellation are implemented. Resume requires matching policy/schema/workspace/market session; it is not a fresh-data refresh.
+- S30 post-ignition research and the long-side Practice pilot are implemented separately from general setups. The watchlist is not trading authority; the pilot is not silently selected or permitted in Live.
+- Source profile, 15m/1.5x/0.70 confirmation defaults, target/risk thresholds, numerical geometry and exit allocation remain explicit engineering choices. Intrabar entries and automatic risk graduation are not introduced.
+
+See [IGNITION.md](IGNITION.md), [DAILY-PREPARATION.md](DAILY-PREPARATION.md), and [PLAN.md](PLAN.md) for definitions and outstanding work.
+
+## Historical decision log
 
 - Automatic preparation (2026-09-07): the user selected automatic execution in
   Practice. [DAILY-PREPARATION.md](DAILY-PREPARATION.md) records the discovery,
@@ -39,7 +49,7 @@ performance claims. Findings must cite SOURCES.md or an identified replay/run.
   Legacy snapshots default false. Source gap path has two directional/causality
   tests. D8's ordinary intraday-break rule remains for plans without this option.
 
-## Resolve before execution acceptance
+## Historical execution-acceptance questions (2026-09-06; see current status)
 
 D16 (2026-09-06, engineering selection policy): automatic routine selection
 requires reviewed minimum/maximum/target DTE, target absolute delta, max ask and

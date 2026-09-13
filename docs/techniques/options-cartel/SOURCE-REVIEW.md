@@ -1,4 +1,6 @@
-# Cross-version source review — 2026-09-06
+# Cross-version source review — historical evidence, updated index 2026-09-13
+
+Implementation-status note: historical source reviews below describe their original dates. Current mechanics and remaining limits are in DELIVERY-STATUS.md; S30 is covered in VIDEO-REVIEW.md and IGNITION.md.
 
 All 21 full texts from the captured Sean archive index have been read, in
 addition to the early focus-list excerpt S03. S01's eleven images were visually
@@ -37,7 +39,7 @@ freshness and the 0.25 absolute floor, with explicitly documented lower-threshol
 exceptions. The 120-second observation-age limit is an engineering choice, not
 Sean's number. A routine selection API now ranks refreshed candidates within
 reviewed DTE/delta/price limits and reports search coverage. Its UI and actual
-submission-time integration remain unfinished.
+submission-time checks are implemented; complete author-policy calibration remains open.
 
 **Risk and exposure (S20/S23).** S20 specifies 1% risk per trade. S23 describes
 0.5%, 1%, then 5% learning-stage risk with different performance targets. These
