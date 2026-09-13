@@ -24,8 +24,9 @@ itself in options at all. That second fact is the one to fix first.
 ## 2. What the author did this week that we did not
 
 Sources: his Discord video transcripts and morning posts (ingested daily), X feed read on 09-09
-and 09-10 (X was unreachable from the desk on 09-12; the Discord material is the method content
-anyway). His wins are self-selected; we have no record of his losses.
+and 09-10, and again on 09-12 for Thu/Fri: **he posted no trade on X on Thursday or Friday** -
+only Alertsify marketing - which matches his Friday video ("I won't guess"). His wins are
+self-selected; we have no record of his losses.
 
 | day | his trade / stance | what we did | gap |
 |---|---|---|---|
