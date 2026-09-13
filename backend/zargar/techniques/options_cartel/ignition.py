@@ -77,8 +77,11 @@ async def record(engine, history, at):
     return rows
 
 
-async def watchlist(engine):
+async def watchlist(engine, *, include_inactive=False):
     async with engine.sf() as session:
-        rows = (await session.scalars(select(CartelIgnitionThesis).order_by(CartelIgnitionThesis.as_of.desc(), CartelIgnitionThesis.symbol).limit(200))).all()
+        query = select(CartelIgnitionThesis)
+        if not include_inactive:
+            query = query.where(CartelIgnitionThesis.stage.notin_(('expired', 'invalidated')))
+        rows = (await session.scalars(query.order_by((CartelIgnitionThesis.stage == 'setup_ready').desc(), CartelIgnitionThesis.as_of.desc(), CartelIgnitionThesis.symbol).limit(200))).all()
     return {'profile': VERSION, 'researchOnly': True, 'placesOrders': False,
             'rows': [r.evidence for r in rows]}

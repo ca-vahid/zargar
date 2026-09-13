@@ -186,3 +186,15 @@ def test_pending_invalidation_cannot_be_revived_by_a_rebound(source,terminal):
     assert not result['ready']
     assert result['terminal'] is terminal
     if terminal: assert result['terminalStatus']=='invalidated'
+
+
+async def test_ignition_watchlist_hides_retired_theses_by_default(engine):
+    from zargar.models import CartelIgnitionThesis
+    bars=history();at=session_bounds(bars[-1].session.isoformat())[1]
+    rows=await record(engine,bars,at)
+    async with engine.sf() as session,session.begin():
+        saved=await session.get(CartelIgnitionThesis,rows[0]['id'])
+        saved.stage='expired'
+        saved.evidence={**saved.evidence,'stage':'expired'}
+    assert (await watchlist(engine))['rows']==[]
+    assert len((await watchlist(engine,include_inactive=True))['rows'])==1
