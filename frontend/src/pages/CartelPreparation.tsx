@@ -161,7 +161,6 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
       <button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Save preparation settings"}</button>
       <p className="muted">Runs outside regular hours. Disabling stops future preparation; existing armed plans and positions remain managed.</p>
     </form>}
-    {view === "plans" && <><CartelIgnition/><CartelSessionReview/></>}
     {view === "plans" && status && <>
       {!status.configuration.enabled && <div className="cartel-inset">Enable {workspaceLabel} preparation in Settings to build and arm your daily shortlist.</div>}
       {live && !status.liveAutoAllowed && <div className="cartel-inset">Cartel live-auto permission is off. Enable it in Settings before preparing Live plans.</div>}
@@ -248,5 +247,6 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         {Object.entries(status.quoteRefresh?.errors || {}).map(([symbol, reason]) => <ErrorState key={symbol} message={`${symbol}: ${reason}`}/>)}
       </> : <EmptyState art={false} title="No preparation yet" hint={`Enable automatic ${workspaceLabel} preparation in Settings, then prepare the next session outside regular market hours.`} action={<button className="ghost-btn" onClick={onSettings}>Set up preparation</button>}/>}
     </>}
+    {view === "plans" && <><CartelIgnition/><CartelSessionReview/></>}
   </section>;
 }

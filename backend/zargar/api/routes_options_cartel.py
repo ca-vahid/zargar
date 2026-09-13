@@ -64,9 +64,9 @@ def build_options_cartel_routes(app, eng, auth, config):
             raise HTTPException(400, str(exc)) from exc
 
     @app.get('/api/options-cartel/ignition', dependencies=[auth])
-    async def cartel_ignition_watchlist():
+    async def cartel_ignition_watchlist(include_inactive: bool = False):
         from ..techniques.options_cartel.ignition import watchlist
-        return await watchlist(eng)
+        return await watchlist(eng, include_inactive=include_inactive)
 
     @app.get('/api/options-cartel/preparation', dependencies=[auth])
     async def cartel_preparation_status(workspace: Workspace | None = None):
