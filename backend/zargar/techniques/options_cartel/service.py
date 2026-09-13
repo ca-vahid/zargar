@@ -36,6 +36,7 @@ class FactsInput(ListingFacts):
 
 
 class MinuteInput(WireModel):
+    source: Literal["exchange", "sampled", "sim", "unknown", ""] = "unknown"
     symbol: str = Field(min_length=1, max_length=32)
     ts: int = Field(ge=0)
     open: float = Field(gt=0)
@@ -147,6 +148,8 @@ class CartelService:
         return self._view(row, detail=True)
 
     async def analyze(self, body: ResearchInput, *, collection: dict | None = None, parent_run_id=None):
+        if body.rules.profile == 'post_ignition_2026_09_11':
+            body = body.model_copy(update={'parameters': body.parameters.model_copy(update={'family': 'post_ignition'})})
         if body.membership_snapshot_id:
             record = await self._load(body.membership_snapshot_id)
             if record.mode != 'membership' or record.symbol != body.facts.symbol or record.verdict != 'verified':

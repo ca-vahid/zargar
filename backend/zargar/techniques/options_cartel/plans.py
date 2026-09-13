@@ -20,6 +20,8 @@ class EntryPolicy(BaseModel):
     allow_gap_retest: bool = False
     stop_mode: Literal["session_extreme", "breakout_bar", "preplanned"] = "session_extreme"
     # Explicit engineering choices until calibrated, never claimed as author numbers.
+    require_exchange_bars: bool = False  # legacy policy; new preparation opts in
+    allow_simulated_bars: bool = False
     volume_multiple: float = Field(default=1.5, gt=0)
     min_close_location: float = Field(default=0.7, ge=0, le=1)
     retest_tolerance_pct: float = Field(default=0.25, ge=0, le=5)
@@ -33,7 +35,7 @@ class CartelPlan(BaseModel):
     id: str = Field(min_length=1)
     symbol: str = Field(min_length=1)
     direction: Literal["long", "short"]
-    setup: Literal["base", "flag", "pennant", "wedge", "inside_day", "ma_pullback", "breakout_retest", "ascending_triangle"]
+    setup: Literal["post_ignition", "base", "flag", "pennant", "wedge", "inside_day", "ma_pullback", "breakout_retest", "ascending_triangle"]
     created_at: int = Field(ge=0)
     first_session: dt.date
     last_session: dt.date

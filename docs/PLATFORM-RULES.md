@@ -1341,3 +1341,17 @@ from `pick_contract`; other techniques may adopt it, none is changed. Team2 also
 `model_out_of_band` and `target_replanned` as `TechniquePlanRead`. Rationale: the user's cohort-v2 instruction — the
 candidate → quote → order → fill → exit trail must be on the append-only record, not only in the plan's capped
 in-memory events.
+
+
+### Cartel source quality and preparation ownership — 2026-09-12
+
+Cartel uses an additive, source-bearing minute representation; shared Bar.to_row()
+remains six values. New Cartel plans can require exchange-quality entry/stop
+history; legacy unknown source is not relabelled. Corrections are context-only
+and cannot revive a consumed entry. Existing positions retain protective exits.
+Additive cartel_history_cache, cartel_ignition_theses and cartel_preparation_leases
+tables are created through the existing schema path. Capacity uses a portfolio-keyed
+advisory lock; preparation has a renewable lease checked before new arming.
+Native daily batching is opt-in with its provider-day completion semantics and a
+separate cache. No other desk switches provider or loses its shared API behavior.
+See options-cartel/RELIABILITY-RELEASE-2026-09-12.md for scope and limits.

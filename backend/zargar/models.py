@@ -795,3 +795,33 @@ class FlowSweep(Base):
     method: Mapped[str] = mapped_column(String(8), default="tick")      # tick | nbbo
     source: Mapped[str] = mapped_column(String(16), default="alpaca")
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CartelHistoryCache(Base):
+    """Replaceable research cache; immutable decisions retain their own input snapshots."""
+    __tablename__ = 'cartel_history_cache'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    timeframe: Mapped[str] = mapped_column(String(8))
+    observed_at: Mapped[int] = mapped_column(BigInteger)
+    start_ms: Mapped[int] = mapped_column(BigInteger)
+    end_ms: Mapped[int] = mapped_column(BigInteger)
+    payload: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+
+
+class CartelIgnitionThesis(Base):
+    __tablename__ = 'cartel_ignition_theses'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(32), index=True)
+    event_session: Mapped[str] = mapped_column(String(10), index=True)
+    as_of: Mapped[int] = mapped_column(BigInteger)
+    stage: Mapped[str] = mapped_column(String(24), index=True)
+    evidence: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CartelPreparationLease(Base):
+    __tablename__ = 'cartel_preparation_leases'
+    workspace: Mapped[str] = mapped_column(String(16), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[int] = mapped_column(BigInteger)

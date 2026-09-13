@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 METHOD_SOURCES = {
+    "post_ignition_2026_09_11": ["S30"],
     "september_2026": ["S01", "S02", "S06"],
     "june_2026": ["S02", "S06"],
     "june_2026_image": ["S02", "S06"],
@@ -15,7 +16,7 @@ METHOD_SOURCES = {
 }
 
 
-ScreenProfile = Literal["september_2026", "september_2026_video", "june_2026", "june_2026_image", "may_2026", "may_2026_image"]
+ScreenProfile = Literal["post_ignition_2026_09_11", "september_2026", "september_2026_video", "june_2026", "june_2026_image", "may_2026", "may_2026_image"]
 
 
 class CartelRules(BaseModel):
@@ -62,6 +63,10 @@ class CartelRules(BaseModel):
                                 require_industry_rank=False, stock_ema_periods=(21, 50), require_positive_change=False)
             if profile == 'september_2026_video':
                 defaults.update(min_relative_volume=1.)
+            if profile == 'post_ignition_2026_09_11':
+                # Event-day liquidity/ADR/change are checked by the ignition detector.
+                defaults.update(min_price=5., min_market_cap=1., min_volume=0, min_adr_pct=.000001,
+                                stock_ema_periods=(50,), require_industry_rank=False)
             for key, value in defaults.items():
                 data.setdefault(key, value)
         return data

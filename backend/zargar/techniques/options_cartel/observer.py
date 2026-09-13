@@ -18,6 +18,7 @@ from ...marketstructure.aggregate import bar_session
 from ...marketstructure.market_calendar import is_trading_day
 from ...marketstructure.sessions import session_bounds, session_date
 from ...models import BarRow, Event, TechniqueRun
+from .data_quality import evidence, merge, unpack
 from .entry import read_entry
 from .observation_health import coverage, recovery_record
 from .plans import CartelPlan
@@ -102,15 +103,15 @@ class CartelObserver(SessionListener):
                                                                 BarRow.ts >= opens, BarRow.ts < closes,
                                                                 BarRow.ts+60_000 <= now))).all()
             locked = await self.repository._locked(session, run_id)
-            minutes = {str(b.ts): [b.ts, b.open, b.high, b.low, b.close, b.volume] for b in stored}
+            minutes = dict(locked.state.get('minutes', {})) if locked.state.get('day') == day else {}
+            for b in stored:
+                merge(minutes, Bar(b.symbol, b.tf, b.ts, b.open, b.high, b.low, b.close, b.volume, source=b.source))
             for b in self.engine.bars.bars(symbol, tf="1m", limit=1000, include_forming=False):
                 if opens <= b.ts < closes and b.ts+60_000 <= now:
-                    minutes[str(b.ts)] = b.to_row()
+                    merge(minutes, b)
             for values in locked.config.get('preparation', {}).get('contextMinutes', []):
                 if opens <= values[0] < closes and values[0]+60_000 <= now:
-                    minutes.setdefault(str(values[0]), values)
-            if locked.state.get("day") == day:
-                minutes.update(locked.state.get("minutes", {}))
+                    merge(minutes, unpack(symbol, values))
             previous_state = locked.state
             cutoff = locked.state.get("observeAfter", locked.state["armedAt"])
             if advance_cutoff:
@@ -235,15 +236,21 @@ class CartelObserver(SessionListener):
                     continue
                 state = row.state
                 if bar.ts <= state.get("lastMinute", -1):
-                    continue
+                    minutes = dict(state.get('minutes', {}))
+                    if merge(minutes, bar):
+                        row.state = {**state, 'minutes': minutes,
+                                     'observeAfter': max(state.get('observeAfter', state['armedAt']), now)}
+                        self.rows[rid] = self.repository.view(row)
+                    continue  # correction is context only, never a historical entry
                 day = session_date(bar.ts)
                 minutes = dict(state.get("minutes", {})) if state.get("day") == day else {}
-                minutes[str(bar.ts)] = bar.to_row()
+                merge(minutes, bar)
                 plan = self.plans[rid].model_copy(update={"created_at": max(
                     self.plans[rid].created_at, state["armedAt"])})
-                tape = [Bar(symbol, "1m", *values) for values in minutes.values()]
+                tape = [unpack(symbol, values) for values in minutes.values()]
                 observation = read_entry(plan, tape, now, entry_after=state.get("observeAfter", state["armedAt"]))
-                row.state = {**state, "minutes": minutes, "day": day, "lastMinute": bar.ts,
+                observation['dataEvidence'] = evidence(minutes)
+                row.state = {**state, 'dataEvidence': evidence(minutes), "minutes": minutes, "day": day, "lastMinute": bar.ts,
                              "observation": observation, "decisionHistory": retain_decisions(
                                  state.get("decisionHistory", (state.get("observation") or {}).get("trace", [])), observation)}
                 if observation["status"] in ("expired", "invalidated"):

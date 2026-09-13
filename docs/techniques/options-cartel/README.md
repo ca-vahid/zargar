@@ -83,3 +83,8 @@ exit details. Those differences remain explicit in METHOD.md.
 No claim is made that every public post has been captured. SOURCES.md records
 coverage; media inspection, related-account posts, historical examples, and
 the linked videos remain part of the research requirement.
+
+
+## September 12 reliability release
+
+See [release scope and operating steps](RELIABILITY-RELEASE-2026-09-12.md) for verified-source entries, durable history, automatic recovery, the ignition watchlist and the optional Practice pilot. Native batching is an explicit alternate provider-day source and is off by default.
