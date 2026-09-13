@@ -617,9 +617,11 @@ async def test_auto_options_without_a_contract_fails_cleanly(rig, monkeypatch):
         return {"available": False, "error": "no call just OTM at 2026-08-28", "provider": "fake"}
     monkeypatch.setattr(rig.svc, "option_pick", pick)
     await rig.eng.settings.set("technique.options.enabled", True, journal=False)
+    # C2 (2026-09-12) made shares the Practice default for EM; this test pins the OFF path
+    await rig.eng.settings.set("techniques.enhanced_market.entry_fallback", "off", journal=False)
     run = await _plan_run(rig)
     await rig.client.post(f"/api/technique/runs/{run['id']}/arm",
-                          json={"mode": "auto", "instrument": "options", "contracts": 1, "portfolioId": rig.sim["id"]})
+                          json={"mode": "auto", "instrument": "options", "contracts": 1, "portfolioId": rig.sim["id"], "entryFallback": "off"})
     plan_for = (await rig.client.get("/api/technique/armed")).json()[0]["planFor"]
     async def q(bar):
         await _quote(rig, bar.close)

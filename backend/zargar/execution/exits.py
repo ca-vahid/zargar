@@ -27,7 +27,8 @@ class ExitDecision:
 def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
               ladder: tuple[float, ...] = EXIT_LADDER, single_exit: str = "tp2",
               stop_on: str = "low", direction: str | None = None,
-              scratch_r: float = 0.0, scratch_trim: float = 0.5) -> ExitDecision | None:
+              scratch_r: float = 0.0, scratch_trim: float = 0.5,
+              scratch_only_far_tp1: bool = False, far_tp1_r: float = 3.0) -> ExitDecision | None:
     """Decide the next exit on a *closed* bar. One exit per bar. Returns None when
     nothing should be sent (nothing hit, or a working exit is still pending).
 
@@ -60,6 +61,9 @@ def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
     if scratch_r > 0 and k == 0 and not getattr(trade, "scratched", False):
         entry = float(getattr(trade, "entry", 0) or 0)
         risk = abs(entry - float(trade.stop))
+        if entry and risk > 0 and scratch_only_far_tp1 and trade.targets:
+            if abs(float(trade.targets[0]) - entry) / risk < far_tp1_r:
+                risk = 0.0                                 # C4: near TP1 - no scratch, the ladder works
         if entry and risk > 0:
             line = entry - scratch_r * risk if short else entry + scratch_r * risk
             if (bar.low <= line) if short else (bar.high >= line):

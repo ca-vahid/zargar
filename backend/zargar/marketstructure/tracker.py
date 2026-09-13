@@ -137,6 +137,7 @@ class TriggerTracker:
     # R3.2 — breaks of this level that failed to hold this session; after
     # `max_false_breaks` the level is done for the day (`exhausted`)
     failed_breaks: int = 0
+    gap_day: bool = False          # C3: the symbol itself opened on a gap >= gap_day_pct
     _bars: list[Bar] = field(default_factory=list)
     _break_index: int | None = None
     _gap_checked: bool = False
@@ -163,6 +164,23 @@ class TriggerTracker:
     @property
     def direction(self) -> str:
         return "short" if self.trigger.get("direction") == "short" else "long"
+
+    def _is_range_break(self, bar: Bar) -> bool:
+        """C5: were the last `range_break_bars` closed bars (before this one) a tight range - their
+        high-low span <= range_break_max_range_mult x the mean single-bar range of the 20 bars before them?"""
+        t = self.thresholds
+        n = int(getattr(t, "range_break_bars", 6) or 6)
+        prior = self._bars[:-1]
+        if len(prior) < n + 5:
+            return False
+        box = prior[-n:]
+        base = prior[-(n + 20):-n] or prior[:-n]
+        span = max(b.high for b in box) - min(b.low for b in box)
+        mean_range = sum(b.high - b.low for b in base) / max(1, len(base))
+        ok = mean_range > 0 and span <= float(getattr(t, "range_break_max_range_mult", 1.0)) * mean_range
+        if ok:
+            self._note(bar, "range_break_candidate", span=round(span, 4), meanRange=round(mean_range, 4), bars=n)
+        return ok
 
     def _to_continuation(self, bar: Bar, how: str) -> None:
         level = self.entry
@@ -205,6 +223,10 @@ class TriggerTracker:
         return None
 
     def _window_ok(self, ts: int) -> bool:
+        if self.gap_day and self.enforce_windows:
+            open_ms = session_bounds(session_date(ts))[0]
+            if ts < open_ms + int(getattr(self.thresholds, "gap_day_wait_minutes", 30)) * 60_000:
+                return False                    # C3: give a gap open time
         return (not self.enforce_windows) or session_window(ts) in (getattr(self.thresholds, "windows", None) or PRIME_WINDOWS)
 
     def _volume_unknown(self, bar: Bar, what: str) -> str:
@@ -229,12 +251,19 @@ class TriggerTracker:
                 self.gap_unchecked = True
                 self._note(bar, "gap_unchecked", firstBar=bar.ts, sessionOpen=open_ms)
             elif self.gap_rules:
+                # C3: is this a gap day for the symbol? (judged on the open vs the previous close)
+                gpct = float(getattr(t, "gap_day_pct", 0.0) or 0.0)
+                if gpct > 0 and self.prev_close and abs(bar.open - self.prev_close) / self.prev_close * 100 >= gpct:
+                    self.gap_day = True
+                    self._note(bar, "gap_day", open=bar.open, prevClose=self.prev_close,
+                               pct=round((bar.open - self.prev_close) / self.prev_close * 100, 3))
                 # specific first (through the stop / past the level), then the magnitude rule
                 short = self.direction == "short"
                 if self.kind in ("bounce", "reject"):
                     through = (bar.open > self.stop) if short else (bar.open < self.stop)
                     past = (bar.open >= self.entry) if short else (bar.open <= self.entry)
-                    if (through or past) and getattr(t, "gap_through_continuation", False):
+                    if (through or past) and (getattr(t, "gap_through_continuation", False)
+                                              or (self.gap_day and getattr(t, "gap_day_continuation", False))):
                         # T-13 (2026-09-09): the level did not hold at the open - the author trades
                         # that as a CONTINUATION in the gap direction (SPY puts on the break of the
                         # prior-day low). The trigger becomes a break trigger the other way: stop at
@@ -324,6 +353,21 @@ class TriggerTracker:
                 self._note(bar, "break_outside_window", window=w)
                 return self.status
             rel = self._rel_volume(bar)
+            # C5: a break out of a tight consolidation is the author's wedge/squeeze entry - it fires on
+            # the break close itself (volume floor only) instead of waiting for surge + follow-through
+            if getattr(t, "range_break", False) and self._is_range_break(bar):
+                if rel is None:
+                    return self._volume_unknown(bar, "break_skipped_volume_unknown")
+                if t.volume_floor_mult > 0 and rel < t.volume_floor_mult:
+                    self.skipped.append({"ts": bar.ts, "reason": f"R3.1 volume {rel:.2f}x below floor"})
+                    self._note(bar, "break_skipped_volume", rel=round(rel, 3))
+                    return self.status
+                self.status = "fired"
+                self.fired_index, self.fired_ts, self.fired_window = index, bar.ts, w
+                self.fill_price = float(bar.close)
+                self.trigger["rangeBreak"] = True
+                self._note(bar, "fired", window=w, rel=rel, fill=self.fill_price, rangeBreak=True)
+                return self.status
             if self.trigger.get("continuation") and not getattr(t, "gap_continuation_confirm", True):
                 # T-13b: the author's tempo - the first close through the opening extreme IS the
                 # entry (volume floor only, no surge / decisive candle / follow-through)
@@ -412,7 +456,8 @@ def score_trigger(tracker: TriggerTracker, bars: list[Bar], *, thresholds: Thres
     # simulate from the fire bar (on_break fills at bars[start]); horizon = rest of session
     sim = simulate_plan(bars, i, plan, entry_window=1, horizon=len(bars),
                         stop_on="close" if t.stop_on_close else "low",
-                        scratch_r=float(getattr(t, "scratch_r", 0.0) or 0.0), scratch_trim=float(getattr(t, "scratch_trim", 0.5)))
+                        scratch_r=float(getattr(t, "scratch_r", 0.0) or 0.0), scratch_trim=float(getattr(t, "scratch_trim", 0.5)),
+                        scratch_only_far_tp1=bool(getattr(t, "scratch_only_far_tp1", False)), far_tp1_r=float(getattr(t, "far_tp1_r", 3.0)))
     res["sim"] = {k: sim.get(k) for k in ("filled", "outcome", "rMultiple", "mfeR", "maeR", "barsHeld", "hits", "resolved")}
     res["closedByEod"] = True
     return res

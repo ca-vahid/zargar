@@ -389,6 +389,11 @@ DEFAULTS: dict[str, Any] = {
     "technique.universe.auto_refresh": True,  # add the day's most-active US stocks (Alpaca screener / Yahoo) before the evening sheet
     "technique.universe.auto_top": 40,        # at most this many auto additions
     "technique.universe.min_price": 20.0,     # auto additions need a share price at least this high (thin, low-priced names are not the book's world)
+    "technique.universe.max_spread_pct": 12.0,   # C1 (2026-09-12): a name is option-tradeable when its near-money median spread <= this
+    "technique.universe.min_oi": 500,            # C1: ... and its near-money open interest averages at least this
+    "technique.universe.option_liquidity": {},   # cache: {date, rows: {sym: {spread, oi, tradeable}}} - nightly job em_option_liquidity
+    "technique.universe.untradeable": "shares",  # C1: arming an option-untradeable name: shares (fallback) | skip (refuse) | ignore
+    "technique.arm.preopen_keep_triggers": True, # C3b (2026-09-12): a pre-open re-plan keeps the evening triggers alongside the new ones
     "technique.universe.resolved": {},        # cache: {date, symbols, provenance, counts, dropped} — read via GET /api/technique/universe
 
     "technique.walkforward.workers": 0,        # CPU workers for a sweep: 0 auto (cpu-1, max 8), 1 = thread only
@@ -422,6 +427,14 @@ DEFAULTS: dict[str, Any] = {
     "technique.arm.critic_kills_per_day": 3,   # vetoes per trigger before it stays down for the day
     "technique.scratch_r": 0.0,                # T-14: trim at +N R and move the stop to breakeven (0 = off; sweep first)
     "technique.scratch_trim": 0.5,
+    "technique.scratch_only_far_tp1": False,   # C4 (2026-09-12): scratch only when TP1 >= far_tp1_r R away
+    "technique.far_tp1_r": 3.0,
+    "technique.gap_day_pct": 0.0,              # C3 (2026-09-12): gap-day policy (0 = off; sweep first)
+    "technique.gap_day_wait_minutes": 30,
+    "technique.gap_day_continuation": False,
+    "technique.range_break": False,            # C5 (2026-09-12): consolidation break fires on the break close
+    "technique.range_break_bars": 6,
+    "technique.range_break_max_range_mult": 1.0,
     "technique.arm.critic_mode": "veto",       # veto | momentum_only (bounce/reject "no" is advisory) | advisory (never blocks)
     "technique.arm.refire_cooldown_minutes": 10,  # wait after a veto before the same trigger may refire
     "technique.arm.auto_symbols": [],          # plans built + armed at the open for these symbols
@@ -435,6 +448,7 @@ DEFAULTS: dict[str, Any] = {
 
     "technique.arm.single_contract_exit": "tp2",  # with < 3 contracts the ladder can't split: exit all at this target
     "technique.arm.default_portfolio": "",     # account armed plans trade in (empty = trading.default_portfolio)
+    "techniques.enhanced_market.entry_fallback": "shares",   # C2 (2026-09-12): an untradeable option buys shares in Practice (longs only)
     "techniques.enhanced_market.critic_mode": "momentum_only",   # 2026-09-09 user decision: 25 kills net +0.5R, 5 of 9 wrong ones were at-level rejects (TRADING-RULES 1.4b / 5)
     "techniques.enhanced_market.default_portfolio": "",   # EM's own Practice book (2026-09-08); the runner resolves this before execution.*
     "technique.arm.risk_pct": 2.0,             # R1: % of equity risked per entry (practice: 2%; the book's live range is 0.5-1%)

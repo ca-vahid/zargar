@@ -56,6 +56,14 @@ class MarketRules:
     stop_on_close: bool = True
     scratch_r: float = 0.0        # T-14: after the trade is this many R in favour, trim `scratch_trim` and move the stop to breakeven (0 = off)
     scratch_trim: float = 0.5     # fraction sold at the scratch point
+    scratch_only_far_tp1: bool = False   # C4: apply the scratch rule only when TP1 sits >= far_tp1_r R away (re-planned gap-day geometry)
+    far_tp1_r: float = 3.0
+    gap_day_pct: float = 0.0             # C3: |open - prev close| / prev close * 100 >= this = a gap day for this symbol (0 = off)
+    gap_day_wait_minutes: int = 30       # C3: on a gap day no entry fires in the first N minutes ("give the open time")
+    gap_day_continuation: bool = False   # C3: on a gap day a gapped bounce/reject re-aims as a continuation break (T-13, loose)
+    range_break: bool = False            # C5: a break out of a tight consolidation fires on the break close (no follow-through wait)
+    range_break_bars: int = 6            # C5: the consolidation = the last N closed bars before the break
+    range_break_max_range_mult: float = 1.0   # C5: their high-low span <= this x the mean bar range of the prior 20 bars
     # the windows an entry may fire in (a technique with no schedule rule passes SESSION_WINDOWS)
     windows: tuple[str, ...] = PRIME_WINDOWS
 

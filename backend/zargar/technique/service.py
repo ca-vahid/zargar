@@ -1221,7 +1221,8 @@ class TechniqueService:
             else:
                 sim = simulate_plan(series, 0, plan, entry_window=entry_window, horizon=horizon,
                                     stop_on="close" if self.thresholds().stop_on_close else "low",
-                                    scratch_r=self.thresholds().scratch_r, scratch_trim=self.thresholds().scratch_trim)
+                                    scratch_r=self.thresholds().scratch_r, scratch_trim=self.thresholds().scratch_trim,
+                                    scratch_only_far_tp1=self.thresholds().scratch_only_far_tp1, far_tp1_r=self.thresholds().far_tp1_r)
                 o = await upsert(src, status="scored" if sim["resolved"] else "partial",
                                  plan={**plan, "entryWindow": entry_window}, outcome=sim["outcome"],
                                  r_multiple=sim["rMultiple"], mfe_r=sim["mfeR"], mae_r=sim["maeR"],
@@ -1773,6 +1774,22 @@ class TechniqueService:
 
     # ------------------------------------------------------------ arming (phase 2)
     async def arm_plan(self, run_id: str, config: dict | None = None) -> dict:
+        # C1 (2026-09-12): route option-untradeable names before the runner sees the config
+        config = dict(config or {})
+        s = self.engine.settings
+        policy = str(s.get("technique.universe.untradeable", "shares") or "shares")
+        run = await self.get_run(run_id)
+        sym = str((run or {}).get("symbol") or "")
+        liq = self.option_liquidity(sym) if sym else None
+        if liq is not None and not liq.get("tradeable") and policy != "ignore" \
+                and str(config.get("instrument") or "options") == "options":
+            if policy == "skip":
+                raise ValueError(f"{sym}: options are not tradeable for EM (near-money spread {liq.get('spread')}%, "
+                                 f"OI {liq.get('oi')}) and technique.universe.untradeable=skip")
+            config.setdefault("entryFallback", "shares")
+            config["optionTradeable"] = False
+        elif liq is not None:
+            config["optionTradeable"] = True
         return await self.armer.arm(run_id, config)
 
     # --- the multi-technique armed hub -------------------------------------------
@@ -1932,7 +1949,7 @@ class TechniqueService:
                          "dailyLossLimit": float(s.get("technique.arm.daily_loss_limit", 0.0)),
                          "skipWideSpread": bool(s.get("technique.arm.skip_wide_spread", True)),
                          "skipElevatedIv": bool(s.get("technique.arm.skip_elevated_iv", False)),
-                         "entryFallback": str(s.get("technique.arm.entry_fallback", "off"))},
+                         "entryFallback": str(s.get("techniques.enhanced_market.entry_fallback") or s.get("technique.arm.entry_fallback", "off"))},
             "haltAllowsExits": bool(s.get("risk.halt_allows_exits", True)),
             "optionsEnabled": bool(s.get("technique.options.enabled", True)),
             "optionsProvider": getattr(self.options_provider(), "name", "?"),
@@ -2163,8 +2180,48 @@ class TechniqueService:
         if getattr(self, "_sheet_task", None) is None:
             self._sheet_task = asyncio.create_task(self._sheet_loop(), name="technique-sheet-auto")
         self.armer.start()
+        with contextlib.suppress(Exception):
+            self.engine.scheduler.register("em_option_liquidity", str(self.engine.settings.get("technique.universe.liquidity_at", "16:40")),
+                                           lambda: self.refresh_option_liquidity())
         if self._restore_task is None:
             self._restore_task = asyncio.create_task(self._restore_armed(), name="technique-armer-restore")
+
+    # ---------------------------------------------------------- C1: option-liquidity screen (2026-09-12)
+    async def refresh_option_liquidity(self) -> dict:
+        """Which universe names can EM actually trade in options? From the latest chain snapshot:
+        the near-the-money contracts (mid $0.50-$5, bid/ask > 0) of each underlying - median spread %
+        of mid and mean open interest. Tradeable = spread <= technique.universe.max_spread_pct and OI >=
+        technique.universe.min_oi. Cached in technique.universe.option_liquidity; read at arm time."""
+        from sqlalchemy import text as _text
+        s = self.engine.settings
+        max_sp = float(s.get("technique.universe.max_spread_pct", 12.0) or 12.0)
+        min_oi = float(s.get("technique.universe.min_oi", 500) or 0)
+        async with self.engine.sf() as session:
+            rows = (await session.execute(_text("""
+                with d as (select max(date) d from option_chain_snapshots),
+                n as (select underlying, (ask-bid)/nullif(mid,0)*100 sp, open_interest oi
+                      from option_chain_snapshots, d where date = d.d and mid between 0.5 and 5 and bid > 0 and ask > 0)
+                select underlying, percentile_cont(0.5) within group (order by sp) med, avg(oi) oi, count(*) n,
+                       (select d from d) d
+                from n group by underlying"""))).all()
+        out = {}
+        day = None
+        for r in rows:
+            day = str(r[4]) if r[4] is not None else day
+            sp = float(r[1]) if r[1] is not None else None
+            oi = float(r[2] or 0)
+            out[str(r[0]).upper()] = {"spread": round(sp, 1) if sp is not None else None, "oi": round(oi),
+                                      "n": int(r[3] or 0), "tradeable": bool(sp is not None and sp <= max_sp and oi >= min_oi)}
+        cache = {"date": day, "maxSpreadPct": max_sp, "minOi": min_oi, "rows": out,
+                 "tradeable": sorted(k for k, v in out.items() if v["tradeable"])}
+        await s.set("technique.universe.option_liquidity", cache, journal=False)
+        log.info("option liquidity: %d names screened, %d tradeable (spread <= %.0f%%, OI >= %.0f)",
+                 len(out), len(cache["tradeable"]), max_sp, min_oi)
+        return cache
+
+    def option_liquidity(self, symbol: str) -> dict | None:
+        rows = ((self.engine.settings.get("technique.universe.option_liquidity", {}) or {}).get("rows") or {})
+        return rows.get(str(symbol).upper())
 
     async def _sheet_exists_for(self, plan_for: str) -> bool:
         async with self.engine.sf() as session:

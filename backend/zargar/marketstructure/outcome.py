@@ -77,7 +77,8 @@ def same_plan(a: dict | None, b: dict | None, tol: float = 1e-6) -> bool:
 
 def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int = 12,
                   horizon: int = 60, stop_on: str = "close", breach_r: float = 0.25,
-                  scratch_r: float = 0.0, scratch_trim: float = 0.5) -> dict:
+                  scratch_r: float = 0.0, scratch_trim: float = 0.5,
+                  scratch_only_far_tp1: bool = False, far_tp1_r: float = 3.0) -> dict:
     """Walk `bars` forward from index `start` (the bar the decision was made on)
     and score `plan`. Returns a plain dict (see keys below). `bars` must be
     sorted by ts and include the start bar; bars after `start` are the future.
@@ -184,6 +185,10 @@ def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int 
     i = fill_i + 1
     last_i = fill_i
     scratched = False
+    if scratch_r > 0 and scratch_only_far_tp1 and targets:
+        tp1_r = abs(targets[0] - entry) / risk
+        if tp1_r < far_tp1_r:
+            scratch_r = 0.0                          # C4: the ladder's first rung is near - let it work
     scratch_px = (entry - scratch_r * risk) if short else (entry + scratch_r * risk)
     while i <= end_i and remaining > 1e-9:
         b = bars[i]

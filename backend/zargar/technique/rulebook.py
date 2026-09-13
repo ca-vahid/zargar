@@ -183,6 +183,14 @@ class Thresholds:
     stop_on_close: bool = True
     scratch_r: float = 0.0        # T-14 (2026-09-10): scratch rule - trim at +scratch_r R and stop to breakeven; 0 = off
     scratch_trim: float = 0.5
+    scratch_only_far_tp1: bool = False   # C4: apply the scratch rule only when TP1 sits >= far_tp1_r R away (re-planned gap-day geometry)
+    far_tp1_r: float = 3.0
+    gap_day_pct: float = 0.0             # C3: |open - prev close| / prev close * 100 >= this = a gap day for this symbol (0 = off)
+    gap_day_wait_minutes: int = 30       # C3: on a gap day no entry fires in the first N minutes ("give the open time")
+    gap_day_continuation: bool = False   # C3: on a gap day a gapped bounce/reject re-aims as a continuation break (T-13, loose)
+    range_break: bool = False            # C5: a break out of a tight consolidation fires on the break close (no follow-through wait)
+    range_break_bars: int = 6            # C5: the consolidation = the last N closed bars before the break
+    range_break_max_range_mult: float = 1.0   # C5: their high-low span <= this x the mean bar range of the prior 20 bars
     # Q10 — the book is long-biased; the short side (rejection at resistance /
     # breakdown through support, expressed with puts) is the mirror of its two
     # setups. The dataclass default is the book's; the app's setting
@@ -220,6 +228,14 @@ def settings_defaults() -> dict[str, float | int | bool | str]:
         "technique.stop_on_close": t.stop_on_close,
         "technique.scratch_r": t.scratch_r,
         "technique.scratch_trim": t.scratch_trim,
+        "technique.scratch_only_far_tp1": t.scratch_only_far_tp1,
+        "technique.far_tp1_r": t.far_tp1_r,
+        "technique.gap_day_pct": t.gap_day_pct,
+        "technique.gap_day_wait_minutes": t.gap_day_wait_minutes,
+        "technique.gap_day_continuation": t.gap_day_continuation,
+        "technique.range_break": t.range_break,
+        "technique.range_break_bars": t.range_break_bars,
+        "technique.range_break_max_range_mult": t.range_break_max_range_mult,
         "technique.decisive_body_ratio": t.decisive_body_ratio,
         "technique.min_risk_reward": t.min_risk_reward,
         "technique.default_risk_pct": t.default_risk_pct,
@@ -267,6 +283,14 @@ def thresholds_from_settings(get) -> Thresholds:
         stop_on_close=bool(get("technique.stop_on_close", d.stop_on_close)),
         scratch_r=float(get("technique.scratch_r", d.scratch_r)),
         scratch_trim=float(get("technique.scratch_trim", d.scratch_trim)),
+        scratch_only_far_tp1=bool(get("technique.scratch_only_far_tp1", d.scratch_only_far_tp1)),
+        far_tp1_r=float(get("technique.far_tp1_r", d.far_tp1_r)),
+        gap_day_pct=float(get("technique.gap_day_pct", d.gap_day_pct)),
+        gap_day_wait_minutes=int(get("technique.gap_day_wait_minutes", d.gap_day_wait_minutes)),
+        gap_day_continuation=bool(get("technique.gap_day_continuation", d.gap_day_continuation)),
+        range_break=bool(get("technique.range_break", d.range_break)),
+        range_break_bars=int(get("technique.range_break_bars", d.range_break_bars)),
+        range_break_max_range_mult=float(get("technique.range_break_max_range_mult", d.range_break_max_range_mult)),
         long_only=bool(get("technique.long_only", d.long_only)),
         level_tolerance_pct=float(get("technique.level_tolerance_pct",
                                       d.level_tolerance_pct * 100)) / 100,

@@ -91,6 +91,7 @@ class ArmConfig:
     # same level trade in the underlying instead (SNOW 2026-08-25 lost +1.89R
     # to a 16.5% spread skip). Changeable after arming.
     entry_fallback: str = "off"
+    option_tradeable: bool | None = None     # C1: the nightly liquidity screen's verdict for this symbol at arm time
 
     def to_dict(self) -> dict:
         return {"portfolioId": self.portfolio_id, "mode": self.mode, "instrument": self.instrument,
@@ -102,7 +103,7 @@ class ArmConfig:
                 "maxOpenTrades": self.max_open_trades, "dailyLossLimit": self.daily_loss_limit,
                 "premiumBudget": self.premium_budget,
                 "skipWideSpread": self.skip_wide_spread, "skipElevatedIv": self.skip_elevated_iv,
-                "entryFallback": self.entry_fallback}
+                "entryFallback": self.entry_fallback, "optionTradeable": self.option_tradeable}
 
     @classmethod
     def from_dict(cls, d: dict) -> "ArmConfig":
@@ -126,7 +127,8 @@ class ArmConfig:
                    premium_budget=float(d.get("premiumBudget", d.get("premium_budget", 0.0)) or 0.0),
                    skip_wide_spread=bool(d.get("skipWideSpread", d.get("skip_wide_spread", True))),
                    skip_elevated_iv=bool(d.get("skipElevatedIv", d.get("skip_elevated_iv", False))),
-                   entry_fallback=str(d.get("entryFallback", d.get("entry_fallback", "off")) or "off"))
+                   entry_fallback=str(d.get("entryFallback", d.get("entry_fallback", "off")) or "off"),
+                   option_tradeable=d.get("optionTradeable"))
 
 
 @dataclass
@@ -2698,7 +2700,9 @@ class PlanRunner(SessionListener):
                              stop_on="close" if self.rules().stop_on_close else "low",
                              direction=tr.direction,
                              scratch_r=float(getattr(self.rules(), "scratch_r", 0.0) or 0.0),
-                             scratch_trim=float(getattr(self.rules(), "scratch_trim", 0.5)))
+                             scratch_trim=float(getattr(self.rules(), "scratch_trim", 0.5)),
+                             scratch_only_far_tp1=bool(getattr(self.rules(), "scratch_only_far_tp1", False)),
+                             far_tp1_r=float(getattr(self.rules(), "far_tp1_r", 3.0)))
         if decision is None:
             # a single-contract position may need to advance its trim counter without an order
             hit = ((bar.low <= tr.targets[tr.trims_done]) if tr.direction == "short"
@@ -2829,6 +2833,29 @@ class PlanRunner(SessionListener):
         new_ap = self._armed.get(run["id"])
         if new_ap is not None:
             new_ap.preopen_done = True
+            # C3b (2026-09-12): the evening triggers ride along. IBIT 09-11: the re-plan on a +0.68%
+            # print discarded a reject that paid +4.8R. The carried trackers keep their own gap
+            # judgement at 09:30 (a level the open really gaps through still voids).
+            if bool(self.rt("preopen_keep_triggers", True)):
+                carried = 0
+                for tid, tr in list(ap.trackers.items()):
+                    if tr.status not in ("waiting", "observed") or not tr.trigger.get("valid", True):
+                        continue
+                    nid = f"e_{tid}"
+                    if nid in new_ap.trackers:
+                        continue
+                    tr.trigger = dict(tr.trigger)
+                    tr.trigger["id"] = nid
+                    tr.trigger["carriedFrom"] = old_id
+                    tr.status = "waiting"
+                    new_ap.trackers[nid] = tr
+                    with contextlib.suppress(Exception):
+                        new_ap.plan.setdefault("triggers", []).append(tr.trigger)
+                    carried += 1
+                if carried:
+                    self._log(new_ap, "preopen_carried",
+                              f"{carried} evening trigger(s) kept alongside the re-plan (C3b); "
+                              f"the open judges each on its own", parentRunId=old_id)
             self._log(new_ap, "preopen_replanned",
                       f"replaces {old_id[:8]}: {n_valid} trigger(s) around the pre-market price {last:.2f}",
                       parentRunId=old_id)
