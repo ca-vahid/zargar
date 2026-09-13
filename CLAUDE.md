@@ -335,7 +335,10 @@ frontend production build runs this check automatically.
   in `zargar/execution/` (`SessionListener` loops + order index, pure `exits`
   decision/intent, `ManagedTrade`); `PlanArmer` subclasses `SessionListener`. New
   techniques reuse that layer instead of re-implementing order management.
-- Armed plans default to the **options** instrument (just-OTM call via
+- Armed plans default to the **options** instrument, and since 2026-09-12 EM Practice arms fall back to SHARES when
+  the option is untradeable (`techniques.enhanced_market.entry_fallback=shares`; the nightly `em_option_liquidity`
+  screen marks 24/135 names option-tradeable; the pick retries the next strike / next expiry on a wide spread) -
+  a test that expects the no-contract FAILURE path must set the fallback off. Default pick: (just-OTM call via
   `technique.option_pick`, BUY LMT at ask, SELL at bid, P&L × 100, <3 contracts
   exit in full at TP2); tests that only need share fills must arm with
   `"instrument": "shares"`. Option quotes reach the risk gate only through

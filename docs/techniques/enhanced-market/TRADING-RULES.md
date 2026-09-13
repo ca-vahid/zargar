@@ -192,7 +192,12 @@ mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally a
   the grade caps at B for this reason. Open question: should TP1 for blue-sky breakouts
   be ATR-derived instead of 2%? Needs fired-breakout outcome data (none yet).
 
-### 1.6 Wide-spread skips vs shares fallback ⏳ new
+### 1.6 Wide-spread skips vs shares fallback → DECIDED 2026-09-12 (C1/C2, §5): shares are EM's Practice vehicle
+**Status:** 8 of 9 fires in the week of 09-08 died on option spreads and only 1 of 37 baseline fires sat on an
+option-liquid name. The nightly liquidity screen routes untradeable names to the shares fallback, the pick retries
+the next strike / next expiry, and `techniques.enhanced_market.entry_fallback=shares`. The open question is now
+the mirror one: over ten sessions of shares fills, does the option leg on the 24 liquid names beat the shares leg
+in R and in $? Shorts still need a tradeable put.
 - **Evidence caveat (2026-09-02):** until 13:42 ET on 2026-09-02 every option quote in the
   app was the CBOE chain, ~15 min DELAYED and re-stamped as fresh (PLATFORM-RULES 2026-09-02,
   invariant 14). T5.4/T5.3 skips before that judged a stale spread/IV; count "wide-spread
@@ -226,7 +231,7 @@ mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally a
   If that pattern holds, the finding may be "R6.3 is right about the tape but the
   critic can substitute for the clock" — n=4, keep counting.
 
-### 1.8 Is the R2 bar (3.0) leaving a 2.0-3.0 band on the table? ⏳ new
+### 1.8 Is the R2 bar (3.0) leaving a 2.0-3.0 band on the table? ⏳ open - R2 stays by user decision (2026-09-09); the weekly gate audit keeps the number
 - **First gate audit (2026-08-26 session, include-invalid sweep `57156a57`):** every
   trigger the validity gates rejected was simulated against the real session.
   Verdict: the gates dropped nothing worth having. Gate-rejected fires: 150 for
@@ -272,6 +277,19 @@ mirror image - do advisory "no" fills lose more than the "yes" fills? Re-tally a
   confirmed and this question closes.
 
 ---
+
+### 1.11 Gap-day wait (R6.6) — does it hold out of sample? ⏳ new (2026-09-12)
+- Adopted on sweep `evo-C3-gap0.5` (+5.1R vs baseline over 08-24..09-11, six fewer fires, non-gap days
+  untouched). It is the first rule taken from the author's practice that survived its sweep.
+- **Decision threshold:** after ten sessions with fills, compare gap-day fires held vs the same
+  sessions' counterfactual without the wait (the tracker journals `gap_day` and `break_outside_window`,
+  so the replay can score both). Revert if the held fires would have made > +2R net.
+
+### 1.12 Pre-open re-plan: carry the evening triggers (C3b) ⏳ new (2026-09-12)
+- IBIT r2 (+4.8R, 09-11) was discarded by the 09:25 re-plan. Evening triggers now ride along as
+  `e_<id>` and are journaled `preopen_carried`; the open judges each on its own gap rules.
+- **Decision threshold:** ten sessions; tally carried-trigger fires vs re-plan-trigger fires in R.
+  If the carried set is net negative, the re-plan goes back to replacing.
 
 ### 1.9 An entry that fills AFTER a bar already closed through the stop (NOW 2026-09-02) - new
 
@@ -787,7 +805,7 @@ tempo is not where our edge is hiding either.
 4. **Grade/analyst calibration** (1.2/1.3) at the 100-fire mark.
 5. **IBKR activation** — execution + second data source; retire the sim-only options fills
    with real paper fills.
-6. **Next-strike/next-expiry contract retry** — pending 1.6 data.
+6. ~~Next-strike/next-expiry contract retry~~ — BUILT 2026-09-12 (C1, `pick_for_setup(retry_wide=)`).
 7. **Blue-sky TP1 from ATR** (1.5) — pending fired-breakout data.
 8. **Full Settings redesign** (task chip exists); slow-DB-writes investigation (chip
    exists); persist critic veto counts across restarts.

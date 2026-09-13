@@ -188,3 +188,13 @@ R2, grade >= `ingest.auto_arm_min_grade` (B), critic at fire - advisory on at-le
 It still never touches an existing armed plan, a rule or a threshold, and it never arms a
 plan our gate rejected. Auto-armed runs carry the tag `ingest` (board row `autoArmed: true`) so the
 weekly review can compare them with the evening batch. Turn it off with one setting.
+
+### 2026-09-12: what the board arms now inherit
+
+Auto-armed board plans go through the same `arm_plan` routing as the evening batch: an
+option-untradeable name (nightly `technique.universe.option_liquidity`) arms with the shares
+fallback, a wide spread on the just-OTM strike retries the next strike / next expiry, the gap-day
+wait (R6.6) holds every entry for the first 30 minutes on a gapped open, and the 09:25 re-plan keeps
+the evening triggers. Eight sessions of auto-arms (MU, GOOGL, META, GS, MSTR, NVDA, NBIS, CVNA...)
+have produced fires only on MU; the author's morning names are mostly in the 24 option-liquid set,
+so the option leg is measured on them first.

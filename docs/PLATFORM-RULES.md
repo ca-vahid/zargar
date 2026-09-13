@@ -1370,3 +1370,16 @@ chain snapshots; `max_spread_pct` 12, `min_oi` 500), `technique.universe.untrade
 skip | ignore, applied in `TechniqueService.arm_plan`), `techniques.enhanced_market.entry_fallback
 = shares`, `technique.arm.preopen_keep_triggers` (the re-plan carries the evening triggers as
 `e_<id>`). Tips/Team2/Cartel are untouched.
+
+
+### A burst of LLM runs wedges /api/health and the watchdog restarts the engine — 2026-09-13 (EM desk)
+
+Second occurrence (first 2026-09-09 21:31 ET): 102 `walkforward/{sheet}/promote` reads submitted
+within a minute; `/api/health` stopped answering within 3 s; `ZargarWatchdog` read DOWN, `start.ps1`
+first refused (exit 2, runs in flight) then on the next tick stopped the engine (pid 172936) and
+started a new one, killing every read. Nothing in the engine limits concurrent technique runs.
+Rules: (1) callers submit by the engine's in-flight count (`local.techniqueRunning` < 8), which the
+EM desk's batch now does; (2) proposed platform fix - an engine-side semaphore on concurrent LLM
+runs (`technique.max_concurrent_runs`, default 8) so a UI "Check & arm" on 100 rows cannot do the
+same; (3) the watchdog should require two consecutive silent ticks before it restarts a process
+that is still alive (a slow engine is not a dead one).

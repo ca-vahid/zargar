@@ -210,13 +210,14 @@ Everything below is deterministic and free (no LLM calls). First run:
 | 5 | Capture-rate weekly report | 1 | ~1 day |
 | 6 | Swing lane | platform §2.4 + chaos suite | later |
 
-Where this stands (2026-09-09): phases 1-2 are built and in daily use; the variant harness has
-run T-11 (window extremes), T-12 (flow confirmation, two forms) and T-13 (gap-through
-continuation, two forms) - all NOT adopted on their sweeps, all logged below and in
-TRADING-RULES §3. The fire-time critic was demoted to advisory on at-level triggers (§5) so
-Practice fills can finally accumulate; the next evolution question is the mirror one (advisory
-"no" fills vs "yes" fills) and the LLM plan-review decision at ten sessions. Phases 3-5 wait
-for a variant that survives its sweep.
+Where this stands (2026-09-13): phases 1-2 are built and in daily use. The variant harness has run
+T-11, T-12 (two forms), T-13 (two forms), T-14 (three levels), C4 and C5 - all NOT adopted - and
+C3 (gap-day wait), the first variant to survive its sweep and go live (TRADING-RULES §5 2026-09-12,
+R6.6). The vehicle problem was bigger than any rule: 1 of 37 baseline fires sat on an option-liquid
+name, so EM trades shares in Practice (C1/C2) and the option leg is measured on the 24 liquid names.
+Open measurements: critic advisory-"no" fills vs "yes" fills, the LLM plan review (decision
+~09-19), the gap-day wait out of sample (1.11), the re-plan carry (1.12). Phases 3-5 (shadow
+instances, graduation) still wait for a second surviving variant.
 
 ## Experiment log
 
