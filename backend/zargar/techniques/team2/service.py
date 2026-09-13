@@ -155,9 +155,10 @@ class Team2Service:
     async def mint_plan_run(self, symbol: str, date: str, *, rules: Team2Rules | None = None,
                             fifteen: list[Bar] | None = None) -> dict | None:
         rules = rules or rules_from_settings(self.engine.settings)
+        prior_1m: list[Bar] | None = None
         if fifteen is None:
-            _, fifteen, _ = await self.history_for(symbol, date, sessions=rules.target_lookback_sessions + 2)
-        sk = build_skeleton(symbol, date, fifteen, rules)
+            prior_1m, fifteen, _ = await self.history_for(symbol, date, sessions=rules.target_lookback_sessions + 2)
+        sk = build_skeleton(symbol, date, fifteen, rules, prev_bars_1m=prior_1m)
         if sk is None:
             log.info("team2: no usable prior history for %s %s — no plan minted", symbol, date)
             return None
@@ -437,7 +438,7 @@ class Team2Service:
                 prior = [b for k in prior_dates for b in by_day[k]]
                 warm, wrep = self.warmup_slice(prior, sessions=rules.warmup_sessions)
                 fifteen = [b for b in aggregate(prior, 15) if bar_session(b.ts) == "rth"] if prior else []
-                sk = build_skeleton(sym, date, fifteen, rules)
+                sk = build_skeleton(sym, date, fifteen, rules, prev_bars_1m=prior)
                 if sk is None:
                     rows.append({"symbol": sym, "date": date, "status": "no_prev_session"})
                     continue
@@ -449,7 +450,8 @@ class Team2Service:
                              "scenario": d_["bias"].get("scenario"), "trades": d_["trades"],
                              "summary": d_["summary"], "setups": len(d_["setups"]), "sigma": sg,
                              "warmup": {"hash": wrep.get("hash"), "sessionsUsed": wrep.get("sessionsUsed")},
-                             "strikeSource": "grid"})      # F104: history carries no as-of listing — a stated limitation
+                             "strikeSource": "grid",       # F104: history carries no as-of listing — a stated limitation
+                             "keyLevels": _key_level_funnel(plan, d_)})
         trades = [t for r in rows for t in (r.get("trades") or [])]
         wins = [t for t in trades if t["win"]]
         summary = {
@@ -481,6 +483,24 @@ class Team2Service:
         except Exception:  # noqa: BLE001
             pass
         return 0.20
+
+
+def _key_level_funnel(plan: dict, read: dict) -> dict | None:
+    """C2 funnel per symbol-session: levels built / masked / how often they acted (the spec's §3 report)."""
+    kl = plan.get("keyLevels")
+    if not isinstance(kl, dict):
+        return None
+    ev = [e.get("event") for e in (read.get("events") or [])]
+    cands = kl.get("candidates") or []
+    return {"definition": kl.get("definition"), "built": len(cands),
+            "maskedZone": sum(1 for c in cands if c.get("maskedBy") in ("pdh", "pdl")),
+            "maskedPm": len(kl.get("pmMasks") or []),
+            "above": len(kl.get("above") or []), "below": len(kl.get("below") or []),
+            "breaks": ev.count("key_level_break"), "setups": ev.count("key_level_setup"), "flips": ev.count("key_level_flip"),
+            "rejected": ev.count("key_level_rejected"), "retired": ev.count("key_level_retired"),
+            "overruled": ev.count("key_level_overruled"), "pending": ev.count("key_level_pending"),
+            "retests": ev.count("key_level_retest"),
+            "firesOnKeyLevels": sum(1 for e in (read.get("events") or []) if e.get("event") == "fire" and e.get("keyLevel"))}
 
 
 def _group(trades: list[dict], rows: list[dict], key: str) -> dict:

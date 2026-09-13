@@ -31,9 +31,12 @@ from .scenario import classify_day, sizing_bucket
 PLAN_VERSION = 1
 
 
-def build_skeleton(symbol: str, date: str, prev_bars_15m: list[Bar], rules: Team2Rules) -> dict | None:
+def build_skeleton(symbol: str, date: str, prev_bars_15m: list[Bar], rules: Team2Rules,
+                   prev_bars_1m: list[Bar] | None = None) -> dict | None:
     """`prev_bars_15m`: 15m bars (RTH; extra sessions are used for targets) ending with the
-    previous trading session. Returns None when the previous session has no bars."""
+    previous trading session. Returns None when the previous session has no bars.
+    `prev_bars_1m` (optional): the same sessions' 1m bars — C2's `atr_build` (the previous session's 2m ATR(14) at
+    its close) is computed from them; without them the 15m bars supply a stated fallback."""
     prev = previous_trading_day(date).isoformat()
     rth = [b for b in prev_bars_15m if bar_session(b.ts) == "rth"]
     prev_day = [b for b in rth if session_date(b.ts) == prev]
@@ -51,6 +54,25 @@ def build_skeleton(symbol: str, date: str, prev_bars_15m: list[Bar], rules: Team
     # F72: the same pivots, unfiltered by the zone, so `target_replan` can pick the next structural
     # level beyond CURRENT PRICE at entry time. Data only — nothing reads it unless the knob is on.
     ladder = level_ladder(rth, zones, lookback_sessions=rules.target_lookback_sessions)
+    key = None
+    if str(getattr(rules, "key_levels", "off") or "off").lower() != "off":
+        # C2 (research, OFF by default): the nightly key-level set. atr_build = the previous session's 2m RTH ATR(14)
+        # at its close (one number, no plan-date data); fallback from the 15m bars when no 1m bars were supplied.
+        from ...marketstructure.levels import atr as _atr
+        from .levels import key_levels
+        src = "2m"
+        if prev_bars_1m:
+            prev_2m = [b for b in aggregate([x for x in prev_bars_1m if session_date(x.ts) == prev], 2) if bar_session(b.ts) == "rth"]
+            atr_build = _atr(sorted(prev_2m, key=lambda b: b.ts), 14) if len(prev_2m) >= 2 else 0.0
+        else:
+            atr_build = 0.0
+        if atr_build <= 0:
+            src = "15m_fallback"
+            atr_build = _atr(sorted(prev_day, key=lambda b: b.ts), 14) * (2.0 / 15.0) ** 0.5
+        prev_close = float(sorted(prev_day, key=lambda b: b.ts)[-1].close)
+        key = key_levels(rth, definition=rules.key_levels, atr_build=float(atr_build), prev_close=prev_close, zones=zones,
+                         plan_date=date, lookback=rules.target_lookback_sessions)
+        key["atrBuildSource"] = src
     return {
         "technique": "team2", "symbol": symbol.upper(), "date": date, "version": PLAN_VERSION,
         "prevSession": prev,
@@ -59,6 +81,7 @@ def build_skeleton(symbol: str, date: str, prev_bars_15m: list[Bar], rules: Team
         "targetsPlanned": {"above": targets["above"], "below": targets["below"]},   # F81: what 17:00 said, kept
         "preopenTargetRederive": bool(rules.preopen_target_rederive),
         "levelLadder": ladder,
+        "keyLevels": key,
         "pmh": None, "pml": None, "dayType": None, "openPrice": None, "sizingAtOpen": None,
         "sheet": level_sheet(symbol.upper(), zones, None, None, targets),
         "complete": False, "thresholds": rules.to_dict(),
@@ -83,6 +106,9 @@ def complete_plan(skeleton: dict, today_bars_1m: list[Bar]) -> dict:
         open_price = sorted(pre, key=lambda b: b.ts)[-1].close if pre else None
         open_src = "premarket_last" if pre else None
     plan.update({"pmh": pmh, "pml": pml})
+    if plan.get("keyLevels"):
+        from .levels import mask_pm
+        plan["keyLevels"] = mask_pm(plan["keyLevels"], pmh, pml, stage=("completed" if rth else "provisional"))
     if open_price is not None:
         plan["openPrice"] = float(open_price)
         plan["openSource"] = open_src

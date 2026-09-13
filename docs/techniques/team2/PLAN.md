@@ -346,8 +346,8 @@ and are now part of the plan; each carries the phase it belongs to.
   `notes/research/2026-09-12-week37-review-and-change-plan.md` (+ addendum).
 - **Research:** C2 multi-day key levels — three definitions FROZEN 2026-09-13 in
   `notes/research/2026-09-13-c2-key-levels-spec.md` (D1 session levels, D2 repeated reactions, D3 confirmed pivots; v2 after the other team's
-  review — validation fixed 2026-09-14 → 10-09, acceptance gates predeclared); build + causal fixtures may proceed, sweeps
-  wait for C6. C4 add on the level retest and C5 breakeven after the first trim: no frozen definition yet. Each needs a causal
+  review — validation fixed 2026-09-14 → 10-09, acceptance gates predeclared); BUILT 2026-09-13 behind `key_levels` (OFF,
+  v0.7.58) with 13 causal fixtures; sweeps wait for C6. C4 add on the level retest and C5 breakeven after the first trim: no frozen definition yet. Each needs a causal
   definition, a sweep on the canonical tape and a matched trade list before it is a proposal.
 - **Change pipeline (how a rule changes):** finding or author evidence → dated research note → frozen-input sweep with
   a `--set` overlay or a knob (matched trade lists, chronological split, book-level simulation) → the other team's
