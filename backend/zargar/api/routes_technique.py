@@ -292,6 +292,14 @@ def build_technique_routes(app, eng, auth, config) -> None:
     async def technique_universe():
         return _svc(eng).universe_cached()
 
+    @app.get("/api/technique/universe/liquidity", dependencies=[auth])
+    async def technique_option_liquidity():
+        return eng.settings.get("technique.universe.option_liquidity", {}) or {}
+
+    @app.post("/api/technique/universe/liquidity/refresh", dependencies=[auth])
+    async def technique_option_liquidity_refresh():
+        return await _svc(eng).refresh_option_liquidity()
+
     @app.post("/api/technique/universe/refresh", dependencies=[auth])
     async def technique_universe_refresh():
         return await _svc(eng).refresh_universe(force=True)
