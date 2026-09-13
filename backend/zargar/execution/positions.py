@@ -225,6 +225,8 @@ class PositionManager:
         self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
         self._last_decide: dict[str, int] = {}   # position id -> raw-bar ts last decided on
         self._mark_evidence: dict[str, str] = {}  # position id -> last mark provenance (1B)
+        self._mark_obs_ts: dict[str, int | None] = {}   # position id -> mark observation identity
+        self._premium_confirm: dict[str, dict] = {}     # position id -> pending stop confirmation
         self._entry_halted: set[str] = set()           # symbols where reconciliation found drift
         self._now = time.time                          # injectable clock (chaos tests)
         self._policy_adapters: dict[str, object] = {}
@@ -259,6 +261,7 @@ class PositionManager:
             "execution.premium_mark_max_age_seconds", 90) or 90) * 1000)
         now = self.now_ms()
         evidence: list[str] = []
+        src_ts: list[int] = []
 
         def fresh(sym: str):
             q = self.engine.quotes.get(sym)
@@ -276,10 +279,45 @@ class PositionManager:
                     f"{'of unknown age' if age_s is None else f'{age_s:.0f}s old'} — refused")
                 return None
             evidence.append(f"{sym}: {getattr(q, 'source', '?')} {age_s:.0f}s old bid={q.bid}")
+            src_ts.append(int(ts))
             return q
         mark = p.net_mark(fresh)
         self._mark_evidence[p.id] = "; ".join(evidence) or "no option legs"
+        # the OBSERVATION IDENTITY (Codex debounce spec, 2026-09-12): the
+        # confirmation logic must see a genuinely NEW observation, so the
+        # oldest source timestamp across legs identifies this evidence set
+        self._mark_obs_ts[p.id] = min(src_ts) if src_ts else None
         return mark
+
+    def _confirm_premium_stop(self, p: Managed, d, now: int):
+        """A tick-path premium STOP needs two DISTINCT fresh observations
+        (Codex debounce spec, 2026-09-12): DAL was market-exited on a single
+        anomalous flash print (bid 0.82; the exit itself filled at 1.53 one
+        second later). Rules: a re-poll of the SAME cached quote (same
+        observation timestamp) never confirms; the confirmation must arrive
+        within `execution.premium_stop_confirm_window_seconds` of the first
+        sighting, else the sighting starts over; recovery (no breach) resets
+        the pending state at the caller. Urgent protections — underlying
+        stop, expiry/DTE flatten, reduce-only exits — never pass through
+        here; the bar path is untouched (1m closes are already discrete
+        observations and slower by construction)."""
+        window_ms = int(float(self._setting(
+            "execution.premium_stop_confirm_window_seconds", 45) or 45) * 1000)
+        obs = self._mark_obs_ts.get(p.id)
+        prev = self._premium_confirm.get(p.id)
+        if prev is not None and now - prev["at"] > window_ms:
+            prev = None                              # window expired: start over
+        if prev is None:
+            self._premium_confirm[p.id] = {"at": now, "obs": obs}
+            self._log(p, "premium_stop_pending",
+                      f"{d.reason} — first sighting; a second DISTINCT fresh "
+                      f"observation within {window_ms // 1000}s confirms "
+                      f"[mark: {self._mark_evidence.get(p.id, '?')}]")
+            return None
+        if obs is not None and prev.get("obs") == obs:
+            return None      # same cached observation re-polled: not confirmation
+        self._premium_confirm.pop(p.id, None)        # confirmed by distinct evidence
+        return d
 
     def min_dte_floor(self) -> int:
         return max(0, int(self._setting("execution.min_dte", 1) or 0))
@@ -1337,6 +1375,11 @@ class PositionManager:
                     d = evaluate_premium(p.policy, p.state, mark, p.entry_mark,
                                          dte=p.dte_min(today), iv_ratio=self._iv_ratio(p),
                                          underlying_move_pct=und_move)
+                    if d is None:
+                        # no breach: any pending stop-confirmation resets
+                        self._premium_confirm.pop(p.id, None)
+                    elif d.kind == "premium_stop":
+                        d = self._confirm_premium_stop(p, d, now)
                     if d is not None and d.kind == "premium_take" \
                             and self._take_units(p, d.fraction) < 1:
                         # a 1-lot cannot sell half: skip the take, the ratchet
