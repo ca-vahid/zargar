@@ -1439,3 +1439,32 @@ managed positions; per-technique overrides resolve via `rt()` as usual.
   `TipEntryStudy` NBBO sampler; analyst per-turn output cap
   `techniques.tip.analyst_max_output_tokens` with doubled-room truncation
   repair.
+
+### Premium-stop confirmation v2 — the SHARED contract (2026-09-13, Tips desk; applies to every technique's managed option positions)
+
+`PositionManager` premium stops (bleed and ratchet floor) fire only on TWO
+observations of the option evidence set that are FRESH (source age ≤
+`execution.premium_mark_max_age_seconds`), DISTINCT and FORWARD-ordered,
+paired inside `execution.premium_stop_confirm_window_seconds` (45):
+
+- identity is the FULL per-leg `{symbol: source_ts}` set — a changed leg set
+  (partial fill / roll) restarts the sighting rather than pairing unlike
+  evidence; absent identity never confirms;
+- an out-of-order packet (any leg's source time behind the sighting's) is
+  quarantined, not confirmation;
+- the state is ONE across bar and tick paths — an underlying candle close is
+  not a second option observation;
+- recovery, any non-stop premium outcome, and position closure reset the
+  pending sighting; a window expiry restarts it (logged
+  `premium_stop_pending_expired`);
+- the window bounds which observations may PAIR — it does NOT guarantee an
+  exit within 45s when no qualifying second quote arrives (degraded data =
+  visible standdown, never a blind exit);
+- untouched: underlying-price stops, expiry/DTE flatten, reduce-only and
+  every non-premium decision (a real underlying stop exits even while a
+  premium confirmation is pending — covered by an independent test).
+
+Affects EM, Tips, Team2 and Cartel wherever their positions run premium
+policies through the shared manager; per-technique knobs resolve via `rt()`.
+Independent reviewer reproductions live in
+`backend/tests/test_premium_confirmation_review.py`.
