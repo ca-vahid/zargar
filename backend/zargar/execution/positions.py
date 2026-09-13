@@ -1090,6 +1090,7 @@ class PositionManager:
         # the bar path fired on the very flash quote the tick path was
         # holding). Underlying stops, expiry/DTE and every non-premium
         # decision pass through untouched.
+        had_premium_stop = any(_d.kind == "premium_stop" for _d in decisions)
         kept = []
         for _d in decisions:
             if _d.kind == "premium_stop":
@@ -1098,6 +1099,15 @@ class PositionManager:
                     continue
             kept.append(_d)
         decisions = kept
+        if view.net_mark is not None and not had_premium_stop:
+            # HEALTHY fresh evidence on the bar path resets a pending tick
+            # sighting too (Codex 2026-09-13 P1: recovery reset lived only in
+            # the tick path — a healthy bar between two isolated bad ticks
+            # did not invalidate the pair). A mark-less bar (degraded data)
+            # never resets. DECIDED: a quantity-only partial fill of our own
+            # position does NOT invalidate a sighting — the evidence is the
+            # contract's premium, unchanged by our size.
+            self._premium_confirm.pop(p.id, None)
         old_stop = p.state.stop
         p.state = apply_moves(p.state, view, decisions, moves, p.policy)
         if p.state.stop != old_stop and p.state.stop is not None:
