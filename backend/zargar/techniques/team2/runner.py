@@ -650,7 +650,8 @@ class Team2Runner(PlanRunner):
                 if journal and what in ("scenario", "pm_break", "late_touch", "pm_retest", "skip_engulfing",
                                         "skip_range_confirmation", "skip_no_trade_zone", "skip_no_contract",
                                         "skip_reentries", "skip_last_entry", "skip_loss_cap",
-                                        "skip_target_behind", "model_out_of_band", "target_replanned"):
+                                        "skip_target_behind", "model_out_of_band", "target_replanned",
+                                        "skip_pm_room", "skip_target_near"):
                     # F28: the structural reads (a scenario, a PM break, a late touch) are not refusals —
                     # they get their own journal kind so skip counts mean skips
                     kind = ev.TECHNIQUE_PLAN_READ if what in ("scenario", "pm_break", "late_touch", "pm_retest",

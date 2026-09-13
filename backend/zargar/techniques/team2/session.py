@@ -25,6 +25,7 @@ from .regime import RegimeRead, RegimeReader
 from .rules import Team2Rules
 from .levels import next_structural_level
 from .scenario import (
+    pm_room,
     SCENARIO_LABEL, TREND_SCENARIOS, ScenarioTracker, body_closed_beyond, sizing_bucket, target_is_ahead,
 )
 
@@ -535,7 +536,7 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                 note_once(s, end_ts, "skip_range_confirmation", f"range day: price has not cleared the PM level {pm_level:.2f} (B3/A4) — does not spend the two-pullback allowance (D9)",
                           setup=s.id, touch=idx)
                 continue
-        bucket = sizing_bucket(entry_spot, zones, pmh, pml)
+        bucket = sizing_bucket(entry_spot, zones, pmh, pml, mode=rules.no_trade_zone)
         # F20 (2026-09-04): a pm_break setup is anchored ON the PM level, so its retest — the entry L2.6/L2.7
         # describe ("enter puts on the retest/rejection of PML") — always sits on the edge of the no-trade
         # zone. Within the touch tolerance of the anchor, with the close on the trade's side, it is the
@@ -546,6 +547,18 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
             bucket = "small"
             note(end_ts, "pm_retest", f"{s.id}: retest of the pre-market level {s.anchor:.2f} itself — the L2.6/L2.7 entry, "
                  "small size (F20)", setup=s.id, touch=idx, spot=round(entry_spot, 4))
+        # C1 obstacle rule (2026-09-13, off by default): an entry inside the PM range that is NOT the pm_break retest
+        # (F20) and has less than `pm_room_atr` x ATR of room to the PM boundary ahead is buying into the range's
+        # edge — F15's QQQ 2026-09-04 10:02 (0.62 under the PMH). Stated as its own condition, as the reviewers asked.
+        if bucket != "none" and rules.pm_room_atr > 0 and atr > 0 and not s.kind.startswith("pm_break"):
+            room = pm_room(entry_spot, s.direction, pmh, pml)
+            if room is not None and room < rules.pm_room_atr * atr:
+                edge = pmh if long else pml
+                note_once(s, end_ts, "skip_pm_room",
+                          f"{s.id}: entry {entry_spot:.2f} is only {room:.2f} ({room / atr:.1f} ATR) from the pre-market "
+                          f"{'high' if long else 'low'} {edge:.2f} ahead — buying into the range's edge (C1 room rule, F15)",
+                          setup=s.id, touch=idx, bucket=bucket, room=round(room, 4), roomAtr=round(room / atr, 2))
+                continue
         mult = {"full": rules.size_full, "small": rules.size_small, "none": rules.size_none}[bucket]
         if mult <= 0:
             note_once(s, end_ts, "skip_no_trade_zone", f"entry {entry_spot:.2f} sits inside the pre-market range — no-trade zone (V6/B5) — does not spend the two-pullback allowance (D9)",
@@ -634,6 +647,16 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
                      f"(F81b target_replan=structure)", setup=s.id, touch=idx, spot=round(entry_spot, 4),
                      was=round(float(target), 4), target=(round(float(cand), 4) if cand is not None else None), source=src)
                 target, target_kind = cand, ("replan" if cand is not None else "none")
+        # C3 (2026-09-13, off by default): a target nearer than `min_target_atr` x ATR is not a trade — Tue 2026-09-08
+        # QQQ exited at a target one strike away within minutes, fee-negative
+        if (target is not None and rules.min_target_atr > 0 and atr > 0
+                and abs(float(target) - entry_spot) < rules.min_target_atr * atr):
+            note_once(s, end_ts, "skip_target_near",
+                      f"{s.id}: target {target:.2f} is only {abs(float(target) - entry_spot):.2f} "
+                      f"({abs(float(target) - entry_spot) / atr:.1f} ATR) from the {entry_spot:.2f} entry — not enough room "
+                      f"to pay for the trade (C3)", setup=s.id, touch=idx, target=round(float(target), 4),
+                      roomAtr=round(abs(float(target) - entry_spot) / atr, 2))
+            continue
         if not target_is_ahead(target, entry_spot, s.direction):
             side = "above" if s.direction == "short" else "below"
             note_once(s, end_ts, "skip_target_behind",

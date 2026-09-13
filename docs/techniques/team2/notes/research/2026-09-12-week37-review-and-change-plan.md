@@ -194,3 +194,86 @@ sessions before/after the flip. Everything is logged in TRADING-RULES' change lo
    plus a recency rule? He never states a rule; three charts are the whole evidence.
 4. Should C1 be flipped in Practice immediately after review (the user's stated preference is to run rules live
    rather than forget them), or held for the twenty-session review with the other variants?
+
+## Addendum 2026-09-13 — the other team's verdict, and what was done about it
+
+Verdict received: GO for research and C6; NO-GO for flipping C1 in Practice as written. Two findings: (1) the F15
+preservation claim was wrong — QQQ 2026-09-04 10:02 (entry 721.44, PDH 718.91, PM 717.13–722.06) is inside the PM
+range but OUTSIDE yesterday's range, so a pure conjunction allows it; (2) the improvement is concentrated in the
+motivating week (+188.5 this week, −39.4 earlier) and summed percentages are not the book (no size multipliers, no
+shared concurrency or loss limits). Both accepted. What follows is the response, in their recommended order.
+
+### A. C1 geometry corrected: ordered truth table (built, tests, DISABLED by default)
+
+`sizing_bucket(price, zones, pmh, pml, mode)` with `in_pm` = pml ≤ price ≤ pmh and `beyond` = above the PDH zone top
+or below the PDL zone bottom:
+
+| mode | in_pm | beyond | bucket | note |
+|---|---|---|---|---|
+| pm_range (today) | yes | any | **none** | V6's picture, F15 widened it to gap days |
+| pm_range | no | yes | full | |
+| pm_range | no | no | small | |
+| conjunction | yes | no | **none** | B5: inside BOTH ranges = risk off |
+| conjunction | yes | yes | **small** | beyond yesterday's zone but inside the PM range — V6's rung, never full |
+| conjunction | no | yes | full | |
+| conjunction | no | no | small | |
+
+So the reviewers' sizing ambiguity is resolved as **small**, never full, inside the PM range. F15's case is NOT kept by
+the geometry (conjunction → small); it is a separate, explicit condition, `pm_room_atr`: an entry inside the PM range
+that is not the pm_break retest (F20) and has less than `pm_room_atr` × ATR of room to the PM boundary ahead is refused
+`skip_pm_room`. F15's case has 0.62 of room; Friday's SPY candle 1.26 = 2.2 ATR. Knobs (all off by default, live read
+unchanged, proven by `tests/test_team2_no_trade_zone.py`): `techniques.team2.no_trade_zone` (`pm_range` |
+`conjunction`), `techniques.team2.pm_room_atr` (0 = off), and C3's `techniques.team2.min_target_atr` (0 = off).
+
+### B. Canonical reproduction and chronological, book-level assessment
+
+Same dataset (`522d120e6af4…`), the sweep now driven by the knobs (no monkey-patching). "Book" = a chronological
+simulation across the three symbols with one open position at a time desk-wide, two losses end the day, and each
+trade weighted by its size multiplier at $600 of premium per full unit — a labelled scale, not the Practice book.
+
+| variant | trades | wr | pnl%-sum | earlier (08-20..09-04) | this week | book total | book earlier | book week | max DD |
+|---|---|---|---|---|---|---|---|---|---|
+| baseline | 54 | .352 | 209.5 | 47 tr, +69.1 | 7 tr, +140.4 | +$471 | +$282 | +$189 | −$320 |
+| **conjunction** | 82 | .366 | 358.6 | 61 tr, +29.7 | 21 tr, +328.9 | **+$1,514** | **+$656** | +$858 | −$565 |
+| conjunction + room 1.0 ATR | 81 | .358 | 334.0 | +5.1 | +328.9 | +$1,407 | +$550 | +$858 | −$565 |
+| conjunction + room 1.5 | 77 | .338 | 219.7 | +0.7 | +218.9 | +$1,137 | +$561 | +$575 | −$565 |
+| conjunction + room 2.0 | 71 | .352 | 259.4 | +27.6 | +231.8 | +$1,272 | +$467 | +$804 | −$559 |
+| conjunction + room 3.0 | 66 | .333 | 223.7 | +21.7 | +202.0 | +$572 | +$504 | +$68 | −$397 |
+| C3 min target 1.0 ATR | 43 | .302 | 97.2 | +22.2 | +74.9 | +$34 | −$9 | +$43 | −$467 |
+| C3 min target 1.5 ATR | 38 | .237 | 15.9 | −59.0 | +74.9 | +$61 | +$18 | +$43 | −$445 |
+
+Readings, stated carefully:
+
+- The reviewers' split is confirmed on summed percentages: the conjunction is worse than baseline on the earlier
+  portion (+29.7 vs +69.1). **At book level the sign flips** (+$656 vs +$282 earlier), because every one of the 38
+  added trades is SMALL size (half a unit) while the 10 lost baseline trades were full size — the raw sum overweights
+  the additions. Whether that is reassuring or an artefact of the $600/half-unit scale is exactly the question a
+  prospective Practice comparison answers; it is not settled here. Drawdown rises from −$320 to −$565 either way.
+- Added trades by date: 08-20 +100.9, 08-24 −19.4, 08-25 +45.1, 08-27 −81.3, 08-31 −0.7, 09-01 −65.6, 09-03 −10.7,
+  09-04 −14.3, 09-08 +22.2, 09-09 −32.7, 09-10 +71.1, 09-11 +120.0. Six of twelve dates negative; the gains sit on
+  four dates. 16 trading dates is the whole sample; the reviewers' "not 48 independent days" stands.
+- **The room rule does not earn its place on this sample**: every threshold lowers the result, and 2.0 ATR (the value
+  that would keep Friday's candle) costs 100 points, 20 of them on the earlier portion where it was meant to help.
+  F15's case is one refusal; the rule refuses many more that were fine. Recommendation: keep `pm_room_atr = 0`; if the
+  team wants F15's case excluded, it needs a narrower condition than distance to the boundary (e.g. only when the
+  scenario itself is a pm_break, or only within the last N minutes of a failed break), which nobody has measured.
+- **C3 as measured is rejected**: a minimum target room of 1.0–1.5 ATR removes more good trades than fee-negative
+  scalps (book +$471 → +$34). The reviewers asked for entry-to-target room, stop distance AND costs measured
+  together; this was the room alone and it is negative enough that the fuller study is not worth its cost now.
+  Tuesday's two QQQ scalps stay a note, not a rule.
+
+### C. Status of each proposal after the review
+
+| | Verdict | Now |
+|---|---|---|
+| C1 conjunction | build behind a disabled knob; do not activate | **built, off, tests; awaiting a defined Practice experiment after C6** |
+| C1 room rule | resolve as an explicit condition | built as `pm_room_atr`, **measured negative, stays 0** |
+| C2 multi-day levels | research; freeze a causal definition | not started; needs the definition first (clustering, independent touches, recency, ranking, invalidation) |
+| C3 min target room | independent sweep | **swept, negative, dropped as specified** |
+| C4 add on retest | research with one risk budget | not started |
+| C5 breakeven after trim | research; distinguish whole-trade vs remaining-contracts | not started; the reviewers are right that Friday's chart does not establish it |
+| C6 one tape | GO, platform ownership | request written in PLATFORM-RULES (2026-09-13); precedes any activation |
+
+Sequence agreed: geometry corrected (A) → canonical inputs (C6, platform) → variant reproduced on the canonical tape →
+book-level risk re-assessed → a separately labelled prospective Practice comparison proposed for approval. Nothing is
+active. `trim_cue=new_extreme` remains rejected; near-ITM eligibility remains the user's separate decision.

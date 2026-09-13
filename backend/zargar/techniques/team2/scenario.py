@@ -33,17 +33,53 @@ def classify_day(open_price: float, zones: dict[str, Zone], pmh: float | None, p
     return DAY_NORMAL
 
 
-def sizing_bucket(price: float, zones: dict[str, Zone], pmh: float | None, pml: float | None) -> str:
+def sizing_bucket(price: float, zones: dict[str, Zone], pmh: float | None, pml: float | None,
+                  *, mode: str = "pm_range") -> str:
     """V6: 'full' beyond the PDH/PDL zones · 'small' between a prior-day zone and the PM level
-    · 'none' inside the PM range. With no PM range, inside yesterday's range is 'small'."""
+    · 'none' inside the PM range. With no PM range, inside yesterday's range is 'small'.
+
+    Ordered truth table (C1 spec, 2026-09-13; `in_pm` = pml <= price <= pmh, `beyond` = price above the PDH
+    zone top or below the PDL zone bottom, `in_pd` = not beyond):
+
+        mode          in_pm  beyond   -> bucket
+        pm_range      yes    any      -> none     (V6's picture; F15 widened it to gap days on 2026-09-04)
+        pm_range      no     yes      -> full
+        pm_range      no     no       -> small
+        conjunction   yes    no       -> none     (B5: inside BOTH ranges = risk off)
+        conjunction   yes    yes      -> small    (beyond yesterday's zone but still inside the PM range: V6's rung,
+                                                   never full — the PM range is chop wherever it sits, F15)
+        conjunction   no     yes      -> full
+        conjunction   no     no       -> small
+
+    `conjunction` is DISABLED by default (`techniques.team2.no_trade_zone`); it does NOT by itself keep F15's QQQ
+    2026-09-04 10:02 case (721.44, PDH top 718.91, PM 717.13–722.06 -> small, not none) — that case is refused by the
+    separate `pm_room_atr` rule in `session.py` (the PMH 0.62 ahead is the obstacle), which the reviewers asked to be
+    stated as its own explicit condition rather than folded into the geometry."""
     pdh, pdl = zones["pdh"], zones["pdl"]
+    in_pm = pmh is not None and pml is not None and pml <= price <= pmh
+    beyond = price > pdh.top or price < pdl.bottom
+    if mode == "conjunction":
+        if in_pm and not beyond:
+            return "none"
+        if in_pm:
+            return "small"
+        return "full" if beyond else "small"
     # F15 (2026-09-04): the PM range is chop wherever it sits — on a gap day it lies beyond the PDH/PDL
     # zone, and "full" there was buying the middle of the pre-market range (QQQ 10:02, 0.62 under the PMH)
-    if pmh is not None and pml is not None and pml <= price <= pmh:
+    if in_pm:
         return "none"
-    if price > pdh.top or price < pdl.bottom:
+    if beyond:
         return "full"
     return "small"
+
+
+def pm_room(price: float, direction: str, pmh: float | None, pml: float | None) -> float | None:
+    """C1's explicit obstacle condition: the distance from an entry INSIDE the PM range to the PM boundary that lies
+    ahead in the trade's direction (PMH for a long, PML for a short); None when the entry is outside the range or the
+    range is unknown. F15's case: long at 721.44 with PMH 722.06 -> 0.62."""
+    if pmh is None or pml is None or not (pml <= price <= pmh):
+        return None
+    return (pmh - price) if direction == "long" else (price - pml)
 
 
 def body_closed_beyond(bar: Bar, level: float, direction: str) -> bool:
