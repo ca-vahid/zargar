@@ -113,10 +113,12 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
   a target, never as a confirmation, because B3's range-day rules govern there). When the zone read and a key-level
   close disagree (a zone flip against the key level's direction), the ZONE wins and the key level's confirmation is
   discarded (`key_level_overruled`).
-- **Setup identity and precedence (build fix 2026-09-13):** a key-level setup's id carries its level's price
-  (`key_break_up@09:30:571.85`), so two levels breaking on the same 15m bar are two setups; among setups confirmed on
-  the same bar the one whose anchor is nearest the current close wins the entry (explicit in the read's selection);
-  a rejection or retirement of one level kills only its own setup.
+- **Setup identity and precedence (build fix 2026-09-13, scoped v0.7.61):** a key-level setup's id carries its level's
+  price (`key_break_up@09:30:571.85`), so two levels breaking on the same 15m bar are two setups. Selection is the
+  LEGACY rule first (newest confirmation, insertion order on ties); only when the legacy winner is a key-level setup
+  does the C2 tie-break apply among the key-level setups confirmed on that bar (nearest anchor to the current close,
+  then id). Zone/PM selection is therefore unchanged with C2 off or when C2 contributes no level (reviewers'
+  before/after regression, 2026-09-13). A rejection or retirement of one level kills only its own setup.
 - **Entry anchor (deterministic, preserved during a pullback):** for a confirmed setup the anchor is the LAST
   CONFIRMED BROKEN level in the trade's direction — the zone edge if the scenario came from the zone, the key level
   if from a key-level close. The anchor is fixed when the setup is minted and does not change while a pullback is in
@@ -216,6 +218,10 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
   the labelled scale); max drawdown; exposure (trades, minutes in market, share of small-size entries); the level
   funnel: levels built / masked at 17:00 / masked at 09:25 / 09:30 / pending flips / confirmations added /
   key-level retest entries / entries blocked by the PM rule (C1 off) / overruled by the zone.
+- **Evidence filter (v0.7.61):** every sweep row carries `keyLevelInputsOk`; `Team2Service.paired_rows(baseline, D…)`
+  returns the symbol-sessions eligible in EVERY sweep (status ok, inputs present, no `insufficientData`) and the
+  dropped cells with reasons; `summarize_rows` recomputes the summary on that common sample. The paired report uses
+  only that sample, for the baseline as well as each definition; the dropped list is reported alongside.
 - **C1 stays off during C2.** Some C2 opportunities will be refused by the existing PM rule; the funnel records them.
   A definition that never reaches an executable decision is reported as "insufficient exposure under the baseline",
   not as "the levels have no value"; C1 is never enabled to rescue C2 and C2 is never activated on that argument.

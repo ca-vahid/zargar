@@ -345,3 +345,46 @@ def test_a_rejected_break_kills_the_key_level_setup_and_the_level_keeps_its_role
     setup = next(s for s in res.setups if s["kind"] == "key_break_up")
     assert setup["dead"] and "rejected" in (setup["deadReason"] or "")
     assert not [e for e in res.events if e["event"] == "fire" and e.get("keyLevel")]
+
+
+# ---------------------------------------------------------------- the evidence filter (paired comparison)
+def test_paired_rows_drop_missing_input_cells_from_every_side():
+    from zargar.techniques.team2.service import paired_rows, summarize_rows
+    base = {"rows": [{"symbol": "SPY", "date": "2026-09-01", "status": "ok", "keyLevelInputsOk": True, "trades": [{"pnlPct": 10.0, "win": True}]},
+                     {"symbol": "SPY", "date": "2026-09-02", "status": "ok", "keyLevelInputsOk": False, "trades": [{"pnlPct": 30.0, "win": True}]},
+                     {"symbol": "QQQ", "date": "2026-09-01", "status": "ok", "keyLevelInputsOk": True, "trades": []}]}
+    d1 = {"rows": [{"symbol": "SPY", "date": "2026-09-01", "status": "ok", "keyLevelInputsOk": True, "keyLevels": {"insufficientData": None}, "trades": [{"pnlPct": -5.0, "win": False}]},
+                   {"symbol": "SPY", "date": "2026-09-02", "status": "ok", "keyLevelInputsOk": False, "keyLevels": {"insufficientData": "no 2m"}, "trades": [{"pnlPct": 30.0, "win": True}]},
+                   {"symbol": "QQQ", "date": "2026-09-01", "status": "no_bars", "keyLevelInputsOk": True}]}
+    (b_rows, d_rows), dropped = paired_rows(base, d1)
+    assert [(r["symbol"], r["date"]) for r in b_rows] == [("SPY", "2026-09-01")] and len(d_rows) == 1
+    assert {(d["symbol"], d["date"]) for d in dropped} == {("SPY", "2026-09-02"), ("QQQ", "2026-09-01")}
+    assert any("no 2m inputs" in r for d in dropped for r in d["reasons"]) and any("no_bars" in r for d in dropped for r in d["reasons"])
+    assert summarize_rows(b_rows)["pnlPctSum"] == 10.0 and summarize_rows(d_rows)["pnlPctSum"] == -5.0
+
+
+def test_legacy_zone_pm_selection_is_untouched_when_c2_contributes_no_level():
+    # the C2 tie-break must not touch zone/PM setups: with the knob ON but no actionable level the fires equal the OFF read
+    prev = prev_day_bars()
+    zone_top = build_skeleton("SPY", DAY.isoformat(), aggregate(prev, 15), make_rules(), prev_bars_1m=prev)["zones"]["pdh"]["top"]
+    def price(i):
+        m = 4 * 60 + i
+        if m < 9 * 60 + 30:
+            return zone_top - 0.5
+        x = m - (9 * 60 + 30)
+        if x < 15:
+            return zone_top + 0.2 + x * 0.06
+        if x < 30:
+            return zone_top + 0.8
+        return zone_top + 0.8 + 0.01 * (x % 7)
+    today = path_1m(DAY, (4, 0), (20, 0), price)
+    next(b for b in today if filter_session([b], "rth")).open = zone_top + 0.2
+    fires = {}
+    for knob in ("off", "D1"):
+        rules = make_rules(key_levels=knob)
+        plan = complete_plan(build_skeleton("SPY", DAY.isoformat(), aggregate(prev, 15), rules, prev_bars_1m=prev), today)
+        if knob == "D1":
+            plan["keyLevels"] = {"definition": "D1", "atrBuild": 0.5, "candidates": [], "above": [], "below": []}
+        res = simulate_session(plan, today, rules, sigma=0.2, warmup_1m=prev)
+        fires[knob] = [(e["ts"], e.get("setup")) for e in res.events if e["event"] == "fire"]
+    assert fires["off"] == fires["D1"]
