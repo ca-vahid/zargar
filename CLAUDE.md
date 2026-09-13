@@ -95,6 +95,20 @@ are enforced in `_tip_budget` — before that they were dead knobs), and earned-
 PLUS the immediate shadow book's aged marks (2026-09-04 user decision — armed-only trust never
 graduates momentum sources). Closed tip
 positions get a nightly **retro** (`tip_retro`, `techniques.tip.retro_*`).
+**Tips evidence + reliability line (2026-09-09→13, Codex-reviewed; details in
+docs/techniques/tip/reviews/):** the Discord gateway is a durable write-ahead LEDGER
+(accept→lease→ACK, revision-keyed, contiguous cursors, per-destination EM ack — a hard
+kill loses nothing); intake dedupe is an atomic advisory-locked CLAIM (fresh=inFlight
+non-ack, stale=resumed); the grounding corpus is caption+transcript UNION with an
+attachment-coverage manifest (first image only — multi-image queued); premium exits
+need fresh marks with provenance on the record AND tick stops need two DISTINCT fresh
+observations (`execution.premium_mark_max_age_seconds`,
+`execution.premium_stop_confirm_window_seconds`); a pure quote-age REJECTED_RISK on an
+AUTO sim-book tip proposal gets ONE durable retry (`freshRetry`, `ProposalRetried`);
+unfilled retros disqualify signals with fills in ANY lane; `TipEntryStudy` journals
+proposal-time+delayed NBBO (diagnostics only — no entry-rule change without a
+cost-aware validated cohort). Meet Kevin: MK-alpha-trades tips-mode, own-book
+MIRRORING OFF until the shadow-first build with predefined promotion criteria.
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries
@@ -226,6 +240,11 @@ top-bar `v…` chip shows), mirrored in `frontend/package.json`, `backend/zargar
 and `backend/pyproject.toml` — bump all four together. Every user-visible change adds a
 CONCISE entry (tag: major/new/improved/fixed/security) to the current release's block;
 start a new block when the user calls a release. `/api/health` reports the version.
+**Version races are real (three collisions on one weekend):** four desks bump
+concurrently — ALWAYS re-read main at release time, take the next FREE number, and on
+a collision renumber YOUR block (never rewrite another desk's released block). Run
+`npm run build` BEFORE committing any changelog merge: a bad union once shipped two
+`APP_VERSION` consts and dropped a desk's release notes.
 `npm run check-release` verifies these values and the package lockfile; the
 frontend production build runs this check automatically.
 
