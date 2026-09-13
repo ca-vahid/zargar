@@ -24,7 +24,9 @@ research convention**, not his rule.
   completion only MASKS (§0.5), never adds or moves levels.
 - **ATR for building and ranking (`atr_build`):** the 14-period ATR of 2-minute RTH bars of the previous completed
   session, read at that session's 16:00 close (one number per symbol per plan; no intraday value of the plan date is
-  used). All widths in §0.3–§0.4 and in D1–D3 use `atr_build`.
+  used). All widths in §0.3–§0.4 and in D1–D3 use `atr_build`. **No substitute:** a plan without those 2m bars
+  carries `keyLevels.insufficientData` and no levels (build fix 2026-09-13; the scaled 15m fallback was removed), and
+  the sweep row reports it — such symbol-sessions are excluded from a definition's evidence, never approximated.
 - **ATR for live touch tests (`atr_live`):** unchanged from today — the read's contemporaneous 2m ATR on closed bars
   (`r.atr`), used with the existing `pm_tol_atr` tolerance. The two roles are different and both are recorded on the
   plan (`keyLevels.atrBuild`, and the read's `regime.atr` as now).
@@ -55,10 +57,12 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
 - **Ranking:** score, then recency (newer `lastReactionAt` wins), then proximity to the previous close (nearer wins),
   then price (above: higher wins; below: lower wins). Deterministic.
 - **Clustering (all definitions, one procedure):** sort candidates by price; walk upward; a candidate joins the current
-  cluster if it is within `0.5 x atr_build` of the cluster's CURRENT representative price (the median of members so
-  far), else it starts a new cluster. This single-linkage-to-the-median rule cannot chain across several ATRs: the
-  test is against the median, not the last member. Members are the candidates' own prices; episode/retest IDs are
-  carried with them and de-duplicated on merge (a reaction that appears at two neighbouring candidates counts once).
+  cluster only if the cluster's DIAMETER with it (max member − min member) stays `<= 0.5 x atr_build`, else it starts a
+  new cluster. `0.5 x atr_build` is therefore the maximum cluster diameter, a hard bound (build fix 2026-09-13: the v2
+  running-median wording did NOT bound a cluster — the reviewers' fixture chained 2.5 ATR). Members are the candidates'
+  own prices; episode/retest IDs are carried with them and de-duplicated on merge (a reaction that appears at two
+  neighbouring candidates counts once). Mixed high/low clusters take the kind of their build-time role (a resistance
+  cluster is `high`); origin date and availability follow the definition's own rule.
 - **Refill:** the cap is applied AFTER clustering and after the 17:00 dedupe against the PDH/PDL zones (§0.5), so
   the 3 per side are the best 3 survivors; a level masked at 09:25 by the PM range is NOT refilled (the day trades
   with fewer key levels — refilling at 09:25 would let the pre-market pick the levels).
@@ -74,7 +78,9 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
 - **Reject:** the next 15m bar closes back on the original side → `flipPending = false`, nothing else changes (the
   break failed; the level held).
 - **Retire:** on the second confirmed flip (`flips == 2`) the level leaves the set at that instant. No score decay, no
-  halving, no 0.25 threshold (v1's contradictions removed).
+  halving, no 0.25 threshold (v1's contradictions removed). Flip state is INTRADAY state (research convention): the
+  nightly rebuild is stateless and derives the next day's set from the history alone, so a level retired today can
+  reappear tomorrow if the history still supports it — recorded, not persisted.
 - **Expiry (nightly, at rebuild):** a level older than `L` sessions (by `originDate`) is dropped; a level that two
   consecutive completed sessions closed THROUGH by more than `1.0 x atr_build` — below a low-born level, above a
   high-born one, i.e. judged on the level's ORIGIN side (build clarification 2026-09-13: a support price merely
@@ -107,6 +113,10 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
   a target, never as a confirmation, because B3's range-day rules govern there). When the zone read and a key-level
   close disagree (a zone flip against the key level's direction), the ZONE wins and the key level's confirmation is
   discarded (`key_level_overruled`).
+- **Setup identity and precedence (build fix 2026-09-13):** a key-level setup's id carries its level's price
+  (`key_break_up@09:30:571.85`), so two levels breaking on the same 15m bar are two setups; among setups confirmed on
+  the same bar the one whose anchor is nearest the current close wins the entry (explicit in the read's selection);
+  a rejection or retirement of one level kills only its own setup.
 - **Entry anchor (deterministic, preserved during a pullback):** for a confirmed setup the anchor is the LAST
   CONFIRMED BROKEN level in the trade's direction — the zone edge if the scenario came from the zone, the key level
   if from a key-level close. The anchor is fixed when the setup is minted and does not change while a pullback is in
@@ -173,7 +183,7 @@ maskedBy       none | pdh | pdl | pmh | pml | <levelId>   (§0.5)
 | atr_build | ATR(14) of 2m RTH bars, previous completed session, at its close | all |
 | touch tolerance (build) | 0.25 x atr_build | all |
 | touch tolerance (live) | `pm_tol_atr` x atr_live (existing) | all |
-| cluster width | 0.5 x atr_build to the running median | all |
+| cluster diameter (max) | 0.5 x atr_build, hard bound | all |
 | mask width vs PDH/PDL/PM | 0.5 x atr_build | all |
 | recency decay | 0.85 per session | all |
 | lone-old-member drop | single member/pivot older than 3 sessions | D1, D3 |

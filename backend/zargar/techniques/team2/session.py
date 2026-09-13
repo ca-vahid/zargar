@@ -242,7 +242,10 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
 
     def setup_for(kind: str, direction: str, anchor: float, target: float | None, ts: int, range_day: bool,
                   key_level_id: str | None = None) -> Setup:
-        s = Setup(id=f"{kind}@{_hhmm(ts)}", kind=kind, direction=direction, anchor=anchor, target=target,
+        # C2 identity (reviewers 2026-09-13): a key-level setup carries its level's price in the id, so two levels
+        # breaking on the same 15m bar are two setups (`key_break_up@09:30` twice used to overwrite the first)
+        sid = f"{kind}@{_hhmm(ts)}" + (f":{anchor:.2f}" if key_level_id else "")
+        s = Setup(id=sid, kind=kind, direction=direction, anchor=anchor, target=target,
                   confirmed_ts=ts, range_day=range_day, key_level_id=key_level_id)
         setups[s.id] = s
         return s
@@ -505,7 +508,9 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         cands = [s for s in live if cur_bias is None or s.direction == cur_bias]
         if not cands:
             continue
-        s = sorted(cands, key=lambda x: x.confirmed_ts)[-1]
+        # precedence (explicit): the newest confirmation wins; among setups confirmed on the SAME bar the nearest
+        # confirmed anchor to the current close wins (spec v2 §0.6 — C2 key levels breaking together, 2026-09-13)
+        s = sorted(cands, key=lambda x: (x.confirmed_ts, -abs(b2.close - x.anchor)))[-1]
         long = s.direction == "long"
         # T8 first: on a range day the trigger may be the 200 EMA flush itself — the 13/48 have crossed the
         # bias way but the full stack is not yet in order (his SPY 671p: bearish cross, then the close under

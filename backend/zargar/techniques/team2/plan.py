@@ -60,19 +60,20 @@ def build_skeleton(symbol: str, date: str, prev_bars_15m: list[Bar], rules: Team
         # at its close (one number, no plan-date data); fallback from the 15m bars when no 1m bars were supplied.
         from ...marketstructure.levels import atr as _atr
         from .levels import key_levels
-        src = "2m"
-        if prev_bars_1m:
-            prev_2m = [b for b in aggregate([x for x in prev_bars_1m if session_date(x.ts) == prev], 2) if bar_session(b.ts) == "rth"]
-            atr_build = _atr(sorted(prev_2m, key=lambda b: b.ts), 14) if len(prev_2m) >= 2 else 0.0
-        else:
-            atr_build = 0.0
-        if atr_build <= 0:
-            src = "15m_fallback"
-            atr_build = _atr(sorted(prev_day, key=lambda b: b.ts), 14) * (2.0 / 15.0) ** 0.5
+        prev_2m = ([b for b in aggregate([x for x in prev_bars_1m if session_date(x.ts) == prev], 2) if bar_session(b.ts) == "rth"]
+                   if prev_bars_1m else [])
+        atr_build = _atr(sorted(prev_2m, key=lambda b: b.ts), 14) if len(prev_2m) >= 15 else 0.0
         prev_close = float(sorted(prev_day, key=lambda b: b.ts)[-1].close)
-        key = key_levels(rth, definition=rules.key_levels, atr_build=float(atr_build), prev_close=prev_close, zones=zones,
-                         plan_date=date, lookback=rules.target_lookback_sessions)
-        key["atrBuildSource"] = src
+        if atr_build <= 0:
+            # the frozen definition specifies the previous session's 2m ATR(14); without it the case is INSUFFICIENT
+            # DATA (reviewers 2026-09-13) — no approximate fallback, no levels, and the sweep row says so
+            key = {"definition": str(rules.key_levels).upper(), "atrBuild": 0.0, "atrBuildSource": "none",
+                   "insufficientData": "no previous-session 2m RTH bars for atr_build", "prevClose": prev_close,
+                   "candidates": [], "above": [], "below": []}
+        else:
+            key = key_levels(rth, definition=rules.key_levels, atr_build=float(atr_build), prev_close=prev_close, zones=zones,
+                             plan_date=date, lookback=rules.target_lookback_sessions)
+            key["atrBuildSource"] = "2m"
     return {
         "technique": "team2", "symbol": symbol.upper(), "date": date, "version": PLAN_VERSION,
         "prevSession": prev,

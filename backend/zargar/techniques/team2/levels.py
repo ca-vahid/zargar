@@ -93,7 +93,7 @@ from dataclasses import dataclass as _dataclass, field as _field
 
 KEY_LEVEL_DECAY = 0.85
 KEY_LEVEL_TOL_ATR = 0.25          # touch tolerance at build time (x atr_build)
-KEY_LEVEL_CLUSTER_ATR = 0.5       # cluster width to the running median (x atr_build)
+KEY_LEVEL_CLUSTER_ATR = 0.5       # MAXIMUM cluster diameter (max member - min member, x atr_build) — a hard bound
 KEY_LEVEL_MASK_ATR = 0.5          # mask width against PDH/PDL zones and PMH/PML (x atr_build)
 KEY_LEVEL_LONE_MAX_AGE = 3        # a single member / zero-retest pivot older than this many sessions is dropped
 KEY_LEVEL_D2_MIN_EPISODES = 3
@@ -182,11 +182,13 @@ def _episodes(bars: list[Bar], price: float, tol: float, role: str, *, start_ind
 
 
 def _cluster(cands: list[dict], width: float) -> list[dict]:
-    """Sort by price, walk upward; a candidate joins the current cluster when it is within `width` of the cluster's
-    CURRENT median (no chaining across several widths). Episode ids are de-duplicated on merge."""
+    """Sort by price, walk upward; a candidate joins the current cluster only if the cluster's DIAMETER with it
+    (max member - min member) stays <= `width`. A running-median test does not bound a cluster (the reviewers'
+    fixture chained 2.5 ATR at a 0.5 ATR radius, 2026-09-13); the diameter test does. Deterministic, no chaining.
+    Episode ids are de-duplicated on merge."""
     out: list[dict] = []
     for c in sorted(cands, key=lambda x: x["price"]):
-        if out and abs(c["price"] - _stats.median(out[-1]["members"])) <= width:
+        if out and (max(out[-1]["members"] + [c["price"]]) - min(out[-1]["members"] + [c["price"]])) <= width:
             cl = out[-1]
             cl["members"].append(c["price"])
             cl["episode_ids"] |= set(c.get("episode_ids") or [])
