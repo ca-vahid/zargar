@@ -278,6 +278,18 @@ Original build plan:
 - Sweep: `--set key_levels=D1|D2|D3`; the C1 study's `book_sim` reused unchanged; the funnel counters added to the
   sweep row.
 
+## 6b. The paired report tool (built 2026-09-13 after the other team's acceptance)
+
+`python -m zargar.tools.team2_c2_report --start 2026-08-20 --end 2026-09-11 [--symbols …] [--definitions D1,D2,D3] [--out …]`
+runs the baseline and each definition in-process on the banked tape, refuses to run unless every sweep consumed ONE
+dataset hash, restricts every metric (model sums, the chronological book simulation at $600/full unit, drawdown,
+worst day, minutes in market, by-symbol, the funnel) to `paired_rows`' common eligible sample, prints the dropped
+cells with reasons, classifies matched trades as unchanged / changed-exit / displaced / new / lost, applies the §4
+gates and the verdict rule, and names the development candidate. The validation window is sealed in the tool: any
+end date ≥ 2026-09-14 is refused unless `--validation-read --after 2026-10-09` is passed after that date — the one
+preregistered read. Pure parts are unit-tested (`tests/test_team2_c2_report.py`); the end-to-end run is exercised
+when C6 lands (the other team's note: the paired-report integration remains to be exercised).
+
 ## 7. Variant register (fixed; no entry until the canonical tape exists)
 
 | # | date | definition | overrides | dataset | period | qualifies? | note |

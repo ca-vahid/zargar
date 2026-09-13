@@ -347,8 +347,11 @@ and are now part of the plan; each carries the phase it belongs to.
 - **Research:** C2 multi-day key levels — three definitions FROZEN 2026-09-13 in
   `notes/research/2026-09-13-c2-key-levels-spec.md` (D1 session levels, D2 repeated reactions, D3 confirmed pivots; v2 after the other team's
   review — validation fixed 2026-09-14 → 10-09, acceptance gates predeclared); BUILT 2026-09-13 behind `key_levels` (OFF,
-  v0.7.58) with 13 causal fixtures; sweeps wait for C6. C4 add on the level retest and C5 breakeven after the first trim: no frozen definition yet. Each needs a causal
+  v0.7.58–0.7.61, accepted by the other team) with 19 causal fixtures + reviewer regressions; the paired report tool
+  `zargar.tools.team2_c2_report` (seal enforced) is ready; sweeps wait for C6. C4 add on the level retest and C5 breakeven after the first trim: no frozen definition yet. Each needs a causal
   definition, a sweep on the canonical tape and a matched trade list before it is a proposal.
+- **What could be wrong:** README's "Known gaps, risks and what could be wrong" is the honest list (model-on-Yahoo
+  sweeps, one filled day, research code reaching the live path, journal gaps, execution unknowns, open decisions).
 - **Change pipeline (how a rule changes):** finding or author evidence → dated research note → frozen-input sweep with
   a `--set` overlay or a knob (matched trade lists, chronological split, book-level simulation) → the other team's
   review → build behind a disabled knob with a truth-table test → Codex review → deploy through the door → the user

@@ -63,8 +63,10 @@ cohort v2 trigger a REVIEW, never a promotion (PLAN §3d).
 **Rules under observation / research (see TRADING-RULES "Rules under observation" and the week-37 plan):**
 F81b `target_replan=structure` (gap days) ON since 09-09; C1 no-trade zone = B5 conjunction, C1 room rule and C3
 minimum target room are BUILT BEHIND KNOBS AND OFF (v0.7.53) pending C6 (one tape, platform) and a separately approved
-Practice experiment; C2 multi-day key levels, C4 add on retest, C5 breakeven after trim are research items without a
-frozen definition yet. Near-ITM contract eligibility is an open user decision.
+Practice experiment; **C2 multi-day key levels: three definitions frozen (spec v2), BUILT behind `key_levels` (OFF,
+v0.7.58–0.7.61), accepted by the other team, development sweeps GO once C6 lands, validation 2026-09-14 → 10-09 sealed
+in the report tool**; C4 add on retest and C5 breakeven after trim are research items without a frozen definition.
+Near-ITM contract eligibility is an open user decision.
 
 **Built (milestones):**
 - 2026-09-03 v0.1: shared primitives (ext-hours bars, aggregation, EMA, zones, market calendar, VIX proxy), the pure
@@ -81,11 +83,47 @@ frozen definition yet. Near-ITM contract eligibility is an open user decision.
   trail and trail gaps, the watch job's F88/F91/F100/F101/F106/F110/F111 fixes.
 - 2026-09-13 v0.7.53: C1/C3 research knobs (off), ordered no-trade-zone truth table, chronological + book-level
   assessment tooling (scratch), C6 request to the platform owners.
+- 2026-09-13 v0.7.58–0.7.61: C2 definitions D1/D2/D3 built behind `key_levels` (off) with the flip/expiry state
+  machine, masks, key-level confirmations/retests/target rungs, sweep funnel and 19 causal fixtures; two review rounds
+  (setup identity, hard cluster diameter, no ATR fallback, then a REGRESSION: the tie-break had reached zone/PM
+  selection with C2 off — scoped and fixed the same evening); the paired report tool `zargar.tools.team2_c2_report`.
 
 **Open (by choice or pending):** C6 one tape (F119, platform); C1 activation experiment (after C6); C2/C4/C5
 definitions; near-ITM policy (user); 5m flag detector (A5) and intraday zones (A11) never built; `/team2-review`
 skill not built (the watch job and dated research notes do that work); the sweep still walks a synthetic strike grid
 for history (no as-of listings) and scores the model's premium path, not fills.
+
+## Known gaps, risks and what could be wrong (2026-09-13 — read this before trusting any number above)
+
+- **Every sweep number in this folder is a MODEL result on YAHOO's tape.** The premium is Black–Scholes at one sigma
+  (12–45 % optimistic on the author's documented trades, F8), the strike is a synthetic $1 grid for history (F104: no
+  as-of listings exist), and the bars are Yahoo's while the live desk trades Alpaca's (F119: QQQ differs on 40 % of
+  minutes). Until C6 lands, a sweep and the live book are two different experiments. Treat pnl%-sums as directional.
+- **The Practice book has one filled day.** Twelve cohort-v1 sessions produced one day with fills (−$66). Nothing in
+  this folder is evidence of profitability; cohort v2 (from 2026-09-11) has produced zero fills so far. The twenty-
+  session review is a checkpoint, not a verdict, and needs candidate-to-fill traces, not session counts.
+- **The read agreeing with the author is not the same as trading like him.** Three of his week-37 entries were inside
+  the pre-market range or on a multi-day level our rules do not carry. C1/C2 are hypotheses with frozen tests, not
+  fixes; C1's gain concentrates in one week and raises drawdown; C2 is unmeasured.
+- **Regressions have reached the live path from research code twice in one day** (the 0.7.46 duplicated version
+  fields earlier in the week; the 0.7.60 tie-break that changed zone/PM selection with C2 off). The guard is the
+  reviewers' before/after tests and the "byte-identical with the knob off" tests — which compare on/off within the
+  NEW implementation, not against a snapshot of the old one. A change to `session.py` should be assumed to touch the
+  live read until a before/after test says otherwise.
+- **The watch job and the desk both edit TRADING-RULES and release versions**; three desks release several versions
+  a day; version collisions happened five times. Always check origin/main's `APP_VERSION` before stamping, and never
+  resolve a version-file conflict by keeping both sides.
+- **Journal completeness**: `_log` events are in-memory (capped, lost on restart); only `_trail` writes are durable.
+  A plan whose snapshot shows `trailGaps` is an incompletely observed session. The morning-report line, the
+  `/team2-review` skill, the 5m flag detector (A5) and intraday zones (A11) were never built.
+- **Execution-path unknowns**: OPRA quotes have dropped for ~49 minutes in a session (F117) — entries are deferred,
+  not filled, during an outage; fills are sim fills at the live NBBO, never real fills; the never-chase cap and
+  premium stop have not been exercised by a live-money order.
+- **Open user decisions**: near-ITM contract eligibility (the author's 288p under 287.83); whether C1 gets a labelled
+  Practice experiment after C6; whether F81b stays after its ten live gap-day entries.
+- **Docs that can drift**: PLAN §2's decision table and this Status block are hand-maintained snapshots; the change
+  log in TRADING-RULES is the authority when they disagree. METHOD §11 and PLAN §3b/§3c are 2026-09-03 build notes
+  kept for history, not current descriptions.
 
 ## How the data was captured (so it can be repeated)
 
