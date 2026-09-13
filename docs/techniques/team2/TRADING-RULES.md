@@ -2439,6 +2439,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-13 later (C2 research GO — definitions frozen BEFORE any sweep; nothing built)** — the other team asked
+  for a family of 2–3 definitions specified first: `notes/research/2026-09-13-c2-key-levels-spec.md` freezes D1
+  historical session levels (clustered), D2 repeated-reaction levels (15m episodes, consecutive bars = one), D3
+  confirmed pivots with retests; common frame (L=10, K=3 per side, tolerance/cluster widths, recency 0.85, flip and
+  expiry rules, tie-breaks, precedence of PDH/PDL over key levels), the measurement protocol (baseline vs C2-only on
+  the canonical tape after C6, development 08-20..09-05, validation 09-08 onward untouched, matched trades + book +
+  drawdown + exposure by date/symbol), the decision rule (simplest source-consistent definition that survives
+  validation; 'none' is acceptable) and an empty variant register. C1 / room / C3 stay off and unchanged.
 - **2026-09-13 (other team's verdict on the week-37 plan; v0.7.53, knobs OFF)** — GO for research and C6, NO-GO for
   activating C1. Their two findings accepted: pure conjunction does NOT keep F15's case (721.44 is outside yesterday's
   range), and the gain is concentrated in the motivating week. Done: C1's ordered truth table (in the PM range but
