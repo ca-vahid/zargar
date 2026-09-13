@@ -716,7 +716,38 @@ class TipNote(Base):
     supplied_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")  # times INJECTED (Codex finding 7: supplied != used)
     last_supplied_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     cited_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # immutable-revision lifecycle (KB-03, 2026-09-13): every mutation of the
+    # fields above snapshots the PRIOR state into tip_note_revisions first;
+    # revised_at = last mutation, revision_no = current revision. A historical
+    # (as_of) read resolves the revision that was KNOWN at that moment.
+    revised_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    revision_no: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # KB-04: a core rule is mandatory in every rulebook selection — a flood of
+    # newer case reports can never silently push it out of the analyst's context
+    core: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class TipNoteRevision(Base):
+    """Immutable prior states of a tip note (KB-03). One row per mutation of
+    text/scope/expiry/supersession/flag: the state that was KNOWN from
+    `known_from` until `known_until` (the mutation instant). Never edited,
+    never deleted — the historical truth an as_of read reconstructs. Legacy
+    mutations made before this table existed have no row: such history is
+    labeled unavailable, never backdated."""
+    __tablename__ = "tip_note_revisions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    note_id: Mapped[str] = mapped_column(String(64), index=True)
+    revision_no: Mapped[int] = mapped_column(Integer, default=1)
+    known_from: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    known_until: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), index=True)
+    scope: Mapped[str] = mapped_column(String(160))
+    text: Mapped[str] = mapped_column(Text)
+    valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    superseded_by: Mapped[str | None] = mapped_column(String(80))
+    needs_human: Mapped[bool] = mapped_column(Boolean, default=False)
+    reason: Mapped[str] = mapped_column(String(40), default="edit")   # edit|supersede|pin|refresh|flag
 
 
 class TechniqueMethodNote(Base):

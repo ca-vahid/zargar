@@ -1896,7 +1896,7 @@ function NoteCard({ n, onChanged, index }: {
           const days = Math.ceil((new Date(n.validUntil).getTime() - Date.now()) / 86_400_000);
           return (
             <span className={`status-pill ${days <= 0 ? "dim" : days <= 7 ? "wait" : "dim"}`}
-              title={`Knowledge TTL: daily digests 14d, ticker/source notes 90d — being cited in a live run refreshes it (cited ${n.citedCount ?? 0}×). Pin to keep forever.`}>
+              title={`Knowledge TTL: daily digests 14d, ticker/source notes 90d — a run that RELIES on it refreshes it. Supplied to runs ${n.suppliedCount ?? 0}× · relied on ${n.citedCount ?? 0}× (the model's own declaration, not proof it helped)${n.core ? " · CORE rule: always supplied" : ""}. Pin to keep forever${n.scope === "rule" ? " (pinning a rule makes it core)" : ""}.`}>
               {days <= 0 ? "expired" : `expires in ${days}d`}
             </span>
           );
@@ -1952,18 +1952,31 @@ type KbView = "all" | "rule" | "ticker" | "source" | "general" | "flagged";
 
 function KnowledgeTab() {
   const [notes, setNotes] = useState<import("../types").TipNote[] | null>(null);
+  const [total, setTotal] = useState(0);
   const [q, setQ] = useState("");
   const [view, setView] = useState<KbView>("all");
   const [withHistory, setWithHistory] = useState(false);
-  const load = () => api.tipNotes("", 300, withHistory).then(setNotes).catch(() => undefined);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { load(); }, [withHistory]);
+  const PAGE = 200;
+  // KB-04: server-side search with a TOTAL — the tab used to filter a silent
+  // newest-300 slice while 550 active notes stayed unfetched
+  const load = (append = false) => {
+    const offset = append ? (notes?.length ?? 0) : 0;
+    return api.searchTipNotes(q.trim(), offset, PAGE, withHistory)
+      .then((r) => { setTotal(r.total); setNotes((prev) => (append && prev ? [...prev, ...r.items] : r.items)); })
+      .catch(() => undefined);
+  };
+  useEffect(() => {
+    const t = setTimeout(() => { load(false); }, 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [withHistory, q]);
   const needle = q.trim().toUpperCase();
   const all = (notes ?? []).filter((n) =>
-    (!needle || [n.text, n.scope, n.author].some((x) => String(x ?? "").toUpperCase().includes(needle)))
     // experiment artifacts are never injected into live runs — they only count
     // and show when the history toggle is on (or when searched for explicitly)
-    && (withHistory || !!needle || !n.scope.startsWith("experiment:")));
+    (withHistory || !!needle || !n.scope.startsWith("experiment:")));
+  const fetched = notes?.length ?? 0;
+  const coverage = total > fetched ? `showing ${fetched} of ${total}` : `${total} note${total === 1 ? "" : "s"}`;
   const rules = all.filter((n) => n.scope === "rule");
   const general = all.filter((n) => n.scope === "general");
   const daily = all.filter((n) => n.scope.startsWith("daily:"))
@@ -2006,6 +2019,10 @@ function KnowledgeTab() {
         <input className="armed-filter" placeholder="search notes…" value={q}
           onChange={(e) => setQ(e.target.value)} spellCheck={false}
           aria-label="Search knowledge" style={{ marginLeft: "auto", maxWidth: 220 }} />
+        <span className="muted" style={{ marginLeft: 8 }}>{coverage}</span>
+        {total > fetched && (
+          <button className="link-btn" style={{ marginLeft: 8 }} onClick={() => load(true)}>load more</button>
+        )}
       </div>
       <div className="panel-body">
         <KnowledgeComposer onSaved={load} />

@@ -282,3 +282,17 @@ dependent — the F7 grouping fix is still open).
 Never user-token automation beyond reading; never alert-room auto-execution; the
 experiment places no orders and touches no books; kill switch / never-list / RiskGate
 invariants untouched; Telegram intake stays deprioritized.
+
+## Phase K — knowledge safeguards (2026-09-13, reviewer tags KB-01..08)
+
+Built: own maintenance schedule (`tip_knowledge_maintenance`, daily incl.
+weekends, `TipKnowledgeMaintenance` journal with skipped/done/partial/failed
++ catch-up), conflict-locked transactional idempotent batch apply
+(`apply_knowledge_batch`), immutable note revisions (`tip_note_revisions`,
+as_of resolves the revision in force; legacy history labeled unavailable),
+scope validation on every writer (`normalize_scope`; no text slicing),
+paginated search with totals + core-first manifested rulebook selection,
+supply-vs-reliance shown in the UI. Staged: consolidation packet
+(`reviews/2026-09-13-consolidation-packet.md`), orphan reassignment list.
+Decision required: kill-switch clock-vs-geometry conflict. Deferred: compact
+rulebook (gated on KB-08 frozen-evidence comparison). Bulk apply HELD.

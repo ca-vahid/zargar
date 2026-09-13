@@ -109,6 +109,14 @@ unfilled retros disqualify signals with fills in ANY lane; `TipEntryStudy` journ
 proposal-time+delayed NBBO (diagnostics only — no entry-rule change without a
 cost-aware validated cohort). Meet Kevin: MK-alpha-trades tips-mode, own-book
 MIRRORING OFF until the shadow-first build with predefined promotion criteria.
+**Knowledge safeguards (2026-09-13):** every note writer goes through `normalize_scope`
+(empty entity / unknown prefix REFUSED, no text slicing); every mutation snapshots an
+immutable `tip_note_revisions` row (as_of reads resolve the revision in force);
+audits apply ONLY via `apply_knowledge_batch` (conflict-locked, one transaction, batchId
+idempotent); the weekly audit runs from its own `tip_knowledge_maintenance` job
+(daily, weekends included, journaled status) — never chain paid weekly work inside a
+weekday-only job. Pinning a rule makes it CORE (always supplied); bulk knowledge cleanup
+is HELD until the consolidation packet's policy decisions are made.
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries

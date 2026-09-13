@@ -21,6 +21,10 @@ from zargar.techniques.tip.runner import TipRunner
 
 from .conftest import make_test_config, wait_for
 
+# spread fixtures: an expiry ~45 days out, never a pinned calendar date
+# (the 2026-09-11 literal rotted the morning after it expired)
+_SPREAD_EXP = (dt.date.today() + dt.timedelta(days=45)).strftime("%y%m%d")
+
 ET = dt.timezone(dt.timedelta(hours=-4))     # fixture bars use fixed EDT; session math is tz-aware
 MIN = 60_000
 
@@ -1205,15 +1209,15 @@ async def test_spread_rollback_failure_adopts_attention_position(tip_rig, monkey
     with pytest.raises(ValueError, match="short leg"):
         await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
                           direction="long", qty=1, source="TestRoom",
-                          legs=[{"side": "BUY", "symbol": "TEST260911C00100000",
+                          legs=[{"side": "BUY", "symbol": f"TEST{_SPREAD_EXP}C00100000",
                                  "ask": 1.0, "strike": 100.0},
-                                {"side": "SELL", "symbol": "TEST260911C00105000",
+                                {"side": "SELL", "symbol": f"TEST{_SPREAD_EXP}C00105000",
                                  "bid": 0.5, "strike": 105.0}])
     from sqlalchemy import select as _sel
     async with eng.sf() as session:
         rows = (await session.execute(_sel(Event.payload)
                                       .where(Event.type == "TipSpreadLegFailed"))).scalars().all()
-    assert rows and rows[0].get("legSymbol") == "TEST260911C00100000"
+    assert rows and rows[0].get("legSymbol") == f"TEST{_SPREAD_EXP}C00100000"
     orphans = [p for p in eng.position_manager.positions()
                if "spread-orphan" in (p.get("tags") or [])]
     assert orphans and orphans[0]["status"] == "attention"
@@ -1738,8 +1742,8 @@ async def test_native_mleg_spread_fills_on_sim(tip_rig):
     from zargar.models import Order
     from zargar.techniques.tip.lifecycle import open_spread
     eng, sim = tip_rig
-    legs = [{"side": "BUY", "symbol": "TEST260911C00100000", "ask": 1.2, "strike": 100.0},
-            {"side": "SELL", "symbol": "TEST260911C00105000", "bid": 0.6, "strike": 105.0}]
+    legs = [{"side": "BUY", "symbol": f"TEST{_SPREAD_EXP}C00100000", "ask": 1.2, "strike": 100.0},
+            {"side": "SELL", "symbol": f"TEST{_SPREAD_EXP}C00105000", "bid": 0.6, "strike": 105.0}]
     pump = asyncio.create_task(_pump_quotes(eng, [l["symbol"] for l in legs], mid=0.9))
     try:
         pos = await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
@@ -1765,14 +1769,14 @@ async def test_native_mleg_risk_rejects_as_one_unit(tip_rig):
     from zargar.techniques.tip.lifecycle import open_spread
     eng, sim = tip_rig
     await eng.settings.set("risk.max_option_premium_notional", 10.0, journal=False)
-    legs = [{"side": "BUY", "symbol": "TEST260911C00100000", "ask": 1.2, "strike": 100.0},
-            {"side": "SELL", "symbol": "TEST260911C00105000", "bid": 0.6, "strike": 105.0}]
+    legs = [{"side": "BUY", "symbol": f"TEST{_SPREAD_EXP}C00100000", "ask": 1.2, "strike": 100.0},
+            {"side": "SELL", "symbol": f"TEST{_SPREAD_EXP}C00105000", "bid": 0.6, "strike": 105.0}]
     with pytest.raises(ValueError):
         await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
                           direction="long", legs=legs, qty=1, source="TestRoom")
     async with eng.sf() as session:
         rows = (await session.execute(_sel(Order).where(
-            Order.symbol == "TEST260911C00100000"))).scalars().all()
+            Order.symbol == f"TEST{_SPREAD_EXP}C00100000"))).scalars().all()
     assert any(r.status == "REJECTED_RISK" and "mleg" in (r.tags or []) for r in rows)
 
 
@@ -1790,10 +1794,10 @@ async def test_native_mleg_failure_falls_back_to_sequencing(tip_rig, monkeypatch
     monkeypatch.setattr(simmod.SimExecutor, "submit_mleg", boom)
     # premiums big enough that the sim's fixed 5-cent half-spread stays inside
     # the 5% price collar AND the legs can actually fill at their limits
-    legs = [{"side": "BUY", "symbol": "TEST260911C00100000", "ask": 3.0, "strike": 100.0},
-            {"side": "SELL", "symbol": "TEST260911C00105000", "bid": 1.8, "strike": 105.0}]
-    pump = asyncio.create_task(_pump_quotes(eng, {"TEST260911C00100000": 2.95,
-                                                  "TEST260911C00105000": 1.86}, seconds=25))
+    legs = [{"side": "BUY", "symbol": f"TEST{_SPREAD_EXP}C00100000", "ask": 3.0, "strike": 100.0},
+            {"side": "SELL", "symbol": f"TEST{_SPREAD_EXP}C00105000", "bid": 1.8, "strike": 105.0}]
+    pump = asyncio.create_task(_pump_quotes(eng, {f"TEST{_SPREAD_EXP}C00100000": 2.95,
+                                                  f"TEST{_SPREAD_EXP}C00105000": 1.86}, seconds=25))
     try:
         pos = await open_spread(eng, portfolio_id=sim["id"], underlying="TEST",
                                 direction="long", legs=legs, qty=1, source="TestRoom")
@@ -1804,7 +1808,7 @@ async def test_native_mleg_failure_falls_back_to_sequencing(tip_rig, monkeypatch
     assert sorted(l["qty"] for l in pos["legs"]) == [-1, 1]
     async with eng.sf() as session:
         rows = (await session.execute(_sel(Order).where(
-            Order.symbol == "TEST260911C00100000",
+            Order.symbol == f"TEST{_SPREAD_EXP}C00100000",
             Order.status == "FILLED"))).scalars().all()
     assert rows and all("mleg" not in (r.tags or []) for r in rows)
 

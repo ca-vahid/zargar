@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.61";
+export const APP_VERSION = "0.7.62";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,19 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.62",
+    date: "2026-09-13",
+    title: "Knowledge that keeps its history, audits that can't merge a contradiction",
+    items: [
+      { tag: "fixed", text: "The weekly knowledge audit finally has its own schedule (daily job, weekends included) - it had been chained inside a weekday-only job, so its Saturday default never ran. Every tick now records skipped / done / partial / failed, with catch-up when a week is missed." },
+      { tag: "fixed", text: "Audit consolidation is validated before anything is written: two notes the audit calls contradictory can no longer be merged or expired in the same breath; the batch applies in one transaction, exactly once, and a concurrent edit aborts it cleanly." },
+      { tag: "new", text: "Every knowledge note keeps immutable revisions: a historical (as-of) read shows what was actually known then, and a later edit, pin, renewal or supersession can no longer rewrite the past. Pre-existing history that cannot be recovered is labeled unavailable, never backdated." },
+      { tag: "fixed", text: "Note scopes are validated on every write path (an empty 'ticker:' can no longer be stored as an unreachable orphan) and note text is never silently truncated." },
+      { tag: "improved", text: "Knowledge tab searches the whole store server-side with a real total and 'load more'; the analyst's rulebook selection is deterministic (pinned rules are core and always supplied, with the selection recorded on every run); hover shows supplied vs relied-on counts honestly." },
+      { tag: "fixed", text: "Outcome census: fees are reported as paid / allocated-to-realized / open-lot separately, every in-scope sale is examined (a sale without a recognized lot is a visible exception, never a vanished one), and the report states its portfolio scope." },
+    ],
+  },
   {version:"0.7.61",date:"2026-09-13",title:"Entry selection restored for zone and pre-market setups",items:[
     {tag:"fixed",text:"Team2: v0.7.60's nearest-anchor tie-break was applied to every setup, so on a day where a zone break and a pre-market break confirmed on the same 15-minute bar the desk could pick a different setup than before - the reviewers' before/after test showed two fires where the previous build had none, with the research knob off. The tie-break now applies only among key-level setups (the research feature, still off); zone and pre-market selection is the previous rule byte-for-byte. The regression is in the suite verbatim."},
     {tag:"improved",text:"Team2 research: every sweep row says whether the inputs for key levels existed, and a paired-comparison helper drops such symbol-sessions from every variant at once, so a missing-data cell is never counted as an evaluated no-effect observation."},
