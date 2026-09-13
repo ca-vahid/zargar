@@ -28,7 +28,7 @@ pre-open (09:25 ET)     : PMH/PML from 04:00-09:25 bars  ->  gap read vs PDH/PDL
 session (2m closes)     : EMA regime (13/48/200, ext-hours warmed)  ->  15m close beyond level = CONFIRMED
                           -> 1st/2nd 2m pullback into EMA13 / level retest that HOLDS = FIRE
                           -> BUY option (Q1)  ->  stop = 2m close through EMA/level (1 candle)
-                          -> trim at new high/low push, runner on EMA13 close, zone target, 16:05 flatten
+                          -> trim at +50 % / +100 % premium (live bid), runner on EMA13 close, zone target, 15:45 flatten
 nightly                 : outcome score (simulate_plan parity), review trace, scorecard, sweep rows
 ```
 
@@ -39,20 +39,20 @@ same shape EM and Tip plans use, so replay / sweep / audit work unchanged.
 
 | # | Decision | Status | Notes |
 |---|---|---|---|
-| D1 | Technique id `team2`, label "Team2", page `team2`, settings prefix `techniques.team2.` | proposed 2026-09-03 | rename before registering if the user prefers |
-| D2 | Universe fixed: SPY, QQQ, IWM (`techniques.team2.symbols`) | proposed | no scan; author never varies it |
+| D1 | Technique id `team2`, label "Team2", page `team2`, settings prefix `techniques.team2.` | **firm (built 2026-09-03)** | rename before registering if the user prefers |
+| D2 | Universe fixed: SPY, QQQ, IWM (`techniques.team2.symbols`) | **firm (built)** | no scan; author never varies it |
 | D3 | Contract (METHOD Q1) | **DECIDED 2026-09-03 (user): Team2 is a 0DTE technique; open the never-list for `team2` with its own gated path.** Rules differ per technique by design. Implementation: RiskGate gets a per-technique 0DTE policy (`techniques.<id>.zero_dte = {enabled, flatten_et, max_contracts, premium_cap}`) instead of hard-coded technique ids; Team2's path = entry-day expiry only, flatten at `techniques.team2.flatten_et` (default 15:45), premium-targeted strike (`target_premium` 0.60, floor 0.20), never after the flatten time. 1DTE stays a sweep VARIANT for comparison, not the default | **firm** |
 | D2b | Images (96 MB) stay local, `*.jpg` gitignored; JSON metadata + INDEX.md are committed | firm (user) | |
-| D4 | Sizing multipliers (Q2): trend-day outside both ranges 1.0 · inside prior range 0.5 · inside PM range 0 | proposed | sweep 0.25/0.5/0.75 for the middle bucket |
-| D5 | Exit ladder (Q3): author trims at +50% and +100% premium (first cue = new high/low of day), runner exits on a 2m close through EMA13, outright exit at the next zone or "when it goes ITM" | proposed (fractions unknown → 1/3 · 1/3 · runner) | sweep fractions; premium-path simulation required (F1) |
+| D4 | Sizing multipliers (Q2): trend-day outside both ranges 1.0 · inside prior range 0.5 · inside PM range 0 | **built as `size_full/size_small/size_none`; the ZONE GEOMETRY is under research (C1, knob `no_trade_zone` OFF, 2026-09-13)** | sweep 0.25/0.5/0.75 for the middle bucket |
+| D5 | Exit ladder (Q3): author trims at +50% and +100% premium (first cue = new high/low of day), runner exits on a 2m close through EMA13, outright exit at the next zone or "when it goes ITM" | **built** (1/3 · 1/3 · runner on the live bid; `trim_cue=new_extreme` measured worse 2026-09-12, stays `premium`) | sweep fractions; premium-path simulation required (F1) |
 | D6 | Entry window (Q4): author has NO time gate (P2); ours: first fire ≥ 09:45 (first 15m close), last fire 15:30, flatten 16:05; pre-10:00 fires tagged `early` and post-14:00 tagged `late` for the sweep | proposed | the 09:30–09:45 candle is the first confirmable 15m bar |
-| D13 | Premium hard stop: `techniques.team2.premium_stop_pct = 25` (author: ~20% on 0DTE, P1) as the cap under the candle rule; the existing runner premium-stop watch does this | proposed | sweep 20/25/35 |
-| D14 | Daily risk discipline (P7): after a winning trade the next trade's $ risk ≤ half the day's realised P&L; never size up intraday | proposed | fits `size_multiplier` + per-arm loss halt |
-| D7 | Tolerance for "touch" (Q5): PDH/PDL use their own zone; PMH/PML lines ±0.25×ATR(2m,14) | proposed | |
-| D8 | EMA continuity (Q6): EMA state carries across sessions incl. 04:00–09:30 and 16:00–20:00 bars, exactly like a TradingView 2m chart with extended hours on | proposed | verify against one screenshot from the author |
-| D9 | Pullback count (Q7): the first two EMA13 touches after confirmation; a third is watch-only | proposed | |
-| D10 | Bias invalidation (Q8): a 15m close back through the zone in the other direction flips the scenario; the plan re-plans, never re-fires the old side | proposed | |
-| D11 | No overnight holds — session technique like EM; flatten at 16:05 | firm | |
+| D13 | Premium hard stop: `techniques.team2.premium_stop_pct = 25` (author: ~20% on 0DTE, P1) as the cap under the candle rule; the existing runner premium-stop watch does this | **built** (basis mid, 3-tick floor — F30) | sweep 20/25/35 |
+| D14 | Daily risk discipline (P7): after a winning trade the next trade's $ risk ≤ half the day's realised P&L; never size up intraday | **built** (`shrink_after_win`, `max_losses_per_day` desk-wide) | fits `size_multiplier` + per-arm loss halt |
+| D7 | Tolerance for "touch" (Q5): PDH/PDL use their own zone; PMH/PML lines ±0.25×ATR(2m,14) | **built** (`pm_tol_atr`) | |
+| D8 | EMA continuity (Q6): EMA state carries across sessions incl. 04:00–09:30 and 16:00–20:00 bars, exactly like a TradingView 2m chart with extended hours on | **built** (one warm-up rule, last 12 valid sessions, F99) | verify against one screenshot from the author |
+| D9 | Pullback count (Q7): the first two EMA13 touches after confirmation; a third is watch-only | **built** (only PRICED pullbacks spend the allowance — F61; episodes reset by `pullback_reset_atr` — F62) | |
+| D10 | Bias invalidation (Q8): a 15m close back through the zone in the other direction flips the scenario; the plan re-plans, never re-fires the old side | **built** (`zone_tol_atr` / `flip_body_ratio` knobs, off — F27) | |
+| D11 | No overnight holds — session technique like EM; flatten at 15:45 (`flatten_min`, C3, independent of the read since F46) | firm | |
 | D12 | Shorts are puts only (platform never-list) | firm | |
 
 ## 3. Build phases
@@ -97,7 +97,7 @@ same shape EM and Tip plans use, so replay / sweep / audit work unchanged.
 - [x] Outcome scoring through the shared `outcome.simulate_plan` path (same evaluator live and replay). **← built 2026-09-03: Team2 scores in PREMIUM terms via `session.simulate_session` (E8); the shared R-based scorer does not apply**
 - [x] Walk-forward sweep: `technique_review sweep --technique team2 --start A --end B [--set k=v]` over **← built 2026-09-03: `Team2Service.sweep` + `POST /api/team2/sweep` + `tools/team2_sweep.py` (variants via `overrides`)**
       SPY/QQQ/IWM; `sweep-compare`. First run: 60 sessions, report per scenario × entry kind × window.
-- [ ] Decide D3–D10 from the sweep, log in `TRADING-RULES.md`.
+- [x] Decide D3–D10 — decided by the user or built with defaults (table above); every later rule change goes through a frozen-input sweep + a review note (§3d).
 
 ### P3 — Runner + UI (alert mode first)
 - [x] `TechniqueInfo(id="team2")` registered; `techniques/team2/runner.py::Team2Runner(PlanRunner)` with the **← built 2026-09-03: `techniques/base.py`, `techniques/team2/runner.py` (hooks + bar-loop override), attached in the lifespan**
@@ -109,22 +109,22 @@ same shape EM and Tip plans use, so replay / sweep / audit work unchanged.
       contract policy, size buckets, exit ladder, fan thresholds) — UI-editable.
 - [x] UI: `pages/Team2Page.tsx` from the registry (tabs: Plans · Armed · History · Validation), phone **← built 2026-09-03: Plans · Armed · History · Validation; nav + route + tabs registered**
       "Now" summary via the shared armed hub. Underline tabs, one-line rows, everything links to its run.
-- [ ] Journal contracts for any new event kind (`events_contract.py`), PLATFORM-RULES §4 note.
+- [x] Journal kinds `TechniquePlanRead` (F28) and `TechniquePlanContract` (cohort v2 trail, 2026-09-10), PLATFORM-RULES-logged.
 - [x] Tests: sim-broker rig arms a Team2 plan, fires on a synthetic confirmed break + pullback, exits **← built 2026-09-03: `tests/test_team2_runner.py` (alert-mode fire, pre-open completion, audit, expiry, replay parity, sweep)**
       on the EMA close; restart mid-session restores; kill switch honoured; pause stops new fires only.
 
 ### P4 — Review loop (the desk's own)
-- [ ] `technique_review` CLI works for `--technique team2` (dump / score / review / diff / replay /
+- [ ] (dropped by choice) `technique_review` CLI for `--technique team2` — Team2 scores in premium terms through its own `replay`/`sweep`; dump / score / review / diff / replay /
       counterfactual) — generic where it already is, Team2 prompt + rubric where it is not.
-- [ ] A `/team2-review` skill mirroring `/technique-review`: replay what the pipeline saw, why each
+- [x] (done differently) the review loop is the 30-minute watch job (`notes/market-watch.md`, findings F13–F122 in TRADING-RULES), EOD author-vs-desk notes and dated research notes; no `/team2-review` skill: replay what the pipeline saw, why each
       step happened, what price did, classify root cause (data / rule / threshold / expression /
       execution), plan the fix. Findings land in `TRADING-RULES.md`.
 - [ ] Nightly soak line in the morning desk report (`zargar/desk.py`) for Team2: plans built, fires,
       misses, needs-attention.
 
 ### P5 — Arming for money (proposal → auto → practice soak)
-- [ ] Proposal mode on the practice portfolio for ≥ 10 sessions; execution scorecard; F-findings.
-- [ ] Auto mode gated exactly like EM: loss halt per arm, `allow_live_auto`, per-arm ack, RiskGate
+- [x] Auto mode on the shared Practice book from 2026-09-04, on `Team2 Practice` from 2026-09-08 (user decisions; the proposal rung was skipped in Practice); execution scorecard (`TechniquePlanScored`), F-findings.
+- [x] Auto mode gated exactly like EM (per-book / per-technique / global halt scopes, 2026-09-04): loss halt per arm, `allow_live_auto`, per-arm ack, RiskGate
       caps per technique/tag, phone exit-only.
 - [ ] Alpaca-paper pass, then the practice soak calendar (PRE-LIVE-PROFILE limits).
 
@@ -226,16 +226,16 @@ and are now part of the plan; each carries the phase it belongs to.
       quality, range-day confirmation, third touch) so each gate's value is measurable.
 
 **C. 0DTE execution realism**
-- [ ] C1 (P3) **Live option quotes**: CBOE is 15-min delayed — unusable for a $0.50 0DTE contract.
+- [x] C1 (P3) **Live option quotes** — built 2026-09-10 (F105/F108): Alpaca OPRA NBBO is the only contract authority; no live quote = deferred. CBOE is 15-min delayed — unusable for a $0.50 0DTE contract.
       Alpaca OPRA real-time quotes exist (`options/service.py`, `options.quotes_source=alpaca`); Team2
       MUST refuse to fire without a fresh OPRA quote (staleness ≤ 5 s) — journal `quote_stale` skips.
 - [ ] C2 (P3) **Fill path latency**: SnapTrade orders + polled fills (~1/s) against 2-minute candles.
       Measure entry→fill latency in the execution scorecard from day one; never-chase cap = the
       author's own rule (entry at the level, `entry_limit_cap` = ask + 1 tick).
-- [ ] C3 (P3) **Flatten discipline**: all Team2 positions closed by `flatten_et` (15:45) — market
+- [x] C3 (P3) **Flatten discipline** — built (F46 clock flatten independent of the read; F106 it always writes a record): all Team2 positions closed by `flatten_et` (15:45) — market
       order retry path exists (failed-exit watchdog); expiry settlement handling exists (2026-09-02)
       but must never be needed.
-- [ ] C4 (P3) **Contract selection at fire time** needs the live chain (strikes/asks) within seconds:
+- [x] C4 (P3) **Contract selection at fire time** — built 2026-09-10 (F104/F108): the listed strikes are stamped on the plan at the first bar, the nearest OTM contracts are quoted live one by one. Needs the live chain (strikes/asks) within seconds:
       cache the day's 0DTE chain at 09:25 and re-price the candidate strikes with OPRA at fire.
 - [ ] C5 (P5) **Venue check**: Webull CA (SnapTrade) 0DTE index-ETF options — confirmed tradable
       (`snaptrade_options_check` 2026-08-21) but the practice soak must measure fill quality; Alpaca
@@ -245,7 +245,7 @@ and are now part of the plan; each carries the phase it belongs to.
 - [x] D-1 (P3) **Per-technique 0DTE policy** (E6) with: entry-day expiry only, `flatten_et`, no new **← built 2026-09-03: `risk.py` + `techniques.team2.zero_dte`**
       entries after `last_entry_et` (15:30), per-order and per-day contract caps, premium cap per
       trade, daily loss halt per technique, kill switch honoured. Manual `risk.allow_0dte` unchanged.
-- [ ] D-2 (P3) **Existing per-order caps** (`risk.max_option_contracts` 10, `risk.max_option_premium_notional`
+- [x] D-2 (P3) **Per-order caps** — Team2's own: `zero_dte` max_contracts 40 / premium cap $2,000, `max_risk_pct` 6 (2026-09-04); the platform's `risk.max_option_contracts` 10, `risk.max_option_premium_notional`
       $1,000, 5% of equity) sit BELOW the author's full size (~48 contracts / $2.6k): Team2 starts
       inside the platform caps (practice) — raising them is a PRE-LIVE-PROFILE decision, not a default.
 - [x] D-3 (P3) **Daily risk discipline** (D14) as a runner rule: after a win, next-trade risk ≤ half **← built 2026-09-03: `max_losses_per_day`, shrink-after-win inside the read**
@@ -259,7 +259,7 @@ and are now part of the plan; each carries the phase it belongs to.
 - [x] E-1 (P3) Nightly job 17:00 ET: PDH/PDL zones + scenario table + targets → plan skeleton per **← built 2026-09-03: skeleton + 09:25 completion; restore inherits PlanRunner**
       symbol, journaled; morning 09:25 completion (PMH/PML, day type, sizing bucket, final triggers);
       restore/boot-roll after a restart (runner core does this — verify with a restart test).
-- [ ] E-2 (P3) Alert mode first (Telegram/push/toast through `PlanRunner._alert`), then proposal,
+- [x] E-2 (P3) Alert mode first (Telegram/push/toast through `PlanRunner._alert`), then auto (2026-09-04); proposal,
       then auto — the same earned ladder as EM; `needsAttention` surfaced on the Armed page.
 - [x] E-3 (P3) Morning desk report line (`zargar/desk.py` 08:25) and nightly soak line for Team2. **← 2026-09-03: the report aggregates `engine.plan_runners` (armed/paused/inTrade per technique), so Team2 is counted; a Team2-specific line (sheet + last read) is still to add**
 - [x] E-4 (P3) Armed "Now" phone summary via the shared armed hub (register in `engine.plan_runners`). **← 2026-09-04: `Team2Runner._snapshot` gives the Armed page pseudo-triggers (the zones being watched, then the live setups) and a summary in the method's words; a "How Team2 works" section sits on the Team2 page**
@@ -330,6 +330,28 @@ and are now part of the plan; each carries the phase it belongs to.
 - Practice continues at the existing risk limits ($2,000 premium / 6 % risk / 10 % technique pause / 15 % book
   breaker / desk-wide two losses) while recovery (watchdog) and exit protection (F50 + premium stop + failed-exit
   watchdog) hold; any of those failing on a live day pauses the desk to alert mode.
+
+## 3e. State of play and the change pipeline (2026-09-13)
+
+- **Running:** auto mode on `Team2 Practice`; cohort v2 (from 2026-09-11, v0.7.45+) is the evaluation set; cohort v1
+  (12 sessions) is preserved as read evidence. The 30-minute watch job tallies per plan: listing, warm-up identity,
+  model-out-of-band reads, every contract verdict with its examined list, fills with the pricing series, F81b replans,
+  and trail gaps (a plan with `trailGaps` is an incompletely observed session).
+- **Rules under observation:** F81b `target_replan=structure` on gap days (ON since 2026-09-09; review at 10 live
+  gap-day entries or the twenty-session review; the BOOK decides).
+- **Research knobs, all OFF (v0.7.53):** `no_trade_zone` (pm_range | conjunction — C1), `pm_room_atr` (C1's explicit
+  obstacle condition; measured negative), `min_target_atr` (C3; measured negative). Activating C1 waits for C6 (one
+  tape, F119, platform owners) and a separately approved, labelled Practice experiment (other team's verdict
+  2026-09-13). Frozen-sample evidence and the book-level simulation are in
+  `notes/research/2026-09-12-week37-review-and-change-plan.md` (+ addendum).
+- **Research without a frozen definition yet:** C2 multi-day key levels as entry levels (the author's anchor on all
+  three of his week-37 trades), C4 add on the level retest, C5 breakeven after the first trim. Each needs a causal
+  definition, a sweep on the canonical tape and a matched trade list before it is a proposal.
+- **Change pipeline (how a rule changes):** finding or author evidence → dated research note → frozen-input sweep with
+  a `--set` overlay or a knob (matched trade lists, chronological split, book-level simulation) → the other team's
+  review → build behind a disabled knob with a truth-table test → Codex review → deploy through the door → the user
+  flips the knob for a labelled Practice experiment → the book decides at the review checkpoint. Nothing is tuned to
+  one day, and no experimental variant lives in the live rules without this trail.
 
 ## 4. Testing bar (from BUILDING-A-TECHNIQUE §6, made concrete)
 

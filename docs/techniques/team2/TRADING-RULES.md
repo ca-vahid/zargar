@@ -27,8 +27,10 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 | Rule | Current value | Question | Decides it | Status |
 |---|---|---|---|---|
 | Q1 contract | **0DTE, strike by premium ≈ $0.50–0.60 (decided, D3)** | Would 1DTE survive as a variant? Does the $0.50 strike beat the first-OTM strike? | sweep with the premium-path scorer (E8): 0DTE-$0.50 vs 0DTE-first-OTM vs 1DTE | decided 2026-09-03; variants open |
-| Q2 size buckets | 1.0 / 0.5 / 0 | Is the middle bucket worth trading at all? | sweep expectancy per bucket, ≥ 60 sessions | open |
-| Q3 exit ladder | 50% at new-high push, runner on EMA13 close | Does the runner add R after costs? | sweep 30/50/70 + no-runner | open |
+| Q2 size buckets | 1.0 / 0.5 / 0 | Is the middle bucket worth trading at all? | sweep expectancy per bucket, ≥ 60 sessions | 2026-09-13: `size_small=0` under the conjunction costs 300 pnl%-sum on 48 symbol-sessions — the middle rung carries the added trades; open on the canonical tape |
+| C1 no-trade zone | V6 picture (`no_trade_zone=pm_range`) | Is B5's conjunction the rule? | knob built OFF (v0.7.53); frozen sample 54→82 trades, 209.5→358.6 but concentrated in week 37; book-level earlier +$374 | research; activation after C6 + an approved Practice experiment |
+| F81b gap targets | `target_replan=structure`, gap days | Does the entry-time fallback pay on the book? | 10 live gap-day entries or the 20-session review | ON under observation since 2026-09-09 |
+| Q3 exit ladder | 1/3 at +50 %, 1/3 at +100 % (live bid), runner on EMA13 close | Does the runner add R after costs? | sweep 30/50/70 + no-runner | open; `trim_cue=new_extreme` measured worse (2026-09-12) |
 | Q4 entry window | 09:45–15:30 | Are post-noon fires net positive with 0–1 DTE decay? | per-window expectancy | open |
 | Q5 PM tolerance | ±0.25 ATR(2m) | Retest hit-rate vs false touches | touch-count audit on replay rows | open |
 | C1 15m close | required | How many valid fires does the 15m rule cost vs how many fakeouts it saves? | replay with the gate off (`include_invalid`) | open |

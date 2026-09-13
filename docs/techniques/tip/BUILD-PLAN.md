@@ -148,3 +148,25 @@ DTE window (10–30d default, never 0DTE — RiskGate hard-rejects it for non-EM
 - Shadow arms auto-acknowledge `app_managed` overnight options; real money never does.
 - `entry_fallback="shares"` is the tip default (a blocked contract still expresses the
   idea; the fallback is journaled and visible on the trade).
+
+## Status 2026-09-13 — where the build actually stands
+
+Everything above through the knowledge/arm/gap phases is BUILT and live. The
+2026-09-08→13 audit cycle with the independent reviewer (Codex) hardened the
+seams; the full paper trail is `docs/techniques/tip/reviews/` (system audit →
+PR reviews → performance audit → consolidated recommendation → v0.7.44
+verdict → EOD critiques, each with adopted regression files in
+`backend/tests/`). Method findings live in TRADING-RULES.md; shared-engine
+changes are logged in PLATFORM-RULES.md.
+
+**Open build queue (agreed with reviewer + user, in order):**
+1. MK self-disclosed-trade classification — labeled fixtures (fresh execution
+   / recap / holding snapshot / hypothetical / trim), shadow-first, PREDEFINED
+   promotion criteria; mirroring stays off until then.
+2. Multi-image evidence processing + per-source quote attribution (grounding
+   currently reads caption + FIRST image transcript only, with a manifest).
+3. Geometry validated BEFORE entry, bounded journaled post-fill exceptions
+   (user decision 2026-09-11; replaces silent post-fill stop re-placement).
+4. Rulebook consolidation informed by per-turn input tokens (usage.inPerCall).
+5. Entry-study coverage report (eligible vs created vs delayed vs valid
+   pairs) before ANY cap/delay experiment is designed.

@@ -42,6 +42,24 @@ file in brackets after a rule when it matters which post said it.*
    what "spends" one) is ours — see TRADING-RULES D9, F61, F62.
 6. The shrink-after-win half-size example has an auto-transcript speaker ambiguity; the fixed half-profit formula is ours.
 
+## 0c. Observations from week 37 (2026-09-12, `notes/research/2026-09-12-week37-review-and-change-plan.md`) — NOT rules
+
+Three author trades read from his own charts and alerts (Wed IWM 293P, Thu IWM 288P, Fri SPY 768C), all winners:
+
+- **His anchor level is the strongest support/resistance of the last several days, not only yesterday's high/low**:
+  "IWM broke 3 days of support at our 293.43 zone"; 287.83 "7 candles wick'd off this level today"; SPY 764.47 = the
+  session high from two days earlier, reclaimed by a gap ("my line in the sand for calls today"). L1 in this document
+  is previous-session only; prior pivots exist as targets (L3), not as entry levels. Candidate rule L1.5 (C2) — needs
+  a causal definition before it is written here.
+- **He enters inside the pre-market range when price is beyond the day's structure** (Fri SPY 765.2 with PM range
+  758.17–766.53; Thu at the PML's edge). B5 as written ("inside BOTH ranges = risk off") supports that reading; V6's
+  picture does not. The desk's rule is V6's picture; the B5 conjunction is built behind a knob (C1) and OFF.
+- **Management, in his words:** "high of day break is always a big trim", "13 EMA break is my stop on the runners",
+  "the 15-minute follow-up candle is where I secure the majority of my profit", "never let the trade go red after
+  this point", "wanted another retest of our key level to add full position", "1 and done Friday". The premium trims
+  (V2) already approximate the scale-out; a new-extreme trim cue measured worse on the frozen sample.
+- He did not trade Tuesday 09-08 ("I did not trade yesterday").
+
 ## 1. The method in one paragraph
 
 Before the open, mark four prices on SPY/QQQ/IWM: the previous regular session's high and
@@ -408,12 +426,12 @@ Zargar way is to shadow-trade the codified rules and let the scorecard speak.
 | Q2 | **Sizing guide** | **ANSWERED (V6): three buckets — full / small / none.** Multiplier for "small" unknown | default 0.5; sweep 0.25/0.5 |
 | Q3 | **Trim ladder** | **PARTLY ANSWERED (V2): trims at +50% and +100% premium, first trim cued by the new high/low of day, runner to the 13 EMA break; fractions not stated** | default 1/3 · 1/3 · runner; sweep |
 | Q4 | **Trading window** | **ANSWERED (P2): no no-trade time; pre-10:00 is "riskier" but taken if the setup is there; lunch traded when there is momentum.** Examples span 09:45 → 14:33 | Sweep entry-time buckets anyway (our theta cost is real); first 15m close is 09:45 |
-| Q5 | **Zone tolerance** for "retest" and "bounce" — how close is a touch | tracker parameters | Use the L1.2 zone width itself for PDH/PDL; PMH/PML lines need a tolerance (start 0.05% SPY ≈ ATR-scaled) |
-| Q6 | **EMA warm-up with extended hours** — 200 EMA on 2m = 400 minutes of bars incl. pre-market | needs 04:00 bars every day, and overnight continuity (does the EMA carry across sessions? "ext hours on" implies yes) | Fetch pre/post bars; carry EMA state across days; verify against a TradingView screenshot |
-| Q7 | **How many pullbacks** — "first or second" then stop looking? | avoids late chasing | Default: first two 13-EMA touches after the 15m close; sweep |
-| Q8 | **What invalidates the bias** — a 15m close back inside the zone? | re-plan logic | Default: bias flips only on a new scenario (B1) confirmed by a 15m close |
+| Q5 | **Zone tolerance** for "retest" and "bounce" — how close is a touch | **ANSWERED (D7, built): the L1.2 zone itself for PDH/PDL; PMH/PML lines ±0.25 × ATR(2m)** | `pm_tol_atr` |
+| Q6 | **EMA warm-up with extended hours** — 200 EMA on 2m = 400 minutes of bars incl. pre-market | **ANSWERED (D8, built): extended-hours 1m bars banked nightly, EMAs seeded from the last 12 valid sessions (one rule for live/replay/sweep, F99)** | verified against the author's charts in the EOD notes screenshot |
+| Q7 | **How many pullbacks** — "first or second" then stop looking? | **ANSWERED (D9, built): first two PRICED touches; later contacts are watch-only (`late_touch`)** | sweep 1/2/3 still open in TRADING-RULES |
+| Q8 | **What invalidates the bias** — a 15m close back inside the zone? | **ANSWERED (D10, built): a 15m body close through the zone the other way flips the scenario (D10); the old setup dies, a new one is minted** | flip-margin knobs off (F27) |
 
-## 11. Fit with the Zargar engine (first look — details belong in a PLAN.md)
+## 11. Fit with the Zargar engine (first look, 2026-09-03 — historical; every gap below was built, see PLAN §3b/§3e)
 
 What exists and can be reused as-is: `marketstructure` levels/ATR/candles/flags-ish
 structure, `TriggerTracker` + `simulate_plan` walk-forward, `PlanRunner` (arm/fire/critic/
@@ -438,7 +456,7 @@ Gaps this method forces (engine work, technique-agnostic where possible):
    express as 1DTE/nearest weekly ATM.
 6. **Universe** is three ETFs — no scan needed; a fixed list under `techniques.team2.symbols`.
 7. **Schedule**: no R6 windows; the author trades from the open through midday. Session-close
-   flatten at 16:05 applies (intraday only, no overnight).
+   flatten applies (intraday only, no overnight) — built as 15:45 (`flatten_min`).
 
 Everything else (alert/proposal/auto modes, per-arm loss halt, audit trail, walk-forward
 sweep with `--set` variants, outcome scoring) is inherited.
