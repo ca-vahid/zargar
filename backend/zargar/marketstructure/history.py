@@ -382,3 +382,48 @@ def split_sessions(bars: list[Bar]) -> dict[str, list[Bar]]:
     for b in bars:
         out.setdefault(session_key(b.ts), []).append(b)
     return out
+
+
+async def fetch_daily_batch(symbols, start_ms, end_ms, *, client):
+    """Opt-in native SIP daily bars, raw prices; provider-day completion required.
+
+    These are not relabelled as an RTH-only volume dataset. The timestamp maps
+    the exchange date for the daily model; the cache records provider_daily.
+    """
+    from ..brokers.alpaca import parse_rfc3339_ms
+    from .sessions import ET, session_bounds
+    if not _ALPACA['key'] or not 1 <= len(symbols) <= 50:
+        raise HistoryError('Native batch needs configured Alpaca data access and 1-50 symbols')
+    headers = {'APCA-API-KEY-ID': _ALPACA['key'], 'APCA-API-SECRET-KEY': _ALPACA['secret']}
+    iso = lambda ms: dt.datetime.fromtimestamp(ms/1000, dt.UTC).isoformat()
+    params = {'symbols': ','.join(symbols), 'timeframe': '1Day', 'start': iso(start_ms),
+              'end': iso(end_ms), 'feed': 'sip', 'adjustment': 'raw', 'limit': 10000}
+    out = {symbol: [] for symbol in symbols}
+    tokens = set()
+    for _ in range(20):
+        response = await client.get('https://data.alpaca.markets/v2/stocks/bars', params=params, headers=headers, timeout=30)
+        if response.status_code >= 400:
+            raise HistoryError(f'Native history HTTP {response.status_code}')
+        data = response.json()
+        for symbol, rows in (data.get('bars') or {}).items():
+            if symbol not in out:
+                raise HistoryError('Batch response contains an unrequested symbol')
+            for row in rows:
+                date = dt.datetime.fromtimestamp(parse_rfc3339_ms(row['t'])/1000, ET).date()
+                opens, closes = session_bounds(date.isoformat())
+                provider_close = int(dt.datetime.combine(date+dt.timedelta(days=1), dt.time(), ET).timestamp()*1000)
+                if provider_close <= end_ms and opens >= start_ms:
+                    out[symbol].append(Bar(symbol, '1d', opens, float(row['o']), float(row['h']),
+                        float(row['l']), float(row['c']), int(row['v']), source='exchange'))
+        token = data.get('next_page_token')
+        if not token:
+            return out
+        if token in tokens:
+            raise HistoryError('Native batch repeated pagination token; coverage incomplete')
+        tokens.add(token)
+        params['page_token'] = token
+    raise HistoryError('Native batch page budget exhausted; coverage incomplete')
+
+
+def native_daily_available():
+    return bool(_ALPACA['key'] and _ALPACA['secret'])

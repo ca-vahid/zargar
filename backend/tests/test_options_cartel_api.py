@@ -287,7 +287,8 @@ async def test_provider_campaign_replay_snapshots_supplied_history(client):
     assert all(call[2:] == (opens, cutoff) for call in calls)
     assert saved['result']['status'] == 'open'
     assert saved['result']['fills'][0]['at'] == opens+5*60_000
-    assert saved['config']['minutes'] == [b.to_row() for b in bars]
+    assert saved['config']['minutes'] == [[*b.to_row(), b.source or 'unknown'] for b in bars]
+    assert saved['result']['dataEvidence']['sourceCounts'] == {'unknown': len(bars)}
     assert saved['config']['daily'] == prepared['config']['inputs']['history']
     async with engine.sf() as session:
         assert await session.scalar(select(func.count()).select_from(Order)) == 0

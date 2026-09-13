@@ -14,6 +14,7 @@ from ...domain import Bar
 from ...marketstructure.market_calendar import is_trading_day, next_trading_day
 from ...marketstructure.sessions import ET, next_session_date, session_bounds
 from .data import DailyBar
+from .data_quality import trusted
 from .plans import CartelPlan, EntryPolicy
 from .rules import CartelRules
 from .screen import ListingFacts, screen_listing
@@ -23,11 +24,13 @@ MINUTE = 60_000
 
 
 def build_volume_baseline(minutes: list[Bar], symbol: str, timeframe_minutes: int,
-                          as_of_ms: int, *, sessions: int = 20, min_samples: int = 5) -> dict:
+                          as_of_ms: int, *, sessions: int = 20, min_samples: int = 5, require_exchange=False, simulation=False) -> dict:
     if timeframe_minutes not in (5, 15, 30) or sessions < 1 or not 1 <= min_samples <= sessions:
         raise ValueError("invalid baseline window")
     days = defaultdict(dict)
     for bar in minutes:
+        if require_exchange and not trusted(bar, simulation=simulation):
+            continue
         day = dt.datetime.fromtimestamp(bar.ts/1000, ET).date()
         if not is_trading_day(day):
             continue
@@ -81,7 +84,7 @@ def prepare_plan(*, plan_id: str, history: list[DailyBar], indices: dict[str, li
         raise ValueError("no confirmed historical targets; supply reviewed levels with a source")
     if reviewed_targets is not None and not (target_source or "").strip():
         raise ValueError("reviewed target levels require a source/rationale")
-    baseline = build_volume_baseline(minute_history, facts.symbol, entry_policy.timeframe_minutes, as_of_ms)
+    baseline = build_volume_baseline(minute_history, facts.symbol, entry_policy.timeframe_minutes, as_of_ms, require_exchange=entry_policy.require_exchange_bars, simulation=entry_policy.allow_simulated_bars)
     first = dt.date.fromisoformat(next_session_date(as_of_ms))
     last = first
     for _ in range(horizon_sessions-1):

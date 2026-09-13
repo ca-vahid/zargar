@@ -91,7 +91,7 @@ async def test_new_preparation_can_arm_a_partial_baseline_without_reducing_sampl
         if tf=='1m':
             bars=[b for b in bars if b.ts-session_bounds(session_date(b.ts))[0] < 15*MIN]
         return bars
-    policy=PreparationPolicy(enabled=True,risk_pct=1,request_interval_seconds=0)
+    policy=PreparationPolicy(enabled=True,risk_pct=1,request_interval_seconds=0,coverage_policy='legacy')
     await engine.settings.set(SETTING,policy.model_dump(mode='json'))
     runtime=engine.cartel_observer=CartelRuntime(engine);runtime.clock=lambda:at
     try:

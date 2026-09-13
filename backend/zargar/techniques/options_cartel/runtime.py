@@ -39,6 +39,33 @@ class CartelRuntime(CartelObserver):
         self.quote_recorder = QuoteRecorder(CartelService(engine), clock=lambda: self.clock())
 
     async def arm(self, run_id, config=None):
+        from sqlalchemy import text
+
+        from .preparation import occupied_plans
+        from .preparation_scope import read_policy
+        config = config or {}
+        portfolio_id = config.get('portfolioId', '')
+        preparing = getattr(self.engine, '_cartel_preparation_task', None)
+        if config.get('preparation') and not config['preparation'].get('leaseOwner') and preparing is not None and not preparing.done():
+            raise ValueError('Fresh preparation is running; pending activation will retry afterwards')
+        if not hasattr(self.engine, '_cartel_capacity_locks'):
+            self.engine._cartel_capacity_locks = {}
+        lock = self.engine._cartel_capacity_locks.setdefault(portfolio_id, asyncio.Lock())
+        async with lock, self.engine.sf() as guard, guard.begin():
+            if guard.bind.dialect.name == 'postgresql':
+                await guard.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                                    {'key': f'cartel-capacity:{portfolio_id}'})
+            policy = read_policy(self.engine)
+            occupied = await occupied_plans(self.engine, portfolio_id)
+            if policy.enabled and not any(r['planId'] == run_id for r in occupied) and len(occupied) >= policy.focus_count:
+                raise ValueError('Cartel campaign capacity is reserved by existing arms or positions')
+            lease = config.get('preparation', {}).get('leaseOwner')
+            if lease:
+                from .preparation_lease import renew
+                await renew(self.engine, config['preparation']['workspace'], lease, self.clock())
+            return await self._arm(run_id, config)
+
+    async def _arm(self, run_id, config=None):
         if self.stopping:
             raise ValueError("Cartel runtime is stopping")
         config = config or {}
@@ -74,6 +101,8 @@ class CartelRuntime(CartelObserver):
         if cached is None or cached["kind"] != portfolio.kind:
             raise ValueError("refresh portfolio identity before arming")
         if portfolio.kind in ("live", "paper"):
+            if plan.rules.profile == 'post_ignition_2026_09_11':
+                raise ValueError('Post-ignition pilot plans are Practice-only')
             if plan.rules.market_alignment != "strict":
                 raise ValueError("Moderate market-alignment plans are Practice-only; Live requires a new strict plan")
             if config.get("clientKind") == "phone" and self.engine.settings.get("mobile.exit_only", True):
@@ -332,6 +361,11 @@ class CartelRuntime(CartelObserver):
         await self.repository._journal(snapshot, action)
 
     async def on_heartbeat(self):
+        from .preparation import automatic_recovery
+        try:
+            await automatic_recovery(self.engine, clock=self.clock)
+        except Exception as exc:  # noqa: BLE001 - recovery never interrupts protective management
+            self.engine._cartel_auto_recovery_error = f'{type(exc).__name__}: preparation recovery pending'
         loss_reports = {}
         for rid, row in list(self.rows.items()):
             if row["mode"] == "alert":

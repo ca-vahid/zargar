@@ -1,3 +1,5 @@
+import {CartelSessionReview} from "./CartelSessionReview";
+import {CartelIgnition} from "./CartelIgnition";
 import { useCartelPortfolios } from "./cartelAccounts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EmptyState, ErrorState, Spinner } from "../components/ui";
@@ -69,6 +71,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
       <span className={`status-pill ${permissionBlocked ? "wait" : status?.configuration?.enabled ? "ok" : "dim"}`}>{permissionBlocked ? "Permission required" : status?.configuration?.enabled ? "Scheduled" : "Off"}</span>
       {view === "plans" && <button className="primary-btn cartel-push" disabled={busy || running || !status?.configuration?.enabled || (live && !status?.liveAutoAllowed)}
         onClick={() => void act(false)}>{busy || running ? "Preparing…" : "Prepare now"}</button>}
+      {view === "plans" && running && <button className="ghost-btn" onClick={()=>void api.post(endpoint("/cancel"),{}).then(reload).catch(e=>setError(String(e.message||e)))}>Stop preparation</button>}
       {view === "plans" && status?.canResume && <button className="ghost-btn" disabled={busy || running || !status?.configuration?.enabled || permissionBlocked}
         onClick={() => void act(false, true)}>Resume saved scan</button>}
     </div>
@@ -102,6 +105,20 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         <label>Premium limit (account currency)<input required type="number" min={1} max={100000} value={config.budget} onChange={e => setConfig({...config, budget:Number(e.target.value)})}/></label>
         <label>Equity at risk (%)<input required type="number" min={0.01} max={10} step={0.01} value={config.riskPct} onChange={e => setConfig({...config, riskPct:Number(e.target.value)})}/></label>
       </div>
+      <div className="form-grid">
+        <label>Method profile<select aria-label="Method profile" value={config.profile} onChange={e=>setConfig({...config,profile:e.target.value})}>
+          <option value="september_2026">September general setups</option><option value="september_2026_video">September scanner video</option>
+          {!live && <option value="post_ignition_2026_09_11">Post-ignition · Practice pilot</option>}
+          {!['september_2026','september_2026_video','post_ignition_2026_09_11'].includes(config.profile) && <option value={config.profile}>{label(config.profile)}</option>}
+        </select></label>
+        <label>Entry-window readiness<select aria-label="Entry-window readiness" value={config.coveragePolicy||"legacy"} onChange={e=>setConfig({...config,coveragePolicy:e.target.value})}><option value="legacy">Existing covered-period policy</option><option value="opening_and_broad">Opening periods plus 80% coverage</option><option value="full_session">Full session</option></select></label>
+        <label><input type="checkbox" disabled={live} checked={config.requireExchangeHistory!==false} onChange={e=>setConfig({...config,requireExchangeHistory:e.target.checked})}/>Require verified exchange bars for new plans</label>
+        <label><input type="checkbox" checked={config.nativeDailyBatch===true} onChange={e=>setConfig({...config,nativeDailyBatch:e.target.checked})}/>Native daily batches · alternate provider-day dataset</label>
+        <label><input type="checkbox" checked={config.autoResume!==false} onChange={e=>setConfig({...config,autoResume:e.target.checked})}/>Resume interrupted preparation automatically</label>
+        <label><input type="checkbox" checked={config.ignitionResearch!==false} onChange={e=>setConfig({...config,ignitionResearch:e.target.checked})}/>Maintain ignition research watchlist</label>
+      </div>
+      {config.profile==='post_ignition_2026_09_11' && <p>Practice pilot: event-day ignition, at least two consolidation sessions, then a fresh closed-bar entry plan. Numerical geometry is experimental; this does not reproduce intrabar entries or certify profitability.</p>}
+      {config.nativeDailyBatch && <p>Native daily bars use a separately cached provider-day dataset and require that day to finish. This can differ from the existing daily source; compare results before relying on it.</p>}
       <p>All eligible listings are checked by default. Industry context mode records ranks without excluding a stock solely on its industry. Strict mode requires weekly/monthly top-list agreement. The shortlist size limits final selection, not coverage. History is prefetched in bounded batches; requests overlap but remain paced and cached. A batch of 25 does not send 25 requests at once. Full option premium counts toward risk. The risk percentage uses this account’s equity, not the combined Practice total.</p>
       <p>Allowed range: above 0% through 10% per setup. The lower of this equity allowance and the premium limit controls spending; a $500 premium limit still caps purchases at $500. Practice and Live values are saved independently. Existing saved values are preserved.</p>
       {live && <p className="cartel-notice">10% permits up to one-tenth of this account’s equity in option premium per setup. Increasing the limit does not enable Live execution or bypass its permissions.</p>}
@@ -144,6 +161,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
       <button className="primary-btn" disabled={busy}>{busy ? "Saving…" : "Save preparation settings"}</button>
       <p className="muted">Runs outside regular hours. Disabling stops future preparation; existing armed plans and positions remain managed.</p>
     </form>}
+    {view === "plans" && <><CartelIgnition/><CartelSessionReview/></>}
     {view === "plans" && status && <>
       {!status.configuration.enabled && <div className="cartel-inset">Enable {workspaceLabel} preparation in Settings to build and arm your daily shortlist.</div>}
       {live && !status.liveAutoAllowed && <div className="cartel-inset">Cartel live-auto permission is off. Enable it in Settings before preparing Live plans.</div>}
@@ -171,8 +189,10 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
               result.phase === "evaluating" ? <><p>{result.processed || 0} / {result.evaluationTotal || 0} stocks processed{result.currentSymbol ? ` · ${result.currentSymbol}` : ""}</p>
                 <progress aria-label="Stock evaluation progress" max={result.evaluationTotal || 1} value={result.processed || 0}/></> : <progress aria-label="Preparation activity"/>}
           </>}
+          {result.savedAnalysesAvailable > 0 && <p>Recovery checkpoint: {result.savedAnalysesAvailable} analyses already saved. Reused results are counted without downloading their histories again.</p>}
           <p className="muted">{elapsed != null ? `Elapsed ${Math.floor(elapsed/60)}m ${elapsed%60}s` : ""}{sinceUpdate != null ? ` · Last update ${sinceUpdate}s ago` : ""}
             {result.cacheHits != null ? ` · ${result.cacheHits} history cache hits` : ""}{result.resumedAnalyses ? ` · ${result.resumedAnalyses} saved analyses reused` : ""}</p>
+          {result.historyProvider && <p>Daily source: {result.historyProvider}{result.nativeDailyBatch ? ' · native multi-symbol requests' : ' · durable cache and incremental fetches'}</p>}
           {running && result.historyConcurrency != null && <p>History pipeline: {result.activeHistoryRequests || 0} active fetches · up to {result.historyConcurrency} parallel · batch window {result.historyBatchSize} · {result.prefetchedHistories || 0} histories ready so far.</p>}
           {running && sinceUpdate != null && sinceUpdate > 30 && <p className="cartel-notice">No recent progress update. The provider or worker may be delayed; this does not confirm progress.</p>}
           {!running && result.coverageComplete === false && result.phase !== "no_market_alignment" && <p className="cartel-notice">Coverage incomplete: {result.notEvaluated || 0} not processed · {result.dataErrors || 0} data errors.</p>}
@@ -200,6 +220,8 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
                 <p>Maximum ask ${r.selection.audit.effectiveMaxAsk.toFixed(2)} · maximum debit ${r.selection.audit.maxDebitUsd.toFixed(2)} per contract before fees.</p>
                 <p>{r.selection.audit.expiriesChecked} / {r.selection.audit.expiriesInRange} allowed expiry dates checked · {r.selection.audit.rowsExamined} contracts inspected.</p>
                 {r.selection.audit.lowestOtherwiseEligibleAsk != null && <p>Lowest ask passing the other filters: ${r.selection.audit.lowestOtherwiseEligibleAsk.toFixed(2)}.</p>}
+                <p>{r.selection.audit.searchComplete ? "Full permitted search completed" : "Search was bounded or a provider failed; this is not proof that no contract exists"}.</p>
+                {r.selection.audit.rejectedCandidates?.length > 0 && <details><summary>Inspected rejected contracts</summary>{r.selection.audit.rejectedCandidates.map((c:any)=><p key={c.symbol}>{c.symbol} · ask {c.ask ?? "unavailable"} · {c.reasons.map(label).join(", ")}</p>)}</details>}
                 <p>First failing filter: {Object.entries(r.selection.audit.rejections).filter(([,count]) => Number(count)>0).map(([reason,count]) => `${label(reason)} ${count}`).join(" · ") || "none"}.</p>
               </details>}
               {r.selection?.errors?.map((e: string, j: number) => <p key={j}>{e}</p>)}

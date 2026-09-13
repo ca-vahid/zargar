@@ -14,6 +14,7 @@ from ...marketstructure.sessions import session_bounds
 from ...models import BarRow
 from .collect import normalize_daily
 from .data import DailyBar
+from .data_quality import evidence, pack
 from .exits import ExitCampaign
 from .plans import CartelPlan
 from .replay import replay_campaign
@@ -46,9 +47,9 @@ async def replay_from_history(service: CartelService, run_id, body: CampaignRepl
         async with service.engine.sf() as session:
             rows = (await session.scalars(select(BarRow).where(BarRow.symbol == plan.symbol,
                 BarRow.ts >= start, BarRow.ts < at, BarRow.tf.in_(("1m", "1d"))).order_by(BarRow.ts))).all()
-        minutes = [Bar(r.symbol, r.tf, r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows if r.tf == "1m"]
-        extra = [Bar(r.symbol, r.tf, r.ts, r.open, r.high, r.low, r.close, r.volume) for r in rows if r.tf == "1d"]
-        source = "Stored engine bars; per-bar feed identity is not retained and data may be simulated."
+        minutes = [Bar(r.symbol, r.tf, r.ts, r.open, r.high, r.low, r.close, r.volume, source=r.source) for r in rows if r.tf == "1m"]
+        extra = [Bar(r.symbol, r.tf, r.ts, r.open, r.high, r.low, r.close, r.volume, source=r.source) for r in rows if r.tf == "1d"]
+        source = "Stored engine bars with retained source classification; revisions may differ from the live decision."
     else:
         fetch = fetch or fetch_window
         async with httpx.AsyncClient(headers={"User-Agent": UA}, timeout=30.) as client:
@@ -61,9 +62,10 @@ async def replay_from_history(service: CartelService, run_id, body: CampaignRepl
     daily.extend(normalize_daily(extra, plan.symbol, at))
     result = replay_campaign(plan, campaign, minutes, daily, as_of_ms=at,
                              quantity=body.quantity, slippage_bps=body.slippage_bps)
+    result['dataEvidence'] = evidence({str(b.ts):pack(b) for b in minutes})
     result["warnings"].extend(warnings)
     return await service._store(mode="replay", symbol=plan.symbol, at=at, verdict=result["status"], parent=run_id,
         result=result, config={"request": body.model_dump(mode="json"), "dataSource": source,
             "planSnapshot": parent.result["plan"], "exitCampaign": campaign.model_dump(mode="json"),
             "baselineMinutes": [b for b in parent.config["inputs"].get("minute_history", [])],
-            "minutes": [b.to_row() for b in minutes], "daily": [b.model_dump(mode="json") for b in daily]})
+            "minutes": [pack(b) for b in minutes], "daily": [b.model_dump(mode="json") for b in daily]})

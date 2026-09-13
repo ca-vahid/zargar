@@ -23,6 +23,7 @@ class SweepVariant(WireModel):
     mode: Literal["breakout", "retest"] | None = None
     volume_multiple: float | None = Field(default=None, gt=0, le=100)
     min_close_location: float | None = Field(default=None, ge=0, le=1)
+    stop_mode: Literal['session_extreme', 'breakout_bar', 'preplanned'] | None = None
     max_chase_r: float | None = Field(default=None, ge=0, le=10)
 
 
@@ -56,9 +57,9 @@ def evaluate_sweep(snapshots, variants):
                 source = config.get('baselineMinutes', [])
                 if not source:
                     raise ValueError('Timeframe comparisons need historical baseline minutes. Create a new campaign replay from the original plan.')
-                historical = [Bar(original.symbol, '1m', b['ts'], b['open'], b['high'], b['low'], b['close'], b['volume']) for b in source]
+                historical = [Bar(original.symbol, '1m', b['ts'], b['open'], b['high'], b['low'], b['close'], b['volume'], source=b.get('source', 'unknown')) for b in source]
                 updates['volume_baseline'] = build_volume_baseline(historical, original.symbol,
-                    policy.timeframe_minutes, original.created_at)['baselines']
+                    policy.timeframe_minutes, original.created_at, require_exchange=policy.require_exchange_bars, simulation=policy.allow_simulated_bars)['baselines']
             plan = original.model_copy(update=updates)
             result = replay_campaign(plan, campaign, minutes, daily, as_of_ms=saved["asOfMs"],
                 quantity=config["request"]["quantity"], slippage_bps=config["request"]["slippage_bps"])

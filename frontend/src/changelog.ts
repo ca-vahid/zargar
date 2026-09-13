@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.50";
+export const APP_VERSION = "0.7.51";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.51",date:"2026-09-12",title:"Cartel ignition research and reliable preparation",items:[
+    {tag:"new",text:"A persistent ignition watchlist follows strong volume events into quiet consolidation. A separately selectable Practice pilot evaluates post-ignition setups using fresh closed-bar execution plans."},
+    {tag:"fixed",text:"New plans can require verified exchange bars. Recovery preserves source information, upgrades sampled context and never replays missed entries. Daily history is cached durably with native batch collection where configured."},
+    {tag:"improved",text:"Preparation can recover interrupted work automatically. Settings expose coverage policy, data quality and the pilot; plans show rejected contracts and whole-contract exit allocations. Existing positions remain managed."},
+  ]},
   {
     version: "0.7.50",
     date: "2026-09-12",
