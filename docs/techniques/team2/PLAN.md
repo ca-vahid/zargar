@@ -344,8 +344,9 @@ and are now part of the plan; each carries the phase it belongs to.
   tape, F119, platform owners) and a separately approved, labelled Practice experiment (other team's verdict
   2026-09-13). Frozen-sample evidence and the book-level simulation are in
   `notes/research/2026-09-12-week37-review-and-change-plan.md` (+ addendum).
-- **Research without a frozen definition yet:** C2 multi-day key levels as entry levels (the author's anchor on all
-  three of his week-37 trades), C4 add on the level retest, C5 breakeven after the first trim. Each needs a causal
+- **Research:** C2 multi-day key levels — three definitions FROZEN 2026-09-13 in
+  `notes/research/2026-09-13-c2-key-levels-spec.md` (D1 session levels, D2 repeated reactions, D3 confirmed pivots);
+  sweeps wait for C6. C4 add on the level retest and C5 breakeven after the first trim: no frozen definition yet. Each needs a causal
   definition, a sweep on the canonical tape and a matched trade list before it is a proposal.
 - **Change pipeline (how a rule changes):** finding or author evidence → dated research note → frozen-input sweep with
   a `--set` overlay or a knob (matched trade lists, chronological split, book-level simulation) → the other team's
