@@ -862,7 +862,8 @@ class SignalService:
                             image_media_type: str = "image/png",
                             message_id: str | None = None,
                             posted_at: str | None = None,
-                            edited_at: str | None = None) -> dict:
+                            edited_at: str | None = None,
+                            image_count: int | None = None) -> dict:
         """Paste-in path — text, or a screenshot of the user's own client (the
         model transcribes it; the image is kept as evidence in chat_assets).
         `message_id`/`posted_at` (gateway envelope 2026-09-09): the Discord
@@ -885,6 +886,8 @@ class SignalService:
             meta["postedAt"] = str(posted_at)
         if edited_at:
             meta["editedAt"] = str(edited_at)
+        if image_count and int(image_count) > 1:
+            meta["imageCount"] = int(image_count)   # coverage manifest: first image only is processed
         row = RawContent(id=new_id(), source_type="manual", source_name=source_name,
                          subject=subject, body_text=text, meta=meta)
         resume_id: str | None = None
@@ -1174,8 +1177,21 @@ class SignalService:
 
         source_text = text
         if image is not None and result.source_transcript:
-            # the transcript IS the source for grounding + display; keep it
-            source_text = result.source_transcript
+            # caption AND transcript are BOTH this message's evidence (Codex
+            # critique 2026-09-11, reproduced: the transcript REPLACED the
+            # caption in the grounding corpus, so a perfectly valid caption
+            # quote failed deterministic grounding — Kevin's first tips died
+            # here). Ground against the sectioned union; the manifest line
+            # keeps attachment coverage honest (intake processes the FIRST
+            # image only — multi-image coverage is a queued follow-up).
+            n_total = int((content.meta or {}).get("imageCount") or 1)
+            if text.strip():
+                source_text = (
+                    f"{text}\n--- IMAGE TRANSCRIPT "
+                    f"(attachment 1 of {n_total} processed) ---\n"
+                    f"{result.source_transcript}")
+            else:
+                source_text = result.source_transcript
             async with eng.sf() as session:
                 db_content = await session.get(RawContent, content_id)
                 if db_content is not None and not (db_content.body_text or "").strip():

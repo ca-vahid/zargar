@@ -1112,7 +1112,8 @@ class Gateway:
                     # the authoritative posting time beats model inference
                     "messageId": str(msg.get("id") or "") or None,
                     "postedAt": str(msg.get("timestamp") or "") or None,
-                    "editedAt": str(msg.get("edited_timestamp") or "") or None}
+                    "editedAt": str(msg.get("edited_timestamp") or "") or None,
+                    "imageCount": len(images) or None}
             if image_data_url:
                 body["imageDataUrl"] = image_data_url
             r = await http.post(f"{self.api}/api/ingest/manual", headers=headers,

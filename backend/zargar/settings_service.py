@@ -205,6 +205,7 @@ DEFAULTS: dict[str, Any] = {
     "techniques.tip.max_premium_per_tip": 750.0,  # $ option premium cap per tip (BBAI 2026-09-04: one 25x $0.51 loser ate the day; 1 contract always fits)
     "techniques.tip.entry_study_enabled": True,   # journal-only NBBO sampling at alert and +delay for every option proposal (entry-quality study, P3 2026-09-10)
     "techniques.tip.entry_study_delay_seconds": 180.0,
+    "techniques.tip.analyst_max_output_tokens": 3000,  # per-turn output cap; doubled (max 8192) after a max_tokens stop (RKLB truncation, 2026-09-11)
     "techniques.tip.reserve_slots": 3,            # glide sizing (2026-09-07): budget = min(budget_per_tip, free cash / this) — always room for ~N more tips (0 = off)
     "techniques.tip.min_budget": 500.0,           # the glide's floor: a late tip still gets a minimum expression while any cash lasts
     # --- the lotto lane (0–3 DTE tips; user decision 2026-09-01) ---

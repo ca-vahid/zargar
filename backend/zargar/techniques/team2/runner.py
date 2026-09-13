@@ -167,9 +167,14 @@ class Team2Runner(PlanRunner):
         run_id = getattr(ap, "run_id", None)
         if journal is None or not run_id:
             return
+        payload = {"runId": run_id, "symbol": ap.symbol, "event": event, "reason": reason, **detail}
+        # F111 (2026-09-11): the TechniquePlanRead contract requires `trigger`; a plan-level read row
+        # (warmup, listing, open_finalized, targets_rederived) has none, and every one of them logged a
+        # contract warning. State the absence rather than omit the field.
+        if kind == ev.TECHNIQUE_PLAN_READ:
+            payload.setdefault("trigger", None)
         try:
-            await journal.append(kind, {"runId": run_id, "symbol": ap.symbol, "event": event, "reason": reason, **detail},
-                                 aggregate_type="technique_run", aggregate_id=run_id)
+            await journal.append(kind, payload, aggregate_type="technique_run", aggregate_id=run_id)
         except Exception as exc:  # noqa: BLE001 - a hole in the record is itself evidence (Codex, 2026-09-10)
             gaps = self._trail_gaps.setdefault(run_id, [])
             gaps.append({"event": event, "kind": kind, "error": str(exc)[:200], "at": int(time.time() * 1000)})
@@ -375,19 +380,25 @@ class Team2Runner(PlanRunner):
         gap = ((ref - prev_close) / prev_close * 100.0) if ref and prev_close else 0.0
         self._log(ap, "preopen", f"{ap.plan.get('sheet')}", pmh=ap.plan.get("pmh"), pml=ap.plan.get("pml"),
                   dayType=ap.plan.get("dayType"), sizing=ap.plan.get("sizingAtOpen"))
-        self._log_rederived(ap, "pre-open")
+        await self._log_rederived(ap, "pre-open")
         return {"rows": [], "reference": ref, "gapPct": round(gap, 3), "replan": False}
 
-    def _log_rederived(self, ap: ArmedPlan, when: str) -> None:
+    async def _log_rederived(self, ap: ArmedPlan, when: str) -> None:
+        """F110 (2026-09-11): the F81 re-derive moves the plan's target before a single entry is judged, so it
+        belongs on the DURABLE record, not only in the plan's in-memory events (which a restart wipes — and
+        this desk restarts mid-session). Journalled as TechniquePlanReplanned/`targets_rederived`."""
         red = (ap.plan or {}).get("targetsRederived") or {}
         if not red or ap.plan.get("_rederivedLogged") == red:
             return
         ap.plan["_rederivedLogged"] = red
         parts = [f"{side}: {v['was']:.2f} -> {v['now']:.2f} ({v['source']})" if v.get("now") is not None
                  else f"{side}: {v['was']:.2f} -> none" for side, v in red.items()]
-        self._log(ap, "targets_rederived", f"the {when} reference {next(iter(red.values()))['reference']:.2f} had run "
-                  f"through the planned target — re-derived from the morning's structure: " + "; ".join(parts) + " (F81)",
+        why = (f"the {when} reference {next(iter(red.values()))['reference']:.2f} had run "
+               f"through the planned target — re-derived from the morning's structure: " + "; ".join(parts) + " (F81)")
+        self._log(ap, "targets_rederived", why,
                   targets=ap.plan.get("targets"), planned=ap.plan.get("targetsPlanned"), rederived=red)
+        await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "targets_rederived", why, when=when,
+                          targets=ap.plan.get("targets"), planned=ap.plan.get("targetsPlanned"), rederived=red)
 
     async def _finalize_open(self, ap: ArmedPlan, bars: list[Bar]) -> None:
         from .plan import complete_plan
@@ -402,10 +413,14 @@ class Team2Runner(PlanRunner):
         ap.plan["preopenSnapshot"] = before
         ap.plan.update(done)
         ap.plan["openFinalizedAt"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
-        self._log_rederived(ap, "09:30 open")
-        self._log(ap, "open_finalized", f"day type finalized on the 09:30 open {done.get('openPrice')}: "
-                  f"{before.get('dayType')} (09:25 estimate) -> {done.get('dayType')}, sizing at open {done.get('sizingAtOpen')} (F49)",
-                  before=before, openPrice=done.get("openPrice"), dayType=done.get("dayType"))
+        await self._log_rederived(ap, "09:30 open")
+        why = (f"day type finalized on the 09:30 open {done.get('openPrice')}: "
+               f"{before.get('dayType')} (09:25 estimate) -> {done.get('dayType')}, "
+               f"sizing at open {done.get('sizingAtOpen')} (F49)")
+        self._log(ap, "open_finalized", why, before=before, openPrice=done.get("openPrice"), dayType=done.get("dayType"))
+        await self._trail(ap, ev.TECHNIQUE_PLAN_READ, "open_finalized", why, before=before,
+                          openPrice=done.get("openPrice"), dayType=done.get("dayType"),
+                          sizingAtOpen=done.get("sizingAtOpen"))
         svc = getattr(self.engine, "team2", None)
         if svc is not None:
             with contextlib.suppress(Exception):
