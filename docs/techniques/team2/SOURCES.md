@@ -54,6 +54,23 @@
 | 2026-07-25 | thread (13 tweets) | +80% win rate over my last 40 trades: the exact entry strategy (Jul 2026) [2081050829214372301](https://x.com/Team2Trading/status/2081050829214372301) | `2026-07-25-2081050829214372301-80pct-win-rate-entries-thread.md` |
 | 2026-09-03 | single posts | Recent posts (2026-09-03)  | `2026-09-03-recent-posts-recaps-and-discord.md` |
 
+## Week 37 (2026-09-09..09-12) — read 2026-09-12 for the weekly review (text in `notes/research/2026-09-12-week37-review-and-change-plan.md`; charts local under `notes/research/week37-author-charts/`)
+
+| Posted (UTC) | Kind | What | Id |
+|---|---|---|---|
+| 2026-09-09 16:25 | reply | "I did not trade yesterday" (Tue 09-08) | 2097723030097330293 |
+| 2026-09-09 18:36 | post + chart | $IWM chart recap: "Support & Resistance flips are the foundation of the stock market" (293.43 = 3-day support flipped; 293P +141.77 %) | 2097756162976530919 |
+| 2026-09-09 19:36 | post + chart | the intraday S/R flip at the PML, rolling profits into a lower strike (+65.28 %) | 2097771160595517923 |
+| 2026-09-09 21:33 | post + chart | the "no fluff" pre-market game plan: under 293.43 puts on the retest; targets PML 291.19 then 289.98 | 2097800476561678782 |
+| 2026-09-10 03:24 | post | "never tell anyone how much money you make from trading" | 2097889003341328772 |
+| 2026-09-10 19:50 | post + chart | patience: waited ~5 hours for the IWM 287.83 retest; 288P +85.37 % | 2098137141838795024 |
+| 2026-09-10 20:27 | reply | "I typically don't like to play calls into the EMA resistance. Especially if under PDL" | 2098146285119492267 |
+| 2026-09-10 23:05 | post + chart | "the 15 minute follow-up" — the momentum candle directly after the level break is where most of the profit is secured | 2098186107460669706 |
+| 2026-09-11 (day) | post + P&L | "$800 in 15 minutes trading $SPY" (+50 %, 768C off the 764.47 retest, 09:39–10:06 ET) | 2098481359241277911 |
+| 2026-09-11 23:40 | post + GIF | "clean sweep one of the toughest weeks of the year" (hurricane, no power since Monday) | 2098557376865710279 |
+| 2026-09-12 06:06 | post + 2m chart | +50 % / $801.66 realized on SPY with the annotated chart (entry on the EMA13 hold, trim at the HOD break, 13 EMA stop on runners) | 2098654455101370413 |
+| 2026-09-12 (day) | post + 4 slides | "ultimate starter package": 4 levels, 13/48/200 EMA, bull/bear flags, 1–2 trades a day, base hits, size up slowly | 2098812715301294495 |
+
 ## Video transcripts (`notes/video/`)
 
 | Uploaded | Title | Minutes | Note |
