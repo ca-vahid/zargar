@@ -3041,6 +3041,28 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-13 latest (C2 spec v2 after the other team's review; GO for the research plan, NO-GO for measurement
+  under v1's wording)** — validation moved to genuinely unseen dates (development = 08-20..09-11 incl. week 37;
+  validation FIXED at 2026-09-14 → 2026-10-09, read once); one causal flip/expiry state machine (break → next-bar
+  confirm/reject; retire on the 2nd confirmed flip; no score decay; pending levels are not entry/target levels);
+  `atr_build` = previous session's 2m ATR(14) at its close vs the live touch ATR; D1 = session highs/lows only with
+  the median (no close, no volume); D2 directions corrected with candle predicates, grid origin/step, 4-clean-bar
+  episode separation, episode IDs de-duplicated across grid points and merges; D3 retests only after `availableAt`,
+  recency = pivot age; clustering to the running median (no chaining); 17:00 zone mask and 09:25/09:30 PM mask as
+  explicit transitions with the candidate record kept and no refill; the entry anchor = the last confirmed broken
+  level, fixed for the pullback; C2 acknowledged as a package (confirmations + retest entries + target rungs) with
+  new / displaced / changed-exit / lost trades reported separately; acceptance gates predeclared (book >= baseline +
+  $300 and model sum >= baseline; drawdown and worst day <= 1.25x baseline; >= 6 new/displaced entries; positive on
+  >= half the changed symbol-sessions; validation read once; simplest accepted wins unless a more complex one beats
+  it by >= $600 on validation; 'none' ends C2). C1 / room / C3 unchanged; no fourth definition.
+- **2026-09-13 later (C2 research GO — definitions frozen BEFORE any sweep; nothing built)** — the other team asked
+  for a family of 2–3 definitions specified first: `notes/research/2026-09-13-c2-key-levels-spec.md` freezes D1
+  historical session levels (clustered), D2 repeated-reaction levels (15m episodes, consecutive bars = one), D3
+  confirmed pivots with retests; common frame (L=10, K=3 per side, tolerance/cluster widths, recency 0.85, flip and
+  expiry rules, tie-breaks, precedence of PDH/PDL over key levels), the measurement protocol (baseline vs C2-only on
+  the canonical tape after C6, development 08-20..09-05, validation 09-08 onward untouched, matched trades + book +
+  drawdown + exposure by date/symbol), the decision rule (simplest source-consistent definition that survives
+  validation; 'none' is acceptable) and an empty variant register. C1 / room / C3 stay off and unchanged.
 - **2026-09-13 (other team's verdict on the week-37 plan; v0.7.53, knobs OFF)** — GO for research and C6, NO-GO for
   activating C1. Their two findings accepted: pure conjunction does NOT keep F15's case (721.44 is outside yesterday's
   range), and the gain is concentrated in the motivating week. Done: C1's ordered truth table (in the PM range but

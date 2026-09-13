@@ -1,5 +1,7 @@
 # Full-backend verification notes — 2026-09-07
 
+> Historical change/verification record. Current operation and limits are in [DAILY-PREPARATION.md](DAILY-PREPARATION.md) and [DELIVERY-STATUS.md](DELIVERY-STATUS.md). Test counts and runtime observations below apply only to their recorded checkpoints.
+
 Run: `scripts/test-codex.ps1 -q`, output in `.cache/cartel-full-backend.log`.
 Only zargar_test_codex on loopback 5433 is used. No simultaneous test run or
 frontend build was started. Backend code stayed unchanged during this run.

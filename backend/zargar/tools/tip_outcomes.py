@@ -54,7 +54,8 @@ async def main() -> None:
            FROM orders o JOIN portfolios pf ON pf.id = o.portfolio_id
            WHERE o.created_at >= $1 AND pf.kind = 'sim' AND pf.archived IS NOT TRUE""", since)
     execs = await conn.fetch(
-        """SELECT e.order_id, e.symbol, e.side, e.qty, e.price, e.commission, e.ts
+        """SELECT e.order_id, e.portfolio_id, e.symbol, e.side, e.qty, e.price,
+                  e.commission, e.ts
            FROM executions e JOIN portfolios pf ON pf.id = e.portfolio_id
            WHERE e.ts >= $1 AND pf.kind = 'sim' AND pf.archived IS NOT TRUE""", since)
 
@@ -69,10 +70,10 @@ async def main() -> None:
             orders_by_sig[o["signal_id"]].append(o)
         order_ids[o["id"]] = o
     ex_by_order: dict[str, list] = defaultdict(list)
-    ex_by_symbol: dict[str, list] = defaultdict(list)
+    ex_by_book_symbol: dict[tuple, list] = defaultdict(list)
     for e in execs:
         ex_by_order[e["order_id"]].append(e)
-        ex_by_symbol[e["symbol"]].append(e)
+        ex_by_book_symbol[(e["portfolio_id"], e["symbol"])].append(e)
 
     rows = []
     for s in sigs:
@@ -87,11 +88,21 @@ async def main() -> None:
         fills = [e for o in so for e in ex_by_order.get(o["id"], [])]
         buys = [e for e in fills if e["side"] == "BUY"]
         # EXIT orders come from the position manager and carry no signal_id —
-        # attribute every fill on the idea's exact contract in the Practice
-        # book to this idea (v1 caveat: re-entries on the same contract by a
-        # different idea would collide; the book's dedupe/caps make that rare)
-        sells = ([e for e in ex_by_symbol.get(buys[0]["symbol"], []) if e["side"] == "SELL"]
-                 if buys else [e for e in fills if e["side"] == "SELL"])
+        # attribute sells by PORTFOLIO + contract + holding EPISODE (Codex
+        # 2026-09-13: symbol-only matching borrowed another book's sale and
+        # could reuse one sale across re-entries): same book, ts >= first
+        # buy, cumulative sold never exceeding this idea's bought quantity.
+        sells = []
+        if buys:
+            fb = min(buys, key=lambda e: e["ts"])
+            cap = sum(float(e["qty"]) for e in buys)
+            acc = 0.0
+            for e in sorted(ex_by_book_symbol.get(
+                    (fb["portfolio_id"], fb["symbol"]), []), key=lambda e: e["ts"]):
+                if e["side"] != "SELL" or e["ts"] < fb["ts"] or acc >= cap - 1e-9:
+                    continue
+                sells.append(e)
+                acc += float(e["qty"])
         fills = buys + sells
         first_buy = min(buys, key=lambda e: e["ts"]) if buys else None
         sym = (so[0]["symbol"] if so else (sp[0]["symbol"] if sp else "")) or ""
@@ -102,8 +113,18 @@ async def main() -> None:
         bought = sum(float(e["qty"]) for e in buys)
         sold = sum(float(e["qty"]) for e in sells)
         open_qty = max(0.0, bought - sold)
-        # realized on the closed portion only (avg-cost basis)
-        realized = (proceeds - (sold / bought) * cost - fees) if bought and sold else (0.0 - fees if fills else 0.0)
+        # realized on the closed PORTION, with entry fees allocated
+        # proportionally (Codex 2026-09-13: partial realizations were omitted
+        # and full entry fees were deducted early — T's +27.68 became 17.28)
+        buy_fees = sum(float(e["commission"] or 0) for e in buys)
+        sell_fees = sum(float(e["commission"] or 0) for e in sells)
+        if bought and sold:
+            frac = sold / bought
+            realized = proceeds - frac * cost - sell_fees - buy_fees * frac
+            unalloc_fees = buy_fees * (1 - frac)
+        else:
+            realized = 0.0
+            unalloc_fees = buy_fees
         completed = bool(bought) and open_qty <= 1e-9
         missed = any(p["status"] in ("failed", "expired") for p in sp) and took and not buys
         # disposition
@@ -135,7 +156,7 @@ async def main() -> None:
             "bucket": bucket(sym, first_buy["ts"].date() if first_buy else None) if sym else "none",
             "disp": disp, "completed": completed, "realized": realized,
             "cost": cost, "open_cost": (open_qty / bought * cost) if bought else 0.0,
-            "fees": fees, "latency_s": lat_s, "slip": slip,
+            "fees": fees, "unalloc_fees": unalloc_fees, "latency_s": lat_s, "slip": slip,
         })
 
     print(f"# Tips outcome table — ideas since {a.since} (generated {dt.date.today()})\n")
@@ -145,8 +166,8 @@ async def main() -> None:
     groups: dict[tuple, list] = defaultdict(list)
     for r in rows:
         groups[(r["source"], r["bucket"])].append(r)
-    print("| source | setup | ideas | taken | filled | closed | open($cost) | skipped | no-fill/missed | net realized | fees | mean win | mean loss | expectancy/idea | med latency s | med slip |")
-    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    print("| source | setup | ideas | taken | filled | closed | open($cost) | skipped | no-fill/missed | net realized (incl. partials) | fees paid | mean win | mean loss | expectancy/completed idea | med latency s | med slip | unalloc entry fees |")
+    print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for (src, bkt), g in sorted(groups.items()):
         comp = [r for r in g if r["completed"]]
         wins = [r["realized"] for r in comp if r["realized"] > 0]
@@ -162,13 +183,14 @@ async def main() -> None:
             f"{sum(r['open_cost'] for r in g):.0f}",
             str(sum(1 for r in g if r["disp"] == "skipped")),
             str(sum(1 for r in g if r["disp"] in ("take-nofill", "take-missed"))),
-            f"{sum(r['realized'] for r in comp):+.2f}",
+            f"{sum(r['realized'] for r in g):+.2f}",
             f"{sum(r['fees'] for r in g):.2f}",
             (f"{statistics.mean(wins):+.2f} x{len(wins)}" if wins else "—"),
             (f"{statistics.mean(losses):+.2f} x{len(losses)}" if losses else "—"),
             (f"{exp:+.2f} (n={len(comp)})" if exp is not None else "n=0"),
             (f"{statistics.median(lat):.0f}" if lat else "—"),
             (f"{statistics.median(slips):+.3f}" if slips else "—"),
+            f"{sum(r['unalloc_fees'] for r in g):.2f}",
         ]
         print("| " + " | ".join(cells) + " |")
     ncomp = sum(1 for r in rows if r["completed"])

@@ -1,5 +1,7 @@
 import { useCallback, useState } from "react";
 import { Markdown } from "../components/technique/Markdown";
+import currentStatus from "../../../docs/techniques/options-cartel/DELIVERY-STATUS.md?raw";
+import ignition from "../../../docs/techniques/options-cartel/IGNITION.md?raw";
 import preparation from "../../../docs/techniques/options-cartel/DAILY-PREPARATION.md?raw";
 import method from "../../../docs/techniques/options-cartel/METHOD.md?raw";
 import rules from "../../../docs/techniques/options-cartel/TRADING-RULES.md?raw";
@@ -13,11 +15,13 @@ import replay from "../../../docs/techniques/options-cartel/REPLAY.md?raw";
 import scanning from "../../../docs/techniques/options-cartel/SCANNING.md?raw";
 
 const documents = [
+  {file:"DELIVERY-STATUS.md", title:"Current capabilities and limits", text:currentStatus},
+  {file:"IGNITION.md", title:"Post-ignition workflow", text:ignition},
   {file:"METHOD.md", title:"Detailed method", text:method},
   {file:"DAILY-PREPARATION.md", title:"Automatic daily preparation", text:preparation},
   {file:"TRADING-RULES.md", title:"Rules and implementation choices", text:rules},
   {file:"SOURCE-REVIEW.md", title:"Source-version differences", text:versions},
-  {file:"VIDEO-REVIEW.md", title:"September video review", text:video},
+  {file:"VIDEO-REVIEW.md", title:"Video evidence (S24/S30)", text:video},
   {file:"EXAMPLES.md", title:"Trade examples", text:examples},
   {file:"LEDGER-REVIEW.md", title:"Public ledger review", text:ledger},
   {file:"INDUSTRY-DATA.md", title:"Industry evidence", text:industry},

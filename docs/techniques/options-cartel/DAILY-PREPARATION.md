@@ -1,299 +1,84 @@
 # Automatic daily preparation
 
-The Cartel desk prepares and arms options plans for the active workspace.
-**Practice** uses the local sim account; **Live** uses an explicitly selected
-live brokerage or broker-paper account. Each workspace has independent settings
-and preparation results. Existing settings and records remain Practice-owned.
-Under Settings, enable Daily preparation, choose the account, and save. Plans shows the daily
-shortlist; Armed shows active execution and account risk. Scheduled jobs run at
-20:20 and 08:45 ET on trading days. “Prepare now” on Plans starts
-outside regular market hours. Preparation does not place an entry order;
-the existing closed-bar entry controller executes qualifying armed plans.
+Current behavior, reviewed 2026-09-13. This is the operating guide; dated release notes are historical evidence.
 
-Live starts disabled. It requires the preparation's live-execution and overnight
-protection acknowledgements, the separate **Cartel live-auto permission**, Live
-trading mode and a connected broker. The existing loss, instrument, quote and
-order risk gates still apply. The permission control is explicitly labeled in
-Live settings; saving a preparation policy never grants it implicitly. Phones
-remain exit-only for enabling/running Live preparation under the existing policy.
+## Using the desk
 
-Scheduled preparation and pending-contract retries use the active workspace at
-dispatch. A mode change prevents an in-progress preparation from arming in its
-former workspace, and prepared entries recheck workspace at submission. Existing
-position management and exits continue. One preparation worker runs at a time;
-requests for the other workspace are rejected rather than joining the wrong run.
+1. Select Practice or Live in the app workspace selector.
+2. Open Options Cartel → Settings. Enable preparation, verify the account, method profile, coverage and risk settings, then save.
+3. Outside regular trading hours, use Plans → Prepare now for a fresh market snapshot. Scheduled dispatches run at 08:45 and 20:20 ET on trading days, in the active workspace only.
+4. Read the preparation result and actual Armed list. Research candidates, eligible setups, contract-pending reserves and active arms are different states.
+5. Leave the engine running to monitor arms. Preparation does not submit an entry order. The controller enters only after fresh closed-bar, quote, risk and execution checks succeed.
 
-The workflow discovers primary US stock/DR listings from TradingView's complete
-paginated screener, using the selected Cartel price and capitalization floors.
-It captures the publisher's complete US industry performance table directly.
-SPY/QQQ alignment determines direction. Completed daily history supplies the
-remaining listing, industry, relative-strength, daily and weekly setup gates.
-Missing evidence blocks a candidate. A mixed market can legitimately produce
-an empty shortlist.
+Practice routes to `techniques.options_cartel.default_portfolio` when configured; a conflicting account is rejected. The archived shared Practice book is not a fallback. Live requires an explicit appropriate account, saved Live/overnight acknowledgements, the separate Cartel live-auto permission, the active Live workspace and a connected broker. Phone exit-only policy remains applicable. Saving settings never implicitly enables Live permissions.
 
-Every supported price/capitalization-eligible listing is checked by default
-(`scanAll=true`). A definite failure of the profile's required industry-ranking
-gate is recorded before downloading history; unknown industry evidence is not
-silently treated as a definite failure. Remaining names receive completed daily
-history analysis. Discovery-volume order remains the documented shortlist priority.
-Shortlist size (default five) never truncates universe evaluation. An optional
-explicit resource cap (`scanAll=false`, `historyLimit`) remains available up to
-10,000; older saved 200 limits apply only if the cap is enabled.
+Practice settings use `techniques.options_cartel.preparation`; Live uses `techniques.options_cartel.preparation_live`. Existing saved values are retained where supplied. The optional ignition pilot is Practice-only. See [IGNITION.md](IGNITION.md).
 
-Each selected plan includes measured entry/stop geometry, target provenance,
-same-time minute-volume history and an exit campaign. Chain data selects a draft
-option expression; fresh execution quotes and Greeks, shared risk checks,
-loss halts and write-ahead order handling still apply at entry. Missing contracts
-are retried once a minute from 08:45 through the regular session while the
-saved preparation evidence and current configuration remain valid.
+## What a run does
 
-## Explicit engineering defaults
+Discovery retrieves the supported TradingView primary US stock/DR universe and reviewed ETFs, then captures industry context and validates SPY/QQQ completed-session history. If benchmark freshness is inadequate, the executable scan stops early in `waiting_for_benchmark`; it does not spend a full market scan pretending stale data is a market opinion.
 
-- September 2026 screen and exit profile; closed 15-minute entry and gap retest.
-- One-session entry window. Position management can continue for multiple days.
-- Maximum premium 500 in account currency, capped again by the configured equity-risk percentage
-  using **full premium debit** as risk, and at most ten contracts.
-- Draft options: 21–90 DTE, target 45 DTE, target absolute delta 0.5,
-  minimum absolute delta 0.25, maximum ask $5, spread 20%, open interest 100.
-- September exit allocations: 25%, 25%, 20%, 20%, 10%.
-- Confirmed historical pivot targets first. If absent, optional engineering
-  Fibonacci anchors use the directional extreme of up to 60 completed sessions
-  preceding the measured base, to the trigger; extensions 1.272/1.618/2.0.
+With fresh data but blocked/mixed market alignment, the configured research direction can still be evaluated. Resulting research records cannot become executable merely because alignment later changes: fresh preparation is required. Strict alignment requires both indices on the selected side of all selected EMAs. Moderate Practice permits bullish alignment when one index is above 8/21/50 and both are above 50; bearish alignment remains strict. Missing data never passes either mode.
 
-These allocations, contract preferences and automatic anchor selection are
-configuration choices, not claims about exact author instructions. The typed
-configuration API exposes the full policy; the desk exposes routine controls.
-Manual research and source-version tools remain available separately.
+All eligible listings are evaluated by default. `scanAll=false` explicitly applies `historyLimit`; the old stored value 200 is irrelevant while scanAll is true. Strict industry mode can reject definite rank failures before downloading history; context mode records ranks without using them as that gate.
 
-## Freshness, refresh and recovery
+Qualifying candidates default to ranking by structural first-target R, directional relative strength, daily volume, then symbol. Volume-only order remains selectable. Ranking is an engineering preference, not predicted option return. The worker checks up to five times `focusCount` candidates for baseline/contract readiness, stopping when capacity is filled. Pending contracts do not use active slots. Existing arms, paused/working campaigns and held positions reserve capacity and are preserved; a refresh does not disarm them first.
 
-The industry adapter consumes published performance directly; it does not
-reconstruct constituent weights. The publication lacks constituent timestamps.
-Its explicit `publisher_observation` policy ages context from receipt for at
-most 24 hours while leaving `dataAsOfMs` unknown. Manual/provider-time snapshots
-retain their existing missing-time rejection. This policy never makes delayed
-stock or option prices executable.
+## Defaults for new/omitted settings
 
-Automatic arms expire for new entries no later than 24 hours after preparation
-or the plan's last-session close, whichever comes first. Each fresh run disarms
-unused automatic arms for the selected account before rebuilding. User-paused
-plans, working submissions and held positions are preserved and count as
-already managed. A failed refresh can leave no new arms; it does not restore an
-obsolete shortlist. Disabling preparation stops its worker and future runs,
-but does not disarm existing plans or close positions.
+These are implementation defaults, not a report of the user's currently saved configuration.
 
-Requests coalesce into one worker. Progress and inputs persist in an owned
-`TechniqueRun` with mode `preparation`, linked to analyses and plans. On restart,
-interrupted runs are marked failed; existing arms restore through normal runtime
-recovery. The next scheduled job or the Prepare now button starts a fresh preparation.
-The daily scheduler records job dispatch separately from preparation completion.
+| Setting | Practice default | Live default / boundary |
+|---|---|---|
+| Preparation enabled | false | false; explicit acknowledgements needed |
+| Method profile | `september_2026` | established profiles; ignition pilot prohibited |
+| Market alignment | strict | strict; Moderate is Practice-only |
+| Industry handling | context | context unless explicitly changed |
+| Ranking / focus count | quality / 5 | same |
+| Entry | 15m breakout, gap-retest option, session-extreme stop, 1.5x volume, 0.70 close location | same unless explicitly saved differently |
+| Minimum first-target distance / entry R | 0.5% / 0.25R | same |
+| Entry-window readiness | first hour plus at least 80% of pre-close slots | full-session coverage |
+| Baseline policy | covered periods | full session |
+| Verified exchange history | true | mandatory for new Live preparation |
+| Automatic interrupted-run recovery | true | still requires valid scope/permissions |
+| Ignition research watchlist | true | research remains non-executing |
+| Native daily batch source | false | false; explicit alternate provider-day dataset |
+| Premium budget / equity risk / max contracts | 500 / 10% / 10 | 500 / 1% / 10 |
+| Draft option preferences | 21–90 DTE, target 45; absolute delta target 0.5/minimum 0.25; ask <=5; spread <=20%; OI >=100 | same |
+| September exit allocation | 25/25/20/20/10% | same; whole-unit rounding applies |
 
-## Data verification
+Risk percentage uses that account's equity and full option premium debit, not all Practice books combined or expected stop loss. The lower budget/affordability bound wins: 10% of a 10,000 book does not override a 500 premium budget. Cash, FX, contract multiplier, quantity, exposure, loss and fresh quote gates remain mandatory. No risk escalation is automatic.
 
-On September 7, 2026 the read-only adapter retrieved 3,089/3,089 listings
-(3,088 supported, one explicitly excluded) and 129/129 published industries.
-These are observations, not permanent universe-size assumptions. Partial pages,
-duplicate identities, changing totals and unexpected industry update modes fail
-closed. Provider availability can prevent completion and appears in the run.
+Confirmed price pivots supply targets first. Optional Fibonacci fallback anchors and the precise geometry/exit allocations are explicitly engineering choices. The 3x daily ignition-volume example is not the 1.5x intraday confirmation rule.
 
-Implementation: `discovery.py`, `industry_feed.py`, `automatic_plans.py`,
-`preparation.py`; authenticated `/api/options-cartel/preparation` status,
-`/preparation/config` settings and `/preparation/run` submission.
+## History, provenance and coverage
 
-Settings storage: `techniques.options_cartel.preparation` retains Practice;
-`techniques.options_cartel.preparation_live` holds Live. The preparation and run-list
-APIs accept `workspace=practice|live`; preparation defaults to the active workspace
-when omitted. Manual research remains shared; automatically prepared plans retain
-their originating workspace. The same daily schedule dispatches only the active
-workspace. Changing workspace does not cancel working orders or abandon positions.
+The existing daily provider uses the shared historical path. Cartel's separate `cartel_history_cache` stores provider-keyed research histories, not a copy of the runtime bars table. Daily reads reuse matching completed sessions and incrementally request missing/revisable ranges. Legacy analysis-cache fallback preserves original observation time and checks actual last session; it can look back five calendar days, never past the requested as-of cutoff.
 
-## Progress, coverage and recovery (0.7.5)
+Minute baselines request 20 trading sessions, subject to source availability. Each usable slot needs at least five complete historical samples and a positive median. No missing minute is filled with invented volume. Partial baseline caches can be retried after five minutes. The first-hour/80% gate concerns pre-close entry windows; the closing slot cannot start an automatic entry. Explicit legacy coverage can still be selected for comparisons.
 
-Discovery reports received/total listings per page, then industry context, index
-context, stock evaluation and option selection report their own operations.
-Provider waits emit a heartbeat every ten seconds; normal UI polling is three
-seconds while running. `processed` counts completed listing decisions;
-`prefiltered` is definite industry rejection; `evaluated` counts completed history
-analyses; `dataErrors` is separate. `notEvaluated` reports untouched listings and
-`coverageComplete` requires all supported listings processed without data errors.
-A cap or data failure yields partial coverage, not a claim that all candidates
-were evaluated. Missing market alignment explicitly skips stock evaluation.
+Timestamp coverage is not source quality. New automatically prepared plans default to requiring exchange-class bars for confirmation and session-extreme stops, with an independent controller check. Legacy six-number minute records remain provenance-unknown. Recovery can replace an inferior source with exchange data and advances the observation cutoff so old crossings do not fire retroactively. Same-quality corrections are not automatically preferred without stronger revision identity.
 
-History calls are paced (default 0.25s minimum start interval), use the shared
-provider's bounded retries and have an overall request deadline. Exhausted rate
-limits stop the batch; three consecutive transport failures also stop it. The
-worker owns and awaits cancellation of pending provider requests.
+The app retains source classification, tape hashes and decision measurements. This is **not** a full immutable per-candle/per-decision provider-revision ledger; a hash cannot reconstruct overwritten input. Distinguish recorded decision measurements, current recovered tape and later provider revisions in reviews.
 
-Saved completed daily history may be reused for twelve hours only when its
-original observation precedes the new cutoff and its last session matches the
-required completed session. Cache reuse retains the original observation and
-source-run pointer; it does not make executable option quotes fresh. Minute
-baselines are collected for shortlisted plans. Candidate queues retain IDs,
-not every candidate's full bar arrays.
+Native daily batching is off by default. With configured access it uses a separate Alpaca provider-day/raw-price dataset, fully paginates bounded requests and requires provider-day completion. It is not silently equivalent to RTH-only daily data. Access-denied fallback separates cache keys; other errors remain explicit. The ordinary batch window (25) and concurrency (6) are local controls, not 25 simultaneous requests. Default start spacing is 0.25 seconds. Cold-run speed gains have not been established; repeated warm work should be measured independently.
 
-A failed/partial run with a complete discovery/industry snapshot may be resumed
-for the same session, workspace and unchanged policy, within 24 hours. Resume
-creates a linked run, preserves the original failed record and snapshot cutoff,
-and reuses successful analyses. Children committed before a progress checkpoint
-are recovered too. Discovery failures need a fresh run. New settings or expired
-evidence require a fresh run. Existing arm/order checks prevent duplicate entries;
-retired arms are not silently revived. Resume is an explicit action; startup marks
-interrupted work and the UI offers Resume saved scan when eligible.
+## Restart, cancellation and expiry
 
-Contract diagnostics count the first failed filter per inspected row, record the
-effective ask/debit ceiling and show provider errors separately. Search proceeds
-through allowed expiries until an eligible nearest-DTE group is found or all
-allowed dates are checked. No price, delta, liquidity or risk limits are relaxed.
-The saved-plan table refreshes on published results/completion, and evidence rows
-are paged to keep large runs usable on phones.
+Preparation owns a renewable 120-second database lease, renewed during progress checkpoints and checked before arming. A stale owner cannot publish arms. A crashed lease may need to expire before a replacement worker proceeds; do not start another engine to get around it.
 
-## Adjustable risk limit (0.7.8)
+Resume saved scan reuses the original snapshot and successful analyses in a linked run. Eligibility requires current coverage schema (6), matching workspace/policy/target session, the same expected completed market session and age under four calendar days. Old-schema, changed-policy or expired snapshots need Prepare now. Progress may reconstruct saved analyses; the visible saved checkpoint is not a promise that no work remains.
 
-Equity at risk (%) on the technique Settings tab accepts values above zero
-through 10 in both workspaces. New Practice configurations default to 10%; new
-Live configurations default to 1%. Explicit saved percentages remain unchanged,
-and the two workspaces retain independent values. Users with a saved 1% value
-must change it and save to use 10%; deployment never silently raises it.
+Automatic recovery checks at five-minute intervals outside regular hours when enabled. It resumes eligible interrupted failed runs and retries fresh preparation after `waiting_for_benchmark`. It does not automatically rerun every partial/data-error result. Stop preparation records cancellation and will not auto-resume that job; disabling preparation also stops future work. Neither action closes positions or discards existing arms.
 
-This is full option-premium allocation per setup, not a stop-loss estimate.
-The separate premium budget still applies: on a hypothetical 10,000-equity book,
-10% allows 1,000, but a 500 premium budget still caps the purchase at 500. Existing
-contract-price/quantity limits, cash requirements, exposure and loss gates remain
-in force. No change to Live acknowledgements or permission requirements.
+New automatic evidence expires at the close of its **first intended entry session**, not 24 wall-clock hours after creation. This permits weekend preparation for Monday. A multi-session thesis or held position is separate from that automatic evidence window. Existing saved arms retain their original expiry/configuration unless explicitly rebuilt.
 
+## Pending contracts and result interpretation
 
-## Mixed-market research (0.7.14)
+Pending activation checks at most once per minute from 08:45 ET through regular-session close, in the active workspace. It requires the latest compatible preparation, remaining capacity, usable history, valid price levels and an eligible contract. It pauses while a new preparation runs. A verified closed-bar invalidation is terminal for that pending plan; a rebound cannot revive it. Expired or target-passed cases remain distinct.
 
-Market alignment controls automatic arming separately from research coverage. If
-SPY/QQQ are mixed or unknown, preparation still evaluates stock/setup evidence in
-the configured research direction (bullish by default). Other stock, history,
-industry and setup checks remain unchanged. Qualifying research candidates are
-saved as analysis records with a market-blocked label, not executable plans.
-No contract is selected and no arm/order is created. Pending activation explicitly
-ignores these preparation snapshots; fresh preparation with aligned market evidence
-is required before execution. Normal plan construction still rejects their failed
-market screen, so manual plan creation cannot promote the saved research snapshot.
+Planning chain quotes select a draft expression, not an executable price. Diagnostics retain first-failing-filter counts plus up to 30 ranked rejected examples with all measured failures. Search completeness and selection completeness are different; a truncated or unavailable search does not prove that no suitable contract exists. Fresh quote/Greek validation is repeated at entry, and the configured refresh budget is authoritative.
 
-The Plans tab displays the completed-session date, close, EMA levels and alignment
-for each index. Research-only candidate counts are distinct from executable setup
-counts. A complete research run with a trading restriction is not an incomplete
-scan; genuine data failures and optional-cap gaps remain visible. Historical runs
-that skipped evaluation on a market block are no longer labeled as download failures.
-A coverage-version change requires fresh preparation rather than resuming old scans.
+`partial` can coexist with valid arms: some histories or plans failed while others passed. Consult the individual reasons. `armed` means monitored; it does not mean purchased. For live operational state use Armed and account reports, not old deployment documents.
 
-
-## Bounded parallel history loading (0.7.16)
-
-Settings expose a history batch window (default 25, range 1–50) and parallel fetches
-(default 6, range 1–12). The batch window bounds queued/completed history buffers;
-it is not a provider bulk endpoint or permission to send every request at once.
-The shared provider's existing concurrency cap remains authoritative. Cartel's
-request spacing is serialized across fetches (default 0.25 seconds, approximately
-four request starts per second), so overlap removes response-wait serialization
-without removing pacing. Cache hits bypass provider requests.
-
-Only history reads overlap. The coordinator evaluates/persists in discovery order,
-keeping shortlist ranking reproducible. Definite strict-industry exclusions and
-resumed analyses do not prefetch. Checkpoint writes serialize to avoid stale progress
-commits. Progress reports active fetches, prefetch completions and configured bounds.
-Rate-limit exhaustion blocks new request starts; interruption cancels and awaits all
-owned prefetch work. Already committed analyses remain resumable. At most the bounded
-window of uncommitted histories needs fetching again after interruption.
-
-An in-progress run is not hot-upgraded. Let it finish; deploy outside an active run
-and use fresh preparation with the new version. Larger batches alone cannot bypass
-the provider rate cap, and higher concurrency does not guarantee faster scans.
-
-
-## Moderate Practice market experiment (0.7.18)
-
-Strict remains the default. To opt in: select Practice, open Cartel Settings,
-choose Market alignment = Moderate, save, and run fresh preparation outside regular
-hours. Moderate uses completed daily 8/21/50 EMAs: bullish alignment needs at least
-one index above all three and both indices strictly above their 50 EMA. An index
-at/below its 50 EMA, missing/stale evidence, or neither index fully bullish does not
-qualify for the bullish exception. Strict bearish alignment is unchanged. The
-selected mode, effective direction, strict direction and measurements are saved.
-This is an engineering Practice experiment, not an author-prescribed threshold.
-
-Live preparation rejects Moderate configuration; arming and submission also reject
-Moderate plans on Live/broker-paper books. Existing budgets, risk percentages,
-contract constraints and entry checks are unchanged. Old research-only records
-cannot be promoted; prepare new plans. Scheduled deduplication now compares policy
-as well as session and age, so a changed policy is not skipped as already prepared.
-Review results across sessions before considering further changes.
-
-
-## Target quality and continuity (0.7.35)
-
-New automatic plans require their existing first target to be at least 0.5% from
-trigger by default. Nearby resistance is never skipped or moved to manufacture
-room. Minimum target distance is configurable (0 disables the distance floor).
-New automatic entry policies also require at least 0.25R to the first target from
-the confirmation price and actual initial stop. The controller rechecks this at the
-current execution price, and replay checks the modeled next-minute fill. The field
-is frozen in each plan; legacy plans default to 0 and keep their original behavior.
-These are engineering guardrails, not author-prescribed numeric rules.
-
-Shortlist ranking defaults to structural first-target R, directional relative
-strength versus the benchmark, then volume, with stable symbol ties. Select the
-legacy volume ordering if required. Displayed ranking evidence is not a prediction
-of option profit. Candidate-pattern selection now prefers better target room before
-pattern specificity. All market, liquidity, contract and cash/order gates remain.
-
-Observation health shows completed-minute coverage, overdue gaps, session recovery
-counts and the last recovery. New missing minutes have a two-minute delivery grace.
-A single owned background task attempts at most five waiting plans per pass, at most
-once per five minutes per plan. Recovery uses bounded historical reads, fills only
-missing context, never overwrites live bars/signals, and advances the observation
-cutoff when context is repaired. It cannot submit a missed historical signal.
-Stopping the runtime cancels and awaits the task. Simulated quote feeds do not pull
-real historical data implicitly during this repair. Protective exits are unchanged.
-
-Equal-weight breadth (SPY/RSP, QQQ/QQQE) is completed-session advisory context only.
-Missing sources are shown unavailable. NYMO is explicitly unavailable until a verified
-source is integrated; no substitute or automatic risk multiplier is invented.
-This follows the questions in Sean's September 9 environment post:
-https://x.com/SRxTrades/status/2097792161466962380
-
-September 9 DRAM/VG paired replays did not justify promoting looser confirmation
-thresholds: modeled DRAM positions remained underwater at the session close, and VG
-still encountered entry-price/target constraints with slippage. Open modeled returns
-are not realized option P&L. Keep 15m, 1.5x and 0.70 as the baseline while collecting
-multiple sessions. A healthy replay cannot establish uninterrupted live observation.
-
-Operating rule: finish routine deployment before the open or after close. Recovery
-can repair data context but cannot restore observation time lost to server restarts.
-Prepare a fresh session after deploying; old scans cannot resume under changed
-ranking/target criteria. Do not manually promote yesterday's research records.
-
-## Supported volume periods (0.7.36)
-
-Diagnosis of the September 10 preparation: all nine baseline-blocked names had
-12 historical sessions. Scattered missing minute timestamps caused incomplete
-15-minute samples; fewer than five complete samples remained for many periods.
-The stored inputs do not identify every absent minute as an outage or zero volume.
-Providers may legitimately omit minute bars without eligible trades:
-https://alpaca.markets/learn/stock-minute-bars
-
-New Practice preparation defaults to `covered_periods` baseline readiness. A plan
-may arm if at least one usable confirmation period exists before the closing period.
-Each supported period still requires five fully observed historical samples and a
-positive median volume. Missing periods never receive imputed zeros or averages from
-another period. The shared entry kernel and submission controller refuse unsupported
-periods. Current complete candles, session-low/high evidence, target room, quotes and
-all risk checks remain required. A crossing in an unsupported period is not replayed
-later as a fresh crossing.
-
-The previous `full_session` rule remains selectable. Existing plans retain that
-legacy default; new Live settings also default to it. Details list supported
-confirmation windows in ET. The first session determines displayed windows; the
-entry kernel always uses the actual session close. Pending plans without a remaining
-supported start in their final session stay unarmed. A closing-only baseline is
-insufficient because the closing bell cannot initiate a new entry.
-
-This corrects the earlier all-or-nothing 26/26 preparation rule without reducing
-confirmation-volume requirements. Existing arms are not mutated. Fresh preparation
-is required to adopt the new policy; old scans cannot resume across the interpretation
-change. Limited entry windows do not guarantee a trade, particularly when current
-session history is incomplete.
+Implementation references are in [TRACEABILITY.md](TRACEABILITY.md); current limits are in [DELIVERY-STATUS.md](DELIVERY-STATUS.md).

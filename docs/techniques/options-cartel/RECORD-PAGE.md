@@ -1,6 +1,6 @@
-# Dedicated Cartel records — 0.7.6
+# Dedicated Cartel records — current behavior (reviewed 2026-09-13)
 
-The reported repeated charts were reproducible: eight opens produced fifteen
+Historical v0.7.6 defect: eight opens produced fifteen
 chart sections. The detail fragment used the same run ID as the React key for
 several sibling components. Each component now has a distinct key, and chart
 cleanup owns only its dedicated host element. Repeated refreshes and range
@@ -33,4 +33,7 @@ controls. Trading rules, budgets and execution machinery are unchanged.
 Verification uses `frontend/scripts/cartel-record-audit.mjs` for direct URLs,
 reload, Back/Forward, new tabs, missing records, and repeated refresh/range
 changes. Existing desk/progress audits and the mobile device matrix also cover
-the new navigation and expanded controls. Tests use only the isolated preview.
+the new navigation and expanded controls. Browser checks may use a synthetic static server; any backend tests use only zargar_test_codex. No running app is needed for documentation checks.
+
+
+Current details include source-quality counts, persisted entry decisions and a whole-contract exit preview. The preview uses cumulative-floor allocation; a zero-sized first trim cannot move the stop to entry. Only actual fills advance live exits. Source counts/tape hashes do not constitute a complete historical provider-revision ledger. The preparation decision remains a snapshot; current arm state is authoritative for whether monitoring is active.

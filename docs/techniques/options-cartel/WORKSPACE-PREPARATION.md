@@ -1,5 +1,7 @@
 # Preparation workspace correction — 0.7.4
 
+> Historical change/verification record. Current operation and limits are in [DAILY-PREPARATION.md](DAILY-PREPARATION.md) and [DELIVERY-STATUS.md](DELIVERY-STATUS.md). Test counts and runtime observations below apply only to their recorded checkpoints.
+
 The user reported that the Practice account dropdown appeared in Live mode and
 requested support for both workspaces with separate settings. This corrects the
 Practice-only UI and backend boundary introduced with daily preparation.

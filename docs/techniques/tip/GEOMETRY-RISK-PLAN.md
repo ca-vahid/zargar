@@ -23,19 +23,28 @@ redefinition of the risk.
    - wrong-side / penny targets: dropped (as today), recorded on the proposal;
    - invalid or inside-noise stop: re-placed at structure — but now BEFORE
      entry, producing the FINAL stop.
-2. **Risk reassessment when geometry changed.** Define
-   `planned_risk = qty × expected loss at the analyst's stop`
-   (for long options: `qty × (entry_premium − est. premium at stop)`,
-   estimated by delta, floored at 25% of premium; for shares:
-   `qty × stop_distance`). If the final stop widens the per-unit risk by more
-   than `techniques.tip.geometry_resize_threshold_pct` (proposed 25%):
-   - resize `qty` down to keep planned dollar risk ≤ the analyst's plan;
-   - if the resize lands below 1 contract, the proposal is NOT auto-eligible:
-     it goes to review with an explicit reason ("1-lot cannot honor the
-     declared risk budget under the repaired stop") — a one-contract minimum
-     never silently violates the budget;
-   - every repair + resize is journaled (`TipGeometryRepaired` gains
-     `phase: "pre-entry"`, `plannedRisk`, `finalRisk`, `resizedFrom/To`).
+2. **Risk budget enforced on EVERY widening** (revised per review,
+   2026-09-13). The authoritative dollar budget **B** comes from approved
+   desk policy (`techniques.tip.risk_budget_per_tip`, resolved via `rt()`) —
+   never from the model's proposed quantity. Units are explicit: for options,
+   `unit_loss = (entry_premium − est_premium_at_stop) × multiplier` where
+   `multiplier` comes from the CONTRACT METADATA (100 for standard OCC;
+   currency = the contract's), estimated by delta (long call: +delta ×
+   stop_distance; long put: |delta| × stop_distance), floored at 25% of
+   premium×multiplier — an ENGINEERING assumption, versioned on the plan,
+   never called a guaranteed loss cap (gamma/vol/time excluded); the full
+   premium-at-risk (stress loss = premium × multiplier × qty) remains an
+   independent constraint. For shares, `unit_loss = stop_distance`.
+   **Invariant on every proposal: `qty × final_unit_loss ≤ B`** — enforced
+   regardless of how small the widening is (the materiality threshold
+   `geometry_resize_threshold_pct` only classifies review-vs-log severity,
+   it never waives the invariant). Round qty DOWN; cash / premium / notional
+   / concentration caps apply after; if no quantity satisfies B, NO
+   automatic entry. Missing/stale Greeks → no estimate → review, never a
+   guess. A 1-contract minimum never silently violates B. Every repair +
+   resize journals `TipGeometryRepaired` `phase: "pre-entry"` with
+   `plannedRisk`, `stressRisk`, `finalRisk`, `estimatorVersion`,
+   `resizedFrom/To`.
 3. **Persist the full risk plan on the proposal**: entry ref, final stop,
    targets/fractions, quote quality (source/age at pricing), qty, planned
    risk, stress loss (premium to zero for options). The approval path and
@@ -47,12 +56,19 @@ redefinition of the risk.
 5. **Post-fill exceptions (bounded, explicit):**
    - allowed ONLY for positions that already exist when a defect is found
      (restored legacy positions, adopted partial fills);
-   - a post-fill stop change may only TIGHTEN risk, or widen it within the
-     same `geometry_resize_threshold_pct` bound WITH a simultaneous
-     proportional trim to preserve planned dollar risk;
+   - a post-fill stop change may only TIGHTEN risk immediately. A WIDEN
+     requires an EXECUTION-STATE SEQUENCE, never assumed atomicity (review
+     condition): (1) submit the proportional trim FIRST with the tighter
+     stop still armed; (2) the wider stop takes effect ONLY after the trim
+     is confirmed filled; (3) a rejected / partially filled / unknown-outcome
+     trim leaves the tighter stop in force (partial → recompute the residual
+     widen bound from actual filled qty; unknown → reconcile before any stop
+     change); (4) each transition persists write-ahead and is reconciled at
+     restart — a restart between steps resumes from the persisted state;
    - every exception journals `TipGeometryRepaired phase: "post-fill"` with
-     before/after risk; anything outside the bound goes to `needsAttention`
-     instead of acting.
+     before/after planned risk and the trim order ids; anything outside the
+     bound raises `needsAttention` — which is a signal to a person, not
+     itself protection: the tighter stop remains armed meanwhile.
 
 ## Accounting (reviewer requirement)
 
@@ -61,16 +77,24 @@ Track separately per position: `plannedRisk` (at the final pre-entry plan),
 Stops do not guarantee fills at the stop price; slippage between planned and
 realized risk is a REPORTED quantity in the outcome table, not an assumption.
 
-## Acceptance cases (to be tests before any code merges)
+## Acceptance cases (to be tests before any code merges; expanded per review)
 
-1. Wider repaired stop → qty resized down; planned dollar risk preserved.
-2. Resize below 1 contract → proposal review-gated, never auto-approved.
-3. Unchanged geometry → byte-identical behavior to today.
-4. Fresh-quote retry re-runs validation; limit never raised.
-5. Post-fill widen beyond the bound → needsAttention, no action.
-6. Post-fill tighten → allowed, journaled.
-7. Shares and options both honor planned-risk preservation.
-8. Cash / concentration / premium caps still apply after resize.
+1. Wider repaired stop → qty resized down; `qty × unit_loss ≤ B` holds.
+2. A SMALL widening below the materiality threshold still triggers resize
+   when B would be breached (the threshold never waives the invariant).
+3. Resize below 1 contract → proposal review-gated, never auto-approved.
+4. Unchanged geometry that ALREADY satisfies B → behavior preserved;
+   unchanged geometry that already VIOLATES B → flagged, not grandfathered.
+5. Fresh-quote retry re-runs validation; limit never raised.
+6. Contract multiplier applied in unit loss AND stress loss; puts use
+   |delta|; missing/stale Greeks → review, no estimate invented.
+7. Post-fill widen: trim-first sequence — rejected trim keeps tight stop;
+   partial trim recomputes the bound from actual fills; unknown outcome
+   reconciles before any stop change; restart between steps resumes.
+8. Post-fill tighten → immediate, journaled.
+9. Shares and options both honor B; cash/concentration/premium caps apply
+   after resize.
+10. Planned vs stress vs realized loss recorded separately per position.
 
 ## Out of scope
 

@@ -1,5 +1,7 @@
 # Dedicated Practice book integration — 0.7.7
 
+> Historical change/verification record. Current operation and limits are in [DAILY-PREPARATION.md](DAILY-PREPARATION.md) and [DELIVERY-STATUS.md](DELIVERY-STATUS.md). Test counts and runtime observations below apply only to their recorded checkpoints.
+
 The 2026-09-08 Practice reset assigns Cartel through
 `techniques.options_cartel.default_portfolio`. Cartel previously retained a
 separate preparation account selection and queried every sim portfolio directly;
