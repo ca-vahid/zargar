@@ -496,7 +496,8 @@ def _key_level_funnel(plan: dict, read: dict) -> dict | None:
         return None
     ev = [e.get("event") for e in (read.get("events") or [])]
     cands = kl.get("candidates") or []
-    return {"definition": kl.get("definition"), "built": len(cands),
+    return {"definition": kl.get("definition"), "built": len(cands), "insufficientData": kl.get("insufficientData"),
+            "atrBuildSource": kl.get("atrBuildSource"),
             "maskedZone": sum(1 for c in cands if c.get("maskedBy") in ("pdh", "pdl")),
             "maskedPm": len(kl.get("pmMasks") or []),
             "above": len(kl.get("above") or []), "below": len(kl.get("below") or []),

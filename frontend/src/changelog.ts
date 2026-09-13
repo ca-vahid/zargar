@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.59";
+export const APP_VERSION = "0.7.60";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.60",date:"2026-09-13",title:"Key-level research fixes from review, still off",items:[
+    {tag:"fixed",text:"Team2 research (C2, knob still OFF): two key levels breaking on the same 15-minute bar are now two setups (the setup id carries the level), the entry precedence among same-bar setups is the nearest confirmed anchor, a level cluster has a hard maximum width instead of a running-median test that could chain across several ATRs, and a plan without the specified 2-minute ATR input reports insufficient data instead of using a scaled fallback. The reviewers' two reproduction tests are in the suite verbatim. No change to the live path."},
+  ]},
   {
     version: "0.7.59",
     date: "2026-09-13",
