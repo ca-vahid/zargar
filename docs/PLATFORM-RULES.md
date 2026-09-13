@@ -1355,3 +1355,13 @@ advisory lock; preparation has a renewable lease checked before new arming.
 Native daily batching is opt-in with its provider-day completion semantics and a
 separate cache. No other desk switches provider or loses its shared API behavior.
 See options-cartel/RELIABILITY-RELEASE-2026-09-12.md for scope and limits.
+
+### Request: one tape for Team2 (F119, C6) — 2026-09-13 (Team2 desk → platform owners)
+
+The other team's review of the week-37 plan made this a prerequisite: every Team2 sweep, replay and parity check scores
+Yahoo's 1m bars while the live desk trades Alpaca's stream (F119: both stamped `source: exchange`, last writer wins,
+QQQ differs on 40 % of minutes). No Team2 rule change will be activated on the strength of a sweep-vs-live comparison
+until one tape exists. Requested, as F119 option (a): a per-venue provenance value (`exchange:alpaca` /
+`exchange:yahoo`, or a `venue` column) and Alpaca-over-Yahoo precedence in `marketdata.merge_exchange` /
+`persist_bars` for streamed symbols, Yahoo filling only minutes Alpaca did not supply. Shared engine, platform's call;
+Team2 will re-run the frozen-input sweeps on the canonical tape once it lands and record the new dataset hash.

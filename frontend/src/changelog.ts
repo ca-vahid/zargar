@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.52";
+export const APP_VERSION = "0.7.53";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.53",date:"2026-09-13",title:"Research knobs for the no-trade zone, all off",items:[
+    {tag:"improved",text:"Team2 research (other team's review of the week-37 plan): three knobs exist and are OFF - no_trade_zone (pm_range today | conjunction: risk off only inside both the pre-market and prior-day ranges), pm_room_atr (refuse an in-range entry with too little room to the pre-market edge) and min_target_atr (refuse a target too near to pay for the trade). Nothing in the live read changes until the user flips one; the sweep can now run the variants with the same code the desk runs. The read journals skip_pm_room and skip_target_near when they are on."},
+  ]},
   {version:"0.7.52",date:"2026-09-12",title:"Keep developing ignition setups in focus",items:[
     {tag:"fixed",text:"Ignition research now hides retired theses by default, prioritizes ready setups, and explains developing, invalidated and expired states accurately. The watchlist is collapsed below preparation progress and displays 25 rows at a time."},
   ]},
