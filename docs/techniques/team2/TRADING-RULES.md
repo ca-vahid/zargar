@@ -2439,6 +2439,12 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-13 latest (other team: ACCEPTED; GO for development sweeps once C6 is ready)** — "Keep C2, C1 and both
+  room rules off. Use the common eligible rows for every reported metric — including the chronological book
+  simulation — and publish the excluded cells with reasons. Keep the frozen definitions and the September 14 –
+  October 9 validation window unchanged and sealed. The next review is the development measurement report." Built
+  the report tool accordingly (`zargar.tools.team2_c2_report`, spec §6b; the seal is enforced in the tool). Nothing
+  else changes until C6.
 - **2026-09-13 late (v0.7.61 — REGRESSION in v0.7.60 fixed before Monday's session)** — the reviewers' before/after test
   (`tests/test_codex_c2_disabled_precedence.py`, verbatim) showed the new nearest-anchor tie-break applied to zone/PM
   setups with C2 OFF: two `scenario_1` fires where ca26bf3 had none on a gap-up whose PMH sat under the PDH. The
