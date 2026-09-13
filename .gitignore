@@ -36,3 +36,5 @@ backend/finpages.txt
 
 # launcher log written when scripts/run-hidden.vbs is run from a checkout (normally lives in C:/ProgramData/Zargar)
 scripts/run-hidden.log
+
+docs/techniques/team2/notes/research/week37-author-charts/*.jpg

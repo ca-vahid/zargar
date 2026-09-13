@@ -2437,6 +2437,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-12 (weekend review of week 37 — PLAN FOR REVIEW, nothing changed)** —
+  `notes/research/2026-09-12-week37-review-and-change-plan.md`: the author 3/3 (Wed IWM +141 %, Thu IWM +85/+100 %,
+  Fri SPY +50 %; no trade Tue) vs our one filled day (Tue QQQ −$66). All three of his entries were retests of a
+  MULTI-DAY level after a 15m body close, two of them inside the PM range. Proposals: C1 no-trade zone = B5's
+  conjunction (frozen sample: 54 → 82 trades, 209.5 → 358.6, wr .352 → .366; knob `no_trade_zone`), C2 multi-day
+  key levels as entry levels (measure first), C3 minimum target distance, C4 add on level retest, C5 breakeven after
+  TP1, C6 one tape (F119). NOT proposed: narrower PM window, no zone, `trim_cue=new_extreme` (measured worse).
+  Awaiting the other team's review; the user decides.
 - **2026-09-10 late (Codex on v0.7.47: trail gaps must be evidence; v0.7.48)** — a failed journal write in `_trail`
   is no longer suppressed: `trail_gap` plan event, one `_alert` per plan, `trailGaps` on the snapshot,
   `Team2Runner.trail_gaps(run_id)`; the picker's early exits (service missing, no expiry, exception) journal a
