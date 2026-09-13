@@ -443,8 +443,13 @@ class Team2Service:
                 warm, wrep = self.warmup_slice(prior, sessions=rules.warmup_sessions)
                 fifteen = [b for b in aggregate(prior, 15) if bar_session(b.ts) == "rth"] if prior else []
                 sk = build_skeleton(sym, date, fifteen, rules, prev_bars_1m=prior)
+                # C2 evidence filter (reviewers 2026-09-13): every row says whether the previous session's 2m RTH bars
+                # exist — knob on or off — so a paired comparison can drop such symbol-sessions from BOTH sides
+                prev_sess = sorted(k for k in by_day if k < date)[-1:]
+                prev_2m = [b for b in aggregate(by_day[prev_sess[0]], 2) if bar_session(b.ts) == "rth"] if prev_sess else []
+                inputs_ok = len(prev_2m) >= 15
                 if sk is None:
-                    rows.append({"symbol": sym, "date": date, "status": "no_prev_session"})
+                    rows.append({"symbol": sym, "date": date, "status": "no_prev_session", "keyLevelInputsOk": inputs_ok})
                     continue
                 plan = complete_plan({**sk, "planFor": date}, today)
                 sg = sigma if sigma is not None else await self._sigma_for(date)
@@ -455,6 +460,7 @@ class Team2Service:
                              "summary": d_["summary"], "setups": len(d_["setups"]), "sigma": sg,
                              "warmup": {"hash": wrep.get("hash"), "sessionsUsed": wrep.get("sessionsUsed")},
                              "strikeSource": "grid",       # F104: history carries no as-of listing — a stated limitation
+                             "keyLevelInputsOk": inputs_ok,
                              "keyLevels": _key_level_funnel(plan, d_)})
         trades = [t for r in rows for t in (r.get("trades") or [])]
         wins = [t for t in trades if t["win"]]
@@ -471,6 +477,8 @@ class Team2Service:
             "strikeSource": "grid", "strikeSourceNote": "the sweep walks the synthetic strike grid: no as-of listing "
                                                         "evidence exists for past sessions (F104)",
         }
+        summary["rowsWithoutKeyLevelInputs"] = sum(1 for r in rows if r.get("keyLevelInputsOk") is False)
+        summary["rowsInsufficientKeyLevelData"] = sum(1 for r in rows if (r.get("keyLevels") or {}).get("insufficientData"))
         return {"start": start, "end": end, "symbols": symbols, "rows": rows, "summary": summary,
                 "datasetVersion": (dataset or {}).get("hash"), "datasetRows": (dataset or {}).get("rows"),
                 "coverage": coverage, "thresholds": rules.to_dict()}
@@ -487,6 +495,41 @@ class Team2Service:
         except Exception:  # noqa: BLE001
             pass
         return 0.20
+
+
+def paired_rows(*sweeps: dict) -> tuple[list[list[dict]], list[dict]]:
+    """C2 paired comparison: the symbol-sessions eligible in EVERY sweep passed (status ok, C2 inputs present, no
+    `insufficientData`), aligned by (symbol, date), plus the dropped keys with the reason. A cell missing its inputs in
+    any variant is dropped from all of them — it is never counted as a fully evaluated no-effect observation."""
+    keyed = [{(r["symbol"], r["date"]): r for r in s["rows"]} for s in sweeps]
+    keys = sorted(set().union(*[set(k) for k in keyed]))
+    kept: list[tuple] = []; dropped: list[dict] = []
+    for k in keys:
+        reasons = []
+        for i, m in enumerate(keyed):
+            r = m.get(k)
+            if r is None:
+                reasons.append(f"sweep {i}: missing")
+            elif r.get("status") != "ok":
+                reasons.append(f"sweep {i}: {r.get('status')}")
+            elif r.get("keyLevelInputsOk") is False:
+                reasons.append(f"sweep {i}: no 2m inputs")
+            elif (r.get("keyLevels") or {}).get("insufficientData"):
+                reasons.append(f"sweep {i}: insufficient key-level data")
+        if reasons:
+            dropped.append({"symbol": k[0], "date": k[1], "reasons": reasons})
+        else:
+            kept.append(k)
+    return [[m[k] for k in kept] for m in keyed], dropped
+
+
+def summarize_rows(rows: list[dict]) -> dict:
+    """The sweep summary recomputed over a row subset (for the paired sample)."""
+    trades = [t for r in rows for t in (r.get("trades") or [])]
+    wins = [t for t in trades if t["win"]]
+    return {"symbolSessions": len(rows), "trades": len(trades), "wins": len(wins),
+            "winRate": round(len(wins) / len(trades), 3) if trades else None,
+            "pnlPctSum": round(sum(t["pnlPct"] for t in trades), 1)}
 
 
 def _key_level_funnel(plan: dict, read: dict) -> dict | None:

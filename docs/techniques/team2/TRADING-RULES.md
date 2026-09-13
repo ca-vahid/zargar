@@ -3041,6 +3041,14 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-13 late (v0.7.61 — REGRESSION in v0.7.60 fixed before Monday's session)** — the reviewers' before/after test
+  (`tests/test_codex_c2_disabled_precedence.py`, verbatim) showed the new nearest-anchor tie-break applied to zone/PM
+  setups with C2 OFF: two `scenario_1` fires where ca26bf3 had none on a gap-up whose PMH sat under the PDH. The
+  tie-break is now scoped to key-level setups only; zone/PM selection is the legacy rule byte-for-byte (newest
+  confirmation, insertion order on ties). Also: every sweep row carries `keyLevelInputsOk`, `paired_rows()` /
+  `summarize_rows()` in the service drop missing-input / insufficient-data cells from EVERY side of a comparison
+  (the research harness must use them), and `summary.rowsWithoutKeyLevelInputs` is reported. Validation window
+  unchanged (sealed). Knob still OFF.
 - **2026-09-13 build review fixes (C2, still OFF; v0.7.60)** — the other team reproduced two defects in the enabled
   path: same-bar key-level breaks overwrote one setup (id was `kind@HH:MM`), and the running-median cluster test
   chained 2.5 ATR. Fixed: setup id carries the level price, explicit nearest-anchor precedence among same-bar

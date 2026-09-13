@@ -508,9 +508,15 @@ def simulate_session(plan: dict, bars1m: list[Bar], rules: Team2Rules, *, sigma:
         cands = [s for s in live if cur_bias is None or s.direction == cur_bias]
         if not cands:
             continue
-        # precedence (explicit): the newest confirmation wins; among setups confirmed on the SAME bar the nearest
-        # confirmed anchor to the current close wins (spec v2 §0.6 — C2 key levels breaking together, 2026-09-13)
-        s = sorted(cands, key=lambda x: (x.confirmed_ts, -abs(b2.close - x.anchor)))[-1]
+        # precedence: the newest confirmation wins, ties by insertion order — the LEGACY rule, byte-for-byte, for zone
+        # and PM setups. Only when the legacy winner is itself a C2 key-level setup does the C2 tie-break apply: among
+        # the key-level setups confirmed on that same bar, the anchor nearest the current close (spec v2 §0.6). The
+        # reviewers' before/after regression (2026-09-13) showed the unconditional tie-break changed scenario/PM
+        # selection with C2 off — two fires where the previous implementation had none.
+        s = sorted(cands, key=lambda x: x.confirmed_ts)[-1]
+        if key_on and s.key_level_id:
+            tied = [x for x in cands if x.key_level_id and x.confirmed_ts == s.confirmed_ts]
+            s = min(tied, key=lambda x: (abs(b2.close - x.anchor), x.id))
         long = s.direction == "long"
         # T8 first: on a range day the trigger may be the 200 EMA flush itself — the 13/48 have crossed the
         # bias way but the full stack is not yet in order (his SPY 671p: bearish cross, then the close under

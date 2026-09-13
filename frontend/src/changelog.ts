@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.60";
+export const APP_VERSION = "0.7.61";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.61",date:"2026-09-13",title:"Entry selection restored for zone and pre-market setups",items:[
+    {tag:"fixed",text:"Team2: v0.7.60's nearest-anchor tie-break was applied to every setup, so on a day where a zone break and a pre-market break confirmed on the same 15-minute bar the desk could pick a different setup than before - the reviewers' before/after test showed two fires where the previous build had none, with the research knob off. The tie-break now applies only among key-level setups (the research feature, still off); zone and pre-market selection is the previous rule byte-for-byte. The regression is in the suite verbatim."},
+    {tag:"improved",text:"Team2 research: every sweep row says whether the inputs for key levels existed, and a paired-comparison helper drops such symbol-sessions from every variant at once, so a missing-data cell is never counted as an evaluated no-effect observation."},
+  ]},
   {version:"0.7.60",date:"2026-09-13",title:"Key-level research fixes from review, still off",items:[
     {tag:"fixed",text:"Team2 research (C2, knob still OFF): two key levels breaking on the same 15-minute bar are now two setups (the setup id carries the level), the entry precedence among same-bar setups is the nearest confirmed anchor, a level cluster has a hard maximum width instead of a running-median test that could chain across several ATRs, and a plan without the specified 2-minute ATR input reports insufficient data instead of using a scaled fallback. The reviewers' two reproduction tests are in the suite verbatim. No change to the live path."},
   ]},
