@@ -336,6 +336,14 @@ def build_signal_routes(app, eng, auth, config) -> None:
                                                    include_superseded=superseded,
                                                    include_expired=superseded)
 
+    @app.get("/api/tip/notes/search", dependencies=[auth])
+    async def search_tip_notes(q: str = "", scope: str = "", offset: int = 0,
+                               limit: int = 100, history: bool = False):
+        """KB-04: paginated server-side search with a total — no silent cutoff."""
+        scopes = [s.strip() for s in scope.split(",") if s.strip()] or None
+        return await eng.signals_service.search_tip_notes(
+            q, scopes, offset=offset, limit=limit, include_history=history)
+
     class NoteBody(BaseModel):
         scope: str = "general"
         text: str

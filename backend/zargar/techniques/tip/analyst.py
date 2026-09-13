@@ -879,12 +879,26 @@ async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
     The function attribute mirrors the return for existing introspection."""
     try:
         kwargs = {"as_of": as_of} if as_of is not None else {}
-        rules = await eng.signals_service.tip_notes(["rule"], limit=50, **kwargs)
+        rules = await eng.signals_service.tip_notes(["rule"], limit=5000, **kwargs)
     except Exception:
         rules = []
     _rules_text.last_snapshot = None      # Codex finding 7: per-run rule snapshot
     if not rules:
         return STARTER_RULES, 0, None
+    # KB-04: DETERMINISTIC selection under a budget — CORE (pinned) rules are
+    # mandatory, then the newest others; what was omitted is on the manifest.
+    # The newest-50 slice silently dropped older actionability/stop guidance.
+    try:
+        budget = int(eng.settings.get("techniques.tip.analyst_max_rules", 50) or 50)
+    except Exception:
+        budget = 50
+    core = [r for r in rules if r.get("core")]
+    rest = [r for r in rules if not r.get("core")]          # newest first
+    selected = core + rest[:max(0, budget - len(core))]
+    selection = {"total": len(rules), "core": len(core),
+                 "recent": len(selected) - len(core), "omitted": len(rules) - len(selected),
+                 "order": "core-first, then newest", "budget": budget}
+    rules = selected
     ordered = list(reversed(rules))
     lines = "\n".join(
         ("- [DISPUTED — the audit flagged a conflict; weigh it, do not follow blindly] "
@@ -896,6 +910,8 @@ async def _rules_text(eng, *, as_of=None) -> tuple[str, int, dict | None]:
                       for n in ordered)
     snapshot = {
         "ruleIds": [str(n["id"]) for n in ordered],
+        "revisionNos": [int(n.get("revisionNo") or 1) for n in ordered],
+        "selection": selection,
         "rulesHash": hashlib.sha1(canon.encode("utf-8")).hexdigest()[:12],
         "rules": [{"id": str(n["id"]), "text": n["text"],
                    "disputed": bool(n.get("needsHuman")),

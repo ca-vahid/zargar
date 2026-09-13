@@ -931,6 +931,13 @@ async def attach_tip_runner(engine) -> None:
     triage_at = str(engine.settings.get("techniques.tip.triage_at", "09:33"))
     engine.scheduler.register("tip_morning_triage", triage_at,
                               lambda: engine.signals_service.morning_triage())
+    # KB-01: knowledge maintenance on its OWN schedule, weekends included —
+    # chained inside the weekday-only retro job its Saturday default never ran
+    from . import rule_audit as _rule_audit
+    maint_at = str(engine.settings.get("techniques.tip.knowledge_maintenance_at", "17:25"))
+    engine.scheduler.register("tip_knowledge_maintenance", maint_at,
+                              lambda: _rule_audit.run_knowledge_maintenance(engine),
+                              weekdays_only=False)
     # nightly LLM usage rollup into TechniqueHookStats.llm (Codex finding 10)
     from ...research import llm_stats
     stats_at = str(engine.settings.get("techniques.tip.llm_stats_at", "17:40"))

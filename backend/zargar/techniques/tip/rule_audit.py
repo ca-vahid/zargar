@@ -21,9 +21,12 @@ import json
 import logging
 from typing import Optional
 
+from zoneinfo import ZoneInfo
+
 from pydantic import BaseModel, Field
 
 log = logging.getLogger("zargar.tip.rule_audit")
+ET = ZoneInfo("America/New_York")
 
 AUDIT_TIMEOUT_S = 90.0
 MIN_RULES = 3          # nothing to consolidate below this — skip silently
@@ -71,17 +74,23 @@ Reply with ONLY one JSON object matching this schema — no prose, no markdown f
 """
 
 
-async def run_rule_audit(eng, *, client=None) -> dict | None:
-    """One audit run: read -> judge (LLM) -> apply (deterministic) -> journal.
-    Returns the applied summary, or None (disabled / too few rules / failed)."""
+async def run_rule_audit(eng, *, client=None, report: dict | None = None) -> dict | None:
+    """One audit run: read -> judge (LLM) -> apply (deterministic, ONE
+    transaction, conflict-locked — KB-02) -> journal. Returns the applied
+    summary, or None (disabled / too few rules / failed); `report`, when
+    given, receives {status: skipped|failed|done, reason} so the maintenance
+    job can tell a failure from a quiet skip (KB-01)."""
     from ...domain import new_id
     from ...models import Event, TipAnalystRun
 
+    rep = report if report is not None else {}
     s = eng.settings
     if not bool(s.get("techniques.tip.rule_audit_enabled", True)):
+        rep.update(status="skipped", reason="disabled")
         return None
     api_key = getattr(eng.config, "anthropic_api_key", "")
     if client is None and not api_key:
+        rep.update(status="skipped", reason="no api key")
         return None
     if client is None:
         import anthropic
@@ -89,9 +98,10 @@ async def run_rule_audit(eng, *, client=None) -> dict | None:
     model = str(s.get("techniques.tip.analyst_model") or "") or eng.config.extraction_model
 
     svc = eng.signals_service
-    rules = await svc.tip_notes(["rule"], limit=100)          # live rules only
+    rules = await svc.tip_notes(["rule"], limit=5000)         # EVERY live rule (KB-04)
     if len(rules) < MIN_RULES:
         log.info("rule audit: only %d live rule(s) — nothing to consolidate", len(rules))
+        rep.update(status="skipped", reason=f"{len(rules)} live rules")
         return None
 
     # evidence pre-pass (A8.4): a rule should cite a position/run/date
@@ -150,38 +160,27 @@ async def run_rule_audit(eng, *, client=None) -> dict | None:
     except Exception as exc:
         log.warning("rule audit failed: %s", exc)
         await _finish(eng, run_id, status="failed", opinion={"error": str(exc)[:300]})
+        rep.update(status="failed", reason=str(exc)[:200])
         return None
 
-    # ---- deterministic apply -------------------------------------------------
+    # ---- deterministic apply: validated + transactional (KB-02) ----------------
     from ... import events as ev
     live_ids = {r["id"] for r in rules}
-    applied = {"merged": 0, "expired": 0, "contradictions": 0, "newRules": []}
-    for m in op.merges:
-        ids = [i for i in m.supersedes if i in live_ids]
-        if not ids or not m.new_rule.strip():
-            continue
-        new = await svc.add_tip_note("rule", m.new_rule.strip(),
-                                     author=f"rule-audit:{run_id[:8]}", run_id=run_id)
-        await svc.supersede_tip_notes(ids, by=new["id"])
-        live_ids -= set(ids)
-        applied["merged"] += len(ids)
-        applied["newRules"].append(new["id"])
-    for e in op.expires:
-        if e.id in live_ids:
-            await svc.supersede_tip_notes([e.id], by=f"expired:{run_id[:8]}")
-            live_ids.discard(e.id)
-            applied["expired"] += 1
-    flagged: list[str] = []
-    for c in op.contradictions:
-        ids = [i for i in c.ids if i in live_ids]
-        if len(ids) >= 2:
-            await svc.flag_tip_notes(ids, needs_human=True)
-            flagged += ids
-    applied["contradictions"] = len(flagged)
-
-    payload = {"runId": run_id, **applied, "flagged": flagged, "summary": op.summary}
-    await eng.journal.append(ev.TIP_RULE_AUDITED, payload,
-                             aggregate_type="technique_run", aggregate_id=run_id)
+    try:
+        applied = await svc.apply_knowledge_batch(
+            scope="rule", merges=list(op.merges), expires=list(op.expires),
+            contradictions=list(op.contradictions),
+            author=f"rule-audit:{run_id[:8]}", run_id=run_id, live_ids=live_ids,
+            batch_id=f"{run_id}:rule")
+    except Exception as exc:
+        log.warning("rule audit apply aborted (nothing written): %s", exc)
+        await _finish(eng, run_id, status="failed", opinion={"error": f"apply aborted: {exc}"[:300]})
+        rep.update(status="failed", reason=f"apply aborted: {exc}"[:200])
+        return None
+    flagged = list(applied.get("flagged") or [])
+    payload = {"runId": run_id, **{k: v for k, v in applied.items() if k != "flagged"},
+               "flagged": flagged, "summary": op.summary}
+    rep.update(status="done", reason="")
     await _finish(eng, run_id, status="done",
                   opinion={"verdict": "audit", **payload,
                            "rationale": op.summary or "rulebook audited"})
@@ -193,7 +192,7 @@ async def run_rule_audit(eng, *, client=None) -> dict | None:
 AUDITABLE_PREFIXES = ("ticker:", "source:")
 
 
-async def run_knowledge_audit(eng, *, client=None) -> dict | None:
+async def run_knowledge_audit(eng, *, client=None, report: dict | None = None) -> dict | None:
     """KNOWLEDGE plan B4: the weekly audit widened beyond rules. Every
     `ticker:*` / `source:*` / `general` group holding >= MIN_RULES ACTIVE notes
     gets the same judge -> deterministic-apply pass (merge near-duplicates,
@@ -203,11 +202,14 @@ async def run_knowledge_audit(eng, *, client=None) -> dict | None:
     from ...domain import new_id
     from ...models import TipAnalystRun
 
+    rep = report if report is not None else {}
     s = eng.settings
     if not bool(s.get("techniques.tip.rule_audit_enabled", True)):
+        rep.update(status="skipped", reason="disabled")
         return None
     api_key = getattr(eng.config, "anthropic_api_key", "")
     if client is None and not api_key:
+        rep.update(status="skipped", reason="no api key")
         return None
     if client is None:
         import anthropic
@@ -215,15 +217,19 @@ async def run_knowledge_audit(eng, *, client=None) -> dict | None:
     model = str(s.get("techniques.tip.analyst_model") or "") or eng.config.extraction_model
 
     svc = eng.signals_service
-    all_notes = await svc.tip_notes(limit=300)     # active only (expired/superseded filtered)
-    groups: dict[str, list[dict]] = {}
-    for n in all_notes:
-        sc = n["scope"]
-        if sc == "general" or sc.startswith(AUDITABLE_PREFIXES):
-            groups.setdefault(sc, []).append(n)
-    groups = {k: v for k, v in groups.items() if len(v) >= MIN_RULES}
-    if not groups:
+    # COMPLETE traversal (KB-04): eligible groups come from a whole-store count,
+    # each group's notes are fetched in full; a per-run group budget DEFERS
+    # the rest visibly instead of silently sampling the newest 300 rows
+    counts = await svc.note_scope_counts(prefixes=AUDITABLE_PREFIXES, include_general=True)
+    eligible = sorted(sc for sc, n in counts.items() if n >= MIN_RULES)
+    if not eligible:
+        rep.update(status="skipped", reason="no eligible groups")
         return None
+    max_groups = int(s.get("techniques.tip.knowledge_audit_max_groups", 12) or 12)
+    todo, deferred = eligible[:max_groups], eligible[max_groups:]
+    groups: dict[str, list[dict]] = {}
+    for sc in todo:
+        groups[sc] = await svc.tip_notes([sc], limit=5000)
 
     run_id = new_id()
     async with eng.sf() as session:
@@ -235,7 +241,9 @@ async def run_knowledge_audit(eng, *, client=None) -> dict | None:
 
     import asyncio
     applied = {"groups": 0, "merged": 0, "expired": 0, "contradictions": 0,
-               "newNotes": [], "flagged": []}
+               "newNotes": [], "flagged": [], "rejected": [],
+               "groupsEligible": len(eligible), "groupsDeferred": deferred,
+               "groupsFailed": []}
     for scope, notes in sorted(groups.items()):
         notes_txt = "\n".join(
             f"- [{n['id']}] {n['text']} (by {n['author']}, {(n['createdAt'] or '')[:10]}, "
@@ -259,31 +267,29 @@ async def run_knowledge_audit(eng, *, client=None) -> dict | None:
             op = RuleAuditOpinion.model_validate_json(text[i:j + 1])
         except Exception as exc:
             log.warning("knowledge audit failed for %s: %s", scope, exc)
+            applied["groupsFailed"].append(scope)      # visible, never silent
             continue
         live_ids = {n["id"] for n in notes}
-        for m in op.merges:
-            ids = [i for i in m.supersedes if i in live_ids]
-            if not ids or not m.new_rule.strip():
-                continue
-            new = await svc.add_tip_note(scope, m.new_rule.strip(),
-                                         author=f"knowledge-audit:{run_id[:8]}",
-                                         run_id=run_id)
-            await svc.supersede_tip_notes(ids, by=new["id"])
-            live_ids -= set(ids)
-            applied["merged"] += len(ids)
-            applied["newNotes"].append(new["id"])
-        for e in op.expires:
-            if e.id in live_ids:
-                await svc.supersede_tip_notes([e.id], by=f"expired:{run_id[:8]}")
-                live_ids.discard(e.id)
-                applied["expired"] += 1
-        for c in op.contradictions:
-            ids = [i for i in c.ids if i in live_ids]
-            if len(ids) >= 2:
-                await svc.flag_tip_notes(ids, needs_human=True)
-                applied["flagged"] += ids
+        try:
+            got = await svc.apply_knowledge_batch(
+                scope=scope, merges=list(op.merges), expires=list(op.expires),
+                contradictions=list(op.contradictions),
+                author=f"knowledge-audit:{run_id[:8]}", run_id=run_id,
+                live_ids=live_ids, batch_id=f"{run_id}:{scope}")
+        except Exception as exc:
+            log.warning("knowledge audit apply aborted for %s: %s", scope, exc)
+            applied["groupsFailed"].append(scope)
+            continue
+        applied["merged"] += got.get("merged", 0)
+        applied["expired"] += got.get("expired", 0)
+        applied["newNotes"] += got.get("newNotes", [])
+        applied["flagged"] += [i for i in got.get("flagged", []) if i not in applied["flagged"]]
+        applied["rejected"] += got.get("rejected", [])
         applied["groups"] += 1
     applied["contradictions"] = len(applied["flagged"])
+    rep.update(status=("partial" if (applied["groupsFailed"] or deferred) else "done"),
+               reason=(f"failed {len(applied['groupsFailed'])}, deferred {len(deferred)}"
+                       if (applied["groupsFailed"] or deferred) else ""))
 
     from ... import events as ev
     payload = {"runId": run_id, "kind": "knowledge", **applied}
@@ -315,7 +321,86 @@ async def _finish(eng, run_id: str, *, status: str, opinion: dict) -> None:
 
 
 def audit_due_today(settings) -> bool:
-    """Runs with the nightly review only on the configured ET weekday."""
+    """The configured ET weekday (default Sat) — America/New_York, not a
+    fixed UTC offset (KB-01)."""
     want = str(settings.get("techniques.tip.rule_audit_day", "Sat"))[:3].lower()
-    now_et = dt.datetime.now(dt.timezone(dt.timedelta(hours=-4)))
-    return now_et.strftime("%a").lower() == want
+    return dt.datetime.now(ET).strftime("%a").lower() == want
+
+
+CATCHUP_DAYS = 8       # a missed Saturday runs on the next tick-able day
+
+
+async def _last_completion(eng) -> dt.datetime | None:
+    """The newest journaled maintenance completion (done or partial)."""
+    try:
+        from sqlalchemy import select as _sel
+        from ... import events as ev
+        from ...models import Event
+        async with eng.sf() as session:
+            rows = (await session.execute(
+                _sel(Event.payload, Event.ts).where(Event.type == ev.TIP_KNOWLEDGE_MAINTENANCE)
+                .order_by(Event.id.desc()).limit(60))).all()
+        for payload, ts in rows:
+            if (payload or {}).get("status") in ("done", "partial"):
+                return ts if ts.tzinfo else ts.replace(tzinfo=dt.timezone.utc)
+    except Exception:
+        log.debug("maintenance completion lookup failed", exc_info=True)
+    return None
+
+
+async def run_knowledge_maintenance(eng, *, client=None, force: bool = False) -> dict:
+    """KB-01: knowledge maintenance on its OWN daily schedule (weekends
+    included) — the audit used to be chained inside the weekday-only
+    `tip_retro` job, so its Saturday default never ran (zero rule_audit runs
+    in the live DB). Policy: run on the configured day, OR as catch-up when
+    no completion exists inside CATCHUP_DAYS; every outcome — skipped (not
+    due), done, partial (a group failed/deferred), failed — is journaled as
+    TipKnowledgeMaintenance so a quiet week is distinguishable from a broken
+    one. Once-per-day and restart-safety come from the scheduler's journal
+    hydration; batch idempotency (KB-02) protects a retry of an applied
+    batch. Paid work: each audit is a TipAnalystRun, so the restart readiness
+    door counts it."""
+    from ... import events as ev
+    s = eng.settings
+    now = dt.datetime.now(ET)
+    day = now.strftime("%Y-%m-%d")
+    due = audit_due_today(s)
+    last = await _last_completion(eng)
+    overdue = last is None or (now.astimezone(dt.timezone.utc) - last).days >= CATCHUP_DAYS
+    payload: dict = {"date": day, "due": due, "overdue": overdue,
+                     "lastCompletion": last.isoformat() if last else None, "catchupDays": CATCHUP_DAYS}
+    if not (due or overdue or force):
+        payload["status"] = "skipped"
+        payload["reason"] = "not due"
+        try:
+            await eng.journal.append(ev.TIP_KNOWLEDGE_MAINTENANCE, payload,
+                                     aggregate_type="technique", aggregate_id="tip")
+        except Exception:
+            log.debug("maintenance journal failed", exc_info=True)
+        return payload
+    rule_rep: dict = {}
+    know_rep: dict = {}
+    try:
+        payload["ruleAudit"] = await run_rule_audit(eng, client=client, report=rule_rep)
+    except Exception as exc:
+        rule_rep.update(status="failed", reason=str(exc)[:200])
+    try:
+        payload["knowledgeAudit"] = await run_knowledge_audit(eng, client=client, report=know_rep)
+    except Exception as exc:
+        know_rep.update(status="failed", reason=str(exc)[:200])
+    payload["ruleAuditStatus"] = rule_rep or {"status": "done"}
+    payload["knowledgeAuditStatus"] = know_rep or {"status": "done"}
+    statuses = {rule_rep.get("status", "done"), know_rep.get("status", "done")}
+    if "failed" in statuses:
+        payload["status"] = "failed"
+    elif "partial" in statuses:
+        payload["status"] = "partial"
+    else:
+        payload["status"] = "done"
+    try:
+        await eng.journal.append(ev.TIP_KNOWLEDGE_MAINTENANCE, payload,
+                                 aggregate_type="technique", aggregate_id="tip")
+    except Exception:
+        log.debug("maintenance journal failed", exc_info=True)
+    log.info("knowledge maintenance %s: %s", day, payload["status"])
+    return payload
