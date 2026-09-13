@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.57";
+export const APP_VERSION = "0.7.58";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.58",date:"2026-09-13",title:"Key-level definitions built, switched off",items:[
+    {tag:"improved",text:"Team2 research (C2): the three multi-day key-level definitions from the frozen spec exist in code behind the knob key_levels (off | D1 | D2 | D3), with the causal flip/expiry state machine, the 17:00 zone mask and the 09:25/09:30 pre-market mask, the key-level break as a scenario confirmation, the retest entry only after a confirmed flip, key levels as extra target rungs, and a per-plan funnel in the sweep. The knob is OFF and stays off: a test proves the live read is byte-identical. Sweeps wait for the canonical tape (C6)."},
+  ]},
   {
     version: "0.7.57",
     date: "2026-09-13",
