@@ -2439,7 +2439,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
-- **2026-09-13 build review fixes (C2, still OFF; v0.7.59)** — the other team reproduced two defects in the enabled
+- **2026-09-13 build review fixes (C2, still OFF; v0.7.60)** — the other team reproduced two defects in the enabled
   path: same-bar key-level breaks overwrote one setup (id was `kind@HH:MM`), and the running-median cluster test
   chained 2.5 ATR. Fixed: setup id carries the level price, explicit nearest-anchor precedence among same-bar
   setups, a hard 0.5 × atr_build cluster DIAMETER, no ATR fallback (insufficient data instead), and the disabled-
