@@ -1,91 +1,18 @@
-# Options Cartel release handoff
+# Cartel release and operational handoff
 
-## 2026-09-10 — v0.7.39
+Current documentation: 2026-09-13. Latest Cartel-specific functional delivery: v0.7.51–0.7.52. Other techniques can advance the app-wide version independently.
 
-Preparation preserves existing campaigns and checks ranked reserves for contract
-and volume readiness before adding arms. Pending activation respects occupied
-capacity. Benchmark retries report the actual completed session; stale evidence
-still blocks arming. No trading thresholds were loosened.
+- [Current capabilities and limits](DELIVERY-STATUS.md)
+- [Preparation/settings/recovery](DAILY-PREPARATION.md)
+- [Ignition research and Practice pilot](IGNITION.md)
+- [September 12 deployment evidence](DEPLOYMENT-2026-09-12.md)
+- [Release scope and validation limits](RELIABILITY-RELEASE-2026-09-12.md)
+- [Current backlog](PLAN.md)
 
-Verified on an isolated origin/main worktree: production frontend build; 30
-preparation regression tests; 16 safety/fidelity/prefetch checks; 9 safety/shared
-history checks (groups overlap). Desktop and phone Practice/Live audit covers
-settings, stale-data messages, retained campaigns and reserve counts. These are
-focused checks, not a full backend suite or a profitability claim.
+The September 12 verification found APA, NOV and CGNX armed for September 14 with 26/26 baseline periods and first-entry-session-close expiry. This is historical evidence, not a current account recommendation or guarantee those arms remain active. Verify the UI and persisted state before an operational action.
 
-Deploy/restart through the existing desk workflow, then use Practice > Options
-Cartel > Plans > Prepare now. This refreshes evidence; Resume preserves its old
-cutoff. Existing arms are retained until normal expiry/invalidation or an
-explicit user action. No runtime restart, orders, account settings or data edits
-were performed by this release. Historical checkpoints below remain historical.
+Before deployment, compare current main with the actual desk checkout, preserve committed parallel work and dirty files, validate the integrated build/version metadata, inspect active work, and use only the authorized managed runtime procedure. Afterwards verify backend and served frontend versions, Cartel arms separately, managed positions and orders. The shared ops inventory observed on September 12 did not enumerate Cartel arms; it was supplemented with a separate check.
 
-## Release candidate
+For Codex work: do not start a second engine or point tests at the runtime database. Use the isolated test wrapper, build before tests that serve dist, and follow root AGENTS.md rather than historical launcher/PID instructions.
 
-Version 0.7.2, prepared in `C:\Cursor\zargar-codex` on
-`codex/zargar-development`. The user requested wrapping up the current feature;
-no additional feature expansion is included in this release checkpoint.
-
-The feature has an independent sidebar desk, method/source library, screening
-profiles, source-dated evidence, focus-list scans/retries, reviewed plans,
-share/option controls, alert/proposal/auto arming, durable management/recovery,
-risk reporting, replay/comparison and recorded-option valuation. Other methods'
-rulebooks were not changed. Shared plumbing changes and their boundaries are
-recorded in [PLATFORM-RULES.md](../../PLATFORM-RULES.md).
-
-## Validation
-
-- Full backend: 1,096 passed, four auth-fixture key-length warnings, exit 0.
-  `.cache/cartel-full-backend-quotes.log`; no database intervention.
-- Final descriptive industry-rank change: 25 industry/API tests passed. It
-  exposes ranks of captured values without changing freshness or trading gates.
-- Production frontend build and focused mobile acceptance passed; final packaging
-  verification is recorded in REGRESSION-NOTES.md.
-- Joined simulated option campaign covers API arm, entry fill, target trim,
-  manager/runner restore, duplicate suppression, final stop and P&L.
-- Tests used only zargar_test_codex. Preview uses zargar_dev_codex, API 8421,
-  simulation mode and blank integration credentials. No preview orders/positions
-  were created during browser research. Recording and scheduled jobs remain off.
-
-Reproduce backend checks from the worktree root:
-
-```powershell
-.\scripts\test-codex.ps1 -q
-```
-
-Run frontend verification from `C:\Cursor\zargar-codex\frontend`:
-
-```powershell
-npm run build
-```
-
-Do not run simultaneous backend test processes: fixtures recreate tables.
-
-## Known limits and follow-up work
-
-- Complete industry-performance collection and market-wide discovery are not
-  automated. Current scans use selected symbols and supplied/captured evidence.
-- Current industry freshness requirements can leave imported ranks unqualified;
-  descriptive ranks remain reviewable. No provider timestamp is invented.
-- Replay comparisons use selected cases. Recorded-premium valuation is conditional
-  on the underlying schedule and does not simulate order depth, resting fills,
-  expiry settlement or premium-driven exits.
-- The indexed archive texts/images and September video were reviewed. Additional
-  X posts/replies, unavailable linked videos and source-example calibration remain
-  follow-ups. Author performance claims are not independently verified.
-- Browser testing of filled runtime campaigns, broader broker normalization and
-  operational soak remain follow-ups. Automated simulated integration tests are
-  not real-broker acceptance.
-
-## Deployment boundary
-
-This handoff does not deploy, merge into main, or restart the existing app.
-Before rollout, review the shared execution changes and arrange one controlled
-restart of the existing runtime through its owner. The additive
-`options_cartel_quotes` table is created through the existing metadata setup;
-verify it in the intended database before enabling recording.
-
-Keep `C:\Cursor\zargar` and Claude worktrees/environments/processes intact.
-Do not run generic start/stop/setup scripts from the Codex checkout: they can
-manage the shared app. The Codex preview is already running on 8421; never launch
-another engine against that database. See [AGENTS.md](../../../AGENTS.md) and
-[COLLABORATION.md](../../COLLABORATION.md) for isolation rules.
+The previous handoff is [archived](archive/RELEASE-HANDOFF-PRE-2026-09-13.md). Its preview-only deployment boundary and old suite counts do not describe current delivery.

@@ -1,4 +1,6 @@
-# September strategy video — S24
+# Video evidence — S24 and S30
+
+## S24 — September strategy overview
 
 Source: [Sean's 3:31 video](https://www.tiktok.com/@sean.rechtman/video/7682454057855864094),
 linked by S01. Reviewed 2026-09-06 after the user cleared TikTok's CAPTCHA.
@@ -36,3 +38,19 @@ summary, not a verbatim transcript or an audit of the author's returns.
 - The clip does not define contract delta/DTE, risk percentage, industry-rank
   gates, or exit fractions. Those need their separately cited written sources
   and reviewed choices. Do not infer a new exit policy from this clip.
+
+
+## S30 — post-ignition continuation, September 11
+
+[Video](https://www.youtube.com/watch?v=7xSMgmLoqM8), 20:20. Full English auto-generated transcript exported/read on September 12; scanner (~14:13), CRCL entry (~17:34) and developing SCCO (~19:11) frames checked. Initial transcript failures were resolved on retry. This is not frame-by-frame verification of every example or a profit audit.
+
+| Interval | Evidence |
+|---|---|
+| 1:55–5:09 | Trend quality, EMA8/21/50, then emphasis on EMA8 catching up |
+| 7:40–10:26 | Unusual ignition volume followed by quieter consolidation and renewed expansion |
+| 10:28–13:39 | Earnings or other catalysts; a few consolidation days can suffice |
+| 13:58–15:16 | Event-day discovery screen and a persistent PG/ignition watchlist |
+| 15:18–17:49 | Daily levels, lower-timeframe entry illustration, day-low stop |
+| 17:49–19:40 | Working positions can be held; developing setups need not trigger tomorrow |
+
+Caption ticker/EMA spellings can be wrong; retain uncertainties rather than using them as instrument identity. See [IGNITION.md](IGNITION.md) for the implemented profile and [METHOD.md](METHOD.md) for source differences. Full transcript text is kept as local research evidence rather than republished in the repository.

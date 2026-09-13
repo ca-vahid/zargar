@@ -1,5 +1,7 @@
 # Preparation coverage and feedback review — 0.7.5
 
+> Historical change/verification record. Current operation and limits are in [DAILY-PREPARATION.md](DAILY-PREPARATION.md) and [DELIVERY-STATUS.md](DELIVERY-STATUS.md). Test counts and runtime observations below apply only to their recorded checkpoints.
+
 The reported run finished, but its presentation overstated coverage and hid the
 reason no trade could be armed. Read-only inspection confirmed the plan existed:
 refreshing Saved plans made it appear. The saved inside-day geometry agreed with

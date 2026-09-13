@@ -1,6 +1,6 @@
-# The Options Cartel method — research draft
+# The Options Cartel method — source reference
 
-Version: research-0, 2026-09-06. Not yet an executable specification.
+Source reference updated 2026-09-13. This chapter describes the author and historical variants; executable defaults and remaining differences are in DAILY-PREPARATION.md and IGNITION.md.
 Author statements are paraphrased; performance claims are not verified evidence.
 Source identifiers resolve in SOURCES.md. No thresholds borrowed from Team2 or EM.
 
@@ -162,3 +162,12 @@ separate `september_2026_video` screen profile. See [VIDEO-REVIEW.md](VIDEO-REVI
 for timestamped evidence, the strict price-boundary choice and the distinction
 between the video's entry-at-break description and Zargar's closed-bar gate.
 The clip supplies no replacement exit allocation or option-selection policy.
+
+
+## M13. September 11 post-ignition continuation — S30
+
+The full 20:20 video's auto-generated transcript and selected chart frames were reviewed. It describes a large ignition move on unusual volume, a quieter multi-day consolidation toward EMA8, then a prospective break of a daily range/previous-day high using a 5m/15m view. The initial event is for discovery and watching, not immediate buying.
+
+The shown screen uses price >5, change >5%, ten-day average volume >500K, ADR >2% and EMA50 below price. The illustrated 3–5x volume is the initial daily ignition event, not an intraday confirmation multiplier. The new Practice detector's exact lookbacks and geometry are documented as engineering in [IGNITION.md](IGNITION.md).
+
+The author describes entry as a level breaks and a day-low stop. The app retains a completed-bar entry and a causal low/high-so-far interpretation. No new option selection or exit fractions were supplied by this video. Its examples are not a verified Friday execution ledger.

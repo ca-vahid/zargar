@@ -54,3 +54,8 @@ computed from these counts. Missing `$ -` values were kept unknown, not set to z
 Complete weighted outcomes still require original alerts, matching contracts,
 timestamped partial quantities and actual fills. The ledger supplies leads for
 source-example review; it does not satisfy those missing execution inputs.
+
+
+## September 12 follow-up
+
+The public Sean-tab tail was refreshed through row 1253, including new September entries. Exact daily entry times, sizes and full exits still did not establish a Friday realized account return. This was a tail/header check, not a repeat of the full 1,246-row audit above. See WEEKEND-REVIEW-2026-09-12.md for the dated comparison; do not treat its rows as a current portfolio.

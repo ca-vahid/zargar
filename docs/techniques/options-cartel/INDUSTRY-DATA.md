@@ -1,6 +1,6 @@
 # Industry evidence for Cartel
 
-September 7 automation update: [Daily preparation](DAILY-PREPARATION.md) now
+Current operating context (reviewed September 13): [Daily preparation](DAILY-PREPARATION.md) now
 captures the complete publisher table directly and joins the stock screener's
 publisher industry labels. It uses an explicit, at-most-24-hour observation-age
 policy for this current publication, leaving constituent data time unknown.
@@ -84,10 +84,9 @@ The desk now offers a tab-separated import form and a recent-snapshot selector.
 Imported captures open for review and are applied only when explicitly selected.
 Unknown source-data timestamps can be stored, but their freshness remains unknown
 and they cannot qualify stock screening. Manual rank inputs are disabled while
-a saved snapshot is selected. Automated capture remains unfinished; browser and
-mobile acceptance of the new import workflow is still pending.
+a saved snapshot is selected. Daily preparation now has automated publisher capture; these manual imports remain a separate research path.
 
-## Existing provider assessment — 2026-09-07
+## Historical provider assessment — 2026-09-07
 
 The app already uses Yahoo quoteSummary through `EventCalendar` and an anonymous
 cookie/crumb session. A read-only probe for MU requesting `price,assetProfile`
@@ -118,7 +117,7 @@ per-symbol data error while other symbols complete. Changing the candidate symbo
 clears manual facts to prevent accidentally transferring another stock's evidence.
 Captures remain in saved history. The candidate form lists matching symbols from
 the 200 most recent captures, requiring explicit selection after reopening the
-page. Automated universe collection remains unfinished.
+page. Broad automatic discovery is implemented separately in daily preparation.
 
 The focus-list form can capture capitalization for all 1–20 listed symbols before
 scanning. Each response is saved separately with its actual observation time.
@@ -150,7 +149,7 @@ This automates positive membership verification for supported pages. It does not
 claim complete market coverage: a missing row may reflect pagination, and still
 fails verification. Saved membership selection after reopening the page is now
 available, with explicit per-symbol selection from the 200 most recent captures.
-Automatic exchange discovery and complete industry-performance collection remain unfinished.
+Automatic discovery and publisher industry capture are implemented in daily preparation; the source-specific historical probe above does not establish present provider health.
 
 ## Provider definitions and complete-table loading
 

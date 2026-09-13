@@ -1,5 +1,7 @@
 # Cartel deployment handoff — 2026-09-12
 
+> Dated checkpoint, not a live version/account report. See DELIVERY-STATUS.md for current capabilities and PLAN.md for remaining work.
+
 Final deployed version: **0.7.52**. Runtime: C:/Cursor/zargar, same existing API on 8420. Development/review branch: codex/cartel-ignition-reliability in C:/Cursor/zargar-codex/.cache/cartel-ignition-reliability. Deployment integration: codex/cartel-deploy-check, retaining the desk's committed EM C1-C5 work and unrelated dirty ingestion files.
 
 - PR66: https://github.com/ca-vahid/zargar/pull/66 — ignition workflow, source-aware preparation, caches, ownership, readiness and reporting.

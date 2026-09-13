@@ -3,11 +3,11 @@
 Shared instructions live in [AGENTS.md](../AGENTS.md); [CLAUDE.md](../CLAUDE.md)
 retains project context and trading rules. Both agents read both files.
 
-Current release checkpoint: [Options Cartel handoff](techniques/options-cartel/RELEASE-HANDOFF.md).
+Current Cartel documentation index: [Options Cartel handoff](techniques/options-cartel/RELEASE-HANDOFF.md).
 The dated PID and test observations below are historical; use the current pid file
 and verify the process command line before operating the isolated preview.
 
-## Current status (2026-09-06, after permission update)
+## Historical setup verification (2026-09-06/07; not current process state)
 
 2026-09-07 execution-desk verification: only the owned Codex preview was refreshed
 for the money-mode runtime and UI. Latest launcher PID observed: 55344; recheck

@@ -1,5 +1,7 @@
 # Options Cartel execution acceptance gaps
 
+> Historical change/verification record. Current operation and limits are in [DAILY-PREPARATION.md](DAILY-PREPARATION.md) and [DELIVERY-STATUS.md](DELIVERY-STATUS.md). Test counts and runtime observations below apply only to their recorded checkpoints.
+
 Updated 2026-09-07: the full regression passed 1,096 tests, including the joined
 option campaign below. Its earlier focused runtime/controller/adapter run passed
 39 tests in 89.22 seconds. These checks do not establish browser or broker rollout acceptance.

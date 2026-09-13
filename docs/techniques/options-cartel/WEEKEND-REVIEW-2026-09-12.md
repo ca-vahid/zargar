@@ -2,12 +2,11 @@
 
 > Execution update, 2026-09-12: the user subsequently authorized implementation, commit, push and deployment while the other team was busy. The proposal text below is the original review baseline, not a continuing approval block. See RELIABILITY-RELEASE-2026-09-12.md for shipped scope and remaining validation.
 
-**Date:** 2026-09-12. **Status: PROPOSAL — awaiting independent team review.**
-No implementation, runtime configuration changes, new preparation, orders, or deployment are authorized by this document. The user requested a review before implementation. This supersedes any inference that earlier auto-merge permission applies to this programme.
+**Historical review:** September 12, clarified September 13. The initial request was review-first; the user later authorized implementation and deployment. See [current status](DELIVERY-STATUS.md) and [backlog](PLAN.md); proposed corrections below are not all completed features.
 
 ## Transcript recovery update
 
-The follow-up retry succeeded: the full auto-generated transcript was read and key chart frames checked. See [the implementation-ready plan](IMPLEMENTATION-PLAN-2026-09-12.md) for the post-ignition watchlist/detector, source timestamps and W0–W8 work packages. Earlier access-failure notes below describe the first pass; they are superseded by this update. No implementation has begun.
+The follow-up retry succeeded: the full auto-generated transcript was read and key chart frames checked. See [the implementation-ready plan](IMPLEMENTATION-PLAN-2026-09-12.md) for the post-ignition watchlist/detector, source timestamps and W0–W8 work packages. Earlier access-failure notes below describe the first pass; they are superseded by this update. Subsequent implementation is documented in the release/handoff records.
 
 ## Decision summary
 
@@ -35,7 +34,7 @@ Important correction to the Friday EOD assessment: all five symbols had 390 stor
 | W2 | [ALAB, September 9](https://x.com/SRxTrades/status/2097827129438163014) | Planned long trigger over 311; contraction following an advance near the moving averages, with a longer-lived weekly thesis. | A watch idea, not a confirmed dated fill or Friday profit. |
 | W3 | [AMD, September 9](https://x.com/SRxTrades/status/2097827535870414857) | Weekly wedge/relative-strength thesis; stated breakout level over 570. | Not proof of an executed trade. |
 | W4 | [SMTC, September 9](https://x.com/SRxTrades/status/2097827348649214160) | Discusses an existing daily breakout and waiting for further structure near highs; quotes the September 7 theme/catalyst thesis. | Does not instruct buying immediately or establish Friday P&L. |
-| W5 | [Friday continuation-setup announcement](https://x.com/SRxTrades/status/2098524484680716568), [YouTube video](https://www.youtube.com/watch?v=7xSMgmLoqM8) | September 11 publication, Sean Trades channel, 20:20 duration, title/description emphasizing one repeatable setup. | **Full video review remains open.** Transcript export timed out twice; the visible transcript panel remained loading. Description/intro are not a substitute for reviewing the examples. No new entry rule is inferred from them. |
+| W5 | [Friday continuation-setup announcement](https://x.com/SRxTrades/status/2098524484680716568), [YouTube video](https://www.youtube.com/watch?v=7xSMgmLoqM8) | September 11 publication, Sean Trades channel, 20:20 duration, title/description emphasizing one repeatable setup. | Initial transcript failures were subsequently resolved: the full transcript and selected frames were reviewed. See VIDEO-REVIEW.md and IGNITION.md for current coverage and interpretation. |
 | W6 | [Cartel's September 8 DRAM highlight](https://x.com/TheOptionCartel/status/2097414673662718231) | Latest non-pinned result highlight visible on the inspected profile reports a swing exceeding 200%. | Not a September 11 daily return; not an audited, weighted Sean account result. |
 | W7 | [Public Sean ledger, gid 0](https://docs.google.com/spreadsheets/d/1yp96STZjdbA6JM06Rm-xlGiT9BzXoSO1w7ZCKnuifIs/htmlview/sheet?headers=true&gid=0) | Refreshed header, formula example and latest September rows through row 1253 inspected. | Rows lack exact entry dates, quantities and complete exits. Not all historical rows were re-audited this time. |
 | W8 | [Sean, September 12](https://x.com/SRxTrades/status/2098849124951232628) | Emphasizes consistency before scaling. | Personal earnings assertions are not independently verified. |
@@ -68,9 +67,9 @@ CENX's saved 07:45 PT decision records volume 33,689 / baseline 34,773 = 0.9688,
 
 Friday scan exclusions for author-reference names: ALAB failed weekly-base, near-extreme, dry-up and tightness checks; AMD/SMTC also failed directional/context checks. These are disagreements to label and study on date-matched charts, not permission to waive gates after seeing a public winner.
 
-### Monday is not ready yet
+### Pre-deployment Monday snapshot — superseded by later preparation
 
-Latest recorded preparation `f451f8270b3f4849bd12b378a4a83859`, targeting September 14, has 3,070 evaluated histories, five data errors and zero arms. Its SPY/QQQ inputs end September 10, not the expected September 11, so alignment is unknown and arming is blocked. A cache-bypassing retry does not manufacture a missing provider session. A fresh valid snapshot is required before any Monday arming. This review did not run preparation or modify those records.
+At the time of this review, preparation `f451f8270b3f4849bd12b378a4a83859`, targeting September 14, has 3,070 evaluated histories, five data errors and zero arms. Its SPY/QQQ inputs end September 10, not the expected September 11, so alignment is unknown and arming is blocked. A cache-bypassing retry does not manufacture a missing provider session. A fresh valid snapshot is required before any Monday arming. The later deployment verification prepared three Monday arms; see DEPLOYMENT-2026-09-12.md. Neither dated snapshot is a current account-state report.
 
 ## 3. Prioritized findings
 
@@ -196,7 +195,8 @@ Recommended order: **A → B → C/D → E → F → G**, with H alongside each 
 - [x] Follow-up: full September 11 transcript read and selected scanner/entry/setup frames checked; see IMPLEMENTATION-PLAN-2026-09-12.md.
 - [ ] Exact Friday author fills/weighted P&L; public evidence does not supply them.
 - [ ] Repaired exchange-data replay and statistically meaningful strategy validation.
-- [ ] Independent team review and approval of selected slices.
-- [ ] Implementation, tests, deployment and fresh Monday preparation after approval.
+- [x] User subsequently authorized implementation while the other team was busy.
+- [x] Substantial implementation, tested deployment and fresh Monday preparation followed; see the dated deployment record.
+- [ ] Unfinished design/validation items are listed in PLAN.md.
 
-No code or settings changed. This is a review packet, not a deployment sign-off or promise of profits.
+The initial review changed no code or settings. Subsequent work has its own release evidence; this historical packet is not a current deployment sign-off or promise of profits.
