@@ -1,5 +1,7 @@
 # Cartel reliability and ignition release — 2026-09-12
 
+> Dated checkpoint, not a live version/account report. See DELIVERY-STATUS.md for current capabilities and PLAN.md for remaining work.
+
 ## Implemented
 
 - Cartel minute snapshots retain source classification without changing the shared six-value Bar serialization. Unknown legacy snapshots stay unknown. New automatic preparation requires verified exchange bars for confirmation and session-extreme stops; the execution controller independently checks those inputs. Recovery upgrades sampled context, resets the observation cutoff, and never replays a missed entry. Same-quality revisions are not silently preferred without a stronger revision identity.

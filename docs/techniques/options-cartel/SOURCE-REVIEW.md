@@ -97,8 +97,7 @@ reference images are under `.cache/options-cartel/media/`.
 | May/Jun/Sep 2026 S04/S02/S01 | Current implementation profiles; differences retained in METHOD.md. |
 
 The older screens must not be blended into a fictional timeless set of author
-rules. The app currently implements the three 2026 profiles, supplemented by
-explicitly labeled engineering measurements and documented older clarifications.
+rules. Historical screen variants remain available alongside the later S24 and S30 profiles, with explicitly labeled engineering measurements. See METHOD.md and IGNITION.md for current source coverage.
 
 ## Process and source cautions
 

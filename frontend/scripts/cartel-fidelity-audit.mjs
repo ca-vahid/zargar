@@ -89,6 +89,13 @@ try {
       assert(await page.getByText('SPY data unavailable:',{exact:true}).isVisible());
       assert(await page.getByText(/1 existing campaigns preserved/).isVisible());
       assert(await page.getByText(/2 candidates checked for history and contracts/).isVisible());
+      await page.getByRole('tab',{name:'Method',exact:true}).click();
+      await page.getByLabel('Read a chapter').selectOption('DELIVERY-STATUS.md');
+      assert(await page.getByRole('heading',{name:'Current Cartel capabilities and limits',exact:true}).isVisible());
+      await page.getByLabel('Read a chapter').selectOption('IGNITION.md');
+      assert(await page.getByRole('heading',{name:'Post-ignition research and Practice pilot',exact:true}).isVisible());
+      await page.getByLabel('Read a chapter').selectOption('DAILY-PREPARATION.md');
+      assert(await page.getByRole('heading',{name:'Restart, cancellation and expiry',exact:true}).isVisible());
       console.log(`PASS ${device} ${workspace}: controls, save payload, disabled execution, research-only market banner, no overflow`);
       await page.close();
     }

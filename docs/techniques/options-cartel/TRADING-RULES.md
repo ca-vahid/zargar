@@ -37,7 +37,7 @@ See [IGNITION.md](IGNITION.md), [DAILY-PREPARATION.md](DAILY-PREPARATION.md), an
   stops remain explicit alternatives. Entry defaults to 15m closed-bar confirmation;
   5m/30m variants are explicit. Relative volume 1.5, directional close location 0.7,
   retest tolerance 0.25%, and never-chase 0.5 planned R are visible, snapshotted
-  engineering values pending example/video research. No live activation is implied.
+  engineering values subject to source-example calibration. No live activation is implied.
 - D8: A retest requires a preceding volume-confirmed break, then a separate candle
   holding the level with confirmation volume/close quality. The initial kernel
   resets this observation each session and across missing-data buckets. Cross-day

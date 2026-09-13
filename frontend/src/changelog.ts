@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.55";
+export const APP_VERSION = "0.7.56";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.56",date:"2026-09-13",title:"Cartel documentation brought current",items:[
+    {tag:"improved",text:"The Method library now explains current preparation, recovery, data quality, ignition research and the optional Practice pilot. Superseded milestones are archived, and implemented features are separated from remaining validation work."},
+  ]},
   {
     version: "0.7.55",
     date: "2026-09-13",
