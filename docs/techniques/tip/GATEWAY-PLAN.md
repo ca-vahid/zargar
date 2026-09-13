@@ -37,6 +37,16 @@ log, mirror, EM forward, ingest) happens in workers.
   after the destination confirmed. Restart re-offers everything undelivered.
   Worker cancellation `release()`s (stays pending); queue overflow defers to
   the ledger instead of spooling a fake attempt.
+- **exact identity everywhere** (B1/B2, 2026-09-10): update entries are keyed
+  by revision (`update:cid:mid:editedTs`) and every record persists its
+  `ledgerKey`, so an ACK tombstone can never resurrect or erase a different
+  revision; a duplicate acceptance merges preserved attempts/`emDone` INTO
+  the queued envelope and never queues a second concurrent owner.
+- **terminal ≠ failure** — a message with no text and no usable image is a
+  COMPLETE delivery once mirrored (it burned 5 retries into the first live
+  dead letter, 2026-09-10); an app-side `duplicate + inFlight` answer is
+  acceptance, not completion — the envelope stays pending until the claim
+  resolves.
 - **ordered retry** — deliveries never overtake an older undelivered create in
   their channel (`pending_min` defers; the retry loop replays sorted per
   channel and stops a channel at its first still-failing entry). A "close"

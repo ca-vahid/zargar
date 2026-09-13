@@ -236,3 +236,56 @@ live in `docs/PLATFORM-RULES.md`.*
   rules (knowledge scope `rule`, injected into every run). Safety floor stays
   platform-enforced: RiskGate on every order, never 0DTE / naked writing /
   share shorting, budget caps, auto only on "take" + allow_live_auto for live.
+
+## Change log 2026-09-08 → 09-13 (first Practice week on the per-technique book + the audit cycle)
+
+**Book reality (reconciled from executions+fees, Tips Practice `4611946d`):**
+Sep-8 −$214.24, Sep-9 −$797.86, Sep-10 −$192.69, Sep-11 **+$254.24** —
+cumulative closed net ≈ **−$950.55** since the reset. One green day inside a
+drawdown; nothing is claimed proven. Open into the new week: T Jan-27 29C
+(10 of 14), APLD Oct 30C, RKT 148 sh.
+
+- 2026-09-11 — **First ladder win, correctly worded** (GOOGL Nov 370C, ab
+  campaign): 8.45 → 10.95 ×1, +$247.92 net at TP1; the stock later faded
+  below TP1. Supports that execution; ladder superiority and missed-upside
+  remain unproven (reviewer's wording adopted).
+- 2026-09-11 — **Partial source exits mirror proportionally** (T): source
+  "CLOSE: sold 6/10" → desk sold 4 of 14 (+$27.68 net), kept the rest; the
+  WAITING T plan was flagged for review, not disarmed. Matches the
+  thesis-dead-vs-profit-taking distinction under observation above.
+- 2026-09-10/11 — **Entry pricing at alert time is the working hypothesis for
+  the loss shape** (CCXI bled 65% from 0.60; SPCX −4.3% real but killed by a
+  stale mark; META filled 0.78 vs the source's 1.00→0.65 round trip) — but
+  the entry study's first 13 pairs (proposal-time, proposal-path-only, NO
+  lotto cohort) showed median ask drift 0.0%: no free lunch from waiting on
+  that cohort. Collection continues; a week is a checkpoint, not a promotion
+  deadline. NO entry-rule change.
+- 2026-09-11 — **A fresh quote is not necessarily a sane quote** (DAL): the
+  premium stop fired on `opra 1s old bid=0.82` while the exit filled at
+  1.5274 one second later — an anomalous flash print. → tick premium stops
+  (bleed AND ratchet floor) now need TWO DISTINCT fresh observations within
+  45s (v0.7.54, `execution.premium_stop_confirm_window_seconds`); re-polled
+  cached quotes never confirm; recovery resets. Bar path unchanged.
+- 2026-09-11 — **Meet Kevin onboarded** (MK-alpha-trades tips-mode + 3
+  context channels; long-horizon own-book style, source-profile note saved).
+  Day-1: his "$200k basket add" extracted (NVDA/SPCX shares) then died in
+  verification — root cause was NOT policy ("I added" IS recognized as
+  actionable) but the grounding corpus: the image transcript REPLACED the
+  caption (fixed v0.7.50, union + coverage manifest). Own-book mirroring
+  stays OFF pending the shadow-first build with PREDEFINED promotion
+  criteria (reviewer condition — no "trust accrued" hand-waving).
+- 2026-09-10 — **The retro can no longer learn from trades that didn't
+  happen**: CCXI's −$505 practice loss had been retro'd as "expired
+  unfilled" and taught a wrong entry rule (run 1f692543). Unfilled retros now
+  disqualify any signal with a real fill in any lane (v0.7.44).
+- 2026-09-09/13 — Reliability line (details in reviews/): crash-proof gateway
+  ledger; premium exits demand fresh marks and name their evidence;
+  stale-quote entries get ONE bounded retry (auto+Practice only); analyst
+  truncation repair gets doubled output room; per-turn input tokens recorded
+  (the 136k "context" was cumulative across calls — measure before
+  consolidating the 50-rule book).
+
+**Queued (agreed, not built):** MK self-disclosed-trade classification with
+labeled fixtures + promotion criteria; multi-image evidence processing;
+geometry validated BEFORE entry with bounded journaled post-fill exceptions
+(user decision 2026-09-11); rule-book consolidation informed by inPerCall.
