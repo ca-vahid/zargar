@@ -96,7 +96,7 @@ async def test_urgent_underlying_stop_is_not_debounced():
     # pending premium state does not swallow other decision kinds
     m = _mgr(lambda s: None)
     d = NS(kind="premium_stop", reason="net premium bled", fraction=1.0)
-    m._mark_obs_ts[p.id] = BASE
+    m._mark_obs_ts[p.id] = {SYM: BASE}
     out1 = m._confirm_premium_stop(p, d, BASE + 1000)
     assert out1 is None and p.id in m._premium_confirm
     other = NS(kind="stop", reason="bar closed through the stop", fraction=1.0)

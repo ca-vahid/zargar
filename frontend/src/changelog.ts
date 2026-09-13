@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.54";
+export const APP_VERSION = "0.7.55";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,16 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.55",
+    date: "2026-09-13",
+    title: "Confirmation means new evidence, on every path",
+    items: [
+      { tag: "fixed", text: "A bar-close evaluation can no longer exit on the very option flash quote the tick path is holding for confirmation: premium stops share ONE evidence state across both paths, keyed by the full per-leg observation set." },
+      { tag: "fixed", text: "An out-of-order quote (an older packet arriving late) never confirms a premium stop - confirmation requires strictly forward-ordered fresh evidence; a leg-set change restarts the sighting; the state dies with the position." },
+      { tag: "new", text: "First idea-level outcome census (tools/tip_outcomes.py): source x DTE-bucket table with net results, fees, no-fills and missed executions kept separate - the ground truth for deciding where an edge actually exists." },
+    ],
+  },
   {
     version: "0.7.54",
     date: "2026-09-13",

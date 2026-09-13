@@ -261,7 +261,7 @@ class PositionManager:
             "execution.premium_mark_max_age_seconds", 90) or 90) * 1000)
         now = self.now_ms()
         evidence: list[str] = []
-        src_ts: list[int] = []
+        obs: dict[str, int] = {}
 
         def fresh(sym: str):
             q = self.engine.quotes.get(sym)
@@ -279,14 +279,14 @@ class PositionManager:
                     f"{'of unknown age' if age_s is None else f'{age_s:.0f}s old'} — refused")
                 return None
             evidence.append(f"{sym}: {getattr(q, 'source', '?')} {age_s:.0f}s old bid={q.bid}")
-            src_ts.append(int(ts))
+            obs[sym] = int(ts)
             return q
         mark = p.net_mark(fresh)
         self._mark_evidence[p.id] = "; ".join(evidence) or "no option legs"
-        # the OBSERVATION IDENTITY (Codex debounce spec, 2026-09-12): the
-        # confirmation logic must see a genuinely NEW observation, so the
-        # oldest source timestamp across legs identifies this evidence set
-        self._mark_obs_ts[p.id] = min(src_ts) if src_ts else None
+        # the OBSERVATION IDENTITY (Codex debounce spec, 2026-09-12; v2
+        # 2026-09-13): the FULL per-leg evidence set — a minimum timestamp
+        # does not uniquely describe a multi-leg net mark
+        self._mark_obs_ts[p.id] = dict(obs) if obs else None
         return mark
 
     def _confirm_premium_stop(self, p: Managed, d, now: int):
@@ -304,19 +304,32 @@ class PositionManager:
         window_ms = int(float(self._setting(
             "execution.premium_stop_confirm_window_seconds", 45) or 45) * 1000)
         obs = self._mark_obs_ts.get(p.id)
+        if not obs:
+            return None                  # absent identity never confirms (v2)
         prev = self._premium_confirm.get(p.id)
         if prev is not None and now - prev["at"] > window_ms:
-            prev = None                              # window expired: start over
+            self._log(p, "premium_stop_pending_expired",
+                      "the earlier sighting found no qualifying second "
+                      "observation inside the window — starting over")
+            prev = None
         if prev is None:
-            self._premium_confirm[p.id] = {"at": now, "obs": obs}
+            self._premium_confirm[p.id] = {"at": now, "obs": dict(obs)}
             self._log(p, "premium_stop_pending",
-                      f"{d.reason} — first sighting; a second DISTINCT fresh "
-                      f"observation within {window_ms // 1000}s confirms "
-                      f"[mark: {self._mark_evidence.get(p.id, '?')}]")
+                      f"{d.reason} — first sighting; a second DISTINCT, "
+                      f"FORWARD-ordered observation within {window_ms // 1000}s "
+                      f"confirms [mark: {self._mark_evidence.get(p.id, '?')}]")
             return None
-        if obs is not None and prev.get("obs") == obs:
+        pobs = prev.get("obs") or {}
+        if set(obs) != set(pobs):
+            # leg set changed (partial fill / roll): a different position —
+            # restart the sighting rather than pairing unlike evidence
+            self._premium_confirm[p.id] = {"at": now, "obs": dict(obs)}
+            return None
+        if any(obs[k] < pobs[k] for k in obs):
+            return None      # out-of-order packet arriving late: quarantined (v2)
+        if all(obs[k] == pobs[k] for k in obs):
             return None      # same cached observation re-polled: not confirmation
-        self._premium_confirm.pop(p.id, None)        # confirmed by distinct evidence
+        self._premium_confirm.pop(p.id, None)   # forward-advanced evidence: confirmed
         return d
 
     def min_dte_floor(self) -> int:
@@ -947,6 +960,10 @@ class PositionManager:
 
     async def _mark_closed(self, p: Managed, *, reason: str) -> None:
         p.status = "closed"
+        # confirmation/evidence state dies with the position (Codex 2026-09-13)
+        self._premium_confirm.pop(p.id, None)
+        self._mark_obs_ts.pop(p.id, None)
+        self._mark_evidence.pop(p.id, None)
         p.closed_ms = self.now_ms()
         p.close_reason = reason        # persisted: the session brake reads it
         if p.venue_stop_order_id:
@@ -1068,6 +1085,19 @@ class PositionManager:
             min_dte_floor=self.min_dte_floor(),
         )
         decisions, moves = evaluate(p.policy, p.state, view)
+        # ONE confirmation state across bar and tick paths (Codex 2026-09-13
+        # P1: an underlying candle close is not a second OPTION observation —
+        # the bar path fired on the very flash quote the tick path was
+        # holding). Underlying stops, expiry/DTE and every non-premium
+        # decision pass through untouched.
+        kept = []
+        for _d in decisions:
+            if _d.kind == "premium_stop":
+                _d = self._confirm_premium_stop(p, _d, self.now_ms())
+                if _d is None:
+                    continue
+            kept.append(_d)
+        decisions = kept
         old_stop = p.state.stop
         p.state = apply_moves(p.state, view, decisions, moves, p.policy)
         if p.state.stop != old_stop and p.state.stop is not None:
@@ -1375,10 +1405,11 @@ class PositionManager:
                     d = evaluate_premium(p.policy, p.state, mark, p.entry_mark,
                                          dte=p.dte_min(today), iv_ratio=self._iv_ratio(p),
                                          underlying_move_pct=und_move)
-                    if d is None:
-                        # no breach: any pending stop-confirmation resets
+                    if d is None or d.kind != "premium_stop":
+                        # no breach, or a NON-stop outcome (a take): an earlier
+                        # adverse sighting must not be preserved by accident
                         self._premium_confirm.pop(p.id, None)
-                    elif d.kind == "premium_stop":
+                    if d is not None and d.kind == "premium_stop":
                         d = self._confirm_premium_stop(p, d, now)
                     if d is not None and d.kind == "premium_take" \
                             and self._take_units(p, d.fraction) < 1:
