@@ -88,6 +88,9 @@ class Team2Rules(MarketRules):
     premium_floor: float = 0.20             # never buy below this (the $0.05 lottery)
     premium_pick: str = "closest"           # F36: "closest" to target_premium (model AND live) | "first_under" (legacy)
     chase_cap_mult: float = 1.5             # F14: never pay more than target_premium x this for the contract (live ask)
+    no_trade_zone: str = "pm_range"         # C1 (2026-09-13, DISABLED): "pm_range" (V6 picture) | "conjunction" (B5: none only inside BOTH ranges)
+    pm_room_atr: float = 0.0                # C1 obstacle rule (0 = off): refuse a non-pm_break entry inside the PM range whose PM boundary ahead is < this x ATR away (F15's case)
+    min_target_atr: float = 0.0             # C3 (0 = off): refuse an entry whose target is nearer than this x ATR (Tue 09-08 QQQ: one strike away, fee-negative)
     strike_step: float = 1.0                # synthetic grid, used ONLY when the plan carries no chain listing (F104)
     quote_candidates: int = 8               # F105/F108: listed OTM contracts (nearest spot first) quoted live before a verdict
     require_fresh_quote: bool = True        # F108: a contract without a live NBBO is not eligible — defer, never fill on the delayed chain
@@ -149,6 +152,7 @@ SETTINGS_MAP: dict[str, str] = {
     "max_concurrent_positions": "max_concurrent_positions", "shrink_after_win": "shrink_after_win",
     "avoid_event_days": "avoid_event_days", "fee_per_contract": "fee_per_contract",
     "quote_candidates": "quote_candidates", "warmup_sessions": "warmup_sessions", "require_fresh_quote": "require_fresh_quote",
+    "no_trade_zone": "no_trade_zone", "pm_room_atr": "pm_room_atr", "min_target_atr": "min_target_atr",
 }
 
 
