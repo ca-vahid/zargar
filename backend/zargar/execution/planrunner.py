@@ -50,6 +50,8 @@ from ..marketstructure.tracker import TriggerTracker, score_trigger
 from ..marketstructure.volume import build_profile
 from ..models import TechniqueArmed
 from .book import EXIT_LADDER, EXIT_REPRICE_BARS
+from .entry_quality import judge_entry_quote
+from ..technique.source_revisions import scenario_origin
 from .exits import (
     plan_exit,
     premium_stop_breach,
@@ -933,6 +935,16 @@ class PlanRunner(SessionListener):
         plan = (run.get("result") or {}).get("plan")
         if run.get("mode") != "plan" or not plan:
             raise ValueError("only plan runs (mode=plan) can be armed")
+        origin = scenario_origin(run)
+        if origin:
+            # Delivery B order-free boundary (2026-09-14): a source-informed scenario candidate is a research
+            # record - it never arms, from any path (API, restore, retry, auto-arm), independent of settings,
+            # until an activation decision adds an explicit allow-list. Journaled, then refused.
+            await self.engine.journal.append(ev.TECHNIQUE_ARM_REFUSED, {
+                "runId": run_id, "symbol": str(run.get("symbol") or ""), "origin": origin,
+                "reason": "order-free scenario candidate (Delivery B): no activation decision",
+                "restored": bool(restored)}, aggregate_type="technique_run", aggregate_id=run_id)
+            raise ValueError(f"run {run_id[:8]} is an order-free scenario candidate ({origin}) - it cannot be armed")
         s = self.engine.settings
         cfg = config if isinstance(config, ArmConfig) else ArmConfig.from_dict({
             "portfolioId": str(self.rt("default_portfolio", "")) or str(s.get("trading.default_portfolio", "")),
@@ -2713,10 +2725,14 @@ class PlanRunner(SessionListener):
         cfg = ap.config
 
         def guard() -> None:
-            if contract is not None and cfg.skip_wide_spread:
-                w = next((str(x) for x in (contract.get("warnings") or []) if "T5.4 wide spread" in str(x)), None)
-                if w:
-                    raise RuntimeError(f"final entry guard: {w}")
+            if contract is not None:
+                # FC-01 (closure review 2026-09-14): the CURRENT cached NBBO for the order symbol, judged by the
+                # technique's pure policy - never the captured warning list alone (a new OPRA print can widen
+                # the book while the order awaits persistence; the ask, size and budget are unchanged)
+                sym = str(contract.get("symbol") or trade.order_symbol or "")
+                why = self.judge_entry_quote(ap, trade, contract, self.engine.quotes.get(sym) if sym else None)
+                if why:
+                    raise RuntimeError(f"final entry guard: {why}")
             limit_d = float(cfg.daily_loss_limit or 0.0)
             # the day-budget predicate is the one F33 already enforces for OPTION entries; a share entry has
             # never been budget-gated before the fill (its loss halt judges the open position), and the
@@ -3088,6 +3104,16 @@ class PlanRunner(SessionListener):
     def reviewer_available(self) -> bool:
         """Does this technique have a fire-time reviewer (EM: the vision critic) right now?"""
         return False
+
+    def judge_entry_quote(self, ap: "ArmedPlan", trade: "Trade", contract: dict, quote) -> str | None:
+        """FC-01: the SYNCHRONOUS final quality verdict on the CURRENT cached quote for the order symbol,
+        run inside `before_submit`. Pure - no I/O, no awaits, no mutation of the intent. Generic policy =
+        two-sided fresh book + spread within `execution.spread_warn_pct`; a technique overrides this with
+        its own book rules (EM: T5.4's 10%). Returns the refusal reason or None."""
+        return judge_entry_quote(contract, quote,
+                                 max_spread_pct=float(self.rt("spread_warn_pct", 20.0) or 20.0),
+                                 max_age_s=float(self.rt("premium_mark_max_age_seconds", 90) or 0),
+                                 refuse_wide=bool(ap.config.skip_wide_spread), now_ms=now_ms())
 
     async def rejudge_contract(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> None:
         """After the pre-order re-price: re-judge the contract's quality warnings on the FRESH quote

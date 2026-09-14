@@ -19,6 +19,12 @@ from zargar.marketstructure.outcome import same_plan
 from zargar.execution.planrunner import FireJudgement, PlanRunner, Trade
 
 
+HISTORICAL = pytest.mark.skip(reason=(
+    "historical reproduction on a minimal fake session (Delivery A re-review, 2026-09-14); the production tool "
+    "no longer carries a fake-session path (closure review). Real-session equivalent: "
+    "tests/test_em_reconcile_real_session.py - see its module docstring for the coverage map."))
+
+
 def trade_record(tid="b1"):
     return {
         "triggerId": tid, "instrument": "shares", "multiplier": 100.0,
@@ -91,6 +97,7 @@ def engine_for(row, orm=False, journal_fail=False):
     return SimpleNamespace(sf=lambda: session, journal=Journal(journal_fail)), session
 
 
+@HISTORICAL
 def test_apply_produces_an_orm_tracked_json_update():
     row, manifest, original = row_and_manifest(orm=True)
     engine, session = engine_for(row, orm=True)
@@ -102,6 +109,7 @@ def test_apply_produces_an_orm_tracked_json_update():
     assert session.persisted != original
 
 
+@HISTORICAL
 def test_two_corrections_for_one_plan_do_not_invalidate_each_other():
     row, manifest, _ = row_and_manifest(n=2)
     engine, session = engine_for(row)
@@ -110,6 +118,7 @@ def test_two_corrections_for_one_plan_do_not_invalidate_each_other():
     assert all(t["multiplier"] == 1.0 for t in session.persisted["trades"])
 
 
+@HISTORICAL
 def test_audit_failure_does_not_leave_a_committed_unjournaled_correction():
     row, manifest, original = row_and_manifest()
     engine, session = engine_for(row, journal_fail=True)
@@ -121,6 +130,7 @@ def test_audit_failure_does_not_leave_a_committed_unjournaled_correction():
     )
 
 
+@HISTORICAL
 def test_apply_updates_the_plan_aggregate_alongside_the_trade():
     row, manifest, _ = row_and_manifest()
     engine, session = engine_for(row)
@@ -130,6 +140,7 @@ def test_apply_updates_the_plan_aggregate_alongside_the_trade():
     )
 
 
+@HISTORICAL
 def test_replay_of_a_corrected_list_trade_is_not_reported_as_a_conflict(capsys):
     row, manifest, _ = row_and_manifest()
     engine, _ = engine_for(row)

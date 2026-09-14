@@ -194,3 +194,51 @@ Two wider suites failed after the guard landed and both were fixed before this h
 Results after the scoping: reviewer group 55/55, Postgres group 12/12, `test_tip_runner` +
 `test_technique_arming` 82/82; platform phase 3 + lifecycle + review + restart recovery + technique API +
 walk-forward + engine flow 98/98 (13.5 min). Nothing new on origin/main or the other desk branch to merge.
+
+---
+
+# Closure review (`2026-09-14-fa-closure-review.md`), same day
+
+Deployment still HELD (FC-01 was the one remaining blocker; fixed below, awaiting the reviewers' re-read).
+The FIX-01 manifest is NOT applied by this desk: the reviewers gave a scoped GO for the five v3 records on
+the default non-live path, and `--apply` stays a human step (the user runs it; receipts and the readback
+are returned afterwards, never a deployment claim).
+
+**FC-01 (P1, fixed).** `_entry_guard` no longer reads the captured contract's warning list as its evidence.
+It reads the CURRENT cached quote for the order symbol (`engine.quotes.get`, synchronous) and asks the
+technique's new pure hook `judge_entry_quote(ap, trade, contract, quote)` for a verdict, inside
+`before_submit`, after OrderManager's last await. The predicate (`execution/entry_quality.py`, no I/O, no
+mutation): a two-sided uncrossed book; an observation fresher than `execution.premium_mark_max_age_seconds`
+by its source timestamp; the current spread within the technique's limit when the arm skips wide spreads
+(EM: T5.4's own `MAX_SPREAD_PCT` 10%, the number the pick and `rejudge_spread` use; generic runner:
+`execution.spread_warn_pct`). With no current observation, or only the delayed chain row, the captured T5.4
+verdict is the only evidence and is applied as before. The budget check and the retry/collar forwarding are
+unchanged. The reviewer's case (`tests/test_codex_em_final_dispatch_quote.py`, adopted unchanged: bid 2.95/ask
+3.00 admitted, then 2.50/3.00 = 18.2% replaces the cache during the SUBMITTED transition) now ends in
+`REJECTED_RISK` with `beforeSubmitRejected`, no executor call. Pure-function cases: `tests/test_entry_quality.py`
+(narrow allow, widened refuse, one-sided/crossed, stale, no-quote/chain fallback, shares untouched).
+
+**Test-harness cleanup (done).** `tools/em_reconcile_fallback.py` has ONE code path: the capability shim
+(`_can`), the projection arithmetic (`_recompute_projection`), the journal-before-commit branch and the
+`with_for_update` fallback are removed. The five direct-function cases in `tests/test_em_review_da_reconcile.py`
+are kept verbatim as historical reproductions and marked skipped with the reason; their real-session
+equivalents are `tests/test_em_reconcile_real_session.py` (repository `fresh_db`, any test database) with the
+coverage map in its docstring: persisted corrected state + plan aggregate, two corrections as one row
+transition, receipt failure rolls the state back (then the exact retry applies once), exact replay =
+`already_applied` with no second receipt. The reviewer's Postgres cases stay the failure-mode authority.
+
+**v4 dry run.** `FIX-01-manifest-dryrun-v4-2026-09-14.json`, produced by the cleaned tool against the runtime
+database (read-only): the same five records, the same three state hashes as v3 (USO `9d03592cf2f6e804`, SWKS
+`6d45be2ad1d79b75`, HPQ `ef17f95f1725c722`), the same corrected values, `liveRows` none, `unresolved` none.
+
+**Upstream.** `origin/main` (5188956, Tips day-1 findings + geometry wiring fixture) is merged; the
+`docs/PLATFORM-RULES.md` conflict was resolved by keeping both desks' 2026-09-14 sections in full.
+
+**Delivery B first PR** is next on this branch (three tables, backfill dry-run tool, `resume_unfinished()` with
+fencing, order-free boundary, the two implementation contracts).
+
+Results: reviewer group on zargar_test_codex (budget 3 + quote 1 + Postgres 6 + promotion 3) 13/13;
+`test_entry_quality` 7/7; real-session reconcile 4/4 (+ 2 kept, 5 historical skipped); arming + tip runner +
+Team2 runner + reviewer execution/evidence/preopen/exits 121/121; ingest + gateway + separation 28 passed,
+3 failed in `test_discord_gateway_modes.py` that call a method (`_on_message`) the Tips desk's envelope
+refactor removed - they fail identically on origin/main and are not touched by this branch.

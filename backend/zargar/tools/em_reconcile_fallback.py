@@ -67,10 +67,6 @@ def _trades(state: dict):
             yield t.get("triggerId") or t.get("trigger_id") or str(i), t
 
 
-def _can(session, name: str) -> bool:
-    return callable(getattr(session, name, None))
-
-
 async def _ledger(session, portfolio_id: str, trade: dict) -> dict:
     """Authoritative fills for one trade: the entry order's BUY executions and the exit orders' SELL
     executions, in this portfolio. Returns {avgEntry, entryQty, exitQty, gross(x1), fees, conflict, missing}."""
@@ -79,8 +75,6 @@ async def _ledger(session, portfolio_id: str, trade: dict) -> dict:
     ids = [x for x in [entry_id, *exit_ids] if x]
     if not ids:
         return {"missing": True, "reason": "the trade records no order ids"}
-    if not _can(session, "execute"):
-        return {"missing": True, "reason": "no ledger access on this session", "noLedger": True}
     rows = (await session.execute(select(Execution).where(Execution.order_id.in_(ids),
                                                           Execution.portfolio_id == portfolio_id))).scalars().all()
     buys = [x for x in rows if x.order_id == entry_id and str(x.side).upper() == "BUY"]
@@ -102,19 +96,6 @@ async def _ledger(session, portfolio_id: str, trade: dict) -> dict:
     conflict = proj != led_set or abs(float(trade.get("avgFill") or 0) - avg_entry) > 1e-6 or abs(float(trade.get("filledQty") or 0) - bq) > 1e-6
     return {"missing": False, "avgEntry": round(avg_entry, 6), "entryQty": bq, "exitQty": sq,
             "gross": round(gross, 4), "fees": round(fees, 4), "conflict": conflict}
-
-
-def _recompute_projection(trade: dict) -> tuple[float, float]:
-    avg = float(trade.get("avgFill") or 0)
-    total = 0.0
-    fees = 0.0
-    for e in trade.get("exits") or []:
-        fq = float(e.get("filledQty") or 0)
-        px = e.get("price")
-        if fq > 0 and px is not None:
-            total += (float(px) - avg) * fq
-        fees += float(e.get("commission") or e.get("fee") or 0)
-    return round(total, 4), round(fees, 4)
 
 
 async def build_manifest(eng: Engine) -> dict:
@@ -160,8 +141,6 @@ async def build_manifest(eng: Engine) -> dict:
 
 async def _receipts(session, run_id: str, stamp) -> dict[str, dict]:
     """Committed receipts for this plan and manifest generation, by trigger."""
-    if not _can(session, "execute"):
-        return {}
     rows = (await session.execute(select(Event).where(Event.type == CORRECTION_KIND, Event.aggregate_id == run_id))).scalars().all()
     out = {}
     for e in rows:
@@ -181,10 +160,7 @@ async def apply(eng: Engine, manifest: dict, *, include_live: bool = False) -> i
     published: list[dict] = []
     for run_id, items in by_run.items():
         async with eng.sf() as session:
-            try:
-                row = await session.get(TechniqueArmed, run_id, with_for_update=True)
-            except TypeError:
-                row = await session.get(TechniqueArmed, run_id)
+            row = await session.get(TechniqueArmed, run_id, with_for_update=True)   # the row is locked for the transition
             if row is None:
                 print(f"skip {run_id[:8]}: row gone"); continue
             # ownership first - before any read of the state, before any write
@@ -204,7 +180,7 @@ async def apply(eng: Engine, manifest: dict, *, include_live: bool = False) -> i
                 print(f"REFUSE {run_id[:8]}: trigger(s) {missing} not in the row"); continue
             done = await _receipts(session, run_id, stamp)
             corrected = all(float(t.get("multiplier") or 1) == 1.0 for t in found.values())
-            if corrected and (set(done) >= set(targets) or (not _can(session, "execute") and _state_hash(current) != items[0]["expectedStateHash"])):
+            if corrected and set(done) >= set(targets):
                 print(f"already_applied {run_id[:8]} {sorted(found)}"); continue
             if _state_hash(current) != items[0]["expectedStateHash"]:
                 print(f"REFUSE {run_id[:8]}: state changed since the manifest (re-run the dry run)"); continue
@@ -217,11 +193,7 @@ async def apply(eng: Engine, manifest: dict, *, include_live: bool = False) -> i
                 if it.get("evidence") == "missing":
                     print(f"REFUSE {run_id[:8]} {tid}: no ledger evidence for the trade"); ok = False; break
                 led = await _ledger(session, row.portfolio_id, t)
-                if led.get("noLedger"):
-                    # no ledger access on this session (direct-function review harness): the projection's own
-                    # fills are the only evidence available - production sessions never take this path
-                    new_real, fees = _recompute_projection(t)
-                elif led.get("missing"):
+                if led.get("missing"):
                     if float(t.get("filledQty") or 0) > 0:
                         print(f"REFUSE {run_id[:8]} {tid}: ledger evidence disappeared ({led.get('reason')})"); ok = False; break
                     new_real, fees = 0.0, 0.0                    # unfilled: only the multiplier is wrong
@@ -245,12 +217,9 @@ async def apply(eng: Engine, manifest: dict, *, include_live: bool = False) -> i
                            "old": it["old"], "new": {"multiplier": 1.0, "realizedPnl": new_real}, "commissions": fees,
                            "haltOld": it.get("haltOld"), "haltNew": it.get("haltNew"), "reason": it["reason"],
                            "manifestGeneratedAt": stamp, "expectedStateHash": it["expectedStateHash"], "newStateHash": new_hash}
-                if _can(session, "add"):
-                    session.add(Event(type=CORRECTION_KIND, aggregate_type="technique_run", aggregate_id=run_id,
-                                      portfolio_id=row.portfolio_id, payload=payload, ts=now))
-                else:
-                    # minimal session (review harness): the receipt goes through the journal BEFORE the commit
-                    await eng.journal.append(CORRECTION_KIND, payload, aggregate_type="technique_run", aggregate_id=run_id)
+                # the receipt is STAGED in the same session as the state: one commit carries both, or neither
+                session.add(Event(type=CORRECTION_KIND, aggregate_type="technique_run", aggregate_id=run_id,
+                                  portfolio_id=row.portfolio_id, payload=payload, ts=now))
                 published.append(payload)
             row.state = new_state                    # a new object: the ORM records the change
             await session.commit()                   # state + every receipt, or nothing
