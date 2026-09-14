@@ -65,7 +65,9 @@ async def test_enforce_mode_finalizes_stop_and_resizes_before_entry(rig):
     shadow = await eng.proposals.create_from_signal(row0, sig0, {})
     rp0 = shadow["context"]["riskPlan"]
     assert rp0["enforced"] is False and rp0["qtyRequested"] >= 2 and rp0["unitLoss"] > 0
-    budget = round(rp0["unitLoss"] * max(1, rp0["qtyRequested"] // 2) + 1e-6, 4)
+    # a 20% margin absorbs the sim's tick drift between the two passes: half the
+    # requested quantity x 1.2 still fits at least one unit and stays under the request
+    budget = round(rp0["unitLoss"] * max(1, rp0["qtyRequested"] // 2) * 1.2, 4)
     await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
     await eng.settings.set("techniques.tip.risk_budget_per_tip", budget, journal=False)
     row, sig = await _tip(eng, "GEOA", q.last, stop_pct=0.2)          # 0.2% stop: inside the 0.75% width floor
