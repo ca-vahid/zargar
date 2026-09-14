@@ -458,3 +458,50 @@ async def test_invalid_quote_incident_needs_repaired_path_and_fresh_observation(
     assert out["status"] == "resolved" and "repaired path" in out["resolution"]["validated"]
     assert out["resolution"]["override"] is False
     assert await ig.entry_paused(eng, portfolio_id=pid) is None
+
+# ---------------------------------------------------------------- 2026-09-14 first enforce session
+async def _geom_review(eng, pid, sig, reason, path="proposal"):
+    await eng.journal.append("TipGeometryRepaired",
+                             {"proposalId": None, "signalId": sig, "underlying": "XYZ", "entryRef": None,
+                              "repairs": [], "phase": "pre-entry", "enforced": True, "mode": "enforce",
+                              "entryPath": path, "reviewRequired": reason},
+                             aggregate_type="signal", aggregate_id=sig, portfolio_id=pid)
+
+
+async def test_card_intrinsic_review_gates_never_open_a_path_incident(rig):
+    """Three option cards whose whole debit exceeds the risk budget (and one
+    with no stop) are review-gated on their own merits — the entry PATH is
+    fine. They must not pause the book (the 09:22 ET false positive)."""
+    eng = rig
+    pid = _pid(eng)
+    for i, r in enumerate(("no quantity satisfies the $88 risk budget: one unit risks $335 at the final stop",
+                           "no quantity satisfies the $88 risk budget: one unit risks $325 at the final stop",
+                           "no quantity satisfies the $88 risk budget: one unit risks $400 at the final stop",
+                           "no risk estimate: no stop")):
+        await _geom_review(eng, pid, f"s{i}", r)
+        out = await ig.record_pre_entry_failure(eng, portfolio_id=pid, entry_path="proposal", reason=r, ref=f"s{i}")
+        assert out is None
+    assert await ig.list_incidents(eng, status="open") == []
+    assert not await ig.entry_paused(eng, portfolio_id=pid, entry_path="proposal")
+
+
+async def test_systemic_failures_open_one_incident_and_extend_it(rig):
+    eng = rig
+    pid = _pid(eng)
+    reasons = ["risk evidence unavailable: RuntimeError: bars provider down"] * 3 + ["underlying quote delayed — no fresh reference"]
+    outs = []
+    for i, r in enumerate(reasons):
+        await _geom_review(eng, pid, f"sys{i}", r)
+        outs.append(await ig.record_pre_entry_failure(eng, portfolio_id=pid, entry_path="proposal", reason=r, ref=f"sys{i}"))
+    assert outs[0] is None and outs[1] is None and outs[2] is not None, "the third systemic failure opens the incident"
+    assert outs[3] is not None and outs[3]["id"] == outs[2]["id"], "the fourth EXTENDS it"
+    assert outs[3]["revision"] == 2
+    open_ = await ig.list_incidents(eng, status="open")
+    assert len(open_) == 1 and open_[0]["cause"] == "repeated_pre_entry_failure"
+    assert await ig.entry_paused(eng, portfolio_id=pid, entry_path="proposal")
+    assert not await ig.entry_paused(eng, portfolio_id=pid, entry_path="armed"), "scope: the armed lane is untouched"
+    # a mixed session: card-intrinsic gates in between never count
+    await _geom_review(eng, pid, "mix", "no risk estimate: no stop")
+    assert await ig.record_pre_entry_failure(eng, portfolio_id=pid, entry_path="proposal",
+                                             reason="no risk estimate: no stop", ref="mix") is None
+    assert len(await ig.list_incidents(eng, status="open")) == 1

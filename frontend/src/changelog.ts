@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.68";
+export const APP_VERSION = "0.7.69";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.69",
+    date: "2026-09-14",
+    title: "An integrity incident needs a failing path, not a card that does not fit",
+    items: [
+      { tag: "fixed", text: "Tips integrity pause: only SYSTEMIC pre-entry failures (bars, quote, greeks or provider evidence unavailable) count toward a repeated-failure incident; a card that is review-gated on its own merits (the risk budget fits no unit, the plan has no stop, an unsupported vehicle) never pauses the book. The first enforce session opened two incidents at 09:22/09:36 ET from three analyst-skipped option cards whose whole debit exceeded the $88 budget - a false positive that paused Practice proposals." },
+      { tag: "fixed", text: "One repeated-failure incident per entry path, book and session: further failures extend it (evidence + revision) instead of opening a duplicate." },
+    ],
+  },
   {
     version: "0.7.68",
     date: "2026-09-14",
