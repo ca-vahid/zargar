@@ -107,6 +107,9 @@ Deployment of the combined change was HELD as asked (the deploy watcher was stop
 fired; the engine was not restarted; the manifest was not applied). The 11 new boundary cases were adopted
 unchanged as `tests/test_em_review_da_execution.py` and `tests/test_em_review_da_reconcile.py`: **11 failed** on
 the previous head, **11 pass** now; the full reviewer group is 55 passing.
+Broader suites on the follow-up (arming, tip runner, platform phase 3, lifecycle, review, restart recovery,
+technique API, walk-forward): **170 passed** on `zargar_test_em2` (11m40s). Commit `6aa489c` (follow-up), merged
+head `f7c6d3a`; `/api/health` will report `build: 6aa489c`-or-later once deployed.
 
 | DA | correction | where |
 |---|---|---|
