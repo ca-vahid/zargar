@@ -431,6 +431,27 @@ def build_signal_routes(app, eng, auth, config) -> None:
         batches, newest first."""
         return await eng.signals_service.knowledge_batches(status=status, limit=limit)
 
+    class ConsolidateBody(BaseModel):
+        manifestHash: str
+        resolve: list[str] = []
+        family: dict = {}
+        killSwitch: dict = {}
+        evidence: list[dict] = []
+
+    @app.post("/api/tip/knowledge/consolidate", dependencies=[auth])
+    async def tip_knowledge_consolidate(body: ConsolidateBody):
+        """The REVIEWED consolidation batches (tools/tip_consolidation.py
+        manifest): disputes resolved deliberately, merges through the audited
+        batch path with receipts, evidence records in a never-injected scope.
+        Routine maintenance stays propose-only."""
+        from ..techniques.tip.consolidation import apply_consolidation
+        try:
+            return await apply_consolidation(eng, manifest_hash=body.manifestHash, resolve=body.resolve,
+                                             family=body.family, kill_switch=body.killSwitch,
+                                             evidence=body.evidence)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc))
+
     # --- KB-06 execution-integrity incidents ---------------------------------
     @app.get("/api/tip/incidents", dependencies=[auth])
     async def tip_incidents(status: str = "open", limit: int = 100):

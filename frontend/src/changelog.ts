@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.66";
+export const APP_VERSION = "0.7.67";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,17 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.67",
+    date: "2026-09-14",
+    title: "Tips: geometry before entry, and an integrity pause instead of a clock",
+    items: [
+      { tag: "major", text: "Pre-entry geometry (Practice books only, knob techniques.tip.geometry_gate): a tip's stop is finalized BEFORE the order and the size is derived from that stop against the approved risk budget (risk_pct of equity, or a fixed per-tip budget). Shares are sized at the executable limit; options need a fresh delta, a fresh non-delayed underlying reference and explicit contract metadata - anything missing is review-gated (a person decides), never guessed. The same plan is recomputed at submission; a card that fails there is returned to pending, no order." },
+      { tag: "major", text: "Execution-integrity pause (knob techniques.tip.entry_pause_mode): automated tip entries are paused by evidence of a broken execution path - a filled trade outside its plan, an exit on unconfirmed or delayed evidence, duplicate or unreconciled fills, a repeatedly failing entry path - not by a fast loss on a clean trade. Incidents are rows (they survive restarts), pause every automated path including already-armed plans and retries, never touch exits, and release only on evidence bound to the incident (or an explicit, labeled override). A valid fast loss is a diagnostic; the daily loss limits are unchanged." },
+      { tag: "improved", text: "Post-fill stop changes may only tighten immediately; a widen is a trim-first sequence with the tight stop armed until the trim is confirmed and the residual re-checked, durable before it is exposed, and it resumes safely after a restart." },
+      { tag: "fixed", text: "A confirmed premium stop now records the two observations that confirmed it on the exit; risk accounting distinguishes the executed plan from a hypothetical shadow plan; note scopes gain evidence:<family> for case records that are searchable but never injected into a run." },
+    ],
+  },
   {
     version: "0.7.66",
     date: "2026-09-13",
