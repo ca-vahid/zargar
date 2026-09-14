@@ -219,7 +219,7 @@ invalidated; OKTA's recovered underlying crossing lacks contemporaneous executab
 evidence. No setting change follows from one observation. New v2 plans and retained legacy
 campaigns remain separate cohorts.
 
-v0.7.73 fixes recovery/measurement boundaries documented in EOD-REVIEW-2026-09-14.md.
+v0.7.74 fixes recovery/measurement boundaries documented in EOD-REVIEW-2026-09-14.md.
 A partial overnight scan must retry eligible missing baselines prospectively instead of
 silently satisfying the morning job. Missing historical bars and incomplete opening windows
 remain blocking evidence. An alternative provider's candle is not permission to silently mix

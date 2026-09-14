@@ -11,7 +11,9 @@ try {
     if (git status --porcelain) { throw 'Runtime has uncommitted changes; preserve and integrate them first.' }
     $readiness = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/restart-check?caller=deploy.ps1' -TimeoutSec 10
     if (-not $readiness.safe) { throw ('Runtime is busy; deployment deferred: ' + ($readiness.reasons -join '; ')) }
-    $null = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/quiesce?minutes=5' -Method Post -TimeoutSec 10
+    $pause = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/quiesce?minutes=5' -Method Post -TimeoutSec 10
+    $pausedState = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/state' -TimeoutSec 10
+    if (-not $pause.quiesced -or -not $pausedState.quiesced) { throw 'Entry pause was not acknowledged and verified; runtime source unchanged.' }
     $oldCommit = (git rev-parse HEAD).Trim()
     git merge --ff-only $TargetCommit
     if ($LASTEXITCODE -ne 0) { throw 'Fast-forward refused. Integrate parallel work in a separate checkout first.' }

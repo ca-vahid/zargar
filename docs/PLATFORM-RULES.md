@@ -1582,8 +1582,20 @@ producer payload or risk setting changed. The journal registry invariant passes.
   when the reviewer signs off).
 
 
+### Restart: exclusive deploy lease and a verified entry pause — 2026-09-14 (R4 of the EOD handoff; v0.7.73)
 
-### Cartel EOD correctness release — 2026-09-14 (v0.7.73)
+The restart door (invariant 18) gained two guarantees the other team showed were missing: `restart.ps1` takes an
+EXCLUSIVE deploy lease (`logs\deploy.lock`, created atomically, owner = host:pid:time, stale after 600 s, released only
+by its owner; nested `start.ps1` inherits it via `ZARGAR_DEPLOY_LEASE`), and the entry pause is VERIFIED — the quiesce
+POST must answer `quiesced=true` AND `/api/ops/state` must read `quiesced=true` before the inventory is captured. A
+pause that is not confirmed refuses the ordinary path (exit 2); `-Force` / the watchdog's `-Override` remain the
+journaled exceptions. The watchdog skips its tick while a deploy holds the lease, so it cannot start a second engine
+during a restore. Refusals and the restore mismatch path release the lease. Scripts stay ASCII-clean where they were
+(start.ps1 keeps its three pre-existing non-ASCII bytes) and CRLF. Not exercised destructively against the shared
+runtime; verified by PowerShell parse and by the next coordinated deploy's transcript.
+
+
+### Cartel EOD correctness release — 2026-09-14 (v0.7.74)
 
 - SimExecutor requires finite positive uncrossed prices and receipt/source freshness (15s).
   Option fills require OPRA/IBKR identity; only explicit sim quote-source mode permits synthetic
@@ -1605,3 +1617,13 @@ producer payload or risk setting changed. The journal registry invariant passes.
   timing outside the trading callback. /api/ops/delivery-health is authenticated. These
   measurements distinguish dispatch delay from stored-history completeness; they do not
   infer missing venue prints or authorize retrospective entries.
+
+
+v0.7.74 convergence: restart, deploy, start and watchdog now share deployment-lock.ps1.
+The OS mutex owns the critical section and the existing deploy.lock marker remains the
+cross-version ownership record. An inherited token is honored only for the current owner
+or an explicitly nested descendant verified through process ancestry; an environment token
+alone cannot bypass ownership. Dead local marker owners can be recovered; live owners are
+not stolen on an age threshold. The R4 acknowledged-and-read-back quiesce requirement remains.
+Foreground manual start releases ownership at process handoff while preserving the existing
+watchdog startup grace period; detached deployment holds it through health/restore checks.

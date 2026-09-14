@@ -33,7 +33,7 @@ Record reviews can annotate setup, execution, data and outcome concerns. Keep ac
 Implementation: `replay.py`, `replay_service.py`, `sweeps.py`, `premium_replay.py`, `quote_observations.py`, `session_review.py`. Historical test counts are in dated release/deployment records; [current limits](DELIVERY-STATUS.md) govern new work.
 
 
-### Exact simulated-fill evidence (v0.7.73)
+### Exact simulated-fill evidence (v0.7.74)
 
 ExecutionEvidence is committed with each new simulated execution. It records the exact
 quote identity fields, source/receive time, bid/ask/size, evidence policy and slippage inputs.

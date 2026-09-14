@@ -88,7 +88,7 @@ Planning chain quotes select a draft expression, not an executable price. Diagno
 Implementation references are in [TRACEABILITY.md](TRACEABILITY.md); current limits are in [DELIVERY-STATUS.md](DELIVERY-STATUS.md).
 
 
-## September 14 recovery and review corrections (v0.7.73)
+## September 14 recovery and review corrections (v0.7.74)
 
 Recovery shows its attempt count and next eligible retry. Each evening and pre-open window has a separate three-attempt allowance, so overnight exhaustion cannot suppress the morning recovery. After three automatic attempts in a window,
 review the precise missing coverage or use Resume deliberately. Stop/disabled/session/policy

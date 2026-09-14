@@ -1,4 +1,4 @@
-# September 14 EOD implementation — v0.7.73
+# September 14 EOD implementation — v0.7.74
 
 Implementation branch: `codex/cartel-eod-improvements` in
 `C:/Cursor/zargar-codex/.cache/cartel-eod-20260914`, based on main `5188956`.
@@ -94,3 +94,16 @@ Final focused validation: **14 passed**, including the scheduled partial-resume 
 pre-open retry allowance, FIFO/fee attribution, real-DB quote coverage, timestamp-tied
 attempt pagination, telemetry and Windows deployment ownership. The earlier provider/coverage
 follow-up also passed **11 checks**. These groups overlap; no counts are summed as unique tests.
+
+
+### Parallel release convergence
+
+Team2 PR #106 merged as 080d9ec during this PR's creation, taking v0.7.73 and adding
+its R4 lease/verified-pause changes. This release is renumbered **v0.7.74**. Both changelog
+entries and all Team2 fixes are preserved. The two deployment guards are converged into
+one shared helper across deploy/restart/start/watchdog, retaining deploy.lock compatibility
+and the R4 pause acknowledgement plus state read-back. Pending elevated handoff remains
+bound to the exact commit/version/artifact. No separate competing lock protocol is shipped.
+
+After convergence with Team2 PR #106: **24 shared deployment/telemetry/ops and Team2
+EOD boundary checks passed**. The merged release metadata is v0.7.74.
