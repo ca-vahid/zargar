@@ -34,7 +34,11 @@ export interface Portfolio {
   isDefault?: boolean;
   baseCurrency?: string;
   venue?: string; // "ibkr" | "snaptrade" for live/paper portfolios
-  todayPct?: number | null; // % equity change vs today's first quote-backed observation
+  todayPct?: number | null; // % equity change vs this ET day's opening equity
+  /** This ET day's opening equity (the previous session's close), from the server.
+      Every "today" figure measures from this — never from a chart array, which is
+      thinned and collapsed and gave the headline the wrong colour (2026-09-14). */
+  dayStart?: number | null;
 }
 
 export interface BrokeragePosition {

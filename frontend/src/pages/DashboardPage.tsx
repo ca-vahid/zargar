@@ -3,6 +3,7 @@ import Highcharts from "highcharts/esm/highstock.js";
 import { api } from "../lib/api";
 import { fmtCcy, fmtDateTime, fmtMoney, fmtQty, fmtTime } from "../lib/format";
 import { baseChartOptions, cssVar } from "../lib/highchartsTheme";
+import { useLiveEquity } from "../lib/liveEquity";
 import { useAsync } from "../lib/useAsync";
 import { netWorthByCurrency, useStore } from "../store";
 import { useViewport } from "../lib/viewport";
@@ -11,7 +12,7 @@ import { ResearchBadge } from "../components/ResearchBadge";
 import { parseOcc } from "../lib/occ";
 import { rgbaVar } from "../lib/highchartsTheme";
 import { SymIcon } from "../components/SymIcon";
-import type { BrokerageProvider } from "../types";
+import type { BrokerageProvider, Portfolio } from "../types";
 import { BrokerIcon } from "../components/BrokerIcon";
 import { IconRefresh } from "../components/icons";
 import { cashText, providerTotal } from "../lib/brokerage";
@@ -196,8 +197,17 @@ function inSession(ms: number): boolean {
 /** Equity samples for a window, session-filtered and flat-collapsed — the
     shape both the hero sparkline and the full curve draw from. */
 function useEquityWindow(pids: string[], hours: number, points: number) {
-  const since = hours ? Date.now() - hours * 3600_000 : 0;
   const key = pids.join(",");
+  // `since` must NOT be recomputed every render: as a memo dependency it made
+  // the whole pipeline re-run continuously while the DATA sat still. It steps
+  // once a minute, which is finer than the 30 s sample rate anyway.
+  const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60_000));
+  useEffect(() => {
+    const t = setInterval(() => setMinute(Math.floor(Date.now() / 60_000)), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  const since = hours ? minute * 60_000 - hours * 3600_000 : 0;
+
   const series = useAsync<[number, number][]>(async () => {
     if (!pids.length) return [];
     // samples land every ~30 s; `since`/`points` are honoured by newer servers,
@@ -222,9 +232,38 @@ function useEquityWindow(pids: string[], hours: number, points: number) {
       });
       return [ts, Math.round(sum * 100) / 100] as [number, number];
     });
-  }, [key, hours, points]);
+  }, [key, hours, points, Math.floor(minute / REFETCH_MINUTES)]);
+
+  // The server pushes an equity point per book every 30 s. Following that tape
+  // is what makes the board live: the fetch above is history, these are the
+  // samples that have landed since, summed the same way.
+  const ticks = useStore((st) => st.equityTicks);
+  const live = useMemo(() => {
+    const stamps = [...new Set(pids.flatMap((p) => (ticks[p] ?? []).map((t) => t[0])))]
+      .sort((a, b) => a - b);
+    if (!stamps.length) return [] as [number, number][];
+    const cursor = pids.map(() => 0);
+    const last = pids.map((p) => ticks[p]?.[0]?.[1] ?? 0);
+    return stamps.map((ts) => {
+      let sum = 0;
+      pids.forEach((p, i) => {
+        const tape = ticks[p] ?? [];
+        while (cursor[i] < tape.length && tape[cursor[i]][0] <= ts) { last[i] = tape[cursor[i]][1]; cursor[i]++; }
+        sum += last[i];
+      });
+      return [ts, Math.round(sum * 100) / 100] as [number, number];
+    });
+  }, [ticks, key]);
+
   const pts = useMemo(() => {
-    let raw = series.data ?? [];
+    const fetched = series.data ?? [];
+    // splice: history up to its last sample, then everything the tape has since
+    const edge = fetched.length ? fetched[fetched.length - 1][0] : 0;
+    const tail = live.filter((p) => p[0] > edge);
+    // one book's tape alone is not the total — only extend when every book has
+    // reported past the seam, or the line would step down to a partial sum
+    const complete = pids.every((p) => (ticks[p] ?? []).some((t) => t[0] > edge));
+    let raw = complete && tail.length ? [...fetched, ...tail] : fetched;
     if (since) raw = raw.filter((p) => p[0] >= since);
     const open = raw.filter((p) => inSession(p[0]));
     let out = open.length >= 2 ? open : raw;
@@ -236,27 +275,91 @@ function useEquityWindow(pids: string[], hours: number, points: number) {
       if (i === 0 || i === out.length - 1) return true;
       return !(p[1] === out[i - 1][1] && p[1] === out[i + 1][1]);
     });
-    if (out.length > points) {                // thin evenly, always keep the last
-      const step = out.length / points;
-      const keep = new Set<number>([out.length - 1]);
-      for (let i = 0; i < points; i++) keep.add(Math.min(out.length - 1, Math.round(i * step)));
+    // Thin WITHOUT losing the range: every Nth sample drops the highs and lows,
+    // so the same day showed a different high on each load — and the readout
+    // under the chart printed whichever samples survived (2026-09-14).
+    if (out.length > points) {
+      const buckets = Math.max(1, Math.floor(points / 2));
+      const step = out.length / buckets;
+      const keep = new Set<number>([0, out.length - 1]);   // always keep the live point
+      for (let b = 0; b < buckets; b++) {
+        const lo = Math.floor(b * step), hi = Math.min(out.length, Math.floor((b + 1) * step));
+        let minI = -1, maxI = -1;
+        for (let i = lo; i < hi; i++) {
+          if (minI < 0 || out[i][1] < out[minI][1]) minI = i;
+          if (maxI < 0 || out[i][1] > out[maxI][1]) maxI = i;
+        }
+        if (minI >= 0) { keep.add(minI); keep.add(maxI); }
+      }
       out = out.filter((_, i) => keep.has(i));
     }
     return out;
-  }, [series.data, since, points]);
+  }, [series.data, live, ticks, pids, key, since, points]);
   return { series, pts };
 }
+/** How often the fetched history is re-pulled. The live tape covers the gap in
+    between, so this only needs to be often enough to heal a missed push. */
+const REFETCH_MINUTES = 5;
 
-/** The move since this ET session's first sample (falls back to the window). */
-function sessionMove(pts: [number, number][]) {
-  if (pts.length < 2) return null;
-  const today = ET_DAY_KEY.format(Date.now());
-  const startIdx = pts.findIndex((p) => ET_DAY_KEY.format(p[0]) === today);
-  const from = startIdx >= 0 ? pts[startIdx][1] : pts[0][1];
-  const to = pts[pts.length - 1][1];
-  return { abs: to - from, pct: from ? ((to - from) / from) * 100 : 0, today: startIdx >= 0 };
+/** Today's move across a set of books, from the server's own day anchor.
+
+    This used to be derived from the chart's points, which are session-filtered,
+    flat-collapsed and thinned — so the baseline was whichever sample survived
+    thinning, and it changed on every reload. The headline beside it updated
+    live over the websocket while the move stayed frozen at page-load, so a
+    board that opened during a dip read RED all morning on a green day and went
+    green on a refresh (user 2026-09-14). Now both read the same two numbers.
+
+    `dayStart` is the previous session's close, which is how a day change is
+    defined everywhere else in this app (CLAUDE.md) and by every broker. */
+function dayMove(books: Portfolio[], liveEquity?: Record<string, number>) {
+  // `dayStart` is the anchor; `todayPct` carries the same one and has shipped
+  // for longer, so a board loaded against an engine that has not restarted yet
+  // still colours correctly (both arrive on the same 30 s push).
+  const anchorOf = (p: Portfolio): number | null => {
+    const eq = p.equity ?? p.cash;
+    if (p.dayStart != null) return p.dayStart;
+    if (p.todayPct != null && eq != null) return eq / (1 + p.todayPct / 100);
+    return null;
+  };
+  const now = (p: Portfolio) => liveEquity?.[p.id] ?? p.equity ?? p.cash;
+  const priced = books.filter((p) => anchorOf(p) != null && now(p) != null);
+  if (!priced.length) return null;
+  const from = priced.reduce((t, p) => t + (anchorOf(p) as number), 0);
+  const to = priced.reduce((t, p) => t + now(p), 0);
+  if (!from) return null;
+  return {
+    abs: to - from, pct: ((to - from) / from) * 100, from, to,
+    partial: priced.length < books.length,   // a book with no anchor yet is left out
+  };
 }
 const ET_DAY_KEY = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+
+/** Axis-sized money: "8.85k" beats "US$8,850.00" on a 40px gutter. */
+function fmtCompact(v: number, ccy: string): string {
+  const sym = ccy === "CAD" ? "C$" : ccy === "USD" ? "$" : "";
+  const a = Math.abs(v);
+  if (a >= 1_000_000) return `${sym}${(v / 1_000_000).toFixed(2)}M`;
+  if (a >= 10_000) return `${sym}${(v / 1000).toFixed(1)}k`;
+  if (a >= 1_000) return `${sym}${(v / 1000).toFixed(2)}k`;
+  return `${sym}${v.toFixed(0)}`;
+}
+
+/** Put the current value ON the line. Everything else on the chart is history;
+    the one number you always want is where it is right now. */
+function withLastLabel(pts: [number, number][], col: string, ccy: string): any[] {
+  if (pts.length < 2) return pts;
+  const head = pts.slice(0, -1);
+  const [x, y] = pts[pts.length - 1];
+  return [...head, {
+    x, y, marker: { enabled: true, radius: 3.5, fillColor: col },
+    dataLabels: {
+      enabled: true, align: "right", verticalAlign: "middle", x: -6, y: -10,
+      style: { fontSize: "11px", fontWeight: "600", color: col, textOutline: "2px var(--surface-1)" },
+      formatter(this: any) { return fmtCompact(this.y, ccy); },
+    },
+  }];
+}
 
 /** A bare sparkline — no axes, no grid: the shape of the day in 40px. */
 function Spark({ pts, up }: { pts: [number, number][]; up: boolean }) {
@@ -301,9 +404,29 @@ function EquityCurvePanel() {
   const chartRef = useRef<Highcharts.Chart | null>(null);
 
   const { series, pts } = useEquityWindow(pids, spec.hours, spec.points);
+  const bookLive = useLiveEquity(books);
+  const ccy = target?.baseCurrency ?? books[0]?.baseCurrency ?? "USD";
   const first = pts.length ? pts[0][1] : 0;
   const last = pts.length ? pts[pts.length - 1][1] : 0;
   const delta = last - first;
+  const pct = first ? (delta / first) * 100 : 0;
+  // The numbers you would otherwise hover for. On 1D the baseline is the real
+  // day anchor (the previous close), so the panel and the headline agree; on a
+  // longer range it is the first sample in the window.
+  const stats = useMemo(() => {
+    if (pts.length < 2) return null;
+    const ys = pts.map((p) => p[1]);
+    const hi = Math.max(...ys), lo = Math.min(...ys);
+    // On 1D both ends come from the books themselves, so this panel and the
+    // headline above it can never print two different numbers for the same day.
+    const anchor = spec.key === "1d" ? dayMove(target ? [target] : books, bookLive) : null;
+    const open = anchor?.from ?? first;
+    const now = anchor?.to ?? last;
+    return { hi: Math.max(hi, now), lo: Math.min(lo, now), open, last: now,
+             abs: now - open, pct: open ? ((now - open) / open) * 100 : 0 };
+  }, [pts, spec.key, target, books, bookLive, first, last]);
+
+  const openAt = stats?.open ?? 0;
 
   useEffect(() => {
     if (!containerRef.current || pts.length === 0) return;
@@ -317,8 +440,38 @@ function EquityCurvePanel() {
       navigator: { enabled: false },
       time: { timezone: "America/New_York" },
       // ordinal: the closed market takes no width at all
-      xAxis: { ...(base.xAxis as any), ordinal: true },
-      yAxis: { ...(base.yAxis as any), opposite: true, startOnTick: false, endOnTick: false },
+      xAxis: {
+        ...(base.xAxis as any), ordinal: true,
+        // a labelled crosshair means the time is readable at a glance, not
+        // only inside a tooltip that has to be summoned
+        crosshair: { width: 1, color: rgbaVar("--text-3", 0.45), dashStyle: "Dot",
+          label: { enabled: true, format: "{value:%H:%M}", padding: 3,
+            backgroundColor: cssVar("--surface-3"), borderRadius: 3,
+            style: { color: cssVar("--text-2"), fontSize: "10px" } } },
+        tickPixelInterval: 90,
+        labels: { ...((base.xAxis as any)?.labels ?? {}), style: { fontSize: "10px", color: cssVar("--text-3") } },
+      },
+      yAxis: {
+        ...(base.yAxis as any), opposite: true, startOnTick: false, endOnTick: false,
+        // the panel used to show two gridlines and two numbers for a whole
+        // session; six ticks is a scale you can actually read a level off
+        tickAmount: 6, showLastLabel: true, gridLineDashStyle: "Dot",
+        crosshair: { width: 1, color: rgbaVar("--text-3", 0.45), dashStyle: "Dot",
+          label: { enabled: true, padding: 3, backgroundColor: cssVar("--surface-3"),
+            borderRadius: 3, style: { color: cssVar("--text-2"), fontSize: "10px" },
+            formatter(this: any) { return fmtCompact(this.value, ccy); } } },
+        labels: { ...((base.yAxis as any)?.labels ?? {}), align: "left", x: 4,
+          style: { fontSize: "10px", color: cssVar("--text-3") },
+          formatter(this: any) { return fmtCompact(this.value, ccy); } },
+        // where the day (or the window) started — the line that tells you
+        // whether you are up without reading a single number
+        plotLines: openAt ? [{
+          value: openAt, width: 1, dashStyle: "Dash", zIndex: 2,
+          color: rgbaVar("--text-3", 0.55),
+          label: { text: spec.key === "1d" ? "prev close" : "start", align: "left", x: 4, y: -4,
+            style: { color: cssVar("--text-3"), fontSize: "9px" } },
+        }] : undefined,
+      },
       // The readout used to be a large box that popped the instant the cursor
       // entered the panel and then sat on top of the line (user 2026-09-04).
       // Now: it only wakes when you are actually near the line (stickyTracking
@@ -350,12 +503,12 @@ function EquityCurvePanel() {
           stops: [[0, rgbaVar(up ? "--up" : "--down", 0.22)], [1, rgbaVar(up ? "--up" : "--down", 0)]] },
         // an area series anchors its axis at 0 by default, which squashed a
         // 8.8k equity line into a hairline at the top of the panel
-        threshold: null, data: pts, marker: { enabled: false },
+        threshold: null, data: withLastLabel(pts, col, ccy), marker: { enabled: false },
         stickyTracking: false,   // hovering empty space is not a question
       } as any],
     });
     return () => { chartRef.current?.destroy(); chartRef.current = null; };
-  }, [pts, theme, target?.name, delta]);
+  }, [pts, theme, target?.name, delta, openAt, ccy, spec.key]);
 
   return (
     <div className="panel dash-curve">
@@ -368,10 +521,11 @@ function EquityCurvePanel() {
             {books.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
         )}
-        {pts.length > 1 && (
-          <span className={`dash-curve-delta ${delta >= 0 ? "pos" : "neg"}`}>
-            {delta >= 0 ? "+" : "−"}{fmtCcy(Math.abs(delta), target?.baseCurrency ?? books[0]?.baseCurrency ?? "USD")}
-            <span className="muted"> over {spec.label === "All" ? "all time" : `the last ${spec.label}`}</span>
+        {stats && (
+          <span className={`dash-curve-delta ${stats.abs >= 0 ? "pos" : "neg"}`}>
+            {stats.abs >= 0 ? "+" : "−"}{fmtCcy(Math.abs(stats.abs), ccy)}
+            <span className="dash-curve-pct">{stats.abs >= 0 ? "+" : "−"}{Math.abs(stats.pct).toFixed(2)}%</span>
+            <span className="muted"> {spec.key === "1d" ? "today" : `over the last ${spec.label}`}</span>
           </span>
         )}
         <div className="seg sm dash-curve-range" role="group" aria-label="Equity range">
@@ -388,7 +542,17 @@ function EquityCurvePanel() {
       >
         {() => <div ref={containerRef} />}
       </AsyncSection>
-      <div className="dash-curve-foot muted">market hours only — nights and weekends are skipped</div>
+      {stats && (
+        <div className="dash-curve-stats">
+          <span><i>{spec.key === "1d" ? "prev close" : "start"}</i>{fmtCcy(stats.open, ccy)}</span>
+          <span><i>high</i>{fmtCcy(stats.hi, ccy)}</span>
+          <span><i>low</i>{fmtCcy(stats.lo, ccy)}</span>
+          <span className="dash-curve-now"><i>now</i>{fmtCcy(stats.last, ccy)}</span>
+        </div>
+      )}
+      <div className="dash-curve-foot muted">market hours only — nights and weekends are skipped
+        <span className="dash-curve-live" title="Equity is pushed every 30 seconds — this updates on its own">live</span>
+      </div>
     </div>
   );
 }
@@ -551,8 +715,12 @@ function EquityHero() {
   const liveTotals = useMemo(
     () => totals.filter((t) => t.brokerage > 0).map((t) => ({ currency: t.currency, total: t.brokerage })),
     [totals]);
-  const sims = useMemo(() => portfolios.filter((p) => p.kind === "sim"), [portfolios]);
-  const practiceTotal = sims.reduce((sum, p) => sum + (p.equity ?? p.cash), 0);
+  const sims = useMemo(
+    () => portfolios.filter((p) => p.kind === "sim" && !p.archived), [portfolios]);
+  // marked against the same quotes the rest of the board draws, so the headline
+  // moves with the tape instead of stepping once every 30 s (2026-09-14)
+  const simLive = useLiveEquity(sims);
+  const practiceTotal = sims.reduce((sum, p) => sum + (simLive[p.id] ?? p.equity ?? p.cash), 0);
   const practiceCcy = sims[0]?.baseCurrency ?? "USD";
   const blended = useMemo(() => {
     if (!usdCad || usdCad <= 0 || liveTotals.length < 2) return null;
@@ -578,7 +746,8 @@ function EquityHero() {
   const accounts: { name: string; ccy: string; value: number; sub?: string }[] = live
     ? (brokerages?.providers ?? []).flatMap((p) => (p.accounts ?? []).map((a) => ({
         name: a.name, ccy: a.currency, value: a.equity, sub: p.broker })))
-    : sims.map((p) => ({ name: p.name, ccy: p.baseCurrency ?? "USD", value: p.equity ?? p.cash }));
+    : sims.map((p) => ({ name: p.name, ccy: p.baseCurrency ?? "USD",
+        value: simLive[p.id] ?? p.equity ?? p.cash }));
 
   // the shape of the day, in the headline — the board's one real visual
   // the headline totals every book, so its move and its shape must too — it
@@ -589,7 +758,10 @@ function EquityHero() {
       : sims.map((p) => p.id)),
     [live, portfolios, sims]);
   const { pts } = useEquityWindow(heroPids, 24, 60);
-  const move = sessionMove(pts);
+  const heroBooks = useMemo(
+    () => portfolios.filter((p) => heroPids.includes(p.id)), [portfolios, heroPids]);
+  const heroLive = useLiveEquity(heroBooks);
+  const move = dayMove(heroBooks, heroLive);
   const upMove = (move?.abs ?? 0) >= 0;
   return (
     <div className="panel dash-hero">
@@ -608,7 +780,8 @@ function EquityHero() {
             <div className={`dash-hero-move ${upMove ? "pos" : "neg"}`}>
               {upMove ? "▲" : "▼"} {fmtCcy(Math.abs(move.abs), live ? (liveTotals[0]?.currency ?? "USD") : practiceCcy)}
               <span className="dash-hero-pct">{upMove ? "+" : "−"}{Math.abs(move.pct).toFixed(2)}%</span>
-              <span className="muted">{move.today ? "today" : "past 24h"}</span>
+              <span className="muted" title={`Since the previous session's close, ${fmtCcy(move.from, practiceCcy)}`}>
+                today{move.partial ? " (so far as priced)" : ""}</span>
             </div>
           )}
           {live && blended !== null && (

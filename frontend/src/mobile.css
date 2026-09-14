@@ -788,6 +788,9 @@ button.bl-card:active { background: var(--surface-2); }
   .dash-curve-range { margin-left: 0; width: 100%; }
   .dash-curve-range button { flex: 1 1 auto; min-width: 40px; }
   .dash-curve-delta { flex: 1 1 100%; }
+  /* four readings do not fit one phone row — two by two, never a sideways scroll */
+  .dash-curve-stats { gap: 0 14px; row-gap: 4px; padding: 6px 10px 2px; font-size: var(--fs-0); }
+  .dash-curve-stats > span { flex: 0 0 calc(50% - 7px); }
   .dash-hold { grid-template-columns: 20px minmax(0, 1fr) auto; min-height: 44px; padding: 8px 10px; }
   .dash-hold-val { display: none; }              /* the P&L is what you scan for */
   .dash-armed-lbl { flex-basis: 100%; margin-left: 0; }

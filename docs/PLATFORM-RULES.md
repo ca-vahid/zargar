@@ -76,6 +76,29 @@ runtime ones to `execution.*`).
    `ZargarRestartOverride` (= `restart.ps1 -Force`) exists for emergencies and is logged as an override. Task
    scripts are ASCII (Windows PowerShell 5.1). "No open positions" is not a restart test.
 
+21. **One day anchor, durable, and every "today" figure measures from it** (2026-09-14).
+   This ET day's opening equity is `PositionKeeper.day_start_equity(pid)`: the last PERSISTED
+   equity point before 04:00 ET (the previous session's close - the basis every broker quotes a
+   day change on, and the one `CLAUDE.md` already states for prices), else the day's first
+   sample, else live equity once quotes are real. It is published as `dayStart` next to `equity`
+   on `/api/portfolios`, the engine snapshot and every 30 s portfolio push, so no client derives
+   its own. Nothing may measure "today" from a chart array - those are session-filtered, thinned
+   and flat-collapsed, and the baseline moved on every reload. The anchor was previously
+   in-memory only and seeded with "equity the first time we looked today", so a mid-session
+   restart re-based the day at the restart price and the daily-loss halt forgot an existing
+   drawdown. A broker sync is a level-set: it shifts the anchor (resolving it first) instead of
+   booking as today's P&L. Tests: `tests/test_day_start_equity.py`.
+22. **A position is valued on a market, not on a print** (2026-09-14). An OPTION marks at the mid
+   of a two-sided quote (`bid > 0 and ask >= bid`); a lone `last` is the fallback for a one-sided
+   book, then the broker's sync mark, then avg cost. Shares are unchanged - an equity print IS
+   the valuation. One definition (`PositionKeeper._mark`) serves both the displayed P&L and the
+   equity the risk halt reads, so they cannot diverge. Thin contracts otherwise write permanent
+   fiction into `equity_points`. Tests: `tests/test_position_marking.py`.
+23. **Downsampling preserves range** (2026-09-14). `equity_series(points=N)` and any client
+   thinning keep each bucket's min and max in time order (`portfolio._decimate`), never every
+   Nth sample - a real intraday extreme must not depend on where the bucket boundaries fell.
+   Tests: `tests/test_equity_series.py`.
+
 ## 2. Findings (settled, with evidence)
 
 ### Cartel final-dispatch entry authority — 2026-09-13
@@ -1600,3 +1623,28 @@ producer payload or risk setting changed. The journal registry invariant passes.
   number of positions is the signal. The shadow books keep the short (research P&L only);
   resetting them is the user's call.
 
+### The board showed red on a green morning — 2026-09-14 (Dashboard, v0.7.70)
+
+- **Report (user):** "this morning even though i was up in total, i kept seeing red chart in
+  color (for the total) ... i would refresh and it would go green and over and over", and "the
+  rate of the refresh is too low. i kept updating the page to see new numbers."
+- **Cause, two halves that compounded.** (1) The headline balance came from the store, which the
+  30 s `portfolio` push keeps current; the MOVE beside it came from `sessionMove(pts)`, derived
+  from the equity chart's own array. Nothing refetched that array — `useAsync` is fetch-on-mount
+  — so a board opened during a dip was pinned to that dip's reading all morning while the number
+  beside it climbed. Reloading refetched and the colour changed; reloading again during the next
+  dip changed it back. (2) Even fresh, the baseline was wrong: `pts` is session-filtered,
+  flat-collapsed and thinned, so "the first sample whose ET day is today" was whichever sample
+  survived thinning, and the multi-book sum seeded each book's carry-forward with its first
+  sample IN THE WINDOW — a sliding window that changed the early total as it slid.
+- **Evidence.** Replayed today's session from `equity_points` (`scratchpad/replay.py`): the
+  hero's own math went RED at 09:30 (−26.93) and GREEN by 10:00 (+101.02) off a 38,697.29
+  anchor. Live, the move's "now" (38,807.71) and the headline (38,756.23) were $51 apart —
+  two clocks, one panel.
+- **Fix.** Invariants 21 and 23 above; the client follows the 30 s push (`store.equityTicks`)
+  and re-pulls history every 5 minutes instead of once. The hero and the curve now read the
+  same two numbers, and both match `/api/portfolios`.
+- **Found on the way.** Two INTC 0DTE calls bought at $1.00 were marked near $7 by a single
+  print at 09:35: +$1,406 (+14%) of equity for one sample, persisted, and it set the whole
+  vertical range of the day's chart. That number feeds `daily_loss_pct` — the same print in the
+  other direction halts a book that never lost anything. Invariant 22.

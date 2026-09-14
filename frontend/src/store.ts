@@ -64,6 +64,11 @@ interface AppState {
   settings: Settings;
   portfolios: Portfolio[];
   positions: Record<string, Position>; // key portfolioId:symbol:secType
+  /** Live equity samples per book, newest last — the 30 s server push, kept.
+      Charts fetch their history once and then follow this, so the board moves
+      on its own instead of waiting for a reload (2026-09-14). Bounded: this is
+      a tape, not a store of record — the API is. */
+  equityTicks: Record<string, [number, number][]>;
   openOrders: Record<string, Order>;
   recentOrders: Order[];
   executions: Execution[];
@@ -180,6 +185,7 @@ export const useStore = create<AppState>((set, get) => ({
   settings: {},
   portfolios: [],
   positions: {},
+  equityTicks: {},
   openOrders: {},
   recentOrders: [],
   executions: [],
@@ -321,12 +327,17 @@ export const useStore = create<AppState>((set, get) => ({
 
   applyPortfolio: (msg) =>
     set((st) => ({
+      equityTicks: msg.equity == null || !msg.ts ? st.equityTicks : {
+        ...st.equityTicks,
+        [msg.portfolioId]: appendTick(st.equityTicks[msg.portfolioId], msg.ts, msg.equity),
+      },
       portfolios: st.portfolios.map((p) =>
         p.id === msg.portfolioId
           ? {
               ...p,
               cash: msg.cash ?? p.cash,
               equity: msg.equity ?? p.equity,
+              dayStart: msg.dayStart !== undefined ? msg.dayStart : p.dayStart,
               todayPct: msg.todayPct !== undefined ? msg.todayPct : p.todayPct,
             }
           : p,
@@ -588,6 +599,21 @@ export function positionsFor(state: AppState, portfolioId?: string): Position[] 
 }
 
 /** Positions grouped by portfolio id (pure helper — use with useMemo). */
+/** Append one equity sample, keeping the tape sorted, deduped and bounded.
+    Out-of-order or duplicate timestamps are ignored rather than sorted in: the
+    push is monotonic in practice, and a stray old sample would otherwise put a
+    backwards step in the middle of a live chart. */
+const TICK_CAP = 720;              // 6 h at one sample per 30 s
+function appendTick(
+  prev: [number, number][] | undefined, ts: number, equity: number,
+): [number, number][] {
+  const tape = prev ?? [];
+  const last = tape[tape.length - 1];
+  if (last && ts <= last[0]) return tape;       // same ref: no re-render
+  const next = [...tape, [ts, Math.round(equity * 100) / 100] as [number, number]];
+  return next.length > TICK_CAP ? next.slice(next.length - TICK_CAP) : next;
+}
+
 export function groupPositions(positions: Record<string, Position>): Record<string, Position[]> {
   const out: Record<string, Position[]> = {};
   for (const p of Object.values(positions)) {

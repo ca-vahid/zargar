@@ -477,6 +477,27 @@ frontend production build runs this check automatically.
   candidates on the NBBO before any refusal — never re-introduce a delayed-ask veto or a synthetic strike grid on the live path.
   **Restarts go through `scripts/start.ps1`'s readiness check** (`/api/ops/restart-check`); assistants use the scheduler's
   `ZargarRestart` task, never `start.ps1` from their own shell (PLATFORM-RULES invariants 17–18).
+- **"Today" has ONE anchor and it is the server's** (2026-09-14, PLATFORM-RULES 21):
+  `PositionKeeper.day_start_equity(pid)` = the last PERSISTED equity point before 04:00 ET
+  (the previous session's close — same basis as the day-change rule for prices above), and it
+  ships as `dayStart` beside `equity` on `/api/portfolios`, the snapshot and the 30 s portfolio
+  push. Never derive a day move from a chart array: those are session-filtered, thinned and
+  flat-collapsed, so the baseline moves on every reload — the Dashboard read RED on a green
+  morning for exactly that reason. A broker sync shifts the anchor (it is a level-set, not P&L).
+- **An option is valued on its book, not on a print** (2026-09-14, PLATFORM-RULES 22):
+  `PositionKeeper._mark` takes the mid whenever there is an ask (`ask > 0 and ask >= bid`,
+  a 0 bid included); a lone `last` is used only when there is no ask at all. Shares are
+  unchanged. `frontend/src/lib/liveEquity.ts` mirrors this rule — change one, change both.
+  One stale print on a thin 0DTE contract put +$1,406 into a book's persisted equity history.
+- **Downsampling keeps the extremes** (2026-09-14, PLATFORM-RULES 23): `portfolio._decimate`
+  (and the client thinning in `DashboardPage`) keep each bucket's min and max, never every Nth
+  sample — the same 1D window otherwise reported a different high depending on where the
+  buckets fell.
+- **The board follows the tape.** The engine pushes equity per book every 30 s on the
+  `portfolio` topic; the store keeps those in `equityTicks` and charts extend themselves from
+  it (`useAsync` is fetch-on-mount — anything that must stay current needs more than a fetch).
+  Between pushes, running totals mark live off the quote stream (`useLiveEquity`), so the top
+  bar, the Dashboard headline and the curve's NOW all show the same number at the same instant.
 - Patching files from scripts on Windows: open with `encoding="utf-8"`
   (the default cp1252 silently corrupts em dashes / arrows).
 

@@ -672,7 +672,9 @@ class Engine:
         for p in self.positions.portfolios():
             eq = await self.positions.equity(p["id"])
             today = await self.positions.daily_loss_pct(p["id"])
+            start = await self.positions.day_start_equity(p["id"])
             portfolios.append({**p, "equity": round(eq, 2), "cash": round(p["cash"], 2),
+                               "dayStart": round(start, 2) if start is not None else None,
                                "todayPct": round(today, 2) if today is not None else None})
         open_orders = await self.orders.list_orders(open_only=True) if self.orders else []
         async with self.sf() as session:

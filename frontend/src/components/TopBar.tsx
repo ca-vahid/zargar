@@ -4,6 +4,7 @@ import { fmtCcy } from "../lib/format";
 import { netWorthByCurrency, useStore } from "../store";
 import { ConfirmDialog, PromptDialog } from "./Modal";
 import { SymbolSearch, type SymbolHit } from "./SymbolSearch";
+import { useLiveTotal } from "../lib/liveEquity";
 import { workspaceOf } from "../lib/workspace";
 import { useViewport } from "../lib/viewport";
 import { Sheet } from "./Sheet";
@@ -50,8 +51,10 @@ export function TopBar() {
     () => netWorthByCurrency(portfolios, brokerages).filter((t) => t.brokerage > 0),
     [portfolios, brokerages]);
   const practice = useMemo(
-    () => portfolios.filter((p) => p.kind === "sim"), [portfolios]);
-  const practiceTotal = practice.reduce((sum, p) => sum + (p.equity ?? p.cash), 0);
+    () => portfolios.filter((p) => p.kind === "sim" && !p.archived), [portfolios]);
+  // marked to the live tape, not to the 30 s server push: the chip used to
+  // sit still between pushes while quotes arrived behind it (2026-09-14)
+  const practiceTotal = useLiveTotal(practice);
   // armed plans living in the OTHER workspace must never be invisible
   const armedPlans = useStore((s) => s.techniqueArmed);
   const otherArmed = useMemo(

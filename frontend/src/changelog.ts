@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.69";
+export const APP_VERSION = "0.7.70";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,19 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.70",
+    date: "2026-09-14",
+    title: "The board tells the truth about today, and keeps telling it",
+    items: [
+      { tag: "fixed", text: "Today's move on the Dashboard is read from the day's real opening equity - the previous session's close, the same basis every broker quotes a day change on - instead of being derived from the chart's own points, which are session-filtered, thinned and flat-collapsed. The baseline was whichever sample survived thinning, so it changed on every reload: a board opened during a dip read RED all morning on a green day and went green on a refresh. The headline and the chart now read the same two numbers." },
+      { tag: "improved", text: "The Dashboard follows the live equity push instead of freezing at page load. Equity is sent for every book every 30 seconds; nothing was keeping those samples, so the balance updated over the websocket while the move and the curve beside it stayed pinned to whatever was fetched on mount - which is why the numbers only changed when you reloaded. The curve now extends itself, and says 'live' when it is doing so." },
+      { tag: "improved", text: "The equity chart carries its numbers on its face: six labelled gridlines instead of two, the previous close drawn as a reference line, the current value labelled on the line itself, and a PREV CLOSE / HIGH / LOW / NOW strip underneath. The readings are there without hovering." },
+      { tag: "fixed", text: "Downsampling a long equity window no longer throws away its highs and lows. Keeping every Nth sample meant the same 1D window reported a 40,120 high on one load and 38,898 on the next, depending on where the buckets fell; buckets now keep their extremes, so the shape and the range survive at any budget." },
+      { tag: "fixed", text: "An option position is valued at the middle of its two-sided market rather than a lone print. Two INTC 0DTE calls bought at $1.00 were marked near $7 by a single print this morning: equity jumped $1,406 (+14%) for one sample, that spike was written into the book's history permanently, and it set the whole vertical range of the day's chart. The same figure feeds the daily-loss halt, where a bad print the other way would halt a book that had not lost anything." },
+      { tag: "fixed", text: "The day's opening equity survives a restart. It was held only in memory and seeded with 'equity the first time we looked today', so an engine restarted mid-session re-based the day at the restart price - a book already down 4% came back reading flat and the daily-loss halt forgot how far down it was." },
+    ],
+  },
   {
     version: "0.7.69",
     date: "2026-09-14",
