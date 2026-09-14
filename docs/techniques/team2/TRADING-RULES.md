@@ -2388,6 +2388,12 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   proxy becomes `refused`, the setup stays eligible for its next contact) — that touches the pure read's
   contract and needs a before/after replay test (the 0.7.60 lesson) plus a sweep, so it is written up here
   and in `notes/market-watch.md` run 88 only. Related: F104, F105, F108, F123.
+  **Evidence 3 (2026-09-14 14:05 ET, run 90):** IWM flipped back to scenario 4 (puts) on the 13:45 15m body close
+  288.715 < 288.77 (open 288.815; verified on the 1m bars). With spot 288.66 the nearest listed OTM put, the 288P,
+  quotes 0.08/0.09 (delta −0.18, vol 92k) — under the $0.20 floor — while the one-strike-ITM 289P is 0.48/0.49
+  (delta −0.61, spread 2.1%, vol 41k), the only in-band near-money contract. A scenario-4 touch now would be refused
+  exactly like 13:02 and would charge the desk cap a second phantom loss (F125). Third instance today across both
+  sides; the near-ITM decision is the gating item.
 - **F125 (2026-09-14 13:40 ET, run 89 — defect at the F108 × F37 seam, NOT fixed; the desk-wide loss cap is
   charging a trade that was never sent).** The IWM proxy from F124 exited on the very next 2m close: 13:04
   `exit` "premium stop: -126% ≤ −25% (P1/D13)" (entry premium $0.0233 incl. 1-tick slippage, exit $0.0014,
