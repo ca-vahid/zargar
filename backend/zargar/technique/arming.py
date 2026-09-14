@@ -286,6 +286,12 @@ class PlanArmer(PlanRunner):
                   trigger=trade.trigger_id, contract=trade.contract)
         return trade.contract
 
+    async def rejudge_contract(self, ap, trade, contract: dict) -> None:
+        """EM's quality re-judgement on the fresh NBBO (DA-01): T5.4 spread and T5.3 IV, the same
+        functions the pick used, so the final admission sees the book's warnings on the final quote."""
+        rejudge_spread(contract)
+        rejudge_iv(contract, spot=float(trade.last_price or trade.entry or 0))
+
     def _preopen_window(self, now: dt.datetime) -> bool:
         at = str(self.engine.settings.get("technique.arm.preopen_at", "09:25") or "09:25")
         try:

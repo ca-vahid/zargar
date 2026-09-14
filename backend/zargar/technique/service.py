@@ -1747,6 +1747,9 @@ class TechniqueService:
             raise KeyError("sweep row not found")
         _, close_ms = session_bounds(session_day)
         params = sw.params or {}
+        # DA-07 (2026-09-14): a promotion carries the sweep's VARIANT (threshold overlay); a prior read is
+        # reused only when it was made under the same variant, and a fresh read is built under it
+        variant = dict((params.get("overrides") or {}))
         if with_vision and not force:
             async with self.engine.sf() as session:
                 prior = (await session.execute(
@@ -1754,7 +1757,9 @@ class TechniqueService:
                                                TechniqueRun.status == "done", TechniqueRun.mode == "plan")
                     .order_by(TechniqueRun.created_at.desc()).limit(6))).scalars().all()
             for pr in prior:
-                if (pr.result or {}).get("passes"):
+                prior_variant = dict((((pr.config or {}).get("overrides") or {}).get("thresholds") or {}))
+                if (pr.result or {}).get("passes") and prior_variant == variant \
+                        and str(getattr(pr, "technique", "enhanced_market") or "enhanced_market") == "enhanced_market":
                     async with self.engine.sf() as session:
                         r2 = await session.get(TechniqueWalkforward, row.id)
                         if r2 is not None:
@@ -1764,7 +1769,8 @@ class TechniqueService:
                     d["reused"] = True
                     return d
         rd = await self.analyze(symbol, as_of_ms=close_ms + 1, primary_tf=params.get("triggerTf"),
-                                trigger="promote", plan=True, with_vision=with_vision, wait=wait)
+                                trigger="promote", plan=True, with_vision=with_vision, wait=wait,
+                                thresholds_override=variant or None)
         async with self.engine.sf() as session:
             r2 = await session.get(TechniqueWalkforward, row.id)
             if r2 is not None:

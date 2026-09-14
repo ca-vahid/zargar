@@ -97,3 +97,38 @@ No production data was modified (dry run only).
   notes; no broker-fill integration test was added.
 - FIX-05 journals the disposition from this deploy forward; older TriggerFired rows keep only `critic` and
   `verdictAfterCritic`, and their disposition is reconstructed as `unknown` (not relabelled).
+
+
+---
+
+# Follow-up after the re-review (`2026-09-14-delivery-a-rereview.md`), same day
+
+Deployment of the combined change was HELD as asked (the deploy watcher was stopped at 11:59 PT before it
+fired; the engine was not restarted; the manifest was not applied). The 11 new boundary cases were adopted
+unchanged as `tests/test_em_review_da_execution.py` and `tests/test_em_review_da_reconcile.py`: **11 failed** on
+the previous head, **11 pass** now; the full reviewer group is 55 passing.
+
+| DA | correction | where |
+|---|---|---|
+| 01 | one admission function (`_admit_option_entry`: T5.3/T5.4 warning skips, premium caps, REMAINING daily-loss budget) runs on the pick and again on the final price and quantity immediately before dispatch; method-specific quality lives behind a new hook `rejudge_contract` (generic runner: spread only, `execution.spread_warn_pct`; EM overrides with T5.4 + T5.3 IV) - the direct EM import is gone | `planrunner.py`, `technique/arming.py` |
+| 02 | `_manage` never advances a rung while `pending_exit_qty > 0`; a cancelled exit leaves the target unexecuted, and the next touch sends the full TP2 | `planrunner.py::_manage` |
+| 03 | the repair builds an independent deep copy and assigns it (ORM history sees the change); the `TechniqueTradeCorrected` receipt is journaled BEFORE the row commits, so an audit failure commits nothing | `tools/em_reconcile_fallback.py` |
+| 04 | items are grouped by plan and applied as one conditional row transition; list and dict projections; exact replay reports `already_applied`; the corrected value is recomputed from the fill records and must match the manifest; plan aggregate `realizedPnl` recomputed; portfolio/technique checked when present; commissions read from the exit records; live (armed/paused) rows are skipped unless `--include-live` after quiescing | same |
+| 05 | confirmation is forward-only: an observation counts only when its source timestamp is strictly newer than the last counted one; a breach that clears resets the sequence; the underlying quote-stop and emergency paths are unchanged | `planrunner.py::on_quote_watch` |
+| 06 | `execution.min_one_contract` registered (False) with explicit per-desk values: EM False; Tips, Team2, Options Cartel True (their behaviour unchanged - their call to flip); `execution.spread_warn_pct` registered | `settings_service.py` |
+| 07 | `same_plan` includes `entry.basis`; `promote` reuses a prior read only under the same variant overlay (`config.overrides.thresholds`) and builds a fresh read with `thresholds_override=variant` | `outcome.py`, `technique/service.py` |
+| 08 | an exhausted critic failure budget sets and journals `critic_disposition = failure-budget-paused` before the fire stops | `planrunner.py::_fire_rest` |
+
+Build identity: `/api/health` now reports `build` = the checkout's short commit SHA (`ZARGAR_BUILD` overrides),
+so the corrected release is distinguishable from the audited 0.7.71 without a version bump.
+
+Corrections to the earlier response: ten shorts were consequentially replaced on 09-14 (pending-break error);
+the two reject rows were mislabelled but the magnitude rule invalidated them regardless. The USO/SWKS rows are
+unfilled, not "no orders" - they carry order ids - and they were still armed at the review snapshot; the revised
+tool skips live rows by default. Fresh manifest: `FIX-01-manifest-dryrun-v2-2026-09-14.json` (5 records; false
+halt: HPQ only; live rows: USO, SWKS plans).
+
+Still open, stated as open: quantity-dependent R:R reporting (FIX-10); FIX-02's partial-fill / uncertain-ACK /
+restart integration cases beyond the decision function; DA-01's integration evidence is still constructed
+intents, not broker acceptance; the reconciliation tests use isolated session fakes (the tool's real-DB
+round trip on the test database is the next evidence to produce).

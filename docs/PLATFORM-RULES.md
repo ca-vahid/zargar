@@ -1665,3 +1665,15 @@ is unchanged). (FIX-05) `Trade.critic / critic_advisory / errors / retries` surv
 journaled on TriggerFired with `criticMode`. (FIX-11 policy) `quote_exit_polls` counts DISTINCT quote
 observations by source timestamp - the same cached print cannot confirm a stop twice. Invariant added: **the
 multiplier belongs to the instrument that was actually ordered, never to the instrument that was requested.**
+
+
+### Reviewer re-review 2026-09-14 (DA-01..08) — shared-runner follow-ups (EM desk)
+
+`_admit_option_entry` is the ONE admission function for option entries (warning skips, premium caps,
+remaining daily-loss budget) and runs on the pick and again on the final price/quantity before dispatch;
+method quality re-judgement is the hook `rejudge_contract` (generic: spread only via
+`execution.spread_warn_pct`; EM: T5.4 + T5.3). `_manage` never advances a rung while an exit is pending.
+Quote-stop confirmation is forward-only (source timestamp strictly newer). `execution.min_one_contract`
+is registered with per-desk values (Tips/Team2/Cartel True = unchanged behaviour, EM False). `/api/health`
+carries `build` (short commit SHA). Repair tool contract: receipt journaled before commit, one row
+transition per plan, replay = `already_applied`, live rows skipped unless `--include-live` after quiescing.

@@ -111,3 +111,51 @@ scenarios, not over triggers, so ideas that never became triggers are counted.
    the other techniques (PLATFORM-RULES invariant 15 suggests its own)?
 3. The two-sided scenario: one scenario row with branches, or two rows sharing a `pair_id`? The alignment
    logic is simpler with two rows; the source fidelity is better with one.
+
+
+---
+
+# Revision after the reviewers' answers (same day)
+
+**Answers adopted.** (1) A revision per distinct accepted source state, including deletion/restoration and
+`A -> B -> A` as a genuine third state; identical transport redelivery is a receipt/retry event, never a
+revision; transcription is reused when the media hash and transcription configuration are unchanged;
+extraction has its own processing version. (2) No new Practice book in Delivery B; candidates are order-free
+research records; any later EM activation uses EM Practice with immutable origin attribution, common risk
+limits and one position owner. (3) One parent opportunity with child branch rows (stable branch ids, own
+conditions/lifecycle); the parent is reserved atomically before any future submission; unknown direction
+creates no executable branch.
+
+**Schema separation (edit 1 + the mutability point).** Three tables, not one:
+- `technique_source_revisions` - IMMUTABLE observations only: identity, author id/name, `published_at`,
+  `received_at`, kind, text, attachment hashes, `content_hash`, `supersedes`. No transcript, no usability.
+- `technique_source_artifacts` - APPEND-ONLY derived artifacts: `revision_id`, `kind` (transcript | extraction |
+  scenarios), `version`, `config_hash` (model/prompt/transcription config), `input_hash` (media or transcript
+  hash), `completed_at`, payload. `first_usable_at` for a scenario is the `completed_at` of the artifact that
+  produced it - a fact, never backfilled from `updated_at`; historical rows get `availability = unknown`.
+- `technique_source_jobs` - MUTABLE progress: stage, attempts, `lease_owner`, `lease_until`, `fence_token`
+  (edit 2: a worker commits only if its fence token still matches; an expired worker's writes are refused),
+  per-item checkpoints (`board_progress` as a list of completed item keys), `outcome` (retryable | permanent |
+  in_progress | done).
+
+**Later evidence (edit 3).** A later chart or post never rewrites an earlier as-of artifact; it produces a new
+scenario version with `first_usable_at` = its own availability, and the current-validity check runs before it
+is used. The earlier "evidence-time ban" is replaced by this versioning.
+
+**Order-free boundary (edit 4).** Scenario candidates carry `origin = scenario:*` and the runner refuses to
+arm any run whose origin starts with `scenario:` (a hard check in `arm_plan`, `arm_today`, the ingest auto-arm,
+restore and any retry path), independent of settings. The refusal is journaled. This stays until an
+activation decision adds an explicit allow-list.
+
+**Supersession fencing (edit 5).** For future activation only: final admission checks the scenario's
+revision is still current; a superseded/deleted source cancels working entries and leaves managed positions
+to the existing exit owner. In Delivery B it only marks records `stale_source`.
+
+**Typed evidence and lifecycle (edit 6).** Evidence rows keep raw numeric fragments and spans, chart marker
+roles and conflicts; `source_timeframe`, `confirmation_timeframe`, `exit_timeframe` and `holding_horizon`
+are separate fields (2h alone does not imply swing). Scenario lifecycle: `received -> understood ->
+candidate | not_executable -> armed -> fired -> filled -> exited`, plus `no_touch` only when observation
+coverage of the session is complete, `expired`, `superseded`.
+
+First implementation PR (proposed): the three tables + backfill dry-run tool + `resume_unfinished()` with
+fencing, no extraction changes yet.
