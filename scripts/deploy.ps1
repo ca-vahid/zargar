@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 $deployRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 . (Join-Path $PSScriptRoot 'deployment-lock.ps1')
 $deployMutex = Enter-ZargarDeployment $deployRoot
+$pausedByDeploy = $false
 try {
   Push-Location $deployRoot
   try {
@@ -12,6 +13,7 @@ try {
     $readiness = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/restart-check?caller=deploy.ps1' -TimeoutSec 10
     if (-not $readiness.safe) { throw ('Runtime is busy; deployment deferred: ' + ($readiness.reasons -join '; ')) }
     $pause = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/quiesce?minutes=5' -Method Post -TimeoutSec 10
+    $pausedByDeploy = [bool]$pause.quiesced
     $pausedState = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/state' -TimeoutSec 10
     if (-not $pause.quiesced -or -not $pausedState.quiesced) { throw 'Entry pause was not acknowledged and verified; runtime source unchanged.' }
     $oldCommit = (git rev-parse HEAD).Trim()
@@ -37,6 +39,6 @@ try {
     $receipt | ConvertTo-Json | Set-Content -LiteralPath $receiptPath -Encoding ASCII
   } finally { Pop-Location }
 } finally {
-  try { $null = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/quiesce?release=true' -Method Post -TimeoutSec 5 } catch { }
+  if ($pausedByDeploy) { try { $null = Invoke-RestMethod 'http://127.0.0.1:8420/api/ops/quiesce?release=true' -Method Post -TimeoutSec 5 } catch { } }
   Exit-ZargarDeployment $deployMutex
 }
