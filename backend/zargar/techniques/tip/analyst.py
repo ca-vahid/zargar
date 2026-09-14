@@ -385,6 +385,9 @@ def _our_positions(eng, symbol: str = "") -> dict:
                 if want and str(p.get("symbol") or "").upper() != want:
                     continue
                 pfm = eng.positions.portfolio(p.get("portfolioId")) or {}
+                if (p.get("extras") or {}).get("riskPlan"):
+                    from .lifecycle import position_risk_accounting
+                    p = {**p, "riskAccounting": position_risk_accounting(p)}   # G91-06
                 if pfm.get("book"):        # shadow-book counterfactuals are NOT ours (D9)
                     continue
                 pol = p.get("policy") or {}
@@ -393,6 +396,7 @@ def _our_positions(eng, symbol: str = "") -> dict:
                     "direction": p.get("direction"), "technique": p.get("technique"),
                     "status": p.get("status"), "sessionsHeld": p.get("sessionsHeld"),
                     "entryUnderlying": p.get("entry"), "realizedPnl": p.get("realizedPnl"),
+                    **({"riskAccounting": p["riskAccounting"]} if p.get("riskAccounting") else {}),
                     "legs": [{k: l.get(k) for k in ("symbol", "secType", "qty", "avgFill")}
                              for l in (p.get("legs") or []) if abs(float(l.get("qty") or 0)) > 1e-9],
                     "exitPlan": {"stop": (pol.get("stop") or {}).get("price"),

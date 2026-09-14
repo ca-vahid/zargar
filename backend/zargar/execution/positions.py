@@ -907,29 +907,60 @@ class PositionManager:
         await self._persist(p)
         return p.to_dict()
 
-    @serialized_adapter
-    async def widen_stop(self, pid: str, new_stop: float, *, reason: str) -> dict | None:
-        """The ONE way a live stop gets WIDER (set_policy only tightens): a
-        bounded, journaled exception the caller has already earned (tips
-        geometry rev 2: the trim-first sequence confirmed its trim). Refused
-        on adapter positions and when the stop is not actually wider."""
-        p = self._pos.get(pid)
-        if p is None:
-            return None
-        if p.policy.get("adapter"):
-            raise ValueError("adapter positions cannot widen their stop through the generic path")
-        short = p.direction == "short"
-        cur = p.state.stop
-        if cur is not None and not (float(new_stop) < cur if not short else float(new_stop) > cur):
-            raise ValueError(f"{new_stop} is not wider than the live stop {cur}")
-        p.policy = {**p.policy, "stop": {"kind": "fixed", "price": float(new_stop)}}
-        p.state.stop = float(new_stop)
-        self._log(p, "stop_widened", f"stop widened {cur} -> {float(new_stop):g}: {reason}")
-        await self._journal(POSITION_POLICY, p, {"policy": p.policy,
-                                                 "widened": {"from": cur, "to": float(new_stop), "reason": reason}})
-        await self._ensure_venue_stop(p)
-        await self._persist(p)
-        return p.to_dict()
+    async def widen_stop(self, pid: str, new_stop: float, *, reason: str,
+                         max_qty: float | None = None, unit_loss: float | None = None,
+                         budget: float | None = None) -> dict | None:
+        """The ONE way a live stop gets WIDER (set_policy only tightens). A
+        shared method that INCREASES exposure trusts no caller (G91-05): under
+        the position guard it re-reads the actual remaining quantity and the
+        position state, refuses when the position is not open, when a
+        protective exit is still in flight (a retained stop may be filling),
+        when the remaining quantity exceeds `max_qty`, or when `qty x unit_loss`
+        would exceed `budget`; then PERSISTS the transition before the wider
+        stop is exposed, and reverts on a persistence or journal failure.
+        Refused on adapter positions and when the stop is not actually wider."""
+        from .serialization import position_guard
+        async with position_guard(self, pid):
+            p = self._pos.get(pid)
+            if p is None:
+                return None
+            if p.policy.get("adapter"):
+                raise ValueError("adapter positions cannot widen their stop through the generic path")
+            if p.status not in ("open", "attention"):
+                raise ValueError(f"position is {p.status} — nothing to widen")
+            remaining = float(sum(abs(l.qty) for l in p.open_legs))
+            if remaining <= 1e-9:
+                raise ValueError("no remaining quantity")
+            inflight = [x for x in p.exits if x.get("orderId") and x.get("kind") in ("stop", "premium_stop", "quote_stop", "venue_stop", "bleed")
+                        and x.get("status") not in self._EXIT_DEAD + ("FILLED",)]
+            if inflight:
+                raise ValueError("a protective exit is in flight — the stop cannot be widened while it may fill")
+            if max_qty is not None and remaining > float(max_qty) + 1e-9:
+                raise ValueError(f"remaining quantity {remaining:g} exceeds the admissible {float(max_qty):g}")
+            if unit_loss is not None and budget is not None and remaining * float(unit_loss) > float(budget) + 0.01:   # a cent of rounding slack, never more
+                raise ValueError(f"{remaining:g} x {float(unit_loss):.4g} at the wider stop exceeds the "
+                                 f"${float(budget):,.0f} budget")
+            short = p.direction == "short"
+            cur = p.state.stop
+            if cur is not None and not (float(new_stop) < cur if not short else float(new_stop) > cur):
+                raise ValueError(f"{new_stop} is not wider than the live stop {cur}")
+            old_policy, old_stop = dict(p.policy), cur
+            p.policy = {**p.policy, "stop": {"kind": "fixed", "price": float(new_stop)}}
+            p.state.stop = float(new_stop)
+            try:
+                await self._persist(p)              # durable FIRST
+                self._log(p, "stop_widened", f"stop widened {cur} -> {float(new_stop):g}: {reason}")
+                await self._journal(POSITION_POLICY, p, {"policy": p.policy,
+                                                         "widened": {"from": cur, "to": float(new_stop), "reason": reason,
+                                                                     "remaining": remaining}})
+            except Exception:
+                p.policy, p.state.stop = old_policy, old_stop      # nothing exposed on failure
+                with contextlib.suppress(Exception):
+                    await self._persist(p)
+                raise
+            await self._ensure_venue_stop(p)
+            await self._persist(p)
+            return p.to_dict()
 
     # ---------------------------------------------------------------- order updates
     @serialized_adapter

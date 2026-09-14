@@ -58,7 +58,8 @@ async def _events(eng, kind: str) -> list[dict]:
 async def test_enforce_mode_finalizes_stop_and_resizes_before_entry(rig):
     eng = rig
     await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
-    await eng.settings.set("techniques.tip.risk_budget_per_tip", 2.0, journal=False)
+    await eng.settings.set("techniques.tip.risk_budget_per_tip", 6.0, journal=False)
+    await eng.settings.set("techniques.tip.budget_per_tip", 5000.0, journal=False)
     q = await _quote(eng, "GEOA")
     row, sig = await _tip(eng, "GEOA", q.last, stop_pct=0.2)          # 0.2% stop: inside the 0.75% width floor
     pdict = await eng.proposals.create_from_signal(row, sig, {})
@@ -68,7 +69,9 @@ async def test_enforce_mode_finalizes_stop_and_resizes_before_entry(rig):
     assert rp["finalStop"] < row.stop_price, "the stop is finalized (widened to the floor) BEFORE entry"
     assert pdict["context"]["exitPlan"]["underlyingStop"] == rp["finalStop"]
     assert rp["unitLoss"] > 0 and pdict["qty"] == rp["qty"]
-    assert pdict["qty"] * rp["unitLoss"] <= 2.0 + 1e-6, "qty x unitLoss <= B on the proposal"
+    assert pdict["qty"] * rp["unitLoss"] <= 6.0 + 1e-6, "qty x unitLoss <= B on the proposal"
+    assert rp["quote"]["entryRefBasis"] == "limit" and rp["entryRef"] == pdict["limitPrice"], "shares are sized at the executable limit"
+    assert pdict["bracket"]["stop_loss"] == rp["finalStop"], "the bracket carries the FINAL stop"
     assert rp["resized"] and rp["qtyRequested"] > rp["qty"]
     evs = [e for e in await _events(eng, "TipGeometryRepaired") if e.get("phase") == "pre-entry"]
     assert evs and evs[-1]["enforced"] is True and evs[-1]["resizedTo"] == pdict["qty"]
@@ -77,7 +80,8 @@ async def test_enforce_mode_finalizes_stop_and_resizes_before_entry(rig):
 
 async def test_shadow_mode_records_but_does_not_change_the_card(rig):
     eng = rig
-    await eng.settings.set("techniques.tip.risk_budget_per_tip", 2.0, journal=False)   # gate default = shadow
+    await eng.settings.set("techniques.tip.risk_budget_per_tip", 6.0, journal=False)   # gate default = shadow
+    await eng.settings.set("techniques.tip.budget_per_tip", 5000.0, journal=False)
     q = await _quote(eng, "GEOB")
     row, sig = await _tip(eng, "GEOB", q.last, stop_pct=0.2)
     pdict = await eng.proposals.create_from_signal(row, sig, {})
@@ -201,3 +205,131 @@ async def test_restart_resume_checks_the_trim_order_instead_of_resubmitting(rig)
     p = mgr.get(pos["id"])
     assert p.extras["geometryException"]["phase"] == "widened" and p.state.stop == wide
     assert len(p.exits) == exits_before, "the restart resumed from the order, it did not trim again"
+
+
+# ---------------------------------------------------------------- reviewer integration coverage (G91-01/02/03/05/06)
+async def test_enforce_mode_computation_failure_is_review_gated_not_admitted(rig, monkeypatch):
+    eng = rig
+    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
+
+    async def boom(self, **kw):
+        raise RuntimeError("bars provider down")
+    monkeypatch.setattr(type(eng.proposals), "_compute_risk_plan", boom)
+    q = await _quote(eng, "GEOH")
+    row, sig = await _tip(eng, "GEOH", q.last, stop_pct=1.5)
+    pdict = await eng.proposals.create_from_signal(row, sig, {})
+    assert pdict is not None and "risk evidence unavailable" in pdict["context"]["reviewRequired"]
+    assert pdict["context"]["riskPlan"]["enforced"] is True
+    out = await eng.proposals.approve(pdict["id"], via="auto")
+    assert out.get("refused") and out["order"] is None and out["proposal"]["status"] == "pending"
+
+
+async def test_final_admission_refusal_reverts_an_automated_approval(rig, monkeypatch):
+    """The card passed at creation AND at the approval head; the plan fails
+    only at final submission (the budget is cut between the two checks) — the
+    automated approval is reverted to pending, no order exists (G91-01: the
+    final refusal is honoured, not only the pre-check)."""
+    eng = rig
+    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
+    await eng.settings.set("techniques.tip.risk_budget_per_tip", 6.0, journal=False)
+    await eng.settings.set("techniques.tip.budget_per_tip", 5000.0, journal=False)
+    q = await _quote(eng, "GEOI")
+    row, sig = await _tip(eng, "GEOI", q.last, stop_pct=1.5)
+    pdict = await eng.proposals.create_from_signal(row, sig, {})
+    assert "reviewRequired" not in pdict["context"]
+    original = type(eng.proposals)._admit_geometry
+    calls = {"n": 0}
+
+    async def admit(self, p, **kw):
+        calls["n"] += 1
+        if calls["n"] == 2:                                   # between the head check and submission
+            await eng.settings.set("techniques.tip.risk_budget_per_tip", 0.01, journal=False)
+        return await original(self, p, **kw)
+    monkeypatch.setattr(type(eng.proposals), "_admit_geometry", admit)
+    out = await eng.proposals.approve(pdict["id"], via="auto")
+    assert calls["n"] == 2 and out.get("refused") and out["order"] is None
+    assert out["proposal"]["status"] == "pending", "the approval was reverted"
+    from zargar.models import Proposal
+    async with eng.sf() as session:
+        prow = await session.get(Proposal, pdict["id"])
+    assert prow.status == "pending" and prow.decided_via is None and prow.order_id is None
+    paused = [p for p in await _events(eng, "TipAutoPaused") if p.get("proposalId") == pdict["id"]]
+    assert paused and paused[-1].get("revertedApproval") is True
+
+
+async def test_live_book_never_gets_a_plan_even_when_enforced(rig):
+    eng = rig
+    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
+    pid = next(p["id"] for p in eng.positions.portfolios() if p["kind"] == "sim")
+    eng.positions.portfolio(pid)["kind"] = "live"          # the same book, relabeled live
+    try:
+        q = await _quote(eng, "GEOJ")
+        _final, qty, rp, note = await eng.proposals._pre_entry_geometry(
+            underlying="GEOJ", direction="long", pid=pid,
+            exit_plan={"underlyingStop": round(q.last * 0.998, 2), "targets": [round(q.last * 1.05, 2)]},
+            vehicle={"kind": "shares"}, sec_type="STK", symbol="GEOJ", limit=q.last, qty=50,
+            entry_hint=q.last, source="t", signal_id=None, analyst_run_id=None)
+        assert rp is None and qty == 50 and note == ""
+        _q2, _p, refusal = await eng.proposals._admit_geometry(
+            {"id": "x", "portfolioId": pid, "secType": "STK", "symbol": "GEOJ",
+             "context": {"techniqueId": "tip"}}, limit=q.last, qty=50, via="auto")
+        assert refusal is None, "a live book is outside the gate's scope entirely"
+    finally:
+        eng.positions.portfolio(pid)["kind"] = "sim"
+
+
+async def test_widen_stop_refuses_stale_caller_state_and_reverts_on_journal_failure(rig, monkeypatch):
+    from unittest.mock import AsyncMock
+    eng = rig
+    mgr = eng.position_manager
+    q = await _quote(eng, "GEOK")
+    tight, wide = round(q.last * 0.99, 2), round(q.last * 0.97, 2)
+    pos = await _adopt_shares(eng, "GEOK", qty=10, stop=tight)
+    # (a) the caller claims a trim happened; the position still holds 10
+    with pytest.raises(ValueError, match="exceeds the admissible"):
+        await mgr.widen_stop(pos["id"], wide, reason="claimed", max_qty=5)
+    # (b) the residual does not fit the budget at the wider stop
+    with pytest.raises(ValueError, match="exceeds the"):
+        await mgr.widen_stop(pos["id"], wide, reason="budget", unit_loss=q.last * 0.03, budget=1.0)
+    # (c) a protective exit in flight: the retained stop may be filling
+    p = mgr.get(pos["id"])
+    p.exits.append({"kind": "stop", "leg": "GEOK", "qty": 10, "orderId": "stop-working", "status": "SUBMITTED",
+                    "filledQty": 0, "price": None, "ts": 0, "reason": "test"})
+    with pytest.raises(ValueError, match="in flight"):
+        await mgr.widen_stop(pos["id"], wide, reason="race")
+    p.exits.pop()
+    # (d) journal failure: nothing exposed, in-memory and persisted stop reverted
+    monkeypatch.setattr(mgr, "_journal", AsyncMock(side_effect=OSError("journal down")))
+    with pytest.raises(OSError):
+        await mgr.widen_stop(pos["id"], wide, reason="journal")
+    assert mgr.get(pos["id"]).state.stop == tight and mgr.get(pos["id"]).policy["stop"]["price"] == tight
+    async with eng.sf() as session:
+        rowdb = await session.get(ManagedPositionRow, pos["id"])
+    assert rowdb.config["policy"]["stop"]["price"] == tight
+    monkeypatch.undo()
+    # (e) a closed position cannot widen
+    await mgr.close(pos["id"], fraction=1.0, kind="close", reason="done", force_market=True)
+    await wait_for(lambda: mgr.get(pos["id"]) is None or mgr.get(pos["id"]).status == "closed", timeout=8)
+    if mgr.get(pos["id"]) is not None:
+        with pytest.raises(ValueError):
+            await mgr.widen_stop(pos["id"], wide, reason="closed")
+
+
+async def test_accounting_is_read_from_serialized_positions(rig):
+    from zargar.techniques.tip.lifecycle import position_risk_accounting
+    from zargar.techniques.tip.analyst import _our_positions
+    eng = rig
+    mgr = eng.position_manager
+    q = await _quote(eng, "GEOL")
+    tight = round(q.last * 0.99, 2)
+    pos = await _adopt_shares(eng, "GEOL", qty=4, stop=tight,
+                              extras={"riskPlan": {"plannedRisk": 12.0, "stressRisk": 400.0, "enforced": True}})
+    acc = position_risk_accounting(mgr.get(pos["id"]).to_dict())
+    assert acc["plannedRisk"] == 12.0 and acc["stressRisk"] == 400.0 and acc["realizedLoss"] == 0.0
+    async with eng.sf() as session:
+        rowdb = await session.get(ManagedPositionRow, pos["id"])
+    row_acc = position_risk_accounting({"config": rowdb.config, "state": rowdb.state})
+    assert row_acc["plannedRisk"] == 12.0, "the DB row shape reads the same plan"
+    ours = _our_positions(eng, "GEOL")
+    managed = [m for m in (ours.get("managed") or []) if m.get("symbol") == "GEOL"]
+    assert managed and managed[0]["riskAccounting"]["plannedRisk"] == 12.0

@@ -367,8 +367,11 @@ def risk_accounting(position: dict) -> dict:
     planned = the final pre-entry plan's risk, stress = theoretical maximum,
     realized = what actually happened (a stop does not guarantee its price;
     the slippage between planned and realized is a REPORTED quantity)."""
+    # both serialized shapes: Managed.to_dict() carries `extras`; a DB row
+    # carries config.extras (G91-06: this is what production reads)
     cfg = position.get("config") or {}
-    rp = cfg.get("riskPlan") or {}
+    rp = ((position.get("extras") or {}).get("riskPlan")
+          or (cfg.get("extras") or {}).get("riskPlan") or cfg.get("riskPlan") or {})
     realized = float(position.get("realizedPnl") or (position.get("state") or {}).get("realizedPnl") or 0.0)
     planned = rp.get("plannedRisk")
     out = {"plannedRisk": planned, "stressRisk": rp.get("stressRisk"),

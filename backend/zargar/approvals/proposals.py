@@ -259,6 +259,19 @@ class ProposalService:
                        f"{'s' if qty != 1 else ''} of {symbol} at a ${limit:.2f} limit "
                        f"≈ ${limit * qty:,.0f} in “{pf.get('name', portfolio_id)}” "
                        f"({pf.get('kind', '?')}). RiskGate still checks the order on approval.")
+        # GEOMETRY rev 2: the armed-fire producer runs the same gate as the tip-time card
+        arm_plan = exit_plan or {"targets": list(targets or []), "underlyingStop": stop}
+        arm_plan, qty, arm_risk, gnote = await self._pre_entry_geometry(
+            underlying=signal_row.ticker, direction=direction, pid=portfolio_id,
+            exit_plan=arm_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol,
+            limit=limit, qty=qty, entry_hint=entry, source=signal_row.source_name,
+            signal_id=signal_row.id, analyst_run_id=analyst_run_id)
+        if gnote:
+            explain += " " + gnote
+        if arm_risk is not None and arm_risk.enforced:
+            exit_plan = arm_plan
+            if sec_type == "STK":
+                bracket = self._bracket_from_plan(arm_plan, fallback_target=(targets[0] if targets else None))
         ttl_min = int(eng.settings.get("signals.default_ttl_minutes", 30))
         row = Proposal(
             id=new_id(), signal_id=signal_row.id, portfolio_id=portfolio_id,
@@ -267,6 +280,9 @@ class ProposalService:
             rationale=signal_row.thesis_summary,
             context={"techniqueId": "tip", "sourceName": signal_row.source_name,
                      "armedRunId": run_id, "triggerId": trigger_id,
+                     **({"riskPlan": arm_risk.to_dict()} if arm_risk else {}),
+                     **({"reviewRequired": arm_risk.reviewRequired}
+                        if (arm_risk and arm_risk.enforced and arm_risk.reviewRequired) else {}),
                      "vehicle": vehicle,
                      "explain": explain + ((" " + glide_note) if glide_note else ""),
                      **({"sizing": {"budget": round(budget, 2), "glide": glide_note}}
@@ -372,6 +388,7 @@ class ProposalService:
                                          "width": width, "credit": bool(net < 0),
                                          "expiry": pick["expiry"]},
                              "explain": explain,
+                             **self._spread_gate_context(pid),
                              "exitPlan": build_exit_plan_spread(signal_row, sig, analyst, policy),
                              "analystRunId": analyst.get("runId"),
                              "analyst": ({k: analyst.get(k) for k in
@@ -518,16 +535,17 @@ class ProposalService:
         # risk budget BEFORE capital commits — shadow journals what would happen,
         # enforce applies it (a review-gated card never auto-approves)
         risk_plan = None
-        try:
-            exit_plan, qty, risk_plan, gnote = await self._pre_entry_geometry(
-                underlying=sig.ticker.upper(), direction=sig.direction, pid=pid,
-                exit_plan=exit_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol,
-                limit=limit, qty=qty, entry_hint=sig.entry_price, source=signal_row.source_name,
-                signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
-            if gnote:
-                explain += " " + gnote
-        except Exception:
-            log.debug("pre-entry geometry failed (advisory)", exc_info=True)
+        exit_plan, qty, risk_plan, gnote = await self._pre_entry_geometry(
+            underlying=sig.ticker.upper(), direction=sig.direction, pid=pid,
+            exit_plan=exit_plan, vehicle=vehicle, sec_type=sec_type, symbol=symbol,
+            limit=limit, qty=qty, entry_hint=sig.entry_price, source=signal_row.source_name,
+            signal_id=signal_row.id, analyst_run_id=analyst.get("runId"))
+        if gnote:
+            explain += " " + gnote
+        if risk_plan is not None and risk_plan.enforced and sec_type == "STK":
+            # G91-02: every protection is built from the SAME final plan — the
+            # bracket carries the finalized stop, never the signal's original
+            bracket = self._bracket_from_plan(exit_plan, fallback_target=sig.target_price)
 
         # ---- preflight coherence (ARM-PLAN P1/F7): compare this order against
         # the platform risk caps NOW, on the card — not as a silent risk
@@ -700,79 +718,104 @@ class ProposalService:
         task.add_done_callback(self._entry_studies.discard)
 
     # ------------------------------------------------------------- geometry rev 2
+    @staticmethod
+    def _bracket_from_plan(plan: dict, *, fallback_target: float | None) -> dict | None:
+        targets = [float(t) for t in (plan or {}).get("targets") or [] if t]
+        stop = (plan or {}).get("underlyingStop")
+        tp = targets[0] if targets else (float(fallback_target) if fallback_target else None)
+        if tp is None and not stop:
+            return None
+        return {"take_profit": tp, "stop_loss": float(stop) if stop else None,
+                "take_profit_pct": None, "stop_loss_pct": None}
+
+    def _geometry_scope(self, pid: str) -> str | None:
+        """G91-03: the gate is PRACTICE-scoped — 'enforce' | 'shadow' on a sim
+        book, None everywhere else (live/paper/shadow/unknown books never see
+        a computed plan; a Tips setting cannot change a live book's behaviour)."""
+        from ..techniques.tip import geometry as _geo
+        mode = _geo.gate_mode(self.engine.settings)
+        if mode == "off":
+            return None
+        pf = self.engine.positions.portfolio(pid) or {}
+        if pf.get("kind") != "sim":
+            return None
+        return mode
+
+    def _spread_gate_context(self, pid: str) -> dict:
+        """A 2-leg spread is not covered by the geometry estimator: under
+        enforce on a Practice book the card is review-gated (a person decides),
+        never auto-approved."""
+        if self._geometry_scope(pid) == "enforce":
+            return {"reviewRequired": "geometry gate does not cover spread vehicles — human decision only"}
+        return {}
+
     async def _pre_entry_geometry(self, *, underlying: str, direction: str, pid: str,
                                   exit_plan: dict, vehicle: dict, sec_type: str, symbol: str,
                                   limit: float, qty: int, entry_hint: float | None,
                                   source: str | None, signal_id: str | None,
-                                  analyst_run_id: str | None) -> tuple[dict, int, object | None, str]:
-        """GEOMETRY-RISK-PLAN rev 2, step 1-3: the same geometry rules the
-        adoption gate runs — but BEFORE entry, producing the FINAL stop; the
-        size is derived from that stop against the approved risk budget B
-        (`geometry.risk_budget`), invariant qty x unitLoss <= B on every
-        proposal. Journals TipGeometryRepaired phase 'pre-entry' with the
-        planned/stress risk and the estimator version. Returns (exit_plan,
-        qty, RiskPlan | None, explain note); in shadow mode the plan is
-        recorded and the caller's sizes are returned untouched."""
+                                  analyst_run_id: str | None, phase: str = "pre-entry",
+                                  proposal_id: str | None = None) -> tuple[dict, int, object | None, str]:
+        """GEOMETRY-RISK-PLAN rev 2, steps 1-3 (reviewer-tightened G91-01/02/03):
+        the same geometry rules the adoption gate runs — BEFORE entry — producing
+        the FINAL stop; the size is derived from that stop against the approved
+        risk budget B, invariant qty x unitLoss <= B on every proposal.
+
+        - Practice scope only (`_geometry_scope`): elsewhere nothing is computed.
+        - Shares are sized at the EXECUTABLE price (the BUY limit, the maximum
+          admissible entry) — never at a lower last trade.
+        - Options need a fresh, non-delayed underlying reference quote, a delta
+          whose per-field age is inside `geometry_greeks_max_age_seconds` and
+          EXPLICIT contract metadata (multiplier); anything missing or stale is
+          a review-gated plan (no estimate is invented).
+        - Under enforce, a failed computation is itself a review-gated plan:
+          never an advisory skip that admits the trade.
+        Returns (exit_plan, qty, RiskPlan | None, explain note); in shadow mode
+        the plan is recorded and the caller's sizes are returned untouched."""
         from ..techniques.tip import geometry as _geo
         eng = self.engine
-        mode = _geo.gate_mode(eng.settings)
-        if mode == "off" or sec_type not in ("OPT", "STK"):
+        mode = self._geometry_scope(pid)
+        if mode is None or sec_type not in ("OPT", "STK"):
             return exit_plan, qty, None, ""
-        await eng.ensure_symbol(underlying)
-        q = eng.quotes.get(underlying)
-        entry_ref = (float(q.last) if q is not None and q.last and q.last > 0 else None) \
-            or (float(entry_hint) if entry_hint else None)
-        if not entry_ref:
-            return exit_plan, qty, None, ""
-        bars: list = []
-        if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
-            try:
-                from ..clock import now_ms as _now_ms
-                from ..marketstructure.history import fetch_window
-                nms = _now_ms()
-                bars = await fetch_window(underlying, "15m", nms - 7 * 86_400_000, nms)
-            except Exception:
-                log.debug("pre-entry geometry: no bars for %s", underlying)
-        equity = None
-        with contextlib.suppress(Exception):
-            equity = float(await eng.positions.equity(pid) or 0) or None
-        budget, budget_source = _geo.risk_budget(eng.settings, equity)
-        delta = None
-        greeks_meta: dict = {}
-        quote_meta: dict = {"limit": float(limit)}
-        multiplier = 1.0
-        option_type = None
-        if sec_type == "OPT":
-            multiplier = float((vehicle or {}).get("multiplier") or 100.0)
-            option_type = (vehicle or {}).get("optionType")
-            snap = None
-            with contextlib.suppress(Exception):
-                snap = eng.options.snapshot_cached(symbol)
-            g = (snap or {}).get("greeks") or {}
-            if g.get("delta") is not None:
-                delta = float(g["delta"])
-                greeks_meta = {"source": "chain" if not (snap or {}).get("greeksLive") else "live",
-                               "asOf": (snap or {}).get("asOf") or (snap or {}).get("greeksFieldAsOf")}
-            oq = eng.quotes.get(symbol)
-            if oq is not None:
-                quote_meta.update({"source": getattr(oq, "source", None),
-                                   "delayed": bool(getattr(oq, "delayed", False))})
-        final_plan, rp = _geo.plan_risk(
-            mode=mode, direction=direction, vehicle=("option" if sec_type == "OPT" else "shares"),
-            entry_ref=entry_ref, exit_plan=exit_plan, bars=bars, settings=eng.settings,
-            limit=float(limit), qty_requested=int(qty), multiplier=multiplier,
-            option_type=option_type, delta=delta, greeks_meta=greeks_meta,
-            budget=budget, budget_source=budget_source, quote_meta=quote_meta)
+        enforce = mode == "enforce"
+
+        def failed(reason: str):
+            rp_ = _geo.RiskPlan(mode=mode, direction=direction,
+                                vehicle=("option" if sec_type == "OPT" else "shares"),
+                                entryRef=float(entry_hint or 0.0), qtyRequested=int(qty), qty=int(qty),
+                                budgetSource="", reviewRequired=f"risk evidence unavailable: {reason}",
+                                enforced=enforce, invariantOk=None)
+            return exit_plan, qty, rp_, (f"Geometry gate: NO automatic entry — {rp_.reviewRequired}."
+                                         if enforce else "")
+
+        try:
+            final_plan, rp = await self._compute_risk_plan(
+                mode=mode, underlying=underlying, direction=direction, pid=pid, exit_plan=exit_plan,
+                vehicle=vehicle, sec_type=sec_type, symbol=symbol, limit=limit, qty=qty,
+                entry_hint=entry_hint)
+        except Exception as exc:
+            log.warning("pre-entry geometry failed for %s: %s", underlying, exc)
+            out = failed(f"{type(exc).__name__}: {str(exc)[:120]}")
+            if enforce:
+                with contextlib.suppress(Exception):
+                    await eng.journal.append(
+                        ev.TIP_GEOMETRY_REPAIRED,
+                        {"proposalId": proposal_id, "signalId": signal_id, "underlying": underlying,
+                         "entryRef": None, "repairs": [], "phase": phase, "enforced": True, "mode": mode,
+                         "reviewRequired": out[2].reviewRequired, "analystRunId": analyst_run_id,
+                         "source": source},
+                        aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
+            return out
         with contextlib.suppress(Exception):
             await eng.journal.append(
                 ev.TIP_GEOMETRY_REPAIRED,
-                {"proposalId": None, "signalId": signal_id, "underlying": underlying,
-                 "entryRef": entry_ref, "repairs": list(rp.repairs), "phase": "pre-entry",
+                {"proposalId": proposal_id, "signalId": signal_id, "underlying": underlying,
+                 "entryRef": rp.entryRef, "repairs": list(rp.repairs), "phase": phase,
                  "enforced": rp.enforced, "mode": mode, "plannedRisk": rp.plannedRisk,
                  "stressRisk": rp.stressRisk, "finalRisk": rp.plannedRisk,
                  "estimatorVersion": rp.estimatorVersion, "resizedFrom": rp.qtyRequested,
                  "resizedTo": rp.qty, "budget": rp.budget, "budgetSource": rp.budgetSource,
                  "reviewRequired": rp.reviewRequired, "decisions": list(rp.decisions),
+                 "quote": rp.quote, "greeks": {k: v for k, v in rp.greeks.items() if k != "text"},
                  "analystRunId": analyst_run_id, "source": source},
                 aggregate_type="signal", aggregate_id=signal_id or underlying, portfolio_id=pid)
         note = ""
@@ -792,50 +835,197 @@ class ProposalService:
                     (f"; review: {rp.reviewRequired}" if rp.reviewRequired else "") + ".")
         return exit_plan, qty, rp, note
 
-    async def _admit_geometry(self, pdict: dict, *, limit: float | None, qty: float,
-                              via: str) -> tuple[float, dict, str | None]:
-        """GEOMETRY rev 2, step 4 — final admission right before an entry order
-        exists: re-derive the risk at the limit that will actually be
-        submitted (a refreshed ask may only have IMPROVED it — the never-raise
-        rule stands) and re-apply qty x unitLoss <= B. Returns (qty, pdict,
-        refusal): a refusal means an AUTOMATED entry must not proceed (the
-        card stays for a person); a human's click proceeds with the resized
-        qty (their click is the review). Records the revalidated plan on the
-        proposal + journals a phase 'submit' event when anything changed."""
+    async def _compute_risk_plan(self, *, mode: str, underlying: str, direction: str, pid: str,
+                                 exit_plan: dict, vehicle: dict, sec_type: str, symbol: str,
+                                 limit: float, qty: int, entry_hint: float | None):
+        """The evidence-gathering half of the gate (raises on unexpected
+        failure; evidence problems come back as a review-gated plan)."""
+        from ..clock import now_ms as _now_ms
         from ..techniques.tip import geometry as _geo
         eng = self.engine
+        s = eng.settings
+        now = int(_now_ms())
+        quote_meta: dict = {"limit": float(limit)}
+        problems: list[str] = []
+        q_max_age = float(s.get("techniques.tip.geometry_quote_max_age_seconds", 300.0) or 300.0)
+
+        def _age_s(q) -> float | None:
+            ts = getattr(q, "source_ts", None) or getattr(q, "ts", None)
+            try:
+                return max(0.0, (now - int(ts)) / 1000.0) if ts else None
+            except (TypeError, ValueError):
+                return None
+
+        if sec_type == "STK":
+            # G91-02: the maximum admissible entry is the BUY limit — size there
+            if not limit or float(limit) <= 0:
+                raise ValueError("no executable limit for a share entry")
+            entry_ref = float(limit)
+            quote_meta["entryRefBasis"] = "limit"
+        else:
+            await eng.ensure_symbol(underlying)
+            uq = eng.quotes.get(underlying)
+            entry_ref = float(uq.last) if uq is not None and getattr(uq, "last", 0) and uq.last > 0 else None
+            quote_meta["entryRefBasis"] = "underlying-last"
+            if entry_ref is None:
+                problems.append("no live underlying reference quote")
+                entry_ref = float(entry_hint) if entry_hint else 0.0
+            else:
+                age = _age_s(uq)
+                quote_meta.update({"underlyingSource": getattr(uq, "source", None),
+                                   "underlyingAgeS": age, "underlyingDelayed": bool(getattr(uq, "delayed", False))})
+                if bool(getattr(uq, "delayed", False)):
+                    problems.append("underlying reference quote is delayed")
+                elif age is None:
+                    problems.append("underlying reference quote age unknown")
+                elif age > q_max_age:
+                    problems.append(f"underlying reference quote is {age:.0f}s old (max {q_max_age:.0f}s)")
+        bars: list = []
+        if type(getattr(eng, "feed", None)).__name__ != "SimQuoteFeed":
+            try:
+                from ..marketstructure.history import fetch_window
+                bars = await fetch_window(underlying, "15m", now - 7 * 86_400_000, now)
+            except Exception:
+                log.debug("pre-entry geometry: no bars for %s", underlying)
+        equity = None
+        with contextlib.suppress(Exception):
+            equity = float(await eng.positions.equity(pid) or 0) or None
+        budget, budget_source = _geo.risk_budget(s, equity)
+        delta = None
+        greeks_meta: dict = {}
+        multiplier = 1.0
+        option_type = None
+        currency = str((vehicle or {}).get("currency") or "USD")
+        if sec_type == "OPT":
+            raw_mult = (vehicle or {}).get("multiplier")
+            if raw_mult is None:
+                problems.append("contract multiplier unknown (no contract metadata on the vehicle)")
+                multiplier = 0.0
+            else:
+                multiplier = float(raw_mult)
+            option_type = (vehicle or {}).get("optionType")
+            if option_type not in ("call", "put"):
+                problems.append("option type unknown")
+            snap = None
+            with contextlib.suppress(Exception):
+                snap = eng.options.snapshot_cached(symbol)
+            g = (snap or {}).get("greeks") or {}
+            g_max_age = float(s.get("techniques.tip.geometry_greeks_max_age_seconds", 900.0) or 900.0)
+            if g.get("delta") is None:
+                greeks_meta = {"reason": "missing delta — no estimate invented"}
+            else:
+                field_ts = ((snap or {}).get("greeksFieldAsOf") or {}).get("delta") or (snap or {}).get("asOf")
+                try:
+                    g_age = max(0.0, (now - int(field_ts)) / 1000.0) if field_ts else None
+                except (TypeError, ValueError):
+                    g_age = None
+                greeks_meta = {"source": "live" if (snap or {}).get("greeksLive") else "chain",
+                               "asOf": field_ts, "ageS": g_age}
+                if g_age is None:
+                    greeks_meta["reason"] = "delta age unknown — no estimate invented"
+                elif g_age > g_max_age:
+                    greeks_meta["reason"] = f"delta is {g_age:.0f}s old (max {g_max_age:.0f}s) — no estimate invented"
+                else:
+                    delta = float(g["delta"])
+            oq = eng.quotes.get(symbol)
+            if oq is not None:
+                quote_meta.update({"source": getattr(oq, "source", None), "ageS": _age_s(oq),
+                                   "delayed": bool(getattr(oq, "delayed", False))})
+                if bool(getattr(oq, "delayed", False)):
+                    problems.append("contract quote is delayed")
+        final_plan, rp = _geo.plan_risk(
+            mode=mode, direction=direction, vehicle=("option" if sec_type == "OPT" else "shares"),
+            entry_ref=entry_ref, exit_plan=exit_plan, bars=bars, settings=s,
+            limit=float(limit), qty_requested=int(qty), multiplier=multiplier,
+            option_type=option_type, delta=delta, greeks_meta=greeks_meta,
+            budget=budget, budget_source=budget_source, quote_meta=quote_meta, currency=currency)
+        if problems:
+            rp.reviewRequired = "; ".join(problems) + (f"; {rp.reviewRequired}" if rp.reviewRequired else "")
+            rp.qty = int(qty)
+            rp.invariantOk = None
+            rp.plannedRisk = None
+        return final_plan, rp
+
+    async def _admit_geometry(self, pdict: dict, *, limit: float | None, qty: float,
+                              via: str) -> tuple[float, dict, str | None]:
+        """GEOMETRY rev 2, step 4 — final admission immediately before an entry
+        order exists (reviewer-tightened G91-01/02): under enforce on a Practice
+        book the WHOLE plan is recomputed at the limit that will actually be
+        submitted (fresh underlying reference, Greek field age, geometry, budget)
+        — not just the premium arithmetic. Returns (qty, pdict, refusal): a
+        refusal means an AUTOMATED entry must not proceed (missing/stale/failed
+        evidence included — never admission by absence); a human's click
+        proceeds with the resized qty (the click is the review). The revalidated
+        plan, final exit plan and bracket are persisted on the proposal."""
+        eng = self.engine
         ctx = pdict.get("context") or {}
-        rp = ctx.get("riskPlan") or {}
-        if not rp or not rp.get("enforced"):
+        if ctx.get("techniqueId") != "tip" or pdict.get("secType") not in ("OPT", "STK"):
             return qty, pdict, None
-        if via == "auto" and ctx.get("reviewRequired"):
-            return qty, pdict, f"geometry review required: {ctx.get('reviewRequired')}"
-        new_limit = float(limit) if limit else float(rp.get("quote", {}).get("limit") or 0)
-        q2, rp2 = _geo.revalidate_for_submit(rp, new_limit=new_limit) if new_limit else (int(rp.get("qty") or qty), rp)
-        q2 = min(int(q2), int(qty)) if q2 >= 1 else q2
-        changed = rp2 != rp or q2 != int(qty)
-        if changed:
-            with contextlib.suppress(Exception):
-                async with eng.sf() as session:
-                    row = await session.get(Proposal, pdict["id"])
-                    if row is not None:
-                        row.context = {**(row.context or {}), "riskPlan": rp2}
-                        await session.commit()
-                        pdict = proposal_dict(row)
-            with contextlib.suppress(Exception):
-                await eng.journal.append(
-                    ev.TIP_GEOMETRY_REPAIRED,
-                    {"proposalId": pdict["id"], "underlying": (ctx.get("vehicle") or {}).get("underlying") or pdict["symbol"],
-                     "entryRef": rp.get("entryRef"), "repairs": [], "phase": "submit", "via": via,
-                     "limit": new_limit, "qtyBefore": qty, "qtyAfter": q2,
-                     "plannedRisk": rp2.get("plannedRisk"), "stressRisk": rp2.get("stressRisk"),
-                     "reviewRequired": rp2.get("reviewRequired")},
-                    aggregate_type="proposal", aggregate_id=pdict["id"], portfolio_id=pdict.get("portfolioId"))
-        if q2 < 1:
+        mode = self._geometry_scope(pdict.get("portfolioId") or "")
+        if mode != "enforce":
+            return qty, pdict, None
+        rp = ctx.get("riskPlan") or {}
+        if via == "auto":
+            if not rp or not rp.get("enforced"):
+                return qty, pdict, "geometry: no enforced risk plan on the proposal — automated entry refused"
+            if ctx.get("reviewRequired"):
+                return qty, pdict, f"geometry review required: {ctx.get('reviewRequired')}"
+        vehicle = ctx.get("vehicle") or {}
+        sec_type = pdict.get("secType")
+        underlying = str(vehicle.get("underlying") or pdict.get("symbol") or "").upper()
+        direction = "short" if (sec_type == "OPT" and vehicle.get("optionType") == "put") else "long"
+        new_limit = float(limit) if limit else float(pdict.get("limitPrice") or 0)
+        final_plan, q2, rp2, _note = await self._pre_entry_geometry(
+            underlying=underlying, direction=direction, pid=pdict["portfolioId"],
+            exit_plan=dict(ctx.get("exitPlan") or {}), vehicle=vehicle, sec_type=sec_type,
+            symbol=pdict["symbol"], limit=new_limit, qty=int(qty),
+            entry_hint=(rp.get("entryRef") if rp else None), source=ctx.get("sourceName"),
+            signal_id=pdict.get("signalId"), analyst_run_id=ctx.get("analystRunId"),
+            phase="submit", proposal_id=pdict.get("id"))
+        if rp2 is None:
+            return (qty, pdict, "geometry: risk evidence unavailable at submission") if via == "auto" else (qty, pdict, None)
+        refusal = None
+        if rp2.reviewRequired:
             if via == "auto":
-                return qty, pdict, f"geometry review required at submission: {rp2.get('reviewRequired')}"
-            return qty, pdict, None          # a person approved: their click is the review
-        return float(q2), pdict, None
+                refusal = f"geometry review required at submission: {rp2.reviewRequired}"
+            q_final = qty                       # a person approved: their click is the review
+        else:
+            q_final = float(min(int(q2), int(qty)))
+        new_bracket = self._bracket_from_plan(final_plan, fallback_target=None) if sec_type == "STK" and not rp2.reviewRequired else None
+        with contextlib.suppress(Exception):
+            async with eng.sf() as session:
+                row = await session.get(Proposal, pdict["id"])
+                if row is not None:
+                    row.context = {**(row.context or {}), "riskPlan": rp2.to_dict(),
+                                   **({"exitPlan": final_plan} if not rp2.reviewRequired else {}),
+                                   **({"reviewRequired": rp2.reviewRequired} if rp2.reviewRequired else {})}
+                    if new_bracket is not None:
+                        row.bracket = new_bracket
+                    await session.commit()
+                    pdict = proposal_dict(row)
+        return q_final, pdict, refusal
+
+    async def _refuse_automated(self, proposal_id: str, *, reason: str, revert: bool = False) -> dict:
+        """An AUTOMATED entry the gate refuses — the card stays (or goes back
+        to) pending with the reason on its record; journaled TipAutoPaused."""
+        eng = self.engine
+        async with eng.sf() as session:
+            row = await session.get(Proposal, proposal_id)
+            if row is None:
+                return {"proposal": {"id": proposal_id}, "order": None, "refused": reason}
+            if revert and row.status == "approved":
+                row.status = "pending"
+                row.decided_at = None
+                row.decided_via = None
+            row.context = {**(row.context or {}), "autoGate": reason}
+            await session.commit()
+            pdict = proposal_dict(row)
+        await eng.journal.append(ev.TIP_AUTO_PAUSED, {"reason": reason, "proposalId": proposal_id,
+                                                      **({"revertedApproval": True} if revert else {})},
+                                 aggregate_type="proposal", aggregate_id=proposal_id,
+                                 portfolio_id=pdict.get("portfolioId"))
+        eng.bus.publish(topics.PROPOSALS, pdict)
+        return {"proposal": pdict, "order": None, "refused": reason}
 
     # ------------------------------------------------------------- decide
     async def _maybe_retry_stale_quote(self, pdict: dict, intent: OrderIntent,
@@ -951,20 +1141,10 @@ class ProposalService:
         # GEOMETRY rev 2: an AUTOMATED approval is admitted only if the enforced
         # risk plan still holds at the current limit — a refused card stays
         # pending for a person, with the reason on its record (no status flip)
-        if via == "auto" and (pre.get("context") or {}).get("riskPlan", {}).get("enforced"):
+        if via == "auto" and (pre.get("context") or {}).get("techniqueId") == "tip":
             _q, pre, refusal = await self._admit_geometry(pre, limit=pre.get("limitPrice"), qty=qty, via=via)
             if refusal:
-                async with eng.sf() as session:
-                    row = await session.get(Proposal, proposal_id)
-                    if row is not None:
-                        row.context = {**(row.context or {}), "autoGate": refusal}
-                        await session.commit()
-                        pre = proposal_dict(row)
-                await eng.journal.append(ev.TIP_AUTO_PAUSED, {"reason": refusal, "proposalId": proposal_id},
-                                         aggregate_type="proposal", aggregate_id=proposal_id,
-                                         portfolio_id=pre.get("portfolioId"))
-                eng.bus.publish(topics.PROPOSALS, pre)
-                return {"proposal": pre, "order": None, "refused": refusal}
+                return await self._refuse_automated(proposal_id, reason=refusal)
         async with eng.sf() as session:
             row = await session.get(Proposal, proposal_id)
             row.status = "approved"
@@ -1006,14 +1186,6 @@ class ProposalService:
             eng.bus.publish(topics.PROPOSALS, pdict)
             return {"proposal": pdict, "order": None}
 
-        bracket = None
-        if pdict["bracket"]:
-            bracket = BracketSpec(**{k: v for k, v in {
-                "take_profit": pdict["bracket"].get("take_profit"),
-                "stop_loss": pdict["bracket"].get("stop_loss"),
-                "take_profit_pct": pdict["bracket"].get("take_profit_pct"),
-                "stop_loss_pct": pdict["bracket"].get("stop_loss_pct"),
-            }.items() if v is not None})
         # re-price an aged limit at approval time (2026-09-01: a 2h-old $23.80
         # limit vs a live $11.82 mid tripped the price collar and failed the
         # user's own click). The never-chase rule from creation applies again:
@@ -1029,8 +1201,22 @@ class ProposalService:
                 log.info("proposal %s: limit improved %s -> %s (live ask)",
                          proposal_id, limit, round(ask, 2))
                 limit = round(ask, 2)
-        # GEOMETRY rev 2: re-derive the risk at the limit actually submitted
-        qty, pdict, _refusal = await self._admit_geometry(pdict, limit=limit, qty=qty, via=via)
+        # GEOMETRY rev 2: the WHOLE plan is re-derived at the limit actually
+        # submitted; an automated entry the gate refuses here goes back to
+        # pending (G91-01: the final refusal is honoured, not just the pre-check)
+        qty, pdict, refusal = await self._admit_geometry(pdict, limit=limit, qty=qty, via=via)
+        if refusal and via == "auto":
+            return await self._refuse_automated(proposal_id, reason=refusal, revert=True)
+        # the bracket is built AFTER admission from the proposal's (possibly
+        # revalidated) protection plan — every protection from the same final plan
+        bracket = None
+        if pdict["bracket"]:
+            bracket = BracketSpec(**{k: v for k, v in {
+                "take_profit": pdict["bracket"].get("take_profit"),
+                "stop_loss": pdict["bracket"].get("stop_loss"),
+                "take_profit_pct": pdict["bracket"].get("take_profit_pct"),
+                "stop_loss_pct": pdict["bracket"].get("stop_loss_pct"),
+            }.items() if v is not None})
         intent = OrderIntent(
             portfolio_id=pdict["portfolioId"], symbol=pdict["symbol"],
             sec_type=pdict["secType"], side=pdict["side"], qty=qty,
