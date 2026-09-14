@@ -374,6 +374,7 @@ export interface TipNote {
   // knowledge lifecycle (KNOWLEDGE B1/B5): null = never expires; citation in a
   // live run refreshes the TTL; pin clears it
   validUntil?: string | null; lastCitedAt?: string | null; citedCount?: number;
+  deletedAt?: string | null;   // tombstone (history keeps the replacement link)
 }
 
 // KB-02 receipt: what a knowledge audit proposed (propose-only mode) or applied

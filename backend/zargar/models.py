@@ -725,6 +725,10 @@ class TipNote(Base):
     # KB-04: a core rule is mandatory in every rulebook selection — a flood of
     # newer case reports can never silently push it out of the analyst's context
     core: Mapped[bool] = mapped_column(Boolean, default=False)
+    # R63-02: a delete is a tombstone that keeps the note's replacement link —
+    # `superseded_by` stays what it was (or "deleted:user" for a live note);
+    # this stamp is the deletion itself, snapshotted like every transition
+    deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
@@ -749,6 +753,23 @@ class TipNoteRevision(Base):
     needs_human: Mapped[bool] = mapped_column(Boolean, default=False)
     core: Mapped[bool] = mapped_column(Boolean, default=False)          # decision-relevant: projected too
     reason: Mapped[str] = mapped_column(String(40), default="edit")   # edit|supersede|pin|refresh|flag|delete
+
+
+class TipKnowledgeCycle(Base):
+    """R63-04: one bounded knowledge-audit CYCLE — the eligible scope set at
+    cycle start plus per-scope progress (pending / done / failed / dropped,
+    attempts, backoff). A run audits pending work only; the cycle completes
+    when nothing is pending, which is what lets the maintenance watermark
+    advance in propose-only mode instead of paying for the same groups daily."""
+    __tablename__ = "tip_knowledge_cycles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    started_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    completed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(16), default="open")        # open | done
+    eligible: Mapped[dict] = mapped_column(JSONVariant, default=dict)       # scope -> {notes, addedAt}
+    progress: Mapped[dict] = mapped_column(JSONVariant, default=dict)       # scope -> {status, attempts, ...}
+    discovered: Mapped[list] = mapped_column(JSONVariant, default=list)     # scopes that became eligible mid-cycle
 
 
 class TipKnowledgeBatch(Base):
