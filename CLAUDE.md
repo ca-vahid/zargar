@@ -133,11 +133,15 @@ notes are restored ONLY via `zargar.tools.tip_note_restore` (manifest + `--confi
 <hash>`, revision transition). Bulk knowledge cleanup is HELD until the
 consolidation packet's policy decisions are made. **Money-path builds awaiting review
 (2026-09-14, own branches, NOT merged/active):** geometry rev 2 (`techniques/tip/geometry.py`,
-`techniques.tip.geometry_gate` default `shadow`; PR #91) and the KB-06 execution-integrity
-pause (`techniques/tip/integrity.py`, `techniques.tip.entry_pause_mode` default `clock` = the
-2026-09-04 `adoption_killswitch` stays the live gate; incidents are recorded in every mode and
-pause automated entries only in `integrity`/`both`; design
-`docs/techniques/tip/reviews/2026-09-13-kb06-execution-integrity-pause.md`).
+`techniques.tip.geometry_gate` default `shadow`, PRACTICE books only; PR #91) and the KB-06
+execution-integrity pause (`techniques/tip/integrity.py`, `techniques.tip.entry_pause_mode`
+default `clock` = the 2026-09-04 `adoption_killswitch` stays the live gate; incidents are
+recorded in every mode and pause automated entries only in `integrity`/`both`; admission fails
+CLOSED; design `docs/techniques/tip/reviews/2026-09-13-kb06-execution-integrity-pause.md`).
+The exact combined tree with both admission gates is PR #95 (`claude/tips-geometry-integrity-integrated`)
+— the reviewer's readiness fixes G91-01..06 / I93-01..04 live on the two branches and are
+merged there; every automated tip entry (auto-approval, `approve(via=auto)` head AND final
+submission, the stale-quote retry, every armed submission/retry) asks BOTH gates.
 Tip **proposals trade the tip's vehicle** (`approvals/proposals.py::create_from_signal`):
 the analyst's "take" contract, else the book's expression, BUY-to-open only — a short tip
 with no usable put proposes nothing; sized by `budget_per_tip`; context carries

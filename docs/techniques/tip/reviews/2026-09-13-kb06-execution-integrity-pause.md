@@ -1,5 +1,16 @@
 # KB-06 — execution-integrity pause — 2026-09-13 (design) / 2026-09-14 (built, for review)
 
+Readiness-review fixes (I93-01..04, head `2791f02`; combined tree PR #95): admission fails
+CLOSED (unavailable store / failed detection = refusal) over the COMPLETE open set with
+detection inside admission and a re-check before EVERY armed submission and transport retry;
+the classifier proves what it claims (risk plan = enforced + budget invariant + quote-freshness
+record; premium stop = structured `confirmation` record; actual fill timestamps from the
+executions table; a proven violation is invalid at any speed; duplicate executions detected);
+release resolves evidence references to actual records at the examined revision, unknown is
+never repaired, repeated pre-entry failures need a successful post-incident validation on the
+journal, and a human override is explicit and labeled; cancellation uses the admission scope
+semantics (entry path + symbol) and verifies outcomes at the order.
+
 Status (2026-09-14): **BUILT on branch `claude/tips-kb06-integrity-pause`
 (PR open for implementation review), NOT active.** The clock-based
 `adoption_killswitch` stays the live gate: `techniques.tip.entry_pause_mode`

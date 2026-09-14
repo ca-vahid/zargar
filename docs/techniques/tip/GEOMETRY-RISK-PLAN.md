@@ -1,5 +1,15 @@
 # Pre-entry geometry + risk sizing — design for review (2026-09-13)
 
+Readiness-review fixes (G91-01..06, head `3ffd6ce`; combined tree PR #95): enforce never admits
+by absence (a failed/missing plan is review-gated; the FINAL refusal at submission reverts an
+automated approval); shares are sized at the executable limit; Greek per-field age, a fresh
+non-delayed underlying reference and an explicit contract multiplier are required (unknown =
+review); the bracket is built from the FINAL plan; submission recomputes the whole plan; the
+gate is Practice-scoped; the trim-first exception carries a durable attempt identity, recovers
+an existing trim instead of trimming twice, re-reads unknown outcomes and re-checks the actual
+residual before any widen; `widen_stop` validates the actual position under the guard and
+persists before exposing; accounting is wired into the analyst positions tool and the retro.
+
 **Status (2026-09-14): BUILT on branch `claude/tips-geometry-rev2` (PR open
 for implementation review), NOT active.** `techniques.tip.geometry_gate`
 defaults to `shadow` — every tip proposal computes and journals its risk

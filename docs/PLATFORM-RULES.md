@@ -1472,3 +1472,21 @@ producer payload or risk setting changed. The journal registry invariant passes.
 - Default behaviour is UNCHANGED for every technique: the gate knob
   `techniques.tip.geometry_gate` ships as `shadow` (compute + journal only).
 
+### Shared position additions from the Tips desk, round 2 — 2026-09-14 (readiness review of PR #91 / #93; combined tree PR #95)
+
+- `PositionManager.widen_stop(pid, new_stop, *, reason, max_qty=None, unit_loss=None, budget=None)`
+  runs under the ordinary `position_guard` for EVERY position (not only adapters), re-reads the
+  actual remaining quantity and status, refuses when a protective exit (stop / premium_stop /
+  quote_stop / venue_stop / bleed) is in flight, when the remaining quantity exceeds `max_qty`
+  or when `remaining x unit_loss > budget` (one cent of rounding slack), PERSISTS the transition
+  before exposing the wider stop, and reverts the in-memory + persisted stop on a persistence or
+  journal failure. Caller assurances are never trusted.
+- `PositionManager.close(..., evidence: dict | None = None)`: an optional STRUCTURED evidence
+  record that rides on the exit records the close creates (`confirmation` for a premium stop,
+  `evidence` otherwise). The bar and tick premium-stop paths pass
+  `_premium_confirmation_record(p)` — `{confirmed, observations: [{at, sourceTs}, {sourceTs}], mark}`
+  derived from the confirmation-v2 state. Prose in the exit reason is not evidence.
+- Exit records gain `filledTs` (the fill's arrival on `on_order_update`), distinct from `ts`
+  (the intent's time). Consumers that need actual execution times read the `executions` table
+  first (`techniques/tip/integrity._fill_times`) and fall back to `filledTs`, never to `ts`.
+- Both additions are additive and default-neutral for EM, Team2 and Cartel.
