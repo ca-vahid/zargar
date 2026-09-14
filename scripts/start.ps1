@@ -112,8 +112,17 @@ try {
   $armedBefore = $armed
   # 2026-09-09 (F75 review): "no open positions" was never the test. Ask the engine what a restart
   # would interrupt across EVERY technique + the order book, and keep its state for the check after.
-  # R1: suspend NEW entries (self-expiring, 5 min) before the inventory is captured, so nothing starts between the check and the stop
-  try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { }
+  # R1/R4: suspend NEW entries (self-expiring, 5 min) before the inventory is captured - and VERIFY it took
+  $q = $null; $st = $null; $paused = $false
+  try { $q = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { $q = $null }
+  if ($q -is [System.Management.Automation.PSCustomObject] -and $q.quiesced) {
+    try { $st = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $st = $null }
+    if ($st -is [System.Management.Automation.PSCustomObject] -and $st.quiesced) { $paused = $true }
+  }
+  if (-not $paused) {
+    if (-not $Force) { Fail "Not safe to restart: the entry pause was not confirmed by the engine (R4). Wait, or run again with -Force (an override, journaled)." 2 }
+    Warn "-Force: restarting without a confirmed entry pause (override)"
+  }
   try { $script:stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $script:stateBefore = $null }
   # an older engine answers the SPA shell (or nothing): no state, no restoration check
   if (-not ($script:stateBefore -is [System.Management.Automation.PSCustomObject]) -or -not ($script:stateBefore.PSObject.Properties.Name -contains "armed")) { $script:stateBefore = $null }

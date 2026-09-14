@@ -30,11 +30,26 @@ if (Test-Path $lock) {
   $age = ((Get-Date) - (Get-Item $lock).LastWriteTime).TotalSeconds
   if ($age -lt 180) { Log ("a start began {0:N0}s ago - skipping this tick" -f $age); exit 0 }
 }
+# R4: a deploy in progress OWNS the engine; the watchdog must not start a second one during its restore
+$deployLease = Join-Path $logDir "deploy.lock"
+if (Test-Path $deployLease) {
+  $lage = ((Get-Date) - (Get-Item $deployLease).LastWriteTime).TotalSeconds
+  if ($lage -lt 600) { Log ("a deploy holds the lease (" + (Get-Content $deployLease -ErrorAction SilentlyContinue) + ", {0:N0}s) - skipping this tick" -f $lage); exit 0 }
+}
 # --- readiness + the state to compare against after the restart (only when something is running)
 $before = $null
 if ($up) {
-  # R1: suspend NEW entries (self-expiring, 5 min) before the inventory is captured, so nothing starts between the check and the stop
-  try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { }
+  # R1/R4: suspend NEW entries (self-expiring, 5 min) before the inventory is captured - and VERIFY it took
+  $q = $null; $st = $null; $paused = $false
+  try { $q = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { $q = $null }
+  if ($q -is [System.Management.Automation.PSCustomObject] -and $q.quiesced) {
+    try { $st = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $st = $null }
+    if ($st -is [System.Management.Automation.PSCustomObject] -and $st.quiesced) { $paused = $true }
+  }
+  if (-not $paused) {
+    if ($Override) { Log "OVERRIDE: entry pause not confirmed - restarting anyway" }
+    else { Log "REFUSED restart: the entry pause was not confirmed by the engine (R4); use -Override for an emergency"; exit 2 }
+  }
   try { $before = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $before = $null }
   # an older engine answers the SPA shell (or nothing): no state, no restoration check
   if (-not ($before -is [System.Management.Automation.PSCustomObject]) -or -not ($before.PSObject.Properties.Name -contains "armed")) { $before = $null }
