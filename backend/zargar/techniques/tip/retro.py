@@ -17,6 +17,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from .lifecycle import position_risk_accounting
 from .analyst import (
     TIMEOUT_S,
     TOOLS,
