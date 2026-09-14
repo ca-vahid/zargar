@@ -209,3 +209,20 @@ cache for that retry. Provenance reports the actual final completed session.
 If it remains stale, arming stays blocked and the UI requests fresh preparation.
 Resume retains the original cutoff; scheduled preparation is not suppressed by
 a prior stale-benchmark result. The current runtime was not restarted by this change.
+
+
+## 2026-09-14: EOD correctness changes, no method loosening
+
+APA closed one Practice call for -$59.05 gross and -$61.13 after recorded fees.
+Its retained one-contract legacy campaign never reached target one. NOV/CGNX were correctly
+invalidated; OKTA's recovered underlying crossing lacks contemporaneous executable-contract
+evidence. No setting change follows from one observation. New v2 plans and retained legacy
+campaigns remain separate cohorts.
+
+v0.7.73 fixes recovery/measurement boundaries documented in EOD-REVIEW-2026-09-14.md.
+A partial overnight scan must retry eligible missing baselines prospectively instead of
+silently satisfying the morning job. Missing historical bars and incomplete opening windows
+remain blocking evidence. An alternative provider's candle is not permission to silently mix
+adjustment/volume datasets. Simulated executions need verifiable fresh observations; orders
+may remain working while such observations are unavailable. Daily accounting reports actual
+fills/fees independently of the original signal classification.

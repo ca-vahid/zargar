@@ -1,6 +1,6 @@
 # Current Cartel capabilities and limits
 
-Reviewed 2026-09-13 against integrated main. Functional milestones v0.7.51–0.7.52 are deployed; the app-wide version can be newer. Use live health, Armed and account reports for current state. [September 12 deployment](DEPLOYMENT-2026-09-12.md) is a dated verification record.
+Updated 2026-09-14 for the v0.7.73 correctness release; deployment is recorded separately. Functional milestones v0.7.51–0.7.52 are deployed; the app-wide version can be newer. Use live health, Armed and account reports for current state. [September 12 deployment](DEPLOYMENT-2026-09-12.md) is a dated verification record.
 
 The [September 13 corrections](READINESS-2026-09-13.md) add final-dispatch contract checks, target causality, pending invalidation protection, provider-compatible cache reuse, explicit legacy-arm review, a versioned Practice small-lot policy, quantity-correct replay, deduplicated quote/gap evidence and advisory leadership cohorts. See the release handoff for deployment and test evidence. Existing campaigns keep their snapshots; no profitability or Live acceptance claim follows from these corrections.
 
@@ -32,3 +32,19 @@ The September 12 initial full Cartel run had 473 passes and seven failures. All 
 - Full receiver/broker-specific acceptance wherever Live execution is intended.
 
 See [PLAN.md](PLAN.md) for ownership and change gates. No old plan is automatically promoted, no Live permission is inferred from a deployment, and no no-trade day proves a strategy defective or successful.
+
+
+## EOD correction delivery — v0.7.73
+
+Implemented: compatible partial-preparation recovery with bounded retries and immutable
+baseline revisions; held-only identity handling; durable pending-attempt/expiry evidence;
+actual provider metadata in history caches; exact simulated-fill evidence and freshness;
+account-scoped EOD fill/fee/holdings review; durable quote coverage; deployment mutex and
+Cartel inventory; asynchronous bar-publication/consumer/handler timing telemetry.
+
+Limits: quote sampling cannot reconstruct unknown legacy fills. Publication/consumer timing
+does not independently prove upstream venue receive latency. FISV remains a documented
+provider-gap investigation: Yahoo omits November 12, 2025 while Alpaca raw provider-day
+history contains it. Different volume/adjustment datasets are not spliced automatically.
+Risk settings and saved campaigns were not migrated. Prospective cohort collection is still
+required before changing strategy thresholds or claiming improved expectancy.

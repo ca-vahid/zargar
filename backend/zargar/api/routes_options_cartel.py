@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from .. import events as ev
-from ..models import Event
+from ..models import Event, Portfolio
 from ..techniques.options_cartel.automatic_plans import PreparationPolicy
 from ..techniques.options_cartel.collect import CollectInput
 from ..techniques.options_cartel.contracts import ContractSelectionInput, select_contract
@@ -49,17 +49,63 @@ def build_options_cartel_routes(app, eng, auth, config):
     service = CartelService(eng)
     eng.options_cartel = service
 
+    async def review_account(workspace, portfolio_id=None):
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        policy = read_policy(eng, workspace)
+        if portfolio_id:
+            async with eng.sf() as session:
+                book = await session.get(Portfolio, portfolio_id)
+            kinds = ('sim', 'shadow') if policy.workspace == 'practice' else ('live', 'paper')
+            if book is None or book.kind not in kinds:
+                raise HTTPException(400, 'Review account does not belong to this workspace')
+            return book.id  # archived history is readable; this path grants no execution permission
+        return await preparation_portfolio(eng, policy.portfolio_id, policy.workspace)
+
+    @app.get('/api/options-cartel/review-accounts', dependencies=[auth])
+    async def cartel_review_accounts(workspace: Workspace | None = None):
+        from ..models import Order, TechniqueArmed
+        from ..techniques.options_cartel.preparation_scope import read_policy
+        policy = read_policy(eng, workspace)
+        kinds = ('sim', 'shadow') if policy.workspace == 'practice' else ('live', 'paper')
+        async with eng.sf() as session:
+            books = (await session.scalars(select(Portfolio).where(Portfolio.kind.in_(kinds)))).all()
+            used = set(await session.scalars(select(Order.portfolio_id).where(Order.technique == 'options_cartel')))
+            used.update(await session.scalars(select(TechniqueArmed.portfolio_id).where(TechniqueArmed.technique == 'options_cartel')))
+        used.add(policy.portfolio_id)
+        return [{'id': b.id, 'name': b.name} for b in books if b.id in used]
+
+    @app.get('/api/options-cartel/quote-coverage', dependencies=[auth])
+    async def cartel_quote_coverage(day: str = Query(pattern=r'^\d{4}-\d{2}-\d{2}$'), workspace: Workspace | None = None,
+                                    portfolio_id: str | None = Query(None, alias='portfolioId')):
+        from ..techniques.options_cartel.quote_coverage import coverage_report
+        try:
+            return await coverage_report(eng, await review_account(workspace, portfolio_id), day)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
     @app.get('/api/options-cartel/session-review', dependencies=[auth])
-    async def cartel_session_review(day: str = Query(pattern=r'^\d{4}-\d{2}-\d{2}$'), workspace: Workspace | None = None):
+    async def cartel_session_review(day: str = Query(pattern=r'^\d{4}-\d{2}-\d{2}$'), workspace: Workspace | None = None,
+                                    portfolio_id: str | None = Query(None, alias='portfolioId')):
         import datetime as dt
 
-        from ..techniques.options_cartel.preparation_scope import read_policy
         from ..techniques.options_cartel.session_review import report
         try:
             dt.date.fromisoformat(day)
-            policy = read_policy(eng, workspace)
-            portfolio = await preparation_portfolio(eng, policy.portfolio_id, policy.workspace)
+            portfolio = await review_account(workspace, portfolio_id)
             return await report(eng, portfolio, day)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.get('/api/options-cartel/preparation-attempts', dependencies=[auth])
+    async def cartel_attempt_page(day: str = Query(pattern=r'^\d{4}-\d{2}-\d{2}$'), workspace: Workspace | None = None,
+                                 portfolio_id: str | None = Query(None, alias='portfolioId'), cursor: str | None = None,
+                                 as_of_ms: int | None = Query(None, alias='asOfMs', ge=0)):
+        from ..domain import now_ms
+        from ..marketstructure.sessions import session_bounds
+        from ..techniques.options_cartel.preparation_attempts import attempt_page
+        try:
+            return await attempt_page(eng, await review_account(workspace, portfolio_id), day,
+                min(now_ms(), session_bounds(day)[1], as_of_ms if as_of_ms is not None else now_ms()), cursor)
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
 

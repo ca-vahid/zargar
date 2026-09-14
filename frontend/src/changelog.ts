@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.71";
+export const APP_VERSION = "0.7.73";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,12 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.73",date:"2026-09-14",title:"Recover preparation and reconcile daily results",items:[
+    {tag:"fixed",text:"Partial Cartel preparation retries unresolved history with bounded recovery, preserving successful analyses, existing arms and immutable plan revisions."},
+    {tag:"fixed",text:"Simulated fills require fresh eligible quotes and retain exact source evidence. Protective orders keep waiting for usable quotes rather than claiming stale fills."},
+    {tag:"improved",text:"Cartel daily review separates trades, fills, fees and remaining holdings, with candidate attempts and durable quote coverage. Archived account history remains available."},
+    {tag:"improved",text:"Deployment ownership is serialized across teams; bar delivery measurements distinguish queue delays from missing history."},
+  ]},
   {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
     {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
     {tag:"fixed",text:"Setup messages show entry descriptions and prices instead of bare IDs. Fixed the visible Unicode escape and replaced the pulsing red attention banner with a quieter, accessible control."},

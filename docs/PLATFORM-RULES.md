@@ -1581,3 +1581,27 @@ producer payload or risk setting changed. The journal registry invariant passes.
   the fix loop is untested (lesson for the next activation: shadow for a session first, even
   when the reviewer signs off).
 
+
+
+### Cartel EOD correctness release — 2026-09-14 (v0.7.73)
+
+- SimExecutor requires finite positive uncrossed prices and receipt/source freshness (15s).
+  Option fills require OPRA/IBKR identity; only explicit sim quote-source mode permits synthetic
+  observations. Stale/delayed evidence leaves the order working and emits SimFillWaiting once
+  per changed reason. Real-broker protective routing is unchanged.
+- ExecutionEvidence is inserted in the execution transaction. OrderFill carries execution ID,
+  executor timestamp and evidence; legacy fills retain unknown provenance. Do not claim a
+  research sampler's nearby quote was the exact fill source.
+- All deployment/restart work uses scripts/deployment-lock.ps1. The Windows OS mutex covers
+  the authorized runtime directory across processes, releases after owner death, and permits
+  a same-owner nested restart. scripts/deploy.ps1 requires a reviewed full target commit,
+  clean runtime, fast-forward integration and matching post-build source before guarded restart.
+  It records owner, commit/version, phase, artifact hash and verification time. It adds no force
+  override. Desks must acquire this lease BEFORE changing/building the runtime checkout.
+- Restart inventory now includes Cartel arms and actual entry tasks; held swing positions
+  remain covered by the shared managed inventory. A proposal waiting for approval alone is
+  not an in-flight order.
+- Bounded BarDeliveryHealth events preserve per-consumer queue/close latency and handler
+  timing outside the trading callback. /api/ops/delivery-health is authenticated. These
+  measurements distinguish dispatch delay from stored-history completeness; they do not
+  infer missing venue prints or authorize retrospective entries.

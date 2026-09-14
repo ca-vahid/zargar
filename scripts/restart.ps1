@@ -27,6 +27,31 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot 'deployment-lock.ps1')
+$restartMutex = Enter-ZargarDeployment $Root -Restart
+try {
+$handoffPath = Join-Path $Root 'logs/deployment-pending.json'
+$handoff = $null
+if (Test-Path -LiteralPath $handoffPath) {
+  $handoff = Get-Content -LiteralPath $handoffPath -Raw | ConvertFrom-Json
+  if ([DateTimeOffset]::Parse($handoff.expiresAt) -le [DateTimeOffset]::UtcNow) { throw 'Deployment handoff expired; revalidate source and artifact before restart.' }
+  if ((git -C $Root rev-parse HEAD).Trim() -ne $handoff.target) { throw 'Deployment target changed after handoff; restart refused.' }
+  if ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Root 'frontend/dist/index.html')).Hash -ne $handoff.artifactSha256) { throw 'Deployment artifact changed after handoff; restart refused.' }
+  if ($Expect -and $Expect -ne $handoff.expectedVersion) { throw 'Expected version disagrees with deployment handoff.' }
+  $Expect = $handoff.expectedVersion
+}
+$receiptPath = Join-Path $Root 'logs/deployment-receipt.json'
+if (-not $handoff -and -not $Force -and (Test-Path -LiteralPath $receiptPath)) {
+  $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+  if ($receipt.phase -eq 'verified' -and $receipt.target -eq (git -C $Root rev-parse HEAD).Trim() -and
+      ([DateTimeOffset]::UtcNow - [DateTimeOffset]::Parse($receipt.completedAt)).TotalMinutes -lt 5) {
+    try { $recentHealth = Invoke-RestMethod http://127.0.0.1:8420/api/health -TimeoutSec 4 } catch { $recentHealth = $null }
+    if ($recentHealth.ok -and $recentHealth.version -eq $receipt.expectedVersion -and (-not $Expect -or $Expect -eq $recentHealth.version)) {
+      Write-Host 'This commit was just deployed and is healthy; duplicate restart skipped.'
+      exit 0
+    }
+  }
+}
 # the scheduler runs this in a console nobody sees: keep a transcript per run in logs/restart-<ts>.log
 $logDirEarly = Join-Path $Root "logs"
 if (-not (Test-Path $logDirEarly)) { New-Item -ItemType Directory -Path $logDirEarly | Out-Null }
@@ -142,4 +167,10 @@ if ($stateBefore -ne $null) {
     exit 6
   }
 }
+if ($handoff) {
+  @{ phase='verified'; target=$handoff.target; expectedVersion=$Expect; artifactSha256=$handoff.artifactSha256; completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID } |
+    ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Root 'logs/deployment-receipt.json') -Encoding ASCII
+  Remove-Item -LiteralPath $handoffPath
+}
 exit 0
+} finally { Exit-ZargarDeployment $restartMutex }
