@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.71";
+export const APP_VERSION = "0.7.72";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.72",date:"2026-09-14",title:"Team2 close record",items:[
+    {tag:"fixed",text:"Team2: the end-of-day scorecard now names its session (planFor), so the close no longer logs an event-contract warning per plan and scored rows can be joined to their day without the plan row."},
+  ]},
   {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
     {tag:"fixed",text:"EM review Delivery A: a shares fallback no longer keeps the option's x100 (HPQ booked -$719 on a -$7 trade and false-halted; repair tool with a dry-run manifest); a two-contract exit takes TP2 in the bar it prints with TP1; contracts are sized on the live ask, and a contract that does not fit the risk budget sizes to zero instead of one; the 09:25 pre-open judges shorts with the same direction-aware rule as the open (twelve shorts were wrongly replaced on 09-14); the critic's opinion, advisory flag and errors survive a restart and every fire journals its final disposition; short setups score as shorts; a cached option quote cannot confirm a premium stop twice."},
     {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
