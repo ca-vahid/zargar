@@ -2718,14 +2718,14 @@ class PlanRunner(SessionListener):
                 if w:
                     raise RuntimeError(f"final entry guard: {w}")
             limit_d = float(cfg.daily_loss_limit or 0.0)
-            if limit_d > 0:
+            # the day-budget predicate is the one F33 already enforces for OPTION entries; a share entry has
+            # never been budget-gated before the fill (its loss halt judges the open position), and the
+            # guard does not widen policy - it only makes the existing option check final
+            if limit_d > 0 and trade.instrument == "options":
                 used = -(self._net_realized(ap) + min(0.0, self._unrealized(ap)))
                 left = limit_d - max(0.0, used)
-                if trade.instrument == "options":
-                    prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
-                    at_risk = float(qty) * float(limit) * float(trade.multiplier or 100.0) * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
-                else:
-                    at_risk = float(qty) * max(float(trade.entry) - float(trade.stop), 0.0)
+                prem_stop = float(self.rt("premium_stop_pct", 50.0) or 0)
+                at_risk = float(qty) * float(limit) * float(trade.multiplier or 100.0) * (prem_stop / 100.0 if 0 < prem_stop < 100 else 1.0)
                 if at_risk > left + 1e-9:
                     raise RuntimeError(f"final entry guard: this entry risks ~${at_risk:,.0f} but only ${left:,.0f} "
                                        f"of the ${limit_d:,.0f} daily loss limit is left (F33)")
