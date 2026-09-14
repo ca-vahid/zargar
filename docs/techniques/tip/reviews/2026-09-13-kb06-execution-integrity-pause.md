@@ -1,5 +1,10 @@
 # KB-06 — execution-integrity pause — 2026-09-13 (design) / 2026-09-14 (built, for review)
 
+Final-pass corrections (C95-01/06/07/08, combined tree PR #95): the premium-stop receipt is the
+frozen confirmed pair; proof references are bound to the incident's book, symbols and its own
+positions' orders/events (unrelated records never release); the diagnostic receipt is journaled
+only after its incident exists; the stale-quote retry re-admits immediately before the order.
+
 Readiness-review fixes (I93-01..04, head `2791f02`; combined tree PR #95): admission fails
 CLOSED (unavailable store / failed detection = refusal) over the COMPLETE open set with
 detection inside admission and a re-check before EVERY armed submission and transport retry;

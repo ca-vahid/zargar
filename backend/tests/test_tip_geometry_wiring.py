@@ -57,10 +57,17 @@ async def _events(eng, kind: str) -> list[dict]:
 # ---------------------------------------------------------------- proposal-time gate
 async def test_enforce_mode_finalizes_stop_and_resizes_before_entry(rig):
     eng = rig
-    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
-    await eng.settings.set("techniques.tip.risk_budget_per_tip", 6.0, journal=False)
     await eng.settings.set("techniques.tip.budget_per_tip", 5000.0, journal=False)
     q = await _quote(eng, "GEOA")
+    # deterministic at ANY sim price: read the plan's own unit loss and requested
+    # quantity from a shadow pass, then set the enforce budget to fit exactly half
+    row0, sig0 = await _tip(eng, "GEOA", q.last, stop_pct=0.2)
+    shadow = await eng.proposals.create_from_signal(row0, sig0, {})
+    rp0 = shadow["context"]["riskPlan"]
+    assert rp0["enforced"] is False and rp0["qtyRequested"] >= 2 and rp0["unitLoss"] > 0
+    budget = round(rp0["unitLoss"] * max(1, rp0["qtyRequested"] // 2) + 1e-6, 4)
+    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
+    await eng.settings.set("techniques.tip.risk_budget_per_tip", budget, journal=False)
     row, sig = await _tip(eng, "GEOA", q.last, stop_pct=0.2)          # 0.2% stop: inside the 0.75% width floor
     pdict = await eng.proposals.create_from_signal(row, sig, {})
     assert pdict is not None
@@ -69,7 +76,7 @@ async def test_enforce_mode_finalizes_stop_and_resizes_before_entry(rig):
     assert rp["finalStop"] < row.stop_price, "the stop is finalized (widened to the floor) BEFORE entry"
     assert pdict["context"]["exitPlan"]["underlyingStop"] == rp["finalStop"]
     assert rp["unitLoss"] > 0 and pdict["qty"] == rp["qty"]
-    assert pdict["qty"] * rp["unitLoss"] <= 6.0 + 1e-6, "qty x unitLoss <= B on the proposal"
+    assert pdict["qty"] * rp["unitLoss"] <= budget + 1e-6, "qty x unitLoss <= B on the proposal"
     assert rp["quote"]["entryRefBasis"] == "limit" and rp["entryRef"] == pdict["limitPrice"], "shares are sized at the executable limit"
     assert pdict["bracket"]["stop_loss"] == rp["finalStop"], "the bracket carries the FINAL stop"
     assert rp["resized"] and rp["qtyRequested"] > rp["qty"]
@@ -309,12 +316,14 @@ async def test_widen_stop_refuses_stale_caller_state_and_reverts_on_journal_fail
         rowdb = await session.get(ManagedPositionRow, pos["id"])
     assert rowdb.config["policy"]["stop"]["price"] == tight
     monkeypatch.undo()
-    # (e) a closed position cannot widen
+    # (e) a closed (or already-forgotten) position cannot widen — either a refusal or nothing
     await mgr.close(pos["id"], fraction=1.0, kind="close", reason="done", force_market=True)
     await wait_for(lambda: mgr.get(pos["id"]) is None or mgr.get(pos["id"]).status == "closed", timeout=8)
-    if mgr.get(pos["id"]) is not None:
-        with pytest.raises(ValueError):
-            await mgr.widen_stop(pos["id"], wide, reason="closed")
+    try:
+        out = await mgr.widen_stop(pos["id"], wide, reason="closed")
+    except ValueError:
+        out = None
+    assert out is None, "a closed position must never come back with a wider stop"
 
 
 async def test_accounting_is_read_from_serialized_positions(rig):

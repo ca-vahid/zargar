@@ -1490,3 +1490,26 @@ producer payload or risk setting changed. The journal registry invariant passes.
   (the intent's time). Consumers that need actual execution times read the `executions` table
   first (`techniques/tip/integrity._fill_times`) and fall back to `filledTs`, never to `ts`.
 - Both additions are additive and default-neutral for EM, Team2 and Cartel.
+
+### Shared position changes, round 3 — 2026-09-14 (PR #95 final-pass corrections C95-01/03/04)
+
+- `serialization.serialized_adapter` now serializes TIPS positions as well as opt-in adapters
+  (the per-position guard is reentrant per task). Reason: `widen_stop` — the one
+  exposure-increasing mutator — holds that guard, so the fill/close/policy mutators of the
+  same Tips position must hold it too. EM / Team2 / Cartel legacy positions are unchanged.
+- `PositionManager.widen_stop` has a STRICT durability contract: `_persist_candidate` writes
+  the row with the candidate policy/stop without touching the in-memory position and raises
+  on failure; the journal write raises; the wider stop is exposed only after both succeed. An
+  unknown durable outcome is recorded in `extras.widenUncertain` and repaired to the tight
+  stop by the Tips reconcile at restore. The legacy `_persist` / `_journal` (which swallow
+  errors for non-adapter positions) are NOT used on this path and are otherwise unchanged.
+- `PositionManager.close(..., attempt_tag=)` → `_close_leg` → `_submit_exit`: an optional
+  durable attempt identity that rides on the venue order's `tags` and the exit record's
+  `attemptTag` (adapters keep minting their own `managed_exit:` tag). Consumers recover an
+  accepted order through that identity instead of assuming a missing local id means "not
+  accepted".
+- `_confirm_premium_stop` freezes the accepted observation pair at confirmation; the exit
+  receipt's `confirmation` record is that immutable pair (C95-01). Contract unchanged: no leg's
+  source time moves backward, at least one advances.
+- `options/occ.contract_multiplier(symbol)`: 100 only for a standard OCC symbol; adjusted /
+  unparseable contracts → `None` (unknown metadata; the tips geometry gate review-gates it).

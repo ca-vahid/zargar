@@ -1,5 +1,11 @@
 # Pre-entry geometry + risk sizing — design for review (2026-09-13)
 
+Final-pass corrections (C95-02/03/04/05, combined tree PR #95): risk accounting carries
+provenance (executed vs hypothetical shadow plan); `widen_stop` is strictly durable before
+exposure; the trim attempt is bound to the order intent and an attempt without an ACK holds,
+never re-trims; a review-only spread never auto-opens; the contract multiplier comes from the
+OCC identity (adjusted = unknown = review).
+
 Readiness-review fixes (G91-01..06, head `3ffd6ce`; combined tree PR #95): enforce never admits
 by absence (a failed/missing plan is review-gated; the FINAL refusal at submission reverts an
 automated approval); shares are sized at the executable limit; Greek per-field age, a fresh
