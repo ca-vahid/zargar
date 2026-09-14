@@ -1,8 +1,8 @@
 # Cartel release and operational handoff
 
-Current documentation: 2026-09-13. Latest Cartel-specific functional delivery: v0.7.51–0.7.52. Other techniques can advance the app-wide version independently.
+Current documentation: 2026-09-13. Cartel correctness release **v0.7.64 is deployed**; see [verified deployment and Monday preparation](DEPLOYMENT-2026-09-13.md). Other techniques can advance the app-wide version independently.
 
-The next correctness release is described in [September 13 readiness](READINESS-2026-09-13.md), with the [final audit](FINAL-REVIEW-2026-09-13.md) preserved as historical evidence. Its deployment checkpoint will supersede the September 12 operational snapshot below.
+The corrections are described in [September 13 readiness](READINESS-2026-09-13.md), with the [final audit](FINAL-REVIEW-2026-09-13.md) preserved as historical evidence. The September 13 deployment supersedes the older operational snapshot below.
 
 - [Current capabilities and limits](DELIVERY-STATUS.md)
 - [Preparation/settings/recovery](DAILY-PREPARATION.md)
