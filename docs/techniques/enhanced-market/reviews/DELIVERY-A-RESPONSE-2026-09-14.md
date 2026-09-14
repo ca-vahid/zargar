@@ -22,8 +22,9 @@ tests/test_execution_exits.py tests/test_scratch_rule.py tests/test_method_chang
 ```
 Database: `zargar_test_em` on 127.0.0.1:5433 (this desk's private DB, never the shared one). Broader suites
 run on the same change: `test_technique_arming.py`, `test_tip_runner.py`, `test_platform_phase3.py`,
-`test_technique_lifecycle.py`, `test_technique_review.py`, `test_restart_entry_recovery.py` - results in the
-section "Broader suites" below.
+`test_technique_lifecycle.py`, `test_technique_review.py`, `test_restart_entry_recovery.py`: **115 passed** (on
+`zargar_test_em2`, 11 minutes). Two of these had failed on `origin/main` before this change
+(`test_native_mleg_failure_falls_back_to_sequencing`, `test_every_journaled_kind_has_a_contract`); both pass now.
 
 ## What changed, per FIX
 
