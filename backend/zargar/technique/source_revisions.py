@@ -197,12 +197,19 @@ def _compare_order(t, seq, wm_t, wm_seq) -> str:
 
 
 def _advance_watermark(note: TechniqueMethodNote, t, seq) -> None:
+    """The watermark is ONE accepted observation's (event time, sequence) pair - never a maximum taken
+    per field across different events (P2, a55bced review: a newer event with a LOWER sequence, e.g. after
+    a gateway sequence reset, must not inherit the older event's larger sequence, or its own later
+    same-time updates are discarded). A newer event time replaces the pair; the same event time keeps
+    the larger sequence; an event without a time advances the sequence only."""
     wm = dict((note.meta or {}).get("sourceWatermark") or {})
     wm_t = parse_ts(wm.get("at"))
     if t is not None and (wm_t is None or t > wm_t):
-        wm["at"] = t.isoformat()
-    if seq is not None and (wm.get("seq") is None or int(seq) > int(wm["seq"])):
+        wm = {"at": t.isoformat(), "seq": (int(seq) if seq is not None else None)}
+    elif seq is not None and (wm.get("seq") is None or int(seq) > int(wm["seq"])):
         wm["seq"] = int(seq)
+        if t is not None and wm_t is None:
+            wm["at"] = t.isoformat()
     note.meta = {**(note.meta or {}), "sourceWatermark": wm}   # a new dict: the ORM records the change
 
 

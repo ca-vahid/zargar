@@ -27,6 +27,7 @@ import sys
 import time
 
 from sqlalchemy import select
+from sqlalchemy.exc import ProgrammingError
 
 from ..config import AppConfig
 from ..domain import new_id
@@ -83,15 +84,21 @@ def item_for(n: TechniqueMethodNote) -> dict:
 
 async def build_manifest(sf) -> dict:
     async with sf() as session:
+        try:
+            have = set((await session.execute(select(TechniqueSourceRevision.note_id))).scalars().all())
+        except ProgrammingError:
+            # the DRY RUN may run against a database the new build has not booted on yet (the revision
+            # table does not exist): nothing is revisioned; `apply` needs the deployed schema
+            await session.rollback()
+            have = set()
         notes = (await session.execute(select(TechniqueMethodNote).where(TechniqueMethodNote.technique == TECHNIQUE)
                                        .order_by(TechniqueMethodNote.created_at.asc()))).scalars().all()
-        have = set((await session.execute(select(TechniqueSourceRevision.note_id))).scalars().all())
-    items, skipped = [], []
-    for n in notes:
-        if n.id in have:
-            skipped.append(n.id)
-            continue
-        items.append(item_for(n))
+        items, skipped = [], []
+        for n in notes:
+            if n.id in have:
+                skipped.append(n.id)
+                continue
+            items.append(item_for(n))
     return {"generatedAt": int(time.time() * 1000), "delivery": "B-backfill", "items": items,
             "alreadyRevisioned": skipped, "planHash": _plan_hash(items)}
 

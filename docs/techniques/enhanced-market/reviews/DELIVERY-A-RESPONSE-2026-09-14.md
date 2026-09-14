@@ -273,3 +273,40 @@ Results this round: reviewer codex group 28/28 (source-loss 2, ordering/API/jobs
 budget 3, quote 1, Postgres 6, promotion 3); `test_entry_quality` 10/10; own Delivery B + real-session
 reconcile + ingest + gateway envelope/ack + separation 67 passed, 5 historical skipped; arming + tip runner +
 Team2 runner + reviewer execution/evidence/preopen/exits 121/121.
+
+---
+
+# a55bced review (`2026-09-14-a55bced-review.md`) - release integration, same day
+
+**Team2 F126 preserved.** The running checkout's local branch (b1da621, never pushed) carried 260fbc0
+(`planFor` on Team2's close scorecard + its regression, v0.7.72 metadata) and the Team2 watch runs 93-95.
+It is merged into the EM branch; `backend/zargar/__init__.py` keeps `__version__ = "0.7.72"` AND EM's
+launch-bound `BUILD`; `npm run check-release` agrees on 0.7.72 across the four files. `test_team2_close.py`
+runs green on the combined tree.
+
+**Exclusive test window.** `zargar_test_codex` had the Cartel branch's two stray tables
+(`execution_evidence`, `cartel_preparation_attempts`) which break this revision's `fresh_db` teardown; with
+ZERO other clients on the database (checked in `pg_stat_activity` before and after) they were dropped and the
+combined group run once, sequentially: budget 3 + quote 1 + source-loss 2 + Postgres 6 + promotion 3 +
+ordering/API/jobs 8 + backfill 3 + gateway 2 + watermark pair 2 + `test_team2_close` 4 = **34 passed**, no
+other client before or after. (A shared reservation for that database is still the right fix; this desk only
+checked and ran.)
+
+**P2 watermark pair - fixed now rather than carried.** `_advance_watermark` stores ONE accepted observation's
+(event time, sequence) pair: a newer event time replaces the pair (its own sequence, even if lower - the
+gateway sequence-reset case), the same event time keeps the larger sequence, an event without a time
+advances the sequence only. The reviewer's pure regression is adopted as `tests/test_codex_source_watermark_pair.py`
+(1 failed -> 2 pass); the tombstone and same-content cases stay green. Sequence-reset semantics, stated: the
+source's own edit time is authoritative across gateway connections; the sequence only orders deliveries that
+share an event time or have none.
+
+**Fresh Delivery B backfill dry run** (read-only, the cleaned tool against the runtime database; the revision
+table does not exist there until the new build boots, which the dry run tolerates and `apply` does not):
+`DELIVERY-B-backfill-dryrun-2026-09-14.json` - 19 notes, 0 already revisioned, digest `f3931513580afb0c`,
+24 artifacts (8 transcripts, 16 extractions, all `availability: unknown`), stages board_checked 16 /
+received 3, outcomes done 16 / retryable 3. NOT applied; a fresh dry run is re-generated after deployment
+and reviewed before `--apply`.
+
+FIX-01 v4 money repair: unchanged scoped GO, still a human step. Deployment: after the reviewers read this,
+through the ZargarRestart task with the readiness check; the build SHA on `/api/health`, effective settings
+and restoration evidence are returned afterwards.
