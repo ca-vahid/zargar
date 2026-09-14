@@ -43,7 +43,10 @@ def serialized_adapter(method):
             position = manager.get(manager._order_index.get(item.get("id")))
         else:
             position = item
-        if position is None or not position.policy.get("adapter"):
+        # opt-in adapters AND Tips positions (C95-03: the exposure-increasing
+        # widen_stop holds this guard, so the fill/close/policy mutators of the
+        # same Tips position must hold it too — the guard is reentrant per task)
+        if position is None or not (position.policy.get("adapter") or getattr(position, "technique", "") == "tip"):
             return await method(manager, item, *args, **kwargs)
         async with position_guard(manager, position.id):
             return await method(manager, item, *args, **kwargs)

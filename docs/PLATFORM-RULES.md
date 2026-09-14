@@ -1491,3 +1491,66 @@ The integration check found TechniquePlanContract was emitted but absent from th
 central event registry. Registered its existing v1 producer's common fields only;
 optional stage/error/selected-contract fields remain optional. No Team2 strategy,
 producer payload or risk setting changed. The journal registry invariant passes.
+
+### Shared positions additions from the Tips desk: `Managed.extras`, `set_extras`, `widen_stop` — 2026-09-14 (geometry rev 2, branch `claude/tips-geometry-rev2`, review before merge)
+
+- `Managed.extras` (persisted in `config.extras`, on `to_dict()` as `extras`):
+  technique-owned facts on a durable position — the tips desk keeps the
+  pre-entry `riskPlan` and a post-fill `geometryException` state machine there.
+  The policy evaluator never reads it; other techniques may use their own keys.
+- `PositionManager.set_extras(pid, patch)`: merge + persist, no journal of its own.
+- `PositionManager.widen_stop(pid, new_stop, *, reason)`: the ONE way a live stop
+  gets WIDER. `set_policy` still only tightens (`state.stop` moves only in the
+  protective direction); `widen_stop` is refused on adapter positions and when the
+  stop is not actually wider, logs `stop_widened`, journals
+  `ManagedPositionPolicyChanged` with a `widened {from, to, reason}` block and
+  re-arms the venue stop. A caller must have EARNED the widen (tips: the
+  trim-first sequence confirmed its trim). Invariant: no other code path widens
+  `state.stop`.
+- `TipGeometryRepaired` gains `phase` values `pre-entry | submit | post-fill |
+  post-fill-exception | post-fill-legacy`; the registered required fields are
+  unchanged (`proposalId` stays nullable).
+- Default behaviour is UNCHANGED for every technique: the gate knob
+  `techniques.tip.geometry_gate` ships as `shadow` (compute + journal only).
+
+### Shared position additions from the Tips desk, round 2 — 2026-09-14 (readiness review of PR #91 / #93; combined tree PR #95)
+
+- `PositionManager.widen_stop(pid, new_stop, *, reason, max_qty=None, unit_loss=None, budget=None)`
+  runs under the ordinary `position_guard` for EVERY position (not only adapters), re-reads the
+  actual remaining quantity and status, refuses when a protective exit (stop / premium_stop /
+  quote_stop / venue_stop / bleed) is in flight, when the remaining quantity exceeds `max_qty`
+  or when `remaining x unit_loss > budget` (one cent of rounding slack), PERSISTS the transition
+  before exposing the wider stop, and reverts the in-memory + persisted stop on a persistence or
+  journal failure. Caller assurances are never trusted.
+- `PositionManager.close(..., evidence: dict | None = None)`: an optional STRUCTURED evidence
+  record that rides on the exit records the close creates (`confirmation` for a premium stop,
+  `evidence` otherwise). The bar and tick premium-stop paths pass
+  `_premium_confirmation_record(p)` — `{confirmed, observations: [{at, sourceTs}, {sourceTs}], mark}`
+  derived from the confirmation-v2 state. Prose in the exit reason is not evidence.
+- Exit records gain `filledTs` (the fill's arrival on `on_order_update`), distinct from `ts`
+  (the intent's time). Consumers that need actual execution times read the `executions` table
+  first (`techniques/tip/integrity._fill_times`) and fall back to `filledTs`, never to `ts`.
+- Both additions are additive and default-neutral for EM, Team2 and Cartel.
+
+### Shared position changes, round 3 — 2026-09-14 (PR #95 final-pass corrections C95-01/03/04)
+
+- `serialization.serialized_adapter` now serializes TIPS positions as well as opt-in adapters
+  (the per-position guard is reentrant per task). Reason: `widen_stop` — the one
+  exposure-increasing mutator — holds that guard, so the fill/close/policy mutators of the
+  same Tips position must hold it too. EM / Team2 / Cartel legacy positions are unchanged.
+- `PositionManager.widen_stop` has a STRICT durability contract: `_persist_candidate` writes
+  the row with the candidate policy/stop without touching the in-memory position and raises
+  on failure; the journal write raises; the wider stop is exposed only after both succeed. An
+  unknown durable outcome is recorded in `extras.widenUncertain` and repaired to the tight
+  stop by the Tips reconcile at restore. The legacy `_persist` / `_journal` (which swallow
+  errors for non-adapter positions) are NOT used on this path and are otherwise unchanged.
+- `PositionManager.close(..., attempt_tag=)` → `_close_leg` → `_submit_exit`: an optional
+  durable attempt identity that rides on the venue order's `tags` and the exit record's
+  `attemptTag` (adapters keep minting their own `managed_exit:` tag). Consumers recover an
+  accepted order through that identity instead of assuming a missing local id means "not
+  accepted".
+- `_confirm_premium_stop` freezes the accepted observation pair at confirmation; the exit
+  receipt's `confirmation` record is that immutable pair (C95-01). Contract unchanged: no leg's
+  source time moves backward, at least one advances.
+- `options/occ.contract_multiplier(symbol)`: 100 only for a standard OCC symbol; adjusted /
+  unparseable contracts → `None` (unknown metadata; the tips geometry gate review-gates it).

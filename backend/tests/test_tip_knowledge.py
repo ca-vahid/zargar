@@ -203,3 +203,75 @@ async def test_knowledge_audit_flags_scoped_contradictions(app_client):
     flagged = {n["id"] for n in notes if n["needsHuman"]}
     assert flagged == set(served[:2])      # exactly what the judge flagged
     assert "experiment:b1" not in fake.calls[0]["messages"][0]["content"]
+
+
+async def test_evidence_scope_is_never_injected(app_client):
+    """`evidence:<family>` notes are reachable on demand (search) but never
+    supplied to a run — not by notes_for_tip and not by the rulebook."""
+    client, eng = app_client
+    svc = eng.signals_service
+    n = await svc.add_tip_note("evidence:adoption-geometry", "AMZN 9/07 case: the handed stop was 0.2% wide (cites dbfd8177).")
+    assert n["scope"] == "evidence:adoption-geometry"
+    supplied = await svc.notes_for_tip("AMZN", "MuggZone", limit=50)
+    assert all(x["id"] != n["id"] for x in supplied)
+    from zargar.techniques.tip.analyst import _rules_text
+    text, count, snap = await _rules_text(eng)
+    assert n["id"] not in (snap or {}).get("revisionNos", {}) and "AMZN 9/07 case" not in text
+    found = await svc.search_tip_notes("AMZN 9/07", None, offset=0, limit=10)
+    assert any(x["id"] == n["id"] for x in found["items"])
+
+
+async def test_reviewed_consolidation_applies_through_audited_paths(app_client):
+    """The reviewed batches: disputes resolved deliberately, family + kill-switch
+    merges via apply_knowledge_batch(mode=apply) with receipts and revision
+    checks, evidence records in the never-injected scope; a replay is idempotent
+    and a stale revision refuses."""
+    from zargar.models import TipKnowledgeBatch, TipNote
+    from zargar.techniques.tip.consolidation import apply_consolidation
+    client, eng = app_client
+    svc = eng.signals_service
+    await eng.settings.set("techniques.tip.knowledge_apply_enabled", False, journal=False)   # routine stays propose-only
+    base = await svc.add_tip_note("rule", "RULE (adoption geometry — base): five checks; one fast stop pauses the session.")
+    ref1 = await svc.add_tip_note("rule", "RULE (adoption geometry — case 5): pre-adoption arithmetic gate.", family_dedupe=False)
+    ks = await svc.add_tip_note("rule", "RULE (session kill-switch — geometry, not the clock): only a stop below the floor pauses.", family_dedupe=False)
+    other = await svc.add_tip_note("rule", "RULE (lotto tape filter): unrelated family.")
+    await svc.flag_tip_notes([base["id"], ks["id"]], needs_human=True)
+    async with eng.sf() as session:
+        revs = {r.id: r.revision_no for r in (await session.execute(select(TipNote))).scalars().all()}
+    family = {"batchId": "consolidation-geometry-test", "scope": "rule",
+              "merge": {"supersedes": [base["id"], ref1["id"]], "new_rule": "RULE (adoption geometry — canonical family): the five checks, consolidated."},
+              "expected_revisions": {base["id"]: revs[base["id"]], ref1["id"]: revs[ref1["id"]]}, "author": "consolidation:test"}
+    kill = {"batchId": "consolidation-killswitch-test", "scope": "rule",
+            "merge": {"supersedes": [ks["id"]], "new_rule": "RULE (session kill-switch — execution-integrity pause): incidents, not clocks."},
+            "expected_revisions": {ks["id"]: revs[ks["id"]]}, "author": "consolidation:test"}
+    evidence = [{"scope": "evidence:adoption-geometry", "sourceId": ref1["id"], "sourceRevision": revs[ref1["id"]],
+                 "text": f"[EVIDENCE — cites rule {ref1['id']}] the case-5 arithmetic gate record."}]
+    out = await apply_consolidation(eng, manifest_hash="abc123", resolve=[base["id"], ks["id"]],
+                                    family=family, kill_switch=kill, evidence=evidence)
+    assert set(out["resolved"]) == {base["id"], ks["id"]}
+    assert out["batches"]["family"]["merged"] == 2 and out["batches"]["killSwitch"]["merged"] == 1
+    assert len(out["evidence"]) == 1 and out["evidence"][0].get("id")
+    async with eng.sf() as session:
+        b = await session.get(TipNote, base["id"]); r1 = await session.get(TipNote, ref1["id"])
+        k = await session.get(TipNote, ks["id"]); o = await session.get(TipNote, other["id"])
+        fam_id = out["batches"]["family"]["newRules"][0]
+        fam = await session.get(TipNote, fam_id)
+        rec = await session.get(TipKnowledgeBatch, "consolidation-geometry-test")
+    assert b.superseded_by == fam_id and r1.superseded_by == fam_id and not b.needs_human
+    assert k.superseded_by == out["batches"]["killSwitch"]["newRules"][0] and o.superseded_by is None
+    assert fam.scope == "rule" and fam.superseded_by is None and rec.status == "applied"
+    live_rules = await svc.tip_notes(["rule"], limit=50)
+    assert {n["id"] for n in live_rules} == {fam_id, out["batches"]["killSwitch"]["newRules"][0], other["id"]}
+    supplied = await svc.notes_for_tip("AAPL", "Src", limit=50)
+    assert all(not n["scope"].startswith("evidence:") for n in supplied)
+    # replay: idempotent (receipts), nothing merged twice, evidence not duplicated
+    again = await apply_consolidation(eng, manifest_hash="abc123", resolve=[], family=family, kill_switch=kill, evidence=evidence)
+    assert again["batches"]["family"].get("alreadyApplied") and again["evidence"][0].get("existing")
+    # a stale manifest revision on a fresh batch id refuses (whole batch)
+    stale = {**family, "batchId": "consolidation-geometry-stale", "merge": {"supersedes": [other["id"]], "new_rule": "x"},
+             "expected_revisions": {other["id"]: 99}}
+    with pytest.raises(ValueError, match="revision"):
+        await apply_consolidation(eng, manifest_hash="stale", resolve=[], family=stale, kill_switch={}, evidence=[])
+    # the API route exists and refuses the same way
+    r = await client.post("/api/tip/knowledge/consolidate", json={"manifestHash": "stale", "family": stale})
+    assert r.status_code == 409

@@ -181,7 +181,11 @@ class SignalService:
             return float(s.get("techniques.tip.note_ttl_scoped_days", 90))
         return None
 
-    _SCOPE_PREFIXES = ("ticker:", "source:", "signal:", "experiment:", "daily:")
+    _SCOPE_PREFIXES = ("ticker:", "source:", "signal:", "experiment:", "daily:", "evidence:")
+    # `evidence:<family>` (consolidation packet, 2026-09-14): dated case records
+    # that CITE a rule; reachable by search and the analyst's notes tool on
+    # demand, NEVER auto-injected (notes_for_tip / rulebook selection do not
+    # read it) and never audited (guard test in test_tip_knowledge)
     NOTE_TEXT_MAX = 20000     # a hard ceiling, refused visibly — never sliced
 
     @classmethod
@@ -209,7 +213,7 @@ class SignalService:
                     raise ValueError("scope too long (160)")
                 return out
         raise ValueError(f"unknown scope '{sc}' — use general, rule, ticker:<SYM>, "
-                         "source:<name>, signal:<id>, daily:<date>, experiment:<batch>")
+                         "source:<name>, signal:<id>, daily:<date>, experiment:<batch>, evidence:<family>")
 
     @staticmethod
     def _snapshot(session, row, now, reason: str) -> None:
@@ -2308,13 +2312,19 @@ class SignalService:
                             elif trust["hitRate"] is not None and trust["hitRate"] < need_hit:
                                 gate = (f"auto not earned: hit rate {trust['hitRate']:.2f} "
                                         f"below the {need_hit:.2f} bar ({trust['graded']} graded)")
+                        if not gate and (proposal.get("context") or {}).get("reviewRequired"):
+                            # GEOMETRY rev 2: a review-gated card never auto-approves
+                            gate = f"geometry review required: {(proposal.get('context') or {}).get('reviewRequired')}"
                         if not gate:
-                            # nine-strike session clause (2026-09-04): one adoption
-                            # stopped out within minutes today = the hand-off
-                            # pipeline is suspect — autos pause for the session
+                            # KB-06 (2026-09-14): the entry pause — the clock gate (the
+                            # 2026-09-04 nine-strike clause, default), execution-integrity
+                            # incidents, or both (techniques.tip.entry_pause_mode); detection
+                            # runs first so a fresh defect pauses this very card
                             with contextlib.suppress(Exception):
-                                from ..techniques.tip.lifecycle import adoption_killswitch
-                                ks = await adoption_killswitch(eng)
+                                from ..techniques.tip import integrity as _ig
+                                await _ig.detect_incidents(eng)
+                                ks = await _ig.gate_reason(eng, portfolio_id=proposal.get("portfolioId"),
+                                                           entry_path="proposal")
                                 if ks:
                                     gate = ks
                                     await eng.journal.append(
