@@ -21,6 +21,7 @@ export const CHANGELOG: Release[] = [
   {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
     {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
     {tag:"fixed",text:"Setup messages show entry descriptions and prices instead of bare IDs. Fixed the visible Unicode escape and replaced the pulsing red attention banner with a quieter, accessible control."},
+    {tag:"improved",text:"Team2: a pre-market break setup pointing against the day's bias now says so on the Armed page (\"inert while the bias is puts: needs a bias flip\") instead of reading like a live entry candidate."},
   ]},
   {
     version: "0.7.70",

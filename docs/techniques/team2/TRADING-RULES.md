@@ -2345,6 +2345,27 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   `test_team2_integrity.py::test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record`
   (fails without the fix). Related: F49, F81, F88, F106 (the same `_log`-vs-`_trail` split).
 
+- **F123 (2026-09-14 12:35 ET, run 87 — display only, FIXED on the label; the read was correct).** The
+  Armed snapshot listed SPY's and IWM's `pm_break_up@11:30` (the 11:45 15m close above the PMH, L2.5/V7)
+  as a `waiting` trigger with `windowOpenNow: true`, which run 86 took to mean "the one setup that can
+  actually enter with a bull stack". It cannot. `session.py` picks the entry candidate from
+  `[s for s in live if cur_bias is None or s.direction == cur_bias]` (the newest confirmed setup IN the
+  current bias direction — the F24 rule), and the bias on all three symbols is still scenario 4 (puts,
+  15m close below the PDL zone at 09:45). A PM break the other way is inert until a 15m close back
+  above the PDL zone flips the bias (`bias_flip_on_15m_close`). The tape proved it: SPY pulled back from
+  762.09 (11:45) to 761.21 (12:08) and reclaimed on the 12:16 2m bar (low 761.47, close 762.17, E13
+  about 761.6) — a textbook calls contact on a bull strength-3 stack — and the read minted no touch, no
+  skip, nothing, exactly as the bias filter dictates. Replay reproduced the same silence, so the live
+  and replayed paths agree. **Fix (label only, `runner.py` `_snapshot`):** a live setup whose direction
+  opposes the bias appends " — inert while the bias is puts: needs a bias flip (B1)" to its trigger
+  label. The status stays `waiting` because the Armed page treats status as a closed set (an unknown
+  value renders as a failure badge; `ArmedTab.tsx`, `ArmedPage.tsx`). No gate, count, order or money
+  path changes; the summary line already followed the bias (F24). Open question for the method, not
+  built: Casey's V7 direction guide says "above PMH → calls to the PDH zone" without a scenario
+  precedence, so whether a PM break should be allowed to override a stale opposite scenario (here, a
+  PDL break that price has since bounced 0.5% above) is a rule decision for the user — evidence today
+  is one clean, untaken SPY contact at 12:16 that ran to 762.60 by 12:24 (+0.43, about 1.2 ATR).
+
 - **F122 (2026-09-11, run 79 — a reporting correction to run 78's note, no code defect).** Run 78
   queued "confirm each of tonight's freshly minted plans carries a `targets_rederived` row" as
   F110's acceptance test. **That test cannot pass at the mint, and its absence there is not a
