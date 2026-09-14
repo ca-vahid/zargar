@@ -1450,3 +1450,25 @@ The integration check found TechniquePlanContract was emitted but absent from th
 central event registry. Registered its existing v1 producer's common fields only;
 optional stage/error/selected-contract fields remain optional. No Team2 strategy,
 producer payload or risk setting changed. The journal registry invariant passes.
+
+### Shared positions additions from the Tips desk: `Managed.extras`, `set_extras`, `widen_stop` — 2026-09-14 (geometry rev 2, branch `claude/tips-geometry-rev2`, review before merge)
+
+- `Managed.extras` (persisted in `config.extras`, on `to_dict()` as `extras`):
+  technique-owned facts on a durable position — the tips desk keeps the
+  pre-entry `riskPlan` and a post-fill `geometryException` state machine there.
+  The policy evaluator never reads it; other techniques may use their own keys.
+- `PositionManager.set_extras(pid, patch)`: merge + persist, no journal of its own.
+- `PositionManager.widen_stop(pid, new_stop, *, reason)`: the ONE way a live stop
+  gets WIDER. `set_policy` still only tightens (`state.stop` moves only in the
+  protective direction); `widen_stop` is refused on adapter positions and when the
+  stop is not actually wider, logs `stop_widened`, journals
+  `ManagedPositionPolicyChanged` with a `widened {from, to, reason}` block and
+  re-arms the venue stop. A caller must have EARNED the widen (tips: the
+  trim-first sequence confirmed its trim). Invariant: no other code path widens
+  `state.stop`.
+- `TipGeometryRepaired` gains `phase` values `pre-entry | submit | post-fill |
+  post-fill-exception | post-fill-legacy`; the registered required fields are
+  unchanged (`proposalId` stays nullable).
+- Default behaviour is UNCHANGED for every technique: the gate knob
+  `techniques.tip.geometry_gate` ships as `shadow` (compute + journal only).
+

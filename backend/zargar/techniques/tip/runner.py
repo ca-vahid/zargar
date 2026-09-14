@@ -918,6 +918,16 @@ async def attach_tip_runner(engine) -> None:
     # the armed shadow book's morning loop (after the 09:05 managed-positions
     # reconciliation; a post-09:12 restart still runs it that day)
     at = str(engine.settings.get("techniques.tip.shadow_arm_at", "09:12"))
+    # GEOMETRY rev 2: a trim-first exception interrupted by a restart resumes from
+    # its persisted phase once the manager has restored its positions
+    async def _resume_geometry_exceptions() -> None:
+        await asyncio.sleep(15)
+        with contextlib.suppress(Exception):
+            from .lifecycle import reconcile_geometry_exceptions
+            n = await reconcile_geometry_exceptions(engine)
+            if n:
+                log.info("resumed %d geometry exception(s) after restart", n)
+    asyncio.create_task(_resume_geometry_exceptions(), name="tip-geometry-exceptions-resume")
     engine.scheduler.register("tip_shadow_arm", at,
                               lambda: engine.tip_runner.shadow_arm_open_tips())
     # the analyst's nightly self-review (ANALYST.md §2.4 + ARM-GAPS D7/D8):
