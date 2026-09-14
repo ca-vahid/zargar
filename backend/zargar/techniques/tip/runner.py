@@ -700,43 +700,89 @@ class TipRunner(PlanRunner):
                 lambda t, k=key: self._handoff_tasks.pop(k, None))
 
     async def _place_with_retry(self, ap, trade, intent, *, stage: str):
-        """KB-06 final admission for the ARMED path: immediately before an
-        ENTRY order exists — arms created before the incident and collar
-        retries included — refuse while an execution-integrity incident
-        pauses this book/path. Exits never arrive here as stage 'entry'."""
-        if stage == "entry":
-            from . import integrity as _ig
-            why = await _ig.admission(self.engine, portfolio_id=getattr(ap.config, "portfolio_id", None),
-                                      entry_path="arm")
+        """KB-06 final admission for the ARMED path (I93-01): immediately
+        before EVERY entry submission — the first attempt AND every transport
+        retry — refuse while an execution-integrity incident pauses this
+        book/path (an incident opened during the retry sleep counts). Exits
+        never arrive here as stage 'entry'; they keep the base behaviour."""
+        if stage != "entry":
+            return await super()._place_with_retry(ap, trade, intent, stage=stage)
+        from . import integrity as _ig
+        from ...execution.planrunner import TRANSIENT_ERRORS
+        from ... import events as _ev
+        cfg = ap.config
+        pid = getattr(cfg, "portfolio_id", None)
+        attempt = 0
+        while True:
+            why = await _ig.admission(self.engine, portfolio_id=pid, entry_path="arm",
+                                      symbol=getattr(ap, "symbol", None))
             if why:
                 trade.status = "skipped"
                 trade.reason = why
                 with contextlib.suppress(Exception):
                     self._log(ap, "entry_paused", f"{trade.trigger_id}: {why}", trigger=trade.trigger_id)
                 with contextlib.suppress(Exception):
-                    from ... import events as _ev
                     await self.engine.journal.append(
                         _ev.TIP_AUTO_PAUSED, {"reason": why, "runId": ap.run_id, "trigger": trade.trigger_id,
-                                              "path": "arm"},
-                        aggregate_type="technique_run", aggregate_id=ap.run_id,
-                        portfolio_id=getattr(ap.config, "portfolio_id", None))
+                                              "path": "arm", "attempt": attempt},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=pid)
                 with contextlib.suppress(Exception):
                     await self._persist(ap)
                 return None
-        return await super()._place_with_retry(ap, trade, intent, stage=stage)
+            try:
+                return await self.engine.orders.place(intent)
+            except Exception as exc:
+                msg = f"{type(exc).__name__}: {exc}"
+                transient = any(k in msg.lower() for k in TRANSIENT_ERRORS)
+                trade.errors.append(f"{stage}: {msg}")
+                attempt += 1
+                trade.retries = attempt
+                retrying = transient and attempt <= int(getattr(cfg, "max_retries", 0) or 0)
+                with contextlib.suppress(Exception):
+                    self._log(ap, f"{stage}_error", f"{trade.trigger_id}: {msg}" + (" — retrying" if retrying else ""),
+                              trigger=trade.trigger_id, attempt=attempt)
+                with contextlib.suppress(Exception):
+                    await self.engine.journal.append(_ev.TECHNIQUE_PLAN_ERROR, {
+                        "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "stage": stage,
+                        "error": msg, "attempt": attempt, "retrying": retrying},
+                        aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=pid)
+                if retrying:
+                    await asyncio.sleep(min(2.0 * attempt, 5.0))
+                    continue                                   # the loop re-admits before the next submission
+                trade.status = "failed"
+                trade.reason = msg
+                with contextlib.suppress(Exception):
+                    await self._persist(ap)
+                with contextlib.suppress(Exception):
+                    self._publish(ap, f"{stage}_error")
+                return None
 
-    async def cancel_working_entries(self, *, reason: str, portfolio_id: str | None = None) -> int:
+    async def cancel_working_entries(self, *, reason: str, portfolio_id: str | None = None,
+                                     symbol: str | None = None) -> int:
         """KB-06: an incident opened AFTER arming still blocks — resting ENTRY
-        orders of this technique's armed plans are cancelled (exits untouched)."""
+        orders of this technique's armed plans IN SCOPE are cancelled (exits
+        untouched); the outcome is verified at the order, a fill that won the
+        race is left to the hand-off."""
         n = 0
         for ap in list(self._armed.values()):
             if portfolio_id and getattr(ap.config, "portfolio_id", None) != portfolio_id:
                 continue
+            if symbol and str(getattr(ap, "symbol", "")).upper() != str(symbol).upper():
+                continue
             for trade in list(ap.trades.values()):
                 if trade.status == "working" and trade.entry_order_id:
+                    try:
+                        res = await self.engine.orders.cancel(trade.entry_order_id)
+                    except Exception:
+                        continue
+                    status = (res or {}).get("status") if isinstance(res, dict) else None
+                    if status in ("FILLED", "PARTIALLY_FILLED"):
+                        with contextlib.suppress(Exception):
+                            self._log(ap, "entry_cancel_raced",
+                                      f"{trade.trigger_id}: filled before the cancel — handed off", trigger=trade.trigger_id)
+                        continue
+                    n += 1
                     with contextlib.suppress(Exception):
-                        await self.engine.orders.cancel(trade.entry_order_id)
-                        n += 1
                         self._log(ap, "entry_cancelled", f"{trade.trigger_id}: {reason}", trigger=trade.trigger_id)
         return n
 

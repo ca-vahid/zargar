@@ -48,8 +48,10 @@ async def _closed(eng, pid: str, sym: str, *, exits: list, opened_ms: int, extra
 
 
 def _stop_exit(ts_ms: int, kind: str = "stop", **kw) -> dict:
+    # the fill record carries `filledTs` (the fill's arrival) — the intent time `ts` is not evidence
     return {"kind": kind, "leg": "X", "qty": 1, "orderId": new_id(), "status": "FILLED",
-            "filledQty": 1, "price": 1.0, "ts": ts_ms, "reason": "bar closed through the stop", **kw}
+            "filledQty": 1, "price": 1.0, "ts": ts_ms - 500, "filledTs": ts_ms,
+            "reason": "bar closed through the stop", **kw}
 
 
 async def _events(eng, kind: str) -> list[dict]:
@@ -101,10 +103,26 @@ def test_classifier_uses_structured_kinds_and_execution_times():
     prem = ig.classify_fast_stop({"exits": [_stop_exit(NOW_MS + 60_000, kind="premium_stop")], "openedMs": NOW_MS,
                                   "extras": VALID_PLAN})
     assert prem["verdict"] == "evidence_missing" and "confirmation" in prem["why"]
+    prose = ig.classify_fast_stop({"exits": [_stop_exit(NOW_MS + 60_000, kind="premium_stop",
+                                                        reason="premium stop confirmed (2 observations)")],
+                                   "openedMs": NOW_MS, "extras": VALID_PLAN})
+    assert prose["verdict"] == "evidence_missing", "prose is not a confirmation record"
     ok_prem = ig.classify_fast_stop({"exits": [_stop_exit(NOW_MS + 60_000, kind="premium_stop",
-                                                          reason="premium stop confirmed (2 observations)")],
+                                                          confirmation={"confirmed": True,
+                                                                        "observations": [{"sourceTs": {"X": 1}},
+                                                                                         {"sourceTs": {"X": 2}}]})],
                                      "openedMs": NOW_MS, "extras": VALID_PLAN})
     assert ok_prem["verdict"] == "valid"
+    unconfirmed = ig.classify_fast_stop({"exits": [_stop_exit(NOW_MS + 60_000, kind="premium_stop",
+                                                              confirmation={"confirmed": False, "observations": []})],
+                                         "openedMs": NOW_MS, "extras": VALID_PLAN})
+    assert unconfirmed["verdict"] == "invalid", "an exit recorded as unconfirmed is a defect at any speed"
+    slow_bad = ig.classify_fast_stop({"exits": [_stop_exit(NOW_MS + 3_600_000)], "openedMs": NOW_MS,
+                                      "extras": {"riskPlan": {"enforced": True, "invariantOk": False}}})
+    assert slow_bad["verdict"] == "invalid", "a proven violation is not discarded for being slow"
+    bare = ig.classify_fast_stop({"exits": [_stop_exit(NOW_MS + 60_000)], "openedMs": NOW_MS,
+                                  "extras": {"riskPlan": {"enforced": True}}})
+    assert bare["verdict"] == "evidence_missing", "a bare enforced flag proves nothing"
 
 
 # 1. a valid, budget-compliant fast loss is a diagnostic, never an incident
@@ -136,8 +154,9 @@ async def test_case2_filled_violation_opens_scoped_incident(rig):
     assert await ig.detect_incidents(eng) == [], "the same defect does not open a second incident"
 
 
-# 3. missing evidence holds; resolution must VALIDATE, and a stale resolution is refused
+# 3. missing evidence holds; resolution must VALIDATE against RECORDS, and a stale resolution is refused
 async def test_case3_hold_incident_resolution_validates_evidence(rig):
+    from zargar.models import Execution, Order
     eng = rig
     pid = _pid(eng)
     await _closed(eng, pid, "FSTC", exits=[_stop_exit(NOW_MS + 45_000)], opened_ms=NOW_MS, extras={})
@@ -145,22 +164,37 @@ async def test_case3_hold_incident_resolution_validates_evidence(rig):
     assert inc["kind"] == "hold" and inc["cause"] == "evidence_missing" and inc["revision"] == 1
     with pytest.raises(ValueError, match="no proof evidence"):
         await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=1, note="looked fine")
-    inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "id": "q2", "valid": True, "note": "fresh NBBO"})
-    assert inc["revision"] == 2
+    # an API-supplied flag on a reference that resolves to nothing is not validation
+    inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "id": "q-nowhere", "valid": True})
+    with pytest.raises(ValueError, match="do not resolve"):
+        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=2)
+    # a proof that resolves to an ACTUAL execution of the incident's symbol validates
+    order_id, exec_id = new_id(), new_id()
+    async with eng.sf() as session:
+        session.add(Order(id=order_id, portfolio_id=pid, symbol="FSTC", sec_type="STK", side="BUY", qty=1.0,
+                          order_type="LMT", limit_price=10.0, status="FILLED", filled_qty=1.0, avg_fill_price=10.0,
+                          source="signal"))
+        await session.commit()                                # the FK needs the order first
+        session.add(Execution(id=exec_id, order_id=order_id, portfolio_id=pid, symbol="FSTC", side="BUY",
+                              qty=1.0, price=10.0))
+        await session.commit()
+    inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "ref": f"execution:{exec_id}", "symbol": "FSTC"})
+    assert inc["revision"] == 3
     with pytest.raises(ValueError, match="stale resolution"):
-        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=1)
-    out = await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=2, note="validated")
-    assert out["status"] == "resolved" and out["resolution"]["examinedRevision"] == 2
+        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=2)
+    out = await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=3, note="validated")
+    assert out["status"] == "resolved" and out["resolution"]["examinedRevision"] == 3
+    assert out["resolution"]["override"] is False and "execution" in out["resolution"]["validated"]
     assert await ig.entry_paused(eng, portfolio_id=pid) is None
-    # a proof that shows a DEFECT never releases: receiving evidence is not validation
+    # a proof that resolves to a DEFECT never releases
     await _closed(eng, pid, "FSTC2", exits=[_stop_exit(NOW_MS + 45_000)], opened_ms=NOW_MS, extras={})
     (inc2,) = await ig.detect_incidents(eng)
-    inc2 = await ig.append_evidence(eng, inc2["id"], {"kind": "proof", "id": "q1", "valid": False, "note": "quote was stale"})
+    inc2 = await ig.append_evidence(eng, inc2["id"], {"kind": "proof", "ref": f"execution:{exec_id}", "symbol": "FSTC2"})
     with pytest.raises(ValueError, match="proves a defect"):
         await ig.resolve_incident(eng, inc2["id"], resolver="user", examined_revision=inc2["revision"])
     assert await ig.entry_paused(eng, portfolio_id=pid), "still paused"
     acts = [e["action"] for e in await _events(eng, "TipExecutionIncident")]
-    assert acts.count("release_refused") == 2 and acts.count("resolved") == 1
+    assert acts.count("release_refused") == 3 and acts.count("resolved") == 1
 
 
 # 4. every automated entry path is refused while paused; a person may still act
@@ -246,8 +280,12 @@ async def test_case7_incident_and_loss_halt_are_independent(rig):
                                  evidence=[{"kind": "component", "id": "x"}], why="independent")
     await eng.engage_book_halt(pid, "test halt", source="test")
     assert eng.trading_halted(pid)
-    await ig.resolve_incident(eng, inc["id"], resolver="owner", examined_revision=1,
-                              note="component owner confirmed healthy after inspection")
+    with pytest.raises(ValueError, match="labeled override"):
+        await ig.resolve_incident(eng, inc["id"], resolver="owner", examined_revision=1,
+                                  note="component owner confirmed healthy after inspection")
+    out = await ig.resolve_incident(eng, inc["id"], resolver="owner", examined_revision=1, override=True,
+                                    note="component owner confirmed healthy after inspection")
+    assert out["resolution"]["override"] is True and out["resolution"]["validated"].startswith("OVERRIDE")
     assert eng.trading_halted(pid), "resolving an incident never clears a loss halt"
     inc2 = await ig.open_incident(eng, kind="integrity", cause="shared_component",
                                   scope={"technique": "tip", "portfolioId": pid},

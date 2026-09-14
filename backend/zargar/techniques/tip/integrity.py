@@ -155,13 +155,17 @@ async def append_evidence(eng, incident_id: str, evidence: dict) -> dict | None:
     return out
 
 
-async def list_incidents(eng, *, status: str | None = "open", limit: int = 100) -> list[dict]:
+async def list_incidents(eng, *, status: str | None = "open", limit: int | None = 100) -> list[dict]:
+    """Incidents newest first. `limit=None` = COMPLETE (the admission path
+    must see every open incident, never a recent slice — I93-01)."""
     from sqlalchemy import select
     from ...models import TipExecutionIncident
     async with eng.sf() as session:
-        q = select(TipExecutionIncident).order_by(TipExecutionIncident.opened_at.desc()).limit(limit)
+        q = select(TipExecutionIncident).order_by(TipExecutionIncident.opened_at.desc())
         if status:
             q = q.where(TipExecutionIncident.status == status)
+        if limit:
+            q = q.limit(int(limit))
         rows = (await session.execute(q)).scalars().all()
     return [_incident_dict(r) for r in rows]
 
@@ -170,27 +174,40 @@ async def entry_paused(eng, *, portfolio_id: str | None, technique: str = "tip",
                        entry_path: str | None = None, symbol: str | None = None) -> str | None:
     """The reason no NEW automated entry may be placed right now on this
     technique/book/path — the first OPEN incident whose scope matches — or
-    None. Answers from the store (persisted: a restart cannot clear it).
-    Exits never consult this."""
+    None. Answers from the store (persisted: a restart cannot clear it) over
+    the COMPLETE set of open incidents. An unavailable store is a refusal
+    (I93-01: fail closed — 'unknown' is never 'no incidents'). Exits never
+    consult this."""
     try:
-        for inc in await list_incidents(eng, status="open"):
-            if _scope_matches(inc["scope"], technique=technique, portfolio_id=portfolio_id,
-                              entry_path=entry_path, symbol=symbol):
-                return (f"execution-integrity {inc['kind']} incident {inc['id'][:8]} "
-                        f"({inc['cause']}): {inc['why']} — release: {inc['releaseCriteria']}")
-    except Exception:
-        log.debug("entry_paused lookup failed", exc_info=True)
+        incidents = await list_incidents(eng, status="open", limit=None)
+    except Exception as exc:
+        log.warning("incident store unavailable — automated entries refused: %s", exc)
+        return f"execution-integrity state unavailable ({type(exc).__name__}) — automated entry refused"
+    for inc in incidents:
+        if _scope_matches(inc["scope"], technique=technique, portfolio_id=portfolio_id,
+                          entry_path=entry_path, symbol=symbol):
+            return (f"execution-integrity {inc['kind']} incident {inc['id'][:8]} "
+                    f"({inc['cause']}): {inc['why']} — release: {inc['releaseCriteria']}")
     return None
 
 
-async def admission(eng, *, portfolio_id: str | None, entry_path: str) -> str | None:
-    """Final-admission check for the automated entry paths OTHER than the
-    tip auto-approval loop (approve(), the stale-quote retry, the armed fire):
-    incidents only, and only when the pause mode is active — the clock gate
-    stays exactly where it lives today."""
+async def admission(eng, *, portfolio_id: str | None, entry_path: str,
+                    symbol: str | None = None, detect: bool = True) -> str | None:
+    """The ONE final-admission boundary for every automated entry path
+    (proposal auto-approval, approve(via=auto), the stale-quote retry, the
+    armed fire and EVERY transport retry of it): runs detection first (a
+    defect that just happened pauses this very entry), then answers from
+    the complete incident set; fails closed when either is unavailable.
+    Only active when the pause mode includes incidents — the clock gate stays
+    exactly where it lives today."""
     if not pauses(eng.settings):
         return None
-    return await entry_paused(eng, portfolio_id=portfolio_id, entry_path=entry_path)
+    if detect:
+        try:
+            await detect_incidents(eng, portfolio_id=portfolio_id, strict=True)
+        except Exception as exc:
+            return f"execution-integrity detection unavailable ({type(exc).__name__}) — automated entry refused"
+    return await entry_paused(eng, portfolio_id=portfolio_id, entry_path=entry_path, symbol=symbol)
 
 
 async def gate_reason(eng, *, portfolio_id: str | None, entry_path: str) -> str | None:
@@ -198,7 +215,7 @@ async def gate_reason(eng, *, portfolio_id: str | None, entry_path: str) -> str 
     clock gate alone (default), incidents alone, or both."""
     mode = pause_mode(eng.settings)
     if mode in ("integrity", "both"):
-        why = await entry_paused(eng, portfolio_id=portfolio_id, entry_path=entry_path)
+        why = await admission(eng, portfolio_id=portfolio_id, entry_path=entry_path)
         if why:
             return why
     if mode in ("clock", "both"):
@@ -208,58 +225,185 @@ async def gate_reason(eng, *, portfolio_id: str | None, entry_path: str) -> str 
 
 
 # ---------------------------------------------------------------------------
+async def _resolve_proof(eng, e: dict) -> tuple[bool | None, str]:
+    """A proof reference resolves to an ACTUAL record or it is nothing
+    (I93-03: an API-supplied boolean is not validation). Supported refs:
+    `execution:<id>` (an executions row for the incident's symbol),
+    `event:<id>` (a journal row of the kinds that carry structured evidence),
+    `position:<id>` (a managed position row whose extras.riskPlan is enforced
+    and invariantOk). Returns (valid|None, detail)."""
+    ref = str(e.get("ref") or e.get("id") or "")
+    sf = getattr(eng, "sf", None)
+    if not ref or ":" not in ref or sf is None:
+        return None, f"unresolvable proof reference {ref!r}"
+    kind, _, ident = ref.partition(":")
+    try:
+        from sqlalchemy import select
+        from ...models import Event, Execution, ManagedPositionRow
+        async with sf() as session:
+            if kind == "execution":
+                row = await session.get(Execution, ident)
+                if row is None:
+                    return None, f"execution {ident} does not exist"
+                if e.get("symbol") and str(row.symbol).upper() != str(e["symbol"]).upper():
+                    return False, f"execution {ident} is for {row.symbol}, not {e['symbol']}"
+                return True, f"execution {ident} {row.side} {row.qty:g} @ {row.price} at {row.ts.isoformat()}"
+            if kind == "event":
+                row = await session.get(Event, int(ident))
+                if row is None:
+                    return None, f"journal event {ident} does not exist"
+                p = row.payload or {}
+                if row.type == "TipGeometryRepaired" and p.get("enforced") and not p.get("reviewRequired"):
+                    return True, f"event {ident}: enforced pre-entry plan without review"
+                if row.type == "TipFastStopDiagnostic":
+                    return (p.get("verdict") == "valid"), f"event {ident}: diagnostic verdict {p.get('verdict')}"
+                if row.type == "ManagedPositionExit" and p.get("confirmation"):
+                    return bool((p.get("confirmation") or {}).get("confirmed")), f"event {ident}: exit confirmation record"
+                return None, f"journal event {ident} ({row.type}) carries no structured validity"
+            if kind == "position":
+                row = await session.get(ManagedPositionRow, ident)
+                if row is None:
+                    return None, f"position {ident} does not exist"
+                rp = ((row.config or {}).get("extras") or {}).get("riskPlan") or {}
+                if not rp:
+                    return None, f"position {ident} has no risk plan"
+                ok = bool(rp.get("enforced")) and rp.get("invariantOk") is True and not rp.get("reviewRequired") \
+                    and not (rp.get("quote") or {}).get("delayed")
+                return ok, f"position {ident}: enforced={rp.get('enforced')} invariantOk={rp.get('invariantOk')}"
+    except Exception as exc:
+        return None, f"proof {ref} could not be resolved: {exc}"
+    return None, f"unknown proof kind {kind!r}"
+
+
 async def _validate_release(eng, inc: dict, note: str) -> tuple[bool, str]:
-    """Cause-specific check of the release criteria against CURRENT state.
-    Receiving evidence is not enough: for a proven defect the state itself
-    must be repaired."""
+    """Cause-specific check of the release criteria against CURRENT state at
+    the examined revision (I93-03): referenced evidence must resolve to actual
+    records; an unavailable manager/store is UNKNOWN, and unknown is never
+    repaired; the calendar alone never releases; a human override is a
+    separate, labeled path (`resolve_incident(..., override=True)`)."""
     cause = inc["cause"]
     mgr = getattr(eng, "position_manager", None)
     pos_ids = [str(e.get("id")) for e in inc.get("evidence") or [] if e.get("kind") == "position"]
+    proofs = [e for e in inc.get("evidence") or [] if e.get("kind") == "proof"]
+
+    async def resolved_proofs() -> tuple[list[str], list[str], list[str]]:
+        good, bad, unknown = [], [], []
+        for e in proofs:
+            ok, detail = await _resolve_proof(eng, e)
+            (good if ok else bad if ok is False else unknown).append(detail)
+        return good, bad, unknown
+
     if cause == "geometry_violation_filled":
+        if mgr is None:
+            return False, "position manager unavailable — repair cannot be verified (unknown is not repaired)"
+        sf = getattr(eng, "sf", None)
         for pid in pos_ids:
-            p = mgr.get(pid) if mgr is not None else None
+            p = mgr.get(pid)
             if p is None:
-                continue                                    # closed / gone: repaired by exit
+                # not in memory: verify it is CLOSED on the record, never assume
+                if sf is None:
+                    return False, f"position {pid[:8]} state unknown"
+                try:
+                    from ...models import ManagedPositionRow
+                    async with sf() as session:
+                        row = await session.get(ManagedPositionRow, pid)
+                except Exception as exc:
+                    return False, f"position {pid[:8]} state unavailable: {exc}"
+                if row is None or row.status != "closed":
+                    return False, f"position {pid[:8]} is {getattr(row, 'status', 'missing')} — not repaired"
+                continue
             exc = (p.extras or {}).get("geometryException") or {}
             if exc.get("phase") in ("trim_pending", "reconcile"):
                 return False, f"position {pid[:8]} still holds an unresolved geometry exception ({exc.get('phase')})"
-        return True, "positions closed or their exceptions resolved"
+            rp = (p.extras or {}).get("riskPlan") or {}
+            if exc.get("phase") == "kept_tight" or exc.get("phase") == "widened":
+                continue                                    # a resolved exception: the tight/admissible stop is in force
+            if not (rp.get("enforced") and rp.get("invariantOk") is True):
+                return False, f"position {pid[:8]} still violates its risk plan"
+        return True, "every referenced position is closed or back inside its risk plan"
     if cause == "unreconciled_fill":
-        if mgr is not None:
-            halted = set(getattr(mgr, "_entry_halted", set()))
-            syms = {str(e.get("symbol") or "").upper() for e in inc.get("evidence") or [] if e.get("symbol")}
-            still = sorted(syms & halted)
-            if still:
-                return False, f"reconciliation drift still halts {', '.join(still)}"
+        if mgr is None:
+            return False, "position manager unavailable — drift cannot be verified"
+        halted = set(getattr(mgr, "_entry_halted", set()))
+        syms = {str(e.get("symbol") or "").upper() for e in inc.get("evidence") or [] if e.get("symbol")}
+        still = sorted(syms & halted)
+        if still:
+            return False, f"reconciliation drift still halts {', '.join(still)}"
+        for pid in pos_ids:
+            p = mgr.get(pid)
+            if p is not None and p.halt_entries:
+                return False, f"position {pid[:8]} still flags reconciliation drift"
         return True, "no reconciliation drift on the incident's symbols"
     if cause == "duplicate_execution":
-        if not note or "reconciled" not in note.lower():
-            return False, "state the reconciliation (one position per fill) in the resolution note"
-        return True, "reconciliation stated"
+        # verified against the executions table: no order with fills beyond its quantity
+        sf = getattr(eng, "sf", None)
+        order_ids = [str(e.get("id")) for e in inc.get("evidence") or [] if e.get("kind") == "order"]
+        if sf is None or not order_ids:
+            return False, "duplicate cannot be verified without the order records"
+        try:
+            from sqlalchemy import func, select
+            from ...models import Execution, Order
+            async with sf() as session:
+                for oid in order_ids:
+                    o = await session.get(Order, oid)
+                    filled = float((await session.execute(
+                        select(func.coalesce(func.sum(Execution.qty), 0.0)).where(Execution.order_id == oid))).scalar() or 0)
+                    if o is None or filled > float(o.qty) + 1e-9:
+                        return False, f"order {oid[:8]} still shows {filled:g} filled against {getattr(o, 'qty', '?')} requested"
+        except Exception as exc:
+            return False, f"execution records unavailable: {exc}"
+        return True, "executions match their orders"
     if cause == "evidence_missing":
-        proofs = [e for e in inc.get("evidence") or [] if e.get("kind") == "proof"]
         if not proofs:
             return False, "no proof evidence appended — receiving nothing is not validation"
-        bad = [e for e in proofs if not e.get("valid")]
+        good, bad, unknown = await resolved_proofs()
         if bad:
-            return False, "the appended evidence proves a defect, not validity — open an integrity incident instead"
-        return True, f"{len(proofs)} proof record(s) validate the trade"
+            return False, "the appended evidence proves a defect, not validity — open an integrity incident instead: " + "; ".join(bad)
+        if not good:
+            return False, "proof references do not resolve to records: " + "; ".join(unknown or ["none valid"])
+        # unresolvable references never count; they are reported, not fatal, once a real record validates
+        return True, (f"{len(good)} resolved proof record(s) validate the trade: " + "; ".join(good)
+                      + (f" (ignored {len(unknown)} unresolvable reference(s))" if unknown else ""))
     if cause == "invalid_evidence":
-        proofs = [e for e in inc.get("evidence") or [] if e.get("kind") == "proof" and e.get("valid")]
-        return (True, "fresh observation recorded") if proofs else (False, "no fresh valid observation appended")
+        good, bad, unknown = await resolved_proofs()
+        if bad:
+            return False, "the fresh observation itself shows a defect: " + "; ".join(bad)
+        if not good:
+            return False, "no fresh valid observation resolves to a record"
+        return True, "fresh observation recorded: " + "; ".join(good)
     if cause == "repeated_pre_entry_failure":
-        opened = dt.datetime.fromisoformat(inc["openedAt"])
-        from ...marketstructure.sessions import ET
-        if dt.datetime.now(dt.timezone.utc).astimezone(ET).date() <= opened.astimezone(ET).date():
-            return False, "the session boundary has not passed"
-        return True, "new session"
+        # the calendar never releases on its own: a SUCCESSFUL pre-entry
+        # validation on this path must be on the journal AFTER the incident opened
+        sf = getattr(eng, "sf", None)
+        if sf is None:
+            return False, "journal unavailable — no successful revalidation can be verified"
+        try:
+            from sqlalchemy import select
+            from ...models import Event
+            opened = dt.datetime.fromisoformat(inc["openedAt"])
+            path = (inc.get("scope") or {}).get("entryPath") or "proposal"
+            async with sf() as session:
+                rows = (await session.execute(select(Event.payload).where(
+                    Event.type == "TipGeometryRepaired", Event.ts > opened))).scalars().all()
+        except Exception as exc:
+            return False, f"journal unavailable: {exc}"
+        ok = [p for p in rows if (p or {}).get("phase") in ("pre-entry", "submit") and (p or {}).get("enforced")
+              and not (p or {}).get("reviewRequired") and ((p or {}).get("entryPath") or "proposal") == path]
+        if not ok:
+            return False, "no successful pre-entry validation on this path since the incident opened"
+        return True, f"{len(ok)} successful pre-entry validation(s) since the incident opened"
     if cause == "shared_component":
-        return (True, "owner confirmed") if note and len(note) >= 12 else (False, "the component owner's confirmation note is required")
+        good, bad, unknown = await resolved_proofs()
+        if bad:
+            return False, "the component's evidence still shows a defect"
+        if good:
+            return True, "component health resolved from records: " + "; ".join(good)
+        return False, "a shared-component incident releases on resolved health evidence or a labeled override"
     return False, "unknown cause"
 
 
 async def resolve_incident(eng, incident_id: str, *, resolver: str, examined_revision: int,
-                           note: str = "") -> dict:
+                           note: str = "", override: bool = False) -> dict:
     """Release an incident: the resolver states which REVISION it examined
     (a stale resolution — newer evidence appended since — is refused) and
     the cause-specific validation must pass. Resolving never touches a loss
@@ -277,6 +421,11 @@ async def resolve_incident(eng, incident_id: str, *, resolver: str, examined_rev
                              f"you examined {examined_revision} — re-read the evidence")
         inc = _incident_dict(row)
     ok, detail = await _validate_release(eng, inc, note)
+    if not ok and override:
+        # a HUMAN override is honest about what it is: not a verified repair
+        if not note or len(note.strip()) < 20:
+            raise ValueError("an override needs a substantive note (>= 20 chars) stating why the desk accepts the risk")
+        ok, detail = True, f"OVERRIDE by {resolver} (validation said: {detail})"
     if not ok:
         await eng.journal.append(ev.TIP_EXECUTION_INCIDENT,
                                  {**inc, "action": "release_refused", "resolver": resolver, "detail": detail},
@@ -291,7 +440,8 @@ async def resolve_incident(eng, incident_id: str, *, resolver: str, examined_rev
         row.resolved_at = now
         row.resolver = resolver[:80]
         row.resolution = {"note": note[:400], "examinedRevision": int(examined_revision),
-                          "validated": detail, "at": now.isoformat()}
+                          "validated": detail, "override": bool(override and detail.startswith("OVERRIDE")),
+                          "at": now.isoformat()}
         await session.commit()
         out = _incident_dict(row)
     await eng.journal.append(ev.TIP_EXECUTION_INCIDENT, {**out, "action": "resolved"},
@@ -303,56 +453,119 @@ async def resolve_incident(eng, incident_id: str, *, resolver: str, examined_rev
 # ---------------------------------------------------------------------------
 # Detection: structured evidence only — exit KINDS and execution timestamps,
 # never row ages or substring matching on prose.
-def classify_fast_stop(position: dict, *, now_ms: int | None = None) -> dict | None:
-    """For a CLOSED tip position: was the exit a fast stop (< FAST_STOP_S from
-    the entry fill to the stop exit), and if so does the evidence prove it
-    was a valid trade? Returns None when not a fast stop, else
-    {verdict: valid | evidence_missing | invalid, why, ...}. Pure."""
+def _risk_plan_evidence(rp: dict) -> tuple[str, str]:
+    """(status, why) of a position's pre-entry risk plan as EVIDENCE:
+    'valid' needs enforced + invariantOk True + no review + a non-delayed
+    quote record; anything less is 'missing'; a recorded violation is
+    'invalid'. A bare {enforced: true} proves nothing (I93-02)."""
+    if not rp:
+        return "missing", "no pre-entry risk plan on the position"
+    if rp.get("invariantOk") is False:
+        return "invalid", "the FILLED position violated qty x unitLoss <= budget"
+    if rp.get("reviewRequired"):
+        return "invalid", f"entered despite review-required geometry: {rp['reviewRequired']}"
+    q = rp.get("quote") or {}
+    if q.get("delayed") is True or q.get("underlyingDelayed") is True:
+        return "invalid", "the entry was priced on a delayed quote"
+    missing = []
+    if not rp.get("enforced"):
+        missing.append("risk plan was not enforced at entry")
+    if rp.get("invariantOk") is not True:
+        missing.append("no budget invariant on the record")
+    if "delayed" not in q:
+        missing.append("no quote-freshness record on the plan")
+    if missing:
+        return "missing", "; ".join(missing)
+    return "valid", "enforced plan, budget invariant and quote freshness on the record"
+
+
+def _exit_evidence(x: dict) -> tuple[str, str]:
+    """A premium stop is proven only by a STRUCTURED confirmation record on
+    the exit (`confirmation: {confirmed: true, observations: [...]}`); prose is
+    not evidence (I93-02: 'NOT confirmed; missing observation' passed the old
+    substring test)."""
+    if x.get("kind") != "premium_stop":
+        return "valid", "underlying/venue stop"
+    conf = x.get("confirmation")
+    if isinstance(conf, dict) and conf.get("confirmed") is True and len(conf.get("observations") or []) >= 2:
+        return "valid", "premium stop with a two-observation confirmation record"
+    if isinstance(conf, dict) and conf.get("confirmed") is False:
+        return "invalid", "premium stop exited WITHOUT confirmation"
+    return "missing", "premium stop without a structured confirmation record"
+
+
+def classify_fast_stop(position: dict, *, now_ms: int | None = None,
+                       entry_fill_ms: int | None = None, exit_fill_ms: int | None = None) -> dict | None:
+    """For a CLOSED tip position: classify a STOP exit from structured
+    evidence. Timing uses ACTUAL fill timestamps when the caller resolved
+    them from the executions table (`entry_fill_ms` / `exit_fill_ms`); the
+    record's `openedMs` (adoption) and the exit's `filledTs` are the fallback,
+    and an unknown timing is reported as unknown, never assumed fast or slow.
+    A proven violation is `invalid` at any speed (its significance is
+    independent of elapsed time); a slow stop with valid evidence is None
+    (nothing to classify); a fast stop is `valid` only when the plan, budget,
+    quote and exit evidence are all on the record. Pure."""
     exits = [x for x in (position.get("exits") or []) if x.get("kind") in STOP_KINDS
              and x.get("status") in ("FILLED", "PARTIALLY_FILLED")]
     if not exits:
         return None
-    opened_ms = int(position.get("openedMs") or 0)
-    first_stop = min(exits, key=lambda x: int(x.get("ts") or 0))
-    exit_ms = int(first_stop.get("ts") or 0)
-    if not opened_ms or not exit_ms:
-        return {"verdict": "evidence_missing", "why": "no execution timestamps on the record",
-                "seconds": None, "exitKind": first_stop.get("kind")}
-    seconds = (exit_ms - opened_ms) / 1000.0
-    if seconds >= FAST_STOP_S:
-        return None
+    first_stop = min(exits, key=lambda x: int(x.get("filledTs") or x.get("ts") or 0))
+    kind = first_stop.get("kind")
     rp = (position.get("extras") or {}).get("riskPlan") or {}
-    problems: list[str] = []
-    if not rp:
-        problems.append("no pre-entry risk plan on the position")
-    else:
-        if not rp.get("enforced"):
-            problems.append("risk plan was not enforced at entry")
-        if rp.get("invariantOk") is False:
-            return {"verdict": "invalid", "why": "the FILLED position violated qty x unitLoss <= budget",
-                    "seconds": seconds, "exitKind": first_stop.get("kind")}
-        if rp.get("reviewRequired"):
-            return {"verdict": "invalid", "why": f"entered despite review-required geometry: {rp['reviewRequired']}",
-                    "seconds": seconds, "exitKind": first_stop.get("kind")}
-        q = rp.get("quote") or {}
-        if q.get("delayed"):
-            return {"verdict": "invalid", "why": "the entry was priced on a delayed quote",
-                    "seconds": seconds, "exitKind": first_stop.get("kind")}
+    plan_status, plan_why = _risk_plan_evidence(rp)
+    exit_status, exit_why = _exit_evidence(first_stop)
     exc = (position.get("extras") or {}).get("geometryException") or {}
     if exc.get("phase") in ("trim_pending", "reconcile"):
-        return {"verdict": "invalid", "why": f"stopped with an unresolved geometry exception ({exc['phase']})",
-                "seconds": seconds, "exitKind": first_stop.get("kind")}
-    if first_stop.get("kind") == "premium_stop" and not first_stop.get("evidence") \
-            and "confirmed" not in str(first_stop.get("reason") or ""):
-        problems.append("premium stop without a confirmation record")
+        plan_status, plan_why = "invalid", f"stopped with an unresolved geometry exception ({exc['phase']})"
+    opened = int(entry_fill_ms or 0) or None
+    closed = int(exit_fill_ms or 0) or None
+    timing = "fills"
+    if opened is None or closed is None:
+        opened = opened or int(position.get("openedMs") or 0) or None
+        closed = closed or int(first_stop.get("filledTs") or 0) or None
+        timing = "record"
+    seconds = ((closed - opened) / 1000.0) if (opened and closed) else None
+    fast = (seconds is not None and seconds < FAST_STOP_S)
+    base = {"seconds": seconds, "exitKind": kind, "timing": timing if seconds is not None else "unknown"}
+    if plan_status == "invalid" or exit_status == "invalid":
+        return {"verdict": "invalid", "why": plan_why if plan_status == "invalid" else exit_why, **base}
+    if seconds is None:
+        return {"verdict": "evidence_missing", "why": "no execution timestamps on the record", **base}
+    if not fast:
+        return None
+    problems = [w for st, w in ((plan_status, plan_why), (exit_status, exit_why)) if st == "missing"]
     if problems:
-        return {"verdict": "evidence_missing", "why": "; ".join(problems), "seconds": seconds,
-                "exitKind": first_stop.get("kind")}
-    return {"verdict": "valid", "why": "final geometry, sizing and quote evidence valid; a clean fast loss",
-            "seconds": seconds, "exitKind": first_stop.get("kind")}
+        return {"verdict": "evidence_missing", "why": "; ".join(problems), **base}
+    return {"verdict": "valid", "why": "final geometry, sizing, quote and exit evidence valid; a clean fast loss", **base}
 
 
-async def detect_incidents(eng, *, portfolio_id: str | None = None) -> list[dict]:
+async def _fill_times(eng, position_row) -> tuple[int | None, int | None]:
+    """ACTUAL entry / first-stop fill times from the executions table
+    (I93-02): the entry legs' order ids and the stop exit's order id."""
+    try:
+        from sqlalchemy import select
+        from ...models import Execution
+        legs = position_row.legs or []
+        st = position_row.state or {}
+        entry_ids = [l.get("entryOrderId") for l in legs if l.get("entryOrderId")]
+        stops = [x for x in (st.get("exits") or []) if x.get("kind") in STOP_KINDS
+                 and x.get("status") in ("FILLED", "PARTIALLY_FILLED") and x.get("orderId")]
+        stop_ids = [x["orderId"] for x in stops]
+        if not entry_ids or not stop_ids:
+            return None, None
+        async with eng.sf() as session:
+            e_rows = (await session.execute(select(Execution.ts).where(Execution.order_id.in_(entry_ids)))).scalars().all()
+            x_rows = (await session.execute(select(Execution.ts).where(Execution.order_id.in_(stop_ids)))).scalars().all()
+        if not e_rows or not x_rows:
+            return None, None
+        first_entry = min(e_rows)
+        first_stop = min(x_rows)
+        return int(first_entry.timestamp() * 1000), int(first_stop.timestamp() * 1000)
+    except Exception:
+        return None, None
+
+
+async def detect_incidents(eng, *, portfolio_id: str | None = None, strict: bool = False) -> list[dict]:
     """Scan today's CLOSED tip positions on real books for fast stops and
     classify each ONCE (idempotent via the journal): valid → diagnostic
     `TipFastStopDiagnostic`; evidence missing → `hold` incident; invalid →
@@ -385,7 +598,8 @@ async def detect_incidents(eng, *, portfolio_id: str | None = None) -> list[dict
             st = r.state or {}
             position = {"id": r.id, "exits": st.get("exits") or [], "openedMs": st.get("openedMs"),
                         "extras": (r.config or {}).get("extras") or {}}
-            verdict = classify_fast_stop(position)
+            entry_ms, exit_ms = await _fill_times(eng, r)
+            verdict = classify_fast_stop(position, entry_fill_ms=entry_ms, exit_fill_ms=exit_ms)
             if verdict is None:
                 continue
             payload = {"positionId": r.id, "symbol": r.symbol, "portfolioId": r.portfolio_id, **verdict}
@@ -400,6 +614,15 @@ async def detect_incidents(eng, *, portfolio_id: str | None = None) -> list[dict
             elif verdict["verdict"] == "evidence_missing":
                 opened.append(await open_incident(eng, kind="hold", cause="evidence_missing", scope=scope,
                                                   evidence=evidence, why=f"{r.symbol}: {verdict['why']}"))
+        # duplicate executions: an entry order filled beyond its quantity (I93-02)
+        dup = await _duplicate_executions(eng, [r for r in rows], scope_base.get("portfolioId"))
+        for oid, sym, pid_, filled, requested in dup:
+            opened.append(await open_incident(
+                eng, kind="integrity", cause="duplicate_execution",
+                scope={**scope_base, "portfolioId": pid_, "symbol": sym},
+                evidence=[{"kind": "order", "id": oid, "symbol": sym,
+                           "note": f"{filled:g} filled against {requested:g} requested"}],
+                why=f"{sym}: order {oid[:8]} shows duplicate executions"))
         mgr = getattr(eng, "position_manager", None)
         if mgr is not None:
             for p in list(getattr(mgr, "_pos", {}).values()):
@@ -420,8 +643,45 @@ async def detect_incidents(eng, *, portfolio_id: str | None = None) -> list[dict
                                    "note": "; ".join(p.attention or []) or "reconciliation drift"}],
                         why=f"{p.symbol}: unexplained reconciliation drift"))
     except Exception:
+        if strict:
+            raise                                   # admission fails CLOSED on an unavailable store
         log.debug("incident detection failed", exc_info=True)
     return opened
+
+
+async def _duplicate_executions(eng, rows, portfolio_id: str | None) -> list[tuple]:
+    """Entry orders of today's closed positions (and every open tip position)
+    whose executions sum past the order's quantity."""
+    out: list[tuple] = []
+    try:
+        from sqlalchemy import func, select
+        from ...models import Execution, Order
+        order_ids: set[str] = set()
+        for r in rows:
+            for l in (r.legs or []):
+                if l.get("entryOrderId"):
+                    order_ids.add(str(l["entryOrderId"]))
+        mgr = getattr(eng, "position_manager", None)
+        for p in list(getattr(mgr, "_pos", {}).values()) if mgr is not None else []:
+            if p.technique == "tip":
+                for l in p.legs:
+                    if getattr(l, "entry_order_id", None):
+                        order_ids.add(str(l.entry_order_id))
+        if not order_ids:
+            return out
+        async with eng.sf() as session:
+            sums = (await session.execute(
+                select(Execution.order_id, func.sum(Execution.qty)).where(Execution.order_id.in_(sorted(order_ids)))
+                .group_by(Execution.order_id))).all()
+            for oid, filled in sums:
+                o = await session.get(Order, oid)
+                if o is None or (portfolio_id and o.portfolio_id != portfolio_id):
+                    continue
+                if float(filled or 0) > float(o.qty) + 1e-9:
+                    out.append((oid, o.symbol, o.portfolio_id, float(filled), float(o.qty)))
+    except Exception:
+        log.debug("duplicate-execution scan failed", exc_info=True)
+    return out
 
 
 async def record_pre_entry_failure(eng, *, portfolio_id: str | None, entry_path: str, reason: str,
@@ -457,44 +717,71 @@ async def record_pre_entry_failure(eng, *, portfolio_id: str | None, entry_path:
 
 async def _cancel_resting_entries(eng, incident: dict) -> int:
     """An incident opened after arming still blocks: resting AUTOMATED entry
-    orders in scope are cancelled (reduce-only exits are never touched).
-    Proposal-path: executed cards whose entry order is still working — the
-    adoption task then sees CANCELLED (or adopts a partial, never a
-    duplicate). Armed-path: the tip runner's working entry trades."""
+    orders IN SCOPE are cancelled (reduce-only exits are never touched) with
+    the SAME scope semantics as admission (I93-04): a proposal-path incident
+    never touches armed entries and vice versa; a symbol scope narrows both.
+    Every cancellation is verified at the order afterwards — a fill that won
+    the race is journaled (its adoption path manages it), never assumed
+    cancelled."""
     from sqlalchemy import select
     from ... import events as ev
     from ...models import Order, Proposal
     scope = incident.get("scope") or {}
+    path = scope.get("entryPath")
+    sym_scope = str(scope.get("symbol") or "").upper() or None
     n = 0
-    try:
-        async with eng.sf() as session:
-            props = (await session.execute(select(Proposal).where(Proposal.status == "executed"))).scalars().all()
-            for pr in props:
-                ctx = pr.context or {}
-                if ctx.get("techniqueId") != "tip" or pr.decided_via not in ("auto", "triage", "recovery"):
-                    continue
-                if scope.get("portfolioId") and pr.portfolio_id != scope["portfolioId"]:
-                    continue
-                if not pr.order_id:
-                    continue
-                o = await session.get(Order, pr.order_id)
-                if o is None or o.status not in ("SUBMITTED", "WORKING", "PARTIALLY_FILLED", "PENDING", "NEW"):
-                    continue
+    if path in (None, "proposal", "retry"):
+        try:
+            async with eng.sf() as session:
+                props = (await session.execute(select(Proposal).where(Proposal.status == "executed"))).scalars().all()
+                todo = []
+                for pr in props:
+                    ctx = pr.context or {}
+                    if ctx.get("techniqueId") != "tip" or pr.decided_via not in ("auto", "triage", "recovery"):
+                        continue
+                    if not _scope_matches(scope, technique="tip", portfolio_id=pr.portfolio_id,
+                                          entry_path=path, symbol=pr.symbol):
+                        continue
+                    if sym_scope and str(pr.symbol).upper() != sym_scope \
+                            and str((ctx.get("vehicle") or {}).get("underlying") or "").upper() != sym_scope:
+                        continue
+                    if not pr.order_id:
+                        continue
+                    o = await session.get(Order, pr.order_id)
+                    if o is None or o.status not in ("SUBMITTED", "WORKING", "PARTIALLY_FILLED", "PENDING", "NEW"):
+                        continue
+                    todo.append((pr.id, pr.order_id, pr.portfolio_id))
+            for prop_id, order_id, pid in todo:
+                outcome = "cancel_requested"
+                try:
+                    await eng.orders.cancel(order_id)
+                except Exception as exc:
+                    outcome = f"cancel_failed: {str(exc)[:80]}"
+                status = None
                 with contextlib.suppress(Exception):
-                    await eng.orders.cancel(pr.order_id)
+                    async with eng.sf() as session:
+                        o = await session.get(Order, order_id)
+                        status = o.status if o is not None else None
+                if status in ("FILLED", "PARTIALLY_FILLED"):
+                    outcome = "filled_before_cancel"        # the adoption path manages the fill
+                elif status == "CANCELLED":
+                    outcome = "cancelled"
                     n += 1
+                with contextlib.suppress(Exception):
                     await eng.journal.append(ev.TIP_EXECUTION_INCIDENT,
                                              {"id": incident["id"], "action": "cancelled_resting_entry",
-                                              "proposalId": pr.id, "orderId": pr.order_id},
+                                              "proposalId": prop_id, "orderId": order_id, "outcome": outcome,
+                                              "orderStatus": status},
                                              aggregate_type="incident", aggregate_id=incident["id"],
-                                             portfolio_id=pr.portfolio_id)
-    except Exception:
-        log.debug("cancel resting proposal entries failed", exc_info=True)
-    runner = None
-    with contextlib.suppress(Exception):
-        runner = eng.plan_runners.get("tip")
-    if runner is not None:
+                                             portfolio_id=pid)
+        except Exception:
+            log.debug("cancel resting proposal entries failed", exc_info=True)
+    if path in (None, "arm"):
+        runner = None
         with contextlib.suppress(Exception):
-            n += await runner.cancel_working_entries(reason=f"execution incident {incident['id'][:8]}",
-                                                    portfolio_id=scope.get("portfolioId"))
+            runner = eng.plan_runners.get("tip")
+        if runner is not None:
+            with contextlib.suppress(Exception):
+                n += await runner.cancel_working_entries(reason=f"execution incident {incident['id'][:8]}",
+                                                        portfolio_id=scope.get("portfolioId"), symbol=sym_scope)
     return n
