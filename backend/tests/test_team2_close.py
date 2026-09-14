@@ -63,6 +63,7 @@ async def test_team2_scorecard_compares_the_read_with_the_book(rig):
     assert sc["rows"][0]["trigger"] == "pm_break_down@10:30#1" and sc["rows"][1]["status"] == "not taken"
     assert sc["realizedPnl"] < sc["realizedPnlGross"] == 250.0                      # fees counted
     assert sc["skips"] == {"skip_no_trade_zone": 2} and sc["bias"] == "bounce PDL"
+    assert sc["planFor"] == ap.plan_for                                            # F126: the event contract requires it
 
 
 async def test_clock_flatten_sells_the_book_at_flatten_time_whatever_the_read_says(rig, monkeypatch):

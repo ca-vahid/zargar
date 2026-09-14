@@ -2394,6 +2394,13 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   (delta −0.61, spread 2.1%, vol 41k), the only in-band near-money contract. A scenario-4 touch now would be refused
   exactly like 13:02 and would charge the desk cap a second phantom loss (F125). Third instance today across both
   sides; the near-ITM decision is the gating item.
+- **F126 (2026-09-14 16:05 ET, run 94 — FIXED in v0.7.72; reporting only).** Every Team2 close since 2026-09-09 logged
+  `event contract: TechniquePlanScored v1: missing required field 'planFor'` three times at 16:00:00 ET (one per plan;
+  12 warnings over four sessions, none from EM). The shared close emits `TechniquePlanScored` as `{runId, symbol,
+  **scorecard}`; EM's scorecard carries `planFor` inside the dict, Team2's `_score_execution` never did, so the
+  desk's scored rows were the only ones that could not be joined to a session without the run row. The scorecard
+  now carries `planFor` (`runner.py::_score_execution`; `test_team2_close.py` asserts it). No rule, gate, sizing or
+  money path changed; the contract check is advisory (a warning, never a failed write), so nothing was lost.
 - **F125 (2026-09-14 13:40 ET, run 89 — defect at the F108 × F37 seam, NOT fixed; the desk-wide loss cap is
   charging a trade that was never sent).** The IWM proxy from F124 exited on the very next 2m close: 13:04
   `exit` "premium stop: -126% ≤ −25% (P1/D13)" (entry premium $0.0233 incl. 1-tick slippage, exit $0.0014,
@@ -3279,6 +3286,7 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
 
 | Date | Change | Evidence | By |
 |---|---|---|---|
+| 2026-09-14 | **F126 fixed (v0.7.72)**: the Team2 execution scorecard (`TechniquePlanScored`) carries `planFor`, so the close no longer trips the event contract and a scored row names its session without the run row. Reporting/observability only — no rule, threshold, gate, sizing or money path changed | market watch run 94; 12 `missing required field 'planFor'` warnings at the close 09-09 → 09-14, none from EM; `test_team2_close.py` 4 pass incl. the new assertion | Team2 desk |
 | 2026-09-11 | **F110 + F111 fixed (v0.7.49)**: the morning target re-derive (F81) and the 09:30 open finalize (F49) are journaled under the plan run instead of living only in the plan's in-memory event list, and plan-level `TechniquePlanRead` rows state `trigger: null` instead of tripping the event contract on every write. Reporting/observability only — no rule, threshold, gate, sizing or money path changed | market watch run 65; SPY's target moved 763.41 → 766.53 at 09:25 and the audit had no record of it; 152 Team2 + marketstructure tests pass, the new regression fails without the fix | Team2 desk |
 | 2026-09-10 | **F101 fixed (v0.7.40, queued for deploy)**: a `skip_no_contract` refusal now names the nearest OTM strike it modelled, that strike's mark and the ladder step (new `PremiumModel.nearest_otm`), so a refusal is diagnosable without a chain fetch. Reporting only — no entry, exit, sizing or gate changed. The underlying defect is NOT fixed: the band is judged on a synthetic `strike_step` ladder that misses listed strikes, and because the runner fires only on a read `fire` event, the live picker never sees the real chain | market watch run 58; IWM 9 refused `pm_retest` entries 13:40–14:02 ET, the listed 287.5P bid 0.20/ask 0.21 with 33,008 traded never tested by the $1 ladder; `select_by_premium` on the live chain returns 287.5P @ $0.21; model prices verified accurate (287.5 modelled $0.2154 vs real $0.21); 133 Team2 tests pass | Team2 desk |
 | 2026-09-10 | **F100 fixed (v0.7.39, queued for deploy)**: a pullback refused for its LOCATION — inside the pre-market no-trade zone (V6/B5) or on a range day that has not cleared its level (B3/A4) — no longer says "not counted as a pullback" (the read had already counted it in `pullbacks`); it now says "does not spend the two-pullback allowance (D9)", which is what F18 actually does. `session.py:497` documents the three-counter contract (`pullbacks` = every episode, `opportunities` = tradeable locations, `touches` = the D9 allowance). Reporting only — no entry, exit, sizing or gate changed | market watch run 57; QQQ scenario_4 at pullbacks 11 / opportunities 0 behind a single 09:52 `skip_no_trade_zone` note; 133 Team2 tests pass | Team2 desk |

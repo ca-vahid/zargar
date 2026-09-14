@@ -6283,3 +6283,100 @@ estart.ps1` at 16:32 ET. The
   a bear stack plus a 2m pullback into E13 ≈ 288.66 from below; if it fires, record the put walk (F124: expect the 288P under the floor) and the
   F125 tally → 2 → `skip_loss_cap_desk`); (2) after 15:45 confirm the flatten cue and that the session grade lands, IWM `needsAttention` resolves
   and the plans expire cleanly at the close; (3) further stream drops; (4) skip `/team2` UI (F103).
+
+## 2026-09-14 15:35 ET (run 93: the 15:30 last-entry cutoff landed on all three (`skip_last_entry` at the 15:32 close); no touch, no fire; FOURTH Alpaca stream drop at 15:29:37 self-healed in 3 s with no bar loss; parity exact; no code)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `stale false`, bar age 93 s,
+  quote age 0 s (SPY 761.88, QQQ 711.12, IWM 288.34), window `prime_close`. 34 1m bars per symbol since 15:00 ET (latest 15:33), all `exchange`,
+  no gap > 61 s. Regime ts 15:30 on all three. `openPosition` null everywhere, no Team2 order today.
+- **Cutoff confirmed (D6/C3):** the first 2m close after 15:30 (15:32) logged `skip_last_entry` ("past 15:30 — no new entries, managing what is
+  open until the 15:45 flatten") on SPY, QQQ and IWM — one read event plus one `TechniquePlanTriggerSkipped` audit row each, at 15:32:00 ET on the
+  dot. The snapshot summary reads "past 15:30 — no new entries today, flat by 15:45". No entry was attempted between 15:05 and 15:30 (no touch:
+  IWM `scenario_4@13:45` stayed `touches 0`).
+- **Tape check since run 92:** SPY 15m closes 762.03 (15:00) and 761.72 (15:15), under the 763.60 flip; QQQ 711.23 / 711.03 under 713.65; IWM
+  288.62 / 288.35 under 288.77 (high of the 15:00 bar 288.75 — again to within 2 c of the level and closed under). All three biases hold scenario 4
+  (puts). Regime 15:30: SPY close 761.86, E13 761.85 / E48 762.07 / E200 761.44, `mixed`; QQQ 711.04, E13 711.17 / E48 711.58 / E200 709.77,
+  `mixed` (E13 slipped under E48 since 15:00); IWM 288.40, E13 288.47 / E48 288.58 / E200 288.47, `mixed` (E48 still above E200 — never a bear
+  stack today, so no scenario-4 put touch was ever eligible; E3/B9/E4 behaved). IWM `scenario_4@09:30` shows `invalidated` (superseded by the
+  12:45 scenario-3 flip), `scenario_4@13:45` `waiting`, `pm_break_up@11:30` inert — all as expected.
+- **F125 status:** unchanged — IWM read `trades 1, losses 1, pnlPctSum −126.71`, desk tally 1 of 2; no loss-cap skip row on any plan.
+  **F124:** no new instance (no touch fired all afternoon). IWM `needsAttention true` is still only the 13:02 `no option contract` refusal.
+- **Replay parity EXACT** on all three (SPY 6, QQQ 2, IWM 12 events incl. the new `skip_last_entry`; IWM 1 trade −126.71 both sides; no open
+  position either side).
+- **Feed — FOURTH Alpaca stream drop of the day at 15:29:37 ET**, this time "sent 1011 (internal error) keepalive ping timeout; no close frame
+  received"; connected 15:29:40, authenticated 15:29:40.5 (3 s). The stream had gone quiet before the timeout noticed: SPY logged
+  `TechniquePlanError stale bars` at 15:29:16 (last bar 15:26) and QQQ at 15:29:39 (last bar 15:26); IWM did not error. The DB shows the 15:27,
+  15:28 and 15:29 bars present for all three with `exchange` provenance — the late bars landed after the reconnect and the 15:30/15:32 closes read
+  normally. One `OPRA quotes failed:` (empty message) at 15:29:37 on the same drop. Drops today: 13:12, 13:26, 14:23, 15:29 — all self-healed,
+  none lost a bar, but two of the four produced stale-bars errors at a 2m close. Platform (Alpaca keepalive), not Team2 — no F-number; flagged
+  for the user below.
+- **Log (`backend/zargar-8420.log`, since 15:00 ET):** Traceback 0, `cartel-observer bar handling failed` 0, `stale bars` in log 0 (only the two
+  audit rows above), no Team2 warning. The `persist_bars: dropped N non-bucket-aligned stub bar(s)` noise continues (~200 lines / 30 min) — platform,
+  noted in runs 91–92, not touched.
+- **No code shipped.** No rule/knob change; nothing to add to TRADING-RULES this run.
+- **Proposed (platform, for the user):** four Alpaca stream drops in 2 h 17 min (13:12 "no close frame", 13:26, 14:23, 15:29 "keepalive ping
+  timeout") is a pattern; each one risks a stale-bars error if it straddles a 2m close. Worth a look by whoever owns `brokers/alpaca.py`
+  (client-side ping interval / timeout vs Alpaca's 10 s keepalive) — outside Team2, not built here.
+- **Next run (~16:05) should:** (1) confirm the 15:45 flatten cue fired (nothing to flatten — expect a `flatten` read event or a skipped-noop and
+  no order); (2) confirm the session grade lands, IWM `needsAttention` resolves and the three plans expire cleanly at 16:00 (`status` no longer
+  `armed`, `grade` set); (3) confirm the 17:00 plan-now job arms tomorrow's three plans (check at the 16:35 run only if the job runs early; else
+  tomorrow 09:00); (4) any further stream drop after the close; (5) skip `/team2` UI (F103).
+
+## 2026-09-14 16:05 ET (run 94: the session closed cleanly on all three (15:45 flatten note, 16:00 scored + disarmed, no order, no open position); F126 found and FIXED (Team2 scorecard lacked `planFor`, v0.7.72 deployed 16:12 ET via ZargarRestart); no stream drop after 15:30)
+
+- **Alive on v0.7.71 at 16:02, v0.7.72 from 16:12 ET.** `/api/team2/status` `armed: []` — SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` are
+  `disarmed`, `stopReason null`. Team2 Practice has NO order today (newest orders on the book are still the 09-08 QQQ 714P pair). No Team2
+  plan is armed until the 17:00 ET `team2_plan_nightly` job (registered on the new process at 16:12).
+- **Close sequence, in order, on all three:** 15:32 `skip_last_entry` (run 93) → **15:45:00 `clock_flatten`** "flatten time 15:45 ET reached —
+  the book is already flat — nothing to close (C3/D-1)" on the plan's state events (F106 works: the flat day leaves a trace) → **16:00:05
+  `TechniquePlanScored`** (SPY/QQQ `theoreticalFires 0`; IWM `theoreticalFires 1, actualFires 0, modelPnlPctSum −126.71`, the row "model trade
+  not taken by the book (see skips)") → **16:00:05 `TechniquePlanDisarmed`** "session closed", `flatten false, openLeft 0`. IWM's
+  `needsAttention` (the 13:02 refusal) went with the plan; nothing carried over.
+- **Tape into the close:** SPY sold off to 760.80 at 15:58 (E13 761.37 / E48 761.79 / E200 761.44, `mixed`); QQQ 709.19 (E13 710.28 / E48
+  711.06 / E200 709.86, `mixed`); **IWM 287.89 with the day's FIRST bear stack at 15:58** (E13 288.16 < E48 288.41 < E200 288.43, strength 3) —
+  after the 15:30 cutoff, so no scenario-4 put touch was ever eligible today. All three biases ended scenario 4 (puts). 34 1m bars per symbol
+  15:30–16:03, all `exchange`, no gap > 61 s; 4 post-16:00 prints per symbol (extended hours, expected).
+- **F125 status:** unchanged at the close (IWM read `losses 1`, desk tally 1 of 2 — the phantom charge described in F125 never had to bite
+  today because no touch fired after 13:02). Resets with tomorrow's plans; the defect itself is still open.
+- **F126 (NEW, FIXED):** every close since 09-09 logged `event contract: TechniquePlanScored v1: missing required field 'planFor'` ×3 at
+  16:00:00 (12 warnings over four sessions, none from EM). The shared close emits `{runId, symbol, **scorecard}`; EM's scorecard carries
+  `planFor`, Team2's `_score_execution` did not. Fixed in `runner.py` (one key), `test_team2_close.py` asserts it (4 pass on
+  `zargar_test_team2_watch`), `npm run build` green, TRADING-RULES finding + change-log row written, version 0.7.72 (main was 0.7.71).
+  Commit `260fbc0` on `claude/zargar-stock-app-research-8mnqfh`. Reporting only — no rule, gate, sizing or money path changed.
+- **Deployed 16:09:48 ET** via `/api/ops/restart-check` (`safe: true`, 0 open trades, 0 working entries, 0 in-flight orders) +
+  `Start-ScheduledTask ZargarRestart` (`logs/restart-20260914-130948.log`). Health on 0.7.72 after 159 s; Alpaca stream connected 16:11:49
+  and authenticated; 11 tip plans restored; `team2_plan_nightly` 17:00 and `team2_preopen` 09:25 registered; 0 tracebacks, no Team2 warning.
+- **Feed since 15:30 ET:** NO fifth Alpaca stream drop (the day ends at four: 13:12, 13:26, 14:23, 15:29 — all self-healed). `OPRA quotes
+  failed` 0, `stale bars` 0, Traceback 0 in the pre-restart log since 15:30. The `persist_bars: dropped N non-bucket-aligned stub bar(s)`
+  noise continues (216 lines / 30 min, platform, not touched). Note for the log reader: the 41 `entry read requires symbol-matched,
+  minute-aligned 1m bars` tracebacks in today's file are the Options Cartel observer at the 09:xx open (another desk, noted in run 87's
+  `cartel-observer` count) — not Team2.
+- **Proposed (unchanged):** the four Alpaca keepalive drops in 2 h 17 min (run 93) remain a platform item for `brokers/alpaca.py`'s owner.
+- **Next run (~16:35) should:** (1) confirm the process is still healthy on 0.7.72 and nothing regressed after the restart; (2) if the run
+  lands after 17:00 ET, confirm the nightly job armed tomorrow's three plans (`/api/team2/status` `armed` × 3 for 2026-09-15, `complete`
+  false until 09:25) — else tomorrow's 09:00 run does it; (3) skip `/team2` UI (F103).
+
+## 2026-09-14 16:32 ET (run 95: post-close, process healthy on v0.7.72 after the 16:12 restart, no Team2 plan armed until the 17:00 nightly job, no stream drop since the restart, no Team2 warning)
+
+- **Alive on 0.7.72** (`/api/health` ok, started, `armed 11` = the restored tip plans). `/api/team2/status` `enabled true, mode auto,
+  armed: []` — SPY/QQQ/IWM for 09-14 stayed `disarmed` after the 16:00 close (run 94); no Team2 plan exists for 2026-09-15 yet, which is
+  correct at 16:32 (the `team2_plan_nightly` job is registered on the new process at 17:00 ET, `team2_preopen` at 09:25). Tomorrow's 09:00
+  run confirms the three plans.
+- **Nothing to read since 16:05.** No Team2 event, no order on Team2 Practice, no open position, no `needsAttention`. `zeroDte` policy
+  unchanged (flatten 15:45, last entry 15:30, premium cap $2,000, max 40 contracts). Thresholds unchanged from run 94 (`key_levels off`,
+  `target_replan structure`, `require_fresh_quote true`).
+- **Log since the restart (16:12 ET, 218 lines):** Team2 lines = the two job registrations only. No Team2 warning or traceback.
+  Alpaca stream connected + authenticated 16:11:49 and NO drop since (day total stays at four: 13:12, 13:26, 14:23, 15:29). The
+  `persist_bars: dropped N non-bucket-aligned stub bar(s)` noise continues through extended hours (platform, runs 91–94, not touched).
+- **Not Team2, for the reader:** (1) 16:15:52 EM's auto plan sheet `69cbf3b2` (152 symbols for 09-15, 4 processes) logged ONE `plan sheet
+  symbol failed` — a Yahoo `httpcore.ConnectTimeout` on one symbol's history fetch (`technique/service.py:1570`) — EM desk's; (2)
+  `TechniqueSweepStarted v1: missing required field 'sweepId'` at the same moment — the same event-contract class as F126 but on EM's
+  sweep event, EM desk's to fix; (3) `zargar.fx no live FX rate USD->CAD — converting 1:1` at boot (platform). None affect Team2.
+- **F125** still open (loss tally phantom charge; resets with tomorrow's plans). **F126** shipped in v0.7.72 — tomorrow's 16:00 close
+  is the first live check that the `TechniquePlanScored` warning is gone (expect ZERO `missing required field 'planFor'` lines).
+- **No code shipped, no rule/knob change, nothing to add to TRADING-RULES** this run. Skipped `/team2` UI (F103).
+- **Proposed (unchanged, platform):** the four Alpaca keepalive drops in 2 h 17 min (run 93) for `brokers/alpaca.py`'s owner.
+- **Tomorrow 09:00 run should:** (1) confirm three `armed` plans for 2026-09-15 minted by the 17:00 job (and, if the log shows the job
+  ran, that `plan-now` needed no manual call); (2) at 09:30 confirm the 09:25 pre-open completion (`pmh`/`pml`, `dayType`,
+  `sizingAtOpen`, `complete true`); (3) check the loss tally reset (F125) reads `losses 0` on all three; (4) count stream drops from
+  the open onward.

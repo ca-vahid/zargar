@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.71";
+export const APP_VERSION = "0.7.72";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,9 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.72",date:"2026-09-14",title:"Team2 close record",items:[
+    {tag:"fixed",text:"Team2: the end-of-day scorecard now names its session (planFor), so the close no longer logs an event-contract warning per plan and scored rows can be joined to their day without the plan row."},
+  ]},
   {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
     {tag:"fixed",text:"EM review second follow-up (FA-01..05): a synchronous final guard runs right before the broker submit on every entry attempt, so a daily-loss budget that moves while the order is being persisted refuses the order; the FIX-01 repair writes state and receipts in one transaction, grounds values in the execution ledger and refuses ownership mismatches; a promotion reuses a prior read only under the same saved definition; /api/health.build is bound at launch."},
     {tag:"fixed",text:"EM review follow-up (DA-01..08): option entries pass one final admission on the price and quantity actually sent (fresh spread, premium caps, remaining daily loss budget); a pending or cancelled exit can no longer consume a target; quote-stop confirmation is forward-only; the FIX-01 repair tool journals its receipt before it commits and applies a plan's corrections as one transition; per-desk sizing-floor setting registered; /api/health reports the build SHA."},

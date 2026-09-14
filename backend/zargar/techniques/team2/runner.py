@@ -1167,7 +1167,7 @@ class Team2Runner(PlanRunner):
             if k.startswith("skip_") or k in ("max_concurrent_skip", "max_open_skip", "halt_skip", "entry_capped", "technique_loss_halt", "loss_halt"):
                 skips[k] = skips.get(k, 0) + 1
         net = round(sum(t.realized_pnl - self._fees_paid(t) for t in ap.trades.values()), 2)
-        return {"technique": self.TECHNIQUE_ID, "basis": "session-read vs book",
+        return {"technique": self.TECHNIQUE_ID, "planFor": ap.plan_for, "basis": "session-read vs book",
                 "theoreticalFires": len(model), "actualFires": len(real), "matched": matched,
                 "modelPnlPctSum": round(sum(float(mt.get("pnlPct") or 0) for mt in model), 2),
                 "realizedPnl": net, "realizedPnlGross": round(sum(t.realized_pnl for t in ap.trades.values()), 2),
