@@ -30,6 +30,9 @@ assert(attentionSummary(swks).notice);assert.equal(attentionSummary(swks).items[
 assert(!attentionSummary(second).notice);
 assert(!attentionSummary({...swks,trades:[],attentionReasons:['submission outcome unknown']}).notice);
 assert(!attentionSummary({...swks,trades:[{...trade('b1'),status:'submitting'}]}).notice);
+assert(!attentionSummary({...swks,attentionReasons:['b1: broker timeout exceeds retry limit']}).notice);
+assert(!attentionSummary({...swks,attentionReasons:['b1: REJECTED_RISK but broker outcome unknown']}).notice);
+assert(!attentionSummary({...swks,trades:[...swks.trades,{...trade('third'),status:'proposal'}]}).notice);
 const dist=resolve('dist');await mkdir('.mobile-shots',{recursive:true});
 const server=createServer(async(req,res)=>{
  const path=resolve(dist,new URL(req.url,'http://localhost').pathname.replace(/^\//,''));
@@ -75,6 +78,8 @@ try {
    await page.goForward();await page.getByRole('heading',{name:'2 plans to review',exact:true}).waitFor();
    await page.reload();await page.getByRole('heading',{name:'2 plans to review',exact:true}).waitFor();
    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+   if(await page.evaluate(()=>innerWidth)!==options.viewport.width) console.log(await page.evaluate(()=>({width:innerWidth,top:[...document.querySelector('.topbar').children].map(e=>({c:e.className,w:e.getBoundingClientRect().width,x:e.getBoundingClientRect().x})),wide:[...document.querySelectorAll('body *')].filter(e=>e.getBoundingClientRect().right>320 && e.getBoundingClientRect().width>0).slice(0,15).map(e=>({c:e.className,w:e.getBoundingClientRect().width,right:e.getBoundingClientRect().right}))})));
+   assert.equal(await page.evaluate(()=>innerWidth),options.viewport.width,'layout viewport expanded past the device width');
    await page.screenshot({path:`.mobile-shots/attention-${name}-${theme}.png`,fullPage:true});
    fail=true;await page.reload();await page.getByRole('alert').filter({hasText:'Could not refresh plans'}).waitFor();
    fail=false;rows=[];await page.getByRole('button',{name:'Retry',exact:true}).click();
