@@ -2365,6 +2365,30 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   precedence, so whether a PM break should be allowed to override a stale opposite scenario (here, a
   PDL break that price has since bounced 0.5% above) is a rule decision for the user — evidence today
   is one clean, untaken SPY contact at 12:16 that ran to 762.60 by 12:24 (+0.43, about 1.2 ATR).
+- **F124 (2026-09-14 13:05 ET, run 88 — observation, NOT fixed; a second in-band-only-ITM day for the open
+  near-ITM decision, plus a proxy-position consequence of F108).** IWM flipped to scenario 3 at 13:00 (the
+  12:45 15m body closed 289.22 above the PDL zone top 289.06, B1/C1, `rangeDay` true) and the 13:00 2m bar
+  (high 289.24 ≥ E13 289.22, low 289.075 > level 289.06, close 289.08) was touch #1 in a bull strength-2
+  stack → `fire` at 13:02, bucket small ×0.5. The live pick walked the listed OTM calls nearest spot 289.064:
+  the nearest is 290 (no 289.5 is listed today — the stamped `listedStrikes` has 83 strikes at $1 steps near
+  the money and `/api/options/quote/IWM260914C00289500` is unavailable), OPRA ask 0.13 (bid 0.12, delayed
+  chain 0.10) < floor 0.20 → the walk stopped under the floor, `contract_refused` ("examined 290 ask 0.13"),
+  `TechniquePlanError` critical "no option contract available and the shares fallback is off — nothing was
+  sent", `needsAttention` true, no order, no exposure. All correct under F104/F105/F108. **Evidence for the
+  near-ITM decision:** at 13:06 ET the 289 call (ITM by $0.05, delta 0.71) quoted 0.41/0.42, volume 68,362,
+  OI 2,974, spread 2.4% — inside the $0.20–$0.90 band and the most active near-money contract, the same
+  shape as F104's 287.5 put on 09-10. **Consequence (F108's proxy):** the pure read fired on the 290 proxy
+  ($0.0233 modelled) and now holds `openPosition` (`openAtEnd` true, remaining 1.0); `session.py` manages
+  an open model position on every 2m close BEFORE it looks for new contacts, so until the proxy exits
+  (target 290.46, a 2m close through 289.06, or the 15:45 flatten) no further IWM contact can fire live —
+  even if a rally lifts the 290 ask into band, even on a legitimate touch #2. The read cannot know the live
+  refusal (it is pure and memoryless by design). Replay parity exact (8 events, same timestamps).
+  **Proposed, not built (user decisions):** (a) near-ITM/ATM eligibility — this is the second day the only
+  in-band contract was one strike ITM; (b) let the runner tell the read that a fire was refused live (the
+  proxy becomes `refused`, the setup stays eligible for its next contact) — that touches the pure read's
+  contract and needs a before/after replay test (the 0.7.60 lesson) plus a sweep, so it is written up here
+  and in `notes/market-watch.md` run 88 only. Related: F104, F105, F108, F123.
+
 
 - **F122 (2026-09-11, run 79 — a reporting correction to run 78's note, no code defect).** Run 78
   queued "confirm each of tonight's freshly minted plans carries a `targets_rederived` row" as

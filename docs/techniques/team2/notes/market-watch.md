@@ -6137,3 +6137,30 @@ estart.ps1` at 16:32 ET. The
   and an EMA13 pullback on the bull stack becomes a real calls candidate (check the `contract` event and the order/fill trail if it fires); (3) re-check OPRA/cartel
   counts on the post-restart log; (4) skip `/team2` UI (F103).
 
+
+## 2026-09-14 13:07 ET (run 88: IWM flipped to scenario 3 and fired calls at 13:02 — refused, no eligible contract (F124); parity exact; no code)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `stale false`, bar age 90 s, quote age 0,
+  window `midday`. 29 1m bars per symbol in the last 30 min (latest 13:03 ET), all `exchange`; regime ts 13:04 at 13:07. Restore after the 12:40 restart
+  logged clean (`team2 runner restored 3 armed plan(s)` 12:43:50 ET; the ops check only logs MISMATCH and logged none after the restart).
+- **IWM: bias flip + fire, refused.** The 12:45 15m body closed 289.22 above the PDL zone top 289.06 → `scenario 3 (bounce PDL) → calls` at 13:00
+  (`rangeDay` true; the 12:47 1m bar ran 288.99 → 289.56 on 370k shares, high of the leg 289.84 at 12:49). The 13:00 2m bar (high 289.24 ≥ E13 289.22,
+  low 289.075 > level 289.06, close 289.08) = touch #1 in a bull strength-2 stack → `model_out_of_band` + `fire` 13:02 (size small ×0.5). Live pick:
+  nearest listed OTM call 290 (no 289.5 listed today), OPRA ask 0.13 (bid 0.12, chain 0.10) < floor 0.20 → walk stopped, `contract_refused`, critical
+  `TechniquePlanError` "no option contract available and the shares fallback is off — nothing was sent", `needsAttention true`. Trade row `failed`,
+  qty 0, no order, no exposure. Correct under F104/F105/F108. At 13:06 the 289 call (ITM by $0.05, delta 0.71) was 0.41/0.42, vol 68k, OI 2,974,
+  spread 2.4% — the only in-band near-money contract, one strike ITM (second such day after F104's 287.5P). **F124** recorded (TRADING-RULES).
+- **F124 side effect to watch:** the pure read holds the 290 proxy as `openPosition` (openAtEnd true); `session.py` manages an open model position
+  before it looks for new contacts, so no further IWM contact can fire live until the proxy exits (target 290.46 / 2m close through 289.06 / 15:45
+  flatten). Proposals (user decisions): near-ITM eligibility; let a live refusal release the read's proxy. Not built.
+- **SPY/QQQ:** no new read event since the 11:45 `pm_break` rows; bias still scenario 4 (puts), stacks bull (SPY 2, QQQ 3), `pm_break_up` inert label
+  correct on SPY. A 15m close back above 763.60 / 713.65 is still the `bias_flip` to watch.
+- **Replay parity EXACT** on all three (SPY 5, QQQ 1, IWM 8 events incl. 13:00 scenario, 13:02 model_out_of_band + fire; same open proxy position).
+- **Log (`backend/zargar-8420.log`):** `OPRA quotes failed` 67 (+2: 12:41 ET during boot, 12:50 ET one blip), `cartel-observer bar handling failed` 41
+  (unchanged), no traceback after the restart (newest still the 06:39 PT Options Cartel one). `fire review failed: timed out after 25s` at 12:50 ET is
+  EM's MSFT `r2` critic (`TechniquePlanError` on run `8979b99f`), not Team2. No Team2 warning.
+- **No code shipped.** F124 written up, no rule/knob change.
+- **Next run (~13:35) should:** (1) IWM: follow the proxy position's model events (`would_trim`/`would_exit`/stop/target) and confirm the live side
+  stays flat with no order; expect SILENCE on any touch #2 while the proxy is open (F124) — record if a real contact was skipped and what the 290 ask
+  was; (2) SPY/QQQ `bias_flip` at 763.60 / 713.65; (3) re-check OPRA/cartel counts; (4) skip `/team2` UI (F103); (5) after 15:45 confirm the
+  proxy flattens and IWM `needsAttention` resolves at the session grade.
