@@ -241,13 +241,19 @@ async def test_final_admission_refusal_reverts_an_automated_approval(rig, monkey
     automated approval is reverted to pending, no order exists (G91-01: the
     final refusal is honoured, not only the pre-check)."""
     eng = rig
-    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
-    await eng.settings.set("techniques.tip.risk_budget_per_tip", 6.0, journal=False)
     await eng.settings.set("techniques.tip.budget_per_tip", 5000.0, journal=False)
     q = await _quote(eng, "GEOI")
+    # deterministic at ANY sim price (see test_enforce_mode_finalizes_stop_and_resizes_before_entry):
+    # the budget is derived from a shadow pass so at least one unit always fits
+    row0, sig0 = await _tip(eng, "GEOI", q.last, stop_pct=1.5)
+    rp0 = (await eng.proposals.create_from_signal(row0, sig0, {}))["context"]["riskPlan"]
+    assert rp0["enforced"] is False and rp0["qtyRequested"] >= 2 and rp0["unitLoss"] > 0
+    budget = round(rp0["unitLoss"] * max(1, rp0["qtyRequested"] // 2) * 1.2, 4)
+    await eng.settings.set("techniques.tip.geometry_gate", "enforce", journal=False)
+    await eng.settings.set("techniques.tip.risk_budget_per_tip", budget, journal=False)
     row, sig = await _tip(eng, "GEOI", q.last, stop_pct=1.5)
     pdict = await eng.proposals.create_from_signal(row, sig, {})
-    assert "reviewRequired" not in pdict["context"]
+    assert "reviewRequired" not in pdict["context"], pdict["context"].get("reviewRequired")
     original = type(eng.proposals)._admit_geometry
     calls = {"n": 0}
 
