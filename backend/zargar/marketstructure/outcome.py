@@ -41,6 +41,7 @@ def plan_from_contract(contract: dict | None) -> dict | None:
         return None
     return {
         "setupType": contract.get("setupType") or "none",
+        "direction": "short" if str(contract.get("direction") or "long") == "short" else "long",   # FIX-06
         "entry": {"price": float(e["price"]), "basis": e.get("basis", "at_level")},
         "stop": {"price": float(s["price"])},
         "targets": [{"price": float(t["price"])} for t in contract["targets"] if t.get("price")],
@@ -58,6 +59,7 @@ def plan_from_candidate(cand: dict | None) -> dict | None:
     try:
         return {
             "setupType": cand.get("setupType") or "none",
+            "direction": "short" if str(cand.get("direction") or "long") == "short" else "long",   # FIX-06
             "entry": {"price": float(e["price"]), "basis": e.get("basis", "at_level")},
             "stop": {"price": float(s["price"])},
             "targets": [{"price": float(t["price"])} for t in cand["targets"] if t.get("price") is not None],
@@ -69,10 +71,18 @@ def plan_from_candidate(cand: dict | None) -> dict | None:
 
 
 def same_plan(a: dict | None, b: dict | None, tol: float = 1e-6) -> bool:
+    """Two plans are the same trade only when every outcome-relevant field agrees: direction, entry,
+    stop AND the targets (FIX-06, 2026-09-14 - a rejected candidate with different targets used to be
+    collapsed onto the accepted plan's score)."""
     if not a or not b:
         return False
-    return (abs(a["entry"]["price"] - b["entry"]["price"]) <= tol
-            and abs(a["stop"]["price"] - b["stop"]["price"]) <= tol)
+    if str(a.get("direction") or "long") != str(b.get("direction") or "long"):
+        return False
+    if abs(a["entry"]["price"] - b["entry"]["price"]) > tol or abs(a["stop"]["price"] - b["stop"]["price"]) > tol:
+        return False
+    ta = [float(t["price"]) for t in (a.get("targets") or [])]
+    tb = [float(t["price"]) for t in (b.get("targets") or [])]
+    return len(ta) == len(tb) and all(abs(x - y) <= tol for x, y in zip(ta, tb))
 
 
 def simulate_plan(bars: list[Bar], start: int, plan: dict, *, entry_window: int = 12,

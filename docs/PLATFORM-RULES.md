@@ -1648,3 +1648,20 @@ producer payload or risk setting changed. The journal registry invariant passes.
   print at 09:35: +$1,406 (+14%) of equity for one sample, persisted, and it set the whole
   vertical range of the day's chart. That number feeds `daily_loss_pct` — the same print in the
   other direction halts a book that never lost anything. Invariant 22.
+
+
+### Reviewer packet 2026-09-14, Delivery A — shared-runner corrections (EM desk)
+
+Response: `docs/techniques/enhanced-market/reviews/DELIVERY-A-RESPONSE-2026-09-14.md`. Shared-runner changes,
+all techniques: (FIX-01) `_enter` sets `trade.instrument` and `trade.multiplier` as one final decision - a
+shares fallback is x1, options x100; HPQ 09-14 booked -$719.30 on a -$7.19 share trade and false-halted;
+repair tool `tools/em_reconcile_fallback.py` (dry-run manifest, idempotent apply, `TechniqueTradeCorrected`
+events, never edits originals, never resumes plans). (FIX-02) `exits.plan_exit` walks several rungs reached
+in one bar for the one/two-contract full-exit policy. (FIX-03) options are re-priced on the NBBO BEFORE
+sizing; the risk budget is a bound - zero contracts is a journaled `size_zero` skip; the old one-contract
+floor is the opt-in knob `execution.min_one_contract` (default off; the tip technique's premium-budget floor
+is unchanged). (FIX-05) `Trade.critic / critic_advisory / errors / retries` survive restore; new
+`critic_disposition` (allowed | advisory | vetoed | timeout-allowed | error-allowed | not-run) persisted and
+journaled on TriggerFired with `criticMode`. (FIX-11 policy) `quote_exit_polls` counts DISTINCT quote
+observations by source timestamp - the same cached print cannot confirm a stop twice. Invariant added: **the
+multiplier belongs to the instrument that was actually ordered, never to the instrument that was requested.**

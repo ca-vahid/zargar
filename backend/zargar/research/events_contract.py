@@ -42,6 +42,7 @@ CONTRACTS: dict[str, dict] = {
     "TechniqueSweepCompleted": {"version": 1, "required": ("sweepId",)},
     # --- the armed runner (shapes produced ONLY by execution/planrunner.py) -
     "TechniquePlanArmed":     {"version": 1, "required": ("runId", "symbol", "planFor", "config", "portfolio")},
+    "TechniqueTradeCorrected": {"version": 1, "required": ("runId", "trigger", "fix", "old", "new")},   # FIX-01 reconciliation (2026-09-14)
     "TechniquePlanRestored":  {"version": 1, "required": ("runId", "symbol", "planFor", "portfolio")},   # restart re-attach; never counted as an arm
     "TechniquePlanDisarmed":  {"version": 1, "required": ("runId", "symbol", "reason")},
     "TechniquePlanRolled":    {"version": 1, "required": ("runId", "symbol", "from", "to")},   # multi-day plan advanced to its next session (ARM-GAPS A2/A4); was journaled without a contract

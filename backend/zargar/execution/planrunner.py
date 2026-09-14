@@ -162,6 +162,7 @@ class Trade:
     retries: int = 0
     critic_advisory: bool = False   # the critic said no and critic_mode let the entry proceed anyway
     scratched: bool = False         # T-14: the scratch rule fired (stop moved to breakeven)
+    critic_disposition: str | None = None   # FIX-05: allowed | advisory | vetoed | timeout-allowed | error-allowed | failure-budget-paused
     opened_ts: int | None = None
     closed_ts: int | None = None
     fire_bar_index: int | None = None
@@ -229,7 +230,8 @@ class Trade:
                                 if self.instrument == "options" and self.filled_qty else None),
                 "lastPrice": self.last_price, "errors": list(self.errors),
                 "retries": self.retries, "openedTs": self.opened_ts, "closedTs": self.closed_ts,
-                "critic": self.critic, "criticAdvisory": self.critic_advisory, "scratched": self.scratched}
+                "critic": self.critic, "criticAdvisory": self.critic_advisory, "scratched": self.scratched,
+                "criticDisposition": self.critic_disposition}
 
 
 @dataclass
@@ -438,6 +440,9 @@ class PlanRunner(SessionListener):
         self._retired_pnl: dict[tuple[str, str], float] = {}
         # (run_id, trigger_id[, "~prem"]) -> consecutive quote polls seen in breach
         self._quote_breaches: dict[tuple[str, str], int] = {}
+        # FIX-11 policy (2026-09-14): `quote_exit_polls` counts DISTINCT quote observations - the same
+        # cached print polled twice is one observation, so a stale feed cannot confirm a stop by itself
+        self._quote_seen: dict[tuple[str, str], int] = {}
         # (run_id, trigger_id) -> (last retry ts, attempts) for the failed-exit watchdog
         self._exit_retries: dict[tuple[str, str], tuple[float, int]] = {}
         self._auto_done: set[tuple[str, str]] = set()
@@ -565,7 +570,11 @@ class PlanRunner(SessionListener):
                     pkey = (ap.run_id, tr.trigger_id + "~prem")
                     if preason is None:
                         self._quote_breaches.pop(pkey, None)
+                        self._quote_seen.pop(pkey, None)
+                    elif self._quote_seen.get(pkey) == int(getattr(oq, "source_ts", 0) or oq.ts):
+                        pass                                   # same observation as the last count
                     else:
+                        self._quote_seen[pkey] = int(getattr(oq, "source_ts", 0) or oq.ts)
                         pn = self._quote_breaches.get(pkey, 0) + 1
                         self._quote_breaches[pkey] = pn
                         if pn >= need:
@@ -1393,9 +1402,14 @@ class PlanRunner(SessionListener):
                 realized_pnl=float(td.get("realizedPnl") or 0), instrument=td.get("instrument") or "shares",
                 contract=td.get("contract"), order_symbol=td.get("orderSymbol"),
                 multiplier=float(td.get("multiplier") or 1.0), opened_ts=td.get("openedTs"),
-                closed_ts=td.get("closedTs"), fire_bar_index=None)
+                closed_ts=td.get("closedTs"), fire_bar_index=None,
+                # FIX-05 (2026-09-14): review evidence survives a restart - the critic's opinion, whether the
+                # entry went ahead against it, and the failure history (INTC/HOOD restored with false flags)
+                critic=td.get("critic"), critic_advisory=bool(td.get("criticAdvisory", False)),
+                errors=list(td.get("errors") or []), retries=int(td.get("retries") or 0))
             tr.single_exit = ap.config.single_contract_exit
             tr.scratched = bool(td.get("scratched", False))
+            tr.critic_disposition = td.get("criticDisposition")
             ap.trades[tid] = tr
             # re-index working entry/exit orders so their updates route back here
             if tr.entry_order_id and tr.status in ("working", "submitting", "open"):
@@ -2223,7 +2237,10 @@ class PlanRunner(SessionListener):
         # optional reviewer (hook) — the RUNNER owns the timeout, the fail-open
         # budget, pause-on-exhaust, the veto cooldown, the kill cap and re-arming
         j = await self._hook("analyze_fire", self.analyze_fire(ap, tid, tr, trade))
+        critic_ran = False
+        critic_failure: str | None = None       # FIX-05: 'timeout' | 'error' when the reviewer did not answer
         if journal and cfg.use_critic and self.reviewer_available():
+            critic_ran = True
             timeout = float(self.rt("critic_timeout_seconds", 25) or 0)
             try:
                 coro = self.review_fire(ap, tid, tr, trade, j)
@@ -2234,6 +2251,7 @@ class PlanRunner(SessionListener):
                 raise
             except Exception as exc:
                 msg = (f"timed out after {timeout:.0f}s" if isinstance(exc, asyncio.TimeoutError) else str(exc))
+                critic_failure = "timeout" if isinstance(exc, asyncio.TimeoutError) else "error"
                 log.warning("fire review failed: %s", msg)
                 j.trace.append({"stage": "critic", "step": "error", "reason": msg})
                 if await self._critic_failed(ap, tid, trade, msg):
@@ -2242,6 +2260,21 @@ class PlanRunner(SessionListener):
                     return
         critic = j.critic
         trade.critic = critic and {k: critic.get(k) for k in ("kill", "summary", "violations")}
+        # FIX-05: the model's OPINION, the effective policy and the FINAL DISPOSITION are three different
+        # facts; journal all three so a negative opinion that was allowed through is never counted as a veto
+        critic_mode = str(self.rt("critic_mode", "veto") or "veto").lower()
+        advisory = j.verdict != "setup" and (
+            critic_mode == "advisory" or (critic_mode == "momentum_only" and tr.kind in ("bounce", "reject")))
+        if critic_failure:
+            trade.critic_disposition = f"{critic_failure}-allowed"
+        elif not critic_ran:
+            trade.critic_disposition = "not-run"
+        elif j.verdict == "setup":
+            trade.critic_disposition = "allowed"
+        elif advisory:
+            trade.critic_disposition = "advisory"
+        else:
+            trade.critic_disposition = "vetoed"
         # the technique's own record of the fire (EM: the setup row), always, so the run shows what fired
         if journal:
             try:
@@ -2254,6 +2287,7 @@ class PlanRunner(SessionListener):
                 "middayExperiment": window == "midday",
                 "fill": tr.fill_price, "entry": tr.entry, "stop": tr.stop, "targets": trade.targets,
                 "verdictAfterCritic": j.verdict, "confidence": round(float(j.confidence), 3), "critic": trade.critic,
+                "criticMode": critic_mode, "criticDisposition": trade.critic_disposition, "criticFailure": critic_failure,
                 "setupId": trade.setup_id, "mode": cfg.mode, "portfolioId": cfg.portfolio_id, "trace": j.trace},
                 aggregate_type="technique_run", aggregate_id=ap.run_id, portfolio_id=cfg.portfolio_id)
         # 2026-09-09 user decision (TRADING-RULES 1.4b, 25 kills net +0.5R): the critic's veto is a knob.
@@ -2261,9 +2295,6 @@ class PlanRunner(SessionListener):
         #   momentum_only  a "no" on an at-level bounce/reject is ADVISORY (recorded, the entry proceeds);
         #                  breakouts/breakdowns/wedge breaks are still vetoed
         #   advisory       never blocks; every verdict is recorded on the trade
-        critic_mode = str(self.rt("critic_mode", "veto") or "veto").lower()
-        advisory = j.verdict != "setup" and (
-            critic_mode == "advisory" or (critic_mode == "momentum_only" and tr.kind in ("bounce", "reject")))
         if advisory:
             trade.critic_advisory = True
             self._log(ap, "critic_advisory",
@@ -2393,7 +2424,13 @@ class PlanRunner(SessionListener):
                 why.append(f"premium ${premium:,.0f} exceeds the ${cfg.premium_budget:,.0f} budget — 1 contract anyway")
             n = min(n, max(1, afford))
             why.append(f"budget ${cfg.premium_budget:,.0f}")
-        n = int(max(1, min(n, cfg.max_contracts)))
+        # FIX-03 policy (2026-09-14, reviewer packet): the risk budget is a BOUND. When one contract's
+        # premium stop already exceeds the budget the answer is 0 (the caller skips with a reason), not
+        # a silent floor of 1. The old floor was deliberate (learning-mode sizing); it is now the
+        # explicit knob `execution.min_one_contract` (default off). A fixed `contracts` count and the
+        # tip technique's premium-budget floor above are separate, unchanged semantics.
+        floor = 1 if bool(self.rt("min_one_contract", False)) else 0
+        n = int(max(floor, min(n, cfg.max_contracts)))
         self._log(ap, "sized",
                   f"{trade.trigger_id}: {n} contract(s) — ${equity * cfg.risk_pct / 100:,.0f} at risk "
                   f"({cfg.risk_pct:g}% of ${equity:,.0f}) / ${risk_per:,.0f} per contract"
@@ -2478,7 +2515,8 @@ class PlanRunner(SessionListener):
                     # a short (puts only).
                     use_options = False
                     trade.instrument = "shares"
-                    trade.contract = None
+                    trade.multiplier = 1.0          # FIX-01 (2026-09-14): the fallback is ONE final instrument decision -
+                    trade.contract = None           # HPQ 09-14 booked -$719.30 on a -$7.19 share trade with the option's x100
                     trade.order_symbol = None
                     self._log(ap, "entry_fallback",
                               f"{trade.trigger_id}: options unavailable ({why}) — taking shares instead",
@@ -2505,18 +2543,31 @@ class PlanRunner(SessionListener):
                     return
         frac = self._trigger_fraction(ap, trade)      # scale-in plans (ARM-PLAN P3)
         if use_options:
-            qty = float(await self._size_contracts(ap, trade, contract))
-            if frac < 1.0:
-                qty = float(max(1, int(qty * frac)))
             # the pick's ask is already a beat old (the critic pass sits between
             # the fire and the order): re-price on the live NBBO so the limit is
             # the market's ask NOW. PLTR 2026-09-03: a limit of 2.14 from the
             # 09:33 pick met a 09:34 mid of 1.97 and the risk gate's price collar
             # refused it - a silent missed entry. The never-chase cap below still
             # guards the other direction (an ask that ran away).
+            # FIX-03 (2026-09-14): re-price BEFORE sizing - the quantity is computed on the price the
+            # order will pay, never on the pick's stale ask (a doubled ask used to double the risk).
             if getattr(self.engine, "options", None) is not None:
                 with contextlib.suppress(Exception):
                     await self.engine.options.reprice(contract)
+                    from ..technique.options import rejudge_spread as _rj
+                    _rj(contract)                    # the spread warnings follow the fresh quote too
+            qty = float(await self._size_contracts(ap, trade, contract))
+            if frac < 1.0:
+                qty = float(max(1, int(qty * frac))) if qty >= 1 else qty
+            if qty < 1:
+                trade.status = "skipped"
+                trade.reason = (f"one contract at {float(contract.get('ask') or contract.get('mid') or 0):.2f} risks more than "
+                                f"the {cfg.risk_pct:g}% trade budget at its premium stop - not sent (FIX-03: budget is a bound)")
+                self._log(ap, "skipped", f"{trade.trigger_id}: {trade.reason}", trigger=trade.trigger_id)
+                await self.engine.journal.append(ev.TECHNIQUE_PLAN_TRIGGER_SKIPPED, {
+                    "runId": ap.run_id, "symbol": ap.symbol, "trigger": trade.trigger_id, "event": "size_zero",
+                    "reason": trade.reason}, aggregate_type="technique_run", aggregate_id=ap.run_id)
+                return
             limit = round(float(contract.get("ask") or contract.get("mid") or 0), 2)
             if limit <= 0:
                 trade.status = "failed"
@@ -2533,6 +2584,7 @@ class PlanRunner(SessionListener):
                           f"{float(cap):.2f} — resting the entry at the cap", trigger=trade.trigger_id)
                 limit = round(float(cap), 2)
             order_symbol, sec_type = contract["symbol"], "OPT"
+            trade.instrument, trade.multiplier = "options", 100.0
         else:
             qty = await self._size(ap, trade)
             if frac < 1.0:
@@ -2561,6 +2613,7 @@ class PlanRunner(SessionListener):
             limit = round(trade.entry * (1 + cfg.slippage_pct / 100), 2)
             order_symbol, sec_type = ap.symbol, "STK"
             trade.order_symbol = ap.symbol
+            trade.instrument, trade.multiplier = "shares", 1.0
         trade.qty = qty
         trade.limit_price = limit
         trade.status = "submitting"

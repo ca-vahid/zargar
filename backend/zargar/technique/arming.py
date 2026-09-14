@@ -310,13 +310,21 @@ class PlanArmer(PlanRunner):
             if tr.status not in ("waiting", "observed"):
                 continue
             verdict = "ok"
-            if tr.kind == "bounce":
-                if last < tr.stop:
+            # FIX-04 (2026-09-14): the SAME direction-aware predicates as the opening tracker
+            # (`TriggerTracker.on_bar`). Ten short breakdowns were called gapped_past on 09-14 with the
+            # pre-market print still between entry and stop (IBIT 44.0 vs 43.43/44.04) and replaced.
+            short = tr.direction == "short"
+            if tr.kind in ("bounce", "reject"):
+                through = (last > tr.stop) if short else (last < tr.stop)
+                past = (last >= tr.entry) if short else (last <= tr.entry)
+                if through:
                     verdict = "gapped_through"
-                elif last <= tr.entry:
+                elif past:
                     verdict = "gapped_past"
-            elif last > tr.entry:
-                verdict = "gapped_past"
+            else:
+                past = (last < tr.entry) if short else (last > tr.entry)
+                if past:
+                    verdict = "gapped_past"
             if verdict == "ok" and prev and abs(last - prev) > t.gap_void_r * tr.risk:
                 verdict = "gap_void"
             (dead := dead + 1) if verdict != "ok" else (alive := alive + 1)

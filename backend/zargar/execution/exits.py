@@ -78,10 +78,19 @@ def plan_exit(trade, bar, *, close_ms: int, flatten_minutes: int,
         single_contract = trade.sec_type == "OPT" and trade.filled_qty < 3
         if single_contract:
             want = _SINGLE_EXIT_INDEX.get(single_exit, 1)
-            if k >= want:
+            hit = lambda n: n < len(trade.targets) and ((bar.low <= trade.targets[n]) if short else (bar.high >= trade.targets[n]))
+            # FIX-02 (2026-09-14): when one bar prints through several rungs, walk the rungs that need
+            # no order in THIS observation instead of consuming the bar on the first one (HPQ 09-14:
+            # TP1 and TP2 in one bar, the two-contract exit waited a bar). The caller sets trims_done
+            # from `new_trims_done`; only a confirmed fill closes the position.
+            while k < want and hit(k):
+                k += 1
+            if k >= want and hit(k):
                 return ExitDecision(f"tp{k + 1}", trade.remaining, len(trade.targets),
                                     f"single contract exits in full at {single_exit.upper()}")
-            return None                               # advance handled by caller via next_trim below
+            if k > trade.trims_done + 1:
+                return ExitDecision(f"tp{k}", 0.0, k, f"rungs reached in one bar, nothing to trim before {single_exit.upper()}")
+            return None                               # a single advance is handled by the caller
         share = ladder[k] if k < len(ladder) else 1.0
         qty = float(int(round(trade.filled_qty * share)))
         qty = min(qty, trade.remaining)

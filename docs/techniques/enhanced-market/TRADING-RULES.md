@@ -325,6 +325,18 @@ never-chase execution the trade was unreachable anyway. The defect is real, its 
 
 ## 2. Findings (settled, with evidence)
 
+- **2026-09-14 · External review (reviewer packet `reviews/DEV-TEAM-HANDOFF-2026-09-14.md`), Delivery A
+  landed.** Six correctness defects confirmed and fixed (response: `reviews/DELIVERY-A-RESPONSE-2026-09-14.md`):
+  the shares fallback kept the option's x100 (HPQ -$7.19 booked as -$719.30 and a false loss halt; five
+  records in the dry-run manifest, one real), a two-contract exit waited a bar when TP1 and TP2 printed
+  together, contracts were sized on the pick's stale ask, the 09:25 pre-open called twelve shorts
+  `gapped_past` with the pre-market print still between entry and stop (SPY, IBIT, NKE, UNH, DIA, XLF, XLU,
+  TLT, IWM, CVNA + USO/BSX rejects that gap_void would have voided anyway) and replaced them, the critic's
+  opinion/advisory flag/errors were dropped on restart (INTC, HOOD), and short contracts were scored as longs
+  by the adapters (no historical row affected). Policy decisions recorded there: risk budget is a BOUND
+  (zero contracts allowed), quote confirmation counts distinct observations. The reviewer's larger point
+  stands and is not fixed by these: the morning source supplies tickers, not the author's scenario (Delivery
+  B design: `reviews/DELIVERY-B-DESIGN-2026-09-14.md`).
 - **2026-09-08 · Does the nightly LLM plan review earn its time? First measurement.** Join of the
   replay's VALID fires to the evening batch's verdict, three sessions (09-03, 09-04, 09-08):
   plans the review ACCEPTED: 6 fires, **+3.10R (+0.52R/fire)**; plans it REJECTED: 4 fires,
