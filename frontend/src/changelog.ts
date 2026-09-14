@@ -23,6 +23,7 @@ export const CHANGELOG: Release[] = [
     {tag:"fixed",text:"Team2 R3: a corrected or late-recovered minute is now merged into the desk's private tape by timestamp and recorded (bar_revised / bar_recovered) instead of being dropped because a later minute had already been seen; the next read runs on the corrected history without re-acting on anything already acted on."},
     {tag:"fixed",text:"Restart scripts R4: a deploy takes an exclusive lease (logs/deploy.lock, owner-named, stale after ten minutes), the entry pause must be acknowledged by the engine AND read back from its state before anything is stopped, and the watchdog will not start a second engine while a deploy holds the lease. A pause that is not confirmed refuses the ordinary restart; -Force / -Override remain the journaled exceptions."},
     {tag:"improved",text:"Team2 R5: the close scorecard keeps every attempt, filled or not, with its decisive contract verdict (policy refusal, transient deferral, order rejected) and the live price examined, and adds a durable funnel (attempts / filled / refused / deferred / book losses) rebuilt from the journal after a restart. Today's refused IWM 290 call read 'not taken - see skips' with no reason."},
+  ]},
   {version:"0.7.72",date:"2026-09-14",title:"Team2 close record",items:[
     {tag:"fixed",text:"Team2: the end-of-day scorecard now names its session (planFor), so the close no longer logs an event-contract warning per plan and scored rows can be joined to their day without the plan row."},
   ]},
