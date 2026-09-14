@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import datetime as dt
 import hashlib
+import json
 import logging
 import time as _time
 
@@ -213,13 +214,17 @@ class SignalService:
         """KB-03: persist the PRIOR state as an immutable revision before any
         mutation; advance the row's revision identity."""
         from ..models import TipNoteRevision
+        # KB-03: a row with no known-from baseline (legacy, pre-revisions) is
+        # NEVER backdated to created_at — its prior state is recorded as known
+        # only from this instant (an empty interval: a record, not history)
         session.add(TipNoteRevision(
             id=new_id(), note_id=row.id,
             revision_no=int(getattr(row, "revision_no", 1) or 1),
-            known_from=(getattr(row, "revised_at", None) or row.created_at or now),
+            known_from=(getattr(row, "revised_at", None) or now),
             known_until=now, scope=row.scope, text=row.text,
             valid_until=row.valid_until, superseded_by=row.superseded_by,
-            needs_human=bool(row.needs_human), reason=reason[:40]))
+            needs_human=bool(row.needs_human), core=bool(getattr(row, "core", False)),
+            reason=reason[:40]))
         row.revised_at = now
         row.revision_no = int(getattr(row, "revision_no", 1) or 1) + 1
 
@@ -266,16 +271,23 @@ class SignalService:
         unavailable = 0
         for r in cand:
             revised_at = getattr(r, "revised_at", None)
-            if revised_at is not None and revised_at > as_of:
+            if revised_at is None:
+                # unversioned legacy row: no trustworthy known-from baseline —
+                # its current text is NOT June knowledge; excluded and counted
+                unavailable += 1
+                continue
+            if revised_at > as_of:
                 rv = revs.get(r.id)
                 if rv is None:
-                    unavailable += 1           # legacy history: unavailable
+                    unavailable += 1           # mutated after as_of, no covering revision
                     continue
                 scope, text = rv.scope, rv.text
                 valid_until, superseded_by, needs_human = rv.valid_until, rv.superseded_by, rv.needs_human
+                core, rev_no, rev_at = bool(rv.core), int(rv.revision_no or 1), rv.known_from
             else:
                 scope, text = r.scope, r.text
                 valid_until, superseded_by, needs_human = r.valid_until, r.superseded_by, r.needs_human
+                core, rev_no, rev_at = bool(getattr(r, "core", False)), int(getattr(r, "revision_no", 1) or 1), revised_at
             if scopes and scope not in scopes:
                 continue
             if not include_expired and valid_until is not None and valid_until <= as_of:
@@ -285,10 +297,14 @@ class SignalService:
             d = self.note_dict(r)
             d.update({"scope": scope, "text": text,
                       "supersededBy": superseded_by, "needsHuman": bool(needs_human),
+                      "core": core, "revisionNo": rev_no,
+                      "revisedAt": rev_at.isoformat() if rev_at else None,
                       "validUntil": valid_until.isoformat() if valid_until else None,
                       "asOf": as_of.isoformat()})
             out.append(d)
         self._last_as_of_unavailable = unavailable
+        self.last_as_of_coverage = {"asOf": as_of.isoformat(), "unavailable": unavailable,
+                                    "candidates": len(cand), "returned": len(out)}
         return out[max(0, int(offset)):max(0, int(offset)) + limit]
 
     async def search_tip_notes(self, q: str = "", scopes: list[str] | None = None, *,
@@ -392,9 +408,11 @@ class SignalService:
         ttl = self._note_ttl_days(scope)
         valid_until = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=ttl)
                        if ttl else None)
+        born = dt.datetime.now(dt.timezone.utc)
         row = TipNote(id=new_id(), scope=scope, text=text,
                       author=author[:80], signal_id=signal_id, run_id=run_id,
-                      valid_until=valid_until)
+                      valid_until=valid_until,
+                      revised_at=born, revision_no=1)   # KB-03: known-from baseline at birth
         async with self.engine.sf() as session:
             session.add(row)
             await session.commit()
@@ -511,6 +529,48 @@ class SignalService:
             await session.commit()
         return n
 
+    async def mark_notes_used(self, used_ids: list[str]) -> int:
+        """KB-08: the model's declared RELIANCE, recorded separately from supply
+        (supply is stamped BEFORE the first provider call, this after the
+        verdict). Promotes cited_count / last_cited_at / TTL only."""
+        from ..models import TipNote
+        n = 0
+        now = dt.datetime.now(dt.timezone.utc)
+        async with self.engine.sf() as session:
+            for nid in used_ids or []:
+                row = await session.get(TipNote, nid)
+                if row is None:
+                    continue
+                row.cited_count = int(row.cited_count or 0) + 1
+                row.last_cited_at = now
+                ttl = self._note_ttl_days(row.scope)
+                if ttl and row.valid_until is not None:
+                    self._snapshot(session, row, now, "refresh")
+                    row.valid_until = now + dt.timedelta(days=ttl)
+                n += 1
+            await session.commit()
+        return n
+
+    async def stamp_legacy_note_baseline(self) -> int:
+        """KB-03 migration (observation-time baseline): rows created before
+        revisions existed carry no known-from; stamp them NOW so history
+        before this instant is explicitly unavailable — never inferred."""
+        from sqlalchemy import update
+        from ..models import TipNote
+        now = dt.datetime.now(dt.timezone.utc)
+        async with self.engine.sf() as session:
+            res = await session.execute(
+                update(TipNote).where(TipNote.revised_at.is_(None))
+                .values(revised_at=now, revision_no=1))
+            await session.commit()
+            n = int(res.rowcount or 0)
+        if n:
+            await self.engine.journal.append(
+                ev.TIP_NOTE_EDITED, {"legacyBaselineStamped": n, "at": now.isoformat(),
+                                     "note": "history before this instant is unavailable, not reconstructed"},
+                aggregate_type="signal", aggregate_id="tip-notes-migration")
+        return n
+
     async def pin_tip_note(self, note_id: str) -> dict | None:
         """User pin: clear the expiry — this note is durable now (journaled)."""
         from ..models import TipNote
@@ -530,101 +590,155 @@ class SignalService:
         return note
 
     async def delete_tip_note(self, note_id: str) -> bool:
+        """KB-03: a delete is a TOMBSTONE, never a hard delete — the row stays
+        (superseded_by='deleted:user', excluded from every live list) so the
+        historical projection keeps what was known before the deletion."""
         from ..models import TipNote
+        now = dt.datetime.now(dt.timezone.utc)
         async with self.engine.sf() as session:
             row = await session.get(TipNote, note_id)
-            if row is None:
-                return False
-            await session.delete(row)
+            if row is None or str(row.superseded_by or "").startswith("deleted:"):
+                return False                      # already a tombstone: 404, as a hard delete would
+            if row.superseded_by is None:
+                self._snapshot(session, row, now, "delete")
+            row.superseded_by = "deleted:user"
             await session.commit()
+        await self.engine.journal.append(ev.TIP_NOTE_EDITED, {"id": note_id, "deleted": True},
+                                         aggregate_type="signal", aggregate_id=note_id)
         return True
 
     async def apply_knowledge_batch(self, *, scope: str, merges: list, expires: list,
                                     contradictions: list, author: str, run_id: str,
-                                    live_ids: set[str], batch_id: str) -> dict:
-        """KB-02: the audit's ONE apply path — validate the whole proposed batch
-        before any write, then apply in a single transaction with row locks
-        and version checks; durable idempotency by `batch_id` (a retry after a
-        commit-with-lost-ACK finds the journaled batch and does nothing).
+                                    live_ids: set[str], batch_id: str,
+                                    expected_revisions: dict | None = None,
+                                    mode: str = "apply") -> dict:
+        """KB-02: the ONE apply path for audit-proposed knowledge changes.
 
-        Validation: any id involved in a contradiction is CONFLICT-LOCKED —
-        it can be flagged, never merged or expired (the LLM once proposed
-        merging the two rules it had just called contradictory). Invalid /
-        non-live ids are rejected with a reason, never silently dropped."""
-        from sqlalchemy import select as _sel
-        from ..models import Event, TipNote
-        # idempotency: an accepted batch applies exactly once
-        async with self.engine.sf() as session:
-            prior = (await session.execute(_sel(Event.payload).where(
-                Event.type == ev.TIP_RULE_AUDITED).order_by(Event.id.desc()).limit(500))).scalars().all()
-        for pl in prior:
-            if (pl or {}).get("batchId") == batch_id:
-                return {**(pl.get("applied") or {}), "alreadyApplied": True}
-        conflict: set[str] = set()
-        flag_sets: list[list[str]] = []
-        rejected: list[dict] = []
-        for c in contradictions:
-            ids = [i for i in (getattr(c, "ids", None) or c.get("ids") or []) if i in live_ids]
-            if len(ids) >= 2:
-                conflict.update(ids)
-                flag_sets.append(ids)
-            else:
-                rejected.append({"kind": "contradiction", "ids": list(getattr(c, "ids", None) or c.get("ids") or []),
-                                 "reason": "fewer than two live ids"})
-        acc_merges: list[tuple[list[str], str]] = []
-        for m in merges:
-            sup = getattr(m, "supersedes", None) or m.get("supersedes") or []
-            new_rule = (getattr(m, "new_rule", None) or m.get("new_rule") or "").strip()
-            ids = [i for i in sup if i in live_ids]
-            if not ids or not new_rule:
-                rejected.append({"kind": "merge", "ids": list(sup), "reason": "no live ids or empty text"})
-                continue
-            if conflict & set(ids):
-                rejected.append({"kind": "merge", "ids": ids,
-                                 "reason": "conflict-locked: involved in a contradiction this batch"})
-                continue
-            acc_merges.append((ids, new_rule))
-        acc_expires: list[str] = []
-        taken = {i for ids, _ in acc_merges for i in ids}
-        for e in expires:
-            eid = getattr(e, "id", None) or e.get("id")
-            if eid not in live_ids:
-                rejected.append({"kind": "expire", "ids": [eid], "reason": "not a live id"})
-            elif eid in conflict:
-                rejected.append({"kind": "expire", "ids": [eid], "reason": "conflict-locked"})
-            elif eid in taken:
-                rejected.append({"kind": "expire", "ids": [eid], "reason": "already merged this batch"})
-            else:
-                acc_expires.append(eid)
-        # ---- apply: ONE transaction, locked rows, version check
+        Contract (reviewer-tightened 2026-09-13):
+        - IDENTITY: the receipt (`tip_knowledge_batches`, PK = batch_id) is
+          written in the SAME transaction as the note mutations — a journal
+          failure after commit cannot strand a committed batch; a retry finds
+          the receipt and returns the applied result (unique lookup, never a
+          recency scan). A reused id with a different payload is refused.
+        - VERSIONS: `expected_revisions` (id -> revision_no the judge READ) is
+          compared under row locks; any mismatch aborts the WHOLE batch before
+          any write — a human edit during the paid call always wins.
+        - DISPUTES: an id involved in a contradiction in THIS batch, or
+          already persisted `needs_human`, is conflict-locked: flagged, never
+          merged or expired, until a human resolves it.
+        - REFERENCES: a merge with any non-live id, or overlapping another
+          merge, is rejected whole (never silently trimmed); new text passes
+          the same scope/length validation as every other writer (KB-07).
+        - MODE: 'propose' (default from `techniques.tip.knowledge_apply_enabled`
+          = False) validates, records the proposal receipt and applies ONLY the
+          protective contradiction flags; 'apply' also commits merges/expiries."""
+        from ..models import TipKnowledgeBatch, TipNote
+        mode = "apply" if mode == "apply" else "propose"
+        scope = self.normalize_scope(scope)
+        def _f(o, k, default=None):
+            return getattr(o, k, None) if not isinstance(o, dict) else o.get(k, default)
+        canon = json.dumps({"scope": scope, "mode": mode,
+                            "merges": [[list(_f(m, "supersedes") or []), (_f(m, "new_rule") or "").strip()] for m in merges],
+                            "expires": [_f(e, "id") for e in expires],
+                            "contradictions": [list(_f(c, "ids") or []) for c in contradictions]},
+                           sort_keys=True, default=str)
+        payload_hash = hashlib.sha1(canon.encode("utf-8")).hexdigest()
         now = dt.datetime.now(dt.timezone.utc)
-        applied = {"merged": 0, "expired": 0, "contradictions": 0, "newRules": [],
-                   "newNotes": [], "flagged": [], "rejected": rejected}
-        touched = sorted({i for ids, _ in acc_merges for i in ids} | set(acc_expires) | conflict)
         async with self.engine.sf() as session:
+            prior = await session.get(TipKnowledgeBatch, batch_id)
+            if prior is not None:
+                if prior.payload_hash != payload_hash:
+                    raise ValueError(f"batch id {batch_id} reused with a different payload")
+                return {**(prior.applied or {}), "alreadyApplied": True, "mode": prior.status}
+            # ---- reference validation (pure) ---------------------------------
+            rejected: list[dict] = []
+            conflict: set[str] = set()
+            flag_sets: list[list[str]] = []
+            for c in contradictions:
+                ids = list(_f(c, "ids") or [])
+                live = [i for i in ids if i in live_ids]
+                if len(live) >= 2:
+                    conflict.update(live)
+                    flag_sets.append(live)
+                else:
+                    rejected.append({"kind": "contradiction", "ids": ids, "reason": "fewer than two live ids"})
+            acc_merges: list[tuple[list[str], str]] = []
+            taken: set[str] = set()
+            for m in merges:
+                ids = list(_f(m, "supersedes") or [])
+                new_rule = (_f(m, "new_rule") or "").strip()
+                if not ids or not new_rule:
+                    rejected.append({"kind": "merge", "ids": ids, "reason": "no ids or empty text"}); continue
+                if any(i not in live_ids for i in ids):
+                    rejected.append({"kind": "merge", "ids": ids, "reason": "references a non-live id (rejected whole)"}); continue
+                if taken & set(ids):
+                    rejected.append({"kind": "merge", "ids": ids, "reason": "overlaps another merge in this batch"}); continue
+                if len(new_rule) > self.NOTE_TEXT_MAX:
+                    rejected.append({"kind": "merge", "ids": ids, "reason": f"text over {self.NOTE_TEXT_MAX} chars"}); continue
+                acc_merges.append((ids, new_rule)); taken.update(ids)
+            acc_expires: list[str] = []
+            for e in expires:
+                eid = _f(e, "id")
+                if eid not in live_ids:
+                    rejected.append({"kind": "expire", "ids": [eid], "reason": "not a live id"})
+                elif eid in taken:
+                    rejected.append({"kind": "expire", "ids": [eid], "reason": "already merged this batch"})
+                else:
+                    acc_expires.append(eid)
+            touched = sorted({i for ids, _ in acc_merges for i in ids} | set(acc_expires) | conflict)
+            # ---- lock + state validation --------------------------------------
             rows: dict[str, TipNote] = {}
             for nid in touched:
                 row = await session.get(TipNote, nid, with_for_update=True)
                 if row is None:
                     raise ValueError(f"batch aborted: {nid} vanished")
+                rows[nid] = row
+            if expected_revisions:
+                for nid, row in rows.items():
+                    exp = expected_revisions.get(nid)
+                    if exp is not None and int(getattr(row, "revision_no", 1) or 1) != int(exp):
+                        raise ValueError(f"batch aborted: {nid} is revision "
+                                         f"{getattr(row, 'revision_no', 1)}, judged at {exp} — re-read required")
+            for nid, row in rows.items():
                 if row.superseded_by is not None and nid not in conflict:
                     raise ValueError(f"batch aborted: {nid} was superseded concurrently")
-                rows[nid] = row
-            ttl = self._note_ttl_days(scope)
+                if row.needs_human:
+                    conflict.add(nid)                 # persisted dispute: locked until resolved
+            kept_merges = []
             for ids, new_rule in acc_merges:
-                new = TipNote(id=new_id(), scope=scope, text=new_rule, author=author[:80],
-                              run_id=run_id,
-                              valid_until=(now + dt.timedelta(days=ttl)) if ttl else None)
-                session.add(new)
-                for nid in ids:
-                    self._snapshot(session, rows[nid], now, "supersede")
-                    rows[nid].superseded_by = new.id
-                applied["merged"] += len(ids)
-                (applied["newRules"] if scope == "rule" else applied["newNotes"]).append(new.id)
+                if conflict & set(ids):
+                    rejected.append({"kind": "merge", "ids": ids, "reason": "conflict-locked (contradiction / unresolved dispute)"})
+                else:
+                    kept_merges.append((ids, new_rule))
+            kept_expires = []
             for eid in acc_expires:
-                self._snapshot(session, rows[eid], now, "supersede")
-                rows[eid].superseded_by = f"expired:{run_id[:8]}"
-                applied["expired"] += 1
+                if eid in conflict:
+                    rejected.append({"kind": "expire", "ids": [eid], "reason": "conflict-locked"})
+                else:
+                    kept_expires.append(eid)
+            proposal = {"merges": [{"supersedes": ids, "text": t} for ids, t in kept_merges],
+                        "expires": kept_expires, "flags": flag_sets, "rejected": rejected,
+                        "expectedRevisions": expected_revisions or {}, "mode": mode}
+            applied = {"merged": 0, "expired": 0, "contradictions": 0, "newRules": [],
+                       "newNotes": [], "flagged": [], "rejected": rejected, "mode": mode,
+                       "proposedMerges": len(kept_merges), "proposedExpires": len(kept_expires)}
+            # ---- write (flags always; merges/expiries only in apply mode) -------
+            ttl = self._note_ttl_days(scope)
+            if mode == "apply":
+                for ids, new_rule in kept_merges:
+                    new = TipNote(id=new_id(), scope=scope, text=new_rule, author=author[:80],
+                                  run_id=run_id, revised_at=now, revision_no=1,
+                                  valid_until=(now + dt.timedelta(days=ttl)) if ttl else None)
+                    session.add(new)
+                    for nid in ids:
+                        self._snapshot(session, rows[nid], now, "supersede")
+                        rows[nid].superseded_by = new.id
+                    applied["merged"] += len(ids)
+                    (applied["newRules"] if scope == "rule" else applied["newNotes"]).append(new.id)
+                for eid in kept_expires:
+                    self._snapshot(session, rows[eid], now, "supersede")
+                    rows[eid].superseded_by = f"expired:{run_id[:8]}"
+                    applied["expired"] += 1
             for ids in flag_sets:
                 for nid in ids:
                     if not rows[nid].needs_human:
@@ -633,14 +747,41 @@ class SignalService:
                     if nid not in applied["flagged"]:
                         applied["flagged"].append(nid)
             applied["contradictions"] = len(applied["flagged"])
-            await session.commit()
+            session.add(TipKnowledgeBatch(
+                id=batch_id, run_id=run_id, scope=scope,
+                status=("applied" if mode == "apply" else "proposed"),
+                payload_hash=payload_hash, proposal=proposal, applied=applied,
+                applied_at=(now if mode == "apply" else None)))
+            await session.commit()                    # receipt + mutations: ONE commit
+        # the journal is a notification AFTER the durable receipt, not the identity
         await self.engine.journal.append(
             ev.TIP_RULE_AUDITED,
-            {"batchId": batch_id, "runId": run_id, "scope": scope, "applied": applied,
-             "proposed": {"merges": len(merges), "expires": len(expires),
-                          "contradictions": len(contradictions)}},
+            {"batchId": batch_id, "runId": run_id, "scope": scope, "mode": mode,
+             "applied": applied, "proposal": {k: v for k, v in proposal.items() if k != "expectedRevisions"}},
             aggregate_type="technique_run", aggregate_id=run_id)
         return applied
+
+    async def knowledge_batches(self, status: str = "proposed", limit: int = 50) -> list[dict]:
+        """KB-02 receipts. In propose-only mode this is where the audit's
+        judgement waits for a human — nothing listed as 'proposed' has touched
+        a live note (its protective contradiction flags excepted)."""
+        from ..models import TipKnowledgeBatch
+        async with self.engine.sf() as session:
+            q = (select(TipKnowledgeBatch).order_by(TipKnowledgeBatch.created_at.desc())
+                 .limit(max(1, min(int(limit), 500))))
+            if status:
+                q = q.where(TipKnowledgeBatch.status == status)
+            rows = (await session.execute(q)).scalars().all()
+        out: list[dict] = []
+        for b in rows:
+            p, a = (b.proposal or {}), (b.applied or {})
+            out.append({"id": b.id, "runId": b.run_id, "scope": b.scope, "status": b.status,
+                        "createdAt": b.created_at.isoformat() if b.created_at else None,
+                        "appliedAt": b.applied_at.isoformat() if b.applied_at else None,
+                        "merges": p.get("merges") or [], "expires": p.get("expires") or [],
+                        "flags": p.get("flags") or [], "rejected": p.get("rejected") or [],
+                        "flagged": a.get("flagged") or [], "mode": a.get("mode")})
+        return out
 
     async def notes_for_tip(self, ticker: str | None, source: str | None,
                             signal_id: str | None = None,
@@ -3049,6 +3190,10 @@ async def attach_signal_layer(engine) -> None:
     engine.signals_service.start_media_catchup()
     # POST-SOAK 4.1/4.3: cold parks re-verify, error content retries once
     engine.signals_service.start_recovery()
+    # KB-03: unversioned legacy notes get their known-from baseline NOW (an
+    # observation-time stamp — history before it is unavailable, never inferred)
+    with contextlib.suppress(Exception):
+        await engine.signals_service.stamp_legacy_note_baseline()
     # Codex finding 4 (+ v0.7.20 review gap 2): runs a restart/cancel left
     # "running" are failed on the record. At BOOT nothing can legitimately be
     # running — sweep ALL of them, however young (a hard kill delivers no

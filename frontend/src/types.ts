@@ -376,6 +376,15 @@ export interface TipNote {
   validUntil?: string | null; lastCitedAt?: string | null; citedCount?: number;
 }
 
+// KB-02 receipt: what a knowledge audit proposed (propose-only mode) or applied
+export interface KnowledgeBatch {
+  id: string; runId: string; scope: string; status: "proposed" | "applied" | "rejected";
+  createdAt?: string | null; appliedAt?: string | null; mode?: string | null;
+  merges: { supersedes: string[]; text: string }[];
+  expires: string[]; flags: string[][]; rejected: { kind: string; ids: string[]; reason: string }[];
+  flagged: string[];
+}
+
 export interface SourceScorecard {
   source: string;
   signals: number;

@@ -747,7 +747,29 @@ class TipNoteRevision(Base):
     valid_until: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
     superseded_by: Mapped[str | None] = mapped_column(String(80))
     needs_human: Mapped[bool] = mapped_column(Boolean, default=False)
-    reason: Mapped[str] = mapped_column(String(40), default="edit")   # edit|supersede|pin|refresh|flag
+    core: Mapped[bool] = mapped_column(Boolean, default=False)          # decision-relevant: projected too
+    reason: Mapped[str] = mapped_column(String(40), default="edit")   # edit|supersede|pin|refresh|flag|delete
+
+
+class TipKnowledgeBatch(Base):
+    """The durable receipt of one audit batch (KB-02-A): written in the SAME
+    transaction as the note mutations it describes, keyed by the batch id
+    (unique identity — never a recency-limited scan). `status` proposed =
+    validated but not applied (propose-only mode); applied = mutations
+    committed. `payload_hash` guards a reused id with a different payload.
+    The journal event is published AFTER commit and is not the source of
+    truth for idempotency."""
+    __tablename__ = "tip_knowledge_batches"
+
+    id: Mapped[str] = mapped_column(String(240), primary_key=True)      # "<run_id>:<scope>"
+    run_id: Mapped[str] = mapped_column(String(64), index=True)
+    scope: Mapped[str] = mapped_column(String(160))
+    status: Mapped[str] = mapped_column(String(16), default="proposed")  # proposed | applied | rejected
+    payload_hash: Mapped[str] = mapped_column(String(40))
+    proposal: Mapped[dict] = mapped_column(JSONVariant, default=dict)    # accepted/rejected + expected revisions
+    applied: Mapped[dict] = mapped_column(JSONVariant, default=dict)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    applied_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class TechniqueMethodNote(Base):

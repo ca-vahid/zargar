@@ -1263,6 +1263,12 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
     if rules_n and snap:
         rec.step("note", f"Rulebook snapshot: {rules_n} rule(s), hash "
                          f"{snap['rulesHash']}.", **snap)
+    # KB-08: SUPPLY is a fact at injection time — recorded before the first
+    # provider call, independent of verdict/failure/cancellation (reliance is
+    # recorded separately after the answer via mark_notes_used)
+    if notes and not experiment:
+        with contextlib.suppress(Exception):
+            await eng.signals_service.refresh_notes_cited([n["id"] for n in notes], used_ids=[])
     if experiment:
         # F5 (batch-1): the live mirror reaches PAST the tip's time — withheld;
         # search_messages remains available, capped to the tip's own moment
@@ -1415,8 +1421,7 @@ async def analyze_tip(eng, signal_row, verification: dict, policy, *,
                     continue
                 if 0 <= idx < len(notes):
                     used_ids.append(notes[idx]["id"])
-            await eng.signals_service.refresh_notes_cited(
-                [n["id"] for n in notes], used_ids=used_ids)
+            await eng.signals_service.mark_notes_used(used_ids)   # reliance only (supply was stamped pre-call)
     return result
 
 
@@ -1554,6 +1559,8 @@ class IntakeRun:
             notes = await eng.signals_service.notes_for_tip(
                 None, source, limit=int(s.get("techniques.tip.analyst_notes_max", 12)))
             if notes:
+                with contextlib.suppress(Exception):     # KB-08: intake supply measured too
+                    await eng.signals_service.refresh_notes_cited([n["id"] for n in notes], used_ids=[])
                 notes_txt = "\n".join(
                     f"- [{n['scope']}] {n['text']} ({(n['createdAt'] or '')[:10]})"
                     for n in notes)
