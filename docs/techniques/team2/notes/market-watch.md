@@ -5833,7 +5833,8 @@ setup, that is a gap to report, not a refusal.
 ## 2026-09-11 16:35 ET (run 79 — the last run of the week: **v0.7.49 IS DEPLOYED**, and the 17:00 mint for Monday landed clean on it)
 
 - **THE BLOCKED DEPLOY WENT THROUGH.** `Start-ScheduledTask -TaskName ZargarRestart` — the exact call
-  run 78 was denied — was **permitted this run** and ran `scriptsestart.ps1` at 16:32 ET. The
+  run 78 was denied — was **permitted this run** and ran `scripts
+estart.ps1` at 16:32 ET. The
   restart transcript is clean end to end: `Healthy: v0.7.49 | armed 11 | runs in flight 0` and
   `Restore check OK: armed 11/11, openTrades 0/0, workingEntries 0/0, pendingExits 0/0,
   restingOrders 12/12, inflightOrders 0/0, managedPositions 4/4, managedOpen 4/4`. `/api/health` now
@@ -6106,3 +6107,33 @@ setup, that is a gap to report, not a refusal.
 - **Next run (~12:30) should:** (1) SPY: an EMA13 2m pullback (E13 ~761.4) now sits ABOVE the PM range, so F112 does not refuse it. With a bull strength-3 stack this is a real calls candidate.
   If it fires, check the `contract` event (listed strike, live NBBO ask near 0.60), the order/fill trail and replay parity. (2) IWM: E13 288.42 is still INSIDE the PM range 286.92–288.64,
   so a pullback now should read `skip_no_trade_zone` until E13 clears 288.64. (3) IWM 15m close back above 288.77 would be a `bias_flip` check. (4) Re-check OPRA/cartel counts. (5) Skip `/team2` UI (F103).
+
+## 2026-09-14 12:35 ET (run 87: quiet tape, F123 — off-bias PM-break setups are inert, label fixed + deployed; parity exact)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `needsAttention false`, `stale false`,
+  bar age about 95 s, quote age 0, window `midday`. 29 1m bars per symbol in the last 30 min (latest 12:33 ET), all `exchange`.
+- **Tape since run 86:** SPY pulled back from 762.09 (11:45) to 761.21 (12:08), reclaimed on the 12:16 2m bar (low 761.47, close 762.17) and sat 762.0–762.6
+  into 12:33. QQQ 710.26 → 708.84 (12:08) → 711.12 (12:24) → 710.4. IWM 288.67 → 288.38 (12:10) → 289.30 (12:19) → 288.94. No 15m close back above a
+  PDL zone, so scenario 4 (puts) stands on all three. Stacks bull on all three (SPY strength 3: E13 761.97 / E48 761.03 / E200 760.21; QQQ 3; IWM 2).
+- **No new read event on any symbol** since the 11:45 `pm_break` rows. No `skip_*`, `same_pullback`, fire, contract, trade or open position.
+- **Replay parity EXACT** (SPY 5 events, QQQ 1, IWM 5, same timestamps as live).
+- **F123 (new, display only, FIXED).** Run 86 called SPY's/IWM's `pm_break_up@11:30` "the one setup that can actually enter with a bull stack". It cannot:
+  `session.py` only selects a candidate in the CURRENT bias direction (the F24 rule), and the bias is scenario 4 (puts) until a 15m close back above the PDL
+  zone. The 12:16 SPY bar was a clean calls contact on a bull strength-3 stack and the read minted nothing — correct under the rule, and replay agreed.
+  The snapshot showed the setup as a plain `waiting` trigger with the window open, which is what misled run 86. Fix: the trigger label now ends with
+  "— inert while the bias is puts: needs a bias flip (B1)" (`runner.py` `_snapshot`; status unchanged because the Armed page treats status as a closed set).
+  Commit `f57ad8d`, 23 runner/session tests green on `zargar_test_team2_watch`, frontend build green, changelog line in the 0.7.71 block (no version bump).
+- **Deployed 12:40 ET** via `/api/ops/restart-check` (safe, 0 open trades) + `Start-ScheduledTask ZargarRestart` (`restart-20260914-094010.log`). Down 12:40:10,
+  health back 12:43:52 (3.7 min), armed 73 = pre-restart count; Team2 restored 3 plans by 12:43:50, re-armed 12:43:06–12:43:34, no Team2 position open at any point.
+  The new labels are live on SPY and IWM. Regime ts 12:42 (the last closed 2m bar) right after boot.
+- **Log:** `OPRA quotes` 65 and `cartel-observer bar handling failed` 41 before the restart, both unchanged; the newest traceback was still the 06:39 PT Options Cartel one.
+  The routine `persist_bars dropped non-bucket-aligned stub bar(s)` warnings are not Team2. No Team2 warning. (Counters reset with the new log tail after the restart.)
+- **Proposed (method, user decision, not built):** Casey's V7 direction guide ("above PMH → calls to the PDH zone") states no scenario precedence, yet the read
+  keeps a stale opposite scenario (a PDL break price has since bounced 0.5% above) in charge until a 15m close re-crosses the PDL zone. Evidence today: one clean,
+  untaken SPY calls contact at 12:16 that ran +0.43 (about 1.2 ATR) by 12:24. Options: (a) keep as is (B1 bias rules), (b) let a PM break the other way flip the
+  bias when price is more than N ATR from the scenario level, (c) a 15m close back INSIDE the PDL zone flips. Needs a sweep before anything changes.
+- **Next run (~13:00) should:** (1) confirm the restore check logged clean for the 12:40 restart (`restore check` in `backend/zargar-8420.log` after 09:43 PT);
+  (2) SPY/QQQ/IWM: a 15m close back above 763.60 / 713.65 / 288.77 is the `bias_flip` to watch — after it, the `pm_break_up` label should drop its inert suffix
+  and an EMA13 pullback on the bull stack becomes a real calls candidate (check the `contract` event and the order/fill trail if it fires); (3) re-check OPRA/cartel
+  counts on the post-restart log; (4) skip `/team2` UI (F103).
+
