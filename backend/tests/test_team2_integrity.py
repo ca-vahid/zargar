@@ -213,6 +213,40 @@ async def test_day_type_is_finalized_on_the_real_open_and_the_estimate_is_kept(r
     assert sum(1 for e in ap.events if e["event"] == "open_finalized") == 1      # once
 
 
+# ---------------------------------------------------------------- F110
+async def test_the_open_finalize_and_the_target_rederive_are_on_the_durable_record(rig):
+    """F110 (2026-09-11): `open_finalized` and the F81 `targets_rederived` used to live only in the plan's
+    in-memory events, which a mid-session restart wipes. Both belong in the journal under the run id."""
+    eng, sim = rig
+    runner, ap, rth = await _armed(eng)
+    # F81: pin a planned upside target the morning has already run through, so the re-derive must fire
+    ap.plan["targetsPlanned"] = {"above": float(rth[0].open) - 5.0, "below": None}
+    ap.plan["targets"] = dict(ap.plan["targetsPlanned"])
+    await eng.team2.preopen_complete()
+    await runner.on_bar(ap.run_id, rth[0])
+    assert ap.plan["openSource"] == "rth_open"
+    red = ap.plan.get("targetsRederived") or {}
+    assert "above" in red and red["above"]["was"] == pytest.approx(float(rth[0].open) - 5.0)
+
+    rows = await runner.audit(ap.run_id)
+    events = [(r["type"], (r["payload"] or {}).get("event")) for r in rows]
+    assert ("TechniquePlanRead", "open_finalized") in events, events
+    assert ("TechniquePlanRead", "targets_rederived") in events, events
+    # journalled once, not on every later bar
+    await runner.on_bar(ap.run_id, rth[1])
+    rows = await runner.audit(ap.run_id)
+    assert sum(1 for r in rows if (r["payload"] or {}).get("event") == "targets_rederived") == 1
+    assert sum(1 for r in rows if (r["payload"] or {}).get("event") == "open_finalized") == 1
+    # the durable row carries what moved
+    row = next(r for r in rows if (r["payload"] or {}).get("event") == "targets_rederived")
+    assert row["payload"]["rederived"]["above"]["source"] in ("pmh", "ladder", "none")
+    assert row["payload"]["runId"] == ap.run_id
+    # F111: every plan-level read row satisfies the TechniquePlanRead contract (`trigger` stated, not omitted)
+    from zargar.research.events_contract import validate
+    for r in rows:
+        assert validate(r["type"], r["payload"] or {}) == [], (r["type"], r["payload"])
+
+
 # ---------------------------------------------------------------- F50
 async def test_target_sells_once_on_a_fresh_print_through_it(rig, monkeypatch):
     eng, sim = rig

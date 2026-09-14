@@ -1593,3 +1593,17 @@ journaled exceptions. The watchdog skips its tick while a deploy holds the lease
 during a restore. Refusals and the restore mismatch path release the lease. Scripts stay ASCII-clean where they were
 (start.ps1 keeps its three pre-existing non-ASCII bytes) and CRLF. Not exercised destructively against the shared
 runtime; verified by PowerShell parse and by the next coordinated deploy's transcript.
+
+### Dark app at 16:22 PT 2026-09-14 (after hours; ~2.5 minutes) — a conflict resolution broke the build
+
+Merging main v0.7.73 into the running checkout (which carried the watch job's unmerged 0.7.72) produced a changelog
+conflict; the Team2 desk's resolver concatenated the two release blocks and dropped the `]},` that closed the first.
+`restart.ps1` stopped the engine, then `start.ps1`'s frontend build failed on the TypeScript error and the restart
+exited 1 — with the new deploy lease still held, so the watchdog would have deferred for up to 10 minutes. Fixed by
+hand within ~2.5 minutes (block closed, lease removed, task re-run; v0.7.73 healthy, three Team2 plans for 09-15
+armed). Two rules from it: (1) `restart.ps1` releases the lease on EVERY failure exit and a lease whose owner
+process is gone is stale for both the next deploy and the watchdog (this change); (2) a merge into the running
+checkout must be built (`node scripts/check-release.mjs && npx tsc -b`) BEFORE the restart task is started — the
+door does not protect against a broken build because the stop happens before the build. The watch job's Team2
+commits (F123, F126, 0.7.72) had never been merged to main; they are brought to main with this change so the running
+checkout and main agree again.

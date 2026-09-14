@@ -49,12 +49,19 @@ if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir | O
 # quiesced=false) is missing evidence: the ordinary path refuses; only -Force may continue (an override).
 $script:leaseFile = Join-Path $lockDir "deploy.lock"
 $script:leaseOwner = "{0}:{1}:{2}" -f $env:COMPUTERNAME, $PID, (Get-Date -Format "yyyyMMdd-HHmmss")
+function Test-LeaseOwnerAlive($path) {
+  # owner = host:pid:time; a lease whose process is gone is stale no matter how young it is
+  try { $o = (Get-Content $path -ErrorAction Stop | Select-Object -First 1); $parts = "$o".Split(":") } catch { return $false }
+  if ($parts.Count -lt 2) { return $false }
+  $ownerPid = 0; if (-not [int]::TryParse($parts[1], [ref]$ownerPid)) { return $false }
+  return [bool](Get-Process -Id $ownerPid -ErrorAction SilentlyContinue)
+}
 function Acquire-DeployLease {
   if ($env:ZARGAR_DEPLOY_LEASE) { $script:leaseOwner = $env:ZARGAR_DEPLOY_LEASE; return $true }   # nested call by the owner
   if (Test-Path $script:leaseFile) {
     $age = ((Get-Date) - (Get-Item $script:leaseFile).LastWriteTime).TotalSeconds
-    if ($age -lt 600) { Warn ("another deploy owns the lease (" + (Get-Content $script:leaseFile -ErrorAction SilentlyContinue) + ", " + [int]$age + "s old)"); return $false }
-    Warn ("taking over a STALE deploy lease (" + [int]$age + "s old)")
+    if ($age -lt 600 -and (Test-LeaseOwnerAlive $script:leaseFile)) { Warn ("another deploy owns the lease (" + (Get-Content $script:leaseFile -ErrorAction SilentlyContinue) + ", " + [int]$age + "s old)"); return $false }
+    Warn ("taking over a STALE deploy lease (" + [int]$age + "s old, owner " + $(if (Test-LeaseOwnerAlive $script:leaseFile) { "alive" } else { "gone" }) + ")")
     Remove-Item $script:leaseFile -Force -ErrorAction SilentlyContinue
   }
   try { New-Item -ItemType File -Path $script:leaseFile -Value $script:leaseOwner -ErrorAction Stop | Out-Null; $env:ZARGAR_DEPLOY_LEASE = $script:leaseOwner; return $true }
@@ -139,7 +146,7 @@ Start-Sleep -Seconds 2
 # the restart never reached its health wait or restoration check)
 $args2 = @{ Detach = $true }; if ($Force) { $args2.Force = $true }
 & (Join-Path $Root "scripts\start.ps1") @args2
-if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; exit 1 }
+if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; Release-DeployLease; exit 1 }
 
 # --- 3. WAIT for health - never walk away from a dark app ----------------------
 Step "Waiting for /api/health ..."
@@ -149,9 +156,9 @@ while ((Get-Date) -lt $deadline) {
   try { $h = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 3; break }
   catch { Start-Sleep -Seconds 3 }
 }
-if (-not $h) { Warn "App did NOT come back within 180s - investigate NOW, do not walk away."; exit 4 }
+if (-not $h) { Warn "App did NOT come back within 180s - investigate NOW, do not walk away."; Release-DeployLease; exit 4 }
 if ($Expect -and ($h.version -ne $Expect)) {
-  Warn "App is up but on v$($h.version), expected v$Expect (stale checkout?)"; exit 5
+  Warn "App is up but on v$($h.version), expected v$Expect (stale checkout?)"; Release-DeployLease; exit 5
 }
 Step ("Healthy: v" + $h.version + " | armed " + $h.local.armed + " | runs in flight " + $h.local.techniqueRunning)
 
