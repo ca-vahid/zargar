@@ -1642,6 +1642,8 @@ async def test_rule_audit_merges_expires_and_flags(tip_rig):
     from zargar.techniques.tip.analyst import _rules_text
     from zargar.techniques.tip.rule_audit import run_rule_audit
     eng, _sim = tip_rig
+    # this test exercises the APPLY mechanics; the platform default is propose-only
+    await eng.settings.set("techniques.tip.knowledge_apply_enabled", True, journal=False)
     svc = eng.signals_service
     a = await svc.add_tip_note("rule", "Never chase premium more than 7% above the alert (position 11112222).", author="analyst:aaaa")
     b = await svc.add_tip_note("rule", "Do not pay more than ~7% over the stated premium (run 33334444).", author="analyst:bbbb")
