@@ -46,6 +46,7 @@ class ExecReport:
     commission: float = 0.0
     reason: str = ""
     exec_id: str = field(default_factory=new_id)
+    evidence: dict = field(default_factory=dict)
 
 
 ReportCallback = Callable[[ExecReport], Awaitable[None]]

@@ -39,6 +39,9 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+. (Join-Path $PSScriptRoot 'deployment-lock.ps1')
+$startLease = Enter-ZargarDeployment $Root -Nested
+try {
 Set-Location $Root
 
 function Step($msg) { Write-Host "> $msg" -ForegroundColor Cyan }
@@ -275,5 +278,10 @@ if ($Detach) {
   if (-not $NoIngest) { Start-EmIngest }
   Step "Zargar -> http://127.0.0.1:8420 (Ctrl+C stops it)"
   Set-Location (Join-Path $Root "backend")
+  # Foreground ownership passes to the process; retain the watchdog startup grace period.
+  Set-Content -LiteralPath (Join-Path $Root 'logs/watchdog.lock') -Value (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+  Exit-ZargarDeployment $startLease
   & $py -m zargar.main
 }
+
+} finally { Exit-ZargarDeployment $startLease }

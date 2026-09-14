@@ -1233,6 +1233,8 @@ class PositionManager:
                         continue
                     bar = msg.get("bar")
                     symbol = msg.get("symbol")
+                    from ..delivery_health import observe
+                    observe(self.engine, 'position_manager', msg, q.qsize())
                     for p in [x for x in self._pos.values() if x.symbol == symbol and x.status in ("open", "closing", "attention")]:
                         await self.on_minute_bar(p, bar)
                 except asyncio.CancelledError:

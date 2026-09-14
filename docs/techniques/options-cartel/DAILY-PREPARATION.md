@@ -71,9 +71,9 @@ Native daily batching is off by default. With configured access it uses a separa
 
 Preparation owns a renewable 120-second database lease, renewed during progress checkpoints and checked before arming. A stale owner cannot publish arms. A crashed lease may need to expire before a replacement worker proceeds; do not start another engine to get around it.
 
-Resume saved scan reuses the original snapshot and successful analyses in a linked run. Eligibility requires current coverage schema (6), matching workspace/policy/target session, the same expected completed market session and age under four calendar days. Old-schema, changed-policy or expired snapshots need Prepare now. Progress may reconstruct saved analyses; the visible saved checkpoint is not a promise that no work remains.
+Resume saved scan reuses the original snapshot and successful analyses in a linked run. Eligibility requires current coverage schema (7), matching workspace/policy/target session, the same expected completed market session and age under four calendar days. Old-schema, changed-policy or expired snapshots need Prepare now. Progress may reconstruct saved analyses; the visible saved checkpoint is not a promise that no work remains.
 
-Automatic recovery checks at five-minute intervals outside regular hours when enabled. It resumes eligible interrupted failed runs and retries fresh preparation after `waiting_for_benchmark`. It does not automatically rerun every partial/data-error result. Stop preparation records cancellation and will not auto-resume that job; disabling preparation also stops future work. Neither action closes positions or discards existing arms.
+Automatic recovery checks at five-minute intervals outside regular hours when enabled. It resumes eligible interrupted failed runs and retries fresh preparation after `waiting_for_benchmark`. Compatible partial results with unresolved history or plan errors now receive at most three automatic recovery attempts per evening/pre-open window, with exponential backoff outside regular hours. The morning job resumes this saved work instead of treating a partial scan as complete. Filtered analyses and waiting-contract plans are reused; failed baselines are retried. A changed baseline produces a new immutable plan revision at the original cutoff. Missing data still cannot authorize a historical entry. Stop preparation records cancellation and will not auto-resume that job; disabling preparation also stops future work. Neither action closes positions or discards existing arms.
 
 New automatic evidence expires at the close of its **first intended entry session**, not 24 wall-clock hours after creation. This permits weekend preparation for Monday. A multi-session thesis or held position is separate from that automatic evidence window. Existing saved arms retain their original expiry/configuration unless explicitly rebuilt.
 
@@ -86,3 +86,22 @@ Planning chain quotes select a draft expression, not an executable price. Diagno
 `partial` can coexist with valid arms: some histories or plans failed while others passed. Consult the individual reasons. `armed` means monitored; it does not mean purchased. For live operational state use Armed and account reports, not old deployment documents.
 
 Implementation references are in [TRACEABILITY.md](TRACEABILITY.md); current limits are in [DELIVERY-STATUS.md](DELIVERY-STATUS.md).
+
+
+## September 14 recovery and review corrections (v0.7.74)
+
+Recovery shows its attempt count and next eligible retry. Each evening and pre-open window has a separate three-attempt allowance, so overnight exhaustion cannot suppress the morning recovery. After three automatic attempts in a window,
+review the precise missing coverage or use Resume deliberately. Stop/disabled/session/policy
+barriers remain authoritative. The lease also serializes pending activation with preparation;
+expired ownership cannot arm after a slow provider call.
+
+Each candidate selection/readiness attempt is saved separately with its time, account,
+policy, plan identity and diagnostic result. An expired pending plan is marked expired;
+its last selection result remains history. A held position without an active arm still
+reserves capacity through its durable config.runId, or an explicit unlinked identity.
+
+The daily review under Plans is read-only: choose a session and account (including a historical
+archived book). It separates confirmed fills/closed campaigns, gross and net realized P&L,
+allocated entry/exit fees, remaining holdings, preparation exclusions and option-recording
+coverage. The native currency must match the account for combined monetary totals; missing
+historical FX or marks are unavailable, not substituted from today's prices.

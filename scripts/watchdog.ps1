@@ -30,12 +30,9 @@ if (Test-Path $lock) {
   $age = ((Get-Date) - (Get-Item $lock).LastWriteTime).TotalSeconds
   if ($age -lt 180) { Log ("a start began {0:N0}s ago - skipping this tick" -f $age); exit 0 }
 }
-# R4: a deploy in progress OWNS the engine; the watchdog must not start a second one during its restore
-$deployLease = Join-Path $logDir "deploy.lock"
-if (Test-Path $deployLease) {
-  $lage = ((Get-Date) - (Get-Item $deployLease).LastWriteTime).TotalSeconds
-  if ($lage -lt 600) { Log ("a deploy holds the lease (" + (Get-Content $deployLease -ErrorAction SilentlyContinue) + ", {0:N0}s) - skipping this tick" -f $lage); exit 0 }
-}
+. (Join-Path $PSScriptRoot 'deployment-lock.ps1')
+try { $watchdogLease = Enter-ZargarDeployment $root } catch { Log $_.Exception.Message; exit 0 }
+try {
 # --- readiness + the state to compare against after the restart (only when something is running)
 $before = $null
 if ($up) {
@@ -96,3 +93,5 @@ if ($before -ne $null) {
   }
 }
 exit 0
+
+} finally { Exit-ZargarDeployment $watchdogLease }
