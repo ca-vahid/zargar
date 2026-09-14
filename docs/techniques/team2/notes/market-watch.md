@@ -6059,3 +6059,27 @@ setup, that is a gap to report, not a refusal.
 - **Next run (~11:30) should:** (1) watch for SPY/IWM breaking below the PML (757.77 / 286.92). A bear-stack EMA13
   pullback after that break is a real entry candidate; check the `contract` event (listed strike, NBBO ask near 0.60)
   and replay parity. (2) See whether QQQ's stack un-braids. (3) Re-check OPRA/cartel counts. (4) Skip `/team2` UI (F103).
+
+## 2026-09-14 11:35 ET (run 85: midday bounce toward the PM highs, no new skip/fire; parity OK)
+
+- **Alive on v0.7.68.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice. `needsAttention false`,
+  `stale false`, bar age about 90 s, quote age 0, window `midday`. No restart. Health reports 73 armed desk-wide.
+- **Tape since run 84 is a steady bounce off the 11:04 lows.** SPY went from 758.15 to 760.38 (11:32 high), close to the PMH at 760.77.
+  QQQ went from 705.27 to 708.77, IWM from 287.09 (11:20) to 287.90 (11:33). Scenario 4 (puts) holds on all three, with no 15m close back above
+  a PDL zone: SPY 763.60, QQQ 713.65, IWM 288.77.
+- **Stacks:** SPY is `mixed` (E13 759.23 / E48 759.10 / E200 759.69, price back above E200). QQQ turned `bull` strength 3
+  (E13 706.95 > E48 706.02 > E200 705.72), which blocks puts correctly (E3/B9/E4). IWM is still `bear` strength 2 (E13 287.34 < E48 287.59 < E200 287.90), but the
+  11:32–33 pop to 287.90 is above E48 and testing E200.
+- **New read events:** IWM `same_pullback` at 11:08 and 11:30. The 11:30–31 2m bar's high of 287.49 touched E13 (~287.34) and closed at 287.35, not 0.5 ATR
+  off, so the note is correct. SPY has no event since 11:04 and QQQ none since the 09:45 scenario. No new `skip_*`, fire, contract, trade or open position.
+- **Replay parity OK on money events (none on either side).** SPY replay matches event for event. QQQ has the scenario only on both sides. IWM's replay
+  lacks the live 11:30 `same_pullback`, with identical 1m bars (all `exchange`) and the same regime ts. This is the known note-placement artifact of the
+  episode-scoped `same_pullback` note (runs 56–58, 64), a diagnostic row only.
+- **Data real-time:** 29 1m bars per symbol in the last 30 min, latest 11:32–11:33 ET, all `exchange`. The live regime ts is 11:30 (the last closed 2m bar).
+  Log `OPRA quotes` is 65 and `cartel-observer bar handling failed` is 41, both unchanged. The newest traceback is still the 06:39 PT Options Cartel one. The routine `persist_bars dropped
+  non-bucket-aligned stub bar(s)` warnings are not Team2. No Team2 warning.
+- **No code shipped, no new F-number.**
+- **Next run (~12:00) should:** (1) if SPY breaks above its PMH 760.77 while the bias is still puts, a later bear EMA13 pullback would sit above the
+  PM range, so it is not refused by F112. Watch the stack before calling it a candidate. (2) If IWM's pop fails back under E13 with the stack still bear, the next
+  pullback would still sit inside the PM range 286.92–288.64 and should read `skip_no_trade_zone`. (3) If QQQ reclaims 713.65 on a 15m close, check the
+  `bias_flip`. (4) Re-check OPRA/cartel counts. (5) Skip `/team2` UI (F103).
