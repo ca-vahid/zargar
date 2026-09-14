@@ -34,7 +34,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", ".
 const OUT = path.join(ROOT, "frontend", ".mobile-shots");
 fs.mkdirSync(OUT, { recursive: true });
 
-const ROUTES = ["/armed", "/trade", "/inbox", "/portfolios", "/", "/options",
+const ROUTES = ["/armed", "/armed/attention", "/trade", "/inbox", "/portfolios", "/", "/options",
   "/watchlists", "/ledger", "/journal", "/settings", "/technique",
   "/techniques/options-cartel", "/techniques/options-cartel/armed", "/techniques/options-cartel/history",
   "/techniques/options-cartel/validation", "/techniques/options-cartel/settings", "/techniques/options-cartel/method"];

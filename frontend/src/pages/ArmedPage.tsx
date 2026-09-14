@@ -12,6 +12,7 @@ import {
 import { useViewport } from "../lib/viewport";
 import { NowView } from "../components/armed/NowView";
 import { SymIcon } from "../components/SymIcon";
+import { AttentionReview } from "../components/armed/AttentionReview";
 
 /* The Armed hub: every armed plan from every technique, its own page.
    Layout toggle: split (table left, detail pinned right) / strip (chip bar,
@@ -21,7 +22,7 @@ import { SymIcon } from "../components/SymIcon";
    sorts (data refreshes patch values in place), selection never auto-moves
    after first load, and detail updates never touch the scroll position. */
 
-type SubTab = "live" | "history";
+type SubTab = "live" | "history" | "attention";
 type Layout = "split" | "strip";
 type TableStyle = "dense" | "rich";
 
@@ -47,7 +48,13 @@ export function ArmedPage() {
     && (a.status === "armed" || a.status === "paused")), [allArmed, ws]);
   const otherArmed = allArmed.length - armed.length;
 
-  const [sub, setSub] = useState<SubTab>("live");
+  const pageTab = useStore(s=>s.pageTab);
+  const setPageTab = useStore(s=>s.setPageTab);
+  const sub: SubTab = pageTab === 'attention' || pageTab === 'history' ? pageTab : 'live';
+  const setSub = (tab: SubTab) => setPageTab(tab);
+  const attention = useMemo(()=>allArmed.filter(a=>a.needsAttention),[allArmed]);
+  const [refreshError,setRefreshError] = useState('');
+  const [refreshing,setRefreshing] = useState(true);
   const [layout, setLayoutRaw] = useState<Layout>(() => (lsGet("zargar_armed_layout", "split") as Layout));
   const [tstyle, setTstyleRaw] = useState<TableStyle>(() => (lsGet("zargar_armed_table", "dense") as TableStyle));
   const setLayout = (v: Layout) => { setLayoutRaw(v); lsSet("zargar_armed_layout", v); };
@@ -71,6 +78,7 @@ export function ArmedPage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (sub !== "live") return;
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -80,14 +88,15 @@ export function ArmedPage() {
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [armed, selArmed]);
+  }, [armed, selArmed, sub]);
 
   const { isPhone } = useViewport();
   const [history, setHistory] = useState<any[]>([]);
   const refresh = useCallback(() => {
-    api.techniqueArmed(isPhone).then(setArmed).catch(() => undefined);
+    setRefreshing(true);
+    api.techniqueArmed(isPhone && sub !== 'attention').then(rows=>{setArmed(rows);setRefreshError('');}).catch(e => setRefreshError(String(e.message || e))).finally(()=>setRefreshing(false));
     api.techniqueArmedHistory().then(setHistory).catch(() => undefined);
-  }, [setArmed, isPhone]);
+  }, [setArmed, isPhone, sub]);
   useEffect(() => { refresh(); const id = setInterval(refresh, 30_000); return () => clearInterval(id); }, [refresh]);
 
   const tradingMode = String(settings["trading.mode"] ?? "practice");
@@ -106,10 +115,12 @@ export function ArmedPage() {
           <div className="tabs armed-subtabs" role="tablist">
             <button role="tab" aria-selected={sub === "live"} className={sub === "live" ? "active" : ""}
               onClick={() => setSub("live")}>Live{armed.length ? <span className="tab-count">{armed.length}</span> : null}</button>
+            <button role="tab" aria-selected={sub === "attention"} className={sub === "attention" ? "active" : ""} onClick={() => setSub("attention")}>Needs review <span className="tab-count">{attention.length}</span></button>
             <button role="tab" aria-selected={sub === "history"} className={sub === "history" ? "active" : ""}
               onClick={() => setSub("history")}>History</button>
           </div>
         </div>
+        {sub === "attention" && <AttentionReview plans={attention} refresh={refresh} error={refreshError} loading={refreshing}/>}
         {sub === "live" && <NowView />}
         {sub === "history" && <PhoneHistory history={history} pmap={pmap} />}
         {sub === "history" && <MissedByBugPanel />}
@@ -123,7 +134,8 @@ export function ArmedPage() {
         <div className="tabs armed-subtabs" role="tablist">
           <button role="tab" aria-selected={sub === "live"} className={sub === "live" ? "active" : ""}
             onClick={() => setSub("live")}>Live{armed.length ? <span className="tab-count">{armed.length}</span> : null}</button>
-          <button role="tab" aria-selected={sub === "history"} className={sub === "history" ? "active" : ""}
+          <button role="tab" aria-selected={sub === "attention"} className={sub === "attention" ? "active" : ""} onClick={() => setSub("attention")}>Needs review <span className="tab-count">{attention.length}</span></button>
+            <button role="tab" aria-selected={sub === "history"} className={sub === "history" ? "active" : ""}
             onClick={() => setSub("history")}>History</button>
         </div>
         {sub === "live" && (
@@ -197,6 +209,7 @@ export function ArmedPage() {
         </>
       )}
 
+      {sub === "attention" && <AttentionReview plans={attention} refresh={refresh} error={refreshError} loading={refreshing}/>}
       {sub === "history" && (
         <><HistoryTable history={history} pmap={pmap} ws={ws} /><MissedByBugPanel /></>
       )}

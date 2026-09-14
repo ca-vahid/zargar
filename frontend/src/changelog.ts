@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.70";
+export const APP_VERSION = "0.7.71";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,10 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
+    {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
+    {tag:"fixed",text:"Setup messages show entry descriptions and prices instead of bare IDs. Fixed the visible Unicode escape and replaced the pulsing red attention banner with a quieter, accessible control."},
+  ]},
   {
     version: "0.7.70",
     date: "2026-09-14",
