@@ -6255,3 +6255,31 @@ estart.ps1` at 16:32 ET. The
   F124) and the F125 tally → 2 → `skip_loss_cap_desk` on SPY/QQQ; (2) SPY stack now `mixed` — a bear stack plus a pullback into E13 ≈ 762.2 is the
   first eligible SPY put touch of the day; QQQ `bias_flip` at 713.65; (3) last-entry cutoff is 15:30 ET (`last_entry_min` 930) and flatten 15:45 —
   confirm no entry after 15:30; (4) further stream drops (three today); (5) skip `/team2` UI (F103).
+
+## 2026-09-14 15:05 ET (run 92: quiet half hour into prime_close; all three biases hold scenario 4 (puts) with no eligible touch; no stream drop this run; parity exact; no code)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `stale false`, bar age 94 s,
+  quote age 0 s (SPY 761.99, QQQ 711.71, IWM 288.70), window `prime_close`. 34 1m bars per symbol since 14:30 ET (latest 15:03), all `exchange`,
+  no gap > 61 s. Regime ts 15:00 on all three. `openPosition` null everywhere, no Team2 order, no audit row on any plan since run 91 (last rows:
+  SPY 13:26 `TechniquePlanError`, QQQ 12:43 restore, IWM 14:00 `TechniquePlanRead`).
+- **No new read event since run 90** (SPY 5, QQQ 1, IWM 11). Verified on the tape: IWM's 14:30–14:45 15m bar opened 288.58 / closed 288.62 and
+  the 14:45–15:00 bar opened 288.62 / closed 288.71 (high 288.77 — touched the level to the cent and closed under it) — both bodies under 288.77,
+  so scenario 4 (puts) stands; the flip to calls still needs a 15m close above 289.06. Regime 15:00: close 288.70, E13 288.66 / E48 288.68 /
+  E200 288.47, stack `mixed` 0 — price crossed back ABOVE the EMA13 (was under it at 14:30) so `scenario_4@13:45` correctly logged nothing (a put
+  pullback into E13 from above is not the pattern, and the stack is not bear — E3/B9/E4). `touches 0`.
+- **SPY/QQQ:** SPY 15m closes 762.35 (14:30) and 762.13 (14:45), both under the 763.60 flip; regime close 761.98, E13 762.26 / E48 762.29 /
+  E200 761.37, stack `mixed` 0 (E13 still a hair under E48, E200 well under both — not bear). QQQ 15m closes 712.13 / 711.84 under 713.65; regime
+  close 711.63, E13 712.00 / E48 711.96 / E200 709.54, stack `bull` 1. Both bias scenario 4 (puts), no eligible put touch. SPY `pm_break_up@11:30`
+  label still correctly inert (`needs a bias flip (B1)`).
+- **F125 status:** unchanged — IWM read `trades 1, losses 1, pnlPctSum −126.71`, desk tally 1 of 2; no `skip_loss_cap`/`skip_loss_cap_desk` row on any plan.
+  **F124:** no new instance (no touch fired). IWM `needsAttention true` is still only the 13:02 `no option contract` refusal.
+- **Replay parity EXACT** on all three (SPY 5, QQQ 1, IWM 11 events; IWM 1 trade −126.71 both sides; no open position either side).
+- **Feed:** NO Alpaca stream drop since the 14:23:32 ET one (three today, all self-healed). `OPRA quotes failed` 0, `cartel-observer bar handling
+  failed` 0, Traceback 0, `stale bars` 0, no Team2 warning in `backend/zargar-8420.log` since 14:33 ET. The `persist_bars: dropped N
+  non-bucket-aligned stub bar(s)` noise continues (~150 lines in 30 min) — platform, noted in run 91, not touched.
+- **Cutoffs ahead:** last entry 15:30 ET (`last_entry_min` 930), flatten 15:45 (`flatten_min` 945). No position to flatten as of 15:05.
+- **No code shipped.** No rule/knob change; nothing to add to TRADING-RULES this run.
+- **Next run (~15:35) should:** (1) confirm NO entry after 15:30 on any plan (a touch between 15:05 and 15:30 is the last window — IWM would need
+  a bear stack plus a 2m pullback into E13 ≈ 288.66 from below; if it fires, record the put walk (F124: expect the 288P under the floor) and the
+  F125 tally → 2 → `skip_loss_cap_desk`); (2) after 15:45 confirm the flatten cue and that the session grade lands, IWM `needsAttention` resolves
+  and the plans expire cleanly at the close; (3) further stream drops; (4) skip `/team2` UI (F103).
