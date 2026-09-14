@@ -6031,3 +6031,31 @@ setup, that is a gap to report, not a refusal.
   says `skip_no_trade_zone` rather than a fire. That is the first live F112 refusal to verify. A break below PML
   first would make it a real candidate, so check the `contract` event and replay parity. (2) Watch whether QQQ/IWM
   stacks turn bear. (3) Re-check OPRA/cartel counts. (4) Skip `/team2` UI (F103).
+
+
+## 2026-09-14 11:02 ET (run 84: first live F112 refusals on SPY 10:36 and IWM 10:48, both correct; no entries)
+
+- **Alive on v0.7.68.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice.
+  `needsAttention false`, `stale false`, bar age 88 s, quote age 0, window `midday`. No restart since 05:35 PT.
+- **Bias unchanged, scenario 4 (puts) on all three.** Price stayed well below every PDL zone: SPY 758.3 vs 763.60,
+  QQQ 706.0 vs 713.65, IWM 287.2 vs 288.77.
+- **SPY `skip_no_trade_zone` at 10:36 (touch 1, bucket none).** The 10:34–35 2m high of 759.14 reached the EMA13
+  entry at 759.23, within the 0.25 ATR tolerance (ATR 0.40). That is inside the PM range 757.77–760.77, so the
+  refusal is correct and did not spend the D9 allowance. `same_pullback` followed at 10:50 (F62: no close 0.5 ATR
+  off EMA13). SPY's low was 757.93 at 10:55, still above the PML, so no break-out candidate yet.
+- **IWM `skip_no_trade_zone` at 10:48.** The 10:46–47 2m high of 287.85 reached the EMA13 entry at 287.78, inside the
+  PM range 286.92–288.64. The refusal is correct. IWM's stack is now `bear` (strength 3, trend, fanWidth 2.39),
+  and price at 287.22 has slipped under the 287.18 room target zone without breaking the PML.
+- **QQQ:** stack `mixed` with EMAs braided (close 705.87, E13 705.58 / E48 705.26 / E200 705.53, fan `chop`).
+  No pullback counted, and entries are correctly held (E3/B9/E4).
+- **Replay parity OK:** replay reproduces SPY scenario → skip 10:36 → same_pullback 10:50, IWM scenario → skip 10:48,
+  and QQQ scenario only. SPY's replay shows one more `same_pullback` at 11:04 from a newer bar.
+  No fire, contract, trade or open position.
+- **Data real-time:** 93 1m bars per symbol 09:30–11:02 ET, all `exchange`, no gaps. Log counts are unchanged:
+  `OPRA quotes` 65, `cartel-observer bar handling failed` 41 (Options Cartel, not Team2). No Team2 warning.
+- **No code shipped, no new F-number.** F112 `pm_range` is now observed live, refusing two in-range pullbacks on a
+  gap-down day where all three stayed inside their PM ranges. Whether those refusals avoided losers is for the
+  end-of-day replay with `no_trade_zone=off` (an overrides replay, not a knob change).
+- **Next run (~11:30) should:** (1) watch for SPY/IWM breaking below the PML (757.77 / 286.92). A bear-stack EMA13
+  pullback after that break is a real entry candidate; check the `contract` event (listed strike, NBBO ask near 0.60)
+  and replay parity. (2) See whether QQQ's stack un-braids. (3) Re-check OPRA/cartel counts. (4) Skip `/team2` UI (F103).
