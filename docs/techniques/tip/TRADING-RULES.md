@@ -337,6 +337,18 @@ drawdown; nothing is claimed proven. Open into the new week: T Jan-27 29C
   provider unavailable, delayed, stale, exceptions) count; one incident per path, book
   and session.
 
+- 2026-09-14 (EOD review, `reviews/2026-09-14-eod-response.md`) — **Correction to the
+  budget narrative:** the MSFT 9/14 505C and TSLA 9/25 340P takes DID carry stops (MSFT
+  501.2 → 485.49 after structure repair, TSLA 368 → 369.81, 45% premium stops); their
+  delta-linear unit risk ($96, $100) exceeded the ~$89 budget. "Require a stop on every
+  take" does not fit them; the budget did what it was asked. No automatic budget increase.
+  Research queued: show budget feasibility to the analyst before tool work; separate
+  `take-but-cannot-fit` from skips in the scorecard; record why structure moved a stop.
+  The APLD Oct 30C exit at 04:01 ET is an execution-realism defect (Practice options now
+  fill only in an eligible session); its −$210 stays in the ledger, flagged. Three retro
+  rules written after the close promoted reviewed HYPOTHESES to policy without a batch —
+  quarantined; model-written rules are proposals from now on.
+
 **Queued (agreed, not built):** MK self-disclosed-trade classification with
 labeled fixtures + promotion criteria; multi-image evidence processing.
 **Built 2026-09-14:** geometry validated BEFORE entry with bounded journaled

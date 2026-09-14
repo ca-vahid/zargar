@@ -25,6 +25,25 @@ from dataclasses import dataclass, field
 from ..domain import Bar, OrderSide, OrderType, Quote, now_ms
 from .base import BrokerOrder, ExecReport, Executor, QuoteFeed
 
+
+def option_session_open(ts_ms: int) -> bool:
+    """EOD-05 (2026-09-14): a listed equity option can only trade in its
+    venue's session — 09:30–16:00 ET on a trading day for every class this
+    desk handles (Cboe's 07:30 extended session covers designated index/ETF
+    classes only and restricts order types; Alpaca rejects extended-hours
+    option orders). A Practice fill outside that window is not market
+    evidence: the APLD Oct 30C "sold" at 04:01 ET on an underlying quote
+    stop. The intent is kept working and fills when the session opens."""
+    from zoneinfo import ZoneInfo
+    from ..marketstructure.market_calendar import is_early_close, is_trading_day
+    import datetime as _dt
+    t = _dt.datetime.fromtimestamp(ts_ms / 1000, ZoneInfo("America/New_York"))
+    if not is_trading_day(t.date()):
+        return False
+    m = t.hour * 60 + t.minute
+    end = 13 * 60 if is_early_close(t.date()) else 16 * 60
+    return 9 * 60 + 30 <= m < end
+
 # Familiar tickers get familiar prices; anything else gets a stable hash price.
 KNOWN_PRICES = {
     "AAPL": 232.0, "MSFT": 445.0, "NVDA": 128.0, "AMZN": 186.0, "GOOG": 172.0,
@@ -164,9 +183,11 @@ class SimExecutor(Executor):
         slippage_bps: float = 2.0,
         size_impact_bps: float = 5.0,   # extra slippage when qty exceeds displayed size
         settings=None,                  # engine settings (fee schedule); None = Webull CA defaults
+        option_sessions: bool = True,   # EOD-05: options fill only in an eligible venue session
     ) -> None:
         super().__init__()
         self._settings = settings
+        self._option_sessions = bool(option_sessions)
         self._working: dict[str, _Working] = {}
         self._oca: dict[str, set[str]] = {}
         self._latency_ms = latency_ms
@@ -234,6 +255,9 @@ class SimExecutor(Executor):
                 o = w.order
                 if o.symbol != q.symbol or now < w.eligible_at or q.halted:
                     continue
+                if self._option_sessions and str(getattr(o, "sec_type", "") or "").upper() == "OPT" \
+                        and not option_session_open(now):
+                    continue                       # EOD-05: resting, not filled — no session
                 price = self._try_fill(w, q)
                 if price is not None:
                     fills.append((w, price))

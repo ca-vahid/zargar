@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.71";
+export const APP_VERSION = "0.7.73";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,20 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.73",
+    date: "2026-09-14",
+    title: "Tips EOD review: liveness, governance, isolation",
+    items: [
+      { tag: "new", text: "Intake liveness (EOD-01): the Discord gateway now proves delivery, not just health - a status file every 30 s (last frame, last message per channel, ledger backlog, reconnects), an idle watchdog that forces a reconnect when no frame arrives for 3 minutes, and a file log. The app exposes GET /api/tip/intake/liveness (gateway clock + mirror watermarks per watched channel) and journals TipIntakeStalled / TipIntakeRecovered during 04:00-20:00 ET. Today 26 market-hours messages first arrived after the close." },
+      { tag: "fixed", text: "Integrity incidents (EOD-02): the geometry plan carries a typed review class (evidence | budget | plan); only unavailable-evidence failures count toward a repeated-failure incident, the real producer texts ('missing delta', '301s old') are recognised, and one book's failures never trip another's counter. The four false-positive incidents were released on the day's bound validations." },
+      { tag: "fixed", text: "Rulebook governance (EOD-03): a rule the analyst writes under propose-only maintenance is a PROPOSAL - born pending review, never superseding a live rule, rendered as 'PENDING REVIEW, not policy' in every run. Three retro-promoted hypotheses from today were quarantined for review." },
+      { tag: "improved", text: "Delivery and protection isolation (EOD-04): simulator fill handling runs on its own bounded queue off the quote-to-bars path, and the position watchdog runs each position as its own step so one blocked position never stalls another's protective retry." },
+      { tag: "fixed", text: "Practice execution realism (EOD-05): an option order in the simulator rests until an eligible session (09:30-16:00 ET on a trading day) instead of filling at 04:01 ET on an underlying quote; test suites keep the old behaviour explicitly." },
+      { tag: "fixed", text: "Evidence identities (EOD-06): a share plan records the quote source, age and delayed flag its incident classifier requires; an execution on one of the incident's own orders is bound by that relationship, not by comparing an option contract with its underlying symbol." },
+      { tag: "improved", text: "Restart readiness (EOD-07) counts running Tips work (appraisals, intake reviews, retros, digests, rule audits) alongside EM's; stale rows are reported separately. Research quarantine (EOD-09): a corrupted shadow book can be flagged (POST /api/portfolios/{id}/quarantine) and is excluded from source trust and lane grading until reconciled; the rule audit records finished_at (EOD-08)." },
+    ],
+  },
   {version:"0.7.71",date:"2026-09-14",title:"Clear, focused plan review",items:[
     {tag:"improved",text:"The top-bar review indicator opens only flagged plans, with every stock, technique and account named. Blocked entries are distinguished from position or execution problems, with clear next steps."},
     {tag:"fixed",text:"Setup messages show entry descriptions and prices instead of bare IDs. Fixed the visible Unicode escape and replaced the pulsing red attention banner with a quieter, accessible control."},

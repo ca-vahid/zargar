@@ -100,7 +100,8 @@ class Engine:
             if isinstance(b, dict) and b.get("day") == today:
                 self.halt.books[pid] = dict(b)
 
-        self.sim_executor = SimExecutor(settings=self.settings)
+        self.sim_executor = SimExecutor(settings=self.settings,
+                                        option_sessions=bool(getattr(self.config, "sim_option_sessions", True)))
         if self.config.broker == "ibkr":
             try:
                 from .brokers.ibkr import IBKRBroker
@@ -496,13 +497,49 @@ class Engine:
 
     # ------------------------------------------------------------- tasks
     async def _quote_consumer(self) -> None:
-        async with self.bus.subscription(topics.QUOTES) as q:
+        """Quotes -> bars is the critical path; the simulator's fill handling
+        (execution-report I/O) runs OFF it on its own bounded, ordered queue
+        (EOD-04, 2026-09-14: one slow fill callback used to stop every other
+        symbol's bar aggregation while quote caches stayed fresh). A full
+        queue drops the OLDEST sim quote for that lane — a fill is only ever
+        delayed to the next quote, never skipped forever — and is counted."""
+        fills: asyncio.Queue = asyncio.Queue(maxsize=4000)
+        sim = getattr(self, "sim_executor", None)
+        dropped = 0
+
+        async def _fill_worker() -> None:
             while True:
-                quote = await q.get()
-                if "=X" not in quote.symbol:  # FX pairs feed conversions, not charts
-                    self.bars.on_quote(quote)
-                if self.sim_executor is not None:
-                    await self.sim_executor.on_quote(quote)
+                quote = await fills.get()
+                try:
+                    await sim.on_quote(quote)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:  # pragma: no cover
+                    log.exception("sim fill handling failed for %s", getattr(quote, "symbol", "?"))
+                finally:
+                    fills.task_done()
+
+        worker = asyncio.create_task(_fill_worker()) if sim is not None else None
+        try:
+            async with self.bus.subscription(topics.QUOTES) as q:
+                while True:
+                    quote = await q.get()
+                    if "=X" not in quote.symbol:  # FX pairs feed conversions, not charts
+                        self.bars.on_quote(quote)
+                    if worker is not None:
+                        if fills.full():
+                            with contextlib.suppress(asyncio.QueueEmpty):
+                                fills.get_nowait()
+                                fills.task_done()
+                            dropped += 1
+                            if dropped in (1, 100, 1000) or dropped % 10000 == 0:
+                                log.warning("sim fill lane saturated: %d quote(s) dropped so far", dropped)
+                        fills.put_nowait(quote)
+        finally:
+            if worker is not None:
+                worker.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await worker
 
     async def _equity_snapshotter(self) -> None:
         while True:

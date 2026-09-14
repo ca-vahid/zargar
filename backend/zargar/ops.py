@@ -100,6 +100,30 @@ async def restart_state(engine) -> dict:
             running = len(st.get("running") or [])
         except Exception:  # noqa: BLE001
             pass
+    # EOD-07 (2026-09-14): the EM service was the only paid work counted — a
+    # running Tips appraisal / intake review / retro / digest / rule audit
+    # coexisted with inflightRuns=0. Count TipAnalystRun rows still RUNNING
+    # and RECENT (a row older than the reconciliation horizon is a stale
+    # record from a dead process, reported separately, never a restart veto).
+    tip_running: list[str] = []
+    tip_stale: list[str] = []
+    sf = getattr(engine, "sf", None)
+    if sf is not None:
+        try:
+            from sqlalchemy import select as _sel
+            from .models import TipAnalystRun
+            horizon = dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=2)
+            async with sf() as session:
+                rows = (await session.execute(_sel(TipAnalystRun.id, TipAnalystRun.kind, TipAnalystRun.created_at)
+                                              .where(TipAnalystRun.status == "running"))).all()
+            for rid, kind, created in rows:
+                key = f"tip:{kind}:{rid}"
+                if created is not None and created.tzinfo is None:
+                    created = created.replace(tzinfo=dt.timezone.utc)
+                (tip_running if (created is None or created >= horizon) else tip_stale).append(key)
+        except Exception as exc:  # noqa: BLE001
+            inventory_error = (inventory_error + "; " if inventory_error else "") + f"tip runs: {exc}"[:160]
+    running += len(tip_running)
     proposals_pending = 0
     props = getattr(engine, "proposals", None)
     if props is not None and hasattr(props, "list_pending"):
@@ -125,6 +149,8 @@ async def restart_state(engine) -> dict:
         "managedPositions": sorted(managed_positions),
         "managedClosed": sorted(managed_closed),
         "inflightRuns": running,
+        "tipRuns": tip_running,
+        "tipRunsStale": tip_stale,
         "proposalsPending": proposals_pending,
         "quiesced": q_until > now,
         "quiesceUntil": q_until or None,
