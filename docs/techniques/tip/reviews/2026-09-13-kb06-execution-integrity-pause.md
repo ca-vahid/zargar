@@ -1,4 +1,4 @@
-# KB-06 — execution-integrity pause — 2026-09-13 (design) / 2026-09-14 (built, for review)
+# KB-06 — execution-integrity pause — 2026-09-13 (design) / 2026-09-14 (built, reviewed, ACTIVE in Practice)
 
 Final-pass corrections (C95-01/06/07/08, combined tree PR #95): the premium-stop receipt is the
 frozen confirmed pair; proof references are bound to the incident's book, symbols and its own
@@ -16,12 +16,13 @@ never repaired, repeated pre-entry failures need a successful post-incident vali
 journal, and a human override is explicit and labeled; cancellation uses the admission scope
 semantics (entry path + symbol) and verifies outcomes at the order.
 
-Status (2026-09-14): **BUILT on branch `claude/tips-kb06-integrity-pause`
-(PR open for implementation review), NOT active.** The clock-based
-`adoption_killswitch` stays the live gate: `techniques.tip.entry_pause_mode`
-defaults to `clock`; incidents are DETECTED and RECORDED in every mode
-(shadow evidence for the activation decision) and PAUSE automated entries only
-in `integrity` / `both`. Code: `techniques/tip/integrity.py` (incident store +
+Status (2026-09-14 01:15 ET): **ACTIVE in Practice** — v0.7.67 (main `b368e7e`, PR #95),
+`techniques.tip.entry_pause_mode` = `integrity` by a journaled settings change (code default
+stays `clock`; rollback = PATCH back — it never clears an incident row). The 2026-09-04
+clock-based `adoption_killswitch` is therefore RETIRED as the live gate; incidents are still
+detected and recorded in every mode and pause automated entries in `integrity` / `both`.
+The analyst's rulebook states the same policy (consolidation batch
+`consolidation-killswitch-2026-09-14`, rule `035b22fc…`). Code: `techniques/tip/integrity.py` (incident store +
 `entry_paused` / `admission` / `gate_reason`, cause-specific release
 validation at the examined revision, structured fast-stop classifier,
 `detect_incidents`, resting-entry cancellation), model `TipExecutionIncident`,

@@ -1,4 +1,4 @@
-# Pre-entry geometry + risk sizing — design for review (2026-09-13)
+# Pre-entry geometry + risk sizing — design (2026-09-13) → BUILT and ACTIVE in Practice (2026-09-14)
 
 Final-pass corrections (C95-02/03/04/05, combined tree PR #95): risk accounting carries
 provenance (executed vs hypothetical shadow plan); `widen_stop` is strictly durable before
@@ -16,12 +16,15 @@ an existing trim instead of trimming twice, re-reads unknown outcomes and re-che
 residual before any widen; `widen_stop` validates the actual position under the guard and
 persists before exposing; accounting is wired into the analyst positions tool and the retro.
 
-**Status (2026-09-14): BUILT on branch `claude/tips-geometry-rev2` (PR open
-for implementation review), NOT active.** `techniques.tip.geometry_gate`
-defaults to `shadow` — every tip proposal computes and journals its risk
-plan (`TipGeometryRepaired phase: pre-entry`, `enforced: false`) while
-sizes and stops stay exactly as before; `enforce` is a separate, reviewed
-activation. Code: `techniques/tip/geometry.py` (pure: budget, unit-loss
+**Status (2026-09-14 01:15 ET): ACTIVE in Practice** — v0.7.67 (main `b368e7e`, PR #95
+reconciling #91/#93), `techniques.tip.geometry_gate` = `enforce` by a journaled settings
+change (the code default stays `shadow`; rollback = PATCH back, see
+`reviews/2026-09-13-pr91-pr93-response.md` "Rollout completion"). Under `enforce` every
+automated tip entry gets its stop finalized and its size derived from that stop against the
+approved budget BEFORE the order, recomputed at submission; missing evidence review-gates the
+card (a person decides). The gate is Practice-scoped by construction (`_geometry_scope`) — a
+live book gets no plan in either mode. Verified by the reviewer's reproductions (G91-01..06,
+C95-02/03/04/05) and `tests/test_tip_activation.py`. Code: `techniques/tip/geometry.py` (pure: budget, unit-loss
 estimator `delta-linear-v1`, sizing invariant, submission revalidation,
 post-fill decision + trim-first reducer, accounting), wiring in
 `approvals/proposals.py` (`_pre_entry_geometry`, `_admit_geometry` for

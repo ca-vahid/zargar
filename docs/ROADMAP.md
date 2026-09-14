@@ -30,7 +30,7 @@ the 08:25 ET morning report + Dashboard card.
 - **Building a technique:** `BUILDING-A-TECHNIQUE.md` (capabilities + testing bar).
 - **Platform architecture:** `ARCHITECTURE.md`; the platform build record is
   `TECHNIQUE-PLATFORM-PLAN.md`.
-- **Tips:** `techniques/tip/` — PLAN, BUILD-PLAN, INTAKE-PLAN, ARM-PLAN,
+- **Tips:** `techniques/tip/` — README (state of play + known gaps), PLAN, BUILD-PLAN, INTAKE-PLAN, ARM-PLAN,
   ARM-GAPS-PLAN, KNOWLEDGE-PLAN(+BUILD), ANALYST.md (charter),
   TRADING-RULES.md (the tips desk's own judgement log).
 - **EM (other team):** `techniques/enhanced-market/` — METHOD, TRADING-RULES,

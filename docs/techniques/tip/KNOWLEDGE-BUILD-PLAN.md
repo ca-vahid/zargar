@@ -271,7 +271,9 @@ dependent — the F7 grouping fix is still open).
   generic prefixes like "extends/new/corollary/refines/sits" carry no claim).
 - **The deeper lesson**: those nine strikes were 8 real failed adoptions in 3
   days — prompt rules do NOT enforce. The check moved into code
-  (`lifecycle.check_exit_geometry` + session `adoption_killswitch`); the
+  (`lifecycle.check_exit_geometry` + the session `adoption_killswitch` clock brake — the latter RETIRED
+  2026-09-14 by KB-06 `entry_pause_mode=integrity`; geometry is now validated BEFORE entry under
+  `geometry_gate=enforce`); the
   analyst's rule notes remain the reasoning trail, the gate is the enforcement.
 - **Digests were OFF** since the 08-30 test (default False) — ~426 mirrored
   messages/week never distilled. Enabled 2026-09-04
