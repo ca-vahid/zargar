@@ -801,13 +801,37 @@ async def _duplicate_executions(eng, rows, portfolio_id: str | None) -> list[tup
     return out
 
 
+_CARD_INTRINSIC_REVIEW = ("no quantity satisfies", "risk budget", "no stop", "no risk estimate",
+                          "spread vehicle", "human decision only", "wrong side", "penny")
+_SYSTEMIC_REVIEW = ("unavailable", "exception", "provider", "delayed", "stale", "no fresh", "missing delta",
+                    "no quote", "quote missing", "multiplier unknown", "error", "timeout", "bars")
+
+
+def systemic_pre_entry_reason(reason: str | None) -> bool:
+    """Does a review-gated pre-entry result point at a FAILING PATH (evidence
+    could not be produced: bars/quote/greeks/provider/exception) rather than
+    at the card itself (the budget fits no unit, the plan has no stop, an
+    unsupported vehicle)? Only the former counts toward
+    `repeated_pre_entry_failure` — 2026-09-14, first enforce session: three
+    analyst-skipped option cards whose whole debit exceeded the $88 budget
+    opened a (duplicated) incident and paused the Practice proposal path."""
+    r = str(reason or "").lower()
+    if not r:
+        return False
+    if any(k in r for k in _CARD_INTRINSIC_REVIEW):
+        return False
+    return any(k in r for k in _SYSTEMIC_REVIEW)
+
+
 async def record_pre_entry_failure(eng, *, portfolio_id: str | None, entry_path: str, reason: str,
                                    ref: str | None) -> dict | None:
     """Invalid geometry BEFORE entry is refused/reviewed on its own; REPEATED
-    systemic failures on one entry path (REPEATED_PRE_ENTRY_FAILURES in a
-    session) open an integrity incident for that path. Counted from the
-    journal (TipGeometryRepaired pre-entry with reviewRequired), so a restart
-    keeps the count."""
+    SYSTEMIC failures on one entry path (REPEATED_PRE_ENTRY_FAILURES in a
+    session) open ONE integrity incident for that path (later failures extend
+    it). Counted from the journal (TipGeometryRepaired pre-entry with a
+    systemic reviewRequired), so a restart keeps the count."""
+    if not systemic_pre_entry_reason(reason):
+        return None
     from sqlalchemy import select
     from ... import events as ev
     from ...models import Event
@@ -818,18 +842,26 @@ async def record_pre_entry_failure(eng, *, portfolio_id: str | None, entry_path:
         async with eng.sf() as session:
             rows = (await session.execute(select(Event.payload).where(
                 Event.type == ev.TIP_GEOMETRY_REPAIRED, Event.ts >= sod))).scalars().all()
-        n = sum(1 for p in rows if (p or {}).get("phase") == "pre-entry" and (p or {}).get("reviewRequired")
+        n = sum(1 for p in rows if (p or {}).get("phase") == "pre-entry"
+                and systemic_pre_entry_reason((p or {}).get("reviewRequired"))
                 and ((p or {}).get("entryPath") or "proposal") == entry_path)
     except Exception:
         return None
     if n < REPEATED_PRE_ENTRY_FAILURES:
         return None
+    # ONE incident per path/book/session: the primary evidence id is the
+    # session key, so `open_incident`'s idempotency EXTENDS the open incident
+    # with this failure instead of opening a duplicate.
+    session_key = f"{entry_path}:{portfolio_id or '-'}:{now_et:%Y-%m-%d}"
+    evidence = [{"kind": "journal", "id": session_key,
+                 "note": f"{n} systemic review-required pre-entry results today on the {entry_path} path"}]
+    if ref:
+        evidence.append({"kind": "journal", "id": ref, "note": f"pre-entry failure #{n}: {reason}"})
     return await open_incident(eng, kind="integrity", cause="repeated_pre_entry_failure",
                                scope={**default_scope(eng), **({"portfolioId": portfolio_id} if portfolio_id else {}),
                                       "entryPath": entry_path},
-                               evidence=[{"kind": "journal", "id": ref or f"{entry_path}:{now_et:%Y-%m-%d}",
-                                          "note": f"{n} review-required pre-entry results today: {reason}"}],
-                               why=f"{n} pre-entry validation failures on the {entry_path} path this session")
+                               evidence=evidence,
+                               why=f"{n} systemic pre-entry validation failures on the {entry_path} path this session")
 
 
 async def _cancel_resting_entries(eng, incident: dict) -> int:
