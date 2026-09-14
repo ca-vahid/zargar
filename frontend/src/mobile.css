@@ -41,7 +41,7 @@ html { -webkit-text-size-adjust: 100%; }
   .seg button, .acct-opt, .sym-opt, .tq-chipbtn, .tq-presets button, .tq-act, .tq-scan-row,
   .armed-chip, .opt-exp, .tq-mode button, .tq-lenses button, .tq-sym-chip, .disclosure-btn,
   .copy-chip, .equity-chip, .wl-head-btn, .tq-check-btn, .tq-run, .tq-rerun, .link-btn,
-  .icon-btn, .side-collapse, .status-pill.attention, .ws-other-chip, .tq-pencil,
+  .icon-btn, .side-collapse, .status-pill.attention, .attention-chip, .ws-other-chip, .tq-pencil,
   .tq-picker-addall, .tq-picker-hit, .chat-thread-row, .chat-hit, .tq-setup-row, .provider-card {
     min-height: 44px; touch-action: manipulation; -webkit-tap-highlight-color: transparent;
   }
@@ -104,9 +104,8 @@ html { -webkit-text-size-adjust: 100%; }
   .topbar .halt-btn { min-height: 40px; padding: 0 14px; font-size: var(--fs-2); }
   .topbar-search-btn { min-width: 44px; }
   .topbar-attn {
-    min-height: 40px; border-radius: 999px; padding: 0 10px; border: none; cursor: pointer;
-    background: var(--down); color: #fff; font-weight: 800; font-size: var(--fs-1);
-    animation: tqpulse 1.6s infinite;
+    min-height: 44px; border-radius: 8px; padding: 0 10px; border: 1px solid var(--border); cursor: pointer;
+    background: var(--surface-1); color: var(--text-1); font-weight: 600; font-size: var(--fs-1);
   }
 
   /* banners wrap instead of overflowing */

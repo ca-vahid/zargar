@@ -120,24 +120,12 @@ export function NowView() {
       </button>
 
       {/* needs attention */}
-      {sum.attention.map((a) => (
-        <div key={`att-${a.runId}`} className="now-card now-card--attn">
-          <div className="now-card-head">
-            <span className="now-sym">{a.symbol}</span>
-            <span className="now-tag bad">needs attention</span>
-            <span className="now-acct">{a.account}</span>
-          </div>
-          <ul className="now-reasons">{a.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
-          <div className="now-actions">
-            {a.hasPosition && (
-              <button type="button" className="now-btn danger" onClick={() => setSellNow({ runId: a.runId, symbol: a.symbol })}>
-                Sell now (market)
-              </button>
-            )}
-            <button type="button" className="now-btn" onClick={() => setOpenRun(a.runId)}>Open plan</button>
-          </div>
-        </div>
-      ))}
+      {sum.attention.length > 0 && <div className="now-card">
+        <h3>{sum.attention.length} plans to review</h3>
+        <p>{sum.attention.map(a=>a.symbol).join(", ")}</p>
+        <p>Review which setups were blocked and whether a position needs action.</p>
+        <button className="now-btn" onClick={()=>useStore.setState({page:'armed',pageTab:'attention',armedFocusRunId:null})}>Show flagged plans only</button>
+      </div>}
 
       {/* recent alerts (persist beyond the 6s toast) */}
       {alerts.length > 0 && (

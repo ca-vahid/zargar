@@ -397,7 +397,7 @@ export const useStore = create<AppState>((set, get) => ({
       optionsContract: r.page === "options" ? (r.optionsContract ?? (r.optionsUnderlying && r.optionsUnderlying !== st.optionsUnderlying ? null : st.optionsContract)) : st.optionsContract,
     })),
   openTechniqueRun: (runId) => set({ page: "technique", techniqueTab: "analyse", techniqueFocusRunId: runId }),
-  openArmedPlan: (runId) => set({ page: "armed", armedFocusRunId: runId }),
+  openArmedPlan: (runId) => set({ page: "armed", pageTab:'live', armedFocusRunId: runId }),
   clearArmedFocus: () => set({ armedFocusRunId: null }),
   setTechniqueFocusRun: (techniqueFocusRunId) => set({ techniqueFocusRunId }),
   setChatThreads: (chatThreads) => set({ chatThreads }),

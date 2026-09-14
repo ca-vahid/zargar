@@ -8,6 +8,8 @@ import { Spinner } from "../ui";
 import { InfoTip } from "../InfoTip";
 import { ArmedDayPanel } from "./ArmedDayPanel";
 import { SymIcon } from "../SymIcon";
+import { AttentionDetails } from "../armed/AttentionDetails";
+import { setupDescription } from '../../lib/armedAttention';
 
 export function fmt(n: number | null | undefined, d = 2) { return n === null || n === undefined ? "—" : Number(n).toFixed(d); }
 export function pnlCls(v: number | null | undefined) { return (v ?? 0) > 0 ? "pos" : (v ?? 0) < 0 ? "neg" : ""; }
@@ -28,7 +30,7 @@ function TradeRow({ t }: { t: ArmedTrade }) {
   return (
     <div className={`tq-armed-trade ${t.status}`}>
       <div className="tq-armed-trade-head">
-        <span className="tq-chip">{t.triggerId}</span>
+        <span className="tq-chip" title={`Setup reference: ${t.triggerId}`}>{setupDescription(t.kind,t.entry)}</span>
         <b>{TRADE_LABEL[t.status] ?? t.status}</b>
         <span className="muted">{t.kind.replace(/_/g, " ")} · fired {fmtTime(t.firedTs)} ({t.window?.replace(/_/g, " ")})</span>
         {t.status === "open" && <span className={`tq-badge ${pnlCls(t.unrealizedPnl)}`}>open {fmt(t.unrealizedPnl)} unreal.</span>}
@@ -157,23 +159,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
             <div className="small">{a.riskWarning}</div>
           </div>
         )}
-        {a.needsAttention && (
-          <div className="tq-attention">
-            <b>{"\u26a0"} Needs attention</b>
-            <ul>{(a.attentionReasons ?? []).map((r, i) => <li key={i}>{r}</li>)}</ul>
-            {a.trades.some((t) => t.remaining > 0) ? (
-              <div className="tq-attention-actions">
-                <button className="danger-btn" disabled={busy}
-                  title="Sell everything this plan still holds, at market, right now (reduce-only)"
-                  onClick={() => act(() => api.techniqueArmedExit(a.runId), "Sell-now sent")}>Sell now (market)</button>
-                <span className="muted small">the watchdog also retries failed exits automatically every 30s</span>
-              </div>
-            ) : (
-              <span className="muted small">nothing is held \u2014 the entry was refused before any money moved;
-                this is a heads-up that a planned trade was missed, not something to act on</span>
-            )}
-          </div>
-        )}
+        {a.needsAttention && <AttentionDetails plan={a}/>}
         <div className="tq-armed-summary">{a.summary}</div>
         {a.stopReason && <div className="neg small tq-armed-stopline">Stopped: {a.stopReason}</div>}
         {day && <ArmedDayPanel a={a} />}
@@ -181,7 +167,7 @@ export function ArmedCard({ a, onChanged }: { a: ArmedPlan; onChanged: () => voi
         <div className="tq-armed-triggers">
           {a.triggers.map((t) => (
             <div key={t.id} className={`tq-armed-trigger ${t.status}`}>
-              <span className="tq-chip">{t.label ?? t.id}</span>
+              <span className="tq-chip" title={`Setup reference: ${t.id}`}>{setupDescription(t.kind,undefined,t.label,t.id)}</span>
               <b>{t.kind.replace(/_/g, " ")}</b>
               <span>@ <b>{fmt(t.entry)}</b></span>
               <span className="muted">{t.distancePct != null ? `${t.distancePct > 0 ? "+" : ""}${t.distancePct.toFixed(2)}% away` : ""}</span>
