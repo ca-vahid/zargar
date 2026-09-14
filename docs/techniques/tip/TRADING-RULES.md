@@ -285,7 +285,31 @@ drawdown; nothing is claimed proven. Open into the new week: T Jan-27 29C
   (the 136k "context" was cumulative across calls — measure before
   consolidating the 50-rule book).
 
+- 2026-09-14 — **Geometry before entry + the execution-integrity pause are LIVE in
+  Practice** (v0.7.67; record in `reviews/2026-09-13-pr91-pr93-response.md`).
+  `techniques.tip.geometry_gate=enforce`: the stop is finalized and the size derived
+  from it against the approved budget (`risk_pct` 1% of equity; `risk_budget_per_tip`
+  0 = off) BEFORE the order, recomputed at submission; a card without evidence
+  (delta older than 900 s, no fresh non-delayed underlying reference, unknown
+  contract multiplier, bars down) is review-gated, never guessed. Post-fill a stop
+  may only tighten immediately; a widen is trim-first with a durable attempt.
+  `techniques.tip.entry_pause_mode=integrity`: the 2026-09-04 "<5-min stop-out
+  pauses the session" clock brake is RETIRED — a fast loss on a trade whose
+  geometry, sizing, quote evidence and fills were valid is a clean loss
+  (`TipFastStopDiagnostic`, the daily-loss limits own that decision); automated
+  entries pause on a persisted `TipExecutionIncident` (filled outside plan,
+  unconfirmed/delayed exit evidence, duplicate/unreconciled fills, repeated
+  pre-entry failure) and release only on evidence bound to it. The rulebook was
+  consolidated the same night (61 → 32 live rules: the 28-rule adoption-geometry
+  family into one canonical rule `85fb55e8`, the two disputed kill-switch rules
+  released and replaced by the incident policy `035b22fc`; 14 case records in
+  `evidence:adoption-geometry`, never injected). Numeric thresholds in the family
+  text are HYPOTHESES, not operative policy. ACCEPTANCE: the first
+  `TipGeometryRepaired phase: pre-entry, enforced: true` and the first
+  review-gated card in the 2026-09-14 session; the first incident, if any, must
+  show every automated path refusing while exits ran.
+
 **Queued (agreed, not built):** MK self-disclosed-trade classification with
-labeled fixtures + promotion criteria; multi-image evidence processing;
-geometry validated BEFORE entry with bounded journaled post-fill exceptions
-(user decision 2026-09-11); rule-book consolidation informed by inPerCall.
+labeled fixtures + promotion criteria; multi-image evidence processing.
+**Built 2026-09-14:** geometry validated BEFORE entry with bounded journaled
+post-fill exceptions (user decision 2026-09-11); rule-book consolidation.

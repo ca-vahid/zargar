@@ -7,6 +7,7 @@ Runs on the technique platform (`docs/TECHNIQUE-PLATFORM-PLAN.md`); read
 
 ## Doc map
 
+- **`README.md`** — START HERE: state of play, what changed, KNOWN GAPS / what could be wrong.
 - **`PLAN.md`** (this file) — design record + decision log for the intake→books core.
 - **`BUILD-PLAN.md`** — Phase B (options expression) task list, as-built.
 - **`INTAKE-PLAN.md`** — Discord auto-intake: the ToS boundary, the gateway, the
@@ -24,8 +25,14 @@ Runs on the technique platform (`docs/TECHNIQUE-PLATFORM-PLAN.md`); read
   replaces, lane grading + unfilled retros, tip-scoped knobs + the Settings/Sources
   editors, and the UI wiring (day-N badges, armed chips, honest window copy).
 - **`TRADING-RULES.md`** — the METHOD judgement log (findings, decisions, change log).
+- **`GEOMETRY-RISK-PLAN.md`** — pre-entry geometry + risk sizing (design → ACTIVE 2026-09-14).
+- **`KNOWLEDGE-PLAN.md`** / **`KNOWLEDGE-BUILD-PLAN.md`** — the shared notes system, TTLs,
+  audits, safeguards, the propose-only maintenance cycle, the consolidation record.
+- **`GATEWAY-PLAN.md`** — the Discord gateway ledger (accept → lease → ACK).
+- **`ANALYST.md`** — the analyst charter. **`reviews/`** — every external review round,
+  response and deploy record (dated; the newest is the current truth).
 
-## Status (as of 2026-08-29)
+## Status (as of 2026-08-29 — the CURRENT state of play is `README.md`)
 
 **Built and on main:** extraction v2 (option-aware flat schema, Discord-shorthand
 grounding, screenshot→transcript intake, **source auto-detection**; + entry zones,

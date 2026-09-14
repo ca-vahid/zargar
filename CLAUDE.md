@@ -70,8 +70,9 @@ policies (expression, exits, critic) and its own `docs/techniques/<id>/TRADING-R
 runtime keys resolve `techniques.<id>.<key>` → `execution.<key>` (read via `PlanRunner.rt()`);
 method-specific knobs are plain `techniques.<id>.*` keys in `settings_service.DEFAULTS` (EM's
 legacy `technique.*` prefix is grandfathered — don't copy it).
-**Tip technique (BUILT 2026-08-27, incl. options expression):** `docs/techniques/tip/PLAN.md` +
-`BUILD-PLAN.md`. Never user-token Discord automation (self-bots — ToS ban risk) and never
+**Tip technique (BUILT 2026-08-27, incl. options expression):** start at
+**`docs/techniques/tip/README.md`** (doc map, state of play, what changed, KNOWN GAPS / what could be
+wrong — keep it current), then `PLAN.md` + `BUILD-PLAN.md`. Never user-token Discord automation (self-bots — ToS ban risk) and never
 alert-room auto-execution; reading the OS notifications Discord delivered to the user IS allowed
 (`zargar/tools/discord_watch.py`, POC 2026-08-28) — boundary table + intake phases in
 `docs/techniques/tip/INTAKE-PLAN.md`. The **Tips Analyst** (`techniques/tip/analyst.py` + `lifecycle.py`; charter =
@@ -86,8 +87,9 @@ Tips > Analyst, deep link `/inbox/analyst/<id>`), reads/writes **shared knowledg
 sharing its `RULE (<family>` prefix, 2026-09-04). Filled tip proposals are adopted into
 `engine.position_manager` with the analyst's policy (`lifecycle.adopt_when_filled`) through the
 **adoption-geometry gate** (2026-09-04, `check_exit_geometry`: wrong-side/penny targets dropped,
-invalid stops re-placed at structure — journaled `TipGeometryRepaired`; one <5-min stop-out pauses
-tip autos for the session, `TipAutoPaused`; sim feed skips the bars fetch). Option sizing is capped
+invalid stops re-placed at structure — journaled `TipGeometryRepaired`; the 2026-09-04 "<5-min
+stop-out pauses tip autos for the session" clock brake (`TipAutoPaused`) was RETIRED 2026-09-14 by the
+execution-integrity pause below; sim feed skips the bars fetch). Option sizing is capped
 per tip (`techniques.tip.max_premium_per_tip` $750), the budget GLIDES with the book
 (2026-09-07: min(`budget_per_tip`, free cash / `reserve_slots`), floor `min_budget`; empty book
 refuses on the record `TipLaneDecided lane=refused`; per-source `max_open_tips`/`budget_open_max`
