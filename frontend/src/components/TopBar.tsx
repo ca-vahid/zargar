@@ -11,6 +11,7 @@ import { IconSearch } from "./icons";
 import { signOut } from "../lib/auth";
 import { APP_VERSION } from "../changelog";
 import { ChangelogDialog } from "./ChangelogDialog";
+import { attentionSummary } from '../lib/armedAttention';
 
 const MODES = [
   { value: "practice", label: "Practice" },
@@ -58,6 +59,7 @@ export function TopBar() {
     () => armedPlans.filter((a) => workspaceOf(a.portfolio?.kind) !== (mode === "live" ? "live" : "practice")).length,
     [armedPlans, mode]);
   const attention = useMemo(() => armedPlans.filter((a) => a.needsAttention), [armedPlans]);
+  const attentionNeedsAction = attention.some(a=>!attentionSummary(a).notice);
   const quoteSource = broker?.quoteSource;
 
   const applyMode = async (value: string) => {
@@ -200,9 +202,9 @@ export function TopBar() {
         </button>
         <div className="spacer" />
         {attention.length > 0 && (
-          <button type="button" className="topbar-attn" onClick={() => setPage("armed")}
-            aria-label={`${attention.length} armed plans need attention`}>
-            ⚠ {attention.length}
+          <button type="button" className="topbar-attn attention-chip" onClick={() => useStore.setState({page:"armed",pageTab:"attention",armedFocusRunId:null})}
+            aria-label={`Review ${attention.length} flagged plans`}>
+            {attentionNeedsAction ? '⚠' : 'ⓘ'} {attention.length}
           </button>
         )}
         <button type="button" className="icon-btn topbar-search-btn" aria-label="Search stocks"
@@ -272,10 +274,10 @@ export function TopBar() {
         </button>
       )}
       {attention.length > 0 && (
-        <button className="status-pill attention"
-          title={`${attention.length} armed plan(s) need attention (failed exit / unmanaged position) — click for the Armed page. This shows regardless of workspace.`}
-          onClick={() => setPage("armed")}>
-          {"\u26a0"} {attention.length} needs attention
+        <button className={`attention-chip ${attentionNeedsAction ? 'action' : 'notice'}`}
+          title={`${attention.map(a=>a.symbol).join(', ')} — review flagged plans across Practice and Live`}
+          onClick={() => useStore.setState({page:'armed',pageTab:'attention',armedFocusRunId:null})}>
+          <span aria-hidden="true">{attentionNeedsAction ? '⚠' : 'ⓘ'}</span><span>{attention.length} {attentionNeedsAction ? `${attention.length === 1 ? 'plan' : 'plans'} to review` : `${attention.length === 1 ? 'plan notice' : 'plan notices'}`}</span>
         </button>
       )}
       {otherArmed > 0 && (

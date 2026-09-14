@@ -32,6 +32,7 @@ export type TqTab = (typeof TQ_TABS)[number];
 // Pages with their own top-level tabs, so /inbox/sources, /flow/brief etc. are
 // deep-linkable and survive F5. The FIRST entry is the default (bare /<page>).
 export const PAGE_TABS: Partial<Record<Page, readonly string[]>> = {
+  armed: ['live', 'attention', 'history'],
   inbox: ["tips", "approvals", "knowledge", "compose", "analyst", "inbox", "sources"],
   flow: ["reads", "brief"],
   team2: ["plans", "armed", "history", "validation"],
@@ -86,7 +87,7 @@ export function parseLocation(pathname = window.location.pathname): RouteState {
     }
     return { page };
   }
-  if (page === "armed") return parts[1] ? { page, armedRunId: parts[1] } : { page };
+  if (page === "armed") return parts[1] && PAGE_TABS.armed!.includes(parts[1]) ? {page, pageTab:parts[1]} : parts[1] ? { page, armedRunId: parts[1] } : { page };
   if (page === "options_cartel" && parts[1] === "run" && parts[2]) {
     try { return {page, cartelRunId:decodeURIComponent(parts[2])}; }
     catch { return {page}; }
@@ -130,7 +131,7 @@ function buildLegacyPath(s: RouteState): string {
     }
     return "/options";
   }
-  if (s.page === "armed") return s.armedRunId ? `/armed/${s.armedRunId}` : "/armed";
+  if (s.page === "armed") return s.armedRunId ? `/armed/${s.armedRunId}` : s.pageTab && s.pageTab !== 'live' ? `/armed/${s.pageTab}` : "/armed";
   if (s.page === "flow" && s.flowSymbol) return `/flow/story/${s.flowSymbol}`;
   if (s.page === "inbox" && s.pageTab === "analyst" && s.analystRunId) {
     return `/inbox/analyst/${s.analystRunId}`;

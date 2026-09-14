@@ -1619,7 +1619,21 @@ code.mono { font-family: var(--mono); font-size: var(--fs-1); background: var(--
 .tq-attention > b { color: var(--down); }
 .tq-attention ul { margin: 6px 0; padding-left: 18px; }
 .tq-attention-actions { display: flex; align-items: center; gap: var(--sp-3); }
-.status-pill.attention { background: var(--down); color: #fff; cursor: pointer; font-weight: 700; animation: tqpulse 1.6s infinite; }
+.attention-chip { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--radius, 8px); background: var(--surface-1); color: var(--text-1); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.attention-chip.notice { border-color: color-mix(in srgb, var(--warn, #a97815) 45%, var(--border)); }
+.attention-chip.action { color: var(--down); border-color: color-mix(in srgb, var(--down) 45%, var(--border)); }
+.attention-chip:hover { background: var(--surface-2); }
+.attention-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.armed-review-list { display: grid; gap: var(--sp-3); }
+.armed-review-list > .panel { min-width: 0; }
+.armed-review-identity { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: center; }
+.armed-review-identity h3 { display: flex; gap: 8px; align-items: center; margin: 0; }
+.armed-attention-detail { border-left: 3px solid var(--warn, #a97815); background: color-mix(in srgb, var(--warn, #a97815) 5%, transparent); padding: var(--sp-3); margin-bottom: var(--sp-3); overflow-wrap: anywhere; }
+.armed-attention-detail.action { border-color: var(--down); }
+.armed-attention-detail h3 { margin: 0 0 var(--sp-2); font-size: 15px; }
+.armed-attention-detail p { margin: 6px 0; }
+.armed-attention-detail li { margin: 10px 0; }
+.armed-attention-detail details { margin-top: var(--sp-3); color: var(--text-3); }
 .tq-armed-traderow { display: flex; align-items: baseline; gap: var(--sp-2); }
 .link-btn.danger { color: var(--down); }
 
