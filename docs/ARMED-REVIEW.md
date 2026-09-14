@@ -25,6 +25,17 @@ or database. It covers multiple messages in one plan, multiple stocks, live-acco
 visibility from Practice, uncertain/held outcomes, URL reload, empty/error states,
 light/dark desktop/phone layouts and absence of mutation requests.
 
+The mobile gate also covers `/armed/attention`. The Armed, review and History routes
+passed 15 device/route combinations using a loopback frontend preview and read-only
+access to the existing API. The smallest-phone header fits the device width and
+technical-detail disclosures have touch-sized targets. Uncertain submissions and
+pending proposals cannot be downgraded to no-action notices.
+
+Deployment handoff, 2026-09-14: the running checkout has overlapping uncommitted
+frontend work and its served assets differ from the committed-baseline build.
+Production assets and source files were left untouched to preserve that work.
+Integrate the merged review changes into the next coordinated frontend deployment.
+
 For a frontend-only update during market hours, backend health continues reporting
 the running process's previous version until the next normal safe restart. Do not
 restart the trading engine solely to update that label; verify served UI and backend

@@ -20,7 +20,8 @@ export function attentionItems(a: ArmedPlan) {
     // Only an explicit refused, unfilled attempt earns no-position reassurance.
     // Unknown submissions, partial fills and protection errors remain actionable.
     const blocked = !!trade && trade.status === 'failed' && trade.filledQty === 0 && trade.remaining === 0
-      && /exceeds|risk (?:cap|limit)|insufficient (?:cash|buying power)|rejected.risk/i.test(match?.[2] || text);
+      && !/unknown|uncertain|unresolved|timeout|timed out|ambiguous|connection|network/i.test(text)
+      && /resulting position [\d.]+% of equity exceeds [\d.]+%|gross exposure would be [\d.]+% of equity \(max [\d.]+%\)|insufficient (?:cash|buying power)|REJECTED_RISK/i.test(match?.[2] || text);
     return {raw: text, reference: match?.[1], setup: trigger || trade ? setup : 'Plan issue', blocked,
       reason: (trigger || trade ? match?.[2] || text : text).replace(/^fire produced nothing\s*[—–-]\s*/i, 'Entry was not placed: ')
         .replace(/resulting position ([\d.]+)% of equity exceeds ([\d.]+)%/i, 'position size after this order would be $1% of account equity, above the $2% limit')};
@@ -30,7 +31,7 @@ export function attentionItems(a: ArmedPlan) {
 export function attentionSummary(a: ArmedPlan) {
   const items = attentionItems(a);
   const held = (a.openPositions ?? 0) > 0 || (a.trades ?? []).some(t => t.remaining > 0);
-  const pending = (a.trades ?? []).some(t => ['working','submitting'].includes(t.status));
+  const pending = (a.trades ?? []).some(t => ['fired','proposal','working','submitting'].includes(t.status));
   const notice = !held && !pending && items.length > 0 && items.every(i => i.blocked);
   return {items, held, notice, title: notice ? 'Entry blocked — no action required' : held ? 'Position needs review' : 'Execution needs review',
     next: notice ? 'These entry attempts were rejected with no fills. No sell action is needed. Review planned position size before a future setup; this notice is not an instruction to retry or increase limits.'

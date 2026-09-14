@@ -398,6 +398,9 @@ button.now-card:active { background: var(--surface-2); }
 .now-fleet-flatten { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 .now-hist-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-top: 1px solid var(--border); align-items: baseline; }
 .armed-page--phone .armed-head { margin-bottom: 8px; }
+.armed-page--phone { min-width: 0; max-width: 100%; }
+.armed-page--phone .armed-subtabs { min-width: 0; width: 0; flex: 1 1 0; overflow-x: auto; }
+.armed-page--phone .armed-attention-detail summary { min-height: 44px; padding: 10px 0; cursor: pointer; }
 
 
 /* ── Trade on phones ───────────────────────────────────────────────────────── */
@@ -589,7 +592,7 @@ button.bl-card:active { background: var(--surface-2); }
 @media (max-width: 420px) {
   .topbar--phone .brand { font-size: 0; gap: 0; }
   .topbar--phone .brand-logo { width: 26px; height: 26px; }
-  .topbar--phone { gap: 6px; padding: 0 8px; }
+  .topbar--phone { gap: 4px; padding: 0 8px; }
   .topbar-phone-ws { padding: 0 8px; font-size: 11px; }
   .topbar .halt-btn { padding: 0 10px; }
 }
