@@ -1513,3 +1513,22 @@ producer payload or risk setting changed. The journal registry invariant passes.
   source time moves backward, at least one advances.
 - `options/occ.contract_multiplier(symbol)`: 100 only for a standard OCC symbol; adjusted /
   unparseable contracts → `None` (unknown metadata; the tips geometry gate review-gates it).
+
+### Tips activation in Practice — 2026-09-14 (v0.7.67 = main `b368e7e`, PR #95)
+
+- `techniques.tip.geometry_gate`: `shadow` → **`enforce`**; `techniques.tip.entry_pause_mode`:
+  `clock` → **`integrity`** (journaled `SettingChanged` 05:15:32Z; previous values were the
+  defaults, no stored override existed). Practice only: `_geometry_scope` refuses a plan for any
+  non-sim book; `techniques.tip.allow_live_auto` stays off, `trading.mode` practice.
+- Shared-engine pieces that shipped with it (all logged in rounds 2–3 above): strict
+  `Managed.set_extras(strict=True)` / `_persist_candidate`, `serialized_adapter` guarding tips
+  positions, `close(attempt_tag=)` on the exit intent, `occ.contract_multiplier`, the
+  `evidence:` note scope, event contracts `TipExecutionIncident` / `TipFastStopDiagnostic`.
+- Rollback is the same PATCH back to `shadow`/`clock`; it never clears an incident row and never
+  touches a position's stop — a rollback that needs those must release incidents on evidence
+  (or a labeled override) and let `reconcile_geometry_exceptions` finish open exceptions.
+- Knowledge: the two disputed kill-switch/geometry rules were released and superseded by the
+  consolidation batches (receipts `consolidation-geometry-2026-09-14`,
+  `consolidation-killswitch-2026-09-14`); the analyst's rulebook now states the incident-based
+  policy in the same words the code enforces.
+
