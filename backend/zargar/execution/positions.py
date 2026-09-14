@@ -762,6 +762,18 @@ class PositionManager:
             out += max(0.0, float(rec.get("qty") or 0) - float(rec.get("filledQty") or 0))
         return out
 
+    def _venue_qty(self, portfolio_id: str, symbol: str) -> float | None:
+        """The venue/book quantity for a symbol, or None when the book has no
+        line for it (unknown — never treated as flat)."""
+        try:
+            rows = self.engine.positions.positions_list(portfolio_id)
+        except Exception:
+            return None
+        for x in rows:
+            if (x.get("symbol") or "").upper() == symbol.upper():
+                return float(x.get("qty") or 0)
+        return None
+
     @serialized_adapter
     async def _close_leg(self, p: Managed, leg: Leg, qty: float, *, force_market: bool,
                          kind: str, reason: str, attempt_tag: str | None = None) -> dict | None:
@@ -778,6 +790,32 @@ class PositionManager:
             self._log(p, "exit_skip",
                       f"{kind} {leg.symbol}: exits already in flight cover this qty")
             return None
+        # HARD invariant: a reduce-only exit never takes the venue book through
+        # zero. When the venue already shows this symbol flat or on the other
+        # side, the leg is stale bookkeeping — mark it flat instead of selling
+        # what we do not hold. An UNKNOWN venue line (never seen, or a lagging
+        # live poll) never blocks a protective exit.
+        held = self._venue_qty(p.portfolio_id, leg.symbol)
+        if held is not None:
+            room = (-held) if leg.qty < 0 else held
+            if room <= 1e-9:
+                self._log(p, "exit_skip",
+                          f"{kind} {leg.symbol}: venue holds {held:g}, nothing on the leg's side to "
+                          f"reduce — leg ({leg.qty:g}) marked flat")
+                leg.qty = 0.0
+                p.venue_flat_legs = getattr(p, "venue_flat_legs", 0) + 1
+                return None
+            if abs(leg.qty) > room + 1e-9:
+                # the surplus above what the venue holds is stale bookkeeping:
+                # shrink the leg to the venue line so the fill brings it to flat
+                self._log(p, "exit_clamp", f"{kind} {leg.symbol}: leg {leg.qty:g} but venue holds "
+                                           f"{room:g} on that side — leg shrunk to the venue line")
+                leg.qty = room if leg.qty > 0 else -room
+                qty = min(qty, room)
+                qty = float(int(qty)) if leg.sec_type == "OPT" else float(qty)
+                if qty <= 0:
+                    leg.qty = 0.0
+                    return None
         closing_short = leg.qty < 0
         if closing_short:
             # buying back a short leg is reduce-only in spirit but is a BUY order
@@ -891,6 +929,15 @@ class PositionManager:
                                         attempt_tag=attempt_tag)
             if rec is not None and evidence is not None:
                 rec["confirmation" if kind == "premium_stop" else "evidence"] = dict(evidence)
+        if getattr(p, "venue_flat_legs", 0) and not p.open_legs and p.status != "closed":
+            # every remaining leg was stale against the venue book: the
+            # position is flat already — close the record instead of looping
+            msg = f"closed on a stale record: the venue already held nothing to reduce ({reason})"
+            if msg not in p.attention:
+                p.attention.append(msg)
+            await self._alert(p, msg, level="warning", stage="venue_flat")
+            await self._mark_closed(p, reason=f"venue already flat — {reason}")
+            return p.to_dict()
         await self._persist(p)
         return p.to_dict()
 
@@ -1089,16 +1136,33 @@ class PositionManager:
                 rec["filledQty"] = fq
                 rec["price"] = o.get("avgFillPrice")
                 rec["filledTs"] = self.now_ms()               # the fill's arrival, never the intent's time
-                leg = next((l for l in p.legs if l.symbol == (o.get("symbol") or "").upper()
-                            or l.symbol == rec.get("leg")), None)
-                if leg is not None:
-                    delta = fq - prev
-                    signed_delta = -delta if leg.qty > 0 else delta
-                    px = float(rec.get("price") or 0)
+                sym = (o.get("symbol") or rec.get("leg") or "").upper()
+                remaining = fq - prev
+                px = float(rec.get("price") or 0)
+                # Reduce TOWARD FLAT across every open leg of that symbol and
+                # never past zero. A scaled-in position holds several
+                # same-symbol legs; the old first-match lookup applied the
+                # second leg's fill to the first (already flat) leg and flipped
+                # it back open, so the stop re-fired on every tick — APLD
+                # 2026-09-14: 3,282 stop exits, a shadow book 37,625 shares
+                # short before the pre-open tick caught it.
+                for leg in [l for l in p.legs if l.symbol.upper() == sym and abs(l.qty) > 1e-9]:
+                    take = min(abs(leg.qty), remaining)
+                    if take <= 1e-9:
+                        break
                     if leg.avg_fill is not None and px:
                         per_unit = (px - float(leg.avg_fill)) if leg.qty > 0 else (float(leg.avg_fill) - px)
-                        p.realized_pnl += per_unit * delta * leg.multiplier
-                    leg.qty += signed_delta
+                        p.realized_pnl += per_unit * take * leg.multiplier
+                    leg.qty += (-take if leg.qty > 0 else take)
+                    if abs(leg.qty) < 1e-9:
+                        leg.qty = 0.0
+                    remaining -= take
+                if remaining > 1e-9:
+                    msg = (f"exit fill exceeded the open legs by {remaining:g} {sym} — "
+                           "the venue book must be reconciled before this position is trusted")
+                    if msg not in p.attention:
+                        p.attention.append(msg)
+                        await self._alert(p, msg, stage="exit_overfill")
                 rec["status"] = status
                 if status == "FILLED" and fq < float(rec.get("qty") or 0):
                     # venue normalized the request (2.5 -> 2): persist the real

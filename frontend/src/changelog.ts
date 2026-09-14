@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.67";
+export const APP_VERSION = "0.7.68";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,15 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.68",
+    date: "2026-09-14",
+    title: "A scaled-in position closes flat, once",
+    items: [
+      { tag: "fixed", text: "Managed positions: an exit fill is now applied across every leg of the same symbol toward flat and never past zero. Before, a scaled-in position (two legs of one ticker) had the second leg's stop fill applied to the first, already-flat leg, flipping it back open - the stop re-fired on every tick (APLD in a research shadow book, pre-market 2026-09-14: 3,282 exits, 37,625 shares short before the pre-open check caught it). No real or Practice money was involved." },
+      { tag: "fixed", text: "A reduce-only exit never sells what the venue does not hold: when the book already shows the symbol flat or on the other side, the stale leg is marked flat and the record closes on attention instead of looping; an unknown venue line never blocks a protective exit." },
+    ],
+  },
   {
     version: "0.7.67",
     date: "2026-09-14",
