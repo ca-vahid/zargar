@@ -1692,6 +1692,28 @@ never from the projection; ownership is validated before any read; `--include-li
 FA-05: a promotion's identity is the sweep's saved resolved thresholds + overlay + process version, never
 "same overlay". Build identity: `zargar.BUILD` bound at import (full SHA, `-dirty`), on `/api/health.build`.
 
+### Reviewer closure 2026-09-14 (FC-01) — the final entry guard judges the CURRENT quote (EM desk)
+
+Rule for every desk placing entries through the runner: `before_submit` evidence is the quote cache NOW, not
+a dict captured before the awaits. `PlanRunner._entry_guard` reads `engine.quotes.get(order_symbol)` and asks
+the technique's pure synchronous hook `judge_entry_quote(ap, trade, contract, quote)` (`execution/entry_quality.py`:
+two-sided uncrossed book, fresher than `execution.premium_mark_max_age_seconds`, spread within the technique's
+limit when the arm skips wide spreads - generic `execution.spread_warn_pct`, EM T5.4 10%). No quote / chain row
+only = the captured T5.4 verdict is the only evidence. The repair tool `tools/em_reconcile_fallback.py` has one
+code path (real session, row lock, receipts staged in the same transaction); fake-session test doubles are
+historical reproductions, never production evidence (`tests/test_em_reconcile_real_session.py`).
+
+
+### Order-free scenario candidates — 2026-09-14 (EM Delivery B, shared-runner boundary)
+
+A run whose `config.origin` or tag starts with `scenario:` is a research record: `PlanRunner.arm` journals
+`TechniqueArmRefused` (contract: runId, symbol, origin, reason) and raises, on EVERY path - API, restore,
+retry, auto-arm - independent of settings, until an activation decision adds an explicit allow-list. The
+check is `execution/origins.py::scenario_origin` (no technique import in the runner). EM's three new tables
+(`technique_source_revisions` / `_artifacts` / `_jobs`) are EM-only (`technique/source_revisions.py`); the
+gateway now forwards EM-channel EDITS to EM's inbox (`kind=update`) - the tips mirror/intake path is unchanged.
+
+
 ### Session findings — 2026-09-14 (first enforce/integrity day; v0.7.68 → 0.7.71)
 
 - **Bar DELIVERY stalls (3×):** 13:09–13:13, 13:23–13:27 and 15:26–15:29 ET every armed

@@ -172,3 +172,40 @@ fencing, no extraction changes yet.
 2. Source/job creation and output/checkpoint transitions are atomic where the database allows (one
    transaction for "artifact row + job checkpoint") and otherwise idempotent by output key: a crash between
    creating an output and checkpointing it is recovered by re-deriving the same key, never by duplicating.
+
+---
+
+# First PR - BUILT (2026-09-14, closure review GO; schema/diagnostic only)
+
+Code: `backend/zargar/technique/source_revisions.py` (the ledger), models `TechniqueSourceRevision` /
+`TechniqueSourceArtifact` / `TechniqueSourceJob` (additive tables; `db.create_all` adds them on the next boot),
+`tools/em_source_backfill.py` (dry-run manifest + one-transaction `--apply`, idempotent, hash-checked),
+`execution/origins.py::scenario_origin` + the refusal in `PlanRunner.arm` (order-free boundary), the ingest
+service (`store_message` writes revision 1 WITH the note in one commit; new `store_revision` for edits/deletes;
+`resume_unfinished` on every gateway delivery and worker poll), the API body (`kind`, `editedAt`, `gatewaySeq`,
+`images: None` = absent; `GET /api/technique/ingest/revisions/{noteId}`), and the gateway forwards EM-channel
+EDITS to EM's inbox as `kind=update` (the tips mirror path is untouched). Tests: `tests/test_em_source_revisions.py`
+(10 cases, real Postgres, no engine/LLM/gateway).
+
+The two implementation contracts, as built:
+1. **Ordering + partial merge** (`record_delivery`): the source's `editedAt` orders deliveries, the gateway
+   sequence breaks ties; an older delivery is recorded as `stale` and changes nothing; absent `text`/`images`
+   (None) keep the accepted values. Identical redelivery = receipt. `A -> B -> A` = three revisions; delete and
+   restore are revisions (`deleted` flag in the content hash).
+2. **Atomic output + checkpoint** (`checkpoint`): artifact row + job checkpoint staged in ONE session, one
+   commit; the artifact id IS the output key `(revision, kind, input_hash, config_hash)`, so recovery after a
+   crash between output and checkpoint reuses the existing row. Leases carry a fence token; `resume_unfinished`
+   re-leases expired jobs at their recorded stage under a new token and a stale worker's checkpoint raises
+   `FenceMismatch` with nothing written.
+
+Not in this PR (by the verdict): extraction changes, scenario records/alignment, any Practice book, candidate
+orders, activation. `technique_method_notes` keeps showing the LATEST accepted text (a convenience view);
+artifacts are never rewritten by a later revision. Backfill: `python -m zargar.tools.em_source_backfill`
+(dry run) then `--apply <manifest>` - a human step, like FIX-01; historical artifacts get `availability:
+unknown` (`completed_at` NULL), never a value derived from `updated_at`.
+
+Limitations, stated: the gateway forwards edits but not deletions yet (Discord delete events are not
+enqueued for EM; `kind=delete` is accepted by the API and the ledger); attachment identity is the URL set,
+hashes arrive when bytes are fetched; the transcription/extraction workers do not yet write artifacts
+through `checkpoint` (they still write the note columns) - wiring them is the next PR, with the scenario
+extraction.

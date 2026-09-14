@@ -1006,6 +1006,11 @@ class Gateway:
         msg, cid, mid = env["msg"], env["cid"], env["mid"]
         entry = self._watch.get(cid) or {}
         source_name = env.get("source") or entry.get("sourceName") or "auto"
+        if env["kind"] == "update" and env.get("em") and not env.get("emDone"):
+            # Delivery B: an EDIT on an EM channel is a new source revision for EM's inbox (kind=update);
+            # independent of the tips mirror below, RAISES on failure like the create path
+            await self._em_forward(http, headers, msg, self._em.get(cid) or {}, kind="update")
+            env["emDone"] = True
         if env["kind"] == "update":
             ok = await self._mirror(http, headers,
                                     [mirror_record(msg, source_name,
@@ -1058,7 +1063,7 @@ class Gateway:
         if not out.get("ok"):
             raise RuntimeError(str(out.get("error") or out.get("note") or "ingest failed")[:200])
 
-    async def _em_forward(self, http, headers, msg: dict, entry: dict) -> None:
+    async def _em_forward(self, http, headers, msg: dict, entry: dict, *, kind: str = "create") -> None:
         """EM method ingestion: post the message to EM's own inbox. Read-only
         toward Discord; never touches the tip mirror/intake. Failures RAISE
         (Codex G3) so the caller spools + retries instead of acknowledging."""
@@ -1077,8 +1082,12 @@ class Gateway:
                 extra.append(str(u))
         if extra:
             rec["text"] = (rec["text"] + "\n" + "\n".join(extra)).strip()
-        rec["text"] = rec.get("text") or ""       # EM inbox wants a string, not absence
-        rec["images"] = rec.get("images") or []
+        rec["kind"] = kind
+        rec["gatewaySeq"] = self._seq
+        if kind == "create":
+            rec["text"] = rec.get("text") or ""       # EM inbox wants a string, not absence
+            rec["images"] = rec.get("images") or []
+        # an update keeps None for fields absent from the partial payload (Delivery B contract 1)
         r = await http.post(f"{self.api}/api/technique/ingest/message", headers=headers,
                             json=rec, timeout=60)
         if r.status_code != 200:

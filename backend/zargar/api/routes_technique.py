@@ -222,12 +222,33 @@ def build_technique_routes(app, eng, auth, config) -> None:
         author: str = ""
         authorId: str | None = None
         text: str = ""
-        images: list[str] = []
+        images: list[str] | None = None        # None = not in this payload (partial delivery) - Delivery B
         postedAt: str | None = None
+        editedAt: str | None = None
+        kind: str = "create"                    # create | update | delete
+        gatewaySeq: int | None = None
 
     @app.post("/api/technique/ingest/message", dependencies=[auth])
     async def ingest_message(body: IngestMessageBody):
-        return await _ingest(eng).store_message(body.model_dump())
+        ing = _ingest(eng)
+        payload = body.model_dump()
+        if str(payload.get("kind") or "create") in ("update", "delete", "deleted"):
+            out = await ing.store_revision(payload)
+        else:
+            payload["images"] = payload.get("images") or []
+            out = await ing.store_message(payload)
+        await ing.resume_unfinished(owner="gateway-delivery")
+        return out
+
+    @app.get("/api/technique/ingest/revisions/{note_id}", dependencies=[auth])
+    async def ingest_revisions(note_id: str):
+        """Delivery B: the immutable revision history of one note (+ artifacts per revision)."""
+        from ..technique import source_revisions as srcrev
+        async with eng.sf() as session:
+            revs = await srcrev.revisions_for(session, note_id)
+            for r in revs:
+                r["artifacts"] = await srcrev.artifacts_for(session, r["id"])
+        return {"noteId": note_id, "revisions": revs}
 
     @app.get("/api/technique/ingest/pending", dependencies=[auth])
     async def ingest_pending():

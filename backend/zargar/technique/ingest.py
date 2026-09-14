@@ -28,6 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from .. import bus as topics
+from . import source_revisions as srcrev
 from ..domain import new_id
 from ..models import TechniqueMethodNote
 from .llm import stream_message
@@ -85,6 +86,13 @@ EXTRACT_SYSTEM = (
     "of the company he describes.\n"
     "Dismissed names and small talk are not board items. Be terse."
 )
+
+
+def _int_or_none(v):
+    try:
+        return int(v) if v is not None and str(v).strip() != "" else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _now() -> dt.datetime:
@@ -194,14 +202,57 @@ class MethodIngestService:
                 posted_at=_parse_ts(payload.get("postedAt")),
                 meta={"attempts": 0, **({"duplicateOf": dup_of} if dup_of else {})})
             session.add(n)
+            await session.flush()
+            # Delivery B: revision 1 is written WITH the note (one commit) - the immutable observation
+            rev = await srcrev.record_delivery(session, note_id=n.id, payload=payload, kind="create",
+                                               gateway_seq=_int_or_none(payload.get("gatewaySeq")))
             await session.commit()
-            d = note_dict(n)
+            d = {**note_dict(n), "revision": rev.get("revision"), "revisionId": rev.get("revisionId")}
         log.info("ingest: %s note %s from #%s (%s)", kind, d["id"][:8], d["channelName"] or d["channelId"], status)
         self._publish(d)
         # a text-only post with substance goes straight to extraction
         if status != "duplicate" and kind != "video" and self._get("ingest.auto_extract", True) and len(text.strip()) >= 60:
             self._spawn(self._extract_and_check(d["id"]), f"em-ingest-extract-{d['id'][:8]}")
         return {**d, "duplicate": False}
+
+    async def store_revision(self, payload: dict) -> dict:
+        """An EDIT or DELETE of a forwarded message (Delivery B contract 1): a new immutable revision when
+        the accepted source state changes; a stale (older) delivery is refused and journaled; an identical
+        redelivery is a receipt. Absent text/images keep the accepted values. The note row keeps showing
+        the LATEST accepted text; dependent artifacts are not rewritten (a later revision gets its own)."""
+        mid = str(payload.get("id") or payload.get("messageId") or "").strip()
+        kind = str(payload.get("kind") or "update")
+        kind = "delete" if kind in ("delete", "deleted") else "update"
+        async with self.engine.sf() as session:
+            note = (await session.execute(
+                select(TechniqueMethodNote).where(TechniqueMethodNote.message_id == mid))).scalar_one_or_none() if mid else None
+            if note is None:
+                return {"ok": False, "why": "unknown message", "messageId": mid}
+            rev = await srcrev.record_delivery(session, note_id=note.id, payload=payload, kind=kind,
+                                               gateway_seq=_int_or_none(payload.get("gatewaySeq")))
+            if rev["outcome"] == "recorded":
+                cur = await srcrev.current_revision(session, note.id)
+                note.text = cur.text[:20000]
+                note.images = list(cur.attachments or [])
+                note.meta = {**(note.meta or {}), "revision": cur.revision, "deleted": bool(cur.deleted),
+                             "revisionKind": cur.kind}
+                note.updated_at = _now()
+            await session.commit()
+            d = note_dict(note)
+        if rev["outcome"] == "stale":
+            log.warning("ingest: stale %s for note %s ignored: %s", kind, d["id"][:8], rev.get("why"))
+        else:
+            log.info("ingest: %s -> note %s revision %s (%s)", kind, d["id"][:8], rev.get("revision"), rev["outcome"])
+        self._publish(d)
+        return {**d, **{k: rev.get(k) for k in ("outcome", "revision", "revisionId", "why")}, "ok": True}
+
+    async def resume_unfinished(self, *, owner: str = "engine") -> list[dict]:
+        """Delivery B: re-lease every job whose lease is free/expired at its recorded stage (fenced).
+        Called on every gateway delivery and every worker poll; cheap when nothing is pending."""
+        async with self.engine.sf() as session:
+            jobs = await srcrev.resume_unfinished(session, owner=owner)
+            await session.commit()
+        return jobs
 
     async def pending(self) -> list[dict]:
         """Video notes waiting for the worker (oldest first). A note deferred
