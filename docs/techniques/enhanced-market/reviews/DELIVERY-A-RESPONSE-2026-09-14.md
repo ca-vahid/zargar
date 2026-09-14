@@ -176,3 +176,21 @@ backfill wording is marked superseded in the design file.
 Still open, stated as open: quantity-dependent R:R reporting (FIX-10); the wider FIX-02 exit integration
 cases; `--include-live` has no quiescence verification (a live repair needs the owner/quiescence/restoration
 protocol before it is ever used).
+
+## Broader-suite regression from the FA-01 guard, and its scoping (same day, commit 1afc713)
+
+Two wider suites failed after the guard landed and both were fixed before this hand-off:
+
+- `tests/test_tip_runner.py` - `TipRunner._place_with_retry` (the Tip desk's override) did not accept the new
+  `before_submit` keyword. It now accepts and forwards it to `super()` / `OrderManager.place`, so the Tip retry
+  path carries the same predicate and no desk bypasses the final boundary. No Tip behaviour changed.
+- `tests/test_technique_arming.py::test_daily_loss_halt_flattens_and_stops_the_plan` - the first guard also
+  budget-gated SHARE entries, which is not what F33 enforces: F33's per-entry day-budget predicate is defined
+  for option entries; a share entry that would exhaust the day budget is caught by the plan-level loss halt
+  after the fill (flatten + stop the plan), which that test pins. The guard now runs the remaining-budget
+  predicate for option entries only; the cached T5.4 evidence check applies to every option entry as before.
+  Reviewer case 3 (the $160 / $150 / -$40 scenario) is an option entry and still ends in `REJECTED_RISK`.
+
+Results after the scoping: reviewer group 55/55, Postgres group 12/12, `test_tip_runner` +
+`test_technique_arming` 82/82; platform phase 3 + lifecycle + review + restart recovery + technique API +
+walk-forward + engine flow 98/98 (13.5 min). Nothing new on origin/main or the other desk branch to merge.
