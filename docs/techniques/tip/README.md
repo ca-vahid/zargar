@@ -21,7 +21,7 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
 
 ## State of play (2026-09-14)
 
-- **Version:** v0.7.68 on main `24b6512` (PR #98 on top of the v0.7.67 rollout, PR #95). Practice only: `trading.mode=practice`,
+- **Version:** v0.7.71 (running checkout; contains this desk's 0.7.67 rollout PR #95, 0.7.68 exit guard PR #98 and 0.7.69 integrity-counter fix PR #100). Practice only: `trading.mode=practice`,
   `techniques.tip.allow_live_auto=false`. The Tips Practice book (`techniques.tip.default_portfolio`)
   is the only book that trades tips; shadow books (immediate / armed) are research.
 - **Entry controls, both ACTIVE by journaled settings (2026-09-14 05:15Z):**
@@ -107,7 +107,18 @@ file whenever a rollout, an activation or a review changes what is true. Last fu
     venue's zero), but the two research books that ran away (`ab` short 40,600 APLD, `eva`
     short 5 TSLA) still carry those positions until the user resets them, and their armed-lane
     scorecards are not trustworthy for those names.
-13. **Restarts are the platform's biggest operational risk.** Other desks deploy during the
+13. **Under a 1% budget, option tips are a review product (day 1 evidence, 2026-09-14).**
+    Eleven of sixteen enforced cards were gated on "no quantity satisfies the ~$89 budget"
+    because a contract with no stop risks its whole debit. Two analyst takes expired
+    unapproved. Either the analyst supplies a stop on every take, or `risk_pct` /
+    `risk_budget_per_tip` changes — a user decision recorded in TRADING-RULES.
+14. **Four stale incidents from the 0.7.68 counter are still open** (`760309ca`, `df02e34a`,
+    `2e87b5bf`, `4e93b293`); they keep Practice proposal automation paused until a take
+    card validates or the user overrides them as a detection defect.
+15. **Bar delivery stalled three times on 2026-09-14** (~4 min each, bars intact, quotes
+    fresh). Exits are quote-based so positions were safe, but an armed ENTRY on a stale
+    bar stream is blind; the aggregator's delivery latency is not instrumented yet.
+16. **Restarts are the platform's biggest operational risk.** Other desks deploy during the
     session; the app has been dark mid-session before. Every deploy must go through
     `/api/ops/restart-check` and the `ZargarRestart` task, never inside 09:30–10:30 /
     14:45–16:00 ET unless the app is dead.
