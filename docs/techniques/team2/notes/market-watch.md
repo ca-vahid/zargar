@@ -5945,3 +5945,33 @@ setup, that is a gap to report, not a refusal.
   PM ranges are wide (SPY 6.5, QQQ 14.3 points) so a 15m close below PDL can sit inside the PM range —
   watch whether the zone blocks the first put setups after 09:45; (4) re-check the OPRA (65) and
   cartel (40) counts; (5) do not attempt the `/team2` UI check (F103).
+
+
+## 2026-09-14 09:35 ET (run 81 — the open: pre-open complete on all three, F110 PASSED on QQQ, no scenario yet)
+
+- **Alive on v0.7.68** (armed 80 desk-wide). Team2 SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed,
+  mode `auto`, book Team2 Practice, `needsAttention false`, `stale false`, bar age 90 s, quote age 0, window
+  `prime_open`. No restart since 05:35 PT.
+- **09:25 pre-open completed** (`ScheduledJobRan team2_preopen` 3.6 s, all three `completed`): `complete true`,
+  `dayType gap_down`, `sizingAtOpen none` on all three. PM ranges: SPY 757.77–760.77, QQQ 701.155–715.416,
+  IWM 286.92–288.64, all from `exchange` bars in the DB. Gap: SPY −0.66 %, QQQ −1.62 %, IWM −0.44 %.
+  **Correction to run 80:** SPY's pre-market high was **760.77** (04:02–04:03 exchange bars), not 764.29. That
+  figure was Friday's `regPrice` misread as a bar high. The plan's PMH is right.
+- **F110 acceptance test PASSED (per F122):** QQQ `targets_rederived` at 09:25 (reference 703.29 had run through
+  708.63, so the put target became **701.155 = PML**), then re-confirmed at the 09:30 open (703.33, same result).
+  No row on SPY (759.15 > 757.26) or IWM (287.62 > 287.18), which is correct. `open_finalized` (F49) at 09:31 on
+  all three: gap_down → gap_down, sizing none. Opens SPY 758.99 / QQQ 703.33 / IWM 287.48.
+- **Read so far:** no scenario on any symbol (the first 15m close is due 09:45). Every open is already
+  below its PDL zone (SPY 763.60, QQQ 713.65, IWM 288.77). First 2m regime: SPY bear stack (strength 3, trend),
+  QQQ bear (1, trend), IWM mixed. No fires, no contract events, so replay parity has nothing to compare yet.
+- **Data real-time:** 1m bars banked through 09:32 on all three (29 bars in the last 30 min each). Log counts unchanged
+  from the baseline: `OPRA quotes` 65, `cartel-observer` 40. No Team2 warning or traceback.
+- **Not Team2:** 09:31:18 `event contract: TechniquePlanError v1: missing required field 'error'` is an EM/tip
+  SWKS entry REJECTED_RISK row (`reason` instead of `error`, run `0ea19792`). The same warning appeared
+  2026-09-11 06:31 PT. It belongs to the other desk. Recorded here only.
+- **No code shipped, no new F-number.**
+- **Next run (~10:00) should:** (1) record the 09:45 15m close vs each PDL zone. A body close below means a puts scenario.
+  Check whether F112's `pm_range` zone blocks it: SPY's 763.60 PDL is above its PM range, so the zone should not
+  block SPY; QQQ's 713.65 sits inside its 701–715 PM range, so watch QQQ. (2) If a fire happens, check the
+  `contract` event (listed strike, NBBO ask near 0.60) and run replay parity. (3) Re-check the OPRA/cartel counts.
+  (4) Skip the `/team2` UI check (F103).
