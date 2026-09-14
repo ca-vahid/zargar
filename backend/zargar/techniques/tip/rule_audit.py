@@ -74,6 +74,42 @@ Reply with ONLY one JSON object matching this schema — no prose, no markdown f
 """
 
 
+async def _judge(client, *, model: str, system: str, header: str, cap: int,
+                 max_tokens_ceiling: int = 8192) -> tuple[RuleAuditOpinion, list[dict]]:
+    """One audit call, measured (KB-08): returns the parsed opinion and a
+    per-call usage list [{inputTokens, outputTokens, stopReason, latencyMs}].
+    The first live rule audit returned an EMPTY text (invalid JSON at column
+    0): prose likely ran past the 2,000-token cap before the object — so a
+    max_tokens stop with no JSON earns ONE retry at double the cap."""
+    import asyncio
+    from ...research import llm_stats
+    calls: list[dict] = []
+    text = ""
+    for attempt in (1, 2):
+        with llm_stats.timed() as _t:
+            resp = await asyncio.wait_for(
+                client.messages.create(model=model, max_tokens=cap, system=system,
+                                       messages=[{"role": "user", "content": header}]),
+                timeout=AUDIT_TIMEOUT_S)
+        llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms, retried=attempt > 1)
+        u = getattr(resp, "usage", None)
+        stop = getattr(resp, "stop_reason", None)
+        calls.append({"inputTokens": int(getattr(u, "input_tokens", 0) or 0) if u else None,
+                      "outputTokens": int(getattr(u, "output_tokens", 0) or 0) if u else None,
+                      "stopReason": str(stop) if stop else None, "latencyMs": round(_t.ms, 1),
+                      "maxTokens": cap})
+        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        if "{" in text or str(stop) != "max_tokens" or cap >= max_tokens_ceiling:
+            break
+        cap = min(cap * 2, max_tokens_ceiling)
+    i, j = text.find("{"), text.rfind("}")
+    return RuleAuditOpinion.model_validate_json(text[i:j + 1]), calls
+
+
+def _apply_mode(settings) -> str:
+    return "apply" if bool(settings.get("techniques.tip.knowledge_apply_enabled", False)) else "propose"
+
+
 async def run_rule_audit(eng, *, client=None, report: dict | None = None) -> dict | None:
     """One audit run: read -> judge (LLM) -> apply (deterministic, ONE
     transaction, conflict-locked — KB-02) -> journal. Returns the applied
@@ -112,7 +148,9 @@ async def run_rule_audit(eng, *, client=None, report: dict | None = None) -> dic
     rules_txt = "\n".join(
         f"- [{r['id']}] {r['text']} (by {r['author']}, {(r['createdAt'] or '')[:10]})"
         + ("" if cited(r) else "  [NO EVIDENCE CITED]")
+        + ("  [DISPUTED — unresolved by the human; never merge or expire]" if r.get("needsHuman") else "")
         for r in rules)
+    expected_revisions = {r["id"]: int(r.get("revisionNo") or 1) for r in rules}
 
     # the evidence: recent retros + lane grades
     from sqlalchemy import select as _sel
@@ -145,41 +183,36 @@ async def run_rule_audit(eng, *, client=None, report: dict | None = None) -> dic
               f"RECENT RETROS:\n{retro_txt}\n\nLANE GRADES:\n{lane_txt}")
     system = AUDIT_SYSTEM + json.dumps(RuleAuditOpinion.model_json_schema(),
                                        separators=(",", ":"))
+    calls: list[dict] = []
     try:
-        import asyncio
-        from ...research import llm_stats
-        with llm_stats.timed() as _t:
-            resp = await asyncio.wait_for(
-                client.messages.create(model=model, max_tokens=2000, system=system,
-                                       messages=[{"role": "user", "content": header}]),
-                timeout=AUDIT_TIMEOUT_S)
-        llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms)
-        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-        i, j = text.find("{"), text.rfind("}")
-        op = RuleAuditOpinion.model_validate_json(text[i:j + 1])
+        cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
+        op, calls = await _judge(client, model=model, system=system, header=header, cap=cap)
     except Exception as exc:
         log.warning("rule audit failed: %s", exc)
-        await _finish(eng, run_id, status="failed", opinion={"error": str(exc)[:300]})
+        await _finish(eng, run_id, status="failed",
+                      opinion={"error": str(exc)[:300], "usage": calls})   # KB-08: failures keep usage
         rep.update(status="failed", reason=str(exc)[:200])
         return None
 
     # ---- deterministic apply: validated + transactional (KB-02) ----------------
     from ... import events as ev
     live_ids = {r["id"] for r in rules}
+    mode = _apply_mode(s)
     try:
         applied = await svc.apply_knowledge_batch(
             scope="rule", merges=list(op.merges), expires=list(op.expires),
             contradictions=list(op.contradictions),
             author=f"rule-audit:{run_id[:8]}", run_id=run_id, live_ids=live_ids,
-            batch_id=f"{run_id}:rule")
+            batch_id=f"{run_id}:rule", expected_revisions=expected_revisions, mode=mode)
     except Exception as exc:
         log.warning("rule audit apply aborted (nothing written): %s", exc)
-        await _finish(eng, run_id, status="failed", opinion={"error": f"apply aborted: {exc}"[:300]})
+        await _finish(eng, run_id, status="failed",
+                      opinion={"error": f"apply aborted: {exc}"[:300], "usage": calls})
         rep.update(status="failed", reason=f"apply aborted: {exc}"[:200])
         return None
     flagged = list(applied.get("flagged") or [])
     payload = {"runId": run_id, **{k: v for k, v in applied.items() if k != "flagged"},
-               "flagged": flagged, "summary": op.summary}
+               "flagged": flagged, "summary": op.summary, "usage": calls, "mode": mode}
     rep.update(status="done", reason="")
     await _finish(eng, run_id, status="done",
                   opinion={"verdict": "audit", **payload,
@@ -226,10 +259,16 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None) -
         rep.update(status="skipped", reason="no eligible groups")
         return None
     max_groups = int(s.get("techniques.tip.knowledge_audit_max_groups", 12) or 12)
+    # KB-04: LEAST-RECENTLY-AUDITED first (durable cursor hydrated from the
+    # journal, kept in memory between runs) — alphabetical first-N starved
+    # every ticker:* group behind the source:* groups forever
+    await _hydrate_audit_cursor(eng)
+    eligible.sort(key=lambda sc: (_AUDIT_CURSOR.get(sc, ""), sc))
     todo, deferred = eligible[:max_groups], eligible[max_groups:]
     groups: dict[str, list[dict]] = {}
     for sc in todo:
         groups[sc] = await svc.tip_notes([sc], limit=5000)
+    mode = _apply_mode(s)
 
     run_id = new_id()
     async with eng.sf() as session:
@@ -244,30 +283,28 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None) -
                "newNotes": [], "flagged": [], "rejected": [],
                "groupsEligible": len(eligible), "groupsDeferred": deferred,
                "groupsFailed": []}
-    for scope, notes in sorted(groups.items()):
+    usage_all: list[dict] = []
+    for scope, notes in groups.items():
         notes_txt = "\n".join(
             f"- [{n['id']}] {n['text']} (by {n['author']}, {(n['createdAt'] or '')[:10]}, "
             f"cited {n.get('citedCount', 0)}x)"
+            + ("  [DISPUTED — unresolved by the human; never merge or expire]" if n.get("needsHuman") else "")
             for n in notes)
+        expected_revisions = {n["id"]: int(n.get("revisionNo") or 1) for n in notes}
         header = (f"These are the desk's ACTIVE knowledge notes in scope '{scope}' "
                   f"(not trading rules — market/source knowledge):\n{notes_txt}")
         try:
-            from ...research import llm_stats
-            with llm_stats.timed() as _t:
-                resp = await asyncio.wait_for(
-                    client.messages.create(model=model, max_tokens=1500,
-                                           system=AUDIT_SYSTEM + json.dumps(
-                                               RuleAuditOpinion.model_json_schema(),
-                                               separators=(",", ":")),
-                                           messages=[{"role": "user", "content": header}]),
-                    timeout=AUDIT_TIMEOUT_S)
-            llm_stats.record_response("audit", resp, model=model, latency_ms=_t.ms)
-            text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-            i, j = text.find("{"), text.rfind("}")
-            op = RuleAuditOpinion.model_validate_json(text[i:j + 1])
+            cap = int(s.get("techniques.tip.audit_max_output_tokens", 3000) or 3000)
+            op, calls = await _judge(
+                client, model=model,
+                system=AUDIT_SYSTEM + json.dumps(RuleAuditOpinion.model_json_schema(),
+                                                 separators=(",", ":")),
+                header=header, cap=cap)
+            usage_all += [{"scope": scope, **c} for c in calls]
         except Exception as exc:
             log.warning("knowledge audit failed for %s: %s", scope, exc)
             applied["groupsFailed"].append(scope)      # visible, never silent
+            usage_all.append({"scope": scope, "error": str(exc)[:160]})
             continue
         live_ids = {n["id"] for n in notes}
         try:
@@ -275,11 +312,13 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None) -
                 scope=scope, merges=list(op.merges), expires=list(op.expires),
                 contradictions=list(op.contradictions),
                 author=f"knowledge-audit:{run_id[:8]}", run_id=run_id,
-                live_ids=live_ids, batch_id=f"{run_id}:{scope}")
+                live_ids=live_ids, batch_id=f"{run_id}:{scope}",
+                expected_revisions=expected_revisions, mode=mode)
         except Exception as exc:
             log.warning("knowledge audit apply aborted for %s: %s", scope, exc)
             applied["groupsFailed"].append(scope)
             continue
+        _AUDIT_CURSOR[scope] = dt.datetime.now(dt.timezone.utc).isoformat()   # progress, durable via journal
         applied["merged"] += got.get("merged", 0)
         applied["expired"] += got.get("expired", 0)
         applied["newNotes"] += got.get("newNotes", [])
@@ -287,17 +326,19 @@ async def run_knowledge_audit(eng, *, client=None, report: dict | None = None) -
         applied["rejected"] += got.get("rejected", [])
         applied["groups"] += 1
     applied["contradictions"] = len(applied["flagged"])
-    rep.update(status=("partial" if (applied["groupsFailed"] or deferred) else "done"),
-               reason=(f"failed {len(applied['groupsFailed'])}, deferred {len(deferred)}"
-                       if (applied["groupsFailed"] or deferred) else ""))
+    applied["mode"] = mode
+    partial = bool(applied["groupsFailed"] or deferred)
+    rep.update(status=("partial" if partial else "done"),
+               reason=(f"failed {len(applied['groupsFailed'])}, deferred {len(deferred)}" if partial else ""))
 
     from ... import events as ev
-    payload = {"runId": run_id, "kind": "knowledge", **applied}
+    payload = {"runId": run_id, "kind": "knowledge", **applied, "usage": usage_all}
     await eng.journal.append(ev.TIP_RULE_AUDITED, payload,
                              aggregate_type="technique_run", aggregate_id=run_id)
-    await _finish(eng, run_id, status="done",
+    await _finish(eng, run_id, status=("partial" if partial else "done"),   # never 'done' with failed groups
                   opinion={"verdict": "audit", **payload,
-                           "rationale": f"knowledge audit over {applied['groups']} scope group(s)"})
+                           "rationale": f"knowledge audit over {applied['groups']} scope group(s)"
+                                        + (f"; {len(applied['groupsFailed'])} failed, {len(deferred)} deferred" if partial else "")})
     log.info("knowledge audit %s: %d group(s), merged %d, expired %d, flagged %d",
              run_id[:8], applied["groups"], applied["merged"], applied["expired"],
              applied["contradictions"])
@@ -329,9 +370,37 @@ def audit_due_today(settings) -> bool:
 
 CATCHUP_DAYS = 8       # a missed Saturday runs on the next tick-able day
 
+# scope -> ISO time of its last audited batch (KB-04 progress cursor). Kept in
+# memory between runs and hydrated from the journal so a restart never resets
+# the traversal order to "alphabetical first N".
+_AUDIT_CURSOR: dict[str, str] = {}
+_CURSOR_HYDRATED = False
+
+
+async def _hydrate_audit_cursor(eng) -> None:
+    global _CURSOR_HYDRATED
+    if _CURSOR_HYDRATED:
+        return
+    _CURSOR_HYDRATED = True
+    try:
+        from sqlalchemy import select as _sel
+        from ... import events as ev
+        from ...models import Event
+        async with eng.sf() as session:
+            rows = (await session.execute(
+                _sel(Event.payload, Event.ts).where(Event.type == ev.TIP_RULE_AUDITED)
+                .order_by(Event.id.desc()).limit(2000))).all()
+        for payload, ts in rows:
+            sc = (payload or {}).get("scope")
+            if sc and sc not in _AUDIT_CURSOR:
+                _AUDIT_CURSOR[sc] = ts.isoformat()
+    except Exception:
+        log.debug("audit cursor hydration unavailable (offline?)", exc_info=True)
+
 
 async def _last_completion(eng) -> dt.datetime | None:
-    """The newest journaled maintenance completion (done or partial)."""
+    """The newest journaled maintenance completion — GENUINE completion only
+    ('done'); a partial pass never advances the watermark (KB-01)."""
     try:
         from sqlalchemy import select as _sel
         from ... import events as ev
@@ -341,7 +410,7 @@ async def _last_completion(eng) -> dt.datetime | None:
                 _sel(Event.payload, Event.ts).where(Event.type == ev.TIP_KNOWLEDGE_MAINTENANCE)
                 .order_by(Event.id.desc()).limit(60))).all()
         for payload, ts in rows:
-            if (payload or {}).get("status") in ("done", "partial"):
+            if (payload or {}).get("status") == "done":
                 return ts if ts.tzinfo else ts.replace(tzinfo=dt.timezone.utc)
     except Exception:
         log.debug("maintenance completion lookup failed", exc_info=True)
@@ -390,11 +459,17 @@ async def run_knowledge_maintenance(eng, *, client=None, force: bool = False) ->
         know_rep.update(status="failed", reason=str(exc)[:200])
     payload["ruleAuditStatus"] = rule_rep or {"status": "done"}
     payload["knowledgeAuditStatus"] = know_rep or {"status": "done"}
+    payload["applyMode"] = _apply_mode(s)
     statuses = {rule_rep.get("status", "done"), know_rep.get("status", "done")}
     if "failed" in statuses:
         payload["status"] = "failed"
     elif "partial" in statuses:
         payload["status"] = "partial"
+    elif statuses == {"skipped"}:
+        # precondition unavailable (no key / disabled / nothing eligible):
+        # NOT a completion — catch-up stays armed (KB-01)
+        payload["status"] = "skipped"
+        payload["reason"] = "; ".join(sorted({rule_rep.get("reason", ""), know_rep.get("reason", "")} - {""}))
     else:
         payload["status"] = "done"
     try:
