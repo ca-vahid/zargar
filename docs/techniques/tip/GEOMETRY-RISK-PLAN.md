@@ -1,6 +1,40 @@
 # Pre-entry geometry + risk sizing — design for review (2026-09-13)
 
-**Status: PROPOSAL. Nothing here is built or active.** Requested by the user
+Final-pass corrections (C95-02/03/04/05, combined tree PR #95): risk accounting carries
+provenance (executed vs hypothetical shadow plan); `widen_stop` is strictly durable before
+exposure; the trim attempt is bound to the order intent and an attempt without an ACK holds,
+never re-trims; a review-only spread never auto-opens; the contract multiplier comes from the
+OCC identity (adjusted = unknown = review).
+
+Readiness-review fixes (G91-01..06, head `3ffd6ce`; combined tree PR #95): enforce never admits
+by absence (a failed/missing plan is review-gated; the FINAL refusal at submission reverts an
+automated approval); shares are sized at the executable limit; Greek per-field age, a fresh
+non-delayed underlying reference and an explicit contract multiplier are required (unknown =
+review); the bracket is built from the FINAL plan; submission recomputes the whole plan; the
+gate is Practice-scoped; the trim-first exception carries a durable attempt identity, recovers
+an existing trim instead of trimming twice, re-reads unknown outcomes and re-checks the actual
+residual before any widen; `widen_stop` validates the actual position under the guard and
+persists before exposing; accounting is wired into the analyst positions tool and the retro.
+
+**Status (2026-09-14): BUILT on branch `claude/tips-geometry-rev2` (PR open
+for implementation review), NOT active.** `techniques.tip.geometry_gate`
+defaults to `shadow` — every tip proposal computes and journals its risk
+plan (`TipGeometryRepaired phase: pre-entry`, `enforced: false`) while
+sizes and stops stay exactly as before; `enforce` is a separate, reviewed
+activation. Code: `techniques/tip/geometry.py` (pure: budget, unit-loss
+estimator `delta-linear-v1`, sizing invariant, submission revalidation,
+post-fill decision + trim-first reducer, accounting), wiring in
+`approvals/proposals.py` (`_pre_entry_geometry`, `_admit_geometry` for
+`via=auto` and the stale-quote retry), `signals/service.py` (a review-gated
+card never auto-approves), `techniques/tip/lifecycle.py`
+(`run_geometry_exception`, `reconcile_geometry_exceptions`), and the shared
+`execution/positions.py` additions `Managed.extras` / `set_extras` /
+`widen_stop` (PLATFORM-RULES change log). Tests: `tests/test_tip_geometry_rev2.py`
+(the ten acceptance cases + budget authority, pure) and
+`tests/test_tip_geometry_wiring.py` (engine wiring on the sim broker).
+Budget B = `techniques.tip.risk_budget_per_tip` when > 0, else
+`techniques.tip.risk_pct` % of the book's equity — approved policy knobs,
+never the model's quantity. Requested by the user
 (2026-09-11: "validate geometry and sizing before entry, with explicit,
 bounded post-fill exceptions") and the independent reviewer (next-priorities
 review, item 1). Motivating incident: SPCX 2026-09-10 — the adoption gate

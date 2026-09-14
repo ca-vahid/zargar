@@ -1,6 +1,44 @@
-# KB-06 — execution-integrity pause (design, NOT built) — 2026-09-13
+# KB-06 — execution-integrity pause — 2026-09-13 (design) / 2026-09-14 (built, for review)
 
-Status: **design for review.** The clock-based `adoption_killswitch` (one
+Final-pass corrections (C95-01/06/07/08, combined tree PR #95): the premium-stop receipt is the
+frozen confirmed pair; proof references are bound to the incident's book, symbols and its own
+positions' orders/events (unrelated records never release); the diagnostic receipt is journaled
+only after its incident exists; the stale-quote retry re-admits immediately before the order.
+
+Readiness-review fixes (I93-01..04, head `2791f02`; combined tree PR #95): admission fails
+CLOSED (unavailable store / failed detection = refusal) over the COMPLETE open set with
+detection inside admission and a re-check before EVERY armed submission and transport retry;
+the classifier proves what it claims (risk plan = enforced + budget invariant + quote-freshness
+record; premium stop = structured `confirmation` record; actual fill timestamps from the
+executions table; a proven violation is invalid at any speed; duplicate executions detected);
+release resolves evidence references to actual records at the examined revision, unknown is
+never repaired, repeated pre-entry failures need a successful post-incident validation on the
+journal, and a human override is explicit and labeled; cancellation uses the admission scope
+semantics (entry path + symbol) and verifies outcomes at the order.
+
+Status (2026-09-14): **BUILT on branch `claude/tips-kb06-integrity-pause`
+(PR open for implementation review), NOT active.** The clock-based
+`adoption_killswitch` stays the live gate: `techniques.tip.entry_pause_mode`
+defaults to `clock`; incidents are DETECTED and RECORDED in every mode
+(shadow evidence for the activation decision) and PAUSE automated entries only
+in `integrity` / `both`. Code: `techniques/tip/integrity.py` (incident store +
+`entry_paused` / `admission` / `gate_reason`, cause-specific release
+validation at the examined revision, structured fast-stop classifier,
+`detect_incidents`, resting-entry cancellation), model `TipExecutionIncident`,
+journal kinds `TipExecutionIncident` / `TipFastStopDiagnostic`, wiring at
+every automated entry path — the auto-approval loop (`signals/service.py`),
+`ProposalService.approve(via=auto)` (before the status flip AND immediately
+before the order), the stale-quote retry, and the armed lane's
+`TipRunner._place_with_retry` (final admission at fire time, arms created
+before the incident included) — plus `TipRunner.cancel_working_entries`. API:
+`GET /api/tip/incidents`, `POST /api/tip/incidents/{id}/evidence`,
+`POST /api/tip/incidents/{id}/resolve` (`examinedRevision` required). Tests:
+`tests/test_tip_integrity.py` (the eight acceptance cases below + the
+reviewer's additions R1–R3 + the default-mode guarantee). Initial scope: the
+Tips Practice book (`techniques.tip.default_portfolio`); a human's click is a
+decision, never an automated entry. Original design text follows.
+
+Status (2026-09-13): **design for review.** The clock-based `adoption_killswitch` (one
 stop-out inside 5 minutes of adoption pauses every later tip auto-adoption for
 the session — `TipAutoPaused`) stays exactly as it is until this replacement
 is built, tested against the acceptance cases below, and reviewed. No setting

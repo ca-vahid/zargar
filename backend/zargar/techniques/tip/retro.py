@@ -17,6 +17,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from .lifecycle import position_risk_accounting
 from .analyst import (
     TIMEOUT_S,
     TOOLS,
@@ -115,6 +116,7 @@ async def retro_position(eng, row: dict, *, client=None) -> dict | None:
         "entryUnderlying": cfg.get("entry"), "risk": cfg.get("risk"),
         "entryMark": cfg.get("entryMark"), "policy": cfg.get("policy"),
         "legs": row.get("legs"), "realizedPnl": pnl,
+        "riskAccounting": position_risk_accounting({"config": cfg, "state": st, "realizedPnl": pnl}),   # G91-06
         "sessionsSeen": st.get("sessionsSeen"),
         "exits": (st.get("exits") or [])[-20:],
         "events": (st.get("events") or [])[-30:],
