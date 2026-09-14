@@ -6083,3 +6083,26 @@ setup, that is a gap to report, not a refusal.
   PM range, so it is not refused by F112. Watch the stack before calling it a candidate. (2) If IWM's pop fails back under E13 with the stack still bear, the next
   pullback would still sit inside the PM range 286.92–288.64 and should read `skip_no_trade_zone`. (3) If QQQ reclaims 713.65 on a 15m close, check the
   `bias_flip`. (4) Re-check OPRA/cartel counts. (5) Skip `/team2` UI (F103).
+
+## 2026-09-14 12:05 ET (run 86: SPY/IWM 15m close above PMH -> pm_break_up calls setups; stacks bull; no entries; parity exact)
+
+- **Alive on v0.7.71.** The app was redeployed at 08:50 PT (11:50 ET, `restart-20260914-085009.log`, restore check 72/72 armed, 0 open trades) by another desk's
+  release. It happened between runs, with no Team2 position open. SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` re-armed at 11:51 ET, mode `auto` on Team2 Practice, `needsAttention false`,
+  `stale false`, bar age about 93 s, quote age 0.
+- **Tape: the midday bounce carried through the PM highs.** SPY is at 761.40 (PMH 760.77), IWM at 288.69 (PMH 288.64), QQQ at 709.38 (PMH 715.42, still inside its range).
+  The **11:45 15m closes** printed `pm_break` up on SPY (close 762.09 > 760.77 → calls to 766.31) and IWM (288.795 > 288.64 → calls to 290.46), creating
+  `pm_break_up@11:30` long setups (touches 0). Scenario 4 (puts) is still the recorded bias on all three. No 15m close has come back above a PDL zone (763.60 / 713.65 / 288.77),
+  though IWM sits 0.03% under 288.77.
+- **Stacks turned bull on all three:** SPY strength 3 (E13 761.38 > E48 760.23 > E200 759.94), QQQ strength 2, IWM strength 3 (E13 288.42 > E48 287.99 ≈ E200 287.98).
+  Puts are correctly blocked (E3/B9/E4). No new `skip_*`, `same_pullback`, fire, contract, trade or open position since run 85 apart from the two `pm_break` events.
+- **Replay parity EXACT on all three.** SPY: scenario, skip 10:36, same_pullback 10:50/11:04, pm_break 11:45. QQQ: scenario only. IWM: scenario, skip 10:48, same_pullback
+  11:08/11:30, pm_break 11:45. Replay now also carries IWM's 11:30 `same_pullback`, which run 85 flagged as missing from replay (the note-placement artifact did not recur on the full-day replay).
+- **Data real-time:** 29 1m bars per symbol in the last 30 min, latest 12:02 ET, all `exchange`. Log (`backend/zargar-8420.log`): `OPRA quotes` 65 and `cartel-observer bar handling failed`
+  41, both unchanged. The newest traceback is still the 06:39 PT Options Cartel `read_entry` one. No Team2 warning.
+- **Observation (reporting only, no F-number):** the snapshot `summary` still leads with "scenario 4 → puts … no entry until the stack turns bear" and does not mention the now-live
+  `pm_break_up` calls setup, which is the one that can actually enter with a bull stack. Snapshot `triggers` do list it. This is the same "newest setup" reporting lineage as F20. It is not worth a code change mid-session; revisit if it misleads a
+  review.
+- **No code shipped, no new F-number.**
+- **Next run (~12:30) should:** (1) SPY: an EMA13 2m pullback (E13 ~761.4) now sits ABOVE the PM range, so F112 does not refuse it. With a bull strength-3 stack this is a real calls candidate.
+  If it fires, check the `contract` event (listed strike, live NBBO ask near 0.60), the order/fill trail and replay parity. (2) IWM: E13 288.42 is still INSIDE the PM range 286.92–288.64,
+  so a pullback now should read `skip_no_trade_zone` until E13 clears 288.64. (3) IWM 15m close back above 288.77 would be a `bias_flip` check. (4) Re-check OPRA/cartel counts. (5) Skip `/team2` UI (F103).
