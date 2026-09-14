@@ -207,6 +207,13 @@ def build_options_cartel_routes(app, eng, auth, config):
     async def cartel_approve(run_id: str, body: SignalApproval):
         return await respond(observer().approve(run_id, body.signalId))
 
+    @app.post("/api/options-cartel/armed/{run_id}/review-limits", dependencies=[auth])
+    async def cartel_review_execution_limits(run_id: str, request: Request):
+        from ..techniques.options_cartel.execution_review import review_execution_limits
+        observer()
+        return await respond(review_execution_limits(eng, run_id,
+            client_kind=request.headers.get('X-Zargar-Client', 'desktop')))
+
     @app.post("/api/options-cartel/armed/{run_id}/flatten", dependencies=[auth])
     async def cartel_flatten(run_id: str):
         return {"disarmed": await observer().disarm(run_id, reason="flatten requested", flatten=True)}

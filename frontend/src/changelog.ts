@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.62";
+export const APP_VERSION = "0.7.63";
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
 
@@ -17,6 +17,11 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {version:"0.7.63",date:"2026-09-13",title:"Cartel entry integrity and Practice evidence",items:[
+    {tag:"fixed",text:"Cartel: saved contract limits are checked again immediately before entry. Pending plans retain invalidation during slow lookups, and nearer confirmed targets cannot disappear behind optimistic fallback targets."},
+    {tag:"improved",text:"Cartel: explicitly review older unused Practice arms, choose reachable first trims for new 2–3-contract campaigns, and replay the actual position size. Existing campaigns keep their saved exit policy."},
+    {tag:"improved",text:"Cartel research: deduplicated option quotes and gap records support long campaign valuation; dated leadership context and policy cohorts support prospective comparisons. History cache reuse now respects provider changes."},
+  ]},
   {
     version: "0.7.62",
     date: "2026-09-13",

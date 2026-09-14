@@ -1,4 +1,5 @@
 import {CartelSessionReview} from "./CartelSessionReview";
+import {CartelLeaderContext} from "./CartelLeaderContext";
 import {CartelIgnition} from "./CartelIgnition";
 import { useCartelPortfolios } from "./cartelAccounts";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -154,6 +155,10 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
         <p>This comparison explains inclusion and exclusion; it does not bypass entry checks or copy another trader’s orders.</p>
       </details>
       <details><summary>Plan policy and exit allocations</summary>
+        <label>Whole-contract exit policy<select aria-label="Whole-contract exit policy" value={config.exitAllocationPolicy || 'legacy'} disabled={live} onChange={e => setConfig({...config, exitAllocationPolicy:e.target.value})}>
+          <option value="legacy">Original percentage rounding</option>{!live && <option value="whole_contracts_v2">Practice: reachable first trim for 2–3 contracts</option>}
+        </select></label>
+        <p>The Practice alternative gives 2 contracts one first-target trim and one EMA50 runner; 3 contracts add an EMA8 exit. One contract cannot trim and keeps its final EMA50/protective exit. Four or more keep the original allocation. New plans only; existing campaigns retain their saved policy.</p>
         <p>Screen: {label(config.profile)}. Exit profile: {label(config.exitProfile)}. Entry window: {config.horizonSessions} session(s); held positions may continue longer.</p>
         <p>September allocations: {config.septemberFractions.map((v: number) => `${v * 100}%`).join(" / ")}. Automatic Fibonacci targets: {config.allowFibonacciTargets ? "enabled when historical pivots are unavailable" : "disabled"}.</p>
         <p>Allocations and automatic target anchors are engineering choices recorded in each plan.</p>
@@ -228,6 +233,7 @@ export function CartelPreparation({onOpen, onSettings, onChanged, view}: {
             </td><td>{(r.planId || r.analysisId) && <CartelRunLink id={r.planId || r.analysisId} onOpen={onOpen}>Open {r.symbol}</CartelRunLink>}</td>
           </tr>)}
         </tbody></table></div> : <EmptyState art={false} title={running ? label(result.phase || "Starting preparation") : "No qualifying shortlist"} hint={running ? "Progress and provider activity are shown above." : "Missing evidence or a market without alignment can produce no setups."}/>}
+        <CartelLeaderContext context={result.leaderContext} protocol={result.researchProtocol}/>
         {!!result.watchlistComparison?.rows?.length && <details className="cartel-inset" open><summary>Watchlist coverage comparison</summary>
           <p>{result.watchlistComparison.source}</p>
           {result.watchlistComparison.rows.map((r:any) => <p key={r.symbol}><b>{r.symbol}</b> · {label(r.status)} · {r.reason || r.reasons?.join("; ") || "Passed setup checks; selection and execution checks remain"}</p>)}

@@ -1,6 +1,7 @@
 """Explicit automatic review policy for Cartel's workspace-scoped preparation workflow."""
 from __future__ import annotations
 
+import datetime as dt
 import math
 import re
 from typing import Literal
@@ -15,7 +16,7 @@ from .plans import EntryPolicy
 from .quality import target_room
 from .rules import ScreenProfile
 from .service import PlanInput, WireModel
-from .setups import SetupParameters
+from .setups import SetupParameters, _targets
 
 
 class PreparationPolicy(WireModel):
@@ -53,6 +54,7 @@ class PreparationPolicy(WireModel):
     entry: EntryPolicy = Field(default_factory=lambda: EntryPolicy(allow_gap_retest=True))
     setups: SetupParameters = Field(default_factory=SetupParameters)
     exit_profile: Literal['september_2026', 'june_2026', 'may_2026'] = 'september_2026'
+    exit_allocation_policy: Literal['legacy', 'whole_contracts_v2'] = 'legacy'
     # Engineering allocation, displayed as configuration; not attributed to Sean.
     september_fractions: tuple[float, float, float, float, float] = (.25, .25, .20, .20, .10)
     allow_fibonacci_targets: bool = True
@@ -79,6 +81,8 @@ class PreparationPolicy(WireModel):
             raise ValueError('New Live preparation requires verified exchange history')
         if self.profile == 'post_ignition_2026_09_11' and self.workspace != 'practice':
             raise ValueError('Post-ignition pilot is Practice-only; Live retains established profiles')
+        if self.workspace == 'live' and self.exit_allocation_policy != 'legacy':
+            raise ValueError('Whole-contract exit allocation v2 is a Practice-only experiment')
 
         if self.workspace == 'live' and self.market_alignment != 'strict':
             raise ValueError('Moderate market alignment is a Practice-only experiment; Live requires strict alignment')
@@ -89,8 +93,35 @@ class PreparationPolicy(WireModel):
                 raise ValueError('Use up to 50 unique uppercase symbols')
         if self.comparison_symbols and not self.comparison_source.strip():
             raise ValueError('Comparison watchlist requires a dated source or rationale')
-        ExitCampaign.for_profile(self.exit_profile, [1., 2.], september_fractions=self.september_fractions)
+        ExitCampaign.for_profile(self.exit_profile, [1., 2.], september_fractions=self.september_fractions,
+                                 allocation_policy=self.exit_allocation_policy)
         return self
+
+
+def _anchor_history(history, candidate, base_sessions):
+    """Anchor before this candidate's geometry, including saved older analyses."""
+    evidence = candidate.get('evidence') or {}
+    boundary = evidence.get('targetBaseStart')
+    if boundary is not None:
+        start = dt.date.fromisoformat(boundary)
+    elif candidate['setup'] == 'post_ignition':
+        event = evidence.get('eventSession')
+        following = [b for b in history if event and b.session.isoformat() > event]
+        if not following:
+            return []
+        start = following[0].session
+    elif candidate['setup'] in ('inside_day', 'ma_pullback', 'breakout_retest'):
+        offset = 2 if candidate['setup'] == 'inside_day' else 1
+        if len(history) < offset:
+            return []
+        start = history[-offset].session
+    elif evidence.get('baseStart'):
+        start = dt.date.fromisoformat(evidence['baseStart'])
+    elif len(history) >= base_sessions:
+        start = history[-base_sessions].session
+    else:
+        return []
+    return [b for b in history if b.session < start][-60:]
 
 
 def automatic_review(research, analysis, policy: PreparationPolicy, *, research_only=False):
@@ -104,10 +135,11 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
         trigger, stop = candidate['trigger'], candidate['invalidation']
         if not math.isfinite(trigger) or not math.isfinite(stop) or (trigger-stop)*sign <= 0:
             continue
-        targets = list(candidate['targets'])
+        targets = _targets(history, trigger, direction, policy.setups.touch_tolerance_pct,
+                           existing=candidate['targets'])
         source = 'Confirmed historical price pivots from completed daily bars'
         if not targets and policy.allow_fibonacci_targets:
-            prior = history[:-policy.setups.base_sessions][-60:]
+            prior = _anchor_history(history, candidate, policy.setups.base_sessions)
             if len(prior) < 20:
                 continue
             anchor = min(b.low for b in prior) if sign == 1 else max(b.high for b in prior)
@@ -124,7 +156,7 @@ def automatic_review(research, analysis, policy: PreparationPolicy, *, research_
             continue
         try:
             campaign = ExitCampaign.for_profile(policy.exit_profile, targets,
-                september_fractions=policy.september_fractions)
+                september_fractions=policy.september_fractions, allocation_policy=policy.exit_allocation_policy)
         except ValueError:
             continue
         ratio = abs(targets[0]-trigger)/abs(trigger-stop)

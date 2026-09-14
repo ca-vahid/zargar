@@ -1,5 +1,11 @@
 # Cartel documentation changes
 
+## 2026-09-13 — final review corrections
+
+- Added the final review and current correctness/Practice protocol, including source-versus-engineering boundaries.
+- Updated preparation, replay and delivery guidance for final-dispatch limits, target causality, pending invalidation, legacy arm review and provider identity.
+- Documented quantity-specific exits, quote gaps/deduplication, paged premium valuation and advisory cohort limitations. No profitability or automatic Live-graduation claim.
+
 ## 2026-09-13 — current guidance consolidated
 
 - Replaced contradictory README, preparation, delivery status, release handoff and traceability text with code-checked current guidance.

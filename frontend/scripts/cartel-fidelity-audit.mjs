@@ -30,7 +30,13 @@ try {
         profile:'september_2026',scanAll:true,historyLimit:200,focusCount:5,budget:500,riskPct:10,
         baselineReadiness:workspace==='practice'?'covered_periods':'full_session',shortlistRanking:'quality',minTargetDistancePct:.5,minEntryTargetR:.25,marketAlignment:'strict',industryPolicy:'context',reviewedEtfs:['DRAM'],comparisonSymbols:['MU'],comparisonSource:'Synthetic dated watchlist',
         entry:{timeframe_minutes:15,mode:'breakout',allow_gap_retest:true,volume_multiple:1.5,min_close_location:.7},
-        exitProfile:'september_2026',horizonSessions:1,septemberFractions:[.25,.25,.2,.2,.1],allowFibonacciTargets:true};
+        exitProfile:'september_2026',exitAllocationPolicy:'legacy',horizonSessions:1,septemberFractions:[.25,.25,.2,.2,.1],allowFibonacciTargets:true};
+      const leaderContext={advisoryOnly:true,discovered:4,evaluated:3,
+        basis:'Industry membership is a theme proxy. Missing histories are not failures. This is advisory context.',
+        groups:[{industry:'Synthetic semiconductors',discovered:4,evaluated:3,trendPassed:2,
+          positiveRelativeStrength:2,strengthKnown:3,medianRelativeStrength:2.75,leaders:['LEAD','NEXT','THIRD']}]};
+      const researchProtocol={cohortId:'ui-fixture:policy-123',promotion:'No automatic promotion. Twenty sessions is a collection checkpoint, not proof of edge.',
+        valuation:'Exact funded whole contracts and contemporaneous bid/ask evidence; missing quotes remain unknown.'};
       await page.routeWebSocket('**/ws**',socket=>socket.send(JSON.stringify({t:'snapshot',d:{
         settings:{'trading.mode':workspace,'techniques.options_cartel.default_portfolio':'practice'},
         portfolios:[{id:'practice',name:'Cartel Practice',kind:'sim',currency:'USD',baseCurrency:'USD',cash:10000,equity:10000},
@@ -45,6 +51,7 @@ try {
           data={configuration:saved||config,latest:{runId:'research-fixture',status:'done',result:{phase:'complete',armingBlocked:true,researchDirection:'long',researchCandidates:1,discovered:1,evaluated:1,notEvaluated:0,dataErrors:0,qualifying:0,armed:0,coverageComplete:true,marketDataErrors:{SPY:'Expected 2026-09-09; provider history ends 2026-09-08'},retainedPlans:[{planId:'retained-fixture',symbol:'HELD'}],candidatesChecked:2,candidateCheckLimit:25,rows:[],shortlist:[{symbol:'TEST',analysisId:'research-analysis',status:'market_blocked',reason:'Research only: market alignment blocks arming'}],market:{direction:'mixed',reason:'Both indices must agree',indices:{SPY:{direction:'mixed',session:'2026-09-08',close:100,emas:{8:101,21:99},aboveEmas:{8:false,21:true}}}}}},liveAutoAllowed:false,activation:{},quoteRefresh:{errors:{}}};
         } else if(url.pathname.endsWith('/schedule')) data={configuration:{scanSymbols:[]},jobs:[]};
         else if(url.pathname.endsWith('/quote-recording')) data={enabled:false,errors:{},captured:0};
+        if(data.latest?.result) Object.assign(data.latest.result,{leaderContext,researchProtocol});
         await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(data)});
       });
       await page.goto(`${base}/techniques/options-cartel/settings`);
@@ -66,6 +73,10 @@ try {
       await page.getByLabel('Reviewed ETF symbols',{exact:true}).fill('DRAM, TEST');
       await page.getByRole('combobox',{name:/^Confirmation timeframe/}).selectOption('5');
       await page.getByRole('combobox',{name:/^Entry approach/}).selectOption('retest');
+      await page.getByText('Plan policy and exit allocations',{exact:true}).click();
+      const allocation=page.getByRole('combobox',{name:'Whole-contract exit policy',exact:true});
+      if(workspace==='practice') await allocation.selectOption('whole_contracts_v2');
+      else { assert(await allocation.isDisabled()); assert.equal(await allocation.locator('option[value=whole_contracts_v2]').count(),0); }
       await page.getByRole('button',{name:'Save preparation settings',exact:true}).click();
       await page.getByText('Cartel preparation settings saved',{exact:true}).waitFor();
       assert.equal(saved.workspace,workspace);
@@ -77,6 +88,7 @@ try {
       assert.deepEqual(saved.reviewedEtfs,['DRAM','TEST']);
       assert.equal(saved.entry.timeframe_minutes,5); assert.equal(saved.entry.mode,'retest');
       assert.equal(saved.allowLive,false); assert.equal(saved.enabled,false);
+      assert.equal(saved.exitAllocationPolicy,workspace==='practice'?'whole_contracts_v2':'legacy');
       assert.deepEqual(errors,[]);
       assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1),'document overflow');
       await page.getByRole('tab',{name:'Plans',exact:true}).click();
@@ -89,6 +101,12 @@ try {
       assert(await page.getByText('SPY data unavailable:',{exact:true}).isVisible());
       assert(await page.getByText(/1 existing campaigns preserved/).isVisible());
       assert(await page.getByText(/2 candidates checked for history and contracts/).isVisible());
+      await page.getByText('Leadership and prospective evidence',{exact:true}).click();
+      assert(await page.getByText('Synthetic semiconductors',{exact:true}).isVisible());
+      assert(await page.getByText('LEAD, NEXT, THIRD',{exact:true}).isVisible());
+      assert(await page.getByText(/Twenty sessions is a collection checkpoint, not proof of edge/).isVisible());
+      assert(await page.getByText('2.75 pp',{exact:true}).isVisible());
+      assert(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth+1),'leadership document overflow');
       await page.getByRole('tab',{name:'Method',exact:true}).click();
       await page.getByLabel('Read a chapter').selectOption('DELIVERY-STATUS.md');
       assert(await page.getByRole('heading',{name:'Current Cartel capabilities and limits',exact:true}).isVisible());

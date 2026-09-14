@@ -251,3 +251,9 @@ Full auto-generated English transcript read; scanner near 14:13, CRCL entry near
 for timestamped paraphrases, engineering definitions and caption limitations.
 Ignition discovery and later consolidation/entry are separate stages. The
 initial 3–5x volume examples do not define an intraday confirmation multiplier.
+
+## September 13 follow-up
+
+- S31: [Full system breakdown](https://x.com/SRxTrades/status/2099241717983486243), September 13: full public text inspected. Emphasizes market context, theme leadership, repeated focus on leaders, predefined price/volume triggers and risk. Targets include prior highs, supply and weekly levels. Supports advisory group evidence; does not prescribe our numerical filters.
+- S32: [FFIV watch](https://x.com/SRxTrades/status/2099254292779536704), September 13: daily base, accumulation and possible software rotation; stated 416 level. Prospective coverage example, not an execution record.
+- S33: [AMBQ watch](https://x.com/SRxTrades/status/2099260584189645197), September 13: IPO-base retest, weekly flag and 50-week EMA context. Prospective coverage example, not proof of profitability.

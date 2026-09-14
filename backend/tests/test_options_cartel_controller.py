@@ -121,8 +121,8 @@ async def test_invalid_entry_conditions_never_reserve_or_place(repo, monkeypatch
 async def test_lost_response_recovers_existing_order_without_second_submission(repo, monkeypatch):
     controller, _ = await setup(repo, monkeypatch)
     original = repo.engine.orders.place
-    async def lost(intent):
-        await original(intent)
+    async def lost(intent, **kwargs):
+        await original(intent, **kwargs)
         raise ConnectionError("response lost")
     monkeypatch.setattr(repo.engine.orders, "place", lost)
     a = await controller.submit("r1")
@@ -135,7 +135,7 @@ async def test_lost_response_recovers_existing_order_without_second_submission(r
 async def test_unknown_submission_is_attention_not_retry_permission(repo, monkeypatch):
     controller, _ = await setup(repo, monkeypatch)
     calls = []
-    async def unavailable(intent):
+    async def unavailable(intent, **kwargs):
         calls.append(intent)
         raise ConnectionError("no acknowledgement")
     monkeypatch.setattr(repo.engine.orders, "place", unavailable)

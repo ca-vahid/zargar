@@ -8,6 +8,8 @@ from __future__ import annotations
 import asyncio
 import math
 import time
+from collections.abc import Callable
+from dataclasses import dataclass
 from weakref import WeakKeyDictionary
 
 from sqlalchemy import select
@@ -18,7 +20,7 @@ from ...marketstructure.sessions import session_bounds, session_date
 from ...models import TechniqueRun
 from ...orders import OrderIntent
 from .data import DailyBar
-from .execution import ExecutionInput, preflight
+from .execution import ExecutionInput, contract_entry_checks, preflight
 from .exits import ExitCampaign
 from .loss import loss_gate
 from .plans import CartelPlan
@@ -28,6 +30,13 @@ from .state import ArmRepository
 
 _locks = WeakKeyDictionary()
 _inflight = WeakKeyDictionary()
+
+
+@dataclass(frozen=True)
+class PreparedEntry:
+    """Server-only handoff; callbacks never enter the order DTO or journal."""
+    intent: OrderIntent
+    before_submit: Callable[[], None]
 
 
 def reviewed_execution_plan(run):
@@ -61,6 +70,8 @@ class CartelEntryController:
             validate_account(self.engine, book)
         preparation = row.get('config', {}).get('preparation')
         if preparation:
+            if spec.instrument == 'options' and spec.contract_policy is None:
+                raise ValueError('Automatic arm lacks saved contract limits; explicitly review and rearm it before entry')
             from .preparation_scope import read_policy, require_execution_scope
             if now >= preparation.get('validUntil', 0):
                 raise ValueError('Automatic preparation evidence expired')
@@ -76,6 +87,8 @@ class CartelEntryController:
             raise ValueError("entry is no longer armed and signalled")
         if row["mode"] not in ("proposal", "auto") or spec.mode != row["mode"] or spec.portfolio_id != row["portfolioId"]:
             raise ValueError("reviewed execution does not match the armed mode/account")
+        if ExecutionInput.model_validate(row['config'].get('execution') or {}) != spec:
+            raise ValueError('Reviewed execution limits changed; fresh evaluation required')
         if not row["state"]["opensAt"] <= now < row["state"]["expiresAt"] or bar_session(now) != "rth":
             raise ValueError("entry requires an open regular exchange session within the plan horizon")
         if signal.get("id") != f"{plan.id}:entry:{signal.get('at')}" or not 0 <= now-signal.get("at", -1) <= 120_000:
@@ -148,6 +161,30 @@ class CartelEntryController:
                     or not spec.min_abs_delta <= abs(delta) <= 1 or (delta <= 0 if plan.direction == "long" else delta >= 0) \
                     or not isinstance(stamp, (int, float)) or isinstance(stamp, bool) or not 0 <= now-stamp <= 120_000:
                 raise ValueError("option delta changed or expired during preflight")
+            failures = [check['reason'] for check in contract_entry_checks(self.engine, plan, spec, now) if not check['passed']]
+            if failures:
+                raise ValueError('; '.join(failures))
+
+    def _runtime_entry_conditions(self, run_id, reserved_row, spec):
+        """Read the owning runtime's current authority without awaiting I/O.
+
+        Its phase can lag the persisted reservation or already reflect the
+        submitted order. Only current authorization/configuration and signal
+        identity are compared; the reserved row retains the execution inputs.
+        """
+        runtime = getattr(self.engine, 'cartel_observer', None)
+        if runtime is None or getattr(runtime, 'controller', None) is not self:
+            return  # Direct controller use has no owning runtime cache.
+        current = runtime.rows.get(run_id)
+        if runtime.stopping or current is None or current.get('status') != 'armed':
+            raise ValueError('Cartel arm is no longer active at dispatch')
+        if (current.get('mode') != reserved_row['mode'] or current.get('portfolioId') != spec.portfolio_id
+                or ExecutionInput.model_validate(current.get('config', {}).get('execution') or {}) != spec
+                or current.get('config') != reserved_row.get('config')):
+            raise ValueError('Cartel arm settings changed before dispatch; fresh review required')
+        signal_id = (current.get('state', {}).get('signal') or {}).get('id')
+        if signal_id != (reserved_row['state'].get('signal') or {}).get('id'):
+            raise ValueError('Cartel arm signal changed before dispatch; fresh confirmation required')
 
     async def _reconciled(self, run_id, spec, plan):
         report = await execution_readiness(self.engine, spec.portfolio_id, plan.symbol, ignore_attempt_run_id=run_id)
@@ -159,10 +196,10 @@ class CartelEntryController:
 
     async def submit(self, run_id, *, approval_signal_id=None):
         prepared = await self._prepare_submission(run_id, approval_signal_id=approval_signal_id)
-        if not isinstance(prepared, OrderIntent):
+        if not isinstance(prepared, PreparedEntry):
             return prepared
         try:
-            await self.engine.orders.place(prepared)
+            await self.engine.orders.place(prepared.intent, before_submit=prepared.before_submit)
         except Exception as exc:  # noqa: BLE001 - reconcile unknown submission outcomes
             async with self.engine.sf() as session, session.begin():
                 locked = await self.repository._locked(session, run_id)
@@ -196,8 +233,8 @@ class CartelEntryController:
                 return {"runId": run_id, "status": "preflight_rejected", "report": report, "placesEntryOrders": False}
             if row["mode"] == "proposal" and approval_signal_id != row["state"]["signal"]["id"]:
                 return {"runId": run_id, "status": "awaiting_approval", "report": report, "placesEntryOrders": False}
-            latest = await self.repository.load(run_id)
             await self._reconciled(run_id, spec, plan)
+            latest = await self.repository.load(run_id)
             self._entry_conditions(latest, plan, spec)
             intent = OrderIntent.model_validate(report["intent"]).model_copy(update={"dry_run": False})
             self._vehicle_conditions(intent, spec, plan)
@@ -205,8 +242,8 @@ class CartelEntryController:
             if reserved is None:
                 return await self._poll(run_id)
             try:
-                latest = await self.repository.load(run_id)
                 await self._reconciled(run_id, spec, plan)
+                latest = await self.repository.load(run_id)
                 self._entry_conditions(latest, plan, spec)
                 self._vehicle_conditions(reserved, spec, plan)
             except ValueError as exc:
@@ -221,7 +258,11 @@ class CartelEntryController:
             # Release the reservation mutex before broker I/O so incoming partial
             # fills can be protected while the submission response is still pending.
             _inflight.setdefault(self.engine, set()).add(run_id)
-            return reserved
+            def before_submit():
+                self._runtime_entry_conditions(run_id, latest, spec)
+                self._entry_conditions(latest, plan, spec)
+                self._vehicle_conditions(reserved, spec, plan)
+            return PreparedEntry(reserved, before_submit)
 
     async def poll(self, run_id, *, request_cancel=False):
         async with self._guard(run_id):

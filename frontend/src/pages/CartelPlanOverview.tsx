@@ -3,6 +3,7 @@ import { api } from "../lib/api";
 import { useStore } from "../store";
 import { ErrorState, Spinner } from "../components/ui";
 import { useWorkspace } from "../lib/workspace";
+import { CartelExecutionLimitReview } from './CartelExecutionLimitReview';
 
 const price = (n: number) => Number.isFinite(n) ? n.toFixed(2) : "—";
 const label = (s: string) => s.replaceAll("_", " ");
@@ -12,11 +13,16 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
   const preparation = run.config?.preparation;
   const workspace = useWorkspace();
   const mismatch = preparation && (preparation.workspace || "practice") !== workspace;
+  const filledQty = active?.trades?.[0]?.filledQty;
   const [previewQty,setPreviewQty] = useState(1);
+  const [previewEdited,setPreviewEdited] = useState(false);
   const [decision, setDecision] = useState<any>(null);
   const [loading, setLoading] = useState(!!preparation);
   const [error, setError] = useState("");
   const openArmedPlan = useStore(s => s.openArmedPlan);
+  useEffect(() => {
+    if (!previewEdited && Number.isInteger(filledQty) && filledQty > 0) setPreviewQty(filledQty);
+  }, [filledQty, previewEdited]);
   useEffect(() => {
     let alive = true;
     if (!preparation?.runId) { setLoading(false); return; }
@@ -38,6 +44,7 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
     {!active && decision?.selection?.pendingReason && <p className="cartel-notice">At preparation: {decision.selection.pendingReason}</p>}
     {!active && decision?.selection?.errors?.map((e: string, i: number) => <p key={i}>{e}</p>)}
     {active && <p>Execution mode: {active.config?.mode || active.mode}. {active.summary} {!mismatch && <button className="link-btn" onClick={() => openArmedPlan(run.runId)}>Open execution monitor</button>}</p>}
+    <CartelExecutionLimitReview runId={run.runId} active={active}/>
     {active?.volumeCoverage && <details open={active.volumeCoverage.limited}><summary>Supported entry windows</summary>
       <p>Volume baseline: {active.volumeCoverage.available}/{active.volumeCoverage.expected} periods. Policy: {label(active.volumeCoverage.policy)}.</p>
       <p>Confirmation windows (ET): {active.volumeCoverage.entryWindows?.map((w:any)=>`${w.startET}–${w.confirmationET}`).join(", ") || "none"}. Unsupported periods cannot trigger an entry; current session data and risk checks remain mandatory.</p>
@@ -69,9 +76,15 @@ export function CartelPlanOverview({run, active}: {run: any; active?: any}) {
         r.kind === "target" ? `Target reached at ${price(r.target)}` : r.kind === "extension" ? `${r.atr_multiple}× ATR extension from EMA ${r.ema_period}` : `Daily close ${plan.direction === "long" ? "below" : "above"} EMA ${r.ema_period}`
       }</td><td className="num">{Math.round(r.fraction*100)}%</td></tr>)}
     </tbody></table></div>
-    <details><summary>Whole-contract exit preview</summary><label>Modeled contracts<input aria-label="Modeled exit contracts" type="number" min="1" max="1000" value={previewQty} onChange={e=>setPreviewQty(Math.max(1,Math.min(1000,Math.floor(Number(e.target.value)||1))))}/></label>
-    {(()=>{let cumulative=0,allocated=0;return run.result.exitCampaign?.rungs.map((r:any)=>{cumulative+=r.fraction;const total=Math.min(previewQty,Math.floor(previewQty*cumulative+1e-9)),qty=total-allocated;allocated=total;return <p key={r.id}>{label(r.id)}: {qty} contracts{qty===0?" · skipped at this quantity":""}</p>;});})()}
-    <p>Only actual fills advance exits. A zero-sized first trim does not move the stop to entry. Protective exits can close the remaining position.</p></details>
+    <details><summary>Whole-contract exit preview</summary><label>Modeled contracts<input aria-label="Modeled exit contracts" type="number" min="1" max="1000" value={previewQty} onChange={e=>{setPreviewEdited(true);setPreviewQty(Math.max(1,Math.min(1000,Math.floor(Number(e.target.value)||1))));}}/></label>
+    <p>{!previewEdited && filledQty === previewQty ? "Original confirmed filled quantity" : "Hypothetical quantity; account funding is not established"} · policy {label(run.result.exitCampaign?.allocation_policy || "legacy")}</p>
+    {(()=>{let cumulative=0,allocated=0;const campaign=run.result.exitCampaign;
+      const sizes:Record<string,number>={};campaign?.rungs.forEach((r:any)=>{cumulative+=r.fraction;const total=Math.min(previewQty,Math.floor(previewQty*cumulative+1e-9));sizes[r.id]=total-allocated;allocated=total;});
+      if(campaign?.allocation_policy==="whole_contracts_v2" && [2,3].includes(previewQty)) Object.assign(sizes,{target1:1,extension:0,ema8:previewQty-2,ema21:0,ema50:1});
+      const first=sizes[campaign?.rungs[0]?.id] || 0;
+      return campaign?.rungs.map((r:any)=>{const qty=sizes[r.id],blocked=r.kind==="extension" && first===0;
+        return <p key={r.id}>{label(r.id)}: {qty} contracts · {(qty/previewQty*100).toFixed(1)}%{qty===0?" · skipped at this quantity":blocked?" · unreachable without a first trim; held for final EMA or protection":r.kind!=="target" && first>0?" · requires first trim to fill":""}</p>;});})()}
+    <p>{previewQty===1?"One contract cannot be trimmed. It uses the final daily EMA or protective/expiry exit, with no target-based breakeven move.":"Only actual fills advance exits. A zero-sized first trim does not move the stop to entry. Protective exits can close the remaining position."}</p></details>
     <p className="muted">Actual trims depend on filled quantity. Chart reference targets are not automatically separate sell orders; this exit schedule controls the campaign. Allocations and automatic geometry choices are recorded engineering settings.</p>
     {plan.rationale && <details><summary>Saved review rationale</summary><p>{plan.rationale}</p></details>}
   </section>;

@@ -2,6 +2,10 @@
 
 Current behavior, reviewed 2026-09-13. This is the operating guide; dated release notes are historical evidence.
 
+The [September 13 corrections](READINESS-2026-09-13.md) preserve contract limits through final submission, recheck pending invalidation after selection and retain nearer confirmed targets. Older unused automatic Practice arms need the explicit **Review entry contract limits** action before entry. It preserves their selected contract, chart targets and exit policy.
+
+Settings → Plan policy and exit allocations has a Practice-only whole-contract alternative for new plans: two contracts use first target/EMA50, three use first target/EMA8/EMA50. One contract retains its final EMA/protective exit. Old campaigns retain their saved policy. Enable Option quote recording to collect contemporaneous evidence. Leadership and prospective evidence on Plans is advisory; it does not replace the configured executable ranking.
+
 ## Using the desk
 
 1. Select Practice or Live in the app workspace selector.

@@ -38,6 +38,7 @@ class ExitCampaign(BaseModel):
     profile: Literal["may_2026", "june_2026", "september_2026", "january_2026_volume", "reviewed"]
     source_refs: tuple[str, ...] = Field(min_length=1)
     allocation_note: str = Field(min_length=1)
+    allocation_policy: Literal["legacy", "whole_contracts_v2"] = "legacy"
     rungs: tuple[ExitRung, ...] = Field(min_length=2)
     atr_period: int = Field(default=14, ge=2, le=252)
 
@@ -49,10 +50,15 @@ class ExitCampaign(BaseModel):
             raise ValueError("exit fractions must allocate exactly the original position")
         if self.rungs[0].kind != "target" or self.rungs[-1].kind != "ema":
             raise ValueError("campaign starts with a target and ends with a daily EMA runner")
+        if self.allocation_policy == "whole_contracts_v2" and (self.profile != "september_2026"
+                or [(r.id, r.kind, r.ema_period) for r in self.rungs] != [
+                    ("target1", "target", 8), ("extension", "extension", 8),
+                    ("ema8", "ema", 8), ("ema21", "ema", 21), ("ema50", "ema", 50)]):
+            raise ValueError("whole_contracts_v2 requires the September target/extension/8/21/50 campaign")
         return self
 
     @classmethod
-    def for_profile(cls, profile: str, targets: list[float], *, september_fractions=None):
+    def for_profile(cls, profile: str, targets: list[float], *, september_fractions=None, allocation_policy="legacy"):
         if not targets:
             raise ValueError("first target is required")
         if profile == 'january_2026_volume':
@@ -87,7 +93,10 @@ class ExitCampaign(BaseModel):
             note = "First trim/3xATR/EMAs from S01; later fractions explicitly chosen by reviewer, not stated by Sean."
         else:
             raise ValueError("unknown source exit profile")
-        return cls(profile=profile, source_refs=refs, allocation_note=note, rungs=tuple(rungs))
+        if allocation_policy == "whole_contracts_v2":
+            note += " Whole-contract v2 is an engineering experiment for two/three units: first-target trim plus EMA runners; one and four-or-more units retain legacy allocation."
+        return cls(profile=profile, source_refs=refs, allocation_note=note, rungs=tuple(rungs),
+                   allocation_policy=allocation_policy)
 
 
 class ExitState(BaseModel):
@@ -116,6 +125,12 @@ def allocations(campaign: ExitCampaign, initial_qty: int) -> dict[str, int]:
     Cumulative floor gives balanced partials (e.g. 3 contracts -> 0,1,1,1).
     Zero-sized rungs are skipped, not promoted to a forced one-contract trim.
     """
+    if not isinstance(initial_qty, int) or isinstance(initial_qty, bool) or initial_qty < 1:
+        raise ValueError("allocation requires positive whole units")
+    if campaign.allocation_policy == "whole_contracts_v2" and initial_qty in (2, 3):
+        # Explicit small-lot experiment. Retain a final runner and make the
+        # first strength trim reachable; all other quantities retain legacy.
+        return {"target1": 1, "extension": 0, "ema8": initial_qty-2, "ema21": 0, "ema50": 1}
     cumulative, allocated = 0., 0
     out = {}
     for rung in campaign.rungs:
@@ -124,6 +139,21 @@ def allocations(campaign: ExitCampaign, initial_qty: int) -> dict[str, int]:
         out[rung.id] = total-allocated
         allocated = total
     return out
+
+
+def allocation_preview(campaign: ExitCampaign, initial_qty: int) -> dict:
+    sizes = allocations(campaign, initial_qty)
+    first = sizes[campaign.rungs[0].id]
+    return {"quantity": initial_qty, "policy": campaign.allocation_policy,
+        "rungs": [{"id": r.id, "quantity": sizes[r.id], "effectiveFraction": sizes[r.id]/initial_qty,
+            "reachable": sizes[r.id] > 0 and (r.kind != "extension" or first > 0),
+            "reason": "No units allocated" if sizes[r.id] == 0 else
+                "First trim has no allocation; this portion remains for the final EMA or protection"
+                if r.kind == "extension" and first == 0 else
+                "Requires the first trim to fill" if r.kind != "target" and first > 0 else ""}
+            for r in campaign.rungs],
+        "note": "One unit cannot be trimmed: final daily EMA or protective/expiry exit; no target breakeven."
+            if initial_qty == 1 else "Only actual fills advance exits or move the stop to entry."}
 
 
 def decide_exits(campaign: ExitCampaign, state: ExitState, history: list[DailyBar], *,

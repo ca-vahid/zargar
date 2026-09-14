@@ -245,8 +245,10 @@ class CartelObserver(SessionListener):
                 day = session_date(bar.ts)
                 minutes = dict(state.get("minutes", {})) if state.get("day") == day else {}
                 merge(minutes, bar)
-                plan = self.plans[rid].model_copy(update={"created_at": max(
-                    self.plans[rid].created_at, state["armedAt"])})
+                # A plan's invalidation lifetime starts at its original creation.
+                # observeAfter suppresses missed entries without erasing a close
+                # that invalidated it while pending, paused or restoring.
+                plan = self.plans[rid]
                 tape = [unpack(symbol, values) for values in minutes.values()]
                 observation = read_entry(plan, tape, now, entry_after=state.get("observeAfter", state["armedAt"]))
                 observation['dataEvidence'] = evidence(minutes)

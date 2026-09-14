@@ -2,6 +2,8 @@
 
 Reviewed 2026-09-13. Research output never grants arming permission or edits the original plan.
 
+Quantity defaults to original confirmed fills when known, otherwise a current fresh budget/equity estimate, otherwise one explicitly hypothetical unit. Explicit overrides remain hypothetical. A 100-unit percentage ladder cannot be divided down to represent a one-contract campaign. Saved replay records include quantity provenance and reachable exit allocations. Stored premium valuation uses bounded pages across long quote windows and preserves gap markers; it no longer rejects merely because 40,000 observations were recorded. See [the current evidence protocol](READINESS-2026-09-13.md).
+
 ## Underlying campaign replay
 
 Saved plans expose Replay this campaign. Select stored bars or the shared historical provider, a UTC cutoff, modeled unit quantity and slippage. The replay saves its input snapshot and uses the Cartel entry/exit evaluators. Decisions use completed data; modeled fills use the next expected regular-session minute open. Missing tape is not bridged to a convenient later fill. Valid held-position daily-close exits can use the next session open; this does not allow new entries at the closing bell.
