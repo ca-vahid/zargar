@@ -6164,3 +6164,35 @@ estart.ps1` at 16:32 ET. The
   stays flat with no order; expect SILENCE on any touch #2 while the proxy is open (F124) — record if a real contact was skipped and what the 290 ask
   was; (2) SPY/QQQ `bias_flip` at 763.60 / 713.65; (3) re-check OPRA/cartel counts; (4) skip `/team2` UI (F103); (5) after 15:45 confirm the
   proxy flattens and IWM `needsAttention` resolves at the session grade.
+
+## 2026-09-14 13:40 ET (run 89: IWM proxy stopped out at 13:04 and its phantom loss is on the desk-wide cap (F125); two Alpaca stream drops self-healed; parity exact; no code)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `stale false`, bar age 97 s at 13:32,
+  quote age 0.3–0.5 s (SPY 762.73, QQQ 712.29, IWM 288.85, session regular), window `midday`. 29 1m bars per symbol in the last 30 min (latest 13:35 ET),
+  all `exchange`, no gap > 60 s since 12:58; regime ts 13:30 at 13:32. No Team2 order today on any book (the orders list has only tip/EM/cartel rows).
+- **IWM: the F124 proxy lasted one bar.** 13:04 2m close 289.03 → `exit` "premium stop: -126% ≤ −25%" on the $0.0233 proxy (exit $0.0014; after
+  $1.04 fees a side the round trip is −126.71% — the arithmetic is right, the contract was economically meaningless). The read then logged one
+  `same_pullback` at 13:10 (F62) and nothing since; `openPosition` null, so the F124 blocking effect is over. Tape since: IWM slid 289.05 → 288.74
+  (13:18) under the scenario-3 level 289.06 and sits 288.84–288.98; scenario_3 stays alive (a 15m close back below the zone bottom 288.77 is the
+  bias flip), E13 288.92, stack bull 3. At 13:33 the nearest OTM call is now the 289 (spot 288.86): 0.25/0.27, delta 0.41, vol 73k — in band, so a
+  legitimate next contact would find a contract; the 290C is 0.06/0.07.
+- **F125 (new, NOT fixed — TRADING-RULES):** because the IWM trade row is `failed` (never routed), `runner._plan_losses` (F37) judges the plan by the
+  MODEL and the phantom proxy exit counts as a real loss: `/api/team2/status` losses SPY 0 / QQQ 0 / IWM 1 of the desk-wide cap 2 (F29). One more
+  model loss on any symbol silences every live Team2 entry today (`skip_loss_cap_desk`) with $0 ever at risk; the IWM read alone is one proxy loss
+  from its own `skip_loss_cap`. `day_pnl_pct`/`pnlPctSum` carry the −126.71 too. Proposed (user decision, changes what a risk cap counts):
+  (a) smallest — a money-mode plan whose fire ended in a `failed` row is judged by the book (0 losers) in `_plan_losses`; (b) the read excludes
+  `modelBand: out` proxy round-trips from its loss/pnl tallies (session.py, needs the before/after replay test); (c) F124(b). Not built.
+- **SPY/QQQ:** no new read event since the 11:45 (SPY) / 09:45 (QQQ) rows; bias still scenario 4 (puts), stacks bull 3, SPY `pm_break_up` label
+  still correctly inert. SPY 762.7 sits 0.8 under the 763.60 flip; QQQ 712.3 is 1.3 under 713.65. A 15m close above either is the `bias_flip` to watch.
+- **Replay parity EXACT** on all three (SPY 5, QQQ 1, IWM 10 events, IWM 1 trade −126.71 on both sides, no open position on either side).
+- **Feed:** two Alpaca stream drops post-restart — 13:12:55 ET ("keepalive ping timeout", reconnected 13:13:03) and 13:26:45 ET ("no close frame",
+  reconnected 13:26:53). Each produced a transient `TechniquePlanError stale bars` on every armed plan (87 rows across the 72 plans; IWM's at
+  13:12:55 with lastBarTs 13:09 and 13:26:50 with lastBarTs 13:23) that cleared on its own — bars are continuous in the DB and `needsAttention`
+  is false on SPY/QQQ (IWM's true is the F124 refusal only). Platform, not Team2; noted, no F-number.
+- **Log (`backend/zargar-8420.log`, post-restart tail):** `OPRA quotes failed` 2 (12:50 ET, 13:12 ET — the second is the stream drop),
+  `cartel-observer bar handling failed` 0, no traceback. `fire review failed: timed out after 25s` 12:50 ET is EM's critic, not Team2. No Team2 warning.
+- **No code shipped.** F125 written up (TRADING-RULES + here), no rule/knob change.
+- **Next run (~14:10) should:** (1) IWM: watch for a touch #2 on scenario_3 (E13 ≈ 288.9) — if it fires, the live pick should now find the 289C in
+  band (record strike/ask and the order/fill trail; the proxy's second loss would trip the per-symbol cap, F125); a 15m close below 288.77 = bias flip
+  back to puts; (2) SPY/QQQ `bias_flip` at 763.60 / 713.65; (3) confirm `/api/team2/status` losses still 0/0/1 and that no `skip_loss_cap_desk` row
+  appeared; (4) re-check for further Alpaca stream drops (two in 14 min); (5) skip `/team2` UI (F103).

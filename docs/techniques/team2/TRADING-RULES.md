@@ -2388,6 +2388,29 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   proxy becomes `refused`, the setup stays eligible for its next contact) — that touches the pure read's
   contract and needs a before/after replay test (the 0.7.60 lesson) plus a sweep, so it is written up here
   and in `notes/market-watch.md` run 88 only. Related: F104, F105, F108, F123.
+- **F125 (2026-09-14 13:40 ET, run 89 — defect at the F108 × F37 seam, NOT fixed; the desk-wide loss cap is
+  charging a trade that was never sent).** The IWM proxy from F124 exited on the very next 2m close: 13:04
+  `exit` "premium stop: -126% ≤ −25% (P1/D13)" (entry premium $0.0233 incl. 1-tick slippage, exit $0.0014,
+  fees $1.04 a side → cost $3.37, proceeds −$0.90 → −126.71%; the arithmetic in `premium.pnl_pct` is right,
+  a penny option can lose more than its premium once fees are charged). The read now shows `trades 1, losses 1,
+  pnlPctSum −126.71`, `losses_today` 1 for IWM. **The live consequence:** the IWM plan is `mode: auto` but its
+  only trade row is `failed` (no `entry_order_id`, `filled_qty` 0 — the contract was refused, F124), so
+  `runner._plan_losses` (F37) judges the plan by the MODEL, and `/api/team2/status` reports losses SPY 0 /
+  QQQ 0 / IWM 1 — one of the desk-wide `max_losses_per_day` 2 (`losses_desk_wide` True, F29) spent with zero
+  dollars ever at risk. One more model loss anywhere (a second out-of-band proxy on a thin strike would do it)
+  and `skip_loss_cap_desk` silences EVERY live Team2 entry for the day; a second proxy loss in the IWM read
+  alone triggers its per-symbol `skip_loss_cap` (D-3). F108 promised "the model never vetoes"; through the
+  loss tally it now can. F37 already names this hazard ("the model can lose trades the desk declined") — the
+  refusal here happened one stage later, at the contract pick, and slipped past the `routed` test. Also
+  polluted: `day_pnl_pct` (the `shrink_after_win` cue) and the day summary's `pnlPctSum`. Replay parity exact
+  (10 events, 1 trade, same timestamps). **Proposed, not built (it changes what a risk cap counts — user
+  decision, and it touches the pure read):** (a) smallest — in `_plan_losses`, a money-mode plan whose fire
+  ended in a `failed` row (refused live) is judged by the book, not the model (0 losers); (b) the read
+  excludes `modelBand: out` proxy round-trips under `contractAuthority: quotes` from `losses_today`,
+  `day_pnl_pct` and `pnlPctSum` (needs `Position.to_dict` to carry `modelBand`, today only the `fire` event
+  does) — this is a `session.py` change and needs the before/after replay test (0.7.60 lesson); (c) F124(b):
+  the runner tells the read a fire was refused so the proxy never becomes a position. Recommend (a) now and
+  (b)/(c) with the near-ITM decision. Related: F29, F37, F108, F124.
 
 
 - **F122 (2026-09-11, run 79 — a reporting correction to run 78's note, no code defect).** Run 78
