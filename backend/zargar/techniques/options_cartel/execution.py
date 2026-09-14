@@ -17,6 +17,7 @@ from ...marketstructure.sessions import ET, session_bounds
 from ...models import Portfolio
 from ...options.occ import parse
 from ...orders import OrderIntent
+from .contracts import ContractSelectionInput
 from .loss import loss_gate
 from .plans import CartelPlan
 from .readiness import execution_readiness
@@ -32,6 +33,9 @@ class ExecutionInput(WireModel):
     risk_pct: float = Field(default=1, gt=0, le=10)
     max_units: int = Field(default=10, ge=1, le=1_000_000)
     max_premium: float | None = Field(default=None, gt=0)
+    # Automatic arms retain the actual reviewed selection limits. Missing means
+    # legacy/manual, never permission to reconstruct them from today's settings.
+    contract_policy: ContractSelectionInput | None = None
     overnight_ack: bool = False
     allow_live: bool = False
     min_abs_delta: float = Field(default=.25, ge=0, le=1)
@@ -42,6 +46,47 @@ class ExecutionInput(WireModel):
         if self.instrument == "options" and self.min_abs_delta < .25 and not self.delta_exception_reason.strip():
             raise ValueError("a delta threshold below Sean's routine 0.25 guidance needs an explicit exception reason")
         return self
+
+
+def contract_entry_checks(engine, plan, spec, at):
+    """Synchronous last-mile checks from current observations, with no provider I/O.
+
+    OI remains selection-time evidence: the current provider snapshot does not
+    carry an independently dated OI observation, so it cannot certify fresh OI.
+    """
+    if spec.instrument != 'options':
+        return []
+    quote = engine.quotes.get(spec.contract_symbol)
+    snapshot = engine.options.snapshot_cached(spec.contract_symbol) if engine.options else None
+    snapshot = snapshot or {}
+    numeric = lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+    valid_quote = bool(quote and numeric(quote.bid) and numeric(quote.ask) and 0 < quote.bid <= quote.ask)
+    fresh_quote = bool(valid_quote and not quote.delayed and not quote.halted
+        and 0 <= at-(quote.source_ts or quote.ts) <= float(engine.settings.get('risk.stale_quote_seconds', 10))*1000)
+    delta = (snapshot.get('greeks') or {}).get('delta')
+    stamp = (snapshot.get('greeksFieldAsOf') or {}).get('delta')
+    policy = spec.contract_policy
+    floor = max(spec.min_abs_delta, policy.min_abs_delta if policy else 0)
+    caps = [v for v in (spec.max_premium, policy.max_ask if policy else None) if v is not None]
+    checks = [
+        ('entry_contract_quote', fresh_quote, 'Final option bid/ask must be current, non-delayed and uncrossed.'),
+        ('entry_contract_delta', numeric(delta) and floor <= abs(delta) <= 1
+            and delta*(1 if plan.direction == 'long' else -1) > 0
+            and numeric(stamp) and 0 <= at-stamp <= 120_000,
+            f'Final option delta must be fresh, directionally correct and at least {floor:g} in absolute value.'),
+        ('entry_contract_premium', valid_quote and (not caps or quote.ask <= min(caps)),
+            'Final option ask must remain within the saved premium cap.'),
+    ]
+    if policy:
+        contract = parse(spec.contract_symbol)
+        today = dt.datetime.fromtimestamp(at/1000, ET).date()
+        checks.extend([
+            ('entry_contract_spread', valid_quote and (quote.ask-quote.bid)/((quote.ask+quote.bid)/2)*100 <= policy.max_spread_pct,
+                f'Final option spread must remain within the saved {policy.max_spread_pct:g}% limit, including limit orders.'),
+            ('entry_contract_dte', bool(contract and policy.dte_min <= contract.dte(today) <= policy.dte_max),
+                'Current contract DTE must remain within the saved selection range.'),
+        ])
+    return [{'name': name, 'passed': bool(passed), 'reason': reason} for name, passed, reason in checks]
 
 
 async def preflight(engine, plan: CartelPlan, spec: ExecutionInput, *, client_kind="desktop", now_ms=None, clock=None):
@@ -159,6 +204,9 @@ async def preflight(engine, plan: CartelPlan, spec: ExecutionInput, *, client_ki
                              technique_id="options_cartel", tags=[f"cartel_run:{plan.id}"],
                              dry_run=True, client=client_kind)
         risk = (await engine.risk.evaluate(intent, portfolio)).to_dict()
+    # Equity/risk evaluation can await I/O. Re-read executable observations after
+    # that last await; the controller repeats this after its own reconciliation.
+    checks.extend(contract_entry_checks(engine, plan, spec, read_clock()))
     return {"runId": plan.id, "asOfMs": at, "passed": all(c["passed"] for c in checks)
             and bool(risk and risk["passed"]), "checks": checks, "risk": risk,
             "expression": {"symbol": order_symbol, "instrument": spec.instrument, "quantity": qty,

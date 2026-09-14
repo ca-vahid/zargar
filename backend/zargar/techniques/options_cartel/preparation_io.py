@@ -49,7 +49,8 @@ class PreparationHistory:
         self.prefetched = 0
         self.native_batch = policy.native_daily_batch and fetch is fetch_window and native_daily_available()
         self.batch_values = {}
-        self.provider_key = 'alpaca:sip:raw:daily:v1' if self.native_batch else f'{getattr(fetch, "__module__", "injected")}.{getattr(fetch, "__qualname__", "provider")}:daily-yahoo-rth'
+        self.fallback_provider_key = f'{getattr(fetch, "__module__", "injected")}.{getattr(fetch, "__qualname__", "provider")}:daily-yahoo-rth'
+        self.provider_key = 'alpaca:sip:raw:daily:v1' if self.native_batch else self.fallback_provider_key
 
     @asynccontextmanager
     async def prefetch(self, listings, at, client, *, skip):
@@ -72,11 +73,15 @@ class PreparationHistory:
                         if not cached or not cached['bars'] or normalize_daily(cached_bars(cached, item['symbol'], '1d'), item['symbol'], at)[-1].session.isoformat() != _latest_session(at).isoformat():
                             need.append(item['symbol'])
                             starts.append(max(at-550*86400000, cached['bars'][-1][0]-86400000) if cached and cached['bars'] else at-550*86400000)
-                    if need:
+                    if need and self.native_batch:
                         self.requests += 1
                         self.active_requests += 1
                         try:
-                            self.batch_values = await observed_work(fetch_daily_batch(need, min(starts), at, client=client), self.report, message=f'Loading daily history batch ({len(need)} symbols)')
+                            try:
+                                self.batch_values = await observed_work(fetch_daily_batch(need, min(starts), at, client=client), self.report, message=f'Loading daily history batch ({len(need)} symbols)')
+                            except HistoryError as exc:
+                                if not await self.fallback_after_denied(exc):
+                                    raise
                         finally:
                             self.active_requests -= 1
                     for item in group:
@@ -154,11 +159,12 @@ class PreparationHistory:
                 TechniqueRun.technique == 'options_cartel', TechniqueRun.mode == 'analysis',
                 TechniqueRun.symbol == symbol, TechniqueRun.status == 'done',
                 TechniqueRun.result['collection']['historyCacheVersion'].as_integer() == 1,
+                TechniqueRun.result['collection']['historySource'].as_string() == self.provider_key,
                 TechniqueRun.result['collection']['historyThrough'].as_string() == expected,
                 cast(TechniqueRun.result['collection']['historyObservedAt'].as_string(), BigInteger) <= at,
                 cast(TechniqueRun.result['collection']['historyObservedAt'].as_string(), BigInteger) >= at-5*86_400_000,
             ).order_by(TechniqueRun.created_at.desc()).limit(1))
-        if cached and (not self.native_batch or cached.result.get('collection', {}).get('historySource') == self.provider_key):
+        if cached and cached.result.get('collection', {}).get('historySource') == self.provider_key:
             bars = completed_daily([DailyBar.model_validate(b) for b in cached.config['inputs']['history']], at)
             if bars and bars[-1].session.isoformat() == expected and all(b.symbol == symbol for b in bars):
                 self.cache_hits += 1
@@ -193,7 +199,17 @@ class PreparationHistory:
         return bars, {'historyCacheVersion': 1, 'historyThrough': actual,
                       'historyExpectedThrough': expected, 'historyFresh': actual == expected,
                       'historyObservedAt': self.clock(), 'historyReusedFrom': None,
-                      'historySource': 'Shared historical provider; completed daily bars only'}
+                      'historySource': self.provider_key}
+
+    async def fallback_after_denied(self, error):
+        """Switch datasets explicitly; neither cached prefixes nor batches cross feeds."""
+        if not any(code in str(error) for code in ('HTTP 401', 'HTTP 403')):
+            return False
+        self.native_batch = False
+        self.batch_values = {}
+        self.provider_key = self.fallback_provider_key
+        await self.report(message='Native daily access unavailable; using the existing history provider with a separate cache')
+        return True
 
     async def baseline(self, symbol, at, client):
         from ...marketstructure.market_calendar import previous_trading_day
@@ -228,11 +244,8 @@ class PreparationHistory:
                 result = await observed_work(fetch_daily_batch([symbol], start, end, client=client), self.report, message=f'Loading {symbol} native daily history')
                 return result[symbol]
             except HistoryError as exc:
-                if not any(code in str(exc) for code in ('HTTP 401', 'HTTP 403')):
+                if not await self.fallback_after_denied(exc):
                     raise
-                self.native_batch = False
-                self.provider_key = f'{self.fetch.__module__}.{self.fetch.__qualname__}:daily-yahoo-rth'
-                await self.report(message='Native daily access unavailable; using the existing history provider with a separate cache')
 
         await self.report(symbol=symbol, message=f'Loading {symbol} {timeframe} history')
         async with self.request_lock:

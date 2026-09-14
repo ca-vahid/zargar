@@ -23,7 +23,8 @@ class QuoteRecorder:
         self.task = None
         self.stopping = False
         self.last_attempt = None
-        self.result = {'captured': 0, 'errors': {}}
+        self.last_ids = {}
+        self.result = {'captured': 0, 'duplicates': 0, 'gaps': {}, 'errors': {}}
 
     def status(self):
         return {'enabled': bool(self.service.engine.settings.get(RECORD_SETTING, False)),
@@ -44,20 +45,33 @@ class QuoteRecorder:
                     and spec.get('instrument') == 'options' and spec.get('contract_symbol'):
                 targets.add((row['runId'], spec['contract_symbol']))
         if not targets:
+            self.last_ids.clear()
             return
+        self.last_ids = {key: value for key, value in self.last_ids.items() if key in targets}
         self.last_attempt = at
         self.task = asyncio.create_task(self._capture(sorted(targets)), name='cartel-quote-recorder')
 
     async def _capture(self, targets):
-        result = {'captured': 0, 'errors': {}}
+        result = {'captured': 0, 'duplicates': 0, 'gaps': {}, 'errors': {}}
         for run_id, contract in targets:
             if self.stopping or not self.service.engine.settings.get(RECORD_SETTING, False):
                 break
             try:
-                await capture_cached_quote(self.service, run_id, contract, clock=self.clock)
-                result['captured'] += 1
+                observation = await capture_cached_quote(self.service, run_id, contract, clock=self.clock)
+                key = (run_id, contract)
+                duplicate = self.last_ids.get(key) == observation['id']
+                result['duplicates' if duplicate else 'captured'] += 1
+                self.last_ids[key] = observation['id']
+                reason = unusable_reason(observation, self.clock())
+                if reason:
+                    result['gaps'][run_id] = reason
             except (KeyError, ValueError) as exc:
                 result['errors'][run_id] = str(exc)
+                result['gaps'][run_id] = str(exc)
+                try:
+                    await capture_quote_gap(self.service, run_id, contract, clock=self.clock)
+                except Exception as gap_error:  # noqa: BLE001 - research availability never interrupts execution
+                    result['errors'][run_id] += f'; gap record unavailable ({type(gap_error).__name__})'
             except Exception as exc:  # noqa: BLE001 - research failures must not interrupt order handling
                 result['errors'][run_id] = f'{type(exc).__name__}: quote recording failed'
         self.result = result
@@ -86,11 +100,54 @@ async def capture_cached_quote(service, run_id, contract, *, clock=now_ms):
         'available_at': observed, 'confirmed_at': quote.ts, 'bid': quote.bid, 'ask': quote.ask,
         'bid_size': quote.bid_size, 'ask_size': quote.ask_size, 'source': quote.source,
         'feed_mode': service.engine.config.quote_source, 'delayed': quote.delayed, 'halted': quote.halted}
-    data['id'] = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+    # Source evidence owns identity; a cache re-read is not a new observation.
+    identity = {k: v for k, v in data.items() if k not in ('available_at', 'confirmed_at')}
+    data['id'] = hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()
     async with service.engine.sf() as session, session.begin():
-        await session.execute(insert(CartelOptionQuote).values(**data).on_conflict_do_nothing(index_elements=['id']))
+        inserted = await session.scalar(insert(CartelOptionQuote).values(**data)
+            .on_conflict_do_nothing(index_elements=['id']).returning(CartelOptionQuote.id))
+        if inserted is None:
+            existing = await session.get(CartelOptionQuote, data['id'])
+            data = {column.name: getattr(existing, column.name) for column in CartelOptionQuote.__table__.columns}
     return {**data, 'placesOrders': False,
             'warning': 'Observation time does not establish provider freshness. Missing source time remains unknown.'}
+
+
+def unusable_reason(observation, at, *, maximum_age_ms=15_000):
+    if str(observation.get('source', '')).startswith('gap:'):
+        return 'Missing usable cached quote'
+    source_at = observation.get('source_at')
+    if source_at is None:
+        return 'Source observation time is unknown'
+    if not 0 <= at-source_at <= maximum_age_ms:
+        return 'No fresh source observation'
+    if observation.get('delayed') or observation.get('halted'):
+        return 'Delayed or halted observation'
+    if not 0 < observation['bid'] <= observation['ask']:
+        return 'Missing or crossed two-sided quote'
+    return None
+
+
+async def capture_quote_gap(service, run_id, contract, *, clock=now_ms):
+    """One durable unavailable marker per contiguous gap; never a market quote."""
+    plan = await service._load(run_id)
+    option = parse(contract)
+    if plan.mode != 'plan' or option is None or option.underlying != plan.symbol:
+        raise ValueError('gap capture requires an owned plan and matching contract')
+    observed = clock()
+    async with service.engine.sf() as session, session.begin():
+        prior = await session.scalar(select(CartelOptionQuote).where(CartelOptionQuote.run_id == run_id,
+            CartelOptionQuote.contract == option.symbol).order_by(CartelOptionQuote.available_at.desc(),
+            CartelOptionQuote.id.desc()).limit(1))
+        if prior is not None and prior.source == 'gap:unavailable':
+            return prior.id
+        data = {'run_id': run_id, 'contract': option.symbol, 'source_at': None,
+            'available_at': observed, 'confirmed_at': observed, 'bid': 0., 'ask': 0.,
+            'bid_size': 0, 'ask_size': 0, 'source': 'gap:unavailable',
+            'feed_mode': service.engine.config.quote_source, 'delayed': True, 'halted': False}
+        data['id'] = hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+        await session.execute(insert(CartelOptionQuote).values(**data).on_conflict_do_nothing(index_elements=['id']))
+    return data['id']
 
 
 async def quote_observations(service, run_id, contract, *, limit=1000):

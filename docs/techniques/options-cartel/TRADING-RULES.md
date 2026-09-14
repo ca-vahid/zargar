@@ -2,6 +2,12 @@
 
 Current policy index updated 2026-09-13. This file also preserves dated engineering decisions. Later entries supersede earlier implementation choices; source statements remain versioned. Use DAILY-PREPARATION.md for current operations and DELIVERY-STATUS.md for limits. No profitable strategy or calibrated author replication is claimed.
 
+## 2026-09-13: final review corrections and explicit Practice experiment
+
+Contract policy now survives preparation through final dispatch; stale/widened quotes or delta outside saved limits cannot borrow authority from the old selection. Confirmed nearer pivots take precedence over Fibonacci fallback. Pending invalidation retains original plan lifetime, including slow contract selection. These are correctness repairs, not looser trading filters.
+
+`whole_contracts_v2` is an explicit new-plan Practice experiment: two contracts allocate first target/EMA50, three allocate first target/EMA8/EMA50; one and four-or-more retain prior rounding. No transition occurs without actual fills. Legacy campaigns remain unchanged. Replay uses exact filled/current estimated/hypothetical quantity with its basis stated. Advisory leader cohorts do not change ranking or imply profitability. See READINESS-2026-09-13.md for the complete protocol and acceptance gates.
+
 ## Current policy update — 2026-09-13
 
 - New automatically prepared plans default to verified exchange-class confirmation/stop data; Live preparation cannot disable this requirement. Manual/legacy snapshots retain their saved policy. Source classification is not a complete provider-revision ledger.

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
-from typing import Callable
+import inspect
+import logging
+from collections.abc import Callable
 
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
@@ -25,6 +27,8 @@ from .models import Execution, Order
 from .options import occ
 from .portfolio import PositionKeeper
 from .risk import RiskGate
+
+log = logging.getLogger('zargar.orders')
 
 
 class BracketSpec(BaseModel):
@@ -175,7 +179,7 @@ class OrderManager:
         return derive_option_action(side.upper(), pos, qty)
 
     # ------------------------------------------------------------------ place
-    async def place(self, intent: OrderIntent) -> dict:
+    async def place(self, intent: OrderIntent, *, before_submit: Callable[[], None] | None = None) -> dict:
         await self._ensure_symbol(intent.symbol)
         portfolio = self._positions.portfolio(intent.portfolio_id)
         if portfolio is None:
@@ -296,6 +300,23 @@ class OrderManager:
 
         result = await self._transition(order.id, OrderStatus.SUBMITTED, ev.ORDER_SUBMITTED,
                                         extra=extra_out or None)
+        # Optional server-owned entry authority. No await is permitted between
+        # this check and executor.submit; the preceding risk/journal/DB work can
+        # otherwise outlive a technique's executable quote or policy evidence.
+        # Protective exits never depend on an entry-only guard.
+        if before_submit is not None and not intent.reduce_only:
+            try:
+                checked = before_submit()
+                if inspect.isawaitable(checked):
+                    if inspect.iscoroutine(checked):
+                        checked.close()
+                    raise TypeError('before_submit must be synchronous')
+                if checked is not None:
+                    raise TypeError('before_submit must return None or raise')
+            except Exception as exc:  # noqa: BLE001 - known pre-routing failure, never an ambiguous broker outcome
+                return await self._transition(order.id, OrderStatus.REJECTED_RISK, ev.ORDER_REJECTED,
+                    reject_reason=f'Pre-submit validation failed: {exc}',
+                    extra={'beforeSubmitRejected': True, **extra_out})
         await executor.submit(BrokerOrder(
             id=order.id, symbol=order.symbol, sec_type=order.sec_type,
             side=OrderSide(order.side), qty=order.qty,
@@ -456,7 +477,7 @@ class OrderManager:
         if bracket_parent is not None:
             await self._spawn_bracket_children(bracket_parent)
 
-    async def _apply_fill(self, report: ExecReport) -> "Order | None":
+    async def _apply_fill(self, report: ExecReport) -> Order | None:
         """Apply one fill. Returns the parent Order when its bracket children
         should be spawned (fully filled, has a bracket, not itself a child) —
         the caller spawns them outside the report lock."""
@@ -468,7 +489,7 @@ class OrderManager:
                 id=report.exec_id, order_id=order.id, portfolio_id=order.portfolio_id,
                 symbol=order.symbol, side=order.side, qty=report.fill_qty,
                 price=report.fill_price, commission=report.commission,
-                ts=dt.datetime.fromtimestamp(report.ts/1000, dt.timezone.utc),
+                ts=dt.datetime.fromtimestamp(report.ts/1000, dt.UTC),
             )
             session.add(exec_row)
             prev_filled = order.filled_qty or 0.0

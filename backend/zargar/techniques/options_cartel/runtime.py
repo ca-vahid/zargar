@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import datetime as dt
+import hashlib
+import json
 import math
 
 from sqlalchemy import select
@@ -131,6 +133,19 @@ class CartelRuntime(CartelObserver):
         if existing is not None and existing["config"] != config:
             async with self.engine.sf() as session, session.begin():
                 stored = await self.repository._locked(session, run_id)
+                execution_review = config.get('preparation', {}).get('executionReview')
+                if execution_review and (stored.status != 'armed' or stored.state.get('phase') != 'waiting'
+                        or hashlib.sha256(json.dumps(stored.config, sort_keys=True).encode()).hexdigest()
+                        != execution_review.get('expectedConfigSha256')):
+                    raise ValueError('Arm changed during execution-limit review; paused and edited arms were preserved')
+                if execution_review:
+                    current_policy = read_policy(self.engine, 'practice')
+                    require_execution_scope(self.engine, current_policy)
+                    policy_hash = hashlib.sha256(json.dumps(current_policy.model_dump(mode='json'), sort_keys=True).encode()).hexdigest()
+                    if not current_policy.enabled or policy_hash != execution_review.get('expectedPolicySha256'):
+                        raise ValueError('Preparation settings changed during execution-limit review; existing arm was preserved')
+                    if stored.mode != 'auto' or stored.portfolio_id != spec.portfolio_id:
+                        raise ValueError('Automatic Practice arm identity changed during execution-limit review')
                 if stored.status not in ("armed", "paused") or stored.state.get("attemptTag"):
                     raise ValueError("execution settings cannot replace a retired or submitted arm")
                 prior = [*stored.state.get("configHistory", []), {"at": self.clock(), "config": stored.config,
@@ -548,6 +563,9 @@ class CartelRuntime(CartelObserver):
             view["unrealizedPnl"] = mark if leg["qty"] else 0.
             trades.append(view)
         result.update(executionAvailable=True, execution=state.get("lastExecutionResult"), managedPositions=positions,
+                      preparation={"runId": row["config"]["preparation"].get("runId"),
+                                   "workspace": row["config"]["preparation"].get("workspace", "practice")}
+                          if row["config"].get("preparation") else None,
                       executionSettings=spec.model_dump(mode="json", by_alias=True), submissionReserved=bool(state.get("attemptTag")),
                       openPositions=len(positions), trades=trades, fired=trades,
                       awaitingApproval=row["mode"] == "proposal" and row["status"] == "armed" and state["phase"] == "signalled"
