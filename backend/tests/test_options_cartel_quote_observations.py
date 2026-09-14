@@ -88,5 +88,34 @@ async def test_recorder_persists_one_sample_per_interval_and_reports_missing_quo
     assert recorder.task is first
     now[0] = 6000; recorder.observe([row]); await recorder.task
     assert recorder.status()['captured'] == 1 and not recorder.status()['errors']
-    assert len((await quote_observations(service, run_id, CONTRACT))['rows']) == 1
+    observations = (await quote_observations(service, run_id, CONTRACT))['rows']
+    assert len(observations) == 2
+    assert observations[0]['source'] == 'gap:unavailable' and observations[0]['source_at'] is None
+    assert observations[1]['source'] == 'opra'
     await recorder.stop()
+
+
+async def test_cache_reread_retains_first_availability_and_new_source_time_is_distinct(engine):
+    service, run_id = await saved_plan(engine)
+    engine.quotes.on_quote(Quote(CONTRACT, bid=1, ask=1.1, ts=900, source='opra', source_ts=800))
+    first = await capture_cached_quote(service, run_id, CONTRACT, clock=lambda: 1000)
+    repeated = await capture_cached_quote(service, run_id, CONTRACT, clock=lambda: 7000)
+    assert first == repeated and repeated['available_at'] == 1000
+    engine.quotes.on_quote(Quote(CONTRACT, bid=1, ask=1.1, ts=8000, source='opra', source_ts=7900))
+    second = await capture_cached_quote(service, run_id, CONTRACT, clock=lambda: 8100)
+    assert second['id'] != first['id']
+    assert len((await quote_observations(service, run_id, CONTRACT))['rows']) == 2
+
+
+async def test_persistent_missing_quote_gap_is_deduplicated_and_stored_pages_keep_all_rows(engine):
+    from zargar.techniques.options_cartel.premium_replay import stored_quote_pages
+    from zargar.techniques.options_cartel.quote_observations import capture_quote_gap
+
+    service, run_id = await saved_plan(engine)
+    first = await capture_quote_gap(service, run_id, CONTRACT, clock=lambda: 1000)
+    assert await capture_quote_gap(service, run_id, CONTRACT, clock=lambda: 7000) == first
+    engine.quotes.on_quote(Quote(CONTRACT, bid=1, ask=1.1, ts=8000, source='opra', source_ts=7900))
+    quote = await capture_cached_quote(service, run_id, CONTRACT, clock=lambda: 8100)
+    second = await capture_quote_gap(service, run_id, CONTRACT, clock=lambda: 10000)
+    ids = [row.id async for batch in stored_quote_pages(service, run_id, CONTRACT, 0, 11000, page_size=1) for row in batch]
+    assert ids == [first, quote['id'], second]

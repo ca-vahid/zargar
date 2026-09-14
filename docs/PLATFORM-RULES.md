@@ -78,6 +78,22 @@ runtime ones to `execution.*`).
 
 ## 2. Findings (settled, with evidence)
 
+### Cartel final-dispatch entry authority — 2026-09-13
+
+OrderManager.place accepts an optional server-only synchronous before_submit guard,
+called after the last SUBMITTED persistence and immediately before executor dispatch.
+Cartel uses it to recheck saved contract limits/current underlying geometry after all
+order-manager waits. Failure is a known, journaled REJECTED_RISK with no executor call;
+it is not an ambiguous broker response. Callbacks are never serialized in order DTOs.
+Reduce-only exits bypass entry-only guards; other callers retain their existing path.
+Regression evidence: test_options_cartel_contract_integrity.py mutates quotes/delta
+during risk evaluation and the submission transition, and checks protective exits.
+
+Cartel's explicit legacy-arm review is a guarded configuration revision: only unused
+automatic Practice arms; config and current policy must still match under the row lock.
+Held campaigns retain their snapshots. Preparation capacity joins managed positions by
+their actual config.runId, never a nonexistent model column, and reserves unlinked holdings.
+
 ### technique_outcomes.plan_source widened 24 → 48 — 2026-09-08
 
 `score_run` on a tip-triggered plan writes `plan_source="trigger:tip-<12hex>-<n>"`
@@ -1468,3 +1484,10 @@ Affects EM, Tips, Team2 and Cartel wherever their positions run premium
 policies through the shared manager; per-technique knobs resolve via `rt()`.
 Independent reviewer reproductions live in
 `backend/tests/test_premium_confirmation_review.py`.
+
+### Existing Team2 contract-event registration — 2026-09-13
+
+The integration check found TechniquePlanContract was emitted but absent from the
+central event registry. Registered its existing v1 producer's common fields only;
+optional stage/error/selected-contract fields remain optional. No Team2 strategy,
+producer payload or risk setting changed. The journal registry invariant passes.

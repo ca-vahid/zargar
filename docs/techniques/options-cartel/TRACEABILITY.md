@@ -22,3 +22,13 @@ Reviewed 2026-09-13. Source IDs resolve in [SOURCES.md](SOURCES.md). Module name
 Representative regression areas: `test_options_cartel_ignition_reliability.py`, `test_options_cartel_preparation_safety.py`, `test_options_cartel_preparation_coverage.py`, `test_options_cartel_baseline_windows.py`, `test_options_cartel_runtime.py`, `test_options_cartel_controller.py`, `test_options_cartel_sweeps.py`, and the dedicated adoption/settlement/exit tests. Use actual test files and current results, not historical counts, for a new change.
 
 The original stage-by-stage matrix is [archived](archive/TRACEABILITY-PRE-2026-09-13.md). Statements there such as registration/provider/entry-adapter pending are historical and superseded.
+
+## September 13 correction boundaries
+
+- Final contract authority: execution.py, controller.py, OrderManager.before_submit; test_options_cartel_contract_integrity.py.
+- Target causality and candidate anchors: setups.py/automatic_plans.py; test_options_cartel_target_boundaries.py.
+- Pending invalidation and explicit unused-arm review: preparation.py, observer.py, execution_review.py, runtime.py; pending_integrity, execution_review, execution_review_integrity tests.
+- Actual held-position capacity: preparation.occupied_plans; test_options_cartel_capacity_integrity.py.
+- Provider identity: preparation_io.py; test_options_cartel_provider_identity.py.
+- Quantity-dependent exits and evidence: exits.py, replay_service.py, quote_observations.py, premium_replay.py; test_options_cartel_monday_economics.py and existing exit/replay/quote suites.
+- Advisory leader observations and preparation-policy cohorts: leader_context.py; test_options_cartel_leader_context.py. These grant no trading permission and are not profitability measurements.

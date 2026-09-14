@@ -20,6 +20,7 @@ export function CartelPremiumReplayControls({busy, onValue}: {
     <p>Use the saved underlying fill schedule with recorded ask entries and bid exits. This saves a separate valuation and places no orders.</p>
     <p>Paste six tab-separated columns without a header: source UTC time, available UTC time, bid, ask, delayed, halted (both true or false). Availability means when the quote was available to the strategy, not when you downloaded its history.</p>
     <p>Quotes must match the selected contract. Use standard US contracts and USD quotes/fees. Missing evidence stays unscorable; order depth, expiry settlement and premium-triggered exits are not modeled.</p>
+    <p>Each saved replay unit becomes one option contract. Check that replay's quantity and exit allocation first; valuation does not resize a legacy 100-unit replay to your account.</p>
     {error && <p role="alert" className="cartel-error">{error}</p>}
     <form className="cartel-form" onSubmit={async e => {
       e.preventDefault(); setError('');
@@ -56,6 +57,8 @@ export function CartelPremiumReplayResult({result}: {result:any}) {
   const money = (v:unknown) => typeof v === 'number' && Number.isFinite(v) ? `$${v.toFixed(2)}` : 'Unavailable';
   return <section aria-label="Option replay valuation"><h3>Option valuation · {result.status}</h3>
     <p>{result.contractSymbol} · recorded-quote valuation of the saved underlying schedule</p>
+    <p>{result.quantity ?? "Unknown"} modeled contracts · {result.quantityBasis?.note || "Account funding is not established."}</p>
+    {result.quoteCoverage && <p>Stored evidence: {result.quoteCoverage.observationsRead} observations inspected · {result.quoteCoverage.gapObservations} recorded gaps · {result.quoteCoverage.requiredInstants} modeled fill/mark times. Eligible quotes are still required at every time.</p>}
     <p>Realized: {money(result.realizedPnl)} · Open: {money(result.openPnl)} · Total: {money(result.totalPnl)}</p>
     <p>Fees paid: {money(result.fees)} · Return on initial debit: {result.returnOnDebitPct == null ? 'Unavailable' : `${result.returnOnDebitPct.toFixed(2)}%`}</p>
     <p>These modeled values do not establish achievable brokerage fills. Incomplete evidence produces no total return.</p>

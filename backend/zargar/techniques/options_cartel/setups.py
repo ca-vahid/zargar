@@ -40,9 +40,12 @@ def _range(bars: list[DailyBar]) -> float:
     return (max(b.high for b in bars)-min(b.low for b in bars))/min(b.low for b in bars)*100
 
 
-def _targets(history: list[DailyBar], trigger: float, direction: str, tolerance: float) -> list[float]:
+def _targets(history: list[DailyBar], trigger: float, direction: str, tolerance: float,
+             *, existing: list[float] | None = None) -> list[float]:
     # Only already-confirmed historical pivots; no invented Fibonacci anchor.
-    pivots = []
+    # Retain saved measured levels while recovering nearer pivots that an older
+    # candidate's truncated history window may have omitted.
+    pivots = [p for p in existing or [] if (p-trigger)*(1 if direction == 'long' else -1) > 0]
     for left, bar, right in zip(history, history[1:], history[2:]):
         if direction == "long" and bar.high > max(left.high, right.high) and bar.high > trigger:
             pivots.append(bar.high)
@@ -87,9 +90,10 @@ def analyze_setups(history: list[DailyBar], benchmark: list[DailyBar], screen: d
         out['sources'] = ['S30']
         for item in matches[-1:]:
             event_index = next(i for i,b in enumerate(bars) if b.session.isoformat() == item['eventSession'])
-            targets = _targets(bars[:event_index], item['trigger'], direction, parameters.touch_tolerance_pct)
+            targets = _targets(bars, item['trigger'], direction, parameters.touch_tolerance_pct)
             out['candidates'].append({'setup':'post_ignition', 'trigger':item['trigger'],
-                'invalidation':item['invalidation'], 'targets':targets, 'evidence':item,
+                'invalidation':item['invalidation'], 'targets':targets,
+                'evidence':{**item, 'targetBaseStart': bars[event_index+1].session.isoformat()},
                 'contextPassed':screen.get('screenPassed') is True,
                 'researchContextPassed':screen.get('researchPassed') is True,
                 'reviewRequired':True, 'needsTargets':not targets,
@@ -169,17 +173,22 @@ def analyze_setups(history: list[DailyBar], benchmark: list[DailyBar], screen: d
         kinds.append("breakout_retest")
     passed = all(c["status"] == "pass" for c in out["checks"])
     for kind in kinds:
+        target_base_start = base[0].session
         trigger = max(b.high for b in base) if sign == 1 else min(b.low for b in base)
         invalidation = min(b.low for b in base) if sign == 1 else max(b.high for b in base)
         if kind in ("inside_day", "ma_pullback"):
             boundary = mother if kind == "inside_day" else latest
+            target_base_start = boundary.session
             trigger = boundary.high if sign == 1 else boundary.low
             invalidation = boundary.low if sign == 1 else boundary.high
         if kind == "breakout_retest":
             # The next confirmation must clear the retest candle; its old level stays evidence.
             trigger = latest.high if sign == 1 else latest.low
             invalidation = latest.low if sign == 1 else latest.high
-        targets = _targets(bars[:-n], trigger, direction, parameters.touch_tolerance_pct)
+            target_base_start = latest.session
+        # Shorter trigger geometry can have resistance/support inside the
+        # broader context base. All completed pivots remain relevant.
+        targets = _targets(bars, trigger, direction, parameters.touch_tolerance_pct)
         out["candidates"].append({"setup": kind, "trigger": trigger, "invalidation": invalidation,
                                   "targets": targets, "contextPassed": passed,
                                   "researchContextPassed": screen.get("researchPassed") is True and all(
@@ -187,6 +196,7 @@ def analyze_setups(history: list[DailyBar], benchmark: list[DailyBar], screen: d
                                   "reviewRequired": True,
                                   "needsTargets": not targets,
                                   "evidence": {"baseStart": base[0].session.isoformat(),
+                                               "targetBaseStart": target_base_start.isoformat(),
                                                "baseEnd": latest.session.isoformat(), "volumeRatio": volume_ratio,
                                                "upperSlopePct": upper, "lowerSlopePct": lower,
                                                "impulsePct": impulse, "tightens": tightens,

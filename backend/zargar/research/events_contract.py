@@ -55,6 +55,10 @@ CONTRACTS: dict[str, dict] = {
                                   "nullable": ("fill", "critic", "setupId")},
     "TechniquePlanTriggerSkipped": {"version": 1, "required": ("runId", "symbol", "trigger", "event")},
     "TechniquePlanRead":      {"version": 1, "required": ("runId", "symbol", "trigger", "event", "reason")},   # F28/F52: a structural read event (scenario, PM break, retest, late touch) journaled by a technique package, not the runner
+    # Team2 F108: all picker paths share these fields, including early deferrals.
+    # Contract/price/expiry and stage/error details depend on the verdict.
+    "TechniquePlanContract": {"version": 1, "required": (
+        "runId", "symbol", "event", "reason", "trigger", "verdict", "examined", "direction")},
     "TechniquePlanOrderIntent": {"version": 1,
                                  "required": ("runId", "symbol", "orderSymbol", "secType", "trigger",
                                               "side", "qty", "portfolioId")},

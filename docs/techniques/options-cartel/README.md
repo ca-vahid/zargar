@@ -3,7 +3,7 @@
 Updated 2026-09-13 against integrated main. Technique id: `options_cartel`.
 Sean Trades (`@SRxTrades`) is the source author; the app's numerical interpretations and Practice experiments are identified separately.
 
-The desk is implemented and deployed. The latest Cartel-specific functional releases were v0.7.51–0.7.52; other desks can advance the app-wide version independently. A dated deployment report is evidence for that checkpoint, not a live health or account report.
+The desk is implemented. The [September 13 correctness release](READINESS-2026-09-13.md) adds final-entry contract checks, target integrity, pending invalidation protection, explicit legacy-arm review and quantity-correct Practice research. Other desks can advance the app-wide version independently. Use the release handoff and live health for deployment state.
 
 ## Start here
 

@@ -1,6 +1,7 @@
 import { useCallback, useState } from "react";
 import { Markdown } from "../components/technique/Markdown";
 import currentStatus from "../../../docs/techniques/options-cartel/DELIVERY-STATUS.md?raw";
+import readiness from "../../../docs/techniques/options-cartel/READINESS-2026-09-13.md?raw";
 import ignition from "../../../docs/techniques/options-cartel/IGNITION.md?raw";
 import preparation from "../../../docs/techniques/options-cartel/DAILY-PREPARATION.md?raw";
 import method from "../../../docs/techniques/options-cartel/METHOD.md?raw";
@@ -16,6 +17,7 @@ import scanning from "../../../docs/techniques/options-cartel/SCANNING.md?raw";
 
 const documents = [
   {file:"DELIVERY-STATUS.md", title:"Current capabilities and limits", text:currentStatus},
+  {file:"READINESS-2026-09-13.md", title:"Practice readiness and evidence protocol", text:readiness},
   {file:"IGNITION.md", title:"Post-ignition workflow", text:ignition},
   {file:"METHOD.md", title:"Detailed method", text:method},
   {file:"DAILY-PREPARATION.md", title:"Automatic daily preparation", text:preparation},

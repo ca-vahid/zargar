@@ -222,8 +222,8 @@ async def test_partial_fill_is_managed_while_entry_response_is_still_pending(rep
     runner, spec = await runtime(repo, monkeypatch)
     original = repo.engine.orders.place
     entered, release = asyncio.Event(), asyncio.Event()
-    async def slow(intent):
-        result = await original(intent)
+    async def slow(intent, **kwargs):
+        result = await original(intent, **kwargs)
         if intent.side == "BUY":
             entered.set()
             await release.wait()
@@ -371,8 +371,8 @@ async def test_cancelled_approval_request_does_not_cancel_its_order_task(repo, m
     signal_id = (await repo.load("r1"))["state"]["signal"]["id"]
     entered, release = asyncio.Event(), asyncio.Event()
     original = repo.engine.orders.place
-    async def slow(intent):
-        result = await original(intent)
+    async def slow(intent, **kwargs):
+        result = await original(intent, **kwargs)
         if intent.side == "BUY":
             entered.set()
             await release.wait()

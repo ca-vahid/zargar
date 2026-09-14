@@ -2,6 +2,8 @@
 
 Reviewed 2026-09-13 against integrated main. Functional milestones v0.7.51–0.7.52 are deployed; the app-wide version can be newer. Use live health, Armed and account reports for current state. [September 12 deployment](DEPLOYMENT-2026-09-12.md) is a dated verification record.
 
+The [September 13 corrections](READINESS-2026-09-13.md) add final-dispatch contract checks, target causality, pending invalidation protection, provider-compatible cache reuse, explicit legacy-arm review, a versioned Practice small-lot policy, quantity-correct replay, deduplicated quote/gap evidence and advisory leadership cohorts. See the release handoff for deployment and test evidence. Existing campaigns keep their snapshots; no profitability or Live acceptance claim follows from these corrections.
+
 | Area | Shipped | Remaining limits |
 |---|---|---|
 | Independent desk | Plans, Armed, History, Validation, Method, Settings; dedicated record URLs | No claim of exact author replication |

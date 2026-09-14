@@ -26,6 +26,7 @@ from .execution import ExecutionInput
 from .ignition import record as record_ignition
 from .industry import IndustrySnapshot, read_industry, save_snapshot
 from .industry_feed import capture_industries
+from .leader_context import leader_evidence, research_protocol, summarize_leaders
 from .plans import CartelPlan
 from .preparation_io import DATA_ERRORS, PreparationHistory, observed_work, rate_limited
 from .preparation_readiness import (
@@ -57,7 +58,11 @@ async def occupied_plans(engine, portfolio_id):
             ManagedPositionRow.technique == 'options_cartel', ManagedPositionRow.portfolio_id == portfolio_id,
             ManagedPositionRow.status.notin_(('closed', 'archived'))))).all()
     records = {a.run_id: {'planId': a.run_id, 'symbol': a.symbol} for a in arms}
-    records.update({p.run_id: {'planId': p.run_id, 'symbol': p.symbol} for p in held})
+    for position in held:
+        # The durable row stores its originating plan in config; run_id is
+        # only an attribute of the in-memory managed-position object.
+        plan_id = (position.config or {}).get('runId') or f'managed:{position.id}'
+        records[plan_id] = {'planId': plan_id, 'symbol': position.symbol}
     return list(records.values())
 
 
@@ -90,6 +95,27 @@ async def affordable_contract_policy(engine, portfolio_id, policy):
     return policy.contract_policy.model_copy(update={'max_ask': limit})
 
 
+def prepared_execution(policy, portfolio_id, contract_symbol, selection_policy):
+    """Snapshot explicitly reviewed limits; never rewrite an existing arm here."""
+    return ExecutionInput(portfolio_id=portfolio_id, mode='auto', instrument='options',
+        contract_symbol=contract_symbol, budget=policy.budget, risk_pct=policy.risk_pct,
+        max_units=policy.max_contracts, max_premium=selection_policy.max_ask,
+        min_abs_delta=selection_policy.min_abs_delta, contract_policy=selection_policy,
+        overnight_ack=policy.workspace == 'practice' or policy.overnight_ack,
+        allow_live=policy.workspace == 'live' and policy.allow_live)
+
+
+async def publication_readiness(engine, plan, clock):
+    """Refresh after selection; a slow history read cannot reuse its old clock."""
+    context = await load_session_context(engine, plan, clock())
+    at = clock()
+    readiness = entry_readiness(plan, context, at)
+    if at >= automatic_valid_until(plan):
+        readiness = {**readiness, 'ready': False, 'terminal': True, 'terminalStatus': 'expired',
+            'reasons': [*readiness['reasons'], 'Automatic preparation evidence expired; prepare a new plan.']}
+    return context, readiness
+
+
 async def preparation_portfolio(engine, requested=None, workspace='practice'):
     dedicated = default_practice_book(engine) if workspace == 'practice' else ''
     if dedicated:
@@ -117,7 +143,7 @@ async def practice_portfolio(engine, requested=None):
 
 def resumable(row, policy, now):
     return bool(row.technique == 'options_cartel' and row.mode == 'preparation'
-        and row.config.get('coverageVersion') == 6
+        and row.config.get('coverageVersion') == 7
         and row.status in ('done', 'failed') and row.result.get('resumeReady') and not row.result.get('userCancelled')
         and (row.status == 'failed' or row.result.get('dataErrors', 0) > 0 or row.result.get('planErrors', 0) > 0)
         and row.config.get('workspace', 'practice') == policy.workspace
@@ -171,16 +197,18 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
     prior = await service._load(resume_run_id) if resume_run_id else None
     if prior and not resumable(prior, policy, started):
         raise ValueError('This preparation cannot be resumed with current settings or expired evidence; start a fresh run')
+    from ... import __version__
     run_id = new_id()
     result = {'phase': 'discovering', 'session': target_session, 'portfolioId': portfolio_id,
               'mode': 'auto', 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'rows': [], 'shortlist': [], 'warnings': [],
               'discovered': 0, 'evaluated': 0, 'qualifying': 0, 'armed': 0, 'processed': 0, 'dataErrors': 0,
               'logicalStartedAt': prior.result.get('logicalStartedAt', prior.result.get('startedAt', started)) if prior else started,
               'savedAnalysesAvailable': prior.result.get('evaluated', 0) if prior else 0, 'startedAt': started, 'updatedAt': started, 'message': 'Starting market discovery', 'currentSymbol': None,
-              'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0}
+              'cacheHits': 0, 'historyRequests': 0, 'resumedFrom': resume_run_id, 'resumedAnalyses': 0, 'prefiltered': 0, 'planErrors': 0,
+              'researchProtocol': research_protocol(policy, code_version=__version__)}
     record = TechniqueRun(id=run_id, technique='options_cartel', symbol='MULTI', mode='preparation',
         parent_run_id=resume_run_id, primary_tf='1d', trigger='automatic', status='running', verdict='running', as_of=started,
-        config={'coverageVersion': 6, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
+        config={'coverageVersion': 7, 'workspace': policy.workspace, 'policy': policy.model_dump(mode='json'), 'session': target_session, 'portfolioId': portfolio_id},
         result=result, tags=['cartel:preparation'])
     async with engine.sf() as session:
         session.add(record); await session.commit()
@@ -372,6 +400,8 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                             review = review_saved(saved)
                             result['resumedAnalyses'] += 1
                             entry = evaluation_row(saved, review, policy)
+                            entry['leaderEvidence'] = leader_evidence(saved)
+                            entry['industryContext'] = industry_reads[group]
                             if market_blocked and review:
                                 entry.update(status='research_only', reasons=['Stock/setup checks pass; market alignment blocks arming.'])
                             if review:
@@ -396,6 +426,7 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                         saved = await service.analyze(research, collection=provenance, parent_run_id=run_id)
                         review = review_saved(saved)
                         entry = evaluation_row(saved, review, policy)
+                        entry['leaderEvidence'] = leader_evidence(saved)
                         if market_blocked and review:
                             entry.update(status='research_only', reasons=['Stock/setup checks pass; market alignment blocks arming.'])
                         if review:
@@ -434,6 +465,7 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
             result['shortlistRanking'] = policy.shortlist_ranking
             # Check a bounded reserve beyond the final arm count, in quality order.
             result['candidateCheckLimit'] = policy.focus_count * 5
+            result['leaderContext'] = summarize_leaders(result['rows'], universe, at)
             result['candidatesChecked'] = 0
             for saved_id, review in pool:
                 if not market_blocked and result['candidatesChecked'] >= result['candidateCheckLimit']:
@@ -502,12 +534,18 @@ async def _run_preparation(engine, policy: PreparationPolicy, *, clock=now_ms, d
                             raise ValueError('Preparation configuration changed before arming; rerun with current settings')
                         await preparation_portfolio(engine, portfolio_id, policy.workspace)
                         require_execution_scope(engine, policy)  # recheck identity immediately before arming
-                        spec = ExecutionInput(portfolio_id=portfolio_id, mode='auto', instrument='options',
-                            contract_symbol=selected['selected']['symbol'], budget=policy.budget, risk_pct=policy.risk_pct,
-                            max_units=policy.max_contracts, overnight_ack=policy.workspace == 'practice' or policy.overnight_ack, allow_live=policy.workspace == 'live' and policy.allow_live)
+                        context, readiness = await publication_readiness(engine, plan, clock)
+                        row['lastReadiness'] = readiness
+                        if not readiness['ready']:
+                            row['status'] = readiness.get('terminalStatus') or 'awaiting_contract'
+                            row['reason'] = '; '.join(readiness['reasons'])
+                            result['shortlist'].append(row)
+                            await checkpoint('preparing_plans')
+                            continue
+                        spec = prepared_execution(policy, portfolio_id, selected['selected']['symbol'], selection_policy)
                         await arm_with_capacity(engine, runtime, policy, plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
                             'clientKind': 'desktop', 'preparation': {'runId': run_id, 'leaseOwner': lease_owner, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice',
-                                'validUntil': automatic_valid_until(plan)}})
+                                'validUntil': automatic_valid_until(plan), 'contextMinutes': [pack(b) for b in context]}})
                         row['status'] = 'armed'; result['armed'] += 1
                     result['shortlist'].append(row)
                 except (*DATA_ERRORS, httpx.HTTPError) as exc:
@@ -608,15 +646,15 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
             if now >= valid_until:
                 statuses[plan.id] = 'Preparation evidence expired; next preparation run must rebuild the plan'
                 continue
-            context = await load_session_context(engine, plan, now)
-            readiness = entry_readiness(plan, context, now)
+            context, readiness = await publication_readiness(engine, plan, clock)
             if not readiness['ready']:
                 statuses[plan.id] = '; '.join(readiness['reasons'])
                 item['lastReadiness'] = readiness
                 if readiness.get('terminal'):
                     item['status'] = readiness['terminalStatus']
                 continue
-            selection = await choose(engine, plan, await affordable_contract_policy(engine, portfolio_id, policy))
+            selection_policy = await affordable_contract_policy(engine, portfolio_id, policy)
+            selection = await choose(engine, plan, selection_policy)
             item['selection'] = selection
             if not selection['selected']:
                 statuses[plan.id] = 'Waiting for an option contract meeting the configured DTE, delta, liquidity and premium limits'
@@ -626,9 +664,14 @@ async def activate_pending(engine, *, clock=now_ms, choose=planning_contract):
                 break
             await preparation_portfolio(engine, portfolio_id, policy.workspace)
             require_execution_scope(engine, policy)
-            spec = ExecutionInput(portfolio_id=portfolio_id, mode='auto', instrument='options',
-                contract_symbol=selection['selected']['symbol'], budget=policy.budget, risk_pct=policy.risk_pct,
-                max_units=policy.max_contracts, overnight_ack=policy.workspace == 'practice' or policy.overnight_ack, allow_live=policy.workspace == 'live' and policy.allow_live)
+            context, readiness = await publication_readiness(engine, plan, clock)
+            item['lastReadiness'] = readiness
+            if not readiness['ready']:
+                statuses[plan.id] = '; '.join(readiness['reasons'])
+                if readiness.get('terminal'):
+                    item['status'] = readiness['terminalStatus']
+                continue
+            spec = prepared_execution(policy, portfolio_id, selection['selected']['symbol'], selection_policy)
             await arm_with_capacity(engine, runtime, policy, plan.id, {'mode': 'auto', 'portfolioId': portfolio_id, 'execution': spec.model_dump(),
                 'clientKind': 'desktop', 'preparation': {'runId': row.id, 'workspace': policy.workspace, 'practiceOnly': policy.workspace == 'practice', 'validUntil': valid_until,
                     'contextMinutes': [pack(b) for b in context]}})
