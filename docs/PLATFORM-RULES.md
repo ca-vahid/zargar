@@ -1687,3 +1687,15 @@ multiplier belongs to the instrument that was actually ordered, never to the ins
   the fix loop is untested (lesson for the next activation: shadow for a session first, even
   when the reviewer signs off).
 
+
+### Restart: exclusive deploy lease and a verified entry pause — 2026-09-14 (R4 of the EOD handoff; v0.7.73)
+
+The restart door (invariant 18) gained two guarantees the other team showed were missing: `restart.ps1` takes an
+EXCLUSIVE deploy lease (`logs\deploy.lock`, created atomically, owner = host:pid:time, stale after 600 s, released only
+by its owner; nested `start.ps1` inherits it via `ZARGAR_DEPLOY_LEASE`), and the entry pause is VERIFIED — the quiesce
+POST must answer `quiesced=true` AND `/api/ops/state` must read `quiesced=true` before the inventory is captured. A
+pause that is not confirmed refuses the ordinary path (exit 2); `-Force` / the watchdog's `-Override` remain the
+journaled exceptions. The watchdog skips its tick while a deploy holds the lease, so it cannot start a second engine
+during a restore. Refusals and the restore mismatch path release the lease. Scripts stay ASCII-clean where they were
+(start.ps1 keeps its three pre-existing non-ASCII bytes) and CRLF. Not exercised destructively against the shared
+runtime; verified by PowerShell parse and by the next coordinated deploy's transcript.

@@ -3122,6 +3122,19 @@ parameter change, each dated and citing its run / scorecard / sweep. Engine-leve
   live reads. No rule, threshold, gate, size or money path changed; nothing deployed.
 - **2026-09-09 20:30 ET (setting change, no code)** — `techniques.team2.target_replan` off → `structure` (gap days
   only) in Practice, user decision: "if we don't turn it on we might forget it". Under observation (above).
+- **2026-09-14 EOD handoff (other team, GO; v0.7.73)** — five fixes from their read-only reconciliation (cash $9,934.16,
+  zero orders/fills, IWM 13:02 290C refused on a live $0.13 ask under the $0.20 floor — correct — but its modelled
+  −126.71 % charged one desk loss). R1 money modes are judged by the BOOK only (`_plan_losses`), and a fire the
+  live picker refused/deferred is recorded on the plan (`executionRefused`, persisted) so the read opens no proxy
+  position and counts no model loss for it (`fire_unfilled_live`). R2 `_stale_signal` gates every money-mode fire
+  on the wall clock (session, 15:30 cutoff, `max_signal_age_min` 3) and `pick_contract` re-checks the cutoff after
+  quoting (`contract_deferred` stage `cutoff`); recorded as `stale_signal_skip` with source/decision times. R3
+  `_merge_revision` merges corrections and recovered holes into the private tape (`bar_revised`/`bar_recovered`).
+  R4 restart scripts: exclusive deploy lease + a VERIFIED entry pause (PLATFORM-RULES). R5 the scorecard keeps every
+  attempt with its decisive verdict and a durable funnel (`load_contract_verdicts` after a restart). Their packet is
+  in the suite verbatim (`tests/test_codex_team2_execution_eod.py`, `tests/test_codex_team2_data_eod.py`). NO-GO
+  honoured: C1, C2, room rules and near-ITM unchanged; validation sealed. Cohort v2 sessions on this execution
+  version are classified as v0.7.73+ in the review.
 - **2026-09-13 latest (other team: ACCEPTED; GO for development sweeps once C6 is ready)** — "Keep C2, C1 and both
   room rules off. Use the common eligible rows for every reported metric — including the chronological book
   simulation — and publish the excluded cells with reasons. Keep the frozen definitions and the September 14 –

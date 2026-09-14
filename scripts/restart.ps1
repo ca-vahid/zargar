@@ -41,10 +41,46 @@ function Warn($m) { Write-Host "! $m" -ForegroundColor Yellow }
 # (which is logged as an override). The state captured here is compared after the restart.
 $stateBefore = $null
 $engineUp = $false
+$lockDir = Join-Path $Root "logs"
+if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir | Out-Null }
+# --- R4 (2026-09-14): exclusive deploy lease + a VERIFIED entry pause -------------------------------
+# Two callers (a task, a shell, the watchdog) must never both proceed; the lease file is created atomically and
+# names its owner. A pause that is not confirmed by the engine (POST failed, or the state still says
+# quiesced=false) is missing evidence: the ordinary path refuses; only -Force may continue (an override).
+$script:leaseFile = Join-Path $lockDir "deploy.lock"
+$script:leaseOwner = "{0}:{1}:{2}" -f $env:COMPUTERNAME, $PID, (Get-Date -Format "yyyyMMdd-HHmmss")
+function Acquire-DeployLease {
+  if ($env:ZARGAR_DEPLOY_LEASE) { $script:leaseOwner = $env:ZARGAR_DEPLOY_LEASE; return $true }   # nested call by the owner
+  if (Test-Path $script:leaseFile) {
+    $age = ((Get-Date) - (Get-Item $script:leaseFile).LastWriteTime).TotalSeconds
+    if ($age -lt 600) { Warn ("another deploy owns the lease (" + (Get-Content $script:leaseFile -ErrorAction SilentlyContinue) + ", " + [int]$age + "s old)"); return $false }
+    Warn ("taking over a STALE deploy lease (" + [int]$age + "s old)")
+    Remove-Item $script:leaseFile -Force -ErrorAction SilentlyContinue
+  }
+  try { New-Item -ItemType File -Path $script:leaseFile -Value $script:leaseOwner -ErrorAction Stop | Out-Null; $env:ZARGAR_DEPLOY_LEASE = $script:leaseOwner; return $true }
+  catch { Warn ("could not create the deploy lease: " + $_.Exception.Message); return $false }
+}
+function Release-DeployLease {
+  if (-not (Test-Path $script:leaseFile)) { return }
+  $owner = (Get-Content $script:leaseFile -ErrorAction SilentlyContinue)
+  if ($owner -eq $script:leaseOwner) { Remove-Item $script:leaseFile -Force -ErrorAction SilentlyContinue }
+}
+function Confirm-EntryPause {
+  # returns $true only when the engine CONFIRMED the pause: the POST answered quiesced=true AND the state reads quiesced=true
+  try { $q = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { Warn ("entry pause request failed: " + $_.Exception.Message); return $false }
+  if (-not ($q -is [System.Management.Automation.PSCustomObject]) -or -not $q.quiesced) { Warn "entry pause not acknowledged by the engine"; return $false }
+  try { $st = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { Warn ("entry pause could not be verified: " + $_.Exception.Message); return $false }
+  if (-not ($st -is [System.Management.Automation.PSCustomObject]) -or -not $st.quiesced) { Warn "entry pause NOT in effect (state says quiesced=false)"; return $false }
+  return $true
+}
+if (-not (Acquire-DeployLease)) { Fail "Not safe to restart: another deploy holds the lease (R4)." 7 }
 try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/health" -TimeoutSec 4; $engineUp = $true } catch { $engineUp = $false }
 if ($engineUp) {
-  # R1: suspend NEW entries (self-expiring, 5 min) before the inventory is captured, so nothing starts between the check and the stop
-  try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?minutes=5" -Method Post -TimeoutSec 6 } catch { }
+  # R1/R4: suspend NEW entries (self-expiring, 5 min) before the inventory is captured - and VERIFY it took
+  if (-not (Confirm-EntryPause)) {
+    if (-not $Force) { Release-DeployLease; Fail "Not safe to restart: the entry pause was not confirmed by the engine (R4). Wait, or run again with -Force (an override, journaled)." 2 }
+    Warn "-Force: restarting without a confirmed entry pause (override)"
+  }
   try { $stateBefore = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/state" -TimeoutSec 6 } catch { $stateBefore = $null }
   # an older engine answers the SPA shell (or nothing): no state, no restoration check
   if (-not ($stateBefore -is [System.Management.Automation.PSCustomObject]) -or -not ($stateBefore.PSObject.Properties.Name -contains "armed")) { $stateBefore = $null }
@@ -55,12 +91,12 @@ if ($engineUp) {
     }
     if (-not $rc.safe) {
       foreach ($r in $rc.reasons) { Warn ("in flight: " + $r) }
-      if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; exit 2 }
+      if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Release-DeployLease; Warn "Not safe to restart now. Wait, or run again with -Force (an override, journaled)."; exit 2 }
       Warn "-Force: restarting over the work listed above (override)"
     }
   } catch {
     Warn ("readiness unavailable (" + $_.Exception.Message + ") - missing evidence is not a safe inventory")
-    if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Fail "Not safe to restart: the engine could not report what is in flight. Wait, or run again with -Force (an override, journaled)." 2 }
+    if (-not $Force) { try { $null = Invoke-RestMethod -Uri "http://127.0.0.1:8420/api/ops/quiesce?release=true" -Method Post -TimeoutSec 6 } catch { }; Release-DeployLease; Fail "Not safe to restart: the engine could not report what is in flight. Wait, or run again with -Force (an override, journaled)." 2 }
     Warn "-Force: restarting without a readiness answer (override)"
   }
 }
@@ -72,8 +108,6 @@ if ($engineUp) {
 # health hung for two minutes and the duplicate only exited when its bind failed.
 # The watchdog honours an age-based lock (logs\watchdog.lock < 180 s = skip), so
 # stamp it here before stopping anything.
-$lockDir = Join-Path $Root "logs"
-if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir | Out-Null }
 Set-Content -Path (Join-Path $lockDir "watchdog.lock") -Value (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
 
 # --- 1. stop, elevation-aware ------------------------------------------------
@@ -139,7 +173,9 @@ if ($stateBefore -ne $null) {
     @{ before = $stateBefore; after = $last } | ConvertTo-Json -Depth 8 | Set-Content -Path $snap
     if ($last) { Warn ("RESTORE MISMATCH: " + ($last.missing | ConvertTo-Json -Compress) + " - saved " + $snap) }
     else { Warn ("RESTORE CHECK unreachable - saved " + $snap) }
+    Release-DeployLease
     exit 6
   }
 }
+Release-DeployLease
 exit 0
