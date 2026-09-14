@@ -310,3 +310,5 @@ and reviewed before `--apply`.
 FIX-01 v4 money repair: unchanged scoped GO, still a human step. Deployment: after the reviewers read this,
 through the ZargarRestart task with the readiness check; the build SHA on `/api/health`, effective settings
 and restoration evidence are returned afterwards.
+
+Results this round: codex exclusive window 34/34 (+ backfill/ordering/own Delivery B 21/21 after the dry-run patch); own Delivery B + reconcile + ingest + gateway envelope/ack 57/57; Team2 runner + close, arming, reviewer execution groups 50/50 (8.7 min).
