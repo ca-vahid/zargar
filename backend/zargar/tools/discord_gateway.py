@@ -917,7 +917,8 @@ class Gateway:
             return
         env = {"kind": kind, "cid": cid, "mid": mid, "isDM": is_dm,
                "self": is_self, "source": source_name, "msg": msg,
-               "em": bool(em_entry) and kind == "create", "matched": bool(matched),
+               "em": bool(em_entry) and kind in ("create", "update"), "matched": bool(matched),
+               "seq": self._seq,                       # the RECEIPT's ordering key (Delivery B); persisted with the spool
                "attempts": 0}
         # write-ahead ACCEPTANCE (Codex G2): durable before RAM — a hard kill
         # between here and delivery loses nothing. A duplicate of a key that
@@ -1009,8 +1010,10 @@ class Gateway:
         if env["kind"] == "update" and env.get("em") and not env.get("emDone"):
             # Delivery B: an EDIT on an EM channel is a new source revision for EM's inbox (kind=update);
             # independent of the tips mirror below, RAISES on failure like the create path
-            await self._em_forward(http, headers, msg, self._em.get(cid) or {}, kind="update")
+            await self._em_forward(http, headers, msg, self._em.get(cid) or {}, kind="update", seq=env.get("seq"))
             env["emDone"] = True
+        if env["kind"] == "update" and not env.get("matched"):
+            return                                    # an EM-only channel: the tips mirror/intake never sees it
         if env["kind"] == "update":
             ok = await self._mirror(http, headers,
                                     [mirror_record(msg, source_name,
@@ -1031,7 +1034,7 @@ class Gateway:
             # EM method inbox (independent of tips). RAISES on failure (Codex
             # G3 — a 503 must not be acknowledged); emDone persists with the
             # spooled envelope so a tips-side retry never re-delivers to EM.
-            await self._em_forward(http, headers, msg, self._em.get(cid) or {})
+            await self._em_forward(http, headers, msg, self._em.get(cid) or {}, seq=env.get("seq"))
             env["emDone"] = True
         if not env.get("matched"):
             return
@@ -1063,7 +1066,8 @@ class Gateway:
         if not out.get("ok"):
             raise RuntimeError(str(out.get("error") or out.get("note") or "ingest failed")[:200])
 
-    async def _em_forward(self, http, headers, msg: dict, entry: dict, *, kind: str = "create") -> None:
+    async def _em_forward(self, http, headers, msg: dict, entry: dict, *, kind: str = "create",
+                          seq: int | None = None) -> None:
         """EM method ingestion: post the message to EM's own inbox. Read-only
         toward Discord; never touches the tip mirror/intake. Failures RAISE
         (Codex G3) so the caller spools + retries instead of acknowledging."""
@@ -1083,7 +1087,7 @@ class Gateway:
         if extra:
             rec["text"] = (rec["text"] + "\n" + "\n".join(extra)).strip()
         rec["kind"] = kind
-        rec["gatewaySeq"] = self._seq
+        rec["gatewaySeq"] = seq if seq is not None else self._seq   # the receipt's key, not the worker's clock
         if kind == "create":
             rec["text"] = rec.get("text") or ""       # EM inbox wants a string, not absence
             rec["images"] = rec.get("images") or []

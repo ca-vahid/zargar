@@ -30,7 +30,7 @@ import datetime as dt
 import hashlib
 import json
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from ..domain import new_id
 from ..models import TechniqueMethodNote, TechniqueSourceArtifact, TechniqueSourceJob, TechniqueSourceRevision
@@ -114,14 +114,19 @@ async def record_delivery(session, *, note_id: str, payload: dict, kind: str = "
     cur = await current_revision(session, note_id)
     edited = parse_ts(payload.get("editedAt"))
     published = parse_ts(payload.get("postedAt")) or (cur.published_at if cur else None)
+    # B-03: ONE explicit ordering key, kept on the note as the accepted WATERMARK independently of the
+    # immutable content revisions: (event time, gateway sequence). Event time = the source's editedAt (else
+    # postedAt on a create); a delivery without an event time is ordered by sequence alone; a delivery with
+    # neither is UNORDERED and refused unless its content is identical (then it is a plain receipt).
+    wm = dict((note.meta or {}).get("sourceWatermark") or {})
+    wm_t, wm_seq = parse_ts(wm.get("at")), wm.get("seq")
+    t = edited if edited is not None else (published if cur is None else None)
     if cur is not None:
-        cur_mark = cur.source_edited_at or cur.published_at
-        if edited is not None and cur_mark is not None and edited < cur_mark:
+        order = _compare_order(t, gateway_seq, wm_t, wm_seq)
+        if order == "older":
             return {"outcome": "stale", "revision": cur.revision, "revisionId": cur.id, "created": False,
-                    "why": f"delivery edited {edited.isoformat()} is older than the accepted {cur_mark.isoformat()}"}
-        if edited is None and gateway_seq is not None and cur.gateway_seq is not None and gateway_seq < cur.gateway_seq:
-            return {"outcome": "stale", "revision": cur.revision, "revisionId": cur.id, "created": False,
-                    "why": f"gateway sequence {gateway_seq} is older than the accepted {cur.gateway_seq}"}
+                    "why": (f"delivery ({t.isoformat() if t else 'no event time'}, seq {gateway_seq}) is older than the "
+                            f"accepted watermark ({wm_t.isoformat() if wm_t else 'none'}, seq {wm_seq})")}
     # partial merge: an absent field (None) means "not in this payload" - keep the accepted value
     text = payload.get("text")
     images = payload.get("images")
@@ -135,7 +140,13 @@ async def record_delivery(session, *, note_id: str, payload: dict, kind: str = "
     deleted = kind == "delete"
     h = content_hash(text, images, deleted=deleted)
     if cur is not None and cur.content_hash == h:
+        # a newer identical state is not a new revision, but its ordering observation is kept (B-03)
+        if order == "newer":
+            _advance_watermark(note, t, gateway_seq)
         return {"outcome": "redelivery", "revision": cur.revision, "revisionId": cur.id, "created": False}
+    if cur is not None and order == "unordered":
+        return {"outcome": "unordered", "revision": cur.revision, "revisionId": cur.id, "created": False,
+                "why": "a content change with neither an event time nor a gateway sequence cannot be ordered"}
     n = (cur.revision + 1) if cur is not None else 1
     if cur is None:
         rkind = "create"
@@ -157,9 +168,42 @@ async def record_delivery(session, *, note_id: str, payload: dict, kind: str = "
     await session.flush()
     session.add(TechniqueSourceJob(id=new_id(), note_id=note_id, revision_id=rev.id, technique=TECHNIQUE,
                                    stage="received", outcome="in_progress", fence_token=0, checkpoint=[]))
+    _advance_watermark(note, t, gateway_seq)
     await session.flush()
     return {"outcome": "recorded", "revision": n, "revisionId": rev.id, "created": True, "kind": rkind,
             "supersedes": rev.supersedes}
+
+
+def _compare_order(t, seq, wm_t, wm_seq) -> str:
+    """older | same | newer | unordered, for delivery (t, seq) against the accepted watermark (wm_t, wm_seq).
+    Event time decides when both sides have one; equal times (or a missing delivery time) fall to the
+    gateway sequence; with neither comparable the order is unknown."""
+    if t is not None and wm_t is not None:
+        if t < wm_t:
+            return "older"
+        if t > wm_t:
+            return "newer"
+    if seq is not None and wm_seq is not None:
+        if int(seq) < int(wm_seq):
+            return "older"
+        if int(seq) > int(wm_seq):
+            return "newer"
+        return "same"
+    if t is not None and wm_t is not None:
+        return "same"                                    # equal times, no sequence on one side
+    if t is not None and wm_t is None:
+        return "newer"                                   # the watermark had no event time yet
+    return "unordered"
+
+
+def _advance_watermark(note: TechniqueMethodNote, t, seq) -> None:
+    wm = dict((note.meta or {}).get("sourceWatermark") or {})
+    wm_t = parse_ts(wm.get("at"))
+    if t is not None and (wm_t is None or t > wm_t):
+        wm["at"] = t.isoformat()
+    if seq is not None and (wm.get("seq") is None or int(seq) > int(wm["seq"])):
+        wm["seq"] = int(seq)
+    note.meta = {**(note.meta or {}), "sourceWatermark": wm}   # a new dict: the ORM records the change
 
 
 async def revisions_for(session, note_id: str) -> list[dict]:
@@ -175,15 +219,16 @@ async def resume_unfinished(session, *, owner: str, now: dt.datetime | None = No
     fence token at its recorded stage (never from the beginning - the checkpoint list is kept). A worker
     that still holds an expired lease learns about it when its next checkpoint is refused."""
     now = now or utcnow()
+    # B-04: ELIGIBILITY before the LIMIT - a live lease or a backing-off job must not hide later ready jobs
     rows = (await session.execute(
-        select(TechniqueSourceJob).where(TechniqueSourceJob.outcome.in_(("in_progress", "retryable")))
+        select(TechniqueSourceJob).where(
+            TechniqueSourceJob.outcome.in_(("in_progress", "retryable")),
+            or_(TechniqueSourceJob.lease_until.is_(None), TechniqueSourceJob.lease_until <= now,
+                TechniqueSourceJob.lease_owner.is_(None)),
+            or_(TechniqueSourceJob.next_due_at.is_(None), TechniqueSourceJob.next_due_at <= now))
         .order_by(TechniqueSourceJob.created_at.asc()).limit(limit).with_for_update(skip_locked=True))).scalars().all()
     out = []
     for j in rows:
-        if j.lease_until is not None and j.lease_until > now and j.lease_owner:
-            continue                                   # a live lease
-        if j.next_due_at is not None and j.next_due_at > now:
-            continue                                   # backing off
         j.fence_token = int(j.fence_token or 0) + 1
         j.lease_owner = owner
         j.lease_until = now + dt.timedelta(seconds=lease_seconds)
@@ -212,6 +257,10 @@ async def checkpoint(session, *, job_id: str, fence_token: int, item_key: str, a
     if int(job.fence_token or 0) != int(fence_token):
         raise FenceMismatch(f"job {job_id[:8]}: fence {fence_token} is not current ({job.fence_token}) - "
                             f"the lease moved to {job.lease_owner!r}; nothing written")
+    # B-04: a matching token is not enough - the job must be CLAIMED, in progress and its lease unexpired
+    if job.outcome != "in_progress" or not job.lease_owner or job.lease_until is None or job.lease_until <= now:
+        raise FenceMismatch(f"job {job_id[:8]}: no valid lease (outcome {job.outcome}, owner {job.lease_owner!r}, "
+                            f"lease until {job.lease_until}) - an expired or unclaimed worker cannot checkpoint; nothing written")
     art_row = None
     reused = False
     if artifact:

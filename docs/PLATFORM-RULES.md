@@ -1698,8 +1698,9 @@ Rule for every desk placing entries through the runner: `before_submit` evidence
 a dict captured before the awaits. `PlanRunner._entry_guard` reads `engine.quotes.get(order_symbol)` and asks
 the technique's pure synchronous hook `judge_entry_quote(ap, trade, contract, quote)` (`execution/entry_quality.py`:
 two-sided uncrossed book, fresher than `execution.premium_mark_max_age_seconds`, spread within the technique's
-limit when the arm skips wide spreads - generic `execution.spread_warn_pct`, EM T5.4 10%). No quote / chain row
-only = the captured T5.4 verdict is the only evidence. The repair tool `tools/em_reconcile_fallback.py` has one
+limit when the arm skips wide spreads - generic `execution.spread_warn_pct`, EM T5.4 10%). FC-02 (same day): NO quote =
+refusal; a delayed chain row = refusal when a real-time option source is configured; the freshness limit is the
+ENTRY policy `risk.stale_quote_seconds`, never an exit-mark age; the captured warning list admits nothing. The repair tool `tools/em_reconcile_fallback.py` has one
 code path (real session, row lock, receipts staged in the same transaction); fake-session test doubles are
 historical reproductions, never production evidence (`tests/test_em_reconcile_real_session.py`).
 

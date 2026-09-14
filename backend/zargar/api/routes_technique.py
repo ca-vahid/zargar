@@ -221,7 +221,7 @@ def build_technique_routes(app, eng, auth, config) -> None:
         guild: str | None = None
         author: str = ""
         authorId: str | None = None
-        text: str = ""
+        text: str | None = None                # None = not in this payload (partial delivery) - Delivery B (B-02)
         images: list[str] | None = None        # None = not in this payload (partial delivery) - Delivery B
         postedAt: str | None = None
         editedAt: str | None = None
@@ -233,8 +233,9 @@ def build_technique_routes(app, eng, auth, config) -> None:
         ing = _ingest(eng)
         payload = body.model_dump()
         if str(payload.get("kind") or "create") in ("update", "delete", "deleted"):
-            out = await ing.store_revision(payload)
+            out = await ing.store_revision(payload)     # omitted/null = unchanged; explicit "" = cleared
         else:
+            payload["text"] = payload.get("text") or ""   # create defaults are normalised HERE, never for updates
             payload["images"] = payload.get("images") or []
             out = await ing.store_message(payload)
         await ing.resume_unfinished(owner="gateway-delivery")

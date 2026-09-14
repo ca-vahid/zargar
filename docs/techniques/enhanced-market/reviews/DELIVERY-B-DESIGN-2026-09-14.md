@@ -209,3 +209,16 @@ enqueued for EM; `kind=delete` is accepted by the API and the ledger); attachmen
 hashes arrive when bytes are fetched; the transcription/extraction workers do not yet write artifacts
 through `checkpoint` (they still write the note columns) - wiring them is the next PR, with the scenario
 extraction.
+
+## Status after the first-PR review (same day)
+
+| area | state |
+|---|---|
+| original Delivery A / FA / FC-01 fixes | closed (reviewer cases green) |
+| FC-02 current-evidence-at-dispatch | closed in this round |
+| first-PR boundaries B-01..B-05 | closed in this round (reviewer regressions adopted, green) |
+| gateway delete forwarding | deferred to the next PR (API + ledger accept `kind=delete`) |
+| transcription / extraction through artifacts + `checkpoint` | deferred to the next PR |
+| scenario records, alignment, source-informed candidate | not started (design accepted) |
+| source backfill application | HELD by the reviewers; dry run only |
+

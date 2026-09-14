@@ -3112,8 +3112,24 @@ class PlanRunner(SessionListener):
         its own book rules (EM: T5.4's 10%). Returns the refusal reason or None."""
         return judge_entry_quote(contract, quote,
                                  max_spread_pct=float(self.rt("spread_warn_pct", 20.0) or 20.0),
-                                 max_age_s=float(self.rt("premium_mark_max_age_seconds", 90) or 0),
-                                 refuse_wide=bool(ap.config.skip_wide_spread), now_ms=now_ms())
+                                 max_age_s=self._entry_quote_max_age(), refuse_wide=bool(ap.config.skip_wide_spread),
+                                 now_ms=now_ms(), require_current=self._live_option_quotes_expected())
+
+    def _entry_quote_max_age(self) -> float:
+        """FC-02: the ENTRY freshness policy is RiskGate's `risk.stale_quote_seconds` (10 s), never an exit-mark age."""
+        s = self.engine.settings
+        try:
+            return float(s.get("risk.stale_quote_seconds", 10) or 0)
+        except (TypeError, ValueError, AttributeError):
+            return 10.0
+
+    def _live_option_quotes_expected(self) -> bool:
+        """Is a real-time option source configured (then a delayed chain row is never entry evidence)?"""
+        fn = getattr(getattr(self.engine, "risk", None), "live_option_quotes_expected", None)
+        try:
+            return bool(fn()) if callable(fn) else False
+        except Exception:
+            return False
 
     async def rejudge_contract(self, ap: "ArmedPlan", trade: "Trade", contract: dict) -> None:
         """After the pre-order re-price: re-judge the contract's quality warnings on the FRESH quote

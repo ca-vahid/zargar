@@ -242,3 +242,34 @@ Results: reviewer group on zargar_test_codex (budget 3 + quote 1 + Postgres 6 + 
 Team2 runner + reviewer execution/evidence/preopen/exits 121/121; ingest + gateway + separation 28 passed,
 3 failed in `test_discord_gateway_modes.py` that call a method (`_on_message`) the Tips desk's envelope
 refactor removed - they fail identically on origin/main and are not touched by this branch.
+
+---
+
+# First-PR review (`2026-09-14-delivery-b-first-pr-review.md`), same day
+
+Deployment HELD; Delivery B source backfill HELD (not applied); the FIX-01 v4 five-record money repair keeps
+its scoped GO on the non-live path (a human runs it; receipts and readback returned afterwards). The four
+reviewer files were adopted unchanged: `tests/test_codex_fc01_source_loss.py`, `tests/test_codex_em_source_ordering.py`
+(the standalone ordering/API/jobs file), `tests/test_codex_em_source_backfill.py`, `tests/test_codex_em_edit_gateway.py`.
+All fifteen boundary cases failed before and pass now; the earlier 13 reviewer cases still pass (28 in the
+codex group after this round).
+
+| finding | closure | where |
+|---|---|---|
+| FC-02 (P1) missing / delayed current quote admitted | An option entry needs CURRENT executable evidence at dispatch: no quote = refusal; with a real-time source configured (`RiskGate.live_option_quotes_expected`) a delayed chain row = refusal and the age is the SOURCE age; without one the chain row is judged by receipt age and spread, as RiskGate does. The freshness limit is the ENTRY policy `risk.stale_quote_seconds` (10 s), no longer the exit-mark age. A quote without a timestamp is not evidence. The captured warning list no longer admits anything. The pure test that blessed the fallback was rewritten to this contract | `execution/entry_quality.py`, `PlanRunner.judge_entry_quote` + `_entry_quote_max_age` / `_live_option_quotes_expected`, EM override in `technique/arming.py`, `tests/test_entry_quality.py` |
+| B-01 (P1) real update envelope never selected EM; worker-time sequence | `_enqueue` marks `em` for create AND update on EM channels and persists the RECEIPT sequence in the envelope (`seq`, spooled with it); `_em_forward(kind=, seq=)` sends that key, never the worker's `_seq`; an EM-only channel's edit returns after EM delivery and never reaches the tips mirror/intake; independent `emDone` acknowledgement kept | `tools/discord_gateway.py` |
+| B-02 (P1) DTO defaults broke partial updates | `text: str \| None = None` on the request model; for updates omitted/null = unchanged and explicit `""` = cleared; create defaults are normalised only on the create path | `api/routes_technique.py` |
+| B-03 (P1) ordering metadata could move backward | ONE comparison key (event time, gateway sequence) kept on the note as the accepted WATERMARK (`meta.sourceWatermark`), independent of the immutable revisions: equal event times fall to the sequence; a delivery without an event time orders by sequence alone and never lowers the time watermark (a tombstone keeps its authority); a newer identical state advances the watermark without a new revision; a content change with neither key is `unordered` and refused, never ordered by worker time | `technique/source_revisions.py::record_delivery`, `_compare_order`, `_advance_watermark` |
+| B-04 (P1/P2) starvation; expired worker could checkpoint | eligibility (free/expired lease, not backing off) is in the query BEFORE the limit, with `skip_locked`; `checkpoint` requires a claimed, in-progress, UNEXPIRED lease plus the current fence - a matching integer alone is refused | `technique/source_revisions.py::resume_unfinished`, `checkpoint` |
+| B-05 (P1) backfill copied unreviewed evidence | the manifest digest (`planHash` over EVERY evidence field: identity, content hash, media reference, transcript hash, extraction hash, artifact keys, stage, outcome) is verified first; the preflight refuses early; then each note is rebuilt from the LOCKED row inside the one transaction and compared field by field - any difference refuses the whole apply with nothing written; `apply` returns 0 on refusal and the CLI exits 2 | `tools/em_source_backfill.py` |
+
+Pre-existing: the three `test_discord_gateway_modes.py` failures (`_on_message`) belong to the Tips desk's
+envelope refactor and are recorded for that desk to port; untouched here.
+
+Deferred to the next PR, as disclosed: gateway DELETE forwarding (the API/ledger accept `kind=delete` now);
+wiring the transcription/extraction workers through artifacts + `checkpoint`.
+
+Results this round: reviewer codex group 28/28 (source-loss 2, ordering/API/jobs 8, backfill 3, gateway 2,
+budget 3, quote 1, Postgres 6, promotion 3); `test_entry_quality` 10/10; own Delivery B + real-session
+reconcile + ingest + gateway envelope/ack + separation 67 passed, 5 historical skipped; arming + tip runner +
+Team2 runner + reviewer execution/evidence/preopen/exits 121/121.

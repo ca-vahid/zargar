@@ -295,11 +295,12 @@ class PlanArmer(PlanRunner):
 
     def judge_entry_quote(self, ap, trade, contract: dict, quote) -> str | None:
         """EM's final verdict on the CURRENT NBBO (FC-01): T5.4's own 10% spread limit (`MAX_SPREAD_PCT`, the
-        number the pick and `rejudge_spread` use), a two-sided book and a mark fresher than
-        `execution.premium_mark_max_age_seconds`. Synchronous and pure; the runner raises on a reason."""
+        number the pick and `rejudge_spread` use), a two-sided book, CURRENT evidence (no quote / a delayed row
+        when a real-time source is configured = refusal, FC-02) fresher than the ENTRY policy
+        `risk.stale_quote_seconds`. Synchronous and pure; the runner raises on a reason."""
         return judge_entry_quote(contract, quote, max_spread_pct=MAX_SPREAD_PCT,
-                                 max_age_s=float(self.rt("premium_mark_max_age_seconds", 90) or 0),
-                                 refuse_wide=bool(ap.config.skip_wide_spread), now_ms=now_ms())
+                                 max_age_s=self._entry_quote_max_age(), refuse_wide=bool(ap.config.skip_wide_spread),
+                                 now_ms=now_ms(), require_current=self._live_option_quotes_expected())
 
     def _preopen_window(self, now: dt.datetime) -> bool:
         at = str(self.engine.settings.get("technique.arm.preopen_at", "09:25") or "09:25")
