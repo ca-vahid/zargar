@@ -149,6 +149,7 @@ Start-Sleep -Seconds 2
 # not as the switch, and start.ps1 then ran the engine in this console's FOREGROUND (2026-09-09 09:26 ET:
 # the restart never reached its health wait or restoration check)
 $args2 = @{ Detach = $true }; if ($Force) { $args2.Force = $true }
+if ($handoff) { $args2.NoBuild = $true } # the exact artifact was built and verified under the deployment owner
 & (Join-Path $Root "scripts\start.ps1") @args2
 if ($LASTEXITCODE -ne 0) { Warn "start.ps1 exited $LASTEXITCODE"; exit 1 }
 
@@ -189,7 +190,9 @@ if ($stateBefore -ne $null) {
   }
 }
 if ($handoff) {
-  @{ phase='verified'; target=$handoff.target; expectedVersion=$Expect; artifactSha256=$handoff.artifactSha256; completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID } |
+  $actualArtifact = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Root 'frontend/dist/index.html')).Hash
+  if ($actualArtifact -ne $handoff.artifactSha256) { throw 'Artifact changed after verified handoff; deployment receipt refused.' }
+  @{ phase='verified'; target=$handoff.target; expectedVersion=$Expect; artifactSha256=$actualArtifact; completedAt=[DateTimeOffset]::UtcNow.ToString('o'); ownerPid=$PID } |
     ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Root 'logs/deployment-receipt.json') -Encoding ASCII
   Remove-Item -LiteralPath $handoffPath
 }
