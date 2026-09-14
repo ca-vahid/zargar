@@ -4,7 +4,7 @@
 // commit log); every release bumps APP_VERSION here AND in package.json,
 // backend/zargar/__init__.py and backend/pyproject.toml.
 
-export const APP_VERSION = "0.7.65";
+export const APP_VERSION = "0.7.66";
 
 
 export type ChangeTag = "major" | "new" | "improved" | "fixed" | "security";
@@ -18,6 +18,14 @@ export interface Release {
 }
 
 export const CHANGELOG: Release[] = [
+  {
+    version: "0.7.66",
+    date: "2026-09-13",
+    title: "A new rule is classified in the same commit it is inserted",
+    items: [
+      { tag: "fixed", text: "Saving a rule that conflicts with a disputed rule of the same family now classifies it (staged as disputed) in the same database transaction that inserts it. Before, the insert committed first and the classification ran after the notification - a failed notification could leave a conflicting rule active and unflagged. The returned note reflects its final committed state." },
+    ],
+  },
   {
     version: "0.7.65",
     date: "2026-09-13",
