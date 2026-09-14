@@ -1691,3 +1691,26 @@ in the caller's session, row locked, hash re-checked); corrected values come fro
 never from the projection; ownership is validated before any read; `--include-live` verifies nothing.
 FA-05: a promotion's identity is the sweep's saved resolved thresholds + overlay + process version, never
 "same overlay". Build identity: `zargar.BUILD` bound at import (full SHA, `-dirty`), on `/api/health.build`.
+
+### Session findings — 2026-09-14 (first enforce/integrity day; v0.7.68 → 0.7.71)
+
+- **Bar DELIVERY stalls (3×):** 13:09–13:13, 13:23–13:27 and 15:26–15:29 ET every armed
+  plan on every desk logged "stale bars" (180 s guard) — 44, 43 and 47 warnings — while the
+  bars table has EVERY minute for SPY (all `exchange`). Delivery to the runners lagged and
+  caught up; nothing was lost, quotes never went stale, exits (quote-based) were unaffected.
+  Open: instrument the aggregator's delivery latency (bar ts → dispatch ts) so the next stall
+  is measured, not inferred from 130 warning rows. Not tips-specific — platform.
+- **Two desks restarted within two minutes (11:45 and 11:50 ET):** this desk's gate cleared
+  and fired `ZargarRestart`; the Armed desk had converged the running checkout to 0.7.71 and
+  fired its own. The app was dark ~2 min and came back on 0.7.71 (which contained both
+  desks' changes because the checkout is shared). The readiness check cannot see another
+  desk's INTENT to restart. Convention until a lock exists: before triggering, check the
+  task's LastRunTime and `git log -1` of the running checkout; if either moved in the last
+  5 minutes, wait a tick.
+- **Concurrent deploy blocked a fix for 2 h 10 m:** the `restart-check` refused from 09:33
+  to 11:45 because of one managed EM trade (INTC b1). A tips fix waited that long while the
+  defect kept opening incidents. That is the gate working as designed; the cost is real and
+  the answer is not to weaken the gate but to keep new-control rollouts OFF the open when
+  the fix loop is untested (lesson for the next activation: shadow for a session first, even
+  when the reviewer signs off).
+

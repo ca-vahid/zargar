@@ -145,6 +145,10 @@ async def _adopt_shares(eng, sym: str, *, qty: int, stop: float, extras: dict | 
             "legs": [{"symbol": sym, "secType": "STK", "qty": qty, "avgFill": q.last, "origin": "adoption"}],
             "overnight": "day_only", "policy": {"timeframe": "15m", "stop": {"kind": "fixed", "price": stop}},
             "extras": extras or {}}
+    # an adoption manages fills that ALREADY exist on the venue book: seed them,
+    # or the boot/pre-open reconcile (which runs during market hours) flags the
+    # record "we hold N, the broker shows nothing" and parks it on attention
+    await eng.positions.apply_fill(pid, sym, "STK", "BUY", float(qty), float(q.last), 0.0)
     return await eng.position_manager.adopt(spec)
 
 

@@ -309,6 +309,34 @@ drawdown; nothing is claimed proven. Open into the new week: T Jan-27 29C
   review-gated card in the 2026-09-14 session; the first incident, if any, must
   show every automated path refusing while exits ran.
 
+- 2026-09-14 (evening) — **Day 1 under enforce + integrity: the gate did its job, the
+  budget decides everything.** Sixteen pre-entry geometry records on Tips Practice, all
+  `enforced: true`. Twelve cards were review-gated: eleven on "no quantity satisfies the
+  ~$89 risk budget" (1% of an $8.9k book; one option contract with no stop risks its whole
+  debit, $96–$400) and one shares card with no stop. Ten of those were analyst SKIPs anyway
+  (maps, wishes, hedges — rejected on the analyst's verdict, as before). Two were analyst
+  TAKEs (MSFT 9/14 505C ×7, TSLA 9/25 340P ×3) that expired unapproved. The two take cards
+  that PASSED (HIMS 9/18 30C resized 15→1, AAL 11/20 14C resized 11→2) were refused
+  automatic approval by the integrity pause, approved by the user in the app at 10:09, and
+  re-validated at submission: HIMS filled at 0.46 (adopted, stop 26.67, later 28.40); AAL
+  rested unfilled all day at 0.67. Method verdict: under a 1% budget with no stop on the
+  card, options tips are a REVIEW product, not an auto product — the analyst must supply a
+  stop (underlying or premium) or the budget policy must change. Both are user decisions;
+  nothing in the code is wrong. Exits were untouched by the pause: T mirrored a source
+  trim at 09:32 (+$16), RKT TP1 at 13:00 (+$16), T TP1 at 14:15 (+$20); the pre-market
+  APLD 30C stop (−$210) was a clean stop, no diagnostic fired. Zero
+  `TipFastStopDiagnostic` today. Tips Practice realized −$158.
+- 2026-09-14 — **The integrity counter's first false positive** (fixed the same morning,
+  v0.7.69 in the 11:50 deploy): `repeated_pre_entry_failure` counted every review-gate
+  as a path failure, opened six incidents (two duplicates) from budget-fit gates on
+  skipped cards and paused Practice proposals from 09:22. Two were released on bound
+  evidence (the HIMS/AAL validations, 10:16); four opened before the fix deployed are
+  still open at the close (`760309ca`, `df02e34a`, `2e87b5bf`, `4e93b293`) — their
+  basis is void, releasing them is a labeled override (user) or the next take card that
+  validates on the book. Rule since 0.7.69: only SYSTEMIC failures (bars/quote/greeks/
+  provider unavailable, delayed, stale, exceptions) count; one incident per path, book
+  and session.
+
 **Queued (agreed, not built):** MK self-disclosed-trade classification with
 labeled fixtures + promotion criteria; multi-image evidence processing.
 **Built 2026-09-14:** geometry validated BEFORE entry with bounded journaled
