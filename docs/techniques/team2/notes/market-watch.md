@@ -6283,3 +6283,41 @@ estart.ps1` at 16:32 ET. The
   a bear stack plus a 2m pullback into E13 ≈ 288.66 from below; if it fires, record the put walk (F124: expect the 288P under the floor) and the
   F125 tally → 2 → `skip_loss_cap_desk`); (2) after 15:45 confirm the flatten cue and that the session grade lands, IWM `needsAttention` resolves
   and the plans expire cleanly at the close; (3) further stream drops; (4) skip `/team2` UI (F103).
+
+## 2026-09-14 15:35 ET (run 93: the 15:30 last-entry cutoff landed on all three (`skip_last_entry` at the 15:32 close); no touch, no fire; FOURTH Alpaca stream drop at 15:29:37 self-healed in 3 s with no bar loss; parity exact; no code)
+
+- **Alive on v0.7.71.** SPY `e26bb753` / QQQ `37d93465` / IWM `fe537b5e` armed in mode `auto` on Team2 Practice, `stale false`, bar age 93 s,
+  quote age 0 s (SPY 761.88, QQQ 711.12, IWM 288.34), window `prime_close`. 34 1m bars per symbol since 15:00 ET (latest 15:33), all `exchange`,
+  no gap > 61 s. Regime ts 15:30 on all three. `openPosition` null everywhere, no Team2 order today.
+- **Cutoff confirmed (D6/C3):** the first 2m close after 15:30 (15:32) logged `skip_last_entry` ("past 15:30 — no new entries, managing what is
+  open until the 15:45 flatten") on SPY, QQQ and IWM — one read event plus one `TechniquePlanTriggerSkipped` audit row each, at 15:32:00 ET on the
+  dot. The snapshot summary reads "past 15:30 — no new entries today, flat by 15:45". No entry was attempted between 15:05 and 15:30 (no touch:
+  IWM `scenario_4@13:45` stayed `touches 0`).
+- **Tape check since run 92:** SPY 15m closes 762.03 (15:00) and 761.72 (15:15), under the 763.60 flip; QQQ 711.23 / 711.03 under 713.65; IWM
+  288.62 / 288.35 under 288.77 (high of the 15:00 bar 288.75 — again to within 2 c of the level and closed under). All three biases hold scenario 4
+  (puts). Regime 15:30: SPY close 761.86, E13 761.85 / E48 762.07 / E200 761.44, `mixed`; QQQ 711.04, E13 711.17 / E48 711.58 / E200 709.77,
+  `mixed` (E13 slipped under E48 since 15:00); IWM 288.40, E13 288.47 / E48 288.58 / E200 288.47, `mixed` (E48 still above E200 — never a bear
+  stack today, so no scenario-4 put touch was ever eligible; E3/B9/E4 behaved). IWM `scenario_4@09:30` shows `invalidated` (superseded by the
+  12:45 scenario-3 flip), `scenario_4@13:45` `waiting`, `pm_break_up@11:30` inert — all as expected.
+- **F125 status:** unchanged — IWM read `trades 1, losses 1, pnlPctSum −126.71`, desk tally 1 of 2; no loss-cap skip row on any plan.
+  **F124:** no new instance (no touch fired all afternoon). IWM `needsAttention true` is still only the 13:02 `no option contract` refusal.
+- **Replay parity EXACT** on all three (SPY 6, QQQ 2, IWM 12 events incl. the new `skip_last_entry`; IWM 1 trade −126.71 both sides; no open
+  position either side).
+- **Feed — FOURTH Alpaca stream drop of the day at 15:29:37 ET**, this time "sent 1011 (internal error) keepalive ping timeout; no close frame
+  received"; connected 15:29:40, authenticated 15:29:40.5 (3 s). The stream had gone quiet before the timeout noticed: SPY logged
+  `TechniquePlanError stale bars` at 15:29:16 (last bar 15:26) and QQQ at 15:29:39 (last bar 15:26); IWM did not error. The DB shows the 15:27,
+  15:28 and 15:29 bars present for all three with `exchange` provenance — the late bars landed after the reconnect and the 15:30/15:32 closes read
+  normally. One `OPRA quotes failed:` (empty message) at 15:29:37 on the same drop. Drops today: 13:12, 13:26, 14:23, 15:29 — all self-healed,
+  none lost a bar, but two of the four produced stale-bars errors at a 2m close. Platform (Alpaca keepalive), not Team2 — no F-number; flagged
+  for the user below.
+- **Log (`backend/zargar-8420.log`, since 15:00 ET):** Traceback 0, `cartel-observer bar handling failed` 0, `stale bars` in log 0 (only the two
+  audit rows above), no Team2 warning. The `persist_bars: dropped N non-bucket-aligned stub bar(s)` noise continues (~200 lines / 30 min) — platform,
+  noted in runs 91–92, not touched.
+- **No code shipped.** No rule/knob change; nothing to add to TRADING-RULES this run.
+- **Proposed (platform, for the user):** four Alpaca stream drops in 2 h 17 min (13:12 "no close frame", 13:26, 14:23, 15:29 "keepalive ping
+  timeout") is a pattern; each one risks a stale-bars error if it straddles a 2m close. Worth a look by whoever owns `brokers/alpaca.py`
+  (client-side ping interval / timeout vs Alpaca's 10 s keepalive) — outside Team2, not built here.
+- **Next run (~16:05) should:** (1) confirm the 15:45 flatten cue fired (nothing to flatten — expect a `flatten` read event or a skipped-noop and
+  no order); (2) confirm the session grade lands, IWM `needsAttention` resolves and the three plans expire cleanly at 16:00 (`status` no longer
+  `armed`, `grade` set); (3) confirm the 17:00 plan-now job arms tomorrow's three plans (check at the 16:35 run only if the job runs early; else
+  tomorrow 09:00); (4) any further stream drop after the close; (5) skip `/team2` UI (F103).
