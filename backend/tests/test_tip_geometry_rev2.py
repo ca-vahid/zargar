@@ -140,12 +140,25 @@ def test_case9_shares_and_options_both_honor_budget():
 
 # 10. planned vs stress vs realized recorded separately
 def test_case10_accounting_keeps_planned_stress_realized_apart():
-    pos = {"config": {"riskPlan": {"plannedRisk": 120.0, "stressRisk": 900.0}}, "realizedPnl": -160.0}
+    enforced = {"enforced": True, "plannedRisk": 120.0, "unitLoss": 40.0, "qty": 3, "stressRisk": 900.0}
+    legs = [{"symbol": "X", "secType": "OPT", "qty": 3, "avgFill": 3.0, "multiplier": 100}]
+    pos = {"config": {"riskPlan": enforced}, "legs": legs, "realizedPnl": -160.0}
     acc = g.risk_accounting(pos)
-    assert acc == {"plannedRisk": 120.0, "stressRisk": 900.0, "realizedPnl": -160.0,
-                   "realizedLoss": 160.0, "slippageVsPlanned": 40.0}
-    win = g.risk_accounting({"config": {"riskPlan": {"plannedRisk": 120.0, "stressRisk": 900.0}}, "realizedPnl": 50.0})
+    assert acc["plannedRisk"] == 120.0 and acc["plannedRiskBasis"] == "enforced-plan"
+    assert acc["stressRisk"] == 900.0 and acc["realizedPnl"] == -160.0 and acc["realizedLoss"] == 160.0
+    assert acc["slippageVsPlanned"] == 40.0 and "hypothetical" not in acc
+    win = g.risk_accounting({"config": {"riskPlan": enforced}, "legs": legs, "realizedPnl": 50.0})
     assert win["realizedLoss"] == 0.0 and "slippageVsPlanned" not in win
+    # a shadow plan never becomes the executed plan's risk (C95-02)
+    shadow = {"mode": "shadow", "enforced": False, "plannedRisk": 50.0, "qty": 50, "qtyRequested": 100, "resized": True}
+    sh = g.risk_accounting({"entry": 100.0, "policy": {"stop": {"kind": "fixed", "price": 99.0}},
+                            "legs": [{"symbol": "X", "secType": "STK", "qty": 100, "avgFill": 100.0}],
+                            "realizedPnl": -100.0, "extras": {"riskPlan": shadow}})
+    assert sh["plannedRisk"] == 100.0 and sh["plannedRiskBasis"] == "executed-plan" and sh["slippageVsPlanned"] == 0.0
+    assert sh["hypothetical"]["plannedRisk"] == 50.0
+    none = g.risk_accounting({"legs": [{"symbol": "O", "secType": "OPT", "qty": 1, "avgFill": 2.0}],
+                              "realizedPnl": -30.0, "extras": {"riskPlan": shadow}})
+    assert none["plannedRisk"] is None and none["plannedRiskBasis"] == "unavailable" and "slippageVsPlanned" not in none
 
 
 # budget authority: approved policy only, never the model's quantity

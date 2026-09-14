@@ -225,34 +225,85 @@ async def gate_reason(eng, *, portfolio_id: str | None, entry_path: str) -> str 
 
 
 # ---------------------------------------------------------------------------
-async def _resolve_proof(eng, e: dict) -> tuple[bool | None, str]:
-    """A proof reference resolves to an ACTUAL record or it is nothing
-    (I93-03: an API-supplied boolean is not validation). Supported refs:
-    `execution:<id>` (an executions row for the incident's symbol),
-    `event:<id>` (a journal row of the kinds that carry structured evidence),
-    `position:<id>` (a managed position row whose extras.riskPlan is enforced
-    and invariantOk). Returns (valid|None, detail)."""
+def _incident_symbols(inc: dict) -> set[str]:
+    out = {str((inc.get("scope") or {}).get("symbol") or "").upper()}
+    for e in inc.get("evidence") or []:
+        if e.get("symbol"):
+            out.add(str(e["symbol"]).upper())
+    return {x for x in out if x}
+
+
+async def _incident_order_ids(eng, inc: dict) -> set[str] | None:
+    """The order ids that belong to the incident's positions (entry legs and
+    exits). None when the positions cannot be loaded (unknown, not empty)."""
+    sf = getattr(eng, "sf", None)
+    pos_ids = [str(e.get("id")) for e in inc.get("evidence") or [] if e.get("kind") == "position"]
+    if sf is None or not pos_ids:
+        return None
+    ids: set[str] = set()
+    try:
+        from ...models import ManagedPositionRow
+        async with sf() as session:
+            for pid in pos_ids:
+                row = await session.get(ManagedPositionRow, pid)
+                for l in (getattr(row, "legs", None) or []):
+                    if isinstance(l, dict) and l.get("entryOrderId"):
+                        ids.add(str(l["entryOrderId"]))
+                for x in ((getattr(row, "state", None) or {}).get("exits") or []):
+                    if isinstance(x, dict) and x.get("orderId"):
+                        ids.add(str(x["orderId"]))
+    except Exception:
+        return None
+    return ids
+
+
+async def _resolve_proof(eng, e: dict, inc: dict | None = None) -> tuple[bool | None, str]:
+    """A proof reference resolves to an ACTUAL record BOUND to the incident
+    (C95-06) or it is nothing: an API-supplied boolean is not validation, and
+    a record's mere existence is not either. Supported refs:
+    `execution:<id>` — must be in the incident's book, for one of the
+    incident's symbols and belong to one of the incident's positions' orders
+    (entry legs or exits); `event:<id>` — a journal row of a kind that carries
+    structured validity, for one of the incident's positions/proposals;
+    `position:<id>` — one of the incident's own positions whose plan is
+    enforced and inside its invariant. Returns (valid|None, detail)."""
+    inc = inc or {}
+    scope = inc.get("scope") or {}
     ref = str(e.get("ref") or e.get("id") or "")
     sf = getattr(eng, "sf", None)
     if not ref or ":" not in ref or sf is None:
         return None, f"unresolvable proof reference {ref!r}"
     kind, _, ident = ref.partition(":")
+    symbols = _incident_symbols(inc)
+    pos_ids = {str(x.get("id")) for x in inc.get("evidence") or [] if x.get("kind") == "position"}
     try:
-        from sqlalchemy import select
         from ...models import Event, Execution, ManagedPositionRow
         async with sf() as session:
             if kind == "execution":
                 row = await session.get(Execution, ident)
                 if row is None:
                     return None, f"execution {ident} does not exist"
-                if e.get("symbol") and str(row.symbol).upper() != str(e["symbol"]).upper():
-                    return False, f"execution {ident} is for {row.symbol}, not {e['symbol']}"
+                if scope.get("portfolioId") and str(row.portfolio_id) != str(scope["portfolioId"]):
+                    return None, f"execution {ident} is in book {row.portfolio_id}, not the incident's — unrelated"
+                if symbols and str(row.symbol).upper() not in symbols:
+                    return None, f"execution {ident} is for {row.symbol}, not {', '.join(sorted(symbols))} — unrelated"
+                order_ids = await _incident_order_ids(eng, inc)
+                if order_ids is None:
+                    return None, f"execution {ident}: the incident's positions could not be loaded"
+                if str(row.order_id) not in order_ids:
+                    return None, f"execution {ident} belongs to order {row.order_id}, not one of the incident's positions — unrelated"
                 return True, f"execution {ident} {row.side} {row.qty:g} @ {row.price} at {row.ts.isoformat()}"
             if kind == "event":
                 row = await session.get(Event, int(ident))
                 if row is None:
                     return None, f"journal event {ident} does not exist"
                 p = row.payload or {}
+                bound = (str(p.get("positionId") or "") in pos_ids
+                         or str(p.get("proposalId") or "") in {str(x.get("id")) for x in inc.get("evidence") or [] if x.get("kind") == "proposal"})
+                if not bound:
+                    return None, f"journal event {ident} is not about one of the incident's positions/proposals — unrelated"
+                if scope.get("portfolioId") and row.portfolio_id and str(row.portfolio_id) != str(scope["portfolioId"]):
+                    return None, f"journal event {ident} is in another book — unrelated"
                 if row.type == "TipGeometryRepaired" and p.get("enforced") and not p.get("reviewRequired"):
                     return True, f"event {ident}: enforced pre-entry plan without review"
                 if row.type == "TipFastStopDiagnostic":
@@ -261,9 +312,13 @@ async def _resolve_proof(eng, e: dict) -> tuple[bool | None, str]:
                     return bool((p.get("confirmation") or {}).get("confirmed")), f"event {ident}: exit confirmation record"
                 return None, f"journal event {ident} ({row.type}) carries no structured validity"
             if kind == "position":
+                if pos_ids and ident not in pos_ids:
+                    return None, f"position {ident} is not one of the incident's positions — unrelated"
                 row = await session.get(ManagedPositionRow, ident)
                 if row is None:
                     return None, f"position {ident} does not exist"
+                if scope.get("portfolioId") and str(row.portfolio_id) != str(scope["portfolioId"]):
+                    return None, f"position {ident} is in another book — unrelated"
                 rp = ((row.config or {}).get("extras") or {}).get("riskPlan") or {}
                 if not rp:
                     return None, f"position {ident} has no risk plan"
@@ -289,7 +344,7 @@ async def _validate_release(eng, inc: dict, note: str) -> tuple[bool, str]:
     async def resolved_proofs() -> tuple[list[str], list[str], list[str]]:
         good, bad, unknown = [], [], []
         for e in proofs:
-            ok, detail = await _resolve_proof(eng, e)
+            ok, detail = await _resolve_proof(eng, e, inc)
             (good if ok else bad if ok is False else unknown).append(detail)
         return good, bad, unknown
 
@@ -383,8 +438,10 @@ async def _validate_release(eng, inc: dict, note: str) -> tuple[bool, str]:
             opened = dt.datetime.fromisoformat(inc["openedAt"])
             path = (inc.get("scope") or {}).get("entryPath") or "proposal"
             async with sf() as session:
-                rows = (await session.execute(select(Event.payload).where(
-                    Event.type == "TipGeometryRepaired", Event.ts > opened))).scalars().all()
+                q = select(Event.payload).where(Event.type == "TipGeometryRepaired", Event.ts > opened)
+                if (inc.get("scope") or {}).get("portfolioId"):
+                    q = q.where(Event.portfolio_id == str(inc["scope"]["portfolioId"]))
+                rows = (await session.execute(q)).scalars().all()
         except Exception as exc:
             return False, f"journal unavailable: {exc}"
         ok = [p for p in rows if (p or {}).get("phase") in ("pre-entry", "submit") and (p or {}).get("enforced")
@@ -603,17 +660,24 @@ async def detect_incidents(eng, *, portfolio_id: str | None = None, strict: bool
             if verdict is None:
                 continue
             payload = {"positionId": r.id, "symbol": r.symbol, "portfolioId": r.portfolio_id, **verdict}
-            await eng.journal.append(ev.TIP_FAST_STOP_DIAGNOSTIC, payload, aggregate_type="position",
-                                     aggregate_id=r.id, portfolio_id=r.portfolio_id)
             evidence = [{"kind": "position", "id": r.id, "symbol": r.symbol, "note": verdict["why"]}]
             scope = {**scope_base, "portfolioId": r.portfolio_id}
+            # C95-07: a classification that REQUIRES an incident is finished only
+            # once that incident exists — the diagnostic receipt (which makes the
+            # position "seen") is written after the incident, carrying its id, so a
+            # failed incident write is retried on the next detection
+            inc = None
             if verdict["verdict"] == "invalid":
-                opened.append(await open_incident(eng, kind="integrity", cause="geometry_violation_filled",
-                                                  scope=scope, evidence=evidence,
-                                                  why=f"{r.symbol}: {verdict['why']}"))
+                inc = await open_incident(eng, kind="integrity", cause="geometry_violation_filled",
+                                          scope=scope, evidence=evidence, why=f"{r.symbol}: {verdict['why']}")
             elif verdict["verdict"] == "evidence_missing":
-                opened.append(await open_incident(eng, kind="hold", cause="evidence_missing", scope=scope,
-                                                  evidence=evidence, why=f"{r.symbol}: {verdict['why']}"))
+                inc = await open_incident(eng, kind="hold", cause="evidence_missing", scope=scope,
+                                          evidence=evidence, why=f"{r.symbol}: {verdict['why']}")
+            if inc is not None:
+                opened.append(inc)
+                payload["incidentId"] = (inc or {}).get("id")
+            await eng.journal.append(ev.TIP_FAST_STOP_DIAGNOSTIC, payload, aggregate_type="position",
+                                     aggregate_id=r.id, portfolio_id=r.portfolio_id)
         # duplicate executions: an entry order filled beyond its quantity (I93-02)
         dup = await _duplicate_executions(eng, [r for r in rows], scope_base.get("portfolioId"))
         for oid, sym, pid_, filled, requested in dup:

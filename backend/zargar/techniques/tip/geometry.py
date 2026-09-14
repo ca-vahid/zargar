@@ -363,20 +363,52 @@ def advance_exception(state: dict, event: dict) -> dict:
 
 
 def risk_accounting(position: dict) -> dict:
-    """Planned vs stress vs realized, kept SEPARATE (design 'Accounting'):
-    planned = the final pre-entry plan's risk, stress = theoretical maximum,
-    realized = what actually happened (a stop does not guarantee its price;
-    the slippage between planned and realized is a REPORTED quantity)."""
-    # both serialized shapes: Managed.to_dict() carries `extras`; a DB row
-    # carries config.extras (G91-06: this is what production reads)
+    """Planned vs stress vs realized for a serialized position, with
+    PROVENANCE (C95-02). `plannedRisk` is the risk of the trade that ACTUALLY
+    executed — from an ENFORCED plan (its unit loss x the actual quantity), or
+    computed from the executed protection plan (entry, live stop, legs) — and
+    is marked `unavailable` when neither exists. A shadow / unenforced plan
+    describes the size and stop that WOULD have been used: it is reported
+    separately under `hypothetical` and is never compared with the realized
+    loss as execution slippage."""
     cfg = position.get("config") or {}
     rp = ((position.get("extras") or {}).get("riskPlan")
           or (cfg.get("extras") or {}).get("riskPlan") or cfg.get("riskPlan") or {})
-    realized = float(position.get("realizedPnl") or (position.get("state") or {}).get("realizedPnl") or 0.0)
-    planned = rp.get("plannedRisk")
-    out = {"plannedRisk": planned, "stressRisk": rp.get("stressRisk"),
+    state = position.get("state") or {}
+    realized = float(position.get("realizedPnl") or state.get("realizedPnl") or 0.0)
+    legs = [l for l in (position.get("legs") or []) if l]
+    qty = sum(abs(float(l.get("qty") or 0)) for l in legs) or None
+    entry = position.get("entry") or cfg.get("entry")
+    policy = position.get("policy") or cfg.get("policy") or {}
+    stop = (policy.get("stop") or {}).get("price")
+    if stop is None:
+        stop = (state.get("policyState") or {}).get("stop") or (position.get("state") or {}).get("stop")
+    is_option = any((l.get("secType") or "STK") == "OPT" for l in legs)
+    planned = None
+    basis = "unavailable"
+    stress = None
+    if rp.get("enforced") and rp.get("unitLoss") is not None and qty:
+        planned = round(float(rp["unitLoss"]) * qty, 4)
+        basis = "enforced-plan"
+    elif rp.get("enforced") and rp.get("plannedRisk") is not None and (qty is None or int(rp.get("qty") or 0) == int(qty)):
+        planned = float(rp["plannedRisk"])
+        basis = "enforced-plan"
+    elif not is_option and entry and stop and qty:
+        planned = round(abs(float(entry) - float(stop)) * qty, 4)
+        basis = "executed-plan"
+    if legs:
+        stress = round(sum(abs(float(l.get("qty") or 0)) * float(l.get("avgFill") or 0) * float(l.get("multiplier") or (100.0 if (l.get("secType") == "OPT") else 1.0))
+                           for l in legs), 4) or None
+    if stress is None and rp.get("enforced"):
+        stress = rp.get("stressRisk")
+    out = {"plannedRisk": planned, "plannedRiskBasis": basis, "stressRisk": stress,
            "realizedPnl": round(realized, 2),
            "realizedLoss": round(-realized, 2) if realized < 0 else 0.0}
     if planned is not None and realized < 0:
         out["slippageVsPlanned"] = round(-realized - float(planned), 2)   # >0: lost more than planned
+    if rp and not rp.get("enforced"):
+        out["hypothetical"] = {"mode": rp.get("mode"), "enforced": False, "qtyRequested": rp.get("qtyRequested"),
+                               "qty": rp.get("qty"), "plannedRisk": rp.get("plannedRisk"),
+                               "stressRisk": rp.get("stressRisk"), "resized": rp.get("resized"),
+                               "note": "what the gate WOULD have done — research only, not the executed trade"}
     return out

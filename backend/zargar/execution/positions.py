@@ -331,7 +331,16 @@ class PositionManager:
             return None      # out-of-order packet arriving late: quarantined (v2)
         if all(obs[k] == pobs[k] for k in obs):
             return None      # same cached observation re-polled: not confirmation
-        self._premium_confirm.pop(p.id, None)   # forward-advanced evidence: confirmed
+        # forward-advanced evidence (no leg moved backward, at least one advanced):
+        # CONFIRMED. The accepted pair is FROZEN here as the decision's evidence
+        # (C95-01) — the exit receipt carries this immutable record, never a
+        # rebuild from the pending state that is cleared next
+        self.__dict__.setdefault("_premium_confirmed", {})[p.id] = {
+            "confirmed": True,
+            "observations": [{"at": prev.get("at"), "sourceTs": dict(pobs)},
+                             {"at": now, "sourceTs": dict(obs)}],
+            "mark": self._mark_evidence.get(p.id)}
+        self._premium_confirm.pop(p.id, None)
         return d
 
     def min_dte_floor(self) -> int:
@@ -755,7 +764,7 @@ class PositionManager:
 
     @serialized_adapter
     async def _close_leg(self, p: Managed, leg: Leg, qty: float, *, force_market: bool,
-                         kind: str, reason: str) -> dict | None:
+                         kind: str, reason: str, attempt_tag: str | None = None) -> dict | None:
         qty = float(int(min(qty, abs(leg.qty)))) if leg.sec_type == "OPT" else float(min(qty, abs(leg.qty)))
         # total outstanding exits must never exceed the leg: a policy decision,
         # the quote watch and a manual close can race a slow fill, and the
@@ -788,10 +797,10 @@ class PositionManager:
                                              sec_type=leg.sec_type, qty=qty, bid=bid,
                                              force_market=force_market, source="technique",
                                              technique_id=p.technique)
-        return await self._submit_exit(p, intent, kind=kind, reason=reason)
+        return await self._submit_exit(p, intent, kind=kind, reason=reason, attempt_tag=attempt_tag)
 
     @serialized_adapter
-    async def _submit_exit(self, p, intent, *, kind, reason):
+    async def _submit_exit(self, p, intent, *, kind, reason, attempt_tag: str | None = None):
         """Shared write-ahead router for reduce-only exits, including adapter stops."""
         if not intent.reduce_only or intent.portfolio_id != p.portfolio_id or intent.technique_id != p.technique:
             raise ValueError("managed exit intent must reduce exposure on its owned portfolio/technique")
@@ -799,6 +808,10 @@ class PositionManager:
                "filledQty": 0.0, "price": None, "ts": self.now_ms(), "reason": reason}
         if p.policy.get("adapter"):
             attempt_tag = f"managed_exit:{p.id}:{new_id()}"
+        if attempt_tag:
+            # a DURABLE attempt identity bound to the order intent (C95-04): the
+            # venue order carries it as a tag, so recovery can find an accepted
+            # order even when the local exit record never learned its id
             intent = intent.model_copy(update={"tags": [*intent.tags, attempt_tag]})
             rec.update(attemptTag=attempt_tag, intent=intent.model_dump())
         p.exits.append(rec)
@@ -829,20 +842,18 @@ class PositionManager:
 
     def _premium_confirmation_record(self, p: Managed) -> dict:
         """The STRUCTURED evidence of a confirmed premium stop (KB-06 I93-02):
-        the two distinct observations that paired, or `confirmed: false`."""
-        prev = self._premium_confirm.get(p.id) or {}
-        obs = self._mark_obs_ts.get(p.id) or {}
-        first = prev.get("obs") or {}
-        confirmed = bool(first) and bool(obs) and set(obs) == set(first) and all(obs[k] > first[k] for k in obs)
-        return {"confirmed": confirmed,
-                "observations": ([{"at": prev.get("at"), "sourceTs": dict(first)}, {"sourceTs": dict(obs)}]
-                                 if first and obs else []),
-                "mark": self._mark_evidence.get(p.id)}
+        the immutable pair frozen by `_confirm_premium_stop` at the moment the
+        decision was confirmed (consumed once), or an honest `confirmed: false`
+        when no confirmation was recorded for this decision."""
+        frozen = self.__dict__.setdefault("_premium_confirmed", {}).pop(p.id, None)
+        if frozen:
+            return dict(frozen)
+        return {"confirmed": False, "observations": [], "mark": self._mark_evidence.get(p.id)}
 
     @serialized_adapter
     async def close(self, pid: str, *, fraction: float = 1.0, reason: str = "manual close",
                     kind: str = "close", force_market: bool = False,
-                    evidence: dict | None = None) -> dict | None:
+                    evidence: dict | None = None, attempt_tag: str | None = None) -> dict | None:
         """Reduce every open leg together (partial closes stay proportional).
         `evidence` (optional, structured) rides on the exit records — a
         premium stop's confirmation record, never prose."""
@@ -876,7 +887,8 @@ class PositionManager:
             want = abs(leg.qty) * fraction
             if leg.sec_type == "OPT":
                 want = float(int(round(want))) or (1.0 if fraction > 0 else 0.0)
-            rec = await self._close_leg(p, leg, want, force_market=force_market, kind=kind, reason=reason)
+            rec = await self._close_leg(p, leg, want, force_market=force_market, kind=kind, reason=reason,
+                                        attempt_tag=attempt_tag)
             if rec is not None and evidence is not None:
                 rec["confirmation" if kind == "premium_stop" else "evidence"] = dict(evidence)
         await self._persist(p)
@@ -924,17 +936,54 @@ class PositionManager:
         await self._persist(p)
         return p.to_dict()
 
+    async def _persist_candidate(self, p: Managed, *, policy: dict, stop: float | None) -> None:
+        """STRICT durability for a candidate protection change (C95-03): writes
+        the row with the candidate policy/stop WITHOUT touching the in-memory
+        position, and RAISES on any failure — the legacy `_persist` swallows
+        errors for non-adapter positions, which an exposure-increasing change
+        can never rely on."""
+        from dataclasses import replace as _replace
+        async with self.engine.sf() as session:
+            row = await session.get(ManagedPositionRow, p.id)
+            cfg = {"direction": p.direction, "policy": dict(policy), "entry": p.entry, "risk": p.risk,
+                   "overnight": p.overnight, "overnightAck": p.overnight_ack, "runId": p.run_id,
+                   "entryMark": p.entry_mark, "entryIv": p.entry_iv, "extras": dict(p.extras or {})}
+            st = {"policyState": _replace(p.state, stop=stop).to_dict(), "realizedPnl": round(p.realized_pnl, 2),
+                  "exits": p.exits[-100:], "events": p.events[-200:], "sessionsSeen": p.sessions_seen,
+                  "openedMs": p.opened_ms, "closedMs": p.closed_ms, "lastTfBarTs": p.last_tf_bar_ts,
+                  "closeReason": p.close_reason,
+                  "venueStopOrderId": p.venue_stop_order_id, "venueStopAt": p.venue_stop_at,
+                  "attention": p.attention, "haltEntries": p.halt_entries}
+            if row is None:
+                row = ManagedPositionRow(id=p.id, technique=p.technique, symbol=p.symbol,
+                                         portfolio_id=p.portfolio_id, status=p.status, tags=list(p.tags),
+                                         config=cfg, legs=[l.to_dict() for l in p.legs], state=st)
+                session.add(row)
+            else:
+                row.status = p.status
+                row.config = cfg
+                row.legs = [l.to_dict() for l in p.legs]
+                row.state = st
+                row.tags = list(p.tags)
+                row.updated_at = dt.datetime.now(dt.timezone.utc)
+            await session.commit()
+
     async def widen_stop(self, pid: str, new_stop: float, *, reason: str,
                          max_qty: float | None = None, unit_loss: float | None = None,
                          budget: float | None = None) -> dict | None:
         """The ONE way a live stop gets WIDER (set_policy only tightens). A
-        shared method that INCREASES exposure trusts no caller (G91-05): under
-        the position guard it re-reads the actual remaining quantity and the
-        position state, refuses when the position is not open, when a
-        protective exit is still in flight (a retained stop may be filling),
-        when the remaining quantity exceeds `max_qty`, or when `qty x unit_loss`
-        would exceed `budget`; then PERSISTS the transition before the wider
-        stop is exposed, and reverts on a persistence or journal failure.
+        shared method that INCREASES exposure trusts no caller and no
+        error-swallowing helper (G91-05 / C95-03): under the position guard it
+        re-reads the actual remaining quantity and the position state, refuses
+        when the position is not open, when a protective exit is still in
+        flight (a retained stop may be filling), when the remaining quantity
+        exceeds `max_qty`, or when `qty x unit_loss` would exceed `budget`;
+        then makes the candidate DURABLE first (strict persist + strict
+        journal, both raise) while the in-memory stop stays tight, and only
+        then exposes the wider stop. A durable write that fails leaves the
+        tight stop in force; an UNCERTAIN outcome (the row may hold the wider
+        stop while memory holds the tight one) is recorded explicitly in
+        `extras.widenUncertain` and reconciled at restore — never assumed.
         Refused on adapter positions and when the stop is not actually wider."""
         from .serialization import position_guard
         async with position_guard(self, pid):
@@ -961,20 +1010,43 @@ class PositionManager:
             cur = p.state.stop
             if cur is not None and not (float(new_stop) < cur if not short else float(new_stop) > cur):
                 raise ValueError(f"{new_stop} is not wider than the live stop {cur}")
-            old_policy, old_stop = dict(p.policy), cur
-            p.policy = {**p.policy, "stop": {"kind": "fixed", "price": float(new_stop)}}
-            p.state.stop = float(new_stop)
+            candidate = {**p.policy, "stop": {"kind": "fixed", "price": float(new_stop)}}
+            payload = {"positionId": p.id, "technique": p.technique, "symbol": p.symbol,
+                       "portfolioId": p.portfolio_id, "status": p.status, "policy": candidate,
+                       "widened": {"from": cur, "to": float(new_stop), "reason": reason, "remaining": remaining}}
+            # (1) durable candidate — the in-memory stop is still the tight one
             try:
-                await self._persist(p)              # durable FIRST
-                self._log(p, "stop_widened", f"stop widened {cur} -> {float(new_stop):g}: {reason}")
-                await self._journal(POSITION_POLICY, p, {"policy": p.policy,
-                                                         "widened": {"from": cur, "to": float(new_stop), "reason": reason,
-                                                                     "remaining": remaining}})
-            except Exception:
-                p.policy, p.state.stop = old_policy, old_stop      # nothing exposed on failure
+                await self._persist_candidate(p, policy=candidate, stop=float(new_stop))
+            except Exception as exc:
+                # the row's state is UNKNOWN (the commit may or may not have landed):
+                # say so explicitly, keep the tight stop, and try to write it back
+                p.extras = {**(p.extras or {}), "widenUncertain": {"tightStop": cur, "attempted": float(new_stop),
+                                                                  "error": str(exc)[:160],
+                                                                  "at": dt.datetime.now(dt.timezone.utc).isoformat()}}
+                self._log(p, "stop_widen_failed", f"durable write failed — tight stop {cur} retained: {exc}")
                 with contextlib.suppress(Exception):
-                    await self._persist(p)
+                    await self._persist_candidate(p, policy=dict(p.policy), stop=cur)
                 raise
+            # (2) durable journal — still nothing exposed
+            try:
+                await self.engine.journal.append(POSITION_POLICY, payload, aggregate_type="managed_position",
+                                                 aggregate_id=p.id, portfolio_id=p.portfolio_id)
+            except Exception as exc:
+                self._log(p, "stop_widen_failed", f"journal failed — tight stop {cur} retained: {exc}")
+                try:
+                    await self._persist_candidate(p, policy=dict(p.policy), stop=cur)   # roll the row back
+                except Exception as exc2:
+                    p.extras = {**(p.extras or {}), "widenUncertain": {"tightStop": cur, "attempted": float(new_stop),
+                                                                      "error": f"rollback failed: {exc2}"[:160],
+                                                                      "at": dt.datetime.now(dt.timezone.utc).isoformat()}}
+                raise
+            # (3) expose
+            p.policy = candidate
+            p.state.stop = float(new_stop)
+            p.extras = {k: v for k, v in (p.extras or {}).items() if k != "widenUncertain"}
+            self._log(p, "stop_widened", f"stop widened {cur} -> {float(new_stop):g}: {reason}")
+            with contextlib.suppress(Exception):
+                self.engine.bus.publish(topics.TECHNIQUE, {"kind": "position", "event": POSITION_POLICY, "position": p.to_dict()})
             await self._ensure_venue_stop(p)
             await self._persist(p)
             return p.to_dict()

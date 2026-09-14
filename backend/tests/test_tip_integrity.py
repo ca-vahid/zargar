@@ -159,7 +159,8 @@ async def test_case3_hold_incident_resolution_validates_evidence(rig):
     from zargar.models import Execution, Order
     eng = rig
     pid = _pid(eng)
-    await _closed(eng, pid, "FSTC", exits=[_stop_exit(NOW_MS + 45_000)], opened_ms=NOW_MS, extras={})
+    stop_order_id = new_id()
+    await _closed(eng, pid, "FSTC", exits=[_stop_exit(NOW_MS + 45_000, orderId=stop_order_id)], opened_ms=NOW_MS, extras={})
     (inc,) = await ig.detect_incidents(eng)
     assert inc["kind"] == "hold" and inc["cause"] == "evidence_missing" and inc["revision"] == 1
     with pytest.raises(ValueError, match="no proof evidence"):
@@ -168,33 +169,55 @@ async def test_case3_hold_incident_resolution_validates_evidence(rig):
     inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "id": "q-nowhere", "valid": True})
     with pytest.raises(ValueError, match="do not resolve"):
         await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=2)
-    # a proof that resolves to an ACTUAL execution of the incident's symbol validates
-    order_id, exec_id = new_id(), new_id()
+    # a proof that resolves to an ACTUAL execution of the incident's OWN position validates
+    order_id, exec_id = stop_order_id, new_id()
     async with eng.sf() as session:
         session.add(Order(id=order_id, portfolio_id=pid, symbol="FSTC", sec_type="STK", side="BUY", qty=1.0,
                           order_type="LMT", limit_price=10.0, status="FILLED", filled_qty=1.0, avg_fill_price=10.0,
                           source="signal"))
         await session.commit()                                # the FK needs the order first
-        session.add(Execution(id=exec_id, order_id=order_id, portfolio_id=pid, symbol="FSTC", side="BUY",
+        session.add(Execution(id=exec_id, order_id=order_id, portfolio_id=pid, symbol="FSTC", side="SELL",
+                              qty=1.0, price=10.0))
+        # an UNRELATED execution of the same symbol in the same book: not this position's
+        other_order = new_id()
+        session.add(Order(id=other_order, portfolio_id=pid, symbol="FSTC", sec_type="STK", side="BUY", qty=1.0,
+                          order_type="LMT", limit_price=10.0, status="FILLED", filled_qty=1.0, avg_fill_price=10.0,
+                          source="signal"))
+        await session.commit()
+        unrelated_exec = new_id()
+        session.add(Execution(id=unrelated_exec, order_id=other_order, portfolio_id=pid, symbol="FSTC", side="BUY",
                               qty=1.0, price=10.0))
         await session.commit()
+    inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "ref": f"execution:{unrelated_exec}", "symbol": "FSTC"})
+    with pytest.raises(ValueError, match="do not resolve"):
+        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=3)
     inc = await ig.append_evidence(eng, inc["id"], {"kind": "proof", "ref": f"execution:{exec_id}", "symbol": "FSTC"})
-    assert inc["revision"] == 3
+    assert inc["revision"] == 4
     with pytest.raises(ValueError, match="stale resolution"):
-        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=2)
-    out = await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=3, note="validated")
-    assert out["status"] == "resolved" and out["resolution"]["examinedRevision"] == 3
+        await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=3)
+    out = await ig.resolve_incident(eng, inc["id"], resolver="user", examined_revision=4, note="validated")
+    assert out["status"] == "resolved" and out["resolution"]["examinedRevision"] == 4
     assert out["resolution"]["override"] is False and "execution" in out["resolution"]["validated"]
     assert await ig.entry_paused(eng, portfolio_id=pid) is None
-    # a proof that resolves to a DEFECT never releases
-    await _closed(eng, pid, "FSTC2", exits=[_stop_exit(NOW_MS + 45_000)], opened_ms=NOW_MS, extras={})
+    # a proof that resolves to a BOUND record showing a DEFECT never releases
+    fstc2 = await _closed(eng, pid, "FSTC2", exits=[_stop_exit(NOW_MS + 45_000)], opened_ms=NOW_MS, extras={})
     (inc2,) = await ig.detect_incidents(eng)
+    # an unrelated record (another position's fill) is unresolved, not a release
     inc2 = await ig.append_evidence(eng, inc2["id"], {"kind": "proof", "ref": f"execution:{exec_id}", "symbol": "FSTC2"})
+    with pytest.raises(ValueError, match="do not resolve"):
+        await ig.resolve_incident(eng, inc2["id"], resolver="user", examined_revision=inc2["revision"])
+    async with eng.sf() as session:                     # the position's own plan records a violation
+        rowdb = await session.get(ManagedPositionRow, fstc2)
+        rowdb.config = {**(rowdb.config or {}), "extras": {"riskPlan": {"enforced": True, "invariantOk": False}}}
+        await session.commit()
+    inc2 = await ig.append_evidence(eng, inc2["id"], {"kind": "proof", "ref": f"position:{fstc2}"})
     with pytest.raises(ValueError, match="proves a defect"):
         await ig.resolve_incident(eng, inc2["id"], resolver="user", examined_revision=inc2["revision"])
     assert await ig.entry_paused(eng, portfolio_id=pid), "still paused"
     acts = [e["action"] for e in await _events(eng, "TipExecutionIncident")]
-    assert acts.count("release_refused") == 3 and acts.count("resolved") == 1
+    assert acts.count("release_refused") == 5 and acts.count("resolved") == 1
+    diag = [d for d in await _events(eng, "TipFastStopDiagnostic") if d.get("symbol") == "FSTC"]
+    assert diag and diag[0].get("incidentId"), "the diagnostic receipt links its incident (C95-07)"
 
 
 # 4. every automated entry path is refused while paused; a person may still act

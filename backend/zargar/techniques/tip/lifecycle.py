@@ -932,14 +932,47 @@ async def adopt_when_filled(eng, proposal: dict, order: dict) -> dict | None:
 TRIM_WAIT_S = 120.0     # a trim is a reduce-only LMT at the bid; sim fills in ms, live may rest a bit
 
 
+def _attempt_tag(st: dict) -> str | None:
+    return f"geometry_trim:{st['attemptId']}" if st.get("attemptId") else None
+
+
 def _unconsumed_trim(p, st: dict) -> dict | None:
     """G91-04: a `geometry_trim` exit record this exception has not accounted
     for — a trim that was submitted (and may have filled) before the exception
-    recorded its order id. Recovery adopts it; it is never submitted again."""
+    recorded its order id. A record carrying THIS attempt's tag wins; without
+    a tag, any unconsumed geometry trim is adopted. Recovery never submits a
+    second trim."""
     known = {st.get("trimOrderId"), *(st.get("consumedTrims") or [])}
-    for x in reversed(list(getattr(p, "exits", None) or [])):
-        if x.get("kind") == "geometry_trim" and x.get("orderId") and x.get("orderId") not in known:
+    tag = _attempt_tag(st)
+    cands = [x for x in reversed(list(getattr(p, "exits", None) or []))
+             if x.get("kind") == "geometry_trim" and x.get("orderId") and x.get("orderId") not in known]
+    for x in cands:
+        if tag and x.get("attemptTag") == tag:
             return x
+    return cands[0] if cands else None
+
+
+async def _order_for_attempt(eng, p, st: dict) -> dict | None:
+    """C95-04: an accepted venue order carrying this attempt's tag — the
+    durable identity bound to the intent before submission — even when the
+    local exit record never learned its id. None = nothing found (which is
+    NOT proof that nothing was accepted when the store is unavailable)."""
+    tag = _attempt_tag(st)
+    sf = getattr(eng, "sf", None)
+    if not tag or sf is None:
+        return None
+    try:
+        from sqlalchemy import select
+        from ...models import Order
+        async with sf() as session:
+            rows = (await session.execute(select(Order).where(
+                Order.portfolio_id == p.portfolio_id, Order.side == "SELL")
+                .order_by(Order.created_at.desc()).limit(200))).scalars().all()
+        for o in rows:
+            if tag in list(o.tags or []):
+                return {"orderId": o.id, "status": o.status, "filledQty": float(o.filled_qty or 0)}
+    except Exception:
+        log.debug("attempt order lookup failed", exc_info=True)
     return None
 
 
@@ -1052,10 +1085,26 @@ async def run_geometry_exception(eng, pos_id: str, state: dict) -> dict:
         return st
     if phase != "trim_pending":
         return st
-    # ---- (1) trim first — with a durable identity persisted BEFORE submission
+    # ---- (1) trim first — with a durable identity BOUND TO THE ORDER before submission
     order_id = st.get("trimOrderId")
     if not order_id:
         prior = _unconsumed_trim(p, st)
+        if prior is None and st.get("attemptId"):
+            # a persisted attempt from an earlier process whose ACK is unknown:
+            # the venue may hold an accepted order — look it up by the attempt
+            # tag; otherwise HOLD with the tight stop (C95-04). Never re-trim.
+            found = await _order_for_attempt(eng, p, st)
+            if found is not None:
+                prior = {"orderId": found["orderId"]}
+            else:
+                st["phase"] = "reconcile"
+                st["stopInForce"] = st.get("tightStop")
+                st["history"] = [*(st.get("history") or []),
+                                 {"from": "trim_pending", "to": "reconcile", "event": "attempt without ACK"}]
+                await persist(st, "attempted trim with an unknown acknowledgement — held, tight stop in force")
+                with contextlib.suppress(Exception):
+                    p.attention.append(f"geometry trim attempt {st['attemptId'][:8]} has no known order — reconcile at the venue")
+                return st
         if prior is not None:
             # a trim already exists (submitted before the stamp survived a crash):
             # recover it — never submit a second one
@@ -1064,19 +1113,28 @@ async def run_geometry_exception(eng, pos_id: str, state: dict) -> dict:
             await persist(st, "recovered an existing trim order; tight stop armed")
             order_id = prior["orderId"]
         else:
-            st["attemptId"] = st.get("attemptId") or new_id()
+            st["attemptId"] = new_id()
+            st["attemptState"] = "submitting"
             await persist(st, "trim attempt recorded before submission")
             before = {x.get("orderId") for x in (p.exits or [])}
             await mgr.close(pos_id, fraction=float(st.get("trimQty") or 0) / max(1.0, float(st.get("qty") or 1)),
-                            kind="geometry_trim",
+                            kind="geometry_trim", attempt_tag=_attempt_tag(st),
                             reason=f"geometry exception {st['attemptId'][:8]}: trim {st.get('trimQty')} of "
                                    f"{st.get('qty')} before widening")
             rec = next((x for x in reversed(p.exits or []) if x.get("kind") == "geometry_trim"
                         and x.get("orderId") and x.get("orderId") not in before), None)
             if rec is None or not rec.get("orderId"):
-                st = _geo.advance_exception(st, {"kind": "trim_rejected"})
-                await persist(st, "trim order could not be placed — tight stop stays")
-                return st
+                # no local order id: the venue MAY still have accepted it — look
+                # up the attempt tag; otherwise hold (never assume rejection)
+                found = await _order_for_attempt(eng, p, st)
+                if found is None:
+                    st["phase"] = "reconcile"
+                    st["stopInForce"] = st.get("tightStop")
+                    st["history"] = [*(st.get("history") or []),
+                                     {"from": "trim_pending", "to": "reconcile", "event": "submission without ACK"}]
+                    await persist(st, "trim submission has no acknowledgement — held, tight stop in force")
+                    return st
+                rec = {"orderId": found["orderId"]}
             st = _geo.advance_exception(st, {"kind": "trim_submitted", "orderId": rec["orderId"]})
             await persist(st, "trim submitted; tight stop armed")
             order_id = rec["orderId"]
@@ -1115,6 +1173,15 @@ async def reconcile_geometry_exceptions(eng) -> int:
     for p in list(getattr(mgr, "_pos", {}).values()):
         if p.technique != "tip" or p.status not in ("open", "attention"):
             continue
+        wu = (p.extras or {}).get("widenUncertain")
+        if wu and wu.get("tightStop") is not None:
+            # a widen whose durable write failed with an unknown outcome: the
+            # tight stop is the protection in force — restore it explicitly
+            with contextlib.suppress(Exception):
+                await mgr.set_policy(p.id, {**p.policy, "stop": {"kind": "fixed", "price": float(wu["tightStop"])}})
+            p.state.stop = float(wu["tightStop"])
+            await mgr.set_extras(p.id, {"widenUncertain": None})
+            n += 1
         st = dict((p.extras or {}).get("geometryException") or {})
         if st.get("phase") not in ("trim_pending", "reconcile", "widen_ready"):
             continue

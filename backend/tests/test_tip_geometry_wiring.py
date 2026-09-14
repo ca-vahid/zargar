@@ -80,14 +80,16 @@ async def test_enforce_mode_finalizes_stop_and_resizes_before_entry(rig):
 
 async def test_shadow_mode_records_but_does_not_change_the_card(rig):
     eng = rig
-    await eng.settings.set("techniques.tip.risk_budget_per_tip", 6.0, journal=False)   # gate default = shadow
+    # deterministic regardless of the sim's per-process price: a one-cent risk
+    # budget fits no share at any price, so the shadow plan ALWAYS resizes
+    await eng.settings.set("techniques.tip.risk_budget_per_tip", 0.01, journal=False)   # gate default = shadow
     await eng.settings.set("techniques.tip.budget_per_tip", 5000.0, journal=False)
     q = await _quote(eng, "GEOB")
     row, sig = await _tip(eng, "GEOB", q.last, stop_pct=0.2)
     pdict = await eng.proposals.create_from_signal(row, sig, {})
     rp = pdict["context"]["riskPlan"]
-    assert rp["enforced"] is False and rp["resized"] is True
-    assert pdict["qty"] == rp["qtyRequested"], "shadow never touches the size"
+    assert rp["enforced"] is False and rp["resized"] is True and rp["qty"] == 0
+    assert pdict["qty"] == rp["qtyRequested"] and pdict["qty"] >= 1, "shadow never touches the size"
     assert pdict["context"]["exitPlan"]["underlyingStop"] == row.stop_price, "shadow never touches the stop"
     assert "reviewRequired" not in pdict["context"]
 
@@ -298,8 +300,8 @@ async def test_widen_stop_refuses_stale_caller_state_and_reverts_on_journal_fail
     with pytest.raises(ValueError, match="in flight"):
         await mgr.widen_stop(pos["id"], wide, reason="race")
     p.exits.pop()
-    # (d) journal failure: nothing exposed, in-memory and persisted stop reverted
-    monkeypatch.setattr(mgr, "_journal", AsyncMock(side_effect=OSError("journal down")))
+    # (d) journal failure at the REAL boundary: nothing exposed, in-memory and persisted stop reverted
+    monkeypatch.setattr(eng.journal, "append", AsyncMock(side_effect=OSError("journal down")))
     with pytest.raises(OSError):
         await mgr.widen_stop(pos["id"], wide, reason="journal")
     assert mgr.get(pos["id"]).state.stop == tight and mgr.get(pos["id"]).policy["stop"]["price"] == tight
@@ -323,13 +325,22 @@ async def test_accounting_is_read_from_serialized_positions(rig):
     q = await _quote(eng, "GEOL")
     tight = round(q.last * 0.99, 2)
     pos = await _adopt_shares(eng, "GEOL", qty=4, stop=tight,
-                              extras={"riskPlan": {"plannedRisk": 12.0, "stressRisk": 400.0, "enforced": True}})
+                              extras={"riskPlan": {"plannedRisk": 12.0, "unitLoss": 3.0, "qty": 4, "stressRisk": 400.0,
+                                                   "enforced": True}})
     acc = position_risk_accounting(mgr.get(pos["id"]).to_dict())
-    assert acc["plannedRisk"] == 12.0 and acc["stressRisk"] == 400.0 and acc["realizedLoss"] == 0.0
+    assert acc["plannedRisk"] == 12.0 and acc["plannedRiskBasis"] == "enforced-plan" and acc["realizedLoss"] == 0.0
+    assert "hypothetical" not in acc
     async with eng.sf() as session:
         rowdb = await session.get(ManagedPositionRow, pos["id"])
-    row_acc = position_risk_accounting({"config": rowdb.config, "state": rowdb.state})
+    row_acc = position_risk_accounting({"config": rowdb.config, "state": rowdb.state, "legs": rowdb.legs})
     assert row_acc["plannedRisk"] == 12.0, "the DB row shape reads the same plan"
     ours = _our_positions(eng, "GEOL")
     managed = [m for m in (ours.get("managed") or []) if m.get("symbol") == "GEOL"]
     assert managed and managed[0]["riskAccounting"]["plannedRisk"] == 12.0
+    # a SHADOW plan is hypothetical: the executed plan is what counts (C95-02)
+    pos2 = await _adopt_shares(eng, "GEOM", qty=4, stop=round(q.last * 0.99, 2),
+                               extras={"riskPlan": {"mode": "shadow", "enforced": False, "qty": 2, "qtyRequested": 4,
+                                                    "plannedRisk": 1.0, "resized": True}})
+    acc2 = position_risk_accounting(mgr.get(pos2["id"]).to_dict())
+    assert acc2["plannedRiskBasis"] == "executed-plan" and acc2["plannedRisk"] != 1.0
+    assert acc2["hypothetical"]["plannedRisk"] == 1.0 and acc2["hypothetical"]["enforced"] is False

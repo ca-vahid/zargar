@@ -121,3 +121,12 @@ def make(underlying: str, expiry: dt.date | str, right: str, strike: float) -> O
     if r not in ("C", "P"):
         raise ValueError(f"right must be C or P, got {right!r}")
     return Occ(underlying.strip().upper(), expiry, r, float(strike))
+
+
+def contract_multiplier(symbol: str | None) -> int | None:
+    """The contract's share multiplier from its OCC identity — the STANDARD
+    100 only for a symbol that parses as a standard OCC contract. Adjusted /
+    non-standard contracts (roots carrying a digit, e.g. AAPL1) do not parse
+    and return None: unknown metadata, which the geometry gate review-gates
+    instead of assuming 100."""
+    return MULTIPLIER if parse(symbol) is not None else None

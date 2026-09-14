@@ -231,9 +231,10 @@ class ProposalService:
                 limit)
             symbol, sec_type = occ, "OPT"
             label = contract.get("display") or occ
+            from ..options import occ as _occ_mod
             vehicle = {"kind": "option", "display": label, "underlying": signal_row.ticker,
                        "optionType": contract.get("optionType"), "pickedBy": "armed_fire",
-                       "multiplier": 100,
+                       "multiplier": _occ_mod.contract_multiplier(occ),   # None = adjusted/unknown -> review-gated
                        **({"substituted": contract["substituted"]}
                           if contract.get("substituted") else {})}
             explain = (f"The level this plan waited for touched: buy {qty} contract"
@@ -455,7 +456,8 @@ class ProposalService:
             opt_type = parsed.option_type if parsed else ("put" if sig.direction == "short" else "call")
             label = label or (occ_mod.display(occ) if parsed else occ)
             vehicle = {"kind": "option", "display": label, "underlying": sig.ticker.upper(),
-                       "optionType": opt_type, "pickedBy": picked_by, "multiplier": 100,
+                       "optionType": opt_type, "pickedBy": picked_by,
+                       "multiplier": occ_mod.contract_multiplier(occ),   # None = adjusted/unknown -> review-gated
                        **({"lotto": True} if lotto else {})}
             cost = limit * qty * 100
             explain = (f"Approve = buy {qty} contract{'s' if qty != 1 else ''} of "
@@ -973,17 +975,23 @@ class ProposalService:
         plan, final exit plan and bracket are persisted on the proposal."""
         eng = self.engine
         ctx = pdict.get("context") or {}
-        if ctx.get("techniqueId") != "tip" or pdict.get("secType") not in ("OPT", "STK"):
+        if ctx.get("techniqueId") != "tip":
             return qty, pdict, None
         mode = self._geometry_scope(pdict.get("portfolioId") or "")
         if mode != "enforce":
             return qty, pdict, None
+        # C95-05: the mandatory review refusal comes BEFORE any vehicle dispatch —
+        # a review-only card (spread or otherwise unsupported vehicle included)
+        # never reaches automatic execution through a code path the producer
+        # did not anticipate
+        if via == "auto" and ctx.get("reviewRequired"):
+            return qty, pdict, f"geometry review required: {ctx.get('reviewRequired')}"
+        if pdict.get("secType") not in ("OPT", "STK"):
+            return (qty, pdict, ("geometry: vehicle not covered by the gate — automated entry refused"
+                                 if via == "auto" else None))
         rp = ctx.get("riskPlan") or {}
-        if via == "auto":
-            if not rp or not rp.get("enforced"):
-                return qty, pdict, "geometry: no enforced risk plan on the proposal — automated entry refused"
-            if ctx.get("reviewRequired"):
-                return qty, pdict, f"geometry review required: {ctx.get('reviewRequired')}"
+        if via == "auto" and (not rp or not rp.get("enforced")):
+            return qty, pdict, "geometry: no enforced risk plan on the proposal — automated entry refused"
         vehicle = ctx.get("vehicle") or {}
         sec_type = pdict.get("secType")
         underlying = str(vehicle.get("underlying") or pdict.get("symbol") or "").upper()
@@ -1110,6 +1118,11 @@ class ProposalService:
         rqty = intent.qty
         if not refusal:
             rqty, pdict, refusal = await self._admit_geometry(pdict, limit=limit, qty=intent.qty, via="auto")
+        if not refusal:
+            # C95-08: the geometry refresh awaited real work — an incident may have
+            # opened meanwhile; the pause is asked again immediately before the order
+            refusal = await _ig.admission(eng, portfolio_id=pdict["portfolioId"], entry_path="retry",
+                                          symbol=(ctx.get("vehicle") or {}).get("underlying") or pdict["symbol"])
         if refusal:
             stamp["retryRefused"] = refusal
             async with eng.sf() as session:
@@ -1121,11 +1134,20 @@ class ProposalService:
                                      aggregate_type="proposal", aggregate_id=pdict["id"],
                                      portfolio_id=pdict["portfolioId"])
             return order
+        # the retry carries the NEWLY admitted protection (the revalidated bracket), not a stale copy
+        retry_bracket = intent.bracket
+        if pdict.get("bracket"):
+            retry_bracket = BracketSpec(**{k: v for k, v in {
+                "take_profit": pdict["bracket"].get("take_profit"),
+                "stop_loss": pdict["bracket"].get("stop_loss"),
+                "take_profit_pct": pdict["bracket"].get("take_profit_pct"),
+                "stop_loss_pct": pdict["bracket"].get("stop_loss_pct"),
+            }.items() if v is not None})
         retry = await eng.orders.place(OrderIntent(
             portfolio_id=intent.portfolio_id, symbol=intent.symbol,
             sec_type=intent.sec_type, side=intent.side, qty=rqty,
             order_type=intent.order_type, limit_price=limit,
-            bracket=intent.bracket, source="signal",
+            bracket=retry_bracket, source="signal",
             signal_id=intent.signal_id, proposal_id=pdict["id"]))
         stamp = {**stamp, "retryOrderId": retry.get("id"),
                  "retryStatus": retry.get("status"),
